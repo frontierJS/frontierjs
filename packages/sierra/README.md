@@ -173,23 +173,11 @@ A prerendered route does not get this: a throw there fails the build (`FJS-D377`
 Then `vite -c config/vite.config.js` for dev and `vite build -c config/vite.config.js`
 for production.
 
-> **How `sierra.config.js` is found.** `virtual:sierra` emits a literal
-> `import sierraConfig from '<path>'`, so this has to be exact — a wrong answer is a
-> `Module not found` at build time, not a degraded mode. Sierra looks, in order:
-> beside `vite.config.js`, then in a `config/` folder beneath it, then `config/` under
-> the Vite root, then the Vite root itself (`.js`, `.mjs` and `.ts` at each). Both
-> layouts therefore work — `config/vite.config.js` next to `config/sierra.config.js`,
-> or a root-level `vite.config.js` with the config in `config/`.
->
-> Never DERIVE the config path from where `vite.config.js` sits (Invariant 3). A
-> string rewrite off that path assumes it is at the Vite root, so the conventional
-> `config/vite.config.js` derives `config/config/sierra.config.js` and can never build.
->
-> For a config that lives somewhere neither rule finds, the escape hatch remains:
->
-> ```js
-> _configPath: new URL('./sierra.config.js', import.meta.url).pathname,
-> ```
+> **The browser gets three keys of `sierra.config.js`, as JSON.** `virtual:sierra`
+> writes `junction`, `analytics` and `theme` into the app's entry by value and imports
+> nothing else of the config, so a plugin that reads the disk stays in Node. A function
+> anywhere under those three keys is refused at startup, naming its key path
+> (`FJS-D552`); a custom analytics provider is a module path instead.
 
 ---
 
@@ -1008,15 +996,15 @@ Everything in `sierra.config.js`:
 | `document` | — | `static` only — the document a prerendered page is wrapped in: `{ bodyClass, bodyAttrs, htmlClass, lang, head, bodyEnd, meta, links, jsonLd }`. The build's own CSS assets are linked automatically |
 | `routeTable.output` | `'config/routes.js'` | where the generated route table is written. A build writes `routes.build.js` beside it, so it never overwrites the table a running dev server serves |
 | `schema` | auto-detect | path to the `.lite` file, or `false` |
-| `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, cookieAuth, auth, services, debug, onConnect, … }` |
+| `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, cookieAuth, auth, services, debug, … }` — data only, since it reaches the browser as JSON |
 | `theme` | — | `{ themes, default, system, persist, key, apply, attribute }` — `attribute` only with `apply: 'attribute'` |
-| `analytics` | — | `{ provider }` — `'plausible'` (`domain`, `apiHost`), `'gtm'` (`containerId`), or a custom `{ init, pageview, track }`. On `static` the build writes the vendor's tag into every page's `<head>` and an island's `track()` reaches it; a custom object is refused there, since a prerendered page has nothing to run it |
+| `analytics` | — | `{ provider }` — `'plausible'` (`domain`, `apiHost`), `'gtm'` (`containerId`), or a custom provider's module path relative to the Vite root (`'/src/analytics.js'`), which exports `init`, `pageview` and `track`. On `static` the build writes the vendor's tag into every page's `<head>` and an island's `track()` reaches it; a custom provider is refused there, since a prerendered page has nothing to run it |
 | `devtools` | — | `{ port, position, n1Threshold }` |
 | `autoImport.components` | `[]` | directories, scanned recursively, whose PascalCase components need no import |
 | `autoImport.modules` | `{}` | package → bindings that need no import |
 | `siteUrl` | `''` | absolute origin for the sitemap |
 | `llms` | `false` | `true` emits `llms.txt` unless `public/llms.txt` exists · `'auto'` always regenerates it |
-| `functions` | — | directory of host functions, relative to the root. A file answers its own path (`functions/api/event.js` is `/api/event`, `index.js` its directory) and is `export default (request, env) => Response`; `env` carries strings only, and a module importing `cloudflare:` or a `[param]` file name is refused. The build writes `.sierra/functions.js`, and `sierra site --serve` mounts it before the static answers |
+| `functions` | — | directory of host functions, relative to the root. A file answers its own path (`functions/api/event.js` is `/api/event`, `index.js` its directory) and is `export default (request, env) => Response`; `env` carries strings only, and a module importing `cloudflare:` or a `[param]` file name is refused. The build writes `.sierra/functions.js`; `sierra site --serve` and a `--compile` binary mount it before the static answers (the binary reads `env` from its own process), and `vite dev` on a `static` target answers the directory per request, so an edit needs no restart |
 | `markdownPages` | `false` | `true` \| `'auto'` — emit `index.md` beside each page |
 | `speculationRules` | `true` | static build: prerender a same-origin link on hover (Speculation Rules, `moderate`); `rel="nofollow"` opts a link out |
 | `build.deferJS` | `false` | defer script tags in `index.html` |
@@ -1444,9 +1432,6 @@ runner reports failures that are runner artifacts rather than bugs.
 
 ## Known rough edges
 
-- `sierra.config.js` is found by probing four locations relative to `vite.config.js` and
-  the Vite root — see the [Quick start](#quick-start) note. Somewhere else entirely still
-  needs `_configPath`.
 - Every named layout slot emits a duplicate-declaration warning from the Mesa compiler.
   Cosmetic — the build and the slot both work.
 

@@ -107,4 +107,30 @@ export async function run(t) {
     'clearing both boxes is not a refusal')
   t.is(await t.evaluate(`return document.querySelector('#sent').textContent;`),
     'null', 'it is a row with no location, which the column allows')
+
+  /* ── a point set from outside reaches the boxes ───────────────────────── */
+
+  // A wrapping control (a map) sets `value`; the boxes were seeded once.
+  const PIN = `[...document.querySelectorAll('#outside input')].map(i => i.value).join(',')`
+  const PIN_LAT = `document.querySelector('#outside input[name=pin]')`
+  const PIN_LNG = `document.querySelector('#outside .field-row input:not([name])')`
+
+  t.is(await t.evaluate(`return ${PIN};`), '1,2', 'the boxes start on the seeded point')
+
+  await t.clickAt('#drop-pin')
+  await t.eventually(PIN, '10,20', 'a value set from outside replaces both boxes')
+
+  // A half-typed box wins over a value that has not changed.
+  await setValue(t, PIN_LNG, '')
+  await t.clickAt('#same-pin')
+  t.is(await t.evaluate(`return ${PIN};`), '10,', 'an equal pair is not a change, so a half-typed box stays')
+
+  // Typing a pair, then the same pair arriving, must not rewrite the text.
+  await setValue(t, PIN_LNG, '20.0')
+  await setValue(t, PIN_LAT, '10.0')
+  await t.clickAt('#same-pin')
+  t.is(await t.evaluate(`return ${PIN};`), '10.0,20.0', 'a pair the boxes already read as keeps their formatting')
+
+  await t.clickAt('#clear-pin')
+  await t.eventually(PIN, ',', 'null from outside empties both boxes')
 }

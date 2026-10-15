@@ -140,3 +140,53 @@ describe('a @from field named through a relation', () => {
     expect(await sys.kid.count({ where: { parent: { is: { kidCount: 2 } } } })).toBe(2)
   })
 })
+
+// ─── @from(rel, column) under the PARENT's row policy (FJS-1305) ──────────────
+// The value is a column of a row the caller may not be allowed to read, so it
+// is recomputed under the parent's policy after the read, as an aggregate is.
+
+const TO_ONE_POLICY = `
+model Room {
+  id    Int    @id
+  owner String
+  label String
+  size  Int
+  full  Boolean @default(false)
+  seats Seat[]
+  @@allow('read', owner == auth().id)
+}
+model Seat {
+  id        Int     @id
+  roomId    Int
+  room      Room    @relation(fields: [roomId], references: [id])
+  roomLabel String  @from(room, label)
+  roomFull  Boolean @from(room, full)
+  @@allow('read', true)
+}
+`
+
+describe('@from(rel, column) under the parent\'s row policy', () => {
+  async function seeded() {
+    const db  = await createClient({ schema: TO_ONE_POLICY, db: ':memory:' })
+    const sys = db.asSystem() as any
+    await sys.room.create({ data: { id: 1, owner: 'u1', label: 'mine', size: 3, full: true } })
+    await sys.room.create({ data: { id: 2, owner: 'u2', label: 'theirs', size: 3 } })
+    await sys.seat.create({ data: { id: 1, roomId: 1 } })
+    await sys.seat.create({ data: { id: 2, roomId: 2 } })
+    return { sys, u1: db.$setAuth({ id: 'u1' }) as any }
+  }
+
+  it('reads null where the parent is not the caller\'s to read, the value where it is', async () => {
+    const { u1 } = await seeded()
+    const rows = await u1.seat.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => r.roomLabel)).toEqual(['mine', null])
+    expect(rows.map((r: any) => r.roomFull)).toEqual([true, null])
+  })
+
+  it('refuses naming it in a where while the parent\'s policy applies, and answers as system', async () => {
+    const { sys, u1 } = await seeded()
+    await expect(u1.seat.findMany({ where: { roomLabel: 'theirs' } })).rejects.toThrow(/roomLabel/)
+    const all = await sys.seat.findMany({ orderBy: { id: 'asc' } })
+    expect(all.map((r: any) => r.roomLabel)).toEqual(['mine', 'theirs'])
+  })
+})

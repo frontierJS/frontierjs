@@ -255,6 +255,8 @@
     open  = false
     _typed = false
     onchange?.(value)
+    // An option is a click on a row, not an input event the form can hear.
+    form?.changed?.(name)
   }
 
   function create(text) {
@@ -265,6 +267,7 @@
     _typed = false
     oncreate?.(text)
     onchange?.(value)
+    form?.changed?.(name)
   }
 
   // A clear is null, never undefined: JSON drops an undefined key, so the
@@ -275,6 +278,7 @@
     open  = false
     _typed = false
     onchange?.(null)
+    form?.changed?.(name)
     inputEl?.focus()
   }
 

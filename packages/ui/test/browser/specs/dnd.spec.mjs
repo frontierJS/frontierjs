@@ -117,4 +117,59 @@ export async function run(t) {
   await t.eventually(state, '3,1,2|5,4|9', 'Escape puts it back where it was lifted')
   t.match(await t.evaluate(`return ${live};`), /cancel/i, 'and says so')
   await t.eventually(active, '2', 'with focus on the item again')
+  /* ── a wrapped row is indexed by line, then along it ──────────────────── */
+
+  // Nine chips, three to a line. One axis reads the pointer on the third line
+  // against the first chip's x and drew the placeholder at index 0.
+  const wstate = `document.getElementById('wstate').textContent`
+  const leftOf = (sel) => t.evaluate(`
+    const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
+    return { x: r.left + 3, y: r.top + r.height / 2 };
+  `)
+  t.is(await t.evaluate(`return ${wstate};`), '1,2,3,4,5,6,7,8,9', 'the chips start in order')
+  await t.drag('#wrap li[data-id="1"]', await leftOf('#wrap li[data-id="7"]'))
+  await t.eventually(wstate, '2,3,4,5,6,1,7,8,9', 'a chip dropped at the left of the third line lands before that line\'s first chip')
+  await t.drag('#wrap li[data-id="9"]', await leftOf('#wrap li[data-id="2"]'))
+  await t.eventually(wstate, '9,2,3,4,5,6,1,7,8', 'and one dropped at the left of the first line lands first')
+
+  /* ── a column-wrap and a grid are indexed by line too ─────────────────── */
+
+  // Nine chips, three to a COLUMN. Read as one axis the pointer in the third
+  // column sat against the first chip's y and drew the placeholder at index 0.
+  const aboveOf = (sel) => t.evaluate(`
+    const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + 3 };
+  `)
+  const cstate = `document.getElementById('cstate').textContent`
+  t.is(await t.evaluate(`return ${cstate};`), '1,2,3,4,5,6,7,8,9', 'the column-wrap chips start in order')
+  await t.drag('#cwrap li[data-id="1"]', await aboveOf('#cwrap li[data-id="7"]'))
+  await t.eventually(cstate, '2,3,4,5,6,1,7,8,9', 'a chip dropped at the top of the third column lands before that column\'s first chip')
+  await t.drag('#cwrap li[data-id="9"]', await aboveOf('#cwrap li[data-id="2"]'))
+  await t.eventually(cstate, '9,2,3,4,5,6,1,7,8', 'and one dropped at the top of the first column lands first')
+
+  /* ── a zone clipped out of view by a scroller takes no drop ───────────── */
+
+  // The second lane lies wholly outside the scroller's box: its rectangle is
+  // real, but the pixels over it are the page's. A rectangle-only hit test put
+  // the card in the lane the user could not see.
+  const clstate = `document.getElementById('clstate').textContent`
+  t.is(await t.evaluate(`return ${clstate};`), '21,22|31,32', 'the clipped lanes start as the fixture wrote them')
+  const centerOf = (sel) => t.evaluate(`
+    const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  `)
+  // Two steps, so the pointer never crosses the scroller's edge zone and autoscrolls it.
+  await t.drag('#clipa li[data-id="21"]', await centerOf('#clipb li[data-id="31"]'), { steps: 2 })
+  await t.evaluate('await new Promise(r => setTimeout(r, 400)); return true;')
+  await t.eventually(clstate, '21,22|31,32', 'a drop over a lane the scroller clips away changes nothing')
+  await t.evaluate(`document.getElementById('clip').scrollLeft = 1000; return true;`)
+  await t.drag('#clipb li[data-id="32"]', await aboveOf('#clipb li[data-id="31"]'))
+  await t.eventually(clstate, '21,22|32,31', 'and the same lane takes a drop once it is scrolled into view')
+
+  const gstate = `document.getElementById('gstate').textContent`
+  t.is(await t.evaluate(`return ${gstate};`), '1,2,3,4,5,6,7,8,9', 'the grid cells start in order')
+  await t.drag('#grid li[data-id="1"]', await leftOf('#grid li[data-id="7"]'))
+  await t.eventually(gstate, '2,3,4,5,6,1,7,8,9', 'a cell dropped at the left of the third row lands before that row\'s first cell')
+  await t.drag('#grid li[data-id="9"]', await leftOf('#grid li[data-id="2"]'))
+  await t.eventually(gstate, '9,2,3,4,5,6,1,7,8', 'and one dropped at the left of the first row lands first')
 }

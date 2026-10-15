@@ -3,6 +3,8 @@
 // Factory function must be named create*Service.
 // Name derived from filename: accounts.service.ts → 'accounts'.
 // Manual registration always takes precedence.
+//
+// Also loads routes/ (`FJS-D626`): a file's path there is the URL it answers.
 
 import { join } from 'node:path'
 import { createService, isBuiltService } from './service.ts'
@@ -249,4 +251,85 @@ export async function loadServiceFile(
 
   const service = factory(app) as Service
   registry.register(service)
+}
+
+// ─── Routes ───────────────────────────────────────────────────────────────
+// `routes/hooks/calendar.ts` answers `/hooks/calendar`, and each of its `GET`,
+// `POST`, `PUT`, `PATCH` and `DELETE` exports is that method's handler. A
+// `[id]` segment is the `{id}` capture, and `index` is its folder. A file or
+// folder beginning `_` is private to the files beside it.
+
+const ROUTE_VERBS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
+
+export interface RouteLoaderOptions {
+  dir:     string
+  app:     Record<string, unknown>
+  report?: (key: string, finding: string) => void
+}
+
+/** `files/[id]/index.ts` → `/files/{id}`; null when the file is not a route. */
+export function routeUrlFor(rel: string): string | null {
+  const parts = rel.replace(/\\/g, '/').replace(/\.(ts|js|mts|mjs)$/, '').split('/')
+  if (parts.some(p => p.startsWith('_'))) return null
+  if (parts[parts.length - 1] === 'index') parts.pop()
+  return '/' + parts.map(p => p.replace(/^\[(\w+)\]$/, '{$1}')).join('/')
+}
+
+// Param NAMES are erased for the same reason the router erases them: `/a/{id}`
+// and `/a/{slug}` accept the same requests, so two files claiming them are one
+// URL claimed twice.
+const urlShape = (url: string) => url.replace(/\{\w+\}/g, '{}')
+
+export async function autoloadRoutes(opts: RouteLoaderOptions): Promise<void> {
+  const { dir, app, report } = opts
+  const fail = (key: string, finding: string) => {
+    if (report) report(key, finding)
+    else console.error(`[Loader] ${finding}`)
+  }
+
+  const files: string[] = []
+  try {
+    for await (const f of new Bun.Glob('**/*.{ts,js,mts,mjs}').scan({ cwd: dir })) {
+      if (/\.(d|test|spec)\.[mc]?[tj]s$/.test(f)) continue
+      files.push(f)
+    }
+  } catch { return }
+  files.sort()
+
+  const claimedBy = new Map<string, string>()
+
+  for (const rel of files) {
+    const url = routeUrlFor(rel)
+    if (!url) continue
+    const file = join(dir, rel)
+
+    try {
+      const shape = urlShape(url)
+      const held  = claimedBy.get(shape)
+      if (held) {
+        fail(`loader:route:${shape}`,
+          `two route files answer ${url}: ${join('routes', rel)} and ${held}. ` +
+          `A file's path is its URL, so one of them has to move.`)
+        continue
+      }
+      claimedBy.set(shape, join('routes', rel))
+
+      const mod  = await import(file)
+      const verbs = ROUTE_VERBS.filter(v => typeof mod[v] === 'function')
+      if (verbs.length === 0) {
+        fail(`loader:${file}:no-verb`,
+          `${join('routes', rel)} exports none of ${ROUTE_VERBS.join(', ')}, so ${url} answers 404. ` +
+          `Export each method's handler by its verb, e.g. export const GET = (ctx) => …`)
+        continue
+      }
+      for (const v of verbs) {
+        const register = app[v.toLowerCase()] as (path: string, handler: unknown) => unknown
+        register.call(app, url, mod[v])
+      }
+    } catch (err) {
+      fail(`loader:${file}:threw`,
+        `${join('routes', rel)} threw while loading, so ${url} answers 404: ` +
+        `${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
 }

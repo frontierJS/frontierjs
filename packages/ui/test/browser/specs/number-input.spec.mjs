@@ -54,4 +54,31 @@ export async function run(t) {
   await t.press('ArrowUp')
   await t.eventually(held('bounded'), '10', 'ArrowUp from under the floor lands on the floor')
   await t.eventually(text('bounded'), '10', 'and the box shows it')
+
+  /* ── oninput per value, onchange at the end of the edit (FJS-2471) ────── */
+
+  const tally = async () => JSON.stringify(await t.evaluate(`return { ...window.tally };`))
+  const reset = () => t.evaluate(`window.tally = { input: 0, change: 0 }; return true;`)
+
+  await reset()
+  await typeInto(t, 'stepped', '123')
+  await t.eventually(held('stepped'), '123', 'three keystrokes land')
+  const typed = JSON.parse(await tally())
+  t.ok(typed.input >= 3, 'every keystroke is an input (' + typed.input + ')')
+  t.is(typed.change, 0, 'and none is a change while the person is still typing')
+
+  await t.press('Enter')
+  t.is(JSON.parse(await tally()).change, 1, 'Enter ends the edit')
+  await t.evaluate(`${box('stepped')}.blur(); return true;`)
+  t.is(JSON.parse(await tally()).change, 1, 'and a blur with nothing new typed adds no second one')
+
+  await reset()
+  await typeInto(t, 'stepped', '7')
+  await t.evaluate(`${box('stepped')}.blur(); return true;`)
+  t.is(JSON.parse(await tally()).change, 1, 'blur after typing ends the edit')
+
+  await reset()
+  await t.evaluate(`${box('stepped')}.focus(); return true;`)
+  await t.press('ArrowUp')
+  t.is(await tally(), '{"input":1,"change":1}', 'an arrow key is one input and one change')
 }

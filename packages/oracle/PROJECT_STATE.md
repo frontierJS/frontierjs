@@ -24,7 +24,6 @@ Planned 2026-10-10. **Access defects come before features**, because getting acc
 
 1. **Rulings that block later steps.** Write the options into each question's bullet, then ask the owner.
    - `FJS-D623`: how an answer names which membership role administers a container. Blocks `FJS-1799`.
-   - `FJS-D886`: whether onboarding for a container `system` creates lives in an `onRegistered` hook emit writes, or in the scaffold. Blocks `FJS-2530`.
    - `FJS-D683`: what a backfill and a split look like in the operations document. Blocks `FJS-1787`.
 2. **Where the finding the person approves and the rule emit writes disagree.** These need no ruling. `FJS-2549` was this class and is closed.
    - `FJS-2552`: the finding says an administrator writes, and the emitted `@@allow` refuses one.
@@ -32,7 +31,6 @@ Planned 2026-10-10. **Access defects come before features**, because getting acc
    - Do the same pass on the **`inferred` check** ([answer.js](src/answer.js) `GUESS`). It is a word match, and in the corpus it refused 2 of 21 first answers whose "not stated" explained an omission rather than an inference. That cost a turn each (`IDEAS/oracle-reasoning.md` § 8).
 3. **The two S2 holes**, once their rulings land.
    - `FJS-1799`: any member re-roles anyone, themselves to admin included.
-   - `FJS-2530`: a generated app with a tenant container cannot be entered.
 4. **What an answer cannot say yet.** Each coins a word, so run `decision-rules` first.
    - `FJS-2550`: the one-business team shape, where every signed-in staff member writes.
    - `FJS-2551`: a visitor without an account has no actor archetype.

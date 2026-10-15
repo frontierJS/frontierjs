@@ -18,14 +18,23 @@ export const alert = {
   duration: 4000,     // ms — 0 means persistent until manually closed
 
   show(message, type = 'info', duration = 4000) {
+    // `alert.error(message, detail)` is the wrong call, and a string here made
+    // `duration > 0` false -- an alert nothing would ever hide.
+    if (typeof duration !== 'number') {
+      throw new TypeError(`alert: duration must be a number of ms, got ${JSON.stringify(duration)} -- an alert is one message`)
+    }
+    // The previous alert's timer would otherwise hide this one early, and a
+    // persistent alert (0) would vanish with it.
+    clearTimeout(_timer)
     _w.message  = message
     _w.type     = type
     _w.duration = duration
     _w.visible  = true
-    if (duration > 0) setTimeout(() => this.hide(), duration)
+    if (duration > 0) _timer = setTimeout(() => this.hide(), duration)
   },
 
   hide() {
+    clearTimeout(_timer)
     _w.visible = false
   },
 
@@ -36,3 +45,4 @@ export const alert = {
 }
 
 const _w = watchProxy(alert)
+let _timer

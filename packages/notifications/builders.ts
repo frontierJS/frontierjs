@@ -1,3 +1,4 @@
+import type { MailAttachment } from '@frontierjs/junction/mail'
 import type { InAppAction, InAppMessage, MailLine, MailMessage } from './types.ts'
 
 // ─── InApp builder ────────────────────────────────────────────────────────────
@@ -100,6 +101,7 @@ class MailBuilder {
   private _to?:     string
   private _html?:   string
   private _text?:   string
+  private _attachments: MailAttachment[] = []
 
   /**
    * Email subject line.
@@ -160,6 +162,12 @@ class MailBuilder {
     return this
   }
 
+  /** Attach a file — call again for each one. Handed to the mailer as given. */
+  attach(file: MailAttachment): this {
+    this._attachments.push(file)
+    return this
+  }
+
   /**
    * Build the final MailMessage. Call this at the end of the chain.
    *
@@ -173,6 +181,7 @@ class MailBuilder {
       to:      this._to,
       ...(this._html !== undefined ? { html: this._html } : {}),
       ...(this._text !== undefined ? { text: this._text } : {}),
+      ...(this._attachments.length ? { attachments: this._attachments } : {}),
     }
   }
 }

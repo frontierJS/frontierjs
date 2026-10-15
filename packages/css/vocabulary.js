@@ -201,7 +201,7 @@ const NOT_A_TERM = {
   modifier: [
     'bottom', 'circle', 'compact', 'complete', 'disabled', 'divided', 'end',
     'focusable', 'hover', 'menu', 'narrow', 'peek', 'pills', 'removable',
-    'rail', 'square', 'start', 'stretch', 'striped', 'text', 'vertical', 'viewport',
+    'rail', 'segmented', 'square', 'start', 'stretch', 'striped', 'text', 'vertical', 'viewport',
     'wide', 'wrap',
   ],
 

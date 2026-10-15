@@ -8,7 +8,7 @@
 
 export { runIsland }                      from './runtime.js'
 export { bootstrapUnoMirror }             from './unocss-mirror.js'
-export { injectPageScript, makePageBridge } from './page-script.js'
+export { injectPageScript, makePageBridge, readPageNonce } from './page-script.js'
 export { buildRegistration,
          registerAllIslands,
          registerIsland,

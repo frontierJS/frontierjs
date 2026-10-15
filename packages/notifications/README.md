@@ -36,11 +36,13 @@ model Notification {
   data        Json                // whatever its formatter built
   contextType String?             // a loose reference, with no foreign key
   contextId   String?
+  deliveryKey String?             // the definition's `key`, so a retry writes no second row
   readAt      DateTime?           // null = unread
   createdAt   DateTime  @default(now())
 
   @@db(main)
   @@gate("0.8.4.8")
+  @@unique([userId, type, deliveryKey], nullsDistinct: true)
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)
 }
@@ -145,6 +147,26 @@ import paymentReceived from '../notifications/PaymentReceived.notification.ts'
 await app.notify(user, paymentReceived(payment))
 ```
 
+**A retried send needs a `key`.** `notify()` delivers every transport and
+throws when any one failed, and a job retries by throwing — so without a key, an
+unreachable mail provider is a new in-app row per attempt. `key` names what
+makes two sends the same send, and a recipient who already has a row under that
+key and type gets no second one:
+
+```typescript
+export default defineNotification<Order>({
+  via:   () => ['inApp', 'email'],
+  key:   (order) => `order:${order.id}`,
+  inApp: (order) => inApp().title('Order paid').context('Order', order.id),
+  email: (order) => mail().subject('Order paid').line(order.reference),
+})
+```
+
+It is optional: a definition without one writes a row every time it is sent,
+which is what a weekly reminder about one invoice wants. The class form states
+it as a `key(recipient)` method. A key dedupes the in-app ROW only — the email a
+retry sends is sent again (`FJS-D872`).
+
 **A formatter may be async.** That is what lets a body be rendered where it is
 read, rather than earlier:
 
@@ -154,6 +176,11 @@ email: async (order) => {
   return mail().subject(subject).html(html).text(text)
 }
 ```
+
+**A mail may carry files.** `.attach({ filename, content, type })` takes junction's
+`MailAttachment` and the driver hands it to the mailer untouched, so a booking
+confirmation with an `.ics` goes through the notification, its preferences and
+its in-app sibling rather than around them.
 
 **`via` takes the payload rather than closing over it**, so a definition can be
 asked what it supports before anything is sent — which is what a preferences
@@ -305,14 +332,14 @@ argument, which is where `user.firstName` above comes from.
 
 ## Execution model
 
-`notify()` formats and validates eagerly, then executes every transport in parallel:
+`notify()` formats and validates eagerly, then delivers the in-app record before anything else leaves:
 
 1. Call `notification.via(recipient)` — get the transport list
 2. Format each transport's message **once**, awaiting it, and validate before any delivery:
    - No formatter for that transport → `NotificationTransportNotImplementedError`
    - Unregistered custom transport → `NotificationDriverNotFoundError`
    - Recipient not addressable on it → `NotificationRecipientError`
-3. `Promise.allSettled` across all transports — a failed email does not block inApp delivery
+3. `inApp` first — if it fails, nothing else is sent (no mail about a notification that does not exist). Then `Promise.allSettled` across the rest — a failed email does not block the record
 4. Failures collected and thrown as `NotificationDeliveryError` with per-transport detail
 
 The message formatted in step 2 is the one delivered in step 3. It is built once: formatting to check the method exists and formatting to send are one call, or a formatter that renders a template does it twice per notification.

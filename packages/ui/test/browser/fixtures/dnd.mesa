@@ -12,6 +12,11 @@
   let todo  = [{ id: 1, t: 'one' }, { id: 2, t: 'two' }, { id: 3, t: 'three' }, { id: 4, t: 'four' }]
   let done  = [{ id: 5, t: 'five' }]
   let other = [{ id: 9, t: 'nine' }]
+  let chips = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => ({ id, t: String(id) }))
+  let cols  = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => ({ id, t: String(id) }))
+  let grid  = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => ({ id, t: String(id) }))
+  let clipA = [{ id: 21, t: 'a1' }, { id: 22, t: 'a2' }]
+  let clipB = [{ id: 31, t: 'b1' }, { id: 32, t: 'b2' }]
   let log   = []
   let clicks = 0
   let sources = []
@@ -43,7 +48,42 @@
   </ul>
 </div>
 
+<div id="clip">
+  <ul id="clipa" {@attach dndzone(() => ({ items: clipA, type: 'lane', onconsider: ({ items }) => clipA = items, onfinalize: ({ items }) => clipA = items }))}>
+    {#each clipA as it (it.id)}
+      <li data-id={it.id}>{it.t}</li>
+    {/each}
+  </ul>
+  <ul id="clipb" {@attach dndzone(() => ({ items: clipB, type: 'lane', onconsider: ({ items }) => clipB = items, onfinalize: ({ items }) => clipB = items }))}>
+    {#each clipB as it (it.id)}
+      <li data-id={it.id}>{it.t}</li>
+    {/each}
+  </ul>
+</div>
+
+<ul id="wrap" {@attach dndzone(() => ({ items: chips, type: 'chip', onconsider: ({ items }) => chips = items, onfinalize: ({ items }) => chips = items }))}>
+  {#each chips as c (c.id)}
+    <li data-id={c.id}>{c.t}</li>
+  {/each}
+</ul>
+
+<ul id="cwrap" {@attach dndzone(() => ({ items: cols, type: 'col', onconsider: ({ items }) => cols = items, onfinalize: ({ items }) => cols = items }))}>
+  {#each cols as c (c.id)}
+    <li data-id={c.id}>{c.t}</li>
+  {/each}
+</ul>
+
+<ul id="grid" {@attach dndzone(() => ({ items: grid, type: 'cell', onconsider: ({ items }) => grid = items, onfinalize: ({ items }) => grid = items }))}>
+  {#each grid as c (c.id)}
+    <li data-id={c.id}>{c.t}</li>
+  {/each}
+</ul>
+
+<output id="clstate">{clipA.map(i => i.id).join(',')}|{clipB.map(i => i.id).join(',')}</output>
 <output id="state">{todo.map(i => i.id).join(',')}|{done.map(i => i.id).join(',')}|{other.map(i => i.id).join(',')}</output>
+<output id="wstate">{chips.map(i => i.id).join(',')}</output>
+<output id="cstate">{cols.map(i => i.id).join(',')}</output>
+<output id="gstate">{grid.map(i => i.id).join(',')}</output>
 <output id="log">{log.join(' ')}</output>
 <output id="clicks">{clicks}</output>
 <output id="sources">{sources.join(' ')}</output>
@@ -51,5 +91,13 @@
 <style>
   .board { display: flex; gap: 2rem; align-items: flex-start; }
   ul { list-style: none; margin: 0; padding: 0.5rem; width: 10rem; min-height: 3rem; }
+  #wrap { display: flex; flex-wrap: wrap; gap: 0.25rem; width: 11rem; margin-top: 2rem; }
+  #wrap li { box-sizing: border-box; width: 3rem; margin: 0; }
+  #cwrap { display: flex; flex-direction: column; flex-wrap: wrap; gap: 0.25rem; height: 7.5rem; width: 11rem; margin-top: 2rem; }
+  #cwrap li { box-sizing: border-box; width: 3rem; margin: 0; }
+  #grid { display: grid; grid-template-columns: repeat(3, 3rem); gap: 0.25rem; width: 11rem; margin-top: 2rem; }
+  #grid li { box-sizing: border-box; margin: 0; }
+  #clip { display: flex; gap: 4rem; width: 12rem; overflow-x: auto; margin-top: 2rem; }
+  #clip ul { flex: none; }
   li { height: 2rem; line-height: 2rem; margin: 0 0 0.25rem; padding: 0 0.5rem; border: 1px solid var(--rule); }
 </style>

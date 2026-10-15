@@ -2140,10 +2140,15 @@ model DiskUsage {
 // stops being true by sitting here.
 //
 // Pruned by `retention.job.ts`, keeping each machine's newest.
+//
+// A null `serverId` is the installation's own host, reported by the Outpost
+// `fli deploy` installs beside the stack (`FJS-D925`). Its only scoping parent
+// is null, so the tenancy desugar leaves it to `asSystem()` alone: the hub
+// reads it, and no workspace member does (`AuditEvent`'s null, `FJS-D141`).
 model ServerPosture {
   id        String   @id @default(uuid())
-  serverId  String
-  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  serverId  String?
+  server    Server?  @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   // When the box took the readings — the Outpost's clock, not the arrival.
   at        DateTime
@@ -3161,6 +3166,10 @@ model Notification {
   contextType NotificationContext?
   contextId   String?
 
+  // What the definition's `key` answered, so a retried send finds the row its
+  // first attempt wrote rather than writing a second (FJS-D872).
+  deliveryKey String?
+
   // null = unread. The one column a recipient writes, which is what U in the
   // gate is for.
   readAt      DateTime?
@@ -3183,6 +3192,7 @@ model Notification {
   @@allow('update', userId == auth().id)
   @@index([userId, readAt])
   @@index([createdAt])
+  @@unique([userId, type, deliveryKey], nullsDistinct: true)
 
   // @@tenant(none) — see the paragraph above: the recipient is the scope.
   @@tenant(none)

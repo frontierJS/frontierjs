@@ -196,9 +196,12 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
  */
 function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
   if (!ctx.hasPolicies) return
-  const { model: target, fkCols, refCols, op, opValue, extra } = aggRef
+  const { model: target, fkCols, refCols, op, opValue, extra, valueSql, reads, isBool } = aggRef
   const policy = buildPolicyFilter(target, 'read', ctx)
   if (!policy || !fkCols?.length) return
+  // A to-one column that is the parent's own aggregate counts rows of `reads`,
+  // and this recompute does not apply that model's policy: unseen is null.
+  const readsPolicied = !!reads && !!buildPolicyFilter(reads, 'read', ctx)
   const tModel = ctx.schema?.models.find(m => m.name === target)
   const T      = `"${tModel ? modelToTableName(tModel, ctx.pluralize ?? false) : target}"`
 
@@ -211,7 +214,8 @@ function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
   const byRef   = new Map()
   if (refs.length) {
     const col = `${T}."${opValue}"`
-    const agg = op === 'count' ? 'COUNT(*)'
+    const agg = op === 'column' ? valueSql.replaceAll('%T%', T)
+              : op === 'count' ? 'COUNT(*)'
               : op === 'exists' ? '1'
               : op === 'sum' ? `COALESCE(SUM(${col}), 0)`
               : `${op.toUpperCase()}(${col})`
@@ -228,7 +232,8 @@ function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
     const tBig   = ctx.shapes[target].bigFields
     const fromDb = tBig.size ? wideDb(readDb, tBig) : plainDb(readDb)
     for (const g of fromDb.query(sql).all(...keyBinds, ...policy.params))
-      byRef.set(JSON.stringify(fkCols.map((_, i) => g[`__fk${i}`] ?? null)), op === 'exists' ? true : g.__agg)
+      byRef.set(JSON.stringify(fkCols.map((_, i) => g[`__fk${i}`] ?? null)),
+        op === 'exists' ? true : readsPolicied ? null : isBool ? g.__agg == null ? null : !!g.__agg : g.__agg)
   }
   for (const r of inHand) r[name] = byRef.has(keyOf(r, refCols)) ? byRef.get(keyOf(r, refCols)) : empty
 }

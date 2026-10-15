@@ -18,8 +18,8 @@ import type { TenantConfigOptions, TenantConfigStore } from './config-scope.ts'
 import { createEventBus }           from '../events/index.ts'
 import { createMemoryCache }        from '../cache/index.ts'
 import { createScheduler }          from '../scheduler/index.ts'
-import { autoloadServices }         from './loader.ts'
-import { resolveServicesDir, describeServicesDir, type ServicesDirResolution } from './services-dir.ts'
+import { autoloadServices, autoloadRoutes } from './loader.ts'
+import { resolveServicesDir, resolveRoutesDir, describeServicesDir, type ServicesDirResolution } from './services-dir.ts'
 import { checkAttachments, formatAttachmentRefusal, formatAttachmentSkips } from './attachments.ts'
 import { resolveBuildId } from './build-id.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
@@ -2028,6 +2028,17 @@ export function createApp(opts: AppOptions = {}): App {
             report: (_key, finding) => _authoringFindings.push(finding),
           })
         }
+
+        const routesDir = declared === false ? null : resolveRoutesDir({
+          servicesDir: _servicesDir.dir,
+          entry:       typeof Bun !== 'undefined' ? Bun.main : null,
+        })
+        if (routesDir) {
+          await autoloadRoutes({
+            dir: routesDir, app: app as unknown as Record<string, unknown>,
+            report: (_key, finding) => _authoringFindings.push(finding),
+          })
+        }
       }},
 
       // Plugins do their async setup here — the full app exists by now.
@@ -2441,6 +2452,41 @@ export function normalizePrefix(prefix: string | undefined): string {
   return stripped ? `/${stripped}` : ''
 }
 
+// A fixed route beats a dynamic one, so `GET /health` (the health plugin) wins
+// over `GET /{service}` and a service named `health` boots green with its
+// `find` unreachable. The same holds one segment down: a raw `GET /reports/summary`
+// answers where `GET /{service}/{id}` would have handed `summary` to `reports`
+// (`FJS-1511`). Refused rather than warned: the service looks mounted in
+// `app.services`, and nothing else would say it is not.
+function refuseShadowedServices(app: App): void {
+  const router = app.http?.router
+  if (typeof router?.routePaths !== 'function') return
+
+  const prefix = normalizePrefix((app.config as { apiPrefix?: string }).apiPrefix)
+  const shadows = new Map<string, string>()   // first segment → 'GET /path'
+  for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+    for (const path of router.routePaths(method)) {
+      if (!path.startsWith(`${prefix}/`)) continue
+      const segments = path.slice(prefix.length + 1).split('/').filter(Boolean)
+      if (segments.length < 1 || segments.length > 2) continue
+      if (segments.some(s => s.includes('{') || s.includes('*'))) continue
+      if (!shadows.has(segments[0]!)) shadows.set(segments[0]!, `${method} ${path}`)
+    }
+  }
+
+  for (const name of app.services.list()) {
+    for (const spelling of [name, ...app.services.aliasesOf(name)]) {
+      const route = shadows.get(spelling)
+      if (!route) continue
+      throw new Error(
+        `Service '${name}' is shadowed by ${route}. A fixed route beats the service's ` +
+        `\`${prefix}/{service}\` mount, so a request for the service reaches the route and the service ` +
+        `never answers. Rename the service, or move the route (healthPlugin({ path }) moves the health endpoints).`
+      )
+    }
+  }
+}
+
 // Maps {prefix}/users → services.users (CRUD)
 // Maps {prefix}/users/123 → services.users (with id=123)
 // Maps {prefix}/servers/123/reboot → servers.reboot (custom method)
@@ -2449,6 +2495,8 @@ export function normalizePrefix(prefix: string | undefined): string {
 // alike, so adding it here too would mount the services at /api/api/users.
 
 export function registerServiceRoutes(app: App): void {
+
+  refuseShadowedServices(app)
 
   // ── CRUD handler ──────────────────────────────────────────────────
   const crudHandler: RouteHandler = async (ctx) => {

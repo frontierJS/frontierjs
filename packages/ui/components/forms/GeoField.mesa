@@ -43,6 +43,11 @@
     return { value: { [latKey]: lat, [lngKey]: lng }, message: '' }
   }
 
+  /** Two boxes' text → one comparable string, so `10.0` and `10` are the same pair. */
+  export function pairKey(latText, lngText) {
+    return `${readCoord(latText)}|${readCoord(lngText)}`
+  }
+
   /**
    * The stored value → what a box shows.
    *
@@ -139,6 +144,24 @@
   // What the control itself refuses, as opposed to what the server said.
   let localError = ''
 
+  // A value set from outside — a map's click or pin drag, a reset, a record
+  // that arrived after mount — replaces the boxes, unless the pair is the one
+  // already held (a parent re-pushing its record must not eat a half-typed
+  // box) or the boxes already read as it (the control's own commit coming back
+  // keeps the text as typed, `10.0`).
+  var heldKey = pairKey(showCoord(value, lat, 'lat', 'latitude'), showCoord(value, lng, 'lng', 'longitude', 'lon'))
+  $: value, () => {
+    const nextLat = showCoord(value, lat, 'lat', 'latitude')
+    const nextLng = showCoord(value, lng, 'lng', 'longitude', 'lon')
+    const key = pairKey(nextLat, nextLng)
+    if (key === heldKey) return
+    heldKey = key
+    if (key === pairKey(latText, lngText)) return
+    latText = nextLat
+    lngText = nextLng
+    if (localError) setLocalError('')
+  }
+
   const displayError = resolveError(form, name, error, errors) || localError
 
   let latEl
@@ -150,6 +173,8 @@
     if (next === undefined) return      // half a coordinate is not a value
     value = next
     onvalue?.(next)
+    // The longitude box carries no name, so its input reaches the form as no field.
+    form?.changed?.(name)
   }
 
   // One place, for `JsonInput`'s reason: a control that reports its refusal and

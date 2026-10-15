@@ -1,8 +1,7 @@
 // example/web/config/vite.config.js
 //
 // Configuration lives in config/, beside sierra.config.js — the standard FJS
-// layout (config/ src/ public/ test/ dist/). Sierra looks for sierra.config.js
-// next to this file first, so nesting needs no `_configPath` escape hatch.
+// layout (config/ src/ public/ test/ dist/).
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'

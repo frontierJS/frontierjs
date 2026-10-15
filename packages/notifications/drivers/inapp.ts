@@ -28,6 +28,7 @@ export async function sendInApp(
   message:      InAppMessage,
   app:          App,
   db:           unknown,
+  deliveryKey?: string,
 ): Promise<void> {
   // notify() refuses this before any transport runs. Restated here because the
   // driver is also reachable directly, and a row keyed by `undefined` is the
@@ -52,20 +53,41 @@ export async function sendInApp(
     asSystem(): {
       notification: {
         create(opts: { data: Record<string, unknown> }): Promise<NotificationRecord>
+        findFirst(opts: { where: Record<string, unknown> }): Promise<NotificationRecord | null>
       }
     }
   }
+  const rows = litestone.asSystem().notification
+  const type = notification.notificationType
 
-  const record = await litestone.asSystem().notification.create({
-    data: {
-      userId:      recipient.id,
-      type:        notification.notificationType,
-      data:        data,
-      contextType: message.contextType ?? null,
-      // The column is String; an integer id arrives as a number from a builder.
-      contextId:   message.contextId == null ? null : String(message.contextId),
-    },
-  })
+  // A keyed send that already has its row is a retry: the first attempt wrote
+  // and pushed, and a later transport failed. The column is written only when
+  // a key is declared, so an app copy of the model without `deliveryKey` keeps
+  // working for every notification that declares none.
+  if (deliveryKey !== undefined) {
+    const where = { userId: recipient.id, type, deliveryKey }
+    if (await rows.findFirst({ where })) return
+  }
+
+  let record: NotificationRecord
+  try {
+    record = await rows.create({
+      data: {
+        userId:      recipient.id,
+        type,
+        data:        data,
+        contextType: message.contextType ?? null,
+        // The column is String; an integer id arrives as a number from a builder.
+        contextId:   message.contextId == null ? null : String(message.contextId),
+        ...(deliveryKey !== undefined && { deliveryKey }),
+      },
+    })
+  } catch (err) {
+    // Two keyed sends racing past the lookup: the @@unique refuses the second,
+    // and the row it wanted is there.
+    if (deliveryKey !== undefined && (err as Error)?.name === 'UniqueConflictError') return
+    throw err
+  }
 
   // Publish WS event — optional, degrades gracefully if channels not configured
   // app.channel() returns undefined when the channels() plugin is absent

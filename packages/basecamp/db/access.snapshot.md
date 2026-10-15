@@ -527,10 +527,15 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `ServerPosture`
 
 - deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **read** — `server == null` — "Outside your workspaceId"
 - deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `server == null` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `server == null` — "Outside your workspaceId"
 - deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `server == null` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `server == null` — "Outside your workspaceId"
 
 ### `User`
 

@@ -607,12 +607,14 @@ table `notification` · db `main` · gate `0.8.4.8`
 | `contextType` | `NotificationContext` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `data` | `Json` | no | — | **required on write** |
+| `deliveryKey` | `String` | yes | — | — |
 | `id` | `Int` | no | — | id |
 | `readAt` | `DateTime` | yes | — | — |
 | `type` | `String` | no | — | **required on write** |
 | `userId` | `String` | no | — | **required on write** |
 
 ```
+@@unique(deliveryKey, type, userId)
 @@allow('read', userId == auth().id)
 @@allow('update', userId == auth().id)
 ```

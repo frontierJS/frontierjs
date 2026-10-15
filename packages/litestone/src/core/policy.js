@@ -1311,12 +1311,31 @@ function buildFilterSql(modelName, op, params, ctx, visited, tenancyOnly = false
     parts.push(sqls.length === 1 ? sqls[0] : `(${sqls.join(' OR ')})`)
   }
 
-  for (const { expr } of denies) {
+  for (const { expr, generated } of denies) {
+    const pass = generated === 'tenancy' && tenantColumnPass(expr, params, ctx, modelName, op, next)
+    if (pass) { parts.push(pass); continue }
     const sql = compileSql(expr, params, ctx, modelName, op, next)
     parts.push(`NOT (${sql})`)
   }
 
   return parts.length === 1 ? parts[0] : parts.join(' AND ')
+}
+
+// The generated tenant column deny is `auth().<claim> == null || col != auth().<claim>`
+// and a deny fires on TRUE or UNKNOWN, so a row passes only when the claim is
+// present and equal. Spelled `NOT (? IS NULL OR col != ?)` no index serves it
+// and every scoped read scans every tenant's rows (FJS-1724); the pass form
+// below has the same truth table, and `col = ?` is a term SQLite searches on.
+// Null for any other deny, which compiles as written.
+function tenantColumnPass(expr, params, ctx, modelName, op, visited) {
+  if (expr.type !== 'or') return null
+  const { left, right } = expr
+  if (left?.type !== 'compare' || left.op !== '==' || left.left?.type !== 'auth') return null
+  if (right?.type !== 'compare' || right.op !== '!=' || right.left?.type !== 'field' || right.right?.type !== 'auth') return null
+
+  const present = compileSql({ ...left, op: '!=' }, params, ctx, modelName, op, visited)
+  const equal   = compileSql({ ...right, op: '==' }, params, ctx, modelName, op, visited)
+  return `(${present} AND ${equal})`
 }
 
 function sqlOp(op) {
@@ -1902,3 +1921,45 @@ function affinityOf(node, ctx, modelName) {
   return t === 'INTEGER' || t === 'REAL' ? 'NUMERIC' : t === 'BLOB' ? 'BLOB' : 'TEXT'
 }
 
+
+// ─── Rows a picker may offer ──────────────────────────────────────────────────
+//
+// `@@allow('create', schedule.hostId == auth().id)` accepts a `scheduleId` only
+// from the caller's own schedules, and a picker over every readable Schedule
+// offers a refusal for the rest. The one-hop shape is carried as
+// `x-pick-where` (`FJS-D669`): `{ scheduleId: { hostId: 'auth().id' } }`, the
+// filter the related query takes with the claim filled from the session.
+//
+// Same rule as `determinedColumns`: EVERY create `@@allow` must state the pin
+// as a top-level `&&` conjunct, or one that leaves the relation free reopens
+// the choice. A relation with a composite key has no single column to filter
+// the picker by and is left out.
+export function pickWhere(model) {
+  const allows = (model.attributes ?? []).filter(a => a.kind === 'allow' && a.operations?.includes('create'))
+  if (!allows.length) return {}
+
+  const fkOf = new Map()
+  for (const f of model.fields ?? []) {
+    if (f.type?.kind !== 'relation' || f.type.array) continue
+    const rel = f.attributes?.find(a => a.kind === 'relation')
+    if (rel?.fields?.length === 1) fkOf.set(f.name, rel.fields[0])
+  }
+
+  const pins = (expr, out = {}) => {
+    if (expr?.type === 'and') { pins(expr.left, out); pins(expr.right, out); return out }
+    if (expr?.type !== 'compare' || expr.op !== '==') return out
+    const [col, who] = expr.left?.type === 'path' ? [expr.left, expr.right] : [expr.right, expr.left]
+    if (col?.type === 'path' && who?.type === 'auth' && fkOf.has(col.rel))
+      out[`${fkOf.get(col.rel)}\0${col.name}`] = `auth().${who.field ?? 'id'}`
+    return out
+  }
+
+  const [first, ...rest] = allows.map(a => pins(a.expr))
+  const out = {}
+  for (const [key, claim] of Object.entries(first)) {
+    if (!rest.every(p => p[key] === claim)) continue
+    const [fk, col] = key.split('\0')
+    ;(out[fk] ??= {})[col] = claim
+  }
+  return out
+}

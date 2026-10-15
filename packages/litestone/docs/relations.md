@@ -424,8 +424,9 @@ model Order {
 
 Two things trip people up, and both are validation errors rather than silent wrong answers:
 
-**The first argument is the target MODEL name, PascalCase** — `@from(Order, …)`, not the
-name of the relation field. `@from(orders, …)` fails with *"unknown model 'orders'"*.
+**With an operation, the first argument is the target MODEL name, PascalCase** — `@from(Order, …)`,
+not the name of the relation field. `@from(orders, …)` fails with *"unknown model 'orders'"*.
+The one form that names a field is the to-one column below.
 
 **`first:`/`last:` return the whole related row**, so the field is typed as the target
 model — `Order?`, not `DateTime`. Reach into it in application code (`account.lastOrder.createdAt`).
@@ -509,6 +510,37 @@ await db.account.findMany({ select: { name: true, orderCount: true, revenue: tru
 ```
 
 Note the two different empties: `sum` coalesces to `0`, `max` stays `null`.
+
+### A parent's column, read onto the child
+
+`@from(rel, column)` names a to-one relation field on THIS model and a column of the row it points at.
+Where the aggregate forms read DOWN to the rows that hold the key, this reads UP to the row the key names:
+
+```lite
+enum Category { backlog started done }
+
+model State {
+  id       Int      @id @default(autoincrement())
+  category Category @default(backlog)
+  issues   Issue[]
+}
+
+model Issue {
+  id            Int       @id @default(autoincrement())
+  stateId       Int?
+  state         State?    @relation(fields: [stateId], references: [id])
+  stateCategory Category? @from(state, category)    // null while there is no state
+}
+```
+
+Re-categorising a `State` changes what every `Issue` reads, because nothing is copied. The field
+filters and sorts (`where: { stateCategory: 'started' }`) and cannot be written. The parent column may
+itself be an `@derived` or an aggregate `@from` (`@from(event, enrolled)` reads the Event's count), but
+not another to-one `@from`, a `first:`/`last:` row, or a `@guarded`/`@encrypted`/`@secret`/`@hashed`/`@omit` column.
+
+The parent's **read gate and row policy apply** as they do to an aggregate: below the gate, or on a
+parent the caller's policy hides, the field reads `null`, and naming it in a `where` or `orderBy` is
+refused while that policy applies. An aggregate parent column is also graded by the gate of the model it counts.
 
 ### `via:` — which relation, when there is more than one
 

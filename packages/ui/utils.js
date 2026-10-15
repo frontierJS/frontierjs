@@ -301,6 +301,22 @@ export function placeAgainst(tr, pr, { placement = 'bottom-start', offset = 4 } 
   return { x: along(pr.width, tr.left, tr.width, winW), y }
 }
 
+/**
+ * Where a kit overlay mounts: the topmost open modal `<dialog>`, else `<body>`
+ * (`FJS-D904`). `showModal()` puts the dialog in the top layer and makes the
+ * rest of the document inert, so an overlay on `<body>` is drawn beneath it
+ * and a press aimed at it lands on the backdrop and closes the dialog
+ * (`FJS-1983`, `FJS-2599`). Still `fixed` inside it: an open `.dialog` or
+ * `.drawer` is `transform: none`, so the viewport stays the containing block.
+ *
+ * Asked when the overlay mounts, never at load: a terminal has no document.
+ * An overlay mounted once at the root asks again each time it changes.
+ */
+export function overlayHost() {
+  const open = document.querySelectorAll('dialog:modal')
+  return open[open.length - 1] ?? document.body
+}
+
 /*
  * ── A list that was cut ───────────────────────────────────────────────
  */
@@ -468,3 +484,8 @@ export function download(blob, filename) {
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), SAVE_GRACE_MS)
 }
+
+// What a click can hand focus to. An overlay closing on a click-away leaves
+// focus alone when the click landed on one of these, and restores it to the
+// trigger otherwise.
+export const FOCUSABLE = 'input, select, textarea, button, a[href], [tabindex], [contenteditable=""], [contenteditable="true"]'

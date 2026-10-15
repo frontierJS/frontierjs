@@ -329,6 +329,31 @@ export async function run(t) {
   await t.eventually(`document.querySelector('#errorKeys').textContent`, '',
     'with every field error cleared')
 
+  /* ── FJS-2492: a segmented RadioGroup is still a radio group ──────────── */
+
+  // A row of Buttons with aria-pressed has no arrow keys, no single tab stop
+  // and no form value. The treatment must keep real radios under the labels.
+  const seg = await t.evaluate(`
+    const g = document.querySelector('#segmented-box [role=radiogroup]');
+    const radios = [...g.querySelectorAll('input')];
+    return {
+      cls: g.className,
+      types: radios.map(r => r.type).join(','),
+      names: new Set(radios.map(r => r.name)).size,
+      parents: radios.map(r => r.parentElement.tagName).join(','),
+      checked: radios.filter(r => r.checked).map(r => r.value).join(','),
+    };
+  `)
+  t.is(seg.cls.includes('segmented'), true, 'layout="segmented" puts the treatment on the group')
+  t.is(seg.types, 'radio,radio,radio', 'under the labels are real radios')
+  t.is(seg.names, 1, 'in one native group')
+  t.is(seg.parents, 'LABEL,LABEL,LABEL', 'each wrapped by its own label, the hit target')
+  t.is(seg.checked, '1:1', 'the bound value is the checked one')
+  await t.evaluate(`document.querySelector('#segmented-box input[value="1:1"]').focus()`)
+  await t.press('ArrowRight')
+  await t.eventually(`document.querySelector('#aspect').textContent`, '4:3', 'the arrow key moves the choice')
+  await t.eventually(`document.querySelector('#segmented-box input[value="4:3"]').checked`, true, 'and checks the next radio')
+
   /* ── an unselected option SAYS it is unselected ───────────────────────── */
 
   // `aria-selected={false}` used to remove the attribute outright, so an option

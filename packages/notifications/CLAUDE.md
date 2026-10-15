@@ -88,8 +88,14 @@ the transport that needs no account.
   shape. It is generated from JUNCTION, duck-typing `app.notifications` exactly
   as `junction jobs` duck-types `app.jobs`: this package must not become a
   dependency of that one.
+- **A key dedupes the in-app ROW, never the email.** `key(payload, recipient)`
+  on a definition (`FJS-D872`) is written to `deliveryKey`, and a retried send
+  finds that row and writes none; the driver writes the column only when a key
+  is declared, so an app copy without it keeps working until something keys.
+  An unkeyed send writes a row every time, by design.
 - **`app.notify` reads three members and never asks which shape produced them** —
-  `notificationType`, `via(recipient)`, `getMessageFor(transport, recipient)`.
+  `notificationType`, `via(recipient)`, `getMessageFor(transport, recipient)`,
+  plus the optional `key(recipient)`.
   That is why the class and `defineNotification` coexist with no adapter, and
   why a plain object satisfying those three has always worked.
 

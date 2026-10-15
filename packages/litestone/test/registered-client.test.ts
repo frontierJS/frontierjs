@@ -46,11 +46,11 @@ const USAGE = `
   }
 `
 
-function compile(audience: 'client' | 'system'): { ok: boolean; out: string } {
+function compile(audience: 'client' | 'system', schema = SCHEMA, usage = USAGE): { ok: boolean; out: string } {
   const dir = mkdtempSync(join(tmpdir(), 'litestone-registered-'))
   try {
-    writeFileSync(join(dir, 'db.d.ts'), generateTypeScript(parse(SCHEMA).schema, { audience }))
-    writeFileSync(join(dir, 'use.ts'), USAGE)
+    writeFileSync(join(dir, 'db.d.ts'), generateTypeScript(parse(schema).schema, { audience }))
+    writeFileSync(join(dir, 'use.ts'), usage)
     writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({
       compilerOptions: {
         strict:                     true,
@@ -94,5 +94,78 @@ describe('the generated client reaches createClient()', () => {
     expect(sys).toContain(`declare module '@frontierjs/litestone'`)
     expect(sys).toContain('interface Register')
     expect(client).not.toContain('interface Register')
+  })
+})
+
+// FJS-2779 -- a read is typed by what it asked for. include and select were
+// `any`, so a relation read was a type error that ran fine and a select's row
+// claimed columns it never fetched.
+const RELATED = `
+  model Location { id Int @id  key String  name String  events Event[] }
+  model Event {
+    id Int @id
+    title String
+    rank Int
+    locationId Int?
+    location Location? @relation(fields: [locationId], references: [id])
+  }
+`
+
+const READS = `
+  import { createClient } from '@frontierjs/litestone'
+
+  export async function run() {
+    const db = await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })
+    const sys = db.asSystem()
+
+    // include adds the relation, at the relation's own type
+    const withLoc = await sys.event.findMany({ include: { location: true } })
+    const key: string | undefined = withLoc[0].location?.key
+    const first = await sys.event.findFirst({ include: { location: true } })
+    const viaFirst: string | undefined = first?.location?.key
+    const many = await sys.location.findMany({ include: { events: true } })
+    const title: string = many[0].events[0].title
+    const counted = await sys.location.findFirstOrThrow({ include: { _count: true } })
+    const n: number = counted._count.events
+
+    // no include: the relation is not on the row
+    const bare = await sys.event.findFirstOrThrow({ orderBy: { rank: 'asc' } })
+    // @ts-expect-error -- not asked for
+    bare.location
+    // @ts-expect-error -- include: false does not add it
+    ;(await sys.event.findMany({ include: { location: false } }))[0].location
+
+    // select narrows the row
+    const picked = await sys.event.findMany({ select: { id: true } })
+    const id: number = picked[0].id
+    // @ts-expect-error -- never fetched
+    picked[0].title
+    const both = await sys.event.findUniqueOrThrow({ where: { id: 1 }, select: { id: true }, include: { location: true } })
+    const bothId: number = both.id
+    const bothKey: string | undefined = both.location?.key
+    // @ts-expect-error -- never fetched
+    both.title
+    const onlyRel = await sys.event.findFirst({ select: { location: true } })
+    // @ts-expect-error -- a select of the relation alone fetches no column
+    onlyRel?.title
+
+    // a name the model lacks is refused where it is written
+    // @ts-expect-error -- no such relation
+    await sys.event.findMany({ include: { nope: true } })
+    // @ts-expect-error -- no such column
+    await sys.event.findMany({ select: { nope: true } })
+
+    const counted2 = await sys.event.findManyAndCount({ select: { id: true } })
+    const total: number = counted2.total + counted2.rows[0].id
+
+    return { key, viaFirst, title, n, id, bothId, bothKey, total }
+  }
+`
+
+describe('a read is typed by its include and select (FJS-2779)', () => {
+  test('relations arrive with include, columns narrow with select, OrThrow takes what findFirst takes', () => {
+    const { ok, out } = compile('system', RELATED, READS)
+    expect(out).toBe('')
+    expect(ok).toBe(true)
   })
 })

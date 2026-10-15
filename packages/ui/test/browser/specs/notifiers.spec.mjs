@@ -208,6 +208,14 @@ export async function run(t) {
     return a.classList.contains('danger') && !a.classList.contains('success');
   `), 'and replaces the tone rather than keeping both')
 
+  // FJS-2611: a short alert's timer must not hide the persistent one after it,
+  // and a detail string in the duration's place is refused rather than never hiding.
+  await t.evaluate(`window.alert_.info('Brief', 150); window.alert_.error('Stays', 0); return true;`)
+  await t.evaluate(`await new Promise(r => setTimeout(r, 450)); return true;`)
+  t.ok(await t.evaluate(`return !!document.querySelector('.alert.raised');`),
+    "an earlier alert's timer does not hide a persistent one")
+  t.is(await t.evaluate(`try { window.alert_.error('Failed', 'because of X'); return 'accepted' } catch (e) { return e.name }`), 'TypeError',
+    'a detail string as the duration is refused')
   await t.evaluate(`window.alert_.hide(); return true;`)
   await t.eventually(`!!document.querySelector('.alert.raised')`, false, 'hide() takes it away')
 }

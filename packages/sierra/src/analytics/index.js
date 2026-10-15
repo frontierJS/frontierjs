@@ -9,7 +9,8 @@
  * Providers:
  *   'plausible' — Plausible Analytics
  *   'gtm'       — Google Tag Manager
- *   object      — custom provider { init, pageview, track }
+ *   a path      — a custom provider's module, exporting init, pageview and
+ *                 track; virtual:sierra imports it and hands its exports here
  */
 
 import { vendorTag } from './tag.js'

@@ -1,7 +1,8 @@
 <script>
   // Popover.mesa
   // Click-triggered content panel, positioned from the trigger's bounding rect
-  // and portaled to <body> so it escapes overflow:hidden scroll containers.
+  // and portaled to overlayHost() so it escapes overflow:hidden scroll containers
+  // and stays reachable inside an open Modal or Drawer (FJS-D904).
   //
   // `.popover` is a surface, so background, border, radius, shadow and the
   // tone recipe come from @frontierjs/css. Positioning is explicitly the
@@ -17,7 +18,7 @@
   //     {/snippet}
   //   </Popover>
 
-  import { tone as toTone, cx, placeAgainst } from '../../utils.js'
+  import { tone as toTone, cx, placeAgainst, FOCUSABLE, overlayHost } from '../../utils.js'
 
   export let placement = 'bottom-start'  // '<side>-<align>': top|bottom|left|right, start|center|end
   export let offset    = 8               // gap between trigger and panel, px
@@ -69,17 +70,18 @@
     y = at.y
   }
 
-  function closePopover() {
+  function closePopover(restoreFocus = true) {
     open = false
     document.removeEventListener('click', onClickAway, { capture: true })
     // Return focus to the trigger — otherwise a keyboard user is dropped at
     // the top of the document when the panel unmounts.
-    triggerEl?.querySelector('button, a, [tabindex]')?.focus()
+    if (restoreFocus) triggerEl?.querySelector('button, a, [tabindex]')?.focus()
   }
 
   function onClickAway(e) {
     if (triggerEl?.contains(e.target) || panelEl?.contains(e.target)) return
-    closePopover()
+    // Clicking another field to dismiss must leave focus on that field.
+    closePopover(!e.target?.closest?.(FOCUSABLE))
   }
 
   $.onDestroy(() => {
@@ -87,7 +89,7 @@
   })
 </script>
 
-<mesa:window on:keydown={(e) => { if (e.key === 'Escape' && open) closePopover() }} />
+<mesa:window on:keydown={(e) => { if (e.key === 'Escape' && open) { e.preventDefault(); closePopover() } }} />
 
 <!-- Trigger wrapper -->
 <span
@@ -101,7 +103,7 @@
 </span>
 
 {#if open}
-  <mesa:portal to={document.body}>
+  <mesa:portal to={overlayHost()}>
     <div
       bind:this={panelEl}
       class={cx('popover', t)}

@@ -1,0 +1,196 @@
+<script>
+  // SignaturePad.mesa
+  // A signature drawn with a finger, a pen or the mouse.
+  //
+  //   <SignaturePad name="signature" bind:value={signature} />
+  //
+  // `value` is `{ paths, width, height }`, or null while the pad is empty: each
+  // stroke one SVG path `d` string, in the pad's own pixels as they were when
+  // the first stroke began. That is a plain JSON value a Json column holds, and
+  // `SignatureView` draws the same value back. The typed name beside it is the
+  // page's, not this control's.
+  //
+  // The pointer is `drag.js`, so a touch scroll that takes a stroke away ends
+  // it, and `touch-action: none` keeps a finger from scrolling the page
+  // instead of signing. The canvas is redrawn from the paths on a resize,
+  // scaled from the size they were drawn at, so turning a phone keeps the
+  // signature rather than cropping it.
+  //
+  // A pointer is the only way in. A person who cannot use one signs by typing
+  // their name, which is why the page keeps that field beside this control.
+
+  import Field  from './Field.mesa'
+  import Button from './Button.mesa'
+  import { drag } from '../../drag.js'
+  import { cx, resolveError, stated, lockedBy } from '../../utils.js'
+
+  // ── Props ───────────────────────────────────────────────────────────────────
+
+  export let value    = null         // { paths, width, height } | null — bindable
+  export let disabled = undefined    // undefined = ask the form; false overrides it
+  export let hint     = 'Draw your signature with a finger, a pen or the mouse.'
+  export let clearLabel = 'Clear'
+  export let onchange = undefined    // ({ paths, width, height } | null) => void
+
+  // Field integration — the same shape every control in the kit has.
+  export let name     = ''
+  // `undefined` is "not stated" and `''` is "no label, deliberately".
+  export let label    = undefined
+  export let error    = ''
+  export let errors   = undefined
+
+  const form             = $context.form
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
+  const displayError     = resolveError(form, name, error, errors)
+
+  // ── The strokes ─────────────────────────────────────────────────────────────
+
+  let canvas = null
+  let paths  = Array.isArray(value?.paths) ? value.paths.slice() : []
+  let size   = paths.length && value?.width > 0 ? { width: value.width, height: value.height } : null
+  let stroke = null        // the stroke in progress: [[x, y], …]
+
+  const empty = paths.length === 0
+
+  const round = (n) => Math.round(n * 10) / 10
+  const dOf = (points) => points.map(([x, y], i) => (i ? 'L' : 'M') + round(x) + ' ' + round(y)).join(' ')
+
+  function pointOf(e) {
+    const r = canvas.getBoundingClientRect()
+    return [e.clientX - r.left, e.clientY - r.top]
+  }
+
+  function paint() {
+    if (!canvas) return
+    const r = canvas.getBoundingClientRect()
+    const ratio = window.devicePixelRatio || 1
+    const w = Math.max(1, Math.round(r.width * ratio))
+    const h = Math.max(1, Math.round(r.height * ratio))
+    if (canvas.width !== w) canvas.width = w
+    if (canvas.height !== h) canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+    // Drawn at the size of the first stroke; scaled to the pad as it is now.
+    const scale = size && size.width ? r.width / size.width : 1
+    ctx.strokeStyle = getComputedStyle(canvas).color
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.setTransform(ratio * scale, 0, 0, ratio * scale, 0, 0)
+    ctx.lineWidth = 2 / scale
+    for (const d of paths) ctx.stroke(new Path2D(d))
+    if (stroke?.length) {
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
+      ctx.lineWidth = 2
+      ctx.stroke(new Path2D(dOf(stroke)))
+    }
+  }
+
+  function commit() {
+    value = paths.length && size ? { paths, width: size.width, height: size.height } : null
+    onchange?.(value)
+    // The canvas carries no name and emits no input event.
+    form?.changed?.(name)
+  }
+
+  const pointer = drag(() => ({
+    accept: (e) => !resolvedDisabled && (e.pointerType !== 'mouse' || e.button === 0),
+    start: (e) => {
+      if (!size) {
+        const r = canvas.getBoundingClientRect()
+        size = { width: Math.round(r.width), height: Math.round(r.height) }
+      }
+      stroke = [pointOf(e)]
+      paint()
+    },
+    move: (e) => {
+      if (!stroke) return
+      stroke = [...stroke, pointOf(e)]
+      paint()
+    },
+    // A cancelled stroke is kept: the browser took the gesture, not the person.
+    end: () => {
+      if (!stroke) return
+      // A tap is a dot: a stroke of one point is drawn as a short one.
+      const points = stroke.length === 1 ? [stroke[0], [stroke[0][0] + 0.5, stroke[0][1] + 0.5]] : stroke
+      // Into the first stroke's pixels, when the pad has been resized since.
+      const r = canvas.getBoundingClientRect()
+      const back = size && r.width ? size.width / r.width : 1
+      paths = [...paths, dOf(points.map(([x, y]) => [x * back, y * back]))]
+      stroke = null
+      paint()
+      commit()
+    },
+  }))
+
+  export function clear() {
+    paths  = []
+    size   = null
+    stroke = null
+    paint()
+    commit()
+  }
+
+  function watch(el) {
+    canvas = el
+    paint()
+    if (typeof ResizeObserver !== 'function') return undefined
+    const observer = new ResizeObserver(() => paint())
+    observer.observe(el)
+    return () => observer.disconnect()
+  }
+</script>
+
+{#snippet control()}
+  <div class={cx('fjs-signature-pad', error && 'invalid')} data-signature-pad {...$attributes}>
+    <canvas class="fjs-signature-canvas" role="img" aria-label={label || name || 'Signature'}
+            data-empty={empty || null} aria-disabled={resolvedDisabled ? 'true' : null}
+            aria-invalid={!!displayError || null}
+            {@attach pointer} {@attach watch}></canvas>
+    <div class="fjs-signature-foot">
+      <span class="fjs-signature-hint" aria-live="polite" data-pad-hint>{empty ? hint : 'Signed. Clear to start again.'}</span>
+      <Button variant="outlined" size="sm" type="button" disabled={resolvedDisabled || empty} onclick={clear} data-clear>{clearLabel}</Button>
+    </div>
+  </div>
+{/snippet}
+
+{#if label || name}
+  <Field name={name} label={label} error={error} errors={errors} {class}>
+    {@render control()}
+  </Field>
+{:else}
+  <div class="fjs-signature-bare" {class}>
+    {@render control()}
+  </div>
+{/if}
+
+<style>
+  .fjs-signature-pad {
+    display: grid;
+    gap:     var(--space-2xs);
+  }
+  .fjs-signature-canvas {
+    display:       block;
+    inline-size:   100%;
+    block-size:    calc(var(--space-6xl) * 2);
+    touch-action:  none;
+    cursor:        crosshair;
+    color:         var(--ink);
+    background:    var(--surface);
+    border:        var(--border-width) dashed var(--rule);
+    border-radius: var(--field-radius);
+  }
+  .fjs-signature-canvas[aria-disabled] { cursor: not-allowed; }
+  .fjs-signature-canvas[aria-invalid]  { border-color: var(--color-danger); }
+  .fjs-signature-foot {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    gap:             var(--space-2xs);
+  }
+  .fjs-signature-hint {
+    font-size: var(--text-xs);
+    color:     var(--ink-mute);
+  }
+</style>

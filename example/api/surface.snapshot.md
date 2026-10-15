@@ -975,7 +975,6 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/api/auth/register` | raw |
 | POST | `/api/auth/support/end` | raw |
 | POST | `/api/auth/support/start` | raw |
-| GET | `/api/channels/stats` | raw |
 | GET | `/api/exports` | raw |
 | GET | `/api/exports/{dataset}` | raw |
 | GET | `/api/health` | raw |
@@ -989,6 +988,7 @@ once; everything else was registered by hand or by a plugin.
 | GET | `/api/jobs/queues/{name}` | raw |
 | POST | `/api/jobs/queues/{name}/drain` | raw |
 | POST | `/api/jobs/queues/{name}/pause` | raw |
+| POST | `/api/jobs/queues/{name}/purge` | raw |
 | POST | `/api/jobs/queues/{name}/resume` | raw |
 | POST | `/api/jobs/run/{name}` | raw |
 | GET | `/api/jobs/schedules` | raw |

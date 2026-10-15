@@ -9,7 +9,7 @@ dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
 `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/markdown`, `/match`, `/mime`,
-`/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
+`/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sigv4`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -153,6 +153,14 @@ src/signature/       what a signed machine-to-machine request is — canonical
                      ONE id for a plus-address — lower-case Crockford base32, an
                      80-bit MAC over `purpose:id`, expiry read from the id's ULID
                      (`FJS-1941`)
+src/sigv4/           AWS Signature V4 — sign, presign, `deriveSigningKey`, and
+                     the canonical-URI rules AWS's own suite grades. Litestone's
+                     `File` columns and `conduit-s3` sign the same requests, and
+                     conduit may not be imported by litestone (`FJS-D892`).
+                     **The clock and the signing-key cache are the CALLER's**:
+                     `opts.now` is required (a missing one throws rather than
+                     reading the host clock) and `opts.signingKey` is the day's
+                     key a caller derived once. Ships a `.d.ts`
 src/trace/           what a W3C `traceparent` says — `parseTraceparent`.
                      Junction derives a request's correlation id from it and
                      conduit continues the trace with it, so a header one

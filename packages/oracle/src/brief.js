@@ -88,6 +88,7 @@ export function brief() {
   out.push('- `access` — how a row is reached beyond its actor links:')
   out.push('  - `via` — a REQUIRED link to a parent: whoever reads the parent reads this row, and whoever may change the parent may change it.')
   out.push('  - `members` — the entity whose rows admit a person to this one (a Membership linking a Workspace to User). Its own access is derived from this one.')
+  out.push('  - `roles` — beside `members`: `{ "update": ["owner"] }`, the values of the membership\'s `role` enum whose holders rename this entity and add, remove and re-role its members. Without it only the application changes who is in it.')
   out.push('  - `public` — `["read"]` and/or `["create"]` for a person who is not signed in, with `why`. `publicWhen` narrows a public read: `{ "status": "published" }`.')
   out.push('  - `shared` — the reason every signed-in person reads every row (reference data an administrator keeps, or a timetable an instructor posts). It opens the read only: the writes still follow the entity\'s actor links, and an administrator holds any write no link does. Use it rarely: it is the shape that exposes one tenant\'s rows to another.')
   out.push('  - `system` — `true` when only the application writes the rows (a log, an inbound webhook).')

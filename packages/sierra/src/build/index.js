@@ -36,6 +36,7 @@ import { widgetDevPlugin } from './widget-build.js'
 import { envFlagsPlugin } from './env-flags-plugin.js'
 import { askPlugin } from './ask-plugin.js'
 import { devlinePlugin } from './devline-plugin.js'
+import { functionsPlugin } from './functions-plugin.js'
 import { explainModuleInitFailure, shippedHints } from './warnings.js'
 import { beginBuildImports, importAppModule } from './app-import.js'
 
@@ -170,6 +171,12 @@ export function createSierraViteConfig(config = {}) {
   // Mesa compiler for all targets
   // Devtools toolbar — dev only, no bundle impact in production
   sierraPlugins.push(devtoolsPlugin(config))
+  // Dev only: the site's host functions, which a build hands to the host and
+  // `vite dev` would otherwise answer with the SPA fallback
+  if (target === 'static') {
+    const fns = functionsPlugin(config)
+    if (fns) sierraPlugins.push(fns)
+  }
   // Dev only: a linked checkout's worker files sit outside Vite's allow list (FJS-1601)
   sierraPlugins.push(fsAllowPlugin())
   // Dev only: `virtual:sierra-widgets` embeds every widget, and a stylesheet

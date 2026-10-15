@@ -204,6 +204,7 @@ export function bigDigits(v) {
 // `Int[]` given ['a'] stores and reads back with nothing raised.
 export const ARRAY_ELEMENTS = {
   Int:    { label: 'integers', test: (v) => Number.isInteger(v) },
+  Float:  { label: 'finite numbers', test: (v) => typeof v === 'number' && Number.isFinite(v) },
   String: { label: 'strings',  test: (v) => typeof v === 'string' },
 }
 
@@ -257,6 +258,7 @@ export const DEFAULT_MESSAGES = {
       ? cap
       : `${cap}; at ${places} decimal place(s) that is ${Math.floor(EXACT_INT_MAX / 10 ** places).toLocaleString('en-GB')}`
   },
+  finite:      ()  => 'must be a finite number — NaN is stored as NULL and Infinity does not survive JSON',
   intRange:    ()  => `must be at most ${EXACT_INT_MAX.toLocaleString('en-GB')} in magnitude — past that a JS number cannot carry the value; declare the column @big to hold more`,
   // The two array rules that come from the TYPE rather than an attribute. They
   // are in this table for the same reason as the rest: it is the one definition
@@ -745,6 +747,12 @@ export function validate(data, model, computedFns, typeMap, enums = null) {
       errors.push({ path: [field.name], message: DEFAULT_MESSAGES.intRange() })
     }
 
+    // SQLite stores NaN as NULL and reads +-Infinity back as Infinity, so a
+    // Float given either would not read back as written (`FJS-2037`).
+    if (isPlainFloat(field) && typeof value === 'number' && !Number.isFinite(value)) {
+      errors.push({ path: [field.name], message: DEFAULT_MESSAGES.finite() })
+    }
+
     // An array column's SHAPE, before its rules. `@minItems` asked about a
     // string answers by its length, which is a plausible wrong answer rather
     // than a refusal; and the element check exists because SQLite stores the
@@ -842,6 +850,10 @@ function isPlainInt(field) {
   return field.type.name === 'Int' && !field.type.array && !field.attributes.some(a => OWN_RANGE.has(a.kind))
 }
 
+function isPlainFloat(field) {
+  return field.type.name === 'Float' && !field.type.array
+}
+
 export function buildValidationMap(schema) {
   const map = {}
   for (const model of schema.models) {
@@ -862,7 +874,8 @@ export function buildValidationMap(schema) {
     // array column is a bare `String[]` would otherwise skip the pass entirely.
     const hasArrayField = model.fields.some(f => f.type.array)
     const hasPlainInt = model.fields.some(isPlainInt)
-    map[model.name] = hasExplicitValidator || hasDateTimeField || hasTypedJson || hasArrayField || hasPlainInt
+    const hasPlainFloat = model.fields.some(isPlainFloat)
+    map[model.name] = hasExplicitValidator || hasDateTimeField || hasTypedJson || hasArrayField || hasPlainInt || hasPlainFloat
   }
   return map
 }

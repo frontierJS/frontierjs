@@ -81,8 +81,20 @@ export async function run(t) {
     const r = d.getBoundingClientRect();
     return { x: r.left, y: r.top };
   `)
+  // A press that begins in the body and is released over the backdrop (a drag
+  // out of a field) also clicks the dialog; it must not dismiss it (FJS-2611).
   await t.evaluate(`
     const d = document.querySelector('dialog.dialog');
+    document.querySelector('#in-body').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    d.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return true;
+  `)
+  await t.evaluate(`await new Promise(r => setTimeout(r, 120)); return true;`)
+  t.is(await t.evaluate(`return document.querySelector('#state').textContent;`), 'open',
+    'a drag that starts inside the dialog and ends on the backdrop does not dismiss it')
+  await t.evaluate(`
+    const d = document.querySelector('dialog.dialog');
+    d.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     d.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     return true;
   `)
@@ -98,6 +110,13 @@ export async function run(t) {
   await t.evaluate(`await new Promise(r => setTimeout(r, 120)); return true;`)
   t.ok(await t.evaluate(`return document.querySelector('dialog.dialog').open;`),
     'dismissible={false} refuses Escape')
+  // Chrome does not fire a cancelable cancel on the second Escape in a row.
+  await t.press('Escape')
+  await t.evaluate(`await new Promise(r => setTimeout(r, 120)); return true;`)
+  t.ok(await t.evaluate(`return document.querySelector('dialog.dialog').open;`),
+    'and refuses the second Escape too')
+  t.is(await t.evaluate(`return document.querySelector('#closes').textContent;`), '0',
+    'without firing onclose')
 
   /* ── mounted open ────────────────────────────────────────────────────
    *

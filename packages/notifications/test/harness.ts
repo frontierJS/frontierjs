@@ -29,10 +29,12 @@ model Notification {
   data        Json
   contextType String?
   contextId   String?
+  deliveryKey String?
   readAt      DateTime?
   createdAt   DateTime  @default(now())
 
   @@gate("0.8.4.8")
+  @@unique([userId, type, deliveryKey], nullsDistinct: true)
 }
 `
 

@@ -36,6 +36,12 @@
  * the one a browser's default stylesheet gives the tag: `<del>` struck
  * through, `<ins>` underlined, `<dfn>` in italics.
  *
+ * A box with a `tabindex` of 0 or more is a Tab stop that hears `keydown`,
+ * as a browser's is, since a `<div role="slider">` is only reachable that way.
+ * One whose `role` is in `WIDGET_ROLES` and holds no content of its own
+ * paints what a screen reader announces for it: its `aria-label`, then its
+ * `aria-valuetext`, else its `aria-valuenow`.
+ *
  * A `<pre>` is a plain box: the compiler keeps the whitespace in its text,
  * and the emitter drops the two newlines a browser drops. A line too long
  * for the screen wraps, where a browser scrolls the block, because only the
@@ -125,6 +131,13 @@ export const TERMINAL_TAGS = {
   optgroup: { role: 'box', hidden: true },
   datalist: { role: 'box', hidden: true }
 }
+
+/**
+ * The ARIA roles whose `aria-label` and value a content-less box paints. A
+ * browser draws a handle or a thumb the terminal has no shape for, and a
+ * screen reader says these words instead.
+ */
+export const WIDGET_ROLES = new Set(['slider', 'switch', 'tab', 'option', 'menuitem'])
 
 /**
  * What an `<input>` is on a terminal, by its `type`: the one attribute that

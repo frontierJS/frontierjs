@@ -40,7 +40,7 @@ import { accountMail }         from './core/account-mail.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
 import { notificationsPlugin }  from '@frontierjs/notifications'
-import { basecampAuditLog, basecampAuditPreImage, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
+import { basecampAuditLog, basecampAuditPreImage, hostReportKey, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
 import { agentGuard, apiKeyGuard, apiKeyUsage, narrowForAgent } from './services/api-keys/scopes.ts'
@@ -224,7 +224,7 @@ export async function buildBasecampApp(
   // INTO that workspace and every read answers 200.
   const app = createApp({
     config, auth, db, logger, autoload: servicesDir, configPath: configDir,
-    credentials: [outpostCredential({ db, logger })],
+    credentials: [outpostCredential({ db, logger, hostKey: hostReportKey(env.ENCRYPTION_KEY) })],
     principal: membershipClaim({
       tenantFrom:  workspaceOrKeys,
       model:       'workspaceMember',

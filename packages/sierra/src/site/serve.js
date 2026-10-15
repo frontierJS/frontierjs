@@ -40,7 +40,7 @@ import { isHashedAsset } from '../serve/hashed-asset.js'
 import { relativePathFor, withinRoot } from '../serve/served-path.js'
 import { bodyAnswer, methodAnswer } from '../serve/http-answers.js'
 import { parseRedirects, redirectKey } from '../postbuild/redirects.js'
-import { functionHandler } from '../postbuild/functions.js'
+import { functionHandler, requestFrom, sendResponse } from '../postbuild/functions.js'
 
 import { contentTypeFor } from '@frontierjs/toolbelt/mime'
 
@@ -111,26 +111,6 @@ function resolveEntry(files, safe) {
   return null
 }
 
-// A function's request body: a beacon or a form post, never an upload. The cap
-// is what stops an open origin buffering whatever it is sent.
-const MAX_BODY = 1024 * 1024
-
-async function requestFrom(req) {
-  const chunks = []
-  let size = 0
-  for await (const chunk of req) {
-    size += chunk.length
-    if (size > MAX_BODY) throw new Error('request body too large')
-    chunks.push(chunk)
-  }
-  const bodiless = req.method === 'GET' || req.method === 'HEAD'
-  return new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, {
-    method:  req.method,
-    headers: req.headers,
-    body:    bodiless ? undefined : Buffer.concat(chunks),
-  })
-}
-
 /**
  * Serve `dir` as a prerendered site origin.
  *
@@ -147,10 +127,14 @@ async function requestFrom(req) {
  * @param {string[]} [opts.allowOutside]  directories a symlink inside `dir` may
  *                                     legitimately resolve into; see
  *                                     serve/served-path.js
- * @param {string}  [opts.functions]   the entry the build wrote for the site's
- *                                     host functions (`.sierra/functions.js`).
- *                                     Mounted before every static answer, the
- *                                     way a host runs them
+ * @param {string | { routes: Record<string, Function> }} [opts.functions]
+ *                                     the entry the build wrote for the site's
+ *                                     host functions (`.sierra/functions.js`),
+ *                                     as a path or as the imported module — a
+ *                                     compiled binary has to import it
+ *                                     statically to embed it. Mounted before
+ *                                     every static answer, the way a host runs
+ *                                     them
  * @param {Record<string, unknown>} [opts.env]  what a function reads as `env`;
  *                                     only the strings reach it
  * @returns {Promise<{ port: number, url: string, close: () => Promise<void> }>}
@@ -163,7 +147,10 @@ export async function serveSite({
   functions, env = {},
 } = {}) {
   const fns = functions
-    ? functionHandler((await import(pathToFileURL(resolve(functions)).href)).routes, env)
+    ? functionHandler(
+        (typeof functions === 'string' ? await import(pathToFileURL(resolve(functions)).href) : functions).routes,
+        env,
+      )
     : null
 
   const rootDir = files ? null : resolve(dir)
@@ -192,13 +179,7 @@ export async function serveSite({
     if (fns) {
       const named = relativePathFor(req.url.split('#')[0].split('?')[0])
       if (named !== null && fns.has('/' + named)) {
-        const response = await fns.handle(await requestFrom(req))
-        res.writeHead(response.status, {
-          ...headers,
-          ...Object.fromEntries(response.headers),
-          ...(response.headers.getSetCookie().length && { 'Set-Cookie': response.headers.getSetCookie() }),
-        })
-        res.end(req.method === 'HEAD' ? undefined : Buffer.from(await response.arrayBuffer()))
+        await sendResponse(req, res, await fns.handle(await requestFrom(req)), headers)
         return
       }
     }

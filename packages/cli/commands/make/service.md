@@ -35,30 +35,34 @@ flags:
 <script>
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
+import { pascal, kebab } from '@frontierjs/toolbelt/inflect'
 
-const makeServiceFile = (name) => {
-  const lower  = name.charAt(0).toLowerCase() + name.slice(1)
-  const plural = `${lower}s`
-  return `import { createBaseService } from '@frontierjs/junction'
+// The service's name is `make:resource`'s (`servicePlural`), so the two
+// generators cannot disagree about which service a model is served by.
+const { servicePlural } =
+  await import(resolve(global.fliRoot, 'core/resource-template.js'))
 
-export default createBaseService({
-  name:   '${plural}',
-  model:  '${plural}',
-  hooks: { }
-})
-`
+// The shape junction's autoloader documents: `<plural>.service.ts` exporting a
+// `create…Service` factory (kebab file for a multi-word name), over a model
+// stated by its PascalCase singular. Stating `model` keeps an irregular plural
+// from being singularized back to a different word.
+const serviceOf = (model, servicesDir) => {
+  const serviceName = servicePlural(model)
+  const file        = `${kebab(serviceName)}.service.ts`
+  return { serviceName, file, servicePath: resolve(servicesDir, file) }
 }
+
+const makeServiceFile = (model, serviceName) => `import { createBaseService } from '@frontierjs/junction'
+
+export function create${pascal(serviceName)}Service() {
+  return createBaseService({ model: '${model}', channel: '${serviceName}' })
+}
+`
 </script>
 
 ```js
 const servicesDir = resolve($.paths.api, 'src/services')
 const editor      = process.env.EDITOR || 'vi'
-
-// service filename + path for a model name (identical to manual behavior)
-const serviceOf = (model) => {
-  const serviceName = model.charAt(0).toLowerCase() + model.slice(1)
-  return { serviceName, servicePath: resolve(servicesDir, `${serviceName}.service.ts`) }
-}
 
 // ─── --auto: read models from schema.lite, step through each with Y/n ──────────
 if (flag.auto) {
@@ -116,29 +120,29 @@ if (flag.auto) {
 
   try {
     for (const model of models) {
-      const { serviceName, servicePath } = serviceOf(model)
+      const { serviceName, file, servicePath } = serviceOf(model, servicesDir)
 
       // Never clobber an existing service — report and move on.
       if (existsSync(servicePath)) {
-        log.info(`  ${model.padEnd(16)} ${serviceName}.service.ts exists — skipping`)
+        log.info(`  ${model.padEnd(16)} ${file} exists — skipping`)
         skipped++
         continue
       }
 
       let make = true
       if (!flag.yes) {
-        const ans = await ask(`  ${model.padEnd(16)} create ${serviceName}.service.ts?  [Y/n] `)
+        const ans = await ask(`  ${model.padEnd(16)} create ${file}?  [Y/n] `)
         make = !(ans && ans.trim().toLowerCase().startsWith('n'))
       }
       if (!make) { skipped++; continue }
 
       if (flag.dry) {
-        log.dry(`  Would create ${serviceName}.service.ts`)
+        log.dry(`  Would create ${file}`)
         continue
       }
       mkdirSync(servicesDir, { recursive: true })
-      writeFileSync(servicePath, makeServiceFile(model), 'utf8')
-      log.success(`  Created ${serviceName}.service.ts`)
+      writeFileSync(servicePath, makeServiceFile(model, serviceName), 'utf8')
+      log.success(`  Created ${file}`)
       created.push(servicePath)
     }
   } finally {
@@ -163,7 +167,7 @@ if (!arg.model) {
   return
 }
 
-const { serviceName, servicePath } = serviceOf(arg.model)
+const { serviceName, servicePath } = serviceOf(arg.model, servicesDir)
 
 if (existsSync(servicePath)) {
   log.warn(`${servicePath} already exists`)
@@ -178,11 +182,9 @@ if (flag.dry) {
 }
 
 mkdirSync(servicesDir, { recursive: true })
-writeFileSync(servicePath, makeServiceFile(arg.model), 'utf8')
+writeFileSync(servicePath, makeServiceFile(arg.model, serviceName), 'utf8')
 log.success(`Created ${servicePath}`)
-log.info('Register in api/src/server.ts:')
-log.info(`  import ${serviceName}Service from './services/${serviceName}.service.ts'`)
-log.info(`  app.services.register(${serviceName}Service)`)
+log.info(`Served as '${serviceName}' — autoloaded from api/src/services/, nothing to register.`)
 
 if (flag.open) $.exec({ command: `${editor} "${servicePath}"` })
 ```

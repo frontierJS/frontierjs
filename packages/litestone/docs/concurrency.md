@@ -330,6 +330,12 @@ field). A delete is never graded.
   every other: leave with `fromDate: '2026-10-01', toDate: '2026-10-03'` covers
   the 1st and the 2nd, and a shift on the 3rd is allowed. Whose midnight it is
   has no spelling yet (`FJS-D351`).
+- **A time of day is a range under a key that names the day.** A `String @time`
+  pair is accepted as a range, graded as seconds past midnight, but it shares
+  no point with an instant or a day, so a scope holding one holds only clock
+  members. `scope personDay(personId, dayId)` is one key of two fields: Monday
+  09:00–12:00 and Tuesday 09:00–12:00 share a person and no time, and under
+  `scope person(personId)` alone they would be called an overlap.
 - **A row outside `where:` occupies nothing**, and neither does a soft-deleted
   or template row. `@@exclude(person, range: [startsAt, endsAt], where: status
   != "cancelled")` frees a cancelled shift's hours; a write naming a field of

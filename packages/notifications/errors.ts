@@ -32,10 +32,10 @@ export class NotificationDriverNotFoundError extends Error {
   readonly transport:        string
   readonly notificationType: string
 
-  constructor(transport: string, notificationType: string) {
+  constructor(transport: string, notificationType: string, reason?: string) {
     super(
       `Notification "${notificationType}" declared transport "${transport}" in via() ` +
-      `but no driver is registered for that transport.`
+      (reason ?? `but no driver is registered for that transport.`)
     )
     this.name             = 'NotificationDriverNotFoundError'
     this.transport        = transport

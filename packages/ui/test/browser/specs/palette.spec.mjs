@@ -169,6 +169,36 @@ export async function run(t) {
   await t.press('Escape')
   await t.evaluate(`await waitFor(() => !document.querySelector('.fjs-cp-panel')); return true;`)
 
+  // FJS-2510: a command is found by words it does not show. Staff prints only
+  // its label, so "employees" can match nothing but its keywords.
+  await t.press('k', 2)
+  await t.evaluate(`return await waitVisible('.fjs-cp-panel');`)
+  await t.type('employees')
+  await t.eventually(`${rows}.map(r => r.querySelector('.item-title').textContent.trim()).join(',')`,
+    'Staff', 'a keyword the row does not show still finds it')
+  await t.press('Escape')
+  await t.evaluate(`await waitFor(() => !document.querySelector('.fjs-cp-panel')); return true;`)
+
+  // FJS-2611: closing hands focus back to what had it when the palette opened.
+  await t.evaluate(`document.querySelector('#open-palette').focus(); return true;`)
+  await t.press('k', 2)
+  await t.evaluate(`return await waitVisible('.fjs-cp-panel');`)
+  await t.press('Escape')
+  await t.evaluate(`await waitFor(() => !document.querySelector('.fjs-cp-panel')); return true;`)
+  await t.eventually(`document.activeElement?.id`, 'open-palette', 'closing returns focus to the opener')
+
+  // And an Escape the palette answered is not also the enclosing dialog's.
+  await t.press('k', 2)
+  await t.evaluate(`return await waitVisible('.fjs-cp-panel');`)
+  await t.evaluate(`
+    window.__escPrevented = null;
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.__escPrevented = e.defaultPrevented }, { once: true });
+    return true;
+  `)
+  await t.press('Escape')
+  await t.evaluate(`await waitFor(() => !document.querySelector('.fjs-cp-panel')); return true;`)
+  t.is(await t.evaluate(`return window.__escPrevented;`), true, 'the palette preventDefaults its Escape')
+
   // A search with no hits has to say so rather than render an empty box.
   await t.press('k', 2)
   await t.evaluate(`return await waitVisible('.fjs-cp-panel');`)

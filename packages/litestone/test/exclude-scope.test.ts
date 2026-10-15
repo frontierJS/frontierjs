@@ -36,7 +36,7 @@ describe('scope + @@exclude — FJS-1527', () => {
   test('a scope cited by two models parses, and the declaration survives onto the schema', () => {
     const r = parse(`scope person(employeeId)\n${SHIFT}\n${LEAVE}`)
     expect(r.errors).toEqual([])
-    expect(r.schema.scopes).toEqual([{ name: 'person', field: 'employeeId' }])
+    expect(r.schema.scopes).toEqual([{ name: 'person', fields: ['employeeId'] }])
     const shift = r.schema.models.find((m: any) => m.name === 'Shift')
     expect(shift.attributes.find((a: any) => a.kind === 'exclude'))
       .toEqual({ kind: 'exclude', scope: 'person', range: ['startsAt', 'endsAt'] })
@@ -131,7 +131,7 @@ describe('scope + @@exclude — FJS-1527', () => {
     writeFileSync(join(dir, 'schema.lite'), `import "./scopes.lite"\n${SHIFT}`)
     const r = parseFile(join(dir, 'schema.lite'))
     expect(r.errors).toEqual([])
-    expect(r.schema.scopes).toEqual([{ name: 'person', field: 'employeeId' }])
+    expect(r.schema.scopes).toEqual([{ name: 'person', fields: ['employeeId'] }])
   })
 })
 
@@ -440,6 +440,81 @@ describe('@@exclude(…, where:) — FJS-1569', () => {
     const e = await refusal(sys.leaveRequest.update({ where: { id: leave.id }, data: { status: 'approved' } }))
     expect(e?.name).toBe('OverlapConflictError')
     expect(e.with.model).toBe('Shift')
+    db.$close()
+  })
+})
+
+// ─── a wall-clock range under a two-field scope — FJS-2781 ───────────────────
+
+const CLOCK = `
+  claim id
+  scope personDay(personId, dayId)
+
+  model Slot {
+    id       Int    @id @default(autoincrement())
+    personId Int
+    dayId    Int
+    opensAt  String @time(seconds: true)
+    shutsAt  String @time(seconds: true)
+    @@exclude(personDay, range: [opensAt, shutsAt])
+    @@allow('all', true)
+  }
+`
+
+describe('a two-field scope over an @time range — FJS-2781', () => {
+  test('parses: the scope keeps its fields as a list', () => {
+    const r = parse(CLOCK)
+    expect(r.errors).toEqual([])
+    expect(r.schema.scopes).toEqual([{ name: 'personDay', fields: ['personId', 'dayId'] }])
+  })
+
+  test('a member lacking one of the scope fields is refused by name', () => {
+    const errs = errorsOf(CLOCK.replace('    dayId    Int\n', ''))
+    expect(errs.some(e => e.includes("Model 'Slot'") && e.includes("'dayId'"))).toBe(true)
+  })
+
+  test('a String range with no format at all still names @time among what orders', () => {
+    const errs = errorsOf(CLOCK.replaceAll(' @time(seconds: true)', ''))
+    expect(errs.some(e => e.includes('@time'))).toBe(true)
+  })
+
+  test('a clock range shares no point with an instant — mixing them in one scope is refused', () => {
+    const errs = errorsOf(`${CLOCK}\nmodel Shift {\n  id Int @id\n  personId Int\n  dayId Int\n  startsAt DateTime\n  endsAt DateTime\n  @@exclude(personDay, range: [startsAt, endsAt])\n}`)
+    expect(errs.some(e => e.includes("scope 'personDay'") && e.includes('clock'))).toBe(true)
+  })
+
+  test('the same hours on another day are not an overlap; on the same day they are', async () => {
+    const { createClient } = await import('../src/index.js')
+    const db = (await createClient({ db: ':memory:', schema: CLOCK })) as any
+    const sys = db.asSystem()
+    await sys.slot.create({ data: { personId: 1, dayId: 1, opensAt: '09:00', shutsAt: '12:00' } })
+    await sys.slot.create({ data: { personId: 1, dayId: 2, opensAt: '09:00', shutsAt: '12:00' } })
+    await sys.slot.create({ data: { personId: 2, dayId: 1, opensAt: '09:00', shutsAt: '12:00' } })
+    const e = await refusal(sys.slot.create({ data: { personId: 1, dayId: 1, opensAt: '11:00', shutsAt: '13:00' } }))
+    expect(e?.name).toBe('OverlapConflictError')
+    expect(await sys.slot.count()).toBe(3)
+    db.$close()
+  })
+
+  test('touching ends do not overlap, and 9:00 orders before 10:00 as a time, not as text', async () => {
+    const { createClient } = await import('../src/index.js')
+    const db = (await createClient({ db: ':memory:', schema: CLOCK })) as any
+    const sys = db.asSystem()
+    await sys.slot.create({ data: { personId: 1, dayId: 1, opensAt: '09:00', shutsAt: '12:00' } })
+    await sys.slot.create({ data: { personId: 1, dayId: 1, opensAt: '12:00', shutsAt: '12:00:30' } })
+    const e = await refusal(sys.slot.create({ data: { personId: 1, dayId: 1, opensAt: '12:00:15', shutsAt: '13:00' } }))
+    expect(e?.name).toBe('OverlapConflictError')
+    db.$close()
+  })
+
+  test('an update moving a row to another day is graded under the new key', async () => {
+    const { createClient } = await import('../src/index.js')
+    const db = (await createClient({ db: ':memory:', schema: CLOCK })) as any
+    const sys = db.asSystem()
+    await sys.slot.create({ data: { personId: 1, dayId: 1, opensAt: '09:00', shutsAt: '12:00' } })
+    const b = await sys.slot.create({ data: { personId: 1, dayId: 2, opensAt: '10:00', shutsAt: '11:00' } })
+    const e = await refusal(sys.slot.update({ where: { id: b.id }, data: { dayId: 1 } }))
+    expect(e?.name).toBe('OverlapConflictError')
     db.$close()
   })
 })

@@ -14,7 +14,7 @@
 // something was inserted between them — so each is reunited with its own pass.
 
 import { isSoftDelete, modelToTableName, isUpdatedAtField, detectM2MPairs, sqlType, columnMapFor, mapExprCols } from './ddl.js'
-import { assertNoBareClock, expandNowTokens }                      from './query.js'
+import { assertNoBareClock, expandNowTokens, quoteIdent }          from './query.js'
 import { compileDerived, checkDerivedType, dependsOnClock }        from './policy.js'
 import { ID_GENERATORS, GENERATED_DEFAULTS }                       from './ids.js'
 
@@ -78,6 +78,33 @@ export function inferFromFk(model, targetModel, via = null) {
   // Fallback: a column named after the model, e.g. Account → AccountId.
   const fallback = targetModel.fields.find(f => f.name === `${model.name}Id`)
   return fallback ? { fkCols: [fallback.name], refCols: [idField] } : null
+}
+
+/**
+ * How a to-one `@from(rel, column)` reaches the row it reads: the relation
+ * field on `model`, the model it points at, the FK fields on `model` and the
+ * fields they reference on that model, index-aligned.
+ *
+ * The ONE owner, as `inferFromFk` is for the aggregate forms: `validate()`
+ * refuses what this cannot resolve and `buildFromMap()` builds from what it
+ * returns. Answers `{ error }` rather than throwing so each caller words it
+ * with its own prefix.
+ */
+export function inferToOneFrom(model, schema, attr) {
+  const relField = model.fields.find(f => f.name === attr.rel)
+  if (!relField)
+    return { error: `'${attr.rel}' is not a field on '${model.name}'. The first argument names a to-one relation field here; to read DOWN a relation, name the model: @from(Model, count: true)` }
+  const rel = relField.attributes.find(a => a.kind === 'relation' && a.fields)
+  if (relField.type.array || !rel)
+    return { error: `'${attr.rel}' is not a to-one relation holding its own key. The first argument names a field such as 'state WorkflowState @relation(fields: [stateId], references: [id])'` }
+  const targetModel = schema.models.find(m => m.name === relField.type.name)
+  if (!targetModel) return { error: `'${attr.rel}' points at unknown model '${relField.type.name}'` }
+  const idField = targetModel.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+  const fkFields  = Array.isArray(rel.fields) ? rel.fields : [rel.fields]
+  const refFields = rel.references
+    ? (Array.isArray(rel.references) ? rel.references : [rel.references])
+    : [idField]
+  return { relField, targetModel, fkFields, refFields }
 }
 
 // ─── Schema analysis ──────────────────────────────────────────────────────────
@@ -615,7 +642,8 @@ export function buildFromMap(schema, pluralize = false) {
   const map = {}
   for (const model of schema.models) {
     addDerivedFields(map, model, schema)
-    const fromFields = model.fields.filter(f => f.attributes.find(a => a.kind === 'from'))
+    const fromFields = model.fields.filter(f => f.attributes.find(a => a.kind === 'from')?.op !== 'column' &&
+                                                 f.attributes.find(a => a.kind === 'from'))
     if (!fromFields.length) continue
     map[model.name] ??= {}
 
@@ -747,7 +775,69 @@ export function buildFromMap(schema, pluralize = false) {
       }
     }
   }
+  // After every aggregate entry exists: a to-one column may itself be one.
+  for (const model of schema.models) addToOneFromFields(map, model, schema, pluralize)
   return map
+}
+
+// ─── @from(rel, column) ───────────────────────────────────────────────────────
+// A column of the parent row a to-one relation points at, as a correlated
+// scalar subquery -- the SQL a policy's `rel.column` path builds (`FJS-D911`).
+//
+// The parent row is aliased `_to`, never `_from`: a target column that is
+// itself an aggregate carries its own `_from` subquery correlated to the row it
+// is read off, and one alias on both levels binds that correlation to the
+// inner table, so every count comes back 0.
+//
+// `aggRef` is the same half an aggregate has -- the value recomputed under the
+// caller's row policy on the parent after the read, and the reason a where or
+// an orderBy naming it is refused while that policy applies. `valueSql` is the
+// column (or the parent's own derived/aggregate expression) with `%T%` for the
+// parent's table.
+function addToOneFromFields(map, model, schema, pluralize) {
+  for (const field of model.fields) {
+    const attr = field.attributes.find(a => a.kind === 'from')
+    if (attr?.op !== 'column') continue
+    const hop = inferToOneFrom(model, schema, attr)
+    if (hop.error) continue                       // validate() named it
+    const { targetModel, fkFields, refFields } = hop
+    const tCols = columnMapFor(targetModel)
+    const sCols = columnMapFor(model)
+    const t     = (f) => tCols[f] ?? f
+    const selfTable   = modelToTableName(model, pluralize)
+    const targetTable = modelToTableName(targetModel, pluralize)
+    const inner = map[targetModel.name]?.[attr.opValue]
+    const value = inner ? inner.subquerySqlFor('_to') : `_to.${quoteIdent(t(attr.opValue))}`
+    const where = refFields.map((r, i) =>
+      `_to.${quoteIdent(t(r))} = %SELF%.${quoteIdent(sCols[fkFields[i]] ?? fkFields[i])}`).join(' AND ')
+    const sql   = `(SELECT ${value} FROM ${quoteIdent(targetTable)} AS _to WHERE ${where})`
+    map[model.name] ??= {}
+    map[model.name][field.name] = {
+      target:             targetModel.name,
+      // The models whose rows the value is counted off beyond the parent, for
+      // the read gate.
+      through:            inner?.target ? [inner.target] : [],
+      subquerySql:        sql.replaceAll('%SELF%', quoteIdent(selfTable)),
+      subquerySqlAliased: sql.replaceAll('%SELF%', 't'),
+      subquerySqlFor:     alias => sql.replaceAll('%SELF%', alias),
+      isObject:           false,
+      isBool:             field.type?.name === 'Boolean',
+      rowRef:             null,
+      aggRef: {
+        model:   targetModel.name,
+        fkCols:  refFields.map(t),
+        refCols: fkFields,
+        op:      'column',
+        isBool:  field.type?.name === 'Boolean',
+        opValue: attr.opValue,
+        valueSql: inner ? inner.subquerySqlFor('%T%') : `%T%.${quoteIdent(t(attr.opValue))}`,
+        // The parent's own aggregate counts rows the caller's policy on THEIR
+        // model may hide, which this recompute does not apply.
+        reads:   inner?.aggRef?.model ?? null,
+        extra:   [],
+      },
+    }
+  }
 }
 
 // ─── Relation cardinality ─────────────────────────────────────────────────────
@@ -843,7 +933,7 @@ export function buildCardinalityMap(schema, pluralize = false) {
 
 // ─── Exclusion scopes ─────────────────────────────────────────────────────────
 //
-// `scope person(employeeId)` + `@@exclude(person, range: [a, b])` on each member
+// `scope person(employeeId, …)` + `@@exclude(person, range: [a, b])` on each member
 // (`FJS-D474`). Indexed both ways because a write on ONE member is graded
 // against EVERY member: a Shift written for a person is checked against that
 // person's leave, which is the pair a per-model rule would never compare.
@@ -853,7 +943,7 @@ export function buildCardinalityMap(schema, pluralize = false) {
 // template is not one either. Its own `where:` narrows them further.
 export function buildExclusionMap(schema, pluralize = false) {
   const byModel = {}           // member model -> [scope name], writes that dirty a key
-  const scopes  = {}           // scope name   -> { name, field, members: [member] }
+  const scopes  = {}           // scope name   -> { name, fields, members: [member] }
 
   const declared = new Map((schema.scopes ?? []).map(s => [s.name, s]))
   for (const model of schema.models) {
@@ -873,16 +963,16 @@ export function buildExclusionMap(schema, pluralize = false) {
       // `where:` — a row outside it holds no time (`FJS-1569`).
       if (attr.whereSql)       filters.push(`(${mapExprCols(attr.whereSql, cols)})`)
 
-      const s = (scopes[scope.name] ??= { name: scope.name, field: scope.field, members: [] })
+      const s = (scopes[scope.name] ??= { name: scope.name, fields: scope.fields, members: [] })
       s.members.push({
-        model:     model.name,
-        table:     modelToTableName(model, pluralize),
-        keyField:  scope.field,
-        keyColumn: col(scope.field),
-        idColumn:  idField ? col(idField) : null,
-        range:     attr.range,
-        columns:   attr.range.map(col),
-        kinds:     attr.range.map(n => rangePointKind(field(n))),
+        model:      model.name,
+        table:      modelToTableName(model, pluralize),
+        keyFields:  scope.fields,
+        keyColumns: scope.fields.map(col),
+        idColumn:   idField ? col(idField) : null,
+        range:      attr.range,
+        columns:    attr.range.map(col),
+        kinds:      attr.range.map(n => rangePointKind(field(n))),
         // A write naming one of these can move a row INTO the predicate — a
         // cancelled shift restored — so it notes the key like a range end does.
         whereFields: attr.whereFields ?? [],
@@ -904,6 +994,7 @@ export function rangePointKind(field) {
   if (t === 'DateTime') return 'instant'
   if (t === 'String' && field.attributes.some(a => a.kind === 'datetime')) return 'instant'
   if (t === 'String' && field.attributes.some(a => a.kind === 'date'))     return 'day'
+  if (t === 'String' && field.attributes.some(a => a.kind === 'time'))     return 'clock'
   return null
 }
 

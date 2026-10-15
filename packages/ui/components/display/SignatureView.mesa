@@ -1,0 +1,53 @@
+<script>
+  // SignatureView.mesa
+  // A signature as it was given: the strokes `SignaturePad` drew, as SVG paths
+  // in the pad's own pixels, and the typed name under them. Read-only.
+  //
+  //   <SignatureView signature={quote.signature} />
+  //
+  // The value is whatever the row holds (a Json column), so every part is read
+  // defensively: a value with no strokes draws the name alone. `name` is the
+  // value's own `name`, or the prop when the name lives in another column.
+  export let signature = null        // { paths, width, height, name? } | null
+  export let name      = undefined   // the signer, when it is not in `signature`
+
+  const paths  = Array.isArray(signature?.paths) ? signature.paths.filter((d) => typeof d === 'string') : []
+  const width  = Number(signature?.width) > 0 ? Number(signature.width) : 300
+  const height = Number(signature?.height) > 0 ? Number(signature.height) : 100
+  const signer = typeof name === 'string' ? name : typeof signature?.name === 'string' ? signature.name : ''
+</script>
+
+<figure class="fjs-signature-view" {class} {...$attributes} data-signature-view>
+  {#if paths.length}
+    <svg class="fjs-signature-strokes" viewBox={'0 0 ' + width + ' ' + height} role="img"
+         aria-label={signer ? 'Signature of ' + signer : 'Signature'} preserveAspectRatio="xMidYMid meet">
+      {#each paths as d}<path {d} />{/each}
+    </svg>
+  {/if}
+  {#if signer}<figcaption class="fjs-signature-name" data-signed-name>{signer}</figcaption>{/if}
+</figure>
+
+<style>
+  .fjs-signature-view {
+    display: grid;
+    gap:     var(--space-2xs);
+    margin:  0;
+  }
+  .fjs-signature-strokes {
+    display:          block;
+    inline-size:      100%;
+    block-size:       auto;
+    max-block-size:   calc(var(--space-6xl) * 2);
+    border-block-end: var(--border-width) solid var(--rule);
+  }
+  .fjs-signature-strokes path {
+    fill:            none;
+    stroke:          currentColor;
+    stroke-width:    2;
+    stroke-linecap:  round;
+    stroke-linejoin: round;
+  }
+  .fjs-signature-name {
+    font-size: var(--text-sm);
+  }
+</style>

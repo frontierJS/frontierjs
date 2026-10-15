@@ -41,6 +41,8 @@ title: Hub
      aria-current={(page.route, isActive('/hub/flags/')) ? 'page' : null}>Flags</a>
   <a class="navlink" href="/hub/backups/"
      aria-current={(page.route, isActive('/hub/backups/')) ? 'page' : null}>Backups</a>
+  <a class="navlink" href="/hub/security/"
+     aria-current={(page.route, isActive('/hub/security/')) ? 'page' : null}>Security</a>
   <a class="navlink" href="/hub/settings/"
      aria-current={(page.route, isActive('/hub/settings/')) ? 'page' : null}>Settings</a>
 </nav>

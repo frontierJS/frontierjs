@@ -406,9 +406,11 @@ CREATE TABLE IF NOT EXISTS "notification" (
   "data" TEXT NOT NULL,
   "contextType" TEXT,
   "contextId" TEXT,
+  "deliveryKey" TEXT,
   "readAt" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("contextType" IN ('Deployment', 'AlertEvent', 'JobRun', 'Server', 'Workspace', 'Monitor')),
+  UNIQUE ("userId", "type", "deliveryKey"),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_notification_userId_readAt" ON "notification" ("userId", "readAt");
@@ -845,7 +847,7 @@ CREATE TABLE IF NOT EXISTS "disk_usage" (
 
 CREATE TABLE IF NOT EXISTS "server_posture" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "serverId" TEXT NOT NULL,
+  "serverId" TEXT,
   "at" TEXT NOT NULL,
   "readings" TEXT NOT NULL DEFAULT '{}',
   "controls" TEXT NOT NULL DEFAULT '[]',

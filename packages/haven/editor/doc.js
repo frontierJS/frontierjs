@@ -248,7 +248,7 @@ export function packHistory(history, source) {
  * The history `packHistory` wrote, or an empty one when it ends at another
  * text than `source` — the file was changed by something else since — or
  * names a piece `known` (ident → piece) no longer has. A pacer's spec is
- * the live one of its name.
+ * the live one of its name; a carousel's is the one kept.
  */
 export function unpackHistory(json, source, known, pacers) {
   try {
@@ -265,7 +265,8 @@ export function unpackHistory(json, source, known, pacers) {
         }
         const piece = known.get(el.ident)
         if (!piece) throw new Error(`piece ${el.ident} is gone`)
-        return { ...el, piece, spec: null }
+        // A carousel is made again from its spec, which is plain data.
+        return { ...el, piece, spec: el.kind === 'Carousel' ? el.spec : null }
       }),
     })
     return { past: kept.past.map(unpack), future: kept.future.map(unpack), kind: null, at: 0 }

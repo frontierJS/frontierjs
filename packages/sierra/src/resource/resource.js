@@ -140,7 +140,7 @@ import {buildFieldRules, buildRelations, buildGate, canAtLevel,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
   toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, refusedFor, declinedFields, requiredFor, blankRefused, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
-  registerControl, unregisterControl, registeredControls, INTERACTION_TASKS, seedDetermined,
+  registerControl, unregisterControl, registeredControls, INTERACTION_TASKS, seedDetermined, pickFilter,
 } from './field-rules.js'
 import { session, isRelayed } from './session.js'
 import { directiveParams } from '@frontierjs/toolbelt/directives'
@@ -2722,6 +2722,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // question: a relation has no set to declare an order, so this list is the
     // display column ascending.
     const filter = {
+      ...pickFilter(rule, app ? app.user : session.user),
       ...(query ?? {}),
       ...(search ? { [shown]: { contains: String(search) } } : {}),
     }

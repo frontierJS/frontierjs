@@ -27,6 +27,11 @@
    "escape": "split when one company runs several brands",
    "access": {
     "members": "Membership",
+    "roles": {
+     "update": [
+      "recruiter"
+     ]
+    },
     "system": true
    },
    "links": []

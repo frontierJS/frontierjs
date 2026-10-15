@@ -372,6 +372,8 @@ describe('the clean app', () => {
     // Installed, so `mesa-compiles` runs over CLEAN's .mesa rather than skipping.
     mkdirSync(join(root, 'node_modules', '@frontierjs'), { recursive: true })
     symlinkSync(join(import.meta.dir, '..', '..', 'sierra'), join(root, 'node_modules', '@frontierjs', 'sierra'))
+    // And litestone, which `schema-runs` asks whether the schema opens.
+    symlinkSync(join(import.meta.dir, '..', '..', 'litestone'), join(root, 'node_modules', '@frontierjs', 'litestone'))
     // And typescript, the parser `command-resolves` reads with — a scaffolded
     // app installs it as a devDependency.
     symlinkSync(join(import.meta.dir, '..', '..', '..', 'node_modules', 'typescript'), join(root, 'node_modules', 'typescript'))
@@ -3704,6 +3706,56 @@ describe('the baseline', () => {
     expect(keys.slice(1)).toEqual([...keys.slice(1)].sort())
   })
 
+  describe('the reasons beside the counts (FJS-2887)', () => {
+    const RULES_RAN = ['ctx-params', 'raw-route-param', 'set-auth-discarded']
+    const rewrite = (root, mode) => {
+      const result = run(root, RULES_RAN)
+      const grade  = gradeBaseline(result, readBaseline(root))
+      writeBaseline(root, { counts: grade.counts, ran: result.ran, baseline: readBaseline(root), mode })
+    }
+
+    test('readBaseline keeps a `//<rule>` reason out of the counts', () => {
+      const root = tree('bl-note-read', { ...CLEAN, [BASELINE_FILE]:
+        JSON.stringify({ '//ctx-params': 'why this many', 'ctx-params': 2 }) })
+      const baseline = readBaseline(root)
+      expect(baseline.counts).toEqual({ 'ctx-params': 2 })
+      expect(baseline.notes).toEqual({ 'ctx-params': 'why this many' })
+    })
+
+    test('--adopt carries the reason of a rule that still has debt', () => {
+      const root = tree('bl-note-adopt', { ...dirty(), [BASELINE_FILE]:
+        JSON.stringify({ '//ctx-params': 'why this many', 'ctx-params': 1 }) })
+      rewrite(root, 'adopt')
+      expect(file(root)['//ctx-params']).toBe('why this many')
+      expect(Object.keys(file(root)).indexOf('//ctx-params'))
+        .toBe(Object.keys(file(root)).indexOf('ctx-params') - 1)
+    })
+
+    test('what writeBaseline returns is the counts alone', () => {
+      const root = tree('bl-note-return', { ...dirty(), [BASELINE_FILE]:
+        JSON.stringify({ '//ctx-params': 'why this many', 'ctx-params': 1 }) })
+      const result = run(root, RULES_RAN)
+      const grade  = gradeBaseline(result, readBaseline(root))
+      const counts = writeBaseline(root, { counts: grade.counts, ran: result.ran, baseline: readBaseline(root), mode: 'adopt' })
+      expect(Object.values(counts).every(Number.isFinite)).toBe(true)
+    })
+
+    test('--update carries it too', () => {
+      const root = tree('bl-note-update', { ...dirty(), [BASELINE_FILE]:
+        JSON.stringify({ '//ctx-params': 'why this many', 'ctx-params': 99 }) })
+      rewrite(root, 'lower')
+      expect(file(root)['//ctx-params']).toBe('why this many')
+    })
+
+    test('a reason is dropped with the debt it explained', () => {
+      const root = tree('bl-note-clean', { ...CLEAN, [BASELINE_FILE]:
+        JSON.stringify({ '//ctx-params': 'why this many', 'ctx-params': 2 }) })
+      rewrite(root, 'lower')
+      expect(file(root)['//ctx-params']).toBeUndefined()
+      expect(file(root)['ctx-params']).toBeUndefined()
+    })
+  })
+
   // An `allow` object sits beside the counts (`FJS-D508`): `'<rule>:<path>'` to
   // why. `fli check` passed `runChecks` none, so the only exception an app could
   // state was a count, which also excused the next real finding (`FJS-1428`).
@@ -4129,6 +4181,39 @@ describe('a model graded by capability is not also graded by ladder', () => {
     const root = tree('cap-none', { ...CLEAN, 'db/schema.lite': 'model Lead { id Int @id }\n' })
     const { skipped } = runChecks({ root, only: ['capability-ladder'] })
     expect(skipped).toHaveLength(1)
+  })
+})
+
+describe('schema-runs', () => {
+
+  // Every other rule reads the schema as text, so a schema litestone refuses to
+  // open passes them all and the app fails at boot (FJS-1242). The rule asks
+  // litestone, so the tree needs one installed to be asked.
+  const withLitestone = (name, schema) => {
+    const root = tree(name, { ...CLEAN, 'db/schema.lite': schema })
+    mkdirSync(join(root, 'node_modules', '@frontierjs'), { recursive: true })
+    symlinkSync(join(import.meta.dir, '..', '..', 'litestone'), join(root, 'node_modules', '@frontierjs', 'litestone'))
+    return root
+  }
+
+  test('a schema that parses and that createClient refuses is an error naming the refusal', () => {
+    const root = withLitestone('sr-bad', 'model Thing {\n  id Int @id\n  @@gate("6.4.5.6")\n}\n')
+    const { findings } = only(root, 'schema-runs')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('error')
+    expect(findings[0].message).toContain('non-decreasing')
+  })
+
+  test('a schema litestone opens passes', () => {
+    const root = withLitestone('sr-good', 'model Thing {\n  id Int @id\n  name String\n}\n')
+    expect(only(root, 'schema-runs').findings).toEqual([])
+  })
+
+  test('a tree with no litestone installed skips and says why', () => {
+    const root = tree('sr-none', CLEAN)
+    const res  = only(root, 'schema-runs')
+    expect(res.findings ?? []).toEqual([])
+    expect(JSON.stringify(res.skipped)).toContain('litestone')
   })
 })
 
@@ -4594,6 +4679,22 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
     expect(f).toHaveLength(1)
     expect(f[0].file).toMatch(/jobs\/send\.ts$/)
     expect(f[0].message).toMatch(/domain\//)
+  })
+
+  // FJS-1933 (FJS-D708): the loader globs its own folder, so a loaded segment beside it is never loaded.
+  test('a loaded segment outside its kind folder', () => {
+    const f = layout('lay-stray', {
+      'api/src/services/orders/order.service.ts': 'export default {}\n',
+      'api/src/jobs/send.job.ts':                 'export default {}\n',
+      'api/src/notifications/Paid.notification.ts': 'export default {}\n',
+      'api/src/domain/billing.service.ts':        'export default {}\n',
+      'api/src/core/sweep.job.ts':                'export default {}\n',
+      'api/src/services/Mail.notification.ts':    'export default {}\n',
+      'api/src/domain/billing.service.test.ts':   '\n',
+    })
+    expect(f.map(x => x.file.replace(/.*\/api\//, 'api/')).sort())
+      .toEqual(['api/src/core/sweep.job.ts', 'api/src/domain/billing.service.ts', 'api/src/services/Mail.notification.ts'])
+    expect(f.find(x => /billing/.test(x.file)).message).toMatch(/services\//)
   })
 
   test('a core/ file that exports a plugin', () => {

@@ -13,7 +13,7 @@
   //
   // The parent decides WHEN it exists (`{#if open}`); this file decides where it
   // sits, what it says and which of the two answers came back.
-  import { tone as toTone, cx, uid, placeAgainst } from '../../utils.js'
+  import { tone as toTone, cx, uid, placeAgainst, overlayHost } from '../../utils.js'
 
   export let anchor       = null       // the Element it points at
   export let title        = 'Are you sure?'
@@ -31,15 +31,6 @@
   let confirmEl
 
   const titleId = uid('confirm-title')
-
-  // Inside the anchor's open <dialog> when it has one, <body> otherwise. A
-  // modal Drawer or Modal sits in the top layer and makes the rest of the
-  // document inert, so a panel in <body> is drawn beneath it and a click at
-  // its confirm button lands on the drawer (`FJS-1983`). Still `fixed`: an
-  // open `.dialog`/`.drawer` is `transform: none`, so the viewport stays the
-  // containing block and `placeAgainst` coordinates stay right. Read by the
-  // portal, never at load: a terminal has no document and never asks.
-  const host = () => anchor?.closest?.('dialog[open]') ?? document.body
 
   const panelAnim = $.entrance({
     in:  el => el.animate?.(
@@ -99,7 +90,7 @@
 
 <mesa:window on:keydown={onKeydown} on:click|capture={onClickAway} />
 
-<mesa:portal to={host()}>
+<mesa:portal to={overlayHost()}>
   <div
     bind:this={panelEl}
     class="popover stack"

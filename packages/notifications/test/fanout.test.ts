@@ -225,7 +225,7 @@ describe('failure paths', () => {
     const err = await bare.app.notify({ id: 'u9', email: 'o@p.test' }, new Welcome(['email']))
       .catch((e: Error) => e)
 
-    expect(err).toBeInstanceOf(NotificationDeliveryError)
+    expect(err).toBeInstanceOf(NotificationDriverNotFoundError)
     expect((err as Error).message).toContain('mailerPlugin')
   })
 

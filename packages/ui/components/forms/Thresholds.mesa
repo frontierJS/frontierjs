@@ -180,6 +180,8 @@
     values = next
     syncRows(next)
     onchange?.(next)
+    // The range inputs carry no name — several elements hold one value.
+    form?.changed?.(name)
   }
 
   function reset() {
@@ -188,6 +190,7 @@
     values = next
     syncRows(next)
     onchange?.(next)
+    form?.changed?.(name)
   }
 </script>
 

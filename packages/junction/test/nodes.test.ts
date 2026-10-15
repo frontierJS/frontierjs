@@ -405,6 +405,94 @@ describe('resource().record(id).error()', () => {
   })
 })
 
+// ─── a record across a revoke ─────────────────────────────────────────────────
+// A revoke sends no frame about the row (`FJS-1738`), so the only things a
+// held record can learn it from are a reconnect and a refused re-read
+// (`FJS-1740`).
+
+describe('resource().record(id) after the row stops being readable', () => {
+  const answer = (status: number, body: unknown) => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(body), {
+        status, headers: { 'Content-Type': 'application/json' },
+      })) as unknown as typeof fetch
+    return { restore: () => { globalThis.fetch = original } }
+  }
+  const notFound = () => answer(404, { name: 'NotFound', message: 'NotFound', code: 404 })
+
+  for (const composed of [false, true]) {
+    it(`a re-read the server answers 404 empties the view (composed: ${composed})`, async () => {
+      const c = client()
+      const r = c.resource('pages', 'id', { model: 'Page' })
+      const ok = answer(200, { id: 1, title: 'D' })
+      const row = r.record(1, { composed })
+      await row.ready
+      ok.restore()
+      expect(row.get()).toEqual({ id: 1, title: 'D' })
+
+      const seen: unknown[] = []
+      row.subscribe((v) => seen.push(v))
+      const m = notFound()
+      await row.refresh()
+      m.restore()
+
+      expect(row.get()).toBeNull()
+      expect(row.error()).toEqual({ status: 404, code: 'NotFound' })
+      expect(seen.at(-1)).toBeNull()
+    })
+  }
+
+  it('a reconnect re-reads the view, and a 404 then empties it', async () => {
+    const c: any = client()
+    const r = c.resource('pages', 'id', { model: 'Page' })
+    const ok = answer(200, { id: 1, title: 'D' })
+    const row = r.record(1)
+    await row.ready
+    ok.restore()
+
+    const realRandom = Math.random
+    Math.random = () => 0
+    const m = notFound()
+    try {
+      c._noteConnected({})
+      c._noteDisconnected()
+      c._noteConnected({})
+      c._wsReady = false   // no socket exists; the re-read goes over HTTP
+      for (let i = 0; i < 100 && row.get() != null; i++) await new Promise(res => setTimeout(res, 10))
+    } finally {
+      Math.random = realRandom
+      m.restore()
+    }
+    expect(row.get()).toBeNull()
+    expect(row.error()).toEqual({ status: 404, code: 'NotFound' })
+  })
+
+  it('a released view does not re-read on a reconnect', async () => {
+    const c: any = client()
+    const r = c.resource('pages', 'id', { model: 'Page' })
+    const ok = mockRow({ id: 1, title: 'D' })
+    const row = r.record(1)
+    await row.ready
+    row.release()
+    const before = ok.calls()
+
+    const realRandom = Math.random
+    Math.random = () => 0
+    try {
+      c._noteConnected({})
+      c._noteDisconnected()
+      c._noteConnected({})
+      c._wsReady = false   // no socket exists; the re-read goes over HTTP
+      await new Promise(res => setTimeout(res, 30))
+    } finally {
+      Math.random = realRandom
+      ok.restore()
+    }
+    expect(ok.calls()).toBe(before)
+  })
+})
+
 // ─── optimism ─────────────────────────────────────────────────────────────────
 // The overlay is the fourth thing `FJS-D138` names: a submitted mutation that
 // has not come back. It sits on the node, so every view of the row moves at

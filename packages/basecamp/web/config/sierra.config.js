@@ -1,8 +1,7 @@
 // web/config/sierra.config.js
 //
 // Configuration lives in config/, beside vite.config.js — the standard FJS
-// layout (config/ src/ public/ test/ dist/). Sierra looks for this file next to
-// vite.config.js first, so nesting needs no _configPath escape hatch.
+// layout (config/ src/ public/ test/ dist/).
 export default {
   target:        'spa',
   routesDir:     'src/routes',

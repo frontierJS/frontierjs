@@ -252,8 +252,16 @@
    */
   function announceTime(start, end) {
     if ((isRange && start && end) || (!isRange && start)) {
-      onDateChange?.(currentEvent(start, end))
+      announce(currentEvent(start, end))
     }
+  }
+
+  // Every committed value goes out here. A day is a button and the hidden
+  // input is written, never typed into, so the form hears nothing unless it
+  // is told by name.
+  function announce(event) {
+    onDateChange?.(event)
+    form?.changed?.(name)
   }
 
   function getHoursAndMinutes(timestamp) {
@@ -607,7 +615,7 @@
 
     onDayClick?.(event)
     if ((isRange && _startDate && _endDate) || (!isRange && _startDate)) {
-      onDateChange?.(event)
+      announce(event)
     }
   }
 
@@ -632,7 +640,7 @@
     endDate    = _endDate
 
     if (isRange && _startDate && _endDate) {
-      onDateChange?.({
+      announce({
         startDate: _startDate,
         startDateTime,
         endDate: _endDate,
@@ -697,7 +705,7 @@
     // Announced with the new values passed in rather than read back off the
     // signals, for the reason `announceTime` states: a write is not visible to
     // a read in the same tick, so reading here reports the day just left.
-    onDateChange?.(currentEvent(next.start, next.end ?? _endDate))
+    announce(currentEvent(next.start, next.end ?? _endDate))
   }
 
   const canStepBack    = !!stepTarget(-1)
@@ -1018,10 +1026,11 @@
   nothing else. `label` goes through unresolved so Field resolves it once off
   the same rule.
 
-  The hidden input is what makes the field EXIST for the form — the picker
-  draws buttons, and a button is not a value the form can read or a name its
-  dirty tracking can see. Single-date mode only: a range is two values and one
-  name, which no column holds.
+  The hidden input is what makes the field EXIST for a native form submit — the
+  picker draws buttons, and a button is not a value a form can read. It emits
+  nothing when written, so the change reaches <Form> through `announce`.
+  Single-date mode only: a range is two values and one name, which no column
+  holds.
 -->
 {#if label || name}
   <Field

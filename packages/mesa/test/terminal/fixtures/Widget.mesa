@@ -1,0 +1,15 @@
+<script>
+  let value = 5
+  let heard = ''
+  const keydown = (e) => {
+    if (e.key === 'ArrowRight') { value += 1; e.preventDefault() }
+    if (e.key === 'ArrowLeft') { value -= 1; e.preventDefault() }
+  }
+</script>
+
+<p>value {value} heard {heard}</p>
+<button type="button">Before</button>
+<div role="slider" tabindex="0" aria-valuenow={value} aria-valuetext={`${value} px`} aria-label="Minimum" on:keydown={keydown}></div>
+<div role="slider" tabindex="-1" aria-valuenow="3" aria-label="Skipped"></div>
+<div role="tab" tabindex="0" aria-label="Ignored name" on:keydown={(e) => heard = e.key}>Tab text</div>
+<div role="presentation" aria-label="Quiet">Not a widget</div>

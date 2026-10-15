@@ -1,0 +1,24 @@
+<script>
+  // slider.mesa — a bare slider named only by aria-label, a labelled one, and a range.
+  import Slider from '../../../components/forms/Slider.mesa'
+
+  let vol = 20
+  let lo  = 20
+  let hi  = 80
+
+  // Calls on the first slider, read by the spec: oninput per value, onchange
+  // once per gesture (FJS-2471).
+  window.tally = { input: 0, change: 0 }
+  const onin = () => { window.tally.input++ }
+  const onch = () => { window.tally.change++ }
+</script>
+
+<div style="width: 400px; margin: 40px">
+  <Slider id="vol" bind:value={vol} oninput={onin} onchange={onch} min={0} max={100} step={10} aria-label="Volume" />
+</div>
+<div style="width: 400px; margin: 40px">
+  <Slider range label="Price" bind:start={lo} bind:end={hi} min={0} max={100} step={10} />
+</div>
+
+<output id="vol-out">{vol}</output>
+<output id="range-out">{lo},{hi}</output>

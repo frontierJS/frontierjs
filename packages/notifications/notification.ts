@@ -63,6 +63,13 @@ export abstract class Notification {
    */
   abstract via(recipient: Recipient): Transport[]
 
+  /**
+   * What makes two sends the same send — `invoice:${this.invoice.id}`. A
+   * retried notify() then writes no second in-app row for a recipient who
+   * already has one under this key and type. Absent, every send writes a row.
+   */
+  key?(recipient: Recipient): string
+
   // ─── Built-in transport formatters ────────────────────────────────────────
 
   /**

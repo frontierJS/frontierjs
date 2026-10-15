@@ -85,3 +85,19 @@ export function resolveServicesDir(opts: {
     ? { dir: found, source: 'probed', probed }
     : { dir: null,  source: 'none',   probed }
 }
+
+/**
+ * Where an app's routes are (`FJS-D626`): the `routes/` folder beside the
+ * services folder, wherever that was found or declared. An app with no
+ * services folder is probed from the entry the way services are.
+ */
+export function resolveRoutesDir(opts: {
+  servicesDir: string | null
+  entry?:      string | null | undefined
+}): string | null {
+  const { servicesDir, entry } = opts
+  const candidates = servicesDir
+    ? [resolve(dirname(servicesDir), 'routes')]
+    : entry ? [resolve(dirname(entry), 'routes'), resolve(dirname(entry), 'src', 'routes')] : []
+  return candidates.find(isDir) ?? null
+}

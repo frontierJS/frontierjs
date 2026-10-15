@@ -12241,7 +12241,7 @@ describe('generateTypeScript — emits the surface a real client has', () => {
     ]
     for (const m of methods) {
       expect(typeof (db.thing as any)[m]).toBe('function')   // the client really has it
-      expect(iface).toContain(`${m}(`)                       // …and the .d.ts says so
+      expect(iface).toMatch(new RegExp(`\\b${m}[(<]`))        // …and the .d.ts says so (a read is generic over its include and select)
     }
     db.$close()
   })
@@ -16413,8 +16413,8 @@ describe('generateTypeScript', () => {
 
   test('emits TableClient<TRow, TCreate, TUpdate, TWhere>', () => {
     const dts = generateTypeScript(schema)
-    expect(dts).toContain('export interface TableClient<TRow, TCreate, TUpdate, TWhere>')
-    expect(dts).toContain('findMany(')
+    expect(dts).toContain('export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}>')
+    expect(dts).toContain('findMany<')
     expect(dts).toContain('createMany(')
     expect(dts).toContain('findManyCursor(')
   })
@@ -16429,8 +16429,8 @@ describe('generateTypeScript', () => {
   test('emits LitestoneClient with all models', () => {
     const dts = generateTypeScript(schema)
     expect(dts).toContain('export interface LitestoneClient {')
-    expect(dts).toContain('readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere>')
-    expect(dts).toContain('readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere>')
+    expect(dts).toContain('readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations>')
+    expect(dts).toContain('readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations>')
     expect(dts).toContain('asSystem(): LitestoneClient')
     expect(dts).toContain('$tapQuery(')
   })
@@ -25219,6 +25219,24 @@ describe('@version — schema output', () => {
     expect(block('OrderCreate')).not.toContain('version')
     expect(block('OrderUpdate')).toContain('version: number')
     expect(block('OrderUpdate')).not.toContain('version?')
+  })
+})
+
+describe('@rank and @sequence — typegen', () => {
+  const { schema } = parse(`
+    model Thing {
+      id       Int     @id
+      scopeId  Int
+      rank     String  @rank(scope: scopeId)
+      number   Int     @sequence(scope: scopeId)
+    }`)
+
+  test('both are optional on Create, because litestone mints them (FJS-2767)', () => {
+    const ts = generateTypeScript(schema)
+    const block = ts.slice(ts.indexOf('interface ThingCreate {')).split('}')[0]
+    expect(block).toContain('rank?: string')
+    expect(block).toContain('number?: number')
+    expect(block).toContain('scopeId: number')
   })
 })
 

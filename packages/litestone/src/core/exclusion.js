@@ -51,12 +51,12 @@ export function createExclusionLedger(map, connFor) {
       if (!row) return
       for (const name of map.byModel[model] ?? []) {
         const member = map.scopes[name].members.find(m => m.model === model)
-        const key = row[member.keyField] ?? row[member.keyColumn]
-        if (key == null) continue                 // a row with no person excludes nothing
+        const key = member.keyFields.map((f, i) => row[f] ?? row[member.keyColumns[i]])
+        if (key.some(v => v == null)) continue    // a row with no person excludes nothing
         // An operator payload (`{ increment: 1 }`) is not the stored key, and an
         // object bound into a statement voids every binding in it (FJS-199).
         // The key the row held before is noted from the table instead.
-        if (typeof key === 'object') continue
+        if (key.some(v => typeof v === 'object')) continue
         dirty.push({ scope: name, key, model })
       }
     },
@@ -65,7 +65,7 @@ export function createExclusionLedger(map, connFor) {
       if (!dirty.length) return
       const touched = new Map()
       for (const { scope, key, model } of dirty) {
-        const sig = `${scope}\u0000${typeof key}\u0000${key}`
+        const sig = `${scope}\u0000${key.map(v => `${typeof v}:${v}`).join('\u0000')}`
         if (!touched.has(sig)) touched.set(sig, { scope, key, models: new Set() })
         touched.get(sig).models.add(model)
       }
@@ -76,14 +76,16 @@ export function createExclusionLedger(map, connFor) {
 }
 
 function gradeKey(scope, key, connFor, written) {
+  // One field's key is that value; a pair's is the pair.
+  const shown = key.length === 1 ? key[0] : key
   const spans = []
   for (const m of scope.members) {
     const conn = connFor(m.model)
     if (!conn) continue
     const id  = m.idColumn ? `"${m.idColumn}"` : 'rowid'
     const sql = `SELECT ${id} AS "id", "${m.columns[0]}" AS "a", "${m.columns[1]}" AS "b" ` +
-                `FROM "${m.table}" WHERE ${[`"${m.keyColumn}" = ?`, ...m.filters].join(' AND ')}`
-    for (const r of conn.query(sql).all(key)) {
+                `FROM "${m.table}" WHERE ${[...m.keyColumns.map(c => `"${c}" = ?`), ...m.filters].join(' AND ')}`
+    for (const r of conn.query(sql).all(...key)) {
       const start = toPoint(r.a, m.kinds[0], -Infinity)
       const end   = toPoint(r.b, m.kinds[1],  Infinity)
       // An end before its start covers nothing, and NaN compares false both
@@ -92,7 +94,7 @@ function gradeKey(scope, key, connFor, written) {
         throw new OverlapConflictError(m.model,
           `${m.model} ${r.id} has ${m.range[0]} ${JSON.stringify(r.a)} and ${m.range[1]} ${JSON.stringify(r.b)}, ` +
           `which is not a range — its end must not be before its start`,
-          { scope: scope.name, key, field: m.range[1] })
+          { scope: scope.name, key: shown, field: m.range[1] })
       if (start === end) continue                 // [a, a) is empty and overlaps nothing
       spans.push({ member: m, id: r.id, start, end })
     }
@@ -105,7 +107,7 @@ function gradeKey(scope, key, connFor, written) {
     if (open && s.start < open.end) {
       // Marked on the model this write touched, so a form puts it under its box.
       const [mine, other] = written.has(s.member.model) ? [s, open] : [open, s]
-      throw overlap(scope, key, mine, other)
+      throw overlap(scope, shown, mine, other)
     }
     if (!open || s.end > open.end) open = s
   }
@@ -119,13 +121,22 @@ function overlap(scope, key, mine, other) {
   return new OverlapConflictError(m.model,
     `${m.model} ${mine.id} overlaps ${o.model} ${other.id} on ${range(m)}` +
     (o.model === m.model ? '' : ` against ${range(o)}`) +
-    ` — @@exclude(${scope.name}) allows no two rows with the same ${scope.field} ${JSON.stringify(key)} to overlap`,
+    ` — @@exclude(${scope.name}) allows no two rows with the same ${scope.fields.join(' and ')} ${JSON.stringify(key)} to overlap`,
     { scope: scope.name, key, field: m.range[0], with: { model: o.model, id: other.id } })
 }
 
 function toPoint(v, kind, none) {
   if (v == null) return none
   if (kind === 'number' || typeof v === 'number') return Number(v)
+  if (kind === 'clock') return clockSeconds(v)
   if (kind === 'day') return Date.parse(`${String(v).slice(0, 10)}T00:00:00.000Z`)
   return Date.parse(v)
+}
+
+// A time of day as seconds past midnight. `@time` is HH:MM, or HH:MM:SS where
+// the column admits seconds; comparing the text would put '12:00' before
+// '12:00:00' and call equal points different.
+function clockSeconds(v) {
+  const m = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(v))
+  return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3] ?? 0) : NaN
 }

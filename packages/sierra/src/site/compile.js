@@ -27,15 +27,20 @@ function walk(dir) {
   })
 }
 
-/** The entry the binary runs — exported so a test can read what was embedded. */
-export function siteEntry(dir, files) {
+/**
+ * The entry the binary runs — exported so a test can read what was embedded.
+ *
+ * `functions` is the build's host-function entry. It is imported statically so
+ * the bundler embeds it; the binary reads `env` from the process it runs in.
+ */
+export function siteEntry(dir, files, functions) {
   const lines = files.map((f, i) => `import f${i} from ${JSON.stringify(f)} with { type: 'file' }`)
   const pairs = files.map((f, i) =>
     `  [${JSON.stringify(relative(dir, f).split(sep).join('/'))}, f${i}],`)
 
   return `${lines.join('\n')}
 import { serveSite } from ${JSON.stringify(SERVE)}
-
+${functions ? `import * as functions from ${JSON.stringify(functions)}\n` : ''}
 const files = new Map([
 ${pairs.join('\n')}
 ])
@@ -44,7 +49,7 @@ const at   = process.argv.indexOf('--port')
 const port = Number(at !== -1 ? process.argv[at + 1] : process.env.PORT ?? 8700)
 const host = process.env.HOST ?? '0.0.0.0'
 
-const server = await serveSite({ files, port, host })
+const server = await serveSite({ files, port, host${functions ? ', functions, env: process.env' : ''} })
 console.log('serving ' + files.size + ' files at ' + server.url)
 `
 }
@@ -57,9 +62,11 @@ console.log('serving ' + files.size + ' files at ' + server.url)
  * @param {string} opts.outfile  where the executable lands; must be outside `dir`
  * @param {string} [opts.target] a `bun build --target`, e.g. `bun-darwin-arm64`;
  *                               omitted builds for this machine
+ * @param {string} [opts.functions]  the entry the build wrote for the site's host
+ *                               functions (`.sierra/functions.js`), embedded
  * @returns {{ outfile: string, files: number }}
  */
-export function compileSite({ dir, outfile, target }) {
+export function compileSite({ dir, outfile, target, functions }) {
   const root = resolve(dir)
   const out  = resolve(outfile)
   // Inside the root, the next compile embeds the last binary in the new one.
@@ -82,7 +89,7 @@ export function compileSite({ dir, outfile, target }) {
   const work = mkdtempSync(join(tmpdir(), 'sierra-compile-'))
   try {
     const entry = join(work, 'entry.js')
-    writeFileSync(entry, siteEntry(root, files))
+    writeFileSync(entry, siteEntry(root, files, functions && resolve(functions)))
 
     const args = ['build', '--compile', entry, '--outfile', out]
     if (target) args.push('--target', target)

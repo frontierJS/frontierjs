@@ -51,6 +51,7 @@ import { parseFrontmatter }                from '@frontierjs/toolbelt/frontmatte
 export { findApps } from './runnables.js'
 import { runnables, findApps }    from './runnables.js'
 import { appSchemaViews, appSchemaModels, shippedSchemas } from './app-schema.js'
+import { binCommand }                 from './snapshots.js'
 import { DRIVES_FILE, readProofs, resolveRun } from './proofs.js'
 import { readPreambles, resolveNeeds } from './preflight.js'
 import { readCourse }             from './tutorial.js'
@@ -151,6 +152,8 @@ export const RULES = [
     title: "a copied model still agrees with the package that ships it" },
   { id: 'schema-in-memory',     scope: 'app',  severity: 'warn',  invariant: null,
     title: 'every model the app runs is one the committed artefacts describe' },
+  { id: 'schema-runs',          scope: 'app',  severity: 'error', invariant: null,
+    title: 'a schema litestone can open: the file parses and createClient builds over it' },
   { id: 'transition-methods',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a declared move and the code that makes it still name each other' },
   { id: 'required-system-unfilled', scope: 'app', severity: 'warn', invariant: null,
@@ -380,11 +383,15 @@ export const BASELINE_FILE = 'check-baseline.json'
 export function readBaseline(root, { read = readFileSync } = {}) {
   const path = join(root, BASELINE_FILE)
   let raw
-  try { raw = JSON.parse(read(path, 'utf8')) } catch { return { path, present: false, counts: {}, allow: {} } }
+  try { raw = JSON.parse(read(path, 'utf8')) } catch { return { path, present: false, counts: {}, allow: {}, notes: {} } }
 
-  const counts = {}
+  // `//<rule>` is the reason a rule's ceiling stands; `writeBaseline` carries it.
+  const counts = {}, notes = {}
   for (const [key, value] of Object.entries(raw)) {
-    if (key.startsWith('//')) continue                 // a comment, the way JSON allows one
+    if (key.startsWith('//')) {                        // a comment, the way JSON allows one
+      if (key.length > 2 && typeof value === 'string') notes[key.slice(2)] = value
+      continue
+    }
     if (Number.isFinite(value)) counts[key] = value
   }
 
@@ -395,7 +402,7 @@ export function readBaseline(root, { read = readFileSync } = {}) {
     for (const [key, why] of Object.entries(raw.allow))
       if (typeof why === 'string' && why.trim()) allow[key] = why
 
-  return { path, present: true, counts, allow }
+  return { path, present: true, counts, allow, notes }
 }
 
 /**
@@ -466,12 +473,18 @@ export function writeBaseline(root, { counts, ran, baseline, mode = 'lower', wri
           '`fli check --update` locks in an improvement and cannot raise; `fli check --adopt` records ' +
           'what is there, which is the verb for taking debt on. The findings still print either way.',
   }
-  const body = Object.fromEntries(Object.entries(next).sort(([a], [b]) => a.localeCompare(b)))
+  // A reason sits directly above its rule and goes when the debt does: a reason
+  // for a ceiling that no longer exists would explain nothing.
+  const notes = baseline.notes ?? {}
+  const sorted = Object.entries(next).sort(([a], [b]) => a.localeCompare(b))
+  const counted = Object.fromEntries(sorted)
+  const body = Object.fromEntries(sorted
+    .flatMap(([id, count]) => notes[id] ? [[`//${id}`, notes[id]], [id, count]] : [[id, count]]))
   // The ratchet rewrites this file, so what it does not own is carried through:
   // an `--adopt` that dropped the allowances would turn each back into a finding.
   const allow = baseline.allow && Object.keys(baseline.allow).length ? { allow: baseline.allow } : {}
   write(join(root, BASELINE_FILE), `${JSON.stringify({ ...header, ...body, ...allow }, null, 2)}\n`)
-  return body
+  return counted
 }
 
 // ─── applyFixes ───────────────────────────────────────────────────────────────
@@ -3353,6 +3366,43 @@ const CHECKS = {
     return { findings }
   },
 
+  // ── schema-runs ────────────────────────────────────────────────────────────
+  //
+  // Every other rule reads the schema as text, so a schema litestone refuses to
+  // open passes them all: `@hashed @guarded` on one column, a `@@gate` ladder
+  // out of order, a `@@unique` over an optional column. `bun run check` then
+  // goes green, `migrate create` may even write the migration, and the app
+  // throws at boot (`FJS-1242`).
+  //
+  // Litestone owns the question. `litestone advise` loads the file the way the
+  // app does and builds the client over memory, so it needs no database and
+  // answers the same in CI, where `app.db` does not exist — `litestone validate`
+  // reads STORED rows and answers a different question. This rule runs it and
+  // reports a nonzero exit; it re-implements nothing.
+  'schema-runs': ({ root }) => {
+    const schema = schemaFile(root)
+    if (!schema) return { skipped: 'no db/schema.lite' }
+
+    const command = binCommand('litestone', root)
+    if (!command) return { skipped: '@frontierjs/litestone is not installed where the app can reach it' }
+
+    const run = spawnSync(`${command} advise --schema ${JSON.stringify(schema.path)} --json`, {
+      cwd: root, shell: true, encoding: 'utf8', timeout: 120_000,
+    })
+    if (run.status === 0) return { findings: [] }
+
+    // The refusal is a block of prose on stderr, wrapped in the CLI's own
+    // decoration; strip the escape codes and keep the words.
+    const said = `${run.stderr ?? ''}${run.stdout ?? ''}`
+      .replace(/\x1b\[[0-9;]*m/g, '').split('\n').map(l => l.trim())
+      .filter(l => l && !/^\(run with --debug/.test(l)).join(' ')
+    return { findings: [{
+      file: schema.path,
+      message: `litestone refuses this schema: ${said || `exit ${run.status}`} — the app will not boot ` +
+               `over it, and every other rule here read it as text. \`fli advise\` prints the same refusal.`,
+    }] }
+  },
+
   // ── schema-in-memory ───────────────────────────────────────────────────────
   //
   // Every schema tool takes a PATH. An app that assembles its schema in memory —
@@ -4123,6 +4173,17 @@ function srcLayoutFindings(root) {
     warn(rel(root, file), `a raw route outside api/src/routes/. \`app.get\` and \`app.post\` live in ` +
       `api/src/routes/, where a file's path is the URL it answers and an outsider can read a webhook's ` +
       `address off the tree (FJS-D626).`)
+  }
+
+  // A loader globs its own folder, so a loaded segment anywhere else registers nothing
+  // and nothing says so (FJS-D708).
+  for (const file of apiJs) {
+    for (const [kind, loaded] of Object.entries(LOADED_SUFFIX)) {
+      if (!loaded.test(file) || inside(join(apiSrc, kind), file)) continue
+      warn(rel(root, file), `a ${kind.replace(/s$/, '')} file outside api/src/${kind}/. The loader reads only ` +
+        `${kind}/, so this file is never loaded; move it there, or drop the .${kind.replace(/s$/, '')} segment ` +
+        `if it is not one (FJS-D708).`)
+    }
   }
 
   // A helper in a loader's folder is private to the files beside it (FJS-D625).

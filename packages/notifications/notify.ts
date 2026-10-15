@@ -71,8 +71,8 @@ async function materialize(message: unknown): Promise<unknown> {
  *      - a transport has no to*() method (NotificationTransportNotImplementedError)
  *      - a transport has no registered driver (NotificationDriverNotFoundError)
  *      - the recipient cannot be addressed on it (NotificationRecipientError)
- *   3. Execute all transports in parallel via Promise.allSettled
- *      — transport isolation: a failed email does not block inApp delivery
+ *   3. Deliver inApp first; if it fails, send nothing else. Then the rest in
+ *      parallel via Promise.allSettled — a failed email does not block the record
  *   4. Collect failures, throw NotificationDeliveryError if any failed
  *
  * The formatted message is carried from step 2 into step 3. It used to be
@@ -90,6 +90,16 @@ export async function notify(
   const notificationType = notification.notificationType
 
   // ── Step 1: format once, validate eagerly — fail before any delivery ─────
+  // An empty or non-string key would dedupe every send of this type into its
+  // first row, so it is refused rather than written.
+  const key = notification.key?.(recipient)
+  if (key !== undefined && (typeof key !== 'string' || key === '')) {
+    throw new Error(
+      `[notifications] "${notificationType}" key() answered ${JSON.stringify(key)}; ` +
+      'a delivery key is a non-empty string naming what makes two sends the same — `order:${order.id}`.'
+    )
+  }
+
   const messages = new Map<string, unknown>()
   for (const transport of transports) {
     const message = await materialize(notification.getMessageFor(transport, recipient))
@@ -101,23 +111,51 @@ export async function notify(
       throw new NotificationDriverNotFoundError(transport, notificationType)
     }
 
+    // The built-in email path sends through app.mail. Found at delivery, the
+    // in-app row is already written and the caller's retry writes another.
+    if (transport === 'email' && !state.drivers.has('email') && !app.mail) {
+      throw new NotificationDriverNotFoundError(
+        transport, notificationType,
+        'but app.mail is not set and no driver is registered under transports.email. ' +
+        'Configure mailerPlugin(...) before notificationsPlugin(...), or register your own driver.'
+      )
+    }
+
     assertAddressable(transport, recipient, message, notificationType, state)
     messages.set(transport, message)
   }
 
-  // ── Step 2: parallel delivery ─────────────────────────────────────────────
-  const results = await Promise.allSettled(
-    transports.map(transport =>
-      deliverTransport(transport, recipient, notification, messages.get(transport), app, state)
-    )
-  )
-
-  // ── Step 3: collect failures ──────────────────────────────────────────────
+  // ── Step 2: the record first, then the rest in parallel ───────────────────
+  // The in-app record is what the others are about: an email sent beside a
+  // create that then fails is mail about a notification that does not exist,
+  // and the caller's retry sends it again. So inApp commits before anything
+  // else leaves, and its failure holds the rest back. The other direction
+  // stays isolated -- a failed email never blocks the record.
   const failures: TransportError[] = []
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i]
-    if (result.status === 'rejected') {
-      failures.push({ transport: transports[i], error: result.reason })
+  const record = transports.includes('inApp') ? 'inApp' : undefined
+  const deliver = (transport: string) =>
+    deliverTransport(transport, recipient, notification, messages.get(transport), key, app, state)
+
+  let held = false
+  if (record) {
+    try {
+      await deliver(record)
+    } catch (error) {
+      failures.push({ transport: record, error })
+      held = true
+    }
+  }
+
+  if (!held) {
+    const rest = transports.filter(transport => transport !== record)
+    const results = await Promise.allSettled(rest.map(deliver))
+
+    // ── Step 3: collect failures ────────────────────────────────────────────
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]
+      if (result.status === 'rejected') {
+        failures.push({ transport: rest[i], error: result.reason })
+      }
     }
   }
 
@@ -187,6 +225,7 @@ async function deliverTransport(
   recipient:    Recipient,
   notification: Notification,
   message:      unknown,
+  key:          string | undefined,
   app:          App,
   state:        NotificationsState,
 ): Promise<void> {
@@ -203,7 +242,7 @@ async function deliverTransport(
 
   switch (transport) {
     case 'inApp':
-      await sendInApp(recipient, notification, message as InAppMessage, app, state.db)
+      await sendInApp(recipient, notification, message as InAppMessage, app, state.db, key)
       break
 
     case 'email':

@@ -115,4 +115,20 @@ export async function run(t) {
     'and its handler has not run')
   await t.evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click(); return true;`)
   await t.eventually(ran, 'delete|delete|plain|submit|off', 'confirming runs it, once')
+
+  /* ── FJS-2611: two providers, and an element replaced while asking ──────── */
+
+  await t.mount('confirm-attribute', { second: true })
+  await t.clickAt('#guarded')
+  await t.eventually(`!!${panel}`, true, 'with two providers the question is asked')
+  t.is(await t.evaluate(`return document.querySelectorAll('[role=dialog][aria-modal=false]').length;`), 1,
+    'once')
+  await t.clickAt('[role=dialog] .btn.danger')
+  await t.eventually(ran, 'delete', 'the first Confirm runs the handler')
+  await t.eventually(`!!${panel}`, false, 'and nothing asks a second time')
+
+  await t.clickAt('#guarded')
+  await t.eventually(`!!${panel}`, true, 'asked again')
+  await t.evaluate(`const el = document.querySelector('#guarded'); el.replaceWith(el.cloneNode(true)); return true;`)
+  await t.eventually(`!!${panel}`, false, 'a panel whose element was replaced goes away rather than asking for nothing')
 }

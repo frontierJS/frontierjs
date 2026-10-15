@@ -330,6 +330,64 @@ input[type="file"]:disabled::file-selector-button {
   z-index:  1;
 }
 
+/*
+ * ── Segmented — a choose-one row welded into one control ────────
+ *
+ *   <div class="field-row segmented" role="radiogroup" aria-label="Aspect">
+ *     <label><input type="radio" name="aspect" value="1:1" checked>1:1</label>
+ *     <label><input type="radio" name="aspect" value="4:3">4:3</label>
+ *   </div>
+ *
+ * A treatment of the radio group, not a second control: the inputs stay
+ * real radios, so the arrow keys, the single tab stop and the form value are
+ * the platform's. The input is stretched invisibly over its label (a radio is
+ * a replaced element, so inset alone does not size it), which is what keeps
+ * it focusable and clickable while the label is what is drawn. The selected
+ * segment is read off :checked, the same as the radio card, so the look and
+ * the state cannot drift apart. It is the primary tint: --bg-mix is
+ * element-scoped, so a tone on the row never reaches its labels.
+ */
+.field-row.segmented > label {
+  position:        relative;
+  flex:            1 1 auto;
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  padding-block:   var(--space-sm);
+  padding-inline:  var(--space-md);
+  border:          var(--border-width) solid var(--rule-strong);
+  background:      var(--surface);
+  color:           var(--ink);
+  font-size:       var(--text-sm);
+  white-space:     nowrap;
+  cursor:          pointer;
+}
+.field-row.segmented > label > input {
+  position:    absolute;
+  inset:       0;
+  inline-size: 100%;
+  block-size:  100%;
+  margin:      0;
+  opacity:     0;
+  cursor:   inherit;
+}
+.field-row.segmented > label:has(input:checked) {
+  --bg-mix:     var(--color-primary);
+  border-color: var(--tint-rule);
+  background:   var(--tint-surface);
+  color:        var(--tint-ink);
+  z-index:      1;
+}
+.field-row.segmented > label:has(input:focus-visible) {
+  outline:        var(--ring-width) var(--ring-style) var(--ring-color, var(--ring, var(--color-primary)));
+  outline-offset: var(--ring-offset);
+  z-index:        1;
+}
+.field-row.segmented > label:has(input:disabled) {
+  opacity: 0.55;
+  cursor:  not-allowed;
+}
+
 .field-addon {
   display:     inline-flex;
   align-items: center;

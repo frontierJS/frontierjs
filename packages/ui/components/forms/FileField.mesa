@@ -59,6 +59,9 @@
   export let accept   = undefined
   export let multiple = undefined
 
+  // Undo and Remove are buttons, which a form hears as no change.
+  const form = $context.form
+
   // Stated wins, then the schema, then everything. `@accept` reaches here
   // through `x-litestone-accept`, so the dialog offers the list the Data
   // boundary will admit rather than a superset of it.
@@ -90,8 +93,8 @@
 
   // Back to what the server has. `null` would CLEAR the column, which is a
   // different action and is only offered where the column is optional.
-  function keepExisting() { onvalue?.(undefined) }
-  function clear()        { onvalue?.(null) }
+  function keepExisting() { onvalue?.(undefined); form?.changed?.(name) }
+  function clear()        { onvalue?.(null); form?.changed?.(name) }
 
   $: canClear = field?.required !== true && (existing || picked)
 </script>

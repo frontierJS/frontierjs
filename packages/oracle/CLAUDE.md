@@ -24,8 +24,10 @@ src/types.js     the words an answer types a field with, and the column each
                  answer's currency>)`
 src/answer.js    checkAnswer(answer) → { ok, refusals, findings, plan }. RULES
                  is the list of what it refuses, and brief.js renders it
-src/emit.js      emit(answer, { scaffold }) → { ok, text, models, … }. Grades
-                 first and writes nothing from a refused answer
+src/emit.js      emit(answer, { scaffold }) → { ok, text, models, document,
+                 onRegistered, … }. Grades first and writes nothing from a
+                 refused answer. onRegistered is the signup hook for a
+                 container `system` creates (FJS-D886), null when none needs one
 src/brief.js     brief() → markdown for a model: the contract, the types, the
                  actors, RULES and the catalog, all rendered from the data
 mockup/          the old React recognizer. Not a workspace member, not ported,

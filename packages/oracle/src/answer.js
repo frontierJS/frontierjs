@@ -70,7 +70,7 @@ const CUSTOM = 'customFields'
 const CURRENCY = 'currency'
 
 const IDENT = /^[a-z][a-zA-Z0-9]*$/
-const an = (name) => `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name}`
+export const an = (name) => `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name}`
 const VALUE = /^[a-z][a-z0-9_]*$/
 const GUESS = /\binferred\b|\bnot (explicitly )?stated\b/i
 
@@ -101,6 +101,7 @@ export const RULES = {
   lifecycle:   `A lifecycle has two or more states, each move names states it declares, every state is reachable from the first, and move names are camelCase, unique, and none of ${MOVE_RESERVED.join(', ')}.`,
   access:      'Every entity names who reaches a row: an actor link to User, `via` a required link to a parent, a `members` entity, or `public`/`shared` with a reason.',
   members:     'A `members` entity has a required link back to the container and a link to User.',
+  roles:       'A container\'s `roles` is `{ update: [...] }` beside `members`, naming values of the membership\'s `role` enum: the members holding one rename the container and decide who is in it. A container without it leaves its membership to the application.',
   pattern:     'A cited pattern is one the catalog lists.',
   rename:      'A field says `was` only when it is the same column under a new name: the camelCase name the app has now, which no column of the entity holds under the new schema and no other field claims. It names a field you added, never a catalog field.',
   currency:    '`currency` is one ISO 4217 code, or a list of them when each row with money names its own; the first is the default.',
@@ -322,7 +323,7 @@ export function checkAnswer(answer) {
     const a = m.access
     const at = m.name
     if (typeof a !== 'object' || Array.isArray(a)) { refuse('access', at, '`access` is an object.'); continue }
-    for (const key of Object.keys(a)) if (!['via', 'members', 'public', 'publicWhen', 'shared', 'system', 'why'].includes(key)) refuse('access', at, `\`access.${key}\` is not an access word. The words are via, members, public, publicWhen, shared, system, why.`)
+    for (const key of Object.keys(a)) if (!['via', 'members', 'roles', 'public', 'publicWhen', 'shared', 'system', 'why'].includes(key)) refuse('access', at, `\`access.${key}\` is not an access word. The words are via, members, roles, public, publicWhen, shared, system, why.`)
     if (a.via != null) {
       const l = m.links.find(x => x.name === a.via)
       if (!l || l.to === 'User') refuse('access', at, `\`via: ${a.via}\` names a link to another entity of this answer.`)
@@ -335,11 +336,12 @@ export function checkAnswer(answer) {
       if (!mm || !back || !user) refuse('members', at, `\`members: ${a.members}\` names an entity with a required link to ${m.name} and a link to User.`)
       else if (mm.container) refuse('members', at, `${a.members} is already the membership of ${mm.container.model}.`)
       else {
-        m.members = { model: mm.name, link: back.name, user: user.name }
-        mm.container = { model: m.name, link: back.name, user: user.name }
+        const admins = readAdmins(a.roles, mm, at, refuse)
+        m.members = { model: mm.name, link: back.name, user: user.name, admins }
+        mm.container = { model: m.name, link: back.name, user: user.name, admins }
         if (mm.access.public || mm.access.shared || mm.access.members) refuse('members', mm.name, `${mm.name} is the membership of ${m.name}, which decides who reads and changes it; it declares no public, shared or members of its own.`)
       }
-    }
+    } else if (a.roles != null) refuse('roles', at, '`roles` names the membership roles that administer a container, so it sits beside `members`.')
     const pub = a.public == null ? [] : a.public
     if (!Array.isArray(pub) || pub.some(op => !['read', 'create'].includes(op))) refuse('access', at, '`public` is a list of `read` and `create`.')
     if (a.shared != null && (typeof a.shared !== 'string' || !a.shared.trim())) refuse('access', at, '`shared` is the reason every signed-in user reads every row.')
@@ -399,6 +401,7 @@ export function checkAnswer(answer) {
       find('access', m.name, `Every signed-in user reads every ${m.name}, and ${who.size === 1 && who.has('an administrator') ? 'only ' : ''}${clauses.join(', and ')}: ${a.shared}`)
     }
     if (a.system) find('access', m.name, `Only the application writes ${an(m.name)}.`)
+    if (m.members && !m.members.admins) find('access', m.name, `No member administers ${an(m.name)}: only the application adds, removes or re-roles ${m.members.model} rows. Say \`roles: { update: [...] }\` to name the roles that do.`)
   }
 
   const ok = refusals.length === 0
@@ -421,18 +424,36 @@ export function checkAnswer(answer) {
  *   fields: import('./catalog.js').Field[],
  *   links: { name: string, to: string, actor?: string, required: boolean, why?: string }[],
  *   lifecycle: import('./catalog.js').Lifecycle|null,
- *   access: { via?: string, members?: string, public?: string[], publicWhen?: Record<string, any>, shared?: string, system?: boolean, why?: string },
+ *   access: { via?: string, members?: string, roles?: { update: string[] }, public?: string[], publicWhen?: Record<string, any>, shared?: string, system?: boolean, why?: string },
  *   patterns: string[],
  *   softDelete: boolean, fts: string[], extensible: string|null, currency: string|null,
  *   renames: Operation[],
- *   members: { model: string, link: string, user: string }|null,
- *   container: { model: string, link: string, user: string }|null,
+ *   members: { model: string, link: string, user: string, admins: string[]|null }|null,
+ *   container: { model: string, link: string, user: string, admins: string[]|null }|null,
  * }} Model
  * A row-keeping operation `litestone migrate create` takes (`FJS-D603`). Only
  * `rename` is written so far; `backfill` and `split` join this union.
  * @typedef {{ op: 'rename', model: string, from: string, to: string }} Operation
  * @typedef {{ summary: string, currency: string[], actors: any[], open: string[], models: Model[], operations: Operation[], findings: Finding[] }} Plan
  */
+
+// The roles whose members administer a container, or null when the answer
+// names none. Null leaves every membership write to the application: a member
+// test with no role in it let any member add, remove and re-role anyone,
+// themselves included (FJS-1799).
+function readAdmins(roles, mm, at, refuse) {
+  if (roles == null) return null
+  const role = mm.fields.find(f => f.name === 'role' && f.type === 'enum')
+  if (typeof roles !== 'object' || Array.isArray(roles) || Object.keys(roles).some(k => k !== 'update')) refuse('roles', at, '`roles` is `{ update: [...] }`: the membership roles that rename the container and decide who is in it.')
+  else if (!Array.isArray(roles.update) || !roles.update.length) refuse('roles', at, '`roles.update` lists one or more membership roles.')
+  else if (!role) refuse('roles', at, `\`roles\` names values of ${mm.name}'s \`role\` enum, and ${mm.name} has no \`role\` enum field.`)
+  else {
+    const unknown = roles.update.filter(v => !role.values?.includes(v))
+    if (unknown.length) refuse('roles', at, `\`roles.update\` names ${unknown.join(', ')}, which ${mm.name}'s \`role\` is not: it is one of ${role.values.join(', ')}.`)
+    else return [...new Set(roles.update)]
+  }
+  return null
+}
 
 function readLifecycle(raw, at, refuse) {
   if (typeof raw !== 'object' || Array.isArray(raw)) { refuse('lifecycle', at, 'A lifecycle is `"catalog"` or `{ field, states, moves }`.'); return null }

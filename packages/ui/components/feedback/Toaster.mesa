@@ -20,6 +20,7 @@
 
   import Toast from './Toast.mesa'
   import { toasts } from '../../stores/toastStore.js'
+  import { overlayHost } from '../../utils.js'
 
   export let position = 'bottom-right'  // 'top-right'|'top-left'|'bottom-right'|'bottom-left'|'top-center'|'bottom-center'
   export let max      = 5               // max simultaneous toasts shown
@@ -50,9 +51,14 @@
   function handleDismiss(id) {
     toasts.remove(id)
   }
+
+  // The stack is mounted once and outlives every modal, so the portal reads
+  // `visibleItems` to ask `overlayHost()` again whenever the stack changes: a
+  // toast raised with a modal open lands in it, where its action can be
+  // pressed, and the next one after the modal closes comes back to <body>.
 </script>
 
-<mesa:portal to={document.body}>
+<mesa:portal to={visibleItems && overlayHost()}>
   <div
     class="toast-stack"
     style:top={pos.top}

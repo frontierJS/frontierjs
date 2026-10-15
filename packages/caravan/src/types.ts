@@ -126,6 +126,25 @@ export interface JobContext<T = unknown> extends Job<T> {
 
 export type JobHandler<T = unknown> = (ctx: JobContext<T>) => Promise<void> | void
 
+/**
+ * The members of `T` JSON would hand back as something else, `never` when there
+ * are none (the type half of `FJS-D480`; dispatch refuses the same values at run
+ * time). It grades MEMBERS rather than constraining `T` to a recursive JSON
+ * value, because that constraint refuses every interface — an interface has no
+ * index signature.
+ */
+export type NotJson<T> =
+  0 extends 1 & T ? never :
+  T extends Date | RegExp | Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any> | ((...a: any[]) => any) | bigint | symbol ? T :
+  T extends readonly (infer U)[] ? NotJson<U> :
+  T extends object ? { [K in keyof T]-?: NotJson<T[K]> }[keyof T] :
+  never
+
+/** `unknown` when `T` is JSON-carryable, otherwise a shape no handler satisfies, naming the offending members. */
+export type PayloadGuard<T> = [NotJson<T>] extends [never]
+  ? unknown
+  : { 'payload is not JSON-carryable, so the handler would receive a different value': NotJson<T> }
+
 export interface HandlerOptions {
   /** Which queue this handler listens on. Default: 'default' */
   queue?:       string

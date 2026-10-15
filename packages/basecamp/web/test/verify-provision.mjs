@@ -121,7 +121,10 @@ mkdirSync(join(ALPHA, 'web', 'config'), { recursive: true })
 writeFileSync(join(ALPHA, 'web', 'index.html'), '<h1>alpha</h1>\n<script type="module" src="./main.js"></script>\n')
 // …which Freeze builds with Vite, and whose bundle must carry VITE_API_URL.
 writeFileSync(join(ALPHA, 'web', 'main.js'), 'document.body.dataset.api = import.meta.env.VITE_API_URL\n')
-writeFileSync(join(ALPHA, 'web', 'config', 'vite.config.js'), 'export default {}\n')
+// …and reads FLI_PORT_FE the way a scaffolded config does: `fli dev` leaves an
+// app that ignores it at slot 0 and refuses when 8000 is held, so Start app put
+// no port on the card on any machine with a dev server up.
+writeFileSync(join(ALPHA, 'web', 'config', 'vite.config.js'), 'export default { server: { port: Number(process.env.FLI_PORT_FE ?? 8000) } }\n')
 mkdirSync(join(ALPHA, 'db'), { recursive: true })
 writeFileSync(join(ALPHA, 'db', 'schema.lite'), 'model Lead { id Int @id }\n')
 // A stand-in for the checkout's own `fli done`, which the workbench runs after

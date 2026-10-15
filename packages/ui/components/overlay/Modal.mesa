@@ -66,6 +66,12 @@
   // the one place the two states could drift, so it is wired explicitly.
   function handleClose() {
     if (open) {
+      // Chrome stops firing a cancelable `cancel` on the second Escape in a
+      // row, so preventDefault alone lets a non-dismissible dialog close.
+      if (!dismissible) {
+        dialogEl.showModal()
+        return
+      }
       open = false
       onclose?.()
     }
@@ -76,10 +82,17 @@
   }
 
   // Clicking the backdrop registers on the dialog itself, since the backdrop
-  // is a pseudo-element and cannot be a separate target.
+  // is a pseudo-element and cannot be a separate target. A drag that starts in
+  // a field and is released over the backdrop also clicks the dialog, so the
+  // press has to have begun there too.
+  let pressedBackdrop = false
+  function handleMouseDown(e) {
+    pressedBackdrop = e.target === dialogEl
+  }
   function handleClick(e) {
     if (!dismissible) return
-    if (e.target === dialogEl) dialogEl.close()
+    if (e.target === dialogEl && pressedBackdrop) dialogEl.close()
+    pressedBackdrop = false
   }
 
   function close() {
@@ -96,6 +109,7 @@
   {...$attributes}
   on:close={handleClose}
   on:cancel={handleCancel}
+  on:mousedown={handleMouseDown}
   on:click={handleClick}
 >
   <div class="surface-header">

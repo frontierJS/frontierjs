@@ -39,6 +39,20 @@ describe('an Int past 2^53 in a column that is not @big', () => {
     const db = (await createClient({ parsed: parse('model Num { id Int @id @default(autoincrement())  n Int }'), db: ':memory:' })).asSystem()
     await expect(db.num.create({ data: { n: 2 ** 60 } })).rejects.toThrow()
   })
+
+  // SQLite stores NaN as NULL and reads +-Infinity back as Infinity, which
+  // JSON.stringify turns into null; a Float is refused the values it cannot
+  // keep (`FJS-2037`).
+  test('NaN and +-Infinity are refused for a Float', async () => {
+    const db = (await createClient({ parsed: parse('model Num { id Int @id @default(autoincrement())  x Float  y Float? }'), db: ':memory:' })).asSystem()
+    for (const bad of [NaN, Infinity, -Infinity]) {
+      await expect(db.num.create({ data: { x: bad } })).rejects.toThrow()
+      await expect(db.num.create({ data: { x: 1, y: bad } })).rejects.toThrow()
+    }
+    const ok = await db.num.create({ data: { x: 1.5, y: null } })
+    await expect(db.num.update({ where: { id: ok.id }, data: { x: NaN } })).rejects.toThrow()
+    expect((await db.num.findFirst()).x).toBe(1.5)
+  })
 })
 
 describe('the optional serialize()', () => {

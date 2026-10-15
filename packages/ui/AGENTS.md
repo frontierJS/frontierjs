@@ -75,7 +75,8 @@ the package has no root entry.
 | source text edited in its own syntax — a template, a query, a snippet | `@frontierjs/ui/components/forms/CodeInput.mesa` — `language` is glow's, `numbered` draws a gutter. It is a real `<textarea>` over a highlighted `<pre>`, so style the box through `@frontierjs/css`'s `--code-*` variables and never by restating the text metrics on one layer |
 | a `File` column · a free-standing dropzone | `@frontierjs/ui/components/forms/FileField.mesa` · `@frontierjs/ui/components/forms/FileUpload.mesa` |
 | a list reordered by dragging, or items dragged between lists — a board, a queue | `dndzone` from `@frontierjs/ui/dnd`, an attachment rather than a component: `<ul {@attach dndzone(() => ({ items, type, onconsider, onfinalize }))}>`. Pass a GETTER — an object literal rebuilds the zone on every write and ends the drag. Every element child of the zone is one item in `items` order, so an empty-state row goes outside it. Persist from `onfinalize` only |
-| a handle, a splitter, a crop box, a pan, a signature pad — anything that follows the pointer from press to release | `drag` from `@frontierjs/ui/drag`: `<div {@attach drag(() => ({ start, move, end }))}>`. `move(e, from, { x, y })` gets the distance from the press, and `end(e, from, { cancelled })` fires on a release AND on a `pointercancel`, which a hand-written drag misses, so a touch scroll leaves it stuck mid-drag. A getter, as `dndzone` takes |
+| a drawn signature — a client accepting a quote with a finger, a pen or the mouse; shown back read-only | `@frontierjs/ui/components/forms/SignaturePad.mesa` (`bind:value`, `{ paths, width, height }` or `null`, each stroke an SVG path in the pad's own pixels) · `@frontierjs/ui/components/display/SignatureView.mesa` draws that value back as an SVG. A Json column holds it as it is. The typed name is the page's field beside it, and is what a person who cannot use a pointer signs with |
+| a handle, a splitter, a crop box, a pan — anything that follows the pointer from press to release | `drag` from `@frontierjs/ui/drag`: `<div {@attach drag(() => ({ start, move, end }))}>`. `move(e, from, { x, y })` gets the distance from the press, and `end(e, from, { cancelled })` fires on a release AND on a `pointercancel`, which a hand-written drag misses, so a touch scroll leaves it stuck mid-drag. A getter, as `dndzone` takes |
 | a file the person saves — a CSV built on the page, an export from a raw route | `download(blob, filename)` from `@frontierjs/ui/utils`. An authenticated export is `download(await (await client.fetch(path)).blob(), name)`: the bearer rides `client.fetch`, never a hand-built `Authorization` header |
 | a label, hint and error around a control of your own | `@frontierjs/ui/components/forms/Field.mesa`, or `@frontierjs/ui/components/forms/Label.mesa` alone |
 | a group that disables as one | `@frontierjs/ui/components/forms/Fieldset.mesa` |
@@ -177,8 +178,9 @@ The callbacks disagree:
 | `Input` · `Textarea` · `CodeInput` · `Select` | `oninput` (`onchange` on commit) | the DOM **event** |
 | `Checkbox` · `Switch` | `onchange` | `checked` |
 | `RadioGroup` · `Combobox` · `MultiSelect` | `onchange` | the value (an array for `multiple`) |
-| `NumberInput` · `Slider` | `onchange` | `{ value }`, or `{ start, end }` for a range |
+| `NumberInput` · `Slider` | `oninput` (`onchange` at the end of the gesture — release, key, Enter, blur) | `{ value }`, or `{ start, end }` for a range |
 | `Thresholds` | `onchange` | the cuts, ascending — an array, also written back through `bind:values` |
+| `SignaturePad` | `onchange` | `{ paths, width, height }` once per stroke, `null` after Clear — also written back through `bind:value` |
 | `DateTimeInput` · `JsonInput` · `FileField` | `onvalue` | an ISO instant · a parsed document · a `File`, `null` to clear, `undefined` to keep |
 | `MoneyInput` | `onvalue` | minor units, `null` for a blank box — nothing while the text is not an amount |
 | `FileUpload` | `onchange` | `File[]` |

@@ -251,11 +251,15 @@ async function cmdSite() {
   if (!existsSync(dir))
     fatal(`No build at ${rel(dir)} — run \`vite build -c config/vite.config.js\` first.`)
 
+  // The entry the last build wrote; a function a host would run is run here.
+  const entry = hasFunctions ? resolve(FUNCTIONS_ENTRY) : undefined
+  if (entry && !existsSync(entry)) fatal(`No ${rel(entry)} — the build writes it; run \`vite build\` first.`)
+
   if (flag('compile')) {
     const { compileSite } = await import('../site/compile.js')
     const outfile = getFlag('out') ?? 'bin/site'
     let made
-    try   { made = compileSite({ dir, outfile, target: getFlag('target') ?? undefined }) }
+    try   { made = compileSite({ dir, outfile, target: getFlag('target') ?? undefined, functions: entry }) }
     catch (err) { fatal(err.message) }
     const bin = rel(made.outfile).startsWith('..') ? made.outfile : `./${rel(made.outfile)}`
     console.log(`\n  ·  ${made.files} files from ${rel(dir)} → ${bin}`)
@@ -265,9 +269,6 @@ async function cmdSite() {
 
   const { serveSite } = await import('../site/serve.js')
   const port   = Number(getFlag('port') ?? 0) || 0
-  // The entry the last build wrote; a function a host would run is run here.
-  const entry  = hasFunctions ? resolve(FUNCTIONS_ENTRY) : undefined
-  if (entry && !existsSync(entry)) fatal(`No ${rel(entry)} — the build writes it; run \`vite build\` first.`)
   const server = await serveSite({ dir, port, functions: entry, env: process.env })
   console.log(`\n  ·  serving ${rel(dir)} at ${server.url}\n`)
 }

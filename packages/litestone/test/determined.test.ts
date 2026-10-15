@@ -54,3 +54,39 @@ describe('x-determined', () => {
     expect(def['x-determined']).toBeUndefined()
   })
 })
+
+describe('x-pick-where', () => {
+  // FJS-1672
+  const withSchedule = async (body: string) => {
+    const db = await createClient({ db: ':memory:', schema: HEAD + `
+model Schedule {
+  id     String @id
+  hostId String
+  host   User @relation(fields: [hostId], references: [id])
+}
+model Booking {
+  id         String @id
+  scheduleId String
+  schedule   Schedule @relation(fields: [scheduleId], references: [id])
+  ${body}
+}` })
+    return (generateJsonSchema(db.$schema) as any).$defs.Booking
+  }
+
+  test('a one-hop == auth() conjunct names the rows the picker may offer', async () => {
+    const def = await withSchedule(`@@allow('create', schedule.hostId == auth().id)`)
+    expect(def['x-pick-where']).toEqual({ scheduleId: { hostId: 'auth().id' } })
+  })
+
+  test('an allow that leaves the relation free reopens the choice', async () => {
+    const def = await withSchedule(`
+      @@allow('create', schedule.hostId == auth().id)
+      @@allow('create', true)`)
+    expect(def['x-pick-where']).toBeUndefined()
+  })
+
+  test('a pin under || is not a pin', async () => {
+    const def = await withSchedule(`@@allow('create', schedule.hostId == auth().id || scheduleId == 'x')`)
+    expect(def['x-pick-where']).toBeUndefined()
+  })
+})

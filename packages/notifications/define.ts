@@ -56,6 +56,12 @@ export interface NotificationDefinition<P> {
    *  `notify()` checks that before it delivers anything. */
   via:     (payload: P, recipient: Recipient) => Transport[]
 
+  /** What makes two sends the same send — `order:${order.id}`. A caller that
+   *  retries a failed `notify()` (every Caravan job retries by throwing) then
+   *  writes no second in-app row for a recipient who already has one under this
+   *  key and type. Absent, every send writes a row (`FJS-D872`). */
+  key?:    (payload: P, recipient: Recipient) => string
+
   inApp?:  Formatter<P, InAppMessage>
   email?:  Formatter<P, MailMessage>
 
@@ -63,11 +69,13 @@ export interface NotificationDefinition<P> {
   [transport: string]: unknown
 }
 
-/** What `app.notify()` takes: the three members it reads, and no more. */
+/** What `app.notify()` takes: the three members it reads, and the optional
+ *  delivery key. */
 export interface SendableNotification {
   readonly notificationType: string
   via(recipient: Recipient): Transport[]
   getMessageFor(transport: string, recipient: Recipient): unknown
+  key?(recipient: Recipient): string
 }
 
 export interface NotificationFactory<P> {
@@ -86,7 +94,7 @@ export interface NotificationFactory<P> {
 // `type` and `via` are the definition's own keys; everything else that is a
 // function is a transport formatter. A key that is neither is ignored rather
 // than refused — a driver may want a plain config value beside its formatter.
-const RESERVED = new Set(['type', 'via'])
+const RESERVED = new Set(['type', 'via', 'key'])
 
 export function defineNotification<P = void>(
   def: NotificationDefinition<P>,
@@ -130,6 +138,8 @@ export function defineNotification<P = void>(
     get notificationType() { return typeOf() },
 
     via: (recipient: Recipient) => def.via(payload, recipient),
+
+    ...(def.key && { key: (recipient: Recipient) => def.key!(payload, recipient) }),
 
     // `undefined` for a transport with no formatter is the contract `notify()`
     // is written against — it turns that into

@@ -70,6 +70,11 @@ model Notification {
   // change.
   contextType String?
   contextId   String?
+  // What the definition's `key` answered, so a retried send finds the row its
+  // first attempt wrote rather than writing a second (FJS-D872). Null for a
+  // notification that declares no key, and SQLite counts nulls as distinct, so
+  // the unique below never holds an unkeyed send back.
+  deliveryKey String?
   // null = unread. The one column a recipient writes, which is what the U in
   // the gate below is for.
   readAt      DateTime?
@@ -85,6 +90,7 @@ model Notification {
   // either — so a 9 in the create slot would stop this package from ever
   // writing a row.
   @@gate("0.8.4.8")
+  @@unique([userId, type, deliveryKey], nullsDistinct: true)
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)
 }

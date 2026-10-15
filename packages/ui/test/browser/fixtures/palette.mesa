@@ -15,7 +15,7 @@
     { id: 'find-order', group: 'Orders',   label: 'Find an order',    icon: '⌕',  sub: 'By id or customer',            action: () => { ran = 'find-order'; runs++ } },
     { id: 'refund',     group: 'Orders',   label: 'Refund an order',  icon: '↩',  badge: 'Beta',                       action: () => { ran = 'refund';     runs++ } },
     { id: 'customers',  group: 'People',   label: 'Customers',        icon: '☺',  sub: 'Everyone who has ordered',     action: () => { ran = 'customers';  runs++ } },
-    { id: 'staff',      group: 'People',   label: 'Staff',            icon: '☗',                                       action: () => { ran = 'staff';      runs++ } },
+    { id: 'staff',      group: 'People',   label: 'Staff',            icon: '☗',  keywords: 'employees team',         action: () => { ran = 'staff';      runs++ } },
     { id: 'theme',      group: 'Settings', label: 'Switch theme',     icon: '◐',  kbd: '⌘ T',                          action: () => { ran = 'theme';      runs++ } },
   ]
 

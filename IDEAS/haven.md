@@ -1743,14 +1743,18 @@ One mechanism each:
   scene.
 - **The archery range.** Targets for 9.5's arrow, so it lands somewhere before
   it lands on a member. Its scoreboard is rows. Built: `/range/`, south of the
-  woods across a border in their south wall; three targets (`pieces/archery.js`,
-  `TARGETS` in `world.js`) scored by the server on the row a bolt struck, or
+  woods across a border in their south wall; four targets riding a carousel
+  on the shared clock -- up one column, under a housing, down the other
+  (`api/src/carousel.ts`, `Carousel.mesa`, `pieces/archery.js`) -- met where
+  each is when the bolt reaches it (`at(x, y, i)` in `bolt.ts`, `FLY_MS` a
+  cell), so a shot is led, and scored by the server on the row a bolt struck, or
   the column flying north or south -- 10 the bull, 5 the ring, 1 the rim
   (`pointsFor` in `api/src/play.ts`) -- as a `scored` trace in the room's
   memory, so the board (`Scores.mesa`) is the room's last ten minutes and a
   restart wipes it: the owner's pick over a model. A miss scorches the bales.
   No drive kept; a throwaway pty probe proved the bull, the `+10`, the board's
-  row and a joiner handed it. Left open: the woods' quivers are the range's
+  row and a joiner handed it; the carousel by a throwaway sim of 828 shots,
+  every score on the rider's cell at landing. Left open: the woods' quivers are the range's
   only supply but its own two, and the flag ignores 7.8's wind.
 
 These need server state:
@@ -1781,8 +1785,7 @@ These need server state:
 
 There are two kinds today. A pacer (4.5) is a scene's animal on the wall
 clock, sent nowhere: the tavern cat and the glade deer. A pet (8.2) is one
-glyph that follows its member. Of the scenes below only the woods has no
-pacer yet.
+glyph that follows its member.
 
 Pacers the existing fields carry (`right`, `left`, `sit`, `flee`) — placed,
 each a `<Pacer>` in its scene file, a crab and gull at the docks, pigeons in the
@@ -1804,7 +1807,12 @@ Pacers that keep hours take `night: true`, the key 6.6's `<Door night>` already
 spells and answered by the same `isNight()` (`web/src/sky.js`). A second
 spelling of the same gate is what this rules out: a day-only animal is
 `night: false` (absent means always), and the field joins the pacer's whitelist
-in `web/src/world.js` as `flee` did:
+in `web/src/world.js` as `flee` did. Built: `pacerNow()` (`api/src/pacer.ts`)
+answers `null` outside a pacer's hours, so the stage draws nothing there and the
+server's `obstacleAt` lets a bolt through, the one check both read --
+`fishing.service.ts` already imports `sky.js` server side. Placed: the owl, the
+rabbit, three fireflies, the otter (the gull is `night: false`), the seal and
+the turtle:
 
 - **The woods owl,** `(o,o)` blinking `(-,o)`, there only in the dark. It is the
   first animal that tells the time, so it is the one to build `night` with.

@@ -30,6 +30,11 @@ interface Order {
 export default defineNotification<Order>({
   via: () => ['inApp'],
 
+  // payment-announce sends this to every staff member and throws when any one
+  // send failed, so Caravan's retry re-sends to the ones that already have it.
+  // The key is what lets each of them keep one row.
+  key: (order) => `order:${order.id}`,
+
   inApp: (order) => inApp()
     .title('Order paid')
     .body(`${order.reference} — ${money(order.total)}`)

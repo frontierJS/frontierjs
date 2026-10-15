@@ -40,13 +40,10 @@ what they mean in any app.
   searches are the build's (`FJS-D962`). `siteKit` owns `target`, `routesDir: 'content/routes'`, `outDir`, `trailingSlash`, and
   the route table's home in `<site>/.sierra/` (never `node_modules/`, which
   the browser caches `immutable`); the site's
-  `content/settings/site.js` default export is spread over it, and is also
-  `_configPath`, the file the browser imports whole (FJS-1544) — so it stays
-  plain data. Without one, `_configPath` is `config/no-settings.js` (`{}`);
-  unnamed, Sierra would look for `config/sierra.config.js` (FJS-1709). Order:
+  `content/settings/site.js` default export is spread over it. Order:
   site-kit's keys, then the preset's `sierra`, then the site's, then
-  `routesDir`, `markdownLayouts` and `_configPath`, which neither a preset nor
-  a site can move. `markdownLayouts` is site-kit's `src/layouts`, then the
+  `routesDir` and `markdownLayouts`, which neither a preset nor a site can
+  move. `markdownLayouts` is site-kit's `src/layouts`, then the
   preset's, then the site's `content/layouts` when it exists; a later
   directory wins a name. `autoImport` gains the settings module beside the
   preset's or the site's own. `document` merges key by key, the preset's then

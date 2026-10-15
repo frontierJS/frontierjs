@@ -10,6 +10,9 @@
   import Input           from '../../../components/forms/Input.mesa'
   import Button          from '../../../components/forms/Button.mesa'
 
+  // A second provider hears every click the first one does (FJS-2611).
+  export let second = false
+
   let password = ''
 
   let ran      = []          // what actually happened
@@ -19,6 +22,7 @@
 </script>
 
 <ConfirmProvider />
+{#if second}<ConfirmProvider />{/if}
 
 <button id="guarded" class="btn danger" data-confirm="Delete this order?"
         on:click={() => did('delete')}>Delete</button>

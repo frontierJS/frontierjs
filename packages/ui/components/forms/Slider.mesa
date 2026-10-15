@@ -1,7 +1,7 @@
 <script>
   // Slider.mesa
-  // Single or dual-handle range slider. Touch + mouse. Keyboard accessible.
-  // Replaces use:draggable Svelte action with {@attach} and native event listeners.
+  // Single or dual-handle range slider. Pointer events (mouse, touch, pen) via
+  // drag.js; arrows, Page and Home/End per the APG slider pattern.
   //
   // SINGLE MODE (default):
   //   <Slider bind:value={price} min={0} max={1000} step={10} />
@@ -16,6 +16,7 @@
   //   <Slider bind:value format={(v) => `$${v.toLocaleString()}`} />
 
   import Field from './Field.mesa'
+  import { drag } from '../../drag.js'
   import { tone as toTone, cx, ruleLabel, resolveRule, stated, lockedBy } from '../../utils.js'
 
   // ── Props ───────────────────────────────────────────────────────────────────
@@ -42,7 +43,11 @@
   export let hint     = ''
   export let error    = ''
   export let errors   = undefined
-  export let onchange = undefined    // ({ value? } | { start, end }) => void
+  // The platform's two names, as `Input` has them: `oninput` per value a drag
+  // or key produces, `onchange` once when the gesture ends. A page with an
+  // undo history keys on `onchange`, or one drag is a hundred steps.
+  export let oninput  = undefined    // ({ value } | { start, end }) => void
+  export let onchange = undefined    // ({ value } | { start, end }) => void
 
   // The enclosing <Form> and this field's rule, both undefined standing alone.
   // A slider inside a <Form> showed no server error and no schema label — and
@@ -61,6 +66,11 @@
   const rule = resolveRule(form, name)
 
   const resolvedLabel = stated(label, ruleLabel(name, rule))
+
+  // $attributes land on the wrapper div, where an aria-label names nothing. The
+  // handle is what announces, so a caller's aria-label is read from there, and
+  // a slider with no visible label can still be told apart from its neighbors.
+  const handleName = resolvedLabel || $attributes['aria-label'] || ''
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -116,78 +126,95 @@
     return snap(pctRaw * (max - min) + min)
   }
 
-  function startDrag(which) {
-    return (e) => {
-      if (resolvedDisabled) return
-      e.preventDefault()
-      dragging = which
-      const moveEvt = e.type === 'touchstart' ? 'touchmove' : 'mousemove'
-      const upEvt   = e.type === 'touchstart' ? 'touchend'  : 'mouseup'
-
-      function onMove(ev) {
-        const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX
-        const v = posToValue(clientX)
-        if (which === 'single') {
-          value = v
-        } else if (which === 'start') {
-          start = Math.min(v, end)
-        } else {
-          end = Math.max(v, start)
-        }
-        emit()
-      }
-
-      function onUp() {
-        dragging = null
-        window.removeEventListener(moveEvt, onMove)
-        window.removeEventListener(upEvt, onUp)
-      }
-
-      window.addEventListener(moveEvt, onMove, { passive: false })
-      window.addEventListener(upEvt, onUp)
-    }
+  // The handle a press at `v` moves. On a handle the press is that handle's;
+  // on the track it is the nearest, and the two sides of a tie go to the side
+  // the press is on, so handles stacked at one value can both be pulled out.
+  function handleFor(v) {
+    if (!range) return 'single'
+    if (v <= start) return 'start'
+    if (v >= end)   return 'end'
+    return Math.abs(v - start) <= Math.abs(v - end) ? 'start' : 'end'
   }
 
-  // Click on track — jump nearest handle
-  function handleTrackClick(e) {
-    if (resolvedDisabled || e.target.classList.contains('fjs-slider-handle')) return
-    const v = posToValue(e.clientX)
-    if (!range) {
+  const valueOf = (which) => which === 'single' ? value : which === 'start' ? start : end
+
+  function set(which, v) {
+    if (which === 'single') {
       value = v
+    } else if (which === 'start') {
+      start = Math.min(v, end)
     } else {
-      // Move nearest handle
-      if (Math.abs(v - start) <= Math.abs(v - end)) {
-        start = Math.min(v, end)
-      } else {
-        end = Math.max(v, start)
-      }
+      end = Math.max(v, start)
     }
-    emit()
   }
+
+  // One gesture for press, drag and a pen: a press on the track jumps the
+  // nearest handle to it and carries on as a drag; a press on a handle drags
+  // that handle without first moving it to the pointer.
+  //
+  // A gesture commits once at release, and only if it moved something: a press
+  // on a handle that never moves it is not a change. A cancelled gesture still
+  // commits, since the value it moved is already the one on screen.
+  var moved = false
+  const track = drag(() => ({
+    accept: (e) => !resolvedDisabled && e.button === 0,
+    start: (e) => {
+      const grabbed = e.target.closest?.('.fjs-slider-handle')
+      const which = grabbed ? grabbed.dataset.which : handleFor(posToValue(e.clientX))
+      moved = false
+      if (!grabbed) { set(which, posToValue(e.clientX)); emit(); moved = true }
+      sliderEl.querySelector('[data-which=' + which + ']')?.focus()
+      dragging = which
+      return which
+    },
+    move: (e, which) => {
+      const before = valueOf(which)
+      set(which, posToValue(e.clientX))
+      if (valueOf(which) === before) return
+      emit()
+      moved = true
+    },
+    end:  () => {
+      dragging = null
+      if (moved) { moved = false; commit() }
+    },
+  }))
+
+  const KEY_DELTA = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -10, PageUp: 10 }
 
   function handleKeydown(which) {
     return (e) => {
       if (resolvedDisabled) return
-      const delta = (e.shiftKey ? step * 10 : step) * (e.key === 'ArrowLeft' ? -1 : 1)
-      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
-      e.preventDefault()
-      if (which === 'single') {
-        value = snap(value + delta)
-      } else if (which === 'start') {
-        start = snap(Math.min(start + delta, end))
+      let next
+      if (e.key === 'Home' || e.key === 'End') {
+        const low = e.key === 'Home'
+        next = which === 'start' ? (low ? min : end)
+             : which === 'end'   ? (low ? start : max)
+             : (low ? min : max)
+      } else if (e.key in KEY_DELTA) {
+        const delta = KEY_DELTA[e.key] * (e.shiftKey ? step * 10 : step)
+        next = valueOf(which) + delta
       } else {
-        end = snap(Math.max(end + delta, start))
+        return
       }
+      e.preventDefault()
+      set(which, snap(next))
       emit()
+      commit()
     }
   }
 
+  const payload = () => range ? { start, end } : { value }
+
+  // The handles are divs, so a drag or an arrow key emits no event a form can
+  // key on: the form is told by name.
   function emit() {
-    if (range) {
-      onchange?.({ start, end })
-    } else {
-      onchange?.({ value })
-    }
+    oninput?.(payload())
+    form?.changed?.(name)
+  }
+
+  function commit() {
+    onchange?.(payload())
   }
 </script>
 
@@ -198,7 +225,8 @@
       bind:this={sliderEl}
       class="fjs-slider-track"
       style:cursor={resolvedDisabled ? 'not-allowed' : 'pointer'}
-      on:click={handleTrackClick}
+      style:touch-action="pan-y"
+      {@attach track}
     >
       <!-- Fill bar -->
       {#if range}
@@ -217,16 +245,15 @@
           class="fjs-slider-handle"
           style:left="{singlePct}%"
           style:cursor={resolvedDisabled ? 'not-allowed' : 'grab'}
+          data-which="single"
           role="slider"
           tabindex={resolvedDisabled ? -1 : 0}
           aria-valuemin={min}
           aria-valuemax={max}
           aria-valuenow={value}
           aria-valuetext={fmt(value)}
-          aria-label={resolvedLabel || 'Value'}
+          aria-label={handleName || 'Value'}
           aria-disabled={resolvedDisabled || null}
-          on:mousedown={startDrag('single')}
-          on:touchstart={startDrag('single')}
           on:keydown={handleKeydown('single')}
         ></div>
 
@@ -240,16 +267,15 @@
           class="fjs-slider-handle"
           style:left="{startPct}%"
           style:cursor={resolvedDisabled ? 'not-allowed' : 'grab'}
+          data-which="start"
           role="slider"
           tabindex={resolvedDisabled ? -1 : 0}
           aria-valuemin={min}
           aria-valuemax={end}
           aria-valuenow={start}
           aria-valuetext={fmt(start)}
-          aria-label="Minimum"
+          aria-label={handleName ? handleName + ' minimum' : 'Minimum'}
           aria-disabled={resolvedDisabled || null}
-          on:mousedown={startDrag('start')}
-          on:touchstart={startDrag('start')}
           on:keydown={handleKeydown('start')}
         ></div>
 
@@ -258,16 +284,15 @@
           class="fjs-slider-handle"
           style:left="{endPct}%"
           style:cursor={resolvedDisabled ? 'not-allowed' : 'grab'}
+          data-which="end"
           role="slider"
           tabindex={resolvedDisabled ? -1 : 0}
           aria-valuemin={start}
           aria-valuemax={max}
           aria-valuenow={end}
           aria-valuetext={fmt(end)}
-          aria-label="Maximum"
+          aria-label={handleName ? handleName + ' maximum' : 'Maximum'}
           aria-disabled={resolvedDisabled || null}
-          on:mousedown={startDrag('end')}
-          on:touchstart={startDrag('end')}
           on:keydown={handleKeydown('end')}
         ></div>
 

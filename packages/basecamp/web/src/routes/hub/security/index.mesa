@@ -1,0 +1,71 @@
+---
+title: Host security
+---
+<script>
+  // The installation's own host — the box holding ENCRYPTION_KEY and every
+  // workspace's secrets (IDEAS/server-posture.md § Basecamp's own host).
+  //
+  // Graded and never acted on from here: there is no Harden and no patch run,
+  // because draining the plane drains the thing running the drain. Its fixes go
+  // through `fli deploy`, and the screen says so. A host that never reported,
+  // or whose report is stale, reads as such and never as clean; the backup
+  // control is graded from the Backup rows on every read.
+  import { postures } from '../../../resources/ServerPosture.mesa'
+  import { ago }      from '../../../datetime.js'
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+
+  let host    = null
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error = null
+    try {
+      host = await postures.service.invoke('host', null, {})
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+  load()
+
+  const tone  = (ok) => ok === true ? 'success' : ok === false ? 'danger' : 'muted'
+  const state = (ok) => ok === true ? 'passing' : ok === false ? 'failing' : 'unknown'
+</script>
+
+<p class="text-muted">The machine this installation runs on, reported by the Outpost <code>fli deploy</code> installs beside it with no command listener.</p>
+
+{#if error}
+  <p class="alert danger" role="alert">{error}</p>
+{/if}
+
+{#if loading}
+  <p class="text-muted">Loading…</p>
+{:else if host}
+  <article class="card stack" id="host-summary">
+    {#if !host.reported}
+      <p><Badge tone="muted">never reported</Badge> No host Outpost has reported. It is installed by <code>fli deploy</code>; until it reports, only the backup control can be graded.</p>
+    {:else if host.stale}
+      <p><Badge tone="warning">stale</Badge> The last report was {ago(host.at)} — more than twice the six-hour interval.</p>
+    {:else}
+      <p>Reported {ago(host.at)} · <strong>{host.failing}</strong> failing · {host.unknown} unknown</p>
+    {/if}
+    <p class="text-sm text-muted">Fixes to this machine go through ring 0, never from this screen: run <code>fli deploy --production</code> from the checkout that installed Basecamp.</p>
+  </article>
+
+  <table class="table" id="host-controls">
+    <thead>
+      <tr><th>Control</th><th>State</th><th>Reading</th></tr>
+    </thead>
+    <tbody>
+      {#each host.controls as c}
+        <tr data-control={c.id}>
+          <td><code>{c.id}</code></td>
+          <td><Badge tone={tone(c.ok)}>{state(c.ok)}</Badge></td>
+          <td class="text-sm">{c.message}</td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+{/if}

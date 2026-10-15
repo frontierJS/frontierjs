@@ -20,7 +20,9 @@ import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
-import { declaredFor, gradePosture, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/core/posture.ts'
+import { declaredFor, gradeHostPosture, gradePosture, HUB_CONTROL_IDS, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/core/posture.ts'
+import { hostReportKey } from '../src/core/hooks.ts'
+import { env as appEnv } from '../src/core/env.ts'
 import type { PostureReadings } from '../src/core/posture.ts'
 import { prunePosture } from '../src/jobs/retention.job.ts'
 
@@ -260,5 +262,84 @@ describe('a report lands', () => {
     await prunePosture(env.system)
     const left = await env.system.serverPosture.findMany({ where: { serverId: lone.id } })
     expect(left).toHaveLength(1)
+  })
+})
+
+// ─── the installation's own host (FJS-2714) ────────────────────────────────
+
+describe('the host grader', () => {
+  const FILES = { db: { path: '/srv/basecamp/db', mode: '700', owner: 'root', group: 'root' },
+                  env: { path: '/srv/basecamp/.env', mode: '600', owner: 'root', group: 'root' } }
+  const host  = (r: PostureReadings | null, lastBackupAt: string | null, at: number = NOW) =>
+    Object.fromEntries(gradeHostPosture(r, { lastBackupAt }, { at, now: NOW }).map(c => [c.id, c]))
+
+  test('no backup ever is failing, and a recent one passes', () => {
+    expect(host({ ...CLEAN, host_files: FILES }, null)['hub.backup-recent'].ok).toBe(false)
+    expect(host({ ...CLEAN, host_files: FILES }, new Date(NOW - 3_600_000).toISOString())['hub.backup-recent'].ok).toBe(true)
+    expect(host({ ...CLEAN, host_files: FILES }, new Date(NOW - 5 * 86_400_000).toISOString())['hub.backup-recent'].ok).toBe(false)
+  })
+
+  test('a world-readable database or env file fails; an unread one is unknown', () => {
+    const c = host({ ...CLEAN, host_files: { db: { ...FILES.db, mode: '755' }, env: { ...FILES.env, mode: '644' } } }, null)
+    expect([c['hub.db-mode'].ok, c['hub.env-mode'].ok]).toEqual([false, false])
+    expect(host({ ...CLEAN, host_files: FILES }, null)['hub.env-mode'].ok).toBe(true)
+    expect(host({ ...CLEAN, host_files: { db: null, env: FILES.env } }, null)['hub.db-mode'].ok).toBe('unknown')
+  })
+
+  test('the backup is graded with no report or a stale one; the rest is unknown', () => {
+    const none  = host(null, null)
+    expect(none['hub.backup-recent'].ok).toBe(false)
+    expect(none['hub.env-mode'].ok).toBe('unknown')
+    const stale = host({ ...CLEAN, host_files: FILES }, null, NOW - 3 * POSTURE_INTERVAL_MS)
+    expect(stale['hub.backup-recent'].ok).toBe(false)
+    expect(stale['ssh.password-off'].ok).toBe('unknown')
+  })
+
+  test('no command listener, so no command-port certificate control', () => {
+    expect(host(CLEAN, null)['outpost.cert-expiry']).toBeUndefined()
+    expect(HUB_CONTROL_IDS.every(id => id in host(CLEAN, null))).toBe(true)
+  })
+})
+
+describe('a host report lands', () => {
+  async function hostReport(body: Record<string, unknown>, secret = hostReportKey(appEnv.ENCRYPTION_KEY)) {
+    const req  = env.http.post('/posture').set('x-service-method', 'report')
+    const head = await signRequest({
+      secret, method: 'POST', path: '/posture', serviceMethod: 'report', body: JSON.stringify(body),
+      timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+    })
+    for (const [k, v] of Object.entries(head)) req.set(k, v)
+    return req.send(body)
+  }
+
+  test('signed with the host key it is a row with no server, read by the hub alone', async () => {
+    const files = { db: { path: '/srv/db', mode: '700', owner: 'root', group: 'root' },
+                    env: { path: '/srv/.env', mode: '644', owner: 'root', group: 'root' } }
+    const res = await hostReport({ at: new Date().toISOString(), readings: { ...CLEAN, host_files: files } })
+    expect(res.status).toBe(200)
+
+    const rows = await env.system.serverPosture.findMany({ where: { serverId: null } })
+    expect(rows).toHaveLength(1)
+
+    // A workspace owner reaches no host row, through the service or the client.
+    expect((await env.as(owner).service('posture').call('host', undefined, {}).catch((e: any) => e)).code ?? 404).toBe(404)
+    const member = env.db.$setAuth({ id: owner.userId ?? owner.user?.userId, workspaceId: ws.id, memberRole: 'owner' })
+    expect(await member.serverPosture.findMany({ where: { serverId: null } })).toHaveLength(0)
+    expect((await member.serverPosture.findMany({})).every((r: any) => r.serverId !== null)).toBe(true)
+
+    const sys = env.system
+    const a   = await sys.user.create({ data: { email: `hub-${Date.now()}@x.co`, accountId: (await sys.account.findFirst({})).id } })
+    await sys.user.update({ where: { id: a.id }, data: { isSystemAdmin: true } })
+    const view = await env.as(session({ userId: a.id, isSystemAdmin: true })).service('posture').call('host', undefined, {})
+    const c    = Object.fromEntries(view.controls.map((x: any) => [x.id, x]))
+    expect(view.reported).toBe(true)
+    expect(c['hub.backup-recent'].ok).toBe(false)
+    expect(c['hub.env-mode'].ok).toBe(false)
+    expect(c['hub.db-mode'].ok).toBe(true)
+  })
+
+  test('a machine\'s own key cannot sign for the host, nor the host key for a machine', async () => {
+    expect((await hostReport({ readings: CLEAN }, SECRET)).status).toBe(401)
+    expect((await hostReport({ server_id: machine.id, readings: CLEAN })).status).toBe(401)
   })
 })

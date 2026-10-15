@@ -5559,10 +5559,16 @@ export function bindProp(anchor, name, setParent) {
   // new object and pushed down again, until the cycle guard abandoned the
   // flush (`FJS-2093`). Its raw target is what the parent holds, so the echo
   // stops at the signal's equality check.
-  createEffect(() => {
-    const v = prop.get()
-    setParent(_proxyTarget.get(v) ?? v)
-  })
+  const toParent = (v) => setParent(_proxyTarget.get(v) ?? v)
+  if (!prop.tracked) {
+    createEffect(() => toParent(prop.get()))
+    return
+  }
+  // Written through at the child's own write, not from an effect after the
+  // flush: the effect delivered the child's value over whatever the parent had
+  // written in the callback the child calls right after writing (`FJS-2509`).
+  toParent(untrack(prop.get))
+  prop.tracked._onChange = toParent
 }
 
 export function pushProps(anchor, newProps) {
@@ -5798,13 +5804,21 @@ export function track(value, _getInterceptor, _setInterceptor, _block, _alwaysNo
   // _directWrite is now identical to write since createSignal no longer has an
   // updater-function check. Kept for API compatibility with pushProps.
   const _directWrite = write
-  return {
+  // `_onChange` is the child half of a `bind:` — see bindProp. It runs inside
+  // the write, so a bound parent hears the child's value BEFORE anything the
+  // child calls next, and a parent write made in that callback is the later one.
+  const tracked = {
     _isMemo: false,
     _read: read,
-    _write: write,
+    _write(next, force) {
+      const changed = write(next, force)
+      if (changed && tracked._onChange) tracked._onChange(next)
+      return changed
+    },
     _directWrite,
     get __v() { return untrack(read) },
   }
+  return tracked
 }
 
 /**
@@ -6226,7 +6240,7 @@ export function makeExternalProperty(name, getter, setter, fallback) {
   // "function as updater" logic. Uses track()'s _directWrite if available —
   // that wraps function values in () => v so createSignal stores them correctly.
   const directWrite = getter?._directWrite ?? ((v) => setter(v))
-  const prop = { get: readFn, set: (v) => setter(v), directWrite, fallback }
+  const prop = { get: readFn, set: (v) => setter(v), directWrite, fallback, tracked: getter?._write ? getter : null }
   if (_propRegistry) _propRegistry.set(name, prop)
   return prop
 }

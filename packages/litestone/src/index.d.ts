@@ -511,8 +511,8 @@ export interface TableClient<
   findMany(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; recursive?: boolean | { direction?: 'descendants' | 'ancestors'; nested?: boolean; maxDepth?: number; via?: string }; distinct?: boolean; window?: WindowSpec }): Promise<(TRow & Record<string, unknown>)[]>
   findFirst(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow | null>
   findUnique(args: { where: TWhere; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow | null>
-  findFirstOrThrow(args?: { where?: TWhere }): Promise<TRow>
-  findUniqueOrThrow(args: { where: TWhere }): Promise<TRow>
+  findFirstOrThrow(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow>
+  findUniqueOrThrow(args: { where: TWhere; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow>
   count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<number>
   exists(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<boolean>
   findManyCursor(args?: { where?: TWhere; limit?: number; cursor?: string; orderBy?: TOrderBy | TOrderBy[] }): Promise<CursorResult<TRow>>

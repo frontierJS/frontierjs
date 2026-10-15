@@ -71,6 +71,10 @@ describe('the monitor sweep', () => {
 
   const base = () => `http://127.0.0.1:${target.port}`
   const sys  = () => env.system as any
+  // The listener is on loopback, which the sweep refuses by default; the block
+  // after this one is what it refuses.
+  const sweep = (opts: Parameters<typeof sweepMonitors>[1]) =>
+    sweepMonitors(env.app, { destinations: { allowPrivate: true }, ...opts })
 
   async function monitor(over: Record<string, unknown> = {}) {
     return sys().monitor.create({ data: {
@@ -88,7 +92,7 @@ describe('the monitor sweep', () => {
     const m = await monitor()
     const before = await told()
 
-    await sweepMonitors(env.app, { at: T0, monitorId: m.id })
+    await sweep({ at: T0, monitorId: m.id })
     let r = await row(m.id)
     expect(r.status).toBe('pending')
     expect(r.failStreak).toBe(1)
@@ -96,7 +100,7 @@ describe('the monitor sweep', () => {
     // The retry comes at the retry interval, not the monitor's own.
     expect(Date.parse(r.nextCheckAt)).toBe(T0 + 60 * SECOND)
 
-    const res = await sweepMonitors(env.app, { at: T0 + 60 * SECOND, monitorId: m.id })
+    const res = await sweep({ at: T0 + 60 * SECOND, monitorId: m.id })
     expect(res.down).toBe(1)
     r = await row(m.id)
     expect(r.status).toBe('down')
@@ -108,7 +112,7 @@ describe('the monitor sweep', () => {
     expect(ev[0].message).toBe('Request failed with status code 502')
 
     // The pair: still failing is not a second page.
-    await sweepMonitors(env.app, { at: T0 + 180 * SECOND, monitorId: m.id })
+    await sweep({ at: T0 + 180 * SECOND, monitorId: m.id })
     expect(await told()).toBe(before + 1)
     expect((await events(m.id)).length).toBe(1)
 
@@ -117,7 +121,7 @@ describe('the monitor sweep', () => {
 
     // Recovery: one message, and the streak is gone.
     answer = 200
-    const back = await sweepMonitors(env.app, { at: T0 + 300 * SECOND, monitorId: m.id })
+    const back = await sweep({ at: T0 + 300 * SECOND, monitorId: m.id })
     expect(back.up).toBe(1)
     r = await row(m.id)
     expect(r.status).toBe('up')
@@ -133,7 +137,7 @@ describe('the monitor sweep', () => {
     const paused = await monitor()
     await sys().monitor.transition(paused.id, 'pause')
 
-    await sweepMonitors(env.app, { at: T0 })
+    await sweep({ at: T0 })
 
     expect((await row(due.id)).lastCheckedAt).not.toBeNull()
     expect((await row(future.id)).lastCheckedAt).toBeNull()
@@ -144,7 +148,7 @@ describe('the monitor sweep', () => {
     answer = 200
     const m = await monitor()
     const before = await told()
-    await sweepMonitors(env.app, { at: T0, monitorId: m.id })
+    await sweep({ at: T0, monitorId: m.id })
     expect((await row(m.id)).status).toBe('up')
     expect(await told()).toBe(before)
     expect((await events(m.id)).length).toBe(1)
@@ -153,7 +157,7 @@ describe('the monitor sweep', () => {
   test('redirects are followed up to maxRedirects, and then it is a failure', async () => {
     const ok  = await monitor({ url: `${base()}/redirect/2`, maxRedirects: 2, retries: 0 })
     const bad = await monitor({ url: `${base()}/redirect/3`, maxRedirects: 2, retries: 0 })
-    await sweepMonitors(env.app, { at: T0 })
+    await sweep({ at: T0 })
     expect((await row(ok.id)).status).toBe('up')
     expect((await row(bad.id)).status).toBe('down')
     const checks = await sys().monitorCheck.findMany({ where: { monitorId: bad.id } })
@@ -167,7 +171,7 @@ describe('the monitor sweep', () => {
     const fine = await monitor({ retries: 0 })
     answer = 200
 
-    await sweepMonitors(env.app, { at: T0 })
+    await sweep({ at: T0 })
 
     expect((await row(slow.id)).status).toBe('down')
     const [slowCheck] = await sys().monitorCheck.findMany({ where: { monitorId: slow.id } })
@@ -181,7 +185,7 @@ describe('the monitor sweep', () => {
   test('upside-down: a URL that must not answer is up while it fails', async () => {
     answer = 503
     const m = await monitor({ invert: true, retries: 0 })
-    await sweepMonitors(env.app, { at: T0, monitorId: m.id })
+    await sweep({ at: T0, monitorId: m.id })
     expect((await row(m.id)).status).toBe('up')
   })
 
@@ -189,7 +193,58 @@ describe('the monitor sweep', () => {
     answer = 502
     const m = await monitor({ retries: 0 })
     await sys().monitor.transition(m.id, 'pause')
-    await sweepMonitors(env.app, { at: T0, monitorId: m.id })
+    await sweep({ at: T0, monitorId: m.id })
     expect((await row(m.id)).status).toBe('paused')
+  })
+})
+
+// FJS-2879 · FJS-D1018: the sweep runs inside the network that holds the
+// fleet's secrets, and an admin who writes a monitor is a workspace role, not
+// an operator. Every request and every redirect hop is graded, with no setting.
+describe('the monitor sweep grades every destination', () => {
+  let env: any, ws: any, target: ReturnType<typeof Bun.serve>
+  let hits = 0
+
+  beforeAll(async () => {
+    target = Bun.serve({ port: 0, fetch() { hits++; return new Response('ok') } })
+    env = await createTestEnv({
+      schema:        join(import.meta.dir, '..', '..', 'db', 'schema.lite'),
+      migrations:    join(import.meta.dir, '..', '..', 'db', 'migrations'),
+      encryptionKey: '0'.repeat(64),
+      plugins:       [new GatePlugin({ getLevel: basecampGateLevel })],
+      api: ({ db, path }: any) => buildBasecampApp({ db, dbPath: path }),
+    })
+    const sys  = env.system as any
+    const uniq = () => Math.random().toString(36).slice(2, 8)
+    const acct = await sys.account.create({ data: { slug: `a-${uniq()}`, displayName: 'A' } })
+    const user = await sys.user.create({ data: {
+      email: `m-${uniq()}@x.co`, accountId: acct.id, status: 'active' } })
+    ws = await sys.workspace.create({
+      data: { accountId: acct.id, name: 'Fleet', slug: `f-${uniq()}`, ownerId: user.id } })
+  })
+
+  afterAll(() => { target?.stop(true) })
+
+  const probeOf = async (url: string) => {
+    const sys = env.system as any
+    const m = await sys.monitor.create({ data: {
+      workspaceId: ws.id, name: `m-${Math.random().toString(36).slice(2, 8)}`, url,
+      retries: 0, nextCheckAt: new Date(T0).toISOString() } })
+    await sweepMonitors(env.app, { monitorId: m.id, at: T0 })
+    const [check] = await sys.monitorCheck.findMany({ where: { monitorId: m.id } })
+    return check
+  }
+
+  test('loopback is refused before a request is sent', async () => {
+    const check = await probeOf(`http://127.0.0.1:${target.port}/`)
+    expect(check.ok).toBe(false)
+    expect(check.message).toBe('127.0.0.1 is a private address')
+    expect(hits).toBe(0)
+  })
+
+  test('a name resolving to loopback, and the metadata service, are refused too', async () => {
+    expect((await probeOf(`http://localhost:${target.port}/`)).message).toMatch(/resolves to a private address/)
+    expect((await probeOf('http://169.254.169.254/latest/meta-data/')).message).toBe('169.254.169.254 is a private address')
+    expect(hits).toBe(0)
   })
 })

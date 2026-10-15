@@ -4,6 +4,7 @@
 
 import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, applyClaims, MEMBERSHIP, signedRequest, serviceAccessor, accessorCandidates, resultData, $} from '@frontierjs/junction'
 import type { Hook, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
+import { createHmac }                     from 'node:crypto'
 import { REDACTED }                       from '@frontierjs/toolbelt/redact'
 import { channelManager, workspaceChannelName } from '../channels.ts'
 import type { BasecampApp }                from '../basecamp.types.ts'
@@ -572,6 +573,24 @@ async function rememberNonce(app: OutpostDeps, nonce: string, windowMs: number):
 /** What a machine's principal is named, so the id survives into `ctx.auth.user.userId`. */
 const OUTPOST_PRINCIPAL = 'outpost:'
 
+/** The installation's own host. No `outpost:` prefix, so no Server id can spell it. */
+const OUTPOST_HOST_PRINCIPAL = 'outpost-host'
+
+/**
+ * The key the host's report-only Outpost signs with: an HMAC of `ENCRYPTION_KEY`
+ * over a fixed label (`FJS-D944`). `fli deploy` writes only this value onto the
+ * host, so the box's Outpost config never holds the key that opens every
+ * `@encrypted` column, and there is no second variable to generate or lose.
+ */
+export const HOST_REPORT_LABEL = 'basecamp.host-posture.v1'
+export function hostReportKey(encryptionKey: string): string {
+  return createHmac('sha256', encryptionKey).update(HOST_REPORT_LABEL).digest('hex')
+}
+
+/** A `posture.report` naming no machine is the host's, and nothing else is. */
+const addressesHostReport = (req: InboundRequest) =>
+  addresses(req, 'report', 'posture', 1) && serverIdInBody(req.body) === null
+
 /**
  * Which machine is this request about?
  *
@@ -693,7 +712,7 @@ async function outpostSecretFor(
  * credential's and falls through to `outpostScope`, which refuses an outpost
  * endpoint that arrives with no machine behind it.
  */
-export function outpostCredential(app: OutpostDeps): CredentialVerifier {
+export function outpostCredential(app: OutpostDeps & { hostKey?: string | null }): CredentialVerifier {
   const TOLERANCE_S = 300
 
   return signedRequest({
@@ -703,6 +722,18 @@ export function outpostCredential(app: OutpostDeps): CredentialVerifier {
     // that does not exist, or addressing something that is not an outpost
     // endpoint is not something the fleet key should rescue.
     keyFor: async (req) => {
+      // The host's report names no machine and is verified against the host key
+      // alone; no machine's own key can sign for it.
+      if (addressesHostReport(req)) {
+        if (!app.hostKey) {
+          app.logger.warn('outpost signature refused', { path: req.path, reason: 'no host key on this API' })
+          return null
+        }
+        return {
+          secret:  app.hostKey,
+          session: { userId: OUTPOST_HOST_PRINCIPAL, userType: 'service', authMethod: 'outpost', workspaceId: null },
+        }
+      }
       const serverId = Object.values(OUTPOST_ENDPOINTS).map(e => e.fromRequest(req)).find(Boolean) ?? null
       const keyed    = await outpostSecretFor(app, serverId)
       if (!serverId || !keyed) {
@@ -763,7 +794,13 @@ export function outpostScope(): Hook {
       if (machine) throw new Forbidden('An outpost may only call its own endpoints')
       return
     }
-    const subject = user?.userId?.slice(OUTPOST_PRINCIPAL.length)
+    // The host reaches one endpoint, naming no machine; a fleet machine is
+    // refused a report naming none.
+    if (machine && user?.userId === OUTPOST_HOST_PRINCIPAL) {
+      if (name !== 'posture.report' || endpoint.fromCall(ctx) !== null) throw new Unauthorized(REFUSED)
+      return
+    }
+    const subject = user?.userId?.startsWith(OUTPOST_PRINCIPAL) ? user.userId.slice(OUTPOST_PRINCIPAL.length) : undefined
     if (!machine || endpoint.fromCall(ctx) !== subject) throw new Unauthorized(REFUSED)
   }
 }

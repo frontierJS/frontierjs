@@ -145,7 +145,7 @@ import { LEVELS } from '@frontierjs/toolbelt/gate'
 import { unitInfo } from '@frontierjs/toolbelt/units'
 import { contentTypeFor, isTextType } from '@frontierjs/toolbelt/mime'
 import { TIME_PATTERNS, transformNames, typeMemberDefault } from './core/validate.js'
-import { dependsOnClock, determinedColumns, writeClaims } from './core/policy.js'
+import { dependsOnClock, determinedColumns, pickWhere, writeClaims } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
 import { isServerAssignedId, isServerFilled, ID_GENERATORS } from './core/ids.js'
 
@@ -483,7 +483,9 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       if (mode !== 'create' && mode !== 'update') {
         const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs, fileDef)
         properties[field.name] = { ...fs, readOnly: true, 'x-litestone-kind': 'from',
-          'x-litestone-from': { target: fromAttr.target, op: fromAttr.op } }
+          'x-litestone-from': fromAttr.op === 'column'
+            ? { rel: fromAttr.rel, column: fromAttr.opValue, op: fromAttr.op }
+            : { target: fromAttr.target, op: fromAttr.op } }
       }
       continue
     }
@@ -867,6 +869,13 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // affordance like `x-gate`: the policy enforces it regardless (Invariant 6).
   const determined = determinedColumns(model)
   if (Object.keys(determined).length) result['x-determined'] = determined
+
+  // ── x-pick-where ───────────────────────────────────────────────────────────
+  // `{ scheduleId: { hostId: 'auth().id' } }` — the related rows a create
+  // policy will accept for a relation column, so a picker lists only those
+  // (`FJS-D669`). An affordance; the policy enforces it regardless.
+  const pick = pickWhere(model)
+  if (Object.keys(pick).length) result['x-pick-where'] = pick
 
   // ── x-version ──────────────────────────────────────────────────────────────
   // Names the column an update must carry back. One string, so a client knows

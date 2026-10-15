@@ -1,0 +1,76 @@
+<script>
+  // overlay-host.mesa -- every app-level overlay raised from inside an open
+  // Modal: a toast with an Undo, a global alert, the palette and a dnd drag.
+  //
+  // The Toaster, AlertProvider and palette are mounted at the root, the way an
+  // app mounts them, so where they land is the overlay's own decision. A modal
+  // <dialog> is in the top layer and makes the rest of the document inert, so
+  // a surface left on <body> is drawn beneath it and cannot be reached
+  // (FJS-2599, FJS-D904).
+  import Modal              from '../../../components/overlay/Modal.mesa'
+  import Button             from '../../../components/forms/Button.mesa'
+  import Toaster            from '../../../components/feedback/Toaster.mesa'
+  import AlertProvider      from '../../../components/feedback/AlertProvider.mesa'
+  import CommandPalette     from '../../../components/overlay/CommandPalette.mesa'
+  import DropdownMenu       from '../../../components/overlay/DropdownMenu.mesa'
+  import DropdownItem       from '../../../components/overlay/DropdownItem.mesa'
+  import Popover            from '../../../components/overlay/Popover.mesa'
+  import { toasts }         from '../../../stores/toastStore.js'
+  import { alert }          from '../../../stores/alertStore.js'
+  import { commandPalette } from '../../../stores/commandPaletteStore.js'
+  import { dndzone }        from '@frontierjs/ui/dnd'
+
+  $: commandPalette.open
+
+  let open  = false
+  let undos = 0
+  let picks = 0
+  let items = [{ id: 1, t: 'one' }, { id: 2, t: 'two' }, { id: 3, t: 'three' }]
+
+  const COMMANDS = [
+    { id: 'archive', group: 'Card', label: 'Archive card', action: () => {} },
+  ]
+
+  // The stores outlive a fixture, so a run must not inherit the previous one.
+  toasts.clear()
+  alert.hide()
+  commandPalette.hide()
+  window.commandPalette = commandPalette
+  window.alert_         = alert
+</script>
+
+<Toaster />
+<AlertProvider />
+{#if commandPalette.open}
+  <CommandPalette items={COMMANDS} onclose={() => commandPalette.hide()} />
+{/if}
+
+<Button id="open-modal" onclick={() => open = true}>Open</Button>
+<button type="button" id="toast-outside"
+        on:click={() => toasts.info('Outside', 0)}>Toast outside</button>
+
+<Modal bind:open={open} title="Card">
+  <button type="button" id="toast" class="btn"
+          on:click={() => toasts.info('Card archived', 0, { label: 'Undo', run: () => undos++ })}>Archive</button>
+  <button type="button" id="alert" class="btn"
+          on:click={() => alert.error('Could not save', 0)}>Save</button>
+  <button type="button" id="palette" class="btn"
+          on:click={() => commandPalette.show()}>Commands</button>
+  <DropdownMenu>
+    {#snippet trigger()}<button type="button" id="menu" class="btn">Menu</button>{/snippet}
+    <DropdownItem onclick={() => picks++}>Pick</DropdownItem>
+  </DropdownMenu>
+  <Popover label="Details">
+    {#snippet trigger()}<button type="button" id="pop" class="btn">Details</button>{/snippet}
+    {#snippet content()}<button type="button" id="pop-body" class="btn">Inside</button>{/snippet}
+  </Popover>
+  <ul id="list" {@attach dndzone(() => ({ items, type: 'card', onconsider: ({ items: i }) => items = i, onfinalize: ({ items: i }) => items = i }))}>
+    {#each items as it (it.id)}
+      <li data-id={it.id} style="background: rgb(10, 120, 200); padding: 0.75rem">{it.t}</li>
+    {/each}
+  </ul>
+</Modal>
+
+<output id="undos">{undos}</output>
+<output id="picks">{picks}</output>
+<output id="state">{open ? 'open' : 'shut'}</output>

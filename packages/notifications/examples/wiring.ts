@@ -23,10 +23,12 @@ model Notification {              // PascalCase singular → accessor db.notific
   data        Json                // payload built by toInApp() — varies by type
   contextType String?             // optional: 'Order', 'Project', 'Invoice'
   contextId   String?             // optional: id of the related record (loose ref, no FK)
+  deliveryKey String?             // the definition's key: a retried send writes no second row
   readAt      DateTime?           // null = unread
   createdAt   DateTime  @default(now())
 
   @@gate("0.8.4.8")
+  @@unique([userId, type, deliveryKey], nullsDistinct: true)
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)
 }

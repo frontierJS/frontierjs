@@ -1,7 +1,7 @@
 <script>
   // CommandPalette.mesa
   // Full ⌘K command palette. Converted from React. Dark-themed, keyboard navigable,
-  // grouped results, fuzzy search across label + sub + group, word by word.
+  // grouped results, fuzzy search across label + sub + group + keywords, word by word.
   //
   // ITEM SHAPE:
   //   {
@@ -10,6 +10,8 @@
   //     label:   string           — primary text (searched)
   //     icon?:   string           — emoji or text glyph
   //     sub?:    string           — secondary text (searched)
+  //     keywords?: string         — words that find the row and are never drawn
+  //                                 ("save export download"); one string, not a list
   //     kbd?:    string           — shortcut hint shown on row ("⌘ D")
   //     badge?:  string           — accent badge ("New", "Beta")
   //     color?:  string           — CSS color for sub text
@@ -48,7 +50,7 @@
   // Reading the box off the DOM instead misses the ✕, which empties it
   // without an `input` event, and breaks on any rename of the palette's classes.
 
-  import { uid } from '../../utils.js'
+  import { uid, overlayHost } from '../../utils.js'
   import { rank, segments } from '@frontierjs/toolbelt/search'
 
   export let items        = []      // Item[]
@@ -84,9 +86,16 @@
   const rowId  = (item) => `${listId}-${item.id}`
 
   // Focus search input immediately on mount
+  var _opener = typeof document === 'undefined' ? null : document.activeElement
   $.onMount(() => {
     inputEl?.focus()
-    return () => { clearTimeout(_timer); _asking?.abort() }
+    return () => {
+      clearTimeout(_timer); _asking?.abort()
+      // Focus is still in the palette (or nowhere) when it goes; send it back
+      // to what opened it, unless the chosen action already moved it.
+      const now = document.activeElement
+      if (_opener?.isConnected && (!now || now === document.body || inputEl?.contains(now) || now === inputEl)) _opener.focus?.()
+    }
   })
 
   // Every change of words drops the last answer: hits for words no longer in
@@ -115,7 +124,7 @@
   // Each const auto-derives when its dependencies change (Rule 2).
   // query → filtered → groupMap → groupNames → flat — all reactive.
 
-  // Ranked across all three fields. This was `includes()` with no ordering at
+  // Ranked across every searched field. This was `includes()` with no ordering at
   // all, so every command that contained the query came back in registration
   // order — typing the exact name of a command could leave it below six others
   // that merely mention the word. Each word on its own, in any order: "theme
@@ -123,7 +132,8 @@
   // the Orders group. `searchGroups={false}` is for a palette that holds rows
   // as well as commands: every row matches its heading, so "boo" in an app
   // with a Bookmarks group lists every bookmark it holds.
-  const keys = searchGroups ? ['label', 'group', 'sub'] : ['label', 'sub']
+  // `keywords` is text a row does not show: "colors extract" on Go to Palette.
+  const keys = searchGroups ? ['label', 'group', 'sub', 'keywords'] : ['label', 'sub', 'keywords']
   const ranked = query.trim()
     ? rank(items, query, { keys, words: true, minimumScore })
     : null
@@ -152,6 +162,10 @@
   // Precomputed id → flat index map — O(1) active lookup per row
   const flatIdx = Object.fromEntries(flat.map((item, i) => [item.id, i]))
 
+  // The cursor can outlive its row: a search answer or an `items` swap shrinks
+  // the list under it, and then no row is active and Enter runs nothing.
+  const at = Math.min(idx, Math.max(flat.length - 1, 0))
+
   // ── Watchers ─────────────────────────────────────────────────────────────
 
   // Reset cursor to top when query changes
@@ -166,8 +180,8 @@
   // ── Actions ───────────────────────────────────────────────────────────────
 
   function run(item) {
-    item.action()
-    if (closeOnSelect) close()
+    // A throwing action still ends the interaction; the error propagates.
+    try { item.action() } finally { if (closeOnSelect) close() }
   }
 
   function close() {
@@ -178,17 +192,19 @@
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
-        idx = Math.min(idx + 1, flat.length - 1)
+        idx = Math.min(at + 1, flat.length - 1)
         break
       case 'ArrowUp':
         e.preventDefault()
-        idx = Math.max(idx - 1, 0)
+        idx = Math.max(at - 1, 0)
         break
       case 'Enter':
         e.preventDefault()
-        if (flat[idx]) run(flat[idx])
+        if (flat[at]) run(flat[at])
         break
       case 'Escape':
+        // Without this the enclosing dialog's own Escape closes it too.
+        e.preventDefault()
         close()
         break
       // The panel says aria-modal, and a div keeps none of that promise on its
@@ -232,7 +248,7 @@
   })
 </script>
 
-<mesa:portal to={document.body}>
+<mesa:portal to={overlayHost()}>
 
   <!-- Backdrop -->
   <!--
@@ -278,7 +294,7 @@
           aria-haspopup="listbox"
           aria-autocomplete="list"
           aria-controls={listId}
-          aria-activedescendant={flat[idx] ? rowId(flat[idx]) : null}
+          aria-activedescendant={flat[at] ? rowId(flat[at]) : null}
         />
         {#if query}
           <!--
@@ -337,7 +353,7 @@
             <!-- Group rows -->
             {#each groupMap[group] as item (item.id)}
               {@const gi       = flatIdx[item.id]}
-              {@const isActive = gi === idx}
+              {@const isActive = gi === at}
 
               <!--
                 The pointer takes the cursor on mousemove, not on mouseenter.

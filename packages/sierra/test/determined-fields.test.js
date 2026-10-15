@@ -10,11 +10,13 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const _calls = []
+const _finds = []
 
 vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({
       create: (data) => { _calls.push(data); return Promise.resolve(data) },
+      find:   (filter) => { _finds.push(filter); return Promise.resolve({ data: [{ id: 's1', name: 'Mine' }], total: 1 }) },
       on: () => {},
     }),
     resource: () => ({
@@ -93,5 +95,41 @@ describe('create', () => {
   test('with no session nothing is invented, and the boundary refuses', async () => {
     await createResource('events', 'id', { model: 'Event' }).save({ name: 'Intro' }, { mode: 'create' })
     expect('hostId' in _calls[0]).toBe(false)
+  })
+})
+
+// FJS-1672, FJS-D669 — the rows a create policy will accept for a relation column
+const BOOKING = {
+  type: 'object',
+  title: 'Booking',
+  properties: { id: { type: 'string', readOnly: true }, scheduleId: { type: 'string' } },
+  required: ['scheduleId'],
+  'x-relations': [{ type: 'belongsTo', field: 'schedule', model: 'Schedule', fields: ['scheduleId'], references: ['id'] }],
+  'x-pick-where': { scheduleId: { hostId: 'auth().id' } },
+}
+const SCHEDULE = { type: 'object', title: 'Schedule', properties: { id: { type: 'string' }, name: { type: 'string' } }, 'x-label-field': 'name' }
+
+describe('options() under x-pick-where', () => {
+  beforeEach(() => {
+    _finds.length = 0
+    registerSchemas({ Booking: BOOKING, Schedule: SCHEDULE }, ['Booking', 'Schedule'])
+  })
+  afterEach(() => { session.user = null })
+
+  test('the picker asks for the caller\'s rows, the claim filled from the session', async () => {
+    session.user = { userId: 'usr_9' }
+    await createResource('bookings', 'id', { model: 'Booking' }).options('scheduleId', { reload: true })
+    expect(_finds[0]).toMatchObject({ hostId: 'usr_9' })
+  })
+
+  test('a filter the caller states wins over the derived one', async () => {
+    session.user = { userId: 'usr_9' }
+    await createResource('bookings', 'id', { model: 'Booking' }).options('scheduleId', { query: { hostId: 'usr_2' }, reload: true })
+    expect(_finds[0].hostId).toBe('usr_2')
+  })
+
+  test('with no session nothing is invented and the boundary decides', async () => {
+    await createResource('bookings', 'id', { model: 'Booking' }).options('scheduleId', { reload: true })
+    expect('hostId' in _finds[0]).toBe(false)
   })
 })

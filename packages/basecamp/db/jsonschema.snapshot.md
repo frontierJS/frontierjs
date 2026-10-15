@@ -1103,19 +1103,19 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 ### `ServerPosture`
 
 - gate `read:2 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
-- relation `server` — belongsTo `Server` via `serverId` · on delete Cascade
+- relation `server` — belongsTo `Server` via `serverId` · on delete Cascade · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `serverId` | `string` | yes | — | — | — |
+| `serverId` | `string`? | — | — | — | — |
 | `at` | `string` | yes | — | `format: "date-time"` | — |
 | `readings` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `controls` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `failing` | `integer` = `0` | — | — | — | — |
 | `unknown` | `integer` = `0` | — | — | — | — |
 
-**On create**: required — `serverId`, `at` · not accepted — `id`
+**On create**: required — `at` · not accepted — `id`
 
 ### `CleanupRun`
 
@@ -1572,6 +1572,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `data` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `contextType` | `NotificationContext`? | — | — | — | — |
 | `contextId` | `string`? | — | — | — | — |
+| `deliveryKey` | `string`? | — | — | — | — |
 | `readAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `userId`, `type`, `data` · not accepted — `id`

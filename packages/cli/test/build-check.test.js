@@ -12,6 +12,7 @@
 // Those eight are reproduced below as the cases that must not drift.
 
 import { describe, test, expect } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import {
   inspectBuild, parseDockerfile, parseDockerignore, ignoreDecision,
   traceToFinalImage, compileGlob, joinPath, isEnvFile, isStateFile,
@@ -491,5 +492,39 @@ describe('walking a tree', () => {
   test('an unreadable directory is skipped, not thrown from', () => {
     const angry = { readdirSync: () => { throw new Error('EACCES') } }
     expect(walkContextFiles('/app', { fs: angry })).toEqual([])
+  })
+})
+
+// ─── the example's own contexts ──────────────────────────────────────────────
+
+// FJS-555: `example/site` and `example/widgets` both build from `example/` with
+// `COPY . .`, and the real `.env` there reached a build stage.
+describe('example/.dockerignore', () => {
+  const root = new URL('../../../example/', import.meta.url)
+  const p = parseDockerignore(readFileSync(new URL('.dockerignore', root), 'utf8'))
+
+  test('every pattern is one this check can evaluate', () => {
+    expect(p.every(x => x.re)).toBe(true)
+  })
+
+  test('the root .env and a nested one are both kept out of the context', () => {
+    expect(ignoreDecision('.env', p)).toBe('ignored')
+    expect(ignoreDecision('api/.env.production', p)).toBe('ignored')
+  })
+
+  test('the declaration of the keys is still sent', () => {
+    expect(ignoreDecision('.env.example', p)).toBe('included')
+  })
+
+  test('both Dockerfiles are graded clean of build-stage config for .env', () => {
+    for (const d of ['site', 'widgets']) {
+      const found = inspectBuild({
+        dockerfile:   readFileSync(new URL(`${d}/deploy/Dockerfile`, root), 'utf8'),
+        dockerignore: readFileSync(new URL('.dockerignore', root), 'utf8'),
+        contextFiles: ['.env', 'api/.env.production'],
+        declaredKeys: [],
+      })
+      expect(found.filter(f => f.rule === 'build-stage-config')).toEqual([])
+    }
   })
 })

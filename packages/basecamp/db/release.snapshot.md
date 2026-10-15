@@ -1353,6 +1353,7 @@ table `notification` · db `main` · gate `0.8.1.8`
 | `contextType` | `NotificationContext` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `data` | `Json` | no | — | **required on write** |
+| `deliveryKey` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `readAt` | `DateTime` | yes | — | — |
 | `type` | `String` | no | — | **required on write** |
@@ -1360,6 +1361,7 @@ table `notification` · db `main` · gate `0.8.1.8`
 | `userId` | `String` | no | — | **required on write** |
 
 ```
+@@unique(deliveryKey, type, userId)
 @@index(createdAt)
 @@index(userId, readAt)
 @@allow('read', userId == auth().id)
@@ -1820,16 +1822,21 @@ table `server_posture` · db `main` · gate `2.8`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `readings` | `Json` | no | `'{}'` | — |
 | `server` | `Server` | — | — | relation |
-| `serverId` | `String` | no | — | **required on write** |
+| `serverId` | `String` | yes | — | — |
 | `unknown` | `Int` | no | `0` | — |
 
 ```
 @@index(serverId, at)
 @@deny('create', !check(server, tenancy))
+@@deny('create', server == null)
 @@deny('delete', !check(server, tenancy))
+@@deny('delete', server == null)
 @@deny('post-update', !check(server, tenancy))
+@@deny('post-update', server == null)
 @@deny('read', !check(server, tenancy))
+@@deny('read', server == null)
 @@deny('update', !check(server, tenancy))
+@@deny('update', server == null)
 ```
 
 ### `Session`

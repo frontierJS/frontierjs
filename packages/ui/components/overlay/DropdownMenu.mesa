@@ -1,6 +1,6 @@
 <script>
   // DropdownMenu.mesa
-  // Positioned action menu triggered by a button. Portals to <body> so it
+  // Positioned action menu triggered by a button. Portals to overlayHost() so it
   // escapes overflow:hidden containers. Keyboard navigable via ArrowUp/Down, Home, End and
   // type-to-jump.
   //
@@ -27,7 +27,7 @@
   // start | center | end. The side flips when the panel would overflow the
   // viewport there.
 
-  import { placeAgainst } from '../../utils.js'
+  import { placeAgainst, FOCUSABLE, overlayHost } from '../../utils.js'
 
   export let placement = 'bottom-start'
   export let offset    = 4               // gap between trigger and panel in px
@@ -40,11 +40,27 @@
   let placed    = false          // has THIS open been positioned yet
   let triggerEl
   let panelEl
+  let menuEl
+
+  // The rows, the row holding focus and the trigger's control are held by
+  // reference. A terminal node has no querySelector, activeElement or
+  // document to ask, so a walk that finds them by query moves nothing there
+  // and a close puts focus nowhere.
+  var rows    = []
+  var cursor  = null
+  var control = null
 
   // Provide close() so DropdownItem descendants can close the menu after selection.
   // Arrow function closes over this component's closeMenu — correct scope. ✓
   $context.close = () => closeMenu()
   $context.keepOpen = keepOpen
+  // A row hands over `{ el, disabled, label }` as getters and gets back the
+  // call that withdraws it. `rowFocus` is told when a row takes or gives up focus.
+  $context.addRow = (row) => {
+    rows.push(row)
+    return () => { rows = rows.filter((r) => r !== row); if (cursor === row) cursor = null }
+  }
+  $context.rowFocus = (row, on) => { if (on) cursor = row; else if (cursor === row) cursor = null }
 
   const panelAnim = $.entrance({
     in:  el => el.animate?.(
@@ -78,14 +94,20 @@
       // no tabindex, so focusing it moved nothing and the keyboard walk below
       // only worked because an absent focus and a focused panel both make
       // `indexOf(activeElement)` -1.
-      queueMicrotask(() => panelEl?.querySelector?.('[role="menu"]')?.focus())
+      queueMicrotask(() => menuEl?.focus?.())
     })
   }
 
-  function closeMenu() {
+  // The control the trigger's snippet drew: the one that held focus when the
+  // menu opened, else the first the DOM can find. A browser that does not focus
+  // a button on press (Safari) never reports one.
+  function controlOf() {
+    return control ?? triggerEl?.querySelector?.('button,a,[tabindex="0"]')
+  }
+
+  function closeMenu(restoreFocus = true) {
     open = false
-    // Restore focus to the trigger element
-    triggerEl?.querySelector?.('button,a,[tabindex="0"]')?.focus()
+    if (restoreFocus) controlOf()?.focus?.()
   }
 
   // A terminal node has no pixel box: the panel paints where it is written,
@@ -105,8 +127,9 @@
     // A row asking `data-confirm` is answered in a panel outside this one.
     // Pressing its confirm button must not unmount the row, or the re-fired
     // click lands on a detached element and the guarded handler never runs.
-    if (panelEl?.querySelector('[data-confirm]') && e.target?.closest?.('[data-confirm-panel]')) return
-    closeMenu()
+    if (panelEl?.querySelector?.('[data-confirm]') && e.target?.closest?.('[data-confirm-panel]')) return
+    // Clicking another field to dismiss must leave focus on that field.
+    closeMenu(!e.target?.closest?.(FOCUSABLE))
   }
 
   // Type-to-jump. Letters typed within half a second narrow one match; the
@@ -123,9 +146,8 @@
     const needle = cycle ? ahead[0] : ahead
     const from   = cycle || cur === -1 ? cur + 1 : cur
     for (let i = 0; i < items.length; i++) {
-      const item  = items[(from + i) % items.length]
-      const label = (item.querySelector('[data-part="label"]') ?? item).textContent.trim().toLowerCase()
-      if (label.startsWith(needle)) return item
+      const item = items[(from + i) % items.length]
+      if (item.label().trim().toLowerCase().startsWith(needle)) return item
     }
     return undefined
   }
@@ -138,13 +160,13 @@
     if (!typed && !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
 
     e.preventDefault()
-    // Query live items from the DOM rather than a registry — simpler and handles
-    // conditionally rendered items automatically.
-    const items = Array.from(
-      panelEl?.querySelectorAll?.(
-        ':is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]):not([disabled]):not([aria-disabled="true"])'
-      ) ?? []
-    )
+    // Registration is mount order; a row behind an `{#if}` can mount after
+    // the rows below it, so a browser puts them back in document order.
+    const items = rows.filter((r) => r.el() && !r.disabled())
+    items.sort((a, b) => {
+      const pos = a.el().compareDocumentPosition?.(b.el())
+      return pos & 4 ? -1 : pos & 2 ? 1 : 0
+    })
     if (!items.length) return
 
     // Opening focuses the PANEL, so on the first press nothing in this list
@@ -152,7 +174,7 @@
     // the first item going down — which is right by accident — and the
     // second-to-last going up, which is not right by anything. Both ends are
     // named rather than computed.
-    const cur = items.indexOf(document.activeElement)
+    const cur = items.indexOf(cursor)
     let next
     if (e.key === 'Home') {
       next = items[0]
@@ -167,7 +189,7 @@
         ? items[(cur + 1) % items.length]
         : items[(cur - 1 + items.length) % items.length]
     }
-    next?.focus()
+    next?.el().focus()
   }
 
   // Keep the caller's control in sync with the menu's state.
@@ -203,13 +225,14 @@
   style:display="inline-block"
   {class}
   {...$attributes}
+  on:focusin={(e) => control = e.target}
   on:click|stopPropagation={openMenu}
 >
   {@render trigger?.()}
 </span>
 
 {#if open}
-  <mesa:portal to={document.body}>
+  <mesa:portal to={overlayHost()}>
     <!--
       .popover is the surface; .items.menu is the interactive list inside it,
       which is what gives DropdownItem's `.item` its hover and padding.
@@ -232,7 +255,7 @@
         `{@render children?.()}` instead, so every menu opened empty unless the
         caller wrapped its items in a snippet nobody documents.
       -->
-      <div class="items menu" role="menu" tabindex="-1">
+      <div bind:this={menuEl} class="items menu" role="menu" tabindex="-1">
         <slot />
       </div>
     </div>

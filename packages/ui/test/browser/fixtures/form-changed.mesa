@@ -1,0 +1,102 @@
+<script>
+  // form-changed.mesa — every kit form control inside one hand-written <Form>.
+  //
+  // A hand-written control is not obliged to emit a named DOM event, so the
+  // form hears a change only if the control tells it (`FJS-D903`). The spec
+  // fails a submit with a server message on one field, commits a value in that
+  // field's control, and asks whether the form turned dirty and dropped the
+  // message. Each control sits in a `[data-ctl]` box named for its component
+  // file, which is how the spec walks the component list.
+  import Form          from '../../../components/forms/Form.mesa'
+  import Input         from '../../../components/forms/Input.mesa'
+  import Textarea      from '../../../components/forms/Textarea.mesa'
+  import Select        from '../../../components/forms/Select.mesa'
+  import Checkbox      from '../../../components/forms/Checkbox.mesa'
+  import Switch        from '../../../components/forms/Switch.mesa'
+  import RadioGroup    from '../../../components/forms/RadioGroup.mesa'
+  import Slider        from '../../../components/forms/Slider.mesa'
+  import Thresholds    from '../../../components/forms/Thresholds.mesa'
+  import SignaturePad  from '../../../components/forms/SignaturePad.mesa'
+  import NumberInput   from '../../../components/forms/NumberInput.mesa'
+  import MoneyInput    from '../../../components/forms/MoneyInput.mesa'
+  import Combobox      from '../../../components/forms/Combobox.mesa'
+  import MultiSelect   from '../../../components/forms/MultiSelect.mesa'
+  import DatePicker    from '../../../components/forms/DatePicker.mesa'
+  import DateTimeInput from '../../../components/forms/DateTimeInput.mesa'
+  import CodeInput     from '../../../components/forms/CodeInput.mesa'
+  import JsonInput     from '../../../components/forms/JsonInput.mesa'
+  import FileUpload    from '../../../components/forms/FileUpload.mesa'
+  import FileField     from '../../../components/forms/FileField.mesa'
+  import GeoField      from '../../../components/forms/GeoField.mesa'
+
+  let SERVER_ERRORS = {}
+  window.kitFailWith = (map) => { SERVER_ERRORS = map }
+
+  const RESOURCE = {
+    context: { model: 'Thing', service: 'things', idField: 'id' },
+    fields:  {},
+    options: () => Promise.resolve([]),
+    make: () => ({}),
+    fieldErrors: () => ({ fields: SERVER_ERRORS, message: 'Could not save' }),
+    validate: () => [],
+    service: {},
+  }
+
+  let dirty  = false
+  let errors = {}
+  let api    = null
+  window.kitReset = () => api?.reset()
+
+  async function submit() {
+    throw new Error('rejected')
+  }
+
+  const ITEMS = [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Beta' }]
+
+  let headline = ''
+  let summary  = ''
+  let plan     = 'a'
+  let live     = false
+  let notify   = false
+  let owner    = 'a'
+  let weight   = 2
+  let cuts     = [2, 5, 8]
+  let signed   = null
+  let seats    = 2
+  let price    = null
+  let region   = null
+  let tags     = []
+  let due      = null
+  let at       = ''
+  let body     = ''
+  let doc      = null
+  let site     = { lat: 1, lng: 2 }
+</script>
+
+<div id="host">
+  <Form resource={RESOURCE} bind:dirty bind:errors onsubmit={submit} onready={(a) => api = a}>
+    <div data-ctl="Input"><Input name="headline" bind:value={headline} /></div>
+    <div data-ctl="Textarea"><Textarea name="summary" bind:value={summary} /></div>
+    <div data-ctl="Select"><Select name="plan" options={ITEMS} bind:value={plan} /></div>
+    <div data-ctl="Checkbox"><Checkbox name="live" bind:checked={live} /></div>
+    <div data-ctl="Switch"><Switch name="notify" bind:checked={notify} /></div>
+    <div data-ctl="RadioGroup"><RadioGroup name="owner" items={ITEMS} bind:value={owner} /></div>
+    <div data-ctl="Slider"><Slider name="weight" bind:value={weight} min={0} max={10} /></div>
+    <div data-ctl="Thresholds"><Thresholds name="cuts" bind:values={cuts} min={0} max={10} /></div>
+    <div data-ctl="SignaturePad"><SignaturePad name="signature" bind:value={signed} /></div>
+    <div data-ctl="NumberInput"><NumberInput name="seats" bind:value={seats} /></div>
+    <div data-ctl="MoneyInput"><MoneyInput name="price" currency="USD" value={price} onvalue={(v) => price = v} /></div>
+    <div data-ctl="Combobox"><Combobox name="region" options={ITEMS} bind:value={region} /></div>
+    <div data-ctl="MultiSelect"><MultiSelect name="tags" options={ITEMS} multiple bind:value={tags} /></div>
+    <div data-ctl="DatePicker"><DatePicker name="due" alwaysShow isOpen bind:startDate={due} /></div>
+    <div data-ctl="DateTimeInput"><DateTimeInput name="at" value={at} onvalue={(v) => at = v} /></div>
+    <div data-ctl="CodeInput"><CodeInput name="body" value={body} oninput={(e) => body = e.target.value} /></div>
+    <div data-ctl="JsonInput"><JsonInput name="doc" value={doc} onvalue={(v) => doc = v} /></div>
+    <div data-ctl="FileUpload"><FileUpload name="files" /></div>
+    <div data-ctl="FileField"><FileField name="photo" /></div>
+    <div data-ctl="GeoField"><GeoField name="site" value={site} onvalue={(v) => site = v} /></div>
+  </Form>
+</div>
+
+<output id="dirty">{dirty}</output>
+<output id="errorKeys">{Object.keys(errors).sort().join(',')}</output>

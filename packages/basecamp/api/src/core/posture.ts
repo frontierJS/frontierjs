@@ -41,7 +41,12 @@ export interface PostureReadings {
   privileged?:   { name: string; privileged: boolean; docker_sock: boolean }[] | null
   files?:        { path: string; mode: string; owner: string; group: string }[] | null
   cert?:         { expires_at: string } | null
+  // The installation's own host only: the files its report-only Outpost was
+  // told hold the database and ENCRYPTION_KEY, each null when unreadable.
+  host_files?:   { db: FileStat | null; env: FileStat | null } | null
 }
+
+export interface FileStat { path: string; mode: string; owner: string; group: string }
 
 export type ControlState = true | false | 'unknown'
 export type Severity     = 'high' | 'medium' | 'low'
@@ -338,6 +343,73 @@ export function gradePosture(
     catch { g = unknown('The reading was not in the shape the grader expects') }
     return { id, group, severity, ...g }
   })
+}
+
+// ─── the installation's own host ──────────────────────────────────────────
+
+/** A host with no command listener has no command-port certificate to expire. */
+const NOT_ON_HOST = new Set(['outpost.cert-expiry'])
+
+// The default `backupCron` is daily, so two days is one missed run and a grace.
+const BACKUP_MAX_AGE_DAYS = 2
+
+// Owner and group may do anything; any bit for everyone else is a reader of
+// `ENCRYPTION_KEY` or of every workspace's rows who is not the stack.
+const worldAccess = (mode: string) => (Number.parseInt(mode, 8) & 0o007) !== 0
+
+function fileControl(what: string, stat: FileStat | null | undefined): Grade {
+  if (!stat) return unknown(`The ${what} could not be read — is its path in the host Outpost's config?`)
+  if (!/^[0-7]{3,4}$/.test(stat.mode)) return unknown(`Unreadable mode for ${stat.path}: ${stat.mode}`)
+  return worldAccess(stat.mode)
+    ? { ok: false, message: `${stat.path} is mode ${stat.mode} — readable outside ${stat.owner}:${stat.group}` }
+    : { ok: true,  message: `${stat.path} is mode ${stat.mode}` }
+}
+
+const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: PostureReadings | null, host: HostDeclared, now: number) => Grade }[] = [
+  // Graded in process from the Backup rows, so a stale report does not hide it.
+  { id: 'hub.backup-recent', group: 'hub', severity: 'high', grade: (_r, host, now) => {
+    if (!host.lastBackupAt) return { ok: false, message: 'No backup has ever finished' }
+    const age = days(now - Date.parse(host.lastBackupAt))
+    return age <= BACKUP_MAX_AGE_DAYS
+      ? { ok: true,  message: age === 0 ? 'Last backup finished today' : `Last backup finished ${age} day(s) ago` }
+      : { ok: false, message: `Last backup finished ${age} days ago` }
+  } },
+  { id: 'hub.db-mode',  group: 'hub', severity: 'high', grade: (r) => fileControl('database volume', r?.host_files?.db) },
+  { id: 'hub.env-mode', group: 'hub', severity: 'high', grade: (r) => fileControl('file holding ENCRYPTION_KEY', r?.host_files?.env) },
+]
+
+export const HUB_CONTROL_IDS = HUB_CONTROLS.map(c => c.id)
+
+/** What the installation's own host should look like. */
+export interface HostDeclared {
+  /** `finishedAt` of the newest successful Backup; null when none has. */
+  lastBackupAt: string | null
+}
+
+/**
+ * Grade the installation's own host: the machine controls it can answer, read
+ * against nothing placed on it (only the edge and sshd should listen), then the
+ * `hub.*` controls only it has. `hub.backup-recent` reads rows, never the
+ * report, so it is graded whether or not the report is stale.
+ */
+export function gradeHostPosture(
+  readings: PostureReadings | null | undefined,
+  host: HostDeclared,
+  { at, now, intervalMs = POSTURE_INTERVAL_MS }: { at: string | number; now: number; intervalMs?: number },
+): Control[] {
+  const declared: Declared = { expectedPorts: [22, 80, 443], exposedPorts: [], sshKeys: null }
+  const machine = gradePosture(readings, declared, { at, now, intervalMs }).filter(c => !NOT_ON_HOST.has(c.id))
+  const taken   = typeof at === 'number' ? at : Date.parse(at)
+  const stale   = !Number.isFinite(taken) || now - taken > 2 * intervalMs
+  const hub     = HUB_CONTROLS.map(({ id, group, severity, grade }) => {
+    if (id !== 'hub.backup-recent' && (stale || !readings))
+      return { id, group, severity, ok: 'unknown' as const, message: stale ? 'The last report is stale' : 'No report' }
+    let g: Grade
+    try { g = grade(readings ?? null, host, now) }
+    catch { g = unknown('The reading was not in the shape the grader expects') }
+    return { id, group, severity, ...g }
+  })
+  return [...hub, ...machine]
 }
 
 /** How a graded report sorts: failing high first, then any failing, then unknown. */

@@ -625,3 +625,48 @@ model Doc {
     db.$close()
   })
 })
+
+// FJS-1724 — the generated tenant deny compiled to `NOT (? IS NULL OR col != ?)`,
+// which no index serves, so a scoped read scanned every tenant's rows. The pass
+// form `? IS NOT NULL AND col = ?` has the same truth table and a SEARCH.
+describe('the tenant deny on a row-tenancy model', () => {
+  const SCHEMA = `
+tenancy { strategy row  column workspaceId  claim workspaceId }
+model Doc {
+  id          String @id
+  workspaceId String
+  title       String?
+  @@index([workspaceId])
+}
+`
+  it('plans a SEARCH on the tenant index, and the rows are the same', async () => {
+    const { Database } = await import('bun:sqlite')
+    const { mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir  = mkdtempSync(join(tmpdir(), 'litestone-tenant-scan-'))
+    const file = join(dir, 'db.sqlite')
+    try {
+      const seen: any[] = []
+      const db: any = await createClient({ schema: SCHEMA, db: file, onQuery: (e: any) => seen.push(e) })
+      const sys = db.asSystem()
+      for (let i = 0; i < 300; i++) await sys.doc.create({ data: { id: `d${i}`, workspaceId: i % 30 === 0 ? 'W1' : `W${2 + (i % 20)}` } })
+
+      seen.length = 0
+      const w1 = await db.$setAuth({ id: 'u', workspaceId: 'W1' }).doc.findMany()
+      expect(w1.length).toBe(10)
+      expect(w1.every((r: any) => r.workspaceId === 'W1')).toBe(true)
+      const q = seen.find(e => e.operation === 'findMany')
+
+      const raw = new Database(file, { readonly: true })
+      try {
+        const plan = (raw.prepare('EXPLAIN QUERY PLAN ' + q.sql).all(...q.params) as any[]).map(r => r.detail).join(' | ')
+        expect(plan).toMatch(/SEARCH doc USING INDEX idx_doc_workspaceId/)
+      } finally { raw.close() }
+
+      // No principal carries no tenant: the deny still refuses every row.
+      expect(await db.$setAuth({ id: 'u' }).doc.findMany()).toEqual([])
+      db.$close()
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})

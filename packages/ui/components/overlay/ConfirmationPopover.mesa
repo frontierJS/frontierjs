@@ -41,12 +41,24 @@
   function handleConfirm() { open = false; restoreFocus(); onconfirm?.() }
   function handleCancel()  { open = false; restoreFocus(); oncancel?.() }
 
+  // The control that held focus when the panel opened; a terminal node cannot
+  // be queried for one. A browser that does not focus a button on press
+  // (Safari) never reports one, and finds it by query.
+  var control = null
+
   function restoreFocus() {
-    triggerEl?.querySelector?.('button, a, [tabindex]')?.focus()
+    (control ?? triggerEl?.querySelector?.('button, a, [tabindex]'))?.focus?.()
   }
 </script>
 
-<span bind:this={triggerEl} style:display="inline-block" {class} {...$attributes} on:click|stopPropagation={() => open = true}>
+<span
+  bind:this={triggerEl}
+  style:display="inline-block"
+  {class}
+  {...$attributes}
+  on:focusin={(e) => control = e.target}
+  on:click|stopPropagation={() => open = true}
+>
   {@render trigger?.()}
 </span>
 

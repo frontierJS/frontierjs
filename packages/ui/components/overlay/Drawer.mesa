@@ -47,6 +47,12 @@
 
   function handleClose() {
     if (open) {
+      // Chrome stops firing a cancelable `cancel` on the second Escape in a
+      // row, so preventDefault alone lets a non-dismissible dialog close.
+      if (!dismissible) {
+        dialogEl.showModal()
+        return
+      }
       open = false
       onclose?.()
     }
@@ -56,9 +62,15 @@
     if (!dismissible) e.preventDefault()
   }
 
+  // A drag from a field released over the backdrop also clicks the dialog.
+  let pressedBackdrop = false
+  function handleMouseDown(e) {
+    pressedBackdrop = e.target === dialogEl
+  }
   function handleClick(e) {
     if (!dismissible) return
-    if (e.target === dialogEl) dialogEl.close()
+    if (e.target === dialogEl && pressedBackdrop) dialogEl.close()
+    pressedBackdrop = false
   }
 
   function close() {
@@ -74,6 +86,7 @@
   {...$attributes}
   on:close={handleClose}
   on:cancel={handleCancel}
+  on:mousedown={handleMouseDown}
   on:click={handleClick}
 >
   <div class="surface-header">

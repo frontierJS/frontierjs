@@ -17,6 +17,7 @@ import { signRequest }            from '@frontierjs/toolbelt/signature'
 import { createInspector }        from '../src/docker.js'
 import { createReporter }         from '../src/report.js'
 import { createOutpostServer }    from '../src/server.js'
+import { readConfig }             from '../src/config.js'
 
 const FIXTURE = JSON.parse(await Bun.file(new URL('./fixtures/posture/dev-host.json', import.meta.url)).text())
 
@@ -368,5 +369,47 @@ describe('posture reaches basecamp', () => {
     const body = await res.json()
     expect(body.readings.kernel.running).toBe('6.8.0-138-generic')
     expect(body.readings.firewall).toBeNull()
+  })
+})
+
+// ─── the installation's own host (FJS-2714) ──────────────────────────────────
+
+describe('the report-only host Outpost', () => {
+  const HOST_ENV = {
+    OUTPOST_HOST_KEY: 'k'.repeat(64), BASECAMP_URL: 'http://127.0.0.1:8120/',
+    OUTPOST_HOST_DB_PATH: '/srv/basecamp/db', OUTPOST_HOST_ENV_PATH: '/srv/basecamp/.env',
+  }
+
+  test('the host key alone configures it: no server, no certificate, and a server id beside it is refused', () => {
+    const config = readConfig(HOST_ENV)
+    expect([config.host, config.serverId, config.secret, config.basecampUrl]).toEqual([true, null, 'k'.repeat(64), 'http://127.0.0.1:8120'])
+    expect(config.hostFiles).toEqual({ db: '/srv/basecamp/db', env: '/srv/basecamp/.env' })
+    expect(() => readConfig({ ...HOST_ENV, OUTPOST_SERVER_ID: 'srv-1' })).toThrow(/names no machine/)
+    expect(() => readConfig({ OUTPOST_HOST_KEY: 'k' })).toThrow(/BASECAMP_URL/)
+  })
+
+  test('it posts posture naming no machine, with the two files read one stat each', async () => {
+    const run = async (argv) => {
+      if (argv[0] === 'stat' && argv.at(-1) === '/srv/basecamp/db')   return { exitCode: 0, stdout: '700 root root /srv/basecamp/db\n', stderr: '' }
+      if (argv[0] === 'stat' && argv.at(-1) === '/srv/basecamp/.env') return { exitCode: 1, stdout: '', stderr: 'No such file' }
+      throw enoent(argv)
+    }
+    const sent = []
+    const config   = readConfig(HOST_ENV)
+    const reporter = createReporter(config, {
+      inspector: createInspector({ run, hostFiles: config.hostFiles }),
+      fetch: async (url, init) => { sent.push({ url, body: JSON.parse(init.body) }); return new Response('{}', { status: 200 }) },
+      log: { warn() {} },
+    })
+    const stop = reporter.start()
+    await new Promise(r => setTimeout(r, 20))
+    stop()
+
+    expect(sent.map(s => s.url)).toEqual(['http://127.0.0.1:8120/posture'])
+    expect('server_id' in sent[0].body).toBe(false)
+    expect(sent[0].body.readings.host_files).toEqual({
+      db:  { path: '/srv/basecamp/db', mode: '700', owner: 'root', group: 'root' },
+      env: null,
+    })
   })
 })

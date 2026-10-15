@@ -1162,6 +1162,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `data` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `contextType` | `NotificationContext`? | — | — | — | — |
 | `contextId` | `string`? | — | — | — | — |
+| `deliveryKey` | `string`? | — | — | — | — |
 | `readAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `userId`, `type`, `data` · not accepted — `id`

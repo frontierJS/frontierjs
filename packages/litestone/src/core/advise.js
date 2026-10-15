@@ -19,7 +19,7 @@
 // must be answerable about a schema that has never been migrated.
 
 import { parseGateString } from '../plugins/gate.js'
-import { authClaimsUsed }   from './policy.js'
+import { authClaimsUsed, pickWhere } from './policy.js'
 import { ID_GENERATORS }   from './ids.js'
 import { VALIDATOR_KINDS } from './validate.js'
 
@@ -1060,6 +1060,55 @@ export const RULES = [
               `auth().${def.value.field}, so a visitor's create is refused 401 naming ${f.name}. ` +
               `Raise the create level to 1 or more, or make ${f.name} optional.`,
           })
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'create-reaches-unpickable-relation',
+    severity: 'warn',
+    title:    'a create policy reaches through a relation the picker cannot be narrowed by',
+    blurb:    'A create @@allow that reads a related row (schedule.hostId == auth().id) accepts only some ' +
+              'of that model, and a generated picker offers every row the caller can READ. Litestone ' +
+              'derives the narrowing for a top-level rel.col == auth().claim conjunct (x-pick-where); ' +
+              'any other shape — an ||, an in, a computed value — it cannot state, so the picker offers ' +
+              'rows the write refuses unless the related model\'s own read policy already narrows them.',
+    run(schema) {
+      const byName = new Map((schema.models ?? []).map(m => [m.name, m]))
+      const reads  = m => (m?.attributes ?? []).some(a =>
+        a.kind === 'allow' && a.operations?.some(op => op === 'read' || op === 'all'))
+      const pathsIn = (node, acc = []) => {
+        if (!node || typeof node !== 'object') return acc
+        if (node.type === 'path' && node.rel) acc.push(node)
+        for (const v of Object.values(node)) pathsIn(v, acc)
+        return acc
+      }
+
+      const out = []
+      for (const model of schema.models ?? []) {
+        const allows = (model.attributes ?? []).filter(a => a.kind === 'allow' && a.operations?.includes('create'))
+        if (!allows.length) continue
+        const pinned = pickWhere(model)
+        const seen   = new Set()
+        for (const allow of allows) {
+          for (const { rel, name } of pathsIn(allow.expr)) {
+            const field = (model.fields ?? []).find(f => f.name === rel)
+            const fk    = field?.attributes?.find(a => a.kind === 'relation')?.fields
+            if (field?.type?.kind !== 'relation' || field.type.array || fk?.length !== 1) continue
+            if (pinned[fk[0]]?.[name] || seen.has(rel)) continue
+            const target = byName.get(field.type.name)
+            if (reads(target)) continue
+            seen.add(rel)
+            out.push({
+              model: model.name, field: fk[0],
+              message: `${model.name}.${fk[0]}: a create @@allow reads ${rel}.${name}, so the write accepts only some ` +
+                `${field.type.name} rows, and ${field.type.name} has no read @@allow to narrow what a picker over ` +
+                `${fk[0]} lists. Narrow ${field.type.name}'s read policy, or give the field an optionsQuery where: ` +
+                `stating the same rows.`,
+            })
+          }
         }
       }
       return out

@@ -3327,7 +3327,7 @@ export type DiskUsageOrderBy =
 
 export interface ServerPosture {
   id: string
-  serverId: string
+  serverId?: string | null
   at: string
   readings: unknown
   controls: unknown
@@ -3338,7 +3338,7 @@ export interface ServerPosture {
 
 export interface ServerPostureCreate {
   id?: string
-  serverId: string
+  serverId?: string | null
   at: string
   readings?: unknown
   controls?: unknown
@@ -3348,7 +3348,7 @@ export interface ServerPostureCreate {
 
 export interface ServerPostureUpdate {
   id?: string
-  serverId?: string
+  serverId?: string | null
   at?: string
   readings?: unknown
   controls?: unknown
@@ -4766,6 +4766,7 @@ export interface Notification {
   data: unknown
   contextType?: NotificationContext | null
   contextId?: string | null
+  deliveryKey?: string | null
   readAt?: string | null
   createdAt: string
 }
@@ -4777,6 +4778,7 @@ export interface NotificationCreate {
   data: unknown
   contextType?: NotificationContext | null
   contextId?: string | null
+  deliveryKey?: string | null
   readAt?: string | null
 }
 
@@ -4787,6 +4789,7 @@ export interface NotificationUpdate {
   data?: unknown
   contextType?: NotificationContext | null
   contextId?: string | null
+  deliveryKey?: string | null
   readAt?: string | null
 }
 
@@ -4797,6 +4800,7 @@ export interface NotificationWhere extends WhereBase {
   data?: unknown | WhereOp<unknown> | null
   contextType?: NotificationContext | WhereOp<NotificationContext> | null
   contextId?: string | WhereOp<string> | null
+  deliveryKey?: string | WhereOp<string> | null
   readAt?: string | WhereOp<string> | null
   createdAt?: string | WhereOp<string> | null
   AND?: NotificationWhere[]

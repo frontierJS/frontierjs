@@ -334,6 +334,9 @@
     // a value naming a row the server has never heard of.
     announce?.()
     onchange?.(value)
+    // An option or a token is a click, and the search box is not the value:
+    // nothing here emits an event the form can key on.
+    form?.changed?.(name)
     return true
   }
 

@@ -66,7 +66,7 @@
  */
 import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind, pickerHidden, opaque } from './terminal/tags.js'
+import { TERMINAL_TAGS, TERMINAL_EVENTS, WIDGET_ROLES, isInline, inputKind, pickerHidden, opaque } from './terminal/tags.js'
 import { htmlEntitiesToText } from './entities.js'
 
 // A terminal is a running client with no DOM: `$.onMount` runs and a watch is
@@ -527,6 +527,7 @@ function attach(parent, node, before = null) {
   inherit(node, parent.__bits)
   const anchor = before ?? parent.__tail ?? null
   anchor ? parent.insertBefore(node, anchor) : parent.add(node)
+  if (parent.__announce) announce(parent)
 }
 
 /** A component's `__anchor` is the marker its caller placed, so appending
@@ -559,7 +560,9 @@ function placeBefore(marker, node) {
 function detach(node) {
   const fr = node.__fragment
   if (fr) { const at = fr.indexOf(node); if (at >= 0) fr.splice(at, 1); node.__fragment = null }
+  const parent = node.parent
   node.destroyRecursively()
+  if (parent?.__announce && !parent.isDestroyed) announce(parent)
 }
 
 // ─── nodes ────────────────────────────────────────────────────────────
@@ -708,6 +711,44 @@ export function element(tag, attrs = {}) {
  * engine emits `input` when its value is written, which a DOM program write
  * never does, so the write is muted.
  */
+const ANNOUNCED = new Set(['role', 'aria-label', 'aria-valuetext', 'aria-valuenow'])
+
+/** A box with a `tabindex` of 0 or more is a Tab stop that hears its keys,
+ *  inverted while focused; anything less leaves focus to what already made
+ *  the node focusable (a button, a link, a `click` listener). */
+function tabStop(node) {
+  if (TERMINAL_TAGS[node.__tag]?.role !== 'box') return
+  if (parseInt(node.__attrs.tabindex, 10) >= 0) {
+    node.__canFocus = true
+    node.focusable = !disabled(node)
+    focusSource(node)
+    invertWhileFocused(node)
+  } else if (!node.__activatable) {
+    node.__canFocus = false
+    node.focusable = false
+    if (node.focused) node.blur()
+  }
+}
+
+/** What a screen reader says for a widget with a name and no content: the
+ *  `aria-label`, then the value. A box with content of its own paints that
+ *  and nothing more, so the text goes empty while one is there; a block's
+ *  marker holds none. */
+function announce(node) {
+  if (TERMINAL_TAGS[node.__tag]?.role !== 'box') return
+  const a = node.__attrs
+  const words = WIDGET_ROLES.has(a.role) ? [a['aria-label'], a['aria-valuetext'] ?? a['aria-valuenow']] : []
+  let str = words.filter((w) => w != null && w !== '').join(' ')
+  if (!node.__announce) {
+    if (!str) return
+    node.__announce = text('')
+    const [first] = node.getChildren()
+    first ? node.insertBefore(node.__announce, first) : node.add(node.__announce)
+  }
+  if (node.getChildren().some((c) => c !== node.__announce && !c.__marker)) str = ''
+  set_text(node.__announce, str)
+}
+
 export function set_attribute(node, name, value) {
   const present = value != null && value !== false
   if (present) node.__attrs[name] = value
@@ -770,6 +811,8 @@ export function set_attribute(node, name, value) {
   }
   if (name === 'class') { paintOpaque(node); return }
   if (name === 'href' && node.__tag === 'a') { link(node, present); return }
+  if (name === 'tabindex') tabStop(node)
+  if (ANNOUNCED.has(name)) announce(node)
   if (name === 'size' && node instanceof Field) { node.minWidth = parseInt(value, 10) > 0 ? parseInt(value, 10) : 20; return }
   if (name === 'disabled') {
     // A disabled control takes no focus and no activation, and gives up the

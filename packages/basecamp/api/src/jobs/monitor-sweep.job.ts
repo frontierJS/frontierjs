@@ -13,6 +13,7 @@
 // `core/probe.ts`, which may not be re-derived here.
 
 import { defineJob }      from '@frontierjs/caravan'
+import { assertPublicUrl, type PublicUrlOptions } from '@frontierjs/junction/public-url'
 import { runsAsApp }      from './context.ts'
 import { gradeProbe, nextState, type ProbeOutcome } from '../core/probe.ts'
 import { fanOutToChannels } from '../core/delivery.ts'
@@ -29,6 +30,11 @@ export interface MonitorSweepOptions {
   at?:        number
   /** One monitor rather than every due one. */
   monitorId?: string
+  /** Where a probe may go. A test with a listener on loopback turns
+   *  `allowPrivate` on here; the job passes nothing, and no row or config can,
+   *  because whoever writes a monitor is a workspace admin and not an operator
+   *  (`FJS-D1018`). */
+  destinations?: PublicUrlOptions
 }
 
 export interface MonitorSweepResult {
@@ -49,6 +55,8 @@ export async function sweepMonitors(
   const db     = (app.db as any).asSystem()
   const at     = opts.at ?? Date.now()
   const result = { probed: 0, down: 0, up: 0 }
+  // Plain http is a site people watch; it is the destination that is graded.
+  const destinations = { allowHttp: true, ...opts.destinations }
 
   // Every workspace in one pass, the way `alert-evaluate` crosses them: the row
   // tenancy scopes to one workspace and a cron has none.
@@ -67,7 +75,7 @@ export async function sweepMonitors(
     while (next < due.length) {
       const monitor = due[next++]
       try {
-        await checkOne(app, db, monitor, at, result)
+        await checkOne(app, db, monitor, at, result, destinations)
       } catch (err) {
         // One monitor's failure to be recorded must not cost the ones after it
         // their check.
@@ -86,8 +94,9 @@ async function checkOne(
   monitor: any,
   at:      number,
   result:  MonitorSweepResult,
+  destinations: PublicUrlOptions,
 ): Promise<void> {
-  const { outcome, latencyMs } = await probe(monitor)
+  const { outcome, latencyMs } = await probe(monitor, destinations)
   const grade = gradeProbe(monitor, outcome)
   const state = nextState(monitor, grade.ok, at)
   result.probed++
@@ -165,9 +174,13 @@ async function checkOne(
 
 // ─── The request ─────────────────────────────────────────────────────────
 
-/** Redirects are followed by hand: `fetch` follows or refuses, and
- *  `maxRedirects` is a count. */
-async function probe(monitor: any): Promise<{ outcome: ProbeOutcome; latencyMs: number | null }> {
+/** Redirects are followed by hand: `fetch` follows or refuses, `maxRedirects`
+ *  is a count, and each hop's own URL is graded before it is requested — a
+ *  public page answering 302 to `http://169.254.169.254/` is the same probe. */
+async function probe(
+  monitor:      any,
+  destinations: PublicUrlOptions,
+): Promise<{ outcome: ProbeOutcome; latencyMs: number | null }> {
   const started = performance.now()
   const elapsed = () => Math.round(performance.now() - started)
 
@@ -176,6 +189,7 @@ async function probe(monitor: any): Promise<{ outcome: ProbeOutcome; latencyMs: 
     const signal = AbortSignal.timeout(monitor.timeoutMs)
 
     for (let hops = 0; ; hops++) {
+      await assertPublicUrl(url, destinations)
       const res = await fetch(url, {
         method:   hops === 0 ? monitor.method : 'GET',
         headers:  monitor.headers ?? {},

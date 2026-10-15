@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-51 services · 41 routes · 17 plugins · prefix (none)
+51 services · 40 routes · 17 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -25,6 +25,7 @@ text, so a body that elevates through a helper is not listed.
 | `api-keys.owners` | standing 5 or above — declared `gate: 5` |
 | `apps.place` | standing 4 or above — declared `gate: 4` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
+| `channels.test` | standing 5 or above — declared `gate: 5` |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
 | `infra.onboarding` | standing 2 or above — declared `gate: 2` |
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
@@ -55,7 +56,7 @@ and what it does.
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (87)
+### A service hook runs in front of the body (88)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -121,6 +122,7 @@ name, and is as unread as the body.
 | `networks.detach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `posture.latest` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `posture.fleet` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `posture.host` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireSystemAdmin` |
 | `projects.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `recipes.restore` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` |
 | `recipes.run` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` |
@@ -349,7 +351,7 @@ name when it declares none.
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `rules` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `test` — standing 5 or above — declared `gate: 5`
+  - `test` — standing 5 or above — declared `gate: 5`; body writes as the app
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -792,7 +794,6 @@ name when it declares none.
 
 - **methods** — `find`, `read`
 - **custom methods** — `read`
-- **also answers to** — `metrics`
 - **who may call** —
   - `find` — standing 7 or above — declared `gate: 7`
   - `read` — standing 7 or above — declared `gate: 7`
@@ -960,11 +961,12 @@ name when it declares none.
 
 ### `posture` · model `ServerPosture`
 
-- **methods** — `latest`, `fleet`, `check`, `report`
-- **custom methods** — `latest`, `fleet`, `check`, `report`
+- **methods** — `latest`, `fleet`, `host`, `check`, `report`
+- **custom methods** — `latest`, `fleet`, `host`, `check`, `report`
 - **who may call** —
   - `latest` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `fleet` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `host` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireSystemAdmin`
   - `check` — standing 4 or above — declared `gate: 4`
   - `report` — anyone, a stranger included — declared `gate: 0`
 - **broadcasts on** — `(computed)`
@@ -973,6 +975,7 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
+| before | `host` | `requireSystemAdmin` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -1348,7 +1351,6 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/auth/support/end` | raw |
 | POST | `/auth/support/start` | raw |
 | GET | `/auth/workspace` | raw |
-| GET | `/channels/stats` | raw |
 | GET | `/health` | raw |
 | GET | `/health/live` | raw |
 | GET | `/health/ready` | raw |

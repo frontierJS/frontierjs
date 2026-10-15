@@ -2099,8 +2099,19 @@ export class JunctionClient extends EventEmitter {
       }
       const fail = (e: unknown): void => { failure = reasonOf(e) }
 
+      // A revoke sends no frame (`FJS-1738`), so a re-read the server answers
+      // 404 for a row this view held is the only way the view learns the row
+      // is no longer its reader's. That is `removed`'s answer, not "whatever
+      // it last knew". Never on the first read: nothing was held, and gone
+      // would keep a row created later off the screen.
+      const refusedAsGone = (e: unknown, held: boolean): void => {
+        if (!held || reasonOf(e).status !== 404) return
+        gone = true
+      }
+
       const readComposed = async (): Promise<T | null> => {
         if (running) { dirty = true; return running }
+        const wasGone = gone
         running = (async () => {
           try {
             do {
@@ -2115,11 +2126,12 @@ export class JunctionClient extends EventEmitter {
             // A refused or missing row is not a crash: this answers whatever it
             // last knew, exactly as the node-backed path does, and says why.
             fail(e)
+            refusedAsGone(e, own != null)
           } finally {
             running = null
           }
-          if (!gone) emit(own)
-          return own
+          if (!wasGone) emit(value())
+          return value()
         })()
         return running
       }
@@ -2149,8 +2161,19 @@ export class JunctionClient extends EventEmitter {
       // watched row goes stale under exactly the writes that say least.
       const offChanged = svc.on('changed', () => { if (!gone) void fetch() })
 
+      // A reconnect is a gap this view cannot see into, and a revoke sent no
+      // frame into it (`FJS-1740`). It re-reads as the list does, jittered for
+      // the same herd (`FJS-701`); a read the server now refuses with a 404
+      // ends the view.
+      let reread: ReturnType<typeof setTimeout> | null = null
+      const offReconnected = this.on('reconnected', () => {
+        if (gone || reread) return
+        reread = setTimeout(() => { reread = null; void fetch() }, Math.random() * 2000)
+      })
+
       const fetch = async (): Promise<T | null> => {
         if (composed) return readComposed()
+        const wasGone = gone
         try {
           const row = ropts.load
             ? await ropts.load()
@@ -2164,7 +2187,8 @@ export class JunctionClient extends EventEmitter {
           // with `error()` saying why. Subscribers hear it too, since a push
           // cannot.
           fail(e)
-          if (!gone) emit(value())
+          refusedAsGone(e, node.get() != null)
+          if (!wasGone) emit(value())
           return null
         }
       }
@@ -2183,7 +2207,12 @@ export class JunctionClient extends EventEmitter {
         },
         refresh:   fetch,
         // `watch` is itself the hold, so letting it go is what starts the TTL.
-        release:   () => { offNode(); offGone(); offChanged(); subs.clear() },
+        release:   () => {
+          offNode(); offGone(); offChanged(); offReconnected()
+          if (reread) clearTimeout(reread)
+          reread = null
+          subs.clear()
+        },
       }
     }
 

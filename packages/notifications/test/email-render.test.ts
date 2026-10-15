@@ -160,3 +160,25 @@ describe('mail().html() / .text() — a rendered body', () => {
     expect('text' in msg).toBe(false)
   })
 })
+
+// ─── An attachment travels ───────────────────────────────────────────────────
+//
+// FJS-1223: junction's mailer builds multipart MIME for `attachments`, but the
+// authoring shape had no slot and the driver sent `{ to, subject, text, html }`
+// only, so a confirmation with an .ics had to bypass notifications entirely.
+
+describe('email driver — attachments', () => {
+  it('forwards what attach() collected to the mailer, untouched', async () => {
+    const { sent, app } = stubApp()
+    const ics = { filename: 'visit.ics', content: 'BEGIN:VCALENDAR', type: 'text/calendar' }
+    const msg = mail().subject('Booked').line('See you.').attach(ics).attach({ filename: 'b.txt', content: 'x' }).build()
+    await sendEmail({ id: 1, email: 'a@b.co' }, msg, app)
+    expect(sent[0].attachments).toEqual([ics, { filename: 'b.txt', content: 'x' }])
+  })
+
+  it('sends no attachments key when none was attached', async () => {
+    const { sent, app } = stubApp()
+    await sendEmail({ id: 1, email: 'a@b.co' }, sample(), app)
+    expect('attachments' in sent[0]).toBe(false)
+  })
+})

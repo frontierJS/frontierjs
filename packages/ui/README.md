@@ -96,13 +96,13 @@ The old six-value `variant` conflated the two, which is why `outline` and
 ## What's in the box
 
 **forms** — `Form` `Button` `Field` `Fieldset` `Label` `Input` `Textarea`
-`Select` `Checkbox` `Switch` `RadioGroup` `NumberInput` `Slider` `Thresholds` `Combobox`
+`Select` `Checkbox` `Switch` `RadioGroup` `NumberInput` `Slider` `Thresholds` `SignaturePad` `Combobox`
 `MultiSelect` `DatePicker` `DateTimeInput` `MoneyInput` `JsonInput` `CodeInput` `FileUpload`
 
 **display** — `Badge` `Pill` `Tag` `Dot` `Kbd` `Mono` `Divider` `Breadcrumbs`
 `Pagination` `Steps` `SectionHeader` `Callout` `EmptyState` `CopyButton` `Code`
 `Avatar` `AvatarGroup` `Stat` `StatCard` `Table` `Bar` `Sparkline`
-`AccountStatus` `Json` (read, or `editable`)
+`AccountStatus` `SignatureView` `Json` (read, or `editable`)
 
 **layout** — `Card` `Accordion` `AccordionItem` `Tabs` `TabList` `Tab` `TabPanel`
 

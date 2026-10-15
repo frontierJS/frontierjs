@@ -2001,7 +2001,28 @@ async function cmdAdvise(cfg) {
 
   // loadSchema, never parse(): a schema may `import`, and only parseFile
   // resolves that. Three readers had this wrong and each failed silently.
-  const parsed = loadSchema(cfg.schema).schema
+  const loaded = loadSchema(cfg.schema)
+  const parsed = loaded.schema
+
+  // Parse is more permissive than the client: a gate ladder out of order, an
+  // optional column under a @@unique, a plugin's own refusal all pass it and
+  // stop createClient at boot. A schema the app cannot open is the first thing
+  // advise has to say, and the only no-database way to ask is to build the
+  // client over memory (FJS-1242).
+  try {
+    const { createClient } = await import('../core/client.js')
+    // The memory database holds nothing a key could protect, and a schema with
+    // @encrypted fields is refused without one -- which is the app's deploy
+    // configuration and not a fault in the schema.
+    const probe = await createClient({
+      parsed: loaded, path: cfg.schema, resolveFrom: 'schema', databases: ':memory:',
+      encryptionKey: getEncKey() ?? '0'.repeat(64),
+    })
+    probe.$close()
+  } catch (e) {
+    fatal(`${rel(cfg.schema)} parses and createClient refuses it:\n     ${e.message}`)
+  }
+
   const rules  = checkRules(parsed)
   const missed = checkOpportunities(parsed)
 

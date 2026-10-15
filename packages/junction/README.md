@@ -68,7 +68,8 @@ my-app/
 │   ├── src/
 │   │   ├── app.ts
 │   │   ├── core/            ← env, Litestone client, auth, hooks
-│   │   └── services/        ← *.service.ts — autoloaded at boot, found without being declared
+│   │   ├── services/        ← *.service.ts — autoloaded at boot, found without being declared
+│   │   └── routes/          ← a file's path is its URL: routes/hooks/calendar.ts → /hooks/calendar
 │   └── test/
 └── web/                     ← UI realm — Sierra + Mesa
 ```
@@ -983,6 +984,29 @@ deliberate no-op — so the banner is where that shows.
 Under a test runner the entry is the **test file**, so an app that needs its
 services in a test states an absolute path: `autoload: new URL('./services',
 import.meta.url).pathname`.
+
+### Where the routes are
+
+A route is a URL an outsider fixes — a vendor's webhook setting, a link in an
+inbox. Junction loads the `routes/` folder **beside the services folder** (or
+beside the entry, when there are no services), and a file's path there is the
+URL it answers. Its `GET`, `POST`, `PUT`, `PATCH` and `DELETE` exports are the
+handlers, the same `(ctx) => …` that `app.get` takes:
+
+```ts
+// api/src/routes/hooks/calendar.ts  →  POST /hooks/calendar
+export const POST = async (ctx) => { /* verify the signature, answer 200 */ }
+
+// api/src/routes/files/[id].ts      →  GET /files/{id}, read as ctx.route.id
+// api/src/routes/index.ts           →  GET /
+```
+
+`apiPrefix` applies as it does to `app.get`. A file or folder beginning `_` is
+private to the files beside it. Boot refuses, naming the files, a file that
+exports no verb, one that threw, and two that answer one URL (`routes/a.ts` and
+`routes/a/index.ts`, or `[id]` and `[slug]` at one position). A route that must
+sit outside the prefix still goes through `app.http.router`. `autoload: false`
+switches this off with the services.
 
 ---
 

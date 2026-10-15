@@ -469,6 +469,7 @@ Shapes the parser accepts and something later refuses. Check every proposal agai
 - **the unit is in the identifier, where nothing can read it** (info). timeoutSeconds Int states the unit and states it to a human only — no form renders it, no agent describing the model repeats it, and nothing checks that the value being written was measured in the same thing. @unit(s) puts the fact where those can reach it, and the name goes back to being the name. It changes no stored value: a unit declares what the number counts, it does not convert it.
 - **a bare check() in a write rule asks the parent the same write** (warn). check(rel) with no operation takes the operation of the rule it sits in, so @@allow('create', check(inbox)) asks whether the caller may create an INBOX, not whether they may see it. Chained, that climbs to whoever may write the root; against a parent held only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.
 - **a public create on a model whose required column defaults to auth()** (warn). A required column with @default(auth().id) is filled from the signed-in principal. With create at level 0 a visitor has none, so the runtime refuses the create (401, naming the field) unless the visitor states the column — and a visitor naming a user it cannot read is refused too. Raise the create level, or make the column optional.
+- **a create policy reaches through a relation the picker cannot be narrowed by** (warn). A create @@allow that reads a related row (schedule.hostId == auth().id) accepts only some of that model, and a generated picker offers every row the caller can READ. Litestone derives the narrowing for a top-level rel.col == auth().claim conjunct (x-pick-where); any other shape — an ||, an in, a computed value — it cannot state, so the picker offers rows the write refuses unless the related model's own read policy already narrows them.
 
 ## Opportunities
 
@@ -598,11 +599,11 @@ valueset TaskTag {
 }
 ```
 
-#### `scope` <name>(<field>)
+#### `scope` <name>(<field>[, <field>…])
 
 tier: **situational** · see also: `exclude`
 
-What a no-overlap rule serializes on, declared once for every model sharing it: each model's `@@exclude(<name>, range: […])` cites it, and a write on any of them is checked against all of them. One declaration rather than each model listing its siblings, because the model nobody updated is the one that lets two rows overlap. Every citing model must carry the field. Not `@@scope`, which is a named read filter on one model.
+What a no-overlap rule serializes on, declared once for every model sharing it: each model's `@@exclude(<name>, range: […])` cites it, and a write on any of them is checked against all of them. One declaration rather than each model listing its siblings, because the model nobody updated is the one that lets two rows overlap. Every citing model must carry every field. More than one field is one key: `scope personDay(personId, dayId)` grades a wall-clock `@time` range per day, where `person` alone would call Monday 09:00–12:00 and Tuesday 09:00–12:00 an overlap. Not `@@scope`, which is a named read filter on one model.
 
 ```lite
 scope person(employeeId)
@@ -1420,7 +1421,7 @@ A composite unique constraint. Parses to `uniqueIndex`, which is why the written
 
 tier: **situational** · legal in: in a model, in a trait · also called: no overlap, exclusion constraint, double booking · see also: `scope`, `unique`
 
-No two rows sharing the scope's key may overlap on the range — uniqueness over a range rather than over a value, across every model citing the same `scope`, so a shift and a leave request for one person are checked against each other. The scope's field must be a plain scalar column on this model; the range is two different stored fields of one kind that orders — Int, Float, DateTime, or a String with @date or @datetime. Members may differ in kind — a day meets an instant at UTC midnight — but not numbers against times. Graded when the outermost write commits, over every member row under each key the unit touched, read past the caller's row policy; an overlap is an `OverlapConflictError` (409). The range is `[start, end)`, a null end is still going, and soft-deleted and template rows occupy nothing. `where:` says which of this model's rows hold their range at all — `where: status != "cancelled"` — and refuses what a partial `@@unique` refuses: `auth()`, `now()`, another model, a quoted string. A write naming one of its fields is graded, so a row moved back into it is checked.
+No two rows sharing the scope's key may overlap on the range — uniqueness over a range rather than over a value, across every model citing the same `scope`, so a shift and a leave request for one person are checked against each other. The scope's fields must each be a plain scalar column on this model; the range is two different stored fields of one kind that orders — Int, Float, DateTime, or a String with @date, @datetime or @time. Members may differ in kind — a day meets an instant at UTC midnight — but not numbers against times, nor a time of day (`@time`) against either: it shares no point with them. Graded when the outermost write commits, over every member row under each key the unit touched, read past the caller's row policy; an overlap is an `OverlapConflictError` (409). The range is `[start, end)`, a null end is still going, and soft-deleted and template rows occupy nothing. `where:` says which of this model's rows hold their range at all — `where: status != "cancelled"` — and refuses what a partial `@@unique` refuses: `auth()`, `now()`, another model, a quoted string. A write naming one of its fields is graded, so a row moved back into it is checked.
 
 ```lite
 @@exclude(person, range: [startsAt, endsAt])

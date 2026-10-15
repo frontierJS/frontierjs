@@ -13,7 +13,7 @@
 import { refusal } from '../build/refusal.js'
 
 /**
- * The tag a named provider loads, or null for a custom provider object.
+ * The tag a named provider loads, or null for a custom provider.
  *
  * @param {object} config — `analytics` from sierra.config.js
  * @returns {{ src: string, attrs: Record<string, string|true>, before?: () => void } | null}
@@ -48,8 +48,8 @@ function gtmStart() {
 /**
  * The same tag as HTML, for a page written to disk.
  *
- * A custom provider is an object with functions in it, and a prerendered page
- * has nothing to run them. Refused by name, since the alternative is a site
+ * A custom provider is a module of functions, and a prerendered page has
+ * nothing to run them. Refused by name, since the alternative is a site
  * that builds clean and reports nothing.
  *
  * @param {object} config
@@ -58,9 +58,8 @@ function gtmStart() {
 export function vendorTagHtml(config) {
   const tag = vendorTag(config)
   if (!tag) {
-    const got = typeof config?.provider === 'object' ? 'a custom provider object' : JSON.stringify(config?.provider)
     throw refusal(
-      `[Sierra] analytics: a static page can carry 'plausible' or 'gtm', not ${got} — ` +
+      `[Sierra] analytics: a static page can carry 'plausible' or 'gtm', not ${JSON.stringify(config?.provider)} — ` +
       `a prerendered page has nothing to run a provider's functions`)
   }
   const attrs = Object.entries(tag.attrs)

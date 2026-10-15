@@ -12,7 +12,10 @@ const answer = JSON.parse(modelReply)          // what the model wrote
 const out = emit(answer, { scaffold })         // scaffold = the app's db/schema.lite
 if (!out.ok) sendBack(out.refusals)            // each one names its rule and where
 else write('db/schema.lite', out.text)
+if (out.onRegistered) write('api/src/onRegistered.js', out.onRegistered)   // createLitestoneAuth({ onRegistered })
 ```
+
+A container only the application creates (`system`) and members enter is gated at 8 on create, so `out.onRegistered` is the hook that gives a person signing up one, with them as its first member holding the first role its `roles.update` names (`FJS-D886`). A container with a required column the hook cannot fill from the user gets no hook and a finding instead.
 
 ## What it knows
 
@@ -51,6 +54,7 @@ The emitter assembles each op's row policy from the answer:
 - **Read** is admitted by any of the actor links, the parent's own read rule, a membership row, or a public condition.
 - **Create** needs both: the caller is the owner or author the row names, and the caller may read the parent.
 - **Update and delete** go to the actors who may change the row, or to whoever may change the parent.
+- **A container** is renamed by the members holding a role its `roles: { update: [...] }` names, and its membership is written by them alone. A container naming none leaves its membership to the application.
 - **An op nobody holds** is raised to gate 8.
 
 A signed-in level with no row policy, the shape behind most of the freehand run's cross-tenant reads, is emitted only when an answer says `shared`. Every public read, unauthenticated write and shared table is listed as a finding at the head of the emitted section.

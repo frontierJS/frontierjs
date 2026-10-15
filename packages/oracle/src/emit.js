@@ -23,6 +23,10 @@
 //           change the parent
 //   delete  any of: an owner/author link, or whoever may change the parent
 //
+// A container's update is its members holding a role `roles.update` names,
+// and its membership's writes delegate to that update; with no such role the
+// membership's writes are the application's.
+//
 // An op nobody holds is raised to gate 8 rather than left at a signed-in
 // level with no policy, which is the shape that read every tenant's rows in
 // the freehand run. `shared` and `public` are the two ways to say otherwise,
@@ -36,7 +40,7 @@
 
 import { camel, pascal, pluralize } from '@frontierjs/toolbelt/inflect'
 import { ACTORS } from './catalog.js'
-import { checkAnswer } from './answer.js'
+import { an, checkAnswer } from './answer.js'
 import { TYPES } from './types.js'
 
 const STAMPS = ['owner', 'author', 'coordinator']
@@ -47,15 +51,19 @@ const WIDTH = 96
  * @param {{ scaffold?: string }} [opts]  the app's db/schema.lite as `fli new`
  *   wrote it. The emitted models are appended to it; User and Notification
  *   stay the scaffold's.
- * @returns {{ ok: boolean, text: string|null, models: string[], document: { operations: import('./answer.js').Operation[] }|null, refusals: import('./answer.js').Finding[], findings: import('./answer.js').Finding[] }}
+ * @returns {{ ok: boolean, text: string|null, models: string[], document: { operations: import('./answer.js').Operation[] }|null, onRegistered: string|null, refusals: import('./answer.js').Finding[], findings: import('./answer.js').Finding[] }}
  *   `document` is what `litestone migrate create --operations` reads, or null
  *   when the answer asks to keep nothing. The schema alone carries no history,
  *   so a rename reaches the database only through this (`FJS-D603`).
+ *   `onRegistered` is the source of a module exporting the hook
+ *   `createLitestoneAuth` takes, or null when no container needs one
+ *   (`FJS-D886`).
  */
 export function emit(answer, { scaffold = '' } = {}) {
   const graded = checkAnswer(answer)
-  if (!graded.ok) return { ok: false, text: null, models: [], document: null, refusals: graded.refusals, findings: graded.findings }
+  if (!graded.ok) return { ok: false, text: null, models: [], document: null, onRegistered: null, refusals: graded.refusals, findings: graded.findings }
   const plan = /** @type {import('./answer.js').Plan} */ (graded.plan)
+  const hook = onboarding(plan)
   const section = emitPlan(plan)
   const head = scaffold.trimEnd()
   return {
@@ -63,6 +71,7 @@ export function emit(answer, { scaffold = '' } = {}) {
     text: `${head}${head ? '\n\n\n' : ''}${section}`,
     models: plan.models.map(m => m.name),
     document: plan.operations.length ? { operations: plan.operations } : null,
+    onRegistered: hook,
     refusals: [],
     findings: graded.findings,
   }
@@ -365,10 +374,11 @@ function accessFor(m, of, backs) {
   let createParent = null
 
   if (m.container) {
-    // A membership row: its person reads it, and whoever may change the
-    // container decides who is in it.
+    // A membership row: its person reads it, and whoever administers the
+    // container decides who is in it. With no administering role there is
+    // nobody to delegate to, and the writes are the application's.
     const c = m.container
-    const change = delegate(c.link, changeOp(c.model))
+    const change = c.admins ? delegate(c.link, changeOp(c.model)) : []
     terms.read = [`${c.user}Id == auth().id`, ...reader(c.link, c.model)]
     terms.create = [...change]
     terms.update = [...change]
@@ -387,14 +397,16 @@ function accessFor(m, of, backs) {
       terms.update.push(...change)
       terms.delete.push(...change)
     }
-    // A member reads and changes the container; the gate says which rung
-    // renames it. Without the update term a membership's create would fall
-    // back to the container's read, and any member could add anyone.
+    // A member reads the container, and a member holding an administering
+    // role changes it. The membership's writes delegate to this update, so a
+    // member test with no role in it let any member re-role themselves admin.
     if (m.members) {
       const list = backs.find(b => b.source === m.members.model && b.link === m.members.link).name
-      const member = `${list}.some(${m.members.user}Id == auth().id)`
-      terms.read.push(member)
-      terms.update.push(member)
+      const id = `${m.members.user}Id == auth().id`
+      const roles = (m.members.admins ?? []).map(r => `role == '${r}'`)
+      const role = roles.length > 1 ? ` && (${roles.join(' || ')})` : roles.length ? ` && ${roles[0]}` : ''
+      terms.read.push(`${list}.some(${id})`)
+      terms.update.push(`${list}.some(${id}${role})`)
     }
     // One term, every entry holding: checkAnswer's finding reads the entries
     // with *and*, and that sentence is what the person approves. Under a
@@ -430,6 +442,70 @@ function accessFor(m, of, backs) {
     if (expr) policies.push([op, expr])
   }
   return { gate, policies }
+}
+
+// ─── onboarding ───────────────────────────────────────────────────────────────
+//
+// A container `system` creates is gated at 8 on create, so without this a
+// fresh sign-up can neither make one nor be admitted to one and the app cannot
+// be entered (FJS-2530). Each such container is created with the person who
+// registered as its first member, holding the role that administers it.
+//
+// A column the hook cannot fill from the user is never guessed: a wrong guess
+// fails every registration inside its own transaction. That container gets a
+// finding instead, and its onboarding is the application's to write.
+
+/**
+ * @param {import('./answer.js').Plan} plan  its findings take one line per container left unentered
+ * @returns {string|null}
+ */
+function onboarding(plan) {
+  const lines = []
+  const made = []
+  for (const m of plan.models) {
+    if (!m.access.system || !m.members) continue
+    const mm = plan.models.find(x => x.name === m.members.model)
+    const label = labelField(m)
+    const role = m.members.admins?.[0] ?? null
+    const unfilled = [
+      ...needed(m, [label && m.fields.find(f => f.name === label)?.type === 'text' ? label : null]),
+      ...needed(mm, [m.members.link, m.members.user, role ? 'role' : null]).map(n => `${mm.name}.${n}`),
+    ]
+    if (unfilled.length) {
+      plan.findings.push({ rule: 'access', at: m.name, message: `Nothing the app ships creates ${an(m.name)}: onboarding cannot fill ${unfilled.join(', ')} from the person signing up, so the application writes the onRegistered that gives them one.` })
+      continue
+    }
+    const v = camel(m.name)
+    const data = label ? `{ ${label}: user.name ?? user.email }` : '{}'
+    const member = [`${m.members.link}Id: ${v}.id`, `${m.members.user}Id: user.id`, ...role ? [`role: '${role}'`] : []]
+    lines.push(`  const ${v} = await db.${v}.create({ data: ${data} })`)
+    lines.push(`  await db.${camel(mm.name)}.create({ data: { ${member.join(', ')} } })`)
+    made.push(role ? `${an(m.name)} they hold as ${role}` : `${an(m.name)} they are a member of`)
+  }
+  if (!lines.length) return null
+  return [
+    '// ─── onRegistered — written by @frontierjs/oracle ' + '─'.repeat(WIDTH - 49),
+    '//',
+    ...comment(`Only the application creates ${made.length > 1 ? 'these containers' : 'this container'}, so a person who signs up is given ${made.join(', and ')}. Pass it to createLitestoneAuth({ onRegistered }): db is the registration's own transaction, and a throw undoes the sign-up.`),
+    '',
+    'export async function onRegistered({ user, db }) {',
+    ...lines,
+    '}',
+    '',
+  ].join('\n')
+}
+
+// The columns of `m` a create must name and the hook has no value for: a
+// required column with no default, a second kind, and a required link.
+function needed(m, filled) {
+  const out = []
+  if (m.kinds.length > 1) out.push('kind')
+  for (const f of m.fields) {
+    const row = TYPES[f.type]
+    if (f.required && f.default == null && !row.array && !row.alwaysSet && !filled.includes(f.name)) out.push(f.name)
+  }
+  for (const l of m.links) if (l.required && !filled.includes(l.name)) out.push(l.name)
+  return out
 }
 
 // ─── comments ─────────────────────────────────────────────────────────────────

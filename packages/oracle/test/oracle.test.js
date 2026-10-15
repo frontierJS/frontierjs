@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { parse } from '@frontierjs/litestone'
@@ -114,8 +114,44 @@ describe('emit', () => {
     const text = emit(hiring, { scaffold: SCAFFOLD }).text
     expect(text).toContain("@@allow('create', check(company, 'update'))")
     expect(text).toContain("@@allow('read',   memberships.some(userId == auth().id))")
-    expect(text).toContain("@@allow('update', memberships.some(userId == auth().id))")
+    expect(text).toContain("@@allow('update', memberships.some(userId == auth().id && role == 'recruiter'))")
     expect(text).toContain('@@relator([companyId, userId], once)')
+  })
+
+  // Forgetting `roles` fails closed: a member test with no role in it is what
+  // let any member re-role anyone (FJS-1799).
+  test('a container naming no administering role leaves its membership to the application', () => {
+    const a = clone(hiring)
+    delete a.entities[0].access.roles
+    const out = emit(a, { scaffold: SCAFFOLD })
+    const membership = out.text.slice(out.text.indexOf('model Membership {'))
+    expect(membership.slice(0, membership.indexOf('\n}'))).toMatch(/@@gate\("4\.8\.8\.8"\)\n {2}@@allow\('read', +userId == auth\(\)\.id \|\| check\(company\)\)$/)
+    expect(out.findings.map(f => f.message).join('\n')).toContain('No member administers a Company')
+    expect(parses(out.text)).toBe(true)
+  })
+
+  test('only a container `system` creates and members enter gets an onRegistered', () => {
+    expect(emit(TIMETABLE, { scaffold: SCAFFOLD }).onRegistered).toBeNull()
+    const src = emit(hiring, { scaffold: SCAFFOLD }).onRegistered
+    expect(src).toContain('export async function onRegistered({ user, db }) {')
+    expect(src).toContain('db.company.create({ data: { name: user.name ?? user.email } })')
+    expect(src).toContain("db.membership.create({ data: { companyId: company.id, userId: user.id, role: 'recruiter' } })")
+  })
+
+  // An onboarding that guessed a required column would fail every sign-up on
+  // NOT NULL, inside the registration's own transaction.
+  test('a container with a column onboarding cannot fill gets a finding, not a guess', () => {
+    const a = clone(hiring)
+    a.entities[0].fields = [{ name: 'taxId', type: 'text', required: true }]
+    const out = emit(a, { scaffold: SCAFFOLD })
+    expect(out.onRegistered).toBeNull()
+    expect(out.findings.map(f => f.message).join('\n')).toContain('Nothing the app ships creates a Company')
+  })
+
+  test('two administering roles are either one', () => {
+    const a = clone(hiring)
+    a.entities[0].access.roles.update = ['recruiter', 'manager']
+    expect(emit(a, { scaffold: SCAFFOLD }).text).toContain("@@allow('update', memberships.some(userId == auth().id && (role == 'recruiter' || role == 'manager')))")
   })
 
   // check(parent, 'update') against a parent held only by a gate compiles to
@@ -260,6 +296,74 @@ describe('emitted access, on a real client', () => {
     }
   })
 
+  // A container `system` creates was gated at 8 and nothing the app shipped ran
+  // at 8, so a fresh sign-up could neither make a company nor join one
+  // (FJS-2530).
+  test('the emitted onRegistered gives a fresh sign-up a company they administer', async () => {
+    const out = emit(hiring, { scaffold: SCAFFOLD })
+    const env = await createTestEnv({ schema: out.text })
+    const dir = mkdtempSync(join(tmpdir(), 'oracle-onboarding-'))
+    try {
+      writeFileSync(join(dir, 'onRegistered.js'), out.onRegistered)
+      const { onRegistered } = await import(join(dir, 'onRegistered.js'))
+      const sys = env.system
+      const user = await sys.user.create({ data: { email: 'new@example.com' } })
+      await sys.$transaction((db) => onRegistered({ user, db }))
+
+      const mine = await env.actingAs(user).company.findMany()
+      expect(mine.map(c => c.name)).toEqual(['new@example.com'])
+      expect((await sys.membership.findMany()).map(r => [r.userId, r.role])).toEqual([[user.id, 'recruiter']])
+      await env.actingAs(user).company.update({ where: { id: mine[0].id }, data: { name: 'Acme' } })
+      expect((await sys.company.findUnique({ where: { id: mine[0].id } })).name).toBe('Acme')
+    } finally {
+      env.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  // Membership delegated every write to the company's update, which any member
+  // held, so an interviewer made themselves recruiter (FJS-1799).
+  test('a member who does not administer the company changes nobody\'s membership', async () => {
+    const env = await createTestEnv({ schema: emit(hiring, { scaffold: SCAFFOLD }).text })
+    try {
+      const sys = env.system
+      const company = await sys.company.create({ data: { name: 'co' } })
+      const join = async (email, role) => {
+        const user = await sys.user.create({ data: { email } })
+        const row = await sys.membership.create({ data: { companyId: company.id, userId: user.id, role } })
+        return { user, row }
+      }
+      const boss = await join('r@example.com', 'recruiter')
+      const staff = await join('i@example.com', 'interviewer')
+      const stranger = await sys.user.create({ data: { email: 's@example.com' } })
+      const as = (who) => env.actingAs(who.user)
+      // A write the policy filters out answers null rather than throwing, so
+      // what each caller did is read back from the rows.
+      const state = async () => ({
+        roles: (await sys.membership.findMany({ orderBy: { id: 'asc' } })).map(r => [r.userId, r.role]),
+        name: (await sys.company.findUnique({ where: { id: company.id } })).name,
+      })
+      const quietly = (p) => p.catch(() => null)
+
+      const before = await state()
+      await quietly(as(staff).membership.update({ where: { id: staff.row.id }, data: { role: 'recruiter' } }))
+      await quietly(as(staff).membership.create({ data: { companyId: company.id, userId: stranger.id } }))
+      await quietly(as(staff).membership.delete({ where: { id: boss.row.id } }))
+      await quietly(as(staff).company.update({ where: { id: company.id }, data: { name: 'mine' } }))
+      expect(await state()).toEqual(before)
+
+      await as(boss).membership.create({ data: { companyId: company.id, userId: stranger.id } })
+      await as(boss).membership.update({ where: { id: staff.row.id }, data: { role: 'manager' } })
+      await as(boss).company.update({ where: { id: company.id }, data: { name: 'renamed' } })
+      expect(await state()).toEqual({
+        roles: [[boss.user.id, 'recruiter'], [staff.user.id, 'manager'], [stranger.id, 'interviewer']],
+        name: 'renamed',
+      })
+    } finally {
+      env.close()
+    }
+  })
+
   // A shared timetable with an instructor link emitted no rule at all, so the
   // instructor could not post a class and every member could edit every one.
   test('every member reads a shared row, and only its instructor changes it', async () => {
@@ -399,6 +503,7 @@ describe('checkAnswer refuses', () => {
     lifecycle: a => { a.entities[2].lifecycle.moves.pop(); a.entities[2].lifecycle.moves.pop() },
     access:    a => { a.entities[5].links.pop(); a.entities[5].access = {} },
     members:   a => { a.entities[1].links.shift() },
+    roles:     a => { a.entities[0].access.roles.update = ['owner'] },
     pattern:   a => { a.entities[4].patterns = ['approvals'] },
     rename:    a => { a.entities[2].fields[1].was = 'title' },
     currency:  a => { a.currency = 'usd' },

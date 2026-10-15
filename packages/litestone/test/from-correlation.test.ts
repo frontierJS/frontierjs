@@ -253,3 +253,137 @@ describe('@from(avg:) is the mean of a column, filterable and sortable (FJS-2679
     expect(ordered.map((r: any) => r.name)).toEqual(['high', 'low'])
   })
 })
+
+// ─── @from(rel, column): a parent's column onto the child (FJS-1305, FJS-D911) ─
+//
+// `@from` had no to-one form, so `@derived(state.category)`'s refusal pointed at
+// a spelling that did not parse and a parent's column could not reach a child at
+// all. The same SQL a policy's `rel.column` path builds, as a read-time field.
+
+const TO_ONE = `
+enum Category { backlog started done }
+model State {
+  id       Int      @id @default(autoincrement())
+  name     String
+  category Category @default(backlog)
+  deleted  Boolean  @default(false)
+  issues   Issue[]
+}
+model Issue {
+  id            Int       @id @default(autoincrement())
+  title         String
+  stateId       Int?
+  state         State?    @relation(fields: [stateId], references: [id])
+  stateCategory Category? @from(state, category)
+}
+model Event {
+  id        Int     @id @default(autoincrement())
+  capacity  Int
+  enrolled  Int     @from(Enrollment, count: true)
+  big       Boolean @derived(capacity > 7)
+  enrollments Enrollment[]
+  shifts    Shift[]
+}
+model Enrollment {
+  id      Int   @id @default(autoincrement())
+  eventId Int
+  event   Event @relation(fields: [eventId], references: [id])
+}
+model Shift {
+  id       Int   @id @default(autoincrement())
+  eventId  Int
+  event    Event @relation(fields: [eventId], references: [id])
+  enrolled Int   @from(event, enrolled)
+  big      Boolean @from(event, big)
+  capacity Int   @from(event, capacity)
+}
+`
+
+describe('@from(rel, column) reads a column off the parent', () => {
+  async function seeded() {
+    const db: any = await createClient({ db: ':memory:', schema: TO_ONE })
+    const sys = db.asSystem()
+    await sys.state.create({ data: { name: 'Todo', category: 'backlog' } })
+    await sys.state.create({ data: { name: 'Doing', category: 'started' } })
+    await sys.issue.create({ data: { title: 'a', stateId: 1 } })
+    await sys.issue.create({ data: { title: 'b', stateId: 2 } })
+    await sys.issue.create({ data: { title: 'c' } })
+    return { db, sys }
+  }
+
+  it('brings the value over, null for an absent parent, and follows the parent', async () => {
+    const { sys } = await seeded()
+    const rows = await sys.issue.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => r.stateCategory)).toEqual(['backlog', 'started', null])
+    await sys.state.update({ where: { id: 1 }, data: { category: 'done' } })
+    const after = await sys.issue.findMany({ orderBy: { id: 'asc' } })
+    expect(after.map((r: any) => r.stateCategory)).toEqual(['done', 'started', null])
+  })
+
+  it('filters and sorts by it, and a write naming it is refused', async () => {
+    const { sys } = await seeded()
+    const started = await sys.issue.findMany({ where: { stateCategory: 'started' } })
+    expect(started.map((r: any) => r.title)).toEqual(['b'])
+    const ordered = await sys.issue.findMany({ where: { stateCategory: { not: null } }, orderBy: { stateCategory: 'desc' } })
+    expect(ordered.map((r: any) => r.title)).toEqual(['b', 'a'])
+    await expect(sys.issue.create({ data: { title: 'x', stateCategory: 'done' } })).rejects.toThrow(/@from\(state, category\)/)
+  })
+
+  it('reads through select, and the parent column a child alone is asked for', async () => {
+    const { sys } = await seeded()
+    const rows = await sys.issue.findMany({ select: { title: true, stateCategory: true }, orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => r.stateCategory)).toEqual(['backlog', 'started', null])
+  })
+
+  it('reads a parent column that is itself an @from or a @derived (a subquery inside a subquery)', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: TO_ONE })
+    const sys = db.asSystem()
+    await sys.event.create({ data: { capacity: 10 } })
+    await sys.event.create({ data: { capacity: 5 } })
+    for (const eventId of [1, 1, 1, 2]) await sys.enrollment.create({ data: { eventId } })
+    await sys.shift.create({ data: { eventId: 1 } })
+    await sys.shift.create({ data: { eventId: 2 } })
+    const rows = await sys.shift.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => r.enrolled)).toEqual([3, 1])
+    expect(rows.map((r: any) => r.big)).toEqual([true, false])
+    expect(rows.map((r: any) => r.capacity)).toEqual([10, 5])
+    const busy = await sys.shift.findMany({ where: { enrolled: { gt: 2 } } })
+    expect(busy.map((r: any) => r.id)).toEqual([1])
+  })
+})
+
+describe('@from(rel, column) is refused by name when it cannot resolve', () => {
+  const schema = (field: string, extra = '') => `
+model Parent { id Int @id
+  label String
+  secret String @guarded
+  kids Kid[]
+  ${extra}
+}
+model Kid { id Int @id
+  parentId Int
+  parent Parent @relation(fields: [parentId], references: [id])
+  ${field}
+}`
+  const refusal = async (s: string) => {
+    try { (await createClient({ db: ':memory:', schema: s }) as any).$close(); return '' }
+    catch (e: any) { return String(e.message).replace(/\s+/g, ' ') }
+  }
+
+  it('accepts the legitimate spelling', async () => {
+    expect(await refusal(schema('label String @from(parent, label)'))).toBe('')
+  })
+  it('names a first argument that is not a field here', async () => {
+    expect(await refusal(schema('label String @from(nope, label)'))).toMatch(/'nope' is not a field on 'Kid'/)
+  })
+  it('names a first argument that is not a to-one relation', async () => {
+    expect(await refusal(schema('label String @from(parentId, label)'))).toMatch(/not a to-one relation/)
+  })
+  it('names a column the parent lacks', async () => {
+    expect(await refusal(schema('label String @from(parent, nope)'))).toMatch(/'nope' does not exist on 'Parent'/)
+  })
+  it('refuses a protected column and a wrong type', async () => {
+    expect(await refusal(schema('s String @from(parent, secret)'))).toMatch(/@guarded/)
+    expect(await refusal(schema('label Int @from(parent, label)'))).toMatch(/field type must be 'String'/)
+  })
+})

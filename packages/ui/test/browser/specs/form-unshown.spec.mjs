@@ -43,4 +43,21 @@ export async function run(t) {
   await submit(t, '#unshown')
   await t.eventually(alertIn('#unshown'), 'Limit must be at least 1',
     'a refusal over a field the form does not draw is the form-level message')
+
+  /* ── a hand-written form: the DOM says what is drawn (FJS-2094) ───────── */
+
+  await submit(t, '#handwritten-shown')
+  await t.eventually(
+    `(document.querySelector('#handwritten-shown [name=title]')?.closest('.field-group')?.textContent ?? '').includes('Title is taken')`, true,
+    'a hand-written form keeps a drawn field\'s message beside it')
+  t.is(await t.evaluate(`return ${alertIn('#handwritten-shown')};`), '',
+    'and does not repeat it at the top')
+
+  await submit(t, '#handwritten')
+  await t.eventually(alertIn('#handwritten'), 'Limit must be at least 1',
+    'a hand-written form says a refusal over an undrawn column at the top')
+
+  await submit(t, '#auto-children')
+  await t.eventually(alertIn('#auto-children'), 'Limit must be at least 1',
+    'so does an auto form with children, whose generated list is not the whole screen')
 }

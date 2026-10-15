@@ -1,0 +1,26 @@
+<script>
+  // signature.mesa — a pad, the value it hands back, and a view of that value.
+  //
+  // The pad sits in a box whose width the spec changes, which is how a resize
+  // is driven; `tally` counts onchange calls so a stroke that reports twice, or
+  // not at all, is visible.
+  import SignaturePad  from '../../../components/forms/SignaturePad.mesa'
+  import SignatureView from '../../../components/display/SignatureView.mesa'
+
+  let value = null
+  window.tally = 0
+  const onch = () => { window.tally++ }
+</script>
+
+<div id="box" style="width: 400px; margin: 40px">
+  <SignaturePad bind:value onchange={onch} label="Sign here" />
+</div>
+
+<output id="out">{JSON.stringify(value)}</output>
+
+<div id="view" style="width: 400px; margin: 40px">
+  <SignatureView signature={{ paths: ['M0 0 L10 10'], width: 200, height: 80, name: 'Ada Lovelace' }} />
+</div>
+<div id="bare">
+  <SignatureView signature={{ name: 'No Strokes' }} />
+</div>

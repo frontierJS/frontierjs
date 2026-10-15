@@ -877,6 +877,19 @@ describe('advise --strict', () => {
   test('a suggestion alone never fails', () => {
     expect(exitOf(SUGGESTS, '--strict')).toBe(0)
   })
+
+  // Parses clean; createClient refuses it at boot (FJS-1242).
+  const UNRUNNABLE = `model Thing {\n  id Int @id\n  @@gate("6.4.5.6")\n}\n`
+
+  test('a schema createClient refuses exits 1 with no flag', () => {
+    expect(parse(UNRUNNABLE).valid).toBe(true)
+    expect(exitOf(UNRUNNABLE)).toBe(1)
+    expect(exitOf(UNRUNNABLE, '--json')).toBe(1)
+  })
+
+  test('an @encrypted field is not a refusal when no key is in the environment', () => {
+    expect(exitOf(`model Vault {\n  id Int @id\n  secret String @encrypted\n}\n`)).toBe(0)
+  })
 })
 
 // A retention sweep is createdAt < cutoff; with no index leading with createdAt
@@ -958,5 +971,35 @@ describe('anonymous-create-auth-default', () => {
         id      Int @id
         ownerId Int @default(auth().id)
       }`, rule)).toEqual([])
+  })
+})
+
+describe('create-reaches-unpickable-relation', () => {
+  // FJS-1672, FJS-D669
+  const SCHEMA = (allow: string, read = '') => `
+    model User { id String @id  @@auth }
+    model Schedule { id String @id  hostId String  host User @relation(fields: [hostId], references: [id]) ${read} }
+    model Booking {
+      id String @id
+      scheduleId String
+      schedule Schedule @relation(fields: [scheduleId], references: [id])
+      ${allow}
+    }`
+
+  test('fires on a create conjunct the derivation cannot state', () => {
+    const f = findings(SCHEMA(`@@allow('create', schedule.hostId == auth().id || auth().isAdmin)`), 'create-reaches-unpickable-relation')
+    expect(f.length).toBe(1)
+    expect(f[0].model).toBe('Booking')
+    expect(f[0].field).toBe('scheduleId')
+    expect(f[0].message).toContain('Schedule')
+  })
+
+  test('silent when the shape is derived into x-pick-where', () => {
+    expect(findings(SCHEMA(`@@allow('create', schedule.hostId == auth().id)`), 'create-reaches-unpickable-relation')).toEqual([])
+  })
+
+  test('silent when the related model narrows its own read', () => {
+    expect(findings(SCHEMA(`@@allow('create', schedule.hostId == auth().id || auth().isAdmin)`,
+      `@@allow('read', hostId == auth().id)`), 'create-reaches-unpickable-relation')).toEqual([])
   })
 })

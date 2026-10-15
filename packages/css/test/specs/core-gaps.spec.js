@@ -502,3 +502,35 @@ test('prose: spacing between blocks is the parent, not the term', function () {
   var stacked = el('<div class="prose stack"><p>a</p><p>b</p></div>');
   assert.ok(parseFloat(style(stacked, 'row-gap')) > 0, 'prose + stack has no gap');
 });
+
+/* ── Segmented — a choose-one row (FJS-2492) ─────────────────────────
+ *
+ * A treatment on .field-row, so the radios stay real. The three things that
+ * make it a segmented control rather than a stack of bare radios: the input
+ * is invisible but still covers its label (focusable, clickable), the labels
+ * are welded, and the checked one is drawn from :checked.
+ */
+
+test('segmented: radios stay under their labels and the checked segment is drawn', function () {
+  var row = el(
+    '<div class="field-row segmented" role="radiogroup" aria-label="Aspect">' +
+      '<label><input type="radio" name="sg" value="a" checked>One</label>' +
+      '<label><input type="radio" name="sg" value="b">Two</label>' +
+    '</div>'
+  );
+  var labels = row.querySelectorAll('label');
+  var input = labels[0].querySelector('input');
+  var box = labels[0].getBoundingClientRect();
+  var inBox = input.getBoundingClientRect();
+
+  assert.ok(getComputedStyle(input).opacity === '0', 'the radio is not drawn');
+  assert.ok(Math.abs(inBox.width - box.width) < 4, 'but it covers its label (inside the border), so a click on the label hits it');
+  assert.ok(
+    getComputedStyle(labels[0]).backgroundColor !== getComputedStyle(labels[1]).backgroundColor,
+    'the checked segment is filled differently from the other'
+  );
+  assert.ok(
+    labels[1].getBoundingClientRect().left <= labels[0].getBoundingClientRect().right,
+    'the segments touch'
+  );
+});

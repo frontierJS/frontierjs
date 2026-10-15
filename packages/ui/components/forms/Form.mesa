@@ -325,6 +325,7 @@
           return r
         }),
     reportInvalid,
+    changed,
   }
 
   // ── The generated fields ─────────────────────────────────────────────
@@ -338,9 +339,6 @@
   const _auto = auto ?? !$slots.default
   const generated = _auto ? (resource?.formFields?.({ only, except }) ?? []) : []
   const rendered  = generated.filter(f => f.control)
-  // Every control this form draws is a generated one, so a field missing from
-  // `rendered` is on no screen at all. With children, a child may be drawing it.
-  const _generatedOnly = _auto && !$slots.default
 
   // A `readOnly` field is not one of them: `@system`, `@computed`, `@generated`
   // and `@from` are the schema saying this value is not the caller's to write,
@@ -373,17 +371,11 @@
   // Controls hand back an event; the record is REPLACED rather than mutated,
   // because a member expression is not a bindable target and mutation would
   // not be seen. Same shape every hand-written form in this repo used.
-  //
-  // `dirty` is set here as well as by the bubbled `input`/`change` listener
-  // below: a contributed control is not obliged to be a DOM input, and one that
-  // hands back a value without emitting an event would otherwise leave a form
-  // that has been edited saying it is pristine. Setting it twice is free.
   function writeField(name, value) {
     _typed = { ...record, [name]: value }
     record = _typed
-    dirty  = true
     _gradeStale(name, value)
-    _autoBump()
+    changed(name)
   }
 
   // ── Live validation ──────────────────────────────────────────────────
@@ -628,6 +620,24 @@
   }
 
   /**
+   * The messages in `messages` whose field this form puts no control under.
+   *
+   * A message for an undrawn field has no box to sit beside, so it is said at
+   * the top; otherwise `only` narrowing a form past a column the record still
+   * carries, or a hand-written form completing a `@system` column in its own
+   * `onsubmit`, is a save that does nothing and shows nothing (`FJS-2094`).
+   * What is drawn is read off the DOM, because children draw controls the
+   * generated list knows nothing about; a generated control counts too.
+   */
+  function _unshown(messages) {
+    return Object.entries(messages)
+      .filter(([name, m]) => m
+        && !rendered.some(f => f.name === name)
+        && !formEl?.querySelector(`[name="${CSS.escape(name)}"]`))
+      .map(([, m]) => m)
+  }
+
+  /**
    * The write itself, shared by the button and the timer.
    *
    * Everything that is true of BOTH lives here — the in-flight flag, the error
@@ -662,6 +672,7 @@
         const kept = resource?.declined?.(sent, result) ?? {}
         if (Object.keys(kept).length) {
           _server = kept
+          formError = _unshown(kept).join(' ')
           _recompute()
         }
       }
@@ -672,14 +683,7 @@
       // form must stop accepting a submit whatever else it shows.
       if (mapped.committed) committed = true
       _server   = mapped.fields  ?? {}
-      // A message for a field this form does not draw has no box to sit under,
-      // so it is said at the top. Otherwise `only` narrowing a form past a
-      // column the record still carries — a nullable seed, a server rule — is
-      // a submit that does nothing and shows nothing.
-      const unshown = _generatedOnly
-        ? Object.entries(_server).filter(([name, m]) => m && !rendered.some(f => f.name === name)).map(([, m]) => m)
-        : []
-      formError = [mapped.message, ...unshown].filter(Boolean).join(' ')
+      formError = [mapped.message, ..._unshown(_server)].filter(Boolean).join(' ')
       _recompute()
       onerror?.(err)
       return { ok: false }
@@ -749,7 +753,7 @@
   /**
    * A control changed the record. Restart the quiet window.
    *
-   * Called from the two places that already set `dirty`, rather than watched:
+   * Called from `changed()`, the one place that sets `dirty`, rather than watched:
    * `dirty` goes true on the first keystroke and stays true, so a watcher sees
    * one edit and a burst of twenty look the same as one.
    */
@@ -878,27 +882,45 @@
     _recompute()
   }
 
-  // `input` and `change` both bubble, so one pair of listeners on the <form>
-  // sees every control under it — including ones this kit did not render.
-  // That is the whole dirty-tracking mechanism: no deep watch of the record,
-  // no per-field wiring.
-  function handleChange(e) {
+  // The one place a field changing lands (`FJS-D903`): it sets `dirty`, arms
+  // autosave and retires the server message about the field's last value.
+  // A control calls `$context.form.changed(name)` when it commits a value,
+  // because a click on a calendar day or a listbox option, a hidden input and
+  // an unnamed box emit nothing the listener below can key on: the form stayed
+  // pristine — no autosave, no unload guard — and the message stayed under a
+  // field already fixed (`FJS-2590`). A nameless call still dirties the form.
+  function changed(name) {
     dirty = true
     _autoBump()
+    if (!name) return
 
-    const key = e?.target?.name
-    if (!key) return
-
-    if (!_touched.includes(key)) _touched = [..._touched, key]
+    if (!_touched.includes(name)) _touched = [..._touched, name]
 
     // A server message is about the value that was sent, so editing that value
     // retires it. Without this it sits under a box the user has already fixed,
     // which reads as the form refusing to accept a correct value.
-    if (_server[key] !== undefined) {
+    if (_server[name] !== undefined) {
       const next = { ..._server }
-      delete next[key]
+      delete next[name]
       _server = next
     }
+
+    if (validateOn === 'input' && !_revealed.includes(name)) {
+      _revealed = [..._revealed, name]
+    }
+
+    // Re-check rather than blindly clear: a field that is already speaking must
+    // be allowed to say something ELSE as the value changes, and one that is
+    // not revealed still cannot start.
+    _recompute()
+  }
+
+  // `input` and `change` both bubble, so one pair of listeners on the <form>
+  // hears a native control this kit did not render, keyed by its `name`.
+  function handleChange(e) {
+    const key = e?.target?.name
+    changed(key)
+    if (!key) return
 
     // A hand-written control reaches this form only as this event, so its
     // value is read off the element. A generated one is graded in
@@ -909,15 +931,6 @@
       _gradeStale(key, el.type === 'select-multiple'
         ? [...el.selectedOptions].map((o) => o.value) : el.value)
     }
-
-    if (validateOn === 'input' && !_revealed.includes(key)) {
-      _revealed = [..._revealed, key]
-    }
-
-    // Re-check rather than blindly clear: a field that is already speaking must
-    // be allowed to say something ELSE as the value changes, and one that is
-    // not revealed still cannot start.
-    _recompute()
   }
 
   // Reveal on leaving a field that has actually been typed in. Tabbing through

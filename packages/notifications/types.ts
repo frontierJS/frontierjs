@@ -58,6 +58,13 @@ export interface MailMessage {
    */
   html?:    string
   text?:    string
+
+  /**
+   * Files that travel with the mail — an `.ics` on a booking confirmation.
+   * Junction's own `MailAttachment`, imported rather than restated, and handed
+   * to the mailer untouched.
+   */
+  attachments?: MailAttachment[]
 }
 
 // ─── Stored notification record (mirrors schema.lite model) ──────────────────
@@ -69,6 +76,8 @@ export interface NotificationRecord {
   data:        Record<string, unknown>
   contextType: string | null
   contextId:   string | null
+  /** The definition's `key`, absent on a copy of the model that has no column. */
+  deliveryKey?: string | null
   readAt:     string | null
   createdAt:   string
 }
@@ -125,14 +134,16 @@ export interface OutgoingMail {
   subject:  string
   text?:    string
   html?:    string
+  attachments?: MailAttachment[]
 }
 
 // Junction's `AppMail` is `{}` until its mail module is imported, which is what
 // augments it to `IMail`. An app with no mailer — in-app notifications alone —
 // never imports it, and junction's App was then unassignable to this one
 // (`mail` has no `send`), so `app.configure(notificationsPlugin(…))` failed
-// `tsc`. Imported here for its augmentation alone: no runtime import.
-import type {} from '@frontierjs/junction/mail'
+// `tsc`. Type-only: no runtime import. `MailAttachment` is junction's own, so
+// the one field that crosses carries no second definition.
+import type { MailAttachment } from '@frontierjs/junction/mail'
 
 export interface App {
   // `Promise<unknown>` and not `Promise<void>`: junction's `IMail.send` answers

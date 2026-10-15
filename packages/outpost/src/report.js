@@ -82,8 +82,11 @@ export function createReporter(config, {
       return post('/cleanup', 'report', { server_id: config.serverId, ...(await inspector.disk()) })
     },
 
+    // The host's report names no machine; that absence is what Basecamp
+    // verifies against the host key.
     async reportPosture() {
-      return post('/posture', 'report', { server_id: config.serverId, ...(await inspector.posture()) })
+      const reading = await inspector.posture()
+      return post('/posture', 'report', config.host ? reading : { server_id: config.serverId, ...reading })
     },
 
     /** Both timers. Every tick is caught and logged rather than thrown: a
@@ -92,6 +95,14 @@ export function createReporter(config, {
      *  recovery. */
     start() {
       const tick = (what, fn) => fn().catch(err => log.warn?.(`outpost: ${what} — ${err.message}`))
+
+      // The host has no Server row to check in as, and its volumes and disk are
+      // the stack's, not a fleet machine's: posture is all it reports.
+      if (config.host) {
+        tick('first posture', () => this.reportPosture())
+        const pos = setInterval(() => tick('posture', () => this.reportPosture()), config.postureMs)
+        return () => clearInterval(pos)
+      }
 
       tick('first heartbeat', () => this.heartbeat())
       tick('first report', async () => { await this.reportVolumes(); await this.reportDisk() })

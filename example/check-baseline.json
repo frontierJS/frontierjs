@@ -1,4 +1,7 @@
 {
+  "//": "One number per fli check rule id — the count that may never rise. Absent = 0 = clean. `fli check --update` locks in an improvement and cannot raise; `fli check --adopt` records what is there, which is the verb for taking debt on. The findings still print either way.",
+  "//app-layout": "Adopted when CI first graded the rule here (FJS-D1009). web/src/displays.js is a module loose in web/src that belongs in web/src/lib/<area>/. The other five cross a surface by relative path (Invariant 3): site/src/cart.js imports web/, and the four route .meta.js files under site/src/routes (index, pricing, catalog, products/[slug]) import api/. Each is a move, not a defence; a ceiling that falls as they move.",
+  "app-layout": 6,
   "allow": {
     "test-port-literal:web/test/verify-replicate.mjs": "8333 is the port INSIDE the SeaweedFS container, mapped from the drive's own S3_PORT; nothing on the host binds it.",
     "test-port-literal:web/test/verify-tui.mjs": "7999 is a port nothing holds, on purpose: the drive proves the frame renders with the API unreachable.",

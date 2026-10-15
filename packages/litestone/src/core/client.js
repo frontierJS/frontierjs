@@ -1172,6 +1172,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           // A @from field is a subquery over the TARGET, so a value written here
           // has nowhere to land and the next read answers the aggregate anyway.
           // Seed the target's rows instead.
+        : isFrom?.op === 'column' ? `${f.name} is @from(${isFrom.rel}, ${isFrom.opValue}) — it is a column of the ${isFrom.rel} row read on demand, not a column here, so it cannot be written. Write ${isFrom.opValue} on the ${isFrom.rel} row instead`
         : isFrom      ? `${f.name} is @from(${isFrom.target}, ${isFrom.op}) — it is a subquery over ${isFrom.target} evaluated on read, not a column, so it cannot be written. Write the ${isFrom.target} rows it counts instead`
           // The one of these that a CALLER is meant to send. It reached the Data
           // boundary because nothing lifted it off the payload — an app writing
@@ -2052,7 +2053,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // not cause.
   const _exclMembers = tx.exclusions ? shape.exclusions : []
   const _exclNotes   = _exclMembers.length > 0
-  const _exclFields  = new Set(_exclMembers.flatMap(m => [m.keyField, ...m.range, ...m.whereFields]))
+  const _exclFields  = new Set(_exclMembers.flatMap(m => [...m.keyFields, ...m.range, ...m.whereFields]))
   // Only a write naming the key, an end of the range or a field of `where:`
   // can move a row into another's range; every other update keeps its fast path.
   const exclTouched = (data) => _exclNotes && data != null && Object.keys(data).some(k => _exclFields.has(k))
@@ -2060,13 +2061,19 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (_exclNotes && row) tx.exclusions.note(modelName, row)
   }
   // The key a row holds BEFORE an update: a write that leaves the key alone
-  // still moves the range under it, and the payload does not name it.
-  function noteExclusionBySql(whereSql, params) {
+  // still moves the range under it, and the payload does not name it. A scope
+  // of several fields is moved by a payload naming only one of them (a row to
+  // another day), so the key it moves TO is the row's own with the payload laid
+  // over it.
+  function noteExclusionBySql(whereSql, params, data) {
     if (!_exclNotes) return
-    const sel = [...new Map(_exclMembers.map(m => [m.keyColumn, m.keyField])).entries()]
+    const sel = [...new Map(_exclMembers.flatMap(m => m.keyColumns.map((c, i) => [c, m.keyFields[i]]))).entries()]
       .map(([c, f]) => `"${c}" AS "${f}"`).join(', ')
     const sql = `SELECT DISTINCT ${sel} FROM "${tableName}"${whereSql ? ` WHERE ${whereSql}` : ''}`
-    for (const row of writeDb.query(sql).all(...params)) tx.exclusions.note(modelName, row)
+    for (const row of writeDb.query(sql).all(...params)) {
+      tx.exclusions.note(modelName, row)
+      if (data) tx.exclusions.note(modelName, { ...row, ...data })
+    }
   }
 
   function fireRowEvent(event, operation, result, transition = null) {
@@ -5675,7 +5682,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // The parents these rows name now — a where names rows only the database
     // knows, and only before the statement runs.
     if (notes.before) noteCardinalityBySql(wSql, wBinds)
-    if (plan.exclusion) { noteExclusionBySql(wSql, wBinds); noteExclusion(plan.exclusion) }
+    if (plan.exclusion) { noteExclusionBySql(wSql, wBinds, plan.exclusion) }
     const moves = plan.moves ? movesOnto(plan.moves, wSql, wBinds) : false
     if (sel && cascadeHeard()) doomed = cascadeDoomed(readOwn ? affected : readAll(readDb.query(sel.sql).all(...sel.params)))
 
@@ -5766,6 +5773,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (!count) { refuseNoRow(plan.refuse); return null }
       const { select, include } = plan.result
       const ps = parseArgs(select === false ? null : select, include)
+      // withIncludes writes the relation onto `row`, and with no protected
+      // column the trail's image IS that object: a relation read for the
+      // caller would land in the audit after-image (FJS-2892).
+      if (row && image === row && plan.logs && (ps || include)) image = { ...row }
       if (row && (ps || include)) withIncludes([row], ps, include)
       const final = row ? finalizeOne(row, ps) : null
       if (plan.announce) {

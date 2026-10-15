@@ -16,7 +16,7 @@
   //   alert.error('Something went wrong.', 0)  // 0 = persistent
 
   import { alert } from '../../stores/alertStore.js'
-  import { tone as toTone, cx } from '../../utils.js'
+  import { tone as toTone, cx, overlayHost } from '../../utils.js'
 
   // Watch alertStore. An imported object is inert in Mesa — a read in the
   // template compiles to a static value unless a `$:` watch covers it. All
@@ -52,7 +52,7 @@
 </script>
 
 {#if alert.visible}
-  <mesa:portal to={document.body}>
+  <mesa:portal to={overlayHost()}>
     {@const t    = toTone(alert.type) || 'info'}
     {@const path = iconMap[t] ?? iconMap.info}
     <div

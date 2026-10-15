@@ -363,52 +363,6 @@ describe('prefetch route matching', () => {
   })
 })
 
-// ─── virtual:sierra config import fix ────────────────────────────────────────
-
-describe('virtual:sierra uses live config import', () => {
-  test('imports sierraConfig from sierra.config.js', () => {
-    const src = _generateVirtualSierra({
-      target: 'spa',
-      junction: { client: 'placeholder' },
-    }, 'config/routes.js')
-    expect(src).toContain("import sierraConfig from '/config/sierra.config.js'")
-  })
-
-  test('passes sierraConfig.junction to initJunction (not JSON)', () => {
-    const src = _generateVirtualSierra({
-      target: 'spa',
-      junction: { url: 'wss://api.example.com', tokenKey: 'tok' },
-    }, 'config/routes.js')
-    // Must be the live reference, not serialized
-    expect(src).toContain('initJunction(sierraConfig.junction)')
-    expect(src).not.toContain('JSON')
-    expect(src).not.toContain('"tokenKey"')
-  })
-
-  test('passes sierraConfig.analytics to initAnalytics (not JSON)', () => {
-    const src = _generateVirtualSierra({
-      target: 'spa',
-      analytics: { provider: 'plausible', domain: 'example.com' },
-    }, 'config/routes.js')
-    expect(src).toContain('initAnalytics(sierraConfig.analytics)')
-    expect(src).not.toContain('"domain"')
-  })
-
-  test('passes sierraConfig.theme to initTheme (not JSON)', () => {
-    const src = _generateVirtualSierra({
-      target: 'spa',
-      theme: { default: 'system' },
-    }, 'config/routes.js')
-    expect(src).toContain('initTheme(sierraConfig.theme)')
-    expect(src).not.toContain('"default"')
-  })
-
-  test('always imports sierraConfig even without junction/analytics/theme', () => {
-    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
-    expect(src).toContain("import sierraConfig from '/config/sierra.config.js'")
-  })
-})
-
 import { _generateVirtualSierra } from '../src/virtual/virtual-sierra.js'
 
 describe('virtual:sierra theme wiring', () => {

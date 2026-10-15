@@ -16,12 +16,12 @@ starts its server and stays up, for looking at a component in a real browser.
 ```
 components/
   forms/      Form · Field · Fieldset · Label · Input · Textarea · Select ·
-              Checkbox · RadioGroup · Switch · Slider · Thresholds · NumberInput · Combobox ·
+              Checkbox · RadioGroup · Switch · Slider · Thresholds · SignaturePad · NumberInput · Combobox ·
               MultiSelect · DatePicker · DateTimeInput · JsonInput · CodeInput ·
               FileUpload · FileField · GeoField · MoneyInput · Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
-              Json · Markdown · BulkBar · …
+              Json · Markdown · SignatureView · BulkBar · …
   layout/     Card · Tabs (Tabs/TabList/Tab/TabPanel) · Accordion(+Item) ·
               Shell (the app frame, drawn from a nav.js table; Sierra's
               page, session and isActive arrive as props)
@@ -67,7 +67,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   wrote the result back, so under `@version` a second write from one open form
   carried a revision the row had passed.
 - **`$context.form` is the seam.** `forms/Form.mesa` provides
-  `{ errors, submitting, disabled, fields, submitted, optionsFor, reportInvalid }`;
+  `{ errors, submitting, disabled, fields, submitted, optionsFor, reportInvalid, changed }`;
   **every control reads it**
   to resolve its own label, constraints, `aria-invalid` and message. An absent form
   reads `undefined` and every fallback is what the control did standing alone.
@@ -155,8 +155,16 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   that ladder was the reason a plugin could name a control and have nothing
   render it. With no `props` builder a control is handed
   `{ name, field, value, onvalue, options }`; **put `name` on the element that
-  emits input** or the form's dirty tracking and blur-reveal cannot see the
-  field. A name nobody bound renders nothing and says which half is missing.
+  emits input** or blur-reveal cannot see the field. A name nobody bound
+  renders nothing and says which half is missing.
+- **A control calls `$context.form.changed(name)` when it commits a value**
+  (`FJS-D903`) — the one place that sets `dirty`, arms autosave and retires
+  the field's server message; `writeField` and the bubbled `input`/`change`
+  listener are callers of it. A click on a day or an option, a hidden input
+  and an unnamed box emit nothing the listener can key on, so a control that
+  forgets leaves a hand-written form pristine under a stale message
+  (`FJS-2590`). `form-changed.spec.mjs` commits a value in every file in
+  `components/forms/` and fails one with no row.
 ### Validation, and when a message may appear
 
 - **The live-validation rule lives in `Form.mesa`, once**: on input an error may
@@ -217,6 +225,16 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   hidden at 0,0 while a click aimed at its confirm button landed behind it
   (`FJS-402`). The frame callback is kept as a re-place for a panel whose content
   resized.
+- **A portal goes to `overlayHost()` (`utils.js`), never `document.body`**
+  (`FJS-D904`): the topmost open modal `<dialog>`, else `<body>`. A modal
+  dialog is in the top layer and makes the page inert, so an overlay on
+  `<body>` is drawn under it and a press at it lands on the backdrop and
+  closes the dialog — a toast's Undo closed the modal and never ran
+  (`FJS-2599`). An overlay mounted once at the root (`Toaster`) must read its
+  own state in the `to={…}` expression, or it asks once, at load, and stays
+  on `<body>`. Its toasts then go with the modal when it closes.
+  `overlay-host.spec.mjs` hit-tests each one inside a Modal. `DropdownMenu`
+  and `Popover` still portal to `<body>` (`FJS-2109`).
 - **A `@point` column is a `Json` column and must not get the document editor.**
   `forms/GeoField.mesa` is two number boxes refusing ±90/±180; Sierra's table
   answers `geo` off `x-geo`, which also carries the KEY NAMES — `@point(latitude,
@@ -529,6 +547,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   `{#if open}`; the read used to answer `undefined`, so choosing an item never
   closed the menu. If a part of a compound component silently does nothing,
   check whether it is behind a conditional before blaming the part.
+- **An overlay finds its rows and its trigger's control by reference, never by query** (`FJS-2391`). A terminal node has no `querySelector`, `activeElement` or `document`, so a menu that walks the DOM moves nothing there and a close that queries for the trigger drops focus. `DropdownItem` registers `{ el, disabled, label }` getters through `$context.addRow` and reports focus through `$context.rowFocus`; the menu's cursor is that report. The trigger's control is the last `focusin` target inside the wrapper, with a guarded query only for a browser that does not focus a button on press. The wrapper listens to `click`, so on a terminal it is a Tab stop before the button inside it.
 - **A `const` consumer of `$context.x` is the VALUE, and it is live** — it
   tracks the provider (Rule 25a), so it reads current inside a handler that
   runs much later, and it is neither a getter to call nor a snapshot taken at

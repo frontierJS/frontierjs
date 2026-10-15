@@ -1917,12 +1917,17 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
         }
       })
 
-      // ── WS stats route ───────────────────────────────────────────
-      // app.get applies apiPrefix — see the route shortcuts in core/app.ts.
-      app.get('/channels/stats', (ctx) => {
-        if (!ctx.user) return ctx.json({ error: 'Unauthorized' }, 401)
-        return ctx.json(manager.stats())
-      })
+      // ── WS counts, as a /metrics section ─────────────────────────
+      // Not a route: a `GET /channels/stats` takes the name `channels` from
+      // the app, and refuseShadowedServices then refuses its service by that
+      // name (`FJS-2897`). Counts only — a channel name carries a row id
+      // (`user:42`) and /metrics may be public.
+      if (typeof app.registerMetricsSource === 'function') {
+        app.registerMetricsSource('channels', () => {
+          const { connections, channels } = manager.stats()
+          return { connections, channels }
+        })
+      }
 
       // ── Run user setup ───────────────────────────────────────────
       if (setup) {

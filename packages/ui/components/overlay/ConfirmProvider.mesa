@@ -1,3 +1,11 @@
+<script module>
+  // The element whose NEXT click is the confirmed one. Module scope because a
+  // second provider hears the re-fired click too: with the mark per instance it
+  // saw an unmarked element and asked the question again, so the first Confirm
+  // ran nothing.
+  const refire = { el: null }
+</script>
+
 <script>
   // ConfirmProvider.mesa
   // `data-confirm` — a destructive action confirms itself, declaratively.
@@ -39,20 +47,27 @@
 
   let pending  = null        // { el, title, message, confirmLabel, tone } while asking
 
-  // The element whose NEXT click is the confirmed one. Deliberately a plain
-  // object property rather than a reactive `let`: it is written and read inside
-  // one synchronous event dispatch, and a signal read there answers the value
-  // from before the write — so the re-fired click was caught by this listener
-  // and the confirmed action never ran.
-  const refire = { el: null }
+  // `refire` is a plain object property rather than a reactive `let`: it is
+  // written and read inside one synchronous event dispatch, and a signal read
+  // there answers the value from before the write — so the re-fired click was
+  // caught by this listener and the confirmed action never ran.
+
+  // Watches the page while a question is open: an element a re-render replaced
+  // can no longer be clicked, so the panel anchored to it asks for nothing.
+  let watcher = null
+  function settle() {
+    pending = null
+    watcher?.disconnect()
+    watcher = null
+  }
 
   function onDocumentClick(e) {
     const el = e.target?.closest?.('[data-confirm]')
     if (!el) return
 
-    // The re-fire. Clear first: a handler that throws must not leave the
-    // element permanently exempt from its own confirmation.
-    if (refire.el === el) { refire.el = null; return }
+    // The re-fire. Left set for the other providers to see; confirm() clears
+    // it when click() returns, thrown handler or not.
+    if (refire.el === el) return
 
     e.preventDefault()
     e.stopPropagation()
@@ -69,12 +84,15 @@
       confirmLabel: el.getAttribute('data-confirm-label') || confirmLabel,
       tone:         el.getAttribute('data-confirm-tone')  || tone,
     }
+    watcher?.disconnect()
+    watcher = new MutationObserver(() => { if (!el.isConnected) settle() })
+    watcher.observe(document.body, { childList: true, subtree: true })
   }
 
   function confirm() {
     const el = pending?.el
-    pending  = null
-    if (!el) return
+    settle()
+    if (!el?.isConnected) return
     // The re-fire is synchronous, so the mark is cleared when click() returns
     // as well as by the listener: click() on a disabled control dispatches
     // nothing, and a mark left set would wave the element's next click through
@@ -85,7 +103,7 @@
 
   function cancel() {
     const el = pending?.el
-    pending  = null
+    settle()
     // Back where they were. A keyboard user who cancels and finds themselves at
     // the top of the document has been punished for saying no.
     el?.focus?.()
@@ -96,6 +114,7 @@
   })
 
   $.onDestroy(() => {
+    watcher?.disconnect()
     document.removeEventListener('click', onDocumentClick, { capture: true })
   })
 </script>

@@ -13,6 +13,10 @@
   //
   // items: { value, label, description?, disabled? }[]
   //
+  // layout="segmented" draws the same radios as one welded row of short
+  // labels (`.field-row.segmented`) -- FJS-D805's single-select toggle. It
+  // draws no description, so use it for choices a word or two names.
+  //
   // Usage:
   //   <RadioGroup
   //     bind:value={plan}
@@ -38,7 +42,7 @@
   export let name     = ''
   export let required = undefined
   export let disabled = undefined  // undefined = ask the form; false overrides it
-  export let layout   = 'stacked'  // 'stacked' | 'inline'
+  export let layout   = 'stacked'  // 'stacked' | 'inline' | 'segmented'
   export let onchange = undefined
 
   // The enclosing <Form> and this field's rule, both undefined standing alone.
@@ -80,6 +84,7 @@
   // group's accessible name is its aria-label.
   export var id = ''
   const groupId   = id
+  const segmented = layout === 'segmented'
   const groupName = name || uid('radio')
 
   function handleChange(e) {
@@ -99,8 +104,8 @@
     aria-label={resolvedLabel || null}
     aria-required={resolvedRequired ? 'true' : null}
     aria-invalid={displayError ? 'true' : null}
-    class={layout === 'inline' ? 'cluster' : 'stack'}
-    style:gap="0.5rem"
+    class={segmented ? 'field-row segmented' : layout === 'inline' ? 'cluster' : 'stack'}
+    style:gap={segmented ? null : '0.5rem'}
     {...$attributes}
   >
     {#each resolvedItems as item (item.value)}
@@ -108,6 +113,19 @@
       {@const isDisabled = resolvedDisabled || item.disabled}
       {@const descId = `${groupName}-${item.value}-desc`}
 
+      {#if segmented}
+        <label>
+          <input
+            type="radio"
+            name={groupName}
+            value={item.value}
+            checked={isSelected}
+            disabled={isDisabled}
+            on:change={handleChange}
+          />
+          {item.label}
+        </label>
+      {:else}
       <label class="card field-check fjs-radio-card">
         <input
           type="radio"
@@ -125,6 +143,7 @@
           {/if}
         </span>
       </label>
+      {/if}
     {/each}
   </div>
 {/snippet}

@@ -1,4 +1,6 @@
 <script module>
+  import { overlayHost } from '../../utils.js'
+
   /**
    * Put text on the clipboard — the one implementation in this kit.
    *
@@ -30,7 +32,7 @@
    */
   function execCopy(text) {
     const back = document.activeElement
-    const host = back?.closest?.('dialog[open]') ?? document.body
+    const host = overlayHost()
     const el   = document.createElement('textarea')
     el.value = text
     el.setAttribute('readonly', '')
@@ -66,7 +68,9 @@
   // Usage — with label:
   //   <CopyButton text={snippet} label="Copy" />
   //
-  // Usage — custom trigger snippet:
+  // Usage — custom trigger snippet. The trigger draws the whole button: it is
+  // not `.square` and takes its name from what it shows (an icon-only trigger
+  // passes `aria-label`, which lands on the button):
   //   <CopyButton text={code}>
   //     {#snippet trigger(copied)}
   //       <span>{copied ? 'Copied!' : 'Copy code'}</span>
@@ -98,10 +102,10 @@
 
 <button
   type="button"
-  class={cx('btn', variant, !label && 'square', copied && 'success')}
+  class={cx('btn', variant, !label && !trigger && 'square', copied && 'success')}
   {class}
   {...$attributes}
-  aria-label={label ? null : (copied ? 'Copied' : 'Copy to clipboard')}
+  aria-label={label || trigger ? null : (copied ? 'Copied' : 'Copy to clipboard')}
   on:click={copy}
 >
   {#if trigger}

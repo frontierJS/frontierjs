@@ -188,6 +188,7 @@ See [access-control.md](./access-control.md).
 @from(Model, sum: field)         derived sum/avg/max/min — take a field name
 @from(Model, first|last: true)   the whole related ROW — field must be typed Model?
 @from(Model, exists: true)       field must be Boolean
+@from(relField, column)          a column of the parent a to-one relation points at — field must match its type
 @from(Model, count: true, where: "sql", orderBy: field)  filtered / ordered
 @from(Model, count: true, withDeleted: true)     include the target's soft-deleted rows
 @from(Model, count: true, withTemplates: true)   include the target's @@hasTemplates rows

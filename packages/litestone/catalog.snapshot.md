@@ -24,7 +24,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `view` | <name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] } |  |
 | `enum` | <Name> { values… } |  |
 | `valueset` | <Name> { source <Model> [value <field>] [scope <name>] [where "…"] [order [recent(<Model>.<col>, <clock>),] <field> [asc\|desc], …] } |  |
-| `scope` | <name>(<field>) |  |
+| `scope` | <name>(<field>[, <field>…]) |  |
 | `function` | <name>(p: Type, …): Type { @@expr("…") } |  |
 | `trait` | <Name> { fields… attributes… } |  |
 | `extend` | model <Name> { fields… attributes… } |  |
@@ -211,3 +211,4 @@ Shapes the parser accepts and something later refuses.
 | `unit-in-the-column-name` | info | the unit is in the identifier, where nothing can read it |
 | `check-without-an-operation-in-a-write-rule` | warn | a bare check() in a write rule asks the parent the same write |
 | `anonymous-create-auth-default` | warn | a public create on a model whose required column defaults to auth() |
+| `create-reaches-unpickable-relation` | warn | a create policy reaches through a relation the picker cannot be narrowed by |

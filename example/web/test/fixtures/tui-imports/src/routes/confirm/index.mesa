@@ -1,10 +1,19 @@
 <script>
   import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
 
   let cancels = 0
+  let chosen = 'none'
 </script>
 
 <p>Cancels: {cancels}</p>
 <ConfirmationPopover title="Remove it?" confirmLabel="Remove" oncancel={() => cancels++}>
   {#snippet trigger()}<button type="button">Ask</button>{/snippet}
 </ConfirmationPopover>
+<p>Chose: {chosen}</p>
+<DropdownMenu>
+  {#snippet trigger()}<button type="button">Actions</button>{/snippet}
+  <DropdownItem onclick={() => chosen = 'edit'}>Edit</DropdownItem>
+  <DropdownItem onclick={() => chosen = 'delete'}>Delete</DropdownItem>
+</DropdownMenu>

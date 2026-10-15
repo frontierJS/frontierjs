@@ -89,6 +89,8 @@
 
   const PLANS   = [{ value: 'monthly', label: 'Monthly' }, { value: 'yearly', label: 'Yearly' }]
   const OWNERS  = [{ value: 'ada', label: 'Ada' }, { value: 'grace', label: 'Grace' }]
+  let aspect    = '1:1'
+  const ASPECTS = [{ value: '1:1', label: '1:1' }, { value: '4:3', label: '4:3' }, { value: '16:9', label: '16:9' }]
   const REGIONS = [{ value: 'eu', label: 'Europe' }, { value: 'us', label: 'Americas' }]
 
   // Fails whenever the spec has armed an error map; succeeds otherwise. The
@@ -141,3 +143,8 @@
 
 <output id="done">{done}</output>
 <output id="errorKeys">{Object.keys(errors).sort().join(',')}</output>
+
+<div id="segmented-box">
+  <RadioGroup layout="segmented" label="Aspect" items={ASPECTS} bind:value={aspect} />
+  <output id="aspect">{aspect}</output>
+</div>

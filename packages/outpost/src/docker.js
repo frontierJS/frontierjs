@@ -530,6 +530,7 @@ const POSTURE = {
   files:           ['stat', '-c', '%a %U %G %n', '/etc/basecamp', '/etc/basecamp/outpost.key', '/etc/basecamp/outpost.env'],
   cert:            ['openssl', 'x509', '-enddate', '-noout', '-in', '/etc/basecamp/outpost.crt'],
 }
+const STAT = ['stat', '-c', '%a %U %G %n']
 // systemd 249 refuses `--json`, and the text form's last line carries the
 // overall score on every version. Asked only when the JSON gave none.
 const UNIT_TEXT = ['systemd-analyze', 'security', '--no-pager', 'outpost']
@@ -766,7 +767,8 @@ function readCert(r) {
  * byte counts. They are wire contracts, not model fields.
  */
 
-export function createInspector({ run = spawnRun } = {}) {
+/** `hostFiles` is the installation's own host only (`config.js` § readHostConfig). */
+export function createInspector({ run = spawnRun, hostFiles = null } = {}) {
   const json = async (argv) => {
     const { exitCode, stdout } = await run(argv)
     if (exitCode !== 0) return []
@@ -948,6 +950,15 @@ export function createInspector({ run = spawnRun } = {}) {
       }
       // Each version is its own unknown, so the group is never null as a whole.
       readings.versions ??= { docker: null, caddy: null, bun: null }
+
+      // One stat per path, so a missing database volume costs its own reading
+      // and not the env file's.
+      if (hostFiles) {
+        const stat = async (path) => path
+          ? guard(async () => readFiles(await read([...STAT, path]))?.[0])
+          : null
+        readings.host_files = { db: await stat(hostFiles.db), env: await stat(hostFiles.env) }
+      }
 
       return { at: new Date().toISOString(), readings }
     },

@@ -29,9 +29,14 @@ export function gatedFromFields(fromFields, ctx) {
   let out = null
   for (const [name, f] of Object.entries(fromFields)) {
     if (!f.target) continue
-    const required = ctx.gateFor(f.target, 'read')
-    if (required == null || levelPasses(required, ctx.levelFor(f.target, ctx))) continue
-    ;(out ??= new Set()).add(name)
+    // `through` is a to-one column that is the parent's own aggregate: it is
+    // read off the parent's rows AND the rows the aggregate counts.
+    for (const model of [f.target, ...(f.through ?? [])]) {
+      const required = ctx.gateFor(model, 'read')
+      if (required == null || levelPasses(required, ctx.levelFor(model, ctx))) continue
+      ;(out ??= new Set()).add(name)
+      break
+    }
   }
   return out
 }

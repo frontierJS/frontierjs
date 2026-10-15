@@ -30,14 +30,14 @@ import { CronScheduler }                            from './cron.ts'
 import type {
   CaravanOptions, CaravanInstance, CaravanApp, CaravanTelemetry,
   CaravanStats, DispatchOptions, BulkDispatchOptions, HandlerOptions,
-  JobDefinition, JobHandler, JobRecord, JobRef, JobStatus,
+  JobDefinition, JobHandler, JobRecord, JobRef, JobStatus, PayloadGuard,
   QueueConfig, RegisteredHandler,
   QueueHandle, QueuePause, QueueEvent, OperatorOptions,
 } from './types.ts'
 
 export type {
   CaravanOptions, CaravanInstance, CaravanStats,
-  Job, JobContext, JobDefinition, JobHandler, JobRef, JobRegistrar,
+  Job, JobContext, JobDefinition, JobHandler, JobRef, JobRegistrar, NotJson, PayloadGuard,
   HandlerOptions, DispatchOptions, BulkDispatchOptions,
   JobRecord, JobStatus, QueueConfig, QueueStats,
   QueueHandle, QueuePause, QueueEvent, OperatorOptions,
@@ -1257,7 +1257,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
 export function defineJob<T = unknown>(
   name:    string,
-  handler: JobHandler<T>,
+  handler: JobHandler<T> & PayloadGuard<T>,
   opts:    HandlerOptions = {}
 ): JobDefinition<T> {
   return {

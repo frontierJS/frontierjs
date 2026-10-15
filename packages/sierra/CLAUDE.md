@@ -75,9 +75,11 @@ src/
                          `postbuild/redirects.js`, and refused there for a rule
                          shape it cannot answer
                          Takes `functions` (the entry `postbuild/functions.js`
-                         wrote) and mounts it BEFORE the verb check, since a
-                         function answers POST
-    compile.js           a built site and serve.js as ONE executable
+                         wrote, as a path or as the imported module) and
+                         mounts it BEFORE the verb check, since a function
+                         answers POST
+    compile.js           a built site and serve.js as ONE executable, the
+                         `functions` entry imported statically so it embeds
                          (`sierra site --compile`, `fli site:build --binary`).
                          Bun's embedded filesystem has no directories and
                          renames every file with a hash, so serve.js takes a
@@ -155,6 +157,10 @@ src/
     static-data-plugin.js  dev only — a prerendered route's load(), run in Node
     mesa-plugin.js       Mesa compilation + reactivity hints; `prepareMesaSource`
                          is what a .mesa becomes before Mesa sees it
+    functions-plugin.js  dev only, `static` target with `functions:` — the
+                         directory read per request and answered ahead of
+                         Vite's SPA fallback; each file `importFresh`ed, not
+                         `ssrLoadModule`d
     devline-plugin.js    dev only, under `fli dev` (`FLI_DEV`) — Vite's boot banner
                          replaced by the ready line `fli dev` lays out; INFO is
                          held until `printUrls()` would have printed, a warning

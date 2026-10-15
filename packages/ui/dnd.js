@@ -56,12 +56,18 @@
  * what holds focus, since a hidden element cannot. One shared live region says
  * where it is, in English. A keyboard move stays inside its own zone.
  *
- * Not built: moving between zones by keyboard, nested zones of one type, grid
- * and flex-wrap layouts (a flow list only, vertical or horizontal, detected per
- * zone from its first two children).
+ * A wrapped zone — a flex-wrap in either direction, or a grid filled along
+ * one axis — is read by line and then along it, and is re-measured after each
+ * move of its placeholder, because the reflow shifts everything after it by
+ * more than one span.
+ *
+ * Not built: moving between zones by keyboard, nested zones of one type, and a
+ * grid whose cells span tracks (a flow list or a wrap is detected per zone from
+ * its children's rects).
  */
 
 import { createEffect } from '@frontierjs/mesa/runtime'
+import { overlayHost }  from './utils.js'
 
 // ─── constants ────────────────────────────────────────────────────────────
 
@@ -209,6 +215,36 @@ function measureZone(meta) {
   }
   if (phIdx === -1 && knownIdx != null && knownIdx < kids.length) phIdx = knownIdx
 
+  // A wrapped zone is read by line, then along it: the placeholder's real
+  // neighbors are on its own line, and no one-axis midpoint says which. A row
+  // wrap (or a grid, which fills row by row) has rows for lines; a column wrap
+  // has columns.
+  meta.lines = null
+  let wrapAxis = 'x'
+  let wrap = wrappedLines(rects, 'x')
+  if (!wrap) { wrapAxis = 'y'; wrap = wrappedLines(rects, 'y') }
+  if (wrap) {
+    const first = wrap.find((l) => l.to - l.from >= 2)
+    const lo = (r) => (wrapAxis === 'x' ? r.left : r.top)
+    const hi = (r) => (wrapAxis === 'x' ? r.right : r.bottom)
+    const neg = lo(rects[first.from + 1]) < lo(rects[first.from])
+    const uMid = (r) => (neg ? -(lo(r) + hi(r)) / 2 : (lo(r) + hi(r)) / 2)
+    const slots = []
+    const lines = []
+    for (const l of wrap) {
+      const at = slots.length
+      for (let i = l.from; i < l.to; i++) if (i !== phIdx) slots.push(uMid(rects[i]))
+      lines.push({ from: at, to: slots.length, lo: l.lo, hi: l.hi })
+    }
+    meta.axis = wrapAxis
+    meta.neg  = neg
+    meta.span = 0
+    meta.slots = slots
+    meta.lines = lines
+    meta.placeholderIndex = phIdx >= 0 ? phIdx : null
+    return
+  }
+
   // Axis is the dominant direction between the first two children, and `neg`
   // is DOM order running against the coordinates (an RTL row, column-reverse).
   // All slot math is in "u-space", coordinates negated when `neg`, so DOM order
@@ -254,9 +290,48 @@ function ancestorDelta(meta) {
   return { dx, dy }
 }
 
-/** Insertion index for a content-space main-axis coordinate. Monotonic in `m`,
- *  which is what keeps the placeholder from flickering between two slots. */
-function indexForPointer(meta, m) {
+/** Group a zone's child rects, in DOM order, into the lines of a wrap running
+ *  along `axis`: `{ from, to, lo, hi }` over child indexes, `lo`/`hi` the line's
+ *  extent on the other axis. Null unless some line holds two children AND there
+ *  is more than one line — a column has a child per line and a row has a single
+ *  line, and the one-axis math covers both. */
+function wrappedLines(rects, axis) {
+  const across = axis === 'x'
+  const lo = (r) => (across ? r.top : r.left)
+  const hi = (r) => (across ? r.bottom : r.right)
+  const lines = []
+  let line = null
+  for (let i = 0; i < rects.length; i++) {
+    const r = rects[i]
+    if (line) {
+      const overlap = Math.min(line.hi, hi(r)) - Math.max(line.lo, lo(r))
+      if (overlap > Math.min(line.hi - line.lo, hi(r) - lo(r)) / 2) {
+        line.to = i + 1
+        line.lo = Math.min(line.lo, lo(r))
+        line.hi = Math.max(line.hi, hi(r))
+        continue
+      }
+    }
+    line = { from: i, to: i + 1, lo: lo(r), hi: hi(r) }
+    lines.push(line)
+  }
+  return lines.length > 1 && lines.some((l) => l.to - l.from >= 2) ? lines : null
+}
+
+/** Insertion index for a content-space main-axis coordinate `m`; `c` is the
+ *  cross-axis one, read only by a wrapped zone to pick the line. Monotonic in
+ *  `m`, which is what keeps the placeholder from flickering between two slots. */
+function indexForPointer(meta, m, c) {
+  if (meta.lines) {
+    let best = meta.lines[0]
+    let bestD = Infinity
+    for (const l of meta.lines) {
+      const d = c < l.lo ? l.lo - c : c > l.hi ? c - l.hi : 0
+      if (d < bestD) { best = l; bestD = d }
+    }
+    for (let i = best.from; i < best.to; i++) if (m < meta.slots[i]) return i
+    return best.to
+  }
   const P = meta.placeholderIndex ?? Infinity
   const { slots, span } = meta
   for (let i = 0; i < slots.length; i++) {
@@ -314,7 +389,7 @@ const GHOST_STYLE_EXACT    = new Set(['opacity', 'color', 'list-style-type', 'bo
 
 function createGhost(sourceEl, rect, pointer, centerOnCursor) {
   const ghost = sourceEl.cloneNode(true)
-  // The clone is reparented to <body>, where a rule keyed on an ancestor and
+  // The clone is reparented to `overlayHost()`, where a rule keyed on an ancestor and
   // every inherited value stop applying — copied once from the computed style
   // so the ghost still looks like the item it was lifted from.
   const cs = getComputedStyle(sourceEl)
@@ -347,7 +422,7 @@ function createGhost(sourceEl, rect, pointer, centerOnCursor) {
   s.pointerEvents = 'none'
   s.cursor        = 'grabbing'
   s.willChange    = 'transform'
-  document.body.appendChild(ghost)
+  overlayHost().appendChild(ghost)
   return { ghost, baseLeft: left, baseTop: top }
 }
 
@@ -434,7 +509,9 @@ function onDragMove(e) {
 function onDragKey(e) {
   if (!session || session.finalizing) return
   if (e.key === 'Escape') {
-    if (session.keyboard) e.preventDefault()
+    // A pointer drag too: an unprevented Escape also closes the dialog the
+    // list sits in.
+    e.preventDefault()
     cancelToOrigin()
   } else if (session.keyboard) {
     keyboardKey(e)
@@ -446,17 +523,20 @@ function onDragKey(e) {
 let liveRegion = null
 
 /** One region for the page, reused: a polite per-zone element would be torn
- *  down with the zone, taking the drop announcement with it. */
+ *  down with the zone, taking the drop announcement with it. Moved into an
+ *  open modal: the inert page behind one is out of the accessibility tree,
+ *  and a region there announces nothing. */
 function announce(message) {
-  if (!liveRegion?.isConnected) {
+  if (!liveRegion) {
     liveRegion = document.createElement('div')
     liveRegion.setAttribute(LIVE_ATTR, '')
     liveRegion.setAttribute('role', 'status')
     liveRegion.setAttribute('aria-live', 'assertive')
     liveRegion.setAttribute('aria-atomic', 'true')
     liveRegion.style.cssText = 'position:fixed;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'
-    document.body.appendChild(liveRegion)
   }
+  const host = overlayHost()
+  if (liveRegion.parentNode !== host) host.appendChild(liveRegion)
   liveRegion.textContent = message
 }
 
@@ -578,6 +658,19 @@ function leave(meta) {
   notify(meta.node, 'onconsider', itemsWithoutShadow(meta), TRIGGERS.DRAGGED_LEFT)
 }
 
+/** Whether a scroll ancestor's box hides the point from the zone. A zone's
+ *  rect is its layout box, which stays put when an `overflow: auto` ancestor
+ *  clips it; the pointer over the clipped pixels is over something else. */
+function clippedAt(meta, clientX, clientY) {
+  for (const { el } of meta.ancestors) {
+    const r = el.getBoundingClientRect()
+    const left = r.left + el.clientLeft
+    const top  = r.top + el.clientTop
+    if (!pointInRect(clientX, clientY, { left, top, right: left + el.clientWidth, bottom: top + el.clientHeight })) return true
+  }
+  return false
+}
+
 function hitTest() {
   const px = session.pointer.clientX + window.scrollX
   const py = session.pointer.clientY + window.scrollY
@@ -585,6 +678,7 @@ function hitTest() {
   let target = null
   let cx = 0, cy = 0
   for (const meta of session.zones) {
+    if (clippedAt(meta, session.pointer.clientX, session.pointer.clientY)) continue
     const { dx, dy } = ancestorDelta(meta)
     // An ancestor's scroll moves the zone on screen; moving the pointer by the
     // same delta and testing the old snapshot is the same question.
@@ -616,16 +710,22 @@ function hitTest() {
     cy += target.node.scrollTop - target.selfScroll.y0
   }
   let m = target.axis === 'y' ? cy : cx
+  const c = target.axis === 'y' ? cx : cy
   if (target.neg) m = -m
 
   if (target !== session.current) {
     if (session.current) leave(session.current)
-    considerWithShadowAt(target, indexForPointer(target, m), TRIGGERS.DRAGGED_ENTERED)
+    considerWithShadowAt(target, indexForPointer(target, m, c), TRIGGERS.DRAGGED_ENTERED)
     session.current = target
     scheduleRemeasure()
   } else {
-    const idx = indexForPointer(target, m)
-    if (idx !== target.placeholderIndex) considerWithShadowAt(target, idx, TRIGGERS.DRAGGED_OVER_INDEX)
+    const idx = indexForPointer(target, m, c)
+    if (idx !== target.placeholderIndex) {
+      considerWithShadowAt(target, idx, TRIGGERS.DRAGGED_OVER_INDEX)
+      // Moving the placeholder reflows every line after it, which the snapshot
+      // cannot express as one shift the way a single line's can.
+      if (target.lines) scheduleRemeasure()
+    }
   }
 }
 
@@ -705,10 +805,14 @@ function finishDrag(skipAnimation) {
       finalItems.splice(Math.min(target.placeholderIndex ?? Infinity, finalItems.length), 0, session.itemData)
     const trigger = session.outside ? TRIGGERS.DROPPED_OUTSIDE_OF_ANY : TRIGGERS.DROPPED_INTO_ZONE
 
-    notify(target.node, 'onfinalize', finalItems, trigger)
-    if (target.node !== session.originNode) {
-      const origin = session.zones.find((z) => z.node === session.originNode)
-      if (origin) notify(session.originNode, 'onfinalize', itemsWithoutShadow(origin), TRIGGERS.DROPPED_INTO_ANOTHER)
+    // `quiet`: the zone the drag was in is gone, so there is no list to hand
+    // a drop to and nobody released anything.
+    if (!session.quiet) {
+      notify(target.node, 'onfinalize', finalItems, trigger)
+      if (target.node !== session.originNode) {
+        const origin = session.zones.find((z) => z.node === session.originNode)
+        if (origin) notify(session.originNode, 'onfinalize', itemsWithoutShadow(origin), TRIGGERS.DROPPED_INTO_ANOTHER)
+      }
     }
 
     session.ghost?.remove()
@@ -995,8 +1099,17 @@ export function dndzone(getOptions) {
       typeIndex.get(config.type)?.delete(node)
       if (typeIndex.get(config.type)?.size === 0) typeIndex.delete(config.type)
       if (session && !session.finalizing) {
-        if (session.current?.node === node || session.originNode === node) finishDrag(true)
-        else session.zones = session.zones.filter((z) => z.node !== node)
+        const gone = session.current?.node === node
+        if (session.originNode !== node) session.zones = session.zones.filter((z) => z.node !== node)
+        if (session.originNode === node) {
+          // Nowhere to cancel to. A drop into another live zone stands as the
+          // person saw it; otherwise nothing is released to anyone.
+          if (gone || !session.current) session.quiet = true
+          finishDrag(true)
+        } else if (gone) {
+          session.current = null
+          cancelToOrigin()
+        }
       }
     }
   }

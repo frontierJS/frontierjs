@@ -390,12 +390,13 @@ Goal: the box holding `ENCRYPTION_KEY` is graded ([`FJS-2714`](../ISSUES.md#fjs-
 Done when: the `bun run image:up` stack shows its host's readings on
 `/hub/security/`, and `hub.backup-recent` fails on a stack with no backup.
 
-- [ ] 2.1 The Outpost's report-only mode: the command listener off, `posture`
-  posted over loopback (`FJS-D925`).
-- [ ] 2.2 `fli deploy` installs it on the host.
-- [ ] 2.3 `ServerPosture` rows with `serverId` null, read by the hub alone.
-- [ ] 2.4 `hub.backup-recent`, `hub.db-mode` and `hub.env-mode`.
-- [ ] 2.5 `/hub/security/` behind `isSystemAdmin` (`FJS-D924`), refusing *Harden*
+- [x] 2.1 The Outpost's report-only mode: the command listener off, `posture`
+  posted over loopback (`FJS-D925`). `OUTPOST_HOST_KEY` selects it, signed with
+  `hostReportKey` (`FJS-D944`).
+- [ ] 2.2 `fli deploy` installs it on the host. Waits on `FJS-D1023`.
+- [x] 2.3 `ServerPosture` rows with `serverId` null, read by the hub alone.
+- [x] 2.4 `hub.backup-recent`, `hub.db-mode` and `hub.env-mode`.
+- [x] 2.5 `/hub/security/` behind `isSystemAdmin` (`FJS-D924`), refusing *Harden*
   and the patch run and showing the `fli deploy` command instead.
 
 ### Phase 3 — The outside view
@@ -567,6 +568,37 @@ posture report.
     nothing new to back up. `ENCRYPTION_KEY` already cannot rotate without
     orphaning every `@encrypted` column, and the HMAC is one-way, so the Outpost's
     config never holds anything that decrypts a `Secret`.
+
+- **FJS-D1023 — How does `fli deploy` know to install the report-only host Outpost, and what does it install from?**
+  Step 2.2. Everything on the Basecamp side of it is built: the Outpost runs
+  report-only when `OUTPOST_HOST_KEY` is set (with `BASECAMP_URL`,
+  `OUTPOST_HOST_DB_PATH`, `OUTPOST_HOST_ENV_PATH`), the API verifies a
+  `posture.report` naming no machine against `hostReportKey(ENCRYPTION_KEY)`
+  (`api/src/core/hooks.ts`, label `basecamp.host-posture.v1`), and
+  `/hub/security/` reads the rows. But `fli deploy` is the generic app deployer
+  and nothing in an app's config says *this app is a control plane, put a host
+  Outpost beside it*, and a deploy target has bun but no `node_modules`
+  (`packages/cli/CLAUDE.md`). Whichever is picked, fli derives the key with the
+  same label, so the label moves to one owner both import (toolbelt) in the same
+  change.
+  - **A** — A deploy config key the app states, `deploy.hostOutpost: true` in
+    basecamp's `frontier.config.js`. `deploy:setup` installs the Outpost from the
+    pushed checkout's `packages/outpost` (it is in the build context already) as
+    `outpost-host.service`, sandboxed like the fleet unit, and writes the key it
+    derives from the server's `.env.production`, the loopback API URL and the two
+    paths fli itself laid out (the deploy root's env file and the `/db` volume's
+    host directory).
+  - **B** — No fli option: basecamp ships its own extra step file under `deploy/`,
+    and `fli deploy` gains a generic *the app's own steps* hook that runs it. The
+    knowledge stays in the app that needs it, at the cost of a second step
+    mechanism in fli.
+  - **C** — The fleet install script (`providers/compute/enrollment.ts`
+    `installScript()`) grows a report-only mode, and `fli deploy` pipes it to the
+    box. One installer for every Outpost, but fli would fetch an install script
+    from the app it is installing, before that app is up.
+  - **Recommend A** — fli already owns the layout both paths come from and holds
+    the `.env.production` the key derives from, so it is the one place that can
+    state all three without a copy; one boolean in the one app that wants it.
 
 ## See also
 

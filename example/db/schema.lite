@@ -3503,9 +3503,12 @@ model Notification {
   data         Json
   contextType  NotificationContext?
   contextId    String?
+  deliveryKey  String?
   readAt       DateTime?
   createdAt    DateTime   @default(now())
-  
+
+  @@unique([userId, type, deliveryKey], nullsDistinct: true)
+
   /// RCUD: read is open because the row policy below is what scopes it —
   /// a gate is per-operation and cannot say "your own rows". Create is 8
   /// (SYSTEM): only `asSystem()` writes one, which is what the inApp driver

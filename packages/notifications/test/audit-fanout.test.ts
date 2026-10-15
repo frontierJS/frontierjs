@@ -13,6 +13,7 @@
 import { describe, test, expect } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { Notification } from '../notification.ts'
+import { defineNotification } from '../define.ts'
 import { inApp, mail } from '../builders.ts'
 import { NotificationDeliveryError } from '../errors.ts'
 import { notificationsPlugin } from '../plugin.ts'
@@ -35,49 +36,77 @@ class InvoiceDue extends Notification {
 const bob: Recipient = { id: 'u-bob', email: 'bob@x.test' }
 
 describe('audit 1.5 — a failed transport after a committed one', () => {
-  // FJS-2341: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  //
-  // Today: the first call writes the in-app row, the email throws, notify()
-  // throws NotificationDeliveryError. A caller that retries — every job in
-  // `example/` throws to make Caravan retry — calls notify() again and a SECOND
-  // row lands for the same person about the same invoice. There is no delivery
-  // key, so nothing in the package can tell the retry from a new notification.
-  test.failing('a retry after a failed email does not write a second in-app row', async () => {
-    const h = await makeApp({ noMailer: true })
-    let attempts = 0
+  // The first call writes the in-app row, the email throws, notify() throws
+  // NotificationDeliveryError. A caller that retries — every job in `example/`
+  // throws to make Caravan retry — calls notify() again; the declared key is
+  // what tells that retry from a new notification (FJS-D872).
+  const smtpDown = (h: { app: any }) => {
+    const seen = { attempts: 0 }
     h.app.configure(mailerPlugin({
-      send: async () => { attempts++; throw new Error('smtp down') },
+      send: async () => { seen.attempts++; throw new Error('smtp down') },
       batch: async () => { throw new Error('smtp down') },
     }))
+    return seen
+  }
+  const bobsRows = async (h: { rows: () => Promise<{ userId: unknown, contextId: unknown }[]> }) =>
+    (await h.rows()).filter(r => r.userId === 'u-bob' && r.contextId === '42').length
 
-    await expect(h.app.notify(bob, new InvoiceDue())).rejects.toBeInstanceOf(NotificationDeliveryError)
+  test('a retry after a failed email does not write a second in-app row', async () => {
+    class KeyedInvoiceDue extends InvoiceDue {
+      key(): string { return 'invoice:42' }
+    }
+    const h    = await makeApp({ noMailer: true })
+    const seen = smtpDown(h)
+
+    await expect(h.app.notify(bob, new KeyedInvoiceDue())).rejects.toBeInstanceOf(NotificationDeliveryError)
     expect((await h.rows()).length).toBe(1)
 
     // The retry, as Caravan would make it.
-    await h.app.notify(bob, new InvoiceDue()).catch(() => {})
-    expect(attempts).toBe(2)
-    expect((await h.rows()).filter(r => r.userId === 'u-bob' && r.contextId === '42').length).toBe(1)
+    await h.app.notify(bob, new KeyedInvoiceDue()).catch(() => {})
+    expect(seen.attempts).toBe(2)
+    expect(await bobsRows(h)).toBe(1)
   })
 
-  // FJS-2342: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  //
+  test('the key a defineNotification declares holds the retry to one row, per recipient', async () => {
+    const invoiceDue = defineNotification<{ id: number }>({
+      type:  'InvoiceDue',
+      via:   () => ['inApp', 'email'],
+      key:   (invoice) => `invoice:${invoice.id}`,
+      inApp: (invoice) => inApp().title('Invoice due').context('Invoice', invoice.id),
+      email: () => mail().subject('Invoice due').line('Pay up.'),
+    })
+    const h = await makeApp({ noMailer: true })
+    smtpDown(h)
+
+    for (let i = 0; i < 3; i++) await h.app.notify(bob, invoiceDue({ id: 42 })).catch(() => {})
+    await h.app.notify({ id: 'u-alice', email: 'alice@x.test' }, invoiceDue({ id: 42 })).catch(() => {})
+    expect(await bobsRows(h)).toBe(1)
+    expect((await h.rows()).length).toBe(2)
+  })
+
+  test('a notification that declares no key keeps writing a row per send', async () => {
+    const h = await makeApp({ noMailer: true })
+    smtpDown(h)
+    await h.app.notify(bob, new InvoiceDue()).catch(() => {})
+    await h.app.notify(bob, new InvoiceDue()).catch(() => {})
+    expect(await bobsRows(h)).toBe(2)
+  })
+
   // notify() promises to "fail before any delivery" when a transport cannot
   // deliver. `email` is built in, so the driver check passes with no
   // `transports.email` configured and no mailer on the app; the boot check only
-  // fires when `transports.email` is a plain object. The in-app row is written,
-  // THEN the email driver discovers there is no app.mail.
-  test.failing('an email transport with no mailer is refused before the in-app row is written', async () => {
+  // fires when `transports.email` is a plain object. Without the eager check the
+  // in-app row is written, THEN the email driver discovers there is no app.mail.
+  test('an email transport with no mailer is refused before the in-app row is written', async () => {
     const h = await makeApp({ noMailer: true })
     await expect(h.app.notify(bob, new InvoiceDue())).rejects.toThrow()
     expect((await h.rows()).length).toBe(0)
   })
 
-  // FJS-2343: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  //
-  // The two transports run in parallel, so the email has left before the
-  // in-app create answers. When the create fails, the person has an email about
-  // a notification that does not exist, and the retry sends the email again.
-  test.failing('no email leaves when the in-app record fails to commit', async () => {
+  // The record commits before the email leaves; otherwise a failed create
+  // leaves the person with mail about a notification that does not exist, and
+  // the retry sends the mail again.
+  test('no email leaves when the in-app record fails to commit', async () => {
     const h = await makeApp()
     const raw = new Database(process.env.MAIN_DB_PATH!)
     raw.run('DROP TABLE notification')

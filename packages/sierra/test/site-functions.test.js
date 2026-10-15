@@ -111,3 +111,90 @@ describe('the build writes the entry', () => {
     expect(results.join('\n')).toMatch(/functions/)
   })
 })
+
+// ─── vite dev ──────────────────────────────────────────────────────────────────
+
+describe('vite dev answers the functions', () => {
+  let dev
+
+  beforeAll(async () => {
+    const { createServer } = await import('vite')
+    const { functionsPlugin } = await import('../src/build/functions-plugin.js')
+    dev = await createServer({
+      root: ROOT,
+      configFile: false,
+      logLevel: 'silent',
+      appType: 'spa',
+      plugins: [functionsPlugin({ functions: 'functions' })],
+      server: { port: 0, strictPort: false, host: '127.0.0.1' },
+    })
+    await dev.listen()
+  })
+
+  afterAll(async () => { await dev?.close() })
+
+  const origin = () => `http://127.0.0.1:${dev.httpServer.address().port}`
+
+  test('a POST reaches the function, not the SPA fallback', async () => {
+    const res = await fetch(`${origin()}/api/event`, { method: 'POST', body: '{"n":2}' })
+    expect(res.status).toBe(202)
+    expect(res.headers.get('x-fn')).toBe('event')
+    expect(await res.json()).toMatchObject({ method: 'POST', body: '{"n":2}' })
+  })
+
+  test('a function added under the running server answers on the next call', async () => {
+    write('functions/late.js', `export default () => new Response('late')`)
+    expect(await (await fetch(`${origin()}/late`)).text()).toBe('late')
+  })
+
+  test('an edited function answers with its new body', async () => {
+    write('functions/edit.js', `export default () => new Response('one')`)
+    expect(await (await fetch(`${origin()}/edit`)).text()).toBe('one')
+    await new Promise(r => setTimeout(r, 20))
+    write('functions/edit.js', `export default () => new Response('two')`)
+    expect(await (await fetch(`${origin()}/edit`)).text()).toBe('two')
+  })
+
+  test('a path with no function falls through to Vite', async () => {
+    expect((await fetch(`${origin()}/nope`)).headers.get('x-fn')).toBeNull()
+  })
+})
+
+// ─── compiled binary ───────────────────────────────────────────────────────────
+
+describe('a compiled site runs the functions', () => {
+  let bin
+
+  beforeAll(async () => {
+    const { compileSite } = await import('../src/site/compile.js')
+    const { spawn } = await import('node:child_process')
+    const { outfile } = compileSite({
+      dir: join(ROOT, 'dist'),
+      outfile: join(ROOT, 'out', 'site'),
+      functions: join(ROOT, FUNCTIONS_ENTRY),
+    })
+    const proc = spawn(outfile, ['--port', '0'], {
+      cwd: mkdtempSync(join(ROOT, 'empty-')),
+      env: { ...process.env, HOST: '127.0.0.1', KEY: 'binary-secret' },
+    })
+    const url = await new Promise((ok, fail) => {
+      let out = ''
+      proc.stdout.on('data', d => { out += d; const m = /at (http:\/\/\S+)/.exec(out); if (m) ok(m[1]) })
+      proc.on('exit', code => fail(new Error(`binary exited ${code}: ${out}`)))
+    })
+    bin = { proc, url }
+  }, 60_000)
+
+  afterAll(() => { bin?.proc.kill() })
+
+  test('a POST reaches the function and env is the process\'s strings', async () => {
+    const res = await fetch(`${bin.url}/api/event`, { method: 'POST', body: 'x' })
+    expect(res.status).toBe(202)
+    expect(await res.json()).toMatchObject({ method: 'POST', body: 'x', key: 'binary-secret' })
+  })
+
+  test('the pages still answer', async () => {
+    expect(await (await fetch(`${bin.url}/`)).text()).toBe('fn root')
+    expect(await (await fetch(`${bin.url}/ping/`)).text()).toBe('pong')
+  })
+})

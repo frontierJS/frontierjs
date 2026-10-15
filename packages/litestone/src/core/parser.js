@@ -14,7 +14,7 @@ import { expandCapabilityType } from './capabilities.js'
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
 import { compileStatic, policyExprToString } from './policy.js'
 import { pointColumnNames, isStoredField, mapIdentifiers } from './ddl.js'
-import { inferFromFk } from './schema-maps.js'
+import { inferFromFk, inferToOneFrom } from './schema-maps.js'
 import { sealedStates, sealFaults, machineWithMove } from './seal.js'
 import { PERSONAL_CATEGORIES, isPersonModel, personalNameCategory } from './personal.js'
 
@@ -662,19 +662,23 @@ class Parser {
     return { name, source: { model, subject, column } }
   }
 
-  // scope <name>(<field>)
+  // scope <name>(<field>, …)
   //
   // What a no-overlap rule serializes on, declared once for every model that
   // shares it (`FJS-D474`): a Shift and a LeaveRequest both citing `person` is
   // one fact, where each model listing its siblings is a fact stated on every
   // write path and the model nobody updated is the one that lets two overlap.
+  // More than one field is one key: `personDay(personId, dayId)` is what lets a
+  // wall-clock range be graded per day, since 09:00–12:00 on Monday and on
+  // Tuesday share a person and no time (`FJS-2781`).
   parseScope() {
     this.eatIdent('scope')
     const name = this.eat(TK.IDENT).value
     this.eat(TK.LPAREN)
-    const field = this.eat(TK.IDENT).value
+    const fields = [this.eat(TK.IDENT).value]
+    while (this.maybeEat(TK.COMMA)) fields.push(this.eat(TK.IDENT).value)
     this.eat(TK.RPAREN)
-    return { name, field }
+    return { name, fields }
   }
 
   parseImport() {
@@ -1701,8 +1705,10 @@ class Parser {
   // ── @from parser ────────────────────────────────────────────────────────────
   // @from(targetModel, op: value, [where: "sql", orderBy: field])
   //
+  // @from(relationField, column) — a column of the parent a to-one relation points at
+  //
   // Operations (exactly one required):
-  //   last: true     — last row as full object  (ORDER BY {orderBy|id} DESC LIMIT 1)
+  //   last: true    — last row as full object  (ORDER BY {orderBy|id} DESC LIMIT 1)
   //   first: true    — first row as full object (ORDER BY {orderBy|id} ASC  LIMIT 1)
   //   count: true    — COUNT(*) as Int
   //   sum: fieldName — COALESCE(SUM(field), 0) as Float/Int
@@ -1714,6 +1720,16 @@ class Parser {
     this.eat(TK.LPAREN)
     const target = this.eat(TK.IDENT).value
     this.eat(TK.COMMA)
+
+    // `@from(state, category)`: a to-one relation field on THIS model and a
+    // column on the row it points at. No `key:` follows, which is what tells it
+    // from every aggregate form. Which relation and which column is graded in
+    // validate(), where the model is known.
+    if (this.check(TK.IDENT) && this.peek(1)?.type === TK.RPAREN) {
+      const column = this.eat(TK.IDENT).value
+      this.eat(TK.RPAREN)
+      return { target: null, rel: target, op: 'column', opValue: column, where: null, orderBy: null, via: null, withDeleted: false, withTemplates: false }
+    }
 
     // Parse key: value pairs
     let op = null, opValue = null, where = null, orderBy = null, via = null
@@ -5457,7 +5473,7 @@ function validate(schema) {
   const scopes = schema.scopes ?? []
   const scopeByName = new Map()
   for (const s of scopes) {
-    if (scopeByName.has(s.name)) errors.push(`scope '${s.name}' is declared twice — one scope, one field it serializes on`)
+    if (scopeByName.has(s.name)) errors.push(`scope '${s.name}' is declared twice — one scope, one key it serializes on`)
     else scopeByName.set(s.name, s)
   }
   const cited = new Set()
@@ -5473,25 +5489,29 @@ function validate(schema) {
     if (t === 'Int' || t === 'Float' || t === 'DateTime') return t
     if (t === 'String' && has(field, 'date'))     return 'String @date'
     if (t === 'String' && has(field, 'datetime')) return 'String @datetime'
+    if (t === 'String' && has(field, 'time'))     return 'String @time'
     return null
   }
+  const rangeAxis = (kind) => kind === 'Int' || kind === 'Float' ? 'number' : kind === 'String @time' ? 'clock' : 'time'
   for (const model of schema.models) {
     for (const attr of model.attributes) {
       if (attr.kind !== 'exclude') continue
       const at = `Model '${model.name}': @@exclude(${attr.scope}, range: [${attr.range.join(', ')}])`
       const scope = scopeByName.get(attr.scope)
       if (!scope) {
-        errors.push(`${at} — there is no scope '${attr.scope}'. Declare it at schema level: scope ${attr.scope}(<field>)` +
+        errors.push(`${at} — there is no scope '${attr.scope}'. Declare it at schema level: scope ${attr.scope}(<field>, …)` +
           (scopes.length ? `. Declared: ${[...scopeByName.keys()].join(', ')}` : ''))
       } else {
         cited.add(scope.name)
-        const key = model.fields.find(f => f.name === scope.field)
-        if (!key)
-          errors.push(`${at} — scope '${scope.name}' serializes on '${scope.field}', and ${model.name} has no field '${scope.field}'`)
-        else if (key.type.array || !(SCALAR_TYPES.has(key.type.name) || enumNames.has(key.type.name)) || key.type.name === 'Json' || key.type.name === 'Bytes')
-          errors.push(`${at} — scope '${scope.name}' serializes on '${scope.field}', which is not one scalar value, and a lock is keyed by one`)
-        else if (unstored(key))
-          errors.push(`${at} — scope '${scope.name}' serializes on '${scope.field}', which is @${unstored(key)}, so there is no plain column to match the other members' rows on`)
+        for (const name of scope.fields) {
+          const key = model.fields.find(f => f.name === name)
+          if (!key)
+            errors.push(`${at} — scope '${scope.name}' serializes on '${name}', and ${model.name} has no field '${name}'`)
+          else if (key.type.array || !(SCALAR_TYPES.has(key.type.name) || enumNames.has(key.type.name)) || key.type.name === 'Json' || key.type.name === 'Bytes')
+            errors.push(`${at} — scope '${scope.name}' serializes on '${name}', which is not one scalar value, and a lock is keyed by one`)
+          else if (unstored(key))
+            errors.push(`${at} — scope '${scope.name}' serializes on '${name}', which is @${unstored(key)}, so there is no plain column to match the other members' rows on`)
+        }
       }
       if (attr.where) excludePredicate(model, attr, at)
       if (attr.range[0] === attr.range[1]) {
@@ -5501,14 +5521,14 @@ function validate(schema) {
       const ends = attr.range.map(n => model.fields.find(f => f.name === n))
       ends.forEach((f, i) => {
         if (!f) errors.push(`${at} — ${model.name} has no field '${attr.range[i]}'`)
-        else if (!rangeKind(f)) errors.push(`${at} — '${f.name}' is ${f.type.name}${f.type.array ? '[]' : ''}, which does not order as a range. Use Int, Float, DateTime, or a String with @date or @datetime`)
+        else if (!rangeKind(f)) errors.push(`${at} — '${f.name}' is ${f.type.name}${f.type.array ? '[]' : ''}, which does not order as a range. Use Int, Float, DateTime, or a String with @date, @datetime or @time`)
         else if (unstored(f)) errors.push(`${at} — '${f.name}' is @${unstored(f)}, so there is no plain column to compare ranges on`)
       })
       if (ends[0] && ends[1] && rangeKind(ends[0]) && rangeKind(ends[1]) && rangeKind(ends[0]) !== rangeKind(ends[1]))
         errors.push(`${at} — '${ends[0].name}' is ${rangeKind(ends[0])} and '${ends[1].name}' is ${rangeKind(ends[1])}; a range is two fields of the same kind`)
       else if (scope && ends[0] && rangeKind(ends[0]))
         (memberKinds.get(scope.name) ?? memberKinds.set(scope.name, []).get(scope.name))
-          .push({ model: model.name, number: rangeKind(ends[0]) === 'Int' || rangeKind(ends[0]) === 'Float' })
+          .push({ model: model.name, axis: rangeAxis(rangeKind(ends[0])) })
     }
   }
   // `where:` is read where an index predicate is: against one row, on the raw
@@ -5541,13 +5561,15 @@ function validate(schema) {
     attr.whereFields = names.fields
   }
 
-  // A day and an instant compare — a day starts at its midnight — but a number
-  // and a time share no point to compare at, so the write would grade nothing.
+  // A day and an instant compare — a day starts at its midnight — but a number,
+  // a time on the calendar and a time of day share no point to compare at, so
+  // the write would grade nothing.
+  const AXIS_LABEL = { number: 'a numeric range', time: 'a time range', clock: 'a clock (@time) range' }
   for (const [name, kinds] of memberKinds) {
-    const nums = kinds.filter(k => k.number), times = kinds.filter(k => !k.number)
-    if (nums.length && times.length)
-      errors.push(`scope '${name}' mixes a numeric range (${nums.map(k => k.model).join(', ')}) with a time range ` +
-        `(${times.map(k => k.model).join(', ')}) — every member of one scope ranges over numbers or over time`)
+    const axes = Object.keys(AXIS_LABEL).filter(a => kinds.some(k => k.axis === a))
+    if (axes.length > 1)
+      errors.push(`scope '${name}' mixes ${axes.map(a => `${AXIS_LABEL[a]} (${kinds.filter(k => k.axis === a).map(k => k.model).join(', ')})`).join(' with ')}` +
+        ` — every member of one scope ranges over numbers, over time, or over a clock`)
   }
   for (const s of scopeByName.values())
     if (!cited.has(s.name))
@@ -7461,6 +7483,26 @@ function validate(schema) {
       const fromAttr = field.attributes.find(a => a.kind === 'from')
       if (!fromAttr) continue
       const { target, op, opValue } = fromAttr
+      if (op === 'column') {
+        const where = `Model '${model.name}', field '${field.name}': @from(${fromAttr.rel}, ${opValue})`
+        const hop = inferToOneFrom(model, schema, fromAttr)
+        if (hop.error) { errors.push(`${where} — ${hop.error}`); continue }
+        const col = hop.targetModel.fields.find(f => f.name === opValue)
+        if (!col) { errors.push(`${where} — field '${opValue}' does not exist on '${hop.targetModel.name}'`); continue }
+        const has = (k) => col.attributes.some(a => a.kind === k)
+        const protectedKind = ['guarded', 'encrypted', 'secret', 'hashed', 'omit'].find(has)
+        if (col.type?.kind === 'relation' || col.type?.kind === 'implicitM2M' || has('edge') || has('computed') || has('transient'))
+          errors.push(`${where} — '${opValue}' is not a value on '${hop.targetModel.name}': a relation, @edge, @computed or @transient field has no column to read`)
+        else if (protectedKind)
+          errors.push(`${where} — '${opValue}' is @${protectedKind} on '${hop.targetModel.name}', and a copy on this model would answer to this model's gate instead of its own`)
+        else if (col.attributes.some(a => a.kind === 'from' && (a.op === 'column' || a.op === 'first' || a.op === 'last')))
+          errors.push(`${where} — '${opValue}' is itself a ${col.attributes.find(a => a.kind === 'from').op === 'column' ? 'to-one @from' : 'row-valued @from'}; a to-one @from reads a stored column, a @derived or an aggregate @from`)
+        else if (col.type.name !== field.type.name || !!col.type.array !== !!field.type.array)
+          errors.push(`${where} — field type must be '${col.type.name}${col.type.array ? '[]' : ''}' to match '${hop.targetModel.name}.${opValue}', got '${field.type.name}${field.type.array ? '[]' : ''}'`)
+        if (field.attributes.some(a => a.kind === 'computed'))
+          errors.push(`Model '${model.name}', field '${field.name}': @from conflicts with @computed`)
+        continue
+      }
       // Target model must exist
       const targetModel = schema.models.find(m => m.name === target)
       if (!targetModel)

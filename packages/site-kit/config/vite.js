@@ -69,11 +69,7 @@ export async function resolveSite({ root }) {
     mesa: { ...preset.sierra?.mesa, ...siteConfig.mesa },
     plugins: [...(preset.sierra?.plugins ?? []), ...(siteConfig.plugins ?? [])],
     // Neither a preset nor a site moves these. Every site-kit site keeps its
-    // pages in content/routes (FJS-D606). The browser's half of the config is
-    // content/settings/site.js, imported whole (FJS-1544): a preset that
-    // named its own would hide the site's `theme` from the switcher. Without
-    // that file it is an empty module, never Sierra's guess at
-    // config/sierra.config.js (FJS-1709).
+    // pages in content/routes (FJS-D606).
     routesDir: 'content/routes',
     // Every key in site.md is a bare name in a page, beside whatever the
     // preset or the site auto-imports; Sierra refuses a name two modules bind.
@@ -88,7 +84,6 @@ export async function resolveSite({ root }) {
       ...(preset.sierra?.markdownLayouts ?? []),
       ...(siteConfig.markdownLayouts ?? (existsSync(resolve(content, 'layouts')) ? ['content/layouts'] : [])),
     ],
-    _configPath: existsSync(configPath) ? configPath : resolve(KIT, 'config/no-settings.js'),
   }
 
   return { root, content, settings, keys, siteConfig, preset, presetName, sierra }

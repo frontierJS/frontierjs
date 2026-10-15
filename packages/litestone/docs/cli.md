@@ -182,6 +182,12 @@ the schema is not wrong and you may have meant it. **Neither list is a gate**:
 `litestone access --strict` and `litestone release --strict` are the two that
 fail a branch, and `advise --strict` exits 1 on an error or warn RULE alone.
 
+One refusal is not a rule and always exits 1: a schema that parses and that
+`createClient` then rejects (a `@@gate` ladder out of order, a `@@unique` over
+an optional column). `advise` builds the client over memory first, so it answers
+*will this schema run* with no database, and `fli check`'s `schema-runs` rule is
+that call.
+
 ```bash
 litestone catalog --snapshot  [--check] [--stdout] [--out=<path>]
 litestone catalog --reference [--check] [--stdout] [--out=<path>]

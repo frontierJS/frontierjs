@@ -15,8 +15,8 @@
 // pass here until the fix lands, and then as a failure, which is the signal to
 // turn it into ok().
 //
-// FJS-2336, FJS-2334: each failing() below asserts the fixed
-// behavior, so it fails until the fix lands; drop the failing() wrapper then.
+// FJS-2336: the failing() below asserts the fixed behavior, so it fails until
+// the fix lands; drop the failing() wrapper then.
 
 import { JSDOM } from 'jsdom'
 
@@ -104,13 +104,29 @@ group('makePageBridge — who may speak to the content script')
   // give it.
   const spoof = { __jetty: true, channel: 'sdk', direction: 'page→cs', payload: { cmd: 'drain', to: 'evil' } }
   window.dispatchEvent(new MessageEvent('message', { data: spoof, origin: 'https://host.example', source: window }))
+  if (received.length === 0) ok('a bridge message without the nonce the content script minted is ignored')
+  else bad('a host-page script spoofed the content-script side', JSON.stringify(received))
 
-  if (received.length === 1 && received[0].cmd === 'drain') {
-    ok('a message from any script on the host page reaches the content-script side')
-  } else {
-    bad('the spoofed message did not arrive — the harness is wrong, not the bridge', JSON.stringify(received))
-  }
-  failing('a bridge message without the nonce the content script minted is ignored', received.length === 0)
+  const guessed = { ...spoof, nonce: 'guess' }
+  window.dispatchEvent(new MessageEvent('message', { data: guessed, origin: 'https://host.example', source: window }))
+  if (received.length === 0) ok('a wrong nonce is ignored')
+  else bad('a wrong nonce was accepted', JSON.stringify(received))
+
+  // jsdom delivers a postMessage with no `source`, so the page side's own
+  // send() is re-dispatched with the source a browser would give it.
+  const page = makePageBridge('sdk', { side: 'page', nonce: cs.nonce })
+  const sent = []
+  const realPost = window.postMessage
+  window.postMessage = (data) => sent.push(data)
+  page.send({ cmd: 'hello' })
+  window.postMessage = realPost
+  window.dispatchEvent(new MessageEvent('message', { data: sent[0], origin: 'https://host.example', source: window }))
+  if (received.length === 1 && received[0].cmd === 'hello') ok('the page side holding the nonce reaches the content-script side')
+  else bad('the page side with the nonce did not arrive', JSON.stringify(received))
+
+  try { makePageBridge('sdk', { side: 'page' }); bad('a page side without a nonce was accepted') }
+  catch { ok('a page side without a nonce is refused') }
+  page.destroy()
   cs.destroy()
 }
 

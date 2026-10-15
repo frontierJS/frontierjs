@@ -142,9 +142,9 @@ describe('injectAnalyticsTag', () => {
     expect(html.match(/sierra-analytics/g)).toHaveLength(1)
   })
 
-  test('refuses a custom provider object by name — a static page has nothing to run it', async () => {
+  test('refuses a custom provider by name — a static page has nothing to run it', async () => {
     const outDir = await setup('analytics-custom', { 'index.html': page })
-    await expect(injectAnalyticsTag({ provider: { track() {} } }, outDir)).rejects.toThrow(/custom provider object/)
+    await expect(injectAnalyticsTag({ provider: '/src/analytics.js' }, outDir)).rejects.toThrow(/"\/src\/analytics\.js"/)
     await expect(injectAnalyticsTag({ provider: 'matomo' }, outDir)).rejects.toThrow(/"matomo"/)
   })
 

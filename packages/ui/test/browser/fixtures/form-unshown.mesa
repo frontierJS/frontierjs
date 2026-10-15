@@ -6,6 +6,7 @@
   // below draw `title` alone and refuse the same way; they differ only in which
   // field the refusal names.
   import Form from '../../../components/forms/Form.mesa'
+  import Input from '../../../components/forms/Input.mesa'
   import { formFieldList } from '@frontierjs/sierra/field-rules'
 
   const FIELDS = {
@@ -40,4 +41,22 @@
 
 <div id="unshown">
   <Form resource={RESOURCE} only={['title']} onsubmit={refuse('limit', 'Limit must be at least 1')} />
+</div>
+
+<div id="handwritten">
+  <Form resource={RESOURCE} onsubmit={refuse('limit', 'Limit must be at least 1')}>
+    <Input name="title" label="Title" />
+  </Form>
+</div>
+
+<div id="handwritten-shown">
+  <Form resource={RESOURCE} onsubmit={refuse('title', 'Title is taken')}>
+    <Input name="title" label="Title" />
+  </Form>
+</div>
+
+<div id="auto-children">
+  <Form resource={RESOURCE} auto only={['title']} onsubmit={refuse('limit', 'Limit must be at least 1')}>
+    <p>Anything else</p>
+  </Form>
 </div>

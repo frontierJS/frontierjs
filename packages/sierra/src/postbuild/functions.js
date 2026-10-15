@@ -39,6 +39,9 @@ export function functionRoutes(dir) {
 
   const walk = (current) => {
     for (const name of readdirSync(current).sort()) {
+      // A dotfile is never a route: the dev server's fresh-import copy sits
+      // beside its original under one.
+      if (name.startsWith('.')) continue
       const file = join(current, name)
       if (statSync(file).isDirectory()) { walk(file); continue }
       if (!SOURCE.test(name)) continue
@@ -138,4 +141,35 @@ export function functionHandler(routes, env) {
       return response
     },
   }
+}
+
+// A function's request body: a beacon or a form post, never an upload. The cap
+// is what stops an open origin buffering whatever it is sent.
+const MAX_BODY = 1024 * 1024
+
+/** A node request as the web's `Request` a function takes. */
+export async function requestFrom(req) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > MAX_BODY) throw new Error('request body too large')
+    chunks.push(chunk)
+  }
+  const bodiless = req.method === 'GET' || req.method === 'HEAD'
+  return new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, {
+    method:  req.method,
+    headers: req.headers,
+    body:    bodiless ? undefined : Buffer.concat(chunks),
+  })
+}
+
+/** A function's `Response` written to a node response; `extra` headers go first and lose. */
+export async function sendResponse(req, res, response, extra = {}) {
+  res.writeHead(response.status, {
+    ...extra,
+    ...Object.fromEntries(response.headers),
+    ...(response.headers.getSetCookie().length && { 'Set-Cookie': response.headers.getSetCookie() }),
+  })
+  res.end(req.method === 'HEAD' ? undefined : Buffer.from(await response.arrayBuffer()))
 }

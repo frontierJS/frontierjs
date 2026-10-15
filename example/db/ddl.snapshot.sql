@@ -568,9 +568,11 @@ CREATE TABLE IF NOT EXISTS "notification" (
   "data" TEXT NOT NULL,
   "contextType" TEXT,
   "contextId" TEXT,
+  "deliveryKey" TEXT,
   "readAt" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("contextType" IN ('Order'))
+  CHECK ("contextType" IN ('Order')),
+  UNIQUE ("userId", "type", "deliveryKey")
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "user" (

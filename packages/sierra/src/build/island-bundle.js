@@ -69,7 +69,7 @@ export function islandEntrySource(islands, {
 
   // The vendor tag is already in the page (postbuild/inject-analytics.js); this
   // only tells `track()` in an island which provider that is (FJS-2058). A
-  // custom provider object is refused by the build before this runs.
+  // custom provider is refused by the build before this runs.
   const analyticsInit = analytics?.provider
     ? `import { configureAnalytics } from '@frontierjs/sierra/analytics'\n` +
       `\nconfigureAnalytics(${JSON.stringify(analytics)})\n`

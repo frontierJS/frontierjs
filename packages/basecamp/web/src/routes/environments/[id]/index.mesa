@@ -38,6 +38,7 @@ title: Environment
   // re-reads after its OWN actions (`FJS-533`). A record view is a subscription
   // to the row's node.
   let row = null, unwatch = null
+  let projectRow = null, unwatchProject = null
 
   function watch() {
     row?.release()
@@ -47,15 +48,25 @@ title: Environment
     return row.ready
   }
 
-  $.onDestroy(() => { unwatch?.(); row?.release() })
+  // For the breadcrumb only. Watched for the environment's reason: a rename
+  // on the project screen is announced, and a read here would keep the old
+  // name. A project that cannot be read answers null and leaves the link
+  // standing with a generic label rather than failing the screen.
+  function watchProject(id) {
+    projectRow?.release()
+    unwatchProject?.()
+    projectRow     = projects.record(id)
+    unwatchProject = projectRow.subscribe(v => { project = v })
+    return projectRow.ready
+  }
+
+  $.onDestroy(() => { unwatch?.(); row?.release(); unwatchProject?.(); projectRow?.release() })
 
   async function load() {
     error = null; loadError = null; loading = true
     try {
       await watch()
-      // For the breadcrumb only; a project that cannot be read leaves the
-      // link standing with a generic label rather than failing the screen.
-      project = await projects.service.get(environment.projectId).catch(() => null)
+      await watchProject(environment.projectId)
       // The app list is its own read: it is a different service's rows, and
       // nothing about the environment moving changes which apps sit in it.
       appRows = (await apps.service.find({ environmentId: page.params.id })).data

@@ -125,3 +125,48 @@ describe('@from below the target\'s read gate', () => {
     expect(s.runCount).toBe(2)
   })
 })
+
+// ─── @from(rel, column): the PARENT's gate, and the aggregate's (FJS-1305) ────
+
+describe('@from(rel, column) below the parent\'s read gate', () => {
+  const SCHEMA = `
+model Boss {
+  id    Int    @id
+  name  String
+  heads Int    @from(Head, count: true)
+  @@gate("3.5.5.5")
+}
+model Head {
+  id     Int  @id
+  bossId Int
+  boss   Boss @relation(fields: [bossId], references: [id])
+  @@gate("5.5.5.5")
+}
+model Vault {
+  id     Int    @id
+  bossId Int
+  boss   Boss   @relation(fields: [bossId], references: [id])
+  bossName  String @from(boss, name)
+  bossHeads Int    @from(boss, heads)
+  @@gate("1.5.5.5")
+}
+`
+  it('reads null below the parent\'s gate (or the aggregate\'s), the value at or above both', async () => {
+    const db  = await createClient({ schema: SCHEMA, db: ':memory:', plugins: [gate] })
+    const sys = db.asSystem() as any
+    await sys.boss.create({ data: { id: 1, name: 'hydra' } })
+    await sys.head.create({ data: { id: 1, bossId: 1 } })
+    await sys.head.create({ data: { id: 2, bossId: 1 } })
+    await sys.vault.create({ data: { id: 1, bossId: 1 } })
+    const as = (level: number) => db.$setAuth({ id: `u${level}`, level }) as any
+    const low = await as(LEVELS.VISITOR).vault.findFirst({ where: { id: 1 } })
+    expect(low.bossName).toBeNull()
+    expect(low.bossHeads).toBeNull()
+    const mid = await as(LEVELS.CREATOR).vault.findFirst({ where: { id: 1 } })
+    expect(mid.bossName).toBe('hydra')
+    expect(mid.bossHeads).toBeNull()
+    const top = await as(5).vault.findFirst({ where: { id: 1 } })
+    expect(top.bossName).toBe('hydra')
+    expect(top.bossHeads).toBe(2)
+  })
+})

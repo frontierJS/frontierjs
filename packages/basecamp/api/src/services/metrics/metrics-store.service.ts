@@ -1,4 +1,4 @@
-// src/services/metrics/metrics.service.ts — reading what the store kept.
+// src/services/metrics/metrics-store.service.ts — reading what the store kept.
 //
 // Mounted at /metrics-store. Custom methods dispatch on X-Service-Method:
 //   read

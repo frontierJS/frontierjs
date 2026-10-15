@@ -4,7 +4,7 @@
 // becomes a URL. resolve(), fileUrl(), fileUrls() and S3Provider build it from
 // here: three copies disagreed on the bucket, and on whether the key is encoded.
 
-import { uriEncode } from './sigv4.js'
+import { uriEncode } from '@frontierjs/toolbelt/sigv4'
 
 // A `?` or `#` in a raw key ends the path, so the URL names a prefix of the object.
 function keyPath(key) {

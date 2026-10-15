@@ -175,11 +175,7 @@ headless Chrome, which is how the three rendering bugs below were caught.
   until 2026-08-03, which read as if a Sierra app were the app.
 - **Configuration lives in `config/`** — `vite.config.js` beside
   `sierra.config.js`, run as `vite -c web/config/vite.config.js` from the example
-  root. Sierra looks for `sierra.config.js` next to the Vite config first, so the
-  pair needs no `_configPath`. Before 2026-08-03 it could not: the path was
-  derived by string-rewriting `vite.config.js` → `config/sierra.config.js`, which
-  turned this layout into `config/config/sierra.config.js` and failed the build
-  outright.
+  root.
 - **The Vite root is stated, not inferred.** `web/config/vite.config.js` sets
   `root` to `web/`, so `bun run dev` works from the example root without a `cd`.
   An app that runs its dev server from inside `web/` doesn't need that line.

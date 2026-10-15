@@ -93,5 +93,6 @@ export async function sendEmail(
     subject: message.subject,
     text:    message.text ?? renderText(lines),
     html:    message.html ?? renderHtml(lines),
+    ...(message.attachments?.length ? { attachments: message.attachments } : {}),
   })
 }

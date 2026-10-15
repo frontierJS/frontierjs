@@ -78,11 +78,14 @@
     localError = ''
     files = multiple ? [...files, ...list] : list
     onchange?.(files)
+    // A drop is no input event, and the file input carries no name.
+    form?.changed?.(name)
   }
 
   function removeFile(i) {
     files = files.filter((_, idx) => idx !== i)
     onchange?.(files)
+    form?.changed?.(name)
     localError = ''
   }
 

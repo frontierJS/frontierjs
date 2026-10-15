@@ -408,6 +408,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./redact (default)` | `src/redact/redact.js` | yes |
 | exports | `./search` | `src/search/search.js` | yes |
 | exports | `./signature` | `src/signature/signature.js` | yes |
+| exports | `./sigv4 (types)` | `src/sigv4/sigv4.d.ts` | yes |
+| exports | `./sigv4 (default)` | `src/sigv4/sigv4.js` | yes |
 | exports | `./sse (types)` | `src/sse/sse.d.ts` | yes |
 | exports | `./sse (default)` | `src/sse/sse.js` | yes |
 | exports | `./trace (types)` | `src/trace/trace.d.ts` | yes |

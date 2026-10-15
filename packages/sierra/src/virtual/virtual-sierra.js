@@ -14,6 +14,7 @@
  */
 
 import { generateOverlayScript } from '../build/dev-overlay.js'
+import { refusal } from '../build/refusal.js'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { existsSync, readFileSync } from 'fs'
@@ -27,8 +28,6 @@ const _sierraExports = JSON.parse(readFileSync(resolve(_sierraRoot, 'package.jso
 
 const VIRTUAL_ID = 'virtual:sierra'
 const RESOLVED_ID = '\0virtual:sierra'
-const VIRTUAL_CONFIG_ID = 'virtual:sierra-config'
-const RESOLVED_CONFIG_ID = '\0virtual:sierra-config'
 
 /**
  * Resolve an `@frontierjs/<pkg>[/<subpath>]` specifier imported from inside the
@@ -146,51 +145,45 @@ function _pickExport(exports, subPath) {
   return null
 }
 
-/** Filenames `sierra.config` may carry, in preference order. */
-const SIERRA_CONFIG_NAMES = ['sierra.config.js', 'sierra.config.mjs', 'sierra.config.ts']
+// ─── What the browser is handed of the config ────────────────────────────────
+
+// The config is a Node module, and it imports whatever its plugins need — `node:fs`,
+// a remark plugin. Importing it into the browser to read three keys blanked every
+// page of `vite dev`, so these go over as JSON and nothing else of it does
+// (`FJS-D552`).
+const BROWSER_KEYS = ['junction', 'analytics', 'theme']
 
 /**
- * Locate `sierra.config.js` on disk.
- *
- * `virtual:sierra` emits a literal `import sierraConfig from '<path>'`, so a wrong
- * answer here is a hard build failure — `Module not found` — not a degraded mode.
- *
- * This used to be a string rewrite of the resolved Vite config path
- * (`…/vite.config.js` → `…/config/sierra.config.js`), which assumed `vite.config.js`
- * sat at the Vite root. The convention is a dedicated `config/` folder, so the
- * common case — `config/vite.config.js` next to `config/sierra.config.js` — derived
- * `config/config/sierra.config.js` and could never build. Both layouts are supported
- * now, by looking rather than by assuming: the sibling of the Vite config first,
- * then `config/` beneath it, then the same two against the Vite root.
- *
- * `_configPath` still wins outright, for a config that lives somewhere else entirely.
- *
- * @param {object} opts
- * @param {string} [opts.explicit]   — config._configPath
- * @param {string} [opts.configFile] — viteConfig.configFile, absolute
- * @param {string} opts.root         — the Vite root
- * @returns {string} absolute path; the best guess when nothing exists yet
+ * The first function under a browser key, as a key path, or null.
+ * JSON would drop it in silence; a custom analytics provider is a module path.
  */
-export function resolveSierraConfigPath({ explicit, configFile, root }) {
-  if (explicit) return explicit
-
-  const dirs = []
-  if (configFile) {
-    const configDir = dirname(configFile)
-    dirs.push(configDir, resolve(configDir, 'config'))
-  }
-  dirs.push(resolve(root, 'config'), root)
-
-  for (const dir of dirs) {
-    for (const name of SIERRA_CONFIG_NAMES) {
-      const abs = resolve(dir, name)
-      if (existsSync(abs)) return abs
+function browserFunctionPath(config) {
+  const seen = new Set()
+  const walk = (value, path) => {
+    if (typeof value === 'function') return path
+    if (!value || typeof value !== 'object' || seen.has(value)) return null
+    seen.add(value)
+    for (const [k, v] of Object.entries(value)) {
+      const hit = walk(v, Array.isArray(value) ? `${path}[${k}]` : `${path}.${k}`)
+      if (hit) return hit
     }
+    return null
   }
+  for (const key of BROWSER_KEYS) {
+    const hit = walk(config[key], key)
+    if (hit) return hit
+  }
+  return null
+}
 
-  // Nothing on disk. Point at the conventional location so the failure names the
-  // place the file belongs, instead of a doubled path nobody wrote.
-  return resolve(root, 'config', SIERRA_CONFIG_NAMES[0])
+/** `analytics.provider` when it is a module path, relative to the Vite root, rather than a vendor's name. */
+function customProvider(analytics) {
+  const provider = analytics?.provider
+  return typeof provider === 'string' && provider.includes('/') ? provider : null
+}
+
+function providerFile(root, provider) {
+  return resolve(root, provider.replace(/^\/+/, ''))
 }
 
 /**
@@ -199,8 +192,15 @@ export function resolveSierraConfigPath({ explicit, configFile, root }) {
  * @returns {import('vite').Plugin}
  */
 export function virtualSierraPlugin(config, sierraContext) {
-  // Path to the sierra config file — resolved at configResolved time
-  let sierraConfigPath = 'config/sierra.config.js'
+  const fn = browserFunctionPath(config)
+  if (fn) {
+    throw refusal(
+      `[Sierra] ${fn} is a function, and ${fn.split('.')[0]} is handed to the browser as JSON. ` +
+      (fn.startsWith('analytics.provider')
+        ? `A custom analytics provider is a module path, relative to the Vite root: ` +
+          `analytics: { provider: '/src/analytics.js' }, exporting init, pageview and track.`
+        : `Set it in the app's own code instead.`))
+  }
   let root = process.cwd()
   let command = 'serve'
 
@@ -210,16 +210,14 @@ export function virtualSierraPlugin(config, sierraContext) {
     configResolved(viteConfig) {
       root = viteConfig.root ?? process.cwd()
       command = viteConfig.command ?? 'serve'
-      sierraConfigPath = resolveSierraConfigPath({
-        explicit:   config._configPath,
-        configFile: viteConfig.configFile,
-        root,
-      })
+      const provider = customProvider(config.analytics)
+      if (provider && !existsSync(providerFile(root, provider))) {
+        throw refusal(`[Sierra] analytics.provider '${provider}' names no file under ${root}`)
+      }
     },
 
     resolveId(id, importer) {
       if (id === VIRTUAL_ID) return RESOLVED_ID
-      if (id === VIRTUAL_CONFIG_ID) return RESOLVED_CONFIG_ID
       // Resolve @frontierjs/* cross-package imports from within sierra source files.
       // When Vite follows the file: symlink it processes sierra's real path, which
       // has no node_modules of its own — @frontierjs/junction/client etc. can't be
@@ -242,7 +240,7 @@ export function virtualSierraPlugin(config, sierraContext) {
       // Virtual modules have no file-system path, so Node can't walk up to find
       // node_modules. They resolve through sierra's own `exports`: a list of
       // subpaths kept here as well is a second copy, and it drifts.
-      if (importer === RESOLVED_ID || importer === RESOLVED_CONFIG_ID) {
+      if (importer === RESOLVED_ID) {
         const sub = id.startsWith('sierra/') ? id.slice('sierra/'.length)
                   : id.startsWith('@frontierjs/sierra/') ? id.slice('@frontierjs/sierra/'.length)
                   : null
@@ -252,11 +250,7 @@ export function virtualSierraPlugin(config, sierraContext) {
     },
 
     load(id) {
-      if (id === RESOLVED_ID) return generateVirtualSierra(config, routeTablePath(config, command), sierraConfigPath, sierraContext)
-      if (id === RESOLVED_CONFIG_ID) {
-        // Re-export the real sierra.config.js — resolved at build time
-        return `export { default } from '${sierraConfigPath}'`
-      }
+      if (id === RESOLVED_ID) return generateVirtualSierra(config, routeTablePath(config, command), root, sierraContext)
       return null
     },
   }
@@ -267,16 +261,12 @@ export function virtualSierraPlugin(config, sierraContext) {
  *
  * @param {import('./index.js').SierraConfig} config
  * @param {string} tableOutput
- * @param {string} sierraConfigPath — absolute path to sierra.config.js
+ * @param {string} root — the Vite root, which a custom analytics provider is relative to
  */
-function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraContext) {
+function generateVirtualSierra(config, tableOutput, root, sierraContext) {
   const lines = []
 
-  // Import the route table and the live sierra.config.js.
-  // Using the absolute path resolved by Vite ensures the correct file is
-  // imported regardless of where vite.config.js lives.
   lines.push(`import { tree, components, loaders, layouts, published, indexed, redirects } from '/${tableOutput}'`)
-  lines.push(`import sierraConfig from '${sierraConfigPath}'`)
   lines.push(``)
 
   // NO SIGNAL BRIDGE.
@@ -314,7 +304,7 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
     // for callers that specifically need the WebSocket transport; awaiting it
     // here blocked the entire entry module — and therefore first paint — on a
     // server round-trip for every returning visitor.
-    lines.push(`initJunction(sierraConfig.junction)`)
+    lines.push(`initJunction(${JSON.stringify(config.junction)})`)
     lines.push(``)
   }
 
@@ -380,8 +370,15 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
   if (config.analytics) {
     lines.push(`// ── Analytics ──────────────────────────────────────────────────`)
     lines.push(`import { initAnalytics } from '@frontierjs/sierra/analytics'`)
-    lines.push(``)
-    lines.push(`initAnalytics(sierraConfig.analytics)`)
+    const provider = customProvider(config.analytics)
+    if (provider) {
+      lines.push(`import * as analyticsProvider from ${JSON.stringify(providerFile(root, provider))}`)
+      lines.push(``)
+      lines.push(`initAnalytics({ ...${JSON.stringify(config.analytics)}, provider: analyticsProvider })`)
+    } else {
+      lines.push(``)
+      lines.push(`initAnalytics(${JSON.stringify(config.analytics)})`)
+    }
     lines.push(``)
   }
 
@@ -390,7 +387,7 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
     lines.push(`// ── Theme ──────────────────────────────────────────────────────`)
     lines.push(`import { initTheme } from '@frontierjs/sierra/theme'`)
     lines.push(``)
-    lines.push(`initTheme(sierraConfig.theme)`)
+    lines.push(`initTheme(${JSON.stringify(config.theme)})`)
     lines.push(``)
   }
 
@@ -430,7 +427,7 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
 
 // Named export for unit testing
 export function _generateVirtualSierra(config, tableOutput, sierraContext) {
-  return generateVirtualSierra(config, tableOutput, '/config/sierra.config.js', sierraContext)
+  return generateVirtualSierra(config, tableOutput, '/', sierraContext)
 }
 
 // Named export for unit testing — see test/frontier-resolution.test.js

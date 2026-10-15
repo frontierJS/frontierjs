@@ -271,6 +271,42 @@ mark = out.length
 walk.stdin.write('\x1b')
 check(await until(() => seen('Cancels: 1') && !seen('Remove it?')), 'Esc cancels it', screen(out))
 check(seen('/confirm/ · Esc goes back'), 'and leaves the route open, since the panel took the key', screen(out))
+// Focus went back to the trigger: Enter opens the panel again. With nothing
+// holding focus it would press nothing.
+mark = out.length
+walk.stdin.write('\r')
+check(await until(() => seen('Remove it?')), 'after Esc focus is back on the trigger, which Enter presses again', screen(out))
+mark = out.length
+walk.stdin.write('\x1b')
+check(await until(() => seen('Cancels: 2') && !seen('Remove it?')), 'and Esc cancels that one too', screen(out))
+
+// The kit's DropdownMenu on the same route: Tab from the trigger reaches the
+// menu's, Enter opens it, ArrowDown walks the rows by registration (a terminal
+// node has no querySelector) and Enter chooses one.
+await new Promise((r) => setTimeout(r, 300))
+mark = out.length
+// The trigger's wrapper listens to `click`, so it is a stop of its own before
+// the button inside it.
+walk.stdin.write('\t')
+await new Promise((r) => setTimeout(r, 300))
+walk.stdin.write('\t')
+await new Promise((r) => setTimeout(r, 300))
+walk.stdin.write('\r')
+check(await until(() => seen('Edit') && seen('Delete')), 'the menu opens under its trigger', screen(out))
+mark = out.length
+walk.stdin.write('\x1b[B')
+await new Promise((r) => setTimeout(r, 300))
+walk.stdin.write('\x1b[B')
+await new Promise((r) => setTimeout(r, 300))
+walk.stdin.write('\r')
+check(await until(() => seen('Chose: delete') && !seen('Edit')), 'ArrowDown twice reaches the second row, Enter chooses it and the menu closes', screen(out))
+mark = out.length
+walk.stdin.write('\r')
+check(await until(() => seen('Edit') && seen('Delete')), 'the close put focus back on the trigger, which Enter opens again', screen(out))
+mark = out.length
+walk.stdin.write('\x1b')
+check(await until(() => !seen('Edit')), 'Esc closes the menu', screen(out))
+check(seen('/confirm/ · Esc goes back'), 'and leaves the route open', screen(out))
 mark = out.length
 walk.stdin.write('\x1b')
 check(await until(() => seen('j/k moves, Enter opens')), 'a second Esc leaves the route', screen(out))

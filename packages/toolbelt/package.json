@@ -76,6 +76,10 @@
     },
     "./search": "./src/search/search.js",
     "./signature": "./src/signature/signature.js",
+    "./sigv4": {
+      "types": "./src/sigv4/sigv4.d.ts",
+      "default": "./src/sigv4/sigv4.js"
+    },
     "./sse": {
       "types": "./src/sse/sse.d.ts",
       "default": "./src/sse/sse.js"

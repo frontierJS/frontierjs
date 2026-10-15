@@ -261,6 +261,19 @@ export function generateTypeScript(schema, opts = {}) {
     lines.push(`  | { [K in keyof Omit<${pascal(model.name)}, never>]?: OrderDir }`)
     lines.push(`  | Array<{ [K in keyof Omit<${pascal(model.name)}, never>]?: OrderDir }>`)
     lines.push(``)
+
+    // ── Relations type ───────────────────────────────────────────────────────
+    // What `include` can add to a row: each relation field at the type a read
+    // answers it with. TableClient reads this to shape the row an `include`
+    // names, so a relation not asked for is not on the type.
+    lines.push(`export interface ${pascal(model.name)}Relations {`)
+    for (const field of model.fields) {
+      if (field.type.kind !== 'relation' || !modelNames.includes(field.type.name)) continue
+      const target = pascal(field.type.name)
+      lines.push(`  ${field.name}: ${field.type.array ? `${target}[]` : `${target} | null`}`)
+    }
+    lines.push(`}`)
+    lines.push(``)
   }
 
   // ── Views ────────────────────────────────────────────────────────────────────
@@ -397,12 +410,35 @@ export interface CursorResult<T> {`,
   lines.push(
     `// ── Table client interface ───────────────────────────────────────────────────`,
     ``,
-    `export interface TableClient<TRow, TCreate, TUpdate, TWhere> {`,
-    `  findMany(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: any; select?: any; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<TRow[]>`,
-    `  findFirst(args?: { where?: TWhere; orderBy?: any; include?: any; select?: any }): Promise<TRow | null>`,
-    `  findUnique(args: { where: TWhere; include?: any; select?: any }): Promise<TRow | null>`,
-    `  findFirstOrThrow(args?: { where?: TWhere }): Promise<TRow>`,
-    `  findUniqueOrThrow(args: { where: TWhere }): Promise<TRow>`,
+    `// Read through a generic signature (a factory inferring its row), I and S arrive as`,
+    `// their constraints: the whole row, no relation, no _count.`,
+    `type __Off = false | null | undefined`,
+    `type __Flat<T> = { [K in keyof T]: T[K] }`,
+    ``,
+    `/** What \`include\` may name: a relation, or \`_count\`. A relation takes \`true\` or its own read options. */`,
+    `export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | Record<string, unknown> } & { _count?: boolean | Record<string, unknown> }`,
+    `/** What \`select\` may name: a column or a relation, \`true\` or an options object. */`,
+    `export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean | Record<string, unknown> }`,
+    ``,
+    `/**`,
+    ` * The row a read answers: the whole row, or only the columns \`select\` named, and`,
+    ` * in either case the relations \`include\` (or \`select\`) named. A nested \`select\` on a`,
+    ` * relation is not followed -- the relation keeps its full row type.`,
+    ` */`,
+    `export type ReadShape<TRow, TRel, I, S> = __Flat<`,
+    `  (undefined extends S ? TRow : __SelectedColumns<TRow, S>)`,
+    `  & { [K in keyof TRel as __On<I, K> extends true ? K : __On<S, K> extends true ? K : never]: TRel[K] }`,
+    `  & (__On<I, '_count'> extends true ? { _count: Record<string, number> } : {})`,
+    `>`,
+    `type __On<A, K> = K extends keyof A ? (A[K] extends true | Record<string, unknown> ? true : false) : false`,
+    `type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>`,
+    ``,
+    `export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}> {`,
+    `  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>`,
+    `  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S> | null>`,
+    `  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S> | null>`,
+    `  findFirstOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S>>`,
+    `  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S>>`,
     `  findManyCursor(args?: { where?: TWhere; orderBy?: any; limit?: number; cursor?: string }): Promise<CursorResult<TRow>>`,
     `  /** The cursor of a row already taken, for the ordering it was scanned in; \`null\` where the row lacks a sort key. Throws where the ordering is not total. */`,
     `  cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null`,
@@ -424,7 +460,7 @@ export interface CursorResult<T> {`,
     `  // Reads whose shape is not one row or a count. Emitted because an app`,
     `  // calls them: leaving one out types a real call as an error, which is`,
     `  // the failure that makes a generated .d.ts worse than no types at all.`,
-    `  findManyAndCount(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: any; select?: any }): Promise<{ rows: TRow[]; total: number }>`,
+    `  findManyAndCount<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S }): Promise<{ rows: ReadShape<TRow, TRel, I, S>[]; total: number }>`,
     `  exists(args?: { where?: TWhere }): Promise<boolean>`,
     `  aggregate(args?: Record<string, unknown>): Promise<Record<string, any>>`,
     `  groupBy(args: Record<string, unknown>): Promise<Record<string, any>[]>`,
@@ -496,7 +532,7 @@ export interface CursorResult<T> {`,
   // One entry per model
   for (const model of schema.models) {
     lines.push(
-      `  readonly ${accessor(model.name)}: TableClient<${pascal(model.name)}, ${pascal(model.name)}Create, ${pascal(model.name)}Update, ${pascal(model.name)}Where>`
+      `  readonly ${accessor(model.name)}: TableClient<${pascal(model.name)}, ${pascal(model.name)}Create, ${pascal(model.name)}Update, ${pascal(model.name)}Where, ${pascal(model.name)}Relations>`
     )
   }
   // And one per view. A view is reached exactly as a table is — `db.<name>` —
@@ -738,8 +774,12 @@ function fieldCreateSpec(field, schema, audience, modelNames) {
   // casting the client back to any.
   const tsType = (fileInputTs(field, 'create') ?? fieldToTs(field, schema, modelNames, false)) + (type.optional ? ' | null' : '')
 
-  // Optional in create if: has @default, is nullable, is @id (auto-increment), or auth()-stamped
-  const optional = type.optional || isId || (hasDefault && !isAuthDefault)
+  // @rank and @sequence are minted on a create that names no value, so the
+  // column carries no @default and would otherwise type as required
+  const isMinted = attributes.some(a => a.kind === 'rank' || a.kind === 'sequence')
+
+  // Optional in create if: has @default, is nullable, is @id (auto-increment), is minted, or auth()-stamped
+  const optional = type.optional || isId || isMinted || (hasDefault && !isAuthDefault)
 
   return { name, tsType, optional, comment: null }
 }

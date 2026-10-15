@@ -1,7 +1,6 @@
 // web/config/vite.config.js
 //
-// Configuration lives in config/, beside sierra.config.js. Sierra looks for
-// sierra.config.js next to this file first, so the pair needs no _configPath.
+// Configuration lives in config/, beside sierra.config.js.
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath }    from 'node:url'
 import { defineConfig }     from 'vite'

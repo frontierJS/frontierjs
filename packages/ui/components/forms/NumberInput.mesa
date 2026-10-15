@@ -54,7 +54,8 @@
   export let errors   = undefined
   export let badge    = undefined
   export let help     = undefined
-  export let onchange = undefined
+  export let oninput  = undefined   // ({ value }) => void — every value
+  export let onchange = undefined   // ({ value }) => void — the end of an edit
 
   export var id = ''
   const inputId = id || uid('num')
@@ -126,40 +127,62 @@
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
+  // `oninput` is every value; `onchange` is the end of an edit, as on a native
+  // input: a stepper press or arrow key, Enter, or blur after typing. A page
+  // with an undo history keys on `onchange`, or a typed number is one step per
+  // keystroke.
+  var typing = false
+
+  function commit() {
+    typing = false
+    onchange?.({ value })
+  }
+
   function increment(multiplier = 1) {
     if (resolvedDisabled || readonly) return
     value    = clamp(value + step * multiplier)
     inputValue = toDisplay(value)
-    onchange?.({ value })
+    oninput?.({ value })
+    commit()
   }
 
   function decrement(multiplier = 1) {
     if (resolvedDisabled || readonly) return
     value    = clamp(value - step * multiplier)
     inputValue = toDisplay(value)
-    onchange?.({ value })
+    oninput?.({ value })
+    commit()
   }
 
   function handleInput(e) {
     inputValue = e.target.value
     const v    = fromDisplay(inputValue)
     value      = v
-    onchange?.({ value })
+    typing     = true
+    oninput?.({ value })
   }
 
   function handleBlur() {
     const settled = clamp(value)
     if (settled !== value) {
       value = settled
-      onchange?.({ value })
+      typing = true
+      oninput?.({ value })
     }
     // Snap display to canonical form on blur so e.g. "$1.5" becomes "$1.50"
     inputValue = toDisplay(value)
+    if (typing) commit()
   }
 
   function handleKeydown(e) {
     if (e.key === 'ArrowUp')   { e.preventDefault(); increment(e.shiftKey ? 10 : 1) }
     if (e.key === 'ArrowDown') { e.preventDefault(); decrement(e.shiftKey ? 10 : 1) }
+    if (e.key === 'Enter' && typing) {
+      const settled = clamp(value)
+      if (settled !== value) { value = settled; oninput?.({ value }) }
+      inputValue = toDisplay(value)
+      commit()
+    }
   }
 </script>
 

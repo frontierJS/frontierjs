@@ -1,7 +1,8 @@
 // storage/providers/s3.js — S3-compatible provider
 // Handles Cloudflare R2, AWS S3, Backblaze B2, MinIO — all use the S3 API.
 
-import { signRequest, presignUrl, uriEncode } from '../sigv4.js'
+import { uriEncode } from '@frontierjs/toolbelt/sigv4'
+import { signRequest, presignUrl } from '../sigv4.js'
 import { refUrl } from '../ref-url.js'
 
 // ─── Provider map ─────────────────────────────────────────────────────────────

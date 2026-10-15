@@ -21,6 +21,7 @@
 // Bun, not Node: the prerender imports each route's companion under the
 // running runtime, and a companion may use what only Bun has.
 
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const args = process.argv.slice(2)
@@ -46,6 +47,19 @@ if (binary && cmd !== 'build') {
   process.exit(2)
 }
 const root = resolve(dir)
+
+// The entry the last build wrote for the site's host functions, when its Sierra
+// config names a directory (Sierra's `.sierra/functions.js`, beside routes.js).
+async function functionsEntry() {
+  const { resolveSite } = await import('../config/vite.js')
+  if (!(await resolveSite({ root })).sierra.functions) return undefined
+  const entry = resolve(root, '.sierra/functions.js')
+  if (!existsSync(entry)) {
+    console.error('site-kit: no .sierra/functions.js — the build writes it; run build first')
+    process.exit(1)
+  }
+  return entry
+}
 
 if (cmd === 'fetch') {
   const { runFetch, loadFetchConfig, validateFetchConfig } = await import('../fetch/run.js')
@@ -104,7 +118,10 @@ if (cmd === 'fetch') {
   process.exitCode = result.counts.error ? 1 : 0
 } else if (cmd === 'preview') {
   const { serveSite } = await import('@frontierjs/sierra/site/serve')
-  const server = await serveSite({ dir: resolve(root, 'dist'), port: port ?? 0, host: lan ? '0.0.0.0' : '127.0.0.1' })
+  const server = await serveSite({
+    dir: resolve(root, 'dist'), port: port ?? 0, host: lan ? '0.0.0.0' : '127.0.0.1',
+    functions: await functionsEntry(), env: process.env,
+  })
   console.log(`\n  ·  serving ${dir}/dist at ${server.url}\n`)
 } else {
   // The site's vite, which is a peer: Vite finds a preset's preprocessors
@@ -125,7 +142,7 @@ if (cmd === 'fetch') {
     await vite.build(config)
     if (binary) {
       const { compileSite } = await import('@frontierjs/sierra/site/compile')
-      const made = compileSite({ dir: resolve(root, 'dist'), outfile: resolve(root, 'bin/site') })
+      const made = compileSite({ dir: resolve(root, 'dist'), outfile: resolve(root, 'bin/site'), functions: await functionsEntry() })
       console.log(`\n  ·  ${made.files} files from ${dir}/dist → ${dir}/bin/site\n     run it: ${dir}/bin/site --port 8080\n`)
     }
   } else {

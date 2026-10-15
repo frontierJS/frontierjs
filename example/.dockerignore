@@ -1,0 +1,28 @@
+# The build context for site/deploy/Dockerfile and widgets/deploy/Dockerfile is
+# this directory, and both do `COPY . .` into a build stage. With no ignore file
+# the real `.env` landed in that stage -- not in the shipped image, whose runtime
+# stage copies subtrees, but in a layer on the build host that
+# `docker build --target build` reads back (FJS-555).
+#
+# `**/`, not a bare `.env`: a plain `*` does not cross a separator, so `.env.*`
+# protects the context root and copies `api/.env.production`.
+
+node_modules
+**/node_modules
+
+**/.env
+**/.env.*
+!**/.env.example
+
+# Built output -- the image builds its own from the source it copied.
+**/dist
+
+# The store the prerendered site READS at build time is deliberately NOT listed:
+# `load()` runs through the same databases the API serves (site/deploy/Dockerfile),
+# and a build without them yields a site with no products and an exit code of 0.
+# What the build never reads is excluded -- the job queue, the audit trail and
+# SQLite's write-ahead sidecars, which also move the image digest on every build.
+db/jobs.db*
+db/audit
+**/*.db-shm
+**/*.db-wal

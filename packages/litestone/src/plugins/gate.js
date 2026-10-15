@@ -338,7 +338,8 @@ export class GatePlugin extends Plugin {
     const fromFields = ctx.shapes[model].fromFields
     const hidden = gatedFromFields(fromFields, ctx)
     if (hidden) for (const name of namedIn(args, hidden))
-      await this._check(fromFields[name].target, 'read', ctx)
+      for (const m of [fromFields[name].target, ...(fromFields[name].through ?? [])])
+        await this._check(m, 'read', ctx)
   }
 
   // ── Create ──────────────────────────────────────────────────────────────────

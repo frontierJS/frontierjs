@@ -89,3 +89,35 @@ describe('the resource', () => {
     expect(todos.summary().columns.map(c => c.name)).toContain('status')
   })
 })
+
+// FJS-2618: a `@rank` column changes only by a move, like a machine's column,
+// and a base-62 order key means nothing to the person asked to type it.
+describe('a @rank column', () => {
+  const CARD = {
+    type: 'object',
+    title: 'Card',
+    properties: {
+      id:     { type: 'integer', readOnly: true },
+      title:  { type: 'string', minLength: 1 },
+      rank:   { type: 'string', 'x-rank': { scope: ['laneId'] } },
+    },
+    required: ['title'],
+  }
+
+  test('marks the column with its scope', () => {
+    expect(buildFieldRules(CARD).rank.rank).toEqual({ scope: ['laneId'] })
+    expect(buildFieldRules(CARD).title.rank).toBeUndefined()
+  })
+
+  test('is left out of the generated set, and `only` still reaches it', () => {
+    expect(formFieldList(buildFieldRules(CARD)).map(f => f.name)).toEqual(['id', 'title'])
+    expect(formFieldList(buildFieldRules(CARD), { only: ['rank'] }).map(f => f.name)).toEqual(['rank'])
+  })
+
+  test('summary() shows the order the form no longer offers', () => {
+    registerSchemas({ Card: CARD }, ['Card'])
+    const cards = createResource('cards', 'id', { model: 'Card' })
+    expect(cards.formFields().map(f => f.name)).not.toContain('rank')
+    expect(cards.summary().columns.map(c => c.name)).toContain('rank')
+  })
+})

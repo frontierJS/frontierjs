@@ -271,6 +271,12 @@ export function buildFieldRules(schema, resolve = resolveRef, resolveName = mode
     out[name].required   = false
   }
 
+  // The related rows a create policy accepts for a relation column
+  // (`x-pick-where`, `FJS-D669`): `options()` filters its picker by them.
+  for (const [name, where] of Object.entries(schema['x-pick-where'] ?? {})) {
+    if (out[name] && where && typeof where === 'object') out[name].pickWhere = where
+  }
+
   // A `@@transitions` column is written by its MOVES, not by a value a person
   // picks. The enum still lists every state, so without this a generated form
   // offers a select whose every choice but one is a refusal: a create is born
@@ -281,6 +287,14 @@ export function buildFieldRules(schema, resolve = resolveRef, resolveName = mode
   // and `stripReadOnly` would drop it from a hand-written save in silence.
   for (const [name, moves] of Object.entries(schema['x-transitions'] ?? {})) {
     if (out[name] && moves && typeof moves === 'object') out[name].transitions = moves
+  }
+
+  // A `@rank` column is an order key litestone mints on a move
+  // (`resource.move()`); a base-62 string means nothing to the person a form
+  // would ask to type it, so the generated form leaves it out like a machine's.
+  for (const [name, def] of Object.entries(schema.properties ?? {})) {
+    const claim = def?.['x-rank']
+    if (out[name] && claim && typeof claim === 'object') out[name].rank = claim
   }
 
   // Mark foreign keys. `accountId` is emitted as a plain integer, so without
@@ -758,6 +772,29 @@ function _builtinControl(rule) {
 }
 
 /**
+ * The filter a relation column's picker takes from the create policy:
+ * `{ hostId: 'auth().id' }` becomes `{ hostId: <the session's id> }`.
+ *
+ * A claim the session does not carry drops its term rather than filtering on
+ * null, which would empty the picker for a caller the boundary may still admit.
+ * An affordance only — the create policy refuses regardless (Invariant 6).
+ *
+ * @param {object} rule  one entry from buildFieldRules()
+ * @param {object|null} user  the session's user
+ */
+export function pickFilter(rule, user) {
+  const out = {}
+  if (!user || !rule?.pickWhere) return out
+  for (const [col, claim] of Object.entries(rule.pickWhere)) {
+    if (typeof claim !== 'string' || !claim.startsWith('auth().')) continue
+    const name  = claim.slice('auth().'.length)
+    const value = name === 'id' ? (user.userId ?? user.id) : user[name]
+    if (value != null) out[col] = value
+  }
+  return out
+}
+
+/**
  * The caller-supplied value of every determined column the record leaves
  * blank — what `x-determined` says the create policy will demand.
  *
@@ -815,11 +852,11 @@ export function formFieldList(fields, { only, except, model } = {}) {
     if (removed.has(name)) continue
     // Left out of the generated set and still reachable by name: `only` is the
     // person saying they will draw it. A determined column has no choice to
-    // offer, and a machine's column changes by a move -- a button over
-    // `transitions(row)` -- so a detail page shows it with the other columns a
-    // form does not offer (`summary()`), read-only.
+    // offer, and a machine's or a `@rank` column changes by a move -- a button
+    // over `transitions(row)`, a drag over `move()` -- so a detail page shows
+    // it with the other columns a form does not offer (`summary()`), read-only.
     const rule = rules[name]
-    if ((rule?.determined || rule?.transitions) && names === known) continue
+    if ((rule?.determined || rule?.transitions || rule?.rank) && names === known) continue
     if (!(name in rules)) {
       out.push({ name, rule: null, control: null, reason: 'no such field on this model' })
       continue

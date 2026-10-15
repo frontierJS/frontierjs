@@ -116,6 +116,35 @@ for (const [file, data, expected] of CASES) {
   }
 }
 
+// ── A caller's trigger draws the button ─────────────────────────────────────
+//
+// `FJS-2511`. A trigger-only CopyButton is the third usage its header shows, and
+// it was drawn `.square` and named 'Copy to clipboard' whatever the trigger
+// showed: a palette row measured 157px square, and eight swatches were eight
+// buttons with one name.
+const TRIGGER = `<script>
+  import CopyButton from '../display/CopyButton.mesa'
+</script>
+<CopyButton text="#542522">
+  {#snippet trigger(copied)}<span class="swatch">#542522</span>{/snippet}
+</CopyButton>`
+
+{
+  const out = await renderComponent(TRIGGER, {
+    cwd: ROOT, filename: 'components/layout/CopyTrigger.mesa', styleTag: false,
+    tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+  })
+  const button = out.html.match(/<button[^>]*>/)?.[0] ?? ''
+  const problems = []
+  if (!/class="swatch\b/.test(out.html)) problems.push('the trigger did not render')
+  if (/\bsquare\b/.test(button)) problems.push(`drawn square: ${button}`)
+  if (/aria-label/.test(button)) problems.push(`named over its own content: ${button}`)
+  if (problems.length) {
+    console.error(`✗ CopyButton with a trigger snippet\n    ${problems.join('\n    ')}`)
+    failed++
+  }
+}
+
 const passed = CASES.length - failed
 console.log(`${passed}/${CASES.length} render cases carry the @frontierjs/css vocabulary`)
 if (failed) process.exit(1)
