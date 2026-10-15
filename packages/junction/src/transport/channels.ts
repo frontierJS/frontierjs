@@ -1389,8 +1389,16 @@ export interface ChannelsOptions {
    * and nothing else. Absent, any JSON inside the cap is accepted, which is the
    * behavior that shipped and is a reasonable default for a field whose whole
    * purpose is application-defined.
+   *
+   * The second argument says where the update lands: the channel, the
+   * connection, and `was`, the meta it replaces (`{}` before the first). A
+   * meta that is a position is a move only against where the member stood,
+   * and an app that remembers moves can know that nowhere else.
    */
-  presenceMeta?: (meta: Record<string, unknown>) => Record<string, unknown>
+  presenceMeta?: (
+    meta: Record<string, unknown>,
+    at: { channel: string, conn: Connection, was: Record<string, unknown> },
+  ) => Record<string, unknown>
 
   /**
    * Which channels track presence. **Default `false` — none of them.**
@@ -1848,7 +1856,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
 
               let meta = raw
               if (opts.presenceMeta) {
-                try { meta = opts.presenceMeta(raw) } catch (err) {
+                try { meta = opts.presenceMeta(raw, { channel: channelId, conn, was: member.meta }) } catch (err) {
                   manager._sendToConn(conn, 'error', {
                     code:    'presence_meta_refused',
                     message: (err as Error).message,

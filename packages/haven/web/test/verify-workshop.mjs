@@ -14,7 +14,10 @@
  * figure, so it is the same room, and none of Sam's workers, their count or
  * the reading — what is drawn from a workers directory stays on the screen
  * of the machine it is on. Then on Sam's screen a session moving to another
- * package walks to its bench, and one gone quiet past `QUIET_MS` leaves.
+ * package walks to its bench, and one gone quiet past `QUIET_MS` leaves. The
+ * one he stands beside is stopped on a permission prompt — through the same
+ * hook, as a Notification — and is a `?` with its bench saying it waits on
+ * him and the prompt read out; then it stops, a `✓` with its last words.
  *
  * Traps (the terminal's own are in `terminal.mjs`):
  * - Bun's `homedir()` is read once per process, so a workers directory is
@@ -36,6 +39,8 @@ import { ROOMS } from '../../api/src/rooms.ts'
 import { signIn } from '../../api/test/sign-in.ts'
 import { blank, cellOf, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
+import { follow } from '../src/stage.js'
+import { BENCH_WIDTH } from '../src/pieces/bench.js'
 import { QUIET_MS, readWorkers } from '../src/workers.js'
 
 const WEB      = join(import.meta.dir, '..')
@@ -57,21 +62,27 @@ const samHome = mkdtempSync(join(tmpdir(), 'haven-sam-'))
 const anaHome = mkdtempSync(join(tmpdir(), 'haven-ana-'))
 const WORKERS = join(samHome, '.fli/haven/workers')
 
-/** One edit, through the hook Claude Code runs, as session `id` on `file` (repo-relative). */
-function hookEdit(id, file) {
+/** One event through the hook Claude Code runs, as session `id`. */
+function hookRun(id, input) {
   const r = spawnSync('node', [HOOK], {
-    input: JSON.stringify({ session_id: id, tool_name: 'Edit', tool_input: { file_path: join(REPO, file) } }),
+    input: JSON.stringify({ session_id: id, cwd: REPO, ...input }),
     env: { ...process.env, HOME: samHome, CLAUDE_PROJECT_DIR: REPO }, encoding: 'utf8',
   })
   if (r.status !== 0 || r.stdout || r.stderr) throw new Error(`the hook failed: ${r.status} ${r.stdout}${r.stderr}`)
 }
+
+/** One edit, as session `id` on `file` (repo-relative). */
+const hookEdit = (id, file) => hookRun(id, { hook_event_name: 'PostToolUse', tool_name: 'Edit', tool_input: { file_path: join(REPO, file) } })
 
 // The bench nearest where a figure comes in from the square, so the walk
 // to it is short and inside the door's sight.
 const door    = workshop.doors.find((d) => d.to === '/')
 const benches = workshop.marks.filter((m) => m.piece?.bench)
 const nearest = benches.reduce((a, b) => (Math.abs(b.x + 2 - door.x) + Math.abs(b.y - door.y) < Math.abs(a.x + 2 - door.x) + Math.abs(a.y - door.y) ? b : a))
-const far     = benches.find((b) => b.y < nearest.y - 6)
+// A bench Sam's first screen shows: the room is taller than a screen and the door is at its foot.
+const v0      = workshop.view
+const onFirst = (b) => b.y >= v0.y && b.y < v0.y + v0.h && b.x >= v0.x && b.x + b.piece.art.length <= v0.x + v0.w
+const far     = benches.find((b) => onFirst(b) && b.y < nearest.y - 6)
 const fileOf  = (bench) => (['example', 'frontierjs'].includes(bench) ? `${bench === 'example' ? 'example/' : ''}README.md` : `packages/${bench}/package.json`)
 hookEdit('aaaa-one', fileOf(nearest.piece.bench))
 hookEdit('bbbb-two', fileOf(nearest.piece.bench))
@@ -90,7 +101,7 @@ for (const room of ROOMS) await env.system.room.create({ data: { ...room } })
 const API = `http://localhost:${env.port}`
 const sam = await signIn(env.port, 'sam')
 const term = terminal(API, sam.token, square, { HOME: samHome })
-const at = (x, y, width = 1, stage = workshop) => cellOf(term.screen(), x, y, width, stage)
+const at = (x, y, width = 1, stage = workshop, view = stage.view) => cellOf(term.screen(), x, y, width, stage, view)
 
 // ─── Sam walks to the workshop ────────────────────────────────────────
 
@@ -116,13 +127,18 @@ function route(stage, from, to) {
   return cells[0]?.x === from.x && cells[0]?.y === from.y ? cells : null
 }
 
-/** Walk Sam along `cells`, each key once the last step is on his screen; the last cell may be a door, waited on by `arrived`. */
-async function walk(stage, cells, arrived) {
+/**
+ * Walk Sam along `cells`, each key once the last step is on his screen; the last cell may be a door, waited on by `arrived`.
+ * With an `eye`, the view his screen has is followed beside it, since a cell past the first screen is read through the
+ * view that has panned to it.
+ */
+async function walk(stage, cells, arrived, eye = null) {
   for (let i = 1; i < cells.length; i++) {
     const a = cells[i - 1], b = cells[i]
     term.shell.stdin.write(KEY[`${b.x - a.x},${b.y - a.y}`])
+    if (eye) eye.view = follow(eye.view, b, stage)
     const last = i === cells.length - 1
-    if (!await until(() => (last && arrived ? arrived() : at(b.x, b.y, 1, stage) === '@'), 3000)) return false
+    if (!await until(() => (last && arrived ? arrived() : at(b.x, b.y, 1, stage, eye?.view) === '@'), 3000)) return false
   }
   return true
 }
@@ -171,7 +187,7 @@ check(!frame.framed.includes('✻') && !frame.framed.includes('(!') && !frame.fr
 
 // ─── a session moves, a session goes quiet ───────────────────────────
 
-const moved = benches.find((b) => b !== nearest && b !== far && b.y === far.y)
+const moved = benches.find((b) => b !== nearest && b !== far && onFirst(b))
 hookEdit('cccc-far', fileOf(moved.piece.bench))
 const m0 = seat(moved, 0)
 check(await until(() => at(m0.x, m0.y) === '✻' && blank(at(f0.x, f0.y))),
@@ -182,6 +198,37 @@ writeFileSync(join(WORKERS, 'bbbb-two.json'), JSON.stringify({
 }) + '\n')
 check(await until(() => blank(at(s1.x, s1.y)) && at(s0.x, s0.y) === '✻' && !term.screen().includes(COUNT)),
   'a session quiet past QUIET_MS leaves its bench, and the count goes with it', term.screen())
+
+// ─── a hand raised, then last words ──────────────────────────────────
+
+const WHY = 'Claude needs your permission to use Bash'
+const WAITS = '(? 1 waiting on you)'
+hookRun('aaaa-one', { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: WHY })
+check(await until(() => at(s0.x, s0.y) === '?' && at(s0.x + 2, s0.y, WAITS.length) === WAITS && term.screen().includes(`aaaa asks: ${WHY} · `)),
+  'a session stopped on a permission prompt is a ? whose bench says it waits on Sam, and beside it the prompt is read', term.screen())
+hookRun('aaaa-one', { hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: '**Booth sweep** fixed, 3 tests added.\n\nMore below.' })
+check(await until(() => at(s0.x, s0.y) === '✓' && !term.screen().includes(WAITS) && term.screen().includes('aaaa done: Booth sweep fixed, 3 tests added. · ')),
+  'when it stops it is a ✓, its hand down, and beside it its last words are read', term.screen())
+
+// ─── the register, on the benches ─────────────────────────────────────
+
+// Litestone has the most issues, so its piles are the tallest and its bench is
+// in the row far below the door. Sam walks up to the aisle past its table,
+// level with the top of its tallest pile, and the view pans up the room to it.
+const { LEDGER } = await import('../src/ledger.data.js')
+const lite = workshop.marks.find((m) => m.piece?.bench === 'litestone')
+const pile = workshop.marks.find((m) => m.piece?.ledger === 'litestone')
+const top = pile.piece.cells.reduce((a, c) => (c.dy < a.dy ? c : a))
+const slip = { x: pile.x + top.dx, y: pile.y + top.dy }
+const aisle = { x: lite.x + BENCH_WIDTH + 1, y: slip.y }
+const there = route(workshop, beside, aisle)
+const eye = { view: workshop.view }
+check(there && await walk(workshop, there, null, eye),
+  'Sam walks up the room to the aisle past litestone\'s table, level with its tallest pile, the view panning', term.screen())
+check(await until(() => at(lite.x, lite.y, 1, workshop, eye.view) === '[' && at(slip.x, slip.y, 1, workshop, eye.view) === '━'),
+  'litestone\'s bench and the top slip of its pile are on his screen, cell for cell through the view that panned to them', term.screen())
+check(pile.piece.count === Object.values(LEDGER.litestone).reduce((a, b) => a + b, 0) && pile.y + pile.piece.art.split('\n').length === lite.y,
+  'its piles hold one slip for each of its issues, lying on the bench', JSON.stringify(LEDGER.litestone))
 
 // ─── done ─────────────────────────────────────────────────────────────
 

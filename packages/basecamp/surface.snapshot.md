@@ -97,8 +97,8 @@ name, and is as unread as the body.
 | `deployments.stepStatus` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `deployments.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `domains.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `domains.uploadCert` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `domains.makePrimary` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `domains.uploadCert` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `environments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `flags.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `flags.setOverride` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -226,12 +226,11 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 | before | `attachChannel` | `validateInput` |
 | before | `detachChannel` | `validateInput` |
@@ -253,11 +252,10 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` → `noKeyManagementByKey` |
 | before | `find` | `captureStatus` → `autoFilter` → `autoSort` |
-| before | `create` | `requireWorkspaceRole` → `stampKey` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `shapeKey` → `autoValidate` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `apps` · model `App`
@@ -279,12 +277,11 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `deriveSlug` → `autoValidate` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 | before | `fromBlueprint` | `validateInput` |
 | before | `place` | `validateInput` |
@@ -354,12 +351,11 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `stampChannel` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `stampChannel` → `autoValidate` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `cleanup` · model `CleanupRun`
@@ -438,12 +434,11 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `stampDashboard` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `stampDashboard` → `autoValidate` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 | before | `addWidget` | `validateInput` |
 | before | `updateWidget` | `validateInput` |
@@ -487,38 +482,38 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
 | before | `startRun` | `internalOnly` |
 | before | `stepStatus` | `internalOnly` |
 | before | `finishRun` | `internalOnly` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `domains` · model `Domain`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `uploadCert`, `makePrimary`
-- **custom methods** — `uploadCert`, `makePrimary`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `makePrimary`, `uploadCert`
+- **custom methods** — `makePrimary`, `uploadCert`
+- **input** — `uploadCert` takes `DomainCertUpload`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `uploadCert` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `makePrimary` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `uploadCert` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+| before | `uploadCert` | `validateInput` |
 
 ### `edge` · model `edge`
 
@@ -553,12 +548,11 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `deriveSlug` → `autoValidate` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `flags` · model `FeatureFlag`
@@ -578,12 +572,11 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `stampFlag` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `stampFlag` → `autoValidate` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 | before | `setOverride` | `validateInput` |
 | before | `clearOverride` | `validateInput` |
@@ -759,7 +752,6 @@ name when it declares none.
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
 | before | `create` | `requireWorkspaceRole` → `stampInvitation` → `refuseGrantAboveOwn` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -782,14 +774,13 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
 | before | `startRun` | `internalOnly` |
 | before | `finishRun` | `internalOnly` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `metrics-store` · model `metrics-store`
@@ -828,12 +819,11 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `deriveSlug` → `autoValidate` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 | before | `attach` | `validateInput` |
 | before | `detach` | `validateInput` |
@@ -842,6 +832,8 @@ name when it declares none.
 
 - **methods** — `find`, `save`, `reset`
 - **custom methods** — `save`, `reset`
+- **input** — `reset` takes `NotificationPreferenceReset`
+- **input** — `save` takes `NotificationPreferenceSave`
 - **who may call** —
   - `save` — **any signed-in caller** — floor, read gate 1; standing not graded
   - `reset` — **any signed-in caller** — floor, read gate 1; standing not graded
@@ -855,6 +847,8 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+| before | `save` | `validateInput` |
+| before | `reset` | `validateInput` |
 
 ### `notifications` · model `Notification`
 
@@ -965,12 +959,11 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `deriveSlug` → `autoValidate` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `recipes` · model `Recipe`
@@ -989,14 +982,13 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `stampRecipe` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `stampRecipe` → `autoValidate` |
 | before | `startRun` | `internalOnly` |
 | before | `finishRun` | `internalOnly` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `registers` · model `registers`
@@ -1074,12 +1066,11 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `stampSecret` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `stampSecret` → `autoValidate` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `servers` · model `Server`
@@ -1115,15 +1106,14 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `deriveSlug` → `autoValidate` |
 | before | `logEvent` | `internalOnly` |
 | before | `provisionStep` | `internalOnly` → `validateInput` |
 | before | `destroyStep` | `internalOnly` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 | before | `provision` | `validateInput` |
 
@@ -1181,18 +1171,18 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `create` | `requireWorkspaceRole` → `scopeFromPayload` → `autoValidate` |
-| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
-| before | `remove` | `requireWorkspaceRole` |
+| before | `create` | `scopeFromPayload` → `autoValidate` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `volumes` · model `Volume`
 
 - **methods** — `find`, `get`, `remove`, `usage`, `prune`, `report`
 - **custom methods** — `usage`, `prune`, `report`
+- **input** — `report` takes `VolumeReport`
 - **who may call** —
   - `usage` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `prune` — standing 5 or above — declared `gate: 5`
@@ -1203,13 +1193,13 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `remove` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+| before | `report` | `validateInput` |
 
 ### `workbench` · model `workbench`
 
@@ -1268,6 +1258,7 @@ name when it declares none.
 - **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`
 - **input** — `addMember` takes `WorkspaceMemberAdd`
 - **input** — `setMemberRole` takes `WorkspaceMemberRole`
+- **input** — `transferOwnership` takes `WorkspaceTransfer`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
   - `members` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
@@ -1287,7 +1278,7 @@ name when it declares none.
 | before | `addMember` | `requireWorkspaceRole` → `refuseGrantAboveOwn` → `validateInput` |
 | before | `setMemberRole` | `requireWorkspaceRole` → `refuseGrantAboveOwn` → `validateInput` |
 | before | `removeMember` | `requireWorkspaceRole` |
-| before | `transferOwnership` | `requireWorkspaceRole` |
+| before | `transferOwnership` | `requireWorkspaceRole` → `validateInput` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

@@ -10,10 +10,14 @@ import { test, expect } from 'bun:test'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { SCENES, WEB, mountScene } from './stage.mjs'
-import { pacerAt, createStage, follow, arrival, litAt, dim, INK, VIEW, EDGE, SIGHT } from '../src/stage.js'
+import { pacerAt, createStage, follow, arrival, litAt, dim, INK, VIEW, EDGE, SIGHT, OUTDOORS, INDOORS } from '../src/stage.js'
 import { piece } from '../src/pieces/index.js'
+import { worldOf, worldJson } from '../src/world.js'
+import { DAY_MS } from '../src/sky.js'
 
 const STEPS = [[0, 1], [0, -1], [1, 0], [-1, 0]]
+// Three quarters into the day is full night, when a `night` door is one.
+const NIGHT = 3 * DAY_MS + DAY_MS * 0.75
 
 const scenes = new Map()   // path → its stage, for the border across
 for (const { name, slug, path } of SCENES) {
@@ -25,22 +29,30 @@ for (const { name, slug, path } of SCENES) {
     expect(stage.picture()).toEqual(expected)
   })
 
+  test(`${slug}: the server's world is ${slug}.world.json`, () => {
+    expect(worldJson(worldOf(stage))).toBe(readFileSync(join(WEB, 'src/scenes', `${slug}.world.json`), 'utf8'))
+  })
+
   test(`${slug}: the terminal draws that picture, the view's slice of it from the spawn and from the far corner`, async () => {
-    // A cycling cell may show another glyph of its `chars` at this tick, and a
-    // pacer stands somewhere on its row, so a cell is compared only where no
-    // clock moves it. A stage no bigger than the view draws the same slice
-    // from both corners.
+    // A cycling cell may show another glyph of its `chars` at this tick, a
+    // pacer stands somewhere on its row, and a night door is a door for a
+    // third of every hour, so a cell is compared only where no clock moves
+    // it. A stage no bigger than the view draws the same slice from both corners.
     const paced = (x, y) => stage.pacers.some((p) => p.y === y && x >= p.from && x <= p.to)
+    const nightly = (x, y) => stage.doors.some((d) => d.night && d.x === x && d.y === y)
     const same = (drawn, v) => {
       for (let row = 0; row < v.h; row++) {
         for (let col = 0; col < v.w; col++) {
           const x = v.x + col, y = v.y + row
-          if (stage.cycles(x, y) || paced(x, y)) continue
+          if (stage.cycles(x, y) || paced(x, y) || nightly(x, y)) continue
           expect({ x, y, ch: drawn[row]?.[col] ?? ' ' }).toEqual({ x, y, ch: expected[y][x] })
         }
       }
     }
-    expect(stage.view).toEqual({ x: 0, y: 0, w: Math.min(VIEW.w, stage.width), h: Math.min(VIEW.h, stage.height) })
+    // The first view is the spawn followed from the corner: the corner itself
+    // for every scene whose spawn is on its first screen.
+    const corner = { x: 0, y: 0, w: Math.min(VIEW.w, stage.width), h: Math.min(VIEW.h, stage.height) }
+    expect(stage.view).toEqual(follow(corner, stage.spawn, stage))
     same(frame, stage.view)
     stage.follow(stage.width - 1, stage.height - 1)
     const far = stage.view
@@ -74,7 +86,7 @@ for (const { name, slug, path } of SCENES) {
         }
       }
     }
-  })
+  }, 30_000)
 
   test(`${slug}: the spawn is floor and every door is reached from it`, () => {
     const { spawn } = stage
@@ -90,11 +102,20 @@ for (const { name, slug, path } of SCENES) {
     }
     expect(stage.doors.length).toBeGreaterThan(0)
     for (const d of stage.doors) {
-      expect(stage.doorAt(d.x, d.y)).toEqual(d)
+      expect(stage.doorAt(d.x, d.y, d.night ? NIGHT : 0)).toEqual(d)
       expect(stage.walkable(d.x, d.y)).toBe(false)
       const reached = STEPS.some(([dx, dy]) => seen.has(`${d.x + dx},${d.y + dy}`))
       expect({ door: d.to, reached }).toEqual({ door: d.to, reached: true })
     }
+  })
+
+  test(`${slug}: every paint letter a piece uses is defined by the scene's palette or the piece's own`, () => {
+    const undefinedLetters = new Set()
+    for (const m of stage.marks) {
+      if (m.kind !== 'piece') continue
+      for (const c of m.piece.cells) if (c.key !== ' ' && !stage.entryOf(c.key)) undefinedLetters.add(`${m.piece.name}:${c.key}`)
+    }
+    expect([...undefinedLetters]).toEqual([])
   })
 
   test(`${slug}: every door leads to a scene with a door back, and a border has its run across at the matching row`, () => {
@@ -126,7 +147,7 @@ for (const { name, slug, path } of SCENES) {
     expect(lit.length).toBeGreaterThan(0)
     expect(lit.length).toBeLessThan(cells.length)
     for (const l of stage.lights) {
-      expect(Object.values(stage.palette).some((e) => e.light === l.r)).toBe(true)
+      expect(Object.values({ ...stage.defaults, ...stage.palette }).some((e) => e.light === l.r)).toBe(true)
       expect(litAt(stage, l.x, l.y, { x: stage.width - 1, y: stage.height - 1 })).toBe(true)
     }
     // The picture is the art whoever stands where: fog is drawn, never claimed.
@@ -171,6 +192,118 @@ test('workshop: the row under every bench is floor its whole width, where its wo
       expect({ bench: b.piece.bench, x: b.x + dx, floor: stage.walkable(b.x + dx, b.y + 1) }).toEqual({ bench: b.piece.bench, x: b.x + dx, floor: true })
     }
   }
+})
+
+// The slips are what ISSUES.md counts for a package, so a pile that lost a
+// slip, took another severity's color, or lay on the wrong bench would still
+// draw a picture. A package with no issues has no pile and no table of its
+// own: it is listed under `(no work)`.
+test('workshop: on every bench with work a pile per severity, a slip in its color for each issue ledger.data.js counts for that package, lying on the bench', async () => {
+  const { LEDGER } = await import('../src/ledger.data.js')
+  const { PILE } = await import('../src/pieces/ledger.js')
+  const stage = scenes.get('/workshop/')
+  const benches = stage.marks.filter((m) => m.piece?.bench)
+  const blocks = stage.marks.filter((m) => m.piece?.ledger)
+  const busy = (name) => Object.values(LEDGER[name]).some((n) => n > 0)
+  expect(blocks.map((b) => b.piece.ledger)).toEqual(benches.map((b) => b.piece.bench).filter(busy))
+  for (const bench of benches.filter((b) => busy(b.piece.bench))) {
+    const name = bench.piece.bench
+    const block = blocks.find((b) => b.piece.ledger === name)
+    const rows = block.piece.art.split('\n').length
+    expect({ name, x: block.x, rests: block.y + rows }).toEqual({ name, x: bench.x, rests: bench.y })
+    Object.entries({ S1: '1', S2: '2', S3: '3', S4: '4' }).forEach(([sev, key], pile) => {
+      const lo = pile * (PILE + 1), hi = lo + PILE
+      const slips = block.piece.cells.filter((c) => c.key === key)
+      expect({ name, sev, slips: slips.length, inPile: slips.every((c) => c.dx >= lo && c.dx < hi) }).toEqual({ name, sev, slips: LEDGER[name][sev], inPile: true })
+    })
+  }
+})
+
+test('workshop: a package with no issues takes no table, and is listed under (no work) in a row below every table', async () => {
+  const { LEDGER } = await import('../src/ledger.data.js')
+  const stage = scenes.get('/workshop/')
+  const idle = Object.keys(LEDGER).filter((n) => Object.values(LEDGER[n]).every((c) => c === 0)).sort()
+  const listed = stage.marks.filter((m) => m.piece?.bench && idle.includes(m.piece.bench))
+  expect(listed.map((m) => m.piece.bench).sort()).toEqual(idle)
+  expect(listed.every((m) => m.piece.art.length === m.piece.bench.length + 4)).toBe(true)
+  const heading = stage.marks.find((m) => m.piece?.name === 'heading')
+  expect(heading.piece.art).toBe('(no work)')
+  const lowest = Math.max(...stage.marks.filter((m) => m.piece?.ledger).map((m) => m.y))
+  expect(listed.every((m) => m.y > lowest && m.y === heading.y)).toBe(true)
+})
+
+// His figure and the row he speaks on are the desk's, and a desk that sat on a
+// wall or under a bench's workers would be found only by a drive.
+test('workshop: the taskmaster\'s desk is no bench, stands on the left by the door, and has floor for him and his line', () => {
+  const stage = scenes.get('/workshop/')
+  const desk = stage.marks.find((m) => m.piece?.name === 'taskmaster')
+  expect(desk.piece.bench).toBeUndefined()
+  expect(desk.x).toBeLessThan(8)
+  const door = stage.doors.find((d) => d.to === '/')
+  expect(desk.y).toBeGreaterThan(Math.max(...stage.marks.filter((m) => m.piece?.bench).map((m) => m.y)))
+  expect(desk.y).toBeLessThan(door.y)
+  for (let dy = 1; dy <= 2; dy++) for (let dx = 0; dx < desk.piece.art.length; dx++) expect(stage.walkable(desk.x + dx, desk.y + dy)).toBe(true)
+})
+
+// ─── the cellar ──────────────────────────────────────────────────────
+
+// A secret is a door nothing draws, so the only things that say it is there
+// are these: one way down, hidden, painted as the rug around it, and a figure
+// coming back up standing beside it.
+test('cellar: the one way down is the tavern rug, a door drawn as the rug it is in', () => {
+  const tavern = scenes.get('/tavern/')
+  const ways = [...scenes].flatMap(([path, stage]) => stage.doors.filter((d) => d.to === '/cellar/' && !d.night).map((d) => ({ path, ...d })))
+  expect(ways).toEqual([expect.objectContaining({ path: '/tavern/', hidden: true })])
+  const { x, y } = ways[0]
+  expect(tavern.walkable(x, y)).toBe(false)
+  const beside = tavern.look(x - 1, y)
+  expect(tavern.look(x, y)).toEqual(beside)
+  expect(beside.ch).toBe(':')
+  expect(tavern.picture()[y][x]).toBe(':')
+})
+
+test('cellar: a figure coming up from it stands on the rug beside the hole, not at the tavern door', () => {
+  const tavern = scenes.get('/tavern/')
+  const hole = tavern.doors.find((d) => d.to === '/cellar/')
+  const landed = arrival(tavern, { from: '/cellar/', x: 48, y: 1 })
+  expect(Math.abs(landed.x - hole.x) + Math.abs(landed.y - hole.y)).toBe(1)
+  expect(tavern.walkable(landed.x, landed.y)).toBe(true)
+})
+
+// ─── the glade and the tunnel ─────────────────────────────────────────
+
+// The glade is the woods' second secret and the oak its third. Nothing drawn
+// says either is there, so these are what does: the plank drawn as fence, the
+// oak's foot and the cellar's wall drawn as themselves by day, and each a door
+// at night that leads to the other.
+test('glade: the one way in is a plank of the woods\' fence, drawn as the fence', () => {
+  const woods = scenes.get('/woods/')
+  const ways = [...scenes].flatMap(([path, stage]) => stage.doors.filter((d) => d.to === '/glade/' && !d.night).map((d) => ({ path, ...d })))
+  expect(ways).toEqual([expect.objectContaining({ path: '/woods/', hidden: true })])
+  const { x, y } = ways[0]
+  expect(woods.picture()[y][x]).toBe('|')
+  expect(woods.look(x, y)).toEqual(woods.look(x, y - 1))
+  const landed = arrival(woods, { from: '/glade/', x: 96, y: 12 })
+  expect(landed).toEqual({ x: x + 1, y })
+})
+
+test('the tunnel: the oak\'s foot and the cellar\'s west wall are each other\'s night door, and by day neither is a door', () => {
+  const glade = scenes.get('/glade/'), cellar = scenes.get('/cellar/')
+  const oak = glade.doors.find((d) => d.to === '/cellar/')
+  const wall = cellar.doors.find((d) => d.to === '/glade/')
+  expect([oak.night, wall.night]).toEqual([true, true])
+  for (const [stage, d] of [[glade, oak], [cellar, wall]]) {
+    expect(stage.doorAt(d.x, d.y, 0)).toBeNull()
+    expect(stage.doorAt(d.x, d.y, NIGHT)).toEqual(d)
+    expect(stage.look(d.x, d.y, 0).ch).toBe(stage.picture()[d.y][d.x])
+    expect(stage.look(d.x, d.y, NIGHT).ch).toBe('n')
+    expect(stage.walkable(d.x, d.y)).toBe(false)
+  }
+  const up = arrival(glade, { from: '/cellar/', x: wall.x, y: wall.y })
+  expect(Math.abs(up.x - oak.x) + Math.abs(up.y - oak.y)).toBe(1)
+  expect(glade.walkable(up.x, up.y)).toBe(true)
+  const down = arrival(cellar, { from: '/glade/', x: oak.x, y: oak.y })
+  expect(Math.abs(down.x - wall.x) + Math.abs(down.y - wall.y)).toBe(1)
 })
 
 // ─── the stage's own rules ───────────────────────────────────────────
@@ -229,7 +362,7 @@ test('a figure sees within SIGHT over floor, a wall blocks the line, and a light
 })
 
 test('a stage with a seer draws lit cells, remembers them dim, and blanks the rest; with none it draws everything', () => {
-  const stage = createStage({ fog: true, slug: 'probe', palette: { w: { fg: '#ff0000' }, k: { fg: ['#ffffff', '#000000'], chars: 'ab', ms: 100 } }, spawn: { x: 0, y: 0 } })
+  const stage = createStage({ layers: [...OUTDOORS, 'fog'], slug: 'probe', palette: { w: { fg: '#ff0000' }, k: { fg: ['#ffffff', '#000000'], chars: 'ab', ms: 100 } }, spawn: { x: 0, y: 0 } })
   stage.stamp(piece('wall', '|', 'w'), 2, 0)
   stage.stamp(piece('water', '~', 'k'), 3, 0)
   stage.stamp(piece('post', '!', ' '), 4, 0)
@@ -329,4 +462,62 @@ test('a floor piece is walked on, a wall is not, and the edge is a wall', () => 
   expect(stage.walkable(0, 0)).toBe(true)
   expect(stage.walkable(4, 1)).toBe(false)
   expect(stage.look(1, 1, 0)).toEqual({ ch: ':', fg: '#000000', bg: undefined })
+})
+
+test('a hidden door draws what is under it and is still a door; lifted, the cell is as it was', () => {
+  const palette = { w: { fg: '#ffffff' } }
+  const stage = createStage({ slug: 'probe', palette, spawn: { x: 0, y: 0 } })
+  stage.stamp(piece('rug', '::', 'ww', { floor: true }), 0, 0)
+  const hole = stage.door(0, 0, '/down/', { hidden: true })
+  const blank = stage.door(5, 0, '/blank/', { hidden: true })
+  expect(stage.doorAt(0, 0)).toEqual({ x: 0, y: 0, to: '/down/', hidden: true })
+  expect(stage.walkable(0, 0)).toBe(false)
+  expect(stage.look(0, 0)).toEqual({ ch: ':', fg: '#ffffff', bg: undefined })
+  expect(stage.picture()[0].slice(0, 2)).toBe('::')
+  expect(stage.look(5, 0)).toEqual({ ch: ' ', fg: undefined, bg: undefined })
+  expect(stage.doors).toEqual([{ x: 0, y: 0, to: '/down/', hidden: true }, { x: 5, y: 0, to: '/blank/', hidden: true }])
+  hole.remove()
+  blank.remove()
+  expect(stage.doorAt(0, 0)).toBeNull()
+  expect(stage.walkable(0, 0)).toBe(true)
+  expect(stage.look(0, 0).ch).toBe(':')
+})
+
+test('a night door is the cell under it by day and a door at full night; an indoor stage redraws for it on the sky\'s step', () => {
+  const palette = { w: { fg: '#ffffff' } }
+  const stage = createStage({ slug: 'probe', palette, spawn: { x: 0, y: 1 }, layers: INDOORS })
+  expect(stage.tickOf(0)).toBe(0)
+  stage.stamp(wall, 0, 0)
+  const gate = stage.door(0, 0, '/out/', { night: true })
+  expect(stage.doorAt(0, 0, 0)).toBeNull()
+  expect(stage.doorAt(0, 0, NIGHT)).toEqual({ x: 0, y: 0, to: '/out/', night: true })
+  expect(stage.doors).toEqual([{ x: 0, y: 0, to: '/out/', night: true }])
+  expect(stage.look(0, 0, 0)).toEqual({ ch: '|', fg: '#ffffff', bg: undefined })
+  expect(stage.look(0, 0, NIGHT).ch).toBe('n')
+  expect(stage.picture()[0]).toBe('|')
+  expect(stage.walkable(0, 0)).toBe(false)
+  expect(stage.tickOf(0)).toBe(DAY_MS / 30)
+  gate.remove()
+  expect(stage.doors).toEqual([])
+  expect(stage.look(0, 0, NIGHT).ch).toBe('|')
+})
+
+
+test('a piece with `overhead` rows is walked under: its top rows are walkable, drawn over the figures, and see-through; the rest is wall', () => {
+  const canopy = piece('canopy', '&&\n||', 'tt\nuu', { overhead: 1 })
+  const stage = createStage({ slug: 'probe', palette: { t: { fg: '#00ff00' }, u: { fg: '#886600' } }, spawn: { x: 0, y: 0 } })
+  stage.stamp(canopy, 0, 1)
+  expect([0, 1].map((x) => stage.walkable(x, 1))).toEqual([true, true])
+  expect([0, 1].map((x) => stage.walkable(x, 2))).toEqual([false, false])
+  expect(stage.look(0, 1)).toEqual({ ch: '&', fg: '#00ff00', bg: undefined, overhead: true })
+  expect(stage.look(0, 2).overhead).toBeUndefined()
+  expect(litAt(stage, 0, 0, { x: 1, y: 0 })).toBe(true)
+  expect(() => stage.stamp(piece('crate', '#', 'w'), 1, 1)).toThrow(/claimed by both/)
+})
+
+test("the square's hedge is a wall and its flowers are floor", () => {
+  const stage = scenes.get('/')
+  const hedge = [5, 21, 37, 53, 67, 83].map((x) => stage.walkable(x, 23))
+  expect(hedge).toEqual([false, false, false, false, false, false])
+  expect(stage.walkable(6, 24)).toBe(true)
 })

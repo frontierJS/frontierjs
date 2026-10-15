@@ -1,0 +1,113 @@
+<script>
+  // Bar.mesa — the board behind the bar. A figure that sits on a stool of the
+  // bar (a `solo` seat of the piece named `bar`, `pieces/index.js`) has the
+  // member's latest activity chalked up over the shelves: `#errand`'s
+  // `barActivity()` runs this machine's `HAVEN_BAR` command and the rows it
+  // prints are drawn, newest first. Standing up takes the board down.
+  //
+  // Drawn on this screen only and never sent, as the runner and the workers
+  // are: what the command reads is this machine's, and the room is anybody's.
+  // A route places it (`routes/tavern.mesa`), never the scene file, which is
+  // pinned and the editor's. With no `HAVEN_BAR` the stool is a stool.
+  //
+  // More rows than the board has room for scroll up it one row each `SCROLL_MS`
+  // while a figure sits, wrapping to the newest; standing up and a fresh pull
+  // both start again at the top, so the board never opens mid-list.
+  //
+  // The board is kept `CACHE_MS` so a figure shuffling between stools asks
+  // nothing again; a command that fails says so on the board and is asked
+  // afresh on the next sitting — `asked` is reset on standing up, never in the
+  // failure itself, or the sitting figure would ask again at once.
+  import { at, tint } from '#cell'
+  import { barActivity } from '#errand'
+  import { bar as barPiece } from '@/pieces/bar.js'
+  import { spotsOf } from '@/pieces/index.js'
+
+  const scene = $context.scene
+  const CACHE_MS = 60_000
+  const SCROLL_MS = 3_000
+  const BOARD = { x: 3, y: 1, w: 84, h: 6 }
+  const PROJECT_W = 12
+  // A row keeps its color wherever it scrolls to, so the eye can stay on one.
+  const INKS = ['#fbbf24', '#34d399', '#60a5fa', '#f472b6', '#a78bfa', '#fb923c']
+  const TITLE = '— behind the bar —'
+
+  const bar    = scene.placed(barPiece)[0]
+  const stools = bar ? spotsOf(barPiece, 'seat').map((s) => bar.spot(s.name)) : []
+
+  let state  = 'idle'   // idle · loading · ready · off (no command) · failed
+  let rows   = []
+  let failed = ''
+  let asked  = 0
+  let offset = 0
+  let me     = scene.seer
+  let view   = scene.view
+  $.onDestroy(scene.subscribe(() => { me = scene.seer; view = scene.view }))
+
+  const ctl = new AbortController()
+  $.onDestroy(() => ctl.abort())
+
+  function pull() {
+    asked = Date.now()
+    offset = 0
+    state = 'loading'
+    barActivity({ signal: ctl.signal })
+      .then((r) => { if (r === null) { state = 'off'; return } rows = r; state = 'ready' })
+      .catch((e) => { if (ctl.signal.aborted) return; failed = e.message; state = 'failed' })
+  }
+
+  $: sitting = !!me && stools.some((s) => s.x === me.x && s.y === me.y)
+  $: { if (sitting && Date.now() - asked > CACHE_MS) pull() }
+  // A failure is not kept: standing up forgets it, so the next sitting asks again.
+  $: { if (!sitting && state === 'failed') asked = 0 }
+
+  // Standing up takes the board down, so the next sitting starts at the newest.
+  $: { if (!sitting) offset = 0 }
+
+  $.onDestroy(scene.task('bar', () => {
+    if (sitting && state === 'ready' && rows.length > BOARD.h - 1) offset = (offset + 1) % rows.length
+  }, { every: SCROLL_MS }))
+
+  $: board = lines(state, rows, failed, offset)
+
+  const ago = (iso) => {
+    const ms = Date.now() - Date.parse(iso)
+    if (!iso || Number.isNaN(ms)) return ''
+    const m = Math.max(0, Math.round(ms / 60_000))
+    return m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`
+  }
+
+  /** `bucket — what happened` as a short project name and the rest, so the notification gets the width. */
+  function split(text) {
+    const i = text.indexOf(' — ')
+    if (i < 0) return ['', text]
+    const name = text.slice(0, i).replace(/\.[a-z]{2,}$/i, '')
+    return [name.length > PROJECT_W ? `${name.slice(0, PROJECT_W - 1)}…` : name, text.slice(i + 3)]
+  }
+
+  /** The board's lines under its title, newest first from row `o`, each cut to the board. */
+  function lines(s, r, f, o) {
+    const room = BOARD.h - 1
+    if (s === 'loading') return [{ text: 'chalking it up…' }]
+    if (s === 'failed')  return [{ text: `the board is blank: ${f}`.slice(0, BOARD.w) }]
+    if (!r.length)       return [{ text: 'nothing new' }]
+    const idx = r.length > room ? Array.from({ length: room }, (_, i) => (o + i) % r.length) : r.map((_, i) => i)
+    return idx.map((n) => {
+      const [project, rest] = split(r[n].text)
+      return { color: INKS[n % INKS.length], text: `${ago(r[n].when).padStart(3)} ${project.padEnd(PROJECT_W)} ${rest}`.slice(0, BOARD.w) }
+    })
+  }
+</script>
+
+{#if sitting && state !== 'off' && state !== 'idle'}
+  <div class="surface board" {@attach at(BOARD.x - view.x, BOARD.y - view.y, 13, [BOARD.w, BOARD.h])}>
+    <p>{TITLE}</p>
+    {#each board as l, i (i)}
+      <p {@attach tint(l.color)}>{l.text}</p>
+    {/each}
+  </div>
+{/if}
+
+<style>
+  .board p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
+</style>

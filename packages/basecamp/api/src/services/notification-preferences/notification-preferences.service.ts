@@ -41,7 +41,12 @@ export function createNotificationPreferencesService(_app: BasecampApp) {
     // No `channel:`. `workspaceChannel` is the only channel this app has and
     // these rows belong to no workspace — broadcasting one would hand a
     // person's own settings to everybody they share a workspace with.
-    methods: ['find', 'save', 'reset'],
+    // A kind is NotificationKind's, so one outside it is refused naming `kind`.
+    methods: [
+      'find',
+      { method: 'save',  input: 'NotificationPreferenceSave' },
+      { method: 'reset', input: 'NotificationPreferenceReset' },
+    ],
 
     /** The seven kinds, stored answers over defaults. */
     async find() {
@@ -78,15 +83,12 @@ export function createNotificationPreferencesService(_app: BasecampApp) {
      */
     async save() {
       const userId = me()
-      const data   = ($.data ?? {}) as Record<string, unknown>
-      const kind   = String(data.kind ?? '')
-
-      if (!notificationKind(kind)) throw new BadRequest(
-        `Unknown notification kind '${kind}'. One of: ${NOTIFICATION_KIND_NAMES.join(', ')}`)
+      const data   = $.data as { kind: string, email?: boolean | null, inApp?: boolean | null }
+      const kind   = data.kind
 
       const patch: Record<string, unknown> = {}
-      if (typeof data.email === 'boolean') patch.email = data.email
-      if (typeof data.inApp === 'boolean') patch.inApp = data.inApp
+      if (data.email != null) patch.email = data.email
+      if (data.inApp != null) patch.inApp = data.inApp
       if (!Object.keys(patch).length) throw new BadRequest(
         'Send `email` and/or `inApp` as booleans — there is nothing else to set')
 
@@ -111,10 +113,7 @@ export function createNotificationPreferencesService(_app: BasecampApp) {
     /** Forget a choice, so the kind goes back to its default. */
     async reset() {
       const userId = me()
-      const kind   = String((($.data ?? {}) as Record<string, unknown>).kind ?? '')
-
-      if (kind && !notificationKind(kind)) throw new BadRequest(
-        `Unknown notification kind '${kind}'. One of: ${NOTIFICATION_KIND_NAMES.join(', ')}`)
+      const kind   = ($.data as { kind?: string | null } | null)?.kind
 
       // No kind means all of them — which is the *reset to defaults* button and
       // is why this is a method rather than a delete by id.

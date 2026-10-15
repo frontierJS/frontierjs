@@ -17,6 +17,8 @@
 -- ║     cart_line.token
 -- ║
 -- ║ To keep them, copy the values somewhere before the old table is dropped.
+-- ║
+-- ║ Accept data loss: yes
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 PRAGMA foreign_keys = OFF;
 BEGIN;

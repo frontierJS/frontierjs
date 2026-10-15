@@ -133,6 +133,22 @@ export function declaredDatabases(appRoot, dbDir) {
   return out
 }
 
+/**
+ * The SQLite file `db:reset` removes: the schema's `main` database (else the
+ * first declared), because that is the file litestone opens — a command that
+ * deletes `development.db` by convention leaves an app declaring `db/app.db`
+ * untouched. `--test` names the test file and `fallback` is the convention for
+ * an app that declares nothing.
+ *
+ * @returns {string[]}
+ */
+export function databaseFilesToReset(appRoot, dbDir, { test = false, fallback } = {}) {
+  if (test) return [fallback]
+  const declared = declaredDatabases(appRoot, dbDir)
+  const main = declared.find(d => d.name === 'main') ?? declared[0]
+  return [main ? main.path : fallback]
+}
+
 /** `path env("DATABASE_URL", "./db/x.db")` or `path "./db/x.db"` → the default. */
 function readPath(body) {
   const env = body.match(/\bpath\s+env\(\s*['"`][^'"`]+['"`]\s*,\s*['"`]([^'"`]+)['"`]\s*\)/)

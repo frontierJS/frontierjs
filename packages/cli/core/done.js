@@ -22,9 +22,9 @@
 
 import { execFileSync }                                   from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { basename, dirname, extname, join, resolve }       from 'node:path'
+import { basename, dirname, extname, join, resolve, sep }  from 'node:path'
 
-import { runChecks }                        from './checks.js'
+import { runChecks, findApps, readBaseline } from './checks.js'
 import { checkSnapshots }                   from './snapshots.js'
 import { runRegisterCheck }                 from './register-check.js'
 import { registerSources }                  from './registers.js'
@@ -116,6 +116,77 @@ function verdictMessage(v, doc) {
   }
 }
 
+/**
+ * The error rules of `fli check`, asked about the files that changed. The tree
+ * already holds findings CI answers with an allowance or a baseline, so only a
+ * finding in a changed file counts, minus the allowances CI itself reads.
+ */
+export function checkItems({ root, changed }) {
+  const hit = new Set(changed)
+  if (!hit.size) return []
+
+  let allowances = {}
+  try { allowances = JSON.parse(readFileSync(join(root, 'scripts', 'ci-allowances.json'), 'utf8')).structure ?? {} } catch { /* none */ }
+
+  const out  = []
+  const runs = findApps(root)
+    .filter(app => [...hit].some(f => join(root, f).startsWith(app + sep)))
+    .map(app => ({ app, scope: 'app', allow: { ...readBaseline(app).allow, ...allowances[rel(root, app) || '.'] } }))
+  if (existsSync(join(root, 'packages'))) runs.push({ app: root, scope: 'repo', allow: allowances['.'] ?? {} })
+
+  for (const { app, scope, allow } of runs) {
+    for (const f of runChecks({ root: app, scope, allow }).findings) {
+      const file = rel(root, f.file)
+      if (f.severity !== 'error' || !hit.has(file)) continue
+      out.push({ check: 'fli-check', subject: `${f.rule}:${file}`, ok: false, message: `${file}${f.line ? `:${f.line}` : ''} ${f.rule}: ${f.message}` })
+    }
+  }
+  return out
+}
+
+/**
+ * A changed `.gitignore` is graded by what its new rules hide: `git status`
+ * stops listing a file the moment a rule matches it, so a rule written to hide
+ * a build directory hides an untracked source file just as quietly.
+ */
+export function ignoreHides({ root, changed }) {
+  const git = argv => {
+    try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
+    catch { return '' }
+  }
+  const out = []
+  for (const file of changed.filter(f => basename(f) === '.gitignore')) {
+    const diff    = git(['diff', '--no-color', '-U0', 'HEAD', '--', file])
+    const text    = diff || (isFile(join(root, file)) ? readFileSync(join(root, file), 'utf8').split('\n').map(l => `+${l}`).join('\n') : '')
+    const added   = new Set(text.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++')).map(l => l.slice(1).trim())
+      .filter(l => l && !l.startsWith('#') && !l.startsWith('!')))
+    if (!added.size) continue
+
+    const ignored = git(['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z', '--', dirname(file)]).split('\0').filter(Boolean)
+    if (!ignored.length) continue
+
+    const hidden = new Map()
+    let verdict = ''
+    try {
+      verdict = execFileSync('git', ['-C', root, 'check-ignore', '-v', '-z', '--stdin'], {
+        encoding: 'utf8', input: ignored.join('\0'), maxBuffer: 64 * 1024 * 1024, stdio: ['pipe', 'pipe', 'ignore'],
+      })
+    } catch { continue }
+    const cells = verdict.split('\0')
+    for (let i = 0; i + 3 < cells.length; i += 4) {
+      const [source, , pattern, path] = cells.slice(i, i + 4)
+      if (source !== file || !added.has(pattern)) continue
+      hidden.set(pattern, [...(hidden.get(pattern) ?? []), path])
+    }
+    for (const [pattern, paths] of hidden) {
+      const shown = paths.slice(0, 5).join(', ') + (paths.length > 5 ? `, and ${paths.length - 5} more` : '')
+      out.push({ check: 'gitignore', subject: `${file}:${pattern}`, ok: false,
+        message: `${file} \`${pattern}\` now hides ${shown} — compare git status --porcelain before it, and keep the file or say why it stays hidden` })
+    }
+  }
+  return out
+}
+
 /** The engines that already exist, asked about this tree. */
 export async function engineItems(root) {
   const out = []
@@ -157,6 +228,8 @@ export async function runDone(root, { changes = null, engines = true } = {}) {
   const items = [
     ...layoutNamed({ root, ...c }),
     ...moduleNamed({ root, ...c }),
+    ...ignoreHides({ root, ...c }),
+    ...(engines ? checkItems({ root, ...c }) : []),
     ...(engines ? await engineItems(root) : []),
   ]
 
@@ -182,18 +255,23 @@ export function itemKey(item) { return `${item.check}:${item.subject}` }
 // HEAD last moved. An item it was shown and left is a choice, and another
 // session's edits in a shared tree would otherwise block every stop forever.
 // Nothing is run at all while the tree is exactly as it was last time.
+//
+// With `edited` — the files the session's own transcript shows it editing — an
+// item blocks only when it is that session's: its subject is a file it edited,
+// or a derived file (a snapshot) in a package it edited. The tree is shared, so
+// without this a session was held on another session's new files.
 
 /**
  * `{ run, block, reason, state }`. `run: false` means the tree has not moved
  * and the report need not be built; call again with `report` when it is true.
  */
-export function stopVerdict({ state = {}, head, fingerprint, report = null }) {
+export function stopVerdict({ state = {}, head, fingerprint, report = null, edited = null }) {
   const fresh = state.head === head ? state : { head, shown: [] }
   if (fresh.fingerprint === fingerprint) return { run: false, block: false, reason: null, state: fresh }
   if (!report) return { run: true, block: false, reason: null, state: fresh }
 
   const shown   = new Set(fresh.shown ?? [])
-  const pending = report.items.filter(i => !i.ok)
+  const pending = report.items.filter(i => !i.ok && (edited === null || ownedBy(i, edited)))
   const unseen  = pending.filter(i => !shown.has(itemKey(i)))
   const next    = { head, fingerprint, shown: [...new Set([...shown, ...pending.map(itemKey)])] }
 
@@ -207,6 +285,43 @@ export function stopVerdict({ state = {}, head, fingerprint, report = null }) {
       'Clear the ones this change caused before finishing. One that belongs to other work in the tree, or that should stay, needs only a sentence saying so — this is not repeated for an item already shown.',
     ].join('\n'),
   }
+}
+
+// A snapshot goes stale from an edit anywhere in its package, so its subject is
+// never the file that was edited.
+const DERIVED = new Set(['snapshots'])
+
+const unitOf = file => String(file).match(/^(packages\/[^/]+|example)\//)?.[1] ?? null
+
+function ownedBy(item, edited) {
+  const unit = DERIVED.has(item.check) ? unitOf(item.subject) : null
+  return edited.some(f => f === item.subject || (unit !== null && unitOf(f) === unit))
+}
+
+const EDITS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
+
+/**
+ * The files under `root`, repo-relative, that a session's transcript (its
+ * JSONL text) shows it editing. A Read names a `file_path` too, so only the
+ * editing tools count; a line that does not parse is skipped. An edit made
+ * through Bash, or by a subagent in its own transcript, is not seen.
+ */
+export function editedIn(transcript, root) {
+  const prefix = resolve(root) + sep
+  const out    = new Set()
+  for (const line of String(transcript ?? '').split('\n')) {
+    if (!line.includes('"tool_use"')) continue
+    let entry
+    try { entry = JSON.parse(line) } catch { continue }
+    const content = entry?.message?.content
+    if (!Array.isArray(content)) continue
+    for (const c of content) {
+      if (c?.type !== 'tool_use' || !EDITS.has(c.name)) continue
+      const path = c.input?.file_path ?? c.input?.notebook_path
+      if (typeof path === 'string' && path.startsWith(prefix)) out.add(path.slice(prefix.length))
+    }
+  }
+  return [...out].sort()
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

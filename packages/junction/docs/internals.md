@@ -94,7 +94,10 @@ and not here. Read the section for a path before changing code under it.
   refusals answer differently and that is deliberate**: an oversize meta is a
   fixed property of the client's code, so it is told; a rate refusal is
   transient, so it is dropped in silence — an error frame per refused update is
-  the same egress the cap exists to remove.
+  the same egress the cap exists to remove. The validator is handed `{ channel,
+  conn, was }` beside the meta, because a meta judged alone cannot be stamped
+  with who sent it (`FJS-1744`) and a position cannot be told from a jump
+  without the one it replaces.
 - **Every HTTP bound stops at the upgrade, so the socket needed its own.** The
   body cap, the DDoS gate and the rate limiter all cover `fetch` and none of
   them covers a frame — which made the transport junction PREFERS the cheapest

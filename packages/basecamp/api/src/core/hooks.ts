@@ -403,8 +403,9 @@ export function internalOnly(): Hook {
 //
 // It reads `isSystemAdmin` off the session, which core/session-auth.ts puts
 // there from the User column of the same name. That name is the one
-// sessionGateLevel() grades SYSADMIN(7) on, so this hook and the @@gate that
-// eventually replaces it are asking the same question of the same field.
+// sessionGateLevel() grades SYSADMIN(7) on, so this hook and the @@gate are
+// asking the same question of the same field. The hook stays because a gate
+// answers 403: dropping it tells a workspace member the surface exists.
 //
 // 404, not 403: the hub is not a screen a workspace member is being refused,
 // it is a surface they have no business knowing exists. Same reason the

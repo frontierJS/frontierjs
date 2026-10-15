@@ -1,14 +1,19 @@
 <script>
-  // Workers.mesa — the Claude sessions editing on this machine, each a figure
+  // Workers.mesa — the Claude sessions working on this machine, each a figure
   // at the bench of the package it last edited (`IDEAS/haven.md` Phase 11),
   // read from `#workers` and drawn on this screen only — never sent, as the
   // tavern's runner is never sent. Two or more at one bench are about to edit
   // one package in a shared tree, so that bench says how many, and since a
   // figure here is drawn whatever the fog, it is seen from the door.
   //
-  // Standing beside a worker reads it: the session, the file it last touched
-  // and how long ago. No key does this, because the line input holds the
-  // keys and a letter pressed beside a worker would be typed into the line.
+  // A session stopped on a permission prompt or a question is `?`, and its
+  // bench says so: it is waiting on you, and nothing else on this machine
+  // shows that until you tab to it. A session that has stopped is `✓`.
+  //
+  // Standing beside a worker reads it: what it asks, else its last words,
+  // else the file it last touched, and how long ago. No key does this,
+  // because the line input holds the keys and a letter pressed beside a
+  // worker would be typed into the line.
   //
   // A route places this (`routes/workshop.mesa`) and never the scene file:
   // the scene's picture is pinned, and the directory differs per machine.
@@ -25,8 +30,17 @@
   let view = scene.view
   let me   = scene.seer
   $.onDestroy(scene.subscribe(() => { view = scene.view; me = scene.seer }))
-  var poll = setInterval(() => { workers = readWorkers(); now = Date.now() }, POLL_MS)
-  $.onDestroy(() => clearInterval(poll))
+  $.onDestroy(scene.task('workers', (ms) => { workers = readWorkers({ now: ms }); now = ms }, { every: POLL_MS }))
+
+  const glyph = (w) => (w.asking ? '?' : w.said ? '✓' : '✻')
+
+  /** What standing beside a worker reads. */
+  function reading(w, now) {
+    const s = w.session.slice(0, 4)
+    if (w.asking) return `${s} asks: ${w.asking.why} · ${ago(now - w.asking.at)}`
+    if (w.said) return `${s} done: ${w.said.text} · ${ago(now - w.said.at)}`
+    return w.file ? `${s} ${w.file} · ${ago(now - w.at)}` : `${s} working · ${ago(now - w.seen)}`
+  }
 
   const ago = (ms) => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))}s ago` : `${Math.round(ms / 60_000)}m ago`)
 
@@ -37,20 +51,24 @@
     for (const w of ws) if (benches.has(w.bench)) byBench.set(w.bench, [...(byBench.get(w.bench) ?? []), w])
     const out = []
     const figures = []
-    for (const [name, here] of byBench) {
+    for (const [name, all] of byBench) {
       const b = benches.get(name)
+      // One asking is seated before the rest, so a full bench never hides it.
+      const here = [...all.filter((w) => w.asking), ...all.filter((w) => !w.asking)]
       here.slice(0, SEATS).forEach((w, i) => {
-        const f = { w, x: b.x + 2 + 2 * i, y: b.y + 1 }
+        const f = { w, ...b.spot(`slot-${i}`) }
         figures.push(f)
-        out.push({ key: `w:${w.session}`, x: f.x, y: f.y, text: '✻', layer: 11 })
+        out.push({ key: `w:${w.session}`, x: f.x, y: f.y, text: glyph(w), layer: 11 })
       })
-      if (here.length > 1) {
-        out.push({ key: `n:${name}`, x: b.x + 2 + 2 * Math.min(here.length, SEATS), y: b.y + 1, text: `(! ${here.length} here)`, layer: 12, surface: true })
+      const asks = here.filter((w) => w.asking).length
+      const says = [here.length > 1 && `! ${here.length} here`, asks && `? ${asks} waiting on you`].filter(Boolean)
+      if (says.length) {
+        out.push({ key: `n:${name}`, ...b.spot(`slot-${Math.min(here.length, SEATS)}`), text: `(${says.join(' · ')})`, layer: 12, surface: true })
       }
     }
     const near = me && figures.find((f) => Math.abs(f.x - me.x) <= 1 && Math.abs(f.y - me.y) <= 1)
     if (near) {
-      const text = `${near.w.session.slice(0, 4)} ${near.w.file} · ${ago(now - near.w.at)}`
+      const text = reading(near.w, now)
       out.push({ key: 'read', x: near.x, y: near.y + 1, text, layer: 12, surface: true })
     }
     // A figure off the view is not drawn; a line is kept inside it, as a bubble is.

@@ -32,7 +32,7 @@
 
 import { createService, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import { KINDS, deliverToChannel, testMessage } from '../../core/delivery.ts'
@@ -266,9 +266,7 @@ export function createChannelsService(app: BasecampApp) {
         // Every write is admin/owner, the same bar as the secrets service: a
         // channel holds a credential that posts as the workspace, and being
         // able to add one is being able to redirect where alerts land.
-        create: [requireWorkspaceRole(app, 'admin', 'owner'), stampChannel],
-        patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
+        create: [stampChannel],
       },
     },
   })

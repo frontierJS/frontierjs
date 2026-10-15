@@ -255,7 +255,7 @@ export function createInvitationsService(app: BasecampApp) {
      */
     async remove() {
       const row = await getScoped('invitation', 'Invitation')
-      await sys().invitation.delete({ where: { id: row.id } })
+      await $.db.invitation.delete({ where: { id: row.id } })
       return row
     },
 
@@ -430,8 +430,10 @@ export function createInvitationsService(app: BasecampApp) {
         // role — and it is here because an invitation is the second way to hand
         // out standing: an admin inviting an address they own as `owner` signs
         // in as that account and holds level 6 (`FJS-410`).
+        // The one CRUD verb that keeps a role hook: it writes through `sys()`,
+        // so the model's @@gate never grades it, and a `gate:` on a CRUD verb
+        // of a model-backed service is refused at construction.
         create: [requireWorkspaceRole(app, 'admin', 'owner'), stampInvitation, refuseGrantAboveOwn()],
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },
   })

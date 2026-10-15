@@ -218,6 +218,51 @@ export interface NetworkDetach {
 }
 
 /**
+ * What an outpost's `volumes.report` sends: the machine and the whole set of
+ * volumes it holds, each entry read leniently by the method.
+ */
+export interface VolumeReport {
+  server_id: string
+  volumes: unknown[]
+}
+
+/**
+ * What `domains.uploadCert` accepts. The material is stored as a Secret by the
+ * method; the shape, including that `expiresAt` is a date, is the schema's.
+ */
+export interface DomainCertUpload {
+  certPem: string
+  keyPem: string
+  expiresAt: string
+  issuedAt?: string | null
+  kind?: string | null
+}
+
+/**
+ * What `notification-preferences.save` accepts. That at least one transport is
+ * sent is the method's: a type cannot say "one of these two".
+ */
+export interface NotificationPreferenceSave {
+  kind: NotificationKind
+  email?: boolean | null
+  inApp?: boolean | null
+}
+
+/**
+ * What `notification-preferences.reset` accepts; no kind resets every kind.
+ */
+export interface NotificationPreferenceReset {
+  kind?: NotificationKind | null
+}
+
+/**
+ * What `workspaces.transferOwnership` accepts: the member who becomes owner.
+ */
+export interface WorkspaceTransfer {
+  userId: string
+}
+
+/**
  * What `apps.fromBlueprint`, `apps.place` and `apps.unplace` accept.
  */
 export interface AppFromBlueprint {

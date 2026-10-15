@@ -224,22 +224,47 @@ ${idFieldLine(o.res)}
   // omitted is every column this table does NOT show, each with the reason, so
   // a column added to the schema that does not appear here is answerable
   // without reading this file.
-  const { columns: cols, omitted } = ${o.res}.columns(${only})
+  //
+  // Asked AGAIN once declaredFields() has answered: on an @@extensible model
+  // the custom fields one workspace declared are not in the schema, so the
+  // first ask names none of them and a single ask at setup would never show
+  // one. A model that is not extensible resolves it at once with no request.
+  let cols    = []
+  let omitted = []
+  let columns = []
+  let filters = []
+  let search  = null
 
-  // A header is sortable where the SCHEMA says the column can be ordered by —
-  // x-sortable is emitted only as an exception, so absent means yes and a
-  // string says why not. Offering one the Data boundary refuses is a header
-  // that throws on click, which is the one thing a generated table must not do.
-  const columns = [
-    ...cols,
-    { name: '_actions', label: 'Actions', hideLabel: true },
-  ]
+  function layout() {
+    const ranked = ${o.res}.columns(${only})
+    cols    = ranked.columns
+    omitted = ranked.omitted
 
-  // Which columns a bar may offer, with which question, and whether the model
-  // answers a search at all -- a search box is drawn only where the schema
-  // declares the full-text index, since below one the Data boundary refuses.
-  // Same ranking as the table, so the filters are over the columns you can see.
-  const { filters, search } = ${o.res}.filters(${only})
+    // A header is sortable where the SCHEMA says the column can be ordered by —
+    // x-sortable is emitted only as an exception, so absent means yes and a
+    // string says why not. Offering one the Data boundary refuses is a header
+    // that throws on click, which is the one thing a generated table must not do.
+    columns = [
+      ...cols,
+      { name: '_actions', label: 'Actions', hideLabel: true },
+    ]
+
+    // Which columns a bar may offer, with which question, and whether the model
+    // answers a search at all -- a search box is drawn only where the schema
+    // declares the full-text index, since below one the Data boundary refuses.
+    // Same ranking as the table, so the filters are over the columns you can see.
+    const asked = ${o.res}.filters(${only})
+    filters = asked.filters
+    search  = asked.search
+  }
+
+  layout()
+  ${o.res}.declaredFields().then(layout, () => {})
+
+  // A declared custom field is named for a PATH into its Json column
+  // (fields.severity), which is no key of the row, so a cell is read by walking
+  // the path -- a flat record[name] is undefined for it.
+  const cellOf = (record, name) => name.split('.').reduce((v, k) => v?.[k], record)
 
   // ── The list ─────────────────────────────────────────────────────────────
   //
@@ -277,7 +302,7 @@ ${moveScript(o, 'error')}${gateState}${removeFn}${SC}
        striped hover emptyText="Nothing here yet." onsort={list.sort}>
   {#snippet row(record)}
     <tr>
-      {#each cols as c}<td><Cell value={record[c.name]} column={c} {record} /></td>{/each}
+      {#each cols as c}<td><Cell value={cellOf(record, c.name)} column={c} {record} /></td>{/each}
       <td class="cluster">
         <Button variant="link" href={'${o.basePath}' + record[idField] + '/'}>Open</Button>
         ${moveButtons('        ', 'record', 'moving === record[idField]')}${rowDelete}
@@ -468,7 +493,17 @@ ${idFieldLine(o.res)}${watch}
   // version. A form shows what is WRITABLE, so all of that is missing from one
   // by rule — this is the surface controlFor names when it refuses a value for
   // being the server's.
-  const { columns: facts } = ${o.res}.summary()
+  //
+  // Asked AGAIN once declaredFields() has answered: a custom field one
+  // workspace declared on an @@extensible model is in no schema, so the first
+  // ask names none. Its column is a PATH into the Json column (fields.key),
+  // which no flat record[name] reaches, so a value is read by walking it.
+  let facts = []
+  const showFacts = () => { facts = ${o.res}.summary().columns }
+  showFacts()
+  ${o.res}.declaredFields().then(showFacts, () => {})
+
+  const factOf = (rec, name) => name.split('.').reduce((v, k) => v?.[k], rec)
 ${moveScript(o, 'failed')}${kids.script}
   async function remove() {
     failed   = null
@@ -497,7 +532,7 @@ ${o.gate ? gateNotice(o.res, 'patch') : ''}{#if record && facts.length}
     {#each facts as c}
       <div>
         <dt>{c.label}</dt>
-        <dd><Cell value={record[c.name]} column={c} {record} /></dd>
+        <dd><Cell value={factOf(record, c.name)} column={c} {record} /></dd>
       </div>
     {/each}
   </dl>

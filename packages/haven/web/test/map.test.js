@@ -51,13 +51,22 @@ test('the square is the middle: the woods west of it, the road east, the docks u
   expect(docks.x + Math.floor(back.x / SCALE.x)).toBe(square.x + Math.floor(here.x / SCALE.x))
 })
 
-test('a house has no side: the tavern and the workshop stand in a row under every street, apart', () => {
+test('a hidden door is not on the map: the tavern keeps its one door, and the rug glyph stays where the hole is', () => {
+  const { stage } = stages.get('tavern')
+  const hole = stage.doors.find((d) => d.hidden)
+  const snap = snapOf('tavern')
+  expect(snap.doors.map((d) => d.to)).toEqual(['/'])
+  expect(snap.rows[Math.floor(hole.y / SCALE.y)][Math.floor(hole.x / SCALE.x)]).not.toBe('n')
+})
+
+test('a house has no side: the tavern, the workshop and the cellar stand in a row under every street, apart', () => {
   const layout = layoutOf(ALL)
   const streets = ['square', 'woods', 'road', 'docks'].map((s) => tileOf(layout, s))
   const bottom = Math.max(...streets.map((t) => t.y + t.h))
-  const houses = ['tavern', 'workshop'].map((s) => tileOf(layout, s))
+  const houses = ['tavern', 'workshop', 'cellar'].map((s) => tileOf(layout, s))
   for (const h of houses) expect(h.y).toBe(bottom)
-  expect(houses[0].x + houses[0].w).toBeLessThan(houses[1].x)
+  const row = [...houses].sort((a, b) => a.x - b.x)
+  for (let i = 1; i < row.length; i++) expect(row[i - 1].x + row[i - 1].w).toBeLessThan(row[i].x)
   expect(layout.tiles.length).toBe(SCENES.length)
 })
 

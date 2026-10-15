@@ -20,7 +20,7 @@
 
 import { createService, BadRequest, Forbidden, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, workspaceChannel, getPagination, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor } from '../../core/resource.ts'
 import { scopeVocabulary, WHOLE_KEY } from './scopes.ts'
 import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
@@ -84,23 +84,26 @@ export function createApiKeysService(app: BasecampApp) {
   }
 
   /**
-   * before/create: everything the client did not send — including the token.
-   *
-   * The mint is HERE rather than in create() for a reason that is not
-   * stylistic: `tokenHint` and `credentialId` are columns derived from the
-   * token, `tokenHint` is NOT NULL, and autoValidate runs after user hooks and
-   * before the method body. Minting in create() means every request 400s with
-   * "tokenHint is required" — a field the caller was never meant to send,
-   * about a value that does not exist yet.
-   *
-   * So this hook validates first, mints second, and create() is left with one
-   * insert and the job of not leaving a credential behind if it fails.
-   *
-   * `expiresIn` is the other half: a preset name, not a column, deleted here
-   * because autoValidate would strip it anyway and the reader should see it go
-   * on purpose. Ruled in DECISIONS.md; the channels service's `secret` is the
-   * same shape.
+   * before/create: shapes what the model validates. `expiresIn` is a preset
+   * name, not a column, and becomes `expiresAt`; an absent `userId` is the
+   * caller. Nothing here spends anything: the mint is in create(), after
+   * autoValidate has graded the payload, because a credential minted ahead of
+   * a refusal is one that has to be revoked again.
    */
+  function shapeKey(): void {
+    const data = $.data as Record<string, unknown> | undefined
+    if (!data) return
+    const preset = typeof data.expiresIn === 'string' ? data.expiresIn : 'never'
+    delete data.expiresIn
+    if (!(preset in EXPIRY))
+      throw new BadRequest(`expiresIn must be one of ${EXPIRY_PRESETS.join(', ')}`)
+    const days = EXPIRY[preset]
+    data.expiresAt = days === null
+      ? null
+      : new Date(Date.now() + days * 86_400_000).toISOString()
+    data.userId ??= actor()
+  }
+
   /**
    * A key may be issued to a BOT in this workspace, and to nothing else.
    *
@@ -143,26 +146,15 @@ export function createApiKeysService(app: BasecampApp) {
     return userId
   }
 
-  async function stampKey(): Promise<void> {
-    const data = $.data as Record<string, unknown>
-    if (!data) return
-
-    const preset = typeof data.expiresIn === 'string' ? data.expiresIn : 'never'
-    delete data.expiresIn
-    if (!(preset in EXPIRY))
-      throw new BadRequest(`expiresIn must be one of ${EXPIRY_PRESETS.join(', ')}`)
-    const days = EXPIRY[preset]
-    data.expiresAt = days === null
-      ? null
-      : new Date(Date.now() + days * 86_400_000).toISOString()
-
-    data.createdBy   = actor()
+  // What the model cannot say — which scopes exist, whose key it is, a name
+  // taken — is checked here, ahead of the mint.
+  async function mintKey(input: Record<string, unknown>): Promise<Record<string, unknown>> {
     // A key is never more than its owner. The default owner is the caller;
     // naming somebody else is allowed for exactly one kind of somebody else,
     // and assertBotOwner is where that rule lives.
-    data.userId      = data.userId ? await assertBotOwner(data.userId as string) : actor()
+    const userId = await assertBotOwner(input.userId as string)
 
-    const scopes = (data.scopes ?? []) as string[]
+    const scopes = (input.scopes ?? []) as string[]
     if (!Array.isArray(scopes) || scopes.length === 0)
       throw new BadRequest('scopes is required — a key with no scopes can do nothing')
 
@@ -174,28 +166,33 @@ export function createApiKeysService(app: BasecampApp) {
     // `admin` beside a scope would read as narrowing and grant everything.
     if (scopes.includes(WHOLE_KEY) && scopes.length > 1)
       throw new BadRequest(`'${WHOLE_KEY}' is every scope, so it is issued alone`)
-    data.scopes = scopes.includes(WHOLE_KEY) ? [] : scopes
+    const granted = scopes.includes(WHOLE_KEY) ? [] : scopes
 
-    if (typeof data.name !== 'string' || !data.name.trim())
-      throw new BadRequest('name is required')
+    const name = input.name as string
 
     // Checked before the mint, not after: the unique is [workspaceId, name],
     // and a name collision found by SQLite would already have cost a real
     // credential that nothing then points at.
-    if (await db().apiKey.exists({ where: { workspaceId: ws(), name: data.name } }))
-      throw new BadRequest(`An API key named '${data.name}' already exists in this workspace`)
+    if (await db().apiKey.exists({ where: { workspaceId: ws(), name } }))
+      throw new BadRequest(`An API key named '${name}' already exists in this workspace`)
 
     // auth mints and hashes. Nothing in this app stores the plaintext; it
     // travels on $.locals to the response and stops there.
-    const { key, id } = await authOrRefuse().createApiKey(data.userId as string, {
-      name:      data.name,
-      scopes:    data.scopes as string[],
-      expiresAt: data.expiresAt ? new Date(data.expiresAt as string) : undefined,
+    const { key, id } = await authOrRefuse().createApiKey(userId, {
+      name,
+      scopes:    granted,
+      expiresAt: input.expiresAt ? new Date(input.expiresAt as string) : undefined,
     })
 
     $.locals.mintedToken = key
-    data.credentialId      = id
-    data.tokenHint         = maskToken(key)
+    return {
+      name, userId,
+      expiresAt:    input.expiresAt ?? null,
+      scopes:       granted,
+      createdBy:    actor(),
+      credentialId: id,
+      tokenHint:    maskToken(key),
+    }
   }
 
   /**
@@ -252,13 +249,13 @@ export function createApiKeysService(app: BasecampApp) {
 
     // ── create ────────────────────────────────────────────────────────
     // The only moment the plaintext token exists outside the caller's hands.
-    // Everything that decides what the key IS happened in stampKey; this is
+    // Everything that decides what the key IS happens in mintKey; this is
     // the insert, plus the one thing an insert can still get wrong.
     async create() {
-      const data = $.data as Record<string, unknown>
+      const data = await mintKey($.data as Record<string, unknown>)
 
       try {
-        // `system:` names the two columns the caller may not send — `stampKey`
+        // `system:` names the two columns the caller may not send — `mintKey`
         // derived them from a token that did not exist when the request was
         // made, and `@system` refuses a write naming one BY NAME. Stating them
         // here keeps the gate, the row policies and the audit actor, where
@@ -359,9 +356,7 @@ export function createApiKeysService(app: BasecampApp) {
         find:   [captureStatus],
         // Issuing a token that carries your standing is an admin act. A
         // developer who could mint one could hand out their own access.
-        create: [requireWorkspaceRole(app, 'admin', 'owner'), stampKey],
-        patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
+        create: [shapeKey],
       },
     },
   })

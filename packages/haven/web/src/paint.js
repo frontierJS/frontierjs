@@ -13,13 +13,21 @@
 // changes: the editor asking for the whole stage, or a piece mounted past
 // the edge of a stage smaller than the view.
 //
-// A stage with a cycling palette entry or a pacer is redrawn on the shortest
-// step, and on any claim changing — a piece moved. The clock is the wall's
-// rather than the mount's, so two terminals in one room draw the cat on the
-// same cell. The timer is unref'd, so a `--frame` render exits when its work
-// is done rather than when the water stops.
+// The drawing is a paint task on the stage's one clock (`stage.js`): run on
+// any change — a piece moved — and on the look's shortest step. The clock is
+// the wall's rather than the mount's, so two terminals in one room draw the
+// cat on the same cell.
+//
+// A cell of a piece that is `overhead` (a canopy, a lamp's head) is drawn in a
+// second buffer above the figures, so a figure walks behind it. That buffer
+// sits between the figures' layer (10, 11) and the speech bubbles' (12),
+// which a canopy must not hide.
 import { FrameBufferRenderable, RGBA } from '@opentui/core'
 import { INK as INK_HEX, pacerAt } from './stage.js'
+import { at } from './cell.js'
+
+/** The layer of what is overhead: over a figure, under a bubble. */
+const OVERHEAD = 11.5
 
 const CLEAR = RGBA.fromValues(0, 0, 0, 0)
 const INK   = RGBA.fromHex(INK_HEX)
@@ -33,28 +41,31 @@ const rgba = (hex) => {
 }
 
 export const paint = (stage) => (box) => {
-  let fb = null
+  let fbs = null   // [the art, what is overhead]
   let size = { w: 0, h: 0 }
-  const buffer = (w, h) => {
-    if (fb && size.w === w && size.h === h) return fb
-    if (fb) { box.remove(fb); fb.destroy() }
+  const release = () => { for (const f of fbs ?? []) { box.remove(f); f.destroy() } }
+  const buffers = (w, h) => {
+    if (fbs && size.w === w && size.h === h) return fbs
+    release()
     size = { w, h }
-    fb = new FrameBufferRenderable(box.ctx, { width: w, height: h, respectAlpha: true, flexShrink: 0 })
-    box.add(fb)
-    return fb
+    fbs = [0, 1].map(() => new FrameBufferRenderable(box.ctx, { width: w, height: h, respectAlpha: true, flexShrink: 0 }))
+    at(0, 0, OVERHEAD)(fbs[1])
+    fbs.forEach((f) => box.add(f))
+    return fbs
   }
 
-  const draw = () => {
-    const ms = Date.now()
+  const draw = (ms) => {
     const v  = stage.view
     if (!v.w || !v.h) return
-    const buf = buffer(v.w, v.h).frameBuffer
+    const [art, top] = buffers(v.w, v.h)
+    const buf = art.frameBuffer
     buf.clear(CLEAR)
+    top.frameBuffer.clear(CLEAR)
     for (let row = 0; row < v.h; row++) {
       for (let col = 0; col < v.w; col++) {
-        const { ch, fg, bg } = stage.look(v.x + col, v.y + row, ms)
+        const { ch, fg, bg, overhead } = stage.look(v.x + col, v.y + row, ms)
         if (ch === ' ' && !bg) continue
-        buf.setCell(col, row, ch, rgba(fg) ?? INK, rgba(bg) ?? CLEAR)
+        ;(overhead ? top.frameBuffer : buf).setCell(col, row, ch, rgba(fg) ?? INK, rgba(bg) ?? CLEAR)
       }
     }
     for (const p of stage.pacers) {
@@ -63,21 +74,19 @@ export const paint = (stage) => (box) => {
       if (row < 0 || row >= v.h) continue
       ;[...text].forEach((ch, i) => {
         const col = x + i - v.x
-        if (ch !== ' ' && col >= 0 && col < v.w && stage.light(x + i, y) === 'lit') buf.setCell(col, row, ch, rgba(p.fg) ?? INK, CLEAR)
+        if (ch !== ' ' && col >= 0 && col < v.w && stage.light(x + i, y) === 'lit') buf.setCell(col, row, ch, rgba(stage.tint(p.fg, x + i, y, ms)) ?? INK, CLEAR)
       })
     }
-    fb.requestRender()
+    art.requestRender()
+    top.requestRender()
   }
-  draw()
-
-  const tick = stage.tickOf()
-  const timer = tick ? setInterval(draw, tick) : null
-  timer?.unref?.()
-  const unsubscribe = stage.subscribe(draw)
+  // A paint task on the stage's clock (`stage.js`): run on any change and on
+  // the look's next tick, at the frame's own ms. Keyed by the box, since the
+  // editor paints one stage into more than one.
+  const stop = stage.task(box, draw, { phase: 'paint' })
 
   return () => {
-    unsubscribe()
-    if (timer) clearInterval(timer)
-    if (fb) { box.remove(fb); fb.destroy() }
+    stop()
+    release()
   }
 }

@@ -25,7 +25,7 @@
 // checkable against an SDK rather than merely described.
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -437,9 +437,7 @@ export function createFlagsService(app: BasecampApp) {
         // Authoring a flag is a developer act — it is part of shipping the code
         // that reads it, and holding it at admin would put the person who wrote
         // the feature behind a ticket.
-        create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), stampFlag],
-        patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
+        create: [stampFlag],
         // Overriding is the same bar as authoring, and `FlagOverride`'s gate
         // says so for the caller's client.
       },

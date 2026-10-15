@@ -1,0 +1,75 @@
+<script>
+  // History.mesa — PageUp opens the room's history over the art and pages back
+  // through it, PageDown pages forward and closes it past the newest line, as
+  // a terminal's own scrollback does; Esc closes it. The pane reads the same
+  // store the bubbles do, newest first, and grows it by a page when the window
+  // reaches the oldest line loaded. The keys are verbs on `$context.commands`
+  // and the open pane is its mode, so the shell does not leave the route on
+  // the Esc and the terminal's page does not scroll under the pane.
+  import { useStore } from '@frontierjs/sierra/resource'
+  import { messages } from '@/resources/Message.mesa'
+  import { at } from '#cell'
+
+  export let room
+  export let nicks
+  export let box
+  // Asks the scene for the nicks of the members who said these lines.
+  export let askNicks
+
+  var verbs = $context.commands
+  const ROWS = box.h - 1
+
+  const { get: lines, unsubscribe } = useStore(messages.store)
+  $.onDestroy(unsubscribe)
+
+  let open = false
+  let back = 0
+  var close = null
+  $: { if (open) askNicks(lines().map((l) => l.memberId)) }
+
+  function show() {
+    close = verbs.open({ name: 'history', closed: () => { open = false; close = null } })
+    open = true
+    back = 0
+  }
+
+  /** The pane's rows: a window of ROWS lines ending `b` lines before the newest, oldest first. */
+  function history(said, b, names) {
+    const all = [...(said ?? [])].reverse()
+    const end = Math.max(0, all.length - b)
+    return all.slice(Math.max(0, end - ROWS), end).map((l) => ({
+      key:  l.id,
+      text: `${names[l.memberId] ?? '…'}${l.toId != null ? ' (whisper)' : ''}: ${l.body}`.slice(0, box.w),
+    }))
+  }
+
+  async function turn(older) {
+    if (!older) {
+      if (back === 0) close?.()
+      else back = Math.max(0, back - ROWS)
+      return
+    }
+    if (!open) { show(); return }
+    const want = back + ROWS
+    if (want + ROWS > lines().length && messages.hasMore()) await messages.more()
+    back = Math.min(want, Math.max(0, lines().length - ROWS))
+  }
+
+  $.onDestroy(verbs.add({ key: 'PageUp',   run: ({ event }) => { event?.preventDefault(); turn(true) } }))
+  $.onDestroy(verbs.add({ key: 'PageDown', run: ({ event }) => { event?.preventDefault(); turn(false) } }))
+  $.onDestroy(() => close?.())
+</script>
+
+{#if open}
+  <div class="surface pane" {@attach at(box.x, box.y, 13, [box.w, box.h])}>
+    {#each history(lines(), back, nicks) as l (l.key)}
+      <p>{l.text}</p>
+    {/each}
+    <p>— {room.name} · {back ? `${back} newer below` : 'the newest'} · PageUp older · PageDown newer · Esc closes —</p>
+  </div>
+{/if}
+
+<style>
+  /* A browser's paragraph carries a margin; a pane's row is one cell tall. */
+  .pane p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
+</style>

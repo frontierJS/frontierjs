@@ -1,0 +1,112 @@
+<script>
+  // Taskmaster.mesa — the man at the desk by the workshop's door
+  // (`pieces/workshop.js`). Walking up to him, he reads `fli next` and offers
+  // the package with the most severe fixable issue: "litestone has the most
+  // severe issue — FJS-2084 (S2). Work on it?" `/yes` starts the fix loop on
+  // that package (`#taskmaster`), `/no` hears the next package, and the
+  // loop's own sessions then stand at their benches through `Workers.mesa`.
+  //
+  // The answer is a command because the line input holds every letter, as the
+  // map's `/map` found. A verb is added to `$context.commands`, which
+  // `Scene.mesa` owns, with his desk as its reach: `/yes` and `/no` are in
+  // Tab, the hints and the help only within `REACH` of him, and out of it the
+  // registry answers that nobody is here. `/y` and `/n` are the same answers,
+  // left out of Tab and the hints.
+  //
+  // Drawn on this screen only and never sent, as the runner and the workers
+  // are. A route places him (`routes/workshop.mesa`), never the scene file: a
+  // scene's picture is pinned, and what he reads and starts is this
+  // machine's. Where `#taskmaster` finds no checkout there is no one at the
+  // desk.
+  import { at } from '#cell'
+  import { checkout, proposals, running, startLoop } from '#taskmaster'
+  import { deskPiece } from '@/pieces/workshop.js'
+
+  const scene = $context.scene
+  var verbs = $context.commands
+  const root = checkout()
+  const POLL_MS = 1000
+  // How near counts as walking up to him.
+  const REACH = 2
+
+  let offers = null   // null until `fli next` answers, then the packages best first
+  let pick   = 0      // the one he is asking about; past the end, he has no more
+  let failed = ''
+  let loop   = running()
+  let view   = scene.view
+  let me     = scene.seer
+  $.onDestroy(scene.subscribe(() => { view = scene.view; me = scene.seer }))
+
+  const ctl = new AbortController()
+  $.onDestroy(() => ctl.abort())
+
+  function ask() {
+    offers = null
+    failed = ''
+    pick = 0
+    proposals({ root, signal: ctl.signal })
+      .then((o) => { offers = o })
+      .catch((e) => { if (!ctl.signal.aborted) failed = e.message })
+  }
+  if (root) ask()
+
+  // A loop that ended changed the register, so he reads it again.
+  $.onDestroy(scene.task('taskmaster', () => {
+    const now = running()
+    if (loop && !now) ask()
+    loop = now
+  }, { every: POLL_MS }))
+
+  const desk   = scene.placed(deskPiece)[0]
+  const figure = desk && desk.spot('keeper')
+  const near   = (c) => !!c && !!figure && Math.abs(c.x - figure.x) <= REACH && Math.abs(c.y - figure.y) <= REACH
+
+  const sev = (o) => `${o.id} (${o.severity})`
+
+  /** What he says now. */
+  function words(o, i, l, f) {
+    if (l) return `fix-loop is on ${l.pkg} — the sessions stand at its bench`
+    if (f) return `fli next tripped: ${f}`
+    if (!o) return '…'
+    if (!o.length) return 'nothing ready for the loop — the register is clear, or waiting on you'
+    if (i >= o.length) return 'that is all I have ready — walk up again later'
+    const lead = i === 0 ? `${o[i].pkg} has the most severe issue` : `then ${o[i].pkg}`
+    return `${lead} — ${sev(o[i])}. Work on it? /yes or /no`
+  }
+
+  function yes() {
+    if (loop) return words(offers, pick, loop, failed)
+    if (!offers || pick >= offers.length) return words(offers, pick, loop, failed)
+    try {
+      loop = startLoop(offers[pick].pkg, { root })
+    } catch (e) { return e.message }
+    return `fix-loop started on ${loop.pkg}`
+  }
+
+  function no() {
+    if (!offers || loop || pick >= offers.length) return words(offers, pick, loop, failed)
+    pick += 1
+    return words(offers, pick, loop, failed)
+  }
+
+  if (root && figure) {
+    const reach = { x: figure.x, y: figure.y, within: REACH }
+    $.onDestroy(verbs.add({ word: 'yes', aliases: ['y'], help: '/yes', reach, run: yes }))
+    $.onDestroy(verbs.add({ word: 'no',  aliases: ['n'], help: '/no',  reach, run: no }))
+  }
+
+  /** His line on the row under him, kept inside the view; shown only to a figure that has walked up. */
+  function said(o, i, l, f, v, c) {
+    if (!root || !figure || !near(c)) return []
+    const text = words(o, i, l, f).slice(0, v.w)
+    return [{ text, x: Math.max(0, Math.min(figure.x - v.x, v.w - text.length)), y: figure.y + 1 - v.y }]
+      .filter((r) => r.y >= 0 && r.y < v.h)
+  }
+</script>
+
+{#if root && figure && figure.x >= view.x && figure.x < view.x + view.w && figure.y >= view.y && figure.y < view.y + view.h}
+  <p {@attach at(figure.x - view.x, figure.y - view.y, 11)}>✦</p>
+{/if}
+{#each said(offers, pick, loop, failed, view, me) as r (r.y)}
+  <p class="surface" {@attach at(r.x, r.y, 12)}>{r.text}</p>
+{/each}

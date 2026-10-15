@@ -1,0 +1,17 @@
+<script>
+  // A booth -- where two members go who sit across a table. The room is the
+  // pair's own, named in the query by the scene that sent them (`room`), and
+  // the walk-in finds nothing for a member it does not belong to.
+  import { page } from '@frontierjs/sierra/router'
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Booth from '@/components/Booth.mesa'
+
+  const slug = String(page.query.room ?? '')
+  const mine = /^booth-\d+-\d+$/.test(slug)
+</script>
+
+{#if mine}
+  <WalkIn {slug}><Booth /></WalkIn>
+{:else}
+  <p>There is no booth here. Sit across a tavern table from someone.</p>
+{/if}

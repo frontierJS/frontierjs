@@ -1,0 +1,29 @@
+<script>
+  // Mod.mesa — `/ban <nick>` and `/unban <nick>`: an ordinary patch of the
+  // member's `bannedAt`, which the schema admits a mod to and drops for anyone
+  // else (`FJS-D22`) — so the answer, not the call, says whether it happened.
+  // Draws nothing.
+  import { members } from '@/resources/Member.mesa'
+
+  var verbs = $context.commands
+
+  const BANS = {
+    ban:   { bannedAt: () => new Date().toISOString(), done: 'is banned', refused: 'only a mod bans' },
+    unban: { bannedAt: () => null,                     done: 'is back',   refused: 'only a mod lifts a ban' },
+  }
+
+  const standing = (word) => async ({ args }) => {
+    const nick = args.split(/\s+/)[0]
+    if (!nick) return `/${word} <nick>`
+    const who = (await members.service.find({ nick: nick.toLowerCase() })).data?.[0]
+    if (!who) return `nobody here is called ${nick}`
+    const cmd = BANS[word]
+    const after = await members.service.patch(who.id, { bannedAt: cmd.bannedAt() })
+    const set = (after?.bannedAt ?? null) !== null
+    return set === (word === 'ban') ? `${who.nick} ${cmd.done}` : cmd.refused
+  }
+
+  for (const word of Object.keys(BANS)) {
+    $.onDestroy(verbs.add({ word, help: `/${word} <nick>`, run: standing(word) }))
+  }
+</script>

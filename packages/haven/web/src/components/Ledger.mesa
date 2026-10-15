@@ -1,0 +1,31 @@
+<script>
+  // Ledger.mesa — `/ledger` in the workshop: count the checkout's ISSUES.md
+  // again (`#ledger`, what `bun run ledger` runs), write `ledger.data.js`, and
+  // hand the counts to the route, which mounts the room again on them, since
+  // where every bench stands follows the counts. The figure is back by the
+  // door. A count that moved nothing redraws nothing and says so.
+  //
+  // A route places it (`routes/workshop.mesa`), never the scene file: a
+  // scene's picture is pinned, and the register it reads is this machine's.
+  // Where `#ledger` finds no checkout there is no `/ledger`.
+  import { checkout, recount } from '#ledger'
+
+  // The counts the room is drawn from, and what takes a new count.
+  export let ledger
+  export let counted
+
+  var verbs = $context.commands
+  const root = checkout()
+
+  const open = (l) => Object.values(l).reduce((sum, c) => sum + c.S1 + c.S2 + c.S3 + c.S4, 0)
+
+  function count() {
+    let fresh
+    try { fresh = recount({ root }) } catch (e) { return `the ledger tripped: ${e.message}` }
+    if (JSON.stringify(fresh) === JSON.stringify(ledger)) return `the ledger is as it was — ${open(fresh)} open`
+    counted(fresh)
+    return ''
+  }
+
+  if (root) $.onDestroy(verbs.add({ word: 'ledger', help: '/ledger', run: count }))
+</script>

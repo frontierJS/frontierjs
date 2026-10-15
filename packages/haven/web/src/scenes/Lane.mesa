@@ -1,0 +1,95 @@
+<script>
+  // Lane.mesa — the lane east of the road: three cottages along the top, one
+  // per member who lives here — Jordan, Vlad and Colin — each with its name
+  // over the windows, a door into its home and a mailbox at the gate; the
+  // lane itself across the middle, and a pond, lamps and trees on the south
+  // side. The west edge is a border into the road, and the road's east edge
+  // the run back. The picture this draws is `lane.frame.txt`, which
+  // `scenes.test.js` pins. The mailboxes' flags are a home's board
+  // (`components/HomeBoard.mesa`), placed by the route.
+  import Scene from '@/components/Scene.mesa'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import Row   from '@/components/Row.mesa'
+  import { piece } from '@/pieces/index.js'
+  import { frame } from '@/pieces/frame.js'
+  import { tree }  from '@/pieces/tree.js'
+  import { lamp }  from '@/pieces/lamp.js'
+  import { bench } from '@/pieces/bench.js'
+  import { cottage, mailbox, pond } from '@/pieces/home.js'
+
+  const jordan = cottage('Jordan', 'r')
+  const vlad   = cottage('Vlad', 'v')
+  const colin  = cottage('Colin', 'g')
+
+  // The lane is floor, walked on, the road's dust carried on.
+  const lane = piece('lane', [
+    '.'.repeat(93),
+    '  . '.repeat(23) + ' ',
+    ' .  '.repeat(23) + ' ',
+    '.'.repeat(93),
+  ].join('\n'), [
+    'o'.repeat(93),
+    '  o '.repeat(23) + ' ',
+    ' o  '.repeat(23) + ' ',
+    'o'.repeat(93),
+  ].join('\n'), { floor: true })
+
+  const hedge  = piece('hedge', ',', 'G', { floor: true })
+  const flower = piece('flower', '*', 'p', { floor: true })
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    r: { fg: '#c2410c' },
+    R: { fg: ['#9a3412', '#b45309', '#9a3412'] },
+    v: { fg: '#4338ca' },
+    V: { fg: ['#3730a3', '#4f46e5', '#3730a3'] },
+    g: { fg: '#15803d' },
+    G: { fg: ['#22c55e', '#16a34a', '#15803d'], ms: 1100, wave: true },
+    c: { fg: '#7c2d12' },
+    k: { fg: ['#9ca3af', '#d1d5db', '#6b7280'], chars: "~'.~", ms: 450, wave: true },
+    w: { fg: '#d6b98c' },
+    d: { fg: '#92400e' },
+    S: { fg: '#a16207' },
+    s: { fg: '#fbbf24' },
+    y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 1 },
+    o: { fg: ['#a16207', '#854d0e', '#a16207'], ms: 2000, wave: true },
+    q: { fg: '#9ca3af' },
+    e: { fg: '#a16207' },
+    u: { fg: '#78350f' },
+    l: { fg: '#9ca3af' },
+    b: { fg: ['#38bdf8', '#7dd3fc', '#0ea5e9'], chars: '~-~', ms: 350, wave: true },
+    t: { fg: '#166534' },
+    T: { fg: ['#22c55e', '#16a34a', '#15803d', '#16a34a'], chars: '&&%&', ms: 900, wave: true },
+    p: { fg: ['#f472b6', '#facc15', '#c084fc', '#fb7185'], ms: 1500, flicker: true, dye: true },
+  }
+</script>
+
+<Scene slug="lane" palette={PALETTE} spawn={{ x: 4, y: 14 }}>
+  <Piece of={frame} />
+  <Door  x={1} y={1} h={24} to="/road/" />
+  <Piece of={jordan} x={5} y={1} />
+  <Door  x={17} y={10} to="/jordan/" />
+  <Piece of={vlad} x={35} y={1} />
+  <Door  x={47} y={10} to="/vlad/" />
+  <Piece of={colin} x={65} y={1} />
+  <Door  x={77} y={10} to="/colin/" />
+  <Piece of={mailbox} x={26} y={11} />
+  <Piece of={mailbox} x={56} y={11} />
+  <Piece of={mailbox} x={86} y={11} />
+  <Row of={hedge} y={11} x={5}  n={10} />
+  <Row of={hedge} y={11} x={20} n={5} />
+  <Row of={hedge} y={11} x={35} n={10} />
+  <Row of={hedge} y={11} x={50} n={5} />
+  <Row of={hedge} y={11} x={65} n={10} />
+  <Row of={hedge} y={11} x={80} n={5} />
+  <Piece of={lane} x={3} y={13} />
+  <Piece of={tree} x={4}  y={18} />
+  <Piece of={lamp} x={24} y={19} />
+  <Piece of={pond} x={33} y={20} />
+  <Row of={flower} y={23} x={50} n={8} step={3} />
+  <Piece of={bench} x={52} y={19} />
+  <Piece of={lamp} x={70} y={19} />
+  <Piece of={tree} x={80} y={18} />
+  <slot />
+</Scene>

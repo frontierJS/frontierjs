@@ -204,9 +204,10 @@ core/
                 marker, for basecamp's Open. Plain node, for `checks.js`
   done.js       is the change in the working tree FINISHED — a CHANGES entry per
                 package touched, a new module or command named where its
-                siblings are, then test-files-run, register:check and the
-                snapshots asked about this tree. Grades the close-out, never
-                the change. `stopVerdict` is the Stop hook's whole policy:
+                siblings are, a new `.gitignore` rule that hides a file on
+                disk, then `fli check`'s error rules (changed files only),
+                test-files-run, register:check and the snapshots asked about
+                this tree. Grades the close-out, never the change. `stopVerdict` is the Stop hook's whole policy:
                 block only on an item not shown since HEAD moved
   decisions.js  what is waiting on the owner — the open questions in ISSUES
                 § Needs a decision and every IDEAS paper's `## Open questions`,

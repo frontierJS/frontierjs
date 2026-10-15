@@ -1,0 +1,210 @@
+<script>
+  // Booth.mesa — the room two members go to when they sit across one table
+  // (`api/src/booth.ts`). This member on the left and them on the right, each
+  // a head in profile against the edge of the screen, facing in, and between
+  // them the conversation: each line a bubble that stays, the next one under it
+  // (`src/booth.js`). Nobody walks; the picture is a backdrop on a stage like
+  // any scene's, and what is said is the room's own Messages.
+  //
+  // Esc stands up: back to the scene the pair left, beside the stool and not
+  // on it, since two members seated across a table are sent here again the
+  // moment they are. The other standing up first leaves this one with the
+  // lines, an empty side where their head was and `<nick> left` under it;
+  // the booth stays theirs.
+  import { presence }    from '@frontierjs/sierra/presence'
+  import { useStore }    from '@frontierjs/sierra/resource'
+  import { goto, page }  from '@frontierjs/sierra/router'
+  import { members }     from '@/resources/Member.mesa'
+  import { messages }    from '@/resources/Message.mesa'
+  import { createStage } from '@/stage.js'
+  import { transcript } from '@/booth.js'
+  import Piece           from '@/components/Piece.mesa'
+  import { piece }       from '@/pieces/index.js'
+  import { candle }      from '@/pieces/candle.js'
+  import { frame }       from '@/pieces/frame.js'
+  import { leftFace, rightFace, FACE } from '@/pieces/face.js'
+  import { at }          from '#cell'
+  import { paint }       from '#paint'
+
+  // The column between the two sides, in the frame's cells.
+  const MID  = { x: 24, y: 1 }
+  // The candle stands on the table at the foot of the column, so the lines
+  // stop above it rather than scroll through the flame.
+  const CANDLE = { x: 44, y: 20 }
+  const SIDE = { me: 2, them: 76, y: 1 }
+
+  const ME   = '#22d3ee'
+  const THEM = '#f59e0b'
+
+  // ─── the light ──────────────────────────────────────────────────────
+  // The candle lights the side of each head that faces it, leans toward
+  // whoever is typing, and is blown out when the other stands up: smoke off
+  // the wick for SMOKE_MS, then a cold one. Each state is the same cells
+  // under different palette entries (`pieces/candle.js`), swapped in place
+  // and redrawn by `stage.touch()`.
+  const SMOKE_MS = 6000
+  // A line left half-typed stops leaning the flame after this long.
+  const IDLE_MS  = 4000
+
+  const mix = (a, b, t) => '#' + [1, 3, 5].map((i) =>
+    Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - t) + parseInt(b.slice(i, i + 2), 16) * t).toString(16).padStart(2, '0')).join('')
+
+  // The rim and the cells behind it step together rather than flicker, so a
+  // face breathes with the light instead of crawling.
+  const PULSE = [0.45, 0.35, 0.55, 0.4]
+  const rim   = { fg: ['#fef3c7', '#fde68a', '#fcd34d', '#fde68a'], ms: 360 }
+  const warm  = (side) => ({ fg: PULSE.map((t) => mix(side, '#fbbf24', t)), ms: 360 })
+
+  const FLAME  = { fg: ['#fde047', '#fbbf24', '#fef08a', '#f59e0b'], ms: 180, flicker: true }
+  const HIDDEN = { chars: [' '] }
+  const POOL   = { fg: ['#b45309', '#92400e', '#78350f', '#b45309'], chars: ['.', ':', "'", '.'], ms: 260, flicker: true }
+  const SMOKE  = { fg: ['#9ca3af', '#6b7280', '#4b5563'], chars: ['~', '(', ' ', ')', ' ', ' '], ms: 300, wave: true }
+  const EMBER  = { fg: ['#ef4444', '#b91c1c', '#f97316', '#7f1d1d'], ms: 300, flicker: true }
+
+  /** The palette entries the candle and the faces take in each state; `lean` is 'me', 'them' or null. */
+  const burning = (lean) => ({
+    l: lean === 'me'   ? FLAME : HIDDEN,
+    i: lean            ? HIDDEN : FLAME,
+    j: lean === 'them' ? FLAME : HIDDEN,
+    Y: FLAME, k: { fg: '#fef3c7' }, h: POOL,
+    M: rim, N: warm(ME), T: rim, U: warm(THEM),
+  })
+  const blownOut = (smoking) => ({
+    l: HIDDEN, i: smoking ? SMOKE : HIDDEN, j: smoking ? SMOKE : HIDDEN,
+    Y: HIDDEN, k: smoking ? EMBER : { fg: '#57534e' }, h: { fg: '#44403c' },
+    M: { fg: ME }, N: { fg: ME }, T: { fg: THEM }, U: { fg: THEM },
+  })
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    r: { fg: '#4b5563' },
+    t: { fg: THEM },
+    m: { fg: ME },
+    w: { fg: '#fef3c7' },
+    c: { fg: '#d97706' },
+    ...burning(null),
+  }
+
+  const rule = (h) => Array(h).fill('|').join('\n')
+  const divider = piece('divider', rule(24), rule(24).replace(/\|/g, 'r'))
+
+  // A head each, the same drawing mirrored, colored by whose it is and lit
+  // on the side facing the table.
+  const mine = leftFace('m', { rim: 'M', mid: 'N' })
+  const them = rightFace('t', { rim: 'T', mid: 'U' })
+
+  var room = $context.room
+  var stage = createStage({ slug: 'booth', palette: PALETTE, spawn: { x: 0, y: 0 } })
+  $context.scene = stage
+
+  // A snapshot and a `var`, for the reason Scene.mesa's is: a presence made in
+  // a derived const is made again on every read.
+  var here = presence(`room:${room.id}`, { meta: { x: 0, y: 0 } })
+
+  const { get: lines, unsubscribe } = useStore(messages.store)
+  $.onDestroy(unsubscribe)
+  let note  = ''
+  let draft = ''
+  messages.load({ roomId: room.id }, { orderBy: '-createdAt', limit: 50 })
+    .catch((e) => { note = e.message })
+
+  // The pair's ids are on the row; which is this member is known once the
+  // socket has said so.
+  let nicks = {}
+  const asked = new Set()
+  for (const id of [room.pairLoId, room.pairHiId]) {
+    if (asked.has(id)) continue
+    asked.add(id)
+    members.service.get(id)
+      .then((row) => { nicks = { ...nicks, [id]: row.nick } })
+      .catch(() => {})
+  }
+  const meOf   = (h) => Number(h.self?.userId)
+  const themOf = (h) => [room.pairLoId, room.pairHiId].find((id) => id !== meOf(h))
+
+  // Plain `var`s, not reactive: the idle timer writes `typing`, and a watch
+  // that read it would run `typed(draft)` again and lean the flame back.
+  var others = []
+  var typing = false
+  var met    = false
+  var idle   = null
+  var smoke  = null
+  // Only after they have been here: a member who sits first is alone for a
+  // moment, and their side is not empty, only not yet filled.
+  let gone   = false
+
+  function light() {
+    if (others.length) { met = true; clearTimeout(smoke); smoke = null }
+    gone = met && !others.length
+    if (!others.length && met) {
+      if (!smoke) {
+        Object.assign(PALETTE, blownOut(true))
+        smoke = setTimeout(() => { Object.assign(PALETTE, blownOut(false)); stage.touch() }, SMOKE_MS)
+        stage.touch()
+      }
+      return
+    }
+    const theirs = others.some((m) => m.meta?.typing)
+    Object.assign(PALETTE, burning(typing === theirs ? null : typing ? 'me' : 'them'))
+    stage.touch()
+  }
+
+  function setTyping(on) {
+    if (on === typing) return
+    typing = on
+    here.updateMeta(on ? { x: 0, y: 0, typing: true } : { x: 0, y: 0 })
+    light()
+  }
+
+  function typed(text) {
+    clearTimeout(idle)
+    const on = !!text.trim()
+    if (on) idle = setTimeout(() => setTyping(false), IDLE_MS)
+    setTyping(on)
+  }
+
+  $: { others = here.get().others; light() }
+  $: typed(draft)
+  $.onDestroy(() => { clearTimeout(idle); clearTimeout(smoke) })
+
+  const leave = () => goto(page.query.from || '/', page.query.from
+    ? { from: '/booth/', x: page.query.x, y: page.query.y, stand: 1 }
+    : {})
+
+  const keydown = (e) => {
+    if (e.key !== 'Escape') return
+    e.preventDefault()
+    leave()
+  }
+
+  const focus = (el) => el.focus()
+
+  async function say() {
+    const body = draft.trim()
+    if (!body) return
+    draft = ''
+    note  = ''
+    try { await messages.save({ roomId: room.id, body }) }
+    catch (e) { note = e.message }
+  }
+</script>
+
+<mesa:window on:keydown={keydown} />
+<div {@attach paint(stage)}>
+  <Piece of={frame} />
+  <Piece of={divider} x={22} y={1} />
+  <Piece of={divider} x={75} y={1} />
+  <Piece of={mine} x={SIDE.me}   y={SIDE.y} />
+  {#if !gone}<Piece of={them} x={SIDE.them} y={SIDE.y} />{/if}
+  <Piece of={candle} x={CANDLE.x} y={CANDLE.y} />
+  <p {@attach at(SIDE.me, SIDE.y + FACE.h + 1)}>{nicks[meOf(here.get())] ?? 'you'}</p>
+  <p {@attach at(SIDE.them, SIDE.y + FACE.h + 1)}>{gone ? `${nicks[themOf(here.get())] ?? 'they'} left` : nicks[themOf(here.get())] ?? '…'}</p>
+  {#each transcript(lines(), { me: meOf(here.get()), roomId: room.id, height: CANDLE.y - MID.y }) as r (r.key)}
+    <p class="surface" {@attach at(MID.x + r.x, MID.y + r.y, 12)}>{r.text}</p>
+  {/each}
+</div>
+<p>You and {nicks[themOf(here.get())] ?? '…'}, across the table{here.get().others.length ? '' : ' · they have stood up'} · Esc stands up</p>
+{#if note}<p>{note}</p>{/if}
+<form on:submit|preventDefault={say}>
+  <input {@attach focus} bind:value={draft} placeholder="Enter says it, Esc stands up" />
+</form>

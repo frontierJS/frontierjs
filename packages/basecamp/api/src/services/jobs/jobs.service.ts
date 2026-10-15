@@ -7,7 +7,7 @@
 
 import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
-import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
 import { syncSchedule, unscheduleJob, nextRunAt } from './job-schedule.ts'
@@ -275,9 +275,6 @@ export function createJobsService(app: BasecampApp) {
         all:     [sessionScope(app, { except: ['startRun', 'finishRun'] })],
         // No deriveSlug: `Job` has no `slug` column, so the shared hook stamped a
         // key the model does not declare and the write dropped it in silence.
-        create:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        patch:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        remove:  [requireWorkspaceRole(app, 'admin', 'owner')],
         startRun:  [internalOnly()],
         finishRun: [internalOnly()],
         // `cancel` is a `Job` update through the caller's client, graded by the gate.

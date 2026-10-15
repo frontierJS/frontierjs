@@ -26,7 +26,7 @@
 // from every read — `get` resolves that to the same answer.
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, assertSlugFree, slugify, ws, actor }
   from '../../core/resource.ts'
 import { WIDGET_KINDS, WIDGET_KIND_BY_NAME, STAT_SOURCES } from './kinds.ts'
@@ -386,9 +386,7 @@ export function createDashboardsService(app: BasecampApp) {
         // sits at the developer bar rather than admin: the person who needs a
         // board is the person doing the work, and holding it higher means
         // asking an owner to arrange somebody else's screen.
-        create:       [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), stampDashboard],
-        patch:        [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        remove:       [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        create:       [stampDashboard],
         // The widget methods write `DashboardWidget` through the caller's
         // client, whose gate is the same developer bar.
       },

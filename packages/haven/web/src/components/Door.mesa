@@ -3,14 +3,20 @@
   // over whatever wall is there, and stepping onto it is `goto(to)`. With a
   // `w` or an `h` it is a run of door cells — a border along an edge into the
   // scene beside this one (`IDEAS/haven.md` 6.2) — and the scene across has a
-  // run back on its facing edge, so a figure crosses at the matching row.
+  // run back on its facing edge, so a figure crosses at the matching row. A
+  // `hidden` door draws what is under it instead (`IDEAS/haven.md` 6.5): the
+  // cell looks like the floor or wall around it and is found by stepping on it.
+  // A `night` door is a door only at full night (6.6); by day it is the cell
+  // under it.
   export let x
   export let y
   export let to
   export let w = 1
   export let h = 1
+  export let hidden = false
+  export let night = false
 
   const scene = $context.scene
-  var mark = scene.door(x, y, to, { w, h })
+  var mark = scene.door(x, y, to, { w, h, hidden, night })
   $.onDestroy(() => mark.remove())
 </script>

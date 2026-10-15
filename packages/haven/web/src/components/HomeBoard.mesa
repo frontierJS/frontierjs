@@ -1,0 +1,143 @@
+<script>
+  // HomeBoard.mesa — a member's board, written over their home's furniture
+  // (`pieces/home.js`) and raised as a flag on their mailbox in the lane.
+  // `#errand`'s `homeBoard()` runs this machine's `HAVEN_HOME` command, and the
+  // board it prints names the home it hangs in: in that home, and at that
+  // home's mailbox, this screen draws it; anywhere else it draws nothing. So a
+  // member visiting another's home sees the furniture bare, and their own
+  // account never lands on the host's walls.
+  //
+  // In the home: the pinned projects on the cork board, the inbox on the screen
+  // (its count and the newest standing, the whole of it scrolling sat at the
+  // desk), what is due on the calendar, a letter on the mat per thing unread,
+  // and the bell ringing for a fresh ping — its pings read out standing beside
+  // it. In the lane: a flag beside the home's mailbox while anything is unread.
+  //
+  // Drawn on this screen only and never sent, as the bar's board is. A route
+  // places it (`routes/lane.mesa` and each home's), never the scene file.
+  import { at, tint } from '#cell'
+  import { homeBoard } from '#errand'
+  import { spotsOf } from '@/pieces/index.js'
+  import { pinCards, screenLines, calendarLines, pingLines, ringing, post } from '@/home-board.js'
+
+  const scene = $context.scene
+  const PULL_MS = 60_000
+  const SCROLL_MS = 3_000
+  const RING_MS = 600
+  const REACH = 2
+  const PANE = { w: 56, h: 6 }
+
+  const marked = (name) => scene.marks.filter((m) => m.kind === 'piece' && m.piece.name === name)
+  const one = (name) => marked(name)[0] ?? null
+  const cork = one('corkboard'), screen = one('screen'), desk = one('desk')
+  const cal = one('calendar'), bell = one('bell'), mat = one('doormat')
+  const chair = desk ? spotsOf(desk.piece, 'seat').map((s) => desk.spot(s.name)) : []
+
+  let board  = null
+  let now    = Date.now()
+  let offset = 0
+  let ring   = 0
+  let me     = scene.seer
+  let view   = scene.view
+  $.onDestroy(scene.subscribe(() => { me = scene.seer; view = scene.view }))
+
+  const ctl = new AbortController()
+  $.onDestroy(() => ctl.abort())
+
+  // A command that fails cannot say whose home it was for, so it says so on the
+  // screen of whatever home this is — on this screen alone, about this machine.
+  // The next pull asks again.
+  let failed = ''
+  function pull() {
+    homeBoard({ signal: ctl.signal })
+      .then((b) => { board = b; failed = ''; now = Date.now() })
+      .catch((e) => { if (ctl.signal.aborted) return; board = null; failed = e.message })
+  }
+  pull()
+  $.onDestroy(scene.task('home-pull', pull, { every: PULL_MS }))
+
+  // ─── the lane ──────────────────────────────────────────────────────────────
+
+  /** The mailbox nearest this board's cottage door, or null outside the lane. */
+  function mailboxOf(b) {
+    const home = b && scene.marks.find((m) => m.kind === 'piece' && m.piece.home === b.home)
+    const door = home && scene.doors.find((d) => d.to === `/${b.home}/`)
+    if (!door) return null
+    const boxes = marked('mailbox')
+    const dist = (m) => Math.abs(m.x - door.x) + Math.abs(m.y - door.y)
+    return boxes.sort((a, b2) => dist(a) - dist(b2))[0] ?? null
+  }
+
+  // ─── the home ──────────────────────────────────────────────────────────────
+
+  $: mine    = !!board && board.home === scene.slug
+  $: box     = board && !mine ? mailboxOf(board) : null
+  $: letters = board ? post(board) : 0
+  $: sitting = mine && !!me && chair.some((c) => c.x === me.x && c.y === me.y)
+  $: near    = mine && !!me && !!bell && Math.abs(me.x - (bell.x + 2)) <= REACH + 2 && Math.abs(me.y - (bell.y + 2)) <= REACH
+  $: rings   = mine && ringing(board.pings, now)
+  $: { if (!sitting) offset = 0 }
+
+  $.onDestroy(scene.task('home-board', () => {
+    now = Date.now()
+    if (rings) ring = (ring + 1) % 2
+  }, { every: RING_MS }))
+
+  $.onDestroy(scene.task('home-scroll', () => {
+    if (sitting && board && board.inbox.length > screen.piece.inner.h) offset = (offset + 1) % board.inbox.length
+  }, { every: SCROLL_MS }))
+
+  const inner = (m) => ({ x: m.x + m.piece.inner.dx, y: m.y + m.piece.inner.dy, ...m.piece.inner })
+
+  $: cards  = mine && cork   ? pinCards(board.pins, cork.piece.inner, now) : []
+  $: lines  = mine && screen ? screenLines(board.inbox, screen.piece.inner, now, { sitting, offset }) : []
+  $: days   = mine && cal    ? calendarLines(board.due, cal.piece.inner, now) : []
+  $: pane   = near ? pingLines(board.pings, PANE.w, PANE.h, now) : []
+  $: paneAt = bell ? { x: Math.max(2, bell.x + 2 - Math.floor(PANE.w / 2)), y: bell.y - PANE.h } : null
+</script>
+
+{#if box && letters}
+  <pre class="line" {@attach at(box.x + 3 - view.x, box.y - view.y)} {@attach tint('#ef4444')}>{`>${letters}`}</pre>
+{/if}
+
+{#if mine && cork}
+  {#each cards as c, i (i)}
+    <pre class="line" {@attach at(inner(cork).x + c.dx - view.x, inner(cork).y + c.dy - view.y)} {@attach tint(c.color)}>{c.text}</pre>
+  {/each}
+{/if}
+
+{#if failed && screen}
+  <pre class="line" {@attach at(inner(screen).x - view.x, inner(screen).y - view.y)} {@attach tint('#f87171')}>{`the board is blank: ${failed}`.slice(0, screen.piece.inner.w)}</pre>
+{/if}
+
+{#if mine && screen}
+  {#each lines as l, i (i)}
+    <pre class="line" {@attach at(inner(screen).x - view.x, inner(screen).y + l.dy - view.y)} {@attach tint(l.color)}>{l.text}</pre>
+  {/each}
+{/if}
+
+{#if mine && cal}
+  {#each days as l, i (i)}
+    <pre class="line" {@attach at(inner(cal).x - view.x, inner(cal).y + i - view.y)} {@attach tint(l.color)}>{l.text}</pre>
+  {/each}
+{/if}
+
+{#if mine && mat && letters}
+  <pre class="line" {@attach at(inner(mat).x - view.x, inner(mat).y - view.y)} {@attach tint('#fef3c7')}>{'✉'.repeat(Math.min(letters, mat.piece.inner.w))}</pre>
+{/if}
+
+{#if rings && bell}
+  <pre class="line" {@attach at(bell.x + 5 - view.x, bell.y + (ring ? 0 : 1) - view.y)} {@attach tint('#facc15')}>{ring ? '♪' : '♫'}</pre>
+{/if}
+
+{#if near && paneAt}
+  <div class="surface board" {@attach at(paneAt.x - view.x, paneAt.y - view.y, 13, [PANE.w, PANE.h])}>
+    {#each pane as l, i (i)}
+      <pre class="line" {@attach tint(l.color)}>{l.text}</pre>
+    {/each}
+  </div>
+{/if}
+
+<style>
+  .line { margin: 0; font: inherit; line-height: inherit; white-space: pre; overflow: hidden }
+</style>

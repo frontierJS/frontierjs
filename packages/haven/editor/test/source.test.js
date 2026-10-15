@@ -16,7 +16,9 @@ const SOURCES = Object.fromEntries(SCENES.map(({ name }) => [name, readFileSync(
 
 // ─── the file as text ────────────────────────────────────────────────
 
-for (const { name } of SCENES) {
+// The workshop's benches stand where the register's counts put them, so the
+// file is a loop and the editor refuses it by name.
+for (const { name } of SCENES.filter((s) => s.name !== 'Workshop')) {
   test(`${name}: read as a flat list of placed tags`, () => {
     const scene = readScene(SOURCES[name])
     expect(scene.slug).toBe(name.toLowerCase())
@@ -29,6 +31,10 @@ for (const { name } of SCENES) {
     expect(writeScene(SOURCES[name], {})).toBe(SOURCES[name])
   })
 }
+
+test('Workshop: a computed room is refused by name, never read as a flat list', () => {
+  expect(() => readScene(SOURCES.Workshop)).toThrow('a block in the markup')
+})
 
 test('an attribute edit moves only its own characters, and a missing one is added', () => {
   const src = SOURCES.Tavern

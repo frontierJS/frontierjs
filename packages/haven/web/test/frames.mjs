@@ -5,12 +5,15 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { SCENES, WEB, mountScene } from './stage.mjs'
+import { worldOf, worldJson } from '../src/world.js'
 
 for (const { name, slug } of SCENES) {
   const { stage, dispose } = await mountScene(name)
   const file = join(WEB, 'src/scenes', `${slug}.frame.txt`)
   writeFileSync(file, stage.picture().join('\n') + '\n')
+  const world = join(WEB, 'src/scenes', `${slug}.world.json`)
+  writeFileSync(world, worldJson(worldOf(stage)))
   dispose()
-  console.log(`wrote ${file}`)
+  console.log(`wrote ${file} and ${world}`)
 }
 process.exit(0)

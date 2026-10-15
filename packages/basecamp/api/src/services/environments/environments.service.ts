@@ -9,7 +9,7 @@
 // older and better evidence of what a tier is.
 
 import { createService, NotFound, Forbidden, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, refuseProtectedForDeveloper, WORKSPACE_QUERY }
+import { sessionScope, workspaceChannel, getPagination, refuseProtectedForDeveloper, WORKSPACE_QUERY }
   from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
@@ -93,9 +93,7 @@ export function createEnvironmentsService(app: BasecampApp) {
     hooks: {
       before: {
         all:    [sessionScope(app)],
-        create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
-        patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
+        create: [deriveSlug],
       },
     },
   })

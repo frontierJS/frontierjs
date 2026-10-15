@@ -10,7 +10,7 @@
 // in both, but only the schema knew `slug` had to be unique per workspace.
 
 import { createService, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
 import { retireAppsIn }         from '../apps/apps.service.ts'
@@ -72,9 +72,7 @@ export function createProjectsService(app: BasecampApp) {
     hooks: {
       before: {
         all:    [sessionScope(app)],
-        create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
-        patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
+        create: [deriveSlug],
       },
     },
   })

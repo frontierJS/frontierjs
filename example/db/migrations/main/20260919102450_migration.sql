@@ -37,6 +37,8 @@
 -- ║
 -- ║ To keep them, replace the rebuild below with a rename:
 -- ║     ALTER TABLE "invoice" RENAME COLUMN "dueAt" TO "dueOn";
+-- ║
+-- ║ Accept data loss: yes
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 PRAGMA foreign_keys = OFF;
 BEGIN;

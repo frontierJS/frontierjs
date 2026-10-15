@@ -35,6 +35,8 @@
 -- ║
 -- ║ To keep them, replace the rebuild below with a rename:
 -- ║     ALTER TABLE "customer" RENAME COLUMN "slots" TO "fieldsSlots";
+-- ║
+-- ║ Accept data loss: yes
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 PRAGMA foreign_keys = OFF;
 BEGIN;

@@ -2,9 +2,9 @@
   // WorldMap.mesa — the map pane (`IDEAS/haven.md` 6.4), drawn over the art
   // the way the history pane is: every scene this machine has walked into
   // (`#seen`, through `map.js`), the one the figure is in drawn from its live
-  // stage, and `@` on the figure's block, moving as it walks. Placed by
-  // `Scene.mesa` while the map is open, so the store is read when it opens
-  // and not on every scene mounted.
+  // stage, and `@` on the figure's block, moving as it walks. `/map` opens it
+  // as the mode over the art and Esc closes it; the store is read when it
+  // opens and not on every scene mounted.
   import { at } from '#cell'
   import { coarse, drawn, layoutOf, recall } from '@/map.js'
 
@@ -14,8 +14,21 @@
   export let y
   export let box
 
+  var verbs = $context.commands
+
   let kept = []
-  recall().then((snaps) => { kept = snaps })
+  let open = false
+  var close = null
+
+  function show() {
+    close = verbs.open({ name: 'map', closed: () => { open = false; close = null } })
+    open = true
+    recall().then((snaps) => { kept = snaps })
+    return ''
+  }
+
+  $.onDestroy(verbs.add({ word: 'map', help: '/map', run: show }))
+  $.onDestroy(() => close?.())
 
   /** The map's rows: what was kept, less this scene's old snap, plus this scene as it stands. */
   function rows(kept, x, y) {
@@ -24,12 +37,14 @@
   }
 </script>
 
-<div class="surface map" {@attach at(box.x, box.y, 13, [box.w, box.h])}>
-  {#each rows(kept, x, y) as row, i (i)}
-    <p>{row || ' '}</p>
-  {/each}
-  <p>— the map · @ you · n a door · Esc closes —</p>
-</div>
+{#if open}
+  <div class="surface map" {@attach at(box.x, box.y, 13, [box.w, box.h])}>
+    {#each rows(kept, x, y) as row, i (i)}
+      <p>{row || ' '}</p>
+    {/each}
+    <p>— the map · @ you · n a door · Esc closes —</p>
+  </div>
+{/if}
 
 <style>
   .map p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }

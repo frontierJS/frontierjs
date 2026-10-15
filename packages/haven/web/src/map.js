@@ -24,7 +24,8 @@ function glyphOf(stage, bx, by) {
   const count = new Map()
   for (let y = by * SCALE.y; y < Math.min(stage.height, (by + 1) * SCALE.y); y++) {
     for (let x = bx * SCALE.x; x < Math.min(stage.width, (bx + 1) * SCALE.x); x++) {
-      if (stage.doorAt(x, y)) return 'n'
+      const door = stage.doorAt(x, y)
+      if (door && !door.hidden) return 'n'
       const { ch } = stage.look(x, y)
       if (ch !== ' ') count.set(ch, (count.get(ch) ?? 0) + 1)
     }
@@ -42,7 +43,7 @@ export function coarse(stage, route, now = Date.now()) {
     for (let bx = 0; bx < blocks(stage.width, SCALE.x); bx++) row += glyphOf(stage, bx, by)
     rows.push(row)
   }
-  const doors = stage.marks.filter((m) => m.kind === 'door').map(({ x, y, w, h, to }) => ({ x, y, w, h, to }))
+  const doors = stage.marks.filter((m) => m.kind === 'door' && !m.hidden && !m.night).map(({ x, y, w, h, to }) => ({ x, y, w, h, to }))
   return { slug: stage.slug, route, w: stage.width, h: stage.height, rows, doors, at: new Date(now).toISOString() }
 }
 

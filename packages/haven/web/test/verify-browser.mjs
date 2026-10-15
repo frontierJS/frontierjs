@@ -41,6 +41,7 @@ import { buildHavenApp } from '../../api/src/app.ts'
 import { signIn } from '../../api/test/sign-in.ts'
 import { cellOf, terminal, until } from './terminal.mjs'
 import { litAt } from '../src/stage.js'
+import { DAY_MS } from '../src/sky.js'
 import { stageOf } from './stage.mjs'
 
 const WEB  = join(import.meta.dir, '..')
@@ -176,12 +177,12 @@ check(drawnCols.length > 0 && drawnCols.every((i) => shape.bottom[i] === termBot
 check(darkCol >= 0 && shape.bottom[darkCol] === ' ' && termBottom[darkCol] === ' ' && shape.top.trim() === '' && termTop.trim() === '',
   `and the wall at ${darkCol},${view.h - 1} and the whole top wall are blank on both: nobody has walked near them`, `tab:  ${shape.bottom}\nterm: ${termBottom}\ntab:  ${shape.top}\nterm: ${termTop}`)
 
-// A cell the palette colors, no clock moves, and Bea sees from the spawn, read for its color in the tab.
+// A cell the palette colors, no clock but the sky moves (the same time of day three days on), and Bea sees from the spawn, read for its color in the tab.
 const still = (() => {
   for (let y = 0; y < view.h; y++)
     for (let x = 0; x < view.w; x++) {
       const a = square.look(x, y, 0)
-      if (a.fg && a.ch !== ' ' && square.look(x, y, 1e7).fg === a.fg && litAt(square, x, y, square.spawn)) return { x, y, fg: a.fg }
+      if (a.fg && a.ch !== ' ' && square.look(x, y, 3 * DAY_MS + 123_457).fg === a.fg && litAt(square, x, y, square.spawn)) return { x, y }
     }
   return null
 })()
@@ -194,7 +195,9 @@ const drawn = still && await browser.evaluate(`
   return getComputedStyle(el).color
 `)
 const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`
-check(still && drawn === rgb(still.fg), `the tab colors a cell from the scene's palette (${still?.x},${still?.y} ${still?.fg})`, String(drawn))
+// The tab draws the sky it is under, so the color expected is the stage's at this moment.
+const wanted = still && square.look(still.x, still.y, Date.now()).fg
+check(still && drawn === rgb(wanted), `the tab colors a cell from the scene's palette, under the sky (${still?.x},${still?.y} ${wanted})`, String(drawn))
 
 const tick = square.tickOf()
 const art = () => browser.evaluate(`return document.querySelector('pre[data-art]').innerHTML`)

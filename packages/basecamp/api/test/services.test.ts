@@ -720,6 +720,21 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     expect((await req.send(body)).status).toBe(401)
   })
 
+  // FJS-2865. The report names its payload in the seed, so a volumes list that
+  // is not a list is a 400 naming the field. A missing server_id never gets
+  // here: the outpost scope refuses it as a 401 first.
+  test('volumes.report declares its input and refuses a malformed report naming the field', async () => {
+    const volumes = (env.app.services.get('volumes') as any).describe().inputs
+    expect(volumes.report).toBe('VolumeReport')
+
+    const body = { server_id: machine.id, volumes: 'x' }
+    const req  = env.http.post('/volumes').set('x-service-method', 'report')
+    for (const [k, v] of Object.entries(await signed('/volumes', body, 'report'))) req.set(k, v)
+    const res = await req.send(body)
+    expect(res.status).toBe(400)
+    expect(JSON.stringify(res.body)).toContain('volumes')
+  })
+
   test('a good signature is a machine principal and reaches no other method (FJS-1715)', async () => {
     // The credential is app-wide, so a signature on a request that is not one of
     // the three endpoints is refused at the transport rather than passed on as
@@ -1310,6 +1325,24 @@ describe('the installation settings are one row, behind the hub tier', () => {
   test('an owner of a workspace is not a sysadmin', async () => {
     await expect(env.as(owner).service('hub-config').call('current')).rejects.toThrow()
   })
+
+  // FJS-D49: the hub tier answers 404, not the gate's 403, so a workspace
+  // member cannot tell the surface exists. requireSystemAdmin() is the only
+  // thing that says it; the 7 on the gate would answer 403.
+  test('the hub tier refuses a workspace owner as not found, never as a role', async () => {
+    const refusals = await Promise.all([
+      env.as(owner).service('hub-config').call('current').catch((e: any) => e),
+      env.as(owner).service('backups').create({}).catch((e: any) => e),
+      env.as(owner).service('blueprints').create({
+        name: 'Nope', slug: 'nope', category: 'Database',
+        description: 'x', version: '1', image: 'nope:1',
+      }).catch((e: any) => e),
+    ])
+    for (const err of refusals) {
+      expect(err).toBeInstanceOf(Error)
+      expect(err.code ?? err.status).toBe(404)
+    }
+  })
 })
 
 describe('a person notification preferences are their own', () => {
@@ -1354,10 +1387,10 @@ describe('a person notification preferences are their own', () => {
     expect(out.data.find((r: any) => r.kind === 'deploy_success').source).toBe('default')
   })
 
-  test('an unknown kind is a sentence naming the seven', async () => {
+  test('an unknown kind is a sentence naming the kinds', async () => {
     await expect(env.as(developer).service('notification-preferences')
       .call('save', null, { kind: 'deploy_fail', email: true }))
-      .rejects.toThrow(/Unknown notification kind/)
+      .rejects.toThrow(/kind must be one of: deploy_success/)
   })
 })
 
@@ -1623,12 +1656,32 @@ describe('a column the system writes and its caller does not', () => {
     expect(row.createdBy).toBeTruthy()
   })
 
+  test('a payload the declaration refuses mints nothing (FJS-2871)', async () => {
+    // The mint is a credential in auth's table. A payload that fails the
+    // declared input must be refused before it, not revoked after it.
+    const auth = (env.app as any).auth
+    const real = auth.createApiKey.bind(auth)
+    let minted = 0
+    auth.createApiKey = (...args: any[]) => { minted++; return real(...args) }
+    try {
+      await expect(env.as(owner).service('api-keys').create({
+        name: 'x'.repeat(201), scopes: ['servers:read'], expiresIn: '30d',
+      })).rejects.toThrow()
+      await expect(env.as(owner).service('api-keys').create({
+        name: `fx-${Math.random().toString(36).slice(2, 8)}`, scopes: ['servers:read'], expiresIn: '30d',
+        nonsense: 1,
+      })).rejects.toThrow()
+    } finally {
+      auth.createApiKey = real
+    }
+    expect(minted).toBe(0)
+  })
+
   test('a forged hint is not what lands — the mint overwrites it', async () => {
     // `@system` refuses a non-system write naming the column, and on THIS
     // model that refusal is a backstop rather than the thing a caller meets:
-    // `stampKey` is a before hook and it assigns `data.tokenHint` from the
-    // token it just minted, so a forged value is replaced before the payload
-    // reaches the Data boundary. Asserting the outcome rather than the throw,
+    // `mintKey` builds the row it inserts from the token it just minted, so a
+    // forged value never reaches the Data boundary. Asserting the outcome rather than the throw,
     // because the throw is unreachable here and a test claiming otherwise
     // would pass for a reason that is not the reason.
     const made: any = await env.as(owner).service('api-keys').create({
@@ -3603,5 +3656,93 @@ describe('alert and network verbs declare their input', () => {
       .rejects.toThrow(/serverId/)
     await expect(env.as(owner).service('networks').call('detach', 'nope', {}))
       .rejects.toThrow(/serverId/)
+  })
+})
+
+// FJS-2865. A certificate upload names its payload in the seed, so a missing
+// PEM or a bad date is a 400 naming the field before the row is read.
+describe('domains.uploadCert declares its input', () => {
+  test('it names a type in the seed', () => {
+    const domains = (env.app.services.get('domains') as any).describe().inputs
+    expect(domains.uploadCert).toBe('DomainCertUpload')
+  })
+
+  test('a missing or malformed field is refused naming it', async () => {
+    await expect(env.as(owner).service('domains').call('uploadCert', 'nope', {}))
+      .rejects.toThrow(/certPem/)
+    await expect(env.as(owner).service('domains').call('uploadCert', 'nope', { certPem: 'c', keyPem: 'k' }))
+      .rejects.toThrow(/expiresAt/)
+  })
+})
+
+// ─── FJS-2353: a CRUD verb is refused by the model's gate, not by a restated hook ─
+//
+// The hooks named the level the model's @@gate already declares. The refusal is
+// the gate's, said as a role by app.ts's mapper; the hook said "admin or owner
+// ... (you have: developer)". The invitations pair is the case worth a row each:
+// both verbs write through asSystem(), so a gate graded only the caller's own
+// client would let a developer through once the hook was gone.
+describe('a CRUD verb is graded by the model gate alone (FJS-2353)', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+
+  test('projects: a viewer is refused create and a developer is refused remove, by the gate', async () => {
+    const row: any = await env.as(owner).service('projects').create({ name: 'Gate', slug: `gate-${uniq()}` })
+    const verbs: Array<[any, () => Promise<unknown>, string]> = [
+      [viewer,    () => env.as(viewer).service('projects').create({ name: 'No', slug: `no-${uniq()}` }), 'developer role in this workspace to create'],
+      [viewer,    () => env.as(viewer).service('projects').patch(row.id, { name: 'No', version: row.version }), 'developer role in this workspace to update'],
+      [developer, () => env.as(developer).service('projects').remove(row.id), 'admin role in this workspace to delete'],
+    ]
+    for (const [, call, said] of verbs)
+      await expect(call()).rejects.toThrow(new RegExp(`^Requires ${said}$`))
+  })
+
+  test('invitations: a developer can neither invite nor revoke', async () => {
+    const made: any = await env.as(owner).service('invitations').create({ email: `i-${uniq()}@x.co`, role: 'viewer' })
+    await expect(env.as(developer).service('invitations').create({ email: `j-${uniq()}@x.co`, role: 'viewer' }))
+      .rejects.toThrow(/^Requires admin/)
+    await expect(env.as(developer).service('invitations').remove(made.id))
+      .rejects.toThrow(/^Requires admin role in this workspace/)
+  })
+
+  test('api-keys and secrets: a developer is refused create', async () => {
+    await expect(env.as(developer).service('api-keys').create({ name: `k-${uniq()}`, scopes: ['servers:read'], expiresIn: '30d' }))
+      .rejects.toThrow(/^Requires admin role in this workspace/)
+    await expect(env.as(developer).service('secrets').create({ name: `S_${uniq()}`, kind: 'generic', data: 'x' }))
+      .rejects.toThrow(/^Requires admin role in this workspace/)
+  })
+
+  test('no CRUD verb but invitations.create restates a role hook', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs')
+    const dir = new URL('../src/services/', import.meta.url)
+    const holders = readdirSync(dir)
+      .filter(d => !['workspaces', 'audit', 'invitations'].includes(d))
+      .flatMap(d => readdirSync(new URL(`${d}/`, dir)).filter(f => f.endsWith('.ts')).map(f => `${d}/${f}`))
+      .filter(f => /requireWorkspaceRole\(/.test(readFileSync(new URL(f, dir), 'utf8')))
+    expect(holders).toEqual([])
+  })
+})
+
+// FJS-2865. A preference names its kind from NotificationKind and a hand-over
+// names its heir, each a type in the seed, so a malformed payload is a 400
+// naming the field before the method reads it.
+describe('preference and ownership verbs declare their input', () => {
+  test('each names a type in the seed', () => {
+    const prefs = (env.app.services.get('notification-preferences') as any).describe().inputs
+    expect(prefs.save).toBe('NotificationPreferenceSave')
+    expect(prefs.reset).toBe('NotificationPreferenceReset')
+    const workspaces = (env.app.services.get('workspaces') as any).describe().inputs
+    expect(workspaces.transferOwnership).toBe('WorkspaceTransfer')
+  })
+
+  test('a kind outside the enum, or a transport that is not a boolean, is refused naming it', async () => {
+    const prefs = env.as(developer).service('notification-preferences')
+    await expect(prefs.call('save', null, { kind: 'deploy_fail', email: true })).rejects.toThrow(/kind/)
+    await expect(prefs.call('save', null, { kind: 'deploy_success', email: 'yes' })).rejects.toThrow(/email/)
+    await expect(prefs.call('reset', null, { kind: 'deploy_fail' })).rejects.toThrow(/kind/)
+  })
+
+  test('a hand-over naming nobody is refused naming userId', async () => {
+    await expect(env.as(owner).service('workspaces').call('transferOwnership', ws.id, {}))
+      .rejects.toThrow(/userId/)
   })
 })

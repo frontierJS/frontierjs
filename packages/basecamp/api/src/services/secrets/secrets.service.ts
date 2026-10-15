@@ -20,7 +20,7 @@
 
 import { createService, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import { targetFor } from '../../providers/compute/index.ts'
@@ -230,9 +230,7 @@ export function createSecretsService(app: BasecampApp) {
         // Every write is admin/owner. A developer who can add a deploy key can
         // reach whatever that key opens, so this is not the same bar as
         // creating a project.
-        create: [requireWorkspaceRole(app, 'admin', 'owner'), stampSecret],
-        patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
+        create: [stampSecret],
         // Reads are NOT restricted further, because there is nothing sensitive
         // in one: the value is stripped at the Data boundary, so a viewer sees
         // that a secret exists and never what it is.

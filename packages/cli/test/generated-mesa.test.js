@@ -155,7 +155,7 @@ describe('what the generators write', () => {
   test('a generated page renders every list it asks columns() for', () => {
     let asked = 0
     for (const [what, source] of Object.entries(GENERATED)) {
-      if (!/columns:\s*cols,\s*omitted/.test(source)) continue
+      if (!/omitted\s*=\s*ranked\.omitted/.test(source)) continue
       asked++
       expect(source, `${what} asks for omitted and never renders it`).toContain('omitted.length')
     }
@@ -374,5 +374,59 @@ describe('make:home', () => {
   test('the register link is offered only where the app has the page', () => {
     expect(home).toContain('href="/register/"')
     expect(homePage({ title: 'X', areas: HOME_AREAS })).not.toContain('href="/register/"')
+  })
+})
+
+// FJS-2874. On an @@extensible model the schema cannot name one workspace's
+// custom fields; the resource learns them from `declaredFields()`, and
+// `columns()` / `filters()` name none before it has answered. A list that asks
+// once at setup therefore shows no custom column and no custom filter, ever.
+// And the column a declared key becomes is named `fields.<key>`, a path into
+// the Json column, so a cell read as `record[c.name]` is undefined even once
+// the column exists.
+describe('a generated list on an @@extensible model', () => {
+  const lists = Object.entries(GENERATED).filter(([, s]) => s.includes('.columns('))
+    .filter(([what]) => what.includes('list page'))
+
+  test('asks again once declaredFields() has answered', () => {
+    expect(lists.length).toBeGreaterThan(0)
+    for (const [what, source] of lists) {
+      const at = source.indexOf('declaredFields()')
+      expect(at, `${what} never awaits declaredFields()`).toBeGreaterThan(-1)
+      // The ask has to sit in a function the answer re-runs, never once at setup.
+      expect(source, `${what} asks columns() once at setup`).not.toMatch(/^\s*const \{ columns: cols/m)
+      expect(source, `${what} asks filters() once at setup`).not.toMatch(/^\s*const \{ filters, search \}/m)
+    }
+  })
+
+  test('reads a cell by the path its column names', () => {
+    for (const [what, source] of lists) {
+      expect(source, `${what} reads a cell by flat name`).not.toContain('record[c.name]')
+    }
+  })
+})
+
+// FJS-2876. The detail page's facts and the home page's recent table read the
+// same ranked columns a list does, and so meet the same two faults: the
+// ranking is asked once at setup, before declaredFields() has answered, and a
+// declared key is a column named `fields.<key>`, which no flat record[name]
+// reaches.
+describe('a generated detail page and home page on an @@extensible model', () => {
+  const pages = Object.entries(GENERATED)
+    .filter(([what]) => what.includes('edit page') || what.includes('detail page') || what.startsWith('make:home'))
+
+  test('asks again once declaredFields() has answered', () => {
+    expect(pages.length).toBeGreaterThan(0)
+    for (const [what, source] of pages) {
+      expect(source, `${what} never awaits declaredFields()`).toContain('declaredFields()')
+      expect(source, `${what} asks summary() once at setup`).not.toMatch(/^\s*const \{ columns: facts \}/m)
+      expect(source, `${what} asks columns() once at setup`).not.toMatch(/^ {2}const (read|shown|columns)\b/m)
+    }
+  })
+
+  test('reads a cell by the path its column names', () => {
+    for (const [what, source] of pages) {
+      expect(source, `${what} reads a cell by flat name`).not.toContain('record[c.name]')
+    }
   })
 })

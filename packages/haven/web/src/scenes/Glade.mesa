@@ -1,0 +1,106 @@
+<script>
+  // Glade.mesa — the glade past the woods' fence: a pond, a ring of standing
+  // stones, a fairy ring, and the old oak. It is reached only through a loose
+  // plank in the woods' west wall, a hidden door (`IDEAS/haven.md` 6.6), and
+  // the way back is the door in its east wall. The oak's foot opens at full
+  // night onto the cellar under the tavern, a `night` door at each end, so by
+  // day it is trunk. The picture this draws is `glade.frame.txt`, the glade by
+  // day, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { piece } from '@/pieces/index.js'
+  import { frame } from '@/pieces/frame.js'
+  import { tree }  from '@/pieces/tree.js'
+
+  // The canopy is in the air and walked under; the trunk is a wall. The
+  // night door is on the trunk's foot, its fourteenth column, with floor
+  // under it to stand on coming up.
+  const oak = piece('oak', String.raw`
+        .&&&&&&&&&&.
+    .&&&&&&&&&&&&&&&&&&.
+  (&&&&&&&&&&&&&&&&&&&&&&)
+ (&&&&&&&&&&&&&&&&&&&&&&&&)
+  '&&&&&&&&&&&&&&&&&&&&&&'
+     '&&&&&&||||&&&&&&'
+            ||||
+            ||||
+          _/||||\_
+`, String.raw`
+        tTTTTTTTTTTt
+    tTTTTTTTTTTTTTTTTTTt
+  tTTTTTTTTTTTTTTTTTTTTTTt
+ tTTTTTTTTTTTTTTTTTTTTTTTTt
+  tTTTTTTTTTTTTTTTTTTTTTTt
+     tTTTTTTuuuuTTTTTTt
+            uuuu
+            uuuu
+          uuuuuuuu
+`, { overhead: 5 })
+
+  const pond = piece('pond', String.raw`
+   .-~~~~~~~~~~~~-.
+ .~~~~~~~~~~~~~~~~~~.
+(~~~~~~~~~~~~~~~~~~~~)
+ '~~~~~~~~~~~~~~~~~~'
+   '-~~~~~~~~~~~~-'
+`, String.raw`
+   sbbbbbbbbbbbbbbs
+ sbbbbbbbbbbbbbbbbbbs
+sbbbbbbbbbbbbbbbbbbbbs
+ sbbbbbbbbbbbbbbbbbbs
+   sbbbbbbbbbbbbbbs
+`)
+
+  const stone = piece('stone', String.raw`
+ _
+| |
+|_|
+`, String.raw`
+ s
+s s
+sss
+`)
+
+  const shroom = piece('shroom', String.raw`
+ _
+(_)
+ |
+`, String.raw`
+ p
+ppp
+ l
+`)
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    u: { fg: '#78350f' },
+    s: { fg: '#9ca3af' },
+    l: { fg: '#9ca3af' },
+    b: { fg: ['#38bdf8', '#7dd3fc', '#0ea5e9'], chars: '~-~', ms: 350, wave: true },
+    p: { fg: ['#f472b6', '#fb7185', '#f472b6', '#e879f9'], ms: 1500, flicker: true },
+    t: { fg: '#166534' },
+    T: { fg: ['#22c55e', '#16a34a', '#15803d', '#16a34a'], chars: '&&%&', ms: 900, wave: true },
+  }
+</script>
+
+<Scene slug="glade" palette={PALETTE} spawn={{ x: 88, y: 12 }}>
+  <Piece of={frame} />
+  <Door  x={96} y={12} to="/woods/" />
+  <Piece of={oak}  x={36} y={1} />
+  <Door  x={49} y={9} to="/cellar/" night />
+  <Piece of={pond} x={6} y={15} />
+  <Piece of={tree} x={4}  y={1} />
+  <Piece of={tree} x={78} y={1} />
+  <Piece of={tree} x={82} y={17} />
+  <Piece of={stone} x={66} y={11} />
+  <Piece of={stone} x={74} y={9} />
+  <Piece of={stone} x={74} y={19} />
+  <Piece of={stone} x={58} y={14} />
+  <Piece of={stone} x={66} y={18} />
+  <Piece of={shroom} x={34} y={16} />
+  <Piece of={shroom} x={40} y={14} />
+  <Piece of={shroom} x={46} y={16} />
+  <Piece of={shroom} x={40} y={19} />
+</Scene>

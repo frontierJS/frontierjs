@@ -118,7 +118,8 @@ export function createWorkspacesService(app: BasecampApp) {
               'members',
               { method: 'addMember',     input: 'WorkspaceMemberAdd' },
               { method: 'setMemberRole', input: 'WorkspaceMemberRole' },
-              'removeMember', 'leave', 'transferOwnership'],
+              'removeMember', 'leave',
+              { method: 'transferOwnership', input: 'WorkspaceTransfer' }],
 
     // Only workspaces the caller belongs to. The old version did this with a
     // JOIN; `memberships: { some: { userId } }` is the relation the schema
@@ -352,9 +353,7 @@ export function createWorkspacesService(app: BasecampApp) {
      *  write: two steps would leave a window with no owner, or two. */
     async transferOwnership() {
       const me     = sessionOf().userId as string
-      const { userId, user_id } = ($.data ?? {}) as Record<string, string>
-      const target = userId ?? user_id
-      if (!target)       throw new BadRequest('userId is required')
+      const target = ($.data as { userId: string }).userId
       if (target === me) throw new BadRequest('You already own this workspace')
 
       const wsId  = $.id as string

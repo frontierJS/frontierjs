@@ -1,9 +1,12 @@
 <script>
   // Tavern.mesa — the tavern: the bar and its shelves, the hearth with a rug
   // before it where the cat paces, tables, barrels, the stairs, and the door
-  // back out to the square in the bottom wall. The picture this draws is
+  // back out to the square in the bottom wall. The rug has a hidden door in
+  // it, the way down to the cellar (`IDEAS/haven.md` 6.5): stepping on that
+  // cell is the only sign of it. The picture this draws is
   // `tavern.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
+  import { INDOORS } from '@/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import Pacer from '@/components/Pacer.mesa'
@@ -11,9 +14,11 @@
   import { frame }  from '@/pieces/frame.js'
   import { table }  from '@/pieces/table.js'
   import { barrel } from '@/pieces/barrel.js'
+  import { bar }    from '@/pieces/bar.js'
 
-  // The shelves, the bar, the hearth, its rug and the stairs are the tavern's
-  // own; the tables and barrels are pieces any scene may use.
+  // The shelves, the hearth, its rug and the stairs are the tavern's own; the
+  // bar is a piece of its own (`pieces/bar.js`), since `components/Bar.mesa`
+  // finds it by import; the tables and barrels are pieces any scene may use.
   const shelves = piece('shelves', String.raw`
 .--------------------------------------.
 | U  0  U  0  U  0  U  0  U  0  U  0  U|
@@ -26,18 +31,6 @@ w c  e  p  c  e  p  c  e  p  c  e  p  cw
 wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
 w e  p  c  e  p  c  e  p  c  e  p  c  ew
 wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-`)
-
-  const bar = piece('bar', String.raw`
-________________________________________
-|======================================|
-'--------------------------------------'
-  o     o     o     o     o     o     o
-`, String.raw`
-wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-wWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWw
-wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-  t     t     t     t     t     t     t
 `)
 
   const hearth = piece('hearth', String.raw`
@@ -104,13 +97,14 @@ uuuuu
   }
 </script>
 
-<Scene slug="tavern" palette={PALETTE} spawn={{ x: 48, y: 24 }}>
+<Scene slug="tavern" layers={INDOORS} palette={PALETTE} spawn={{ x: 48, y: 24 }}>
   <Piece of={frame} />
   <Door  x={48} y={25} to="/" />
   <Piece of={shelves} x={5}  y={1} />
   <Piece of={bar}     x={5}  y={7} />
   <Piece of={hearth}  x={63} y={1} />
   <Piece of={rug}     x={65} y={10} />
+  <Door  x={75} y={11} to="/cellar/" hidden />
   <Piece of={table}   x={9}  y={13} />
   <Piece of={table}   x={29} y={13} />
   <Piece of={table}   x={49} y={16} />

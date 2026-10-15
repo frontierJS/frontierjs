@@ -1,0 +1,35 @@
+<script>
+  // Sitting.mesa — two figures on the stools of one table are a booth
+  // (`api/src/booth.ts`), and neither is told: each client reads the same two
+  // seats off the same presence, asks for the pair's room and walks in, so
+  // both go. `sat` is the last pair asked about, so an update that changes
+  // nothing asks for nothing, and a figure who stands and sits again is asked
+  // afresh. The room is asked for here and not by the booth's route, which has
+  // to find the row ready. Draws nothing.
+  import { goto, page } from '@frontierjs/sierra/router'
+  import { rooms } from '@/resources/Room.mesa'
+  import { cellOf } from '@/crowd.js'
+
+  export let stage
+  export let here
+  export let x
+  export let y
+  export let spawn
+  // Says why a sitting went nowhere.
+  export let tell
+
+  let sat = ''
+  async function sitAcross(sx, sy, others) {
+    const seat = stage.seatAt(sx, sy)
+    const mate = seat && others.find((m) => cellOf(m, spawn).x === seat.mate.x && cellOf(m, spawn).y === seat.mate.y)
+    const pair = mate ? `${sx},${sy}:${mate.userId}` : ''
+    if (pair === sat) return
+    sat = pair
+    if (!mate) return
+    try {
+      const booth = await rooms.service.invoke('booth', null, { withId: Number(mate.userId) })
+      goto('/booth/', { room: booth.slug, from: page.pathname, x: seat.stand.x, y: seat.stand.y })
+    } catch (e) { tell(e.message) }
+  }
+  $: sitAcross(x, y, here.get().others)
+</script>

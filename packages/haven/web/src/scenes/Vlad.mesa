@@ -1,0 +1,58 @@
+<script>
+  // Vlad.mesa — Vlad's home, through the second cottage on the lane. Every home
+  // has the board's furniture in the same places — the cork board of pinned
+  // projects and the inbox screen over the desk along the top, the calendar on
+  // the west wall, the bell and the mat by the door — so one
+  // `components/HomeBoard.mesa` writes on any of them, and only on the screen
+  // of the member whose board names this home. Vlad's own: an easel with a
+  // chart that climbs, and plants on every side.
+  // The picture this draws is `vlad.frame.txt`, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import { INDOORS } from '@/stage.js'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { frame } from '@/pieces/frame.js'
+  import { corkboard, screen, desk, calendar, bell, doormat, bed, rug, easel, plant, stove } from '@/pieces/home.js'
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    w: { fg: '#b45309' },
+    W: { fg: '#d97706' },
+    S: { fg: '#a16207' },
+    s: { fg: '#fbbf24' },
+    l: { fg: '#64748b' },
+    q: { fg: '#9ca3af' },
+    Q: { fg: '#475569' },
+    e: { fg: '#a3e635' },
+    c: { fg: '#22d3ee' },
+    p: { fg: '#f472b6' },
+    u: { fg: '#854d0e' },
+    m: { fg: '#7f1d1d' },
+    M: { fg: '#b91c1c' },
+    B: { fg: ['#facc15', '#fde047', '#facc15'], ms: 1200, wave: true },
+    T: { fg: ['#22c55e', '#16a34a', '#15803d'], ms: 1100, wave: true },
+    L: { fg: ['#22c55e', '#166534', '#4ade80', '#166534'], ms: 400, flicker: true },
+    V: { fg: ['#1f2937', '#4b5563'], chars: '@o', ms: 250, flicker: true },
+    h: { fg: ['#ef4444', '#f97316', '#facc15', '#fb923c'], chars: '^*^"', ms: 110, flicker: true, light: 6 },
+  }
+</script>
+
+<Scene slug="vlad" layers={INDOORS} palette={PALETTE} spawn={{ x: 48, y: 24 }}>
+  <Piece of={frame} />
+  <Door  x={48} y={25} to="/lane/" />
+  <Piece of={corkboard} x={3}  y={1} />
+  <Piece of={screen}    x={50} y={1} />
+  <Piece of={desk}      x={57} y={10} />
+  <Piece of={calendar}  x={3}  y={13} />
+  <Piece of={bell}      x={41} y={21} />
+  <Piece of={doormat}   x={44} y={24} />
+  <Piece of={rug}       x={40} y={15} />
+  <Piece of={bed}       x={76} y={20} />
+  <Piece of={easel}     x={25} y={13} />
+  <Piece of={plant}     x={38} y={13} />
+  <Piece of={plant}     x={90} y={12} />
+  <Piece of={plant}     x={90} y={16} />
+  <Piece of={stove}     x={24} y={21} />
+  <slot />
+</Scene>

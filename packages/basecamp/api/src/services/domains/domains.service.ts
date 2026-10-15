@@ -22,7 +22,7 @@
 // somebody remembers to run an update.
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import domainDns from '../../jobs/domain-dns.job.ts'
@@ -93,6 +93,12 @@ export function createDomainsService(app: BasecampApp) {
     name:  'domains',
     scope: keyScope('domains'),
     model: 'Domain',
+    // The whole surface: a service gaining `input:` lists every verb it answers.
+    methods: [
+      'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+      'makePrimary',
+      { method: 'uploadCert', input: 'DomainCertUpload' },
+    ],
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,
     // where an `after: { all: [...] }` hook broadcast every read to every browser
@@ -189,10 +195,6 @@ export function createDomainsService(app: BasecampApp) {
       const { certPem, keyPem, kind, issuedAt, expiresAt } =
         ($.data ?? {}) as Record<string, string>
 
-      if (!certPem || !keyPem) throw new BadRequest('certPem and keyPem are both required')
-      if (!expiresAt || Number.isNaN(Date.parse(expiresAt)))
-        throw new BadRequest('expiresAt is required and must be a date — it is what decides renewal')
-
       const secret = await db().secret.create({
         data: {
           workspaceId: ws(),
@@ -238,9 +240,6 @@ export function createDomainsService(app: BasecampApp) {
         // whether it is private. Both are admin acts.
         // No deriveSlug: `Domain` has neither `name` nor `slug`, so it was a
         // hook that could never fire.
-        create:      [requireWorkspaceRole(app, 'admin', 'owner')],
-        patch:       [requireWorkspaceRole(app, 'admin', 'owner')],
-        remove:      [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },
   })

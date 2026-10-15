@@ -15,10 +15,8 @@ flags:
 ---
 
 ```js
-$.config.env    = flag.test ? ':test' : ''
-$.config.dbFile = flag.test ? 'test.db' : 'development.db'
-$.config.dbPath = $.paths.db
-$.config.root   = $.paths.root
+$.config.env  = flag.test ? ':test' : ''
+$.config.root = $.paths.root
 
-log.warn(`Resetting ${$.config.dbFile} — this is destructive`)
+log.warn('Resetting the database — this is destructive')
 ```

@@ -296,6 +296,41 @@ type NetworkDetach {
   serverId String
 }
 
+/// What an outpost's `volumes.report` sends: the machine and the whole set of
+/// volumes it holds, each entry read leniently by the method.
+type VolumeReport {
+  server_id String
+  volumes   Json[]
+}
+
+/// What `domains.uploadCert` accepts. The material is stored as a Secret by the
+/// method; the shape, including that `expiresAt` is a date, is the schema's.
+type DomainCertUpload {
+  certPem   String @length(1, 100000)
+  keyPem    String @length(1, 100000)
+  expiresAt DateTime
+  issuedAt  DateTime?
+  kind      String?
+}
+
+/// What `notification-preferences.save` accepts. That at least one transport is
+/// sent is the method's: a type cannot say "one of these two".
+type NotificationPreferenceSave {
+  kind  NotificationKind
+  email Boolean?
+  inApp Boolean?
+}
+
+/// What `notification-preferences.reset` accepts; no kind resets every kind.
+type NotificationPreferenceReset {
+  kind NotificationKind?
+}
+
+/// What `workspaces.transferOwnership` accepts: the member who becomes owner.
+type WorkspaceTransfer {
+  userId String
+}
+
 /// What `apps.fromBlueprint`, `apps.place` and `apps.unplace` accept.
 type AppFromBlueprint {
   blueprintId   String

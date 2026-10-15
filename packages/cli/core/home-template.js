@@ -93,15 +93,32 @@ ${areas}
   // The rows a person comes back for: the first model with a lifecycle, the
   // working row — and with none, the first model that is not the people.
   const focus = flows[0] ?? areas.find(a => a.resource.context?.model !== 'User') ?? null
-  const read    = focus ? focus.resource.columns() : { columns: [], omitted: [] }
-  const shown   = read.columns.slice(0, 4)
-  const columns = [...shown, { name: '_open', label: 'Open', hideLabel: true }]
   const idField = focus?.resource.context.idField ?? 'id'
-  // Newest first where the model stamps its rows. \`fields\` is the write
-  // schema and holds no createdAt; the read schema columns() ranked does, in
-  // what it showed or in what it left out.
-  const stamped = [...read.columns, ...read.omitted].some(c => c.name === 'createdAt')
-  const newest  = stamped ? { orderBy: '-createdAt' } : {}
+
+  let shown   = []
+  let columns = []
+  let newest  = {}
+
+  // Asked AGAIN once declaredFields() has answered: on an @@extensible model a
+  // custom field one workspace declared is in no schema, so the first ask names
+  // none of them.
+  function layout() {
+    const read = focus ? focus.resource.columns() : { columns: [], omitted: [] }
+    shown   = read.columns.slice(0, 4)
+    columns = [...shown, { name: '_open', label: 'Open', hideLabel: true }]
+    // Newest first where the model stamps its rows. \`fields\` is the write
+    // schema and holds no createdAt; the read schema columns() ranked does, in
+    // what it showed or in what it left out.
+    const stamped = [...read.columns, ...read.omitted].some(c => c.name === 'createdAt')
+    newest = stamped ? { orderBy: '-createdAt' } : {}
+  }
+
+  layout()
+  if (focus) focus.resource.declaredFields().then(layout, () => {})
+
+  // A declared custom field is named for a PATH into its Json column
+  // (fields.severity), which no flat record[name] reaches.
+  const cellOf = (record, name) => name.split('.').reduce((v, k) => v?.[k], record)
 
   const stateHref = (f, s) => f.href + '?' + f.machine.field + '=' + encodeURIComponent(s.value)
 
@@ -175,7 +192,7 @@ ${SC}
         <Table {columns} rows={recent} loading={loading && !recent.length} hover emptyText="Nothing here yet.">
           {#snippet row(record)}
             <tr>
-              {#each shown as c (c.name)}<td><Cell value={record[c.name]} column={c} {record} /></td>{/each}
+              {#each shown as c (c.name)}<td><Cell value={cellOf(record, c.name)} column={c} {record} /></td>{/each}
               <td><Button variant="link" href={focus.href + record[idField] + '/'}>Open</Button></td>
             </tr>
           {/snippet}

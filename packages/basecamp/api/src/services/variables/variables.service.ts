@@ -10,7 +10,7 @@
 // absent from every read here. A secret is replaced, never read back.
 
 import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, refuseProtectedForDeveloper, WORKSPACE_QUERY }
+import { sessionScope, workspaceChannel, getPagination, refuseProtectedForDeveloper, WORKSPACE_QUERY }
   from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -105,9 +105,7 @@ export function createVariablesService(app: BasecampApp) {
     hooks: {
       before: {
         all:    [sessionScope(app)],
-        create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), scopeFromPayload],
-        patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        create: [scopeFromPayload],
       },
     },
   })

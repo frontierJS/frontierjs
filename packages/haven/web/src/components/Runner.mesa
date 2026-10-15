@@ -8,7 +8,7 @@
   // A route places him (`routes/tavern.mesa`), never a scene file: a scene's
   // picture is pinned by `scenes.test.js` and its file is the editor's, and
   // neither may run a command.
-  import { at } from '#cell'
+  import { at, linked } from '#cell'
   import { nextErrand, markDelivered } from '#errand'
 
   // The `to` of the door he comes in by.
@@ -20,12 +20,13 @@
   let boy    = null   // { x, y } on the stage; null until he is through the door
   let errand = null   // shown once he stops
   let view   = scene.view
+  let hyper  = true   // false once a terminal says it cannot open a hyperlink, and the URL is printed
   $.onDestroy(scene.subscribe(() => { view = scene.view }))
 
   // Leaving the room aborts the fetch, so no boy arrives in the next one.
-  const ctl    = new AbortController()
-  const timers = []
-  $.onDestroy(() => { ctl.abort(); timers.forEach(clearTimeout) })
+  const ctl = new AbortController()
+  let stop  = null
+  $.onDestroy(() => { ctl.abort(); stop?.() })
 
   /** The cells he runs: the door, one in, then along the wall, while the floor allows. */
   function path(d) {
@@ -45,11 +46,14 @@
     const d = scene.doors.find((o) => o.to === door)
     if (!d) return
     const cells = path(d)
-    cells.forEach((c, i) => timers.push(setTimeout(() => { boy = c }, i * STEP_MS)))
-    timers.push(setTimeout(() => {
+    // A cell a step on the stage's clock, then the errand once he stops.
+    let i = 0
+    stop = scene.task('runner', () => {
+      if (i < cells.length) { boy = cells[i++]; return }
+      stop()
       errand = e
       if (e.id) markDelivered(e.id)
-    }, cells.length * STEP_MS))
+    }, { every: STEP_MS })
   }
 
   $.onMount(() => {
@@ -58,15 +62,16 @@
       .catch((e) => { if (!ctl.signal.aborted) runIn({ id: null, title: `the runner tripped: ${e.message}`, url: '' }) })
   })
 
-  /** What he says, a row each over where he stands, kept inside the view. */
+  /** What he says, a row over where he stands, kept inside the view; the row is a link when the errand has a URL. */
   function note(e, b, v) {
-    const rows = [`(! ${e.title})`, e.url].filter(Boolean).map((t) => t.slice(0, v.w))
-    return rows.map((text, i) => ({
-      key:  i,
+    const text = `(! ${e.title})`.slice(0, v.w)
+    return [{
+      key:  0,
       text,
+      url:  e.url,
       x:    Math.max(0, Math.min(b.x - v.x, v.w - text.length)),
-      y:    Math.max(0, b.y - v.y - rows.length + i),
-    }))
+      y:    Math.max(0, b.y - v.y - 1),
+    }]
   }
 </script>
 
@@ -74,7 +79,14 @@
   <p {@attach at(boy.x - view.x, boy.y - view.y, 11)}>&</p>
   {#if errand}
     {#each note(errand, boy, view) as r (r.key)}
-      <p class="surface" {@attach at(r.x, r.y, 12)}>{r.text}</p>
+      {#if r.url}
+        <p class="surface" {@attach at(r.x, r.y, 12)} {@attach linked(r.url, (ok) => { hyper = ok })}>{r.text}</p>
+        {#if !hyper}
+          <p class="surface" {@attach at(Math.min(r.x, Math.max(0, view.w - r.url.length)), r.y - 1, 12)}>{r.url.slice(0, view.w)}</p>
+        {/if}
+      {:else}
+        <p class="surface" {@attach at(r.x, r.y, 12)}>{r.text}</p>
+      {/if}
     {/each}
   {/if}
 {/if}

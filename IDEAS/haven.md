@@ -6,7 +6,7 @@ dated: 2026-10-14
 
 # Idea — Haven: a place in the terminal anyone with `fli` installed can walk into
 
-**Status: PROPOSED. Phases 0, 1, 2 and 4 are built — the schema, the API, the signed login, the square and the tavern in color and motion, and `fli haven` in front of them, which installs the server's own Haven on a machine with no checkout (3.1); nothing is published yet. Phase 5 is built but for the editor in VS Code (5.4): a scene is a component tree over a stage (5.5, `FJS-D997`), its picture committed beside it and pinned; a browser tab and a terminal stand in one room (5.2, 5.6); and `fli haven:scenes` places pieces on a page and writes the tree back byte for byte (5.7). Phase 6 is begun: the view follows a figure across a square wider than a screen (6.1); 6.2–6.5 and Phases 7–9 — a Haven that lives, inhabitants, building and play — are proposed. The deploy is the last step (10.1, by the owner); Phase 11, the workshop placed before it, is built; and every open question is ruled, so each step cites its ruling. Work the plan from the first open box.** Dated 2026-10-13. The
+**Status: PROPOSED. Phases 0, 1, 2 and 4 are built — the schema, the API, the signed login, the square and the tavern in color and motion, and `fli haven` in front of them, which installs the server's own Haven on a machine with no checkout (3.1); nothing is published yet. Phase 5 is built but for the editor in VS Code (5.4): a scene is a component tree over a stage (5.5, `FJS-D997`), its picture committed beside it and pinned; a browser tab and a terminal stand in one room (5.2, 5.6); and `fli haven:scenes` places pieces on a page and writes the tree back byte for byte (5.7). Phase 6 is begun: the view follows a figure across a square wider than a screen (6.1); 6.2–6.5 and Phases 7–9 — a Haven that lives, inhabitants, building and play — are proposed. The deploy is the last step (10.1, by the owner); Phase 11, the workshop placed before it, is built; Phase 12, the world as data, is proposed, and a box that says **Needs 12.x** waits on that step; and every open question is ruled, so each step cites its ruling. Work the plan from the first open box.** Dated 2026-10-13. The
 probe below is now `packages/mesa/test/terminal/specs/haven.spec.mjs`; everything
 past Phase 0 is argument. Do not cite this file as describing behavior — see
 `VERIFYING.md`.
@@ -628,11 +628,42 @@ FJS-D985's "never a forked world" holds: both targets show the same viewport.
   then the tavern too with `@` in its block, a second terminal in the same
   HOME drawing the tavern it never walked into, a third HOME drawing only the
   square; `verify:browser` reads the same off the tab and its IndexedDB.
-- [ ] 6.5 Secrets. A cellar under the tavern behind a door in the floor, a
-  plank in the woods' fence, a door that is there only at night (7.2). A
-  hidden door is `<Door hidden>`, and one the spawn's flood fill in
-  `scenes.test.js` reaches only through another hidden door is allowed, so the test learns the word rather than
-  excusing the cell.
+- [x] 6.5 Secrets: the cellar. A hidden door is `<Door hidden>`: it keeps the
+  glyph and paint of the cell it is on, so nothing drawn says it is there, and
+  stepping on it is `goto` like any door. The tavern's rug has one, at its
+  middle, to a cellar under the tavern (`Cellar.mesa`, racks, barrels, crates,
+  a chest, a ladder in the top wall). The map leaves a hidden door out of a
+  snap, so `/map` neither draws it nor places a scene by it; the cellar stands
+  in the row of houses once it has been walked into. Built: `hidden` on the
+  stage's `door()`, `Door.mesa` and `doorAt()`/`doors` (`hidden: true` only
+  when set); `scenes.test.js` holds that the rug is the one way down, drawn
+  as rug, and that a figure coming up stands beside the hole; `verify:cellar`
+  walks down and up, and reads the hole off a frame as rug. The spawn's
+  flood-fill rule for a hidden door reached only through another was not
+  needed and is not written. The editor places no hidden door: a new `<Door>`
+  tag has no `hidden`, and a moved one keeps it.
+- [x] 6.6 More secrets. A plank in the woods' fence to a scene of its own, and
+  a door that is there only at night (7.2) -- a hidden door whose `hidden`
+  is a function of the clock, so 7.2 comes first. Built: the woods' west wall
+  is the fence, and its cell at the path's end is a hidden door to the glade
+  (`Glade.mesa`: a pond, standing stones, a fairy ring, the old oak), whose
+  way back is a plain door in its east wall. The night door is not `hidden` as
+  a function: a hidden door is still a door, found by stepping, so one that
+  is "there only at night" is `<Door night>` -- a door at full night
+  (`isNight`) and, by day, the cell it replaced, drawn and bumped as that.
+  `hidden` stays orthogonal: it says how a door is drawn, `night` when it is
+  one. The oak's foot and the cellar's west wall are each other's night door,
+  a tunnel from the woods into the cellar under the tavern. The clock is the
+  caller's (`doorAt(x, y, ms)`, `look`), `stage.doors` lists a night door
+  whatever the hour so `arrival()` finds the way back, the picture and the
+  map's snap are the day's, and an indoor stage holding one redraws on the
+  sky's step. `scenes.test.js` holds the plank drawn as fence, the tunnel by
+  day and night, and a probe night door; `verify:glade` walks a pty pinned to
+  day through the plank and against the shut oak, and one pinned to night
+  down the tunnel and back (`clock-at.mjs`, a preload through `BUN_OPTIONS`).
+  Found: `verify:explore` walks Sam into the square's hedge expecting a wall,
+  and the hedge is floor, so 36 of its checks fail from the wrong cell
+  (`FJS-2875`).
 
 ### Phase 7 — Haven lives
 
@@ -640,28 +671,93 @@ Goal: Haven looks and sounds lived in, including with nobody else on.
 Done when: two terminals on one shared clock draw the same sky and the same
 footprints, and a line said at one end of the square does not reach the other.
 
-- [ ] 7.1 Hearing by distance. A line said is heard within a radius of the
+- [x] 7.1 Hearing by distance. A line said is heard within a radius of the
   speaker, `!` before it shouts to the whole scene, and `/w <nick>` whispers
   to one member. This is what makes walking over to someone mean something.
   The server filters who hears a line, and a whisper is a Message row with a
-  `toId` and a read policy (`FJS-D992`).
-- [ ] 7.2 Night and day. The wall clock the pacers already share runs a cycle
+  `toId` and a read policy (`FJS-D992`). Built: `api/src/hearing.ts` holds the
+  rule once -- `EARSHOT` 16×6 cells, a box about the speaker -- and the
+  messages service's `channel:` returns the room's channel filtered by it
+  against presence; `Message.toId` and the read policy make a whisper private
+  to its two members in `find` as well as in the fan-out, a mod included.
+  `Scene.mesa` asks the same `hears()` of the lines it loaded, so a bubble is
+  drawn only for a speaker heard from where each stands now (walk away and it
+  goes); `/w <nick> <line>` saves with a `toId` and draws `(psst: …)`. A
+  listener with no cell hears nothing and a speaker with none is heard by the
+  room, which a booth's lines are. `hearing.test.ts`, `schema.test.js` and
+  `verify:hearing`. Left as ruled: `messages.find` returns the room's
+  history, so the PageUp pane shows lines the figure did not hear. Found: a
+  bubble's off-screen marker (`>`) now shows only for a shout, since a
+  speaker past the view is past earshot; and `verify:explore` and
+  `verify:browser` fail on the fog checks while `FOG` is off, as before.
+- [x] 7.2 Night and day. The wall clock the pacers already share runs a cycle
   (an hour of real time is a day, to start): a palette entry gains a night
   `fg`, the lamps light at dusk, and 6.3's radius shrinks after dark. Nothing
-  is sent, so every terminal sees the same sky.
-- [ ] 7.3 Weather. Rain and snow as an overlay drawn over the art and under the
+  is sent, so every terminal sees the same sky. Built: `web/src/sky.js`, a pure
+  function of the clock -- `darkness(ms)` in thirds (half the hour is day, a
+  tenth dusk, three tenths night, a tenth dawn), `isNight(ms)` for 6.6's door,
+  `shade()` toward moonlight. A palette entry gains no `night` field: the night
+  color is derived from the day one, so no scene is edited to have one.
+  `stage.look()` shades every outdoor cell except a light source (an entry with
+  `light`), and a cell inside a light's radius keeps half the day, so a lamp
+  and each window pool on the facade as dusk comes; `stage.tint()` does it for
+  a pacer in both paints. `<Scene indoors>` (tavern, cellar, workshop) has no
+  sky; the stage redraws on the sky's own step (`SKY_MS`, two minutes) when
+  nothing else moves it. Not done: the sight radius does not shrink at night,
+  because `FOG` is off and `SIGHT` acts on nothing -- it comes back with the
+  fog. `sky.test.js` holds the curve, a probe stage and the real scenes; no
+  drive reads a night color, since the drives read glyphs. Found: 7.1's
+  `Scene.mesa` imports `hearing.ts` by a relative path the editor drive's copy
+  did not have, so `verify:scenes` opened no scene (the copy mirrors the
+  package layout now); and `verify:browser` read a tab's color against the
+  palette's, which is the sky's by night (it asks the stage at `Date.now()`).
+  `verify:scenes` still fails two checks, on the tavern table's candle drawn
+  `.` where the drive expects `i` -- the unoccupied candle, not the sky.
+- [x] 7.3 Weather. Rain and snow as an overlay drawn over the art and under the
   figures, hashed from the clock the way `flicker` is, so a storm falls on the
   same cells everywhere. The real weather at the server is a later door, not
-  a first one.
-- [ ] 7.4 Footprints. Where somebody walked in the last few minutes, fading.
+  a first one. Built: `web/src/sky.js` -- a spell of weather is ten minutes
+  of the clock (`scheduleAt`: half clear, three tenths rain, a fifth snow), and
+  a drop is a function of the clock and the cell (`fallAt`: a drop a column a
+  period, a row lower each step; snow drifts a column every few steps). A drop
+  replaces a BLANK outdoor cell in `stage.look()`, so it never hides a wall, a
+  door or a piece, a canopy's cells take none, an `indoors` stage has none, and
+  the night shades it like any other color; the figures are boxes a layer up,
+  so they walk in front of it. Both paints draw `look()`, so the two targets
+  agree. `tickOf(ms)` now answers for the weather and the paints ask it again
+  after every draw, with the edge of a spell a step of its own. `HAVEN_WEATHER`
+  pins a kind (the one option, and why: rain changes glyphs, so a drive that
+  reads a blank cell would pass or fail by the clock) -- `stage.mjs` pins
+  `clear`, and the two Vite configs bake the name in at start. `sky.test.js`
+  holds the schedule, the pin, the fall, the density, rain on blank outdoor
+  cells only, the tick, and the square's terminal frame in the rain.
+  Not done: a drive that reads rain off a live screen or a tab, and the sight
+  radius in a storm (the fog is off).
+- [x] 7.4 Footprints. Where somebody walked in the last few minutes, fading.
   An empty square at 3am still says somebody went into the woods ten minutes
   ago. A move is never a row, so this is the room's memory of moves and not
   a model: the API keeps the recent moves per room in memory (`FJS-D993`).
+  Built: a step is a move of one cell from where the figure stood
+  (`stepped()` in `api/src/memory.ts`), so a join, a door's arrival and a
+  booth's stand lay none. The server lays one per step in `app.memory`,
+  keyed by the room's channel, from `presenceMeta` -- which Junction now
+  hands `{ channel, conn, was }` (`FJS-1744`) -- and `rooms.traces` gives a
+  joiner the room's backlog once; after that `Scene.mesa` lays its own step
+  and each step presence shows it, by the same `stepped()`, so a step costs
+  no frame of its own. `stage.tread()` keeps the newest footprint per cell,
+  and the `steps` layer draws it as a `.` on a blank lit cell, fading through
+  `STEP_FG` in thirds of `TRACES.step` (five minutes), under a falling drop
+  and shaded by the night; each third is a tick of the stage's clock.
+  `steps.test.js`, `memory.test.ts`, `room.test.ts` § footprints and
+  `verify:steps` (two ptys and a late `--frame`). Not done: footprints in
+  the browser are drawn but no drive reads one there.
 - [ ] 7.5 The notice board. A board on the square's wall: stand beside it, press
   `e`, read what is pinned and pin a line. This is the part of Haven that
   works when nobody is on. A first cut is the board's own Room and its
   Messages, with no new model; check it against 3.3's retention, since a
   board's lines are meant to outlive the tavern's.
+  - Needs 12.4: the board's `e` is a verb in reach, which is how the line
+    input stops holding every letter.
 
 ### Phase 8 — Inhabitants
 
@@ -674,9 +770,12 @@ and the crier announces a new member's first walk-in.
   ticks. A bench piece names its seats, so `/sit` beside one sits on it. An
   emote is a presence field beside `{ x, y }`, so `position()` in
   `api/src/rooms.ts` widens by one named key and still cuts everything else.
+  - Needs 12.3 (`/sit` finds a seat as a spot) and 12.4 (an emote is a verb).
 - [ ] 8.2 A pet follows its member, one cell behind on the path walked. It is
   drawn from the figure's own recent cells on every screen, so nothing is
   sent for it.
+  - Needs 12.7: the pet's place is state carried from tick to tick, not a
+    function of the clock.
 - [ ] 8.3 Haven's crier: a system member who announces a member's first
   walk-in and a release. Its lines are Messages said through `asSystem()`.
   The repo's state reaches Haven only at deploy (`FJS-D996`), so a push to
@@ -686,18 +785,44 @@ and the crier announces a new member's first walk-in.
   from a search over `docs/`, `VOCABULARY.md` and the package READMEs,
   quoting the passage and its path, and counts the questions it could not
   answer, since that count is what would justify a model later.
+  - Needs 12.4: the barkeep's question is a verb in reach of the bar.
+- [x] 8.5 Booths. Two members on the stools of one tavern table are walked, by
+  their own clients, into a room of their own: them on the left, you on the
+  right, the conversation between, each line a bubble that stays and the next
+  under it. A booth is a Room row naming its pair (`pairLoId`, `pairHiId`), so
+  privacy is the Room and Message read policies and the channel, the history
+  and retention are the ones every room has; `rooms.booth` finds or makes the
+  row. A piece names its `seats`, which pair up; Esc stands up beside the stool,
+  not on it, so the pair are not seated again at once. The pair's lines
+  persist in the room, newest 500. `verify:booth` and `api/test/booth.test.ts`.
+  Left open: `rooms.booth` is rate-limited but a member can still make a
+  row per member; a sweep of booths nobody has spoken in is not written.
+- [x] 8.6 The board behind the bar. A member who sits on a stool of the tavern's
+  bar has the machine's latest activity chalked up over the shelves: the
+  runner's pattern (`#errand`) a second time — `HAVEN_BAR`, else
+  `~/.fli/haven/bar`, a command printing `[{ text, when? }]` newest first, run
+  when the figure sits and kept a minute. Haven knows no source: Jordan's is
+  `basecamp timeline me`. A stool is a `solo` seat (a seat with no mate, so it
+  is never a booth); `components/Bar.mesa`, placed by the tavern's route, reads
+  the figure's cell. Drawn on this screen only. Left open: a row is not a link —
+  the terminal's `linked()` draws no link on a text Mesa binds in an `{#each}`
+  (the same call on a literal text works), so the URL a row came with is dropped.
+  `verify:bar`, `bar.test.js`.
 
 ### Phase 9 — Building and play
 
 Goal: members change Haven and play in it.
-Done when: two members finish a game at a tavern table, and a house one of them
-drew stands in a scene where the other walks into it.
+Done when: two members finish a game at a tavern table, a house one of them
+drew stands in a scene where the other walks into it, and a bolt one fires
+knocks the other back on both screens and removes neither.
 
 - [ ] 9.1 Tavern games. Dice first: `/roll 2d6` is a Message the server rolls,
   so nobody can roll their own number. Then checkers on a table piece: sit
   down and the board draws over the table, a move is a call, and the game is
   a row a service owns. This is live shared state at a small scale, which is
   the hardest thing in the framework to get right.
+  - Needs 12.4: `/roll` and a table game are verbs, the game a mode while
+    seated.
 - [ ] 9.2 The framework quarter. A scene where each building is a package —
   the Litestone quarry, the Junction crossroads, the Mesa workshop, the
   Caravan stables. Inside, a wall reads its `PROJECT_STATE.md`; a red CI run
@@ -708,6 +833,65 @@ drew stands in a scene where the other walks into it.
   editor, and the house is a Room they own — a row of placements and a
   palette, never a stranger's glyphs (`FJS-D995` as `FJS-D997` amends it). Strangers drawing art is a
   moderation surface, so this waits on 3.2's mod standing.
+  - Needs 12.1 (a plot is placements in a row) and 12.9 (the editor it is
+    placed in).
+- [ ] 9.4 The home row. The left hand acts while the right walks on `h j k l`:
+  `a s d f` in NORMAL, each keeping what the key means in vim. A figure
+  gains a facing, the way it last stepped, as one more presence key beside
+  `{ x, y }` (8.1's widening of `position()`). A struck piece and a mark are
+  the room's memory, the same in-memory store 7.4's footprints keep
+  (`FJS-D993`), so 7.4 comes first and no step here adds a model. Check
+  first: in NORMAL a letter types nothing (`Shell.mesa`), so the scene can
+  read it, which may also reopen 7.5's `e` and 11.4's key; the browser's
+  line has no NORMAL yet.
+  - Needs 12.4: `a s d f` are key verbs, delivered along the facing.
+- [ ] 9.5 `d` deletes: a bolt. It flies about 8 cells the way the figure
+  faces, drawn `-` or `|`, as one event on the room's channel that each
+  client animates; the server resolves what it hit, so there is one answer.
+  A piece shatters and is gone for everyone for about five minutes, then
+  grows back. The cat yowls and runs at double speed. A wall takes a `,`
+  scorch that fades. A member is knocked back two cells and flickers `x` for
+  a second, and is never removed: Haven has strangers on it, and a bolt
+  that deletes a person is a griefing tool. `dd` fires all four ways on a
+  longer cooldown. The cooldown, about 3 s, is the server's.
+  - Needs 12.2: what a bolt hits is resolved on the server's world, not the
+    caller's.
+  - Server half built: `rooms.bolt` resolves a bolt or `dd` against
+    `world.json`, holds the cooldown (`app.cooldowns`), lays the scorch and the
+    shattered piece in `app.memory`, wipes chalk crossed, and sends one `bolt`
+    event to the room (`api/test/bolt-service.test.ts`). Left open: nothing on
+    the client fires it, draws the flight, moves the struck figure, flickers
+    `x`, hides a shattered piece or sends a joiner the live `struck` and
+    `scorch` traces; a grown-back piece is only a trace expiring.
+  - Client half so far: `Scene.mesa` reads `home-row.js` and `d`, `d` + a way and `dd` call
+    `rooms.bolt` (`web/test/verify-home-row.mjs` proves the cooldown refusal reaches the
+    screen), and hears the `bolt` event: the flight is drawn cell by cell, the struck
+    figure is moved by its own screen and flickers `x` on every screen, a broken piece
+    draws as nothing and is walkable until it grows back, a struck wall takes a `,` that
+    fades, and a joiner reads both from `rooms.traces` (`web/test/verify-bolt.mjs`,
+    `scars.test.js`). Left open: the cat running at double speed -- it paces on the
+    shared clock the server also reads, so only the yowl note is done -- and a piece
+    breaking is proved by unit tests but not by a drive.
+- [ ] 9.6 `f` finds. `f` and a letter walks the figure to the nearest member
+  whose nick starts with it, by the flood fill the door-reach check already
+  does; with nobody in the scene, an arrow at the edge points at the door
+  toward them. A step or Esc cancels. This is what makes "come find me" a
+  thing a member can do.
+  - Built: `f` + a letter walks to the nearest lit member (`Scene.mesa`, `paths.js`),
+    re-planned each step, cancelled by a step or Esc. Left open: the arrow at the edge
+    toward a member in another room, and whether `f` should see through the dark.
+- [ ] 9.7 `s` substitutes: a shapeshift. `s` and a character draws the figure
+  as that character for 60 s, a presence key like the facing. One printable
+  character only, so nothing is spelled with it. Hide-and-seek comes free:
+  a `T` standing still among the trees.
+- [ ] 9.8 `a` appends: chalk. `a` and a character leaves a mark on the cell
+  behind the figure that fades over ten minutes: trails, `>` arrows, an X for
+  a treasure hunt. A cap per member drops the oldest, and a `d` bolt wipes
+  chalk it crosses. A shapeshift character and chalk are strangers' text, so
+  a ban clears a member's, and a mod needs a wipe; that waits on 3.2's mod
+  standing as 9.3 does.
+  - Needs 12.2 (the server places chalk on its world) and 12.6 (chalk is
+    drawn as a layer).
 
 ### Phase 11 — The workshop
 
@@ -762,6 +946,208 @@ its shape.
   `verify:workshop` — the files written through the real hook, a walk from
   the square, the reading, a `--frame` from another HOME showing the figure
   and none of the workers, then a move and a quiet session leaving.
+- [x] 11.6 A raised hand. A session stopped on a permission prompt or a
+  question is drawn `?`, seated first at its bench, and the bench says
+  `(? N waiting on you)` — it stays past quiet, since it is waiting on you.
+  The hook takes `Notification` (`notification_type` in `ASKS`; an
+  `idle_prompt` is ignored) and lowers the hand on the next `PostToolUse`,
+  now on every tool, or `UserPromptSubmit`; `SessionEnd` removes the file.
+  Every entry is `async` but SessionEnd's. `verify:workshop`.
+- [x] 11.7 Last words. A `Stop` writes `last_assistant_message`'s first line
+  with words in it; the worker is `✓` and reading it gives those words. Both
+  fields are the hook's documented input, not the transcript (11.2).
+  `verify:workshop`.
+
+### Phase 12 — The world as data
+
+Numbered 12 because a number is issued once, and placed before Phase 10 so the
+deploy stays the last step. Its steps are not taken in plan order: a box in
+Phases 7–9 that says **Needs 12.x** waits until that step is done, and the
+step is taken then. The rest of this phase follows 12.1.
+
+Goal: everything a scene is (where its pieces stand, where it can be walked,
+what each piece does and how it is lit) is data. The server, the tests and a
+web world builder then all read one shape, built first for the owner over
+the repo and then for members over Room rows (9.3).
+Done when: the editor makes a new scene with a door to the square and a
+behavior attached by form, saves it to source, and the server refuses a move
+into one of its walls; the same placements loaded from a Room row draw the
+same frame.
+
+The shapes are borrowed, and the reason for each is written in its step:
+Rapier keeps colliders apart from what is drawn; Threlte has `injectPlugin`
+(behavior added to a subtree from outside it), `interactivity()` (events
+delivered nearest first along a ray) and `useTask` (one clock, ordered
+stages); Evennia and MOO keep commands on the objects in reach. Phase 11
+deferred a general map of places to commands until a third use; the
+Taskmaster and the bar's board are the third and fourth.
+
+- [ ] 12.1 One placement format (`FJS-D1015`). A Room row holds `{ placements:
+  [{ piece, x, y, id?, props }], doors, spawn, palette, layers }`, and one
+  generic `<Placements>` mounts it as the same `<Piece>` and `<Door>` tree an
+  owner's `.mesa` scene is, so an owner's scene and a member's plot are the
+  same thing loaded two ways and the mounted tree still stamps (`FJS-D997`
+  unamended). A row names a piece by key from `pieces/index.js`; an owner's
+  scene may still define one inline. Source is the truth for the owner's
+  scenes, a row for a member's (`FJS-D995` as amended). A row's world is
+  derived by mounting it headlessly when it is saved, and a key the registry
+  lacks or an overlap is refused by name there. Pinned by a test: the
+  placements read off a scene built only from registry pieces, mounted
+  through `<Placements>`, draw that scene's `.frame.txt` byte for byte.
+- [ ] 12.2 `world.json`. `bun run frames` also writes, per scene, what can be
+  walked, the doors, the seats and the spots, plus the graph of doors
+  between scenes. It is pinned the way a `.frame.txt` is. The API reads it
+  as it shares `hearing.ts`: a move onto a cell that is not walkable, or more
+  than a step from the last, is dropped, as an over-rate move is, and a bolt
+  is resolved on the server's world rather than the caller's `at(x, y)`. The
+  editor's `problems` and `scenes.test.js` check through it, so their rules
+  have one home. `ROOMS` in `api/src/rooms.ts` is read from it, so a new
+  scene is no longer written in four places.
+  - Half built: `bun run frames` writes `scenes/<slug>.world.json` (walkable
+    rows, doors, solid pieces by id, pacers), `scenes.test.js` pins it, and
+    `api/src/world.ts` reads it for the bolt and for a move: `presenceMeta`
+    in `rooms.ts` refuses a cell that is not floor, or a piece the room does
+    not remember broken (`standable()`), as `presence_meta_refused` naming the
+    cell -- `room.test.ts`, `world.test.ts`. A room with no scene, a booth,
+    has no walls. Left open: more than a step from the last cell is not
+    refused, since a door's arrival and a bolt's knock-back are both jumps and
+    the rate (10 a second) is all that bounds one; the editor's `problems`
+    keep their own rules; and `ROOMS` is still written by hand, its names
+    having no home in a scene file.
+- [x] 12.3 Spots. `piece()` names cells of its own, `spots: { keeper: { dx, dy
+  } }`, and `seats` and `burns` become spots of two kinds. A placement is found
+  by its `id` or its piece by import, never by `piece.name === 'bar'`, and an
+  actor reads a spot rather than an offset (`desk.x + 7` in
+  `Taskmaster.mesa`, `b.x + 2` in `Workers.mesa`).
+  Built: a spot is `{ dx, dy }` with an optional `kind` -- `seat` (`stand`, and
+  a `mate` naming the seat across, else `solo`) or `burn` -- and a piece
+  refuses a malformed one by name; `spotsOf(piece, kind)` lists them,
+  `mark.spot(name)` is one as a cell of the stage, `stage.placed(piece)` finds a
+  piece by import. A seat's mate is the seat it names, so the pairing no longer
+  rests on the order of an array. The bar moved to `pieces/bar.js` so
+  `Bar.mesa` can import it; the taskmaster's `keeper` and a bench's `slot-0`
+  to `slot-3` replace the offsets. `spots.test.js`. Left open: `HomeBoard.mesa`
+  and `world.js`'s `FRAGILE` still find a piece by `piece.name`, and an id
+  (`piece@x,y`) is not yet a way to find a placement.
+- [ ] 12.4 Verbs in reach. `$context.commands` grows into the one registry:
+  an actor contributes its verbs, `{ word?, key?, help, run, reach? }`, and
+  what a member can say is the merge of their own, the room's and those of
+  every placement within reach. A mode (the history pane, `/map`, a booth)
+  replaces the arrows and Esc while it is open, in place of the `pane` and
+  `charting` flags. Tab, the hints and the help for an unknown command are
+  read from the merge. A key action is an event delivered along the figure's
+  facing or reach, nearest first, which is what `fly()` already does for a
+  bolt. `Scene.mesa` is cut down to the stage, the presence and the input,
+  and `/w`, `/ban`, `/map`, the history pane, the bubbles, the nameplates and
+  the booth each become an actor of the Taskmaster's shape.
+  - Half built: `commands.js` is the registry (`createCommands()`: `add`,
+    `words`/`helps`/`find` by reach, `press`, and `open`/`modeKey` for a mode)
+    and `Scene.mesa` reads it for the line, Tab, the hints, the keys and the
+    unknown-command help. `Whisper`, `Mod`, `WorldMap`, `History`, `Bubbles`,
+    `Nameplates` and `Sitting` are actors placed by the scene; `Taskmaster`
+    and `Ledger` add to the same registry, the desk's `/yes` and `/no` now
+    only in Tab and the help within two cells of him (`commands.test.js`,
+    `crowd.test.js`). Left open: the home row, the bolt and `find` are still
+    in `Scene.mesa` and take their keys by hand (9.4/9.5 are the key verbs
+    along the facing), a verb has no `reach` along the facing yet, and the
+    booth route's Esc is its own rather than a mode. `verify:explore`,
+    `verify:bolt` and `verify:workshop` fail on screens that now draw
+    footprints and scorches over the cells they read; they were not
+    re-pinned here.
+- [ ] 12.5 Behaviors with a schema. A behavior (the bar's board, the
+  Taskmaster, the runner) declares its props as a schema and is attached to
+  a placement by `id`, so the editor draws a form for it. The code is still
+  written by hand; the GUI only places it and fills its fields. A behavior
+  that runs a command on this machine is still placed by a route, never by a
+  scene, so a scene's picture runs nothing. Taken after 12.4 and right
+  before 12.9, so it is built when a builder asks for it.
+- [x] 12.6 Layers. `stage.look()` is a fold over the layers a scene names:
+  the sky, fog, light, a seat's candle, 7.3's weather (built into `look()`
+  before this step and moved out by it) and next 7.4's footprints. `indoors`
+  and `FOG` become "that layer is not named". Mostly this shrinks `stage.js`
+  back to cells and claims. Built: `LAYERS` -- `candle`, `weather`,
+  `steps`, `sky`, `fog`, folded in that order whatever order a scene names
+  them -- each one rule over a cell's look and, where it moves, a tick of
+  its own for `tickOf`. `<Scene layers={INDOORS}>` replaces `indoors`
+  (`OUTDOORS` is the default and names no fog); a name not in `LAYERS` is
+  refused at `createStage`. Light stayed inside the sky: a lamp's pool is the
+  sky's rule about light, not a layer of its own.
+- [x] 12.7 One clock. `stage.task(key, fn, { after })` with phases simulate,
+  light, paint, and a redraw only when something invalidates it, in place of
+  the runner's `setTimeout`, the Taskmaster's poll and the pacers' own time.
+  A test steps it by hand, so a scene with state is pinned at tick N the way
+  `look(x, y, ms)` pins one without. Built: `stage.task(key, fn, { phase,
+  every, after })`; `phase`, not stage, since the Stage is the noun it hangs
+  on. `every` is on the wall's clock, so two screens poll on one beat. A
+  paint runs on a change (at once, as before, so a drive reads a step the
+  moment it is taken) and on the look's next tick; both `#paint`s are paint
+  tasks, and the runner, the Taskmaster, the workers and the bar's scroll are
+  simulate tasks. `createStage({ manual: true })` keeps no timer, and
+  `stage.frame(ms)` steps it -- `clock.test.js`. Left on their own timers: the
+  booth's one-shot waits (a candle's smoke, the typing flag), which follow
+  a key rather than the clock, and `Scene.mesa`'s find-walk; the fog's
+  relight still runs in the change that needs it, so the `light` phase holds
+  no task yet.
+- [x] 12.8 A piece's palette. A piece carries the palette entries it needs
+  (the lamp's `Y` and its `light`) and a scene's palette overrides them, so a
+  piece placed in a scene that lacks one still draws. A check fails on a
+  paint letter that neither defines.
+  Built: `piece(…, { palette })`; the stage reads a letter through
+  `stage.entryOf`, the scene's entry first and the placed pieces' after, and
+  refuses two pieces giving one letter different entries when the scene does
+  not settle it (`stage.defaults` lists what pieces brought). The lamp carries
+  `Y` (light 4); the square, lane and docks dropped their copy and the cellar
+  keeps its 5. `scenes.test.js` fails a scene whose piece uses a letter
+  neither defines; `spots.test.js`. The editor's palette panel lists only the
+  scene's own entries, so a piece's default is not editable there.
+- [ ] 12.9 The world editor. The editor grows from one scene at a time to the
+  world: the door graph from 12.2 drawn and edited, with an unpaired door shown
+  while it is placed; a behavior's form from 12.5; the layers from 12.6
+  toggled; the clock from 12.7 scrubbed; a new scene made. It saves to source.
+  The members' builder is 9.3, over the same format through rows.
+
+### Phase 13 — Homes
+
+Goal: the people who work here each have a home in the haven, and their own
+Basecamp is on its walls — pinned projects, the inbox, pings and what is due —
+drawn on their screen alone.
+Done when: Jordan, Vlad and Colin each walk into their own home and read their
+own board, and none of them sees another's.
+
+The homes are hand-built in source, ahead of 9.3's plots: a plot is a member
+building their own, and these three are the shape it will produce.
+
+- [x] 13.1 The lane and three homes. `Lane.mesa`, east across the road's
+  border, with a cottage per member (`cottage(name, roof)` in
+  `pieces/home.js`), a mailbox at each gate; `Jordan.mesa`, `Vlad.mesa` and
+  `Colin.mesa` inside, each a Room in `ROOMS`. Every home has the board's
+  furniture in the same places — cork board, screen, desk and chair, calendar,
+  bell, mat — and its own decor beside it. Pinned by `scenes.test.js`.
+- [x] 13.2 The board. `HAVEN_HOME` (else `~/.fli/haven/home`), the third
+  opt-in beside the errand and the bar: a command printing `{ home, pins,
+  inbox, pings, due }`, read by `#errand`'s `homeBoard()` and held a minute.
+  The board NAMES its home and `HomeBoard.mesa` draws it there alone, so a
+  visitor's account never lands on the host's walls. Pins on the cork board
+  (how long since each moved, how much moved today), the inbox on the screen —
+  its count and the newest standing, all of it sat at the desk — what is due on
+  the calendar, a letter on the mat per thing unread, the bell ringing for a
+  fresh ping and its pings read out beside it, a flag on the lane's mailbox.
+  `scripts/basecamp-home.mjs <home>` is the one source, over the `basecamp`
+  CLI. `home-board.test.js`; proved live by `--frame`s of the lane and two
+  homes through a real API (a visitor's frame bare).
+- [ ] 13.3 Vlad's and Colin's boards. Each runs `basecamp-home.mjs vlad` (or
+  `colin`) on their own machine, under their own `basecamp auth login`; nothing
+  in Haven changes. Asks them, not the code.
+- [ ] 13.4 A drive: `verify:home`, a pty sitting at the desk (the inbox
+  scrolling), standing by the bell (the pings pane), and a second HOME's pty
+  in the same home drawing none of it.
+- [ ] 13.5 The board in a browser. `errand.browser.js` has no board, as it has
+  no bar, since a page runs no command. A board pushed from the member's
+  machine to their own Room would reach the page, and would also be a
+  member's data on a server for the first time — a ruling first.
+- [ ] 13.6 Whose home it is. Today a home is its board's by name; with 9.3 a
+  Room has an owner, and the board draws where the viewer is the owner.
+  - Needs 9.3.
 
 ### Phase 10 — Hosted
 
@@ -779,7 +1165,8 @@ else's package.)
 
 Not steps. Each becomes one at the end of the plan when it is wanted. The
 first group is the runner's pattern: from this machine, drawn on this screen
-only. The second is shared, so it is rows or presence.
+only. The second is shared, so it is rows or presence. The third is scenes,
+each tagged with the mechanism it would add, cheapest first.
 
 **This machine's**
 
@@ -809,6 +1196,48 @@ only. The second is shared, so it is rows or presence.
 - **The pairing table.** Two members sit at a tavern table and one shows the
   other a terminal's `fli` output scrolling on the tabletop, read only, shown
   by choice.
+
+**Scenes**
+
+What's built already carries these:
+
+- **The library.** A quiet room: a line is heard a stool away, and a shout is
+  answered with a hush. The shelves are `DECISIONS.md`, and standing at one
+  reads a ruling. The one change is `EARSHOT` (`api/src/hearing.ts`) becoming
+  the scene's rather than Haven's. The first to build: it makes 7.1 felt and
+  ties Haven to the repo as 9.2 does.
+- **The graveyard.** Past the glade, behind a night door (6.6). A stone per
+  closed issue or deleted package, its epitaph from `ISSUES_ARCHIVE.md`.
+- **The market.** Each stall is a booth (8.5), so two members at one stall share
+  a conversation. A stall a member rents is plots (9.3) at a smaller scale, and
+  could come before 3.2's mod standing does.
+- **Rooftops.** A ladder in a house, there at night only. A narrow run where a
+  step off the edge is a door back to the square at the cell you fell from.
+
+One mechanism each:
+
+- **The lighthouse,** at the docks' far end. Its beam is a light that turns on
+  the clock. Light is steady today (`litAt` takes no tick), so this is a moving
+  light, still a pure function of the clock and so still sent nowhere.
+- **The mine,** under 9.2's quarry. Pitch dark, and a figure carries a lantern —
+  a light that moves with its member, so the others are seen by theirs. This is
+  what gives `FOG` a reason to come back on.
+- **The hedge maze.** Generated from the date, so every terminal walks the same
+  maze and it changes at midnight with nothing stored, as the sky does (7.2).
+  The first member to reach the middle is announced by 8.3's crier.
+- **The amphitheater.** A member on the stage is heard by the whole scene, which
+  is earshot turned inside out: hearing becomes a property of the cell as well
+  as of the speaker. For demos and office hours.
+- **The frozen pond.** The glade's pond when 7.3's weather is snow: a step onto
+  the ice slides until a wall stops it, which is room for small puzzles.
+
+These need server state:
+
+- **The post office.** A mailbox per member. A whisper sent while its member is
+  offline waits there until they sign in — 7.1's `toId` row with a read flag.
+- **The ferry.** The ship at the docks sails on a timetable, and its door is
+  there only while it is docked — 6.6's night door on a schedule. It runs to
+  an island, which is Haven's far, quiet place.
 
 ## Open questions
 

@@ -81,13 +81,23 @@ model Room {
   slug     String    @unique @lower @length(2, 24) @regex("^[a-z0-9-]+$")
   name     String    @length(1, 40)
 
+  /// A booth is a room for two (`api/src/booth.ts`): the lower and the higher
+  /// member id of the pair, set together by the system and by nothing else.
+  /// Both null is a scene anybody may enter. A pair, not a list, because a
+  /// booth has two seats; the ids are plain columns and not relations, since a
+  /// second relation to Member would need a name on both sides for a fact
+  /// only the read policy below uses.
+  pairLoId Int?
+  pairHiId Int?
+
   messages Message[]
 
   /// A room is a channel bound to this row (`api/src/rooms.ts`), so the read
   /// policy is the join: a banned member is refused the room and evicted from
-  /// one they stand in on the next write.
+  /// one they stand in on the next write. A booth is joined by its pair alone
+  /// — to anyone else it is no row, and the socket joins it to nothing.
   @@gate("3.8")
-  @@allow('read', auth().bannedAt == null)
+  @@allow('read', auth().bannedAt == null && (pairLoId == null || pairLoId == auth().id || pairHiId == auth().id))
 }
 
 model Message {
@@ -103,6 +113,12 @@ model Message {
   body      String   @trim @length(1, 280)
   createdAt DateTime @default(now())
 
+  /// A whisper's listener (`/w <nick> <line>`). Null is a line said aloud. A
+  /// plain column and not a relation, as Room's pair is: only the read policy
+  /// below uses it, and a second relation to Member would need a name on both
+  /// sides. Whoever it names reads the line, and so does its speaker.
+  toId      Int?
+
   /// The tavern's history pane and the newest-line-per-member bubble both read
   /// a room in time order.
   @@index([roomId, createdAt])
@@ -111,8 +127,14 @@ model Message {
   /// room's newest lines kept by count, `api/src/retention.ts`, and never a
   /// `retention` on `main`, which would sweep members and rooms with them.
   @@gate("3.3.9.8")
-  @@allow('read', auth().bannedAt == null && member.bannedAt == null)
-  @@allow('create', auth().bannedAt == null)
+  ///
+  /// A line in a booth is read and said by its pair alone: the room's own
+  /// columns are the policy, so `messages.find` by a stranger who learned the
+  /// room id answers empty and a `create` into it writes nothing. A whisper is
+  /// read by its speaker and the member it names and by nobody else, a mod
+  /// included -- distance is fan-out only (`FJS-D992`), so privacy is this.
+  @@allow('read', auth().bannedAt == null && member.bannedAt == null && (room.pairLoId == null || room.pairLoId == auth().id || room.pairHiId == auth().id) && (toId == null || toId == auth().id || memberId == auth().id))
+  @@allow('create', auth().bannedAt == null && (room.pairLoId == null || room.pairLoId == auth().id || room.pairHiId == auth().id))
 
   @@trail(audit)
 }

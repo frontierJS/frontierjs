@@ -12,7 +12,7 @@ import { join, dirname } from 'path'
 import { tmpdir }        from 'os'
 import { execFileSync }  from 'child_process'
 
-import { layoutNamed, moduleNamed, collectChanges, runDone, stopVerdict, itemKey } from '../core/done.js'
+import { layoutNamed, moduleNamed, collectChanges, runDone, stopVerdict, itemKey, editedIn, checkItems, ignoreHides } from '../core/done.js'
 
 function tree(files) {
   const root = mkdtempSync(join(tmpdir(), 'fli-done-'))
@@ -67,6 +67,65 @@ describe('module-named', () => {
   })
 })
 
+describe('fli check, asked about the files that changed', () => {
+  const app = {
+    'db/schema.lite':               'model Lead { id Int @id }\n',
+    'web/config/vite.config.js':    'export default { server: { port: 8010 } }\n',
+    'widgets/config/vite.config.js':   'export default { server: { port: 8011 } }\n',
+    'api/src/app.ts':               "app.get('/orders/:id', h)\n",
+  }
+
+  test('a vite config without strictPort and a :id raw route are unfinished, in the changed files only', () => {
+    const { root, cleanup } = tree(app)
+    try {
+      const items = checkItems({ root, changed: ['web/config/vite.config.js', 'api/src/app.ts'] })
+      expect(items.every(i => i.check === 'fli-check' && i.ok === false)).toBe(true)
+      expect(items.map(i => i.subject).sort()).toEqual(['raw-route-param:api/src/app.ts', 'vite-strict-port:web/config/vite.config.js'])
+    } finally { cleanup() }
+  })
+
+  test('a finding in a file the change did not touch is not the change\'s, and an unrelated change asks nothing', () => {
+    const { root, cleanup } = tree(app)
+    try {
+      expect(checkItems({ root, changed: ['widgets/config/vite.config.js'] }).map(i => i.subject)).toEqual(['vite-strict-port:widgets/config/vite.config.js'])
+      expect(checkItems({ root, changed: ['notes.md'] })).toEqual([])
+    } finally { cleanup() }
+  })
+})
+
+describe('a new ignore rule', () => {
+  const repo = files => {
+    const t   = tree(files)
+    const git = (...a) => execFileSync('git', ['-C', t.root, ...a], { stdio: 'ignore' })
+    git('init', '-q'); git('add', '.'); git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'x')
+    return { ...t, git }
+  }
+
+  test('one that hides a file on disk is unfinished until looked at, and runDone says so', async () => {
+    const { root, cleanup } = repo({ '.gitignore': 'dist/\n', 'a.js': '' })
+    try {
+      mkdirSync(join(root, 'notes'), { recursive: true })
+      writeFileSync(join(root, 'notes/plan.md'), 'x')
+      writeFileSync(join(root, '.gitignore'), 'dist/\nnotes/\n')
+      const items = ignoreHides({ root, changed: ['.gitignore'] })
+      expect(items.map(i => [i.check, i.subject, i.ok])).toEqual([['gitignore', '.gitignore:notes/', false]])
+      expect(items[0].message).toMatch(/hides notes\//)
+
+      const report = await runDone(root, { changes: { changed: ['.gitignore'], added: [], untracked: [], diff: '' }, engines: false })
+      expect(report.unfinished).toBe(1)
+    } finally { cleanup() }
+  })
+
+  test('one that hides nothing, a comment and a rule already there ask nothing', () => {
+    const { root, cleanup } = repo({ '.gitignore': 'dist/\n', 'a.js': '' })
+    try {
+      writeFileSync(join(root, '.gitignore'), 'dist/\n# a note\nbuild/\n')
+      expect(ignoreHides({ root, changed: ['.gitignore'] })).toEqual([])
+      expect(ignoreHides({ root, changed: ['a.js'] })).toEqual([])
+    } finally { cleanup() }
+  })
+})
+
 describe('the diff', () => {
   test('an untracked file is changed and added, and a clean tree reports nothing', async () => {
     const { root, cleanup } = tree({ 'a.js': 'one\n' })
@@ -115,5 +174,54 @@ describe('the Stop hook verdict', () => {
     expect(stopVerdict({ state: {}, head: 'h1', fingerprint: 'f1', report: report(item('packages/a', true)) }).block).toBe(false)
     const shown = { head: 'h1', fingerprint: 'f1', shown: [itemKey(item('packages/a'))] }
     expect(stopVerdict({ state: shown, head: 'h2', fingerprint: 'f9', report: report(item('packages/a')) }).block).toBe(true)
+  })
+
+  test('with the files a session edited, it is held only on its own items', () => {
+    const mine   = item('packages/a/core/mine.js')
+    const theirs = item('packages/a/core/theirs.js')
+    const v = stopVerdict({ state: {}, head: 'h1', fingerprint: 'f1', edited: ['packages/a/core/mine.js'], report: report(mine, theirs) })
+    expect(v.block).toBe(true)
+    expect(v.reason).toMatch(/mine\.js/)
+    expect(v.reason).not.toMatch(/theirs\.js/)
+    // Not shown, so a later edit of it by this session still holds it.
+    expect(v.state.shown).toEqual([itemKey(mine)])
+
+    expect(stopVerdict({ state: {}, head: 'h1', fingerprint: 'f1', edited: [], report: report(mine) }).block).toBe(false)
+  })
+
+  test('a stale snapshot is the session\'s when it edited the snapshot\'s package, and nobody\'s at the root', () => {
+    const snap = subject => ({ check: 'snapshots', subject, ok: false, message: `${subject} is stale` })
+    const at = (edited, s) => stopVerdict({ state: {}, head: 'h1', fingerprint: 'f1', edited, report: report(snap(s)) }).block
+    expect(at(['packages/a/src/x.js'], 'packages/a/surface.snapshot.md')).toBe(true)
+    expect(at(['packages/b/src/x.js'], 'packages/a/surface.snapshot.md')).toBe(false)
+    expect(at(['ISSUES.md'],           'repo-atlas.snapshot.html')).toBe(false)
+    // A new module is never the session's for sharing its package.
+    expect(stopVerdict({ state: {}, head: 'h1', fingerprint: 'f1', edited: ['packages/a/core/x.js'], report: report(item('packages/a/core/y.js')) }).block).toBe(false)
+  })
+})
+
+describe('editedIn', () => {
+  const use  = (name, input) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name, input }] } })
+  const root = '/r/repo'
+
+  test('the editing tools under the root, repo-relative, and nothing a Read or Bash names', () => {
+    const transcript = [
+      use('Edit',         { file_path: '/r/repo/packages/a/x.js', old_string: 'a' }),
+      use('Write',        { file_path: '/r/repo/ISSUES.md' }),
+      use('NotebookEdit', { notebook_path: '/r/repo/n.ipynb' }),
+      use('Edit',         { file_path: '/r/repo/packages/a/x.js' }),
+      use('Read',         { file_path: '/r/repo/packages/b/y.js' }),
+      use('Bash',         { command: 'sed -i s/a/b/ /r/repo/packages/c/z.js' }),
+      use('Edit',         { file_path: '/r/repo-other/w.js' }),
+      use('Edit',         { file_path: '/elsewhere/v.js' }),
+      '{ torn',
+      JSON.stringify({ type: 'user', message: { content: 'just "tool_use" said in a prompt' } }),
+    ].join('\n')
+    expect(editedIn(transcript, root)).toEqual(['ISSUES.md', 'n.ipynb', 'packages/a/x.js'])
+  })
+
+  test('no transcript is no edits', () => {
+    expect(editedIn('', root)).toEqual([])
+    expect(editedIn(undefined, root)).toEqual([])
   })
 })

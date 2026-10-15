@@ -1,7 +1,8 @@
 <script>
   // Docks.mesa — the docks south of the square: a stone quay with crates,
   // barrels, bollards and lamps, a pier out over the water, and a boat
-  // moored beside it. The north edge is a border into the square
+  // moored beside it. A plank of the pier crumbles once a figure has stepped
+  // on it and off again (`crumbles`, `stage.js`). The north edge is a border into the square
   // (`IDEAS/haven.md` 6.2), and the square's south edge is the run back.
   // The picture this draws is `docks.frame.txt`, which `scenes.test.js`
   // pins.
@@ -31,7 +32,8 @@
   const quayE = quay(41)
 
   const pier = piece('pier', [...Array(PIER.rows)].map(() => '='.repeat(PIER.w)).join('\n'),
-    [...Array(PIER.rows)].map(() => 'u'.repeat(PIER.w)).join('\n'), { floor: true })
+    [...Array(PIER.rows)].map(() => 'u'.repeat(PIER.w)).join('\n'),
+    { floor: true, crumbles: { ch: '~', key: 'b' } })
 
   const boat = piece('boat', String.raw`
 ~~~~~~~~|~~~~~~~~~
@@ -80,7 +82,6 @@ eeeeeeeee
     e: { fg: '#a16207' },
     l: { fg: '#9ca3af' },
     y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 1 },
-    Y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 4 },
     b: { fg: ['#38bdf8', '#7dd3fc', '#0ea5e9'], chars: '~-~', ms: 350, wave: true },
   }
 </script>

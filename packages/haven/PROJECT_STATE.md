@@ -1,16 +1,16 @@
 # Haven — Project State
 
 **Phases 1, 2, 3, 4 and 5 of `IDEAS/haven.md` are built (5.4, the VS Code
-editor, aside), and 6.1–6.4.** 1.1 is the schema, 1.2 the API, 1.3 the signed
+editor, aside), and 6.1–6.5.** 1.1 is the schema, 1.2 the API, 1.3 the signed
 login, 2.1 the square in a terminal, 2.2 the tavern and its door, 2.3 `fli
 haven`, 3.1 the server naming its client, 3.2 the mod standing and the ban end
 to end, 3.3 the history pane and retention by count, Phase 4 color and motion,
 Phase 5 scenes as component trees, the browser target and the scene editor,
 6.1 the view that follows a figure across a square wider than a screen, 6.2
 the road, the woods and the docks across the square's borders, 6.3 light and
-fog, 6.4 the map, and Phase 11, the workshop — this machine's Claude sessions
-at their packages' benches. Next: 6.5, secrets; the deploy is the last step
-(10.1).
+fog, 6.4 the map, 6.5 the cellar, and Phase 11, the workshop — this machine's Claude sessions
+at their packages' benches. Next: 6.6, more secrets (waits on 7.2 for the night door); the deploy is the
+last step (10.1).
 
 ## What exists
 
@@ -57,6 +57,31 @@ at their packages' benches. Next: 6.5, secrets; the deploy is the last step
   out from their borders, houses in a row under the streets. Kept on the
   machine — `~/.fli/haven/seen/` or IndexedDB (`#seen`) — and never sent.
   `verify:map` (3 HOMEs, 18 checks) and `web/test/map.test.js`.
+- Nameplates: a figure within four columns and two rows of yours wears its full
+  nick on the row under it (`Scene.mesa` `plates`); `verify:nameplate`.
+- Secrets (6.5): `<Door hidden>` keeps the glyph and paint under it, so a
+  cell on the tavern's rug looks like rug and is the way down to the cellar;
+  stepping on it is `goto`. The map leaves a hidden door out of a snap.
+  `verify:cellar` and the cellar tests in `scenes.test.js`.
+- More secrets (6.6): a loose plank in the woods' west fence (hidden) to the
+  glade, a scene of its own; and `<Door night>`, a door only at full night
+  (`isNight`) and the cell under it by day — the oak's foot in the glade and
+  the cellar's west wall are a tunnel of two. Neither is on the map.
+  `verify:glade` (a pty by day, one by night, through `clock-at.mjs`) and the
+  glade, tunnel and night-door tests in `scenes.test.js`.
+- The runner (`Runner.mesa`, `#errand`): walking into the tavern, a boy runs
+  in through the door and stops with `(! title)` and the URL over his head;
+  drawn on that screen only, delivered once a day. The title is a terminal
+  hyperlink (OSC 8, `linked()` in `#cell`) with the URL unprinted; a terminal
+  that does not say it has hyperlinks is shown the URL as text instead. The command is
+  `HAVEN_ERRAND`, else the one line in `~/.fli/haven/errand` (opt-in, set once;
+  neither set, no boy). This machine's file carries the newest unread in
+  Basecamp's Hey! menu — `basecamp notifications list --jq` over
+  `.data.unreads`, `{ id: "<id>@<unread_at>", title: "N unread · <who> in
+  <project>: <title>", url }`, the `@unread_at` so a new reply in a thread
+  comes again the same day — else the first todo assigned to you.
+  `verify:errand` drives it with a stand-in, env and file;
+  `HAVEN_ERRAND_CMD=<command>` drives a real one.
 - The same `web/` built for a browser (5.2, `FJS-D985`): `bun run web` on
   5506, the routes unchanged, `#paint`/`#cell`/`#sign-in` resolved to their
   `.browser.js` twins by the package's `imports` conditions; the key kept in
@@ -66,5 +91,6 @@ at their packages' benches. Next: 6.5, secrets; the deploy is the last step
 ## What is not here yet
 
 Nothing is published: a machine with no checkout walks in only through
-`verify:fresh`'s registry. There is no hosted Haven, so such a machine must
-pass `--api`, and a checkout's default origin is `localhost:5505`, where `bun run api` listens. There is no logout route: `auth.logout` revokes, but nothing mounts it.
+`verify:fresh`'s registry. Such a machine's default
+server is `haven.knightly.dev` (a tunnel to the owner's machine, `bun run
+share`, not a deploy), and a checkout's default origin is `localhost:5505`, where `bun run api` listens. There is no logout route: `auth.logout` revokes, but nothing mounts it.

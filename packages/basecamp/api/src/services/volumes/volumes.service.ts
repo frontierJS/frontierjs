@@ -38,7 +38,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor }  from '../../core/resource.ts'
 import type { BasecampApp }     from '../../basecamp.types.ts'
 import type { ServerEventKind } from '../../../../db/schema.d.ts'
@@ -154,7 +154,7 @@ export function createVolumesService(app: BasecampApp) {
     // (`FJS-826`).
     // `prune` destroys data on a machine, and it is graded here because no model's
     // gate reaches a method that acts on the machine before any write.
-    methods: ['find', 'get', 'remove', 'usage', { method: 'prune', gate: LEVELS.ADMINISTRATOR }, { method: 'report', gate: 0 }],
+    methods: ['find', 'get', 'remove', 'usage', { method: 'prune', gate: LEVELS.ADMINISTRATOR }, { method: 'report', gate: 0, input: 'VolumeReport' }],
 
     // ── find ──────────────────────────────────────────────────────────
     async find() {
@@ -253,10 +253,8 @@ export function createVolumesService(app: BasecampApp) {
     // longer exists — forgetting it here is recording a fact, not deleting a
     // disk.
     async report() {
-      const data     = $.data as ReportData
-      const serverId = data?.server_id
-      if (!serverId)         throw new BadRequest('server_id is required')
-      if (!Array.isArray(data.volumes)) throw new BadRequest('volumes must be an array')
+      const data     = $.data as Required<ReportData>
+      const serverId = data.server_id
 
       // asSystem(): an outpost holds no session and there is no user to scope to.
       // The same call `servers.heartbeat` makes, for the same reason.
@@ -426,9 +424,6 @@ export function createVolumesService(app: BasecampApp) {
         // It must be exempted HERE; a comment on the method is not an
         // exemption, and that mistake 401'd every server check-in once.
         all:    [sessionScope(app, { except: ['report'] })],
-        // Both write paths destroy data on a machine. Same bar as removing a
-        // server, and higher than the developer bar the read side sits at.
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },
   })

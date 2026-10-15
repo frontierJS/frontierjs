@@ -13,7 +13,7 @@
 // person (admin), an event is FIRED by the system and ACKNOWLEDGED by a person.
 
 import { createService, NotFound, BadRequest, Conflict, $, isStale } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import { MAX_SNOOZE_MINUTES } from '../../core/alerting.ts'
@@ -265,9 +265,6 @@ export function createAlertsService(app: BasecampApp) {
         all:    [sessionScope(app)],
         // Authoring a rule is an admin act: a rule decides who gets woken up.
         // No deriveSlug: `AlertRule` has no `slug` column.
-        create: [requireWorkspaceRole(app, 'admin', 'owner')],
-        patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
         // No hook on the custom methods: each writes through the caller's own
         // client, so the model's gate grades it. Delivery and silencing are
         // `AlertRule`/`AlertRuleChannel` writes (admin), acknowledging and

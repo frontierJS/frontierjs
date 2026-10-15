@@ -14,7 +14,7 @@
 // making the browser fan out one request per server.
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, assertSlugFree, ws }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -162,9 +162,7 @@ export function createNetworksService(app: BasecampApp) {
     hooks: {
       before: {
         all:    [sessionScope(app)],
-        create: [requireWorkspaceRole(app, 'admin', 'owner'), deriveSlug],
-        patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
+        create: [deriveSlug],
         // Attaching a server changes what can reach what, so it is held at the
         // bar of authoring the network: `ServerNetwork`'s gate, which the
         // caller's client grades.

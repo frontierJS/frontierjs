@@ -26,6 +26,8 @@ const USERS: Record<string, { userId: string; userType: string; authMethod: 'ses
 }
 
 let app: any
+// What the app's `presenceMeta` was handed, in order; it passes every meta through.
+const judged: Array<{ meta: Record<string, unknown>, channel: string, userId: unknown, was: Record<string, unknown> }> = []
 
 /** A WS client that records every frame, so tests assert on what arrived. */
 function client(token?: string) {
@@ -98,7 +100,14 @@ beforeAll(async () => {
   app.configure(channels((a: any) => {
     // Server owns membership: everyone who connects lands in ROOM.
     a.channels.on('connection', (_session: unknown, conn: unknown) => { a.channel(ROOM).join(conn) })
-  }, { presence: true, presenceFlushMs: 0 }))
+  }, {
+    presence: true,
+    presenceFlushMs: 0,
+    presenceMeta: (meta: Record<string, unknown>, at: any) => {
+      judged.push({ meta, channel: at.channel, userId: at.conn.user?.userId, was: at.was })
+      return meta
+    },
+  }))
 
   await app.start()
 })
@@ -211,6 +220,24 @@ describe('presence — subscribe (the path that used to crash)', () => {
     expect(update.data.meta).toEqual({ status: 'typing' })
 
     alice.close(); bob.close()
+  })
+
+  it('the app\'s presenceMeta is told the channel, the sender and the meta it replaces (FJS-1744)', async () => {
+    const bob = client('tok-bob')
+    await bob.ready
+    await bob.waitFor('presence:sync')
+    judged.length = 0
+
+    bob.send({ type: 'subscribe', channel: ROOM, meta: { x: 1 } })
+    bob.send({ type: 'subscribe', channel: ROOM, meta: { x: 2 } })
+    const deadline = Date.now() + 2500
+    while (judged.length < 2 && Date.now() < deadline) await new Promise(r => setTimeout(r, 15))
+
+    expect(judged).toEqual([
+      { meta: { x: 1 }, channel: ROOM, userId: 'bob', was: {} },
+      { meta: { x: 2 }, channel: ROOM, userId: 'bob', was: { x: 1 } },
+    ])
+    bob.close()
   })
 
   it('subscribe is ignored for a channel the connection is not in', async () => {

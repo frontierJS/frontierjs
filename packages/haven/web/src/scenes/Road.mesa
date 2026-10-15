@@ -3,7 +3,7 @@
   // fenced on both sides with a gap in each, a milestone, a cart pulled up
   // on the verge, trees, and the signpost back. The west edge is a border
   // into the square (`IDEAS/haven.md` 6.2), and the square's east edge is
-  // the run back. The picture this draws is `road.frame.txt`, which
+  // the run back; the east edge is a border on into the lane. The picture this draws is `road.frame.txt`, which
   // `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
   import Piece from '@/components/Piece.mesa'
@@ -80,6 +80,7 @@ eeeeeeeee
 <Scene slug="road" palette={PALETTE} spawn={{ x: 10, y: 12 }}>
   <Piece of={frame} />
   <Door  x={1} y={1} h={24} to="/" />
+  <Door  x={96} y={1} h={24} to="/lane/" />
   <Piece of={road} x={3} y={11} />
   <Piece of={fenceW} x={3}  y={9} />
   <Piece of={fenceE} x={52} y={9} />

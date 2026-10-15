@@ -70,8 +70,12 @@ const freePort = () => new Promise((resolve) => {
 const root = join(PKG, 'editor', `.copy-${process.pid}`)
 rmSync(root, { recursive: true, force: true })
 mkdirSync(root, { recursive: true })
-cpSync(SRC, join(root, 'src'), { recursive: true })
-const SCENE = join(root, 'src/scenes/Tavern.mesa')
+// The package's own layout, so the web's relative imports of the rules it
+// shares with the server (`api/src/hearing.ts`, `memory.ts`, `pacer.ts`) land
+// on the copy of them; a file left out is a preview that draws nothing.
+cpSync(SRC, join(root, 'web/src'), { recursive: true })
+cpSync(join(PKG, 'api/src'), join(root, 'api/src'), { recursive: true })
+const SCENE = join(root, 'web/src/scenes/Tavern.mesa')
 const original = readFileSync(SCENE, 'utf8')
 
 const port = await freePort()
@@ -82,7 +86,7 @@ if (await fetch(URL_).then(() => true, () => false)) {
 }
 const vite = spawn(VITE, ['-c', 'editor/vite.config.js'], {
   cwd: PKG, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, PORT: String(port), SCENES_DIR: join(root, 'src/scenes') },
+  env: { ...process.env, PORT: String(port), SCENES_DIR: join(root, 'web/src/scenes') },
 })
 let viteLog = ''
 vite.stdout.on('data', (d) => { viteLog += d })
@@ -145,7 +149,7 @@ check(rows[25].includes('n'), "the door's n is in the bottom wall")
 check((await text('[data-problems]'))?.includes('The spawn reaches every door'), 'an unedited tavern has nothing wrong', await text('aside'))
 check(!(await saveEnabled()), 'and nothing to save')
 check((await marksOf('success')).join() === '48,24', 'the spawn is marked on its cell', JSON.stringify(await marksOf('success')))
-check((await marksOf('warning')).join() === '48,25', 'the door is marked on its cell', JSON.stringify(await marksOf('warning')))
+check((await marksOf('warning')).join() === '48,25,75,11', 'both doors are marked on their cells, the hidden one too: the editor is where an author finds a secret', JSON.stringify(await marksOf('warning')))
 
 // ─── a piece moved by arrow ───────────────────────────────────────────
 
@@ -226,9 +230,11 @@ const gone = original.split('\n').filter((l) => !saved.includes(l))
 check(gone.length === 5 && gone.every((l) => /x=\{9\}|x=\{86\}|spawn=|<Door|^\s+f: /.test(l)), 'and every other line of the file is untouched', gone.join('\n'))
 
 const again = readScene(saved)
-check(again.elements.length === 16, 'read again, the file is 16 placed tags', String(again.elements.length))
+check(again.elements.length === 17, 'read again, the file is 17 placed tags', String(again.elements.length))
 const { stage, dispose } = await mountScene(SCENE)
-check(stage.doors.length === 1 && stage.doors[0].to === '/square/' && stage.doors[0].x === 48, 'the saved scene mounts with its door retargeted', JSON.stringify(stage.doors))
+const shown = stage.doors.filter((d) => !d.hidden)
+check(shown.length === 1 && shown[0].to === '/square/' && shown[0].x === 48, 'the saved scene mounts with its door retargeted', JSON.stringify(stage.doors))
+check(stage.doors.some((d) => d.hidden && d.to === '/cellar/'), 'and the hidden door to the cellar is still hidden, a save having left its tag alone', JSON.stringify(stage.doors))
 check(stage.picture()[20].slice(40, 43) === '(o)' && stage.picture()[19].slice(86, 92) === '      ', 'the lamp placed and the barrel gone')
 check(stage.spawn.x === 50 && stage.spawn.y === 21 && stage.walkable(50, 21), 'and the spawn where it was put, on floor')
 dispose()

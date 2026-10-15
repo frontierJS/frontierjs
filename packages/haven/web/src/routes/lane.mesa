@@ -1,0 +1,9 @@
+<script>
+  // The lane — east of the road, across its border: the three cottages, and a
+  // flag on the mailbox of the home whose board this machine reads.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import HomeBoard from '@/components/HomeBoard.mesa'
+  import Lane from '@/scenes/Lane.mesa'
+</script>
+
+<WalkIn slug="lane"><Lane><HomeBoard /></Lane></WalkIn>

@@ -147,3 +147,55 @@ describe('a mod', () => {
     expect(db.$levelOf('member', { id: sam.id, role: null })).toBe(3)
   })
 })
+
+describe('a booth', () => {
+  let booth, line
+
+  beforeEach(async () => {
+    booth = await sys.room.create({ data: { slug: `booth-${sam.id}-${ana.id}`, name: 'A booth', pairLoId: sam.id, pairHiId: ana.id } })
+    line  = await as(sam).message.create({ data: { roomId: booth.id, body: 'psst' } })
+  })
+
+  test('is read by its pair, line and room, and by nobody else', async () => {
+    expect((await as(sam).room.findMany()).map(r => r.slug)).toContain(booth.slug)
+    expect((await as(ana).message.findMany({ where: { roomId: booth.id } })).map(m => m.body)).toEqual(['psst'])
+    expect((await as(mod).room.findMany()).map(r => r.slug)).toEqual(['square'])
+    expect(await as(mod).message.findMany({ where: { roomId: booth.id } })).toEqual([])
+    expect((await as(await fresh(rex)).room.findMany())).toEqual([])
+  })
+
+  test('is said into by its pair, and a third member writes nothing', async () => {
+    const reply = await as(ana).message.create({ data: { roomId: booth.id, body: 'yes?' } })
+    expect(reply.memberId).toBe(ana.id)
+    await expect(as(mod).message.create({ data: { roomId: booth.id, body: 'hello' } })).rejects.toThrow()
+    expect(await sys.message.count({ where: { roomId: booth.id } })).toBe(2)
+  })
+
+  test('leaves the square a square: no pair, everybody reads it', async () => {
+    expect((await as(mod).room.findMany({ where: { slug: 'square' } })).length).toBe(1)
+    await as(mod).message.create({ data: { roomId: square.id, body: 'hi all' } })
+    expect((await as(sam).message.findMany({ where: { roomId: square.id } })).length).toBe(1)
+  })
+})
+
+describe('a whisper', () => {
+  beforeEach(async () => {
+    await as(sam).message.create({ data: { roomId: square.id, body: 'psst', toId: ana.id } })
+    await as(sam).message.create({ data: { roomId: square.id, body: 'hello' } })
+  })
+
+  test('is read by its speaker and the member it names, and by nobody else', async () => {
+    const bodies = async (m) => (await as(m).message.findMany({ where: { roomId: square.id } })).map(l => l.body).sort()
+    expect(await bodies(sam)).toEqual(['hello', 'psst'])
+    expect(await bodies(ana)).toEqual(['hello', 'psst'])
+    expect(await bodies(mod)).toEqual(['hello'])
+    expect(await sys.message.count({ where: { roomId: square.id } })).toBe(2)
+  })
+
+  test('is not a stamp: the speaker is still the caller, and a null toId is a line said aloud', async () => {
+    const line = await as(ana).message.create({ data: { roomId: square.id, body: 'back', toId: sam.id, memberId: sam.id } })
+    expect(line).toMatchObject({ memberId: ana.id, toId: sam.id })
+    const aloud = await as(ana).message.create({ data: { roomId: square.id, body: 'all', toId: null } })
+    expect((await as(mod).message.findMany({ where: { id: aloud.id } })).length).toBe(1)
+  })
+})

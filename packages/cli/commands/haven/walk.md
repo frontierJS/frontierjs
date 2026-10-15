@@ -42,8 +42,9 @@ that is the developer's own build, and it wins. Anywhere else the server names
 its client — `GET /haven/client` answers the package and version it runs — and
 that version is installed once into `~/.fli/haven/<version>/` before the sign-in
 (`FJS-D982`), so the client is always the server's. The install honors the
-registry bun is pointed at, which is how it is rehearsed before a publish. Until
-a hosted Haven exists, a machine with no checkout names its server with `--api`.
+registry bun is pointed at, which is how it is rehearsed before a publish. A
+machine with no checkout walks into the hosted Haven, `haven.knightly.dev`,
+unless `--api` names another.
 
 ```js
 const { join, resolve, sep } = await import('node:path')
@@ -55,6 +56,9 @@ const { shippedFile } = await import(resolve(global.fliRoot, 'core/app-schema.js
 // imported, because it is asked before any haven is on this machine.
 const CLIENT_PATH  = '/haven/client'
 const HAVEN_PACKAGE = '@frontierjs/haven'
+// Where a machine with no checkout walks in. packages/haven/scripts/share.mjs
+// serves the same hostname; a change to one is a change to the other.
+const HOSTED = 'https://haven.knightly.dev'
 
 const signInOf = (haven) => join(haven, 'web', 'src', 'sign-in.js')
 
@@ -68,12 +72,7 @@ if (checkout) {
   haven = root = sibling
   api  = flag.api || (await import(join(haven, 'web', 'config', 'sierra.config.js'))).default.junction.url
 } else {
-  if (!flag.api) {
-    log.error('There is no hosted haven yet, and no haven beside this fli. Name a haven server with --api.')
-    process.exitCode = 1
-    return
-  }
-  api = flag.api.replace(/\/+$/, '')
+  api = (flag.api || HOSTED).replace(/\/+$/, '')
   let stated
   try {
     const res = await fetch(api + CLIENT_PATH)

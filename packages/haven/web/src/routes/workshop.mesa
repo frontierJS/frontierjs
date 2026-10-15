@@ -1,9 +1,21 @@
 <script>
   // The workshop — through the house beside the tavern. The Claude sessions
   // editing on this machine stand at their benches, read from `#workers`.
+  // `/ledger` recounts the register, and the room is mounted again on the
+  // new count.
   import WalkIn from '@/components/WalkIn.mesa'
   import Workers from '@/components/Workers.mesa'
+  import Taskmaster from '@/components/Taskmaster.mesa'
+  import Ledger from '@/components/Ledger.mesa'
   import Workshop from '@/scenes/Workshop.mesa'
+  import { LEDGER } from '@/ledger.data.js'
+
+  let ledger = LEDGER
+  function counted(fresh) { ledger = fresh }
 </script>
 
-<WalkIn slug="workshop"><Workshop><Workers /></Workshop></WalkIn>
+<WalkIn slug="workshop">
+  {#key ledger}
+    <Workshop ledger={ledger}><Workers /><Taskmaster /><Ledger ledger={ledger} counted={counted} /></Workshop>
+  {/key}
+</WalkIn>

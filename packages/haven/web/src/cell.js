@@ -11,6 +11,8 @@
 // keeps its art and its figures in one wrapper. A `size` of `[cols, rows]`
 // makes the box a pane over that many cells; without one the box is as big
 // as what it holds.
+import { StyledText, TextAttributes, TextRenderable } from '@opentui/core'
+
 export const at = (col, row, layer = 10, size = null) => (el) => {
   el.position = 'absolute'
   el.left     = Math.max(0, col)
@@ -20,4 +22,32 @@ export const at = (col, row, layer = 10, size = null) => (el) => {
     el.width  = size[0]
     el.height = size[1]
   }
+}
+
+// A text that is a terminal hyperlink (OSC 8): the words stay, underlined, and
+// the terminal opens `url` when they are clicked. The URL is never printed, so
+// a ticket's row is as short as its title. A factory for the reason `at` is;
+// the text read is the node's own, so it is attached to the `<p>` that holds it.
+// A terminal that does not say it has hyperlinks would show an underlined
+// title and lose the URL, so `seen(supported)` is told, and the caller prints
+// the URL itself when it is false.
+// A text drawn in a color: the node's own `fg`. The terminal paints no CSS, so a
+// `style:color` on a `<p>` colors nothing here. Taking the box's first text when
+// the attach sits on a wrapper is `linked`'s reading, for the same reason. No
+// color leaves the terminal's own ink: an `fg` of undefined is not that.
+export const tint = (color) => (el) => {
+  if (!color) return
+  const text = el instanceof TextRenderable ? el : el.getChildren().find((c) => c instanceof TextRenderable)
+  if (text) text.fg = color
+}
+
+export const linked = (url, seen = () => {}) => (el) => {
+  const supported = el.ctx?.capabilities?.hyperlinks === true
+  seen(supported)
+  if (!supported) return
+  const text = el instanceof TextRenderable ? el : el.getChildren().find((c) => c instanceof TextRenderable)
+  if (!text) return
+  text.content = new StyledText([
+    { __isChunk: true, text: text.plainText, attributes: TextAttributes.UNDERLINE, link: { url } },
+  ])
 }

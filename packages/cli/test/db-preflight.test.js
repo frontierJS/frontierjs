@@ -27,7 +27,7 @@ import { tmpdir } from 'node:os'
 // rather than wrong.
 import { Database } from 'bun:sqlite'
 
-import { declaredDatabases, databaseState, detectRunner } from '../core/db-preflight.js'
+import { declaredDatabases, databaseFilesToReset, databaseState, detectRunner } from '../core/db-preflight.js'
 
 let dir
 beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'fli-preflight-')) })
@@ -136,5 +136,37 @@ describe('detectRunner — the lockfile is at the WORKSPACE root', () => {
   test('npm when that is what the lockfile says', () => {
     const root = app('npmapp', { lockfile: 'package-lock.json' })
     expect(detectRunner(root)).toBe('npm')
+  })
+})
+
+// FJS-1733: `db:reset` removed `development.db` whatever the app's database was
+// called, so an app declaring db/app.db was never reset.
+describe('databaseFilesToReset — the file db:reset removes is the one the app opens', () => {
+
+  test('the declared main database, not the development.db convention', () => {
+    const root = app('reset-declared', {
+      schema: 'database main { path env("RESET_DB_URL", "./db/app.db") }\n',
+    })
+    expect(databaseFilesToReset(root, join(root, 'db'), { fallback: join(root, 'db', 'development.db') }))
+      .toEqual([join(root, 'db', 'app.db')])
+  })
+
+  test('`main` wins over a database declared before it', () => {
+    const root = app('reset-main', {
+      schema: 'database jobs { path "./db/jobs.db" }\n\ndatabase main { path "./db/app.db" }\n',
+    })
+    expect(databaseFilesToReset(root, join(root, 'db'), { fallback: 'x' })).toEqual([join(root, 'db', 'app.db')])
+  })
+
+  test('an app declaring none keeps the convention', () => {
+    const root = app('reset-none', { schema: 'model A {\n  id String @id\n}\n' })
+    expect(databaseFilesToReset(root, join(root, 'db'), { fallback: join(root, 'db', 'development.db') }))
+      .toEqual([join(root, 'db', 'development.db')])
+  })
+
+  test('--test names the test database whatever the schema declares', () => {
+    const root = app('reset-test', { schema: 'database main { path "./db/app.db" }\n' })
+    expect(databaseFilesToReset(root, join(root, 'db'), { test: true, fallback: join(root, 'db', 'test.db') }))
+      .toEqual([join(root, 'db', 'test.db')])
   })
 })

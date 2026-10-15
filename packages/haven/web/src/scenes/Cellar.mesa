@@ -1,0 +1,85 @@
+<script>
+  // Cellar.mesa — the cellar under the tavern: two wine racks on the back
+  // wall, barrels along the front, crates, a chest, two lamps, and the ladder
+  // up in the top wall. By day it is reached only through the tavern's hidden
+  // door (`IDEAS/haven.md` 6.5), and the map shows it only once it has been
+  // walked into. At full night the west wall opens onto a tunnel to the
+  // glade's oak, a `night` door at each end (6.6). The picture this draws is
+  // `cellar.frame.txt`, the cellar by day, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import { INDOORS } from '@/stage.js'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { piece }  from '@/pieces/index.js'
+  import { frame }  from '@/pieces/frame.js'
+  import { lamp }   from '@/pieces/lamp.js'
+  import { barrel } from '@/pieces/barrel.js'
+
+  const rack = piece('rack', String.raw`
+.----------------------------.
+|o o o o o o o o o o o o o o |
+|----------------------------|
+| o o o o o o o o o o o o o o|
+'----------------------------'
+`, String.raw`
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu
+ugrgrgrgrgrgrgrgrgrgrgrgrgrg u
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu
+u grgrgrgrgrgrgrgrgrgrgrgrgrgu
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu
+`)
+
+  const crates = piece('crates', String.raw`
+.------.
+|[]  []|
+|[]  []|
+'------'
+`, String.raw`
+uuuuuuuu
+uuuuuuuu
+uuuuuuuu
+uuuuuuuu
+`)
+
+  const chest = piece('chest', String.raw`
+ .-------.
+ |  [=]  |
+ '-------'
+`, String.raw`
+ uuuuuuuuu
+ uuucccuuu
+ uuuuuuuuu
+`)
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    u: { fg: '#78350f' },
+    g: { fg: '#16a34a' },
+    r: { fg: '#b91c1c' },
+    c: { fg: '#d97706' },
+    l: { fg: '#9ca3af' },
+    Y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 5 },
+  }
+</script>
+
+<Scene slug="cellar" layers={INDOORS} palette={PALETTE} spawn={{ x: 48, y: 3 }}>
+  <Piece of={frame} />
+  <Door  x={48} y={0} to="/tavern/" />
+  <Door  x={1}  y={12} to="/glade/" night />
+  <Piece of={rack}   x={4}  y={3} />
+  <Piece of={rack}   x={62} y={3} />
+  <Piece of={lamp}   x={30} y={9} />
+  <Piece of={lamp}   x={66} y={9} />
+  <Piece of={crates} x={14} y={12} />
+  <Piece of={crates} x={76} y={13} />
+  <Piece of={chest}  x={44} y={15} />
+  <Piece of={barrel} x={6}  y={20} />
+  <Piece of={barrel} x={13} y={20} />
+  <Piece of={barrel} x={20} y={20} />
+  <Piece of={barrel} x={27} y={20} />
+  <Piece of={barrel} x={62} y={20} />
+  <Piece of={barrel} x={69} y={20} />
+  <Piece of={barrel} x={76} y={20} />
+  <Piece of={barrel} x={83} y={20} />
+</Scene>

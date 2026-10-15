@@ -31,6 +31,9 @@ const sierra = createSierraViteConfig(sierraConfig)
 export default defineConfig({
   ...sierra,
   root: ROOT,
+  // The weather a person or a drive pins (`web/src/sky.js`) -- the browser
+  // has no environment, so the name is baked in when the server starts.
+  define: { ...sierra.define, 'import.meta.env.HAVEN_WEATHER': JSON.stringify(process.env.HAVEN_WEATHER ?? null) },
   server: {
     ...sierra.server,
     port: PORT,

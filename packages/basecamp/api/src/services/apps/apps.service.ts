@@ -24,7 +24,7 @@ import { randomBytes } from 'node:crypto'
 import { createService, NotFound, BadRequest, parseWhere, normalizeOrderBy, $ } from '@frontierjs/junction'
 import type { SortParam } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws,
          slugify, }
   from '../../core/resource.ts'
@@ -483,9 +483,7 @@ export function createAppsService(app: BasecampApp) {
     hooks: {
       before: {
         all:    [sessionScope(app)],
-        create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
-        patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
+        create: [deriveSlug],
         // `fromBlueprint` is create's authority and writes `App` through the
         // caller's client. Topology, not content: the same authority that may patch the app.
       },

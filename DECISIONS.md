@@ -13482,6 +13482,14 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1015"></a>2026-10-14 · `FJS-D1015` — A member's scene is mounted as a tree, never built as data — A Room row's placements are mounted by one generic `<Placements>` component that renders the same `<Piece>` and `<Door>` an owner's `.mesa` scene does, so the mounted tree still calls `stamp()` and `FJS-D997` stands unamended. The placement format exists only in the row; what the server and tests read is derived from the tree by `bun run frames`, as `.frame.txt` is.
+
+Ruled by the owner over **B** (the tree compiles to placement data and `createStage` is built from that, amending `FJS-D997` to make the tree authoring only) and **C** (a scene is a placements JSON file, overturning `FJS-D997`). Answers the check `IDEAS/haven.md` 12.1 asked first.
+
+**Why.** All three differ in who calls `stamp()`, a mounted tree or a loop over data. B's one gain is a stage the server builds without Mesa. For an owner's scene, 12.2's generated `world.json` already gives that. For a member's row, the API derives the same shape by mounting `<Placements>` headlessly when the row is saved, through the loader `web/test/stage.mjs` already uses, and never takes a world the caller sends. B would add a second way to build a stage for nothing. C undoes 5.5–5.8 a day after they were ruled. A row can name a piece only by key, so a piece a member may place lives in `pieces/index.js`; an owner's scene may still define one inline. A key the registry lacks, or two pieces on one cell, is refused by name when the row is saved, not when a screen draws it.
+
+*Lives in:* `packages/haven/web/src/components/Placements.mesa` (new, 12.1), `web/src/pieces/index.js`; the plan is `IDEAS/haven.md` 12.1.
+
 ### <a id="fjs-d998"></a>2026-10-14 · `FJS-D998` — A Haven mod is a nick the server lists — `HAVEN_MODS`, read at every login both ways; the standing is `Member.role = 'mod'`, `@guarded`, and what a mod may do is two predicates in the schema, never a method or a hook.
 
 `IDEAS/haven.md` 3.2 asked for a mod standing a ban is exercised through. The

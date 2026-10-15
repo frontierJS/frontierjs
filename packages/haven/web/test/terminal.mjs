@@ -99,6 +99,7 @@ export function terminal(api, token, home, env = {}) {
     shell,
     exited,
     screen: () => screen(out),
+    raw:    () => out,
     at:     (x, y, width, stage = home, view) => cellOf(screen(out), x, y, width, stage, view),
   }
 }

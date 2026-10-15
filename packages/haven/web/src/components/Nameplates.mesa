@@ -1,0 +1,18 @@
+<script>
+  // Nameplates.mesa — a figure within reach of this one wears its full nick on
+  // the row below it (`crowd.js`'s `plates`). Placed by `Scene.mesa`.
+  import { plates } from '@/crowd.js'
+  import { at } from '#cell'
+
+  export let here
+  export let nicks
+  export let x
+  export let y
+  export let view
+  export let stage
+  export let spawn
+</script>
+
+{#each plates(here.get(), view, nicks, x, y, stage, spawn) as n (n.key)}
+  <p {@attach at(n.x, n.y, 9)}>{n.text}</p>
+{/each}

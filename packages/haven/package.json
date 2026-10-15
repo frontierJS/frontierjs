@@ -25,6 +25,14 @@
       "browser": "./web/src/workers.browser.js",
       "default": "./web/src/workers.js"
     },
+    "#taskmaster": {
+      "browser": "./web/src/taskmaster.browser.js",
+      "default": "./web/src/taskmaster.js"
+    },
+    "#ledger": {
+      "browser": "./web/src/ledger.browser.js",
+      "default": "./web/src/ledger.js"
+    },
     "#seen": {
       "browser": "./web/src/seen.browser.js",
       "default": "./web/src/seen.js"
@@ -38,14 +46,28 @@
     "web": "cd web && vite -c config/vite.config.js",
     "scenes": "vite -c editor/vite.config.js",
     "start": "bun api/index.ts",
+    "share": "bun scripts/share.mjs",
     "tui": "cd web && bun ../node_modules/@frontierjs/sierra/src/tools/tui.js",
     "test": "node ../../scripts/tmp-run.mjs 'bun test'",
     "frames": "bun web/test/frames.mjs",
+    "ledger": "bun scripts/ledger.mjs",
     "verify:explore": "bun web/test/verify-explore.mjs",
     "verify:browser": "bun web/test/verify-browser.mjs",
     "verify:scenes": "bun editor/test/verify-scenes.mjs",
     "verify:workshop": "bun web/test/verify-workshop.mjs",
+    "verify:taskmaster": "bun web/test/verify-taskmaster.mjs",
+    "verify:ledger": "bun web/test/verify-ledger.mjs",
     "verify:map": "bun web/test/verify-map.mjs",
+    "verify:nameplate": "bun web/test/verify-nameplate.mjs",
+    "verify:home-row": "bun web/test/verify-home-row.mjs",
+    "verify:bolt": "bun web/test/verify-bolt.mjs",
+    "verify:cellar": "bun web/test/verify-cellar.mjs",
+    "verify:glade": "bun web/test/verify-glade.mjs",
+    "verify:booth": "bun web/test/verify-booth.mjs",
+    "verify:hearing": "bun web/test/verify-hearing.mjs",
+    "verify:steps": "bun web/test/verify-steps.mjs",
+    "verify:errand": "bun web/test/verify-errand.mjs",
+    "verify:bar": "bun web/test/verify-bar.mjs",
     "verify:fresh": "bun tests/verify-fresh.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs",
     "db:types": "bunx litestone types --schema db/schema.lite --audience=system --out db/schema.d.ts"

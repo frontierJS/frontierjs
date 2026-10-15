@@ -1,0 +1,25 @@
+<script>
+  // Whisper.mesa — `/w <nick> <line>`: a Message with a `toId`, heard by the
+  // member it names and nobody else (`api/src/hearing.ts`). Draws nothing.
+  import { members } from '@/resources/Member.mesa'
+  import { messages } from '@/resources/Message.mesa'
+
+  export let room
+  export let here
+
+  var verbs = $context.commands
+
+  async function whisper({ args }) {
+    const nick = args.split(/\s+/)[0]
+    if (!nick) return '/w <nick> <line>'
+    const who = (await members.service.find({ nick: nick.toLowerCase() })).data?.[0]
+    if (!who) return `nobody here is called ${nick}`
+    const text = args.slice(nick.length).trim()
+    if (!text) return '/w <nick> <line>'
+    if (String(who.id) === String(here.get().self?.userId)) return 'a whisper is for somebody else'
+    await messages.save({ roomId: room.id, body: text, toId: who.id })
+    return `whispered to ${who.nick}`
+  }
+
+  $.onDestroy(verbs.add({ word: 'w', help: '/w <nick> <line>', run: whisper }))
+</script>

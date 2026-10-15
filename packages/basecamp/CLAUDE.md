@@ -316,7 +316,9 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   standing into any other workspace they can name; and the role hooks, kept
   only where no gate grades the work — the workspaces service's member
   methods, which address `ctx.id` while `gateAuth` grades the header's
-  workspace. A method takes no hook: the model's gate refuses, or a `gate:`
+  workspace, and `invitations.create`, which writes through `asSystem()` for
+  the `@guarded` token and cannot state a `gate:` on a CRUD verb of a
+  model-backed service. A method takes no hook: the model's gate refuses, or a `gate:`
   in the service's `methods:` where it writes through `asSystem()` or acts on a
   machine or provider first (`FJS-2856`), and `app.ts`'s error mapper says the
   refusal as a role, in-process and on the wire alike. `methods:` is the

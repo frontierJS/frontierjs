@@ -1,85 +1,64 @@
 <script>
   // Workshop.mesa — the workshop, through the house beside the tavern: a
-  // bench for every package in the repo, a bench for `example/` and one for
-  // the rest of the tree, `frontierjs`, in rows by name, and the door back
-  // out to the square in the bottom wall. Each name is a lamp, so every
-  // bench is read from the door. The Claude sessions editing on this machine
-  // stand at them (`components/Workers.mesa`), placed by the route and never
-  // by this file. The picture this draws is `workshop.frame.txt`, which
+  // bench for every package in the repo, one for `example/` and one for the
+  // rest of the tree, `frontierjs`, and the door back out to the square in the
+  // bottom wall. Each name is a lamp, so every bench is read from the door.
+  // The Claude sessions editing on this machine stand at them
+  // (`components/Workers.mesa`), placed by the route and never by this file;
+  // so is the taskmaster, whose desk is the one piece here by the door on the
+  // left (`components/Taskmaster.mesa`).
+  // On each bench lie its package's open issues from ISSUES.md: a slip for
+  // each, piled by severity, S1 to S4 left to right (`pieces/ledger.js`,
+  // counts from `bun run ledger`). A package with none has no table of its
+  // own: it is listed under `(no work)` along the bottom. Where every bench
+  // stands comes from the counts (`pieces/workshop.js`), so the room is as
+  // tall as the piles need and is a screen wide and several tall; the view
+  // pans up it. The picture this draws is `workshop.frame.txt`, which
   // `scenes.test.js` pins, beside a test that every package has its bench.
   import Scene from '@/components/Scene.mesa'
+  import { INDOORS } from '@/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
-  import { frame }      from '@/pieces/frame.js'
-  import { namedBench } from '@/pieces/bench.js'
+  import { framed }          from '@/pieces/frame.js'
+  import { layoutWorkshop }  from '@/pieces/workshop.js'
+  import { LEDGER }          from '@/ledger.data.js'
 
-  const auth             = namedBench('auth')
-  const basecamp         = namedBench('basecamp')
-  const caravan          = namedBench('caravan')
-  const cli              = namedBench('cli')
-  const conduit          = namedBench('conduit')
-  const config           = namedBench('config')
-  const createFrontier   = namedBench('create-frontier')
-  const css              = namedBench('css')
-  const emailKit         = namedBench('email-kit')
-  const example          = namedBench('example')
-  const frontierjs       = namedBench('frontierjs')
-  const frontierjsVscode = namedBench('frontierjs-vscode')
-  const haven            = namedBench('haven')
-  const jetty            = namedBench('jetty')
-  const junction         = namedBench('junction')
-  const litestone        = namedBench('litestone')
-  const mcp              = namedBench('mcp')
-  const mesa             = namedBench('mesa')
-  const notifications    = namedBench('notifications')
-  const oracle           = namedBench('oracle')
-  const orion            = namedBench('orion')
-  const outpost          = namedBench('outpost')
-  const printKit         = namedBench('print-kit')
-  const sierra           = namedBench('sierra')
-  const siteKit          = namedBench('site-kit')
-  const testing          = namedBench('testing')
-  const toolbelt         = namedBench('toolbelt')
-  const ui               = namedBench('ui')
+  // The route hands a fresh count after `/ledger` and mounts the room again,
+  // since where every bench stands follows the counts.
+  export let ledger = LEDGER
+
+  const shop = layoutWorkshop(ledger)
+
+  // Wider and taller than a screen, so this scene's `frame` is its own, as the
+  // square's is.
+  const frame = framed(shop.width, shop.height)
 
   const PALETTE = {
     f: { fg: '#6b7280' },
     d: { fg: '#92400e' },
     w: { fg: '#a16207' },
     n: { fg: ['#fde68a', '#fcd34d', '#fde68a', '#fef3c7'], ms: 1400, wave: true, light: 1 },
+    1: { fg: '#ef4444' },
+    2: { fg: '#f97316' },
+    3: { fg: '#eab308' },
+    4: { fg: '#22d3ee' },
   }
 </script>
 
-<Scene slug="workshop" palette={PALETTE} spawn={{ x: 48, y: 24 }}>
+<Scene slug="workshop" layers={INDOORS} palette={PALETTE} spawn={shop.spawn}>
   <Piece of={frame} />
-  <Door  x={48} y={25} to="/" />
-  <Piece of={auth}             x={4}  y={2} />
-  <Piece of={basecamp}         x={27} y={2} />
-  <Piece of={caravan}          x={50} y={2} />
-  <Piece of={cli}              x={73} y={2} />
-  <Piece of={conduit}          x={4}  y={5} />
-  <Piece of={config}           x={27} y={5} />
-  <Piece of={createFrontier}   x={50} y={5} />
-  <Piece of={css}              x={73} y={5} />
-  <Piece of={emailKit}         x={4}  y={8} />
-  <Piece of={example}          x={27} y={8} />
-  <Piece of={frontierjs}       x={50} y={8} />
-  <Piece of={frontierjsVscode} x={73} y={8} />
-  <Piece of={haven}            x={4}  y={11} />
-  <Piece of={jetty}            x={27} y={11} />
-  <Piece of={junction}         x={50} y={11} />
-  <Piece of={litestone}        x={73} y={11} />
-  <Piece of={mcp}              x={4}  y={14} />
-  <Piece of={mesa}             x={27} y={14} />
-  <Piece of={notifications}    x={50} y={14} />
-  <Piece of={oracle}           x={73} y={14} />
-  <Piece of={orion}            x={4}  y={17} />
-  <Piece of={outpost}          x={27} y={17} />
-  <Piece of={printKit}         x={50} y={17} />
-  <Piece of={sierra}           x={73} y={17} />
-  <Piece of={siteKit}          x={4}  y={20} />
-  <Piece of={testing}          x={27} y={20} />
-  <Piece of={toolbelt}         x={50} y={20} />
-  <Piece of={ui}               x={73} y={20} />
+  <Door  x={shop.door.x} y={shop.door.y} to="/" />
+  {#each shop.benches as b (b.name)}
+    <Piece of={b.bench}  x={b.x} y={b.y} />
+    <Piece of={b.ledger} x={b.x} y={b.y - b.ledger.art.split('\n').length} />
+  {/each}
+  {#if shop.listing}
+    <Piece of={shop.heading} x={shop.listing.x} y={shop.listing.y} />
+  {/if}
+  {#each shop.idle as b (b.name)}
+    <Piece of={b.bench} x={b.x} y={b.y} />
+  {/each}
+  <Piece of={shop.desk.piece} x={shop.desk.x} y={shop.desk.y} />
+  <Piece of={shop.legend.piece} x={shop.legend.x} y={shop.legend.y} />
   <slot />
 </Scene>

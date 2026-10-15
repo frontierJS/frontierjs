@@ -152,16 +152,18 @@ sbbbbbbbbbbbbbbbbbs
    sssssbbbsssss
 `]
 
-  // One drawing, two pieces: the rim and the jet are a wall, the water inside
+  // One drawing, two pieces: the rim is a wall, the water inside
   // is walked through, and three cells of water break the front rim as the
-  // way in. A cell has one owner, so each takes its own paint keys.
+  // way in. A cell has one owner, so each takes its own paint keys. The jet is
+  // the top two rows and floor like the water: a figure stands on the spray,
+  // drawn over it rather than hidden under it.
   const carve = (name, keys, options) => {
     const [art, paint] = FOUNTAIN.map((s) => s.replace(/^\n/, '').replace(/\n$/, '').split('\n'))
     const keep = (row, dy) => [...row].map((ch, dx) => keys.includes(paint[dy]?.[dx]) ? ch : ' ').join('')
     return piece(name, art.map(keep).join('\n'), paint.map((r, dy) => [...r].map((k, dx) => keys.includes(k) ? k : ' ').join('')).join('\n'), options)
   }
-  const fountain = carve('fountain', 'sj')
-  const basin = carve('fountain water', 'b', { floor: true })
+  const fountain = carve('fountain', 's')
+  const basin = carve('fountain water', 'bj', { floor: true })
 
   // The square's own frame: a screen and two thirds wide, where the shared
   // `frame` is one screen.
@@ -201,7 +203,7 @@ eeeeeee
   lll
 `)
 
-  const hedge  = piece('hedge', ',', 'g', { floor: true })
+  const hedge  = piece('hedge', ',', 'g')
   const flower = piece('flower', '*', 'p', { floor: true })
 
   const PALETTE = {
@@ -215,7 +217,6 @@ eeeeeee
     S: { fg: '#a16207' },
     s: { fg: '#fbbf24' },
     y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 1 },
-    Y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 4 },
     t: { fg: '#166534' },
     T: { fg: ['#22c55e', '#16a34a', '#15803d', '#16a34a'], chars: '&&%&', ms: 900, wave: true },
     u: { fg: '#78350f' },
@@ -224,7 +225,7 @@ eeeeeee
     j: { fg: ['#e0f2fe', '#7dd3fc', '#bae6fd'], chars: ".':'", ms: 180, flicker: true },
     b: { fg: ['#38bdf8', '#7dd3fc', '#0ea5e9'], chars: '~-~', ms: 350, wave: true },
     g: { fg: ['#22c55e', '#16a34a', '#15803d'], ms: 1100, wave: true },
-    p: { fg: ['#f472b6', '#facc15', '#c084fc', '#fb7185'], ms: 1500, flicker: true },
+    p: { fg: ['#f472b6', '#facc15', '#c084fc', '#fb7185'], ms: 1500, flicker: true, dye: true },
   }
 </script>
 

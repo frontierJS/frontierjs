@@ -12,7 +12,7 @@
 // schema rather than spelled out as SQL.
 
 import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, changesNothing, ws, actor } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -547,9 +547,6 @@ export function createDeploymentsService(app: BasecampApp) {
         all:    [sessionScope(app)],
         // No deriveSlug: `Deployment` has neither `name` nor `slug`, so it was a
         // hook that could never fire.
-        create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         // The engine's three. The standing was graded when `create` queued the
         // release; the queue runs as that same actor.
         startRun:   [internalOnly()],

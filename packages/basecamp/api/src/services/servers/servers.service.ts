@@ -43,7 +43,7 @@
 import { createService, NotFound, BadRequest, normalizeOrderBy, seriesKey, isStale, $ } from '@frontierjs/junction'
 import type { SortParam } from '@frontierjs/junction'
 import { LEVELS }                from '@frontierjs/litestone'
-import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, findScoped, getScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, slugify } from '../../core/resource.ts'
 import { secretRef }             from '../../core/credentials.ts'
 import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../core/server-metrics.ts'
@@ -1191,9 +1191,7 @@ export function createServersService(app: BasecampApp) {
         // transport. It must be exempted HERE; a comment on the method is not
         // an exemption, and it used to 401 every check-in.
         all:       [sessionScope(app, { except: ['heartbeat'] })],
-        create:    [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
-        patch:     [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        remove:    [requireWorkspaceRole(app, 'admin', 'owner')],
+        create:    [deriveSlug],
         // reboot / drain / undrain carry NO role hook. Each is one named move
         // and the authority for it is `@gate(N)` on that move in the schema —
         // drain and undrain at ADMINISTRATOR(5), reboot at the model's own

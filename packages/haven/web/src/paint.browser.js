@@ -13,6 +13,10 @@
 // is a bigger font, never more cells, or a browser would see a world a
 // terminal cannot. The editor asks the stage for the whole of it instead.
 //
+// A cell of a piece that is `overhead` is drawn in a second `<pre>` above the
+// figures, so a figure walks behind a canopy: z-index 12 is over a figure's
+// (10, 11) and, being earlier in the box than a speech bubble's, under it.
+//
 // The clock is the wall's, as in the terminal, so a terminal and a tab in one
 // room draw the cat on the same cell.
 import { pacerAt, VIEW } from './stage.js'
@@ -26,6 +30,25 @@ function runs(cells) {
     else out.push({ text: c.ch, fg: c.fg, bg: c.bg })
   }
   return out
+}
+
+const BLANK = { ch: ' ', fg: undefined, bg: undefined }
+
+/** A grid of cells as a fragment: a handful of spans a row, a newline between rows. */
+function fragment(grid) {
+  const frag = document.createDocumentFragment()
+  grid.forEach((row, i) => {
+    for (const r of runs(row)) {
+      if (!r.fg && !r.bg) { frag.append(r.text); continue }
+      const span = document.createElement('span')
+      if (r.fg) span.style.color = r.fg
+      if (r.bg) span.style.background = r.bg
+      span.textContent = r.text
+      frag.append(span)
+    }
+    if (i < grid.length - 1) frag.append('\n')
+  })
+  return frag
 }
 
 export const paint = (stage) => (box) => {
@@ -43,22 +66,31 @@ export const paint = (stage) => (box) => {
   const pre = document.createElement('pre')
   pre.setAttribute('aria-hidden', 'true')
   pre.dataset.art = stage.slug
-  Object.assign(pre.style, { margin: '0', padding: '0', font: 'inherit', lineHeight: 'inherit', background: 'none', border: '0' })
+  const bare = { margin: '0', padding: '0', font: 'inherit', lineHeight: 'inherit', background: 'none', border: '0' }
+  Object.assign(pre.style, bare)
   box.prepend(pre)
+  const top = document.createElement('pre')
+  top.setAttribute('aria-hidden', 'true')
+  Object.assign(top.style, bare, { position: 'absolute', top: '0', left: '0', zIndex: '12', pointerEvents: 'none' })
+  pre.after(top)
 
-  const draw = () => {
-    const ms = Date.now()
+  const draw = (ms) => {
     const v  = stage.view
     if (size.w !== v.w || size.h !== v.h) {
       size = { w: v.w, h: v.h }
       b.width  = `${v.w}ch`
       b.height = `${v.h}lh`
     }
-    const grid = []
+    const grid = [], overhead = []
     for (let row = 0; row < v.h; row++) {
-      const cells = []
-      for (let col = 0; col < v.w; col++) cells.push(stage.look(v.x + col, v.y + row, ms))
+      const cells = [], high = []
+      for (let col = 0; col < v.w; col++) {
+        const look = stage.look(v.x + col, v.y + row, ms)
+        cells.push(look.overhead ? BLANK : look)
+        high.push(look.overhead ? look : BLANK)
+      }
       grid.push(cells)
+      overhead.push(high)
     }
     // A pacer's spaces are not drawn, as in the terminal, and neither is a
     // pacer on a cell the figure cannot see: the art shows through.
@@ -66,32 +98,20 @@ export const paint = (stage) => (box) => {
       const { x, y, text } = pacerAt(p, ms)
       ;[...text].forEach((ch, i) => {
         const cell = grid[y - v.y]?.[x + i - v.x]
-        if (cell && ch !== ' ' && stage.light(x + i, y) === 'lit') grid[y - v.y][x + i - v.x] = { ch, fg: p.fg, bg: cell.bg }
+        if (cell && ch !== ' ' && stage.light(x + i, y) === 'lit') grid[y - v.y][x + i - v.x] = { ch, fg: stage.tint(p.fg, x + i, y, ms), bg: cell.bg }
       })
     }
-    const frag = document.createDocumentFragment()
-    grid.forEach((row, i) => {
-      for (const r of runs(row)) {
-        if (!r.fg && !r.bg) { frag.append(r.text); continue }
-        const span = document.createElement('span')
-        if (r.fg) span.style.color = r.fg
-        if (r.bg) span.style.background = r.bg
-        span.textContent = r.text
-        frag.append(span)
-      }
-      if (i < v.h - 1) frag.append('\n')
-    })
-    pre.replaceChildren(frag)
+    pre.replaceChildren(fragment(grid))
+    top.replaceChildren(fragment(overhead))
   }
-  draw()
-
-  const tick = stage.tickOf()
-  const timer = tick ? setInterval(draw, tick) : null
-  const unsubscribe = stage.subscribe(draw)
+  // A paint task on the stage's clock (`stage.js`): run on any change and on
+  // the look's next tick, at the frame's own ms. Keyed by the box, since the
+  // editor paints one stage into more than one.
+  const stop = stage.task(box, draw, { phase: 'paint' })
 
   return () => {
-    unsubscribe()
-    if (timer) clearInterval(timer)
+    stop()
     pre.remove()
+    top.remove()
   }
 }

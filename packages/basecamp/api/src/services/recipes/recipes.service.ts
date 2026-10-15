@@ -34,7 +34,7 @@
 // nothing recording which half.
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, slugify, findScoped, getScoped, assertSlugFree, removeScoped, narrowPatch, changesNothing } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import recipeRun from '../../jobs/recipe-run.job.ts'
@@ -340,9 +340,7 @@ export function createRecipesService(app: BasecampApp) {
         all:    [sessionScope(app)],
         // Authorship is the privileged act — the script is the payload, and
         // editing one edits what runs on every machine it is pointed at.
-        create: [requireWorkspaceRole(app, 'admin', 'owner'), stampRecipe],
-        patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
-        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
+        create: [stampRecipe],
         // Running is the ordinary act, and the separation is the point: a
         // developer runs a script an admin vetted, and the run says who. No
         // hook: `run` creates a `RecipeRun` through the caller's client.
