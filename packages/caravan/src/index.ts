@@ -1272,7 +1272,7 @@ export function defineJob<T = unknown>(
     timeout:     spec.timeout,
     cron:        spec.cron,
     timeZone:    spec.timeZone,
-  } as JobDefinition<T>
+  } as Omit<JobDefinition<T>, 'name'> as JobDefinition<T>
 
   // A getter, so a job that is neither stamped nor named fails where its name
   // is first read instead of registering under `undefined`.
