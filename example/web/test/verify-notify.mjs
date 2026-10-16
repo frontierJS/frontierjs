@@ -197,10 +197,10 @@ try {
 
   // ── 4. what the service refuses ────────────────────────────────────────
   //
-  // `methods: ['find','get','patch']` on createBaseService. Declaring it there
-  // did NOTHING until 2026-08-06 — the option was read by createService and
-  // neither read nor forwarded by the base factory — so this answered 403 from
-  // the model's gate, or 400 from validation, depending on the body.
+  // `methods: ['find','get','patch']` on the notifications service. A method
+  // the service does not declare must answer 405; a declaration that goes
+  // unread answers 403 from the model's gate, or 400 from validation,
+  // depending on the body.
   const forged = await fetch(`${API}/api/notifications`, {
     method: 'POST', headers: admin,
     body: JSON.stringify({ userId: 'x', type: 'Forged', data: {} }),

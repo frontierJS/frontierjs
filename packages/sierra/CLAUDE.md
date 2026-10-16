@@ -490,6 +490,10 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   **A composed key (a relation, or an object under an undeclared name) never
   travels, baseline or not** — identity would send a child list whenever the
   last recorded read was not the one the form opened on (`FJS-1576`).
+  **A column that is an object on the read and in the record goes as
+  `{ $merge: patch }`** (`FJS-1759`, `_jsonPatch`) — a Json document written whole
+  loses a key a second session set. `null` and a removed key are merge-patch's
+  delete; the optimistic overlay shows the document, not the operator.
   `service.patch(id, data)` is the escape and sends what it is handed: this verb
   takes a record, that one takes a payload.
 - **Neither the baseline nor the `@version` moves on a push.** Both are recorded

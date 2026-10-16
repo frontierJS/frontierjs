@@ -12,7 +12,8 @@
 // not — the last test is that half.
 
 import { describe, expect, test } from 'bun:test'
-import { createApp, createService, defaultConfig, scopeRefusal } from '../index.ts'
+import { createApp, defaultConfig, scopeRefusal } from '../index.ts'
+import { buildService } from '../src/core/service.ts'
 
 const TOKENS: Record<string, { scopes?: string[] }> = {
   session:   {},
@@ -28,7 +29,7 @@ async function clockApp() {
     config: { port: 0, services: { dir: '/nonexistent' },
               http: { ...defaultConfig.http, drainTimeout: 50 } },
   })
-  app.services.register(createService({
+  app.services.register(buildService({
     name:    'clock',
     scope:   { read: 'clock:read', write: 'clock:write' },
     methods: ['find', 'create', { method: 'tally', read: true }, { method: 'whoami', scope: false }],
@@ -37,11 +38,11 @@ async function clockApp() {
     async tally()  { ran.push('tally');  return { total: 0 } },
     async whoami() { ran.push('whoami'); return { ok: true } },
   }))
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'audit',
     async find() { ran.push('audit.find'); return [await app.service('clock').find({})].flat() },
   }))
-  app.services.register(createService({
+  app.services.register(buildService({
     name:    'relay',
     scope:   'clock:read',
     async pull(ctx: any) { ran.push('relay.pull'); return app.service('audit').find({}, { auth: ctx.auth }) },
@@ -132,11 +133,11 @@ describe('scope: on a service and on a method', () => {
   })
 
   test('a malformed declaration is refused where it is written', () => {
-    expect(() => createService({ name: 'x', scope: '' as never, async find() { return [] } }))
+    expect(() => buildService({ name: 'x', scope: '' as never, async find() { return [] } }))
       .toThrow(/scope "" is not a scope name/)
-    expect(() => createService({ name: 'x', scope: { read: 'x:read' } as never, async find() { return [] } }))
+    expect(() => buildService({ name: 'x', scope: { read: 'x:read' } as never, async find() { return [] } }))
       .toThrow(/not a scope name/)
-    expect(() => createService({ name: 'x', methods: [{ method: 'find', scope: true as never }], async find() { return [] } }))
+    expect(() => buildService({ name: 'x', methods: [{ method: 'find', scope: true as never }], async find() { return [] } }))
       .toThrow(/find declares scope true/)
   })
 })

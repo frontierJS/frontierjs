@@ -32,6 +32,7 @@ Detail: `references/the-hook-pipeline.md`
 - **An irreversible effect belongs in `ctx.afterCommit(fn)`, not in an `after` hook.**
 - **Under `transactional:`, a result carrying a non-empty `errors` is a 422 and a rollback** (`FJS-2149`)
 - **A `mailer.send()` that answers `sent` sends everything the message declared — including `cc`, `bcc`, `attachments` and `headers`** (`FJS-895`)
+- **A reply tag proves the holder RECEIVED our mail, not who is holding it; attribution also needs `from` to be the address the mail went to** (`FJS-D1091`, `FJS-D1092`)
 - **A recurring `app.scheduler` job does not overlap itself, and the tick it dropped is COUNTED** (`FJS-896`)
 - **The log level is a CELL shared down the whole tree, and `setLevel` moves all of it** (`FJS-897`)
 - **A job records the request that queued it** (`FJS-897`)

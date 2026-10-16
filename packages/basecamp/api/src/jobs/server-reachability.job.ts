@@ -24,7 +24,7 @@ import { defineJob }      from '@frontierjs/caravan'
 import { runsAsApp }      from './context.ts'
 import { gradeReachability, heartbeatGraceMs } from '../core/reachability.ts'
 import { notifyPeople, workspaceMembers }        from '../core/notify.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 export interface SweepOptions {
   /** The instant to grade at. A parameter, not a clock read inside — see
@@ -54,7 +54,7 @@ export interface SweepResult {
  * Exported so it can be run at a stated instant. The job below is one caller.
  */
 export async function sweepUnreachable(
-  app:  BasecampApp,
+  app:  App,
   opts: SweepOptions = {},
 ): Promise<SweepResult> {
   const db      = (app.db as any).asSystem()

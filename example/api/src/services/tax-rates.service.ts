@@ -9,8 +9,6 @@
 // `pricing.ts` takes the first active default and charges nothing where there
 // is none — a shop nobody has configured is one that does not charge tax, not
 // one that refuses to sell.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createTaxRatesService() {
-  return createBaseService({ model: 'TaxRate', channel: 'tax-rates' })
-}
+export default createService({ model: 'TaxRate', channel: 'tax-rates' })

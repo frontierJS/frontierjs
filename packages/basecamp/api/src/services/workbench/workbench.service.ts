@@ -58,325 +58,321 @@ import { describeRepo }            from '../../core/local-git.ts'
 import { doneScript }              from '../../core/workbench.ts'
 import { openPreview, freezePreview, thawPreview, retirePreview, type Opened, type PreviewSettings } from '../../core/preview.ts'
 import { db, ws }                  from '../../core/resource.ts'
-import type { BasecampApp }        from '../../basecamp.types.ts'
 
 const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan']
 const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'seen', 'check', 'review', 'buildPlan', 'openPlan', 'closePlan', 'go', 'next', 'tick', 'file', 'decide', 'fork', 'freeze', 'thaw', 'land', 'commit', 'archive', 'run', 'halt']
 
-export function createWorkbenchService(app: BasecampApp) {
-  // Read per call: services are built inside createApp, before app.ts claims it.
-  const wb = () => app.workbench
+const wb = () => $.app.workbench
 
-  function offered() {
-    const refused = localMachineRefusal()
-    if (refused) throw new NotFound(`The workbench is ${refused}`)
-  }
-
-  function pinned() {
-    offered()
-    const p = wb().getPin(String($.id ?? ''))
-    if (!p) throw new NotFound(`No pinned checkout '${$.id}'`)
-    return p
-  }
-
-  const body = () => ($.data ?? {}) as Record<string, unknown>
-
-  /** A preview branch: what Open made, and the settings of the checkout it
-   *  was forked from. */
-  function previewOf(p: ReturnType<typeof pinned>): { opened: Opened, settings: PreviewSettings } {
-    const parent = p.from ? wb().getPin(p.from) : null
-    if (!p.opened?.appId || !p.opened.environmentId) throw new Conflict(`${p.name} is not a preview — fork one with { preview: true }`)
-    if (!parent?.preview) throw new Conflict(`${p.name}'s checkout no longer carries preview settings`)
-    return { opened: p.opened as Opened, settings: parent.preview }
-  }
-
-  async function previewTargetsHere(s: Pick<PreviewSettings, 'projectId' | 'serverId'>) {
-    if (!await db().project.findFirst({ where: { id: s.projectId, workspaceId: ws() } }))
-      throw new NotFound(`Project '${s.projectId}' not found in this workspace`)
-    if (s.serverId && !await db().server.findFirst({ where: { id: s.serverId, workspaceId: ws() } }))
-      throw new NotFound(`Server '${s.serverId}' not found in this workspace`)
-  }
-
-  return createService({
-    name: 'workbench',
-    reservedQuery: [...WORKSPACE_QUERY],
-
-    methods: [
-      ...READS.map(method => ({ method, read: true, gate: LEVELS.ADMINISTRATOR })),
-      ...WRITES.map(method => ({ method, gate: LEVELS.ADMINISTRATOR })),
-    ],
-
-    async pins() {
-      offered()
-      const pins = wb().readPins()
-      return {
-        dir:  wb().dir,
-        pins: await Promise.all(pins.map(async p => {
-          // A renamed or deleted folder: git there answers nothing, and every
-          // run is refused, so the screen says so instead of a blank card.
-          const missing = !existsSync(p.path)
-          return {
-            ...p,
-            missing,
-            git:    missing ? null : await describeRepo(dirname(p.path), p.path),
-            checkable: !missing && !!doneScript(p.path),
-            // Where Build plan writes by default: IDEAS/<slug>.md beside the
-            // other papers, PLAN.md where the checkout has none (FJS-D966).
-            hasIdeas:  !missing && existsSync(join(p.path, 'IDEAS')),
-            status: await wb().status(p),
-          }
-        })),
-      }
-    },
-
-    async status() {
-      offered()
-      return { status: await wb().statuses() }
-    },
-
-    async transcript() {
-      const p = pinned()
-      const t = await wb().transcript(p.id, body().chat)
-      if (!t) throw new NotFound(`${p.name} has no chat '${body().chat}'`)
-      return t
-    },
-
-    async diff() {
-      const p = pinned()
-      return wb().diff(p.id)
-    },
-
-    async runnables() {
-      const p = pinned()
-      return wb().runnables(p.id)
-    },
-
-    async output() {
-      const p = pinned()
-      const out = wb().output(p.id, body().row)
-      if (!out) throw new NotFound(`Nothing called '${body().row}' was started in ${p.name}`)
-      return out
-    },
-
-    async plan() {
-      const p = pinned()
-      const plan = await wb().readPlan(p.id)
-      if (!plan) throw new NotFound(`${p.name} has no plan — Build plan writes one`)
-      return plan
-    },
-
-    async buildPlan() {
-      const p = pinned()
-      const r = await wb().buildPlan(p.id, { goal: body().goal, path: body().path })
-      if ('refused' in r) throw new BadRequest(r.refused)
-      return r
-    },
-
-    async openPlan() {
-      const p = pinned()
-      const r = wb().openPlan(p.id, body().path)
-      if ('refused' in r) throw new BadRequest(r.refused)
-      return r
-    },
-
-    async closePlan() {
-      const p = pinned()
-      const r = wb().closePlan(p.id, body().path)
-      if ('refused' in r) throw new Conflict(r.refused)
-      return r
-    },
-
-    async go() {
-      const p = pinned()
-      const r = await wb().go(p.id)
-      if ('refused' in r) throw new Conflict(r.refused)
-      return r
-    },
-
-    async next() {
-      const p = pinned()
-      const r = await wb().next(p.id)
-      if ('refused' in r) throw new Conflict(r.refused)
-      return r
-    },
-
-    async tick() {
-      const p = pinned()
-      const r = await wb().tick(p.id, body().step)
-      if ('refused' in r) throw new Conflict(r.refused)
-      return r
-    },
-
-    async file() {
-      const p = pinned()
-      const { severity, area, title, detail } = body()
-      const r = await wb().file(p.id, { severity, area, title, detail })
-      if ('refused' in r) throw new BadRequest(r.refused)
-      return r
-    },
-
-    async decide() {
-      const p = pinned()
-      const { question, pick, why, section } = body()
-      const r = await wb().decide(p.id, { question, pick, why, section })
-      if ('refused' in r) throw new BadRequest(r.refused)
-      return r
-    },
-
-    async run() {
-      const p = pinned()
-      const r = await wb().run(p.id, body().row)
-      if ('refused' in r) throw new Conflict(r.refused)
-      return r
-    },
-
-    async halt() {
-      const p = pinned()
-      const r = wb().halt(p.id, body().row)
-      if ('refused' in r) throw new NotFound(r.refused)
-      return r
-    },
-
-    async pin() {
-      offered()
-      const r = wb().pin(body().path)
-      if ('refused' in r) throw new BadRequest(r.refused)
-      return r.pin
-    },
-
-    async unpin() {
-      const p = pinned()
-      const r = wb().unpin(p.id)
-      if (r) throw new Conflict(r.refused)
-      return { id: p.id }
-    },
-
-    async fork() {
-      const p = pinned()
-      const preview = body().preview === true
-      if (preview && p.preview) await previewTargetsHere(p.preview)
-      const r = await wb().fork(p.id, { slug: body().slug, preview })
-      if ('refused' in r) throw new Conflict(r.refused)
-      if (!preview) return r.pin
-      const b = r.pin
-      try {
-        const opened = await openPreview(app, p.preview!, { slug: b.branch!.slice('wb/'.length), branch: b.branch!, port: b.opened!.port })
-        return wb().recordOpened(b.id, opened)
-      } catch (e) {
-        await wb().archive(b.id, { discard: true })
-        throw new Conflict(`Open failed, so the branch was archived (${b.branch} is kept): ${(e as Error).message}`)
-      }
-    },
-
-    async freeze() {
-      const p = pinned()
-      const { opened, settings } = previewOf(p)
-      try { return await freezePreview(app, settings, { path: p.path, branch: p.branch!, appId: opened.appId }) }
-      catch (e) {
-        if ((e as { code?: number }).code) throw e
-        throw new Conflict(`Freeze failed, and the hostname still serves what it did: ${(e as Error).message}`)
-      }
-    },
-
-    async thaw() {
-      const p = pinned()
-      const { opened, settings } = previewOf(p)
-      const { port, hosts, ...route } = await thawPreview(app, settings, opened)
-      if (!route.ok) throw new Conflict(`The hostnames were not routed back: ${route.why}`)
-      return { hosts, port, route }
-    },
-
-    async land() {
-      const p = pinned()
-      const r = wb().land(p.id)
-      if ('refused' in r) throw new Conflict(r.refused, { files: r.files ?? [] })
-      return r
-    },
-
-    async commit() {
-      const p = pinned()
-      const r = wb().commit(p.id, body())
-      if ('refused' in r) throw new Conflict(r.refused, { files: r.files ?? [] })
-      return r
-    },
-
-    async archive() {
-      const p = pinned()
-      const refused = wb().archiveRefusal(p.id, { discard: body().discard })
-      if (refused) throw new Conflict(refused.refused, { pending: refused.pending ?? 0 })
-      // Before the worktree goes and its port with it: a route left dialing a
-      // released port serves whichever branch claims that port next.
-      const retired = p.opened?.environmentId ? await retirePreview(app, p.opened as Opened) : null
-      const r = await wb().archive(p.id, { discard: body().discard })
-      if ('refused' in r) throw new Conflict(r.refused, { pending: r.pending ?? 0 })
-      return retired ? { ...r, retired } : r
-    },
-
-    async configure() {
-      const p = pinned()
-      const asked = body().preview
-      if (asked && typeof asked === 'object' && !Array.isArray(asked) && (asked as Record<string, unknown>).projectId)
-        await previewTargetsHere({
-          projectId: String((asked as Record<string, unknown>).projectId),
-          serverId:  ((asked as Record<string, unknown>).serverId as string | null | undefined) || null,
-        })
-      const r = wb().configure(p.id, body())
-      if ('refused' in r) throw new BadRequest(r.refused)
-      return r
-    },
-
-    async send() {
-      const p = pinned()
-      const r = await wb().send(p.id, String(body().prompt ?? ''), body().chat)
-      if ('refused' in r) throw new BadRequest(r.refused)
-      return r
-    },
-
-    async check() {
-      const p = pinned()
-      const r = wb().check(p.id)
-      if ('refused' in r) throw new Conflict(r.refused)
-      return r
-    },
-
-    async review() {
-      const p = pinned()
-      const r = await wb().review(p.id)
-      if ('refused' in r) throw new Conflict(r.refused)
-      return r
-    },
-
-    async stop() {
-      const p = pinned()
-      return { stopped: wb().stop(p.id) }
-    },
-
-    async fresh() {
-      const p = pinned()
-      return wb().fresh(p.id)
-    },
-
-    async select() {
-      const p = pinned()
-      const r = wb().select(p.id, body().chat)
-      if ('refused' in r) throw new NotFound(r.refused)
-      return r
-    },
-
-    async close() {
-      const p = pinned()
-      const r = await wb().close(p.id, body().chat)
-      if ('refused' in r) throw new Conflict(r.refused)
-      return r
-    },
-
-    async seen() {
-      const p = pinned()
-      return wb().seen(p.id)
-    },
-
-    hooks: {
-      before: { all: [sessionScope(app)] },
-    },
-  })
+function offered() {
+  const refused = localMachineRefusal()
+  if (refused) throw new NotFound(`The workbench is ${refused}`)
 }
+
+function pinned() {
+  offered()
+  const p = wb().getPin(String($.id ?? ''))
+  if (!p) throw new NotFound(`No pinned checkout '${$.id}'`)
+  return p
+}
+
+const body = () => ($.data ?? {}) as Record<string, unknown>
+
+/** A preview branch: what Open made, and the settings of the checkout it
+ *  was forked from. */
+function previewOf(p: ReturnType<typeof pinned>): { opened: Opened, settings: PreviewSettings } {
+  const parent = p.from ? wb().getPin(p.from) : null
+  if (!p.opened?.appId || !p.opened.environmentId) throw new Conflict(`${p.name} is not a preview — fork one with { preview: true }`)
+  if (!parent?.preview) throw new Conflict(`${p.name}'s checkout no longer carries preview settings`)
+  return { opened: p.opened as Opened, settings: parent.preview }
+}
+
+async function previewTargetsHere(s: Pick<PreviewSettings, 'projectId' | 'serverId'>) {
+  if (!await db().project.findFirst({ where: { id: s.projectId, workspaceId: ws() } }))
+    throw new NotFound(`Project '${s.projectId}' not found in this workspace`)
+  if (s.serverId && !await db().server.findFirst({ where: { id: s.serverId, workspaceId: ws() } }))
+    throw new NotFound(`Server '${s.serverId}' not found in this workspace`)
+}
+
+export default createService({
+  name: 'workbench',
+  reservedQuery: [...WORKSPACE_QUERY],
+
+  methods: [
+    ...READS.map(method => ({ method, read: true, gate: LEVELS.ADMINISTRATOR })),
+    ...WRITES.map(method => ({ method, gate: LEVELS.ADMINISTRATOR })),
+  ],
+
+  async pins() {
+    offered()
+    const pins = wb().readPins()
+    return {
+      dir:  wb().dir,
+      pins: await Promise.all(pins.map(async p => {
+        // A renamed or deleted folder: git there answers nothing, and every
+        // run is refused, so the screen says so instead of a blank card.
+        const missing = !existsSync(p.path)
+        return {
+          ...p,
+          missing,
+          git:    missing ? null : await describeRepo(dirname(p.path), p.path),
+          checkable: !missing && !!doneScript(p.path),
+          // Where Build plan writes by default: IDEAS/<slug>.md beside the
+          // other papers, PLAN.md where the checkout has none (FJS-D966).
+          hasIdeas:  !missing && existsSync(join(p.path, 'IDEAS')),
+          status: await wb().status(p),
+        }
+      })),
+    }
+  },
+
+  async status() {
+    offered()
+    return { status: await wb().statuses() }
+  },
+
+  async transcript() {
+    const p = pinned()
+    const t = await wb().transcript(p.id, body().chat)
+    if (!t) throw new NotFound(`${p.name} has no chat '${body().chat}'`)
+    return t
+  },
+
+  async diff() {
+    const p = pinned()
+    return wb().diff(p.id)
+  },
+
+  async runnables() {
+    const p = pinned()
+    return wb().runnables(p.id)
+  },
+
+  async output() {
+    const p = pinned()
+    const out = wb().output(p.id, body().row)
+    if (!out) throw new NotFound(`Nothing called '${body().row}' was started in ${p.name}`)
+    return out
+  },
+
+  async plan() {
+    const p = pinned()
+    const plan = await wb().readPlan(p.id)
+    if (!plan) throw new NotFound(`${p.name} has no plan — Build plan writes one`)
+    return plan
+  },
+
+  async buildPlan() {
+    const p = pinned()
+    const r = await wb().buildPlan(p.id, { goal: body().goal, path: body().path })
+    if ('refused' in r) throw new BadRequest(r.refused)
+    return r
+  },
+
+  async openPlan() {
+    const p = pinned()
+    const r = wb().openPlan(p.id, body().path)
+    if ('refused' in r) throw new BadRequest(r.refused)
+    return r
+  },
+
+  async closePlan() {
+    const p = pinned()
+    const r = wb().closePlan(p.id, body().path)
+    if ('refused' in r) throw new Conflict(r.refused)
+    return r
+  },
+
+  async go() {
+    const p = pinned()
+    const r = await wb().go(p.id)
+    if ('refused' in r) throw new Conflict(r.refused)
+    return r
+  },
+
+  async next() {
+    const p = pinned()
+    const r = await wb().next(p.id)
+    if ('refused' in r) throw new Conflict(r.refused)
+    return r
+  },
+
+  async tick() {
+    const p = pinned()
+    const r = await wb().tick(p.id, body().step)
+    if ('refused' in r) throw new Conflict(r.refused)
+    return r
+  },
+
+  async file() {
+    const p = pinned()
+    const { severity, area, title, detail } = body()
+    const r = await wb().file(p.id, { severity, area, title, detail })
+    if ('refused' in r) throw new BadRequest(r.refused)
+    return r
+  },
+
+  async decide() {
+    const p = pinned()
+    const { question, pick, why, section } = body()
+    const r = await wb().decide(p.id, { question, pick, why, section })
+    if ('refused' in r) throw new BadRequest(r.refused)
+    return r
+  },
+
+  async run() {
+    const p = pinned()
+    const r = await wb().run(p.id, body().row)
+    if ('refused' in r) throw new Conflict(r.refused)
+    return r
+  },
+
+  async halt() {
+    const p = pinned()
+    const r = wb().halt(p.id, body().row)
+    if ('refused' in r) throw new NotFound(r.refused)
+    return r
+  },
+
+  async pin() {
+    offered()
+    const r = wb().pin(body().path)
+    if ('refused' in r) throw new BadRequest(r.refused)
+    return r.pin
+  },
+
+  async unpin() {
+    const p = pinned()
+    const r = wb().unpin(p.id)
+    if (r) throw new Conflict(r.refused)
+    return { id: p.id }
+  },
+
+  async fork() {
+    const p = pinned()
+    const preview = body().preview === true
+    if (preview && p.preview) await previewTargetsHere(p.preview)
+    const r = await wb().fork(p.id, { slug: body().slug, preview })
+    if ('refused' in r) throw new Conflict(r.refused)
+    if (!preview) return r.pin
+    const b = r.pin
+    try {
+      const opened = await openPreview($.app, p.preview!, { slug: b.branch!.slice('wb/'.length), branch: b.branch!, port: b.opened!.port })
+      return wb().recordOpened(b.id, opened)
+    } catch (e) {
+      await wb().archive(b.id, { discard: true })
+      throw new Conflict(`Open failed, so the branch was archived (${b.branch} is kept): ${(e as Error).message}`)
+    }
+  },
+
+  async freeze() {
+    const p = pinned()
+    const { opened, settings } = previewOf(p)
+    try { return await freezePreview($.app, settings, { path: p.path, branch: p.branch!, appId: opened.appId }) }
+    catch (e) {
+      if ((e as { code?: number }).code) throw e
+      throw new Conflict(`Freeze failed, and the hostname still serves what it did: ${(e as Error).message}`)
+    }
+  },
+
+  async thaw() {
+    const p = pinned()
+    const { opened, settings } = previewOf(p)
+    const { port, hosts, ...route } = await thawPreview($.app, settings, opened)
+    if (!route.ok) throw new Conflict(`The hostnames were not routed back: ${route.why}`)
+    return { hosts, port, route }
+  },
+
+  async land() {
+    const p = pinned()
+    const r = wb().land(p.id)
+    if ('refused' in r) throw new Conflict(r.refused, { files: r.files ?? [] })
+    return r
+  },
+
+  async commit() {
+    const p = pinned()
+    const r = wb().commit(p.id, body())
+    if ('refused' in r) throw new Conflict(r.refused, { files: r.files ?? [] })
+    return r
+  },
+
+  async archive() {
+    const p = pinned()
+    const refused = wb().archiveRefusal(p.id, { discard: body().discard })
+    if (refused) throw new Conflict(refused.refused, { pending: refused.pending ?? 0 })
+    // Before the worktree goes and its port with it: a route left dialing a
+    // released port serves whichever branch claims that port next.
+    const retired = p.opened?.environmentId ? await retirePreview($.app, p.opened as Opened) : null
+    const r = await wb().archive(p.id, { discard: body().discard })
+    if ('refused' in r) throw new Conflict(r.refused, { pending: r.pending ?? 0 })
+    return retired ? { ...r, retired } : r
+  },
+
+  async configure() {
+    const p = pinned()
+    const asked = body().preview
+    if (asked && typeof asked === 'object' && !Array.isArray(asked) && (asked as Record<string, unknown>).projectId)
+      await previewTargetsHere({
+        projectId: String((asked as Record<string, unknown>).projectId),
+        serverId:  ((asked as Record<string, unknown>).serverId as string | null | undefined) || null,
+      })
+    const r = wb().configure(p.id, body())
+    if ('refused' in r) throw new BadRequest(r.refused)
+    return r
+  },
+
+  async send() {
+    const p = pinned()
+    const r = await wb().send(p.id, String(body().prompt ?? ''), body().chat)
+    if ('refused' in r) throw new BadRequest(r.refused)
+    return r
+  },
+
+  async check() {
+    const p = pinned()
+    const r = wb().check(p.id)
+    if ('refused' in r) throw new Conflict(r.refused)
+    return r
+  },
+
+  async review() {
+    const p = pinned()
+    const r = await wb().review(p.id)
+    if ('refused' in r) throw new Conflict(r.refused)
+    return r
+  },
+
+  async stop() {
+    const p = pinned()
+    return { stopped: wb().stop(p.id) }
+  },
+
+  async fresh() {
+    const p = pinned()
+    return wb().fresh(p.id)
+  },
+
+  async select() {
+    const p = pinned()
+    const r = wb().select(p.id, body().chat)
+    if ('refused' in r) throw new NotFound(r.refused)
+    return r
+  },
+
+  async close() {
+    const p = pinned()
+    const r = await wb().close(p.id, body().chat)
+    if ('refused' in r) throw new Conflict(r.refused)
+    return r
+  },
+
+  async seen() {
+    const p = pinned()
+    return wb().seen(p.id)
+  },
+
+  hooks: {
+    before: { all: [sessionScope()] },
+  },
+})

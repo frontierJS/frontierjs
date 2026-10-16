@@ -18,7 +18,7 @@
 
 import { createService } from '../../core/service.ts'
 import { BadRequest }    from '../../core/errors.ts'
-import type { Service }  from '../../core/service.ts'
+import type { ServiceDefinition } from '../../core/service.ts'
 import type { ServiceContext } from '../../core/context.ts'
 
 /** Options for `searchService()`. */
@@ -47,7 +47,7 @@ function modelList(raw: unknown): string[] {
   return parts.flatMap(p => String(p).split(',')).map(s => s.trim()).filter(Boolean)
 }
 
-export function searchService({ models, name = 'search' }: SearchServiceOptions): Service {
+export function searchService({ models, name = 'search' }: SearchServiceOptions): ServiceDefinition {
   if (!Array.isArray(models) || !models.length) {
     throw new TypeError(`searchService({ models }) names the accessors this search holds, e.g. models: ['issue', 'comment'] — got ${JSON.stringify(models)}`)
   }

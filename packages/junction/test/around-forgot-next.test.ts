@@ -7,11 +7,11 @@
 // `ctx.result`, which is `@frontierjs/toolbelt/hooks`' `answered`.
 
 import { describe, test, expect } from 'bun:test'
-import { createService, callService } from '../src/core/service.ts'
+import { buildService, callService } from '../src/core/service.ts'
 import { bridge }                     from '../src/transport/bridge.ts'
 
 function mkService(around: Array<(ctx: never, next: () => Promise<void>) => Promise<void>>, calls: { n: number }) {
-  const svc = createService({
+  const svc = buildService({
     name: 'items',
     get: async () => { calls.n++; return { id: 1 } },
   })
@@ -33,7 +33,7 @@ describe('FJS-946 — an around hook that ended the call without an answer', () 
   })
 
   test('catching the failure and not rethrowing is the same refusal', async () => {
-    const svc = createService({ name: 'items', get: async () => { throw new Error('boom') } })
+    const svc = buildService({ name: 'items', get: async () => { throw new Error('boom') } })
     svc.hooks({ around: { get: [async (_ctx, next) => { try { await next() } catch { /* swallowed */ } }] } })
 
     await expect(call(svc as never)).rejects.toThrow(/without an answer/)

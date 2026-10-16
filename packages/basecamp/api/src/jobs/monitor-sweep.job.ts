@@ -18,7 +18,7 @@ import { runsAsApp }      from './context.ts'
 import { gradeProbe, nextState, type ProbeOutcome } from '../core/probe.ts'
 import { fanOutToChannels } from '../core/delivery.ts'
 import { notifyPeople, workspaceMembers } from '../core/notify.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 /** Probes in flight at once. A sweep of a hundred slow URLs is bounded by the
  *  slowest `timeoutMs`, not by their sum, and not by a hundred sockets. */
@@ -49,7 +49,7 @@ export interface MonitorSweepResult {
  * Exported so it can be run at a stated instant; the job below is one caller.
  */
 export async function sweepMonitors(
-  app:  BasecampApp,
+  app:  App,
   opts: MonitorSweepOptions = {},
 ): Promise<MonitorSweepResult> {
   const db     = (app.db as any).asSystem()
@@ -89,7 +89,7 @@ export async function sweepMonitors(
 }
 
 async function checkOne(
-  app:     BasecampApp,
+  app:     App,
   db:      any,
   monitor: any,
   at:      number,

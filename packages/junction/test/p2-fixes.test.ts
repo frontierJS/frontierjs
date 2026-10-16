@@ -14,7 +14,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { describe, it, expect } from 'bun:test'
-import { createTestApp, createService, testCtx, callService, rateLimit } from '../index.ts'
+import { createTestApp, testCtx, callService, rateLimit } from '../index.ts'
+import { buildService } from '../src/core/service.ts'
 import { createChannelManager, type Connection } from '../src/transport/channels.ts'
 import { devtools } from '../src/plugins/devtools/index.ts'
 
@@ -69,7 +70,7 @@ describe('P2: stop() is non-fatal and repeatable', () => {
 
   it('stop() returns without exiting the process, twice', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'x', async find() { return [1] } })],
+      services: [buildService({ name: 'x', async find() { return [1] } })],
     })
     await app.stop()
     await app.stop()          // idempotent — second call must not throw
@@ -93,7 +94,7 @@ describe('P2: stop() is non-fatal and repeatable', () => {
 describe('P2: per-app service cache scoping', () => {
 
   function cachedService(payload: string) {
-    return createService({
+    return buildService({
       name: 'scoped',
       cache: true,
       async get() { return { id: '1', payload } },
@@ -101,8 +102,8 @@ describe('P2: per-app service cache scoping', () => {
   }
 
   it('two apps never share cache entries for identical keys', async () => {
-    const app1 = await createTestApp({ services: [() => cachedService('one')] })
-    const app2 = await createTestApp({ services: [() => cachedService('two')] })
+    const app1 = await createTestApp({ services: [cachedService('one')] })
+    const app2 = await createTestApp({ services: [cachedService('two')] })
 
     const r1 = await app1.service('scoped').get('1') as { payload: string }
     expect(r1.payload).toBe('one')                       // primes app1's cache
@@ -117,7 +118,7 @@ describe('P2: per-app service cache scoping', () => {
 
   it('bare callService (no app) still caches via the module fallback', async () => {
     let hits = 0
-    const svc = createService({
+    const svc = buildService({
       name: 'bare',
       cache: true,
       async get() { hits++; return { id: '1', n: hits } },

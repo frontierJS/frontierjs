@@ -7,8 +7,6 @@
 //
 // Nothing else calls it. That is the shape — a value set's source is a list
 // somebody maintains, not a thing the app has screens about.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createColorsService() {
-  return createBaseService({ model: 'Color', channel: 'colors' })
-}
+export default createService({ model: 'Color', channel: 'colors' })

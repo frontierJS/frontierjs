@@ -26,7 +26,7 @@
 // recording its own act. That asymmetry is the whole of the authorization story
 // for stock and it is two sentences long.
 
-import { createBaseService, $ } from '@frontierjs/junction'
+import { createService, $ } from '@frontierjs/junction'
 import { levelsFor, move, HOLD_MINUTES, type MovementKind } from '../domain/shop'
 
 /** The kinds an adjustment may name. `received` has its own method — it takes a
@@ -34,146 +34,144 @@ import { levelsFor, move, HOLD_MINUTES, type MovementKind } from '../domain/shop
  *  a hand-filed one would be a sale with no order behind it. */
 const ADJUSTABLE: MovementKind[] = ['adjusted', 'damaged', 'returned']
 
-export function createInventoryService() {
-  return createBaseService({
-    model: 'InventoryMovement',
+export default createService({
+  model: 'InventoryMovement',
 
-    // No `channel:`. A movement is `@@gate("5.…")` for reads and a broadcast
-    // does not re-check the gate — publishing these would hand every connected
-    // browser rows the Data boundary refuses them. The shelf itself DOES
-    // announce: `move()` writes ProductVariant, junction taps Litestone's write
-    // events, and `product-variants updated` reaches every open catalog.
-    //
-    // That is why `receive` and `adjust` may still set `$.dispatch` to the
-    // movement they wrote: with no channel it reaches the in-process bus and
-    // nothing else, so an app-side subscriber gets the row and no browser gets
-    // a row it may not read. Declaring a channel here would change both at once.
+  // No `channel:`. A movement is `@@gate("5.…")` for reads and a broadcast
+  // does not re-check the gate — publishing these would hand every connected
+  // browser rows the Data boundary refuses them. The shelf itself DOES
+  // announce: `move()` writes ProductVariant, junction taps Litestone's write
+  // events, and `product-variants updated` reaches every open catalog.
+  //
+  // That is why `receive` and `adjust` may still set `$.dispatch` to the
+  // movement they wrote: with no channel it reaches the in-process bus and
+  // nothing else, so an app-side subscriber gets the row and no browser gets
+  // a row it may not read. Declaring a channel here would change both at once.
 
-    // Both writes are read-modify-write over a number two people can move at
-    // once, and each writes two rows that are one fact — the tape and the
-    // shelf. `BEGIN IMMEDIATE` is what makes the read and the write one step.
-    transactional: ['receive', 'adjust'],
+  // Both writes are read-modify-write over a number two people can move at
+  // once, and each writes two rows that are one fact — the tape and the
+  // shelf. `BEGIN IMMEDIATE` is what makes the read and the write one step.
+  transactional: ['receive', 'adjust'],
 
-    /**
-     * On hand, held and available for a set of shelves.
-     *
-     * Filtered by `productId`, or by an explicit list, or neither — in which
-     * case it answers every variant, which is what the inventory screen opens
-     * on. `limit` bounds it: this is a table a person reads, and a shop with ten
-     * thousand shelves wants a filter rather than ten thousand rows.
-     */
-    async levels() {
-      // A read announces nothing. This service is over InventoryMovement — the
-      // ledger — and what `levels` answers is a join across two tables and a
-      // clock, which is a row in neither. There is no `channel:` here, so the
-      // frame went to the in-process bus rather than to a browser, but the
-      // shape is the same defect and the same one line silences it.
-      $.dispatch = false
+  /**
+   * On hand, held and available for a set of shelves.
+   *
+   * Filtered by `productId`, or by an explicit list, or neither — in which
+   * case it answers every variant, which is what the inventory screen opens
+   * on. `limit` bounds it: this is a table a person reads, and a shop with ten
+   * thousand shelves wants a filter rather than ten thousand rows.
+   */
+  async levels() {
+    // A read announces nothing. This service is over InventoryMovement — the
+    // ledger — and what `levels` answers is a join across two tables and a
+    // clock, which is a row in neither. There is no `channel:` here, so the
+    // frame went to the in-process bus rather than to a browser, but the
+    // shape is the same defect and the same one line silences it.
+    $.dispatch = false
 
-      const { productId, variantIds, limit = 500 } = ($.data ?? $.query ?? {}) as {
-        productId?: number | string
-        variantIds?: Array<number | string>
-        limit?: number
-      }
+    const { productId, variantIds, limit = 500 } = ($.data ?? $.query ?? {}) as {
+      productId?: number | string
+      variantIds?: Array<number | string>
+      limit?: number
+    }
 
-      const where: Record<string, unknown> = {}
-      if (productId != null)        where.productId = Number(productId)
-      if (Array.isArray(variantIds)) where.id = { in: variantIds.map(Number).filter(Number.isFinite) }
+    const where: Record<string, unknown> = {}
+    if (productId != null)        where.productId = Number(productId)
+    if (Array.isArray(variantIds)) where.id = { in: variantIds.map(Number).filter(Number.isFinite) }
 
-      const variants = await $.db.productVariant.findMany({
-        where,
-        orderBy: { sku: 'asc' },
-        limit:   Math.min(Number(limit) || 500, 2000),
-        include: { product: true },
-      }) as Array<{ id: number, sku: string, color: string, size: string, active: boolean, product?: { id: number, name: string } }>
+    const variants = await $.db.productVariant.findMany({
+      where,
+      orderBy: { sku: 'asc' },
+      limit:   Math.min(Number(limit) || 500, 2000),
+      include: { product: true },
+    }) as Array<{ id: number, sku: string, color: string, size: string, active: boolean, product?: { id: number, name: string } }>
 
-      // The holds are summed as the shop. An administrator MAY read them —
-      // that is what the 5 in the gate says — but `levelsFor` is one function
-      // with one client argument, and handing it the caller's would make this
-      // the only call site whose answer depends on who asked.
-      const levels = await levelsFor(sys(), variants.map(v => v.id))
+    // The holds are summed as the shop. An administrator MAY read them —
+    // that is what the 5 in the gate says — but `levelsFor` is one function
+    // with one client argument, and handing it the caller's would make this
+    // the only call site whose answer depends on who asked.
+    const levels = await levelsFor(sys(), variants.map(v => v.id))
 
-      return {
-        holdMinutes: HOLD_MINUTES,
-        rows: variants.map(v => {
-          const lv = levels.get(v.id)
-          return {
-            variantId: v.id,
-            sku:       v.sku,
-            color:     v.color,
-            size:      v.size,
-            active:    !!v.active,
-            productId: v.product?.id   ?? null,
-            product:   v.product?.name ?? '',
-            onHand:    lv?.onHand    ?? 0,
-            held:      lv?.held      ?? 0,
-            available: lv?.available ?? 0,
-          }
-        }),
-      }
-    },
+    return {
+      holdMinutes: HOLD_MINUTES,
+      rows: variants.map(v => {
+        const lv = levels.get(v.id)
+        return {
+          variantId: v.id,
+          sku:       v.sku,
+          color:     v.color,
+          size:      v.size,
+          active:    !!v.active,
+          productId: v.product?.id   ?? null,
+          product:   v.product?.name ?? '',
+          onHand:    lv?.onHand    ?? 0,
+          held:      lv?.held      ?? 0,
+          available: lv?.available ?? 0,
+        }
+      }),
+    }
+  },
 
-    /** A delivery. Always positive, always `received`, and the delivery note
-     *  goes on the movement as its reference. */
-    async receive() {
-      const { variantId, quantity, reference, note } = $.data as {
-        variantId: number, quantity: number, reference?: string, note?: string
-      }
-      const { before, after, movement } =
-        await move($.db, Number(variantId), 'received', Number(quantity), { reference, note })
+  /** A delivery. Always positive, always `received`, and the delivery note
+   *  goes on the movement as its reference. */
+  async receive() {
+    const { variantId, quantity, reference, note } = $.data as {
+      variantId: number, quantity: number, reference?: string, note?: string
+    }
+    const { before, after, movement } =
+      await move($.db, Number(variantId), 'received', Number(quantity), { reference, note })
 
-      // What is ANSWERED and what is ANNOUNCED are two questions here, and the
-      // answer is the wrong thing to broadcast: `{ variantId, before, after }`
-      // is what a receiving screen needs back and it is not an
-      // InventoryMovement, so a subscriber has nowhere to put it — the client's
-      // store refuses a record carrying no id. The movement is the fact that
-      // happened, so it is what goes out.
-      $.dispatch = movement
+    // What is ANSWERED and what is ANNOUNCED are two questions here, and the
+    // answer is the wrong thing to broadcast: `{ variantId, before, after }`
+    // is what a receiving screen needs back and it is not an
+    // InventoryMovement, so a subscriber has nowhere to put it — the client's
+    // store refuses a record carrying no id. The movement is the fact that
+    // happened, so it is what goes out.
+    $.dispatch = movement
 
-      return { variantId: Number(variantId), before, after }
-    },
+    return { variantId: Number(variantId), before, after }
+  },
 
-    /**
-     * A correction, a breakage or a return.
-     *
-     * The reason is the caller's and the shape is the schema's — `kind` is
-     * `StockMovementKind` in db/schema.lite, so an unknown one is a 400 with the
-     * enum's own wording before this function runs. What the schema cannot say
-     * is that two of its five members are not adjustments, and that is here.
-     */
-    async adjust() {
-      const { variantId, quantity, kind, note } = $.data as {
-        variantId: number, quantity: number, kind: MovementKind, note: string
-      }
+  /**
+   * A correction, a breakage or a return.
+   *
+   * The reason is the caller's and the shape is the schema's — `kind` is
+   * `StockMovementKind` in db/schema.lite, so an unknown one is a 400 with the
+   * enum's own wording before this function runs. What the schema cannot say
+   * is that two of its five members are not adjustments, and that is here.
+   */
+  async adjust() {
+    const { variantId, quantity, kind, note } = $.data as {
+      variantId: number, quantity: number, kind: MovementKind, note: string
+    }
 
-      if (!ADJUSTABLE.includes(kind)) throw Object.assign(
-        new Error(
-          `'${kind}' is not an adjustment. A receipt is inventory.receive, and a sale is ` +
-          `recorded by the checkout that made it — filing one by hand would be a sale with ` +
-          `no order behind it.`,
-        ),
-        { status: 400 },
-      )
+    if (!ADJUSTABLE.includes(kind)) throw Object.assign(
+      new Error(
+        `'${kind}' is not an adjustment. A receipt is inventory.receive, and a sale is ` +
+        `recorded by the checkout that made it — filing one by hand would be a sale with ` +
+        `no order behind it.`,
+      ),
+      { status: 400 },
+    )
 
-      const { before, after, movement } =
-        await move($.db, Number(variantId), kind, Number(quantity), { note })
+    const { before, after, movement } =
+      await move($.db, Number(variantId), kind, Number(quantity), { note })
 
-      $.dispatch = movement
+    $.dispatch = movement
 
-      return { variantId: Number(variantId), before, after }
-    },
+    return { variantId: Number(variantId), before, after }
+  },
 
-    // The surface, stated. `find` is the ledger; `get` reads one movement.
-    // There is deliberately no create, update or remove: the model's gate locks
-    // the last two at 9 and a create with no shelf movement beside it is
-    // exactly the drift the ledger exists to make impossible.
-    methods: [
-      'find', 'get',
-      'levels',
-      { method: 'receive', input: 'StockReceipt' },
-      { method: 'adjust',  input: 'StockAdjustment' },
-    ],
-  })
-}
+  // The surface, stated. `find` is the ledger; `get` reads one movement.
+  // There is deliberately no create, update or remove: the model's gate locks
+  // the last two at 9 and a create with no shelf movement beside it is
+  // exactly the drift the ledger exists to make impossible.
+  methods: [
+    'find', 'get',
+    'levels',
+    { method: 'receive', input: 'StockReceipt' },
+    { method: 'adjust',  input: 'StockAdjustment' },
+  ],
+})
 
 const sys = () => ($.db as { asSystem(): Record<string, any> }).asSystem()

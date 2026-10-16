@@ -23,8 +23,7 @@ import { LEVELS }                  from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { edgeAccounts, edgeHealth } from '../edge/edge.service.ts'
 import { edgeProviders }           from '../../providers/edge/index.ts'
-import type { BasecampApp }        from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
+import type { App, ServiceContext } from '@frontierjs/junction'
 import { keyScope } from '../api-keys/scopes.ts'
 import { shapedByCaller } from '../../core/resource.ts'
 
@@ -42,7 +41,7 @@ export interface PortalEntry {
   checked_at:  number
 }
 
-type ProviderKey = keyof BasecampApp['providers']
+type ProviderKey = keyof App['providers']
 
 const SERVICES: Array<{
   id:          ProviderKey | 'edge'
@@ -125,7 +124,7 @@ function buildEntry(svc: typeof SERVICES[0], adapter: unknown, status: ServiceSt
  * `adapter` names the vendors, so the portal reports what is really behind it.
  * `ping` asks each account's vendor, the way `pingAdapter` asks an appliance.
  */
-async function edgeEntry(app: BasecampApp, svc: typeof SERVICES[0], ping: boolean): Promise<PortalEntry> {
+async function edgeEntry(app: App, svc: typeof SERVICES[0], ping: boolean): Promise<PortalEntry> {
   const accounts = await edgeAccounts()
   const labels   = new Map(edgeProviders().map(p => [p.kind, p.label]))
   const status: ServiceStatus = accounts.length === 0 ? 'unconfigured'
@@ -154,77 +153,75 @@ function isUsableId(id: unknown): id is string {
   return typeof id === 'string' && id !== '' && id !== 'null' && id !== 'undefined'
 }
 
-export function createPortalService(app: BasecampApp) {
-  return createService({
-    name: 'portal',
-    scope: keyScope('portal'),
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
-    methods: [
-      { method: 'find', gate: LEVELS.READER },
-      { method: 'get',  gate: LEVELS.READER },
-      { method: 'ping', gate: LEVELS.ADMINISTRATOR },
-    ],
+export default createService({
+  name: 'portal',
+  scope: keyScope('portal'),
+  reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+  methods: [
+    { method: 'find', gate: LEVELS.READER },
+    { method: 'get',  gate: LEVELS.READER },
+    { method: 'ping', gate: LEVELS.ADMINISTRATOR },
+  ],
 
-    async find(_ctx: ServiceContext) {
-      const entries = await Promise.all(SERVICES.map(svc => {
-        if (svc.id === 'edge') return edgeEntry(app, svc, false)
-        const adapter = app.providers[svc.id]
-        return buildEntry(svc, adapter, isStub(adapter) ? 'unconfigured' : 'healthy', app.config)
-      }))
-      return { total: entries.length, limit: entries.length, offset: 0, data: shapedByCaller(entries) }
+  async find(_ctx: ServiceContext) {
+    const entries = await Promise.all(SERVICES.map(svc => {
+      if (svc.id === 'edge') return edgeEntry($.app, svc, false)
+      const adapter = $.app.providers[svc.id]
+      return buildEntry(svc, adapter, isStub(adapter) ? 'unconfigured' : 'healthy', $.app.config)
+    }))
+    return { total: entries.length, limit: entries.length, offset: 0, data: shapedByCaller(entries) }
+  },
+
+  async get() {
+    // Two different failures wore one sentence. `$.id` is null when the call
+    // carried no id at all, and the string 'null' when a caller interpolated
+    // one, and `Portal service 'null' not found` was the answer to both — and
+    // to an appliance that genuinely is not in the registry (`FJS-1018`). A
+    // reader of the log could not tell *a screen is asking wrong* from *this
+    // appliance is gone*, which is the difference between a bug in this app
+    // and a configuration somebody removed.
+    //
+    // Separated by STATUS as well as wording: a value that is not an id is
+    // the caller's mistake (400) and a real id nobody serves is a miss (404).
+    // The string forms are checked because `!id` does not catch them — they
+    // are what a template writes when the value it interpolated was empty.
+    if (!isUsableId($.id))
+      throw new BadRequest(
+        `portal.get needs an appliance id and was given ${JSON.stringify($.id)}. ` +
+        `A screen that reached here interpolated an empty value into a call or a URL.`)
+
+    const svc = SERVICES.find(s => s.id === $.id)
+    if (!svc) throw new NotFound(`Portal service '${$.id}' not found`)
+    if (svc.id === 'edge') return edgeEntry($.app, svc, true)
+
+    const adapter = $.app.providers[svc.id]
+    return buildEntry(svc, adapter, await pingAdapter(adapter), $.app.config)
+  },
+
+  async ping() {
+    const id  = $.id as string
+    // Same separation as get(): a ping is addressed to an appliance, so a
+    // value that cannot be one is the caller's mistake rather than a miss.
+    if (!isUsableId(id))
+      throw new BadRequest(
+        `portal ping needs an appliance id and was given ${JSON.stringify(id)}.`)
+    const svc = SERVICES.find(s => s.id === id)
+    if (!svc) throw new NotFound(`Portal service '${id}' not found`)
+    if (svc.id === 'edge') {
+      const entry = await edgeEntry($.app, svc, true)
+      $.app.logger.info(`Portal ping: ${svc.name}`, { status: entry.status })
+      return entry
+    }
+
+    const adapter = $.app.providers[svc.id]
+    const status  = await pingAdapter(adapter)
+    $.app.logger.info(`Portal ping: ${svc.name}`, { status })
+    return buildEntry(svc, adapter, status, $.app.config)
+  },
+
+  hooks: {
+    before: {
+      all: [sessionScope()],
     },
-
-    async get() {
-      // Two different failures wore one sentence. `$.id` is null when the call
-      // carried no id at all, and the string 'null' when a caller interpolated
-      // one, and `Portal service 'null' not found` was the answer to both — and
-      // to an appliance that genuinely is not in the registry (`FJS-1018`). A
-      // reader of the log could not tell *a screen is asking wrong* from *this
-      // appliance is gone*, which is the difference between a bug in this app
-      // and a configuration somebody removed.
-      //
-      // Separated by STATUS as well as wording: a value that is not an id is
-      // the caller's mistake (400) and a real id nobody serves is a miss (404).
-      // The string forms are checked because `!id` does not catch them — they
-      // are what a template writes when the value it interpolated was empty.
-      if (!isUsableId($.id))
-        throw new BadRequest(
-          `portal.get needs an appliance id and was given ${JSON.stringify($.id)}. ` +
-          `A screen that reached here interpolated an empty value into a call or a URL.`)
-
-      const svc = SERVICES.find(s => s.id === $.id)
-      if (!svc) throw new NotFound(`Portal service '${$.id}' not found`)
-      if (svc.id === 'edge') return edgeEntry(app, svc, true)
-
-      const adapter = app.providers[svc.id]
-      return buildEntry(svc, adapter, await pingAdapter(adapter), app.config)
-    },
-
-    async ping() {
-      const id  = $.id as string
-      // Same separation as get(): a ping is addressed to an appliance, so a
-      // value that cannot be one is the caller's mistake rather than a miss.
-      if (!isUsableId(id))
-        throw new BadRequest(
-          `portal ping needs an appliance id and was given ${JSON.stringify(id)}.`)
-      const svc = SERVICES.find(s => s.id === id)
-      if (!svc) throw new NotFound(`Portal service '${id}' not found`)
-      if (svc.id === 'edge') {
-        const entry = await edgeEntry(app, svc, true)
-        app.logger.info(`Portal ping: ${svc.name}`, { status: entry.status })
-        return entry
-      }
-
-      const adapter = app.providers[svc.id]
-      const status  = await pingAdapter(adapter)
-      app.logger.info(`Portal ping: ${svc.name}`, { status })
-      return buildEntry(svc, adapter, status, app.config)
-    },
-
-    hooks: {
-      before: {
-        all: [sessionScope(app)],
-      },
-    },
-  })
-}
+  },
+})

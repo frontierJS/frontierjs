@@ -550,13 +550,13 @@ describe('broker subscription health', () => {
 describe('app.conduit.send() inside an afterCommit drain', () => {
   it('warns once per call site, and not outside the drain', async () => {
     const app = await bootApp({ targets: [] })
-    const svc = createService({
+    const svc = app.services.register(createService({
       name: 'pings',
       async create() { return { ok: true } },
       hooks: { after: { create: [(c: any) => {
         c.afterCommit(() => conduitOf(app).send({ target: 'nowhere', method: 'GET', path: '/' } as never))
       }] } },
-    } as never)
+    } as never))
     const logged: string[] = []
     const real = console.warn
     console.warn = (...a: unknown[]) => { logged.push(a.map(String).join(' ')) }

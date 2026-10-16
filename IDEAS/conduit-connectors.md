@@ -256,6 +256,7 @@ that names a fixture names one wired to `FIXTURE_URL` and never run.
 | openai | C | new, protocol connector; streams | 23 | Ollama, llama.cpp **unproved** | a local model server |
 | twilio | C | new; the built-in Basic signer (`FJS-D933`) | 12 | — | nothing |
 | postmark | C | new; inbound over a URL credential | 10 | — | nothing |
+| mailgun | C | new; the raw-MIME inbound (`fromMime` over postal-mime, `FJS-D784`), signature over `timestamp + token` with the token as nonce; `Dialect.parse` async for it | 13 | — | nothing; event webhooks, attachments on a send not built |
 | turnstile | C | new; secret-in-body signer | 12 | — | nothing |
 | slack | C | new; bot token + incoming webhook | 26 | — | nothing; `files.uploadV2`, `conversations.history` not built |
 | plausible | C | new; the replayable read | 8 | Plausible CE **unproved** | a docker run |

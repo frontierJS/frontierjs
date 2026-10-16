@@ -28,7 +28,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { createApp } from '../src/core/app.ts'
-import { createService, createBaseService } from '../src/core/service.ts'
+import { createService, buildBase } from '../src/core/service.ts'
 import { channels } from '../src/transport/channels.ts'
 
 const SCHEMA = `
@@ -466,7 +466,7 @@ describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
 // Everything above declares `model: 'Order'` by hand, and that is the whole
 // reason the mechanism could be dead for two months without a red test.
 //
-// No real service file writes that. `createBaseService({})` in orders.service.ts
+// No real service file writes that. `buildBase({})` in orders.service.ts
 // is the canonical shape — the accessor is resolved per call from the service
 // NAME through accessorCandidates — and the model → service index this file
 // exercises was built from `svc.model ?? singularize(name)`, where `svc.model`
@@ -475,7 +475,7 @@ describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
 // service in every app.
 //
 // Two spellings are legal and both have to resolve: the accessor may be the
-// singular or the plural (`createBaseService({ model: 'posts' })` is
+// singular or the plural (`buildBase({ model: 'posts' })` is
 // documented), and Litestone announces the model name.
 
 describe('the model → service index (FJS-464)', () => {
@@ -519,12 +519,12 @@ describe('the model → service index (FJS-464)', () => {
     expect(seen).toEqual(['created#1'])
   })
 
-  // The option-drop half of the same defect: `createBaseService` returned an
+  // The option-drop half of the same defect: `buildBase` returned an
   // object with no `model` key, so the loader's `createService({ name, ...base })`
   // saw none and substituted the file name. A service declaring which model it
   // is reported a different one.
-  test('createBaseService carries its declared model through createService', async () => {
-    const base = createBaseService({ model: 'Order' }) as unknown as Record<string, unknown>
+  test('buildBase carries its declared model through createService', async () => {
+    const base = buildBase({ model: 'Order' }) as unknown as Record<string, unknown>
     expect(base.model).toBe('Order')
     expect((createService({ name: 'orders', ...base }) as { model?: string }).model).toBe('Order')
   })

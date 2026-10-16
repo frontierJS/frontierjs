@@ -55,7 +55,7 @@ export const cases = [
     floor: () => parse(SCRIPT, { ecmaVersion: 'latest', sourceType: 'module' }),
   },
   {
-    name: 'ssr-100', ceiling: 450, ops: 30,
+    name: 'ssr-100', ceiling: 250, ops: 30,
     async open() {
       const rows = buildData(100)
       const opts = { data: { rows }, cwd: '/tmp/mesa-bench', target: 'fragment' }

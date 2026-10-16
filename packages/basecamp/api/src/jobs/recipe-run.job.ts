@@ -14,9 +14,9 @@ import { defineJob } from '@frontierjs/caravan'
 import { outbound, outpostFor } from '../providers/outpost.ts'
 import { tail, recordServerEvent } from './outpost-run.ts'
 import { runsAsCaller } from './context.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
-async function runRecipe(app: BasecampApp, runId: string): Promise<void> {
+async function runRecipe(app: App, runId: string): Promise<void> {
   const log = app.logger.child('recipe-run')
 
   // No client here, and that is the change (`FJS-384`). Caravan records the

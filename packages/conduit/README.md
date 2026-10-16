@@ -113,11 +113,24 @@ await app.conduit.send({ target: 'hook:slack', address: row.url, method: 'POST',
 Each attempt checks the URL as one a stranger chose (junction's
 `assertPublicUrl`): public https only, unless `destinations: { allowHttp,
 allowPrivate }` says otherwise for a test receiver on localhost. `allowPrivate`
-opens the whole target to every row, so it does not reach a self-hosted
-counterparty on a private network; nothing does yet (`FJS-2923`). The breaker is kept per
-origin, and observers see the origin, never the path. Such a target takes
-`none` or `hmac` auth and follows no redirect. A stored key would go
-wherever the row says.
+opens the whole target to every row, so a counterparty on a LAN is never a
+row's to name: it is a fixed-address target the operator declares, or an
+Outpost vantage (`FJS-D1018`). The breaker is kept per origin, and observers
+see the origin, never the path. Such a target takes `none` or `hmac` auth and
+follows no redirect, because a stored key would go wherever the row says.
+
+A self-hosted instance a row names — Plausible CE at the client's own domain,
+with the client's own key — takes that row's credential, `per_caller`
+(`FJS-D1089`): the send names the row with `grant`, the resolver's `getFor`
+answers that row's token, and a send with no `grant` is refused by name, since
+keyed on the tenant alone two rows would share one cached token.
+
+```ts
+{ id: 'provider:plausible', kind: 'provider', protocol: 'http', address: '',
+  address_from: 'request', auth: { type: 'bearer', ref: 'PLAUSIBLE', per_caller: true }, registered_at: 0, last_seen_at: null }
+
+await app.conduit.send({ target: 'provider:plausible', address: `${row.address}/api/v2/query`, grant: row.id, method: 'POST', body: q })
+```
 
 ### Receiving
 

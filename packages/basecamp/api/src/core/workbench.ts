@@ -99,6 +99,7 @@ import { commitFiles, readDiff }       from './workbench-diff.ts'
 import { addWorktree, branchName, copyIgnored, land as landBranch, pendingFiles, removeWorktree, snapshot } from './workbench-branch.ts'
 import { previewLabelRefusal, previewSettings, type Opened, type PreviewSettings } from './preview.ts'
 import { inventory, resolveArgv, servedBy, tail, type RunRecord, type Served } from './workbench-run.ts'
+import { endShell }                    from './workbench-shell.ts'
 
 export type Chat = {
   id:      string
@@ -502,6 +503,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 
   function forget(id: string) {
     stop(id)
+    endShell(id)
     const p = getPin(id)
     if (p) for (const row of Object.keys(p.runs)) { halt(id, row); rmSync(runFile(id, row), { force: true }) }
     writePins(readPins().filter(p => p.id !== id))
@@ -997,12 +999,15 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   // touch it. Unpin and Archive stop it, since the folder it serves goes.
 
   /** Without this API's own variables and the ports `fli dev` handed it: a
-   *  server that read `FLI_PORT_BE` would bind this API's port. */
-  function runEnv() {
+   *  server that read `FLI_PORT_BE` would bind this API's port. The terminal
+   *  tab's shell gets the same, so a `fli dev` typed there is not handed them. */
+  function shellEnv() {
     const out = childEnv()
     for (const key of Object.keys(out)) if (key.startsWith('FLI_PORT_')) delete out[key]
-    return { ...out, NO_COLOR: '1' }
+    return out
   }
+
+  const runEnv = () => ({ ...shellEnv(), NO_COLOR: '1' })
 
   async function runnables(id: string) {
     const p = getPin(id)
@@ -1477,6 +1482,6 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   return {
     dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff,
     send, stop, fresh, select, close, seen, check, review, fork, land, commit, archive, archiveRefusal, recordOpened,
-    runnables, run, halt, output, readPlan, buildPlan, go, next, tick, file, decide, openPlan, closePlan,
+    runnables, run, halt, output, shellEnv, readPlan, buildPlan, go, next, tick, file, decide, openPlan, closePlan,
   }
 }

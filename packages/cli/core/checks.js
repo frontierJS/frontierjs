@@ -121,6 +121,8 @@ export const RULES = [
     title: 'a per-call header is declared in http.callHeaders' },
   { id: 'service-model',        scope: 'app',  severity: 'error', invariant: 2,
     title: 'a service resolves to the model whose @@gate grades it' },
+  { id: 'service-definition',   scope: 'app',  severity: 'error', invariant: null,
+    title: 'a service file default-exports a definition, never a factory (FJS-D1079)' },
   { id: 'resource-model-miss',  scope: 'app',  severity: 'error', invariant: 2,
     title: 'a resource name resolves to the model it means' },
   { id: 'money-rendered-raw',   scope: 'app',  severity: 'warn',  invariant: null,
@@ -1753,7 +1755,15 @@ const CHECKS = {
         continue
       }
 
-      if (!/\bcreateBaseService\b/.test(code)) continue
+      // Only a definition that writes no function at all leaves its whole
+      // surface to the base, and the base reads the model. One with a method of
+      // its own — a hub, a webhook receiver, a report — asks for a derived layer
+      // over nothing, so a missing model switches nothing off. A hook is a
+      // function too, which leaves that service unjudged rather than wrongly
+      // reported.
+      const call = code.match(/\bcreateService\s*\(/)
+      if (!call) continue
+      if (/=>|\bfunction\b|\basync\b|\b\w+\s*\([^)]*\)\s*\{/.test(code.slice(call.index + call[0].length))) continue
       // `model: null` is junction's word for "there is none" (FJS-D628): the
       // derived layer is the method gates alone, so there is no @@gate to miss.
       if (/\bmodel\s*:\s*null\b/.test(code)) continue
@@ -1761,13 +1771,49 @@ const CHECKS = {
 
       // No edit: a model the schema holds under this name would have resolved,
       // so there is nothing to name.
-      const call = code.match(/\bcreateBaseService\s*\(/)
       findings.push({
-        file: path, line: lineOf(code, call ? call.index : 0),
-        message: `createBaseService with no model:, and '${service}' resolves to none — it singularizes ` +
+        file: path, line: lineOf(code, call.index),
+        message: `createService with no model:, and '${service}' resolves to none — it singularizes ` +
                  `to '${singularize(service)}', and no model has that accessor. The miss is silent and ` +
                  `fails open: the @@gate is not found and the model is served to anyone. State it — ` +
-                 `model: '<Model>', naming one in db/schema.lite.`,
+                 `model: '<Model>', naming one in db/schema.lite, or model: null if there is none.`,
+      })
+    }
+    return { findings }
+  },
+
+  // `FJS-D1079`: `createService(def)` returns the definition and a service file
+  // `export default`s it; the registry builds it and the loader reads nothing
+  // else. A file that exports a `create*Service` factory, default-exports a
+  // function, or still names `createBaseService` registers nothing, so its name
+  // answers 404 and the only sign is the loader's report at start.
+  //
+  // Only files under a `services/` directory are judged: a helper beside a
+  // service may legitimately build one (a plugin's `createXServices`).
+  'service-definition': ({ root }) => {
+    const files = scripts(root, 'api')
+      .filter(p => /[/\\]services[/\\]/.test(p) && /\.service\.[cm]?[jt]s$/.test(basename(p)))
+    if (!files.length) return { skipped: 'no *.service.* under api/**/services/' }
+
+    const SHAPES = [
+      [/\bcreateBaseService\b/,                                   'names createBaseService, which no longer exists'],
+      [/\bexport\s+(?:async\s+)?function\s+create\w*Service\b/,   'exports a create*Service factory'],
+      [/\bexport\s+(?:const|let)\s+create\w*Service\b/,           'exports a create*Service factory'],
+      [/\bexport\s+default\s+(?:async\s+)?(?:function\b|\([^)]*\)\s*=>|\w+\s*=>)/, 'default-exports a function'],
+    ]
+
+    const findings = []
+    for (const path of files) {
+      const code = readCode(path)
+      const hit  = SHAPES.map(([re, what]) => ({ m: code.match(re), what })).find(h => h.m)
+      if (!hit) continue
+      findings.push({
+        file: path, line: lineOf(code, hit.m.index),
+        message: `${basename(path)} ${hit.what}. The autoloader reads the DEFAULT export and it must be a ` +
+                 `definition -- export default createService({ … }) -- so this file registers nothing and ` +
+                 `'${basename(path).replace(/\.service\.[cm]?[jt]s$/, '')}' answers 404. What a factory ` +
+                 `closed over is reached at call time as ctx.app or $.app; per-app state goes in a ` +
+                 `WeakMap keyed by the app (FJS-D1079).`,
       })
     }
     return { findings }

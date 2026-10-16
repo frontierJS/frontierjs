@@ -32,62 +32,59 @@
 import { createService, findWindow, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, callerOrder } from '../../core/resource.ts'
-import type { BasecampApp }    from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
-export function createAuditService(app: BasecampApp) {
-  return createService({
-    name:    'audit',
-    scope:   keyScope('audit'),
-    model:   'AuditEvent',
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
-    methods: 'readOnly',
+export default createService({
+  name:    'audit',
+  scope:   keyScope('audit'),
+  model:   'AuditEvent',
+  reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+  methods: 'readOnly',
 
-    // A trail is the shape a numbered page is worst for. It only grows, and it
-    // grows at the end a reader starts from, so between asking for page 1 and
-    // page 2 every offset has moved by however many things happened in between
-    // — which is a row served twice and another one skipped, silently, on the
-    // one screen in the app whose whole job is to be complete.
-    //
-    // So the answer here is a WINDOW THAT GROWS (`FJS-D145`): the browser holds
-    // what it has read and asks for what is past the far edge of it, by the
-    // sort keys of the last row rather than by a count of rows before it.
-    // `findWindow` owns both paths — junction's derived find calls the same
-    // function — because a hand-written find restating them is how the
-    // tiebreaker and the absent total end up with two answers.
-    async find() {
-      const { limit, offset, after } = getPagination({ limit: 50 })
+  // A trail is the shape a numbered page is worst for. It only grows, and it
+  // grows at the end a reader starts from, so between asking for page 1 and
+  // page 2 every offset has moved by however many things happened in between
+  // — which is a row served twice and another one skipped, silently, on the
+  // one screen in the app whose whole job is to be complete.
+  //
+  // So the answer here is a WINDOW THAT GROWS (`FJS-D145`): the browser holds
+  // what it has read and asks for what is past the far edge of it, by the
+  // sort keys of the last row rather than by a count of rows before it.
+  // `findWindow` owns both paths — junction's derived find calls the same
+  // function — because a hand-written find restating them is how the
+  // tiebreaker and the absent total end up with two answers.
+  async find() {
+    const { limit, offset, after } = getPagination({ limit: 50 })
 
-      // Filters are declared here rather than passed through: `$.query` is
-      // whatever a caller sent, and handing it to the client verbatim would let
-      // one filter on columns this service does not mean to expose.
-      const action      = $.query.action      as string | undefined
-      const subjectType = $.query.subjectType as string | undefined
-      const actorId     = $.query.actorId     as string | undefined
+    // Filters are declared here rather than passed through: `$.query` is
+    // whatever a caller sent, and handing it to the client verbatim would let
+    // one filter on columns this service does not mean to expose.
+    const action      = $.query.action      as string | undefined
+    const subjectType = $.query.subjectType as string | undefined
+    const actorId     = $.query.actorId     as string | undefined
 
-      return await findWindow(db().auditEvent, {
-        where: {
-          workspaceId: ws(),
-          ...(action      ? { action }      : {}),
-          ...(subjectType ? { subjectType } : {}),
-          ...(actorId     ? { actorId }     : {}),
-        },
-        // `createdAt` is not unique — a burst of writes inside one millisecond
-        // shares a timestamp — so the cursor cannot be built from it alone.
-        // Litestone appends the model's own id to the sort keys and refuses
-        // where there is nothing to append; the tiebreaker is the schema's, and
-        // is not restated here. `$select` is not read: a cursor is minted from
-        // the last row's sort keys, which a projection may have dropped, so it
-        // stays a 400.
-        orderBy: callerOrder({ createdAt: 'desc' }),
-        limit, offset,
-      }, after, 'The audit trail')
-    },
-
-    hooks: {
-      before: {
-        all: [sessionScope(app), requireWorkspaceRole(app, 'admin', 'owner')],
+    return await findWindow(db().auditEvent, {
+      where: {
+        workspaceId: ws(),
+        ...(action      ? { action }      : {}),
+        ...(subjectType ? { subjectType } : {}),
+        ...(actorId     ? { actorId }     : {}),
       },
+      // `createdAt` is not unique — a burst of writes inside one millisecond
+      // shares a timestamp — so the cursor cannot be built from it alone.
+      // Litestone appends the model's own id to the sort keys and refuses
+      // where there is nothing to append; the tiebreaker is the schema's, and
+      // is not restated here. `$select` is not read: a cursor is minted from
+      // the last row's sort keys, which a projection may have dropped, so it
+      // stays a 400.
+      orderBy: callerOrder({ createdAt: 'desc' }),
+      limit, offset,
+    }, after, 'The audit trail')
+  },
+
+  hooks: {
+    before: {
+      all: [sessionScope(), requireWorkspaceRole('admin', 'owner')],
     },
-  })
-}
+  },
+})

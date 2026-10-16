@@ -9,8 +9,6 @@
 // whole point of it being a declaration rather than a verb: the gate, the row
 // policies and the tenant filter are in front of it for free, and a custom
 // method would have had to put each of them back.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createPickupPointsService() {
-  return createBaseService({ model: 'PickupPoint', channel: 'pickup-points' })
-}
+export default createService({ model: 'PickupPoint', channel: 'pickup-points' })

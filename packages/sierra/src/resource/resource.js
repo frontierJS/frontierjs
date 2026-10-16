@@ -259,6 +259,33 @@ function _filesIn(data) {
   return out
 }
 
+function _plainObject(v) {
+  if (v === null || typeof v !== 'object') return false
+  const proto = Object.getPrototypeOf(v)
+  return proto === Object.prototype || proto === null
+}
+
+/**
+ * The RFC 7396 merge-patch that turns `from` into `to`, or `undefined` when
+ * they are the same document. A key `to` lacks is `null` (merge-patch's delete),
+ * a nested object is diffed so the server keeps the siblings this screen did
+ * not touch, and an array or a scalar replaces whole.
+ *
+ * A `null` in `to` is a delete as well: merge-patch cannot store one.
+ */
+function _jsonPatch(from, to) {
+  if (!_plainObject(from) || !_plainObject(to)) return Object.is(from, to) ? undefined : to
+  const out = {}
+  for (const key of Object.keys(to)) {
+    if (to[key] === null) { if (key in from && from[key] !== null) out[key] = null; continue }
+    if (!(key in from)) { out[key] = to[key]; continue }
+    const d = _jsonPatch(from[key], to[key])
+    if (d !== undefined) out[key] = d
+  }
+  for (const key of Object.keys(from)) if (!(key in to) && from[key] !== null) out[key] = null
+  return Object.keys(out).length ? out : undefined
+}
+
 /** The same payload with the bytes taken out — what the row half replays. */
 function _withoutFiles(data, files) {
   const keys = Object.keys(files)
@@ -2895,7 +2922,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const reach   = _templateReach(id, data)
 
     return optimistic
-      ? mutate(id, payload, () => _call('patch', id, payload, {}, reach))
+      ? mutate(id, _changed(id, data, { merge: false }), () => _call('patch', id, payload, {}, reach))
       : _call('patch', id, payload, {}, reach)
   }
 
@@ -2929,6 +2956,13 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * rewrites the record as `{ ...record, [name]: value }`, so an untouched key
    * is still the identical reference the read produced.
    *
+   * A column that is an object in the baseline and in `data` travels as
+   * `{ $merge: patch }` (`FJS-D176`), the keys that moved and nothing else.
+   * Whole, it would overwrite a key somebody else set in the meantime, and
+   * `@@sync(field)` cannot tell two cells of one document apart. A removed or
+   * `null` key is `null` in the patch, which is merge-patch's delete. The
+   * optimistic overlay passes `merge: false` and shows the document it will be.
+   *
    * A COMPOSED key never travels, baseline or not: a relation or a child list
    * the caller assembled is not a column, and the service that owns its write
    * refuses it on a patch. Identity alone would send it whenever the read the
@@ -2936,7 +2970,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * (`FJS-1576`). A resource with no schema declares nothing, so nothing is
    * composed there.
    */
-  function _changed(id, data) {
+  function _changed(id, data, { merge = true } = {}) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) return data
     const base = _read.get(id)
     const noBase = !base || typeof base !== 'object'
@@ -2945,7 +2979,12 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     for (const key of Object.keys(data)) {
       if (key === idField || (versionOf && key === versionOf)) { out[key] = data[key]; continue }
       if (schema && isComposed(key, data[key])) continue
-      if (noBase || !(key in base) || base[key] !== data[key]) out[key] = data[key]
+      if (noBase || !(key in base) || base[key] !== data[key]) {
+        if (merge && !noBase && _plainObject(base[key]) && _plainObject(data[key])) {
+          const patch = _jsonPatch(base[key], data[key])
+          if (patch !== undefined) out[key] = { $merge: patch }
+        } else out[key] = data[key]
+      }
     }
     return out
   }

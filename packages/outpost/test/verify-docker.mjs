@@ -38,6 +38,13 @@
  *   answers over HTTPS, and the port it dials and the loopback bind are read
  *   back off the daemon.
  *
+ *   `volume.*` — `/volume/restore` extracts an archive from the restore
+ *   directory into the stopped app's data volume, refuses a second one into a
+ *   volume with files unless told to overwrite, refuses a path off that
+ *   directory, and refuses while a container holds the volume (`FJS-D943`).
+ *   The directory is under `$HOME`, because a snap-packaged docker cannot
+ *   bind-mount the host's `/tmp`.
+ *
  *   `reports.*` — the heartbeat, the volume report and the disk report as the
  *   stand-in received them: signed, and holding what the daemon holds.
  *
@@ -55,8 +62,8 @@
  */
 
 import { spawnSync }    from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir }       from 'node:os'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir, homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { connect }      from 'node:net'
@@ -78,6 +85,7 @@ const CADDY_IMAGE = 'caddy:2'
 const HOST     = 'verify-docker.test'
 const ALSO     = 'also.verify-docker.test'
 const IMAGE    = 'traefik/whoami:v1.10.3'
+const BUSYBOX  = 'busybox:1.36'
 const APP      = 'verify-docker'
 const NAME     = `fjs-${APP}`
 const SECRET   = crypto.randomUUID()
@@ -100,6 +108,7 @@ for (const p of [PORT, STATIC, SINK, APP_PORT, CADDY_HTTP, CADDY_HTTPS, CADDY_AD
   if (await answers(p)) fail(`port ${p} already answers — refusing to test whatever holds it`)
 for (const n of [NAME, CADDY])
   if (sh('docker', 'inspect', n).status === 0) fail(`a container named ${n} already exists`)
+if (sh('docker', 'volume', 'inspect', `${NAME}-data`).status === 0) fail(`a volume named ${NAME}-data already exists`)
 // "Off the machine" is any address of this host that is not loopback: a port
 // published on every interface answers on each of them.
 const offLoopback = Object.values(networkInterfaces()).flat()
@@ -166,6 +175,9 @@ const tls      = ensureCert(join(scratch, 'tls'))
 const pinned   = { ca: tls.cert, checkServerIdentity: () => undefined }
 const hadImage = sh('docker', 'image', 'inspect', IMAGE).status === 0
 const hadCaddy = sh('docker', 'image', 'inspect', CADDY_IMAGE).status === 0
+const hadBusybox = sh('docker', 'image', 'inspect', BUSYBOX).status === 0
+mkdirSync(join(homedir(), '.cache'), { recursive: true })
+const restoreDir = mkdtempSync(join(homedir(), '.cache', 'fjs-verify-restore-'))
 const rootPath = join(scratch, 'caddy-root.pem')
 let outpost    = null
 let stoppedEarly = null
@@ -207,6 +219,7 @@ try {
       OUTPOST_REPORT_MS:    '2000',
       OUTPOST_WORK_DIR:     join(scratch, 'apps'),
       OUTPOST_STATIC_DIR:   join(scratch, 'static'),
+      OUTPOST_RESTORE_DIR:  restoreDir,
       OUTPOST_CADDY_ADMIN:  ADMIN,
     },
   })
@@ -350,6 +363,36 @@ try {
   t('logs.sayNoSuchContainer',   (await call('/logs', { app_id: APP })).body?.running === false)
   t('route.unknownIs404',        (await call('/no-such-route')).status === 404)
 
+  // ─── volume restore ─────────────────────────────────────────────────────
+
+  const archive = (name, files) => {
+    const src = join(restoreDir, `${name}.src`)
+    mkdirSync(join(src, 'sub'), { recursive: true })
+    for (const [path, text] of Object.entries(files)) writeFileSync(join(src, path), text)
+    if (sh('tar', '-czf', join(restoreDir, `${name}.tar.gz`), '-C', src, '.').status !== 0) throw new Error(`could not tar ${name}`)
+  }
+  const inVolume = (...argv) => sh('docker', 'run', '--rm', '-v', `${NAME}-data:/data`, BUSYBOX, ...argv).stdout.trim()
+  archive('adopt', { 'app.db': 'adopted', 'sub/notes': '12345' })
+  archive('again', { 'fresh.db': 'replaced' })
+
+  const restored = await call('/volume/restore', { app_id: APP, path: 'adopt.tar.gz' })
+  if (restored.status !== 200) console.log(restored.body)
+  t('volume.restoresIntoTheVolume',
+    restored.status === 200 && restored.body?.files === 2 && restored.body?.bytes === 12 && inVolume('cat', '/data/app.db') === 'adopted')
+  const twice = await call('/volume/restore', { app_id: APP, path: 'again.tar.gz' })
+  t('volume.refusesANonEmptyOne',      twice.status === 500 && /overwrite: true/.test(twice.body?.error) && inVolume('ls', '/data') === 'app.db\nsub')
+  const off = await call('/volume/restore', { app_id: APP, path: '/etc/passwd' })
+  t('volume.refusesAPathOffTheRoot',   off.status === 500 && /under/.test(off.body?.error))
+  sh('docker', 'create', '--name', NAME, '-v', `${NAME}-data:/data`, BUSYBOX)
+  const held = await call('/volume/restore', { app_id: APP, path: 'again.tar.gz', overwrite: true })
+  sh('docker', 'rm', '-f', NAME)
+  t('volume.refusesWhileHeld',         held.status === 500 && held.body?.error?.includes(`held by ${NAME}`))
+  const over = await call('/volume/restore', { app_id: APP, path: 'again.tar.gz', overwrite: true })
+  t('volume.overwriteReplacesTheFiles', over.status === 200 && inVolume('find', '/data', '-type', 'f') === '/data/fresh.db')
+  // The report below counts the daemon's volumes against one sent before this
+  // one existed.
+  sh('docker', 'volume', 'rm', '-f', `${NAME}-data`)
+
   // ─── reports ────────────────────────────────────────────────────────────
   //
   // The volume report walks every volume, which takes seconds on a busy
@@ -384,7 +427,10 @@ try {
   sh('docker', 'rm', '-f', CADDY)
   if (!hadImage) sh('docker', 'rmi', IMAGE)
   if (!hadCaddy) sh('docker', 'rmi', CADDY_IMAGE)
+  sh('docker', 'volume', 'rm', '-f', `${NAME}-data`)
+  if (!hadBusybox) sh('docker', 'rmi', BUSYBOX)
   rmSync(scratch, { recursive: true, force: true })
+  rmSync(restoreDir, { recursive: true, force: true })
 }
 
 // ─── Report ───────────────────────────────────────────────────────────────
@@ -405,6 +451,8 @@ const expected = [
   'redirect.answers308WithTheRequestUri', 'redirect.droppedWithTheLastOne',
   'stop.removesTheContainer', 'stop.takesTheRoute', 'health.saysNotRunning', 'logs.sayNoSuchContainer',
   'route.unknownIs404',
+  'volume.restoresIntoTheVolume', 'volume.refusesANonEmptyOne', 'volume.refusesAPathOffTheRoot',
+  'volume.refusesWhileHeld', 'volume.overwriteReplacesTheFiles',
   'reports.areSigned', 'reports.heartbeatRegistersTheUrl', 'reports.heartbeatCarriesVitals',
   'reports.volumesAreEveryVolume', 'reports.volumesHaveMountpoints', 'reports.diskCountsTheImages', 'reports.diskIsInBytes',
 ]

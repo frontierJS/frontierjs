@@ -28,11 +28,11 @@
 // the screen already says the app has no mailer.
 
 import { NOTIFICATION_KINDS, notificationKind } from '../services/notification-preferences/kinds.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 /** The transports this app can actually deliver on. `inApp` always; `email`
  *  only where a provider is configured, which `app.mail` is the one answer to. */
-function available(app: BasecampApp): Set<string> {
+function available(app: App): Set<string> {
   const set = new Set(['inApp'])
   if ((app as { mail?: unknown }).mail) set.add('email')
   return set
@@ -48,7 +48,7 @@ function available(app: BasecampApp): Set<string> {
  * schema test refuses, so reaching it means the two lists have already parted.
  */
 export async function transportsFor(
-  app:    BasecampApp,
+  app:    App,
   userId: string,
   kind:   string,
 ): Promise<string[]> {
@@ -90,7 +90,7 @@ export interface Addressee {
  * whole deploy's worth of recipients.
  */
 export async function notifyPeople(
-  app:     BasecampApp,
+  app:     App,
   kind:    string,
   userIds: string[],
   payload: unknown,
@@ -146,7 +146,7 @@ export async function notifyPeople(
  * mailing one is telling a stranger about a fleet.
  */
 export async function workspaceMembers(
-  app:         BasecampApp,
+  app:         App,
   workspaceId: string,
   roles?:      string[],
 ): Promise<string[]> {

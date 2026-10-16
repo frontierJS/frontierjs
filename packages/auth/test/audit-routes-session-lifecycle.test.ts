@@ -65,8 +65,7 @@ describe('cookie attributes', () => {
     expect(cleared).toMatch(/Path=\//)
   })
 
-  // FJS-1855: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a login that produced a session leaves no login_challenge cookie behind', async () => {
+  test('a login that produced a session leaves no login_challenge cookie behind', async () => {
     // A half-finished login's ticket is the password's stand-in; a full login
     // that follows it should not leave the earlier ticket in the jar.
     const a = await person('nochal')
@@ -79,8 +78,7 @@ describe('cookie attributes', () => {
     expect(chal!).toMatch(/Max-Age=0/)
   })
 
-  // FJS-1855: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a refused challenge that cannot be retried clears the login_challenge cookie', async () => {
+  test('a refused challenge that cannot be retried clears the login_challenge cookie', async () => {
     const res = await json(cookieApp, 'POST', '/auth/login/challenge', { code: '000000' },
       { cookie: 'login_challenge=no-such-ticket' })
     expect(res.status).toBe(401)

@@ -16,7 +16,7 @@
 // have reached, and the channel's `lastDeliveryAt` does not move.
 
 import type { JunctionActor, INodeImplementation, NodeContext, NodeResult, PluginManifest } from '@frontierjs/orion/plugin'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 import { deliverToChannel, type Message } from './delivery.ts'
 
 const SEVERITIES = ['info', 'warning', 'critical'] as const
@@ -25,7 +25,7 @@ const SEVERITIES = ['info', 'warning', 'critical'] as const
 // literal gives `category: string`, which is not the union, and the mismatch
 // surfaces at `orion({ plugins })` as a structural error about a field nobody
 // got wrong.
-export function basecampNodes(app: BasecampApp): { manifest: PluginManifest; implementations: INodeImplementation[] } {
+export function basecampNodes(app: App): { manifest: PluginManifest; implementations: INodeImplementation[] } {
   const page: INodeImplementation = {
     type: 'basecamp.page',
     async execute(ctx: NodeContext): Promise<NodeResult> {

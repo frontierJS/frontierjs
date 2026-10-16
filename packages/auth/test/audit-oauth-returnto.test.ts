@@ -21,15 +21,14 @@ import { makeAuth, type Harness } from './harness.ts'
 describe('isAllowedReturnTo — a prefix entry bounds where the browser LANDS', () => {
   const allow = ['/orders/']
 
-  // FJS-1846: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a dot segment under the prefix does not escape it', () => {
+  test('a dot segment under the prefix does not escape it', () => {
     expect(isAllowedReturnTo('/orders/../admin', allow)).toBe(false)
     expect(isAllowedReturnTo('/orders/42/../../admin', allow)).toBe(false)
     expect(isAllowedReturnTo('/orders/./../admin', allow)).toBe(false)
+    expect(isAllowedReturnTo('/orders/..\\admin', allow)).toBe(false)
   })
 
-  // FJS-1846: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('nor does a percent-encoded one — WHATWG resolves %2e%2e as ..', () => {
+  test('nor does a percent-encoded one — WHATWG resolves %2e%2e as ..', () => {
     expect(isAllowedReturnTo('/orders/%2e%2e/admin', allow)).toBe(false)
     expect(isAllowedReturnTo('/orders/%2E%2E/admin', allow)).toBe(false)
     expect(isAllowedReturnTo('/orders/.%2e/admin', allow)).toBe(false)
@@ -72,8 +71,7 @@ describe('GET /auth/oauth/{provider}?returnTo= with a prefix entry', () => {
     }) as unknown as typeof fetch
   }
 
-  // FJS-1846: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a traversal under the prefix lands at the default, not outside the prefix', async () => {
+  test('a traversal under the prefix lands at the default, not outside the prefix', async () => {
     const start = await request(app).get('/auth/oauth/google?returnTo=' + encodeURIComponent('/orders/../admin'))
     const state = new URL(String(start.headers['location'])).searchParams.get('state')!
     stubProviderOk()

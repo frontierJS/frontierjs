@@ -5462,6 +5462,81 @@ describe('a target whose address comes per send (FJS-1667)', () => {
     expect(JSON.stringify(seen[0])).not.toContain('secret')
     expect(JSON.stringify(seen[0])).not.toContain('hunter2')
   })
+
+  // FJS-D1089 · a self-hosted instance a row names takes that row's own token.
+  // The credential is per caller and the grant is the row, so the writer of
+  // the address holds the token that goes there; a send that names no grant
+  // sends nothing, because keyed on the tenant alone the first row's token
+  // would go to the second row's address.
+  describe('with the row\'s own credential (FJS-D1089)', () => {
+    const rowTokens: CredentialResolver = {
+      async get()           { return 'the-machine-token' },
+      async getFor(_ref, w) { return w.grant ? `token-of-${w.grant}` : null },
+    }
+    const selfHosted = (auth: TargetDescriptor['auth']) =>
+      hookTarget({ ...local, id: 'provider:plausible', auth })
+
+    function vendor() {
+      const seen: Array<{ path: string; authorization: string | null }> = []
+      const server = Bun.serve({
+        port: 0,
+        fetch(req) {
+          seen.push({ path: new URL(req.url).pathname, authorization: req.headers.get('authorization') })
+          return Response.json({ ok: true })
+        },
+      })
+      return { seen, url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) }
+    }
+
+    it('is admitted at register() only as per_caller, by name', async () => {
+      const c = createConduit({ credentials: rowTokens })
+      await c.init()
+      await expect(c.register(selfHosted({ type: 'bearer', ref: 'PLAUSIBLE' }))).rejects.toThrow(/per_caller: true when the credential is the row's own/)
+      await expect(c.register(selfHosted({ type: 'signed', ref: 'PLAUSIBLE', signer: 'basic' }))).rejects.toThrow(/stored credential/)
+      await c.register(selfHosted({ type: 'bearer', ref: 'PLAUSIBLE', per_caller: true }))
+      await c.register(hookTarget({ ...local, id: 'provider:plausible-key', auth: { type: 'api_key', ref: 'PLAUSIBLE', header: 'X-Key', per_caller: true } }))
+    })
+
+    it('lands each row\'s token at that row\'s address, one tenant, two rows', async () => {
+      const a = vendor()
+      const b = vendor()
+      try {
+        const c = createConduit({ targets: [selfHosted({ type: 'bearer', ref: 'PLAUSIBLE', per_caller: true })], credentials: rowTokens })
+        await c.init()
+        const who = { tenant: 'agency', principal: 'u1' }
+        expect((await c.send({ target: 'provider:plausible', address: `${a.url}/api/v2/query`, method: 'POST', body: {}, who: { ...who, grant: 'row-a' } })).error).toBeNull()
+        expect((await c.send({ target: 'provider:plausible', address: `${b.url}/api/v2/query`, method: 'POST', body: {}, who: { ...who, grant: 'row-b' } })).error).toBeNull()
+        expect(a.seen).toEqual([{ path: '/api/v2/query', authorization: 'Bearer token-of-row-a' }])
+        expect(b.seen).toEqual([{ path: '/api/v2/query', authorization: 'Bearer token-of-row-b' }])
+      } finally { a.stop(); b.stop() }
+    })
+
+    it('refuses a send that names no grant, by name, and sends nothing', async () => {
+      const r = vendor()
+      try {
+        const c = createConduit({ targets: [selfHosted({ type: 'bearer', ref: 'PLAUSIBLE', per_caller: true })], credentials: rowTokens })
+        await c.init()
+        for (const who of [{ tenant: 'agency', principal: 'u1', grant: null }, undefined]) {
+          const result = await c.send({ target: 'provider:plausible', address: `${r.url}/x`, method: 'POST', body: {}, who })
+          expect(result.error?.kind).toBe('invalid_request')
+          expect(result.error?.retryable).toBe(false)
+          expect(result.error?.message).toMatch(/names the row with grant/)
+        }
+        expect(r.seen).toHaveLength(0)
+      } finally { r.stop() }
+    })
+
+    it('still grades the address: the row\'s own token does not reach a private address', async () => {
+      const r = vendor()
+      try {
+        const strict = createConduit({ targets: [{ ...selfHosted({ type: 'bearer', ref: 'PLAUSIBLE', per_caller: true }), destinations: undefined }], credentials: rowTokens })
+        await strict.init()
+        const result = await strict.send({ target: 'provider:plausible', address: `${r.url}/x`, method: 'POST', body: {}, who: { tenant: 'agency', principal: null, grant: 'row-a' } })
+        expect(result.error?.kind).toBe('invalid_request')
+        expect(r.seen).toHaveLength(0)
+      } finally { r.stop() }
+    })
+  })
 })
 
 // ─── conduit-11 · a connection failure carries the URL, userinfo and all ─────

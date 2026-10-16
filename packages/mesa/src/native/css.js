@@ -10,8 +10,8 @@
  * - An attribute selector paints nothing, against an attribute set by the
  *   engine's own call.
  * - `@media`, `@supports`, `@layer` and `@container` drop their whole block.
- * - `:where`, `:has`, `:lang`, `:focus-visible` and `::backdrop` are dropped
- *   by the encoder, and the structural pseudo-classes paint nothing:
+ * - `:where`, `:has`, `:lang`, `:focus-visible`, `:host` and `::backdrop`
+ *   are dropped by the encoder, and the structural pseudo-classes paint nothing:
  *   `:nth-child` and `:first-child` were measured, the rest of the family is
  *   assumed to share their path.
  *
@@ -22,14 +22,14 @@
 
 const AT_RULES = new Set(['media', 'supports', 'layer', 'container'])
 
-const PSEUDO = /::backdrop\b|:(?:where|has|lang|focus-visible|nth-child|nth-last-child|nth-of-type|nth-last-of-type|first-child|last-child|only-child|first-of-type|last-of-type|only-of-type)\b/
+const PSEUDO = /::backdrop\b|:(?:where|has|lang|host|focus-visible|nth-child|nth-last-child|nth-of-type|nth-last-of-type|first-child|last-child|only-child|first-of-type|last-of-type|only-of-type)\b/
 
 // The pseudo-classes whose argument is not a selector, so `odd` and `en`
 // inside one are not type selectors.
 const NOT_A_SELECTOR = /:(?:nth-[\w-]+|lang|dir)\([^)]*\)/g
 
 /** Split `s` on top-level commas, outside parens and brackets. */
-function list(s) {
+export function list(s) {
   const out = []
   let depth = 0, cur = ''
   for (const c of s) {

@@ -503,9 +503,20 @@ export function deriveModelName(name: string): string {
  * genuinely-plural foreign table keep resolving to themselves.
  */
 export function accessorCandidates(accessor: string): string[] {
+  let candidates = candidateCache.get(accessor)
+  if (candidates) return candidates
   const derived = deriveModelName(accessor)
-  return derived === accessor ? [accessor] : [accessor, derived]
+  candidates = Object.freeze(derived === accessor ? [accessor] : [accessor, derived]) as string[]
+  // Every service call asks this several times and the inflector runs its rule
+  // table each time (`FJS-2992`). A name can reach here from a caller, so the
+  // cache is bounded rather than grown forever.
+  if (candidateCache.size >= CANDIDATE_CACHE_MAX) candidateCache.clear()
+  candidateCache.set(accessor, candidates)
+  return candidates
 }
+
+const CANDIDATE_CACHE_MAX = 1024
+const candidateCache = new Map<string, string[]>()
 
 /**
  * The one spelling of an accessor a Litestone client will actually judge.
@@ -550,11 +561,23 @@ export function accessorIfModel(client: unknown, accessor: string): string | nul
   } catch { return null }
   if (!Array.isArray(models)) return null
 
+  // A client's model list is fixed once built, so the answer is per list; the
+  // scan ran on every filtered read (`FJS-2992`).
+  let answers = modelAccessorCache.get(models)
+  if (!answers) modelAccessorCache.set(models, answers = new Map())
+  const known = answers.get(accessor)
+  if (known !== undefined) return known
+
   const candidates = accessorCandidates(accessor)
   const camel = (n: string) => n.charAt(0).toLowerCase() + n.slice(1)
   const model = models.find(m => candidates.includes(camel(m.name)))
-  return model ? camel(model.name) : null
+  const answer = model ? camel(model.name) : null
+  if (answers.size >= CANDIDATE_CACHE_MAX) answers.clear()
+  answers.set(accessor, answer)
+  return answer
 }
+
+const modelAccessorCache = new WeakMap<object, Map<string, string | null>>()
 
 type ParsedModel = { name: string; attributes?: Array<{ kind: string; transitions?: Record<string, unknown> }> }
 
@@ -655,9 +678,7 @@ export interface LitestoneServiceOptions {
    * the minimal service file literally just the model:
    *
    *   // services/posts.service.ts
-   *   export function createPostsService() {
-   *     return createBaseService({})       // → db.post, via 'posts'
-   *   }
+   *   export default createService({})   // → db.post, via 'posts'
    *
    * A plural spelling resolves too (see accessorCandidates), so `'posts'`,
    * `'post'` and an omitted value all reach `model Post`.
@@ -846,7 +867,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       // seeds ctx.locals.db itself still gets scoping.
       //
       // $setAuth is guarded so plain (non-litestone) clients — adapted by
-      // createBaseService — pass through without per-user scoping.
+      // the service base — pass through without per-user scoping.
       // `in` before `typeof`: a system client has no `$setAuth`, and a Litestone
       // client THROWS on a property it lacks, so a hook that put `asSystem()`
       // on `ctx.locals.db` — having graded the caller itself — made every
@@ -873,6 +894,18 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     // `model` omitted → fall back to the service name, which the autoloader
     // derived from the filename ('posts.service.ts' → 'posts' → db.post).
     const candidates = accessorCandidates(model ?? ctx.service)
+    // `in` first: a Litestone client's `has` trap answers a miss without the
+    // Error its `get` trap builds, and the literal spelling misses on every
+    // call to a service that names its model `Item` (`FJS-2992`). A client
+    // whose `in` says no for everything still reaches the probe below.
+    for (const candidate of candidates) {
+      let present = false
+      try { present = candidate in scopedDb } catch { break }
+      if (!present) continue
+      let table: LitestoneTable | undefined
+      try { table = scopedDb[candidate] as LitestoneTable | undefined } catch { continue }
+      if (table) return table
+    }
     for (const candidate of candidates) {
       // Probing must not assume a miss is quiet. A real Litestone client is a
       // Proxy that THROWS on an unknown accessor ('"posts" is not a table in
@@ -1001,6 +1034,28 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       ...(q.withTemplates ? { withTemplates: true } : {}),
       ...(q.onlyTemplates ? { onlyTemplates: true } : {}),
     }
+  }
+
+  /**
+   * What a write by id that matched no row answers.
+   *
+   * Litestone answers null for a row the row policy hides and for one it lets
+   * the caller read and not change, so a no-existence-oracle null is all the
+   * write has. A 404 for the second is a lie to a screen that is drawing the
+   * row (`FJS-1750`). The caller's own read says which: a row they cannot read
+   * is 404, and one they can is refused by name, which tells them nothing they
+   * were not already looking at.
+   */
+  async function missOrRefused(
+    ctx: ServiceContext, table: LitestoneTable, where: Record<string, unknown>,
+    q: { withDeleted?: boolean, withTemplates?: boolean, onlyTemplates?: boolean },
+    verb: string,
+  ): Promise<never> {
+    const readable = await table.findFirst({
+      where, ...(q.withDeleted ? { withDeleted: true } : {}), ...templateArgs(q),
+    })
+    if (readable == null) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
+    throw new Forbidden(`${modelLabel(ctx)} with ${idField}=${ctx.id} is not one you may ${verb}`)
   }
 
   /**
@@ -1416,7 +1471,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       const sys = systemFields(ctx)
       if (sys) args.system = sys
       const updated = await table.update(args)
-      if (!updated) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
+      if (!updated) return missOrRefused(ctx, table, where, q, 'change')
       return updated
     },
 
@@ -1448,7 +1503,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         const sys = systemFields(ctx)
         if (sys) args.system = sys
         const updated = await table.update(args)
-        if (!updated) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
+        if (!updated) return missOrRefused(ctx, table, where, q, 'change')
         return updated
       }
 
@@ -1508,12 +1563,12 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
             data: { [softDelete]: new Date().toISOString() },
             ...templateArgs(q),
           })
-          if (!stamped) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
+          if (!stamped) return missOrRefused(ctx, table, where, q, 'remove')
           return stamped
         }
 
         const removed = await table.remove({ where, ...templateArgs(q) })
-        if (!removed) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
+        if (!removed) return missOrRefused(ctx, table, where, q, 'remove')
         return removed
       }
 
@@ -1556,8 +1611,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
 // backed by one already knows its field rules — @length, @email, @gte and the
 // rest. Making every service restate that by passing
 // `schema: generateJsonSchema(db.$schema)` is boilerplate that silently loses
-// validation when forgotten, and it was forgotten by default:
-// createBaseService had no schema option at all.
+// validation when forgotten.
 //
 // This derives it instead. @frontierjs/litestone is a peer dependency, so the
 // import is dynamic and its absence is tolerated — the same approach
@@ -1618,7 +1672,7 @@ function _warnNoValidation(reason: string): void {
     `[Junction] Schema validation is OFF. The database client carries a $schema, ` +
     `so field rules were expected to be derived from it — but @frontierjs/litestone ` +
     `could not be loaded: ${reason}. Services will accept unvalidated input. ` +
-    `Install the peer dependency, or pass an explicit schema to createBaseService.`
+    `Install the peer dependency, or pass an explicit schema: to createService.`
   )
 }
 
@@ -2918,7 +2972,7 @@ export function gateAuth(accessor: string | undefined, op: GateOp) {
   // entries reading 'anonymous' in the telemetry waterfall.
   return function gateAuth(ctx: ServiceContext): void {
     // accessor omitted → same fallback as getTable, so a model-less
-    // createBaseService({}) is still gated by the model's @@gate.
+    // createService({}) is still gated by the model's @@gate.
     const levels = _gateLevels(ctx.locals.db, accessor ?? ctx.service)
     if (!levels) return
     if (levels[op] > 0 && !ctx.auth?.user) {
@@ -3619,8 +3673,7 @@ export function withLitestoneDb(
     // Scope to the caller here, not in the service.
     //
     // This used to seed the ROOT client and leave $setAuth to
-    // one of two service factories. createBaseService never scoped at all, so a
-    // service written with it ran unscoped — and a schema declaring
+    // the service factory. A factory that never scoped ran unscoped — and a schema declaring
     // `@@allow('read', ownerId == auth().id)` then compared against a null
     // auth() and matched nothing. The service looked broken; the policy was
     // fine. Which factory you picked silently decided whether your row policies
@@ -4796,9 +4849,9 @@ export function announceDataWrites(
       // NOTHING, in every app, since FJS-010 (FJS-464).
       //
       // Two things defeat one key. `svc.model` is an ACCESSOR and may
-      // legitimately be the plural — `createBaseService({ model: 'posts' })`
+      // legitimately be the plural — `createService({ model: 'posts' })`
       // is documented and supported — while Litestone announces `Post`. And
-      // `singularize(name)` was unreachable, because `createService` fills
+      // `singularize(name)` was unreachable, because `buildService` fills
       // `model` with the service NAME when a file declares none, so the `??`
       // never took its right-hand side.
       //

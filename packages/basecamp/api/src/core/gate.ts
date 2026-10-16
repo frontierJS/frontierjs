@@ -36,7 +36,7 @@
 // narrowest role reads, and the next one up writes.
 //
 // The levels are not invented — they are read off the hooks that were doing
-// this job in service files. `requireWorkspaceRole(app, 'developer', …)` on a
+// this job in service files. `requireWorkspaceRole('developer', …)` on a
 // create is what @@gate("2.4.…") says, in the schema, for every service at
 // once. See DECISIONS.md § Basecamp's gate ladder.
 //

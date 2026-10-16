@@ -29,35 +29,32 @@
 import { createService } from '@frontierjs/junction'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, callerOrder, callerSelect } from '../../core/resource.ts'
-import type { BasecampApp } from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
-export function createFleetService(_app: BasecampApp) {
-  return createService({
-    name:    'fleet',
-    scope:   keyScope('fleet'),
-    model:   'fleetByProvider',
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
-    methods: 'readOnly',
+export default createService({
+  name:    'fleet',
+  scope:   keyScope('fleet'),
+  model:   'fleetByProvider',
+  reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+  methods: 'readOnly',
 
-    // The whole projection, every time. A report over a fleet is tens of rows
-    // — one per provider and region a workspace runs in — so there is nothing
-    // to page, and a limit here would reintroduce the truncation this view
-    // exists to end: the screen used to tally `find({ limit: 200 })` and was
-    // silently wrong from the 201st machine.
-    async find() {
-      const data = await db().fleetByProvider.findMany({
-        orderBy: callerOrder([{ providerKind: 'asc' }, { region: 'asc' }]),
-        ...callerSelect(),
-      })
-      return { data, total: data.length }
-    },
+  // The whole projection, every time. A report over a fleet is tens of rows
+  // — one per provider and region a workspace runs in — so there is nothing
+  // to page, and a limit here would reintroduce the truncation this view
+  // exists to end: the screen used to tally `find({ limit: 200 })` and was
+  // silently wrong from the 201st machine.
+  async find() {
+    const data = await db().fleetByProvider.findMany({
+      orderBy: callerOrder([{ providerKind: 'asc' }, { region: 'asc' }]),
+      ...callerSelect(),
+    })
+    return { data, total: data.length }
+  },
 
-    hooks: {
-      // No role check beyond membership. `Server` reads at 2 and so does the
-      // projection; a member who can open every machine can read the shape of
-      // them.
-      before: { all: [sessionScope(_app)] },
-    },
-  })
-}
+  hooks: {
+    // No role check beyond membership. `Server` reads at 2 and so does the
+    // projection; a member who can open every machine can read the shape of
+    // them.
+    before: { all: [sessionScope()] },
+  },
+})

@@ -46,8 +46,7 @@ const end   = (op: string) => request(app).post('/auth/support/end').auth(op)
 
 describe('actions on the subject that outlive the episode', () => {
 
-  // FJS-1854: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('POST /auth/email/verify/request inside an episode does not mail the subject', async () => {
+  test('POST /auth/email/verify/request inside an episode does not mail the subject', async () => {
     const op = await person(), sub = await person()
     expect((await start(op.token, sub.userId)).status).toBe(200)
     const before = mails.filter(m => m.email === sub.email).length

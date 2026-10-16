@@ -70,7 +70,7 @@ const LITESTONE = resolve(import.meta.dir, '../../litestone/src/index.js')
 const running: Array<{ stop: () => Promise<void> }> = []
 afterEach(async () => { for (const a of running.splice(0)) await a.stop().catch(() => {}) })
 
-async function mkApp(opts: { telemetry?: boolean; second?: boolean; schema?: string; file?: string; getLevel?: (u: unknown) => number } = {}) {
+async function mkApp(opts: { telemetry?: boolean; second?: boolean; named?: boolean; schema?: string; file?: string; getLevel?: (u: unknown) => number } = {}) {
   const db: any = await createClient({
     ...(opts.file ? {} : { db: ':memory:' }), schema: opts.schema ?? SCHEMA,
     ...(opts.getLevel ? { plugins: [new GatePlugin({ getLevel: opts.getLevel })] } : {}),
@@ -88,7 +88,9 @@ async function mkApp(opts: { telemetry?: boolean; second?: boolean; schema?: str
       },
     },
   })
-  app.services.register(createService({ name: 'orders', model: 'Order', channel: 'orders' }))
+  // `named`: a channel FUNCTION answering a name — a definition holds no app to
+  // build a channel with (FJS-D1079).
+  app.services.register(createService({ name: 'orders', model: 'Order', channel: opts.named ? () => 'orders' : 'orders' }))
   // A service whose NAME maps to no model. `model:` is the declaration and the
   // name is only a fallback — grading off the name alone refused everybody here.
   if (opts.second)
@@ -262,6 +264,24 @@ describe('a background write is graded like a published one (FJS-672)', () => {
     await app.service('orders').create({ customerId: '5' }, { auth: { user: sessionFor('admin') } })
     await settle()
     expect(owner.events.filter(e => e.event === 'orders created')).toHaveLength(1)
+  })
+})
+
+describe('a channel function may answer a channel name (FJS-D1079)', () => {
+
+  test('graded on the service path and the background path alike', async () => {
+    const { app, db, port } = await mkApp({ named: true })
+    const owner    = open(port, 'u5')
+    const stranger = open(port, 'u6')
+    expect(await ready(owner)).toBe(true)
+    expect(await ready(stranger)).toBe(true)
+
+    await app.service('orders').create({ customerId: '5' }, { auth: { user: sessionFor('admin') } })
+    await (db as any).asSystem().order.create({ data: { customerId: '5' } })
+    await settle()
+
+    expect(owner.events.filter(e => e.event === 'orders created')).toHaveLength(2)
+    expect(stranger.events).toEqual([])
   })
 })
 

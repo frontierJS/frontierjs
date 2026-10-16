@@ -17,7 +17,7 @@
 // arrangement ends at the boundary, so between the press and the boundary there
 // is nothing to undo and `resume` is an ordinary write rather than a move back
 // out of a terminal state.
-import { createBaseService, $ } from '@frontierjs/junction'
+import { createService, $ } from '@frontierjs/junction'
 import { changePlan, openFirstPeriod } from '../domain/billing'
 
 /** The scoped client for this call, loosely typed — `orders.service.ts` carries
@@ -63,87 +63,85 @@ async function openPeriodOf(ctx: { result?: unknown }) {
   if (sub?.id) await openFirstPeriod(subs().asSystem(), sub, { timeZone: $.config.timeZone })
 }
 
-export function createSubscriptionsService() {
-  return createBaseService({
-    model:   'Subscription',
-    channel: 'subscriptions',
+export default createService({
+  model:   'Subscription',
+  channel: 'subscriptions',
 
-    transactional: ['create'],
-    hooks: { after: { create: [openPeriodOf] } },
+  transactional: ['create'],
+  hooks: { after: { create: [openPeriodOf] } },
 
-    /**
-     * Stop it renewing — at the end of the period, not now.
-     *
-     * The period has been paid for, so ending it the moment somebody asks
-     * forfeits the rest of it. `renewPeriod` reads the flag when the period
-     * closes and cancels there instead of issuing.
-     *
-     * It does NOT touch invoices. An invoice already issued is a document
-     * (`FJS-D162`) and the money is owed whether or not the arrangement
-     * continues — cancelling a subscription that owes for last month and having
-     * the debt vanish is the behavior a shop cannot have.
-     *
-     * `system:` names the one column this may write. It keeps the model's gate,
-     * its row policies and the audit actor, where `asSystem()` would drop all
-     * three to set a boolean.
-     */
-    cancel: async () => setCancelling(true),
+  /**
+   * Stop it renewing — at the end of the period, not now.
+   *
+   * The period has been paid for, so ending it the moment somebody asks
+   * forfeits the rest of it. `renewPeriod` reads the flag when the period
+   * closes and cancels there instead of issuing.
+   *
+   * It does NOT touch invoices. An invoice already issued is a document
+   * (`FJS-D162`) and the money is owed whether or not the arrangement
+   * continues — cancelling a subscription that owes for last month and having
+   * the debt vanish is the behavior a shop cannot have.
+   *
+   * `system:` names the one column this may write. It keeps the model's gate,
+   * its row policies and the audit actor, where `asSystem()` would drop all
+   * three to set a boolean.
+   */
+  cancel: async () => setCancelling(true),
 
-    /**
-     * Change your mind, while the window is still open.
-     *
-     * Refused once the row is `cancelled`, and the refusal is the honest one
-     * rather than a convenience: coming back after the boundary is a NEW
-     * arrangement at whatever `PlanVersion` is open now, which is the whole
-     * argument for versioning a price in the first place. Reviving the old row
-     * would quietly restore a price that is no longer for sale.
-     */
-    resume: async () => setCancelling(false),
+  /**
+   * Change your mind, while the window is still open.
+   *
+   * Refused once the row is `cancelled`, and the refusal is the honest one
+   * rather than a convenience: coming back after the boundary is a NEW
+   * arrangement at whatever `PlanVersion` is open now, which is the whole
+   * argument for versioning a price in the first place. Reviving the old row
+   * would quietly restore a price that is no longer for sale.
+   */
+  resume: async () => setCancelling(false),
 
-    /**
-     * Move to a different price, a different quantity, or both — now.
-     *
-     * The money for the rest of the period is settled at the same moment, and
-     * WHICH document that is comes out of the schema rather than out of a
-     * branch: an upgrade owes money and is an invoice, a downgrade is owed
-     * money and is a credit note, because `Invoice.subtotal` is `@gte(0)` and
-     * the Data boundary refuses a negative document. `api/src/domain/billing` is
-     * the one owner of the arithmetic and this only names the call.
-     *
-     * The CALLER's client, and the document names the gate it lifts —
-     * `Invoice` creates at 8 — so the invoice's trail says who changed the
-     * plan, and the row policies still grade them (`FJS-D575`).
-     *
-     * The caller's right to THIS subscription is still read first, so a
-     * subscription they may not see is a 404 before anything is priced
-     * (`FJS-1087`): a custom method's gate floor is a presence check and no
-     * row policy runs before the body.
-     */
-    changePlan: async () => {
-      const body = ($.data ?? {}) as { planVersionId?: number, quantity?: number }
-      // The one rule a field validator cannot hold: it is about the
-      // RELATIONSHIP between two optional fields, so `PlanChange` in the seed
-      // types and bounds each of them and this says they may not both be absent.
-      if (body.planVersionId == null && body.quantity == null)
-        throw Object.assign(new Error('Name a plan version, a quantity, or both'), { status: 400 })
+  /**
+   * Move to a different price, a different quantity, or both — now.
+   *
+   * The money for the rest of the period is settled at the same moment, and
+   * WHICH document that is comes out of the schema rather than out of a
+   * branch: an upgrade owes money and is an invoice, a downgrade is owed
+   * money and is a credit note, because `Invoice.subtotal` is `@gte(0)` and
+   * the Data boundary refuses a negative document. `api/src/domain/billing` is
+   * the one owner of the arithmetic and this only names the call.
+   *
+   * The CALLER's client, and the document names the gate it lifts —
+   * `Invoice` creates at 8 — so the invoice's trail says who changed the
+   * plan, and the row policies still grade them (`FJS-D575`).
+   *
+   * The caller's right to THIS subscription is still read first, so a
+   * subscription they may not see is a 404 before anything is priced
+   * (`FJS-1087`): a custom method's gate floor is a presence check and no
+   * row policy runs before the body.
+   */
+  changePlan: async () => {
+    const body = ($.data ?? {}) as { planVersionId?: number, quantity?: number }
+    // The one rule a field validator cannot hold: it is about the
+    // RELATIONSHIP between two optional fields, so `PlanChange` in the seed
+    // types and bounds each of them and this says they may not both be absent.
+    if (body.planVersionId == null && body.quantity == null)
+      throw Object.assign(new Error('Name a plan version, a quantity, or both'), { status: 400 })
 
-      const db  = subs()
-      const row = await db.subscription.findFirst({ where: { id: Number($.id) } })
-      if (!row) throw Object.assign(new Error('No such subscription'), { status: 404 })
+    const db  = subs()
+    const row = await db.subscription.findFirst({ where: { id: Number($.id) } })
+    if (!row) throw Object.assign(new Error('No such subscription'), { status: 404 })
 
-      return await changePlan(db, row.id, body, $.config.timeZone)
-    },
+    return await changePlan(db, row.id, body, $.config.timeZone)
+  },
 
-    // Stated whole, because declaring one method declares the list — a service
-    // that named only `cancel` would answer 405 to `find`. `surface.snapshot.md`
-    // carries this and CI fails a stale one.
-    //
-    // `input:` names the `type` in db/schema.lite, so the payload is validated
-    // exactly as a model create is — same generated JSON Schema, same wording,
-    // same 400 (`validateInput`).
-    methods: [
-      'find', 'get', 'create', 'update', 'patch', 'remove', 'cancel', 'resume',
-      { method: 'changePlan', input: 'PlanChange' },
-    ],
-  })
-}
+  // Stated whole, because declaring one method declares the list — a service
+  // that named only `cancel` would answer 405 to `find`. `surface.snapshot.md`
+  // carries this and CI fails a stale one.
+  //
+  // `input:` names the `type` in db/schema.lite, so the payload is validated
+  // exactly as a model create is — same generated JSON Schema, same wording,
+  // same 400 (`validateInput`).
+  methods: [
+    'find', 'get', 'create', 'update', 'patch', 'remove', 'cancel', 'resume',
+    { method: 'changePlan', input: 'PlanChange' },
+  ],
+})

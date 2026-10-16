@@ -21,7 +21,7 @@ import type { CaravanInstance } from '@frontierjs/caravan'
 
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { scheduleName, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
-import type { BasecampApp }  from '../src/basecamp.types.ts'
+import type { App }          from '@frontierjs/junction'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -58,7 +58,7 @@ async function makeApp() {
   // Proxy whose accessors are the schema's models, and no static type here
   // knows them. Every line below would otherwise open with the same cast.
   const db: any = env.db.asSystem()
-  const app = { db: env.db, jobs, logger: noopLog() } as unknown as BasecampApp
+  const app = { db: env.db, jobs, logger: noopLog() } as unknown as App
   return { app, jobs, db }
 }
 

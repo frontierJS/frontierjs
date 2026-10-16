@@ -1406,7 +1406,7 @@ export async function cmdStudio(cfg) {
           const before = currentSchemaParse()
 
           // Each pane is asked separately, because parse() is more permissive
-          // than the layers above it: a gate string parses and then throws the
+          // than the layers above it: a schema can parse and then throw the
           // moment deriveAccess reads it. A preview whose whole job is to say
           // what a word does must answer with the message, not a 500 that says
           // nothing about the other three realms.

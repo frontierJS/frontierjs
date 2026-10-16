@@ -10,7 +10,7 @@
 // rather than restating what each should say.
 
 import { describe, test, expect } from 'bun:test'
-import { createService, createBaseService, isBuiltService } from '../src/core/service.ts'
+import { createService, buildBase, isBuiltService, buildService, ServiceRegistry } from '../src/core/service.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { manifestPlugin } from '../src/plugins/manifest/index.ts'
 import { healthPlugin } from '../src/transport/health.ts'
@@ -19,7 +19,7 @@ import { openapi } from '../src/plugins/openapi/index.ts'
 const noop = async () => ({ ok: true })
 
 function mkService() {
-  return createService({
+  return buildService({
     name:       'widgets',
     model:      'Widget',
     methods:    ['find', 'get', 'create', 'reboot'],
@@ -49,7 +49,7 @@ describe('describe()', () => {
   })
 
   test('a plain service reports the defaults rather than undefined', () => {
-    const d = createService({ name: 'plain', model: 'plain' }).describe()
+    const d = buildService({ name: 'plain', model: 'plain' }).describe()
     expect(d.softDelete).toBeNull()
     expect(d.cache).toBe(false)
     expect(d.idField).toBe('id')
@@ -57,7 +57,7 @@ describe('describe()', () => {
   })
 
   test('/manifest, /metrics and the OpenAPI spec all agree with it', async () => {
-    const app = await createTestApp({ services: [mkService] })
+    const app = await createTestApp({ services: [mkService()] })
     app.configure(manifestPlugin())
     app.configure(healthPlugin())
     const spec = openapi({ title: 'T', version: '1' })
@@ -94,23 +94,32 @@ describe('describe()', () => {
 
 describe('the built-service marker', () => {
 
-  test('createService is idempotent — building twice returns the same object', () => {
-    const once  = createService({ name: 'things', model: 'thing', reboot: noop })
-    const twice = createService(once as never)
+  test('createService states a definition and the registry builds it (FJS-D1079)', () => {
+    const def = { name: 'things', model: 'thing', reboot: noop }
+    expect(createService(def as never)).toBe(def as never)
+    expect(isBuiltService(def)).toBe(false)
+    const built = new ServiceRegistry().register(def as never)
+    expect(isBuiltService(built)).toBe(true)
+    expect(isBuiltService(def)).toBe(false)
+  })
+
+  test('buildService is idempotent — building twice returns the same object', () => {
+    const once  = buildService({ name: 'things', model: 'thing', reboot: noop })
+    const twice = buildService(once as never)
     expect(twice).toBe(once)
   })
 
-  test('a base is not marked, so the loader still wraps it', () => {
-    expect(isBuiltService(createBaseService({ model: 'thing' }))).toBe(false)
-    expect(isBuiltService(createService({ name: 'things', model: 'thing' }))).toBe(true)
+  test('a base is not marked', () => {
+    expect(isBuiltService(buildBase({ model: 'thing' }))).toBe(false)
+    expect(isBuiltService(buildService({ name: 'things', model: 'thing' }))).toBe(true)
   })
 
   test('a SPREAD copy is not a built service', () => {
     // The marker is non-enumerable on purpose: `{...svc}` is a copy of the
     // fields, not a service, and wrapping it is the right call.
-    const svc  = createService({ name: 'things', model: 'thing', reboot: noop })
+    const svc  = buildService({ name: 'things', model: 'thing', reboot: noop })
     const copy = { ...svc }
     expect(isBuiltService(copy)).toBe(false)
-    expect(isBuiltService(createService(copy as never))).toBe(true)
+    expect(isBuiltService(buildService(copy as never))).toBe(true)
   })
 })

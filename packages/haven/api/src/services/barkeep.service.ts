@@ -4,7 +4,7 @@
 //
 // The answer is the caller's alone and no line of the room: a question is a
 // verb, never a Message. The books are read on the first question, once.
-import { createService, rateLimitHook, $, BadRequest } from '@frontierjs/junction'
+import { createService, $, BadRequest, rateLimitHook } from '@frontierjs/junction'
 
 import { answer, booksRoot, readBooks } from '../barkeep.ts'
 import type { Answer, Books } from '../barkeep.ts'
@@ -19,29 +19,27 @@ function shelved (): Books | null {
   return books
 }
 
-export function createBarkeepService () {
-  return createService({
-    model:   'Miss',
-    methods: ['ask'],
-    hooks: {
-      before: {
-        ask: [rateLimitHook({ max: 5, window: '10s', message: 'One at a time — the barkeep is pouring' })],
-      },
+export default createService({
+  model:   'Miss',
+  methods: ['ask'],
+  hooks: {
+    before: {
+      ask: [rateLimitHook({ max: 5, window: '10s', message: 'One at a time — the barkeep is pouring' })],
     },
+  },
 
-    /** `{ question }` — answers `{ found: true, text, path, heading }`, or `{ found: false, misses }` with how many questions have gone unanswered, this one counted. */
-    async ask (): Promise<({ found: true } & Answer) | { found: false, misses: number, shelf: boolean }> {
-      const question = String(($.data as { question?: unknown } | undefined)?.question ?? '').trim()
-      if (!question) throw new BadRequest('Ask the barkeep about something')
-      if (question.length > 280) throw new BadRequest('The barkeep stops listening after 280 characters')
-      // A Miss is no row a screen holds, so nothing is announced.
-      $.dispatch = false
-      const shelf = shelved()
-      const found = shelf && answer(shelf, question)
-      if (found) return { found: true, ...found }
-      const sys = ($.db as any).asSystem()
-      await sys.miss.create({ data: { question } })
-      return { found: false, misses: await sys.miss.count(), shelf: !!shelf }
-    },
-  })
-}
+  /** `{ question }` — answers `{ found: true, text, path, heading }`, or `{ found: false, misses }` with how many questions have gone unanswered, this one counted. */
+  async ask (): Promise<({ found: true } & Answer) | { found: false, misses: number, shelf: boolean }> {
+    const question = String(($.data as { question?: unknown } | undefined)?.question ?? '').trim()
+    if (!question) throw new BadRequest('Ask the barkeep about something')
+    if (question.length > 280) throw new BadRequest('The barkeep stops listening after 280 characters')
+    // A Miss is no row a screen holds, so nothing is announced.
+    $.dispatch = false
+    const shelf = shelved()
+    const found = shelf && answer(shelf, question)
+    if (found) return { found: true, ...found }
+    const sys = ($.db as any).asSystem()
+    await sys.miss.create({ data: { question } })
+    return { found: false, misses: await sys.miss.count(), shelf: !!shelf }
+  },
+})

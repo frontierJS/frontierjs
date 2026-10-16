@@ -39,7 +39,7 @@ function parseJsonSchema(src) {
 // Extracts the model name from a Junction service file.
 // Matches:  model: 'leads'  or  model: "leads"
 //
-// A minimal service names no model at all — createBaseService() resolves it from
+// A minimal service names no model at all — the registry resolves it from
 // the service name, which the autoloader takes from the FILENAME. So an absent
 // `model:` is not "nothing to check", it is "check the filename instead".
 

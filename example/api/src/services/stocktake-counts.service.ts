@@ -10,24 +10,22 @@
 // resolves. What makes that true is `@default(uuid())` on both models, not
 // anything in this file — which is the point of writing it down here.
 
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createStocktakeCountsService() {
-  return createBaseService({
-    model: 'StocktakeCount',
+export default createService({
+  model: 'StocktakeCount',
 
-    // ─── why `patch` is here on an append-only table ──────────────────────
-    //
-    // A second look at a shelf is a second count, not an edit of the first, and
-    // the model's gate locks delete at 9. So `patch` reads as the wrong verb —
-    // and it is the one the BYTES arrive on.
-    //
-    // A held write replays in two halves (`FJS-D301`): the row first, then each
-    // file as a patch naming that row. A service that offers no patch refuses
-    // the second half with a 405 and the photograph is stranded in the device's
-    // attachment queue, which is exactly what happened here before this line.
-    // A model that declares `@@sync` and carries a `File` needs the verb its
-    // own bytes travel on.
-    methods: ['find', 'get', 'create', 'patch'],
-  })
-}
+  // ─── why `patch` is here on an append-only table ──────────────────────
+  //
+  // A second look at a shelf is a second count, not an edit of the first, and
+  // the model's gate locks delete at 9. So `patch` reads as the wrong verb —
+  // and it is the one the BYTES arrive on.
+  //
+  // A held write replays in two halves (`FJS-D301`): the row first, then each
+  // file as a patch naming that row. A service that offers no patch refuses
+  // the second half with a 405 and the photograph is stranded in the device's
+  // attachment queue, which is exactly what happened here before this line.
+  // A model that declares `@@sync` and carries a `File` needs the verb its
+  // own bytes travel on.
+  methods: ['find', 'get', 'create', 'patch'],
+})

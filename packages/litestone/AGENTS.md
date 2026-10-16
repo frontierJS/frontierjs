@@ -332,6 +332,11 @@ Filters:
 { AND: [ … ] } · { OR: [ … ] } · { NOT: { … } }
 ```
 
+**A `Json` column written whole loses a key another writer set.** Change one key
+with `data: { settings: { $merge: { theme: 'dark' } } }` (`json_patch`, RFC 7396):
+the other keys stay, `null` deletes a key, an array replaces whole. It is the one
+operator a `Json` column takes, and `docs/querying.md` § `$merge` has the rest.
+
 **A client throws on an unknown property**, so a typo'd accessor is loud and
 feature-detection is itself a throwing expression — use `'$maybe' in db`, never
 `typeof db.$maybe === 'function'`.

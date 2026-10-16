@@ -95,7 +95,7 @@ packages/junction/
 │
 ├── src/core/
 │   ├── app.ts            ← createApp() — lifecycle, plugins, service routing
-│   ├── service.ts        ← createService(), createBaseService(), callService()
+│   ├── service.ts        ← createService(), callService()
 │   ├── context.ts        ← ServiceContext, CallOptions, RequestMeta (ALS)
 │   ├── envelope.ts       ← THE result envelope — wrap/unwrap, one owner
 │   ├── hooks.ts          ← around/before/after/error pipeline
@@ -1702,9 +1702,10 @@ put.
 
 ```typescript
 import { createTestApp, testCtx, request, callService } from '@frontierjs/junction'
+import notes from './services/notes.service.ts'
 
 const app = await createTestApp({
-  services: [createNotesService],
+  services: [notes],
   users:    [{ id: 'u1', role: 'admin' }],
 })
 
@@ -2156,6 +2157,40 @@ A message takes `from`, `replyTo`, `cc`, `bcc`, `headers`, `tags` and
 `batch(messages)` sends several over one SMTP session. Any other provider is
 an `IMail` you write: `send` and `batch`.
 
+**Receiving a reply.** Mail arrives through a conduit Receiver whose dialect the
+mail vendor's connector exports (`conduit-postmark`'s `postmarkMailDialect`
+over Postmark's parsed JSON, `conduit-mailgun`'s `mailgunMailDialect` over raw
+MIME); the dialect parses the vendor's payload into a `ReceivedMail` — a `MailMessage`
+read the other way, plus the envelope `recipient` — and your `apply` decides
+what the address does with it. To have a reply land on the record it answers,
+send with a tagged `replyTo` and read the tag back:
+
+```typescript
+import { replyAddress, splitAddress, readReplyTag, headerOf } from '@frontierjs/junction/mail'
+
+// Out: support+<token>@acme.test, the token naming the message being answered.
+await app.mail.send({ to, subject, text, replyTo: await replyAddress('support@acme.test', message.id, secret) })
+
+// In: the Receiver's apply.
+async apply(ev) {
+  const mail = ev.payload                                   // ReceivedMail
+  const { base, tag } = splitAddress(mail.recipient)        // 'support@acme.test', the token
+  const read = tag ? await readReplyTag(tag, { secret, now, ttlSeconds: 14 * 86_400 }) : null
+  if (read?.ok) return thread(read.id, mail)                // the reply lands on its record
+  return open(base, mail)                                   // a new thread; `from` is a claim
+}
+```
+
+The token is `@frontierjs/toolbelt/signature`'s: a ULID and an 80-bit MAC in
+lower-case Crockford base32, which is what fits a 64-octet local part and
+survives a server folding case — so a mailbox carrying one has at most 21
+characters before the `@`, and `replyAddress` throws past that. A tag expires
+from the instant in its ULID; an expired or forged one still delivers the mail,
+to the base address, unthreaded. **The token proves the holder received your
+mail, not who is holding it**: attribute a reply to the person you wrote to
+only when `from` is the address the mail went to. Message-ID and In-Reply-To
+are `headerOf(mail, 'Message-ID')`.
+
 **SMTP ports:**
 
 | Port | Protocol     | Notes |
@@ -2391,10 +2426,10 @@ Deploy is `fli deploy`, from the Dockerfile `fli make:deploy` writes. Junction h
 An app that bundles itself anyway (`bun build`) **must register its services statically** and set `autoload: false`:
 
 ```ts
-import { createMessagesService } from './messages.service.ts'
+import messages from './messages.service.ts'
 
 const app = createApp({ autoload: false, config: { /* … */ } })
-app.services.register(createMessagesService())
+app.services.register(messages)
 ```
 
 Directory autoload fails in a bundled build for two independent reasons:

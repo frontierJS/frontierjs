@@ -32,11 +32,9 @@ guards the callers that pass through it and nobody else. Read
 
 ```ts
 // api/src/services/orders.service.ts
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createOrdersService() {
-  return createBaseService({ channel: 'orders' })
-}
+export default createService({ channel: 'orders' })
 ```
 
 The file name is the service name (`orders`), the service name resolves the
@@ -44,8 +42,8 @@ model (`Order`, accessor `db.order`), and the file is autoloaded — nothing
 registers it. `order-lines.service.ts` becomes the service `orderLines` over
 `OrderLine`. Where the name cannot reach the model — a service `sales` over
 `Order` — state `model: 'Order'`. A
-`*.service.ts` exporting no `create…Service` factory is an authoring error that
-refuses `start()`.
+`*.service.ts` with no default export is an authoring error that refuses
+`start()`.
 
 ---
 
@@ -128,32 +126,30 @@ calls the service and encodes what comes back. Verify a signature over `ctx.rawB
 ## Services
 
 ```ts
-export function createOrdersService() {
-  return createBaseService({
-    channel: 'orders',
+export default createService({
+  channel: 'orders',
 
-    // The whole surface. Anything absent answers 405.
-    methods: [
-      'find', 'get', 'create', 'patch', 'remove',
-      { method: 'ship', gate: 5 },                              // above the model's read gate
-      { method: 'recordTracking', input: 'TrackingUpdate' },    // a `type` in schema.lite
-    ],
+  // The whole surface. Anything absent answers 405.
+  methods: [
+    'find', 'get', 'create', 'patch', 'remove',
+    { method: 'ship', gate: 5 },                              // above the model's read gate
+    { method: 'recordTracking', input: 'TrackingUpdate' },    // a `type` in schema.lite
+  ],
 
-    transactional: ['ship'],   // or true
+  transactional: ['ship'],   // or true
 
-    hooks: {
-      before:    { create: [(ctx) => { /* shape ctx.data */ }] },
-      validated: { create: [async (ctx) => { /* a rule that reads the database */ }] },
-    },
+  hooks: {
+    before:    { create: [(ctx) => { /* shape ctx.data */ }] },
+    validated: { create: [async (ctx) => { /* a rule that reads the database */ }] },
+  },
 
-    // No `ship()` to write: `ship` is a move in `@@transitions`, served by name.
+  // No `ship()` to write: `ship` is a move in `@@transitions`, served by name.
 
-    async recordTracking() {
-      const { trackingCode } = $.data as { trackingCode: string }
-      return $.db.order.update({ where: { id: Number($.id) }, data: { trackingCode }, system: ['trackingCode'] })
-    },
-  })
-}
+  async recordTracking() {
+    const { trackingCode } = $.data as { trackingCode: string }
+    return $.db.order.update({ where: { id: Number($.id) }, data: { trackingCode }, system: ['trackingCode'] })
+  },
+})
 ```
 
 **Declaring `methods:` declares the whole surface.** A service with no list

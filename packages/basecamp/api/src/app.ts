@@ -27,6 +27,7 @@ import { mcpPlugin }         from '@frontierjs/mcp'
 import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
 import { createWorkbench }           from './core/workbench.ts'
+import { workbenchTerminal }         from './core/workbench-terminal.ts'
 import { apply, LEVELS }                         from '@frontierjs/litestone'
 import type { WriteEvent }                       from '@frontierjs/litestone'
 import { createLitestoneAuth, createAuthPlugin, defineProvider } from '@frontierjs/auth'
@@ -51,7 +52,7 @@ import { restoreSchedules }          from './services/jobs/job-schedule.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
 import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './channels.ts'
 
-import type { BasecampApp } from './basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 // Recorded nowhere, and stated once because two hooks take it: both halves of
 // the audit trail must skip the same calls or a pre-image is read for an event
@@ -78,7 +79,7 @@ const AUDIT_EXCEPT = ['servers.heartbeat', 'volumes.report', 'cleanup.report', '
  */
 export async function buildBasecampApp(
   opts: { db?: unknown; dbPath?: string; sso?: Record<string, string | undefined> } = {},
-): Promise<BasecampApp> {
+): Promise<App> {
 
   // ── Logger ──────────────────────────────────────────────────────────
   const logger = createLogger({
@@ -148,7 +149,7 @@ export async function buildBasecampApp(
   // redirect and can only hand back a cookie, so a fleet that sets a provider
   // gives up Bearer login; web/config reads the same list for its twin.
   const sso = ssoFromEnv(opts.sso ?? env)
-  let built: BasecampApp | null = null
+  let built: App | null = null
   const auth = refuseSuspendedLogin(createLitestoneAuth(db, {
     oauthProviders: Object.fromEntries(sso.map(p => [p.name, defineProvider(p.name, p.preset, p.opts)])),
     // '/' covers every same-origin path, which is what `?next=` on the login
@@ -246,7 +247,7 @@ export async function buildBasecampApp(
       // to name one rather than with the fact that it did not.
       namedBy:     'the X-Workspace-Id header or ?workspace_id=',
     }),
-  }) as BasecampApp
+  })
   built = app
 
   // ── One error, translated ─────────────────────────────────────────────
@@ -525,13 +526,14 @@ export async function buildBasecampApp(
   }))
 
   // ── Services ──────────────────────────────────────────────────────────
-  // Not registered here: Junction autoloads `**/*.service.ts` from the
-  // directory beside the entry file (api/src/services/), calls each
-  // create*Service(app) factory and registers the result. Registering them by
-  // hand as well ran every factory twice — the second copy was dropped with
-  // "[Loader] Skipping duplicate service", but its side effects had already
-  // happened. Autoload runs during start(), before compile-hook-pipelines, so
-  // the app-level hooks below still reach every service.
+  // Not registered here: Junction autoloads `**/*.service.ts` from
+  // api/src/services/ and registers each file's default export, a definition
+  // that holds no app — a method reaches it as `$.app` at call time, and a
+  // default-exported function is refused at load. So a service runs nothing at
+  // import: work a service needs at boot (a schedule, a tap, a registration)
+  // goes in a plugin's `boot`/`work` in this file. Autoload runs during
+  // start(), before compile-hook-pipelines, so the app-level hooks below still
+  // reach every service.
 
   // ── Global hooks ──────────────────────────────────────────────────────
   app.hooks({
@@ -557,7 +559,7 @@ export async function buildBasecampApp(
       // Session row deleted. It costs no query, because `status` is on the
       // session already (sessionFields above).
       all: [
-        apiKeyGuard(app), agentGuard(), refuseSuspended(),
+        apiKeyGuard(), agentGuard(), refuseSuspended(),
         // The three endpoints a machine calls are exempted from sessionScope
         // because an outpost holds no session. The signature is the credential
         // that replaces one (`credentials` below); this is the grade on the
@@ -568,7 +570,7 @@ export async function buildBasecampApp(
         // The other half of the trail. A diff needs the row as it stands, and
         // an `after` hook cannot have it — so the pre-image is read here, under
         // the same exception list the `after` half takes.
-        basecampAuditPreImage(app, { except: AUDIT_EXCEPT }),
+        basecampAuditPreImage({ except: AUDIT_EXCEPT }),
       ],
     },
     after: {
@@ -582,10 +584,10 @@ export async function buildBasecampApp(
         // audit trail nobody can read is an audit trail nobody reads.
         // Deliberately NOT `ctx.dispatch = false` — that would also silence the
         // channel, and both screens are fed by exactly that broadcast.
-        basecampAuditLog(app, { except: AUDIT_EXCEPT }),
+        basecampAuditLog({ except: AUDIT_EXCEPT }),
         // Only fires when apiKeyGuard stamped a key id, so a session request
         // pays nothing for it.
-        apiKeyUsage(app),
+        apiKeyUsage(),
       ],
     },
     error: {
@@ -910,6 +912,10 @@ export async function buildBasecampApp(
     }))
   })
 
+  // The workbench's Terminal tab — a shell in a pinned checkout, behind the
+  // same refusal as the workbench service (core/workbench-terminal.ts).
+  app.configure(function terminalRoute() { workbenchTerminal(app) })
+
   app.configure(function staticRoutes(a) {
     a.get('/', () => Bun.file(new URL('../../web/index.html', import.meta.url).pathname))
   })
@@ -928,7 +934,7 @@ export async function buildBasecampApp(
     name:     'basecamp-cloud-accounts',
     requires: ['conduit'],
     boot:     async () => {
-      const n = await registerAllAccounts(app as unknown as BasecampApp, db)
+      const n = await registerAllAccounts(app, db)
       if (n) logger.info('conduit: cloud accounts registered', { count: n })
     },
   })
@@ -950,7 +956,7 @@ export async function buildBasecampApp(
         if (e.event !== 'transition' || e.model !== 'Server') return
         if ((e.from === 'online') === (e.to === 'online')) return
         const row = e.record as { id: string; updatedAt?: string }
-        return pushAppsOn(app as unknown as BasecampApp, row.id, String(e.to), String(row.updatedAt ?? Date.now()))
+        return pushAppsOn(app, row.id, String(e.to), String(row.updatedAt ?? Date.now()))
           .catch(err => logger.warn('dns: fleet move not pushed', { serverId: row.id, error: (err as Error).message }))
       })
     },

@@ -59,7 +59,7 @@ export const HEARTBEAT_GRACE_MS = DEFAULT_HEARTBEAT_TIMEOUT_S * 1_000
  * `HubConfig` is behind `requireSystemAdmin` — the settings are the
  * installation's, and who is asking cannot change what the timeout IS.
  */
-export async function heartbeatGraceMs(app: { db: unknown }): Promise<number> {
+export async function heartbeatGraceMs(app: { db?: unknown }): Promise<number> {
   const row = await (app.db as any).asSystem().hubConfig.findFirst({ where: { id: 'hub' } })
   const seconds = Number(row?.heartbeatTimeoutSeconds)
   return (Number.isFinite(seconds) ? seconds : DEFAULT_HEARTBEAT_TIMEOUT_S) * 1_000

@@ -12,7 +12,7 @@
 // BECAUSE of the one before it:
 //
 //   db/schema.lite                the seed: table, gate, field rules
-//   services/posts.service.ts     the service: createBaseService({})
+//   services/posts.service.ts     the service: createService({})
 //   public/index.html             the Resource: client.resource('posts')
 //
 // This file is the only place with any wiring in it, and most of that wiring

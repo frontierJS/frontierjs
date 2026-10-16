@@ -1893,13 +1893,83 @@ Goal: `@frontierjs/css` paints on a device without a browser resolving it first.
 Done when: § 11's kit sheet, built from the shipped bundle, matches Chrome
 on the emulator as closely as `csskit-resolved` did.
 
-- [ ] 4.1 Unwrap layers and split selector lists, so one unsupported member
+- [x] 4.1 Unwrap layers and split selector lists, so one unsupported member
       no longer drops the token rule
-- [ ] 4.2 Evaluate the token graph to one `var()` hop per (theme × tone)
+  - `lowerSheet()` in `native/sheet.js`, over css-tree as `css-inliner.js`
+    is, and not yet wired: layers flat in cascade order, one rule per list
+    member, and a member `cssOffense` refuses dropped alone. `@media`, `@supports`, `@container` and `@import`
+    are dropped too. What it drops comes back by line. `:host` joined
+    `cssOffense`, which moves no corpus file.
+  - Over the kit bundle: no `@layer` left, `:root` standalone, 311 members
+    dropped (`:lang` 78, type 63, attribute 62, `:where` 29, `:has` 21).
+    The `:lang` rows are the bundler's lowering of logical properties, for
+    4.3.
+  - On the emulator, three one-hop tokens on a probe paint under the lowered
+    sheet and nothing paints under the shipped one, the probe's own
+    unlayered rules after it included. The kit's own colors still paint
+    nothing, since they are two hops (4.2).
+  - Lost: a later layer beats an earlier one whatever the specificity, and
+    a flat sheet does not keep that. No fixture checks the pass, and the
+    emulator segfaulted twice in this run after one or two bundles.
+  - Dropping where `FJS-D1088` refuses is the input's difference: a
+    `<style>` is the author's to fix, and the kit is not, so refusing it
+    would refuse every app that imports it. The caller that wires the sheet
+    in prints `dropped`. The nine were answered late, after the code; Q6
+    moved the parser onto css-tree. Q9: the pass and the specificity loss
+    are both `none`.
+- [x] 4.2 Evaluate the token graph to one `var()` hop per (theme × tone)
+  - `lowerTokens()` in `native/tokens.js`, run by `lowerSheet` after the
+    flatten. The contexts are read off the sheet: `.theme-*`, and the
+    single-class setters of each `@property`, which makes `inherits: false`
+    the tones and `inherits: true` the density. The kit has 13 × 3 × 8.
+    Every definition holding a `var()` becomes one literal per distinct
+    context. A definition on `:root`, `*` or an axis class is placed on the
+    axis element and inherited. Anything else gains its context classes.
+    A use is rewritten only where the device cannot read it: at the top level
+    it keeps a one-hop `var()`, and a value inside `calc()` that reads only
+    ambient tokens is hoisted into a private `--_vN` placed as `:root`'s are.
+  - In Chrome, the 4.1 sheet and the 4.1+4.2 sheet give **0 of 665,496
+    computed values different**. That covers the kit plus seven more toned
+    nodes, under all 13 themes, plain, `.dense`, and `.dense` inside
+    `.roomy`. 47.7 KB becomes 221 KB, and the bundle is 264 KB. The size is
+    the definitions written theme × tone.
+  - On the emulator the kit paints its fills: tones on buttons, badges and
+    pills, the white label, the field border and the footer strip. Still
+    blank:
+    - The card and alert ground, border and tint. All of it sits in one
+      `:where(.surface, .card, .alert, …)` rule that 4.1 drops (4.6).
+    - The outlined button's tone. `--tone-ink` is `oklch(from …)` (4.3).
+  - An app's knob that the sheet never sets (`--on-bg-mix`, `--app-bg`) is
+    unset, and its fallback stands in. To keep it, its fallback would have to
+    be written as a literal per context, and that breaks a `.dense` inside a
+    `.roomy`. A knob reaches a phone when the app's sheet is lowered together
+    with the kit's.
+  - Lost:
+    - A tone leaks into an untoned child, because the device ignores
+      `inherits: false`.
+    - A component's own definition depending on density still ties
+      `.dense .x` with `.roomy .x`.
+    - Nested themes are ordered by the sheet.
+    - A variant's added classes raise its specificity.
+    - The vendor `:-webkit-any`/`:-moz-any` copies of `:is()` are expanded
+      too, about a fifth of the bytes.
+  - Each knob a lowered value reads comes back on `dropped`. There are 33
+    over the kit, `--_fill` and `--_surface-*` among them, which is 4.6's
+    loss showing.
+  - The nine were answered late, after the code. Q8/Q9 failed, because a lost
+    knob was silent, and reporting it was the change. Q1 is open: the
+    `theme-` prefix is now written in Sierra's build and here. Mesa cannot
+    import Sierra, and toolbelt could own the prefix.
+  - No fixture checks the pass (no new test files while experimenting).
+    Device run by hand: `csskit-tokens` in the spike. The emulator segfaulted
+    once, right after boot.
 - [ ] 4.3 Compute `oklch()` and `color-mix()`; logical properties to physical
 - [ ] 4.4 Text properties copied onto the `<text>` node
 - [ ] 4.5 Type selectors lowered to a scope-and-tag class (`FJS-D1088`):
       `p.mHASH` becomes `.mHASH_p`, and each element carries one
+- [ ] 4.6 A whole-selector `:where(list)` unwrapped into its members, as
+      `FJS-D1069`'s A lists: the Block surface (card, alert, dialog ground,
+      border, tint) and the chip fill `--_fill` are both one such rule
 
 ### Phase 5 — The kit's DOM habits
 

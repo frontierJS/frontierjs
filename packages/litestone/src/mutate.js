@@ -408,10 +408,8 @@ export async function mutationScore({ schema, build, check, suite = null, kinds 
 
     // Built in its own try, because refusing to build and failing to check are
     // different answers. A schema the framework will not LOAD is killed — it
-    // cannot ship — and several are: `parse()` accepts a non-monotonic
-    // `@@gate("4.4.3.5")` and the gate plugin refuses it at construction, so
-    // the two halves of "is this schema legal" do not agree and only the second
-    // one is reached here.
+    // cannot ship. What `parse()` accepts and a plugin refuses at construction
+    // lands here, so the two halves of "is this schema legal" can disagree.
     let env, outcome
     try {
       env = await build(mutant.text)

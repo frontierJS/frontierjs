@@ -7,16 +7,11 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { describe, it, expect } from 'bun:test'
-import {
-  createTestApp, request, testCtx,
-  createService, circuitBreaker,
-  callService,Unavailable,
-  healthPlugin, correlationId,
-  type TestApp,
-} from '../index.ts'
+import { createTestApp, request, testCtx, circuitBreaker, callService, Unavailable, healthPlugin, correlationId, type TestApp } from '../index.ts'
+import { buildService } from '../src/core/service.ts'
 
-import { createUsersService } from './services/users.service.ts'
-import { createNotesService } from './services/notes.service.ts'
+import users from './services/users.service.ts'
+import notes from './services/notes.service.ts'
 
 // ─── App factory ─────────────────────────────────────────────────────────
 // Each test suite gets a fresh isolated app with clean in-memory state.
@@ -27,10 +22,7 @@ async function makeApp(): Promise<TestApp> {
     // under /api. createTestApp's defaultConfig has no prefix, so without
     // this every request here would 404 against /{service} routes.
     config: { apiPrefix: '/api' },
-    services: [
-      (app) => createUsersService(app),
-      (app) => createNotesService(app),
-    ],
+    services: [users, notes],
     users: [
       { id: 'admin-1', role: 'admin' },
       { id: 'user-1',  role: 'user'  },
@@ -253,7 +245,7 @@ describe('Circuit breaker (prices service)', () => {
 
   function makeFlaky(failAfter: number) {
     let calls = 0
-    return createService({
+    return buildService({
       name: 'flaky',
       find: async () => {
         calls++
@@ -267,7 +259,7 @@ describe('Circuit breaker (prices service)', () => {
   }
 
   it('passes through when upstream is healthy', async () => {
-    const app = await createTestApp({ services: [() => makeFlaky(0)] })
+    const app = await createTestApp({ services: [makeFlaky(0)] })
     const ctx = testCtx('flaky', 'find')
     await callService(app.services.get('flaky')!, ctx)
     // callService wraps raw results in the ServiceResult envelope —
@@ -276,7 +268,7 @@ describe('Circuit breaker (prices service)', () => {
   })
 
   it('opens after threshold failures', async () => {
-    const app = await createTestApp({ services: [() => makeFlaky(999)] })
+    const app = await createTestApp({ services: [makeFlaky(999)] })
     const svc = app.services.get('flaky')!
 
     for (let i = 0; i < 3; i++) {
@@ -289,12 +281,12 @@ describe('Circuit breaker (prices service)', () => {
 
   it('recovers after timeout', async () => {
     let fail = true
-    const svc = createService({
+    const svc = buildService({
       name: 'recover',
       find: async () => { if (fail) throw new Error('down'); return [{ ok: true }] },
       hooks: { around: { all: [circuitBreaker({ threshold: 2, timeout: 20 })] } },
     })
-    const app = await createTestApp({ services: [() => svc] })
+    const app = await createTestApp({ services: [svc] })
     const s   = app.services.get('recover')!
 
     for (let i = 0; i < 2; i++) {
@@ -314,7 +306,7 @@ describe('healthPlugin', () => {
 
   it('GET /health returns 200 ok', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'ping', find: async () => [] })],
+      services: [buildService({ name: 'ping', find: async () => [] })],
     })
     app.configure(healthPlugin())
     const res = await request(app).get('/health')
@@ -324,7 +316,7 @@ describe('healthPlugin', () => {
 
   it('GET /health returns 503 when a check fails', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'ping', find: async () => [] })],
+      services: [buildService({ name: 'ping', find: async () => [] })],
     })
     app.configure(healthPlugin({
       checks: { downstream: async () => { throw new Error('connection refused') } },
@@ -336,7 +328,7 @@ describe('healthPlugin', () => {
 
   it('GET /metrics returns process + service + cache data', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'ping', find: async () => [] })],
+      services: [buildService({ name: 'ping', find: async () => [] })],
     })
     app.configure(healthPlugin())
     const res  = await request(app).get('/metrics')
@@ -354,7 +346,7 @@ describe('correlationId middleware', () => {
 
   it('echoes X-Request-ID back in the response', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'ping', find: async () => [] })],
+      services: [buildService({ name: 'ping', find: async () => [] })],
     })
     app.configure(correlationId())
     const res = await request(app).get('/api/ping').set('x-request-id', 'trace-abc')
@@ -363,7 +355,7 @@ describe('correlationId middleware', () => {
 
   it('generates an id when none is provided', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'ping', find: async () => [] })],
+      services: [buildService({ name: 'ping', find: async () => [] })],
     })
     app.configure(correlationId())
     const res = await request(app).get('/api/ping')
@@ -387,7 +379,7 @@ describe('Direct callService()', () => {
 
   it('hooks run on direct callService() calls', async () => {
     const order: string[] = []
-    const svc = createService({
+    const svc = buildService({
       name: 'ordered',
       find: async () => { order.push('method'); return [] },
       hooks: {
@@ -395,7 +387,7 @@ describe('Direct callService()', () => {
         after:  { find: [async () => { order.push('after')  }] },
       },
     })
-    const app = await createTestApp({ services: [() => svc] })
+    const app = await createTestApp({ services: [svc] })
     await callService(app.services.get('ordered')!, testCtx('ordered', 'find'))
     expect(order).toEqual(['before', 'method', 'after'])
   })

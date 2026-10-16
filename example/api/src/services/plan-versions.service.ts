@@ -12,8 +12,6 @@
 // legal rather than where the rule lives. It is not implemented here yet: nothing in the app raises a price, and a method that exists to hold
 // a rule nobody exercises is a method that is wrong the first time somebody
 // needs it.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createPlanVersionsService() {
-  return createBaseService({ model: 'PlanVersion', channel: 'plan-versions' })
-}
+export default createService({ model: 'PlanVersion', channel: 'plan-versions' })

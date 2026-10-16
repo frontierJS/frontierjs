@@ -21,18 +21,18 @@ function harness() {
   return { app, written }
 }
 
-function ctxFor(result: unknown, method: string) {
-  return { service: 'widgets', method, result, locals: {}, auth: undefined } as any
+function ctxFor(app: unknown, result: unknown, method: string) {
+  return { app, service: 'widgets', method, result, locals: {}, auth: undefined } as any
 }
 
 test('a custom method answering a row with its own `data` column is filed under that row', async () => {
   const { app, written } = harness()
-  await basecampAuditLog(app)(ctxFor({ id: 'row-1', data: { id: 'inner' } }, 'rotate'))
+  await basecampAuditLog()(ctxFor(app, { id: 'row-1', data: { id: 'inner' } }, 'rotate'))
   expect(written[0].subjectId).toBe('row-1')
 })
 
 test('an envelope is unwrapped to its row', async () => {
   const { app, written } = harness()
-  await basecampAuditLog(app)(ctxFor(wrapResult({ id: 'row-2' }, 'widgets', 'create'), 'create'))
+  await basecampAuditLog()(ctxFor(app, wrapResult({ id: 'row-2' }, 'widgets', 'create'), 'create'))
   expect(written[0].subjectId).toBe('row-2')
 })

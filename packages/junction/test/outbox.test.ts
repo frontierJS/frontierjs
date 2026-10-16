@@ -19,7 +19,7 @@
 import { describe, test, expect } from 'bun:test'
 
 import { createClient }                from '../../litestone/src/index.js'
-import { createService, callService }  from '../src/core/service.ts'
+import { callService, buildService }  from '../src/core/service.ts'
 import { withCallEffects }             from '../src/core/context.ts'
 import type { ServiceContext }         from '../src/core/context.ts'
 
@@ -56,7 +56,7 @@ function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
 const rows = (db: any) => db.asSystem().outboxMessage.findMany({ orderBy: { createdAt: 'asc' } })
 
 /** A service that writes a post and records an effect in the same breath. */
-const shippingService = (extra: Record<string, unknown> = {}) => createService({
+const shippingService = (extra: Record<string, unknown> = {}) => buildService({
   name:          'posts',
   transactional: ['create'],
   async create(c: ServiceContext) {
@@ -88,7 +88,7 @@ describe('ctx.enqueue — the row commits with the write', () => {
     // The whole point, and the half a second database could not deliver: the
     // intent has to roll back with the write it belongs to.
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name:          'posts',
       transactional: ['create'],
       async create(c: ServiceContext) {
@@ -119,7 +119,7 @@ describe('ctx.enqueue — the row commits with the write', () => {
   test('actor: null says the effect is the app\'s own', async () => {
     // Absent is not null — the same rule caravan's dispatch makes.
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name:          'posts',
       transactional: ['create'],
       async create(c: ServiceContext) {
@@ -145,7 +145,7 @@ describe('ctx.enqueue — what it refuses, and by what name', () => {
     // A row written outside one can be recorded for a call that then fails,
     // which is the failure this feature exists to remove wearing its other face.
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name: 'posts',
       async create(c: ServiceContext) { await c.enqueue('order.shipped', {}) },
       async find() { return [] },
@@ -174,7 +174,7 @@ describe('ctx.enqueue — what it refuses, and by what name', () => {
   test('with no Litestone client on the call', async () => {
     // Not through shippingService: `transactional:` refuses a db with no
     // $transaction before the method runs at all, and says so better.
-    const svc = createService({
+    const svc = buildService({
       name: 'posts',
       async create(c: ServiceContext) { await c.enqueue('order.shipped', {}) },
       async find() { return [] },
@@ -202,7 +202,7 @@ describe('ctx.enqueue — the relay kick', () => {
     const db = await mkDb()
     let kicks = 0
     const app = { outbox: { enqueue: enqueueOutbox, deliver: async () => { kicks++; return { delivered: 0, failed: 0 } } } }
-    const svc = createService({
+    const svc = buildService({
       name:          'posts',
       transactional: ['create'],
       async create(c: ServiceContext) {

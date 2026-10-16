@@ -122,46 +122,43 @@ function makeSchemaStanza(name, fields, softDelete) {
 }
 
 // ─── Template: service ────────────────────────────────────────────────────────
-// The autoloader looks for a `create*Service` factory export and takes the
-// registered name from the FILENAME — leads.service.ts becomes 'leads'. A file
-// exporting something it cannot recognize is skipped with a warning rather than
-// an error, so the app starts and the route 404s later.
+// The autoloader reads a file's DEFAULT export and takes the registered name
+// from the FILENAME — leads.service.ts becomes 'leads'. A file with no default
+// definition is reported at start rather than registered (FJS-D1079).
 
-function makeServiceFile(model, plural, pascalPlural) {
+function makeServiceFile(model, plural) {
   const accessor = model.charAt(0).toLowerCase() + model.slice(1)
   return `// The whole service. The name comes from this file's name ('${plural}' →
 // /api/${plural} → db.${accessor}), CRUD from the model, 401s from @@gate, and 400s
 // from the field rules. Nothing below restates the schema.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function create${pascalPlural}Service() {
-  return createBaseService({
-    // Announce every mutation on the '${plural}' channel. Every write through
-    // this service is published there under its own name — the five CRUD
-    // methods and any action you add.
-    //
-    // NOTHING IS DELIVERED UNTIL A CONNECTION JOINS, and membership is the
-    // app's decision — Junction never makes it. api/src/core/channels.ts is
-    // where this app makes it, and it joins every channel a service declares,
-    // so this line is enough. Narrow it there, not here: a broadcast to a
-    // channel nobody joined succeeds and reaches nobody, with no error.
-    //
-    // Joining is a subscription and not a permission: each frame is graded
-    // per recipient against this model's own @@gate and @@allow, so a
-    // subscriber receives what they could have read and nothing else. Set
-    // channel to false to announce nothing.
-    channel: '${plural}',
+export default createService({
+  // Announce every mutation on the '${plural}' channel. Every write through
+  // this service is published there under its own name — the five CRUD
+  // methods and any action you add.
+  //
+  // NOTHING IS DELIVERED UNTIL A CONNECTION JOINS, and membership is the
+  // app's decision — Junction never makes it. api/src/core/channels.ts is
+  // where this app makes it, and it joins every channel a service declares,
+  // so this line is enough. Narrow it there, not here: a broadcast to a
+  // channel nobody joined succeeds and reaches nobody, with no error.
+  //
+  // Joining is a subscription and not a permission: each frame is graded
+  // per recipient against this model's own @@gate and @@allow, so a
+  // subscriber receives what they could have read and nothing else. Set
+  // channel to false to announce nothing.
+  channel: '${plural}',
 
-    // Adding an action? Declare it, and the CRUD you keep, in one list:
-    //
-    //   methods: ['find', 'get', 'create', 'patch', 'remove', 'approve'],
-    //   async approve(ctx) { … },
-    //
-    // The list is the surface — anything absent answers 405 naming what is
-    // offered, which is also how a verb is removed. Left out entirely, every
-    // CRUD verb is answered and custom methods are found by scanning.
-  })
-}
+  // Adding an action? Declare it, and the CRUD you keep, in one list:
+  //
+  //   methods: ['find', 'get', 'create', 'patch', 'remove', 'approve'],
+  //   async approve(ctx) { … },
+  //
+  // The list is the surface — anything absent answers 405 naming what is
+  // offered, which is also how a verb is removed. Left out entirely, every
+  // CRUD verb is answered and custom methods are found by scanning.
+})
 `
 }
 
@@ -246,8 +243,6 @@ const created    = []
 
 const plural       = servicePlural(modelName)
 
-const pascalPlural = plural.charAt(0).toUpperCase() + plural.slice(1)
-
 const write = (path, content, label) => {
   if (existsSync(path) && !flag.force) {
     log.warn(`${label} already exists — skipping (use --force to overwrite)`)
@@ -299,7 +294,7 @@ if (flag['skip-schema']) {
 
 write(
   resolve($.paths.api, `src/services/${plural}.service.ts`),
-  makeServiceFile(modelName, plural, pascalPlural),
+  makeServiceFile(modelName, plural),
   'service'
 )
 

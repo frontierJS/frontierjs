@@ -58,7 +58,7 @@ export const cases = [
     floor: ()        => call(() => Response.json({ ok: true }), new Request(`${BASE}/ping`)),
   },
   {
-    name: 'get-1', ceiling: 50, ops: 3_000,
+    name: 'get-1', ceiling: 30, ops: 3_000,
     async open() {
       const s = await served()
       const one = s.sql.query('SELECT id, name, qty FROM item WHERE id = ?')

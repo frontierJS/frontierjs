@@ -57,8 +57,10 @@ Every open item is a row in `ISSUES.md`; this is the map of them.
   and the expiry on an answer (`FJS-D1075`, `FJS-2245` closed) are built; the
   cross-replica refresh lock is the app's row, and auth exports no resolver over
   its own `Credential` rows yet because no app spends one.
-- **A self-hosted counterparty on a private network has no spelling**
-  (`FJS-2923`).
+- **A self-hosted counterparty a row names is reached on a public name only**
+  (`FJS-D1089`): its token is `per_caller` and the send names the row with
+  `grant`. One on a LAN or a tailnet waits for Outpost vantage (`FJS-D1018`),
+  or is the operator's fixed-address target per install.
 - **Transports reach HTTP-shaped vendors only.** `websocket` and `broker` speak
   conduit's own frame envelope; a third-party WebSocket API, a real broker
   (Kafka, NATS, AMQP) and `ssh` are not reachable. `IDEAS/conduit-batteries.md`.

@@ -32,7 +32,7 @@ export interface DiskReport {
 }
 
 import { recordDiskUsage } from '../../core/server-metrics.ts'
-import type { BasecampApp } from '../../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 const int = (n: unknown): number => Math.max(0, Math.round(Number(n) || 0))
 
@@ -45,7 +45,7 @@ const int = (n: unknown): number => Math.max(0, Math.round(Number(n) || 0))
  * second later would be a second answer to the same question. One owner, so the
  * two cannot disagree about which key means what.
  */
-export async function applyDiskReport(app: BasecampApp, sys: any, serverId: string, data: DiskReport) {
+export async function applyDiskReport(app: App, sys: any, serverId: string, data: DiskReport) {
   const row = {
     imagesTotal:                int(data.images?.total),
     imagesUnused:               int(data.images?.unused),

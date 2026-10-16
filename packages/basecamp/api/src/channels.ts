@@ -11,7 +11,7 @@
 // a channel is a silent no-op — the deploy pipeline did exactly that for its
 // whole life and pushed nothing, ever, without a line in the log.
 
-import type { BasecampApp } from './basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 type Channel = { send?: (event: string, data: unknown) => void }
 type Manager = {
@@ -51,7 +51,7 @@ export function workspaceIdFromChannel(name: string): string | null {
 export const notificationChannelName = (userId: string): string => `notifications:user:${userId}`
 
 /** The channels plugin's manager, or undefined when it is not configured. */
-export function channelManager(app: BasecampApp): Manager | undefined {
+export function channelManager(app: App): Manager | undefined {
   return (app as unknown as Record<string, unknown>).channels as Manager | undefined
 }
 
@@ -64,7 +64,7 @@ export function channelManager(app: BasecampApp): Manager | undefined {
  *  so an ungraded send hands that socket every row an engine writes (`FJS-2443`).
  *  Never throws, for the same reason a job need not announce. */
 export async function announce(
-  app: BasecampApp, workspaceId: string, model: string, event: string, row: unknown,
+  app: App, workspaceId: string, model: string, event: string, row: unknown,
 ): Promise<void> {
   await channelManager(app)?.sendGraded(workspaceChannelName(workspaceId), event, row, {
     db: app.db, accessor: model, label: event,

@@ -38,7 +38,7 @@ describe('an error mapper is the declaring app\'s', () => {
   })
 
   it('applies over the wire to its own app only', async () => {
-    const service = () => createService({ name: 'cards', async create() { throw new CardError('x') } })
+    const service = createService({ name: 'cards', async create() { throw new CardError('x') } })
     const a = await createTestApp({ services: [service] })
     const b = await createTestApp({ services: [service] })
     a.errorMapper(card)
@@ -56,7 +56,7 @@ describe('an error mapper is the declaring app\'s', () => {
 describe('a service-cache override is the claiming app\'s', () => {
   const cached = () => {
     let hits = 0
-    const service = () => createService({
+    const service = createService({
       name: 'accounts', cache: true,
       async get() { hits++; return { id: '1' } },
     })

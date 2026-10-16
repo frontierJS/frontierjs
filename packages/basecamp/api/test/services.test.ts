@@ -14,7 +14,7 @@
 //
 // The app is the REAL one — `buildBasecampApp({ db, dbPath })` over the
 // environment's own client, so the autoloader, the global hooks and every
-// service factory are the ones production runs.
+// service definition are the ones production runs.
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join }        from 'node:path'

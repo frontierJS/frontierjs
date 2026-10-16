@@ -246,15 +246,23 @@ src/
   credential goes to every declared origin, so the list is never a send's to
   widen. Breaker and concurrency are keyed per origin whenever a send names an
   address.
-- **A request-addressed target reaches public https and nothing else.**
-  `destinations.allowPrivate` opens the whole target to every row, so it is a
-  test receiver's switch, not how a self-hosted counterparty on a LAN is
-  reached. Registering one fixed-address target per row is never graded and is
-  the hole, not the workaround. That counterparty has no spelling yet
-  (`FJS-2923`).
+- **A request-addressed target reaches public https, and the only credential
+  it carries is the row's own** (`FJS-D1089`). `destinations.allowPrivate`
+  opens the whole target to every row, so it is a test receiver's switch: a
+  counterparty on a LAN is a fixed-address target the operator declares, or an
+  Outpost vantage (`FJS-D1018`), never a row's to name. A self-hosted instance
+  behind a public name is one `address_from` target with `per_caller` auth, the
+  send naming the row with `grant` — refused by name without it, because
+  `withCache` keyed on the tenant alone sends the first row's token to the
+  second row's address (`FJS-2232` per row). What conduit cannot see is a
+  `getFor` that ignores `grant` and answers a tenant-wide token for every row;
+  nothing grades that. Registering one fixed-address target per row is never
+  graded and is the hole, not the workaround.
 - **A Receiver is three parties and one order** (`FJS-D899`). A connector exports
   the `Dialect` — `verify · parse · dedupeKey`, pure, the clock passed in as
-  `ctx.now` in seconds — the app declares the `Receiver` around it, and
+  `ctx.now` in seconds; `parse` may be a promise, because a raw-MIME vendor's
+  parse is a MIME parser's (conduit-mailgun, `FJS-D784`) — the app declares
+  the `Receiver` around it, and
   `accept()` runs credential → verify → parse → owner → receipt → apply → mark.
   `credential` is a ref through the installed resolver, or a function choosing
   the key for one delivery BEFORE the body is believed (Quo's key is the
@@ -324,7 +332,8 @@ src/
   minted token is a copy of the provider's number, and 3CX ships `expires_in` as
   3600 or 60 by build. `valueOf()` is the one place an answer becomes the string
   a transport sends; a non-finite `expires_at` is `auth_failed` by name. `put()` refuses an unknown signer by name, and a signed
-  target beside `follow_redirects` or `address_from`. A per-target fact the
+  target beside `follow_redirects`, or beside `address_from` unless it is
+  `per_caller` (`FJS-D1089`). A per-target fact the
   scheme signs under (SigV4's region) is `auth.params`, strings only, never a
   secret — not a signer registered per value (`FJS-2725`). **A resolver or signer
   that throws has sent nothing**, so `beforeDispatch` makes any throw a

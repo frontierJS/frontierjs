@@ -1,4 +1,4 @@
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
 // The provider's own words, as a list a person can read.
 //
@@ -13,9 +13,7 @@ import { createBaseService } from '@frontierjs/junction'
 // `payment-event`, which resolves — but a model whose name is two words is the
 // exact case where three resolvers agreeing is worth not relying on, and the
 // declaration costs one line (Invariant 2).
-export function createPaymentEventsService() {
-  return createBaseService({
-    model:   'PaymentEvent',
-    methods: ['find', 'get'],
-  })
-}
+export default createService({
+  model:   'PaymentEvent',
+  methods: ['find', 'get'],
+})

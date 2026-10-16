@@ -12,7 +12,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createClient }   from '../../litestone/src/index.js'
-import { createService, createBaseService, callService, resolveTransactional } from '../src/core/service.ts'
+import { createService, buildBase, callService, resolveTransactional, buildService } from '../src/core/service.ts'
 import { withLitestoneDb } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 
@@ -39,7 +39,7 @@ describe('transactional: the write is atomic with the whole pipeline', () => {
 
   test('an after hook throwing rolls the method write back', async () => {
     const db  = await mkDb()
-    const svc = createService(writes({
+    const svc = buildService(writes({
       transactional: true,
       hooks: { after: { create: [function boom() { throw new Error('a later after hook fails') }] } },
     }) as never)
@@ -50,7 +50,7 @@ describe('transactional: the write is atomic with the whole pipeline', () => {
 
   test('and the happy path commits', async () => {
     const db  = await mkDb()
-    const svc = createService(writes({ transactional: true }) as never)
+    const svc = buildService(writes({ transactional: true }) as never)
     await callService(svc, ctx(db))
     expect(await db.asSystem().post.count()).toBe(1)
   })
@@ -59,7 +59,7 @@ describe('transactional: the write is atomic with the whole pipeline', () => {
     // The control. Same service, same throwing hook, no `transactional:` — the
     // client is told the create failed and the row is there.
     const db  = await mkDb()
-    const svc = createService(writes({
+    const svc = buildService(writes({
       hooks: { after: { create: [function boom() { throw new Error('boom') }] } },
     }) as never)
 
@@ -71,8 +71,8 @@ describe('transactional: the write is atomic with the whole pipeline', () => {
     // Every client flavor shares one write connection and one depth counter, so
     // the inner write lands inside the outer transaction with no propagation.
     const db    = await mkDb()
-    const inner = createService(writes() as never)
-    const outer = createService({
+    const inner = buildService(writes() as never)
+    const outer = buildService({
       name: 'outer',
       transactional: true,
       async create(c: ServiceContext) {
@@ -103,7 +103,7 @@ describe('what it is and is not applied to', () => {
 
   test('a named list leaves the other methods alone', async () => {
     const db  = await mkDb()
-    const svc = createService(writes({
+    const svc = buildService(writes({
       transactional: ['patch'],
       async patch(c: ServiceContext) { return (c.locals.db as any).post.create({ data: c.data }) },
       hooks: { after: { all: [function boom() { throw new Error('boom') }] } },
@@ -117,17 +117,17 @@ describe('what it is and is not applied to', () => {
   })
 
   test('describe() reports the resolved list', () => {
-    const svc = createService({ name: 'posts', model: 'Post', transactional: true } as never)
+    const svc = buildService({ name: 'posts', model: 'Post', transactional: true } as never)
     expect(svc.describe().transactional).toContain('create')
     expect(svc.describe().transactional).not.toContain('find')
-    expect(createService({ name: 'p2', model: 'Post' } as never).describe().transactional).toEqual([])
+    expect(buildService({ name: 'p2', model: 'Post' } as never).describe().transactional).toEqual([])
   })
 })
 
 describe('it refuses rather than quietly doing nothing', () => {
 
   test('a service declaring it without a Litestone client throws, naming the service', async () => {
-    const svc = createService(writes({ transactional: true }) as never)
+    const svc = buildService(writes({ transactional: true }) as never)
     await expect(callService(svc, ctx({ /* not a litestone client */ })))
       .rejects.toThrow(/Service 'posts' declares transactional: but ctx.locals.db has no \$transaction/)
   })
@@ -151,7 +151,7 @@ describe('the scope survives into the transaction', () => {
       }`,
     }) as any
 
-    const svc = createService(writes({ transactional: true }) as never)
+    const svc = buildService(writes({ transactional: true }) as never)
     const appHooks = { around: { all: [withLitestoneDb(db)] } }
 
     const c = ctx(undefined, { auth: { user: { id: 7, userId: 7 } } })
@@ -178,8 +178,8 @@ describe('the derived hook installs once', () => {
 
     // The loader's actual shape: a factory returns a BASE, the loader spreads it
     // into createService with the filename-derived name.
-    const base  = createBaseService({ model: 'Post', transactional: true } as never)
-    const built = createService({ name: 'posts', ...(base as unknown as Record<string, unknown>) } as never)
+    const base  = buildBase({ model: 'Post', transactional: true } as never)
+    const built = buildService({ name: 'posts', ...(base as unknown as Record<string, unknown>) } as never)
 
     await callService(built, ctx(db))
     expect(opens).toBe(1)
@@ -195,7 +195,7 @@ describe('transactional: makes a bulk write all or nothing (FJS-2149)', () => {
   // (`FJS-D11`).
   const UNIQUE = `model Event { id Int @id @default(autoincrement())  key String @unique }`
   const events = (over: Record<string, unknown> = {}) =>
-    createService({ name: 'events', model: 'Event', allowBulk: true, ...over } as never)
+    buildService({ name: 'events', model: 'Event', allowBulk: true, ...over } as never)
 
   test('one failing row in a bulk create rolls back the rest and answers the failures', async () => {
     const db = await createClient({ db: ':memory:', schema: UNIQUE }) as any

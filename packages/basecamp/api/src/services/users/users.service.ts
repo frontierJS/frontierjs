@@ -22,7 +22,6 @@
 
 import { createService, NotFound, Unauthorized, $ } from '@frontierjs/junction'
 import type { ServiceContext }                       from '@frontierjs/junction'
-import type { BasecampApp }                          from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** `me` is the address, and the caller's own id is accepted as its second
@@ -39,14 +38,12 @@ function ownRow(ctx: ServiceContext): void {
   ctx.id = me
 }
 
-export function createUsersService(_app: BasecampApp) {
-  return createService({
-    name:    'users',
-    scope:   keyScope('users'),
-    model:   'User',
-    methods: ['get', 'patch'],
-    hooks: {
-      before: { all: [ownRow] },
-    },
-  })
-}
+export default createService({
+  name:    'users',
+  scope:   keyScope('users'),
+  model:   'User',
+  methods: ['get', 'patch'],
+  hooks: {
+    before: { all: [ownRow] },
+  },
+})

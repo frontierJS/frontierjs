@@ -271,6 +271,19 @@ describe('accept(): the rest of the order', () => {
     expect(seen).toEqual([[PATH, 'applied', undefined], [PATH, 'duplicate', undefined], [PATH, 'refused', 'signature does not match']])
   })
 
+  it('parse may be a promise — a raw-MIME dialect parses with a MIME parser, which is one — and the order waits for it', async () => {
+    const c = createConduit({ credentials: createStaticResolver({ HOOK: SECRET }) })
+    const applied: string[] = []
+    c.receive<string, AcmeEvent, string>({
+      provider: 'acme', path: PATH, credential: 'HOOK',
+      dialect: { ...acme, parse: async (d, cred) => { await new Promise(r => setTimeout(r, 5)); return acme.parse(d, cred) } },
+      apply:   ev => { applied.push(ev.id); return 'applied' },
+    })
+    const first = await c.accept(PATH, await delivery({ id: 'e1', type: 't' }), NOW)
+    const again = await c.accept(PATH, await delivery({ id: 'e1', type: 't' }), NOW)
+    expect([first.result, again.result, applied]).toEqual(['applied', 'duplicate', ['e1']])
+  })
+
   it('a destroyed conduit stops accepting', async () => {
     const h = harness()
     await h.c.destroy()

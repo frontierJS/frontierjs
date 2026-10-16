@@ -11707,6 +11707,9 @@ function makeLockPrimitive(rawWriteDb) {
   function $checkWhere(accessor, where) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return []
+    // An empty filter names no key to grade, and junction asks on every read;
+    // the key sets below are built fresh per call (`FJS-2992`).
+    if (where && typeof where === 'object' && !Array.isArray(where) && Object.keys(where).length === 0) return []
     const keys = filterableKeysFor(model)
     for (const d of Object.values(shapes[model.name].edges)) keys.filterable.add(d.as)
     return collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted, [],

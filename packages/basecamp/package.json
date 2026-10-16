@@ -59,7 +59,9 @@
     "@frontierjs/orion": "workspace:*",
     "@frontierjs/sierra": "workspace:*",
     "@frontierjs/toolbelt": "workspace:*",
-    "@frontierjs/ui": "workspace:*"
+    "@frontierjs/ui": "workspace:*",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0"
   },
   "devDependencies": {
     "@frontierjs/cli": "workspace:*",

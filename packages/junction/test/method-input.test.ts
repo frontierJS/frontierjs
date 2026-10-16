@@ -32,7 +32,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createClient }           from '../../litestone/src/index.js'
 import { createApp }              from '../src/core/app.ts'
-import { createService, collectMethodInputs, collectMethodOutputs, methodEntryName } from '../src/core/service.ts'
+import { collectMethodInputs, collectMethodOutputs, methodEntryName, buildService } from '../src/core/service.ts'
 import { describeSurface }    from '../src/core/app-model.ts'
 import { generateOpenAPI }    from '../src/plugins/openapi/index.ts'
 
@@ -50,7 +50,7 @@ async function mkApp(methods: unknown) {
   const db  = await createClient({ db: ':memory:', schema: SCHEMA })
   const app = createApp({ db: db as never })
   const seen: unknown[] = []
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'orders', model: 'Order', db: db as never,
     methods: methods as never,
     // `dispatch = false`: these answer a receipt rather than an Order row, and
@@ -106,7 +106,7 @@ describe('methods: entries', () => {
   test('an object entry naming a method that does not exist is reported', () => {
     // Collected rather than thrown at construction — `start()`'s
     // `check-authoring` phase refuses with every finding at once (`FJS-D199`).
-    const svc = createService({
+    const svc = buildService({
       name: 'orders',
       methods: [{ method: 'pya', input: 'PayOrder' }] as never,
       async pay() { return null },
@@ -117,7 +117,7 @@ describe('methods: entries', () => {
     // The control one letter away: the entry naming the method that IS there
     // reports nothing, so the refusal is about the name and not about the
     // object form of an entry.
-    const fine = createService({
+    const fine = buildService({
       name: 'orders',
       methods: [{ method: 'pay', input: 'PayOrder' }] as never,
       async pay() { return null },
@@ -204,7 +204,7 @@ describe('a nested type is graded by its own rules', () => {
     const db  = await createClient({ db: ':memory:', schema: NESTED })
     const app = createApp({ db: db as never })
     const seen: unknown[] = []
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'orders', model: 'Order', db: db as never,
       methods: [{ method: 'start', input: 'Start' }, { method: 'tree', input: 'Node' }],
       async start(ctx: any) { seen.push(ctx.data); ctx.dispatch = false; return { ok: true } },
@@ -316,7 +316,7 @@ describe('a declared output is reported', () => {
   test('describe() and the surface carry it, and so does the OpenAPI answer', async () => {
     const db  = await createClient({ db: ':memory:', schema: SEARCH })
     const app = createApp({ db: db as never })
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'orders', model: 'Order', db: db as never,
       methods: [{ method: 'search', output: 'SearchResult', read: true }] as never,
       async search() { return { hits: [] } },
@@ -351,7 +351,7 @@ describe('a list member is graded by its size rules', () => {
     const db  = await createClient({ db: ':memory:', schema: LISTS })
     const app = createApp({ db: db as never })
     const seen: unknown[] = []
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'orders', model: 'Order', db: db as never,
       methods: [{ method: 'preview', input: 'SurveyPreview' }] as never,
       async preview(ctx: any) { seen.push(ctx.data); ctx.dispatch = false; return { ok: true } },

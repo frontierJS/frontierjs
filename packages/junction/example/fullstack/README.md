@@ -22,12 +22,10 @@ before it.
 The service is the whole point:
 
 ```ts
-export function createPostsService() {
-  return createBaseService({
-    channel:   'posts',
-    allowBulk: true,
-  })
-}
+export default createService({
+  channel:   'posts',
+  allowBulk: true,
+})
 ```
 
 Nothing in it restates the schema — it declares where writes are announced and

@@ -1,8 +1,8 @@
 // core/service.ts
 // Service layer — the heart of the framework.
-// createBaseService() exposes the 5 CRUD methods.
-// createService() composes hooks + base + custom overrides.
-// Services are registered in the app and called by the transport.
+// createService() states a service: a definition, which a file export-defaults.
+// The registry builds it — buildService() composes hooks + base + custom
+// methods, over buildBase()'s CRUD. Called by the transport.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
 import { CRUD_METHODS, requestMeta, reenterAs, enterCall, currentCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope, runAfterCommitEffect } from './context.ts'
@@ -23,8 +23,8 @@ import { NotFound, BadRequest, Forbidden, MethodNotAllowed, Unprocessable, toFra
 import { createMemoryCache, type ICache }         from '../cache/index.ts'
 import { wrapResult, isServiceResult, resultData, refuseStream } from './envelope.ts'
 // NOTE: service.ts ⇄ litestone.ts is an intentional, safe ESM cycle:
-// litestone imports createService (used only inside functions) and this
-// module imports createLitestoneBase (used only inside createBaseService).
+// litestone imports buildService (used only inside functions) and this
+// module imports createLitestoneBase (used only inside buildBase).
 import { createSchema } from './schema.ts'
 import { AUTO_EVENT_MAP, isAnnounceHook } from './events.ts'
 import {
@@ -182,7 +182,7 @@ function buildCacheHooks(
  * service from having one. A noun cannot collide with a verb-shaped method.
  *
  *   'posts'        a channel name — the common case
- *   (rows, ctx) => a channel, an array of channels, or null to skip this one;
+ *   (rows, ctx) => a channel or its name, an array of them, or null to skip;
  *                  `ctx` is null for a write outside any service call, so read
  *                  the target off the row (`FJS-1741`)
  *   false          declared opt-out (documents intent; same effect as omitting)
@@ -305,9 +305,8 @@ export interface Service {
   /**
    * The DECLARATION, as written — `['find','get']` or `'readOnly'`.
    *
-   * Carried on the object because `createBaseService` returns options for
-   * `createService` to resolve, and the loader spreads one into the other.
-   * `_methods` below is the resolved form and the one to read.
+   * Carried on the built service as written. `_methods` below is the resolved
+   * form and the one to read.
    */
   methods?: MethodSelection
 
@@ -1055,9 +1054,9 @@ export interface BaseServiceOptions {
    * the autoloader derives from the filename. A plural spelling resolves too,
    * so all three of these reach `model Post`:
    *
-   *   createBaseService({})                  // via 'posts' (the filename)
-   *   createBaseService({ model: 'posts' })  // plural
-   *   createBaseService({ model: 'post' })   // the accessor itself
+   *   createService({})                  // via 'posts' (the filename)
+   *   createService({ model: 'posts' })  // plural
+   *   createService({ model: 'post' })   // the accessor itself
    *
    * The literal spelling is always tried first, so an `@@external` model
    * mirroring a genuinely-plural foreign table still resolves to itself.
@@ -1086,7 +1085,7 @@ export interface BaseServiceOptions {
   /**
    * Narrow what this service answers — `['find','get']`, or `'readOnly'`.
    *
-   * Same key and same meaning as on `createService`; carried through and
+   * Same key and same meaning as on the definition; carried through and
    * resolved there, against the custom methods that exist. Declaring it here used to
    * do NOTHING — the option was neither read nor forwarded, so an append-only
    * service written with this factory answered every verb and the only symptom
@@ -1096,7 +1095,7 @@ export interface BaseServiceOptions {
   /**
    * Per-method levels, already read off a `methods:` list.
    *
-   * `createService` passes these rather than its own `methods:`, because the
+   * `buildService` passes these rather than its own `methods:`, because the
    * base carries none of the custom functions and would refuse every name it
    * was handed. Absent, the base reads its own `methods:`.
    */
@@ -1105,24 +1104,8 @@ export interface BaseServiceOptions {
   methodClaims?: Record<string, string[]>
 
   /**
-   * Hook pipeline. Carried through onto the returned object.
-   *
-   * This used to be dropped: createBaseService destructured only
-   * { model, db, paginate, allowBulk } and returned the bare CRUD methods, so
-   * the natural shape
-   *
-   *   export default createBaseService({
-   *     name:  'leads',
-   *     model: 'lead',
-   *     hooks: { before: { create: [authenticate] } },
-   *   })
-   *
-   * type-checked, registered, and ran with no hooks at all. For `authenticate`
-   * that is a silent authorization hole. Only the spread form worked:
-   *
-   *   export default { ...createBaseService({ model: 'lead' }), hooks: {...} }
-   *
-   * Both forms work now.
+   * Hook pipeline. Merged with the derived layer and carried onto the returned
+   * object; dropping it runs a service declaring `authenticate` with no hooks.
    */
   hooks?:    HookMap
   /**
@@ -1130,7 +1113,7 @@ export interface BaseServiceOptions {
    * resolves the client at call time, in order:
    *   1. ctx.locals.db  — request-scoped client (withLitestoneDb)
    *   2. ctx.app.db     — the app's database
-   * so the minimal service file is just createBaseService({ model: 'posts' }).
+   * so the minimal service file is just createService({ model: 'posts' }).
    */
   db?:       () => unknown
   paginate?: {
@@ -2023,33 +2006,24 @@ export function scanCustomMethods(obj: object): string[] {
 }
 
 /**
- * What `createBaseService` hands back — a service DEFINITION carrying the CRUD
- * methods, on its way into `createService`, not a built `Service`.
- *
- * The difference is load-bearing in one place: a built service's `hooks` is the
- * registration METHOD, a definition's is the MAP. Declaring this as
- * `Omit<Service, …>` therefore said the returned `hooks` was a function, and
- * the documented shape — `createService({ ...createBaseService({ model }) })` —
- * did not compile.
+ * What `buildBase` hands back — a service DEFINITION carrying the CRUD
+ * methods, on its way into `buildService`, not a built `Service`. A built
+ * service's `hooks` is the registration METHOD, a definition's is the MAP.
  */
 export type BaseServiceDefinition =
   ServiceDefinition &
   Required<Pick<ServiceDefinition,
     'find' | 'get' | 'aggregate' | 'create' | 'update' | 'patch' | 'remove' | 'restore' | 'hooks'>>
 
-export function createBaseService(
+export function buildBase(
   opts: BaseServiceOptions
 ): BaseServiceDefinition {
 
   // ── Single CRUD code path ─────────────────────────────────────────────
-  // createBaseService used to carry its own parallel find/get/create/...
-  // implementation that had drifted from createLitestoneBase (no $gt/$in
-  // operator translation, no soft-delete handling, divergent orderBy
-  // shapes). It now DELEGATES to createLitestoneBase — one implementation,
-  // one query dialect — and adapts plain db clients to the litestone table
-  // surface where needed (see adaptPlainClient).
+  // DELEGATES to createLitestoneBase — one implementation, one query dialect —
+  // and adapts plain db clients to the litestone table surface where needed
+  // (see adaptPlainClient).
   //
-  // Semantics preserved from the old base:
   //   • allowBulk defaults to FALSE here (explicit opt-in for bulk writes),
   //     while createLitestoneBase's own default is true.
   //   • The db() thunk is honored per call: ctx.locals.db is seeded from
@@ -2104,7 +2078,7 @@ export function createBaseService(
 
   // Custom methods — declared by `methods:` when it is there, scanned for when it is
   // not. One parse step; everything downstream reads the table.
-  // No findings from here: `methods:` rides the definition into createService,
+  // No findings from here: `methods:` rides the definition into buildService,
   // which grades the same list under the service's real name — a name this
   // call often does not know yet — and re-grades it once the model's moves are
   // known (`FJS-1255`). Reporting here too said every typo twice, once of a
@@ -2209,9 +2183,8 @@ export function createBaseService(
     },
   }
 
-  // A hook map reaching here may ALREADY carry this layer: the autoloader
-  // spreads a built base back through createService, and a base returns the
-  // merged map, not the caller's. Appending unconditionally then ran the gate
+  // A hook map reaching here may ALREADY carry this layer: a base returns the
+  // merged map, not the caller's, and a definition built from one carries it. Appending unconditionally then ran the gate
   // and the validator twice on every request to every autoloaded service
   // (`FJS-231`). Skip a derived hook whose name is already present among the
   // MARKED hooks — a user hook of the same name is not one of ours and does not
@@ -2281,9 +2254,6 @@ export function createBaseService(
     }
   }
 
-  // name/hooks are carried through rather than dropped. The loader spreads this
-  // object into createService(), which is where both are read — so omitting
-  // them here is what made the options-object form silently hook-less.
   return {
     find:      withDb(base.find),
     get:       withDb(base.get),
@@ -2297,19 +2267,17 @@ export function createBaseService(
     ...overrides,
     // They land twice on purpose: as own keys, which is how a spread carries
     // them and how a caller reaches `svc.reboot`, and as the table, which is
-    // what createService reads instead of re-scanning a shape that by then
+    // what buildService reads instead of re-scanning a shape that by then
     // includes CRUD, `_meta` and every other runtime key.
     ...customMethods,
     _customMethods: customMethods,
     ...(name    !== undefined ? { name }    : {}),
     ...(channel !== undefined ? { channel } : {}),
-    // The last five of SERVICE_OPTION_KEYS this literal used to drop, and they
-    // drop for the reason `name` and `hooks` did: the loader spreads this
-    // object into createService(), so a key that is not on it was never
-    // declared as far as that call is concerned.
+    // A key dropped here is undeclared to anything reading this object as a
+    // definition.
     //
     // `model` is the one with a silent consequence rather than a loud one.
-    // createService substitutes `def.model ?? def.name`, so a service that
+    // buildService substitutes `def.model ?? def.name`, so a service that
     // declared `model: 'Payment'` in its own file reported `model: 'payments'`
     // on the way out — and CRUD still worked, because the accessor is resolved
     // per call from the service name through accessorCandidates(). What broke
@@ -2332,19 +2300,14 @@ export function createBaseService(
     ...(paginate   !== undefined ? { paginate }   : {}),
     ...(idField    !== undefined ? { idField }    : {}),
     ...(softDelete !== undefined ? { softDelete } : {}),
-    // Carried through, not resolved here: the loader spreads this object into
-    // createService(), which is where the allow-list is validated against the
-    // custom methods that exist. Dropping it was a SECURITY-shaped silence — the same
-    // `methods: 'readOnly'` that makes an audit trail append-only through
-    // createService did nothing at all through createBaseService, and the only
-    // symptom was a write that succeeded. Which factory you picked decided
-    // whether your method selection existed, exactly as it once decided whether
-    // your row policies did.
+    // Carried through, not resolved here: buildService is where the allow-list
+    // is validated against the custom methods that exist, and a dropped
+    // `methods: 'readOnly'` is an audit trail that accepts writes.
     ...(methods !== undefined ? { methods } : {}),
     // Same reason again, failing closed: a dropped `scope:` refuses every
     // scoped key at every method of the service (FJS-D916).
     ...(scope !== undefined ? { scope } : {}),
-    // Same reason as `methods` above: createService is where the around hook is
+    // Same reason as `methods` above: buildService is where the around hook is
     // installed, so a base that drops this declares a transaction nobody opens.
     ...(transactional !== undefined ? { transactional } : {}),
     hooks: mergedHooks,
@@ -2360,14 +2323,14 @@ export function createBaseService(
       idField:    idField ?? 'id',
     },
   // Two-step because this literal is a service DEFINITION on its way into
-  // createService, not a built Service: it carries no `_customMethods`, no `_methods`
-  // and no `pipelines`, and those are what createService adds. A one-step
+  // buildService, not a built Service: it carries no `_methods` and no
+  // `pipelines`, and those are what buildService adds. A one-step
   // assertion claims an overlap the compiler is right to refuse.
   } as unknown as BaseServiceDefinition
 }
 
 // ─── Plain-client adapter ─────────────────────────────────────────────────
-// createBaseService's documented db contract is a plain object of tables
+// A service's documented db contract is a plain object of tables
 // exposing findMany/count/findUnique/create/update/updateMany/delete/
 // deleteMany. createLitestoneBase codes against the richer litestone table
 // surface (findManyAndCount, remove/removeMany, $setAuth on the client).
@@ -2434,8 +2397,7 @@ export interface ServiceDefinition {
   /**
    * Litestone accessor — `'user'` for `model User`.
    *
-   * OPTIONAL, on the same terms as createBaseService: omitted, it resolves per
-   * call from the service name, so `createService({ name: 'leads' })` reaches
+   * OPTIONAL: omitted, it resolves per call from the service name, so `createService({ name: 'leads' })` reaches
    * `model Lead` and `createService({})` in leads.service.ts does too. `null`
    * is a service over no model, whatever its name reaches.
    */
@@ -2616,7 +2578,7 @@ function makeBypass(
 // answer and is what anything holding the function should ask.
 export const DERIVED_HOOKS = new Set(['gateAuth', 'autoValidate', 'validateInput', 'autoFilter', 'autoSort'])
 
-// Stamped on a service createService has already built. Non-enumerable, so a
+// Stamped on a service buildService has already built. Non-enumerable, so a
 // spread does NOT carry it — which is the correct answer: `{...svc}` is a copy
 // of the fields, not a built service, and the loader has to be able to tell.
 const BUILT = Symbol.for('junction.service')
@@ -2637,22 +2599,39 @@ export function serveDeclaredMoves(svc: object, schema: unknown): void {
   if (typeof serve === 'function' && schema) serve(schema)
 }
 
-/** Has createService already built this? */
+/** Has buildService already built this? */
 export function isBuiltService(value: unknown): boolean {
   return !!value && typeof value === 'object' && (value as Record<symbol, unknown>)[BUILT] === true
 }
 
-export function createService(def: ServiceDefinition): Service {
+/**
+ * State a service. Returns the definition it is handed — a service file
+ * `export default`s it, and the registry builds it (`FJS-D1079`):
+ *
+ *   export default createService({ model: 'Post', async publish(ctx) { … } })
+ *
+ * Nothing is built here, so a definition is inert data: importing a service
+ * file runs no hook setup and reads no app, and one definition registered on
+ * two apps is two services. A method reaches the app through `ctx.app`.
+ */
+export function createService(def: ServiceDefinition): ServiceDefinition {
+  return def
+}
+
+/**
+ * The registry's builder — composes the definition's hooks, the derived layer
+ * and the CRUD base into a `Service`. An app never calls it; `register()` does.
+ */
+export function buildService(def: ServiceDefinition): Service {
   // Idempotent, the way Feathers' wrapService is. Building twice would re-run
-  // createBaseService and rebuild the hook state around an object that already
-  // has one.
+  // buildBase and rebuild the hook state around an object that already has one.
   if (isBuiltService(def)) return def as unknown as Service
 
 
   // db is optional — the base falls back to ctx.app.db at call time, so
-  // `createService({ name: 'posts', model: 'posts' })` is a complete service.
+  // `{ name: 'posts', model: 'posts' }` is a complete service.
   //
-  // def.hooks is forwarded so createBaseService can merge the model's derived
+  // def.hooks is forwarded so buildBase can merge the model's derived
   // hooks (gateAuth from @@gate, autoValidate from field rules) after the
   // user's — the returned base.hooks carries both. Reading def.hooks here
   // instead used to silently drop the derived layer on the direct
@@ -2660,23 +2639,12 @@ export function createService(def: ServiceDefinition): Service {
   // driver errors (500) instead of 401/400 pre-checks.
   // EVERY base option must be forwarded. This list used to stop at `hooks`,
   // silently dropping idField, softDelete and schema — so
-  // `createService({ model, softDelete: 'deleted_at' })` HARD DELETED rows while
-  // `createBaseService({ model, softDelete: 'deleted_at' })` soft-deleted them.
-  // Same option name, same docs, opposite behavior. Keep this in sync with
+  // `{ model, softDelete: 'deleted_at' }` HARD DELETED rows. Keep this in sync with
   // SERVICE_OPTION_KEYS; nothing here may be dropped on the way through.
   //
-  // `model` is OPTIONAL here, exactly as it is on createBaseService: the
-  // accessor resolves per call from `model ?? ctx.service`, and the service
-  // name itself may be assigned by the autoloader AFTER construction. So the
-  // base is built unconditionally.
-  //
-  // This used to read `def.model ? createBaseService(…) : notImplementedBase()`,
-  // which was the same class of bug as the two above: `createBaseService({})`
-  // in leads.service.ts is a complete service, while `createService({})` — or
-  // `createService({ name: 'leads' })` — was a service whose every method threw
-  // 'No model/db configured for this service', despite reporting
-  // `model: def.model ?? def.name` on the way out. Same file, same options,
-  // opposite behavior.
+  // `model` is OPTIONAL: the accessor resolves per call from
+  // `model ?? ctx.service`, so the base is built unconditionally —
+  // `createService({})` in leads.service.ts is a complete service.
   //
   // A service with no model at all (custom methods only) is unaffected: the
   // derived hooks no-op when the accessor resolves to nothing (gateAuth reads
@@ -2687,7 +2655,7 @@ export function createService(def: ServiceDefinition): Service {
   const declaredGates  = collectMethodGates(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredClaims = collectMethodClaims(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredReads  = collectReadMethods(def.methods, (def.name as string) ?? '(unnamed)')
-  const base = createBaseService({
+  const base = buildBase({
     model:      def.model,
     name:       def.name,
     db:         def.db,
@@ -2781,8 +2749,7 @@ export function createService(def: ServiceDefinition): Service {
   }
   // base.hooks already contains def.hooks merged with the derived hooks —
   // push it (not def.hooks) so both layers survive. The `?? def.hooks` is a
-  // belt-and-braces fallback: createBaseService always returns a hooks map now
-  // that the base is built unconditionally.
+  // belt-and-braces fallback: buildBase always returns a hooks map.
   const effectiveHooks = baseHooks ?? def.hooks
   if (effectiveHooks) hookMaps.push(effectiveHooks)
 
@@ -2935,10 +2902,9 @@ export function createService(def: ServiceDefinition): Service {
 
     _hookMap: mergedMap,
 
-    // Metadata built by createBaseService. Not copied through, these were lost
-    // on the createService path — the primary public factory — so /manifest
-    // reported softDelete:false / idField:'id' for every service regardless of
-    // its actual config, and the openapi plugin never saw an explicit schema.
+    // Metadata buildBase computes. Not copied through, /manifest reports
+    // softDelete:false / idField:'id' for every service regardless of its
+    // config, and the openapi plugin never sees an explicit schema.
     ...(() => {
       const b = base as unknown as Record<string, unknown>
       return {
@@ -3118,12 +3084,18 @@ export class ServiceRegistry {
    */
   constructor(private _schema: () => unknown = () => null) {}
 
-  register(service: Service, aliases: string[] = []): void {
+  /**
+   * Build a definition and hold it under its name (`FJS-D1079`). Every way a
+   * service reaches an app — the loader, a plugin, a test env — comes through
+   * here, so this is the one place a definition becomes a `Service`.
+   */
+  register(def: ServiceDefinition | Service, aliases: string[] = []): Service {
+    if (!def.name)
+      throw new Error(`a service registered by hand needs a name — createService({ name: 'posts', … })`)
+    const service = buildService(def as ServiceDefinition)
     // HERE, because this is the first place a built service and the schema meet:
-    // a service module is imported before any client exists, and every way a
-    // service reaches an app — the loader, a plugin, a test env — comes through
-    // this call. Before the warm below, so the pipelines are built for the
-    // table the service will answer with.
+    // a service module is imported before any client exists. Before the warm
+    // below, so the pipelines are built for the table the service will answer with.
     serveDeclaredMoves(service, this._schema())
     this._map.set(service.name, service)
     this._version++
@@ -3137,6 +3109,7 @@ export class ServiceRegistry {
     // silently outranked it; the version key in pipelines() is what removed the
     // need, and with it the double merge-and-resolve every hooks() call paid.
     if (this._appHooks) service.pipelines(this._appHooks)
+    return service
   }
 
   get(name: string): Service | undefined {
@@ -3202,11 +3175,6 @@ function overNoModel(name: string | undefined) {
   } as unknown as ReturnType<typeof createLitestoneBase>
 }
 
-// (notImplementedBase removed: createService builds the real base
-// unconditionally, since the accessor resolves per call from
-// `model ?? ctx.service`. Its stand-in methods threw
-// 'No model/db configured for this service' for every service that omitted
-// `model` — including ones whose model was perfectly resolvable from the name.)
 
 // (wrapResult moved to core/envelope.ts — the envelope is built, inspected and
 // unwrapped in one module now. It used to be built here and taken apart in

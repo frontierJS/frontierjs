@@ -22,7 +22,7 @@
 // The Outpost protocol itself lives at the top of `deployment-run.job.ts`; this
 // module only decides who speaks it.
 
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 /**
  * How long a release's two long commands may take, read off the machine's own
@@ -87,7 +87,7 @@ function stubExecutor(serverId: string): Executor {
   }
 }
 
-function outpostExecutor(app: BasecampApp, serverId: string, target: string): Executor {
+function outpostExecutor(app: App, serverId: string, target: string): Executor {
   return {
     kind:   'outpost',
     serverId,
@@ -124,7 +124,7 @@ export function machineSaid(raw: unknown): string | null {
 }
 
 /** The outpost on this one machine, when it holds a pinned target. */
-async function reachable(app: BasecampApp, serverId: string): Promise<Executor | null> {
+async function reachable(app: App, serverId: string): Promise<Executor | null> {
   if (!app.conduit) return null
   const target = `outpost:${serverId}`
   return (await app.conduit.resolve(target).catch(() => null))?.pinned_cert
@@ -138,7 +138,7 @@ async function reachable(app: BasecampApp, serverId: string): Promise<Executor |
  * rules as `resolveExecutor`, asked of one server: its pinned outpost, else the
  * stub where it is allowed, else a refusal naming the machine.
  */
-export async function executorOn(app: BasecampApp, serverId: string, name = serverId): Promise<Executor | NoExecutor> {
+export async function executorOn(app: App, serverId: string, name = serverId): Promise<Executor | NoExecutor> {
   const reached = await reachable(app, serverId)
   if (reached) return reached
   if (stubAllowed()) return stubExecutor(serverId)
@@ -153,8 +153,8 @@ export async function executorOn(app: BasecampApp, serverId: string, name = serv
  * a placement can go away between the click and the job — the two must not be
  * able to disagree, which is why the rule is here rather than in either.
  */
-export async function resolveExecutor(app: BasecampApp, appId: string): Promise<Executor | NoExecutor> {
-  const db = app.db.asSystem() as any
+export async function resolveExecutor(app: App, appId: string): Promise<Executor | NoExecutor> {
+  const db = app.db!.asSystem() as any
 
   const placements = await db.appServer.findMany({
     where:   { appId },

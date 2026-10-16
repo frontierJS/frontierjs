@@ -8,8 +8,6 @@
 // A merchant's ordering is a column (`position`) rather than the list being
 // sorted alphabetically here, because which option sits at the top decides what
 // most people pick.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createShippingMethodsService() {
-  return createBaseService({ model: 'ShippingMethod', channel: 'shipping-methods' })
-}
+export default createService({ model: 'ShippingMethod', channel: 'shipping-methods' })

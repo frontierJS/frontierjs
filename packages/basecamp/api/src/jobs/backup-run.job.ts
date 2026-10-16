@@ -38,7 +38,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join }    from 'node:path'
 import { runsAsApp }        from './context.ts'
 import { jobsDatabasePath } from '../core/db.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 /** Only for Caravan's queue, which no schema names and `app.db.$backup` cannot
  *  reach. Bound as a parameter and never interpolated (Invariant 8). Its own
@@ -60,7 +60,7 @@ function treeSize(dir: string): number {
  *  directory that does not exist yet is an app that has not written to it, and
  *  is left out; a SQLite file that fails to copy throws, because an archive
  *  missing one of them is not an archive. */
-async function archiveAll(app: BasecampApp, dest: string): Promise<void> {
+async function archiveAll(app: App, dest: string): Promise<void> {
   mkdirSync(dest, { recursive: true })
 
   const declared = (app.db as unknown as {
@@ -83,7 +83,7 @@ async function archiveAll(app: BasecampApp, dest: string): Promise<void> {
 
 /** Where an archive lands — `backups/` beside the live database, so a bind
  *  mount that carries the data volume carries these with it. */
-function backupDir(app: BasecampApp): string {
+function backupDir(app: App): string {
   const live = app.sqlite.filename
   // `:memory:` has no directory. A test env would otherwise write `backups/`
   // into the process CWD, which is somebody's repository.
@@ -91,9 +91,9 @@ function backupDir(app: BasecampApp): string {
   return join(dirname(live), 'backups')
 }
 
-export async function takeBackup(app: BasecampApp, backupId: string): Promise<void> {
+export async function takeBackup(app: App, backupId: string): Promise<void> {
   const log = app.logger.child('backup-run')
-  const sys = app.db.asSystem()
+  const sys = app.db!.asSystem()
 
   const row = await sys.backup.findFirst({ where: { id: backupId } })
   if (!row) {
@@ -149,7 +149,7 @@ export default defineJob<{ backupId: string }>('backup:run', async (ctx) => {
   // Nobody's work but the app's — a hub action has no workspace, so there is
   // no standing to run as. `backups.create` states `actor: null` to match.
   const { app } = runsAsApp(ctx, 'backup:run')
-  await takeBackup(app as BasecampApp, ctx.data.backupId)
+  await takeBackup(app, ctx.data.backupId)
 }, {
   queue:       'fleet',
   maxAttempts: 2,

@@ -62,6 +62,15 @@ src/
                          stylesheet drops in silence, so a `<style>` rule using
                          one is refused by line. A type selector is one: every
                          element is the engine's view or text
+  native/sheet.js      — lowerSheet(): a whole stylesheet, the kit's bundle
+                         first, flattened out of its layers and split one rule
+                         per list member, since the encoder drops a layer or a
+                         list whole, then its tokens evaluated. Returns what
+                         it dropped by line, an app knob it lost included
+  native/tokens.js     — lowerTokens(): the token graph evaluated per (theme ×
+                         axis × tone), so no var() on a phone is more than one
+                         hop from a literal. The contexts are read off the
+                         sheet: `.theme-*`, and each @property's setters
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
   runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal.js:
                          `$$host`, a cell tree over @opentui/core (optional peer,

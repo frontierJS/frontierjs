@@ -8,7 +8,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createTestApp, createStubAuth, request } from '../src/testing/index.ts'
-import { createService, callService } from '../src/core/service.ts'
+import { buildService, callService } from '../src/core/service.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { bridge } from '../src/transport/bridge.ts'
 import { BadRequest } from '../src/core/errors.ts'
@@ -17,7 +17,7 @@ import { createApp, channels, defaultConfig } from '../index.ts'
 // A service that counts how many times its body actually ran.
 function countingService(name = 'notes') {
   const calls = { create: 0, find: 0 }
-  const svc = createService({
+  const svc = buildService({
     name,
     create: async (ctx) => { calls.create++; return { id: String(calls.create), ...(ctx.data as object) } },
     find:   async ()    => { calls.find++;   return [] },
@@ -30,7 +30,7 @@ function countingService(name = 'notes') {
 // tests below prove the header reaches it.
 async function callWithKey(
   app: Awaited<ReturnType<typeof createTestApp>>,
-  svc: ReturnType<typeof createService>,
+  svc: ReturnType<typeof buildService>,
   method: string,
   key: string | undefined,
   opts: { user?: { userId: string } | null; data?: unknown } = {}
@@ -101,7 +101,7 @@ describe('an Idempotency-Key executes a mutation once', () => {
   test('a failed call releases the key — the retry runs', async () => {
     const app = await createTestApp()
     let attempts = 0
-    const svc = createService({
+    const svc = buildService({
       name: 'flaky',
       create: async () => {
         attempts++
@@ -120,7 +120,7 @@ describe('an Idempotency-Key executes a mutation once', () => {
     const app = await createTestApp()
     let release: (() => void) | null = null
     const gate = new Promise<void>(r => { release = r })
-    const svc = createService({
+    const svc = buildService({
       name: 'slow',
       create: async () => { await gate; return { id: '1' } },
     })
@@ -163,7 +163,7 @@ describe('the header reaches it', () => {
 
   test('two POSTs with the same Idempotency-Key create one row', async () => {
     const { svc, calls } = countingService('things')
-    const app = await createTestApp({ services: [() => svc], ...signedIn })
+    const app = await createTestApp({ services: [svc], ...signedIn })
 
     const post = () => request(app).post('/things')
       .auth(TOKEN)
@@ -181,7 +181,7 @@ describe('the header reaches it', () => {
 
   test('without the header the same POST twice creates two', async () => {
     const { svc, calls } = countingService('things')
-    const app = await createTestApp({ services: [() => svc] })
+    const app = await createTestApp({ services: [svc] })
     await request(app).post('/things').send({ title: 'hello' })
     await request(app).post('/things').send({ title: 'hello' })
     expect(calls.create).toBe(2)
@@ -191,7 +191,7 @@ describe('the header reaches it', () => {
     const { svc, calls } = countingService('things')
     const app = await createTestApp({
       config: { idempotency: { enabled: false } },
-      services: [() => svc],
+      services: [svc],
       ...signedIn,
     })
     for (let i = 0; i < 2; i++)
@@ -220,7 +220,7 @@ describe('an Idempotency-Key from nobody is not honored', () => {
 
   test('over HTTP, two anonymous POSTs with one key create two rows', async () => {
     const { svc, calls } = countingService('things')
-    const app = await createTestApp({ services: [() => svc] })
+    const app = await createTestApp({ services: [svc] })
 
     const a = await request(app).post('/things').set('idempotency-key', 'k').send({ title: 'first caller' })
     const b = await request(app).post('/things').set('idempotency-key', 'k').send({ title: 'second caller' })
@@ -260,7 +260,7 @@ describe('the same key with a different payload is refused', () => {
 
   test('over HTTP: same key, different body → 422', async () => {
     const { svc, calls } = countingService('things')
-    const app = await createTestApp({ services: [() => svc], ...signedIn })
+    const app = await createTestApp({ services: [svc], ...signedIn })
 
     const a = await request(app).post('/things').auth(TOKEN).set('idempotency-key', 'k').send({ title: 'one' })
     const b = await request(app).post('/things').auth(TOKEN).set('idempotency-key', 'k').send({ title: 'two' })

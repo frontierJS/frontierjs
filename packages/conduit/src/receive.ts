@@ -72,8 +72,12 @@ export interface ReceivedEvent {
 export interface Dialect<Cred = string, Ev extends ReceivedEvent = ReceivedEvent> {
   /** The signature and the freshness window together; the window is a check on a signed field, in the dialect's unit. */
   verify(d: Delivery, cred: Cred, ctx: VerifyContext): Verdict | Promise<Verdict>
-  /** The event out of the envelope. `null` is *not an event* — answered 200 and ignored, because a 4xx retries forever. */
-  parse(d: Delivery, cred: Cred): Ev | null
+  /**
+   * The event out of the envelope. `null` is *not an event* — answered 200 and
+   * ignored, because a 4xx retries forever. May be async: a raw-MIME vendor's
+   * parse is a MIME parser's, and that is a promise (`FJS-D784`, conduit-mailgun).
+   */
+  parse(d: Delivery, cred: Cred): Ev | null | Promise<Ev | null>
   /** What names ONE delivery: a body id, a header (Standard Webhooks' `webhook-id`), or the subject's own natural key. */
   dedupeKey(d: Delivery, ev: Ev, cred: Cred): string
 }
@@ -198,7 +202,7 @@ export async function accept<Cred, Ev extends ReceivedEvent, Owner>(
   const verdict = await r.dialect.verify(d, cred, { now, seenNonce: (nonce, keep) => deps.seenNonce(nonce, now, keep) })
   if (!verdict.ok) return REFUSED(verdict.reason)
 
-  const ev = r.dialect.parse(d, cred)
+  const ev = await r.dialect.parse(d, cred)
   if (!ev) return { status: 200, body: { received: true, outcome: 'ignored' }, result: 'ignored', reason: 'not an event envelope' }
 
   const owner = (await r.owner?.(ev, cred)) ?? null

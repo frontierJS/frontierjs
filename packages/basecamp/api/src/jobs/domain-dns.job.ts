@@ -8,8 +8,10 @@
 // bringing it back. Each one pushes twice: the zone, through `edge.syncStep`,
 // and the App's hostnames to Caddy on every machine running it, through
 // `/route` (`FJS-1610`) — a Domain written between releases otherwise answers
-// nothing on the machine (no route, no certificate) until the next deploy. This
-// file decides only whether to try again.
+// nothing on the machine (no route, no certificate) until the next deploy. A
+// route that leaves the container's port bound wrong (`rebind`) is followed by
+// a release, `deployments.rebind` (`FJS-D577`). Otherwise this file decides
+// only whether to try again.
 //
 // Each dispatch STATES its id — `dns:<domainId>:<version>` for a write,
 // `dns:<domainId>:release:<deploymentId>` for a release,
@@ -43,12 +45,12 @@ import { runsEitherWay } from './context.ts'
 import { executorOn, isExecutor } from '../providers/executor.ts'
 import { routedHosts, routedRedirects } from '../core/runtime.ts'
 import { isInline }      from '../core/app-source.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 const domainDns = defineJob<{ domainId: string }>(
   'domain:dns',
   async (ctx) => {
-    const { app } = runsEitherWay(ctx, 'domain:dns')
+    const { app, mode } = runsEitherWay(ctx, 'domain:dns')
     const log     = app.logger.child('domain-dns')
 
     let dns: unknown = null
@@ -64,15 +66,32 @@ const domainDns = defineJob<{ domainId: string }>(
     }
 
     const routes = await routeDomainApp(app, ctx.data.domainId)
-    for (const r of routes.routed)
-      if (r.rebind) log.warn('routed, bind stale until the next release', { serverId: r.serverId, rebind: r.rebind })
     if (routes.failed.length)
       log.error('route push failed', { id: ctx.data.domainId, failed: routes.failed })
+
+    // A stale bind is a release (`FJS-D577`), made by whoever wrote the
+    // Domain. A machine moving has nobody to own the restart, so there it
+    // stays a warning until the next release.
+    let rebound: unknown = null
+    const stale = routes.routed.filter(r => r.rebind)
+    if (stale.length && mode === 'caller') {
+      try {
+        const out = await app.service('deployments').call('rebind', routes.appId) as { id?: string; skipped?: string }
+        log.info('bind stale, released to move it', { appId: routes.appId, deployment: out.id ?? null, skipped: out.skipped ?? null, rebind: stale.map(r => r.rebind) })
+      } catch (err) {
+        const code = Number((err as { code?: unknown }).code)
+        if (code >= 400 && code < 500) (err as { retryable?: boolean }).retryable = false
+        log.error('bind stale, and the release to move it was refused', { appId: routes.appId, error: (err as Error).message })
+        rebound = err
+      }
+    } else for (const r of stale)
+      log.warn('routed, bind stale until the next release', { serverId: r.serverId, rebind: r.rebind })
 
     // A terminal zone refusal stops the retries only when every machine took
     // its route; otherwise the retry is owed to the machines.
     if (routes.failed.length)
       throw new Error(`route not pushed to ${routes.failed.map(f => `${f.server}: ${f.error}`).join('; ')}`)
+    if (rebound) throw rebound
     if (dns) throw dns
   },
   {
@@ -97,19 +116,20 @@ export default domainDns
  * An App left on NO online machine is still dispatched: the push refuses it as
  * not-yet and the record stays where it last ran (`FJS-D567`).
  */
-export async function pushAppsOn(app: BasecampApp, serverId: string, status: string, at: string): Promise<number> {
+export async function pushAppsOn(app: App, serverId: string, status: string, at: string): Promise<number> {
   const sys    = (app.db as any).asSystem()
   const placed = await sys.appServer.findMany({ where: { serverId, status: 'running' }, select: { appId: true } }) as { appId: string }[]
   const appIds = [...new Set(placed.map(p => p.appId))]
   if (!appIds.length) return 0
   const domains = await sys.domain.findMany({ where: { appId: { in: appIds } }, select: { id: true } }) as { id: string }[]
   for (const d of domains)
-    await app.jobs.dispatch(domainDns, { domainId: d.id },
+    await app.jobs!.dispatch(domainDns, { domainId: d.id },
       { id: `dns:${d.id}:server:${serverId}:${status}:${at}`, actor: null })
   return domains.length
 }
 
 interface RoutePush {
+  appId:  string | null
   routed: { serverId: string; hosts: string[]; redirects: { host: string; to: string }[]; rebind: string | null }[]
   failed: { server: string; error: string }[]
 }
@@ -126,11 +146,12 @@ interface RoutePush {
  * release's Activate does, so a Domain changed between releases does not wait
  * for the next one.
  */
-export async function routeDomainApp(app: BasecampApp, domainId: string): Promise<RoutePush> {
-  const out: RoutePush = { routed: [], failed: [] }
+export async function routeDomainApp(app: App, domainId: string): Promise<RoutePush> {
+  const out: RoutePush = { appId: null, routed: [], failed: [] }
   const sys    = (app.db as any).asSystem()
   const domain = await sys.domain.findFirst({ where: { id: domainId }, withDeleted: true, select: { appId: true } }) as { appId: string } | null
   if (!domain) return out
+  out.appId = domain.appId
   const row = await sys.app.findFirst({ where: { id: domain.appId }, select: { source: true } }) as { source: unknown } | null
   if (!row) return out
 

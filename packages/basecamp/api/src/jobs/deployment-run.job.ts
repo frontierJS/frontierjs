@@ -51,7 +51,7 @@ import domainDns                from './domain-dns.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../core/app-source.ts'
 import { releaseEnv } from '../core/variables.ts'
 import { runtimeOf, routedHosts, routedRedirects, markRunning, type Runtime } from '../core/runtime.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 import type { StepStatus } from '../../../db/schema.d.ts'
 
 // Row shapes come from the schema now, not from hand-written mirrors of it.
@@ -70,7 +70,7 @@ function runtimeFor(snapshot: Record<string, unknown>, service: Record<string, u
   return (snapshot.runtime as Runtime | undefined) ?? runtimeOf(service)
 }
 
-function runner(app: BasecampApp) {
+function runner(app: App) {
 
   // No client here (`FJS-384`). A deploy runs as whoever asked for it, so the
   // service calls below resolve their membership in the workspace the queue
@@ -140,9 +140,9 @@ function runner(app: BasecampApp) {
   // hiccup here must not reach failDeploy, and `/dns/` names what went stale.
   async function toZones(appId: string, deploymentId: string): Promise<void> {
     try {
-      const domains = await app.db.asSystem().domain.findMany({ where: { appId }, select: { id: true } }) as { id: string }[]
+      const domains = await app.db!.asSystem().domain.findMany({ where: { appId }, select: { id: true } }) as { id: string }[]
       for (const d of domains)
-        await app.jobs.dispatch(domainDns, { domainId: d.id }, { id: `dns:${d.id}:release:${deploymentId}` })
+        await app.jobs!.dispatch(domainDns, { domainId: d.id }, { id: `dns:${d.id}:release:${deploymentId}` })
     } catch (err) {
       log.warn('release not pushed to its zones', { id: deploymentId, error: (err as Error).message })
     }

@@ -26,7 +26,7 @@ import { basecampGateLevel } from '../src/core/gate.ts'
 import { evaluateWindow, breaches, describeBreach } from '../src/core/alerting.ts'
 import { KINDS, testMessage }  from '../src/core/delivery.ts'
 import evaluate              from '../src/jobs/alert-evaluate.job.ts'
-import type { BasecampApp }  from '../src/basecamp.types.ts'
+import type { App }          from '@frontierjs/junction'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -206,7 +206,7 @@ async function makeApp() {
     // `runsAsApp` refuses when an actor is in scope — this is a cron, so there
     // is none, and saying so is what the mode asserts rather than assumes.
     principal: () => undefined,
-  } as unknown as BasecampApp
+  } as unknown as App
 
   return { app, db, received, origin: `http://localhost:${server.port}` }
 }
@@ -251,7 +251,7 @@ async function fixture(db: any, opts: {
   return { ws, rule, series: s }
 }
 
-const run = (app: BasecampApp) => (evaluate as any).handler({ app } as never)
+const run = (app: App) => (evaluate as any).handler({ app } as never)
 
 describe('alert-evaluate — the job between a rule and an event', () => {
 

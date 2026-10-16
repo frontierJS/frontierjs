@@ -12,7 +12,7 @@
 // no error at any point.
 
 import { describe, test, expect } from 'bun:test'
-import { createService, createBaseService, collectCustomMethods, customMethodNames, allowedMethodNames, callService } from '../src/core/service.ts'
+import { buildBase, collectCustomMethods, customMethodNames, allowedMethodNames, callService, buildService } from '../src/core/service.ts'
 import { resultData } from '../src/core/envelope.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { manifestPlugin } from '../src/plugins/manifest/index.ts'
@@ -35,7 +35,7 @@ function ctx(over: Record<string, unknown> = {}): ServiceContext {
 describe('the action table', () => {
 
   test('scanned: inline function keys, and nothing else', () => {
-    const svc = createService({
+    const svc = buildService({
       name: 'things', model: 'thing',
       channel: 'things',                 // an option, not an action
       allowBulk: true,
@@ -46,7 +46,7 @@ describe('the action table', () => {
   })
 
   test('CRUD, the bypass twins and the internals never enter it', () => {
-    const svc = createService({ name: 'things', model: 'thing', reboot: noop })
+    const svc = buildService({ name: 'things', model: 'thing', reboot: noop })
     const keys = customMethodNames(svc)
     for (const k of ['find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
                      '_find', '_get', '_hookMap', '_meta', '_customMethods', 'hooks', 'name', 'model']) {
@@ -55,7 +55,7 @@ describe('the action table', () => {
   })
 
   test('declared: `methods:` says what the custom methods are', () => {
-    const svc = createService({
+    const svc = buildService({
       name: 'things', model: 'thing',
       methods: ['find', 'get', 'reboot'],
       reboot: noop,
@@ -67,7 +67,7 @@ describe('the action table', () => {
   test('a `channel` FUNCTION is an option, not an action', () => {
     // `channel` accepts a function, so the scan has to keep letting the deny-list
     // win here — this is the case the list was widened for.
-    const svc = createService({
+    const svc = buildService({
       name: 'things', model: 'thing',
       channel: () => 'things',
     })
@@ -81,14 +81,14 @@ describe('the action table', () => {
     // `app.service('reports').cache` stayed undefined, `describe().cache`
     // answered false, and `if (def.cache)` read the FUNCTION as a truthy cache
     // declaration and cached find and get. One name, three answers.
-    const scanned = createService({
+    const scanned = buildService({
       name: 'reports', model: 'report',
       cache: (async () => ({ warmed: true })) as never,
     })
     expect(customMethodNames(scanned)).toEqual([])       // eaten as config, as before
 
     const findings: string[] = []
-    const declared = createService({
+    const declared = buildService({
       name: 'reports', model: 'report',
       methods: ['find', 'cache'],
       cache: (async () => ({ warmed: true })) as never,
@@ -100,7 +100,7 @@ describe('the action table', () => {
 
     // The control, one name away: a name that is NOT an option is a method,
     // which is what stops the refusal being "declaring never works".
-    const fine = createService({
+    const fine = buildService({
       name: 'reports', model: 'report',
       methods: ['find', 'warm'], warm: noop,
     })
@@ -112,7 +112,7 @@ describe('the action table', () => {
     // Reported rather than thrown at construction: an app has a config, N
     // service files and a hook table, and start()'s `check-authoring` phase
     // refuses with every finding at once (`FJS-D199`).
-    const svc = createService({ name: 'things', model: 'thing', methods: ['find', 'rebot'], reboot: noop })
+    const svc = buildService({ name: 'things', model: 'thing', methods: ['find', 'rebot'], reboot: noop })
     const msg = ((svc as { _authoringFindings?: string[] })._authoringFindings ?? []).join('\n')
     expect(msg).toContain("'rebot'")
     expect(msg).toContain('not defined')
@@ -124,7 +124,7 @@ describe('the action table', () => {
   })
 
   test('a declared name that is a non-function option says a name cannot be both', () => {
-    const svc = createService({ name: 'things', model: 'thing', methods: ['find', 'cache'], cache: true })
+    const svc = buildService({ name: 'things', model: 'thing', methods: ['find', 'cache'], cache: true })
     const msg = ((svc as { _authoringFindings?: string[] })._authoringFindings ?? []).join('\n')
     expect(msg).toContain("'cache'")
     expect(msg).toContain('cannot be both')
@@ -134,7 +134,7 @@ describe('the action table', () => {
     // The action stays in the table and the policy refuses it — 405, not 404,
     // which is the distinction method-policy.test.ts pins. A service that
     // pretended the method did not exist would be lying about its own shape.
-    const svc = createService({ name: 'audit', model: 'audit', methods: 'readOnly', purge: noop })
+    const svc = buildService({ name: 'audit', model: 'audit', methods: 'readOnly', purge: noop })
     expect(customMethodNames(svc)).toEqual(['purge'])
     // `aggregate` is a read and rides `find`'s gate (`FJS-D226`) — a read-only
     // service that could not answer *how many* would surprise everybody.
@@ -152,14 +152,14 @@ describe('the action table', () => {
 describe('a base reached through the loader keeps its custom methods', () => {
 
   test('the table survives the spread + re-wrap', () => {
-    const base = createBaseService({ model: 'thing', reboot: noop } as never)
-    const svc  = createService({ name: 'things', ...(base as object) } as never)
+    const base = buildBase({ model: 'thing', reboot: noop } as never)
+    const svc  = buildService({ name: 'things', ...(base as object) } as never)
     expect(customMethodNames(svc)).toEqual(['reboot'])
   })
 
   test('and the action is still callable', async () => {
-    const base = createBaseService({ model: 'thing', reboot: noop } as never)
-    const svc  = createService({ name: 'things', ...(base as object) } as never)
+    const base = buildBase({ model: 'thing', reboot: noop } as never)
+    const svc  = buildService({ name: 'things', ...(base as object) } as never)
     const c    = ctx({ service: 'things', method: 'reboot' })
     await callService(svc, c)
     expect(resultData(c.result)).toEqual({ ok: true })
@@ -171,14 +171,14 @@ describe('a base reached through the loader keeps its custom methods', () => {
 describe('dispatch', () => {
 
   test('an action in the table dispatches', async () => {
-    const svc = createService({ name: 'things', model: 'thing', reboot: noop })
+    const svc = buildService({ name: 'things', model: 'thing', reboot: noop })
     const c   = ctx({ service: 'things', method: 'reboot' })
     await callService(svc, c)
     expect(resultData(c.result)).toEqual({ ok: true })
   })
 
   test('a name in neither the table nor the object is a 404', async () => {
-    const svc = createService({ name: 'things', model: 'thing', reboot: noop })
+    const svc = buildService({ name: 'things', model: 'thing', reboot: noop })
     const err = await callService(svc, ctx({ service: 'things', method: 'nope' })).catch(e => e)
     expect((err as Error).message).toContain("'nope'")
   })
@@ -188,7 +188,7 @@ describe('dispatch', () => {
     // `X-Service-Method` was an allow-list written as a block-list — six CRUD
     // names refused and every other own function callable, `_create` and
     // `pipelines` included.
-    const svc = createService({ name: 'things', model: 'thing' })
+    const svc = buildService({ name: 'things', model: 'thing' })
     ;(svc as unknown as Record<string, unknown>).late = noop
 
     const err = await callService(svc, ctx({ service: 'things', method: 'late' })).catch(e => e)
@@ -201,7 +201,7 @@ describe('dispatch', () => {
     // answer: two skip the derived hooks, two describe the service, and the
     // last two are Object.prototype's, reached because the table is an object
     // literal and bare indexing walks the prototype chain.
-    const svc = createService({ name: 'things', model: 'thing', reboot: noop })
+    const svc = buildService({ name: 'things', model: 'thing', reboot: noop })
     for (const method of ['_create', '_find', 'describe', 'pipelines', 'hooks', 'constructor', 'toString', '__proto__']) {
       const err = await callService(svc, ctx({ service: 'things', method })).catch(e => e)
       expect([404, 405]).toContain((err as { code?: number }).code ?? 0)
@@ -216,7 +216,7 @@ describe('what the app advertises comes from the same table', () => {
 
   test('/manifest, the OpenAPI spec and /metrics agree', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'things', model: 'thing',
         methods: ['find', 'get', 'reboot', 'drain'],
         async find() { return [] },

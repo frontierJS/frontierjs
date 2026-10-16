@@ -2340,7 +2340,7 @@ export function normalizeOrderBy(orderBy) {
  * `DESC` puts them last. A cursor that guessed the other way would resume from
  * the wrong side of the nulls and lose every row on one side of them.
  */
-/** @param {string} dir @param {any} resolved */
+/** @param {string | { dir?: string, nulls?: string }} dir @param {any} resolved */
 export function nullsPosition(dir, resolved) {
   if (dir !== null && typeof dir === 'object' && dir.nulls) {
     const n = dir.nulls.toUpperCase()
@@ -2964,13 +2964,13 @@ export function identifyingKeysFor(model, schema) {
   for (const f of model.fields) {
     if (f.type?.array || !modelNames.has(f.type?.name)) continue
     const rel = f.attributes?.find(a => a.kind === 'relation' && a.fields)
-    if (rel) for (const col of rel.fields) fks.add(col)
+    if (rel) for (const col of /** @type {string[]} */ (rel.fields)) fks.add(col)
   }
 
   const tenantColumn = schema?.tenancy?.strategy === 'row' ? schema.tenancy.column : null
   const byName       = new Map(model.fields.map(f => [f.name, f]))
 
-  const identifies = (name) => {
+  const identifies = (/** @type {string} */ name) => {
     if (name === tenantColumn || fks.has(name)) return false
     const f = byName.get(name)
     if (!f) return false
@@ -2983,7 +2983,7 @@ export function identifyingKeysFor(model, schema) {
 
   for (const a of model.attributes) {
     if (a.kind !== 'uniqueIndex' || a.nullsDistinct) continue
-    for (const name of a.fields) if (identifies(name)) keys.push(name)
+    for (const name of /** @type {string[]} */ (a.fields)) if (identifies(name)) keys.push(name)
   }
 
   return [...new Set(keys)]

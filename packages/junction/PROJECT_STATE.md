@@ -19,6 +19,13 @@ OpenAPI, manifest, devtools, health, the transactional outbox, the backfill).
 File storage is **not** among them and is Litestone's (`FJS-D260`); junction's
 half of a `File` column is the multipart crossing and `http.static`.
 
+Mail has a receiving half (`FJS-D1091`): `ReceivedMail` and the reply-tag kit
+(`replyAddress`, `splitAddress`, `readReplyTag`) in `src/mail/received.ts`. It
+listens on nothing — a mail vendor's connector exports the conduit `Dialect`
+and the app declares the Receiver; the kit is what every app's `apply` would
+otherwise hand-roll. Proved by `test/mail-received.test.ts`; the round trip
+over two real dialects is the chatwoot stressor's `mail.test.ts` (`FJS-D1093`).
+
 **The backfill** is the middle step of expand → backfill → contract
 (`FJS-D157`): `defineBackfill({ name, model, field, fill })`, a `BackfillRun` row
 holding the position, and a Caravan job that fills one chunk and queues the next
@@ -35,7 +42,7 @@ row inside the call's own transaction and `app.configure(outbox())` relays it to
 to a table.
 
 Schema-derived behavior is the load-bearing part: `createService({ model })`
-merges `gateAuth()` and `autoValidate()` through `createBaseService`, so a model
+merges `gateAuth()` and `autoValidate()` into the definition, so a model
 service gets 401s and 400s from `db/schema.lite` without declaring them.
 
 Runnable examples are verified over HTTP — `example/README.md` has the ladder

@@ -354,7 +354,7 @@ nothing for it to be inside of.
   every position, not one per phase per method. The old gate was
   `NODE_ENV !== 'production'`, which is every developer all of the time.
   **The third kind is a REFUSAL, and it took over what this line used to call a
-  warning.** A duplicate service, a file with no factory, a hook map on a method
+  warning.** A duplicate service, a file with no default export, a hook map on a method
   the service does not answer: each one is a thing the author wrote that nothing
   reads, and each was a `console.warn` beside a `continue` — or, measured, not
   even that. They are `check-authoring` findings now (`FJS-D199`), collected and

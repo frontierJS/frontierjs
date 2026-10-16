@@ -1,10 +1,10 @@
 // test/derived-hooks-once.test.ts — the schema-derived layer installs once.
 //
-// `createBaseService` returns the MERGED hook map, not the caller's, and the
+// `buildBase` returns the MERGED hook map, not the caller's, and the
 // autoloader spreads a built base straight back through `createService`
 // (loader.ts:52 — its discriminant is `typeof service.hooks !== 'function'`, and
 // a base's hooks is a map). `createService` forwards that map into a second
-// `createBaseService`, which appended the derived layer again. Every autoloaded
+// `buildBase`, which appended the derived layer again. Every autoloaded
 // one-line service therefore graded its @@gate and ran its validator twice per
 // request — not wrong on the wire, which is exactly why nothing caught it
 // (`FJS-231`).
@@ -13,7 +13,7 @@
 // not ours, and letting it suppress the real one is fail-open on access.
 
 import { describe, test, expect } from 'bun:test'
-import { createService, createBaseService } from '../src/core/service.ts'
+import { createService, buildBase, buildService } from '../src/core/service.ts'
 import { isDerivedHook } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 
@@ -60,10 +60,10 @@ const db = () => ({
 describe('the derived layer installs once', () => {
 
   // Exactly what loader.ts:52-56 builds for `export function createLeadsService()
-  // { return createBaseService({ model: 'lead' }) }`.
-  const throughTheLoader = () => createService({
+  // { return buildBase({ model: 'lead' }) }`.
+  const throughTheLoader = () => buildService({
     name: 'leads',
-    ...(createBaseService({ model: 'lead', db }) as object),
+    ...(buildBase({ model: 'lead', db }) as object),
   } as never)
 
   test('the loader shape installs each derived hook once per method', () => {
@@ -75,7 +75,7 @@ describe('the derived layer installs once', () => {
   })
 
   test('a direct createService is unchanged, and agrees with the loader shape', () => {
-    const direct = createService({ name: 'leads', model: 'lead', db })
+    const direct = buildService({ name: 'leads', model: 'lead', db })
     expect(derivedCounts(throughTheLoader())).toEqual(derivedCounts(direct))
   })
 
@@ -88,9 +88,9 @@ describe('the derived layer installs once', () => {
   })
 
   test('a hand-spread base is the same case', () => {
-    const svc = createService({
+    const svc = buildService({
       name: 'leads',
-      ...(createBaseService({ model: 'lead', db }) as object),
+      ...(buildBase({ model: 'lead', db }) as object),
     } as never)
     for (const counts of Object.values(derivedCounts(svc))) {
       for (const n of Object.values(counts)) expect(n).toBe(1)
@@ -102,7 +102,7 @@ describe('the derived layer installs once', () => {
     // `before: { all: [...] }` included. The shaping hook still runs before the
     // validator that grades what it shaped.
     const mine = function authenticate(_ctx: ServiceContext) {}
-    const svc  = createService({
+    const svc  = buildService({
       name: 'leads', model: 'lead', db,
       hooks: { before: { create: [mine] } },
     })
@@ -114,7 +114,7 @@ describe('the derived layer installs once', () => {
     // The reason the mark exists. Dedupe by name alone would read this as
     // "gateAuth is already here" and drop the only copy that enforces @@gate.
     const impostor = function gateAuth(_ctx: ServiceContext) {}
-    const svc = createService({
+    const svc = buildService({
       name: 'leads', model: 'lead', db,
       hooks: { before: { find: [impostor] } },
     })
@@ -126,14 +126,14 @@ describe('the derived layer installs once', () => {
 
   test('the mark does not leak onto user hooks', () => {
     const mine = function authenticate(_ctx: ServiceContext) {}
-    createService({ name: 'leads', model: 'lead', db, hooks: { before: { find: [mine] } } })
+    buildService({ name: 'leads', model: 'lead', db, hooks: { before: { find: [mine] } } })
     expect(isDerivedHook(mine)).toBe(false)
   })
 
   test('a base with no user hooks still marks its derived layer', () => {
     // The `: derivedHooks` branch of the merge. An unmarked layer is invisible
     // to the dedupe, so the second pass would install it again.
-    const base = createBaseService({ model: 'lead', db }) as { hooks?: { before?: Record<string, Function[]> } }
+    const base = buildBase({ model: 'lead', db }) as { hooks?: { before?: Record<string, Function[]> } }
     const find = base.hooks?.before?.find ?? []
     expect(find.length).toBeGreaterThan(0)
     expect(find.every(isDerivedHook)).toBe(true)
@@ -143,17 +143,17 @@ describe('the derived layer installs once', () => {
 describe('a service over no model, through the loader', () => {
   // `model: null` derives only the gate, so its layer has no `before` map. The
   // loader's re-spread merged `derivedHooks.before` unguarded, and every
-  // `createBaseService({ model: null })` file threw at boot — reported as
+  // `buildBase({ model: null })` file threw at boot — reported as
   // "threw while loading … Object.entries requires that input parameter not be
   // null or undefined", and its service answered 404.
-  const noModel = () => createBaseService({
+  const noModel = () => buildBase({
     model: null,
     hello: async () => 'hi',
     methods: [{ method: 'hello', gate: 0 }],
   } as never)
 
   test('registers, with its gate once', () => {
-    const svc = createService({ name: 'greetings', ...(noModel() as object) } as never)
+    const svc = buildService({ name: 'greetings', ...(noModel() as object) } as never)
     expect(derivedCounts(svc)['around.all']).toEqual({ gateAuth: 1 })
     expect(Object.values(hooksOf(svc)).flat().filter(isDerivedHook)).toEqual([])
   })

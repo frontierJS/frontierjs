@@ -138,13 +138,11 @@ model Lead {              // PascalCase, singular — always. Accessor: db.lead
 // The name comes from the file ('leads' → /api/leads → db.lead), CRUD from the
 // model, 401s from @@gate, 400s from the field rules. Autoloaded at boot.
 
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createLeadsService() {
-  return createBaseService({
-    channel: 'leads',   // announce every write; each frame graded per recipient
-  })
-}
+export default createService({
+  channel: 'leads',   // announce every write; each frame graded per recipient
+})
 ```
 
 ```javascript

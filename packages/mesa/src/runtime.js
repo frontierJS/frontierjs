@@ -32,6 +32,14 @@ export function setRenderEnvironment(isBrowser, isClient = isBrowser) {
   _isBrowser = isBrowser
   _isClient = isClient
 }
+
+/** A DOM is reachable AND a reactive graph is running — a browser tab. False
+ *  under renderToHTML (DOM, no graph) and on a terminal or a phone (graph, no
+ *  DOM). The one spelling of that pair, so nothing outside this file reads a
+ *  flag; `src/browser/` answers every wrapper by it. */
+export function isBrowserClient() {
+  return _isBrowser && _isClient
+}
 function _safeCall(fn) {
   try {
     return fn?.()
@@ -1867,6 +1875,18 @@ function _releaseDelegateRoot(root) {
 }
 
 /**
+ * The nearest delegation root at or above `el`, or null when no mounted tree
+ * holds it. Walks through a shadow boundary by way of the host, since a portal
+ * into a ShadowRoot registers the ShadowRoot itself (Invariant 11).
+ * @param {Node|null|undefined} el
+ * @returns {Element|ShadowRoot|null}
+ */
+export function delegationRootOf(el) {
+  for (let n = el; n; n = n.parentNode ?? n.host ?? null) if (_delegateRoots.has(n)) return n
+  return null
+}
+
+/**
  * <mesa:portal to={expr}> — render children into a different DOM node.
  * `getTarget` is a reactive getter — if it changes, the portal moves.
  * `blockFactory` is a makeBlock factory — called once to produce the DOM.
@@ -1937,6 +1957,51 @@ export function portal(getTarget, blockFactory) {
     unregisterRoot?.()
     if (contentNode) { _disposeNode(contentNode, true); contentNode = null }
   })
+}
+
+/**
+ * subscribe(start) — one platform listener shared by every effect that reads it.
+ *
+ * Returns `track()`. An effect or memo that calls it re-runs whenever `start`'s
+ * `update` is called. `start(update)` runs when the FIRST node reads and returns
+ * a stop; the stop runs when the LAST node is disposed. The caller keeps the
+ * value itself and reads it after `track()`:
+ *
+ *   const track = subscribe((update) => { mql.addEventListener('change', update)
+ *                                         return () => mql.removeEventListener('change', update) })
+ *   get matches() { track(); return mql.matches }
+ *
+ * On a server render there is no reactive graph, so `track()` is a plain call
+ * and `start` never runs — the wrapper answers its default. Outside an effect
+ * (a handler, `untrack`) it tracks nothing and starts nothing either.
+ *
+ * Readers are counted per NODE, not per run, and the stop is deferred one
+ * microtask. An effect's re-run clears its cleanups and then reads again in the
+ * same tick, so a per-run count tore the listener down and started it again on
+ * every update — and a memo, whose cleanups also clear per recompute, did the
+ * same. A node that is gone for a whole microtask is gone.
+ */
+export function subscribe(start) {
+  const [version, bump] = createSignal(0)
+  const readers = new Set()
+  let started = false, stop, v = 0
+  const update = () => bump(++v)
+  const settle = () => {
+    if (readers.size > 0 || !started) return
+    started = false
+    const s = stop
+    stop = undefined
+    s?.()
+  }
+  return function track() {
+    if (!_isClient || !_listener) return
+    version()
+    const node = _listener
+    if (readers.has(node)) return
+    readers.add(node)
+    if (!started) { started = true; stop = start(update) }
+    onCleanup(() => { readers.delete(node); if (readers.size === 0) _resolved.then(settle) })
+  }
 }
 
 // Window property → the event that updates it
@@ -5906,25 +5971,16 @@ export function pop(_node)           {}   // no-op client-side; SSR hydration us
 const TEMPLATE_FRAGMENT = 1
 
 /**
- * Parse a template's HTML afresh, with no cache and no clone.
+ * A template's HTML parsed against the server's document, uncached.
  *
- * Used on the SERVER only. happy-dom's `cloneNode` does not copy an element's
- * attributes — it re-derives some of them from default PROPERTIES, and gets it
- * wrong for `<input>`: every cloned input gains `formaction="<the page's own
- * URL>"` and `formmethod=""`, and an authored relative `formaction="/search"`
- * comes back absolutised to `http://localhost:5274/search`.
- *
- * That is not cosmetic. `formaction` on a submit control OVERRIDES its form's
- * action, so a prerendered form shipped by `target: 'static'` posted to
- * whatever origin built it — and the localhost URL of the build machine went
- * into a public file. Found in `example/`'s prerendered catalog, where a
- * search box that never submits anything still carried both attributes.
- *
- * Parsing is the same path that produced the original, so what ships is what
- * was written. The cost is one parse per template INSTANCE instead of one per
- * template, which is a build-time cost on a page that is rendered once.
+ * A server render clones what this returns, so the clone must reproduce the
+ * attributes as written: a `formaction` the clone invented or absolutised
+ * overrides its form's action, and a prerendered page would post to the
+ * machine that built it. An earlier happy-dom did that to every `<input>`;
+ * 20.11.6, where the peer range starts, does not, and `test/render-ssr.test.js`
+ * § no attribute the author did not write fails if a clone does it again.
  */
-function parseTemplateFresh(html, asFragment) {
+function parseServerTemplate(html, asFragment) {
   const t = document.createElement('template')
   t.innerHTML = html.replace(/<>/g, `<!--${ANCHOR_DATA}-->`)
   const content = t.content
@@ -5934,9 +5990,12 @@ function parseTemplateFresh(html, asFragment) {
 
 export function template(html, flags) {
   const isFragment = flags & TEMPLATE_FRAGMENT
-  let parsed = null
+  let parsed = null, doc
   return function () {
-    if (!_isClient) return parseTemplateFresh(html, !!isFragment)
+    // Parsing every row's template was most of a server render's cost
+    // (`FJS-2993`). Keyed on the document because initRenderer can install
+    // another, and a node from the old one is adopted without complaint.
+    if (!_isClient && doc !== document) { doc = document; parsed = parseServerTemplate(html, !!isFragment) }
     if (!parsed) parsed = htmlToFragment(html, isFragment ? 2 : 1)
     return parsed.cloneNode(true)
   }

@@ -92,8 +92,8 @@ import { openapi } from '../src/plugins/openapi/index.ts'
 import { webhooks, createSqliteWebhookStore } from '../src/plugins/webhooks/index.ts'
 import { Database } from 'bun:sqlite'
 
-import { createUsersService, verifyDemoToken } from './services/users.service.ts'
-import { createNotesService }                  from './services/notes.service.ts'
+import users, { verifyDemoToken } from './services/users.service.ts'
+import notes                      from './services/notes.service.ts'
 
 import type { App }            from '../src/core/app.ts'
 import type { IAuth }          from '../src/auth/types.ts'
@@ -174,8 +174,8 @@ app.configure(webhooks({
 
 // ─── Services ─────────────────────────────────────────────────────────────
 
-app.services.register(createUsersService(app))
-app.services.register(createNotesService(app))
+app.services.register(users)
+app.services.register(notes)
 
 // ─── External API simulator service ───────────────────────────────────────
 // Demonstrates circuitBreaker() protecting a service that calls an external API.

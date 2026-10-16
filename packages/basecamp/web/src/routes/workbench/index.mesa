@@ -63,6 +63,7 @@ title: Workbench
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
+  import Terminal   from '../../components/Terminal.mesa'
 
   const POLL_MS   = 2000
   const SHOW_TOOLS = 4
@@ -480,6 +481,7 @@ title: Workbench
     if (!p.missing) out.push({ key: 'run', tone: serving(p.id).length ? 'success' : '',
                                label: serving(p.id).length ? `Run · ${serving(p.id).length} up` : 'Run' })
     if (!p.missing) out.push({ key: 'plan', label: planLabel(p) })
+    if (!p.missing) out.push({ key: 'terminal', label: 'Terminal' })
     const c = status[p.id]?.checks
     if (c) out.push({ key: 'checks', tone: CHECKS_TONE[c.state],
                       label: checksLabel(c) + (c.drives ? ` · ${plural(c.drives, 'drive')} to run` : '') })
@@ -1725,6 +1727,11 @@ title: Workbench
                 {/each}
               </div>
 
+            {:else if tabOf(p) === 'terminal'}
+              <div class="workbench-panel workbench-terminal-panel" role="tabpanel" aria-labelledby={`workbench-tab-terminal-${p.id}`}>
+                <Terminal pin={p.id} />
+              </div>
+
             {:else if tabOf(p) === 'settings'}
               <div class="workbench-panel text-sm workbench-settings" role="tabpanel" aria-labelledby={`workbench-tab-settings-${p.id}`}>
                 <p class="text-muted"><code>{p.path}</code></p>
@@ -1994,6 +2001,7 @@ title: Workbench
     overflow-y: auto;
     overscroll-behavior: contain;
   }
+  .workbench-terminal-panel { display: flex; flex-direction: column; overflow: hidden; }
   .workbench-chat-panel { display: flex; flex-direction: column; gap: var(--space-xs); overflow: hidden; }
   .workbench-composer textarea { resize: vertical; inline-size: 100%; max-block-size: 30vh; }
 

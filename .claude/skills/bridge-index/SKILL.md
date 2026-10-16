@@ -80,7 +80,7 @@ Detail: `references/api-internals.md`
 - `CALL_OPTIONS_AT` — which argument of each `ServiceCaller` method holds `CallOptions` — `junction/src/core/app.ts`
 - `svc.pipelines(appHooks)` — the hook chain, memoized — `junction/src/core/service.ts`
 - `svc.describe()` — what this service is, for `/manifest`, OpenAPI and `/metrics` — `junction/src/core/service.ts`
-- `isBuiltService(v)` / `Symbol.for('junction.service')` — has `createService` built this — `junction/src/core/service.ts`
+- `isBuiltService(v)` / `Symbol.for('junction.service')` — has `buildService` already built this (`createService` only returns the definition; the registry builds) — `junction/src/core/service.ts`
 - `normalizePrefix()` — the one owner of `apiPrefix` — `junction/src/core/app.ts`
 - `ctx.enqueue(job, payload)` / `deliverOutbox(app)` — the durable effect, inside the call's transaction — `junction/src/plugins/outbox/engine.ts`
 - `claimIdempotency(ctx, key, config)` — claimed once in `callService`, for both transports — `junction/src/core/idempotency.ts`

@@ -10,8 +10,6 @@
 // through `carts.applyDiscount`, which validates it through the system client
 // and answers what it is worth to THAT basket — the only fact about a code a
 // shopper is entitled to.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createDiscountsService() {
-  return createBaseService({ model: 'Discount', channel: 'discounts' })
-}
+export default createService({ model: 'Discount', channel: 'discounts' })

@@ -28,7 +28,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createApp }     from '../src/core/app.ts'
-import { createService } from '../src/core/service.ts'
+import { buildService } from '../src/core/service.ts'
 import { enterRequest }  from '../src/core/context.ts'
 import { readFileSync }  from 'node:fs'
 import { join }          from 'node:path'
@@ -41,7 +41,7 @@ function harness() {
   const app  = createApp()
   const seen: Record<string, any> = {}
 
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'leaf',
     methods: ['find'],
     find(ctx: any) {
@@ -66,7 +66,7 @@ describe('auth — the principal, frozen, and it propagates', () => {
   test('a call naming no principal inherits the one in scope', async () => {
     const { app, seen } = harness()
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) { await ctx.app.service('leaf').find({ tag: 'a' }); return [] },
     } as never))
@@ -78,11 +78,11 @@ describe('auth — the principal, frozen, and it propagates', () => {
   test('it propagates at DEPTH, not just one level', async () => {
     const { app, seen } = harness()
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'mid', methods: ['find'],
       async find(ctx: any) { await ctx.app.service('leaf').find({ tag: 'deep' }); return [] },
     } as never))
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) { await ctx.app.service('mid').find({}); return [] },
     } as never))
@@ -97,7 +97,7 @@ describe('auth — the principal, frozen, and it propagates', () => {
     // listing return — has to be able to say so.
     const { app, seen } = harness()
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) {
         await ctx.app.service('leaf').find({ tag: 'nobody' }, { auth: { user: null } })
@@ -114,11 +114,11 @@ describe('auth — the principal, frozen, and it propagates', () => {
     // calls mid as bob; anything mid calls must be bob, not the request's alice.
     const { app, seen } = harness()
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'mid', methods: ['find'],
       async find(ctx: any) { await ctx.app.service('leaf').find({ tag: 'grandchild' }); return [] },
     } as never))
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) { await ctx.app.service('mid').find({}, { auth: { user: bob } }); return [] },
     } as never))
@@ -131,7 +131,7 @@ describe('auth — the principal, frozen, and it propagates', () => {
     const { app } = harness()
     let caught: unknown = null
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) {
         try { ctx.auth.user.role = 'admin' } catch (e) { caught = e }
@@ -151,7 +151,7 @@ describe('client — propagates, and is information rather than authority', () =
   test('it reaches a nested call', async () => {
     const { app, seen } = harness()
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) { await ctx.app.service('leaf').find({ tag: 'c' }); return [] },
     } as never))
@@ -176,12 +176,12 @@ describe('locals — fresh per call, and it does NOT propagate', () => {
     const { app } = harness()
     let leaked: unknown = 'unset'
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'writer', methods: ['find'],
       async find(ctx: any) { ctx.locals.secret = 'from-child'; return [] },
     } as never))
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) {
         await ctx.app.service('writer').find({})
@@ -197,7 +197,7 @@ describe('locals — fresh per call, and it does NOT propagate', () => {
   test('and a caller cannot leak into a sub-call by accident', async () => {
     const { app, seen } = harness()
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) {
         ctx.locals.scratch = 'parent'
@@ -213,7 +213,7 @@ describe('locals — fresh per call, and it does NOT propagate', () => {
   test('locals CAN be handed down deliberately — passed, never inherited', async () => {
     const { app, seen } = harness()
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) {
         await ctx.app.service('leaf').find({ tag: 'given' }, { locals: { scratch: 'stated' } })
@@ -240,7 +240,7 @@ describe('transients — fresh per call, and it does NOT propagate', () => {
     // ONE payload. A nested call has its own, or none.
     const { app, seen } = harness()
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) {
         ctx.transients.secret = 'from-parent'
@@ -270,7 +270,7 @@ describe('reserved — the query keys a service owns rather than filters on', ()
     const app = createApp()
     const at: Record<string, any> = {}
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'owned',
       methods: ['find'],
       reservedQuery: ['workspace_id'],
@@ -292,7 +292,7 @@ describe('reserved — the query keys a service owns rather than filters on', ()
   test('a key the caller did not send is simply absent', async () => {
     const app = createApp()
     let seen: any = null
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'owned2', methods: ['find'], reservedQuery: ['workspace_id'],
       find(ctx: any) { seen = { ...ctx.reserved }; return [] },
     } as never))
@@ -304,7 +304,7 @@ describe('reserved — the query keys a service owns rather than filters on', ()
   test('a sub-call does not inherit what its caller reserved', async () => {
     const { app, seen } = harness()
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root-r', methods: ['find'],
       async find(ctx: any) {
         ctx.reserved.workspace_id = 'from-parent'
@@ -321,7 +321,7 @@ describe('reserved — the query keys a service owns rather than filters on', ()
     // Decidable with no client: $ is transport syntax and the directive table
     // owns every name under it (Invariant 10), so reserving one would put two
     // owners on a single spelling.
-    expect(() => createService({
+    expect(() => buildService({
       name: 'bad', reservedQuery: ['$limit'],
     } as never)).toThrow(/directive/)
   })
@@ -337,7 +337,7 @@ describe('madeAt — when the write was made, and it propagates', () => {
 
   test('a stated one reaches a nested call, corrected for the device clock', async () => {
     const { app, seen } = harness()
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) { await ctx.app.service('leaf').find({ tag: 'replay' }); return [] },
     } as never))

@@ -5,12 +5,10 @@
 // that context cannot restate one. The service exists because a detail screen
 // needs the lines and a nested read would make the header's own policy the
 // only thing protecting them.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createInvoiceLinesService() {
-  return createBaseService({
-    model:   'InvoiceLine',
-    channel: 'invoice-lines',
-    methods: ['find', 'get'],
-  })
-}
+export default createService({
+  model:   'InvoiceLine',
+  channel: 'invoice-lines',
+  methods: ['find', 'get'],
+})

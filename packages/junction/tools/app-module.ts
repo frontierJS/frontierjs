@@ -155,7 +155,7 @@ async function build(value: unknown, label: string, servicesDir: string | null, 
     fatal(`No services directory at ${rel(resolved.probed[0])}`)
 
   if (resolved.dir) {
-    await quietly(() => autoloadServices({ dir: resolved.dir!, app, registry: app.services }))
+    await quietly(() => autoloadServices({ dir: resolved.dir!, registry: app.services }))
   }
 
   // `load-config` is a `needsHost` phase too, and skipping it means every

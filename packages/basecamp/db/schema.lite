@@ -357,6 +357,14 @@ type AppUnplace {
   replicaIndex Int?
 }
 
+/// What `apps.restoreVolume` accepts: an archive already on that server, under
+/// its Outpost's restore directory (`FJS-D943`).
+type AppVolumeRestore {
+  serverId  String
+  path      String
+  overwrite Boolean?
+}
+
 /// What `flags.setOverride` and `flags.clearOverride` accept. A rollout outside
 /// 0..100 is clamped by the method, so it is not narrowed here.
 type FlagOverrideSet {

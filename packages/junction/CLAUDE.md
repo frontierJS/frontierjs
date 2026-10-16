@@ -66,6 +66,12 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
   unapplied and answers 500 (`FJS-D1087`, `test/webhooks.test.ts` § receiving).
 - **A CRLF in a mail address or header is refused at the builder AND at
   `sendMessage()`** (`FJS-677`, `test/mail-injection.test.ts`).
+- **A reply tag threads a reply onto its record and proves only that the
+  holder RECEIVED our mail** — attribution also needs `from` to be the address
+  the mail went to; an expired or forged tag still delivers, unthreaded, and a
+  mailbox longer than 21 characters cannot carry one (`FJS-D1091`, `FJS-D1092`,
+  `test/mail-received.test.ts`). Mail arrives through a conduit Receiver, never
+  a route here.
 - **The static server serves a file inside its root**, symlinks resolved, 404 on
   the way out (`FJS-746`, `test/static-root.test.ts`). Its cases are shared with
   sierra's origins: one found by either goes in
@@ -231,7 +237,7 @@ index.ts — the four axes and the host; no battery (FJS-D639, test/edge.test.ts
 src/
   core/
     app.ts — createApp; the plugin protocol; configure, start, ready, running, shutdown
-    service.ts — createBaseService (five CRUD verbs), createService, callService
+    service.ts — createService (the definition, five CRUD verbs), callService
     context.ts — ServiceContext; the request store (enterRequest, reenterAs) and the call store ($, enterCall)
     directives.ts — QueryDirectives, the $-prefixed key fields; imports nothing
     hooks.ts · hooks-builtin.ts · hooks-resilience.ts — the pipeline and around; the built-in hooks; circuitBreaker, rateLimit
@@ -276,7 +282,7 @@ src/
     backfill/ — index.ts · engine.ts (the middle step of expand, backfill, contract, FJS-D157)
     export/index.ts (the governed extract, FJS-D228) ·
     metrics/index.ts (keeping what /metrics said) · commitments/index.ts (the sweep under @@commitment, FJS-D368)
-  mail/ — index.ts · smtp.ts
+  mail/ — index.ts · smtp.ts · received.ts (ReceivedMail, the reply-tag kit)
   cache/index.ts · events/index.ts · scheduler/index.ts · ai/index.ts
   testing/index.ts — createTestApp, request, withTestMeta
 tools/

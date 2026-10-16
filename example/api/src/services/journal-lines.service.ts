@@ -7,12 +7,10 @@
 // The service exists because a trial-balance screen sums lines ACROSS entries —
 // which is the one question the composed `journal-entries.get` cannot answer,
 // since it is scoped to a single header.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createJournalLinesService() {
-  return createBaseService({
-    model:   'JournalLine',
-    channel: 'journal-lines',
-    methods: ['find', 'get'],
-  })
-}
+export default createService({
+  model:   'JournalLine',
+  channel: 'journal-lines',
+  methods: ['find', 'get'],
+})

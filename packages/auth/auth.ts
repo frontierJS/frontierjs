@@ -6,6 +6,7 @@
 // Never sends email — that is the caller's job via the onX callbacks in opts.
 
 import type { IAuth, LoginResult, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from '@frontierjs/junction'
+import { parseTtl } from '@frontierjs/junction'
 import {
   hashPassword,
   verifyPassword,
@@ -35,6 +36,7 @@ import {
   LastCredentialError,
   NoPasswordCredentialError, NotFoundError,
   TotpAlreadyEnabledError, InvalidSecondFactorError, WeakPasswordError,
+  SupportEpisodeError, InvalidExpiryError,
 } from './errors.ts'
 
 // Minimal interface — avoids a hard import of @frontierjs/litestone types
@@ -427,19 +429,34 @@ export function createLitestoneAuth(
    * own account, and one that can remove theirs has taken the protection off
    * without ever knowing the password. Both are reachable from a stolen tab, so
    * both ask. Pays the comparison cost on a user with no password credential for
-   * the same reason `login()` does.
+   * the same reason `login()` does. `via` is the method that asked, for the trail.
    */
-  async function requireCurrentPassword(userId: string, password: string): Promise<any> {
+  async function requireCurrentPassword(userId: string, password: string, via: string): Promise<any> {
     const user = await sys.user.findFirst({ where: { id: userId } })
     if (!user) throw new UserNotFoundError()
 
     const cred = await sys.credential.findFirst({ where: { userId, type: 'password' } })
     if (!cred) {
       await payPasswordCost(password)
+      await reauthenticationFailed(userId, via, 'no-password')
       throw new NoPasswordCredentialError('This account has no password to confirm with')
     }
-    if (!await verifyPassword(password, cred.value)) throw new ReauthenticationFailedError()
+    if (!await verifyPassword(password, cred.value)) {
+      await reauthenticationFailed(userId, via, 'wrong-password')
+      throw new ReauthenticationFailedError()
+    }
     return user
+  }
+
+  // The in-session sibling of `login.failed`. A wrong current password through
+  // a live session is the same guess as one at the front door, made by whoever
+  // holds the tab, and the trail is where a lockout policy reads it from.
+  async function reauthenticationFailed(userId: string, method: string, reason: string): Promise<void> {
+    await audit('reauthentication.failed', {
+      model: 'User', records: [userId],
+      actorId: userId, actorType: 'user',
+      meta: { method, reason },
+    })
   }
 
   /** The click on an `emailChange` link — `verifyEmail` finds the row and this spends it. */
@@ -810,10 +827,10 @@ export function createLitestoneAuth(
       // start after that is refused for an episode nobody is in. There is no way
       // out of that state a person could find (`example`: `verify:support`).
       if (session.impersonatingUserId && liveEpisode(session))
-        throw new AuthConfigError('Already in a support session — end it before starting another')
+        throw new SupportEpisodeError('Already in a support session — end it before starting another')
 
       if (String(session.userId) === String(subjectId))
-        throw new AuthConfigError('Cannot start a support session against yourself')
+        throw new SupportEpisodeError('Cannot start a support session against yourself')
 
       if (!reason?.trim()) throw new AuthConfigError('A support session needs a reason')
 
@@ -821,10 +838,14 @@ export function createLitestoneAuth(
       if (!subject) throw new UserNotFoundError(`No user '${subjectId}'`)
 
       // The app may ask for less than the ceiling and never for more. A
-      // requested ttl is a preference; the cap is the rule.
-      const cap  = new Date(expiresAt(supportTtl, sys.$now()))
-      const want = ttl ? new Date(expiresAt(ttl, sys.$now())) : cap
-      const endsAt = (want < cap ? want : cap).toISOString()
+      // requested ttl is a preference; the cap is the rule, and a ttl that is
+      // not a finite positive duration is the cap too — `parseTtl` of twenty
+      // digits is a number a Date cannot hold, and its toISOString is a 500.
+      const now  = sys.$now()
+      const cap  = new Date(expiresAt(supportTtl, now))
+      const ms   = ttl ? parseTtl(ttl) : NaN
+      const want = Number.isFinite(ms) && ms > 0 ? new Date(now.getTime() + ms) : cap
+      const endsAt = (Number.isNaN(want.getTime()) || want > cap ? cap : want).toISOString()
 
       await sys.session.update({
         where: { id: session.id },
@@ -1045,7 +1066,7 @@ export function createLitestoneAuth(
     // the three that change what the account requires.
 
     async setupTotp(userId: string, currentPassword: string): Promise<{ secret: string; qr: string }> {
-      const user = await requireCurrentPassword(userId, currentPassword)
+      const user = await requireCurrentPassword(userId, currentPassword, 'setupTotp')
 
       // Refused rather than replaced. Overwriting would invalidate the secret the
       // person's authenticator holds while their next login still demands a code
@@ -1119,7 +1140,7 @@ export function createLitestoneAuth(
     },
 
     async disableTotp(userId: string, currentPassword: string): Promise<void> {
-      await requireCurrentPassword(userId, currentPassword)
+      await requireCurrentPassword(userId, currentPassword, 'disableTotp')
 
       const cred = await liveTotp(userId)
       if (!cred) throw new NotFoundError('Two-factor authentication is not enabled')
@@ -1138,7 +1159,7 @@ export function createLitestoneAuth(
     },
 
     async regenerateRecoveryCodes(userId: string, currentPassword: string): Promise<{ recoveryCodes: string[] }> {
-      await requireCurrentPassword(userId, currentPassword)
+      await requireCurrentPassword(userId, currentPassword, 'regenerateRecoveryCodes')
 
       if (!await liveTotp(userId)) throw new NotFoundError('Two-factor authentication is not enabled')
 
@@ -1946,7 +1967,7 @@ export function createLitestoneAuth(
       if (!onEmailVerificationRequested) {
         throw new AuthConfigError('requestEmailChange needs onEmailVerificationRequested — the link it mails is the proof')
       }
-      await requireCurrentPassword(userId, currentPassword)
+      await requireCurrentPassword(userId, currentPassword, 'requestEmailChange')
 
       const address = newEmail.trim().toLowerCase()
       // Answered now rather than at the click, by the same 409 registering
@@ -2007,6 +2028,14 @@ export function createLitestoneAuth(
 
     async createApiKey(userId: string, opts?: ApiKeyOptions): Promise<{ key: string; id: string }> {
       const secret = requireEncryptionKey('createApiKey')
+      // Absent means the key never expires. Stated, it is graded against the
+      // clock the verifier reads: an Invalid Date is a 500 at the insert, and a
+      // past one mints a key `verifyApiKey` refuses from its first use.
+      if (opts?.expiresAt != null) {
+        const at = opts.expiresAt instanceof Date ? opts.expiresAt : new Date(opts.expiresAt as any)
+        if (Number.isNaN(at.getTime())) throw new InvalidExpiryError('expiresAt is not a date')
+        if (at <= sys.$now())           throw new InvalidExpiryError('expiresAt is already in the past')
+      }
       const rawKey = generateApiKey()
       const hash   = hashApiKey(rawKey, secret)
 
@@ -2104,8 +2133,14 @@ export function createLitestoneAuth(
       // Same refusal for "no password set" as for "wrong password". An account
       // with only an OAuth credential is a fact about that account, and this is
       // reachable by anyone holding a session for it.
-      if (!cred) throw new ReauthenticationFailedError()
-      if (!await verifyPassword(currentPassword, cred.value)) throw new ReauthenticationFailedError()
+      if (!cred) {
+        await reauthenticationFailed(userId, 'changePassword', 'no-password')
+        throw new ReauthenticationFailedError()
+      }
+      if (!await verifyPassword(currentPassword, cred.value)) {
+        await reauthenticationFailed(userId, 'changePassword', 'wrong-password')
+        throw new ReauthenticationFailedError()
+      }
 
       await sys.credential.update({
         where: { id: cred.id },

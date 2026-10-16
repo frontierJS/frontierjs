@@ -620,7 +620,7 @@ function collectIssues({ services, resources, surface, models, env, packages }) 
 
   // There is deliberately NO per-service gateAuth check. One lived here and was
   // false for every row it ever printed: it read the per-method `before` chain,
-  // and `gateAuth` is an `around.all` hook that `createBaseService` installs
+  // and `gateAuth` is an `around.all` hook that the service builder installs
   // unconditionally — zero occurrences in any `before` chain of any snapshot in
   // this repo. So it fired on exactly the services that expose a write method
   // and reported *ungated* about the one thing gated on every path (`FJS-1016`).

@@ -28,7 +28,7 @@ describe('P1: service caller memoization', () => {
 
   it('returns the same caller object for the same name', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'a', async find() { return [1] } })],
+      services: [createService({ name: 'a', async find() { return [1] } })],
     })
     expect(app.service('a')).toBe(app.service('a'))
     expect(app.service('a')).not.toBe(app.service('b'))
@@ -77,7 +77,7 @@ describe('P1: frozen shared auth principal', () => {
   it('internal calls receive a frozen user object', async () => {
     let seenFrozen = false
     const app = await createTestApp({
-      services: [() => createService({
+      services: [createService({
         name: 'whoami',
         async find(ctx) {
           seenFrozen = ctx.auth.user !== null && Object.isFrozen(ctx.auth.user)
@@ -149,7 +149,7 @@ describe('P1: OpenAPI spec caching', () => {
   it('caches between requests and busts on late service registration', async () => {
     const app = await createTestApp({
       config: { apiPrefix: '/api' },
-      services: [() => createService({ name: 'first', async find() { return [] } })],
+      services: [createService({ name: 'first', async find() { return [] } })],
     })
     app.configure(openapi({ title: 'T', version: '1' }))
 

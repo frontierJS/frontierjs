@@ -35,7 +35,7 @@ export default createService({
   // — `POST /shopfront` with `X-Service-Method: settings` — wraps as a single
   // and unwraps whole.
   //
-  // `methods:` also narrows the surface: without it the base service answers
+  // `methods:` also narrows the surface: without it the CRUD default answers
   // every CRUD verb it was not given, and on a service with no model that is a
   // 500 rather than a refusal.
   methods: ['settings'],

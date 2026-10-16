@@ -163,6 +163,44 @@ describe('parser', () => {
     expect(r.errors.some((e: string) => e.includes("'@missingFn' is neither a field attribute nor a function"))).toBe(true)
   })
 
+  // A typo'd validator with a literal argument is not a function call, and the
+  // grammar error 'Expected IDENT' hid which attribute was the problem (FJS-2949).
+  test('a misspelled attribute with literal arguments names the attribute', () => {
+    for (const args of ['1, 10', '"x"']) {
+      const r = parse(`
+        model T { id Int @id
+          name String @lenght(${args}) }
+      `)
+      expect(r.valid).toBe(false)
+      expect(r.errors[0]).toContain("Unknown field attribute '@lenght'")
+      expect(r.errors[0]).not.toContain('Expected IDENT')
+    }
+  })
+
+  // The gate-order rule and Invariant 2's model case were enforced in the
+  // plugin and `fli check`, so a developer holding litestone alone got a valid
+  // parse and a failure at boot (FJS-2948).
+  test('a @@gate out of order is refused by parse, naming the model', () => {
+    for (const g of ['6.4.2.1', '2.4.1', '1.5.3']) {
+      const r = parse(`model T { id Int @id\n @@gate("${g}") }`)
+      expect(r.valid).toBe(false)
+      expect(r.errors[0]).toContain('@@gate on "T"')
+    }
+    expect(parse(`model T { id Int @id\n @@gate("2.1.") }`).valid).toBe(false)
+    expect(parse(`model T { id Int @id\n @@gate("2.4.4.5") }`).valid).toBe(true)
+    expect(parse(`model T { id Int @id\n @@gate("5.8.8.9") }`).valid).toBe(true)
+  })
+
+  test('a model name that is not PascalCase is refused unless @@external', () => {
+    for (const name of ['user', 'lead_item', 'Lead_Item']) {
+      const r = parse(`model ${name} { id Int @id }`)
+      expect(r.valid).toBe(false)
+      expect(r.errors[0]).toContain(`Model '${name}'`)
+    }
+    expect(parse(`model Lead { id Int @id }`).valid).toBe(true)
+    expect(parse(`model legacy_user { id Int @id\n @@external }`).valid).toBe(true)
+  })
+
   test('validates @funcCall arg count', () => {
     const r = parse(`
       function dbl(x: Int): Int { @@expr("{x} * 2") }
@@ -396,7 +434,7 @@ database other { path "./other.db" }
 
   test('treats non-breaking space as whitespace', () => {
     // U+00A0 between tokens — used to trip tokenizer on first occurrence
-    const src = `model\u00A0users\u00A0{\u00A0id\u00A0Int\u00A0@id\u00A0}`
+    const src = `model\u00A0Users\u00A0{\u00A0id\u00A0Int\u00A0@id\u00A0}`
     const r = parse(src)
     expect(r.valid).toBe(true)
     expect(r.schema.models[0].fields).toHaveLength(1)
@@ -26397,10 +26435,9 @@ model Scan {
       kinds:  ['gate-lower'],
       build:  (t: string) => createTestEnv({ schema: t }),
     })
-    // A non-monotonic @@gate parses and the gate plugin refuses it at
-    // construction — the two halves of "is this schema legal" do not agree, and
-    // only the second is reached here.
-    expect(r.refused.length).toBeGreaterThan(0)
+    // A non-monotonic @@gate is refused by parse() (FJS-2948), so the mutant is
+    // killed before any client is built.
+    expect(r.byParser).toBeGreaterThan(0)
     expect(r.errored).toHaveLength(0)
   }, 120_000)
 })

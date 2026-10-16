@@ -243,7 +243,7 @@ export function orion(options: OrionOptions = {}): Plugin {
 
       if (options.services !== false) {
         for (const svc of createOrionServices({ runner, names: options.services })) {
-          if (app.services.has(svc.name)) {
+          if (app.services.has(svc.name!)) {
             throw new Error(`[orion] service '${svc.name}' is already registered by this app. Rename orion's: orion({ services: { ${svc.name}: '…' } }), or false to leave it out.`)
           }
           app.services.register(svc)

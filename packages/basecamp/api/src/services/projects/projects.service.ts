@@ -14,66 +14,63 @@ import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '
 import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
 import { retireAppsIn }         from '../apps/apps.service.ts'
-import type { BasecampApp }    from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
-export function createProjectsService(app: BasecampApp) {
-  return createService({
-    name:  'projects',
-    scope: keyScope('projects'),
-    model: 'Project',
-    // Announced by the service DEFINITION, not by an after hook: `callService`
-    // is junction's one announcement point and it excludes `find`/`get` by name,
-    // where an `after: { all: [...] }` hook broadcast every read to every browser
-    // in the workspace (FJS-031). Declaring both is refused at construction.
-    channel: workspaceChannel(app),
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+export default createService({
+  name:  'projects',
+  scope: keyScope('projects'),
+  model: 'Project',
+  // Announced by the service DEFINITION, not by an after hook: `callService`
+  // is junction's one announcement point and it excludes `find`/`get` by name,
+  // where an `after: { all: [...] }` hook broadcast every read to every browser
+  // in the workspace (FJS-031). Declaring both is refused at construction.
+  channel: workspaceChannel,
+  reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find() {
-      const { limit, offset } = getPagination()
-      const status = $.query.status as string | undefined
-      return findScoped('project', { where: status ? { status } : {}, limit, offset })
+  async find() {
+    const { limit, offset } = getPagination()
+    const status = $.query.status as string | undefined
+    return findScoped('project', { where: status ? { status } : {}, limit, offset })
+  },
+
+  get: () => getScoped('project', 'Project'),
+
+  async create() {
+    const data = $.data as Record<string, unknown>
+    await assertSlugFree('project', { workspaceId: ws(), slug: data.slug },
+      `Project slug '${data.slug}' already exists in this workspace`)
+
+    const project = await db().project.create({ data })
+    $.app.events.emit('project:created', { id: project.id, workspace_id: ws() })
+    return project
+  },
+
+  async patch() {
+    await getScoped('project', 'Project')
+    // slug is immutable: it is half of the @@unique([workspaceId, slug]) key
+    // and appears in URLs the UI has already handed out.
+    const patch = narrowPatch($.data as Record<string, unknown>, ['slug'])
+    if (changesNothing(patch)) return getScoped('project', 'Project')
+    return db().project.update({ where: { id: $.id as string }, data: patch })
+  },
+
+  async remove() {
+    // @@softDelete(cascade) on Project — this also stamps its Environments,
+    // and through them their Apps and Jobs. That cascade is why archiving a
+    // project cannot leave live rows behind; it tells no machine, so the
+    // Apps are retired first.
+    const project = await getScoped('project', 'Project')
+    const envs    = await db().environment.findMany({ where: { projectId: project.id }, select: { id: true } })
+    const apps    = await retireAppsIn($.app, envs.map((e: { id: string }) => e.id))
+    const removed = await removeScoped('project', 'Project')
+    $.app.events.emit('project:deleted', { id: $.id, workspace_id: ws() })
+    return { ...removed, apps }
+  },
+
+  hooks: {
+    before: {
+      all:    [sessionScope()],
+      create: [deriveSlug],
     },
-
-    get: () => getScoped('project', 'Project'),
-
-    async create() {
-      const data = $.data as Record<string, unknown>
-      await assertSlugFree('project', { workspaceId: ws(), slug: data.slug },
-        `Project slug '${data.slug}' already exists in this workspace`)
-
-      const project = await db().project.create({ data })
-      app.events.emit('project:created', { id: project.id, workspace_id: ws() })
-      return project
-    },
-
-    async patch() {
-      await getScoped('project', 'Project')
-      // slug is immutable: it is half of the @@unique([workspaceId, slug]) key
-      // and appears in URLs the UI has already handed out.
-      const patch = narrowPatch($.data as Record<string, unknown>, ['slug'])
-      if (changesNothing(patch)) return getScoped('project', 'Project')
-      return db().project.update({ where: { id: $.id as string }, data: patch })
-    },
-
-    async remove() {
-      // @@softDelete(cascade) on Project — this also stamps its Environments,
-      // and through them their Apps and Jobs. That cascade is why archiving a
-      // project cannot leave live rows behind; it tells no machine, so the
-      // Apps are retired first.
-      const project = await getScoped('project', 'Project')
-      const envs    = await db().environment.findMany({ where: { projectId: project.id }, select: { id: true } })
-      const apps    = await retireAppsIn(app, envs.map((e: { id: string }) => e.id))
-      const removed = await removeScoped('project', 'Project')
-      app.events.emit('project:deleted', { id: $.id, workspace_id: ws() })
-      return { ...removed, apps }
-    },
-
-    hooks: {
-      before: {
-        all:    [sessionScope(app)],
-        create: [deriveSlug],
-      },
-    },
-  })
-}
+  },
+})

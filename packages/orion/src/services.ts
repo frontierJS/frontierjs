@@ -24,7 +24,7 @@
  */
 
 import { BadRequest, Conflict, Forbidden, NotFound, Unauthorized, callerGateLevel, createService } from "@frontierjs/junction"
-import type { Service, ServiceContext, SessionContext } from "@frontierjs/junction"
+import type { ServiceDefinition, ServiceContext, SessionContext } from "@frontierjs/junction"
 import { LEVELS, levelName, levelPasses } from "@frontierjs/toolbelt/gate"
 
 import type { Flow } from "./engine/types"
@@ -52,10 +52,10 @@ export interface FlowFile {
 export function createOrionServices(deps: {
   runner: Runner
   names?: OrionServiceNames
-}): Service[] {
+}): ServiceDefinition[] {
   const { runner } = deps
   const names = { ...DEFAULT_SERVICE_NAMES, ...deps.names }
-  const services: Service[] = []
+  const services: ServiceDefinition[] = []
 
   // ─── who is asking ─────────────────────────────────────────────────────────
 

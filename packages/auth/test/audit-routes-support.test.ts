@@ -39,13 +39,11 @@ describe('ttl', () => {
 
   test.each(['garbage', '-5m', '0', 'NaN', '1e9', '   '])('ttl %j answers 200 and an endsAt within the cap', clamped)
 
-  // FJS-1852: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('ttl "99999999999999999999" answers 200 and an endsAt within the cap', () => clamped('99999999999999999999'))
+  test('ttl "99999999999999999999" answers 200 and an endsAt within the cap', () => clamped('99999999999999999999'))
 })
 
 describe('from inside an episode', () => {
-  // FJS-1851: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('canStartSupport is handed the OPERATOR, not the subject the session currently resolves to', async () => {
+  test('canStartSupport is handed the OPERATOR, not the subject the session currently resolves to', async () => {
     const op = await person('op'), sub = await person('sub'), other = await person('other')
     expect((await json(app, 'POST', '/auth/support/start', { subjectId: sub.userId, reason: 'r' }, op.bearer)).status).toBe(200)
 
@@ -56,8 +54,7 @@ describe('from inside an episode', () => {
     if (guardSaw.length) expect(guardSaw[0]).toBe(op.userId)
   })
 
-  // FJS-1851: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a chained start is refused as the caller\'s mistake, not a 500', async () => {
+  test('a chained start is refused as the caller\'s mistake, not a 500', async () => {
     const op = await person('op'), sub = await person('sub'), other = await person('other')
     expect((await json(app, 'POST', '/auth/support/start', { subjectId: sub.userId, reason: 'r' }, op.bearer)).status).toBe(200)
     const res = await json(app, 'POST', '/auth/support/start', { subjectId: other.userId, reason: 'r2' }, op.bearer)
@@ -68,8 +65,7 @@ describe('from inside an episode', () => {
     expect(me.body.userId).toBe(sub.userId)
   })
 
-  // FJS-1851: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a chained start for a user that does not exist does not answer 404 before the chaining refusal', async () => {
+  test('a chained start for a user that does not exist does not answer 404 before the chaining refusal', async () => {
     const op = await person('op'), sub = await person('sub')
     expect((await json(app, 'POST', '/auth/support/start', { subjectId: sub.userId, reason: 'r' }, op.bearer)).status).toBe(200)
     const res = await json(app, 'POST', '/auth/support/start', { subjectId: 'no-such-user', reason: 'r2' }, op.bearer)

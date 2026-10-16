@@ -1,6 +1,6 @@
 // Field validation must be derived from the Litestone client's own $schema —
 // no `schema:` option, no per-app wrapper. Checks the real smoke-test schema.
-import { createBaseService } from '/home/claude/review/junction/src/core/service.ts'
+import { buildBase } from '/home/claude/review/junction/src/core/service.ts'
 import { parse } from '/home/claude/review/litestone/src/core/parser.js'
 import { readFileSync } from 'fs'
 
@@ -15,7 +15,7 @@ const client = {
   lead: { create: async ({ data }) => { rows.push(data); return data } },
 }
 
-const svc = createBaseService({ name: 'leads', model: 'lead' })
+const svc = buildBase({ name: 'leads', model: 'lead' })
 chk('hooks installed on the service', !!svc.hooks?.before?.create?.length)
 
 // Authenticated: gateAuth runs before validation and the Lead model is

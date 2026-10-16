@@ -231,8 +231,8 @@ const CLEAN = {
     "  console.log(open)\n" +
     "}, { cron: '0 8 * * 1' })\n",
   'api/src/services/leads.service.ts':
-    "import { createBaseService } from '@frontierjs/junction'\n" +
-    "export default () => createBaseService({})\n" +
+    "import { createService } from '@frontierjs/junction'\n" +
+    "export default createService({})\n" +
     "export const qualify = () => $.db.lead.transition($.id, 'qualify')\n" +
     "export const close   = () => $.db.lead.update({ where: {}, data: { status: 'closed' } })\n" +
     "export const stamp   = (ctx) => { ctx.data.code = 'L-1'; ctx.system.add('code') }\n",
@@ -2234,7 +2234,7 @@ describe('call-header-declared', () => {
 describe('service-model', () => {
   const SCHEMA2 = SCHEMA + 'model ProductVariant { id Int @id }\nmodel Person { id Int @id }\n'
   const base = (body = '{}') =>
-    `import { createBaseService } from '@frontierjs/junction'\nexport default () => createBaseService(${body})\n`
+    `import { createService } from '@frontierjs/junction'\nexport default createService(${body})\n`
 
   test('a hyphenated service name resolves — junction registers the file camelised (FJS-1218)', () => {
     // `product-variants.service.ts` is the service `productVariants`, which
@@ -2292,7 +2292,7 @@ describe('service-model', () => {
     const root = tree('sm-custom', {
       ...CLEAN, 'db/schema.lite': SCHEMA2,
       'api/src/services/hub.service.ts':
-        "import { createService } from '@frontierjs/junction'\nexport default () => createService({ find: () => [] })\n",
+        "import { createService } from '@frontierjs/junction'\nexport default createService({ find: () => [] })\n",
     })
     expect(only(root, 'service-model').findings).toEqual([])
   })
@@ -2308,6 +2308,61 @@ describe('service-model', () => {
   })
 })
 
+
+describe('service-definition', () => {
+  const file = (body) => ({ ...CLEAN, 'api/src/services/leads.service.ts': body })
+
+  test('a default-exported definition is the shape, and is quiet', () => {
+    const root = tree('sd-def', file(
+      "import { createService } from '@frontierjs/junction'\nexport default createService({ model: 'Lead' })\n"))
+    expect(only(root, 'service-definition').findings).toEqual([])
+  })
+
+  test('createBaseService is reported, naming the ruling', () => {
+    const root = tree('sd-base', file(
+      "import { createBaseService } from '@frontierjs/junction'\nexport const x = createBaseService({})\n"))
+    const { findings } = only(root, 'service-definition')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(1)
+    expect(findings[0].message).toMatch(/createBaseService/)
+    expect(findings[0].message).toMatch(/FJS-D1079/)
+  })
+
+  test('an exported create*Service factory is reported', () => {
+    const root = tree('sd-factory', file(
+      "import { createService } from '@frontierjs/junction'\n\n" +
+      "export function createLeadsService() {\n  return createService({})\n}\n"))
+    const { findings } = only(root, 'service-definition')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(3)
+    expect(findings[0].message).toMatch(/create\*Service factory/)
+    expect(findings[0].message).toMatch(/FJS-D1079/)
+  })
+
+  test('a default-exported function is reported — the loader refuses it', () => {
+    const root = tree('sd-fn', file(
+      "import { createService } from '@frontierjs/junction'\nexport default (app) => createService({})\n"))
+    const { findings } = only(root, 'service-definition')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/default-exports a function/)
+  })
+
+  test('a factory named in a comment is not a factory', () => {
+    const root = tree('sd-comment', file(
+      "import { createService } from '@frontierjs/junction'\n" +
+      "// was export function createLeadsService() { return createBaseService({}) }\n" +
+      "export default createService({})\n"))
+    expect(only(root, 'service-definition').findings).toEqual([])
+  })
+
+  test('a create*Services helper outside a *.service.ts file is not judged', () => {
+    const root = tree('sd-helper', {
+      ...CLEAN,
+      'api/src/services/helpers.ts': "export function createLeadsService() { return 1 }\n",
+    })
+    expect(only(root, 'service-definition').findings).toEqual([])
+  })
+})
 
 // ─── the cross-realm hazards ──────────────────────────────────────────────────
 //
@@ -2594,33 +2649,33 @@ describe('service-as-system', () => {
   })
 
   test('the app client elevated inside a service is a warning', () => {
-    const root = tree('sas-app', svc('export default (app) => createService({\n' +
-      '  find: () => app.data.asSystem().lead.findMany({ where: {} }),\n})\n'))
+    const root = tree('sas-app', svc('export default createService({\n' +
+      '  find: () => $.app.data.asSystem().lead.findMany({ where: {} }),\n})\n'))
     const { findings } = only(root, 'service-as-system')
     expect(findings).toHaveLength(1)
     expect(findings[0].line).toBe(3)
-    expect(findings[0].message).toMatch(/app\.data\.asSystem\(\)/)
+    expect(findings[0].message).toMatch(/\$\.app\.data\.asSystem\(\)/)
     expect(findings[0].message).toMatch(/EVERY tenant/)
   })
 
   test('a cast does not hide the receiver', () => {
     // Three of basecamp's sites are spelled this way.
-    const root = tree('sas-cast', svc('export default (app) => createService({\n' +
-      '  find: () => (app.data as any).asSystem().lead.findMany({ where: {} }),\n})\n'))
+    const root = tree('sas-cast', svc('export default createService({\n' +
+      '  find: () => ($.app.data as any).asSystem().lead.findMany({ where: {} }),\n})\n'))
     const { findings } = only(root, 'service-as-system')
     expect(findings).toHaveLength(1)
-    expect(findings[0].message).toMatch(/^app\.data\.asSystem/)
+    expect(findings[0].message).toMatch(/^\$\.app\.data\.asSystem/)
   })
 
   test('the request client, either spelling, is the correct shape', () => {
-    const root = tree('sas-scoped', svc('export default () => createService({\n' +
+    const root = tree('sas-scoped', svc('export default createService({\n' +
       '  find: () => $.db.asSystem().lead.findMany({ where: {} }),\n' +
       '  get:  (ctx) => ctx.locals.db.asSystem().lead.findFirst({ where: {} }),\n})\n'))
     expect(only(root, 'service-as-system').findings).toEqual([])
   })
 
   test('a local bound to the request client is the same shape', () => {
-    const root = tree('sas-local', svc('export default () => createService({\n' +
+    const root = tree('sas-local', svc('export default createService({\n' +
       '  find: (ctx) => {\n    const db = ctx.locals.db\n' +
       '    return db.asSystem().lead.findMany({ where: {} })\n  },\n})\n'))
     expect(only(root, 'service-as-system').findings).toEqual([])
@@ -2631,8 +2686,8 @@ describe('service-as-system', () => {
   // generated apps declare no tenancy (theirs is membership policies), and the
   // rule skipping them is how four elevations went unreported.
   test('no tenancy block: every elevation in a service crosses every user', () => {
-    const root = tree('sas-none', svc('export default (app) => createService({\n' +
-      '  find:  () => app.data.asSystem().lead.findMany({ where: {} }),\n' +
+    const root = tree('sas-none', svc('export default createService({\n' +
+      '  find:  () => $.app.data.asSystem().lead.findMany({ where: {} }),\n' +
       '  place: () => $.db.asSystem().lead.create({ data: {} }),\n' +
       '  get:   (ctx) => ctx.locals.db.asSystem().lead.findFirst({ where: {} }),\n})\n', ''))
     const { findings } = only(root, 'service-as-system')
@@ -2645,7 +2700,7 @@ describe('service-as-system', () => {
     // notifications' README § Sending shows `db.asSystem().user.findUnique(…)`
     // in an `after` hook. service-module-db's pattern cannot match it by design.
     const root = tree('sas-none-db', svc('import { db } from "../core/db.ts"\n' +
-      'export default () => createService({\n' +
+      'export default createService({\n' +
       '  after: { create: async () => { await db.asSystem().user.findUnique({ where: { id: 1 } }) } },\n})\n', ''))
     const { findings } = only(root, 'service-as-system')
     expect(findings).toHaveLength(1)
@@ -2654,14 +2709,14 @@ describe('service-as-system', () => {
 
   test('no tenancy block: a job is still not inside a call', () => {
     const root = tree('sas-none-job', {
-      ...svc('export default () => createService({})\n', ''),
+      ...svc('export default createService({})\n', ''),
       'api/src/jobs/sweep.job.ts': 'export default (app) => app.data.asSystem().lead.findMany({ where: {} })\n',
     })
     expect(only(root, 'service-as-system').findings).toEqual([])
   })
 
   test('no tenancy block and no elevation is quiet', () => {
-    const root = tree('sas-none-clean', svc('export default () => createService({\n' +
+    const root = tree('sas-none-clean', svc('export default createService({\n' +
       '  find: () => $.db.lead.findMany({ where: {} }),\n})\n', ''))
     expect(only(root, 'service-as-system').findings).toEqual([])
   })
@@ -2669,8 +2724,8 @@ describe('service-as-system', () => {
   test('strategy database is skipped — one client is one file', () => {
     // The hazard is physical there: a system context cannot reach a second
     // tenant's database, so every finding would be noise. `example` is this.
-    const root = tree('sas-db', svc('export default (app) => createService({\n' +
-      '  find: () => app.data.asSystem().lead.findMany({ where: {} }),\n})\n',
+    const root = tree('sas-db', svc('export default createService({\n' +
+      '  find: () => $.app.data.asSystem().lead.findMany({ where: {} }),\n})\n',
       'tenancy { strategy database  dir "./shops" }\n'))
     const { findings, skipped } = only(root, 'service-as-system')
     expect(findings).toEqual([])
@@ -2681,8 +2736,8 @@ describe('service-as-system', () => {
     // This repo's own schema says *declared once in the `tenancy { }` block
     // below*, and an unblanked match reads that empty pair as the declaration
     // and skips the whole app.
-    const root = tree('sas-comment', svc('export default (app) => createService({\n' +
-      '  find: () => app.data.asSystem().lead.findMany({ where: {} }),\n})\n',
+    const root = tree('sas-comment', svc('export default createService({\n' +
+      '  find: () => $.app.data.asSystem().lead.findMany({ where: {} }),\n})\n',
       '/// scoped by the `tenancy { }` block below\n' +
       'tenancy { strategy row  column workspaceId  claim workspaceId }\n'))
     expect(only(root, 'service-as-system').findings).toHaveLength(1)
@@ -2697,7 +2752,7 @@ describe('service-module-db', () => {
   })
 
   test('the module client inside a service is an error', () => {
-    const root = tree('md-module', svc('export default () => createService({\n' +
+    const root = tree('md-module', svc('export default createService({\n' +
       '  find: () => db.lead.findMany({ where: {} }),\n})\n'))
     const { findings } = only(root, 'service-module-db')
     expect(findings).toHaveLength(1)
@@ -2706,7 +2761,7 @@ describe('service-module-db', () => {
   })
 
   test('the request-scoped client, either spelling, is the correct shape', () => {
-    const root = tree('md-scoped', svc('export default () => createService({\n' +
+    const root = tree('md-scoped', svc('export default createService({\n' +
       '  find:   () => $.db.lead.findMany({ where: {} }),\n' +
       '  get:    (ctx) => ctx.locals.db.lead.findFirst({ where: {} }),\n})\n'))
     expect(only(root, 'service-module-db').findings).toEqual([])
@@ -2715,7 +2770,7 @@ describe('service-module-db', () => {
   test('asSystem() off the module client is the deliberate bypass', () => {
     // It says which client it means, in the one word that means it. The shape
     // this rule is for is the one that says nothing.
-    const root = tree('md-system', svc('export default () => createService({\n' +
+    const root = tree('md-system', svc('export default createService({\n' +
       '  find: () => db.asSystem().lead.findMany({ where: {} }),\n})\n'))
     expect(only(root, 'service-module-db').findings).toEqual([])
   })
@@ -2725,7 +2780,7 @@ describe('service-module-db', () => {
       ...CLEAN,
       'api/src/services/leads.service.ts':
         "import { createService } from '@frontierjs/junction'\n" +
-        'export default () => createService({\n' +
+        'export default createService({\n' +
         '  find: (ctx) => { const db = ctx.locals.db; return db.lead.findMany({ where: {} }) },\n})\n',
     })
     expect(only(root, 'service-module-db').findings).toEqual([])
@@ -2800,7 +2855,7 @@ describe('queue-operator-verb', () => {
   test('a service that pauses a queue is an error, and names the gate it skips', () => {
     const root = tree('qov-service', {
       'api/src/services/ops.service.ts':
-        "export default () => createService({ halt: (ctx) => ctx.app.jobs.queue('mail').pause() })\n",
+        "export default createService({ halt: (ctx) => ctx.app.jobs.queue('mail').pause() })\n",
     })
     const { findings } = only(root, 'queue-operator-verb')
     expect(findings).toHaveLength(1)
@@ -2823,7 +2878,7 @@ describe('queue-operator-verb', () => {
   test('pausing EVERY queue from a service is an error too', () => {
     const root = tree('qov-every', {
       'api/src/services/ops.service.ts':
-        "export default () => createService({ halt: (ctx) => ctx.app.jobs.pause({ reason: 'x' }) })\n",
+        "export default createService({ halt: (ctx) => ctx.app.jobs.pause({ reason: 'x' }) })\n",
     })
     const { findings } = only(root, 'queue-operator-verb')
     expect(findings).toHaveLength(1)
@@ -2833,7 +2888,7 @@ describe('queue-operator-verb', () => {
   test('purging a queue from a service is an error', () => {
     const root = tree('qov-purge', {
       'api/src/services/ops.service.ts':
-        "export default () => createService({ wipe: (ctx) => ctx.app.jobs.queue('mail').purge() })\n",
+        "export default createService({ wipe: (ctx) => ctx.app.jobs.queue('mail').purge() })\n",
     })
     const { findings } = only(root, 'queue-operator-verb')
     expect(findings).toHaveLength(1)
@@ -2844,7 +2899,7 @@ describe('queue-operator-verb', () => {
   test('reading a queue from a service is silent', () => {
     const root = tree('qov-read', {
       'api/src/services/ops.service.ts':
-        "export default () => createService({ status: (ctx) => ctx.app.jobs.queue('mail').state(), all: (ctx) => ctx.app.jobs.stats() })\n",
+        "export default createService({ status: (ctx) => ctx.app.jobs.queue('mail').state(), all: (ctx) => ctx.app.jobs.stats() })\n",
     })
     expect(only(root, 'queue-operator-verb').findings).toEqual([])
   })
@@ -2869,7 +2924,7 @@ describe('transition-methods', () => {
   // over the model serves every move it does not narrow away (`FJS-1255`) — so
   // these cases grade the literal spellings and nothing else. `service`
   // replaces the declaration for the cases about that third spelling.
-  const NARROW = "createBaseService({ methods: ['find', 'get'] })"
+  const NARROW = "createService({ methods: ['find', 'get'] })"
   const app = (moves, drives, { owed = false, service = NARROW } = {}) => {
     const files = {
       ...CLEAN,
@@ -2878,7 +2933,7 @@ describe('transition-methods', () => {
         `@@transitions(status,\n    ${moves})\n`)
         .replace(owed ? /$^/ : /\n\s*@@commitment\(close[^\n]*/, ''),
       'api/src/services/leads.service.ts':
-        "import { createBaseService } from '@frontierjs/junction'\n" +
+        "import { createService } from '@frontierjs/junction'\n" +
         `export default () => ${service}\n` + drives,
     }
     if (service === null) delete files['api/src/services/leads.service.ts']
@@ -3058,7 +3113,7 @@ describe('transition-methods', () => {
   const QUALIFY = "export const q = () => $.db.lead.transition($.id, 'qualify')\n"
 
   test('a base service with no methods: list reaches every move by its own name', () => {
-    expect(only(tree('tm-served', app(MOVES, '', { service: 'createBaseService({})' })),
+    expect(only(tree('tm-served', app(MOVES, '', { service: 'createService({})' })),
       'transition-methods').findings).toHaveLength(0)
     const narrowed = only(tree('tm-served-narrow', app(MOVES, QUALIFY)), 'transition-methods').findings
     expect(narrowed).toHaveLength(1)
@@ -3068,13 +3123,13 @@ describe('transition-methods', () => {
 
   test('a methods: list reaches the moves it names, bare or as { method }', () => {
     for (const [name, service] of [
-      ['tm-list-bare', "createBaseService({ methods: ['find', 'close'] })"],
-      ['tm-list-obj',  "createBaseService({ methods: ['find', { method: 'close', gate: 5 }] })"],
+      ['tm-list-bare', "createService({ methods: ['find', 'close'] })"],
+      ['tm-list-obj',  "createService({ methods: ['find', { method: 'close', gate: 5 }] })"],
     ]) expect(only(tree(name, app(MOVES, QUALIFY, { service })), 'transition-methods').findings).toHaveLength(0)
   })
 
   test("'readOnly' serves no move", () => {
-    const service = "createBaseService({ methods: 'readOnly' })"
+    const service = "createService({ methods: 'readOnly' })"
     expect(only(tree('tm-readonly', app(MOVES, QUALIFY, { service })), 'transition-methods').findings).toHaveLength(1)
   })
 
@@ -3094,7 +3149,7 @@ describe('transition-methods', () => {
   test('a hand-written method naming a move the schema dropped is still reported', () => {
     const root = tree('tm-dropped', app(MOVES,
       QUALIFY + "export const r = () => $.db.lead.transition($.id, 'reopen')\n",
-      { service: 'createBaseService({})' }))
+      { service: 'createService({})' }))
     const { findings } = only(root, 'transition-methods')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/'reopen'\) names no move/)
@@ -3173,8 +3228,8 @@ describe('required-system-unfilled', () => {
   })
 
   test('a methods: list serves create only when it names it', () => {
-    const svc = (methods) => "import { createBaseService } from '@frontierjs/junction'\n" +
-      `export default () => createBaseService({ methods: ${methods} })\n`
+    const svc = (methods) => "import { createService } from '@frontierjs/junction'\n" +
+      `export default createService({ methods: ${methods} })\n`
     expect(only(tree('rsu-readonly', app({ service: svc("'readOnly'") })), 'required-system-unfilled').findings).toHaveLength(0)
     expect(only(tree('rsu-no-create', app({ service: svc("['find', 'get']") })), 'required-system-unfilled').findings).toHaveLength(0)
     expect(only(tree('rsu-create', app({ service: svc("['find', 'create']") })), 'required-system-unfilled').findings).toHaveLength(1)

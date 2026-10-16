@@ -119,7 +119,7 @@ spelling is answered with the right one.
 Done when: the reference's *shapes that parse and fail later* list is exact, and
 the 22 bad-schema probes from Phase 0 each get the message the row asks for.
 
-- [ ] 4.1 Gate order and model case refuse in `parse()` (`FJS-2948`)
+- [x] 4.1 Gate order and model case refuse in `parse()` (`FJS-2948`)
 - [ ] 4.2 The schema-function branch only for a declared `function`; a typo'd attribute gets *did you mean* (`FJS-2949`, `FJS-2977`)
 - [ ] 4.3 `scope` (exclusion key) renamed away from `@@scope` (`FJS-2950`); a move word of its own or the overload documented once (`FJS-2951`)
 - [ ] 4.4 Named keys for every optional operand, positional only for the required one (`FJS-2978`); migration verbs off the main barrel (`FJS-2979`)

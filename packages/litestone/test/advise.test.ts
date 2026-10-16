@@ -930,11 +930,12 @@ describe('advise --strict', () => {
     expect(exitOf(SUGGESTS, '--strict')).toBe(0)
   })
 
-  // Parses clean; createClient refuses it at boot (FJS-1242).
+  // A gate out of order is refused by parse() itself (FJS-2948), so advise
+  // never reaches createClient with it.
   const UNRUNNABLE = `model Thing {\n  id Int @id\n  @@gate("6.4.5.6")\n}\n`
 
-  test('a schema createClient refuses exits 1 with no flag', () => {
-    expect(parse(UNRUNNABLE).valid).toBe(true)
+  test('a schema parse refuses exits 1 with no flag', () => {
+    expect(parse(UNRUNNABLE).valid).toBe(false)
     expect(exitOf(UNRUNNABLE)).toBe(1)
     expect(exitOf(UNRUNNABLE, '--json')).toBe(1)
   })

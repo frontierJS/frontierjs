@@ -15,7 +15,8 @@
 // ctx.locals.db under the method mid-call.
 
 import { describe, test, expect } from 'bun:test'
-import { createApp, createService }        from '../index.ts'
+import { createApp }                        from '../index.ts'
+import { buildService, buildBase }         from '../src/core/service.ts'
 import { createLogger }                                   from '../src/core/logger.ts'
 import { $, currentCall, enterCall, announcingService }   from '../src/core/context.ts'
 import { createClient }                                   from '../../litestone/src/index.js'
@@ -50,7 +51,7 @@ describe('call lifetime', () => {
 
   test('the scope covers the method', async () => {
     let seen: unknown
-    const a = app(createService({
+    const a = app(buildService({
       name: 'probe', methods: ['find'],
       async find() { seen = { id: $.id, method: $.method, service: $.service }; return [] },
     }))
@@ -60,7 +61,7 @@ describe('call lifetime', () => {
 
   test('the scope covers before and after hooks', async () => {
     const at: string[] = []
-    const svc = createService({
+    const svc = buildService({
       name: 'probe', methods: ['find'],
       async find() { at.push('method:' + $.service); return [] },
     })
@@ -75,7 +76,7 @@ describe('call lifetime', () => {
   test('the scope covers afterCommit — the span reaches past the pipeline', async () => {
     let inEffect: string | undefined
     let threw: unknown = null
-    const a = app(createService({
+    const a = app(buildService({
       name: 'probe', methods: ['create'],
       async create(ctx: any) {
         ctx.afterCommit(() => {
@@ -90,7 +91,7 @@ describe('call lifetime', () => {
   })
 
   test('the scope is gone after the call returns', async () => {
-    const a = app(createService({
+    const a = app(buildService({
       name: 'probe', methods: ['find'], async find() { return [] },
     }))
     await a.service('probe').find()
@@ -99,7 +100,7 @@ describe('call lifetime', () => {
   })
 
   test('a throwing method does not leave a scope standing', async () => {
-    const a = app(createService({
+    const a = app(buildService({
       name: 'probe', methods: ['find'],
       async find() { throw new Error('boom') },
     }))
@@ -114,7 +115,7 @@ describe('calling a method directly', () => {
   // app.service(x).find(). What it does not cover is a hand-built context
   // calling a method as a plain function, which this suite and several others
   // do (test/populate.test.ts, test/real-litestone-client.test.ts). Those
-  // pass today because createBaseService's CRUD reads the ctx PARAMETER; a
+  // pass today because buildBase's CRUD reads the ctx PARAMETER; a
   // method reading `$` has no such luck, and `enterCall` is the only way in.
 
   const method = async () => ({ saw: $.service, id: $.id })
@@ -197,7 +198,7 @@ describe('db', () => {
       db,
       config: { port: 0, services: { dir: '/nonexistent' } },
     })
-    a.services.register(createService({
+    a.services.register(buildService({
       name: 'posts', model: 'Post', transactional: true, methods: ['run'],
       async run(ctx: any) {
         outer = ctx.locals.db
@@ -223,11 +224,11 @@ describe('leakage', () => {
 
   test('a nested call gets its own context; the parent is intact after', async () => {
     const seen: Record<string, unknown> = {}
-    const inner = createService({
+    const inner = buildService({
       name: 'inner', methods: ['find'],
       async find() { seen.inner = $.service; return [] },
     })
-    const outer = createService({
+    const outer = buildService({
       name: 'outer', methods: ['find'],
       async find(ctx: any) {
         seen.beforeNest = $.service
@@ -243,11 +244,11 @@ describe('leakage', () => {
 
   test('a nested call does not overwrite the parent locals', async () => {
     let parentLocal: unknown
-    const inner = createService({
+    const inner = buildService({
       name: 'inner', methods: ['find'],
       async find() { ($.locals as Record<string, unknown>).mine = 'inner'; return [] },
     })
-    const outer = createService({
+    const outer = buildService({
       name: 'outer', methods: ['find'],
       async find(ctx: any) {
         ($.locals as Record<string, unknown>).mine = 'outer'
@@ -263,7 +264,7 @@ describe('leakage', () => {
   })
 
   test('concurrent calls cannot observe each other', async () => {
-    const a = app(createService({
+    const a = app(buildService({
       name: 'probe', methods: ['get'],
       async get() {
         const mine = $.id
@@ -280,11 +281,11 @@ describe('leakage', () => {
 
   test('a principal change re-enters the request without moving the call', async () => {
     const seen: Record<string, unknown> = {}
-    const inner = createService({
+    const inner = buildService({
       name: 'inner', methods: ['find'],
       async find() { seen.innerUser = $.auth.user?.userId; seen.innerSvc = $.service; return [] },
     })
-    const outer = createService({
+    const outer = buildService({
       name: 'outer', methods: ['find'],
       async find(ctx: any) {
         await ctx.app.service('inner').find(undefined, { auth: { user: { userId: 'bob' } } })
@@ -307,7 +308,7 @@ describe('the announcing-service store stayed narrow', () => {
   test('it is already closed by afterCommit, so a write there still announces', async () => {
     let during: string | undefined = 'unset'
     let inEffect: string | undefined = 'unset'
-    const a = app(createService({
+    const a = app(buildService({
       name: 'probe', methods: ['create'],
       async create(ctx: any) {
         during = announcingService()
@@ -346,7 +347,7 @@ describe('log', () => {
   }
 
   test('is namespaced by service and method', async () => {
-    const { app: a, entries } = logging(createService({
+    const { app: a, entries } = logging(buildService({
       name: 'orders', methods: ['find'],
       find() { $.log.info('picked'); return [] },
     } as never))
@@ -358,7 +359,7 @@ describe('log', () => {
   })
 
   test('carries the correlation id, so a line joins to its request', async () => {
-    const { app: a, entries } = logging(createService({
+    const { app: a, entries } = logging(buildService({
       name: 'orders', methods: ['find'],
       find() { $.log.warn('slow'); return [] },
     } as never))
@@ -371,7 +372,7 @@ describe('log', () => {
 
   test('two requests get two ids, and every line of one shares its id', async () => {
     // The negative control for the test above: a constant would pass that one.
-    const { app: a, entries } = logging(createService({
+    const { app: a, entries } = logging(buildService({
       name: 'orders', methods: ['find'],
       find() { $.log.info('a'); $.log.info('b'); return [] },
     } as never))
@@ -389,7 +390,7 @@ describe('log', () => {
   test('carries the principal where there is one, and omits it where there is not', async () => {
     // An absent key rather than `userId: undefined`: a stated absence on every
     // internal call is noise, and JSON output would carry the key either way.
-    const { app: a, entries } = logging(createService({
+    const { app: a, entries } = logging(buildService({
       name: 'orders', methods: ['find'],
       find() { $.log.info('x'); return [] },
     } as never))
@@ -405,11 +406,11 @@ describe('log', () => {
     // The two halves of what a bound logger is for: the namespace is the call,
     // the correlation id is the request, and they move at different rates.
     const { app: a, entries } = logging(
-      createService({
+      buildService({
         name: 'inner', methods: ['find'],
         find() { $.log.info('inner'); return [] },
       } as never),
-      createService({
+      buildService({
         name: 'outer', methods: ['find'],
         async find(ctx: any) { $.log.info('outer'); await ctx.app.service('inner').find(); return [] },
       } as never),
@@ -422,7 +423,7 @@ describe('log', () => {
 
   test('is memoized per call — a child logger per line would allocate per line', async () => {
     let first: unknown, second: unknown
-    const { app: a } = logging(createService({
+    const { app: a } = logging(buildService({
       name: 'orders', methods: ['find'],
       find() { first = $.log; second = $.log; return [] },
     } as never))
@@ -439,7 +440,7 @@ describe('log', () => {
     // Same rule as `$.db`: enumerating a derived accessor makes `{ ...$ }`
     // evaluate it, and one of them throws on an app that has no client.
     let keys: string[] = []
-    const { app: a } = logging(createService({
+    const { app: a } = logging(buildService({
       name: 'orders', methods: ['find'],
       find() { keys = Object.keys($); return [] },
     } as never))
@@ -478,7 +479,7 @@ describe('a call that has ended (FJS-687)', () => {
 
   test('`$` read from a timer the call scheduled throws, naming the call', async () => {
     const probe = afterTheCall(run => { setTimeout(run, 5) })
-    const a = app(createService({
+    const a = app(buildService({
       name: 'probe', methods: ['find'],
       async find() { probe.arm(); return [] },
     }))
@@ -494,7 +495,7 @@ describe('a call that has ended (FJS-687)', () => {
 
   test('a floating promise is the same hazard and gets the same refusal', async () => {
     const probe = afterTheCall(run => { Promise.resolve().then(() => setTimeout(run, 5)) })
-    const a = app(createService({
+    const a = app(buildService({
       name: 'probe', methods: ['find'],
       async find() { probe.arm(); return [] },
     }))
@@ -505,7 +506,7 @@ describe('a call that has ended (FJS-687)', () => {
   test('a call that THREW is just as over', async () => {
     // Same hazard, and a `then` rather than a `finally` would miss it.
     const probe = afterTheCall(run => { setTimeout(run, 5) })
-    const a = app(createService({
+    const a = app(buildService({
       name: 'probe', methods: ['find'],
       async find() { probe.arm(); throw new Error('boom') },
     }))
@@ -517,7 +518,7 @@ describe('a call that has ended (FJS-687)', () => {
     // The span deliberately covers the drain. A marker that ended the call too
     // early would break this and satisfy every row above it.
     let seen: string | undefined
-    const a = app(createService({
+    const a = app(buildService({
       name: 'probe', methods: ['find'],
       async find(ctx: any) { ctx.afterCommit(() => { seen = $.service }); return [] },
     }))
@@ -527,8 +528,8 @@ describe('a call that has ended (FJS-687)', () => {
 
   test('an inner call ending does not end the outer one', async () => {
     let outerAfter: string | undefined
-    const inner = createService({ name: 'inner', methods: ['find'], async find() { return [] } })
-    const outer = createService({
+    const inner = buildService({ name: 'inner', methods: ['find'], async find() { return [] } })
+    const outer = buildService({
       name: 'outer', methods: ['find'],
       async find(ctx: any) {
         await ctx.app.service('inner').find()
@@ -544,7 +545,7 @@ describe('a call that has ended (FJS-687)', () => {
   test('the second call on one service is not refused by the first one ending', async () => {
     // The marker lives on the CONTEXT, which is per call — a marker on the
     // service or the store would make an app work exactly once.
-    const a = app(createService({
+    const a = app(buildService({
       name: 'probe', methods: ['find'], async find() { return [$.service] },
     }))
     // `find` answers the list envelope; the rows are what this is about.
@@ -564,7 +565,7 @@ describe('a call that has ended (FJS-687)', () => {
       db,
       config: { port: 0, services: { dir: '/nonexistent' } },
     })
-    a.services.register(createService({
+    a.services.register(buildService({
       name: 'posts', model: 'Post', transactional: true, methods: ['run'],
       async run(ctx: any) {
         during = ctx.locals.db
@@ -586,7 +587,7 @@ describe('$.me — one spelling of the caller', () => {
   // A principal handed in as a User row put the id at `id`, where a session
   // puts it at `userId`. A service reading `$.me.userId` got null for every
   // such caller and passed every test written with a session (`FJS-1890`).
-  const echo = () => createService({
+  const echo = () => buildService({
     name: 'whoami', methods: ['find'],
     find() { return [{ userId: ($.me as any)?.userId ?? null }] },
   } as never)

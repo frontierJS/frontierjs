@@ -21,7 +21,7 @@
 // `fli make:*` now does.
 
 import { describe, test, expect } from 'bun:test'
-import { createService, callService } from '../src/core/service.ts'
+import { buildService, callService } from '../src/core/service.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 
 // Captures both consumers so a test can assert they agree.
@@ -49,7 +49,7 @@ function ctx(h: ReturnType<typeof harness>, method: string, over: Record<string,
   } as unknown as ServiceContext
 }
 
-const svc = (over: Record<string, unknown> = {}) => createService({
+const svc = (over: Record<string, unknown> = {}) => buildService({
   name:   'posts',
   create: async () => ({ id: 1, title: 'x' }),
   patch:  async () => ({ id: 1, title: 'y' }),
@@ -208,7 +208,7 @@ describe('`channel` as an option does not steal `publish` as an action name', ()
     // is an ordinary action, and the openapi suite has a posts service with
     // exactly that. A noun cannot collide with a verb.
     let called = false
-    const s = createService({
+    const s = buildService({
       name: 'posts',
       channel: 'posts',
       async publish() { called = true; return { published: true } },

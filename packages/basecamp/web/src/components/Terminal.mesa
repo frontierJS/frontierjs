@@ -1,0 +1,111 @@
+<script>
+  // Terminal.mesa — a shell in a pinned checkout, drawn by xterm.js.
+  //
+  // The socket is api/src/core/workbench-terminal.ts. With tmux on the API's
+  // machine, closing this (a tab switch, a reload) detaches rather than ends the
+  // shell, so the next mount lands in the same session with its scrollback.
+  //
+  // The token rides the subprotocol list as junction's own client sends it
+  // (`FJS-D486`), never the URL, and a cookie session sends none.
+  //
+  // The colors are read off the panel's own computed style, so the terminal
+  // follows the theme instead of naming one.
+  import { Terminal } from '@xterm/xterm'
+  import { FitAddon } from '@xterm/addon-fit'
+  import '@xterm/xterm/css/xterm.css'
+  import { getClient } from '@frontierjs/sierra/resource'
+  import { session }   from '../session.js'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let pin = ''
+
+  let host   = null
+  let state  = 'connecting'   // connecting · open · closed
+  let reason = ''
+
+  let term = null
+  let fit  = null
+  let ws   = null
+  let resizer = null
+
+  // A close code the API sends on a refusal carries its reason; any other
+  // close is the shell ending or the API restarting.
+  const REFUSED = new Set([4001, 4003, 4004])
+
+  function socketUrl() {
+    const origin = getClient().origin || location.origin
+    const q = new URLSearchParams({ workspace: session.workspaceId ?? '', cols: term.cols, rows: term.rows })
+    return `${origin.replace(/^http/, 'ws')}/ws/terminal/${encodeURIComponent(pin)}?${q}`
+  }
+
+  function connect() {
+    state  = 'connecting'
+    reason = ''
+    const token = getClient().token
+    ws = new WebSocket(socketUrl(), token ? ['fjs', `fjs.bearer.${token}`] : ['fjs'])
+    ws.onopen    = () => { state = 'open'; term.focus() }
+    ws.onmessage = (e) => term.write(e.data)
+    ws.onclose   = (e) => {
+      state  = 'closed'
+      reason = REFUSED.has(e.code) ? e.reason : (e.reason || 'disconnected')
+    }
+  }
+
+  const send = (frame) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(frame)) }
+
+  function themeOf(el) {
+    const s = getComputedStyle(el)
+    return { background: s.backgroundColor, foreground: s.color, cursor: s.color }
+  }
+
+  $.onMount(() => {
+    term = new Terminal({
+      fontFamily: getComputedStyle(host).getPropertyValue('--font-mono') || 'ui-monospace, monospace',
+      fontSize:   13,
+      cursorBlink: true,
+      scrollback: 5000,
+      theme:      themeOf(host),
+    })
+    fit = new FitAddon()
+    term.loadAddon(fit)
+    term.open(host)
+    fit.fit()
+    term.onData(i => send({ i }))
+    term.onResize(({ cols, rows }) => send({ r: [cols, rows] }))
+    resizer = new ResizeObserver(() => { try { fit.fit() } catch {} })
+    resizer.observe(host)
+    connect()
+  })
+
+  $.onDestroy(() => {
+    resizer?.disconnect()
+    if (ws) { ws.onclose = null; ws.close() }
+    term?.dispose()
+  })
+</script>
+
+<div class="stack workbench-terminal">
+  <div class="workbench-terminal-screen" bind:this={host}></div>
+  {#if state !== 'open'}
+    <p class="text-sm text-muted cluster" aria-live="polite">
+      {#if state === 'connecting'}
+        Connecting…
+      {:else}
+        <span>Terminal closed — {reason}</span>
+        <Button size="xs" variant="outlined" onclick={connect}>Reconnect</Button>
+      {/if}
+    </p>
+  {/if}
+</div>
+
+<style>
+  .workbench-terminal { flex: 1; min-block-size: 0; gap: var(--space-xs); }
+  .workbench-terminal-screen {
+    flex: 1;
+    min-block-size: 16rem;
+    padding: var(--space-xs);
+    background: var(--surface-sunken);
+    color: var(--ink);
+    overflow: hidden;
+  }
+</style>

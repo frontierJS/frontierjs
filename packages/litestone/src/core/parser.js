@@ -9,6 +9,7 @@ import { isKnownCurrency, minorUnits, isKnownUnit, unitInfo, suggestUnit, MEASUR
 import { LEVELS }                       from '@frontierjs/toolbelt/gate'
 import { parseExpression, tokenize, TK, ParseError } from '@frontierjs/toolbelt/predicate'
 import { expandCapabilityType } from './capabilities.js'
+import { parseGateString, validateGate } from '../plugins/gate.js'
 // One owner for the range a value round-trips through a JS number in — the
 // validator's, so a refusal here and a refusal at the boundary name one number.
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
@@ -1532,6 +1533,11 @@ class Parser {
           this.eat(TK.LPAREN)
           const args = []
           while (!this.check(TK.RPAREN)) {
+            // A schema function takes field names, so a literal here means the
+            // name was a misspelled attribute, not a call.
+            if (!this.check(TK.IDENT)) throw new ParseError(
+              `Unknown field attribute '@${name}'. If it is a schema function, its arguments are field names, not '${this.peek().value}'`,
+              this.peek())
             args.push(this.eat(TK.IDENT).value)
             this.maybeEat(TK.COMMA)
           }
@@ -5114,6 +5120,27 @@ function validate(schema) {
   const enumNames  = new Set(schema.enums.map(e => e.name))
   const modelNames = new Set(schema.models.map(m => m.name))
   const allTypes   = new Set([...SCALAR_TYPES, ...enumNames])
+
+  // A gate that the plugin refuses at boot is refused here, so the author of
+  // a schema meets the rule where they wrote it and not at the first request.
+  for (const decl of [...schema.models, ...(schema.views ?? [])]) {
+    const gateAttr = decl.attributes?.find(a => a.kind === 'gate')
+    if (!gateAttr) continue
+    try { validateGate(parseGateString(gateAttr.value), decl.name) }
+    catch (e) { errors.push(e.message) }
+  }
+
+  // `db.<accessor>`, the service name and the JSON Schema `$defs` key are all
+  // derived from the model name and do not derive the same way from any other
+  // case (Invariant 2). `@@external` is exempt: it names a table somebody
+  // else made.
+  for (const model of schema.models) {
+    if (model.attributes.some(a => a.kind === 'external')) continue
+    if (!/^[A-Z][A-Za-z0-9]*$/.test(model.name))
+      errors.push(
+        `Model '${model.name}': a model name is PascalCase (letters and digits, starting with a capital) — ` +
+        `\`db.<accessor>\`, the service name and the JSON Schema $defs key are all derived from it.`)
+  }
 
   for (const model of schema.models) {
     // Collect all field names first so @relation can reference fields declared later

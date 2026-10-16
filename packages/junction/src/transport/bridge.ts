@@ -50,6 +50,12 @@ const CRUD_METHOD_BLOCK = new Set<string>(CRUD_METHODS.filter(m => !HEADER_BUILT
 
 // ─── Bridge ───────────────────────────────────────────────────────────────
 
+
+// What a context made outside any app holds as `ctx.app`. One object, not a
+// fresh one per call: state a hook keeps per app (a rate limiter's buckets) is
+// keyed on it, and a new object each call is a new app each call.
+const NO_APP = {} as import('../core/app.ts').App
+
 export const bridge = {
 
   // ── Transport → ServiceContext ────────────────────────────────────────
@@ -197,7 +203,7 @@ export const bridge = {
       locals: {},
       transients: {},             // filled by autoValidate, from what the model declares
       reserved:   {},             // filled by callService, from what the service reserved
-      app:       appRef ?? ({} as import('../core/app.ts').App),
+      app:       appRef ?? NO_APP,
       result:    null,
       error:     null,
       statusCode: undefined,
@@ -297,7 +303,7 @@ export const bridge = {
       locals: locals ? { ...locals } : {},   // fresh; explicit seed only
       transients: {},
       reserved:   {},
-      app:       appRef ?? ({} as import('../core/app.ts').App),
+      app:       appRef ?? NO_APP,
       result:    null,
       error:     null,
       statusCode: undefined,
@@ -414,6 +420,12 @@ function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
  * table was built to end.
  */
 export function refuseBadDirectives(params: unknown): void {
+  // Every check below grades a `$` key, and most calls carry none; the three
+  // table walks ran on every request regardless (`FJS-2992`).
+  if (!params || typeof params !== 'object') return
+  let dollar = false
+  for (const key in params) if (key[0] === '$') { dollar = true; break }
+  if (!dollar) return
   refuseListedDirectives(params)
   refuseInvalidFlags(params)
   const unknown = unknownDirectives(params as Record<string, unknown>)

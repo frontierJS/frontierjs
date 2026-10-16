@@ -32,7 +32,7 @@ import { executorOn, isExecutor, resolveExecutor } from '../providers/executor.t
 import { snapshotVariables }        from './variables.ts'
 import { db }                       from './resource.ts'
 import { routedHosts }              from './runtime.ts'
-import type { BasecampApp }         from '../basecamp.types.ts'
+import type { App }                 from '@frontierjs/junction'
 import type { MachineAnswer }       from '../services/apps/apps.service.ts'
 
 export type PreviewSettings = {
@@ -104,7 +104,7 @@ const PLACEHOLDER = (branch: string) => `<!doctype html>
  * row lands or the Environment is removed again; the route is a push, and a
  * machine that refused it is reported, not undone.
  */
-export async function openPreview(app: BasecampApp, settings: PreviewSettings,
+export async function openPreview(app: App, settings: PreviewSettings,
   branch: { slug: string, branch: string, port: number }): Promise<Opened> {
   const hostname = `${branch.slug}.${settings.domain}`
   const svc = (name: string) => app.service(name) as any
@@ -129,7 +129,7 @@ export async function openPreview(app: BasecampApp, settings: PreviewSettings,
   return { port: branch.port, environmentId: env.id, appId, hostname, route: await routeTo(app, settings.serverId, appId, [hostname], branch.port) }
 }
 
-async function routeTo(app: BasecampApp, serverId: string | null, appId: string, hosts: string[], port: number): Promise<Opened['route']> {
+async function routeTo(app: App, serverId: string | null, appId: string, hosts: string[], port: number): Promise<Opened['route']> {
   if (!serverId) return { ok: false, why: 'no machine is named in the checkout\'s preview settings, so nothing routes the hostname' }
   const executor = await executorOn(app, serverId)
   if (!isExecutor(executor)) return { ok: false, why: executor.reason }
@@ -162,7 +162,7 @@ type Wire = { path: string, content: string } | { path: string, content_base64: 
  * released by digest. Refused before anything reaches the machine when the
  * build fails or its bundle does not carry `VITE_API_URL`.
  */
-export async function freezePreview(app: BasecampApp, settings: PreviewSettings,
+export async function freezePreview(app: App, settings: PreviewSettings,
   branch: { path: string, branch: string, appId: string }): Promise<Frozen> {
   const svc   = (name: string) => app.service(name) as any
   const row   = await svc('apps').get(branch.appId) as { id: string, environmentId: string }
@@ -251,7 +251,7 @@ function cleanHead(path: string): string | null {
  *  the machine; the route is what says which one serves. The port and the
  *  hostnames are the App's and its Domains' — `opened` is what Open made,
  *  and a row edited since is what the machine must be told. */
-export async function thawPreview(app: BasecampApp, settings: PreviewSettings, opened: Opened): Promise<Opened['route'] & { port: number | null, hosts: string[] }> {
+export async function thawPreview(app: App, settings: PreviewSettings, opened: Opened): Promise<Opened['route'] & { port: number | null, hosts: string[] }> {
   const row   = await (app.service('apps') as any).get(opened.appId) as { id: string, port: number | null }
   const hosts = await routedHosts(app.db, row.id)
   if (!row.port) return { ok: false, why: 'the App names no port for its dev server', port: null, hosts }
@@ -265,7 +265,7 @@ export async function thawPreview(app: BasecampApp, settings: PreviewSettings, o
  * does not keep the rows and is reported: its route still dials the branch's
  * port, which Archive then gives back for another branch to claim.
  */
-export async function retirePreview(app: BasecampApp, opened: Opened): Promise<{ machine: MachineAnswer }> {
+export async function retirePreview(app: App, opened: Opened): Promise<{ machine: MachineAnswer }> {
   const gone    = (e: { code?: number }) => { if (e?.code !== 404) throw e; return null }
   const removed = await (app.service('environments') as any).remove(opened.environmentId).catch(gone) as { apps: { id: string, machine: MachineAnswer }[] } | null
   return { machine: removed?.apps.find(a => a.id === opened.appId)?.machine ?? { ok: true } }

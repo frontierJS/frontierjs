@@ -385,10 +385,12 @@ Done when: example's and basecamp's drives pass, and basecamp's ⌘K offers `/se
     collapse button sits in the rail, and the Shell's rail always peeks, so a click
     would reopen it under the pointer. ⌘K's page rows are `paletteItems`, so a
     signed-out ⌘K no longer lists all ten
-  **The rail toggle at the head of the sidebar now has two callers**, basecamp and
-  serpgrid: 3.2's reason to revisit. One caller each, still: a class on the sidebar,
-  a sticky rail, a non-peeking rail, a frame with no topbar, a path-picked group,
-  `brand(where)`. `nav-href-routes` skips three of the four, which commit no
+  **The rail toggle at the head of the sidebar had two callers**, basecamp and
+  serpgrid, and is in the Shell now: `collapsible` and `bind:collapsed`, folded as a
+  non-peeking rail with Sign out in the bar and the foot told `'rail'`. Neither
+  caller moved onto it; both keep their own module for other reasons. One caller
+  each, still: a class on the sidebar, a sticky rail, a frame with no topbar, a
+  path-picked group, `brand(where)`. `nav-href-routes` skips three of the four, which commit no
   `routes.snapshot.md`. In a scratch copy with one from `sierra routes --stdout`, it
   found nothing in either app it was run on, and it flagged a planted bad link.
   Drives: a throwaway CDP probe over ela's build with the network cut (23/23); one

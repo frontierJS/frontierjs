@@ -37,7 +37,13 @@ const { schema, valid, errors } = parse(`
     id     Int    @id
     name   String
     meta   Json?
+    prefs  Json @type(Prefs)
     params BlueprintParam[]
+  }
+
+  type Prefs {
+    theme String
+    size  Int
   }
 
   model BlueprintParam {
@@ -55,7 +61,7 @@ const lastPatch = () => calls.filter(c => c[0] === 'patch').at(-1)?.[2]
 beforeEach(() => {
   registerSchemas(DEFS, ['Blueprint', 'BlueprintParam'])
   calls.length = 0
-  row = { id: 1, name: 'Deploy', meta: { a: 1 }, params: [{ id: 9, key: 'env' }] }
+  row = { id: 1, name: 'Deploy', meta: { a: 1 }, prefs: { theme: 'dark', size: 2 }, params: [{ id: 9, key: 'env' }] }
 })
 
 describe('a patch carries columns, never a composed key', () => {
@@ -77,12 +83,49 @@ describe('a patch carries columns, never a composed key', () => {
     expect(lastPatch().name).toBe('Ship')
   })
 
-  test('a declared Json column that changed still travels', async () => {
+  // FJS-1759: a whole Json document overwrites a key another session set
+  test('a changed Json column travels as a $merge of the keys that moved', async () => {
+    row = { ...row, meta: { a: 1, b: 1, nest: { x: 1, y: 2 } } }
     const r = createResource('blueprints', { model: 'Blueprint' })
     await r.service.get(1)
 
-    await r.save({ ...row, meta: { a: 2 } })
+    await r.save({ ...row, meta: { ...row.meta, a: 2 } })
+    expect(lastPatch()).toEqual({ id: 1, meta: { $merge: { a: 2 } } })
 
-    expect(lastPatch()).toEqual({ id: 1, meta: { a: 2 } })
+    await r.service.get(1)
+    await r.save({ ...row, meta: { a: 1, b: 1, nest: { x: 1 } } })
+    expect(lastPatch()).toEqual({ id: 1, meta: { $merge: { nest: { y: null } } } })
+
+    await r.service.get(1)
+    await r.save({ ...row, meta: { a: 1, nest: { x: 1, y: 2 } } })
+    expect(lastPatch()).toEqual({ id: 1, meta: { $merge: { b: null } } })
+  })
+
+  test('a Json column replaced by a non-object, or read as one, travels whole', async () => {
+    const r = createResource('blueprints', { model: 'Blueprint' })
+    await r.service.get(1)
+
+    await r.save({ ...row, meta: [1, 2] })
+    expect(lastPatch()).toEqual({ id: 1, meta: [1, 2] })
+
+    await r.service.get(1)
+    await r.save({ ...row, meta: null })
+    expect(lastPatch()).toEqual({ id: 1, meta: null })
+  })
+
+  test('a Json column rebuilt to the same document is not sent', async () => {
+    const r = createResource('blueprints', { model: 'Blueprint' })
+    await r.service.get(1)
+
+    await r.save({ ...row, name: 'Ship', meta: { a: 1 } })
+    expect(lastPatch()).toEqual({ id: 1, name: 'Ship' })
+  })
+
+  test('a typed Json column sends its $merge past the browser-side validation', async () => {
+    const r = createResource('blueprints', { model: 'Blueprint' })
+    await r.service.get(1)
+
+    await r.save({ ...row, prefs: { ...row.prefs, size: 3 } })
+    expect(lastPatch()).toEqual({ id: 1, prefs: { $merge: { size: 3 } } })
   })
 })

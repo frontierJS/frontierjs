@@ -1141,7 +1141,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
 - **`project:map --as=serve` has ONE viewer and `collectIssues` has a test.** Both of its
   checks were wrong for every row they ever printed, and both survived because
   nothing ran the function (`FJS-1017`). There is deliberately no per-service
-  gateAuth check now: the hook is `around.all` and `createBaseService` installs
+  gateAuth check now: the hook is `around.all` and the service builder installs
   it unconditionally — zero occurrences in any `before` chain of any snapshot
   here — so the question has no varying answer per service, and it is asked of
   the raw routes instead. Models are filtered on the stated `x-litestone-kind`
@@ -1392,7 +1392,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   navigates to). `exact-numbers.md` linked from nothing was half of `FJS-560`.
 - **Some of the rules read source rather than the tree, and `readCode` is why
   they are usable.** `raw-route-param`, `ctx-params`, `set-auth-discarded`,
-  `call-header-declared`, `service-model`, `resource-model-miss`,
+  `call-header-declared`, `service-model`, `service-definition`, `resource-model-miss`,
   `service-module-db`, `scheduler-dispatch`, `battery-raw-secret`, `gate-unreachable`,
   `transition-methods`, `commitment-swept` and `static-publish-db` match text — so they match the
   paragraphs that DESCRIBE those hazards too, and this repo's own `api/` files

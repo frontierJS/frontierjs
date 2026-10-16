@@ -15,7 +15,6 @@ import { createService, NotFound, Conflict, Forbidden, BadRequest, Unauthorized,
 import { requireWorkspaceRole, refuseGrantAboveOwn, roleOf, restandingFor, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import { db, actor, slugify, narrowPatch, changesNothing, callerOrder } from '../../core/resource.ts'
-import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
 // The roles are graded in core/gate.ts and the enum lives in schema.lite; the
 // map's KEYS are the one place this app already states the vocabulary, and a
@@ -25,371 +24,368 @@ import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
 import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
-export function createWorkspacesService(app: BasecampApp) {
+/**
+ * Point the role hooks at the workspace being addressed.
+ *
+ * requireWorkspaceRole reads $.locals.workspaceId, which sessionScope's
+ * requireWorkspace() normally stamps from the X-Workspace-Id header. This
+ * service has no such header — the workspace is $.id. Without this the
+ * hook found no workspaceId, hit its `if (!userId || !workspaceId) return`
+ * guard and **enforced nothing**: any authenticated user could rename or
+ * delete any workspace, or promote themselves inside it.
+ */
+async function stampSelfAsWorkspace(): Promise<void> {
+  if (!$.id) return
+  $.locals.workspaceId = String($.id)
+  // Re-resolve the standing against THIS workspace. The around hook already
+  // resolved one from X-Workspace-Id — the workspace the UI is currently
+  // showing — and that is a different workspace from the one being addressed
+  // whenever a person renames or leaves one from a list. Without this an
+  // admin of the workspace they are LOOKING AT would carry ADMINISTRATOR(5)
+  // into a patch of any other workspace they can name.
+  await restandingFor($, String($.id))
+}
 
-  /**
-   * Point the role hooks at the workspace being addressed.
-   *
-   * requireWorkspaceRole reads $.locals.workspaceId, which sessionScope's
-   * requireWorkspace() normally stamps from the X-Workspace-Id header. This
-   * service has no such header — the workspace is $.id. Without this the
-   * hook found no workspaceId, hit its `if (!userId || !workspaceId) return`
-   * guard and **enforced nothing**: any authenticated user could rename or
-   * delete any workspace, or promote themselves inside it.
-   */
-  async function stampSelfAsWorkspace(): Promise<void> {
-    if (!$.id) return
-    $.locals.workspaceId = String($.id)
-    // Re-resolve the standing against THIS workspace. The around hook already
-    // resolved one from X-Workspace-Id — the workspace the UI is currently
-    // showing — and that is a different workspace from the one being addressed
-    // whenever a person renames or leaves one from a list. Without this an
-    // admin of the workspace they are LOOKING AT would carry ADMINISTRATOR(5)
-    // into a patch of any other workspace they can name.
-    await restandingFor(app, $, String($.id))
-  }
+/**
+ * Put the session-derived columns on $.data BEFORE validation sees it.
+ *
+ * `accountId` and `ownerId` are required and NOT the caller's to send —
+ * create() takes both from the session, which is the whole point: a client
+ * that could name them could create a workspace inside another tenant or
+ * owned by someone else. But `autoValidate` runs against the model's field
+ * rules and does not know that, so it rejected every create with
+ * `accountId is required, ownerId is required` and the method never ran.
+ *
+ * Order is what makes this work: user hooks run BEFORE the derived
+ * gateAuth/autoValidate pair (junction core/service.ts ~688), so a
+ * before/create hook is the documented place to shape $.data. Found by the
+ * UI — POST /workspaces was unreachable over HTTP entirely.
+ */
+function stampOwnership(): void {
+  const user = sessionOf()
+  if (!user.accountId) throw new Unauthorized('Session carries no account')
 
-  /**
-   * Put the session-derived columns on $.data BEFORE validation sees it.
-   *
-   * `accountId` and `ownerId` are required and NOT the caller's to send —
-   * create() takes both from the session, which is the whole point: a client
-   * that could name them could create a workspace inside another tenant or
-   * owned by someone else. But `autoValidate` runs against the model's field
-   * rules and does not know that, so it rejected every create with
-   * `accountId is required, ownerId is required` and the method never ran.
-   *
-   * Order is what makes this work: user hooks run BEFORE the derived
-   * gateAuth/autoValidate pair (junction core/service.ts ~688), so a
-   * before/create hook is the documented place to shape $.data. Found by the
-   * UI — POST /workspaces was unreachable over HTTP entirely.
-   */
-  function stampOwnership(): void {
+  const data = ($.data ?? {}) as Record<string, unknown>
+  // Assigned, not defaulted: whatever a client sent for these is discarded.
+  data.accountId = user.accountId
+  data.ownerId   = user.userId
+  // Derived, not assigned — a caller may name their own slug. It has to
+  // happen HERE for the same reason the two above do: `slug` is required and
+  // autoValidate runs after this hook and before the method, so deriving it
+  // in create() 400s with `slug is required` on every caller that did not
+  // send one. The browser sends one, which is why nothing caught it.
+  data.slug ??= slugify(String(data.name ?? ''))
+  $.data = data
+}
+
+function sessionOf() {
+  const user = $.auth?.user as { userId?: string; accountId?: string } | undefined
+  if (!user?.userId) throw new Unauthorized('Not authenticated')
+  return user
+}
+
+/** Membership decides access, so it is read as system, not through the caller.
+ *  `any` for the reason every sibling service says it: `$.db` is the request's
+ *  client and Litestone's accessors exist only at runtime, so a typed handle
+ *  would be a fiction maintained by hand until `litestone types` lands. */
+function members(): any {
+  return $.db.asSystem().workspaceMember
+}
+
+/** The three roster writes go through the caller's own client, re-claimed to
+ *  the workspace being addressed by `stampSelfAsWorkspace`, so the schema's
+ *  gate, `@@allow` and `@@deny(update, userId == auth().id)` hold them and
+ *  not a restatement here. `leave` and `transferOwnership` stay system: both
+ *  write the caller's own row, which that deny exists to refuse. */
+function memberWrites(): any {
+  return $.db.workspaceMember
+}
+
+export default createService({
+  name:  'workspaces',
+  scope: keyScope('workspaces'),
+  model: 'Workspace',
+  reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+
+  // The member verbs write a WorkspaceMember row by hand, so autoValidate
+  // never sees their payload: each names a `type` in db/schema.lite instead,
+  // and a role outside WorkspaceRole is a 400 naming the field before the
+  // method runs.
+  methods: ['find', 'get', 'create', 'patch', 'remove', 'restore',
+            'members',
+            { method: 'addMember',     input: 'WorkspaceMemberAdd' },
+            { method: 'setMemberRole', input: 'WorkspaceMemberRole' },
+            'removeMember', 'leave',
+            { method: 'transferOwnership', input: 'WorkspaceTransfer' }],
+
+  // Only workspaces the caller belongs to. The old version did this with a
+  // JOIN; `memberships: { some: { userId } }` is the relation the schema
+  // already declares.
+  async find() {
+    const user = $.auth?.user as { userId?: string } | undefined
+    if (!user?.userId) return { total: 0, limit: 20, offset: 0, data: [] }
+
+    const { limit, offset } = getPagination()
+    const mine = await members().findMany({ where: { userId: user.userId } })
+    const ids  = mine.map((m: any) => m.workspaceId)
+    if (!ids.length) return { total: 0, limit, offset, data: [] }
+
+    const { rows, total } = await db().workspace.findManyAndCount({
+      where:   { id: { in: ids } },
+      orderBy: callerOrder({ createdAt: 'desc' }),
+      limit, offset,
+    })
+    // The caller's role in each, off the rows already read. A person's list of
+    // workspaces is also where they read what they hold in each, and a
+    // Workspace row has no column that says it.
+    const roleIn = new Map(mine.map((m: any) => [m.workspaceId, m.role]))
+    return { total, limit, offset, data: rows.map((w: any) => ({ ...w, role: roleIn.get(w.id) })) }
+  },
+
+  // Non-membership is reported as 404, not 403 — a workspace you cannot see
+  // should not be confirmable by id.
+  async get() {
+    const user = sessionOf()
+    const ws   = await db().workspace.findUnique({ where: { id: $.id as string } })
+    if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
+
+    const member = await members().findFirst({ where: { workspaceId: $.id as string, userId: user.userId } })
+    if (!member) throw new NotFound(`Workspace '${$.id}' not found`)
+
+    return ws
+  },
+
+  async create() {
     const user = sessionOf()
     if (!user.accountId) throw new Unauthorized('Session carries no account')
 
-    const data = ($.data ?? {}) as Record<string, unknown>
-    // Assigned, not defaulted: whatever a client sent for these is discarded.
-    data.accountId = user.accountId
-    data.ownerId   = user.userId
-    // Derived, not assigned — a caller may name their own slug. It has to
-    // happen HERE for the same reason the two above do: `slug` is required and
-    // autoValidate runs after this hook and before the method, so deriving it
-    // in create() 400s with `slug is required` on every caller that did not
-    // send one. The browser sends one, which is why nothing caught it.
+    const data = $.data as Record<string, unknown>
     data.slug ??= slugify(String(data.name ?? ''))
-    $.data = data
-  }
 
-  function sessionOf() {
-    const user = $.auth?.user as { userId?: string; accountId?: string } | undefined
-    if (!user?.userId) throw new Unauthorized('Not authenticated')
-    return user
-  }
+    if (await db().workspace.exists({ where: { slug: data.slug } }))
+      throw new Conflict(`Slug '${data.slug}' is already taken`)
 
-  /** Membership decides access, so it is read as system, not through the caller.
-   *  `any` for the reason every sibling service says it: `$.db` is the request's
-   *  client and Litestone's accessors exist only at runtime, so a typed handle
-   *  would be a fiction maintained by hand until `litestone types` lands. */
-  function members(): any {
-    return $.db.asSystem().workspaceMember
-  }
-
-  /** The three roster writes go through the caller's own client, re-claimed to
-   *  the workspace being addressed by `stampSelfAsWorkspace`, so the schema's
-   *  gate, `@@allow` and `@@deny(update, userId == auth().id)` hold them and
-   *  not a restatement here. `leave` and `transferOwnership` stay system: both
-   *  write the caller's own row, which that deny exists to refuse. */
-  function memberWrites(): any {
-    return $.db.workspaceMember
-  }
-
-  return createService({
-    name:  'workspaces',
-    scope: keyScope('workspaces'),
-    model: 'Workspace',
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
-
-    // The member verbs write a WorkspaceMember row by hand, so autoValidate
-    // never sees their payload: each names a `type` in db/schema.lite instead,
-    // and a role outside WorkspaceRole is a 400 naming the field before the
-    // method runs.
-    methods: ['find', 'get', 'create', 'patch', 'remove', 'restore',
-              'members',
-              { method: 'addMember',     input: 'WorkspaceMemberAdd' },
-              { method: 'setMemberRole', input: 'WorkspaceMemberRole' },
-              'removeMember', 'leave',
-              { method: 'transferOwnership', input: 'WorkspaceTransfer' }],
-
-    // Only workspaces the caller belongs to. The old version did this with a
-    // JOIN; `memberships: { some: { userId } }` is the relation the schema
-    // already declares.
-    async find() {
-      const user = $.auth?.user as { userId?: string } | undefined
-      if (!user?.userId) return { total: 0, limit: 20, offset: 0, data: [] }
-
-      const { limit, offset } = getPagination()
-      const mine = await members().findMany({ where: { userId: user.userId } })
-      const ids  = mine.map((m: any) => m.workspaceId)
-      if (!ids.length) return { total: 0, limit, offset, data: [] }
-
-      const { rows, total } = await db().workspace.findManyAndCount({
-        where:   { id: { in: ids } },
-        orderBy: callerOrder({ createdAt: 'desc' }),
-        limit, offset,
+    // One transaction: a workspace whose creator is not a member of it is
+    // unreachable by its own owner.
+    const ws = await ($.db.asSystem() as any).$transaction(async (tx: any) => {
+      const ws = await tx.workspace.create({
+        data: { ...data, accountId: user.accountId, ownerId: user.userId },
       })
-      // The caller's role in each, off the rows already read. A person's list of
-      // workspaces is also where they read what they hold in each, and a
-      // Workspace row has no column that says it.
-      const roleIn = new Map(mine.map((m: any) => [m.workspaceId, m.role]))
-      return { total, limit, offset, data: rows.map((w: any) => ({ ...w, role: roleIn.get(w.id) })) }
-    },
-
-    // Non-membership is reported as 404, not 403 — a workspace you cannot see
-    // should not be confirmable by id.
-    async get() {
-      const user = sessionOf()
-      const ws   = await db().workspace.findUnique({ where: { id: $.id as string } })
-      if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
-
-      const member = await members().findFirst({ where: { workspaceId: $.id as string, userId: user.userId } })
-      if (!member) throw new NotFound(`Workspace '${$.id}' not found`)
-
+      await tx.workspaceMember.create({
+        data: { workspaceId: ws.id, userId: user.userId, role: 'owner',
+                capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() },
+      })
       return ws
-    },
+    })
 
-    async create() {
-      const user = sessionOf()
-      if (!user.accountId) throw new Unauthorized('Session carries no account')
+    $.app.events.emit('workspace:created', { id: ws.id, slug: ws.slug, owner_id: user.userId })
+    return ws
+  },
 
-      const data = $.data as Record<string, unknown>
-      data.slug ??= slugify(String(data.name ?? ''))
+  async patch() {
+    const ws   = await db().workspace.findUnique({ where: { id: $.id as string } })
+    if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
 
-      if (await db().workspace.exists({ where: { slug: data.slug } }))
-        throw new Conflict(`Slug '${data.slug}' is already taken`)
+    const data = $.data as Record<string, unknown>
+    if (data.slug && data.slug !== ws.slug &&
+        await db().workspace.exists({ where: { slug: data.slug } }))
+      throw new Conflict(`Slug '${data.slug}' is already taken`)
 
-      // One transaction: a workspace whose creator is not a member of it is
-      // unreachable by its own owner.
-      const ws = await ($.db.asSystem() as any).$transaction(async (tx: any) => {
-        const ws = await tx.workspace.create({
-          data: { ...data, accountId: user.accountId, ownerId: user.userId },
-        })
-        await tx.workspaceMember.create({
-          data: { workspaceId: ws.id, userId: user.userId, role: 'owner',
-                  capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() },
-        })
-        return ws
-      })
+    // accountId and ownerId are not a client's to change: one moves the
+    // workspace between tenants, the other hands over ownership, and neither
+    // belongs on a general PATCH.
+    const patch = narrowPatch(data, ['accountId', 'ownerId'])
+    if (changesNothing(patch)) return ws
+    return db().workspace.update({ where: { id: $.id as string }, data: patch })
+  },
 
-      app.events.emit('workspace:created', { id: ws.id, slug: ws.slug, owner_id: user.userId })
-      return ws
-    },
+  async remove() {
+    const ws = await db().workspace.findUnique({ where: { id: $.id as string } })
+    if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
 
-    async patch() {
-      const ws   = await db().workspace.findUnique({ where: { id: $.id as string } })
-      if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
+    // @@softDelete(cascade) — projects, servers, secrets and jobs are stamped
+    // with it rather than left live under a deleted parent.
+    const removed = await db().workspace.remove({ where: { id: $.id as string } })
+    $.app.events.emit('workspace:deleted', { id: $.id })
+    return Array.isArray(removed) ? removed[0] : removed
+  },
 
-      const data = $.data as Record<string, unknown>
-      if (data.slug && data.slug !== ws.slug &&
-          await db().workspace.exists({ where: { slug: data.slug } }))
-        throw new Conflict(`Slug '${data.slug}' is already taken`)
+  // ── members ───────────────────────────────────────────────────────
+  // asSystem: membership is what decides access, so it is not read through
+  // the caller it is deciding about.
+  //
+  // The read is a system one for ANY id, so membership is checked first and
+  // answers like `get` does — without it any signed-in account read another
+  // workspace's roster, whole User rows included (`FJS-1087`).
+  //
+  // A colleague is shown by name, address and face and nothing more
+  // (`FJS-D619`). The read is a system one, so the User read policy that
+  // keeps a viewer to their own row never runs, and a whole row handed every
+  // viewer `isSystemAdmin`, `status` and `accountId` of everybody in the team.
+  async members() {
+    $.dispatch = false          // a read — do not announce it on a channel
+    const user = sessionOf()
+    const mine = await members().findFirst({ where: { workspaceId: $.id as string, userId: user.userId } })
+    if (!mine) throw new NotFound(`Workspace '${$.id}' not found`)
 
-      // accountId and ownerId are not a client's to change: one moves the
-      // workspace between tenants, the other hands over ownership, and neither
-      // belongs on a general PATCH.
-      const patch = narrowPatch(data, ['accountId', 'ownerId'])
-      if (changesNothing(patch)) return ws
-      return db().workspace.update({ where: { id: $.id as string }, data: patch })
-    },
+    const rows = await members().findMany({
+      where:   { workspaceId: $.id as string },
+      include: { user: { select: { id: true, name: true, displayName: true, email: true, avatarUrl: true } } },
+      orderBy: { createdAt: 'asc' },
+    })
+    return { total: rows.length, data: rows }
+  },
 
-    async remove() {
-      const ws = await db().workspace.findUnique({ where: { id: $.id as string } })
-      if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
+  async addMember() {
+    const { userId: target, role } = $.data as { userId: string; role?: WorkspaceRole }
 
-      // @@softDelete(cascade) — projects, servers, secrets and jobs are stamped
-      // with it rather than left live under a deleted parent.
-      const removed = await db().workspace.remove({ where: { id: $.id as string } })
-      app.events.emit('workspace:deleted', { id: $.id })
-      return Array.isArray(removed) ? removed[0] : removed
-    },
+    const wsId = $.id as string
+    if (await members().exists({ where: { workspaceId: wsId, userId: target } }))
+      throw new Conflict('User is already a member of this workspace')
 
-    // ── members ───────────────────────────────────────────────────────
-    // asSystem: membership is what decides access, so it is not read through
-    // the caller it is deciding about.
+    const next = role ?? 'developer'
+    return memberWrites().create({
+      data: { workspaceId: wsId, userId: target, role: next, capabilities: grantsFor(next),
+              invitedBy: actor(), invitedAt: new Date().toISOString() },
+    })
+  },
+
+  async setMemberRole() {
+    const { userId: target, role } = $.data as { userId: string; role: WorkspaceRole }
+
+    // FJS-410. `role` is what core/gate.ts grades every gate from, so naming
+    // your OWN userId with `role: 'owner'` granted level 6. The write below
+    // is the caller's own client, so `WorkspaceMember`'s
+    // `@@deny('update', userId == auth().id)` refuses it; the read stays
+    // system because standing cannot be read through the caller it grades.
+    const wsId   = $.id as string
+    const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
+    if (!member) throw new NotFound('Member not found')
+
+    // A member who outranks you is not yours to move either. `refuseGrantAboveOwn`
+    // grades what is being HANDED OUT and this grades who is being acted on —
+    // an admin demoting an owner is the same inversion pointed the other way,
+    // and the last-owner guard below only catches it where there happens to
+    // be exactly one.
+    const myRole = roleOf($) ?? ''
+    if ((WORKSPACE_ROLE_LEVEL[member.role] ?? 0) > (WORKSPACE_ROLE_LEVEL[myRole] ?? 0))
+      throw new Forbidden(
+        `You cannot change the role of ${member.role === 'owner' ? 'an' : 'a'} ${member.role} — you hold ${myRole || 'none'}.`
+      )
+
+    // Demoting the last owner would leave the workspace unadministrable.
+    if (member.role === 'owner' && role !== 'owner') {
+      const owners = await members().count({ where: { workspaceId: wsId, role: 'owner' } })
+      if (owners <= 1) throw new Forbidden('Cannot demote the last owner of a workspace')
+    }
+
+    // Re-stamped, not merged. A role IS a default set (core/capabilities.ts),
+    // so leaving the old grants behind would make a demotion change the word
+    // on the screen and nothing about what the person may actually do.
     //
-    // The read is a system one for ANY id, so membership is checked first and
-    // answers like `get` does — without it any signed-in account read another
-    // workspace's roster, whole User rows included (`FJS-1087`).
-    //
-    // A colleague is shown by name, address and face and nothing more
-    // (`FJS-D619`). The read is a system one, so the User read policy that
-    // keeps a viewer to their own row never runs, and a whole row handed every
-    // viewer `isSystemAdmin`, `status` and `accountId` of everybody in the team.
-    async members() {
-      $.dispatch = false          // a read — do not announce it on a channel
-      const user = sessionOf()
-      const mine = await members().findFirst({ where: { workspaceId: $.id as string, userId: user.userId } })
-      if (!mine) throw new NotFound(`Workspace '${$.id}' not found`)
+    // A deny on update FILTERS the row out rather than throwing, so a refused
+    // write answers null — and a 200 carrying null reads as a role changed.
+    const updated = await memberWrites().update({
+      where: { id: member.id },
+      data:  { role, capabilities: grantsFor(role) },
+    })
+    if (!updated)
+      throw new Forbidden(
+        'You cannot change your own role in a workspace. Ask another owner or administrator.'
+      )
+    return updated
+  },
 
-      const rows = await members().findMany({
-        where:   { workspaceId: $.id as string },
-        include: { user: { select: { id: true, name: true, displayName: true, email: true, avatarUrl: true } } },
-        orderBy: { createdAt: 'asc' },
-      })
-      return { total: rows.length, data: rows }
-    },
+  async removeMember() {
+    const target = ($.query.userId ?? $.query.user_id ??
+                    ($.data as Record<string, string> | null)?.userId) as string | undefined
+    if (!target) throw new BadRequest('userId is required')
 
-    async addMember() {
-      const { userId: target, role } = $.data as { userId: string; role?: WorkspaceRole }
+    const wsId   = $.id as string
+    const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
+    if (!member) throw new NotFound('Member not found')
+    if (member.role === 'owner') throw new Forbidden('Cannot remove the workspace owner')
 
-      const wsId = $.id as string
-      if (await members().exists({ where: { workspaceId: wsId, userId: target } }))
-        throw new Conflict('User is already a member of this workspace')
+    // Hard delete: WorkspaceMember has no @@softDelete — a revoked membership
+    // should stop matching, not linger as a tombstone the role hooks read.
+    await memberWrites().delete({ where: { id: member.id } })
+    return { workspace_id: wsId, user_id: target, removed: true }
+  },
 
-      const next = role ?? 'developer'
-      return memberWrites().create({
-        data: { workspaceId: wsId, userId: target, role: next, capabilities: grantsFor(next),
-                invitedBy: actor(), invitedAt: new Date().toISOString() },
-      })
-    },
+  // ── leave · transferOwnership ─────────────────────────────────────
+  // The two acts on your OWN membership. `setMemberRole` refuses your own row
+  // because a person must not promote themselves; stepping down is the other
+  // direction and is only safe while somebody else holds the workspace, so it
+  // happens here, inside the act that hands it over.
 
-    async setMemberRole() {
-      const { userId: target, role } = $.data as { userId: string; role: WorkspaceRole }
+  /** End your own membership. Any role may; the last owner may not, because
+   *  a workspace with no owner is one nobody can administer or delete. */
+  async leave() {
+    const me     = sessionOf().userId as string
+    const wsId   = $.id as string
+    const mine   = await members().findFirst({ where: { workspaceId: wsId, userId: me } })
+    if (!mine) throw new NotFound(`Workspace '${wsId}' not found`)
 
-      // FJS-410. `role` is what core/gate.ts grades every gate from, so naming
-      // your OWN userId with `role: 'owner'` granted level 6. The write below
-      // is the caller's own client, so `WorkspaceMember`'s
-      // `@@deny('update', userId == auth().id)` refuses it; the read stays
-      // system because standing cannot be read through the caller it grades.
-      const wsId   = $.id as string
-      const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
-      if (!member) throw new NotFound('Member not found')
-
-      // A member who outranks you is not yours to move either. `refuseGrantAboveOwn`
-      // grades what is being HANDED OUT and this grades who is being acted on —
-      // an admin demoting an owner is the same inversion pointed the other way,
-      // and the last-owner guard below only catches it where there happens to
-      // be exactly one.
-      const myRole = roleOf($) ?? ''
-      if ((WORKSPACE_ROLE_LEVEL[member.role] ?? 0) > (WORKSPACE_ROLE_LEVEL[myRole] ?? 0))
-        throw new Forbidden(
-          `You cannot change the role of ${member.role === 'owner' ? 'an' : 'a'} ${member.role} — you hold ${myRole || 'none'}.`
-        )
-
-      // Demoting the last owner would leave the workspace unadministrable.
-      if (member.role === 'owner' && role !== 'owner') {
-        const owners = await members().count({ where: { workspaceId: wsId, role: 'owner' } })
-        if (owners <= 1) throw new Forbidden('Cannot demote the last owner of a workspace')
-      }
-
-      // Re-stamped, not merged. A role IS a default set (core/capabilities.ts),
-      // so leaving the old grants behind would make a demotion change the word
-      // on the screen and nothing about what the person may actually do.
-      //
-      // A deny on update FILTERS the row out rather than throwing, so a refused
-      // write answers null — and a 200 carrying null reads as a role changed.
-      const updated = await memberWrites().update({
-        where: { id: member.id },
-        data:  { role, capabilities: grantsFor(role) },
-      })
-      if (!updated)
-        throw new Forbidden(
-          'You cannot change your own role in a workspace. Ask another owner or administrator.'
-        )
-      return updated
-    },
-
-    async removeMember() {
-      const target = ($.query.userId ?? $.query.user_id ??
-                      ($.data as Record<string, string> | null)?.userId) as string | undefined
-      if (!target) throw new BadRequest('userId is required')
-
-      const wsId   = $.id as string
-      const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
-      if (!member) throw new NotFound('Member not found')
-      if (member.role === 'owner') throw new Forbidden('Cannot remove the workspace owner')
-
-      // Hard delete: WorkspaceMember has no @@softDelete — a revoked membership
-      // should stop matching, not linger as a tombstone the role hooks read.
-      await memberWrites().delete({ where: { id: member.id } })
-      return { workspace_id: wsId, user_id: target, removed: true }
-    },
-
-    // ── leave · transferOwnership ─────────────────────────────────────
-    // The two acts on your OWN membership. `setMemberRole` refuses your own row
-    // because a person must not promote themselves; stepping down is the other
-    // direction and is only safe while somebody else holds the workspace, so it
-    // happens here, inside the act that hands it over.
-
-    /** End your own membership. Any role may; the last owner may not, because
-     *  a workspace with no owner is one nobody can administer or delete. */
-    async leave() {
-      const me     = sessionOf().userId as string
-      const wsId   = $.id as string
-      const mine   = await members().findFirst({ where: { workspaceId: wsId, userId: me } })
-      if (!mine) throw new NotFound(`Workspace '${wsId}' not found`)
-
-      const heir = mine.role === 'owner'
-        ? await members().findFirst({
-            where:   { workspaceId: wsId, role: 'owner', userId: { not: me } },
-            orderBy: { createdAt: 'asc' },
-          })
-        : null
-      if (mine.role === 'owner' && !heir)
-        throw new Forbidden('You are the only owner. Hand ownership to another member before you leave.')
-
-      return db().asSystem().$transaction(async (tx: any) => {
-        await tx.workspaceMember.delete({ where: { id: mine.id } })
-        // `ownerId` is who the hub names as the owner. Left pointing at
-        // somebody outside the workspace, it names a person nobody can reach.
-        const ws = await tx.workspace.findUnique({ where: { id: wsId } })
-        if (heir && ws.ownerId === me)
-          await tx.workspace.update({ where: { id: wsId }, data: { ownerId: heir.userId, version: ws.version } })
-        return { workspace_id: wsId, user_id: me, left: true }
-      })
-    },
-
-    /** Hand the workspace to another member and step down to admin, in one
-     *  write: two steps would leave a window with no owner, or two. */
-    async transferOwnership() {
-      const me     = sessionOf().userId as string
-      const target = ($.data as { userId: string }).userId
-      if (target === me) throw new BadRequest('You already own this workspace')
-
-      const wsId  = $.id as string
-      const heir  = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
-      if (!heir) throw new NotFound('Member not found')
-      const mine  = await members().findFirst({ where: { workspaceId: wsId, userId: me } })
-
-      return db().asSystem().$transaction(async (tx: any) => {
-        const owner = await tx.workspaceMember.update({
-          where: { id: heir.id }, data: { role: 'owner', capabilities: grantsFor('owner') },
+    const heir = mine.role === 'owner'
+      ? await members().findFirst({
+          where:   { workspaceId: wsId, role: 'owner', userId: { not: me } },
+          orderBy: { createdAt: 'asc' },
         })
-        await tx.workspaceMember.update({
-          where: { id: mine.id }, data: { role: 'admin', capabilities: grantsFor('admin') },
-        })
-        const ws = await tx.workspace.findUnique({ where: { id: wsId } })
-        await tx.workspace.update({ where: { id: wsId }, data: { ownerId: target, version: ws.version } })
-        return owner
-      })
-    },
+      : null
+    if (mine.role === 'owner' && !heir)
+      throw new Forbidden('You are the only owner. Hand ownership to another member before you leave.')
 
-    hooks: {
-      before: {
-        // stampSelfAsWorkspace must run BEFORE the role hooks — they read the
-        // workspaceId it sets.
-        all:           [authenticate, stampSelfAsWorkspace],
-        create:        [stampOwnership],
-        patch:         [requireWorkspaceRole(app, 'admin', 'owner')],
-        remove:        [requireWorkspaceRole(app, 'owner')],
-        // refuseGrantAboveOwn is the other half of FJS-410: the hook above says
-        // *may you manage the team*, this one says *not a role above your own*.
-        // Without it an admin still mints an owner, on somebody else's row.
-        addMember:     [requireWorkspaceRole(app, 'admin', 'owner'), refuseGrantAboveOwn()],
-        setMemberRole: [requireWorkspaceRole(app, 'admin', 'owner'), refuseGrantAboveOwn()],
-        removeMember:  [requireWorkspaceRole(app, 'admin', 'owner')],
-        transferOwnership: [requireWorkspaceRole(app, 'owner')],
-      },
+    return db().asSystem().$transaction(async (tx: any) => {
+      await tx.workspaceMember.delete({ where: { id: mine.id } })
+      // `ownerId` is who the hub names as the owner. Left pointing at
+      // somebody outside the workspace, it names a person nobody can reach.
+      const ws = await tx.workspace.findUnique({ where: { id: wsId } })
+      if (heir && ws.ownerId === me)
+        await tx.workspace.update({ where: { id: wsId }, data: { ownerId: heir.userId, version: ws.version } })
+      return { workspace_id: wsId, user_id: me, left: true }
+    })
+  },
+
+  /** Hand the workspace to another member and step down to admin, in one
+   *  write: two steps would leave a window with no owner, or two. */
+  async transferOwnership() {
+    const me     = sessionOf().userId as string
+    const target = ($.data as { userId: string }).userId
+    if (target === me) throw new BadRequest('You already own this workspace')
+
+    const wsId  = $.id as string
+    const heir  = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
+    if (!heir) throw new NotFound('Member not found')
+    const mine  = await members().findFirst({ where: { workspaceId: wsId, userId: me } })
+
+    return db().asSystem().$transaction(async (tx: any) => {
+      const owner = await tx.workspaceMember.update({
+        where: { id: heir.id }, data: { role: 'owner', capabilities: grantsFor('owner') },
+      })
+      await tx.workspaceMember.update({
+        where: { id: mine.id }, data: { role: 'admin', capabilities: grantsFor('admin') },
+      })
+      const ws = await tx.workspace.findUnique({ where: { id: wsId } })
+      await tx.workspace.update({ where: { id: wsId }, data: { ownerId: target, version: ws.version } })
+      return owner
+    })
+  },
+
+  hooks: {
+    before: {
+      // stampSelfAsWorkspace must run BEFORE the role hooks — they read the
+      // workspaceId it sets.
+      all:           [authenticate, stampSelfAsWorkspace],
+      create:        [stampOwnership],
+      patch:         [requireWorkspaceRole('admin', 'owner')],
+      remove:        [requireWorkspaceRole('owner')],
+      // refuseGrantAboveOwn is the other half of FJS-410: the hook above says
+      // *may you manage the team*, this one says *not a role above your own*.
+      // Without it an admin still mints an owner, on somebody else's row.
+      addMember:     [requireWorkspaceRole('admin', 'owner'), refuseGrantAboveOwn()],
+      setMemberRole: [requireWorkspaceRole('admin', 'owner'), refuseGrantAboveOwn()],
+      removeMember:  [requireWorkspaceRole('admin', 'owner')],
+      transferOwnership: [requireWorkspaceRole('owner')],
     },
-  })
-}
+  },
+})

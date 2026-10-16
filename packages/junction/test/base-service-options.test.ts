@@ -1,10 +1,10 @@
 // test/base-service-options.test.ts
 //
-// createBaseService used to destructure only { model, db, paginate, allowBulk }
+// buildBase used to destructure only { model, db, paginate, allowBulk }
 // and return the seven CRUD methods, dropping everything else. That made the
 // documented service shape silently wrong:
 //
-//   export default createBaseService({
+//   export default buildBase({
 //     name:  'leads',
 //     model: 'lead',
 //     hooks: { before: { create: [authenticate] } },
@@ -17,30 +17,30 @@
 //
 // Only the spread form worked:
 //
-//   export default { ...createBaseService({ model: 'lead' }), hooks: {...} }
+//   export default { ...buildBase({ model: 'lead' }), hooks: {...} }
 //
 // because the loader reads hooks off the object you export, via
-// createService({ name: deriveName(filename), ...service }).
+// buildService({ name: deriveName(filename), ...service }).
 //
 // Both forms work now. These tests pin that, and pin the things that must NOT
 // leak onto the service alongside it.
 
 import { describe, test, expect } from 'bun:test'
-import { createBaseService, createService, requiredScope, scopeRefusal } from '../src/core/service.ts'
+import { buildBase, createService, requiredScope, scopeRefusal, buildService } from '../src/core/service.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 
 const authenticate = () => {}
 const CRUD = ['find', 'get', 'create', 'update', 'patch', 'remove', 'restore'] as const
 
-describe('createBaseService — option pass-through', () => {
+describe('buildBase — option pass-through', () => {
 
   test('carries name through', () => {
-    const svc = createBaseService({ name: 'leads', model: 'lead' })
+    const svc = buildBase({ name: 'leads', model: 'lead' })
     expect(svc.name).toBe('leads')
   })
 
   test('carries hooks through', () => {
-    const svc = createBaseService({
+    const svc = buildBase({
       model: 'lead',
       hooks: { before: { create: [authenticate] } },
     })
@@ -56,30 +56,30 @@ describe('createBaseService — option pass-through', () => {
   })
 
   test('still returns every CRUD method', () => {
-    const svc = createBaseService({ name: 'leads', model: 'lead', hooks: {} })
+    const svc = buildBase({ name: 'leads', model: 'lead', hooks: {} })
     for (const m of CRUD) expect(typeof (svc as Record<string, unknown>)[m]).toBe('function')
   })
 
   test('carries custom methods through', () => {
     const summary = async (_ctx: ServiceContext) => ({ ok: true })
-    const svc = createBaseService({ model: 'lead', summary })
+    const svc = buildBase({ model: 'lead', summary })
     expect((svc as Record<string, unknown>).summary).toBe(summary)
   })
 
   test('carries scope through to what createService grades', () => {
     // Dropped, it fails closed: every scoped key refused at every method.
-    const built = createService({ name: 'leads', ...createBaseService({ model: 'lead', scope: 'crm' }) })
+    const built = buildService({ name: 'leads', ...buildBase({ model: 'lead', scope: 'crm' }) })
     expect(requiredScope(built, 'find')).toBe('crm')
     expect(scopeRefusal(built, 'find', { scopes: ['crm'] })).toBeNull()
   })
 })
 
-describe('createBaseService — what must not leak', () => {
+describe('buildBase — what must not leak', () => {
 
   test('omitting name adds no name key', () => {
     // An explicit `name: undefined` would override the loader's
     // filename-derived name with nothing.
-    const svc = createBaseService({ model: 'lead' })
+    const svc = buildBase({ model: 'lead' })
     expect('name' in svc).toBe(false)
   })
 
@@ -90,13 +90,13 @@ describe('createBaseService — what must not leak', () => {
     // opt out of it. What still matters is the loader's branch:
     // `typeof service.hooks !== 'function'` distinguishes a HookMap (config to
     // merge) from a built service's `.hooks(map)` registration method.
-    const svc = createBaseService({ model: 'lead' })
+    const svc = buildBase({ model: 'lead' })
     expect(typeof svc.hooks).not.toBe('function')
     expect(svc.hooks?.before?.create?.length).toBeGreaterThan(0)
   })
 
   test('reserved options are not exposed as service methods', () => {
-    const svc = createBaseService({
+    const svc = buildBase({
       model:     'lead',
       db:        () => ({}),
       allowBulk: true,
@@ -114,7 +114,7 @@ describe('createBaseService — what must not leak', () => {
   })
 
   test('non-function options are not treated as methods', () => {
-    const svc = createBaseService({
+    const svc = buildBase({
       model: 'lead',
       label: 'not a method',
     }) as Record<string, unknown>
@@ -122,11 +122,11 @@ describe('createBaseService — what must not leak', () => {
   })
 })
 
-describe('createBaseService — the spread form still works', () => {
+describe('buildBase — the spread form still works', () => {
 
   test('spread values win over anything the base returned', () => {
     const svc = {
-      ...createBaseService({ name: 'ignored', model: 'lead' }),
+      ...buildBase({ name: 'ignored', model: 'lead' }),
       name:  'leads',
       hooks: { before: { find: [authenticate] } },
     }

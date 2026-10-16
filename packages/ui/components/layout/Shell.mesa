@@ -72,6 +72,8 @@
   const LAYOUTS = ['sidebar', 'rail', 'topbar']
   if (!LAYOUTS.includes(layout))
     console.warn(`[Shell] layout="${layout}" is not one of ${LAYOUTS.join(', ')}; drawing a sidebar`)
+  if (collapsible && layout !== 'sidebar')
+    console.warn(`[Shell] collapsible folds a sidebar; layout="${layout}" draws no fold control`)
   $: shape = LAYOUTS.includes(layout) ? layout : 'sidebar'
 
   // With no isActive nothing is ever current, and a nav with no current page

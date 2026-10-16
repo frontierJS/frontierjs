@@ -1,4 +1,4 @@
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
 // What an order was billed for, as a list a screen can read.
 //
@@ -13,9 +13,7 @@ import { createBaseService } from '@frontierjs/junction'
 // `order-lines` singularizes to `order-line` and resolves, and a two-word model
 // is exactly where relying on three resolvers agreeing is not worth the line it
 // saves (Invariant 2).
-export function createOrderLinesService() {
-  return createBaseService({
-    model:   'OrderLine',
-    methods: ['find', 'get'],
-  })
-}
+export default createService({
+  model:   'OrderLine',
+  methods: ['find', 'get'],
+})

@@ -89,40 +89,38 @@
 // and nothing here has to hold one. basecamp's `model Invitation` is the fuller
 // answer to the same question — an offer of membership to an address that has
 // no account yet — and it earns a table because it carries state this does not.
-import { createBaseService, resultData } from '@frontierjs/junction'
+import { createService, resultData } from '@frontierjs/junction'
 
 type NewUser = { id?: string; email?: string }
 
-export function createUsersService() {
-  return createBaseService({
-    model:   'User',
-    channel: 'users',
-    methods: ['find', 'get', 'create', 'patch'],
+export default createService({
+  model:   'User',
+  channel: 'users',
+  methods: ['find', 'get', 'create', 'patch'],
 
-    hooks: {
-      after: {
-        create: [
-          function inviteTheNewAccount(ctx) {
-            // `resultData`, not `ctx.result`. Inside the pipeline the result is
-            // still the ENVELOPE — `{ kind: 'single', object: 'users', data }` —
-            // and only the transport unwraps it. Reading `.email` off it is
-            // `undefined` with no error anywhere: the hook runs, the account is
-            // made, and the invitation silently never goes out. Junction exports
-            // the unwrapper for exactly this.
-            const row = resultData(ctx.result) as NewUser | undefined
-            if (!row?.email) return
-            const email = row.email
+  hooks: {
+    after: {
+      create: [
+        function inviteTheNewAccount(ctx) {
+          // `resultData`, not `ctx.result`. Inside the pipeline the result is
+          // still the ENVELOPE — `{ kind: 'single', object: 'users', data }` —
+          // and only the transport unwraps it. Reading `.email` off it is
+          // `undefined` with no error anywhere: the hook runs, the account is
+          // made, and the invitation silently never goes out. Junction exports
+          // the unwrapper for exactly this.
+          const row = resultData(ctx.result) as NewUser | undefined
+          if (!row?.email) return
+          const email = row.email
 
-            ctx.afterCommit(async () => {
-              // Per SHOP. `app.auth` is the proxy in api/src/core/auth.ts, which
-              // routes every method to the provider for the tenant this request
-              // is for — so an invitation is minted against the database the
-              // account was made in, and never against the default shop's.
-              await ctx.app.auth?.requestPasswordReset?.(email)
-            })
-          },
-        ],
-      },
+          ctx.afterCommit(async () => {
+            // Per SHOP. `app.auth` is the proxy in api/src/core/auth.ts, which
+            // routes every method to the provider for the tenant this request
+            // is for — so an invitation is minted against the database the
+            // account was made in, and never against the default shop's.
+            await ctx.app.auth?.requestPasswordReset?.(email)
+          })
+        },
+      ],
     },
-  })
-}
+  },
+})

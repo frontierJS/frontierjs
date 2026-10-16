@@ -147,7 +147,7 @@ export interface AppConduit {}
  *
  * Empty here for the same reason as `AppConduit` above and with the opposite
  * problem: Junction genuinely does not know what the client is — a Litestone
- * client and a plain table-shaped object are both valid, and `createBaseService`
+ * client and a plain table-shaped object are both valid, and the service base
  * adapts the latter. It was `unknown`, which is honest and unusable: an app
  * cannot narrow it, because Invariant 5 rules that a property is typed by
  * AUGMENTING an exported interface and never by redeclaring it (declaration
@@ -263,7 +263,7 @@ export interface App {
    *
    * Whatever was passed as `createApp({ db })`. Typed loosely because both a
    * Litestone client and a plain table-shaped object are valid —
-   * `createBaseService` adapts the latter.
+   * the service base adapts the latter.
    *
    * Augment `AppDb`, don't redeclare this field.
    */
@@ -723,7 +723,7 @@ export interface AppOptions {
    * The application's database client, exposed as `app.db`.
    *
    * Accepts a Litestone client or any plain table-shaped object —
-   * `createBaseService` adapts the latter. When the client exposes `$setAuth`,
+   * the service base adapts the latter. When the client exposes `$setAuth`,
    * per-request scoping is installed automatically as an app-level around hook,
    * so `ctx.locals.db` is always the caller-scoped client and row policies see
    * who is asking.
@@ -1047,7 +1047,7 @@ export function createApp(opts: AppOptions = {}): App {
 
   // ── Database (optional) ──────────────────────────────────────────────
   // One way in (`FJS-D641`): a client you built — Litestone, or anything
-  // table-shaped that createBaseService can adapt. It lands on app.db, so
+  // table-shaped that the service base can adapt. It lands on app.db, so
   // services and hooks have one place to look. If the client supports
   // $setAuth, per-request scoping is installed further down — see
   // "Litestone scoping".
@@ -1118,7 +1118,7 @@ export function createApp(opts: AppOptions = {}): App {
     // The OPTION stays `unknown` and the field is `AppDb`, which is the one
     // place those two meet. Narrowing the option too would mean an app that
     // augments `AppDb` could no longer pass the plain table-shaped object
-    // `createBaseService` adapts — permissive in, typed out.
+    // the service base adapts — permissive in, typed out.
     db: db as AppDb,
     tenants: opts.tenants,
     logger,
@@ -2022,9 +2022,9 @@ export function createApp(opts: AppOptions = {}): App {
 
         if (_servicesDir.dir) {
           await autoloadServices({
-            dir: _servicesDir.dir, app, registry: services,
-            // Keyed like every other authoring finding, so one file that
-            // exports two factories AND throws is two sentences and not four.
+            dir: _servicesDir.dir, registry: services,
+            // Keyed like every other authoring finding, so a file that is both a
+            // duplicate name AND throws is two sentences and not four.
             report: (_key, finding) => _authoringFindings.push(finding),
           })
         }

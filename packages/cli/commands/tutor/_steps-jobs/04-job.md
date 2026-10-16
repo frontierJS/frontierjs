@@ -84,7 +84,7 @@ writeFileSync(join(jobsDir, 'finish-note.job.ts'), [
 let src = readFileSync(service, 'utf8')
 
 if (!src.includes('finish-note')) {
-  const ANCHOR = "    channel: 'notes',"
+  const ANCHOR = "  channel: 'notes',"
   if (!src.includes(ANCHOR)) {
     await must($, {
       ok:    false,
@@ -99,27 +99,27 @@ if (!src.includes('finish-note')) {
   }
 
   src = src.replace(
-    "import { createBaseService } from '@frontierjs/junction'",
-    "import { createBaseService, resultData } from '@frontierjs/junction'\nimport finishNote from '../jobs/finish-note.job.ts'",
+    "import { createService } from '@frontierjs/junction'",
+    "import { createService, resultData } from '@frontierjs/junction'\nimport finishNote from '../jobs/finish-note.job.ts'",
   )
 
   src = src.replace(ANCHOR, [
     ANCHOR,
     '',
-    '    // Queue the work, do not do it — the response goes back before the job',
-    '    // runs.',
-    '    //',
-    '    // resultData, not ctx.result: inside the pipeline the result is still',
-    '    // the envelope, and reading .id off it is undefined with no error.',
-    '    hooks: {',
-    '      after: {',
-    '        create: [async (ctx) => {',
-    '          const row = resultData(ctx.result) as { id?: string } | undefined',
-    '          if (!row?.id) return',
-    '          await ctx.app.jobs.dispatch(finishNote, { id: row.id })',
-    '        }],',
-    '      },',
+    '  // Queue the work, do not do it — the response goes back before the job',
+    '  // runs.',
+    '  //',
+    '  // resultData, not ctx.result: inside the pipeline the result is still',
+    '  // the envelope, and reading .id off it is undefined with no error.',
+    '  hooks: {',
+    '    after: {',
+    '      create: [async (ctx) => {',
+    '        const row = resultData(ctx.result) as { id?: string } | undefined',
+    '        if (!row?.id) return',
+    '        await ctx.app.jobs.dispatch(finishNote, { id: row.id })',
+    '      }],',
     '    },',
+    '  },',
   ].join('\n'))
 
   writeFileSync(service, src, 'utf8')

@@ -27,101 +27,98 @@ import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/ju
 import { requireSystemAdmin, getPagination }                from '../../core/hooks.ts'
 import { db, actor, callerOrder, callerSelect }               from '../../core/resource.ts'
 import backupRun                                            from '../../jobs/backup-run.job.ts'
-import type { BasecampApp }                                 from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** Terminal states — anything else is still in flight. */
 const SETTLED = ['success', 'failed', 'timeout']
 
-export function createBackupsService(app: BasecampApp) {
-  return createService({
-    name:  'backups',
-    scope: keyScope('backups'),
-    model: 'Backup',
+export default createService({
+  name:  'backups',
+  scope: keyScope('backups'),
+  model: 'Backup',
 
-    methods: ['find', 'get', 'create', 'remove'],
+  methods: ['find', 'get', 'create', 'remove'],
 
-    async find() {
-      const { limit, offset } = getPagination()
-      const status = $.query.status as string | undefined
-      const { rows, total } = await db().backup.findManyAndCount({
-        where:   status ? { status } : {},
-        limit, offset,
-        orderBy: callerOrder({ createdAt: 'desc' }),
-        ...callerSelect(),
-      })
-      return { total, limit, offset, data: rows }
-    },
+  async find() {
+    const { limit, offset } = getPagination()
+    const status = $.query.status as string | undefined
+    const { rows, total } = await db().backup.findManyAndCount({
+      where:   status ? { status } : {},
+      limit, offset,
+      orderBy: callerOrder({ createdAt: 'desc' }),
+      ...callerSelect(),
+    })
+    return { total, limit, offset, data: rows }
+  },
 
-    async get() {
-      const row = await db().backup.findFirst({ where: { id: $.id as string } })
-      if (!row) throw new NotFound(`Backup '${$.id}' not found`)
-      return row
-    },
+  async get() {
+    const row = await db().backup.findFirst({ where: { id: $.id as string } })
+    if (!row) throw new NotFound(`Backup '${$.id}' not found`)
+    return row
+  },
 
-    /**
-     * Ask for one now.
-     *
-     * Refuses while another is in flight. Two concurrent `VACUUM INTO`s on one
-     * database are not a corruption risk — SQLite serializes them — but they are
-     * two archives of the same bytes taken a second apart, and the second one
-     * doubles how long the first takes for no reason anybody would want.
-     */
-    async create() {
-      const data = ($.data ?? {}) as Record<string, unknown>
+  /**
+   * Ask for one now.
+   *
+   * Refuses while another is in flight. Two concurrent `VACUUM INTO`s on one
+   * database are not a corruption risk — SQLite serializes them — but they are
+   * two archives of the same bytes taken a second apart, and the second one
+   * doubles how long the first takes for no reason anybody would want.
+   */
+  async create() {
+    const data = ($.data ?? {}) as Record<string, unknown>
 
-      const inFlight = await db().backup.findFirst({
-        where: { status: { notIn: SETTLED } }, orderBy: { createdAt: 'desc' },
-      })
-      if (inFlight) throw new Conflict(
-        `A backup is already ${inFlight.status} (started ${inFlight.startedAt ?? 'just now'}). ` +
-        `Wait for it to finish.`)
+    const inFlight = await db().backup.findFirst({
+      where: { status: { notIn: SETTLED } }, orderBy: { createdAt: 'desc' },
+    })
+    if (inFlight) throw new Conflict(
+      `A backup is already ${inFlight.status} (started ${inFlight.startedAt ?? 'just now'}). ` +
+      `Wait for it to finish.`)
 
-      // `s3` is a declared value with nothing behind it. Refused by name here
-      // rather than accepted and failed by the job, because a queued row that
-      // is going to fail for a reason already known is a worse answer than a
-      // refusal — the person has to come back to find out.
-      const destination = String(data.destination ?? 'local')
-      if (destination !== 'local') throw new BadRequest(
-        `Only 'local' backups are implemented. '${destination}' needs an outbound ` +
-        `adapter this app does not have (FJS-153).`)
+    // `s3` is a declared value with nothing behind it. Refused by name here
+    // rather than accepted and failed by the job, because a queued row that
+    // is going to fail for a reason already known is a worse answer than a
+    // refusal — the person has to come back to find out.
+    const destination = String(data.destination ?? 'local')
+    if (destination !== 'local') throw new BadRequest(
+      `Only 'local' backups are implemented. '${destination}' needs an outbound ` +
+      `adapter this app does not have (FJS-153).`)
 
-      const backup = await db().backup.create({
-        data: { kind: 'manual', status: 'pending', destination, requestedBy: actor() },
-      })
+    const backup = await db().backup.create({
+      data: { kind: 'manual', status: 'pending', destination, requestedBy: actor() },
+    })
 
-      // `actor: null` — see the header. A hub action has no tenant, so the
-      // handler declares `runsAsApp` and this says so rather than letting
-      // caravan inherit a principal the handler would then refuse.
-      await app.jobs.dispatch(backupRun, { backupId: backup.id },
-        { queue: 'fleet', priority: 5, actor: null })
+    // `actor: null` — see the header. A hub action has no tenant, so the
+    // handler declares `runsAsApp` and this says so rather than letting
+    // caravan inherit a principal the handler would then refuse.
+    await $.app.jobs!.dispatch(backupRun, { backupId: backup.id },
+      { queue: 'fleet', priority: 5, actor: null })
 
-      return backup
-    },
+    return backup
+  },
 
-    /**
-     * Forget an archive.
-     *
-     * The ROW only. The file it names is not deleted, and that is deliberate
-     * while `location` is a path on a disk this process shares with the live
-     * database: a delete that unlinks a file is a delete that can unlink the
-     * wrong one, and the failure mode is losing the backup you were about to
-     * restore from. Pruning the files is an operator's job until there is a
-     * destination that owns its own lifecycle.
-     */
-    async remove() {
-      const id  = $.id as string
-      const row = await db().backup.findFirst({ where: { id } })
-      if (!row) throw new NotFound(`Backup '${id}' not found`)
-      if (!SETTLED.includes(row.status)) throw new Conflict(
-        `That backup is still ${row.status} — wait for it to finish.`)
+  /**
+   * Forget an archive.
+   *
+   * The ROW only. The file it names is not deleted, and that is deliberate
+   * while `location` is a path on a disk this process shares with the live
+   * database: a delete that unlinks a file is a delete that can unlink the
+   * wrong one, and the failure mode is losing the backup you were about to
+   * restore from. Pruning the files is an operator's job until there is a
+   * destination that owns its own lifecycle.
+   */
+  async remove() {
+    const id  = $.id as string
+    const row = await db().backup.findFirst({ where: { id } })
+    if (!row) throw new NotFound(`Backup '${id}' not found`)
+    if (!SETTLED.includes(row.status)) throw new Conflict(
+      `That backup is still ${row.status} — wait for it to finish.`)
 
-      await db().backup.delete({ where: { id } })
-      return { ...row, note: row.location ? `The archive at ${row.location} was left in place` : null }
-    },
+    await db().backup.delete({ where: { id } })
+    return { ...row, note: row.location ? `The archive at ${row.location} was left in place` : null }
+  },
 
-    hooks: {
-      before: { all: [requireSystemAdmin()] },
-    },
-  })
-}
+  hooks: {
+    before: { all: [requireSystemAdmin()] },
+  },
+})
