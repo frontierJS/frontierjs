@@ -36,19 +36,15 @@ model Lead {
 // model ← the service name  ('leads' → db.lead)
 // db    ← app.db, scoped per call to the caller
 
-export function createLeadsService() {
-  return createBaseService({})
-}`,
-  S2: `export function createLeadsService() {
-  return createBaseService({
-    hooks: {
-      around: { all:    [timing] },        // wraps the whole call
-      before: { create: [stampOwner] },    // may mutate ctx.data or halt
-      after:  { create: [queueWelcome] },  // sees ctx.result
-      error:  { all:    [report] },        // sees ctx.error
-    },
-  })
-}
+export default createService({})`,
+  S2: `export default createService({
+  hooks: {
+    around: { all:    [timing] },        // wraps the whole call
+    before: { create: [stampOwner] },    // may mutate ctx.data or halt
+    after:  { create: [queueWelcome] },  // sees ctx.result
+    error:  { all:    [report] },        // sees ctx.error
+  },
+})
 
 function stampOwner(ctx) {
   ctx.data.ownerId = ctx.auth.user.userId   // who, from the Context
@@ -62,7 +58,7 @@ app.configure(conduit({ … }))                        // → app.conduit
 async function queueWelcome(ctx) {
   await ctx.app.jobs.dispatch('send-welcome', { •email•: ctx.result.data.email })
 }`,
-  S4: `return createBaseService({
+  S4: `export default createService({
   channel: 'leads',   // the declared broadcast target
 })
 

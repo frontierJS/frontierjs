@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-140 definitions · 68 models · 1 view · 28 types · 43 enums · 0 other
+141 definitions · 68 models · 1 view · 29 types · 43 enums · 0 other
 ```
 
 ## Definitions
@@ -161,6 +161,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppFromBlueprint` | type |
 | `AppPlace` | type |
 | `AppUnplace` | type |
+| `AppVolumeRestore` | type |
 | `FlagOverrideSet` | type |
 | `FlagOverrideClear` | type |
 | `ServerProvision` | type |
@@ -1824,7 +1825,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `server_id` | `string` | yes | — | — | — |
-| `volumes` | `string[]` = `[]` | yes | — | — | — |
+| `volumes` | `array` = `[]` | yes | — | — | — |
 
 **On create**: required — `server_id`, `volumes`
 
@@ -1908,6 +1909,18 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `replicaIndex` | `integer`? | — | — | — | — |
 
 **On create**: required — `serverId`
+
+### `AppVolumeRestore`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `serverId` | `string` | yes | — | — | — |
+| `path` | `string` | yes | — | — | — |
+| `overwrite` | `boolean`? | — | — | — | — |
+
+**On create**: required — `serverId`, `path`
 
 ### `FlagOverrideSet`
 

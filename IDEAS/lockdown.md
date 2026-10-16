@@ -96,7 +96,7 @@ spelling, in the same change as the rename, nothing kept for the old one.
 Done when: `bun run ci` green, `fli check` carries a rule for each row below, and
 the three `verify:*` drives `fli proves --from main` names have run.
 
-- [ ] 3.1 Service verb across example (×36), basecamp (×43), haven, scaffold; loader drops the `create*Service` factory-name rule (`FJS-2937`)
+- [x] 3.1 Service verb across example (×36), basecamp (×42), haven, scaffold; loader drops the `create*Service` factory-name rule (`FJS-2937`) — definition only, a function default refused (`FJS-D1079` amended); `fli check` rule `service-definition`; left over: `FJS-2995`
 - [ ] 3.2 Plugin names to the ruled grammar; `define*` to one spec-object shape, `defineJob` stops restating the filename (`FJS-2938`, `FJS-2953`); `auth({ auth })` schedules its own cleanup jobs, so no app writes the inline plugin (`FJS-1893`)
 - [ ] 3.3 `createApp({ root })`; `autoload`, `jobsDir`, `notifications`, `configPath` gone; the port read once by junction from the broker var (`FJS-2939`, `FJS-2975`, `FJS-2974`); `createApp`'s bag reduced to `db|tenants, auth, principal, system, config, root` (`FJS-2954`)
 - [ ] 3.4 `app.<slot>` non-optional once declared, or `configure()` narrows the type; the scaffold ships no `!` (`FJS-2940`)

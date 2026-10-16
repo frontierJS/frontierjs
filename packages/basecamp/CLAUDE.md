@@ -589,10 +589,13 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   between the two. Never add a fourth branch that returns early and lets the
   caller mark the step `success`: that was the whole of `FJS-257`, a release
   finishing green in 23ms having issued no command.
-- **An inline release that names a digest uploads nothing.** `deployments.create`
+- **A release that names a digest uploads and builds nothing.** `deployments.create`
   with `builtImage` on an inline App snapshots `{ kind: 'inline', files: [] }`
   and runs Validate, Activate, Health check — the machine already holds the
-  bytes (a preview's Freeze). Every inline Activate sends the App's live Domain
+  bytes (a preview's Freeze). On a container App it runs Validate, Start
+  container, Health check, whatever the source says: the image was built where
+  the workspace is and loaded onto the machine by `fli deploy:basecamp`
+  (`FJS-D942`), and building the git source would ship the branch instead. Every inline Activate sends the App's live Domain
   rows as `hosts`, as `/deploy` does, so a machine with no Caddy fails the
   release of an inline app that has a Domain rather than leaving it unrouted.
 - **An App's source is a KIND, and `inline` means the files ARE the release**

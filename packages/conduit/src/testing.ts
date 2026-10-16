@@ -102,3 +102,56 @@ function inferKind(targetId: string): TargetDescriptor['kind'] {
   if (targetId.startsWith('outpost:'))    return 'outpost'
   return 'local'
 }
+
+// ─── A connector's drive ──────────────────────────────────────
+// The assertion shape every `packages/conduit-*` drive shares (`FJS-D890`):
+// `t(name, actual)` records one row, `report(got, expected)` compares each
+// row deep-equal against the expected table and prints the diff, so a drive
+// reads as a table of claims rather than a script that throws at the first
+// miss. Here rather than in each connector because a connector peers on
+// conduit and may import nothing else of the framework's.
+
+export type Rows = Record<string, unknown>
+
+export function results() {
+  const got: Rows = {}
+  return {
+    got,
+    t(name: string, actual: unknown) {
+      if (name in got) throw new Error(`drive: row '${name}' recorded twice`)
+      got[name] = actual
+    },
+  }
+}
+
+const norm = (v: unknown): unknown =>
+  v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v as Rows).sort(([a], [b]) => a < b ? -1 : 1).map(([k, x]) => [k, norm(x)]))
+    : v
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(norm(a)) === JSON.stringify(norm(b))
+
+/** Prints every row and returns 1 on any miss. A row expected and never recorded is a miss, and so is one recorded and never expected. */
+export function report(got: Rows, expected: Rows): number {
+  let failed = 0
+  for (const [name, want] of Object.entries(expected)) {
+    const have = got[name]
+    const ok = name in got && same(have, want)
+    if (!ok) failed++
+    console.log(`${ok ? '  ok  ' : ' FAIL '} ${name}`)
+    if (!ok) console.log(`        want ${JSON.stringify(want)}\n        got  ${name in got ? JSON.stringify(have) : '(not recorded)'}`)
+  }
+  for (const name of Object.keys(got)) if (!(name in expected)) { failed++; console.log(` FAIL  ${name}  (recorded, not expected)`) }
+  if ('__threw' in got) failed++
+  console.log(`\n${failed ? `${failed} failed` : 'all green'} — ${Object.keys(expected).length} rows`)
+  return failed ? 1 : 0
+}
+
+/** `fetch` to a sink's control endpoint: `/_sink/reset`, `/_sink/arm`, `/_sink/seen`. */
+export const control = (base: string) => ({
+  reset: () => fetch(`${base}/_sink/reset`, { method: 'POST' }).then(r => r.json()),
+  arm:   (what: Rows) => fetch(`${base}/_sink/arm`, { method: 'POST', body: JSON.stringify(what) }).then(r => r.json()),
+  seen:  <T = unknown>() => fetch(`${base}/_sink/seen`).then(r => r.json() as Promise<T[]>),
+})
+
+/** The resilience a drive runs a connector under: short, so a lost response costs a second rather than the default ten. */
+export const DRIVE_RESILIENCE = { timeout_ms: 800, retry_limit: 2, deadline_ms: 6_000 }

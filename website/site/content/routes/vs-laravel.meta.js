@@ -82,9 +82,7 @@ public function store(StoreLeadRequest $request) {
 // db    ← app.db, scoped per request to the calling user
 // CRUD · 401s · 400s ← the Model
 
-export function createLeadsService() {
-  return createBaseService({})
-}`,
+export default createService({})`,
   S8: `<script>
   const leads = createResource('leads')
   await leads.find({ $limit: 20 })

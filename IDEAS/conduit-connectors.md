@@ -8,7 +8,7 @@ reranked: 2026-10-10
 # Idea — which Conduit connectors FrontierJS should maintain, and in which order
 
 **Status: PROPOSAL, prototyped.** All twenty are built as prototypes in the
-sibling workspace `../conduit-connectors/`, none promoted into `packages/` —
+sibling workspace `../conduit-connectors/`; postmark and mailgun are shaped as `packages/` members (2026-10-16) but held in the sibling workspace until the owner commits them, the rest not —
 § *Prototyped 2026-10-11* is the state of each (20 built, all 10 conduit rows closed). Dated 2026-08-29. `FJS-D153` settled
 *where* an official connector lives — its own package, `@frontierjs/conduit-<vendor>`,
 promoted out of `example/` once a second one exists to argue with the first. It did
@@ -255,8 +255,8 @@ that names a fixture names one wired to `FIXTURE_URL` and never run.
 | anthropic | C | new | 22 | — | nothing; streams through `conduit.stream()` (`FJS-D934`) |
 | openai | C | new, protocol connector; streams | 23 | Ollama, llama.cpp **unproved** | a local model server |
 | twilio | C | new; the built-in Basic signer (`FJS-D933`) | 12 | — | nothing |
-| postmark | C | new; inbound over a URL credential | 10 | — | nothing |
-| mailgun | C | new; the raw-MIME inbound (`fromMime` over postal-mime, `FJS-D784`), signature over `timestamp + token` with the token as nonce; `Dialect.parse` async for it | 13 | — | nothing; event webhooks, attachments on a send not built |
+| postmark | C | new; inbound over a URL credential — **shaped for `packages/conduit-postmark` 2026-10-16, held in this workspace until committed** | 11 | — | nothing |
+| mailgun | C | **shaped for `packages/conduit-mailgun` 2026-10-16, held in this workspace until committed**; new; the raw-MIME inbound (`fromMime` over postal-mime, `FJS-D784`), signature over `timestamp + token` with the token as nonce; `Dialect.parse` async for it | 13 | — | nothing; event webhooks, attachments on a send not built |
 | turnstile | C | new; secret-in-body signer | 12 | — | nothing |
 | slack | C | new; bot token + incoming webhook | 26 | — | nothing; `files.uploadV2`, `conversations.history` not built |
 | plausible | C | new; the replayable read | 8 | Plausible CE **unproved** | a docker run |

@@ -132,7 +132,9 @@ export function media(query) {
 ```
 
 `bindWindow` is rewritten on it and `<mesa:window bind:prop>` keeps its
-syntax; `watchProxy` stays what `page` and `session` are built from.
+syntax: one subscriber per EVENT SET rather than per property, so every
+`bind:innerWidth` and `bind:innerHeight` on a page is one `resize` listener.
+`watchProxy` stays what `page` and `session` are built from.
 
 ### The host rule — three environments, three answers
 
@@ -403,8 +405,8 @@ compiler contract, its implementation is not.
 Goal: the primitive, proved on the one window signal that exists.
 Done when: `bindWindow` runs on `subscribe(start)`, mesa's browser drive still passes, and the subscriber's own spec shows `start` called once across two readers and torn down at zero.
 
-- [ ] 0.1 `subscribe(start)` in `runtime.js`, server-safe; `isBrowserClient()` and `delegationRootOf(el)` exported beside it
-- [ ] 0.2 Rewrite `bindWindow` on it; `<mesa:window>` unchanged
+- [x] 0.1 `subscribe(start)` in `runtime.js`, server-safe; `isBrowserClient()` and `delegationRootOf(el)` exported beside it — `test/subscribe.test.js`
+- [x] 0.2 Rewrite `bindWindow` on it; `<mesa:window>` unchanged
 - [ ] 0.3 Rule Q1–Q7
   - Q1, Q2, Q6, Q7 ruled 2026-10-16 (`FJS-D1097`); Q3–Q5 open.
 - [ ] 0.4 `src/browser/index.js` + `result.js` + `browser.d.ts` scaffolded, the `exports` line, the empty `test/browser/kit/` runner wired into `test:browser`

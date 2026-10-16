@@ -176,3 +176,76 @@ describe('delegationRootOf(el)', () => {
     outer.remove()
   })
 })
+
+// bindWindow is the first consumer of subscribe(): one resize listener however
+// many <mesa:window bind:innerWidth> and bind:innerHeight are mounted, gone
+// when the last unmounts, and under renderToHTML an initial read with no
+// listener at all.
+describe('bindWindow(prop, setter) on subscribe', () => {
+  const counts = () => {
+    const added = [], removed = []
+    const add = window.addEventListener, rm = window.removeEventListener
+    window.addEventListener = (ev, fn, o) => { added.push(ev); add.call(window, ev, fn, o) }
+    window.removeEventListener = (ev, fn, o) => { removed.push(ev); rm.call(window, ev, fn, o) }
+    return { added, removed, restore() { window.addEventListener = add; window.removeEventListener = rm } }
+  }
+
+  test('reads synchronously, shares one resize listener, re-reads on the event, stops at zero', async () => {
+    const c = counts()
+    try {
+      const [w, setW] = rt.createSignal(-1)
+      const [h, setH] = rt.createSignal(-1)
+      const dispose = rt.createRoot((dispose) => {
+        rt.bindWindow('innerWidth', setW)
+        rt.bindWindow('innerHeight', setH)
+        return dispose
+      })
+      expect(w()).toBe(window.innerWidth)
+      expect(h()).toBe(window.innerHeight)
+      expect(c.added.filter((e) => e === 'resize').length).toBe(1)
+
+      window.innerWidth = 333
+      window.dispatchEvent(new Event('resize'))
+      rt.flushSync()
+      expect(w()).toBe(333)
+
+      dispose()
+      await tick()
+      expect(c.removed.filter((e) => e === 'resize').length).toBe(1)
+    } finally { c.restore() }
+  })
+
+  test('online reads navigator.onLine and listens to both events', async () => {
+    const c = counts()
+    try {
+      const [on, setOn] = rt.createSignal(null)
+      const dispose = rt.createRoot((dispose) => { rt.bindWindow('online', setOn); return dispose })
+      expect(on()).toBe(window.navigator.onLine)
+      expect(c.added).toContain('online')
+      expect(c.added).toContain('offline')
+      dispose()
+      await tick()
+      expect(c.removed).toContain('online')
+      expect(c.removed).toContain('offline')
+    } finally { c.restore() }
+  })
+
+  test('on a server render the initial value lands and no listener is added', () => {
+    rt.setRenderEnvironment(true, false)
+    const c = counts()
+    try {
+      const [w, setW] = rt.createSignal(-1)
+      const dispose = rt.createRoot((dispose) => { rt.bindWindow('innerWidth', setW); return dispose })
+      expect(w()).toBe(window.innerWidth)
+      expect(c.added).toEqual([])
+      dispose()
+    } finally { c.restore() }
+  })
+
+  test('on a terminal there is no window and nothing happens', () => {
+    rt.setRenderEnvironment(false, true)
+    const [w, setW] = rt.createSignal(-1)
+    rt.bindWindow('innerWidth', setW)
+    expect(w()).toBe(-1)
+  })
+})

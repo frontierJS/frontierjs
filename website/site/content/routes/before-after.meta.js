@@ -125,11 +125,9 @@ io.to(\`org:\${req.user.orgId}\`).emit('lead:created', lead)
   S23: `socket.on('lead:created', l => setLeads(p => [...p, l]))
 socket.on('lead:updated', l => setLeads(p => p.map(…)))
 // event names agreed by convention across two repos`,
-  S24: `export function createLeadsService() {
-  return createBaseService({
-    channel: 'leads',   // the declared broadcast target
-  })
-}
+  S24: `export default createService({
+  channel: 'leads',   // the declared broadcast target
+})
 // name and model come from the filename`,
   S25: `# docker-compose.yml
 redis:

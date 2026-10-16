@@ -61,6 +61,7 @@ const sh       = (...argv) => spawnSync(argv[0], argv.slice(1), { encoding: 'utf
 const hadImage = sh('docker', 'image', 'inspect', IMAGE).status === 0
 let container  = null
 let volume     = null
+let built      = []
 
 const ENV = {
   ...process.env,
@@ -172,6 +173,7 @@ async function cleanup() {
   for (const c of children) { try { process.kill(-c.pid, 'SIGKILL') } catch {} }
   if (container) sh('docker', 'rm', '-f', container)
   if (volume)    sh('docker', 'volume', 'rm', '-f', volume)
+  for (const [name, tag] of built) { sh('docker', 'rm', '-f', name); sh('docker', 'rmi', tag) }
   if (!hadImage) sh('docker', 'rmi', IMAGE)
   rmSync(OWN, { recursive: true, force: true })
   if (existsSync(ASIDE)) renameSync(ASIDE, OWN)
@@ -414,6 +416,43 @@ try {
   check('a second restore into a volume with files is refused in the machine\'s words', /overwrite: true/.test(again2?.message ?? ''))
   const off = await restore({ path: '/etc/passwd' })
   check('…and a path off the restore directory is refused', /under/.test(off?.message ?? ''))
+
+  // ── An image built where the workspace is, released by digest (`FJS-D942`) ──
+  // `fli deploy:basecamp` from an app root: build here, load onto the machine
+  // (this laptop's daemon, so nothing is shipped), release the image id. The
+  // App's source is a git repository that does not exist, so a release that
+  // built anything would fail on the clone.
+  const me     = await call('/account/me', auth).catch(() => null)
+  const minted = await call('/api-keys', { ...auth, body: {
+    userId: me?.id ?? me?.user?.id, name: `deploy-${process.pid}`, scopes: ['apps:read', 'deployments:read', 'deployments:write'],
+  } })
+  const fliApp = await call('/apps', { ...auth, body: {
+    environmentId: environment?.id, name: `fli-${process.pid}`, slug: `fli-${process.pid}`, type: 'container',
+    source: { kind: 'git', repo: 'https://git.invalid/nothing.git' },
+  } })
+  await call(`/apps/${fliApp?.id}`, { ...auth, serviceMethod: 'place', body: { serverId: first.serverId, replicaIndex: 0 } })
+  const appDir = join(OWN, 'fli-app')
+  // `db/schema.lite` is what fli reads as an app root; without one it walks up to basecamp's own.
+  mkdirSync(join(appDir, 'deploy'), { recursive: true })
+  mkdirSync(join(appDir, 'db'), { recursive: true })
+  writeFileSync(join(appDir, 'db', 'schema.lite'), 'model Note {\n  id Integer @id\n}\n')
+  writeFileSync(join(appDir, 'package.json'), JSON.stringify({ name: 'fli-app', private: true }))
+  writeFileSync(join(appDir, 'deploy', 'Dockerfile'), `FROM ${IMAGE}\nLABEL fjs.verify=${process.pid}\n`)
+  const fli = spawnSync(process.execPath, [join(ROOT, '..', 'cli', 'bin', 'fli.js'), 'deploy:basecamp', '--app', String(fliApp?.id), '--url', API, '--server', 'localhost'], {
+    cwd: appDir, encoding: 'utf8', env: { ...ENV, BASECAMP_API_KEY: minted?.token ?? '' }, timeout: 300_000,
+  })
+  const tag  = `fjs-${fliApp?.id}:`
+  const made = sh('docker', 'image', 'ls', '--format', '{{.Repository}}:{{.Tag}} {{.ID}}').stdout.split('\n').find(l => l.startsWith(tag))
+  if (made) built.push([`fjs-${fliApp?.id}`, made.split(' ')[0]])
+  if (fli.status !== 0) console.log(`\n${fli.stdout}\n${fli.stderr}\n`)
+  check('fli deploy:basecamp builds here and releases what it built', fli.status === 0 && !!made)
+  const fliRelease = ((await call(`/deployments?appId=${fliApp?.id}`, auth))?.data ?? [])[0]
+  const steps2  = (await call(`/deployments/${fliRelease?.id}`, auth))?.steps ?? []
+  const madeId  = made ? sh('docker', 'image', 'inspect', '--format', '{{.Id}}', made.split(' ')[0]).stdout.trim() : null
+  check('…naming the image id as the release\'s bytes', !!madeId && fliRelease?.builtImage === madeId && fliRelease?.status === 'success')
+  check('…and building nothing from the app\'s git source', steps2.length > 0 && !steps2.some(s => /build/i.test(s.name)))
+  check('…the container runs those bytes',
+    !!madeId && sh('docker', 'inspect', '--format', '{{.Image}}', `fjs-${fliApp?.id}`).stdout.trim() === madeId)
 } catch (err) {
   console.log(`\n  ✗ ${err.message}`)
   failed++

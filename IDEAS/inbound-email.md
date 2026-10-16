@@ -9,13 +9,13 @@ dated: 2026-10-16
 **Status: PARTIAL.** Ruled 2026-10-16 ([`FJS-D1091`](../DECISIONS.md#fjs-d1091) the
 shape, [`FJS-D1092`](../DECISIONS.md#fjs-d1092) the expiry, [`FJS-D1093`](../DECISIONS.md#fjs-d1093)
 the proof). Built: `ReceivedMail` and the reply-tag kit in `@frontierjs/junction/mail`
-(`received.ts`, `test/mail-received.test.ts`), and `conduit-postmark`'s
-`postmarkMailDialect` in the connector workspace, and `conduit-mailgun`'s
-`mailgunMailDialect` over `fromMime` — the raw-MIME parser `FJS-D784` named,
-postal-mime underneath, the one SES imports; conduit's `Dialect.parse` may be
-a promise for it. Not built: the connectors' promotion into `packages/`, and
-the chatwoot stressor's hand-rolled `inbound.ts`/`mailgun.ts`/`token.ts`
-collapsing onto the kit. It is the email
+(`received.ts`, `test/mail-received.test.ts`); `@frontierjs/conduit-postmark`'s
+`postmarkMailDialect`; and `@frontierjs/conduit-mailgun`'s `mailgunMailDialect`
+over `fromMime` — the raw-MIME parser `FJS-D784` named, postal-mime underneath,
+the one SES imports; conduit's `Dialect.parse` may be a promise for it. Both
+connectors are shaped as `packages/` members and held in `../conduit-connectors/packages/` until the owner commits them (2026-10-16). Not built: the chatwoot
+stressor's hand-rolled `inbound.ts`/`mailgun.ts`/`token.ts` collapsing onto
+the kit. It is the email
 leg that [`FJS-D177`](../DECISIONS.md#fjs-d177) excluded by name — *"Rails made
 that its own noun (`ActionMailbox`) and was right to"* — and that
 `ecosystem-gaps.md` § 14 recorded from the OpenMRP audit: FJS sends an order

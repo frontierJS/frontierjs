@@ -2016,23 +2016,37 @@ const _windowPropEvent = {
   online:           ['online', 'offline'],
 }
 
+// One subscriber per EVENT SET, shared by every <mesa:window> on the page —
+// innerWidth and innerHeight are one resize listener, and a second component
+// binding either adds a reader, not a listener.
+const _windowTracks = new Map()
+function _windowTrack(events) {
+  const key = events.join(',')
+  let track = _windowTracks.get(key)
+  if (!track) {
+    track = subscribe((update) => {
+      events.forEach((ev) => window.addEventListener(ev, update, { passive: true }))
+      return () => events.forEach((ev) => window.removeEventListener(ev, update))
+    })
+    _windowTracks.set(key, track)
+  }
+  return track
+}
+
 /**
  * <mesa:window bind:prop={var}> — sync a window property to a signal.
- * Reads the initial value immediately, then updates on the matching window event.
+ * Reads the initial value synchronously, then re-reads on the matching window
+ * event through `subscribe`. Under renderToHTML the initial read lands and no
+ * listener is added; on a terminal there is no window and nothing happens.
  * scrollX / scrollY are writable — assigning them calls window.scrollTo().
  */
 export function bindWindow(prop, setter) {
   if (!_isBrowser) return
-  // Initial read
   const read = () => prop === 'online' ? window.navigator.onLine : window[prop]
-  setter(read())
-
   const events = _windowPropEvent[prop]
-  if (!events) return
-  const handler = () => setter(read())
-  const evList = Array.isArray(events) ? events : [events]
-  evList.forEach((ev) => window.addEventListener(ev, handler, { passive: true }))
-  onCleanup(() => evList.forEach((ev) => window.removeEventListener(ev, handler)))
+  if (!events || !_isClient) { setter(read()); return }
+  const track = _windowTrack(Array.isArray(events) ? events : [events])
+  createEffect(() => { track(); setter(read()) }, { derived: true })
 }
 
 /**

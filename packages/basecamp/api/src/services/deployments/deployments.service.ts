@@ -221,14 +221,18 @@ export default createService({
         `App '${target.name}' names no image — ` +
         `set its source to an image (e.g. nginx:alpine), a git repository or inline files`)
 
-    // An inline app's release that states a digest is of bytes already on
-    // the machine (a preview's Freeze), so its snapshot holds no files: the
-    // app's own would be uploaded over the digest, and a rollback to it
-    // would put back the app's files rather than the bytes that served.
-    const held = isInline(target.source) && data.builtImage != null
-    if (held && !/^sha256:[0-9a-f]{64}$/.test(String(data.builtImage)))
+    // A release that states a digest is of bytes already on the machine, and
+    // builds nothing. An inline one is a preview's Freeze, so its snapshot
+    // holds no files: the app's own would be uploaded over the digest, and a
+    // rollback to it would put back the app's files rather than the bytes that
+    // served. A container one is an image `fli deploy:basecamp` built where
+    // the workspace is and loaded onto the machine (`FJS-D942`): building the
+    // app's git source instead would ship the branch, not those bytes.
+    const named = data.builtImage != null
+    if (named && !/^sha256:[0-9a-f]{64}$/.test(String(data.builtImage)))
       throw new BadRequest(`'${data.builtImage}' is not a digest — a release of bytes the machine holds names them as sha256:<64 hex>`)
-    return queueRelease(target, data, { held })
+    const held = named && isInline(target.source)
+    return queueRelease(target, data, { held, built: named && !held })
   },
 
   // ── rebind — the `domain:dns` job's release (FJS-D577) ────────────
