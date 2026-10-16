@@ -61,9 +61,9 @@ export type { Hook, AroundHook, BridgeHook, HookMap, ResolvedPipeline, CircuitBr
 
 // ─── Bridge ───────────────────────────────────────────────────────────────
 export { bridge, jsonResponse, errorResponse, errorBody, redirectResponse, withholdProtected } from './src/transport/bridge.ts'
-export type { ServiceContext, ServiceMethod, AnyMethod, ServiceContextLocals, CallOptions, RequestMeta } from './src/transport/bridge.ts'
+export type { ServiceContext, ServiceMethod, AnyMethod, ServiceContextLocals, CallOptions, RequestMeta } from './src/core/context.ts'
 export type { QueryDirectives } from './src/core/context.ts'
-export { requestMeta } from './src/transport/bridge.ts'
+export { requestMeta } from './src/core/context.ts'
 // `enterCall` is the escape hatch for calling a service method DIRECTLY —
 // a unit test holding a hand-built context, or an app invoking a method
 // outside the pipeline. `callService` opens the scope for every ordinary

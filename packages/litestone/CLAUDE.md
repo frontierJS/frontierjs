@@ -87,6 +87,12 @@ rise fails. A value written into statement text shows up there first. A
 model added to `example` legitimately moves it, and `--adopt` is the
 answer then. `--why` and `--all` say what moved.
 
+**`bench/cases.mjs` is the timed tier and is not in `test`.** Each case is
+timed beside raw `bun:sqlite` in the same process and declares the ratio it
+may not exceed. `node scripts/bench-ab.mjs --only litestone` (from the root)
+compares this tree with a base ref, and CI's `perf` phase prints that and
+never fails on a time. A case that throws fails it.
+
 Then, because every other package sits on this one: `example` and `basecamp`
 `bun run verify`, and `sierra` `bun run test:safety`.
 
@@ -241,7 +247,7 @@ src/
     backup.js — how a live file is copied, for $backup and migrate apply
     query.js — buildWhere, buildOrderBy, coercion
     policy.js — @@allow / @@deny / field @allow to SQL (compileSql) and JS (evalJs)
-    plugin.js — Plugin, PluginRunner, AccessDeniedError
+    plugin.js — LitestonePlugin, PluginRunner, AccessDeniedError
     validate.js — field validators, ValidationError, EXACT_INT_MAX
     valuesets.js — @values, enforced through the caller's accessor
     capabilities.js — what a capability IS, derived from the schema (FJS-D139)

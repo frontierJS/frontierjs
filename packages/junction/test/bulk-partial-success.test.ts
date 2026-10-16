@@ -31,7 +31,7 @@ import { createService } from '../src/core/service.ts'
 import { createSchema } from '../src/core/schema.ts'
 import { BULK_FAILURES, partitionBulk, wrapResult, type BulkFailure } from '../src/core/envelope.ts'
 import { createClient }        from '../../litestone/src/index.js'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 describe('an array body survives the bridge', () => {
 

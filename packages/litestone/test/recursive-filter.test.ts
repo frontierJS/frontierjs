@@ -6,7 +6,7 @@
 // that named the hidden row. A hidden row hides its whole subtree, as a row
 // policy and a soft delete already do (the walk carries the anchor's predicate).
 import { describe, test, expect } from 'bun:test'
-import { createClient, Plugin } from '../src/index.js'
+import { createClient, LitestonePlugin } from '../src/index.js'
 
 const SCHEMA = `
   model Node {
@@ -26,7 +26,7 @@ const ROWS = [
   { id: 5, tenant: 'a', parentId: 3 },
 ]
 
-class TenantA extends Plugin {
+class TenantA extends LitestonePlugin {
   buildReadFilter(model: string) { return model === 'Node' ? { tenant: 'a' } : null }
 }
 

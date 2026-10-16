@@ -896,9 +896,9 @@ cell means.
 ## Plugin hooks
 
 ```js
-import { Plugin, PluginRunner, AccessDeniedError } from '@frontierjs/litestone'
+import { LitestonePlugin, PluginRunner, AccessDeniedError } from '@frontierjs/litestone'
 
-class MyPlugin extends Plugin {
+class MyPlugin extends LitestonePlugin {
   onInit(schema, ctx) {}
   async onBeforeRead(model, args, ctx) {}
   async onBeforeCreate(model, args, ctx) {}

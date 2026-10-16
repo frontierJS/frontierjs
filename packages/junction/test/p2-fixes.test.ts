@@ -150,10 +150,10 @@ describe('P2: plugin teardown', () => {
     app.configure(dt)
 
     expect(app.events.emit).toBe(origEmit)               // emit untouched
-    expect(app.telemetry.hasListeners('junction.call')).toBe(true)
+    expect(app.telemetry.hasListeners('junction.call.end')).toBe(true)
 
     await (dt as { shutdown?: () => void | Promise<void> }).shutdown?.()
-    expect(app.telemetry.hasListeners('junction.call')).toBe(false)
+    expect(app.telemetry.hasListeners('junction.call.end')).toBe(false)
     expect(app.events.hasListeners()).toBe(false)        // onAny tap removed
     await app.stop()
   })

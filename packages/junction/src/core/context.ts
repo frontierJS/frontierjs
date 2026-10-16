@@ -2,12 +2,8 @@
 // The framework's central call-context types — OWNED BY CORE.
 //
 // ServiceContext is what every hook and service method sees, on every
-// transport and on internal calls. It used to live in transport/bridge.ts,
-// which inverted the layering: the service layer's own vocabulary was
-// defined by (and imported from) a transport module. Core modules now
-// import these from here; transport/bridge.ts re-exports everything for
-// backwards compatibility, so existing `from '.../transport/bridge.ts'`
-// imports keep working.
+// transport and on internal calls. It lives in core, not transport/bridge.ts,
+// so the service layer's vocabulary is never imported from a transport module.
 //
 // The one remaining upward reference is $raw's TransportContext type — a
 // type-only escape hatch (erased at compile time, no runtime coupling).

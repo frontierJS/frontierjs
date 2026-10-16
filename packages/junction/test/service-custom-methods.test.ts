@@ -18,7 +18,7 @@ import { createTestApp, request } from '../src/testing/index.ts'
 import { manifestPlugin } from '../src/plugins/manifest/index.ts'
 import { openapi } from '../src/plugins/openapi/index.ts'
 import { healthPlugin } from '../src/transport/health.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const noop = async () => ({ ok: true })
 

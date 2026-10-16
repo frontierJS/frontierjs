@@ -14,7 +14,7 @@ import { createClient } from '../../litestone/src/index.js'
 import { createApp, createService } from '../index.ts'
 import type { PrincipalResolver } from '../index.ts'
 import type { SessionContext } from '../src/auth/types.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const rowsOf = (r: unknown): any[] => (r as { data: any[] }).data
 

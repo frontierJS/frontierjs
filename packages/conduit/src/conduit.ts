@@ -196,7 +196,9 @@ function assertBroker(descriptor: TargetDescriptor): void {
 }
 
 // A target whose address comes per send reaches wherever a row says, so it
-// may carry nothing that would go there with it (`FJS-1667`).
+// may carry nothing of the PROCESS's that would go there with it (`FJS-1667`).
+// A per-caller credential is the row's own (`FJS-D1089`): the send that names
+// the address names the grant, and the transport refuses one without it.
 function assertRequestAddressed(descriptor: TargetDescriptor): void {
   if (descriptor.address_from === undefined) {
     if (descriptor.destinations !== undefined)
@@ -210,8 +212,8 @@ function assertRequestAddressed(descriptor: TargetDescriptor): void {
     throw new TypeError(`${where}: only an 'http' target can take its address per send`)
   if (descriptor.address !== '')
     throw new TypeError(`${where}: address must be '' — each send names its own`)
-  if (descriptor.auth.type !== 'none' && descriptor.auth.type !== 'hmac')
-    throw new TypeError(`${where}: auth '${descriptor.auth.type}' would send a stored credential to whatever address a send names; use 'none', or 'hmac' to sign the body`)
+  if (descriptor.auth.type !== 'none' && descriptor.auth.type !== 'hmac' && descriptor.auth.per_caller !== true)
+    throw new TypeError(`${where}: auth '${descriptor.auth.type}' would send a stored credential to whatever address a send names; use 'none', 'hmac' to sign the body, or per_caller: true when the credential is the row's own`)
   if ((descriptor.follow_redirects ?? 'never') !== 'never')
     throw new TypeError(`${where}: a followed redirect is a second address nobody graded`)
   if (descriptor.pinned_cert !== undefined)

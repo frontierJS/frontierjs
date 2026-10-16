@@ -1,5 +1,5 @@
 /**
- * The terminal runtime — `$$tui`, what a component compiled with
+ * The terminal runtime — `$$host`, what a component compiled with
  * `target: 'terminal'` calls in place of the DOM half of `runtime.js`. The
  * signal graph, the flush and the component frame are the same `runtime.js`;
  * only the tree the effects write into differs, and this file is that tree.
@@ -479,7 +479,7 @@ function blank(buffer) {
 let _renderer = null
 
 function needRenderer(what) {
-  if (!_renderer) throw new Error(`[Mesa] $$tui.${what}() before mount(): no renderer is current`)
+  if (!_renderer) throw new Error(`[Mesa] $$host.${what}() before mount(): no renderer is current`)
   return _renderer
 }
 
@@ -1928,7 +1928,7 @@ export async function createHeadlessRenderer({ width = 80, height = 24 } = {}) {
 // ─── mount ────────────────────────────────────────────────────────────
 
 export function mount(Component, { renderer, props = {}, parent = null } = {}) {
-  if (!renderer) throw new Error('[Mesa] $$tui.mount() needs a renderer')
+  if (!renderer) throw new Error('[Mesa] $$host.mount() needs a renderer')
   parent ??= documentOf(renderer)
   _renderer = renderer
   const before = new Set(parent.getChildren())

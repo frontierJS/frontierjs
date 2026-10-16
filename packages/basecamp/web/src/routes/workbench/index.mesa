@@ -351,6 +351,17 @@ title: Workbench
   let over      = null
   let asking    = null
 
+  // Slim folds every pane to its header. The bar's button sets them all;
+  // a click on a pane's own header overrides just that one.
+  let slim    = false
+  let slimmed = {}
+  const isSlim = (id) => id in slimmed ? slimmed[id] : slim
+  const toggleSlim = () => { slim = !slim; slimmed = {} }
+  function slimPane(id, e) {
+    if (e.target.closest('button, a, summary')) return
+    slimmed = { ...slimmed, [id]: !isSlim(id) }
+  }
+
   function arrange(on = !arranging) {
     arranging = on
     asking    = null
@@ -1187,9 +1198,12 @@ title: Workbench
         </EmptyState>
       {:else if loaded}
       <div class="cluster workbench-bar">
-        <span class="text-sm text-muted">{staged().length ? `${cols()} × ${rows()}` : 'Nothing on the stage — Alt+1 to Alt+9 for a chat by its place, Alt+J for one waiting on you.'}</span>
-        <Button size="xs" variant={arranging ? 'primary' : 'outlined'} id="workbench-layout" onclick={() => arrange()} aria-pressed={arranging ? 'true' : 'false'}
-                title={arranging ? 'Back to the panes (Alt+L)' : 'Fold the panes to cards and arrange the grid: drag a tile into a box, or start a chat in one (Alt+L)'}>{arranging ? 'Done' : 'Layout'}</Button>
+        <span class="cluster">
+          <Button size="sm" variant="outlined" id="workbench-slim" onclick={toggleSlim} aria-pressed={slim ? 'true' : 'false'}
+                  title="Slim: every pane shrinks to its header; click a pane's header to flip just that one">{slim ? 'Full' : 'Slim'}</Button>
+          <Button size="xs" variant={arranging ? 'primary' : 'outlined'} id="workbench-layout" onclick={() => arrange()} aria-pressed={arranging ? 'true' : 'false'}
+                  title={arranging ? 'Back to the panes (Alt+L)' : 'Fold the panes to cards and arrange the grid: drag a tile into a box, or start a chat in one (Alt+L)'}>{arranging ? 'Done' : 'Layout'}</Button>
+        </span>
       </div>
       <div class="workbench-panes" data-arranging={arranging ? '' : null} style:--cols={String(shownCols())} style:--rows={String(shownRows())}>
       {#if arranging}
@@ -1210,8 +1224,8 @@ title: Workbench
       {:else}
       {#each visible() as p (p.id)}
           <article class="card workbench-pane" id={`workbench-${p.id}`} data-state={status[p.id]?.state} style:grid-area={areaOf(p.id)}
-                   data-branch={p.branch ?? null} on:click={() => { touched[p.id] = Date.now(); markSeen(p) }}>
-            <div class="section-header workbench-head">
+                   data-slim={isSlim(p.id) ? '' : null} data-branch={p.branch ?? null} on:click={() => { touched[p.id] = Date.now(); markSeen(p) }}>
+            <div class="section-header workbench-head" on:click={(e) => slimPane(p.id, e)}>
               <h2 class="h5 cluster">
                 <Dot tone={dotTone(p.id)}
                      pulse={status[p.id]?.state === 'working'}
@@ -1949,6 +1963,10 @@ title: Workbench
      column and spaces them with its gap, so the margin would come twice. */
   .workbench-pane > * { margin-block-start: 0; }
   .workbench-pane[data-branch] { border-inline-start: 3px solid var(--rule-strong); }
+  /* Slim: a pane folds to its header; clicking the header flips it. */
+  .workbench-pane[data-slim] { align-self: start; }
+  .workbench-pane[data-slim] > :not(.workbench-head) { display: none; }
+  .workbench-head { cursor: pointer; }
   .workbench-meta { row-gap: 0; }
   /* A narrow pane wraps the buttons under the name rather than clipping them. */
   .workbench-head { flex-wrap: wrap; }

@@ -23,7 +23,7 @@ import { createService, callService } from '../src/core/service.ts'
 import { AUTO_EVENT_MAP }             from '../src/core/events.ts'
 import { announce } from '../src/transport/channels.ts'
 import { createJunctionClient } from '../src/client/index.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 // Records what announce() hands the channel manager, without a socket.
 function captureNames() {

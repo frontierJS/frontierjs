@@ -19,7 +19,7 @@
 import { createService } from '../../core/service.ts'
 import { BadRequest }    from '../../core/errors.ts'
 import type { Service }  from '../../core/service.ts'
-import type { ServiceContext } from '../../transport/bridge.ts'
+import type { ServiceContext } from '../../core/context.ts'
 
 /** Options for `searchService()`. */
 export interface SearchServiceOptions {

@@ -586,7 +586,7 @@ ctx.file(path, download?)
 ctx.stream(readable, type, status?)
 
 // Pagination envelope with next/prev links built from the request URL
-ctx.paginate(rows, total, { limit, skip })
+ctx.paginate(rows, total, { limit, offset })
 // → { data, total, limit, offset, next: '/posts?$limit=20&$offset=20', prev: null }
 
 // Server-Sent Events
@@ -1821,31 +1821,28 @@ const hook = await app.webhooks.register(
 // hook.secret — show once; the receiver stores this to verify signatures
 ```
 
-**Verifying a payload on the receiver:**
+Every delivery is signed with `@frontierjs/toolbelt/signature` under the `X-Webhook` prefix — `X-Webhook-Signature`, `X-Webhook-Timestamp`, `X-Webhook-Nonce` — over the method, path, query, timestamp, nonce and a hash of the body. The body is `{ id, event, timestamp, data }`; `id` is the delivery, stable across retries, and it is inside the signature where the `X-Webhook-Id` header is not — deduplicate on the body's. A receiver outside FrontierJS verifies with `verifyRequest({ prefix: 'X-Webhook', … })`.
+
+**Receiving — a subscription** (`FJS-D1087`). The same scheme read the other way: a *subscriber* is the far side of a registration this app made, a *subscription* is this app's side of a registration a far app holds. The row carries the secrets the far app signs under, the route is `POST {apiPrefix}/webhooks/subscriptions/{id}`, and one `receive` says what to do:
 
 ```typescript
-// Every delivery is signed with @frontierjs/toolbelt/signature under the
-// X-Webhook prefix — X-Webhook-Signature, X-Webhook-Timestamp, X-Webhook-Nonce —
-// over the method, path, query, timestamp, nonce and a hash of the body.
-// X-Webhook-Id is the EVENT, stable across retries: deduplicate on it.
+app.configure(webhooks({
+  events, store,
+  receive: async (ev, { subscription }) => {
+    // ev: { id, event, timestamp, payload } — verified. No principal: run as
+    // whom the app decides; the route never mints one.
+    await app.service('orders').call('record', null, ev.payload, { auth: { user: SYSTEM } })
+    return 'applied'          // or 'ignored' — both make a redelivery a duplicate
+                              // or 'parked' — the subject is not here yet; the sender's retry runs this again
+  },
+}))
 
-import { verifyRequest } from '@frontierjs/toolbelt/signature'
-
-const url     = new URL(req.url)
-const rawBody = await req.text()
-const result  = await verifyRequest({
-  secret,
-  method:  req.method,
-  path:    url.pathname,
-  query:   url.search,
-  body:    rawBody,
-  headers: req.headers,
-  prefix:  'X-Webhook',
-  now:     Math.floor(Date.now() / 1000),
-  seenNonce: async (nonce) => nonceStore.has(nonce),   // refuse a replay
-})
-if (!result.ok) return new Response(result.reason, { status: 401 })
+const sub = await app.webhooks.subscribe({ to: 'shop' })
+// sub.path is the route under apiPrefix, sub.secrets[0] the key minted for it —
+// hand both to the far app: register(`${origin}${sub.path}`, events, sub.secrets[0])
 ```
+
+The order is verify → receipt → `receive` → mark applied, and **dedupe means applied, not seen**: a `receive` that throws answers 500 and leaves the receipt unapplied, so the sender's retry gets a clean run — applying twice must be safe, which the subject's own unique key is for. A forgery, a stale clock, a replayed nonce and an unknown id are one 401, `not verified`, with the reason in the log and never the body. `secrets` is a list so a rotation is two valid keys for a while; `subscribe({ to, secrets })` states them, absent means one is minted. With no `receive` the route is not mounted.
 
 **Other API:**
 
@@ -1854,6 +1851,8 @@ await app.webhooks.deliver('orders:created', payload)  // manual fan-out
 await app.webhooks.retry(deliveryId)                   // force-retry a dead delivery
 const list = await app.webhooks.list()                  // all registrations
 const log  = await app.webhooks.deliveries(hookId)     // delivery history
+const subs = await app.webhooks.subscriptions()         // what this app receives from
+await app.webhooks.unsubscribe(subId)
 ```
 
 **HTTP management routes** (auto-registered; a caller needs gate level `manage`, default 5 — 401 for a stranger, 403 below it):

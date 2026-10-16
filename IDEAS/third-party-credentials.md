@@ -6,7 +6,7 @@ dated: 2026-08-24
 
 # Idea — Third-party credentials: who mints them, who spends them
 
-**Status: THE LOGIN HALF IS BUILT; THE CREDENTIAL SEAM IS NOT.** Dated 2026-08-24.
+**Status: THE LOGIN HALF IS BUILT; THE CREDENTIAL SEAM IS BUILT, LESS THE OAUTH KIND.** Dated 2026-08-24.
 Supersedes the scope of overview row 2.2 (*OAuth into `auth`*), which framed this
 as one feature in one package. It is not: OAuth login and delegated API access are
 two halves with one credential between them, and the half `ecosystem-gaps.md` 1
@@ -15,20 +15,20 @@ names is the smaller.
 **Read the two halves differently.** Phases 0–6 of § Build plan shipped on
 2026-08-24 and are BEHAVIOR — `packages/auth/oauth.ts`, three routes, a
 `connections` service, and `example`'s `verify:oauth` (22 assertions, its own IdP
-on 8113). Everything else in this file is still an idea and must not be cited as
-behavior: legs one and three — a principal in `CredentialResolver.get()`, an
-expiry in the return, an OAuth-shaped `TargetAuth`, refresh under a lock, and the
-scope derivation in § The move that makes this FJS — are unbuilt, deliberately and
-in that order. One piece of the refresh is behavior since 2026-10-07 (`FJS-1905`): a
-401 hands the refused value to `CredentialResolver.invalidate`, and `withCache`
-re-mints it once for every send racing it, in-process. That covers a login-minted
-session. A rotating refresh token still needs the expiry and the principal.
-**The principal half of leg one is behavior since 2026-10-10 (`FJS-D848` B,
-`FJS-2232` closed):** `auth.per_caller`, `getFor(ref, who)` / `invalidateFor`,
-`withCache` keyed on who, the junction plugin writing `who` from the call in
-progress — `packages/conduit/per-caller.test.ts`. The expiry in the return and
-the refresh lock are still unbuilt; maidtech's Jobber resolver refreshes on the
-401 and holds the rotation with a compare-and-set on its own row.
+on 8113). **The credential seam is behavior in three pieces:** a 401 hands the
+refused value to `invalidate` and the send replays once on a fresh one, in-process
+(`FJS-1905`, 2026-10-07); the principal — `auth.per_caller`, `getFor(ref, who)` /
+`invalidateFor`, `withCache` keyed on who, the junction plugin writing `who` from
+the call in progress (`FJS-D848`, 2026-10-10, `packages/conduit/per-caller.test.ts`);
+and the expiry — an answer may be `{ value, expires_at }` and `withCache` holds it
+exactly that long, so one refresh per key and the refused set are the cache's
+(`FJS-D1075`, 2026-10-15, `conduit.test.ts` § credential resolvers). What is NOT
+behavior and must not be cited as such: an OAuth-shaped `TargetAuth` and the scope
+derivation in § The move that makes this FJS (deferred together, `FJS-D1075`), and
+auth exporting a resolver over its own `Credential` rows — no app spends one yet.
+The cross-process refresh lock is the app's row: maidtech's Jobber and ELA's Graph
+resolvers hold the rotation with a compare-and-set on their own row, and conduit
+has no row to hold it on.
 
 **First consumer with rows (2026-10-09): stressor #27, `fjs-prototypes/maidtech`
 Q11** — 63 MaidCentral logins, 8 Jobber, a Cloudflare token per client, each a
@@ -90,14 +90,15 @@ third-party integration needs on the way in, it exists and is exercised.
 
 ### Three gaps, all narrow
 
-1. **`CredentialResolver.get(ref)` takes one argument** — no principal, so a
-   per-user token cannot be resolved through it as written
-   (`packages/conduit/src/types.ts`, `CredentialResolver`).
-2. **It returns `string | null`** — no expiry, so nothing can say *this one is
-   stale*. Refresh has no seam to live in. The comment above it notes a transport
-   resolves once per attempt, up to `retry_limit + 1` times, which is where a
-   refresh-on-401 would naturally sit and currently only counts failures.
-3. **`TargetAuth` has no OAuth variant** — `bearer`, `api_key`, `hmac`, `none`.
+1. ~~**`CredentialResolver.get(ref)` takes one argument** — no principal, so a
+   per-user token cannot be resolved through it as written~~ **Closed by
+   `FJS-D848`**: `getFor(ref, who)` beside it, `get(ref)` unchanged.
+2. ~~**It returns `string | null`** — no expiry, so nothing can say *this one is
+   stale*. Refresh has no seam to live in.~~ **Closed by `FJS-D1075`**: either
+   method may answer `{ value, expires_at }`, and `withCache` is the seam the
+   refresh lives in — one in-flight per key, held until the answer says.
+3. **`TargetAuth` has no OAuth variant** — `bearer`, `api_key`, `hmac`, `signed`,
+   `none`. Deferred to the scope derivation (step 4), the only thing that reads it.
 
 ---
 
@@ -298,8 +299,12 @@ Descope, Okta and Semperis on nOAuth · Auth0 on OAuth CSRF · Supabase identity
   - *Under B, `who` is `{ tenant, principal, grant }`*: the grant is a per-send option, since a send is the only point that knows which of an agency's Google accounts it spends. `withCache` keys on `ref` plus all three, so serpgrid's own `withGrant` ALS goes away.
   - **Recommend B** — A lets a process-scoped resolver ignore the principal and hand every caller the machine token, and C does the same inside `withCache`, which keys on `ref` alone and would hand one person's token to the next; both are wrong without anything saying so. B leaves the shape `FJS-D219` made every battery depend on untouched and turns a missing per-caller resolver into a boot refusal.
   - *First measured caller, 2026-10-09:* serpgrid's DataForSEO resolver ([`index.ts`](../../fjs-prototypes/serpgrid/api/src/providers/dataforseo/index.ts)) is C in practice — `get(ref)` reads the agency from the ambient call — and its header says it may never be wrapped in `withCache`, because the ref is one string for every agency and the first agency's login would be sent for the next one's scans (`api/test/dataforseo.test.ts` measures it). The vendor is HTTP Basic, which `TargetAuth` has no type for ([`FJS-2233`](../ISSUES.md#fjs-2233)).
-- What does the resolver return once expiry matters — a string plus an expiry, or a
-  richer credential object? Every existing resolver returns a string.
+- ~~What does the resolver return once expiry matters — a string plus an expiry, or a
+  richer credential object? Every existing resolver returns a string.~~ **Answered
+  2026-10-15 (`FJS-D1075`): A widened to both methods — `get()` and `getFor()` answer
+  `string | { value, expires_at }`, `withCache` holds an answer until `expires_at` or
+  `ttl_ms`, whichever is first; 3CX and `conduit-oidc` are process-scoped and were
+  the reason A alone was not enough.**
   - **A** — the per-caller interface returns `{ value, expiresAt }`; `get(ref)` keeps returning a string.
   - **B** — a credential object, `{ value, expiresAt, scope, refresh() }`, from both interfaces.
   - **C** — a string still, with no expiry: a 401 hands it to `invalidate` and it is re-minted, which is what `FJS-1905` ships.
@@ -564,14 +569,18 @@ The credential seam is independent of both flows, small, and unblocks each of th
 It should not wait for a decision about OAuth.
 
 1. **The credential seam** — a principal in resolution, an expiry in the return, an
-   OAuth-shaped `TargetAuth`. No flow yet, nothing minted. **Not built.**
+   OAuth-shaped `TargetAuth`. No flow yet, nothing minted. **Built 2026-10-10 and
+   2026-10-15** (`FJS-D848`, `FJS-D1075`), less the OAuth kind, which waits for step 4.
 2. **OAuth login** — mints the row. The redirect and identity questions above.
    **Built 2026-08-24** — and it went first, which the note below says it need not
    have. That cost nothing: the two are independent, and step 2 is what produced a
    `Credential` row with `accessToken`, `refreshToken`, `tokenExpiresAt` and
    `scope` actually populated, which is the thing step 1 resolves.
-3. **Conduit spends it** — refresh, the lock, the reconnect state. This is where the
-   real work is. **Not built.**
+3. **Conduit spends it** — refresh, the lock, the reconnect state. The refresh is
+   the resolver's `get`, the in-process lock is `withCache` (`FJS-D1075`), the
+   cross-process lock is the app's row, and the reconnect state is the row too —
+   a `reconnect_required` kind waits for a caller that branches on it. **What is
+   left is auth's resolver over its own `Credential` rows, which no app spends yet.**
 4. **Scope derivation** — the check that makes it FJS. **Not built.**
 
 1 and 2 are independent of each other and both small.

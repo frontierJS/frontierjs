@@ -18,7 +18,8 @@
 import * as acorn from 'acorn'
 import { lower } from './ir.js'
 import { htmlEntitiesToText } from './entities.js'
-import { buildTerminal, terminalRefusal } from './terminal/emit.js'
+import { buildHost, hostRefusal } from './host/emit.js'
+import { TARGETS } from './host/targets.js'
 
 /**
  * Names a component function may not take. Reserved words are a parse error;
@@ -10596,15 +10597,16 @@ export async function compile(source, config = {}) {
   // A refused file with a <script module> keeps its data half: a route that
   // imports `orders` from Order.mesa needs none of that file's form, and the
   // DOM path pays nothing for an unmounted default export either (`FJS-2182`).
-  // The default throws the refusal when mounted; `ctx.terminalRefusal` lets an
+  // The default throws the refusal when mounted; `ctx.targetRefusal` lets an
   // importer graph refuse anything that takes the default without running it.
   use_context(ctx, () => {
-    if (config.target !== 'terminal') return buildRuntime.call(ctx)
-    const refused = terminalRefusal(ctx.ir)
+    const target = TARGETS[config.target]
+    if (!target) return buildRuntime.call(ctx)
+    const refused = hostRefusal(ctx.ir, target)
     if (refused && !ctx.scriptModuleNodes[0]) throw new Error(refused)
-    if (refused) return void (ctx.terminalRefusal = refused)
+    if (refused) return void (ctx.targetRefusal = refused)
     buildHead.call(ctx)
-    buildTerminal(ctx)
+    buildHost(ctx, target)
   })
   await hook('runtime')
 
@@ -10629,16 +10631,16 @@ export async function compile(source, config = {}) {
     // only at `vite build`, having run fine in dev.
     const _compName = safeComponentIdent(_displayName, ctx)
 
-    const root = ctx.terminalRefusal ? xNode('root', (w) => {
+    const root = ctx.targetRefusal ? xNode('root', (w) => {
       ctx.scriptModuleNodes[0].content.trim().split('\n').forEach(line => w.write(true, line))
       w.write(true, '')
       w.write(true, `export default function ${_compName}() {`)
-      w.write(true, `  throw new Error(${JSON.stringify(ctx.terminalRefusal)});`)
+      w.write(true, `  throw new Error(${JSON.stringify(ctx.targetRefusal)});`)
       w.write(true, '}')
     }) : xNode('root', (w) => {
       w.write(true, `import * as $$runtime from '@frontierjs/mesa/runtime.js';`)
-      if (config.target === 'terminal')
-        w.write(true, `import * as $$tui from '@frontierjs/mesa/runtime/terminal.js';`)
+      if (TARGETS[config.target])
+        w.write(true, `import * as $$host from '${TARGETS[config.target].runtime}';`)
       w.add(ctx.module.top)
       // <script module> content — emitted at module scope, before component fn
       const moduleScript = ctx.scriptModuleNodes[0]?.content?.trim()

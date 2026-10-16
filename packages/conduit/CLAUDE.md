@@ -11,9 +11,11 @@ dialing direction — a vendor holds two of our secrets and dials us about as of
 as we dial it — so a Provider has a Target (where we send) and a Receiver (the
 route it calls us on), and the two share a credential store and no code. Write
 *outbound* for the sending end, never for the package. What is NOT conduit's is a
-counterparty signing with FrontierJS's *own* scheme and becoming a caller, which
-is junction's door (`createApp({ credentials })`, `FJS-D475`). The test is *whose
-scheme is it*.
+counterparty signing with FrontierJS's *own* scheme: becoming a caller is
+junction's door (`createApp({ credentials })`, `FJS-D475`), and a far app's
+webhook deliveries are a webhooks SUBSCRIPTION (`FJS-D1087`), which restates
+`accept()`'s applied-not-seen order over one fixed dialect — a change to that
+order here is owed there too. The test is *whose scheme is it*.
 
 **It is not a wall.** Nothing enforces the declaration — there is no check for a
 raw `fetch`, and junction's `ai` and `mail` batteries each dial out directly on
@@ -317,8 +319,11 @@ src/
   bytes `serialize()` produced and may return a replacement body — an http
   transport sends `authorize().body`, never its own `rawBody`, or the signed bytes
   were not the ones sent. A minted JWT or OAuth token is the RESOLVER's:
-  `withCache({ get: mint }, { ttl_ms })` is its expiry, so conduit holds no
-  credential lifetime. `put()` refuses an unknown signer by name, and a signed
+  its `get` answers `{ value, expires_at }` and `withCache({ get: mint }, { ttl_ms:
+  Infinity })` holds it exactly that long (`FJS-D1075`) — a fixed `ttl_ms` beside a
+  minted token is a copy of the provider's number, and 3CX ships `expires_in` as
+  3600 or 60 by build. `valueOf()` is the one place an answer becomes the string
+  a transport sends; a non-finite `expires_at` is `auth_failed` by name. `put()` refuses an unknown signer by name, and a signed
   target beside `follow_redirects` or `address_from`. A per-target fact the
   scheme signs under (SigV4's region) is `auth.params`, strings only, never a
   secret — not a signer registered per value (`FJS-2725`). **A resolver or signer

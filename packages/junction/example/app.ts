@@ -98,7 +98,7 @@ import { createNotesService }                  from './services/notes.service.ts
 import type { App }            from '../src/core/app.ts'
 import type { IAuth }          from '../src/auth/types.ts'
 import type { WsContext }      from '../src/transport/types.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 // ─── Logger ───────────────────────────────────────────────────────────────
 

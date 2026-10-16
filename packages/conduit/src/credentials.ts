@@ -12,7 +12,28 @@
 //   })
 // ============================================================
 
-import type { CredentialCaller, CredentialResolver } from './types.ts'
+import type { CredentialCaller, CredentialResolver, Material } from './types.ts'
+
+// ─── The answer ──────────────────────────────────────────────────────────────
+
+// The string in a resolver's answer, or null for no answer. Empty counts as
+// none: an unset env var read through a shell default is the common way to
+// end up with one. An `expires_at` that is not a finite number is refused by
+// name here rather than read as never-expiring by `withCache`.
+export function valueOf(m: Material | null | undefined): string | null {
+  if (m === null || m === undefined) return null
+  if (typeof m === 'string') return m === '' ? null : m
+  if (m.expires_at !== undefined && !Number.isFinite(m.expires_at))
+    throw new TypeError(`a credential's expires_at is epoch milliseconds, got ${String(m.expires_at)}`)
+  return typeof m.value === 'string' && m.value !== '' ? m.value : null
+}
+
+// When the answer stops being good, or Infinity when it never says.
+function expiryOf(m: Material | null | undefined): number {
+  return m !== null && typeof m === 'object' && m.expires_at !== undefined ? m.expires_at : Infinity
+}
+
+// ─── Resolvers ───────────────────────────────────────────────────────────────
 
 // Reads refs from process.env. This is the default when
 // ConduitOptions.credentials is omitted.
@@ -100,15 +121,22 @@ export function byRef(table: Record<string, CredentialResolver>): CredentialReso
   return routed
 }
 
-// Wraps a resolver with a TTL cache. Transports resolve once per
+// Wraps a resolver with a cache. Transports resolve once per
 // attempt, so a retried request hits the underlying resolver up to
 // retry_limit + 1 times — worth avoiding for anything networked.
+//
+// An entry lives until `ttl_ms` or the answer's own `expires_at`, whichever
+// is first: an answer that says when it expires is held exactly that long, so
+// a minted token is `ttl_ms: Infinity` with the provider's number on the
+// answer, never a TTL copied from the provider's documentation. An answer
+// already expired is used for the send that asked and not kept.
 //
 // Only successful lookups are cached; a null keeps failing through
 // so a newly-provisioned secret is picked up without a restart.
 //
 // Concurrent misses on one ref share one inner call: a burst against a
-// cold cache otherwise sends one vault request per send(). The in-flight
+// cold cache otherwise sends one vault request per send(), and five callers
+// finding one token stale otherwise refresh it five times. The in-flight
 // entry clears when the call settles, so a rejection is not remembered.
 //
 // A credential minted by a login — a cookie session — is this with
@@ -130,7 +158,7 @@ export function withCache(
   const keyFor = (ref: string, who?: CredentialCaller) =>
     who ? ['\u0000who', ref, who.tenant ?? '', who.principal ?? '', who.grant ?? ''].join('\u0000') : ref
 
-  function cached(key: string, fetch: () => Promise<string | null>): Promise<string | null> {
+  function cached(key: string, fetch: () => Promise<Material | null>): Promise<string | null> {
     const hit = cache.get(key)
     if (hit && hit.expires_at > Date.now()) return Promise.resolve(hit.value)
 
@@ -139,8 +167,10 @@ export function withCache(
       // Cleared after the set: a resolver that throws synchronously would
       // otherwise settle before the entry exists and leave it behind.
       pending = (async () => {
-        const value = await fetch()
-        if (value !== null && value !== '') cache.set(key, { value, expires_at: Date.now() + ttl })
+        const answer = await fetch()
+        const value  = valueOf(answer)
+        const until  = Math.min(Date.now() + ttl, expiryOf(answer))
+        if (value !== null && until > Date.now()) cache.set(key, { value, expires_at: until })
         return value
       })().finally(() => inflight.delete(key))
       inflight.set(key, pending)

@@ -387,11 +387,11 @@ project appears, and reconciles hooks deleted on Basecamp's side.
 
 ### What is still unbuilt
 
-Mechanism is done. What an app would still need: **the credential leg** —
-`CredentialResolver.get(ref)` takes no principal and returns no expiry, and
-`TargetAuth` has no OAuth variant (`third-party-credentials.md` legs one and three,
-refresh under a lock so two sends do not both spend the refresh token); **the
-connector** in `example/api/src/providers/basecamp/`, following the Stripe shape,
+Mechanism is done. What an app would still need: **the credential leg's OAuth
+kind** — `getFor(ref, who)` carries the principal (`FJS-D848`) and an answer its
+expiry (`FJS-D1075`, one refresh per key inside `withCache`), but `TargetAuth` has
+no OAuth variant until the scope derivation (`third-party-credentials.md` § Sequencing
+step 4); **the connector** in `example/api/src/providers/basecamp/`, following the Stripe shape,
 whose `translate()` treats 404 as *you may not see this* because visibility is per
 project; and **a sink and a drive** that can move the clock rather than wait a
 fortnight — a 304 served from cache, a `Link` walk to page two, a 429 that does not

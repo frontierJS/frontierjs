@@ -19,7 +19,7 @@
 import { describe, it, expect } from 'bun:test'
 import { createTestApp, request, createService, createBaseService } from '../index.ts'
 import { requestMeta as coreRequestMeta, freezeUser as coreFreezeUser } from '../src/core/context.ts'
-import { requestMeta as bridgeRequestMeta, freezeUser as bridgeFreezeUser } from '../src/transport/bridge.ts'
+import { requestMeta as bridgeRequestMeta, freezeUser as bridgeFreezeUser } from '../src/core/context.ts'
 import { matchRouteSegments, matchPathDirect, parsePathSegments } from '../src/transport/router.ts'
 import { loadConfig } from '../src/config/index.ts'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'

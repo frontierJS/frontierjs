@@ -324,7 +324,7 @@ export interface CreateClientOptions {
    */
   previousEncryptionKeys?: string[]
   /** Plugins — GatePlugin, FileStorage, custom */
-  plugins?:       Plugin[]
+  plugins?:       LitestonePlugin[]
   /**
    * Computed field functions, or path to a file exporting them.
    *
@@ -1041,7 +1041,7 @@ export declare function checksum(str: string): string
 
 // ─── Plugin system ────────────────────────────────────────────────────────────
 
-export declare class Plugin {
+export declare class LitestonePlugin {
   onInit(schema: LitestoneSchema, ctx: LitestoneCtx): void
   onBeforeRead(model: string, args: unknown, ctx: LitestoneCtx): Promise<void>
   onBeforeCreate(model: string, args: unknown, ctx: LitestoneCtx): Promise<void>
@@ -1054,7 +1054,7 @@ export declare class Plugin {
 }
 
 export declare class PluginRunner {
-  constructor(plugins: Plugin[])
+  constructor(plugins: LitestonePlugin[])
   hasPlugins: boolean
   /** Whether an installed plugin answers onAfterDelete — the inherited empty one does not count. */
   hearsDeletes: boolean
@@ -1076,7 +1076,7 @@ export declare class AccessDeniedError extends Error {
 
 // ─── ExternalRefPlugin ────────────────────────────────────────────────────────
 
-export declare class ExternalRefPlugin extends Plugin {
+export declare class ExternalRefPlugin extends LitestonePlugin {
   fieldType: string
   constructor(config?: { autoResolve?: boolean; [key: string]: unknown })
   serialize(value: unknown, opts: { field: string; model: string; id: unknown; ctx: LitestoneCtx }): Promise<Record<string, unknown>>
@@ -1109,7 +1109,7 @@ export interface GateConfig {
   delete: number
 }
 
-export declare class GatePlugin extends Plugin {
+export declare class GatePlugin extends LitestonePlugin {
   constructor(opts?: { getLevel?: (user: LitestoneAuth | null, model: string) => number })
 }
 

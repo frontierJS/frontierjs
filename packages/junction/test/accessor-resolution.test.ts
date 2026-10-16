@@ -22,7 +22,7 @@ import { describe, test, expect } from 'bun:test'
 import { createBaseService, createService } from '../src/core/service.ts'
 import { createApp, defaultConfig } from '../index.ts'
 import { gateAuth, autoValidate, accessorCandidates, resolveDefsKey } from '../src/core/litestone.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 // A Litestone-shaped client for `model Post`: accessor is SINGULAR, and the
 // model is gated at level 4 (every operation needs a user). The $schema shape

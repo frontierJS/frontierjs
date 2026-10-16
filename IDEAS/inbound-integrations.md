@@ -1,13 +1,13 @@
 ---
 id: inbound-integrations
-status: partial
+status: shipped
 dated: 2026-09-02
 ---
 
 # Idea — receiving: two features, two owners
 
 **Status: the DIRECTION is ruled ([`FJS-D177`](../DECISIONS.md#fjs-d177), 2026-09-02);
-half B is BUILT (2026-10-15, [`FJS-D899`](../DECISIONS.md#fjs-d899): `packages/conduit/src/receive.ts`), half A and the credential seam are not.** Read the two halves
+all of § Order is BUILT 2026-10-15 — half B as [`FJS-D899`](../DECISIONS.md#fjs-d899) (`packages/conduit/src/receive.ts`), half A as [`FJS-D1087`](../DECISIONS.md#fjs-d1087) (`packages/junction/src/plugins/webhooks/index.ts` § Receiving), the credential seam as [`FJS-D1075`](../DECISIONS.md#fjs-d1075).** Read the two halves
 differently: conduit holding the relationship, the who-dials axis, the
 whose-scheme-is-it split, the three exclusions and the two records are settled and
 must not be relitigated here. The shape of the receiver record, the toolbelt
@@ -303,7 +303,9 @@ alone, and *outlet/inlet* is plumbing nobody else in the ecosystem says. Fails
 One row added, two rows filled (Provider) or narrowed (Target), nothing
 renamed. Junction's half A takes **no noun**: its registration is a row, its far
 side is already *subscriber*, and receiving its own scheme is `verifyRequest`
-with `secrets` (§ Order step 2). Inbound email takes none either —
+with `secrets` (§ Order step 2). *Amended by [`FJS-D1087`](../DECISIONS.md#fjs-d1087):
+the row is a* subscription, *the mirror of* subscriber, *the webhooks plugin's
+own word the way* registration *is — no register row.* Inbound email takes none either —
 [`inbound-email.md`](inbound-email.md) routes what a mail provider's Receiver
 hands over, so a mailbox, if it is ever a word, is that paper's to coin.
 
@@ -318,15 +320,19 @@ mechanism — route, signature, window — does not apply to a socket we opened.
 
 **1 — the credential seam.** `IDEAS/third-party-credentials.md` leg three. It is
 the only genuinely shared machinery between the two ends of a relationship, so it
-is the load-bearing half of the whole argument for merging. Built second, the
-receiver gets written against a resolver that cannot hold a per-user expiring
-credential anyway.
+is the load-bearing half of the whole argument for merging. **Built 2026-10-15**
+(`FJS-D1075`, after `FJS-D848`): a resolver's answer carries its expiry and
+`withCache` holds it that long, so a receiver's `credential` ref and a target's
+`auth.ref` resolve through one seam that can hold a per-caller expiring credential.
 
 **2 — `verifyRequest({ secrets })`.** ~~Open~~ **Built 2026-10-15.** One kit change, and it is
 what stops A and B each inventing rotation.
 
-**3 — A, in junction.** Smaller, symmetric with code that already ships, and it
-gives an app that never installs conduit a receiving half.
+**3 — A, in junction.** **Built 2026-10-15 as `FJS-D1087`**: a webhooks
+SUBSCRIPTION — the row this app holds to verify a far app's deliveries, at
+`POST {apiPrefix}/webhooks/subscriptions/{id}`, one `receive`, dedupe on the
+signed body id, applied-not-seen. Symmetric with the code that already ships,
+and an app that never installs conduit has a receiving half.
 
 **4 — B, in conduit.** **Built 2026-10-15 as `FJS-D899` ruled it**: a connector's Dialect, an app's Receiver, conduit's order and receipts; the record is wider than this paper drew it (`FJS-1804`).
 

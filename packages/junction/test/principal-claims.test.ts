@@ -15,7 +15,7 @@ import { createClient } from '../../litestone/src/index.js'
 import { createApp, createService, membershipClaim, applyClaims, MEMBERSHIP, sessionGateLevel } from '../index.ts'
 import type { PrincipalResolver } from '../index.ts'
 import type { SessionContext } from '../src/auth/types.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 /** find() answers the list envelope; the rows are `.data`. */
 const rowsOf = (r: unknown): any[] => (r as { data: any[] }).data

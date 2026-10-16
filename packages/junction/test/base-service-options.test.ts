@@ -27,7 +27,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createBaseService, createService, requiredScope, scopeRefusal } from '../src/core/service.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const authenticate = () => {}
 const CRUD = ['find', 'get', 'create', 'update', 'patch', 'remove', 'restore'] as const

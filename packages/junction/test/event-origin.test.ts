@@ -22,7 +22,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createService, callService } from '../src/core/service.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 // Captures both consumers so a test can assert they agree.
 function harness() {

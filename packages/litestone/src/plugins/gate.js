@@ -58,7 +58,7 @@
 //   const userDb = db.$setAuth(req.user)
 //   db.asSystem()   // ← SYSTEM level, for background jobs only
 
-import { Plugin, AccessDeniedError } from '../core/plugin.js'
+import { LitestonePlugin, AccessDeniedError } from '../core/plugin.js'
 import { collectNestedOps, collectIncludedModels } from './reach.js'
 import { gatedFromFields } from '../core/from-gate.js'
 
@@ -239,7 +239,7 @@ function checkLevel(required, userLevel, model, operation) {
 
 // ─── GatePlugin ───────────────────────────────────────────────────────────────
 
-export class GatePlugin extends Plugin {
+export class GatePlugin extends LitestonePlugin {
   constructor({ getLevel } = {}) {
     super()
     // The default is the shipped grader, and it used to be a second one written

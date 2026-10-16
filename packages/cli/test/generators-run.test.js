@@ -147,46 +147,46 @@ describe('a generated link names the URL its directory is served at', () => {
 
 // make:scaffold ended on *Add a nav link to your layout* and nothing added one,
 // so in 0 of 21 apps the Charter stressor generated did the page after sign-up
-// reach a model's list (`FJS-1808`). The layout here is the one `fli new`
+// reach a model's list (`FJS-1808`). The table here is the one `fli new`
 // writes, read out of new.md, so a change to it is graded too.
-describe('make:scaffold links the list from the layout fli new writes', () => {
+describe('make:scaffold lists the model in the nav table fli new writes', () => {
   const NEW_MD = Bun.file(join(CLI, 'commands/project/new.md')).text()
-  const layoutOf = async (useAuth) => {
-    const src = (await NEW_MD).match(/\nfunction makeRouteModule\(appName, useAuth(?:, useApi = true)?\) \{[\s\S]*?\n\}\n/)[0]
-    return new Function('sc', `${src}\nreturn makeRouteModule`)('</' + 'script>')('demo', useAuth)
+  const navOf = async (useAuth) => {
+    const src = (await NEW_MD).match(/\nfunction makeNavJs\(useAuth\) \{[\s\S]*?\n\}\n/)[0]
+    return new Function(`${src}\nreturn makeNavJs`)()(useAuth)
   }
   const SCHEMA = { 'db/schema.lite': 'model SearchIndex { id Int @id  name String }\n' }
-  const LAYOUT = 'web/src/routes/_module.mesa'
+  const NAV = 'web/src/lib/nav.js'
 
   for (const useAuth of [true, false]) {
-    test(useAuth ? 'behind the signed-in check, as the Users link is' : 'with no sign-in, for everyone', async () => {
-      const root = makeApp({ ...SCHEMA, [LAYOUT]: await layoutOf(useAuth) })
+    test(useAuth ? 'behind the signed-in check, as the Users entry is' : 'with no sign-in, for everyone', async () => {
+      const root = makeApp({ ...SCHEMA, [NAV]: await navOf(useAuth) })
       try {
         await run(root, 'make:scaffold', ['SearchIndex'], { 'skip-schema': true })
-        const layout = await Bun.file(join(root, LAYOUT)).text()
-        const nav = layout.slice(layout.indexOf('aria-label="Main"'), layout.indexOf('</nav>'))
-        expect(nav).toContain(`<a class="navlink" href="/searchindexes/" aria-current={(page.route, isActive('/searchindexes/')) ? 'page' : null}>Search Indexes</a>`)
-        expect(/\{#if session\.user\}\s*<a class="navlink" href="\/searchindexes\/"/.test(nav)).toBe(useAuth)
+        const nav = await Bun.file(join(root, NAV)).text()
+        const entry = nav.split('\n').find(l => l.includes("href: '/searchindexes/'"))
+        expect(entry.trim()).toBe(`{ href: '/searchindexes/', label: 'Search Indexes'${useAuth ? ', show: members' : ''} },`)
 
-        // Run again, and the link is not added a second time.
+        // Run again, and the entry is not added a second time.
         await run(root, 'make:scaffold', ['SearchIndex'], { 'skip-schema': true })
-        expect((await Bun.file(join(root, LAYOUT)).text()).split('href="/searchindexes/"').length).toBe(2)
+        expect((await Bun.file(join(root, NAV)).text()).split("href: '/searchindexes/'").length).toBe(2)
 
-        const { compileSource } = await import(resolve(CLI, '../mesa/src/compiler.js'))
-        const ctx = await compileSource(layout.replace(/^---[\s\S]*?\n---\n/, ''), { filename: '_module.mesa', css: false, debug: false })
-        expect(ctx.analysis.errors).toEqual([])
+        // The result is a module that loads, and the entry sits in the group.
+        const mod = await import(`data:text/javascript;base64,${Buffer.from(nav).toString('base64')}`)
+        const hrefs = mod.groups.flatMap(g => g.entries.map(e => e.href))
+        expect(hrefs).toContain('/searchindexes/')
+        expect(hrefs[0]).toBe('/')
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
     }, 30000)
   }
 
-  test('a layout with no main nav is left alone', async () => {
-    const own = '<div class="shell"><slot /></div>\n'
-    const root = makeApp({ ...SCHEMA, [LAYOUT]: own })
+  test('an app with no nav table is left alone', async () => {
+    const root = makeApp({ ...SCHEMA })
     try {
       await run(root, 'make:scaffold', ['SearchIndex'], { 'skip-schema': true })
-      expect(await Bun.file(join(root, LAYOUT)).text()).toBe(own)
+      expect(existsSync(join(root, NAV))).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

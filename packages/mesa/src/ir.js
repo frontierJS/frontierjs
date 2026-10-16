@@ -589,5 +589,51 @@ export function lower(ctx) {
     delete ctx._irSnippets
   }
   const diagnostics = errors ? errors.splice(errorsBefore) : []
-  return { kind: 'root', children, diagnostics }
+  const root = { kind: 'root', children, diagnostics }
+  if (ctx.styleNodes?.length) root.styles = lowerStyles(ctx)
+  return root
+}
+
+// ─── styles ───────────────────────────────────────────────────────────────────
+
+// Whose blocks hold no selectors: `from` and `50%` in a `@keyframes` are not
+// rules a target could refuse.
+const OPAQUE_AT = /^@(?:-\w+-)?(?:keyframes|font-face|property|counter-style|font-palette-values|page)\b/i
+
+/**
+ * The `<style>` blocks as the preludes they open, `{ prelude, loc }` in
+ * source order, with `scope`, the class every element of the component
+ * carries. A target that paints CSS judges each prelude as written —
+ * `:global(...)` included, since a global rule paints on the same engine —
+ * and the scoped text itself is `ctx.css.result`.
+ */
+function lowerStyles(ctx) {
+  const rules = []
+  for (const n of ctx.styleNodes) {
+    const src = n.content
+    const base = n.start + n.openTag.length
+    let from = 0
+    let opaque = 0
+    let depth = 0
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i]
+      if (c === '/' && src[i + 1] === '*') { const end = src.indexOf('*/', i + 2); i = end < 0 ? src.length : end + 1; continue }
+      if (c === '"' || c === "'") { while (++i < src.length && src[i] !== c) if (src[i] === '\\') i++; continue }
+      if (c === ';' || c === '}') {
+        if (c === '}' && opaque && --depth < opaque) opaque = 0
+        else if (c === '}') depth--
+        from = i + 1
+        continue
+      }
+      if (c !== '{') continue
+      depth++
+      const raw = src.slice(from, i)
+      const prelude = raw.replace(/\/\*[\s\S]*?\*\//g, '').trim()
+      const lead = raw.match(/^(?:\s|\/\*[\s\S]*?\*\/)*/)[0].length
+      if (!opaque && prelude) rules.push({ prelude, loc: ctx.posOf(base + from + lead) })
+      if (!opaque && OPAQUE_AT.test(prelude)) opaque = depth
+      from = i + 1
+    }
+  }
+  return { scope: ctx.css.id, rules }
 }

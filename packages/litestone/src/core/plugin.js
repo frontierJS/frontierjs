@@ -49,7 +49,10 @@
 //     Multiple plugins' filters are AND-merged together and with the query's
 //     own where clause.
 
-export class Plugin {
+// Named for its host: Junction exports a `Plugin` of its own, a plain-object
+// protocol, and an app importing both barrels must not meet two things under
+// one name.
+export class LitestonePlugin {
   /**
    * Identity — `FJS-D19`. Without it a plugin cannot be introspected, ordered,
    * named in an error, or reported anywhere, and this had none at all.
@@ -60,7 +63,7 @@ export class Plugin {
    * minifier rewrites `constructor.name` — a bundled app would report `t` — so
    * anything that ships bundled states its own:
    *
-   *   class TenantScope extends Plugin { name = 'tenant-scope' }
+   *   class TenantScope extends LitestonePlugin { name = 'tenant-scope' }
    *
    * A field wins over this getter by ordinary property lookup.
    */
@@ -120,12 +123,12 @@ export class PluginRunner {
   // onAfterDelete, so `hasPlugins` is true for a gate that has nothing to do
   // with one, and a retention sweep read every doomed row to tell it (FJS-2288).
   get hearsDeletes() {
-    return this._plugins.some(p => typeof p?.onAfterDelete === 'function' && p.onAfterDelete !== Plugin.prototype.onAfterDelete)
+    return this._plugins.some(p => typeof p?.onAfterDelete === 'function' && p.onAfterDelete !== LitestonePlugin.prototype.onAfterDelete)
   }
 
   // The write half: a cascade's `onDelete: SetNull` is an update a plugin hears.
   get hearsWrites() {
-    return this._plugins.some(p => typeof p?.onAfterWrite === 'function' && p.onAfterWrite !== Plugin.prototype.onAfterWrite)
+    return this._plugins.some(p => typeof p?.onAfterWrite === 'function' && p.onAfterWrite !== LitestonePlugin.prototype.onAfterWrite)
   }
 
   /**

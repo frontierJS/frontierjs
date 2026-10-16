@@ -810,7 +810,6 @@ async function _callService(
       } : {}),
     }
     t.emit('junction.call.end', event)
-    t.emit('junction.call', event)   // back-compat alias
   }
 
   // ── Real-time: ONE origin ─────────────────────────────────────────

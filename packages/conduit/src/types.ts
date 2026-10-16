@@ -229,16 +229,24 @@ export interface TargetDescriptor {
   // A URL somebody else chose is graded by junction's `assertPublicUrl` before
   // EVERY attempt, a retry included, since what a name resolves to is not
   // fixed: no private or loopback address and no http unless `destinations`
-  // says so. Refused at register() with `bearer` or `api_key` auth (a stored
-  // credential would go wherever the row says), with a followed redirect, a
-  // pinned certificate or `trace`. `hmac` is allowed: it signs the body, as a
-  // webhook delivery does, and names nothing secret. The breaker and the
-  // concurrency cap are kept per origin, so one dead subscriber URL does not
-  // close the target for the rest, and observers see the origin only.
+  // says so. Refused at register() with a stored `bearer`, `api_key` or
+  // `signed` credential (the process's would go wherever the row says), with a
+  // followed redirect, a pinned certificate or `trace`. `hmac` is allowed: it
+  // signs the body, as a webhook delivery does, and names nothing secret. So
+  // is any credential that is `per_caller` (`FJS-D1089`): a self-hosted
+  // instance a row names takes that row's own token, and the send states
+  // `grant` or is refused, because the grant is what ties the token to the
+  // address — keyed on the tenant alone, two rows share one cached token. The
+  // breaker and the concurrency cap are kept per origin, so one dead
+  // subscriber URL does not close the target for the rest, and observers see
+  // the origin only.
   address_from?:   'request'
 
   // What a request-addressed target may reach beyond public https. A test or
-  // a dev receiver on localhost turns both on and says so.
+  // a dev receiver on localhost turns both on and says so. `allowPrivate`
+  // opens the target to every row, so a counterparty on a LAN is never a
+  // row's to name: it is a fixed-address target the operator declares, or an
+  // Outpost vantage (`FJS-D1018`, `FJS-D1089`).
   destinations?:   { allowHttp?: boolean; allowPrivate?: boolean }
 
   // Further origins this counterparty answers on, each a bare origin
@@ -305,8 +313,17 @@ export interface TargetDescriptor {
 // Returning null (or an empty string) is a hard failure — the transport
 // returns auth_failed rather than sending unauthenticated traffic.
 
+// What a resolver answers. A string is material with no lifetime of its own —
+// an env var, a static key. Material a provider minted for a while says when,
+// `expires_at` in epoch ms, and `withCache` holds it exactly that long
+// whatever its `ttl_ms`: a fixed TTL beside a minted token is a hand copy of
+// the provider's number, and one PBX ships `expires_in` as 3600 on one build
+// and 60 on another (`FJS-D1075`, `FJS-2245`). `valueOf()` in credentials.ts
+// is the one place either shape becomes the string a transport sends.
+export type Material = string | { value: string; expires_at?: number }
+
 export interface CredentialResolver {
-  get(ref: string): Promise<string | null>
+  get(ref: string): Promise<Material | null>
 
   // The target refused `value` — a 401, or a shape the target's
   // `auth.refusal` declares: forget it, so the next get() mints
@@ -325,7 +342,7 @@ export interface CredentialResolver {
   // would hand every caller the machine's credential with nothing saying so,
   // and a target that needs this is refused at put() when it is missing.
   // Null fails the send closed, as get() does.
-  getFor?(ref: string, who: CredentialCaller): Promise<string | null>
+  getFor?(ref: string, who: CredentialCaller): Promise<Material | null>
 
   // invalidate(), for the value getFor(ref, who) answered. Forgets that
   // caller's and nobody else's: one tenant's revoked login is not another's.

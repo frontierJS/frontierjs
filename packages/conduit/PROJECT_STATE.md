@@ -52,9 +52,11 @@ Every open item is a row in `ISSUES.md`; this is the map of them.
 - **Half A — a partner posting back under FrontierJS's own scheme without
   installing conduit** — is junction's and unbuilt (`IDEAS/inbound-integrations.md`
   § Order step 3). `receive.test.ts`'s dialect is the shape it would take.
-- **The credential seam** (`FJS-2245`): no OAuth `TargetAuth`, no expiry on a
-  resolver's answer, no cross-replica refresh lock. Both ends of a relationship
-  need it, and `per_caller` (`FJS-D848`) is only the principal half.
+- **The credential seam's OAuth kind** — `TargetAuth` has no `oauth` variant,
+  deferred with the scope derivation (`FJS-D1075`). The principal (`FJS-D848`)
+  and the expiry on an answer (`FJS-D1075`, `FJS-2245` closed) are built; the
+  cross-replica refresh lock is the app's row, and auth exports no resolver over
+  its own `Credential` rows yet because no app spends one.
 - **A self-hosted counterparty on a private network has no spelling**
   (`FJS-2923`).
 - **Transports reach HTTP-shaped vendors only.** `websocket` and `broker` speak

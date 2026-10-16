@@ -33,19 +33,6 @@ const isDriver = (v: unknown): v is NotificationDriver =>
  * await ctx.app.notify(user, new WelcomeUser())
  */
 export function notificationsPlugin(opts: NotificationsPluginOptions) {
-  // `channels:` was this option's name until FJS-D06 ruled Channel to be
-  // junction's broadcast set and a delivery medium to be a Transport. An
-  // unknown key would otherwise configure nothing and be discovered as a
-  // missing driver at first send.
-  const legacy = (opts as { channels?: unknown }).channels
-  if (legacy !== undefined) {
-    throw new Error(
-      '[notifications] `channels:` is now `transports:` — a delivery medium is a ' +
-      'Transport, and `channel` is junction\'s broadcast set (FJS-285). Rename the ' +
-      'option; the values are unchanged.'
-    )
-  }
-
   // `sms: { provider: 'twilio' }` is the shape other frameworks take. There is
   // no built-in SMS to configure, so it registered nothing and was found at the
   // first send — which for an alert is the moment it was needed.

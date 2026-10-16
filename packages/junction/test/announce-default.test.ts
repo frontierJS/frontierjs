@@ -25,7 +25,7 @@ import { describe, test, expect } from 'bun:test'
 import { createService, callService } from '../src/core/service.ts'
 import { createChannelManager, announce, channels } from '../src/transport/channels.ts'
 import { createApp } from '../src/core/app.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 type Manager = ReturnType<typeof createChannelManager>
 

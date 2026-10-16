@@ -800,6 +800,18 @@ be worse.
   rule the boundary already applied. **ABSENT is not `null`** — a custom store
   that cannot record a subscriber answers `undefined`, which is *cannot say* and
   not *nobody*, and its deliveries go out ungraded saying so.
+- **A subscription is the scheme read backwards, and the dedupe key is the
+  body's `id`, not the header's** (`FJS-D1087`). `X-Webhook-Id` is outside the
+  canonical string, so a receiver keyed on it would let a signed body be
+  replayed as a new event under a fresh header. The receipt is written
+  UNAPPLIED before `receive` runs and marked after, because a receiver that
+  records first and applies second loses the event when the apply throws — the
+  sender's retry finds the record and is answered as a duplicate (`FJS-1805`,
+  measured in four hand-built receivers). The route is outside `guard`: a
+  delivery has no session, the signature is its admission, and every refusal
+  is one sentence with the reason in the log, since *your clock is out* and
+  *wrong secret* are one 401 to a forger. The nonce memory is keyed per
+  subscription, so one sender's nonce cannot refuse another's.
 - **Every address and every header value on a mail message is refused at BOTH
   ends** (`FJS-677`). SMTP is line-oriented, so a CRLF in a `to` is not a bad
   address but a second transaction — a fake MTA queued TWO messages from one

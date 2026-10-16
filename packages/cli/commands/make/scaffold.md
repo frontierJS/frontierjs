@@ -195,7 +195,7 @@ const { resourceFile, servicePlural } =
 // writes, so the links in them and the URL the directory is served at have one
 // answer between the two commands (`FJS-1821`).
 
-const { resourceRoutePage, routeSegment, withNavLink } =
+const { resourceRoutePage, routeSegment, withNavEntry } =
   await import(resolve(global.fliRoot, 'core/crud-templates.js'))
 
 </script>
@@ -328,20 +328,20 @@ if (!skipRoutes) {
 }
 
 // ─── 5. Nav ───────────────────────────────────────────────────────────────────
-// The list is linked from the layout's main nav. Left as advice, the link was
+// The list is linked from the app's nav table. Left as advice, the link was
 // never added, and a generated app could not reach its own pages (`FJS-1808`).
 
 let linked = null
 if (!skipRoutes) {
-  const layoutPath = resolve($.paths.webPages, '_module.mesa')
-  const layout = existsSync(layoutPath) ? readFileSync(layoutPath, 'utf8') : null
-  const next = layout == null ? null : withNavLink(layout, plural)
+  const navPath = resolve($.paths.webPages, '../lib/nav.js')
+  const nav = existsSync(navPath) ? readFileSync(navPath, 'utf8') : null
+  const next = nav == null ? null : withNavEntry(nav, plural)
   if (next == null) linked = false
-  else if (next === layout) linked = true
-  else if (flag.dry) log.dry(`Would link /${routeSegment(plural)}/ from the layout's nav:  ${layoutPath}`)
+  else if (next === nav) linked = true
+  else if (flag.dry) log.dry(`Would add /${routeSegment(plural)}/ to the nav table:  ${navPath}`)
   else {
-    writeFileSync(layoutPath, next, 'utf8')
-    log.success(`Linked ${'nav'.padEnd(13)}  ${layoutPath}`)
+    writeFileSync(navPath, next, 'utf8')
+    log.success(`Linked ${'nav'.padEnd(13)}  ${navPath}`)
     linked = true
   }
 }
@@ -358,7 +358,7 @@ if (!flag.dry && created.length) {
   if (!skipRoutes) {
     const url = routeSegment(plural)
     echo(`  Routes: /${url}/  ·  /${url}/create/  ·  /${url}/[id]/`)
-    if (linked === false) echo(`  The layout has no <nav aria-label="Main">: link /${url}/ from where a person lands`)
+    if (linked === false) echo(`  No src/lib/nav.js with a \`groups\` table: link /${url}/ from where a person lands`)
   }
   echo('')
 }

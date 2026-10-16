@@ -22,10 +22,17 @@ is the page tested. `bun example/build-vendor.mjs` rewrites the directory when a
 devDependency moves; one `Bun.build` with splitting, because a second copy of
 `@codemirror/state` fails on an `instanceof` that no message explains.
 
-**`bun run bench` is in neither `test` nor CI.** Run it when a change touches
-`{#each}`, the flush or anything that writes the DOM: a rise in bytes or in DOM
-mutations for an operation fails it, and a time never does — a time is printed as
-a ratio to the hand-written floor measured in the same browser.
+**`test` ends with `bench/run.mjs --gate`** — bytes and DOM mutations, and a
+rise in either fails it (`FJS-D532`). The timed `bun run bench` is by hand: run
+it when a change touches `{#each}`, the flush or anything that writes the DOM. A
+time never fails it; it is printed as a ratio to the hand-written floor measured
+in the same browser.
+
+**`bench/cases.mjs` is the timed tier that needs no browser** — a compile, a
+server render and a signal fan-out, each beside hand-written code, and each
+checking its work happened so a broken case cannot read as fast. CI's `perf`
+phase runs it against the base ref (`node scripts/bench-ab.mjs --only mesa` from
+the root) and never fails on a time; a case that throws fails it.
 
 ---
 
@@ -40,14 +47,24 @@ src/
   terminal/tags.js     — the terminal target's table: which tags and DOM event
                          names it paints (FJS-D700, FJS-D692). Pure data; the
                          compiler refuses what is not in it, by file and line
-  terminal/emit.js     — the terminal emitter, the stage compile() runs for
-                         target: 'terminal' (FJS-D699): ctx.ir → calls on $$tui
-                         written into ctx.module.body. Refuses, never approximates
+  host/emit.js         — the host emitter, the stage compile() runs for every
+                         target in host/targets.js (FJS-D699, FJS-D1074):
+                         ctx.ir → calls on $$host written into ctx.module.body.
+                         Takes the target's profile; refuses, never approximates
                          — except a tag it cannot paint on or inside a static
-                         aria-hidden="true", which it leaves out (`terminalDropped`)
+                         aria-hidden="true", which it leaves out (`hostDropped`)
+  host/targets.js      — one profile per non-DOM target: its tables, which
+                         `class:` names it paints, whether it paints CSS, the
+                         runtime it imports
+  native/tags.js       — the native target's table (FJS-D1074): what a phone
+                         builds. What it has no element for is absent, so refused
+  native/css.js        — cssOffense(): the selectors and at-rules a phone's
+                         stylesheet drops in silence, so a `<style>` rule using
+                         one is refused by line. A type selector is one: every
+                         element is the engine's view or text
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
   runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal.js:
-                         `$$tui`, a cell tree over @opentui/core (optional peer,
+                         `$$host`, a cell tree over @opentui/core (optional peer,
                          pinned exact while 0.x — FJS-D698). Bun only. Events
                          dispatch as a browser's (capture, target, bubble) and
                          it is a CLIENT: `$.onMount` and `{@attach}` run, so a DOM API
@@ -56,6 +73,10 @@ src/
                          (`createRenderer`, `createHeadlessRenderer`) — its own
                          engine import would be a second copy — and a strip
                          under the page that does not scroll (`footerOf`)
+  runtime-native.js    — the native runtime, @frontierjs/mesa/runtime/native.js:
+                         `$$host` over Lynx's Element PAPI, the main-thread
+                         globals, so no engine import and no peer. The one file
+                         that names Lynx. Measure and focus answer a Promise
   entities.js          — htmlEntitiesToText(): character references as text,
                          read by the compiler and the terminal runtime's {@html}
   render-component.js  — renderComponent(): a component → HTML, at build time
@@ -112,9 +133,11 @@ scripts/
   portability.js       — the report's counting, pure: a file lowers only when
                          every component it imports lowers. A tally change is
                          graded by test/portability.test.js, not by eye
-  terminal-tree.js     — compileTree(): a .mesa file and its imports compiled
-                         for the terminal against this tree's src/. The drive
-                         and `tui` share it
+  host-tree.js         — compileTree(): a .mesa file and its imports compiled
+                         for a host target against this tree's src/. The two
+                         drives and `tui` share it. Each file's scoped rules
+                         come back on `styles`, since a Lynx bundle takes its
+                         stylesheet at build time and has no addStyles
   tui.mjs              — bun run tui <file.mesa>: one file live in a real
                          terminal (--frame prints one and exits, --props=JSON).
                          Paths are relative to packages/mesa; from elsewhere

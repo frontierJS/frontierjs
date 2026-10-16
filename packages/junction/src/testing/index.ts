@@ -24,7 +24,8 @@
 //   expect((res.body as { name: string }).name).toBe('Alice')
 
 import { createApp, type App, type AppOptions } from '../core/app.ts'
-import { bridge, enterRequest, type ServiceContext }          from '../transport/bridge.ts'
+import { bridge }                                from '../transport/bridge.ts'
+import { enterRequest, type ServiceContext }    from '../core/context.ts'
 import { defaultConfig, deepMerge }               from '../config/index.ts'
 import { encodeQueryString }                     from '@frontierjs/toolbelt/query'
 import type { IAuth, SessionContext }            from '../auth/types.ts'
@@ -425,7 +426,7 @@ export { enterCall } from '../core/context.ts'
 // fields, so `user` and `caller` were silently dropped and propagation
 // behaved one way under test and another in production.
 export function withTestMeta<T>(
-  meta: Partial<import('../transport/bridge.ts').RequestMeta>,
+  meta: Partial<import('../core/context.ts').RequestMeta>,
   fn: () => T
 ): T {
   return enterRequest({

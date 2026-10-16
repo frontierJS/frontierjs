@@ -21,6 +21,9 @@
   export let path    = '/leads/'
   export let layout  = 'sidebar'
   export let guests  = false
+  export let collapsible = false
+
+  let collapsed = false
 
   let query    = {}
   let unread   = 2
@@ -90,7 +93,7 @@
 
 <div id="app" on:click={go}>
   <Shell {groups} {sections} {path} {query} title="Leads"
-         {user} {level} {checked} {isActive} {layout} onsignout={out}>
+         {user} {level} {checked} {isActive} {layout} {collapsible} bind:collapsed onsignout={out}>
     {#snippet brand()}<a href="/" data-brand>Acme</a>{/snippet}
     {#snippet icon(name)}<svg class="icon" data-icon={name} viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6" /></svg>{/snippet}
     {#snippet badge(entry)}{#if entry.href === '/leads/'}<span class="badge" data-unread>{unread}</span>{/if}{/snippet}

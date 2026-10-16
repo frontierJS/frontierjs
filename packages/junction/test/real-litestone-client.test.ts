@@ -23,7 +23,7 @@ import { createService, createBaseService } from '../src/core/service.ts'
 import { gateAuth, autoValidate, liftReservedQuery, resetReservedQueryChecks, withLitestoneDb } from '../src/core/litestone.ts'
 import { toFrameworkError } from '../src/core/errors.ts'
 import { splitParams } from '@frontierjs/toolbelt/directives'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 import { createApp, createStubAuth } from '../index.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
 

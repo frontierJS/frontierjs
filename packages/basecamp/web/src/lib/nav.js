@@ -11,13 +11,13 @@ const member = ({ user }) => !!user
 
 // The handful opened many times a day. They sit in the topbar rather than the
 // sidebar, and the drawer below 767px repeats them above the groups.
-export const primary = [
+export const primary = { label: null, show: member, entries: [
   { href: '/',             label: 'Overview',    icon: 'home', exact: true },
   { href: '/apps/',        label: 'Apps',        icon: 'apps',        sub: 'every app in the workspace' },
   { href: '/deployments/', label: 'Deployments', icon: 'deployments' },
   { href: '/servers/',     label: 'Servers',     icon: 'servers' },
   { href: '/alerts/',      label: 'Alerts',      icon: 'alerts',      sub: 'rules and firings' },
-]
+] }
 
 // Everything else. `open` is basecamp's own field: a group starts open when it
 // says so or holds the current screen, since twenty-odd links at once read as a

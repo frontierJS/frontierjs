@@ -95,7 +95,7 @@ export async function installTerminalLoader({ root, autoImportMap = null }) {
         locLines:  content == null ? null : locLines(source, content),
         warning:   () => {},
       })
-      entry = { code: ctx.result.replace(ROUTER_IMPORT, `$1${ROUTER}$2`), refusal: ctx.terminalRefusal ?? null }
+      entry = { code: ctx.result.replace(ROUTER_IMPORT, `$1${ROUTER}$2`), refusal: ctx.targetRefusal ?? null }
     } catch (e) {
       entry = { error: e.message }
     }

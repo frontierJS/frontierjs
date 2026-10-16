@@ -63,7 +63,7 @@ async function makeApp(events: string[] = ['*']) {
 describe('event matching is exact', () => {
   // findForEvent built a SQL LIKE pattern out of the EVENT NAME:
   //   events LIKE ('%"' || ? || '"%')
-  // so metacharacters in the event name matched other subscriptions. A partner
+  // so metacharacters in the event name matched other registrations. A partner
   // received payloads, correctly HMAC-signed, for events they never subscribed
   // to. It uses json_each() equality now.
 
@@ -77,7 +77,7 @@ describe('event matching is exact', () => {
     expect(hits).toHaveLength(1)
   })
 
-  it('an underscore in the event name does NOT match a different subscription', async () => {
+  it('an underscore in the event name does NOT match a different registration', async () => {
     const app = await makeApp()
     await app.webhooks.register(url(), ['userXcreated'])
     hits.length = 0
@@ -109,7 +109,7 @@ describe('event matching is exact', () => {
     expect(hits).toHaveLength(0)
   })
 
-  it('a "*" subscription still receives everything', async () => {
+  it('a "*" registration still receives everything', async () => {
     const app = await makeApp()
     await app.webhooks.register(url(), ['*'])
     hits.length = 0
@@ -474,5 +474,236 @@ describe('plugin wiring', () => {
     await app.webhooks!.register('https://x.test', ['a'])
 
     expect(registrations).toHaveLength(1)
+  })
+})
+
+// ─── receiving — the scheme read the other way ────────────────────────────
+//
+// A SUBSCRIPTION is this app's side of a far app's registration (`FJS-D1087`).
+// The sender below is a second junction app running this same plugin, so what
+// is proved is the pair: what `attemptDelivery` signs is what the route
+// verifies, dedupes on and hands to `receive`.
+
+import { signRequest } from '@frontierjs/toolbelt/signature'
+import type { ReceivedWebhook, ReceiveOutcome } from '../src/plugins/webhooks/index.ts'
+
+type Seen = { ev: ReceivedWebhook; outcome: ReceiveOutcome }
+
+async function makeReceiver(receive?: (ev: ReceivedWebhook) => ReceiveOutcome | Promise<ReceiveOutcome>) {
+  const app = await createTestApp({ config: { apiPrefix: '/api' } })
+  app.configure(webhooks({
+    events:        [],
+    store:         createSqliteWebhookStore(new Database(':memory:')),
+    retryInterval: 3_600_000,
+    ...(receive ? { receive } : {}),
+  }))
+  await app._startForTest()
+  app.http.router.build()
+  const answers: Array<{ status: number; body: unknown }> = []
+  // A real socket, because the sender's `fetch` needs one; the handler is the
+  // app's own transport, so the request runs the same pipeline a test request does.
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const res = await app.http.fetch(req)
+      answers.push({ status: res.status, body: await res.clone().json().catch(() => null) })
+      return res
+    },
+  })
+  return {
+    app: app as typeof app & { webhooks: NonNullable<typeof app.webhooks> },
+    origin: `http://localhost:${server.port}`,
+    answers,
+    stop: () => server.stop(true),
+  }
+}
+
+/** A delivery signed by hand, posted straight at the app's transport — no port. */
+async function postSigned(app: Awaited<ReturnType<typeof makeReceiver>>['app'], path: string, secret: string, body: unknown, over: Partial<{ timestamp: number; nonce: string; headers: Record<string, string> }> = {}) {
+  const raw    = JSON.stringify(body)
+  const signed = await signRequest({
+    secret, method: 'POST', path, body: raw, prefix: 'X-Webhook',
+    timestamp: over.timestamp ?? Math.floor(Date.now() / 1000),
+    nonce:     over.nonce ?? crypto.randomUUID(),
+  })
+  const res = await app.http.fetch(new Request(`http://localhost${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...signed, ...(over.headers ?? {}) },
+    body: raw,
+  }))
+  return { status: res.status, body: await res.json().catch(() => null) as Record<string, unknown> | null }
+}
+
+const envelope = (id: string, event = 'e', data: unknown = { x: 1 }) =>
+  ({ id, event, timestamp: Math.floor(Date.now() / 1000), data })
+
+describe('receiving', () => {
+
+  it('a subscription names the route under apiPrefix and mints the secret to hand out', async () => {
+    const r = await makeReceiver(() => 'applied')
+    try {
+      const sub = await r.app.webhooks.subscribe({ to: 'shop' })
+      expect(sub.path).toBe(`/api/webhooks/subscriptions/${sub.id}`)
+      expect(sub.secrets).toHaveLength(1)
+      expect(sub.secrets[0]).toMatch(/^[0-9a-f]{48}$/)
+      expect(await r.app.webhooks.subscriptions()).toHaveLength(1)
+      await r.app.webhooks.unsubscribe(sub.id)
+      expect(await r.app.webhooks.subscriptions()).toHaveLength(0)
+    } finally { r.stop() }
+  })
+
+  it('a delivery from another junction app verifies, is applied once, and a redelivery is a duplicate', async () => {
+    const seen: Seen[] = []
+    const r = await makeReceiver(ev => { seen.push({ ev, outcome: 'applied' }); return 'applied' })
+    try {
+      const sub    = await r.app.webhooks.subscribe({ to: 'sender' })
+      const sender = await makeApp()
+      const hook   = await sender.webhooks.register(`${r.origin}${sub.path}`, ['orders:created'], sub.secrets[0])
+
+      await sender.webhooks.deliver('orders:created', { id: 'ord_1', total: 99 })
+
+      expect(seen).toHaveLength(1)
+      expect(seen[0].ev.event).toBe('orders:created')
+      expect(seen[0].ev.payload).toEqual({ id: 'ord_1', total: 99 })
+      const [delivery] = await sender.webhooks.deliveries(hook.id)
+      expect(delivery.status).toBe('delivered')
+      expect(seen[0].ev.id).toBe(delivery.id)
+      expect(r.answers.at(-1)).toEqual({ status: 200, body: { received: true, outcome: 'applied' } })
+
+      // The sender's retry carries a new nonce and the same delivery id, so the
+      // nonce memory lets it through and the receipt names it a duplicate.
+      await sender.webhooks.retry(delivery.id)
+      expect(seen).toHaveLength(1)
+      expect(r.answers.at(-1)).toEqual({ status: 200, body: { received: true, outcome: 'duplicate' } })
+    } finally { r.stop() }
+  })
+
+  it('dedupe means APPLIED: a receive that throws answers 500, the retry applies it, the next retry is a duplicate', async () => {
+    let calls = 0
+    const r = await makeReceiver(() => { if (++calls === 1) throw new Error('db locked'); return 'applied' })
+    try {
+      const sub    = await r.app.webhooks.subscribe({ to: 'sender' })
+      const sender = await makeApp()
+      const hook   = await sender.webhooks.register(`${r.origin}${sub.path}`, ['e'], sub.secrets[0])
+
+      await sender.webhooks.deliver('e', {})
+      let [delivery] = await sender.webhooks.deliveries(hook.id)
+      expect(delivery.status).toBe('failed')
+      expect(r.answers.at(-1)).toEqual({ status: 500, body: { error: 'not applied' } })
+
+      await sender.webhooks.retry(delivery.id)
+      ;[delivery] = await sender.webhooks.deliveries(hook.id)
+      expect(delivery.status).toBe('delivered')
+      expect(calls).toBe(2)
+
+      await sender.webhooks.retry(delivery.id)
+      expect(calls).toBe(2)
+      expect(r.answers.at(-1)?.body).toEqual({ received: true, outcome: 'duplicate' })
+    } finally { r.stop() }
+  })
+
+  it('parked leaves the receipt unapplied, so a redelivery runs receive again', async () => {
+    const outcomes: ReceiveOutcome[] = ['parked', 'applied']
+    let calls = 0
+    const r = await makeReceiver(() => outcomes[calls++])
+    try {
+      const sub    = await r.app.webhooks.subscribe({ to: 'sender' })
+      const sender = await makeApp()
+      const hook   = await sender.webhooks.register(`${r.origin}${sub.path}`, ['e'], sub.secrets[0])
+
+      await sender.webhooks.deliver('e', {})
+      const [delivery] = await sender.webhooks.deliveries(hook.id)
+      expect(delivery.status).toBe('delivered')
+      expect(r.answers.at(-1)?.body).toEqual({ received: true, outcome: 'parked' })
+
+      await sender.webhooks.retry(delivery.id)
+      expect(calls).toBe(2)
+      expect(r.answers.at(-1)?.body).toEqual({ received: true, outcome: 'applied' })
+    } finally { r.stop() }
+  })
+
+  it('refuses, with one sentence: a wrong secret, an unknown subscription, a stale timestamp, a replayed nonce', async () => {
+    let calls = 0
+    const r = await makeReceiver(() => { calls++; return 'applied' })
+    try {
+      const sub = await r.app.webhooks.subscribe({ to: 'sender' })
+
+      const forged = await postSigned(r.app, sub.path, 'not-the-secret', envelope('d1'))
+      expect(forged).toEqual({ status: 401, body: { error: 'not verified' } })
+
+      const unknown = await postSigned(r.app, sub.path.replace(sub.id, 'nobody'), sub.secrets[0], envelope('d1'))
+      expect(unknown).toEqual({ status: 401, body: { error: 'not verified' } })
+
+      const stale = await postSigned(r.app, sub.path, sub.secrets[0], envelope('d1'), { timestamp: Math.floor(Date.now() / 1000) - 3600 })
+      expect(stale).toEqual({ status: 401, body: { error: 'not verified' } })
+
+      const nonce = crypto.randomUUID()
+      const first  = await postSigned(r.app, sub.path, sub.secrets[0], envelope('d1'), { nonce })
+      const replay = await postSigned(r.app, sub.path, sub.secrets[0], envelope('d1'), { nonce })
+      expect(first.status).toBe(200)
+      expect(replay).toEqual({ status: 401, body: { error: 'not verified' } })
+
+      expect(calls).toBe(1)
+    } finally { r.stop() }
+  })
+
+  it('a rotation is two valid secrets: the second one verifies too', async () => {
+    const r = await makeReceiver(() => 'applied')
+    try {
+      const sub = await r.app.webhooks.subscribe({ to: 'sender', secrets: ['old-secret', 'new-secret'] })
+      expect((await postSigned(r.app, sub.path, 'new-secret', envelope('d1'))).status).toBe(200)
+      expect((await postSigned(r.app, sub.path, 'old-secret', envelope('d2'))).status).toBe(200)
+      expect((await postSigned(r.app, sub.path, 'other', envelope('d3'))).status).toBe(401)
+    } finally { r.stop() }
+  })
+
+  it('dedupes on the SIGNED body id, not the X-Webhook-Id header', async () => {
+    let calls = 0
+    const r = await makeReceiver(() => { calls++; return 'applied' })
+    try {
+      const sub = await r.app.webhooks.subscribe({ to: 'sender' })
+      await postSigned(r.app, sub.path, sub.secrets[0], envelope('same'), { headers: { 'x-webhook-id': 'h1' } })
+      const again = await postSigned(r.app, sub.path, sub.secrets[0], envelope('same'), { headers: { 'x-webhook-id': 'h2' } })
+      expect(again.body).toEqual({ received: true, outcome: 'duplicate' })
+      expect(calls).toBe(1)
+    } finally { r.stop() }
+  })
+
+  it('a verified body that is not the envelope is 200 ignored, and receive is not called', async () => {
+    let calls = 0
+    const r = await makeReceiver(() => { calls++; return 'applied' })
+    try {
+      const sub = await r.app.webhooks.subscribe({ to: 'sender' })
+      const res = await postSigned(r.app, sub.path, sub.secrets[0], { hello: 'world' })
+      expect(res).toEqual({ status: 200, body: { received: true, outcome: 'ignored' } })
+      expect(calls).toBe(0)
+    } finally { r.stop() }
+  })
+
+  it('a receive answering a word that is not an outcome is a 500, and the receipt stays unapplied', async () => {
+    let calls = 0
+    const r = await makeReceiver(() => (++calls === 1 ? 'done' : 'applied') as ReceiveOutcome)
+    try {
+      const sub = await r.app.webhooks.subscribe({ to: 'sender' })
+      expect((await postSigned(r.app, sub.path, sub.secrets[0], envelope('d1'))).status).toBe(500)
+      expect((await postSigned(r.app, sub.path, sub.secrets[0], envelope('d1'))).body).toEqual({ received: true, outcome: 'applied' })
+    } finally { r.stop() }
+  })
+
+  it('with no receive configured the route is not mounted', async () => {
+    const r = await makeReceiver()
+    try {
+      const sub = await r.app.webhooks.subscribe({ to: 'sender' })
+      const res = await postSigned(r.app, sub.path, sub.secrets[0], envelope('d1'))
+      expect(res.status).toBe(404)
+    } finally { r.stop() }
+  })
+
+  it('subscribe refuses a missing label and an empty secret list by name', async () => {
+    const r = await makeReceiver(() => 'applied')
+    try {
+      await expect(r.app.webhooks.subscribe({ to: '' })).rejects.toThrow(/`to` names/)
+      await expect(r.app.webhooks.subscribe({ to: 'x', secrets: [] })).rejects.toThrow(/non-empty list/)
+    } finally { r.stop() }
   })
 })

@@ -21,6 +21,7 @@
 // junction's door (`createApp({ credentials })`), not this.
 // ============================================================
 
+import { valueOf } from './credentials.ts'
 import type { ConduitStore, CredentialResolver, Receipt } from './types.ts'
 
 // ─── What arrives ─────────────────────────────────────────────
@@ -189,7 +190,7 @@ export async function accept<Cred, Ev extends ReceivedEvent, Owner>(
   deps: AcceptDeps,
 ): Promise<Received> {
   const cred = typeof r.credential === 'string'
-    ? (await deps.credentials.get(r.credential) as Cred | null)
+    ? (valueOf(await deps.credentials.get(r.credential)) as Cred | null)
     : await r.credential(d)
   if (cred === null || cred === undefined || cred === '')
     return REFUSED(typeof r.credential === 'string' ? `credential '${r.credential}' did not resolve` : 'no credential for this delivery')

@@ -17,7 +17,7 @@
 //     templates, and the precompiled statement folds nothing.
 
 import { describe, it, expect } from 'bun:test'
-import { createClient, GatePlugin, LEVELS, Plugin } from '../src/index.js'
+import { createClient, GatePlugin, LEVELS, LitestonePlugin } from '../src/index.js'
 
 const SCHEMA = `
 model Author {
@@ -85,7 +85,7 @@ describe('the fast paths in an app with a gate', () => {
 
   it("a plugin's afterRead sees the row", async () => {
     const seen: string[] = []
-    class Tap extends Plugin {
+    class Tap extends LitestonePlugin {
       async onAfterRead(model: string, rows: any[]) { for (const r of rows) seen.push(`${model}:${r.id}`) }
     }
     const db = await open([new Tap()])
@@ -95,7 +95,7 @@ describe('the fast paths in an app with a gate', () => {
   })
 
   it("a plugin's read filter narrows a lookup by id", async () => {
-    class Hide extends Plugin {
+    class Hide extends LitestonePlugin {
       buildReadFilter(model: string) { return model === 'Author' ? { name: 'nobody' } : null }
     }
     const db = await open([new Hide()])
@@ -103,7 +103,7 @@ describe('the fast paths in an app with a gate', () => {
   })
 
   it('a beforeRead that rewrites the where is honored', async () => {
-    class Redirect extends Plugin {
+    class Redirect extends LitestonePlugin {
       async onBeforeRead(model: string, args: any) { if (model === 'Author' && args.where) args.where = { id: 2 } }
     }
     const db = await open([new Redirect()])

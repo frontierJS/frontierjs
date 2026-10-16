@@ -551,6 +551,7 @@ ${useDb ? '├── db/\n│   └── schema.lite             # Single sourc
         ├── main.js             # Entry: boots the router + client, mounts App
         ├── datetime.js         # The app's clock and zone — at(), ago()
         ├── App.mesa            # Root: <RouterView />
+        ├── lib/nav.js          # The nav table — the Shell draws it, make:scaffold adds to it
         ├── routes/             # Sierra file-based routes (.mesa)
 ${useDb ? '        └── resources/          # One Resource per model — Note.mesa (.mesa)\n' : ''}`
   : ''}${useWidgets
@@ -1523,6 +1524,29 @@ export function ago(instant, none = 'never') {
 `
 }
 
+// The nav table. The Shell draws it and `make:scaffold` appends to it, so a new
+// model's list is reachable without anyone editing the layout.
+function makeNavJs(useAuth) {
+  return `// The app's navigation table, drawn by the Shell in routes/_module.mesa.
+// \`fli make:scaffold\` appends an entry here for each model it lays out.
+//
+// A \`show\` is an affordance and never the boundary (Invariant 6): the server
+// refuses whatever the nav offers, so hiding a link changes what is worth
+// clicking and nothing about what is reachable.
+${useAuth ? `
+// db/schema.lite gates User at level 4, so the link is for members: a nav that
+// offers a stranger a page that always answers "Authentication required" is a
+// working app reporting itself broken.
+const members = ({ user }) => !!user
+` : ''}
+export const groups = [
+  { label: null, entries: [
+    { href: '/', label: 'Home', exact: true },
+${useAuth ? "    { href: '/users/', label: 'Users', show: members },\n" : ''}  ] },
+]
+`
+}
+
 function makeRouteModule(appName, useAuth, useApi = true) {
   if (useAuth) {
     return `---
@@ -1532,6 +1556,9 @@ siteName: ${appName}
   import { goto, isActive, page } from '@frontierjs/sierra/router'
   import { status, session, signOut } from '@frontierjs/sierra/resource'
   import { theme, toggleTheme } from '@frontierjs/sierra/theme'
+  import Shell from '@frontierjs/ui/components/layout/Shell.mesa'
+
+  import { groups } from '../lib/nav.js'
 
   // Naming a property in a $: line is what SUBSCRIBES this component to it.
   // Without it status.connected renders once, at its initial false, and never
@@ -1539,9 +1566,10 @@ siteName: ${appName}
   //
   // session.checked is here for the same reason and answers a different
   // question: the boot restore is asynchronous, so on a cold load session.user
-  // is null for a caller who IS signed in. Rendering the signed-out nav until
-  // it settles is the redirect flash one layer up.
-  $: (page.siteName, page.route, status.connected, session.user, session.checked, theme.value)
+  // is null for a caller who IS signed in. The Shell draws nothing until it
+  // settles, because the signed-out frame in its place is the redirect flash.
+  $: (page.siteName, page.route, page.pathname, page.query)
+  $: (status.connected, session.user, session.level, session.checked, theme.value)
 
   // Awaited: signOut ends the session at the SERVER and then locally, and
   // navigating first would send the guard past a session that is still there.
@@ -1555,50 +1583,35 @@ ${sc}
   Every class here is @frontierjs/css, imported once in main.js, so there is no
   <style> block: a color written here is one a theme cannot reach.
 
-  The current page is aria-current="page" rather than a class — the stylesheet
-  keys off the attribute, and Mesa drops one whose value is null. The leading
-  page.route read in each expression is what makes it move: Mesa takes an
-  expression's dependencies from its own text, and isActive() reads the route
-  where this file cannot see it.
+  The Shell draws the bar and the nav from src/lib/nav.js and marks the current
+  page with aria-current through Sierra's isActive. Home is public, so a
+  visitor with no account gets the same frame and its Sign in button.
 -->
-<div class="shell">
-  <header class="topbar">
-    <nav class="group" aria-label="Main">
-      <strong>{page.siteName}</strong>
-      <a class="navlink" href="/" aria-current={(page.route, isActive('/', { exact: true })) ? 'page' : null}>Home</a>
-      <!-- User reads at gate level 4 in db/schema.lite, so this link cannot
-           work for a stranger. A nav that offers one that always answers
-           "Authentication required" is a working app reporting itself broken. -->
-      {#if session.user}
-        <a class="navlink" href="/users/" aria-current={(page.route, isActive('/users/')) ? 'page' : null}>Users</a>
-      {/if}
-    </nav>
+<Shell {groups} layout="topbar"
+       path={page.pathname} query={page.query}
+       user={session.user} level={session.level} checked={session.checked}
+       {isActive} onsignout={out}>
+  {#snippet brand()}
+    <strong>{page.siteName}</strong>
+  {/snippet}
 
-    <div class="group">
-      <span class="badge" class:success={status.connected} class:muted={!status.connected}>
-        {status.connected ? 'live' : 'offline'}
-      </span>
-      <button class="btn ghost square" on:click={toggleTheme}
-              aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
-        {theme.value === 'theme-dark' ? '☀' : '☾'}
-      </button>
-      {#if !session.checked}
-        <span class="text-muted">…</span>
-      {:else if session.user}
-        <a class="navlink" href="/account/" aria-current={(page.route, isActive('/account/')) ? 'page' : null}>{session.user.email}</a>
-        <button class="btn ghost" on:click={out}>Sign out</button>
-      {:else}
-        <a class="btn primary" href="/login/">Sign in</a>
-      {/if}
-    </div>
-  </header>
+  {#snippet topbar()}
+    <span class="badge" class:success={status.connected} class:muted={!status.connected}>
+      {status.connected ? 'live' : 'offline'}
+    </span>
+    <button class="btn ghost square" on:click={toggleTheme}
+            aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
+      {theme.value === 'theme-dark' ? '☀' : '☾'}
+    </button>
+    {#if session.user}
+      <a class="navlink" href="/account/" aria-current={(page.route, isActive('/account/')) ? 'page' : null}>{session.user.email}</a>
+    {:else}
+      <a class="btn primary" href="/login/">Sign in</a>
+    {/if}
+  {/snippet}
 
-  <main class="screen">
-    <div class="container">
-      <slot />
-    </div>
-  </main>
-</div>
+  <slot />
+</Shell>
 `
   }
 
@@ -1608,45 +1621,44 @@ siteName: ${appName}
 <script>
   import { isActive, page } from '@frontierjs/sierra/router'
 ${useApi ? "  import { status } from '@frontierjs/sierra/resource'\n" : ''}  import { theme, toggleTheme } from '@frontierjs/sierra/theme'
+  import Shell from '@frontierjs/ui/components/layout/Shell.mesa'
+
+  import { groups } from '../lib/nav.js'
 
 ${useApi ? `  // Naming a property in a $: line is what SUBSCRIBES this component to it.
   // Without it status.connected renders once, at its initial false, and never
   // updates — the socket connects and the page still says otherwise.
-  $: (page.siteName, page.route, status.connected, theme.value)
+  $: (page.siteName, page.pathname, page.query, status.connected, theme.value)
 ` : `  // Naming a property in a $: line is what SUBSCRIBES this component to it.
-  $: (page.siteName, page.route, theme.value)
+  $: (page.siteName, page.pathname, page.query, theme.value)
 `}${sc}
 
 <!--
   Every class here is @frontierjs/css, imported once in main.js, so there is no
-  <style> block: a color written here is one a theme cannot reach. The leading
-  page.route read is what makes aria-current move — Mesa takes an expression's
-  dependencies from its own text, and isActive() reads the route out of sight.
+  <style> block: a color written here is one a theme cannot reach.
+
+  The Shell draws the bar and the nav from src/lib/nav.js and marks the current
+  page with aria-current through Sierra's isActive.
 -->
-<div class="shell">
-  <header class="topbar">
-    <nav class="group" aria-label="Main">
-      <strong>{page.siteName}</strong>
-      <a class="navlink" href="/" aria-current={(page.route, isActive('/', { exact: true })) ? 'page' : null}>Home</a>
-    </nav>
+<Shell {groups} layout="topbar"
+       path={page.pathname} query={page.query}
+       {isActive}>
+  {#snippet brand()}
+    <strong>{page.siteName}</strong>
+  {/snippet}
 
-    <div class="group">
-${useApi ? `      <span class="badge" class:success={status.connected} class:muted={!status.connected}>
-        {status.connected ? 'live' : 'offline'}
-      </span>
-` : ''}      <button class="btn ghost square" on:click={toggleTheme}
-              aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
-        {theme.value === 'theme-dark' ? '☀' : '☾'}
-      </button>
-    </div>
-  </header>
+  {#snippet topbar()}
+${useApi ? `    <span class="badge" class:success={status.connected} class:muted={!status.connected}>
+      {status.connected ? 'live' : 'offline'}
+    </span>
+` : ''}    <button class="btn ghost square" on:click={toggleTheme}
+            aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
+      {theme.value === 'theme-dark' ? '☀' : '☾'}
+    </button>
+  {/snippet}
 
-  <main class="screen">
-    <div class="container">
-      <slot />
-    </div>
-  </main>
-</div>
+  <slot />
+</Shell>
 `
 }
 
@@ -2617,7 +2629,7 @@ if (useApi && useAuth) dirs.push('api/test')
 if (useDeploy && useApi) dirs.push('deploy')
 if (flag.ci !== false) dirs.push('.github/workflows')
 if (useWeb) {
-  dirs.push('web', 'web/config', 'web/src', 'web/src/routes', 'web/src/components', 'web/public')
+  dirs.push('web', 'web/config', 'web/src', 'web/src/lib', 'web/src/routes', 'web/src/components', 'web/public')
   if (useDb) dirs.push('web/src/resources')
   if (useAuth) dirs.push('web/src/routes/login', 'web/src/routes/register', 'web/src/routes/reset', 'web/src/routes/account')
 }
@@ -2682,6 +2694,7 @@ if (useWeb) {
     ['web/src/App.mesa',                    makeAppMesa()],
     ['web/src/main.js',                     makeMainJs(useApi)],
     ['web/src/datetime.js',                 makeDatetimeJs()],
+    ['web/src/lib/nav.js',                  makeNavJs(useAuth)],
     ['web/src/routes/_module.mesa',         makeRouteModule(appName, useAuth, useApi)],
     ['web/src/routes/index.mesa',           makeRouteIndex(appName, useApi)],
     ['web/src/routes/[...404].mesa',        makeRouteNotFound()],

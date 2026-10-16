@@ -8,31 +8,13 @@ import { toFrameworkError, FrameworkError, BadRequest, sanitizeError, type Error
 import { accessorCandidates } from '../core/litestone.ts'
 import { omitBy } from '@frontierjs/toolbelt/redact'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
-
-// ─── Context types — moved to core (core/context.ts) ─────────────────────
-// The service layer's vocabulary (ServiceContext, ServiceResult, hook and
-// method types, request meta, freezeUser) is owned by core; this module
-// re-exports it so existing `from '.../transport/bridge.ts'` imports keep
-// working unchanged.
 import {
-  CRUD_METHODS, RESERVED_PARAMS, enterRequest, requestMeta, freezeUser, withCallEffects,
-  type ServiceContext, type ServiceContextLocals, type ServiceResult,
-  type ServiceMethod, type AnyMethod, type HookType,
-  type CallOptions, type RequestMeta, type QueryDirectives,
+  CRUD_METHODS, RESERVED_PARAMS, requestMeta, freezeUser, withCallEffects,
+  type ServiceContext, type ServiceMethod, type AnyMethod,
+  type CallOptions, type QueryDirectives,
 } from '../core/context.ts'
 import { isServiceResult, unwrapResult } from '../core/envelope.ts'
-// `RESERVED_PARAMS` comes through `../core/context.ts` above — the same kit
-// binding, re-exported there so junction has one import point for it.
 import { invalidDirectives, listedDirectives, splitParams, transportFlags, unknownDirectives } from '@frontierjs/toolbelt/directives'
-
-export {
-  RESERVED_PARAMS, enterRequest, requestMeta, freezeUser,
-}
-export type {
-  ServiceContext, ServiceContextLocals, ServiceResult,
-  ServiceMethod, AnyMethod, HookType,
-  CallOptions, RequestMeta,
-}
 
 // ─── HTTP method → service method map ────────────────────────────────────
 // PUT -> update, PATCH -> patch. Both MERGE (`FJS-D179`): Feathers' word for

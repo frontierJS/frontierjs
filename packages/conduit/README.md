@@ -277,11 +277,12 @@ auth headers still win over a caller's. A name is refused at `register()` when
 no such signer is installed, and so is `follow_redirects` or `address_from`
 beside it, for `hmac`'s reason.
 
-**A minted credential's lifetime is the resolver's.** A JWT or an OAuth access
-token is what the resolver's `get(ref)` returns — mint it there, and
-`withCache(resolver, { ttl_ms })` is its expiry. A 401 forgets it through
-`invalidate` and the send replays once on a fresh one, as for any credential.
-The signer sees only the string.
+**A minted credential's lifetime is the resolver's, and the answer says it.** A JWT
+or an OAuth access token is what the resolver's `get(ref)` returns — mint it there,
+answer `{ value, expires_at }` with the provider's own number, and
+`withCache(resolver, { ttl_ms: Infinity })` holds it exactly that long. A 401
+forgets it through `invalidate` and the send replays once on a fresh one, as for
+any credential. The signer sees only the string.
 
 **A mint that calls a third party sends through conduit too.** An OAuth token
 exchange is a request to someone else's endpoint, so it gets its own `auth:
@@ -331,9 +332,13 @@ auth: { type: 'bearer', ref: 'HETZNER_TOKEN' }
 The reference is resolved at send time by a `CredentialResolver`, so secret material never enters the registry, `resolve()`, `list()`, the observers, or the management routes.
 
 ```ts
+type Material = string | { value: string; expires_at?: number }   // epoch ms; a string never expires on its own
+
 interface CredentialResolver {
-  get(ref: string): Promise<string | null>
+  get(ref: string): Promise<Material | null>
   invalidate?(ref: string, value: string): void   // the target refused `value` — a 401, or a declared `auth.refusal`
+  getFor?(ref: string, who: CredentialCaller): Promise<Material | null>   // a `per_caller` target's (FJS-D848)
+  invalidateFor?(ref: string, value: string, who: CredentialCaller): void
 }
 ```
 
@@ -344,7 +349,7 @@ import {
   createEnvResolver,     // reads process.env[ref] — the default
   createStaticResolver,  // fixed { ref: secret } map, for the composition root and tests
   createNullResolver,    // resolves nothing; every ref fails closed
-  withCache,             // TTL cache around any resolver
+  withCache,             // cache around any resolver — until ttl_ms or the answer's expires_at
   byRef,                 // one resolver per ref — credentials with different lifetimes
 } from '@frontierjs/conduit'
 
@@ -359,6 +364,8 @@ app.configure(conduit({
 
 Transports resolve once per attempt, so a retried request calls the resolver up to `retry_limit + 1` times. Wrap anything networked in `withCache`.
 
+**An answer may say when it expires.** `get()` and `getFor()` answer `string | { value, expires_at } | null`, `expires_at` in epoch milliseconds. `withCache` keeps an answer until its `expires_at` or the cache's `ttl_ms`, whichever comes first, so a token minted for `expires_in` seconds is answered as `{ value, expires_at: Date.now() + expires_in * 1000 }` under `ttl_ms: Infinity` — the provider's number, never a TTL copied from its documentation. Five callers finding one token expired share one refresh. An answer already expired is used for the send that asked and not kept; an `expires_at` that is not a finite number fails the send `auth_failed` by name.
+
 **A refused credential is answered once by a fresh one.** When the resolver has `invalidate`, the transport hands it the value the target refused and replays the send once — any method, since a 401 means the request was not acted on — on whatever `get()` returns next. A second refusal is `auth_failed`. The replay is not an attempt: it does not count against `retry_limit`. A 403 is never replayed. `withCache` implements `invalidate` as a compare-and-set: it forgets the value only if it is still the cached one, so twenty sends refused on one stale credential fetch one fresh one, not twenty.
 
 **A target that never says 401 declares what it says instead.** Many systems that only have a login page answer a dead session with that page — a 200 carrying HTML, or a 302 to it. `auth.refusal` names those shapes, and each is then `auth_failed` and replayed exactly as a 401 is:
@@ -372,7 +379,7 @@ Undeclared, neither shape is a refusal: a captive portal answers 200 HTML too, a
 
 #### A credential a login mints
 
-A system with no API key — a username and password that mint a cookie session — is `withCache` with no expiry around a `get()` that logs in. The login is its own target, so it is observed and policed like any other call:
+A system with no API key — a username and password that mint a cookie session — is `withCache` with no expiry around a `get()` that logs in (a session that states its lifetime answers `{ value, expires_at }` instead). The login is its own target, so it is observed and policed like any other call:
 
 ```ts
 const c = createConduit({

@@ -20,7 +20,7 @@ import { fingerprint } from '@frontierjs/toolbelt/bearer'
 import { createApp, createService, mergeHookMaps, bearerClaim, BEARER, header, authorization, cookie, sessionGateLevel } from '../index.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { declaredCallHeaders } from '../src/core/litestone.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const KEY = 'test-app-secret'
 

@@ -15,7 +15,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createService, createBaseService } from '../src/core/service.ts'
 import { isDerivedHook } from '../src/core/litestone.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const _DERIVED = ['gateAuth', 'autoValidate', 'autoFilter', 'autoSort']
 

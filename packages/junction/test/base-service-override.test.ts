@@ -12,7 +12,7 @@ import { describe, test, expect } from 'bun:test'
 import { createBaseService } from '../src/core/service.ts'
 import { createApp }         from '../src/core/app.ts'
 import { createService }     from '../src/core/service.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 /** A plain client, which is the documented `db:` contract for this factory. */
 function client() {

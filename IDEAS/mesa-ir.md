@@ -1821,13 +1821,26 @@ Done when: the terminal drive and `terminal-emit.test.js` pass unchanged
 apart from `$$host`, the DOM corpus diff is empty, and a native compile of
 every terminal fixture either parses or is refused by name.
 
-- [ ] 1.1 Move `terminal/emit.js` to `host/emit.js`, reading a target profile
+- [x] 1.1 Move `terminal/emit.js` to `host/emit.js`, reading a target profile
       (tags, events, paints CSS, runtime specifier); `$$tui` becomes `$$host`
-- [ ] 1.2 `native/tags.js` and `target: 'native'`: the tags and events a
+  - The DOM corpus held (the two moved outputs were a peer's edit to
+    basecamp's workbench), the terminal drive 428 of 428, vitest 2,351.
+    `ctx.terminalRefusal` became `ctx.targetRefusal`, sierra's loader with it.
+    `verify:tui` fails one check that predates this: `FJS-2931`.
+- [x] 1.2 `native/tags.js` and `target: 'native'`: the tags and events a
       phone has, with the six § 9 found missing refused by name
-- [ ] 1.3 `runtime-native.js`, `@frontierjs/mesa/runtime/native.js`: the
+  - 32 of 48 fixtures compile and 16 are refused at compile, by name: the
+    device parity of § 10, moved from the runtime to the compiler. A
+    `class:` paints on native from here, which is half of 3.1.
+- [x] 1.3 `runtime-native.js`, `@frontierjs/mesa/runtime/native.js`: the
       spike's runtime with § 10's three fixes, `flatten=false` set on a bound
       node up front instead of retried
+  - No engine import: the PAPI are main-thread globals, so mesa gains no
+    peer. It sets `setRenderEnvironment(false, true)`, as the terminal
+    does, since a phone has no `document` and `runtime.js` would otherwise
+    take it for a server render. A node is unflattened the first time it is
+    measured or focused, and on the emulator `measure()` answered 120x40 on
+    the first call.
 
 ### Phase 2 — The drive
 
@@ -1836,19 +1849,43 @@ Done when: `test/native/run.mjs` mounts the fixtures in `<lynx-view>` and
 passes Counter, Bound and Probe, and `DRIVES.md` names the manual device
 sweep.
 
-- [ ] 2.1 `@lynx-js/*` devDependencies pinned exact; rsbuild builds one
+- [x] 2.1 `@lynx-js/*` devDependencies pinned exact; rsbuild builds one
       bundle per fixture
-- [ ] 2.2 `test/native/run.mjs` in `test`, over `src/drive.js`
-- [ ] 2.3 The device sweep as a manual drive in `DRIVES.md`
+  - web-core 0.26.3, web-elements 0.12.13, rsbuild-plugin 0.1.4,
+    vanilla-rsbuild-plugin 0.1.3, lynx-core 0.1.4, `@rsbuild/core` 2.2.9.
+    `scripts/terminal-tree.js` became `host-tree.js`, taking the target.
+- [x] 2.2 `test/native/run.mjs` in `test`, over `src/drive.js`
+  - 61 rows in about 12 s: 48 fixtures mount or are refused by the name
+    `mount.spec` lists, and Counter, Bound and Probe pass by real clicks.
+- [x] 2.3 The device sweep as a manual drive in `DRIVES.md`
+  - `bun run test:native:device` (`--device` on the same runner), in
+    both of `DRIVES.md`'s tables. It reports mounts; taps on a device are
+    still by hand.
 
 ### Phase 3 — Classes and styles reach the device
 
 Goal: a component's `class`, `style` and scoped `<style>` paint on a phone.
 Done when: a fixture with scoped rules paints them in the drive.
 
-- [ ] 3.1 The native profile keeps `class` and `style`, which the terminal
+- [x] 3.1 The native profile keeps `class` and `style`, which the terminal
       drops
-- [ ] 3.2 Scoped `<style>` reaches the bundle's stylesheet
+  - `class` and `style` already passed through from 1.2. `style:` was
+    dropped and now paints (`set_style`); one write of the whole inline
+    style keeps `style=`, `style:` and `hidden` from erasing each other,
+    since the engine's call replaces it.
+- [x] 3.2 Scoped `<style>` reaches the bundle's stylesheet
+  - Every element of a styled component carries the scope class, and
+    `compileTree` hands each file's scoped rules back on `styles`; the
+    drive writes them as the entry's `css`. A Lynx bundle takes its sheet at
+    build time, so `css: true` emits no `addStyles` on native.
+  - A rule a phone cannot paint is refused by line (`native/css.js`): a
+    type selector, which never matches since every element is `view` or
+    `text`, an attribute selector, `@media`, `@supports`, `@layer`,
+    `@container`, and the § 9 and § 11 pseudo-classes. The corpus goes from
+    53% to 45% lowering on native; type selectors are 64 files and 449 uses.
+    Refusing over warning is `FJS-D1088`.
+  - `Scoped.mesa` paints on Lynx for Web (8 rows, a tap flips a rule and a
+    `style:`) and on the emulator by hand, with the tap.
 
 ### Phase 4 — The value-language lowering
 
@@ -1861,6 +1898,8 @@ on the emulator as closely as `csskit-resolved` did.
 - [ ] 4.2 Evaluate the token graph to one `var()` hop per (theme × tone)
 - [ ] 4.3 Compute `oklch()` and `color-mix()`; logical properties to physical
 - [ ] 4.4 Text properties copied onto the `<text>` node
+- [ ] 4.5 Type selectors lowered to a scope-and-tag class (`FJS-D1088`):
+      `p.mHASH` becomes `.mHASH_p`, and each element carries one
 
 ### Phase 5 — The kit's DOM habits
 

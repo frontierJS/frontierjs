@@ -856,7 +856,7 @@ model Order {
   @@transitions(status,
     pay:    pending         -> paid,
     ship:   paid            -> shipped,
-    refund: paid            -> refunded @gate(ADMINISTRATOR),
+    refund: paid            -> refunded @gate(5),
     cancel: [pending, paid] -> cancelled)
 }
 ```
@@ -868,8 +868,8 @@ await db.order.transitions(order)             // → what this row may do NOW, w
 ```
 
 A name is optional — an unnamed clause names itself after its target state, so
-`pending -> paid` is the `paid` transition. `@gate(N)` takes a level or a level
-name and is **per move**, which is the thing a gate on the model cannot say: any
+`pending -> paid` is the `paid` transition. `@gate(N)` takes a level 0–9 and is
+**per move**, which is the thing a gate on the model cannot say: any
 USER may ship, only an ADMINISTRATOR may refund. An illegal move throws
 `TransitionViolationError`; one the caller is not graded for throws
 `TransitionGateError`.

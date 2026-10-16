@@ -67,8 +67,9 @@ export const VIEW_COLUMN_ATTRS = new Set(['money', 'scale', 'unit'])
 // added is likelier to be a third member than a fourth policy.
 export const SYNC_NEEDS_VERSION = new Set(['refuse', 'field'])
 
-// The 0–9 scale, by name — `@@gate`'s named form and `@@transitions`' per-move
-// `@gate()` both read it, so a level can never mean two things. It used to be a
+// The 0–9 scale, by name — `@@gate` and `@@transitions`' per-move `@gate()`
+// both read it to name the digit a refused level name means, so a level can
+// never mean two things. It used to be a
 // copy of the runtime's, described here as mirroring it; the mirror is what
 // went wrong one file over (`FJS-D197`), so both come off the kit now and the
 // parse and the enforcement cannot disagree about what a name is worth.
@@ -2952,7 +2953,7 @@ class Parser {
   //     cancel: [pending, paid] -> cancelled)
   //
   // The leading name is optional — `pending -> paid` names itself after the
-  // target value. `@gate(N)` takes a number or a level name (ADMINISTRATOR).
+  // target value. `@gate(N)` takes a level 0–9, written as a digit.
   //
   // Values are checked against the field's enum in validate(), not here: the
   // enum may be declared after the model, or in another file.
@@ -3123,7 +3124,8 @@ class Parser {
     return { field, transitions }
   }
 
-  // @gate(5) or @gate(ADMINISTRATOR) — a single level, unlike @@gate's R.C.U.D tuple
+  // @gate(5) — a single level, unlike @@gate's R.C.U.D tuple. A level name is
+  // refused with the digit it means, for `parseGateArg`'s reason (`FJS-D239`).
   parseTransitionGate(field, name) {
     this.eat(TK.LPAREN)
     const tok = this.advance()
@@ -3132,14 +3134,19 @@ class Parser {
       level = tok.value
     } else if (tok.type === TK.IDENT) {
       // Guarded for FJS-984's reason — see the `@@gate` site above.
-      level = Object.hasOwn(LEVELS, tok.value) ? LEVELS[tok.value] : undefined
-      if (level === undefined)
+      const named = Object.hasOwn(LEVELS, tok.value) ? LEVELS[tok.value] : undefined
+      if (named === undefined)
         throw new ParseError(
-          `@@transitions(${field}) '${name}': unknown level '${tok.value}'. Valid: ${Object.keys(LEVELS).join(', ')}`,
+          `@@transitions(${field}) '${name}': @gate expects a level 0–9, got '${tok.value}'`,
           tok,
         )
+      throw new ParseError(
+        `@@transitions(${field}) '${name}': the named form is not the gate syntax — write the level. ` +
+        `@gate(${tok.value}) is @gate(${named}) on the level ladder.`,
+        tok,
+      )
     } else {
-      throw new ParseError(`@@transitions(${field}) '${name}': @gate expects a level 0–9 or a level name, got '${tok.value}'`, tok)
+      throw new ParseError(`@@transitions(${field}) '${name}': @gate expects a level 0–9, got '${tok.value}'`, tok)
     }
     if (!Number.isInteger(level) || level < 0 || level > 9)
       throw new ParseError(`@@transitions(${field}) '${name}': @gate level must be an integer 0–9, got ${level}`, tok)
@@ -8859,22 +8866,14 @@ export function parseFile(filePath) {
       return null
     }
 
-    let tokens
-    try { tokens = tokenize(src) }
-    catch (e) {
-      // Re-raise with the file path so the user sees which file failed when
-      // imports chain across multiple files.
-      if (e && e.message) e.message = `In ${currentPath}:\n  ${e.message}`
-      throw e
-    }
     // A ParseError is a RESULT here, exactly as it is in parse() — the two have
     // to answer the same shape or every caller has to know which one it called,
     // and a caller that warns and keeps going (sierra's build, the CLI's error
-    // box) got a stack trace instead. Named with its file, since imports chain.
-    const parser = new Parser(tokens)
+    // box) got a stack trace instead. The lexer's refusal is one too. Named
+    // with its file, since imports chain.
     let schema
     try {
-      schema = parser.parseSchema()
+      schema = new Parser(tokenize(src)).parseSchema()
     } catch (e) {
       if (!(e instanceof ParseError)) throw e
       allErrors.push(`In ${currentPath}: ${e.message}`)
@@ -9052,11 +9051,10 @@ export function parseFile(filePath) {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export function parse(src) {
-  const tokens = tokenize(src)
-  const parser = new Parser(tokens)
   let schema
   try {
-    schema = parser.parseSchema()
+    // The lexer throws a ParseError too, so it sits inside the same catch.
+    schema = new Parser(tokenize(src)).parseSchema()
   } catch (e) {
     if (e instanceof ParseError)
       return { schema: null, valid: false, errors: [e.message], warnings: [] }

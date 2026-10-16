@@ -21,7 +21,7 @@ import { describe, test, expect } from 'bun:test'
 import { createClient }                from '../../litestone/src/index.js'
 import { createService, callService }  from '../src/core/service.ts'
 import { withCallEffects }             from '../src/core/context.ts'
-import type { ServiceContext }         from '../src/transport/bridge.ts'
+import type { ServiceContext }         from '../src/core/context.ts'
 
 // The SHIPPED fragment, not a copy of it: an outbox model this file wrote and
 // the one an app installs would be free to disagree.

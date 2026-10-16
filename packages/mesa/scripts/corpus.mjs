@@ -26,7 +26,7 @@
  * not a compile that produced JavaScript.
  *
  * The portability report reads `ctx.ir` off the production compile and asks
- * the target's own `terminalOffenses` what it would refuse — every offender,
+ * the target's own `hostOffenses` what it would refuse — every offender,
  * not the first the emitter throws. A file lowers when nothing in its own
  * template is refused AND every component it calls lowers, so a component
  * tag is followed through its import to the child's file. A tag whose import
@@ -48,7 +48,8 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import * as acorn from 'acorn'
 import { compile } from '../src/compiler.js'
-import { terminalOffenses } from '../src/terminal/emit.js'
+import { hostOffenses } from '../src/host/emit.js'
+import { TARGETS } from '../src/host/targets.js'
 import { callsOf, follow, lowering, plan } from './portability.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -68,9 +69,8 @@ const flag = (name) => {
 const saveAs = flag('--save')
 const diffAgainst = flag('--diff')
 const portability = flag('--portability')
-const OFFENSES = { terminal: terminalOffenses }
-if (portability && !OFFENSES[portability]) {
-  console.error(`no portability report for target ${portability} — one of: ${Object.keys(OFFENSES).join(', ')}`)
+if (portability && !TARGETS[portability]) {
+  console.error(`no portability report for target ${portability} — one of: ${Object.keys(TARGETS).join(', ')}`)
   process.exit(2)
 }
 
@@ -96,7 +96,7 @@ for (const file of files) {
     try {
       const ctx = await compile(source, { ...configFor(file), warning: warningsOff })
       out = ctx.result
-      if (portability && mode === 'prod') portable.push({ file, offenses: OFFENSES[portability](ctx.ir), calls: callsOf(file, source, ctx.ir, PACKAGES) })
+      if (portability && mode === 'prod') portable.push({ file, offenses: hostOffenses(ctx.ir, TARGETS[portability]), calls: callsOf(file, source, ctx.ir, PACKAGES) })
     } catch (err) {
       refused = String(err?.message ?? err)
       out = `/* refused */\n${refused}\n`

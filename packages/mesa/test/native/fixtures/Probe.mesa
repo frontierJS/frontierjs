@@ -1,0 +1,26 @@
+<script>
+  import { measure, focus } from '@frontierjs/mesa/runtime/native.js'
+  let box = null
+  let field = null
+  let sync = 'untried'
+  let size = 'pending'
+  let focused = 'pending'
+  let typed = ''
+  const doMeasure = async () => {
+    const r = box?.getBoundingClientRect?.()
+    sync = r ? `${r.width}x${r.height}` : 'none'
+    const m = await measure(box)
+    size = m?.data ? `${Math.round(m.data.width)}x${Math.round(m.data.height)}` : JSON.stringify(m)
+  }
+  const doFocus = async () => { const r = await focus(field); focused = String(r?.code) }
+</script>
+<div>
+  <div bind:this={box} style="width: 120px; height: 40px"><p>box</p></div>
+  <p>sync: {sync}</p>
+  <p>measure: {size}</p>
+  <p>focus: {focused}</p>
+  <p>typed: {typed}</p>
+  <input bind:this={field} bind:value={typed} placeholder="type" />
+  <button on:click={doMeasure}>Measure</button>
+  <button on:click={doFocus}>Focus</button>
+</div>

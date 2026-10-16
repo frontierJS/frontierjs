@@ -15,7 +15,7 @@ import { describe, test, expect, mock } from 'bun:test'
 import { createJunctionClient } from '../src/client/index.ts'
 import { createClient } from '../../litestone/src/index.js'
 import { createService } from '../src/core/service.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 function mockFetch(body: unknown) {
   const original = globalThis.fetch

@@ -1267,11 +1267,10 @@ function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false, fileDef =
   // Read as `string[]` it named no file at all, so a form drew a text list.
   if (type.array && type.name === 'File') return { type: 'array', items: { '$ref': `#/$defs/${fileDef}` } }
 
-  // Array types — String[] / Int[]
-  if (type.array) {
-    const itemType = type.name === 'Int' ? 'integer' : 'string'
-    return { type: 'array', items: { type: itemType } }
-  }
+  // An item is what the scalar column of the same type is. Every array but
+  // Int[] read as string items, so a realm grading by this refused a Json[]
+  // of objects with `volumes[0] must be a string`.
+  if (type.array) return { type: 'array', items: typeToJsonSchema({ ...type, array: false }, schema, enumDefs, inlineEnums, fileDef) }
 
   switch (type.name) {
     case 'String':     return { type: 'string' }

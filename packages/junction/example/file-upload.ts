@@ -44,7 +44,7 @@ import { FileStorage, fileUrl } from '@frontierjs/litestone/storage'
 import type { LitestoneClient, TableClient } from '@frontierjs/litestone'
 import type { FileStorageOptions } from '@frontierjs/litestone/storage'
 
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const log = createLogger({ ns: 'file-example' })
 

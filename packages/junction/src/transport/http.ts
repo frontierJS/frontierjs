@@ -1097,11 +1097,8 @@ export class HttpTransport {
       paginate: (data, total, opts) => {
         this.stats.response.json++
 
-        // Accept both `skip` (legacy) and `offset` (canonical) as the same thing.
-        const { limit } = opts as { limit: number }
-        const skip = (opts as { skip?: number; offset?: number }).skip
-          ?? (opts as { offset?: number }).offset
-          ?? 0
+        const { limit } = opts
+        const offset = opts.offset ?? 0
 
         const base   = `${url.protocol}//${url.host}${url.pathname}`
 
@@ -1115,11 +1112,11 @@ export class HttpTransport {
           return base + encodeQueryString({ ...params, ...directiveParams({ offset: newOffset, limit: newLimit }) })
         }
 
-        const next = skip + limit < total ? buildUrl(skip + limit, limit)         : null
-        const prev = skip > 0             ? buildUrl(Math.max(0, skip - limit), limit) : null
+        const next = offset + limit < total ? buildUrl(offset + limit, limit)         : null
+        const prev = offset > 0             ? buildUrl(Math.max(0, offset - limit), limit) : null
 
         return new Response(
-          JSON.stringify({ data, total, limit, offset: skip, next, prev }),
+          JSON.stringify({ data, total, limit, offset, next, prev }),
           { status: 200, headers: { 'content-type': 'application/json' } }
         )
       },

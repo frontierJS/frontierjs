@@ -28,7 +28,7 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { createService, callService } from '../src/core/service.ts'
 import { resetAnnouncementWarnings } from '../src/core/litestone.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 async function mkDb() {
   const db = await createClient({

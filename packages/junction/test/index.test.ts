@@ -336,7 +336,7 @@ describe('extractIP', () => {
 // ─── Hooks pipeline tests ─────────────────────────────────────────────────
 
 import { runPipeline, resolvePipelines, mergeHookMaps } from '../src/core/hooks.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 import { withCallEffects }      from '../src/core/context.ts'
 import type { HookMap }        from '../src/core/hooks.ts'
 
@@ -3627,7 +3627,7 @@ describe('ctx.paginate()', () => {
 
   it('generates a prev URL on subsequent pages', async () => {
     const app = await makeApp()
-    app.get('/paginated', (ctx) => ctx.paginate([{ id: '5' }], 10, { limit: 5, skip: 5 }))
+    app.get('/paginated', (ctx) => ctx.paginate([{ id: '5' }], 10, { limit: 5, offset: 5 }))
     const res = await request(app).get('/paginated')
     const body = res.body as Record<string, unknown>
     expect(body.prev).toContain('$offset=0')
@@ -3651,7 +3651,7 @@ describe('ctx.paginate()', () => {
 
   it('null for both next and prev on a single full page', async () => {
     const app = await makeApp()
-    app.get('/paginated', (ctx) => ctx.paginate([{ id: '1' }], 1, { limit: 10, skip: 0 }))
+    app.get('/paginated', (ctx) => ctx.paginate([{ id: '1' }], 1, { limit: 10, offset: 0 }))
     const res = await request(app).get('/paginated')
     const body = res.body as Record<string, unknown>
     expect(body.next).toBeNull()

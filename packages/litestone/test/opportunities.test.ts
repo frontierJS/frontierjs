@@ -187,8 +187,80 @@ describe('gate-with-nothing-saying-whose-row', () => {
   test('silent with a policy, and on a model only asSystem() reaches', () => {
     expect(found(AUTH + `
       model Post { id Int @id  ownerId Int  @@gate("2.4.4.5")
-        @@allow('read', ownerId == auth().id) }`, ID)).toEqual([])
+        @@allow('read,update,delete', ownerId == auth().id) }`, ID)).toEqual([])
     expect(found(`model Secret { id Int @id  @@gate("8") }`, ID)).toEqual([])
+  })
+
+  // FJS-1780: policied was "any @@allow", so a model that restricted its
+  // writes was never asked about its read, and one with no delete allow let any
+  // caller past the gate delete another's row.
+  test('judges the policy per operation, not per model', () => {
+    const f = found(AUTH + `
+      model Issue {
+        id       Int  @id
+        authorId Int
+        author   User @relation(fields: [authorId], references: [id])
+        @@gate("2.4.4.5")
+        @@allow('update,delete', authorId == auth().id)
+      }`, ID)
+    expect(f.map(x => [x.model, x.confidence])).toEqual([['Issue', 'likely']])
+    expect(f[0].message).toContain('read')
+    expect(f[0].message).not.toContain('delete')
+  })
+
+  test('names a delete nobody answered when read, create and update are', () => {
+    const f = found(AUTH + `
+      model Subscription {
+        id    Int  @id
+        orgId Int
+        @@gate("4")
+        @@allow('read,create,update', orgId == auth().id)
+      }`, ID)
+    expect(f.map(x => x.model)).toEqual(['Subscription'])
+    expect(f[0].message).toContain('delete')
+    expect(f[0].message).not.toContain('read')
+  })
+
+  test('an operation gated to system is not asked about', () => {
+    expect(found(AUTH + `
+      model Subscription {
+        id Int @id  orgId Int
+        @@gate("4.4.4.8")
+        @@allow('read,update', orgId == auth().id)
+      }`, ID)).toEqual([])
+  })
+
+  test('ownership is read through a required relation to an owned model', () => {
+    const SRC = AUTH + `
+      model Team {
+        id      Int  @id
+        ownerId Int
+        owner   User @relation(fields: [ownerId], references: [id])
+        @@gate("4")
+        @@allow('all', ownerId == auth().id)
+      }
+      model Issue {
+        id     Int  @id
+        teamId Int
+        team   Team @relation(fields: [teamId], references: [id])
+        @@gate("4")
+      }`
+    const f = found(SRC, ID)
+    expect(f.map(x => [x.model, x.confidence])).toEqual([['Issue', 'likely']])
+
+    // optional means some rows have no parent, so the parent proves nothing
+    const g = found(SRC.replace('teamId Int', 'teamId Int?').replace('team   Team ', 'team   Team? '), ID)
+    expect(g.map(x => [x.model, x.confidence])).toEqual([['Issue', 'possible']])
+  })
+
+  test('ownership through a chain of parents, and a cycle terminates', () => {
+    const f = found(AUTH + `
+      model A { id Int @id  ownerId Int  owner User @relation(fields: [ownerId], references: [id])
+        bId Int  b B @relation(fields: [bId], references: [id])
+        @@allow('all', ownerId == auth().id)  @@gate("4") }
+      model B { id Int @id  aId Int  a A @relation(fields: [aId], references: [id])  @@gate("4") }
+      model C { id Int @id  bId Int  b B @relation(fields: [bId], references: [id])  @@gate("4") }`, ID)
+    expect(f.map(x => [x.model, x.confidence]).sort()).toEqual([['B', 'likely'], ['C', 'likely']])
   })
 })
 
@@ -476,7 +548,7 @@ describe('a schema that took every suggestion', () => {
         password String  @hashed
         @@auth
         @@gate("2.4.4.5")
-        @@allow('update', id == auth().id)
+        @@allow('read,update,delete', id == auth().id)
       }
       model Order {
         id        Int      @id
@@ -488,7 +560,7 @@ describe('a schema that took every suggestion', () => {
         @@softDelete
         @@transitions(status, draft -> paid)
         @@gate("2.4.4.5")
-        @@allow('read', ownerId == auth().id)
+        @@allow('read,update,delete', ownerId == auth().id)
       }`)).toEqual([])
   })
 })

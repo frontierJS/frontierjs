@@ -384,6 +384,6 @@ export interface ApiKeyInfo {
 export interface RateLimitHookOptions {
   max:      number
   window:   string    // human-readable: '15 minutes', '1 hour', '30 seconds'
-  key?:     (ctx: import('../transport/bridge.ts').ServiceContext) => string
+  key?:     (ctx: import('../core/context.ts').ServiceContext) => string
   message?: string
 }

@@ -229,6 +229,31 @@ describe('parser', () => {
     expect(r.errors.join(' ')).toContain("unknown type 'Nope'")
   })
 
+  // The lexer's refusal is a ParseError too, and it fires before the parser's
+  // try — a caller reading `errors` crashed on the one kind of bad schema it
+  // never saw coming (FJS-1777).
+  test('a lexer error is a result in parse() and parseFile(), the file named', () => {
+    const bad = 'model A {\n id Int @id\n rate Int @unit(%)\n}'
+    const dir = tmpDir('lex-error')
+    writeFileSync(join(dir, 'schema.lite'), bad)
+    writeFileSync(join(dir, 'child.lite'), bad)
+    writeFileSync(join(dir, 'root.lite'), 'import "./child.lite"\nmodel B { id Int @id }')
+
+    let a: any, b: any, c: any
+    expect(() => { a = parse(bad) }).not.toThrow()
+    expect(a.valid).toBe(false)
+    expect(a.errors.join(' ')).toContain("Unexpected character '%'")
+
+    expect(() => { b = parseFile(join(dir, 'schema.lite')) }).not.toThrow()
+    expect(b.valid).toBe(false)
+    expect(b.errors.join(' ')).toContain('schema.lite')
+    expect(b.errors.join(' ')).toContain("Unexpected character '%'")
+
+    expect(() => { c = parseFile(join(dir, 'root.lite')) }).not.toThrow()
+    expect(c.valid).toBe(false)
+    expect(c.errors.join(' ')).toContain('child.lite')
+  })
+
   // ─── import "..." into <db> ───────────────────────────────────────────────
   //
   // A package shipping a schema fragment has to spell SOME database name, and
@@ -386,23 +411,21 @@ database other { path "./other.db" }
 
   test('smart quote produces actionable error with codepoint + hint', () => {
     // U+201C is the left smart double-quote — common when pasting from docs
-    let err: any = null
-    try { parse(`model User { id String @default(\u201Chi\u201D) }`) }
-    catch (e) { err = e }
-    expect(err).not.toBeNull()
-    expect(err.message).toContain('U+201C')
-    expect(err.message.toLowerCase()).toContain('smart')
+    const r = parse(`model User { id String @default(\u201Chi\u201D) }`)
+    expect(r.valid).toBe(false)
+    const msg = r.errors.join('\n')
+    expect(msg).toContain('U+201C')
+    expect(msg.toLowerCase()).toContain('smart')
   })
 
   test('NBSP error path retains location info if not skipped (sanity)', () => {
     // Direct check that pickCharHint surfaces a useful message when something
     // genuinely unparseable shows up — uses an em-dash, which we don't accept.
-    let err: any = null
-    try { parse(`model User { id \u2014 Int @id }`) }
-    catch (e) { err = e }
-    expect(err).not.toBeNull()
-    expect(err.message).toContain('U+2014')
-    expect(err.message.toLowerCase()).toMatch(/dash|did you mean/)
+    const r = parse(`model User { id \u2014 Int @id }`)
+    expect(r.valid).toBe(false)
+    const msg = r.errors.join('\n')
+    expect(msg).toContain('U+2014')
+    expect(msg.toLowerCase()).toMatch(/dash|did you mean/)
   })
 
   test('parseFile: SQLite database file is rejected with a clear error', () => {
@@ -437,11 +460,10 @@ database other { path "./other.db" }
     const dir = tmpDir('parse-error-path')
     const path = join(dir, 'broken.lite')
     writeFileSync(path, `model User { id String @default(\u201Cx\u201D) }`)
-    let err: any = null
-    try { parseFile(path) } catch (e) { err = e }
-    expect(err).not.toBeNull()
-    expect(err.message).toContain(path)
-    expect(err.message).toContain('U+201C')
+    const r = parseFile(path)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain(path)
+    expect(r.errors.join('\n')).toContain('U+201C')
   })
 })
 
@@ -5112,9 +5134,9 @@ describe('upsertMany', () => {
   })
 
   test('plugin beforeCreate fires', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let fired = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeCreate() { fired = true }
     }
     const db = await makeDb(schema, 'upsertmany-plugin', { plugins: [new Spy()] })
@@ -9425,8 +9447,8 @@ describe('FrontierGateGetLevel', () => {
 
 describe('plugin system', () => {
   test('Plugin base class has all lifecycle methods', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    const p = new Plugin()
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    const p = new LitestonePlugin()
     // All hooks exist and are no-ops by default
     expect(typeof p.onInit).toBe('function')
     expect(typeof p.onBeforeRead).toBe('function')
@@ -9441,12 +9463,12 @@ describe('plugin system', () => {
   })
 
   test('PluginRunner calls hooks in order', async () => {
-    const { Plugin, PluginRunner } = await import('../src/core/plugin.js')
+    const { LitestonePlugin, PluginRunner } = await import('../src/core/plugin.js')
     const order: string[] = []
-    class A extends Plugin {
+    class A extends LitestonePlugin {
       async onBeforeRead() { order.push('A') }
     }
-    class B extends Plugin {
+    class B extends LitestonePlugin {
       async onBeforeRead() { order.push('B') }
     }
     const runner = new PluginRunner([new A(), new B()])
@@ -9461,8 +9483,8 @@ describe('plugin system', () => {
   })
 
   test('PluginRunner.getReadFilters collects non-null filters', async () => {
-    const { Plugin, PluginRunner } = await import('../src/core/plugin.js')
-    class F extends Plugin {
+    const { LitestonePlugin, PluginRunner } = await import('../src/core/plugin.js')
+    class F extends LitestonePlugin {
       buildReadFilter(model: string) {
         return model === 'Post' ? { published: true } : null
       }
@@ -9484,10 +9506,10 @@ describe('plugin system', () => {
   })
 
   test('plugin onInit called with schema and ctx', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let receivedSchema: any = null
     let receivedCtx:   any = null
-    class InitPlugin extends Plugin {
+    class InitPlugin extends LitestonePlugin {
       onInit(schema: any, ctx: any) {
         receivedSchema = schema
         receivedCtx    = ctx
@@ -9503,8 +9525,8 @@ describe('plugin system', () => {
   })
 
   test('plugin onBeforeRead can block a read', async () => {
-    const { Plugin, AccessDeniedError } = await import('../src/core/plugin.js')
-    class BlockAll extends Plugin {
+    const { LitestonePlugin, AccessDeniedError } = await import('../src/core/plugin.js')
+    class BlockAll extends LitestonePlugin {
       async onBeforeRead(model: string) {
         throw new AccessDeniedError(`blocked`, { model, operation: 'read' })
       }
@@ -9518,8 +9540,8 @@ describe('plugin system', () => {
   })
 
   test('plugin onBeforeCreate can block a write', async () => {
-    const { Plugin, AccessDeniedError } = await import('../src/core/plugin.js')
-    class BlockCreate extends Plugin {
+    const { LitestonePlugin, AccessDeniedError } = await import('../src/core/plugin.js')
+    class BlockCreate extends LitestonePlugin {
       async onBeforeCreate(model: string) {
         throw new AccessDeniedError(`no creates`, { model, operation: 'create' })
       }
@@ -9532,8 +9554,8 @@ describe('plugin system', () => {
   })
 
   test('FJS-1307: a value onBeforeCreate writes is graded by the create policy', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class FillVal extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class FillVal extends LitestonePlugin {
       async onBeforeCreate(_model: string, args: any) {
         for (const row of [args.data].flat()) if (row.val === 'fill') row.val = 'bad'
       }
@@ -9558,9 +9580,9 @@ describe('plugin system', () => {
   // `ctx.tables`, and it must be the CALLER's flavor — a client captured at
   // install reads as nobody, or as everybody, whoever is calling.
   test('FJS-1358: ctx.tables in a hook is the calling flavor, policy-scoped', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const seen: Record<string, number[]> = {}
-    class ReadBack extends Plugin {
+    class ReadBack extends LitestonePlugin {
       async onBeforeCreate(model: string, args: any, ctx: any) {
         if (model !== 'Note') return
         const who = ctx.isSystem ? 'system' : String(ctx.auth?.id ?? 'anon')
@@ -9595,8 +9617,8 @@ describe('plugin system', () => {
   })
 
   test('plugin onBeforeUpdate can block an update', async () => {
-    const { Plugin, AccessDeniedError } = await import('../src/core/plugin.js')
-    class BlockUpdate extends Plugin {
+    const { LitestonePlugin, AccessDeniedError } = await import('../src/core/plugin.js')
+    class BlockUpdate extends LitestonePlugin {
       async onBeforeUpdate() {
         throw new AccessDeniedError('no updates', { operation: 'update' })
       }
@@ -9611,8 +9633,8 @@ describe('plugin system', () => {
   })
 
   test('plugin onBeforeDelete can block a delete', async () => {
-    const { Plugin, AccessDeniedError } = await import('../src/core/plugin.js')
-    class BlockDelete extends Plugin {
+    const { LitestonePlugin, AccessDeniedError } = await import('../src/core/plugin.js')
+    class BlockDelete extends LitestonePlugin {
       async onBeforeDelete() {
         throw new AccessDeniedError('no deletes', { operation: 'delete' })
       }
@@ -9626,11 +9648,11 @@ describe('plugin system', () => {
   })
 
   test('multiple plugins all run before request completes', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const log: string[] = []
-    class A extends Plugin { async onBeforeRead() { log.push('A') } }
-    class B extends Plugin { async onBeforeRead() { log.push('B') } }
-    class C extends Plugin { async onBeforeRead() { log.push('C') } }
+    class A extends LitestonePlugin { async onBeforeRead() { log.push('A') } }
+    class B extends LitestonePlugin { async onBeforeRead() { log.push('B') } }
+    class C extends LitestonePlugin { async onBeforeRead() { log.push('C') } }
     const db = await makeDb(`
       model T { id Int @id }
     `, 'plugin-multi', { plugins: [new A(), new B(), new C()] })
@@ -9645,26 +9667,26 @@ describe('plugin system', () => {
 
 describe('plugin system — onAfterDelete', () => {
   test('Plugin base class has onAfterDelete', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    const p = new Plugin()
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    const p = new LitestonePlugin()
     expect(typeof p.onAfterDelete).toBe('function')
     await expect(p.onAfterDelete('User', [], {})).resolves.toBeUndefined()
   })
 
   test('PluginRunner.afterDelete calls all plugins in order', async () => {
-    const { Plugin, PluginRunner } = await import('../src/core/plugin.js')
+    const { LitestonePlugin, PluginRunner } = await import('../src/core/plugin.js')
     const calls: string[] = []
-    class A extends Plugin { async onAfterDelete() { calls.push('A') } }
-    class B extends Plugin { async onAfterDelete() { calls.push('B') } }
+    class A extends LitestonePlugin { async onAfterDelete() { calls.push('A') } }
+    class B extends LitestonePlugin { async onAfterDelete() { calls.push('B') } }
     const runner = new PluginRunner([new A(), new B()])
     await runner.afterDelete('User', [{ id: 1 }], {})
     expect(calls).toEqual(['A', 'B'])
   })
 
   test('afterDelete receives the deleted rows', async () => {
-    const { Plugin, PluginRunner } = await import('../src/core/plugin.js')
+    const { LitestonePlugin, PluginRunner } = await import('../src/core/plugin.js')
     let received: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { received = rows }
     }
     const runner = new PluginRunner([new Spy()])
@@ -9674,9 +9696,9 @@ describe('plugin system — onAfterDelete', () => {
   })
 
   test('afterDelete fires after hard delete', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const deleted: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
@@ -9694,9 +9716,9 @@ describe('plugin system — onAfterDelete', () => {
   })
 
   test('afterDelete fires after soft delete with the softResult row', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const deleted: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
@@ -9715,9 +9737,9 @@ describe('plugin system — onAfterDelete', () => {
   })
 
   test('afterDelete fires after deleteMany with all rows', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const deleted: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
@@ -9736,9 +9758,9 @@ describe('plugin system — onAfterDelete', () => {
   })
 
   test('afterDelete not called when no rows match', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let called = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(`
@@ -9978,7 +10000,7 @@ describe('FileStorage plugin', () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
     const deleted: string[] = []
 
-    class SpyPlugin extends (await import('../src/core/plugin.js')).Plugin {
+    class SpyPlugin extends (await import('../src/core/plugin.js')).LitestonePlugin {
       async onAfterDelete(_model: string, rows: any[]) {
         for (const row of rows) {
           if (row.avatar) deleted.push(row.avatar.key)
@@ -10103,8 +10125,8 @@ describe('buildReadFilter wired into buildSQL', () => {
   `
 
   test('plugin read filter scopes findMany results', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class TenantFilter extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class TenantFilter extends LitestonePlugin {
       buildReadFilter(_model: string, ctx: any) {
         // Simulate scoping to the current user's authorId
         return ctx.auth?.userId ? { authorId: ctx.auth.userId } : null
@@ -10127,8 +10149,8 @@ describe('buildReadFilter wired into buildSQL', () => {
   })
 
   test('plugin read filter scopes findFirst', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class OwnerFilter extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class OwnerFilter extends LitestonePlugin {
       buildReadFilter(_model: string, ctx: any) {
         return ctx.auth?.userId ? { authorId: ctx.auth.userId } : null
       }
@@ -10149,11 +10171,11 @@ describe('buildReadFilter wired into buildSQL', () => {
   })
 
   test('multiple plugin filters are AND-merged', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class FilterA extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class FilterA extends LitestonePlugin {
       buildReadFilter() { return { authorId: 1 } }
     }
-    class FilterB extends Plugin {
+    class FilterB extends LitestonePlugin {
       buildReadFilter() { return { id: 3 } }
     }
     const db = await makeDb(schema, 'readfilter-multi', { plugins: [new FilterA(), new FilterB()] })
@@ -10172,8 +10194,8 @@ describe('buildReadFilter wired into buildSQL', () => {
   })
 
   test('null filter from plugin is ignored', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class NoFilter extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class NoFilter extends LitestonePlugin {
       buildReadFilter() { return null }
     }
     const db = await makeDb(schema, 'readfilter-null', { plugins: [new NoFilter()] })
@@ -10187,8 +10209,8 @@ describe('buildReadFilter wired into buildSQL', () => {
   })
 
   test('count() respects plugin read filter', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class CountFilter extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class CountFilter extends LitestonePlugin {
       buildReadFilter(_model: string, ctx: any) {
         return ctx.auth?.userId ? { authorId: ctx.auth.userId } : null
       }
@@ -10219,9 +10241,9 @@ describe('onAfterRead wired into reads', () => {
   `
 
   test('onAfterRead fires after findMany with all rows', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let capturedRows: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterRead(_model: string, rows: unknown[]) { capturedRows = rows }
     }
     const db = await makeDb(schema, 'afterread-findmany', { plugins: [new Spy()] })
@@ -10235,9 +10257,9 @@ describe('onAfterRead wired into reads', () => {
   })
 
   test('onAfterRead fires after findFirst with single-element array', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let capturedRows: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterRead(_model: string, rows: unknown[]) { capturedRows = rows }
     }
     const db = await makeDb(schema, 'afterread-findfirst', { plugins: [new Spy()] })
@@ -10249,8 +10271,8 @@ describe('onAfterRead wired into reads', () => {
   })
 
   test('onAfterRead can mutate rows before return', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class Redactor extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class Redactor extends LitestonePlugin {
       async onAfterRead(_model: string, rows: any[]) {
         for (const row of rows) row.content = '[redacted]'
       }
@@ -10266,9 +10288,9 @@ describe('onAfterRead wired into reads', () => {
   })
 
   test('onAfterRead not called when findMany returns empty', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let called = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterRead(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(schema, 'afterread-empty', { plugins: [new Spy()] })
@@ -10278,9 +10300,9 @@ describe('onAfterRead wired into reads', () => {
   })
 
   test('onAfterRead not called when findFirst returns null', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let called = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterRead(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(schema, 'afterread-null', { plugins: [new Spy()] })
@@ -10303,9 +10325,9 @@ describe('upsert plugin hooks', () => {
   `
 
   test('beforeCreate fires on create path', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const ops: string[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeCreate() { ops.push('create') }
       async onBeforeUpdate() { ops.push('update') }
     }
@@ -10320,9 +10342,9 @@ describe('upsert plugin hooks', () => {
   })
 
   test('beforeUpdate fires on update path', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const ops: string[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeCreate() { ops.push('create') }
       async onBeforeUpdate() { ops.push('update') }
     }
@@ -10340,9 +10362,9 @@ describe('upsert plugin hooks', () => {
   })
 
   test('beforeUpdate receives correct where and data', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let capturedArgs: any = null
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeUpdate(_model: string, args: any) { capturedArgs = args }
     }
     const db = await makeDb(schema, 'upsert-hook-args', { plugins: [new Spy()] })
@@ -10373,9 +10395,9 @@ describe('removeMany plugin hooks', () => {
   `
 
   test('beforeDelete fires on removeMany (soft delete)', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let fired = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeDelete() { fired = true }
     }
     const db = await makeDb(schema, 'removemany-before-soft', { plugins: [new Spy()] })
@@ -10386,9 +10408,9 @@ describe('removeMany plugin hooks', () => {
   })
 
   test('beforeDelete receives the where clause', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let capturedWhere: any = null
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeDelete(_model: string, args: any) { capturedWhere = args.where }
     }
     const db = await makeDb(schema, 'removemany-before-where', { plugins: [new Spy()] })
@@ -10399,8 +10421,8 @@ describe('removeMany plugin hooks', () => {
   })
 
   test('throwing in beforeDelete prevents the removal', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class Guard extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class Guard extends LitestonePlugin {
       async onBeforeDelete() { throw new Error('removal blocked') }
     }
     const db = await makeDb(schema, 'removemany-before-throws', { plugins: [new Guard()] })
@@ -10853,12 +10875,11 @@ model Order { id Int @id  status S @default(pending)  @@transitions(status, pend
     expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false })
   })
 
-  test('@gate accepts a level name as well as a number', () => {
+  test('@gate refuses a level name and names the digit it means (FJS-D239)', () => {
     const r = parse(`enum S { a b }
 model M { id Int @id  s S @default(a)  @@transitions(s, go: a -> b @gate(ADMINISTRATOR)) }`)
-    expect(r.valid).toBe(true)
-    expect(r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
-      .transitions.go.gate).toBe(5)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain('@gate(ADMINISTRATOR) is @gate(5)')
   })
 
   test.each([
@@ -10869,7 +10890,7 @@ model M { id Int @id  s S @default(a)  @@transitions(s, go: a -> b @gate(ADMINIS
     ['self-transition',    `@@transitions(s, a -> a)`,           'self-transition'],
     ['duplicate name',     `@@transitions(s, go: a -> b, go: b -> a)`, 'duplicate transition name'],
     ['gate out of range',  `@@transitions(s, a -> b @gate(12))`, 'integer 0–9'],
-    ['unknown level name', `@@transitions(s, a -> b @gate(NOPE))`, 'unknown level'],
+    ['unknown level name', `@@transitions(s, a -> b @gate(NOPE))`, 'expects a level 0–9'],
     ['no clauses',         `@@transitions(s)`,                   'at least one transition'],
     ['unknown attribute',  `@@transitions(s, a -> b @wat(1))`,   'only @gate, @system and @seals are supported'],
   ])('rejects: %s', (_label, attr, fragment) => {
@@ -13661,7 +13682,7 @@ import { generateFactory, generateGateMatrix, generateValidationCases, factoryFr
          expectedVerdict, REACHABLE_LEVELS, createTestEnv, readOnly, sampleWrites }
   from '../src/testing.js'
 import { levelPasses } from '../src/plugins/gate.js'
-import { Plugin } from '../src/core/plugin.js'
+import { LitestonePlugin } from '../src/core/plugin.js'
 import { _resetTemplates }       from '../src/testdb.js'
 import { DEFAULT_MESSAGES }      from '../src/core/validate.js'
 
@@ -15733,7 +15754,7 @@ describe('createTestEnv', () => {
     // ignored rule cannot be simulated from inside a schema — that branch is
     // proven by mutation instead (disable @gte, @length or @email in
     // validate.js and this reports 2/10, 8/46 and 1/1 on example and basecamp).
-    const refuseTwelve = new (class extends Plugin {
+    const refuseTwelve = new (class extends LitestonePlugin {
       async onBeforeCreate(_m: string, args: any) {
         if (args?.data?.handle?.length === 12) throw Object.assign(
           new Error('handle: too long, really'), { name: 'ValidationError' })
@@ -15847,7 +15868,7 @@ describe('createTestEnv', () => {
     // named rule survived, which is the one thing `litestone mutate` exists to
     // catch. Simulated with a plugin, because a case that fails for the wrong
     // reason can no longer be generated.
-    const refuseAll = new (class extends Plugin {
+    const refuseAll = new (class extends LitestonePlugin {
       async onBeforeCreate(_m: string, args: any) {
         if (typeof args?.data?.plain === 'string') throw Object.assign(
           new Error('plain: something else entirely'), { name: 'ValidationError' })
@@ -15866,7 +15887,7 @@ describe('createTestEnv', () => {
     // calling it a refusal is the whole trap: it would make a broken validator
     // look enforced. It is reported as `error` rather than swallowed, because a
     // case that cannot run is a hole in the coverage the count implies.
-    const boom = new (class extends Plugin {
+    const boom = new (class extends LitestonePlugin {
       async onBeforeCreate() { throw new Error('unrelated boom') }
     })()
     const env = await createTestEnv({ schema: RULES_ENV_SCHEMA, plugins: [boom] })
@@ -17082,9 +17103,9 @@ describe('implicit many-to-many', () => {
 
 describe('onAfterDelete — soft-delete boundary', () => {
   test('remove() on @@softDelete model does NOT fire onAfterDelete', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let called = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(`
@@ -17102,9 +17123,9 @@ describe('onAfterDelete — soft-delete boundary', () => {
   })
 
   test('delete() on @@softDelete model fires onAfterDelete (hard delete)', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const deleted: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
@@ -17123,9 +17144,9 @@ describe('onAfterDelete — soft-delete boundary', () => {
   })
 
   test('removeMany() on @@softDelete model does NOT fire onAfterDelete', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let called = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(`
@@ -27478,21 +27499,21 @@ describe('a plugin has a name, and every client flavor will say it', () => {
   }`
 
   test('defaults to the class name — right for every plugin written as a class', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class TenantScope extends Plugin {}
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class TenantScope extends LitestonePlugin {}
     expect(new TenantScope().name).toBe('TenantScope')
   })
 
   test('a stated name wins, because a minifier rewrites the class name', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class Whatever extends Plugin { name = 'tenant-scope' }
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class Whatever extends LitestonePlugin { name = 'tenant-scope' }
     expect(new Whatever().name).toBe('tenant-scope')
   })
 
   test('$plugins lists what is installed, in run order', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class TenantScope extends Plugin {}
-    class Auditor    extends Plugin { name = 'auditor' }
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class TenantScope extends LitestonePlugin {}
+    class Auditor    extends LitestonePlugin { name = 'auditor' }
 
     // The auto-installed GatePlugin is in it and comes LAST, which is the
     // answer this accessor exists to give: what you passed is not what is
@@ -27841,5 +27862,16 @@ describe('@check and @@check', () => {
 
     expect(err?.name).toBe('UniqueConflictError')
     expect(err.status).toBe(409)
+  })
+})
+
+// FJS-2965 — junction exports `Plugin` too, a plain-object protocol; an app
+// importing both barrels would meet two unrelated things under one name.
+describe('plugin base class export', () => {
+  test('the barrel names the class for its host, never the bare noun junction owns', async () => {
+    const barrel = await import('../src/index.js') as Record<string, unknown>
+    const { LitestonePlugin } = await import('../src/core/plugin.js') as any
+    expect(barrel.LitestonePlugin).toBe(LitestonePlugin)
+    expect('Plugin' in barrel).toBe(false)
   })
 })

@@ -18,7 +18,7 @@ import { describe, test, expect } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { createApp, createService } from '../index.ts'
 import type { SessionContext } from '../src/auth/types.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const rowsOf = (r: unknown): any[] => (r as { data: any[] }).data
 
@@ -279,7 +279,7 @@ describe('requestMeta().tenant versus app.tenant() in a request', () => {
   test('app.tenant() answers a request under strategy row, where the request meta holds none', async () => {
     const db  = await seeded()
     const { membershipClaim, requestMeta } = await import('../index.ts')
-    const { enterRequest } = await import('../src/transport/bridge.ts')
+    const { enterRequest } = await import('../src/core/context.ts')
     const auth = {
       async sessionFor(userId: string) {
         return { userId, userType: 'user', authMethod: 'created' } as unknown as SessionContext

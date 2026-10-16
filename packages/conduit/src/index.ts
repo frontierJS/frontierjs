@@ -20,6 +20,7 @@ export {
   createNullResolver,
   withCache,
   byRef,
+  valueOf,
 } from './credentials.ts'
 
 // Trace context propagation
@@ -58,6 +59,7 @@ export type {
   // Credentials
   CredentialResolver,
   CredentialCaller,
+  Material,
 
   // Resilience + validation
   ResilienceOptions,

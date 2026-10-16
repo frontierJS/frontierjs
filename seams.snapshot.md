@@ -30,7 +30,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | Seam | Owner | Other declaring files |
 | --- | --- | --- |
 | `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 17 |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 12 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 13 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 10 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 9 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 8 |
@@ -38,11 +38,11 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 8 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 6 |
+| `app.conduit.receive(receiver)` | `packages/conduit/src/conduit.ts` | 4 |
 | `ctx.enqueue(job, payload)` | `packages/junction/src/plugins/outbox/engine.ts` | 4 |
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 3 |
-| `app.conduit.receive(receiver)` | `packages/conduit/src/conduit.ts` | 3 |
 | `signRequest()` | `packages/toolbelt/src/signature/signature.js` | 3 |
 
 ## Data → API
@@ -99,7 +99,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
-| `app.conduit.receive(receiver)` / `Dialect` | `packages/conduit/src/conduit.ts` | yes | 3 |
+| `app.conduit.receive(receiver)` / `Dialect` | `packages/conduit/src/conduit.ts` | yes | 4 |
 | `signRequest()` / `verifyRequest()` | `packages/toolbelt/src/signature/signature.js` | yes | 3 |
 | `requestMeta().traceparent` / `.tracestate` | `packages/junction/src/core/context.ts` | yes | 1 |
 | `ctx.$raw.rawBody` | `packages/junction/src/transport/http.ts` | mentioned | — |
@@ -159,7 +159,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `*.mount.js` | `packages/sierra/src/scanner/walk.js` | mentions `mount` — weak | — |
 | `page.query` / `page.directives` | `packages/sierra/src/router/page-fields.js` | mentions `query` — weak | — |
 | `watchProxy()` / `createSignal()` / `createRoot(fn)` | `packages/mesa/src/runtime.js` | yes | — |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 12 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 13 |
 | `renderComponent(src, opts)` | `packages/mesa/src/render-component.js` | yes | — |
 | `appSrcDir(root)` / `appAliasPlugin()` | `packages/sierra/src/build/app-alias-plugin.js` | yes | — |
 | `swapInstances(entries, newFn, newSetMark, label)` | `packages/mesa/mesa-vite/swap.js` | yes | 1 |

@@ -209,6 +209,29 @@ export async function run(t) {
   await t.eventually(`document.querySelector('#stage .shell > nav.sidebar').classList.contains('rail')`, 'true',
     'and back to a rail')
 
+  /* ── a sidebar that folds itself ────────────────────────────────────── */
+
+  // The control sits inside what it folds, so the folded sidebar is a plain
+  // rail: a peeking one would open again under the pointer that closed it.
+  await t.mount('shell', { user: { email: 'a@b.c' }, collapsible: true })
+  const fold = '#stage .sidebar .shell-fold'
+  await t.eventually(`!!document.querySelector('${fold}')`, 'true', 'collapsible puts a fold control at the head of the sidebar')
+  t.is(await t.evaluate(`return document.querySelector('${fold}').getAttribute('aria-expanded');`), 'true', 'which says the sidebar is open')
+  await t.eventually(railWidth, String(15 * rem), 'at --sidebar-width')
+  await t.clickAt(fold)
+  await t.eventually(`document.querySelector('#stage .shell > nav.sidebar').classList.contains('rail')`, 'true', 'a click folds it to a rail')
+  await t.eventually(railWidth, String(3.5 * rem), 'an icon wide')
+  t.ok(await t.evaluate(`return !document.querySelector('#stage .sidebar').classList.contains('peek');`), 'and not a peeking one')
+  t.is(await t.evaluate(`return document.querySelector('${fold}').getAttribute('aria-expanded');`), 'false', 'the control now says it is folded')
+  t.ok(await t.evaluate(`return !!document.querySelector('#stage .sidebar [data-foot="rail"]') && !document.querySelector('#stage .sidebar [data-foot="sidebar"]');`),
+    'the foot is told it is in a rail')
+  t.ok(await t.evaluate(`return document.querySelector('#stage .topbar button.btn:not(.sidebar-toggle)')?.textContent === 'Sign out' && !document.querySelector('#stage .sidebar .navlist ~ div button');`),
+    'and Sign out is in the bar')
+  t.ok(await t.evaluate(`return !document.querySelector('dialog.drawer .shell-fold');`), 'the drawer carries no fold control')
+  await t.clickAt(fold)
+  await t.eventually(`document.querySelector('#stage .shell > nav.sidebar').classList.contains('rail')`, 'false', 'a second click opens it again')
+  await t.eventually(railWidth, String(15 * rem), 'to --sidebar-width')
+
   /* ── layout="topbar" ────────────────────────────────────────────────── */
 
   await t.mount('shell', { user: { email: 'a@b.c' }, layout: 'topbar' })

@@ -129,7 +129,7 @@ siteName: Basecamp
   $: COMMANDS = [
     // Navigate is derived from src/lib/nav.js through the same `show`, so it
     // cannot offer a screen the nav hides or miss one the nav lists.
-    ...paletteItems([{ label: null, entries: primary }, ...groups, ...elsewhere], navSession(), goto),
+    ...paletteItems([primary, ...groups, ...elsewhere], navSession(), goto),
 
     // Spread, not a conditional entry: a falsy item in the list renders as a
     // blank row in the palette rather than as nothing.
@@ -295,6 +295,18 @@ siteName: Basecamp
 {/snippet}
 
 <div class="shell">
+  <!-- Focus mode takes the header out of the DOM, so the screen gets its row
+       back. A strip at the top edge brings back the one control that leaves it. -->
+  {#if session.user && focus}
+    <div class="focus-peek">
+      <span class="focus-peek-tab">
+        <Button variant="outlined" size="sm" id="focus-leave" aria-pressed="true"
+                title="Show the header and side panels (Ctrl+.)"
+                onclick={toggleFocus}>Toggle focus</Button>
+      </span>
+    </div>
+  {/if}
+  {#if !focus}
   <header class="topbar">
     <span class="cluster">
       <!-- `.sidebar-toggle` decides WHEN this control exists — the package
@@ -312,8 +324,8 @@ siteName: Basecamp
       <span class="hide-sm"><Badge tone="muted">alpha</Badge></span>
       {#if session.user}
         <span class="hide-sm">
-          <Button variant={focus ? 'outlined' : 'ghost'} size="sm" id="focus-toggle"
-                  aria-pressed={focus ? 'true' : 'false'} title="Hide the side panels (Ctrl+.)"
+          <Button variant="ghost" size="sm" id="focus-toggle"
+                  aria-pressed="false" title="Hide the header and side panels (Ctrl+.)"
                   onclick={toggleFocus}>Focus</Button>
         </span>
       {/if}
@@ -323,7 +335,7 @@ siteName: Basecamp
          and this row is hidden (`.hide-sm`, the style block below). -->
     {#if session.user}
       <nav class="cluster hide-sm" aria-label="Primary">
-        {#each primary as link}
+        {#each primary.entries as link}
           <a class="navlink" href={link.href}
              aria-current={(page.route, current(link)) ? 'page' : null}
           >{link.label}</a>
@@ -415,6 +427,7 @@ siteName: Basecamp
       {/if}
     </span>
   </header>
+  {/if}
 
   <!-- The long tail lives here rather than in the topbar: every `.navlink` in
        a 56px row wrapped to two lines and spilled out of it at every width
@@ -493,7 +506,7 @@ siteName: Basecamp
           />
         </div>
       {/if}
-      {@render navlinks(primary)}
+      {@render navlinks(primary.entries)}
       {@render navlists()}
     </nav>
   </Drawer>
@@ -536,6 +549,32 @@ siteName: Basecamp
     .topbar .cluster { flex-wrap: nowrap; gap: var(--space-xs); }
   }
   .drawer-switch { margin-block-end: var(--space-lg); }
+
+  /* Focus mode has no header. A thin strip along the top edge is the hover
+     target; the toggle waits above the viewport and slides down when the
+     cursor reaches the strip, or when the keyboard tabs into it. */
+  .focus-peek {
+    position:        fixed;
+    inset-block-start: 0;
+    inset-inline:    0;
+    block-size:      var(--space-sm);
+    display:         flex;
+    justify-content: center;
+    z-index:         var(--z-topbar);
+  }
+  .focus-peek-tab {
+    align-self:  flex-start;
+    padding:     var(--space-xs);
+    background:  var(--topbar-bg, var(--surface));
+    border:      var(--border-width) solid var(--rule);
+    border-block-start: 0;
+    border-end-start-radius: var(--radius-md, 0.5rem);
+    border-end-end-radius:   var(--radius-md, 0.5rem);
+    transform:   translateY(-100%);
+    transition:  transform var(--motion-fast);
+  }
+  .focus-peek:hover .focus-peek-tab,
+  .focus-peek:focus-within .focus-peek-tab { transform: none; }
 
   .rail-toggle {
     display:             flex;

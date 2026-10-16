@@ -432,10 +432,10 @@ function buildOperation(
           schema: {
             type: 'object',
             properties: {
-              total: { type: 'integer' },
-              limit: { type: 'integer' },
-              skip:  { type: 'integer' },
-              data:  schema?.response ? compiledToOA(schema.response) : { type: 'array', items: { type: 'object' } },
+              total:  { type: 'integer' },
+              limit:  { type: 'integer' },
+              offset: { type: 'integer' },
+              data:   schema?.response ? compiledToOA(schema.response) : { type: 'array', items: { type: 'object' } },
             },
           }
         }

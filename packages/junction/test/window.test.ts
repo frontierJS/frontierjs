@@ -22,7 +22,7 @@ import { createClient } from '../../litestone/src/index.js'
 import { createService } from '../src/core/service.ts'
 import { parseQuery } from '../src/core/litestone.ts'
 import { createJunctionClient } from '../src/client/index.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { RESERVED_PARAMS } from '@frontierjs/toolbelt/directives'
 

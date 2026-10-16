@@ -8,7 +8,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createClient, autoMigrate } from '../src/index.js'
-import { Plugin } from '../src/core/plugin.js'
+import { LitestonePlugin } from '../src/core/plugin.js'
 
 const tick = () => new Promise((r) => setImmediate(r))
 
@@ -60,7 +60,7 @@ const SCHEMA = `
   }
 `
 
-class Spy extends Plugin {
+class Spy extends LitestonePlugin {
   deleted: Record<string, number[]> = {}
   async onAfterDelete(model: string, rows: any[]) {
     ;(this.deleted[model] ??= []).push(...rows.map(r => r.id))
@@ -267,12 +267,12 @@ describe('a child a foreign key\'s onDelete: SetNull clears is an updated row (F
     }
   `
 
-  class Writes extends Plugin {
+  class Writes extends LitestonePlugin {
     written: Array<[string, string, any]> = []
     async onAfterWrite(model: string, op: string, row: any) { this.written.push([model, op, row]) }
   }
 
-  async function seededNotes(plugin?: Plugin) {
+  async function seededNotes(plugin?: LitestonePlugin) {
     const db: any = await createClient({ schema: NULLED, db: ':memory:', ...(plugin ? { plugins: [plugin] } : {}) })
     await autoMigrate(db)
     const sys = db.asSystem()

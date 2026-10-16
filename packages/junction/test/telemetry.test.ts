@@ -2,7 +2,7 @@
 // Tests for the app.telemetry instrumentation layer:
 //   1. junction.call.start / junction.call.end lifecycle
 //   2. telemetryId correlation between start and end
-//   3. junction.call alias (back-compat)
+//   3. One name per event — no bare junction.call beside .end
 //   4. junction.hook — per-hook events (before / after / around / error)
 //   5. Bypass methods — lightweight junction.call.end, no telemetryId
 //   6. ctx._cleanups — drained after pipeline (success and error)
@@ -34,7 +34,7 @@ function mockTelemetry() {
 }
 
 function callEvents(captured: CapturedEvent[]) {
-  return captured.filter(e => e.name === 'junction.call.start' || e.name === 'junction.call.end' || e.name === 'junction.call')
+  return captured.filter(e => e.name === 'junction.call.start' || e.name === 'junction.call.end')
 }
 
 function hookEvents(captured: CapturedEvent[]) {
@@ -238,22 +238,18 @@ describe('telemetryId correlation', () => {
 
 })
 
-// ─── 3. junction.call alias ───────────────────────────────────────────────────
+// ─── 3. One name per event ────────────────────────────────────────────────────
 
-describe('junction.call back-compat alias', () => {
+describe('junction.call.end is the one end event', () => {
 
-  it('junction.call fires alongside junction.call.end', async () => {
+  it('emits no bare junction.call beside it', async () => {
     const { emitter, captured } = mockTelemetry()
     const svc = createService({ name: 'items', find: async () => [] })
     const ctx = bridge.internal('items', 'find', null)
     await callService(svc, ctx, undefined, undefined, emitter)
 
-    const endEvent   = captured.find(e => e.name === 'junction.call.end')!.data as TelemetryEvent
-    const aliasEvent = captured.find(e => e.name === 'junction.call')!.data   as TelemetryEvent
-
-    expect(aliasEvent).toBeDefined()
-    expect(aliasEvent.telemetryId).toBe(endEvent.telemetryId)
-    expect(aliasEvent.status).toBe(endEvent.status)
+    expect(captured.some(e => e.name === 'junction.call.end')).toBe(true)
+    expect(captured.some(e => e.name === 'junction.call')).toBe(false)
   })
 
 })

@@ -59,6 +59,7 @@ import { runRegisterCheck, RULES as REGISTER_RULES } from '../packages/cli/core/
 import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-config.js'
 import { openRunLog, parseCounts }             from '../packages/cli/core/ci-log.js'
 import { findChrome }                          from '../packages/mesa/src/drive.js'
+import { compare as benchCompare, format as benchFormat } from './bench-ab.mjs'
 
 // Packs the working tree and builds a scaffolded app against it. Its own file
 // because the mechanism needs more explaining than the phase does.
@@ -141,7 +142,7 @@ Flags
                       the order typed — scaffold packs what deploy installs
   --only <pkg>        narrow typecheck and tests; hygiene and coverage are
                       repo-wide questions and ignore it
-  --base-ref <ref>    what access and snapshots compare against (origin/main)
+  --base-ref <ref>    what access, snapshots and perf compare against (origin/main)
   --update            write ratchet improvements back to ci-allowances.json
   --verbose           full child output
   --help, -h          this
@@ -191,14 +192,14 @@ let currentPhase = null
 // learn to stop running CI at all.
 const PHASES = {
   hygiene, lint, structure, registers, snapshots, access, coverage,
-  registry, advisories, scaffold, typecheck, deploy, mutate, tutor, tests,
+  registry, advisories, scaffold, typecheck, deploy, mutate, tutor, perf, tests,
 }
 
 // Which tier a phase belongs to, and the ONLY statement of it. The order above
 // and the tier here are what `main()` and `--help` both read, so a phase cannot
 // be added to the run and left out of the printed list, or described in help as
 // something the tier it is in does not do.
-const FULL_ONLY = new Set(['deploy', 'mutate', 'tutor', 'tests'])
+const FULL_ONLY = new Set(['deploy', 'mutate', 'tutor', 'perf', 'tests'])
 
 async function main() {
   if (args.includes('--help') || args.includes('-h')) { usage(); return }
@@ -1642,6 +1643,47 @@ function deploy() {
 
   if (!queues.findings.length)
     ok('a pause drains every queue in a running container and the unpause runs what it held', Date.now() - q0)
+}
+
+// ─── phase · perf ───────────────────────────────────────────
+// What did this branch do to how long a request takes, against the base ref.
+//
+// Reports and does not fail on a time, for the reason `access` does not fail on
+// a widening: a timing red on a shared runner fires on noise, and a phase that
+// fires on noise is a phase everyone learns to skip. A case over its declared
+// ceiling, or slower than the base outside both spreads, is a `!` line a person
+// reads. It FAILS on what is not noise — a case that threw, a case declaring no
+// ceiling, fewer cases run than declared — because a case that stops running
+// reads as a quiet run. scripts/bench-ab.mjs is the runner; this prints it.
+
+function perf() {
+  const from = phase('perf')
+
+  const ref = resolveRef(baseRef)
+  if (!ref) note(`perf compared against nothing — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FJS_CI_BASE_REF.`)
+
+  // A deleted case file leaves nothing to run, and nothing run reads as a pass.
+  if (ref) {
+    const listed = spawnSync('git', ['ls-tree', '--name-only', '-r', ref, '--', 'packages'], { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER })
+    for (const file of (listed.stdout ?? '').split('\n').filter(f => /^packages\/[^/]+\/bench\/cases\.mjs$/.test(f)))
+      if ((!only || file.split('/')[1] === only) && !existsSync(join(ROOT, file)))
+        fail(`${file} — at ${ref.slice(0, 8)} and gone here; its cases no longer run`)
+  }
+
+  begin('perf')
+  const t0    = Date.now()
+  const model = benchCompare({ root: ROOT, ref, only: only ?? null })
+  console.log(benchFormat(model).replace(/^/gm, '    '))
+
+  for (const p of model.packages) {
+    for (const f of p.failures) fail(`${p.pkg} — ${f}\n      Run \`node scripts/bench-ab.mjs --only ${p.pkg}\`.`, '', { key: `perf:${p.pkg}` })
+    if (p.baseNote) note(`perf ${p.pkg}: base not compared — ${p.baseNote}`)
+    for (const c of p.cases) {
+      if (c.toFloor > c.ceiling) warn(`${p.pkg} ${c.name} — ${c.toFloor.toFixed(2)}x its floor, ceiling ${c.ceiling}x`)
+      if (c.ratio > 1 && !c.noise) warn(`${p.pkg} ${c.name} — ${c.ratio.toFixed(3)}x the base, outside both spreads`)
+    }
+  }
+  if (clean(from)) ok(`${model.packages.length} package(s) timed against ${ref ? ref.slice(0, 8) : 'nothing'}`, Date.now() - t0, { key: 'perf' })
 }
 
 // ─── phase 8 · tests ────────────────────────────────────────

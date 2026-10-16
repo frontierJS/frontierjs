@@ -63,3 +63,26 @@ describe('the JSON Schema a realm grades by', () => {
     expect(js.properties.codes.minLength).toBeUndefined()
   })
 })
+
+describe('an array column names its element type', () => {
+  test('Json[], Float[], Boolean[] and DateTime[] items are what the scalar column is', async () => {
+    const { generateJsonSchema } = await import('../src/jsonschema.js') as any
+    const { parse } = await import('../src/core/parser.js') as any
+    const js = generateJsonSchema(parse(`
+model Report {
+  id      Int        @id @default(autoincrement())
+  volumes Json[]
+  sizes   Float[]
+  flags   Boolean[]
+  seen    DateTime[]
+  counts  Int[]
+  names   String[]
+}`).schema, { mode: 'create' }).$defs.Report
+    expect(js.properties.volumes.items).toEqual({})
+    expect(js.properties.sizes.items).toEqual({ type: 'number' })
+    expect(js.properties.flags.items).toEqual({ type: 'boolean' })
+    expect(js.properties.seen.items).toEqual({ type: 'string', format: 'date-time' })
+    expect(js.properties.counts.items).toEqual({ type: 'integer' })
+    expect(js.properties.names.items).toEqual({ type: 'string' })
+  })
+})

@@ -14,7 +14,7 @@ import { describe, test, expect } from 'bun:test'
 import { createClient }   from '../../litestone/src/index.js'
 import { createService, createBaseService, callService, resolveTransactional } from '../src/core/service.ts'
 import { withLitestoneDb } from '../src/core/litestone.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const SCHEMA = `model Post { id Int @id @default(autoincrement())  title String }`
 

@@ -60,7 +60,10 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
   `test/duplicate-routes.test.ts`).
 - **A webhook destination is graded at registration and before every attempt, and
   its subscriber is read from the registrant** (`FJS-681`, `FJS-D193`,
-  `test/webhook-targets.test.ts`, `test/webhook-payload.test.ts`).
+  `test/webhook-targets.test.ts`, `test/webhook-payload.test.ts`). **A
+  subscription receives the same scheme, dedupes on the SIGNED body id, and
+  dedupe means applied, not seen** — a `receive` that throws leaves the receipt
+  unapplied and answers 500 (`FJS-D1087`, `test/webhooks.test.ts` § receiving).
 - **A CRLF in a mail address or header is refused at the builder AND at
   `sendMessage()`** (`FJS-677`, `test/mail-injection.test.ts`).
 - **The static server serves a file inside its root**, symlinks resolved, 404 on
@@ -98,6 +101,13 @@ A change to channels or `announce` also needs `example` `verify:live`, the only
 drive that watches a SECOND tab and so tells a broadcast from a tab's own echo.
 A change to either transport's context also needs `@frontierjs/testing`'s
 `bun run test`, whose parity runner puts one call down both.
+
+**`bench/cases.mjs` is the timed tier and is not in `test`.** Four requests
+through `app.http.fetch`, each beside a hand-written fetch handler running the
+same statement, and each must answer 2xx — a refused request is faster than a
+served one. CI's `perf` phase runs it against the base ref (`node
+scripts/bench-ab.mjs --only junction` from the root) and never fails on a time;
+a case that throws fails it.
 
 | A change that adds… | …joins |
 | --- | --- |

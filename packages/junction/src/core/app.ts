@@ -276,7 +276,7 @@ export interface App {
   logger:    ILogger
   services:  ServiceRegistry
   events:    IEventBus
-  telemetry: IEventBus   // low-level instrumentation bus — subscribe to 'junction.call'
+  telemetry: IEventBus   // low-level instrumentation bus — subscribe to 'junction.call.end'
   cache:     AppCache
   scheduler: AppScheduler
   http:      HttpTransport
@@ -1264,7 +1264,7 @@ export function createApp(opts: AppOptions = {}): App {
         },
         call(methodName: string, id?: string | number | null, data?: Record<string, unknown> | null, opts?: CallOptions) {
           return call(() => {
-            const ctx = makeCtx(methodName as import('../transport/bridge.ts').ServiceMethod, id ?? null, data ?? null, {}, opts)
+            const ctx = makeCtx(methodName as import('../core/context.ts').ServiceMethod, id ?? null, data ?? null, {}, opts)
             ctx.method = methodName
             return ctx
           })

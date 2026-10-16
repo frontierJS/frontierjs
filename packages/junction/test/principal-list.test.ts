@@ -19,7 +19,7 @@ import type { PrincipalResolver, ResolvedBearer } from '../index.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { declaredCallHeaders, describePrincipalRealm, PRINCIPAL_RESOLVER } from '../src/core/litestone.ts'
 import { renderPrincipalSnapshot } from '../tools/principal-snapshot.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const KEY = 'test-app-secret'
 

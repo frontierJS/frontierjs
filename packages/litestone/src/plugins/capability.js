@@ -25,7 +25,7 @@
 // a missing write capability announces itself in the error, a missing read one is
 // a blank screen, so the silent half is the one you opt into.
 
-import { Plugin, AccessDeniedError } from '../core/plugin.js'
+import { LitestonePlugin, AccessDeniedError } from '../core/plugin.js'
 import { collectNestedOps, collectIncludedModels } from './reach.js'
 import { capabilityDeclarations } from '../core/capabilities.js'
 
@@ -49,7 +49,7 @@ function heldBy(auth, model) {
 
 const EMPTY = new Set()
 
-export class CapabilityPlugin extends Plugin {
+export class CapabilityPlugin extends LitestonePlugin {
   // Nothing read from the schema is kept on the instance. A tenant registry
   // forwards one plugin to every client it opens, and a second onInit on `this`
   // replaced the FIRST client's grid with the second schema's (`FJS-1380`). The

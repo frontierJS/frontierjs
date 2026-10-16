@@ -7,7 +7,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createClient, autoMigrate } from '../src/index.js'
-import { Plugin } from '../src/core/plugin.js'
+import { LitestonePlugin } from '../src/core/plugin.js'
 
 const SCHEMA = `
   database main { path ":memory:" }
@@ -19,12 +19,12 @@ const SCHEMA = `
   }
 `
 
-class Writes extends Plugin {
+class Writes extends LitestonePlugin {
   written: Array<[string, string, any]> = []
   async onAfterWrite(model: string, op: string, row: any) { this.written.push([model, op, row]) }
 }
 
-async function client(plugin: Plugin) {
+async function client(plugin: LitestonePlugin) {
   const db: any = await createClient({ schema: SCHEMA, db: ':memory:', plugins: [plugin] })
   await autoMigrate(db)
   return db
@@ -78,7 +78,7 @@ const SOFT = `
   }
 `
 
-async function softClient(plugin: Plugin) {
+async function softClient(plugin: LitestonePlugin) {
   const db: any = await createClient({ schema: SOFT, db: ':memory:', plugins: [plugin] })
   await autoMigrate(db)
   return db

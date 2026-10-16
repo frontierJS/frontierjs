@@ -504,13 +504,6 @@ describe('each to*() is called once per notify()', () => {
 // ─── plugin lifecycle (FJS-049) ───────────────────────────────────────────
 
 describe('plugin lifecycle', () => {
-  test('the old `channels:` option is refused by name, not ignored', () => {
-    // Silently ignoring it would configure nothing and surface as a missing
-    // driver at first send.
-    expect(() => notificationsPlugin({ db: {}, channels: { email: { mailer: 'x' } } } as never))
-      .toThrow(/`channels:` is now `transports:`/)
-  })
-
   test('boot() refuses when the email transport has no app.mail', async () => {
     // requires: ['mailer'] proves the plugin is CONFIGURED. This proves the
     // mailer it should have installed is actually there.

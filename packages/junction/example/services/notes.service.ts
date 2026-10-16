@@ -7,7 +7,7 @@ import { createSchema, v }            from '../../src/core/schema.ts'
 import { NotFound }                   from '../../src/core/errors.ts'
 import { authenticate, requireRole, paginate } from '../../src/core/hooks.ts'
 import type { App }                   from '../../src/core/app.ts'
-import type { ServiceContext }        from '../../src/transport/bridge.ts'
+import type { ServiceContext }        from '../../src/core/context.ts'
 
 // ─── In-memory store ──────────────────────────────────────────────────────
 

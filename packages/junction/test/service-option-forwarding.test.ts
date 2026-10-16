@@ -17,7 +17,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createService, createBaseService } from '../src/core/service.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 type Log = string[]
 

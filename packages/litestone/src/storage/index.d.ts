@@ -1,6 +1,6 @@
 // @frontierjs/litestone/storage — object storage, a battery (FJS-D635).
 
-import type { FileRef, Plugin } from '../index.d.ts'
+import type { FileRef, LitestonePlugin } from '../index.d.ts'
 
 export interface FileStorageOptions {
   provider?:        'r2' | 's3' | 'b2' | 'minio' | 'local'
@@ -18,7 +18,7 @@ export interface FileStorageOptions {
   localPort?:       number   // default: 3001
 }
 
-export declare function FileStorage(options?: FileStorageOptions): Plugin
+export declare function FileStorage(options?: FileStorageOptions): LitestonePlugin
 /** A File column value read from the server's disk. A string is never read as a path. */
 export declare function fromPath(path: string): { readonly path: string }
 export declare function fileUrl(ref: FileRef | string | null | undefined): string | null

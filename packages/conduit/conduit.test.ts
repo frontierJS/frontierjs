@@ -269,6 +269,82 @@ describe('credential resolvers', () => {
     await cached.get('A')
     expect(calls).toBe(2)
   })
+
+  // FJS-D1075: the answer says when it expires, and the cache holds it that
+  // long whatever its ttl — the provider's number, never a copy of it.
+  it('withCache holds a minted answer exactly as long as the answer says, under ttl_ms: Infinity', async () => {
+    let mints = 0
+    const cached = withCache({
+      async get() { mints++; return { value: `tok-${mints}`, expires_at: Date.now() + 40 } }
+    }, { ttl_ms: Infinity })
+
+    expect(await cached.get('A')).toBe('tok-1')
+    expect(await cached.get('A')).toBe('tok-1')
+    await Bun.sleep(60)
+    expect(await cached.get('A')).toBe('tok-2')
+    expect(mints).toBe(2)
+  })
+
+  it('withCache: five callers finding one token expired refresh it once', async () => {
+    let mints = 0
+    const cached = withCache({
+      async get() { mints++; await Bun.sleep(10); return { value: `tok-${mints}`, expires_at: Date.now() + 30 } }
+    }, { ttl_ms: Infinity })
+
+    await cached.get('A')
+    await Bun.sleep(50)
+    const got = await Promise.all(Array.from({ length: 5 }, () => cached.get('A')))
+    expect(got.every(v => v === 'tok-2')).toBe(true)
+    expect(mints).toBe(2)
+  })
+
+  it('withCache: the answer\'s expiry never extends the ttl', async () => {
+    let calls = 0
+    const cached = withCache({
+      async get() { calls++; return { value: 'v', expires_at: Date.now() + 60_000 } }
+    }, { ttl_ms: 20 })
+
+    await cached.get('A')
+    await Bun.sleep(40)
+    await cached.get('A')
+    expect(calls).toBe(2)
+  })
+
+  it('withCache: an answer already expired is used for the send that asked and not kept', async () => {
+    let calls = 0
+    const cached = withCache({
+      async get() { calls++; return { value: `v${calls}`, expires_at: Date.now() - 1 } }
+    }, { ttl_ms: Infinity })
+
+    expect(await cached.get('A')).toBe('v1')
+    expect(await cached.get('A')).toBe('v2')
+  })
+
+  it('withCache keys a per-caller answer\'s expiry on who, so one tenant\'s refresh is not another\'s', async () => {
+    const mints = new Map<string, number>()
+    const cached = withCache({
+      async get() { return null },
+      async getFor(_ref, who) {
+        const n = (mints.get(who.tenant!) ?? 0) + 1
+        mints.set(who.tenant!, n)
+        return { value: `${who.tenant}-${n}`, expires_at: Date.now() + (who.tenant === 'A' ? 30 : 60_000) }
+      },
+    }, { ttl_ms: Infinity })
+    const w = (tenant: string) => ({ tenant, principal: null, grant: null })
+
+    expect(await cached.getFor!('R', w('A'))).toBe('A-1')
+    expect(await cached.getFor!('R', w('B'))).toBe('B-1')
+    await Bun.sleep(50)
+    expect(await cached.getFor!('R', w('A'))).toBe('A-2')
+    expect(await cached.getFor!('R', w('B'))).toBe('B-1')
+  })
+
+  it('an expires_at that is not a number is refused by name, never read as forever', async () => {
+    const cached = withCache({
+      async get() { return { value: 'v', expires_at: Number('3600s') } }
+    })
+    await expect(cached.get('A')).rejects.toThrow(/expires_at is epoch milliseconds/)
+  })
 })
 
 // ─── Credentials reach the wire, and fail closed ─────────────
@@ -291,6 +367,33 @@ describe('credential resolution through the HTTP transport', () => {
 
       expect(result.error).toBeNull()
       expect(seen[0]).toBe('Bearer htz-token-abc')
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  // An unwrapped resolver may answer { value, expires_at } too: the transport
+  // sends the value, and a malformed expiry is auth_failed, nothing sent.
+  it('an answer with an expiry reaches the wire as its value', async () => {
+    const seen: (string | null)[] = []
+    let reached = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) { reached++; seen.push(req.headers.get('authorization')); return Response.json({ ok: true }) }
+    })
+
+    try {
+      const target = providerTarget({ address: `http://localhost:${server.port}` })
+      const minted = new HttpTransport(target, { async get() { return { value: 'minted-abc', expires_at: Date.now() + 60_000 } } }, { retry_limit: 0 })
+      const ok = await minted.send({ target: target.id, method: 'GET', path: '/servers' })
+      expect(ok.error).toBeNull()
+      expect(seen[0]).toBe('Bearer minted-abc')
+
+      const broken = new HttpTransport(target, { async get() { return { value: 'minted-abc', expires_at: NaN } } }, { retry_limit: 0 })
+      const bad = await broken.send({ target: target.id, method: 'GET', path: '/servers' })
+      expect(bad.error!.kind).toBe('auth_failed')
+      expect(bad.error!.message).toContain('expires_at')
+      expect(reached).toBe(1)
     } finally {
       server.stop(true)
     }

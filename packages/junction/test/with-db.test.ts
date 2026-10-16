@@ -16,7 +16,7 @@ import { join } from 'node:path'
 
 import { createClient, createTenantRegistry } from '../../litestone/src/index.js'
 import { createApp, createService, createStubAuth, toDataPrincipal } from '../index.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const USERS = createStubAuth({ users: [{ id: 'u1', role: 'member' }, { id: 'u2', role: 'member' }] })
 

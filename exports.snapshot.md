@@ -250,6 +250,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./runtime (import)` | `src/runtime.js` | yes |
 | exports | `./runtime/terminal.js (import)` | `src/runtime-terminal.js` | yes |
 | exports | `./runtime/terminal (import)` | `src/runtime-terminal.js` | yes |
+| exports | `./runtime/native.js (import)` | `src/runtime-native.js` | yes |
+| exports | `./runtime/native (import)` | `src/runtime-native.js` | yes |
 | exports | `./compiler.js (import)` | `src/compiler.js` | yes |
 | exports | `./compiler (import)` | `src/compiler.js` | yes |
 | exports | `./compiler-md.js (import)` | `src/compiler-md.js` | yes |
