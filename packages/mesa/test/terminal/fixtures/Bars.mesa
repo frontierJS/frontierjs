@@ -13,5 +13,5 @@
 <progress value="0.25"></progress>
 <p>wait</p>
 <progress value={busy ? undefined : 1}>{busy ? 'busy' : 'idle'}</progress>
-<button on:click={() => done = Math.min(10, done + 5)}>more</button>
-<button on:click={() => busy = !busy}>flip</button>
+<button onclick={() => done = Math.min(10, done + 5)}>more</button>
+<button onclick={() => busy = !busy}>flip</button>

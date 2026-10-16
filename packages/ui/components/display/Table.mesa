@@ -168,10 +168,10 @@
               {:else if col.sortable}
                 <!--
                   A real <button>, so the sort control is reachable by keyboard.
-                  The old markup put on:click on the <th> itself, which meant a
+                  The old markup put onclick on the <th> itself, which meant a
                   keyboard user could not sort at all.
                 -->
-                <button type="button" class="btn link" on:click={() => handleSort(col)}>
+                <button type="button" class="btn link" onclick={() => handleSort(col)}>
                   {col.label}
                   {#if sortedBy(col) === 'asc'}
                     <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M6 3l4 6H2z"/></svg>

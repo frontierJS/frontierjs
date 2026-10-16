@@ -1029,10 +1029,10 @@
   class={cx('stack')}
   novalidate={novalidate || null}
   aria-busy={submitting || null}
-  on:submit|preventDefault={submit}
-  on:input={handleChange}
-  on:change={handleChange}
-  on:blur|capture={handleLeave}
+  onsubmit|preventDefault={submit}
+  oninput={handleChange}
+  onchange={handleChange}
+  onblur|capture={handleLeave}
   {class}
   {...$attributes}
 >

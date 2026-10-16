@@ -393,7 +393,7 @@ hooks: { around: {...}, before: {...}, after: {...}, error: {...} }
       "  let draft = leads.make()",
       "</script>",
       "",
-      "<form on:submit={() => leads.create(draft)}>",
+      "<form onsubmit={() => leads.create(draft)}>",
       "  <input class=\"field\" bind:value={draft.name}  placeholder=\"Name\">",
       "  <input class=\"field\" bind:value={draft.email} placeholder=\"Email\">",
       "  <button class=\"btn\">Add lead</button>",

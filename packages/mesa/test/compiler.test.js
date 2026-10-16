@@ -565,7 +565,7 @@ describe('compile() output shape', () => {
       expect(out).not.toContain('htmlToFragment')
     })
     it('delegate call at module tail outside function', async () => {
-      const out = await cx(`<script>function fn(){}</script><button on:click={fn}>x</button>`)
+      const out = await cx(`<script>function fn(){}</script><button onclick={fn}>x</button>`)
       const popIdx = out.indexOf('pop_component()')
       const delIdx = out.indexOf('$$delegate')
       expect(delIdx).toBeGreaterThan(popIdx)
@@ -819,46 +819,38 @@ describe('compile() output shape', () => {
     })
   })
 
-  // VISION RULE 23. Implemented since the compiler was written and pinned by
-  // nothing until now, which is the shape a rule regresses in: it is enforced
-  // by one `.filter()` over a component's attributes, and dropping that filter
-  // makes the directive compile to a prop the child never declared — silently,
-  // because the handler is simply never called.
-  describe('on:event on a component (RULE 23)', () => {
+  // VISION RULE 23 (`FJS-D1078`): one event spelling, the DOM's own name, with
+  // modifiers piped on. A second spelling compiled on one path and not another
+  // is how `on:` reached a component as a prop no child declared.
+  describe('one event spelling (RULE 23)', () => {
     const onComponent = (body) =>
       compile(`<script>import Child from './Child.mesa'; function go() {}</script>${body}`,
         { debug: false, css: false })
 
-    it('is a compiler error', async () => {
-      const ctx = await onComponent(`<Child on:click={go} />`)
-      expect(ctx.analysis.errors.some(e => e.includes('not valid on a component'))).toBe(true)
+    it.each([
+      ['on:click on an element', '<button on:click={go}>x</button>', 'onclick={handler}'],
+      ['@click on an element', '<button @click={go}>x</button>', 'onclick={handler}'],
+      ['on:paid on a component', '<Child on:paid={go} />', 'onpaid={handler}'],
+      ['a modifier carried across', '<form on:submit|preventDefault={go}></form>', 'onsubmit|preventDefault={handler}'],
+      ['on:keydown on mesa:window', '<mesa:window on:keydown={go} />', 'onkeydown={handler}'],
+    ])('refuses %s, naming the spelling to write', async (_, body, written) => {
+      await expect(onComponent(body)).rejects.toThrow(written)
     })
 
-    it('names the prop for THIS event, not for click', async () => {
-      const ctx = await onComponent(`<Child on:paid={go} />`)
-      // The message said `onclick={fn}` whatever the event was, so the advice
-      // for every non-click event was a second wrong guess.
-      expect(ctx.analysis.errors.some(e => e.includes('onpaid={fn}'))).toBe(true)
-      expect(ctx.analysis.errors.some(e => e.includes('onclick'))).toBe(false)
+    it('compiles a guard modifier on a component into the value it hands over', async () => {
+      const ctx = await onComponent(`<Child onclick|preventDefault={go} />`)
+      expect(ctx.analysis.errors).toHaveLength(0)
+      expect(ctx.result).toMatch(/onclick: \(\$\$e\) => \{ \$\$e\.preventDefault\(\); \(go\)\(\$\$e\); \}/)
     })
 
-    it('says a modifier has nowhere to go', async () => {
-      const ctx = await onComponent(`<Child on:click|preventDefault={go} />`)
-      expect(ctx.analysis.errors.some(e => e.includes('preventDefault'))).toBe(true)
-      // …and still names the plain prop, since that is the actual fix.
-      expect(ctx.analysis.errors.some(e => e.includes('onclick={fn}'))).toBe(true)
+    it('refuses a listener option on a component by name', async () => {
+      const ctx = await onComponent(`<Child onclick|once={go} />`)
+      expect(ctx.analysis.errors.some(e => e.includes("'once' is an addEventListener option"))).toBe(true)
+      expect(ctx.result).not.toContain('onclick:')
     })
 
-    it('catches the @ shorthand too', async () => {
-      const ctx = await onComponent(`<Child @click={go} />`)
-      expect(ctx.analysis.errors.some(e => e.includes('not valid on a component'))).toBe(true)
-    })
-
-    // The other three shapes must stay legal, or the rule has eaten the
-    // language. An element is where a directive belongs; `onclick` as a prop is
-    // the documented replacement; `mesa:window` is not a component.
     it('leaves an element, a callback prop and mesa:window alone', async () => {
-      for (const body of [`<button on:click={go}>x</button>`, `<Child onclick={go} />`, `<mesa:window on:keydown={go} />`]) {
+      for (const body of [`<button onclick|once={go}>x</button>`, `<Child onclick={go} />`, `<mesa:window onkeydown|capture={go} />`]) {
         const ctx = await onComponent(body)
         expect(ctx.analysis.errors).toHaveLength(0)
       }
@@ -1091,7 +1083,7 @@ function provide(n, f) { return null }
       expect(out).toContain("bindStyle($$el0, 'display'")
     })
     it('shorthand reads the signal named for the property (FJS-2177)', async () => {
-      const out = await cx(`<script>let fontSize = '2px'; const b = () => fontSize = '3px'</script><div style:font-size on:click={b}>x</div>`)
+      const out = await cx(`<script>let fontSize = '2px'; const b = () => fontSize = '3px'</script><div style:font-size onclick={b}>x</div>`)
       expect(out).toContain("bindStyle($$el0, 'font-size', () => ($$runtime.get($$sig_fontSize)))")
     })
     it('multiple on same element', async () => {
@@ -1120,10 +1112,6 @@ function provide(n, f) { return null }
     it('does NOT emit pushProps for static prop', async () => {
       const out = await cx(`<Child label="hello"/>`)
       expect(out).not.toContain('pushProps')
-    })
-    it('on:event on a component is a compiler error', async () => {
-      const ctx = await compile(`<Child on:click={fn}/>`, { debug: false, css: false })
-      expect(ctx.analysis.errors.some(e => e.includes('on:click'))).toBe(true)
     })
     it('onclick as plain prop passes through', async () => {
       const out = await cx(`<script>function fn(){}</script><Child onclick={fn}/>`)
@@ -1284,63 +1272,63 @@ function provide(n, f) { return null }
 
   describe('event modifiers', () => {
     it('preventDefault — wraps handler with guard', async () => {
-      const out = await cx(`<form on:submit|preventDefault={fn}><button>go</button></form>`)
+      const out = await cx(`<form onsubmit|preventDefault={fn}><button>go</button></form>`)
       expect(out).toContain('$$e.preventDefault()')
       // submit is delegated — either addEvent or __submit property
       expect(out).toMatch(/addEvent|__submit/)
     })
     it('stopPropagation — wraps handler', async () => {
-      const out = await cx(`<div on:click|stopPropagation={fn}>x</div>`)
+      const out = await cx(`<div onclick|stopPropagation={fn}>x</div>`)
       expect(out).toContain('$$e.stopPropagation()')
     })
     it('self — wraps handler with target guard', async () => {
-      const out = await cx(`<div on:click|self={fn}>x</div>`)
+      const out = await cx(`<div onclick|self={fn}>x</div>`)
       expect(out).toContain('$$e.target !== $$e.currentTarget')
     })
     it('once — passes addEventListener option', async () => {
-      const out = await cx(`<button on:click|once={fn}>x</button>`)
+      const out = await cx(`<button onclick|once={fn}>x</button>`)
       expect(out).toContain('{ once: true }')
       expect(out).not.toContain('$$e.')
     })
     it('passive + capture — combined options', async () => {
-      const out = await cx(`<div on:scroll|passive|capture={fn}>x</div>`)
+      const out = await cx(`<div onscroll|passive|capture={fn}>x</div>`)
       expect(out).toContain('passive: true')
       expect(out).toContain('capture: true')
     })
     it('debounce — wraps handler', async () => {
-      const out = await cx(`<input on:input|debounce(300)={fn}/>`)
+      const out = await cx(`<input oninput|debounce(300)={fn}/>`)
       expect(out).toContain('$$runtime.debounce(fn, 300)')
     })
     it('throttle — wraps handler', async () => {
-      const out = await cx(`<div on:scroll|throttle(100)={fn}>x</div>`)
+      const out = await cx(`<div onscroll|throttle(100)={fn}>x</div>`)
       expect(out).toContain('$$runtime.throttle(fn, 100)')
     })
     it('debounce with reactive arg — passes getter', async () => {
-      const out = await cx(`<script>let delay = 300</script><input on:input|debounce({delay})={fn}/>`)
+      const out = await cx(`<script>let delay = 300</script><input oninput|debounce({delay})={fn}/>`)
       expect(out).toContain('() => ($$runtime.get($$sig_delay))')
       expect(out).toContain('$$runtime.debounce(fn,')
     })
     it('multiple modifiers — guards then wrapped', async () => {
-      const out = await cx(`<form on:submit|preventDefault|debounce(200)={fn}><b>x</b></form>`)
+      const out = await cx(`<form onsubmit|preventDefault|debounce(200)={fn}><b>x</b></form>`)
       expect(out).toContain('$$e.preventDefault()')
       expect(out).toContain('$$runtime.debounce(')
     })
     it('unknown modifier — compiler error', async () => {
-      const ctx = await compile(`<div on:click|magic={fn}>x</div>`, { debug: false, css: false })
+      const ctx = await compile(`<div onclick|magic={fn}>x</div>`, { debug: false, css: false })
       expect(ctx.analysis.errors.some(e => e.includes('magic'))).toBe(true)
     })
     it('delegated click — uses __click property', async () => {
-      const out = await cx(`<script>function fn(){}</script><button on:click={fn}>x</button>`)
+      const out = await cx(`<script>function fn(){}</script><button onclick={fn}>x</button>`)
       expect(out).toContain('.__click = fn')
     })
     it('focus — uses addEvent (not delegation)', async () => {
-      const out = await cx(`<script>function fn(){}</script><input on:focus={fn}/>`)
+      const out = await cx(`<script>function fn(){}</script><input onfocus={fn}/>`)
       expect(out).toContain("$$runtime.addEvent(")
       expect(out).not.toContain('__focus')
     })
     // Delegating one of these registers the handler on a root the event never
     // reaches: the element renders, the browser does its half, and the
-    // component's half silently never runs. `<dialog on:close>` was delegated,
+    // component's half silently never runs. `<dialog onclose>` was delegated,
     // so Escape closed the dialog and `bind:open` was never written back —
     // the caller's state said "open" forever and the overlay could not reopen.
     // Bubbling is measured in a real browser by
@@ -1348,7 +1336,7 @@ function provide(n, f) { return null }
     it.each(['close', 'cancel', 'toggle', 'beforetoggle', 'invalid'])(
       '%s does not bubble — uses addEvent, not delegation',
       async (event) => {
-        const out = await cx(`<script>function fn(){}</script><dialog on:${event}={fn}>x</dialog>`)
+        const out = await cx(`<script>function fn(){}</script><dialog on${event}={fn}>x</dialog>`)
         expect(out).toContain('$$runtime.addEvent(')
         expect(out).not.toContain(`__${event}`)
       }
@@ -1419,7 +1407,7 @@ function provide(n, f) { return null }
            import Child from './Child.mesa'
            let n = 0
            $.context.n = n
-         </script><button on:click={() => n++}>+</button><Child />`,
+         </script><button onclick={() => n++}>+</button><Child />`,
         { debug: false, css: false })
       const c = mountLive(
         execCompiled(parent.result, runtime, { './Child.mesa': { default: Child } }), runtime)
@@ -1435,7 +1423,7 @@ function provide(n, f) { return null }
       const runtime = await import('../src/runtime.js')
       const Child = await compileAndExec(
         `<script>const n = $.context.n\nconst inc = $.context.inc</script>` +
-        `<i>{n}</i><button on:click={inc}>+</button>`, runtime)
+        `<i>{n}</i><button onclick={inc}>+</button>`, runtime)
       const box = await compile(
         `<script>
            import Child from './Child.mesa'
@@ -1491,8 +1479,8 @@ function provide(n, f) { return null }
   })
 
   describe('mesa:window', () => {
-    it('emits addGlobalEvent for on:event', async () => {
-      const out = await cx(`<mesa:window on:resize={fn} />`)
+    it('emits addGlobalEvent for onevent', async () => {
+      const out = await cx(`<mesa:window onresize={fn} />`)
       expect(out).toContain("addGlobalEvent('window', 'resize', fn)")
     })
     it('emits bindWindow for bind:prop', async () => {
@@ -1530,13 +1518,13 @@ function provide(n, f) { return null }
   })
 
   describe('mesa:document', () => {
-    it('emits addGlobalEvent for on:event', async () => {
-      const out = await cx(`<mesa:document on:click={fn} /><p>x</p>`)
+    it('emits addGlobalEvent for onevent', async () => {
+      const out = await cx(`<mesa:document onclick={fn} /><p>x</p>`)
       expect(out).toContain("addGlobalEvent('document', 'click', fn)")
     })
     it('error — children in mesa:document', async () => {
       const ctx = await compile(
-        `<mesa:document on:click={fn}><p>bad</p></mesa:document><p>x</p>`,
+        `<mesa:document onclick={fn}><p>bad</p></mesa:document><p>x</p>`,
         { debug: false, css: false }
       )
       expect(ctx.analysis.errors.some(e => e.includes('mesa:document'))).toBe(true)
@@ -1544,13 +1532,13 @@ function provide(n, f) { return null }
   })
 
   describe('mesa:body', () => {
-    it('emits addGlobalEvent for on:event', async () => {
-      const out = await cx(`<mesa:body on:click={fn} /><p>x</p>`)
+    it('emits addGlobalEvent for onevent', async () => {
+      const out = await cx(`<mesa:body onclick={fn} /><p>x</p>`)
       expect(out).toContain("addGlobalEvent('body', 'click', fn)")
     })
     it('error — children in mesa:body', async () => {
       const ctx = await compile(
-        `<mesa:body on:click={fn}><p>bad</p></mesa:body><p>x</p>`,
+        `<mesa:body onclick={fn}><p>bad</p></mesa:body><p>x</p>`,
         { debug: false, css: false }
       )
       expect(ctx.analysis.errors.some(e => e.includes('mesa:body'))).toBe(true)
@@ -1603,7 +1591,7 @@ function provide(n, f) { return null }
   describe('$.transition and $.entrance', () => {
     it('$.transition in script — injects $ namespace', async () => {
       const out = await cx(
-        `<script>let show = true\nfunction toggle() { $.transition(() => show = !show) }</script><button on:click={toggle}>x</button>`
+        `<script>let show = true\nfunction toggle() { $.transition(() => show = !show) }</script><button onclick={toggle}>x</button>`
       )
       // The five animation helpers are instance-independent, so they live on a
       // module-scope object the per-instance `$` inherits — mounting allocates
@@ -1921,7 +1909,7 @@ describe('end-to-end — counter', () => {
   })
   it('updates DOM on click', async () => {
     const fn = await compileAndExec(
-      `<script>let count = 0\nfunction inc(){count++}</script><p>{count}</p><button on:click={inc}>+</button>`,
+      `<script>let count = 0\nfunction inc(){count++}</script><p>{count}</p><button onclick={inc}>+</button>`,
       runtime
     )
     const app = mount(fn, runtime)
@@ -1932,7 +1920,7 @@ describe('end-to-end — counter', () => {
   })
   it('derived const updates with signal', async () => {
     const fn = await compileAndExec(
-      `<script>let count = 0\nconst double = count * 2\nfunction inc(){count++}</script><p>{count} {double}</p><button on:click={inc}>+</button>`,
+      `<script>let count = 0\nconst double = count * 2\nfunction inc(){count++}</script><p>{count} {double}</p><button onclick={inc}>+</button>`,
       runtime
     )
     const app = mount(fn, runtime)
@@ -1943,7 +1931,7 @@ describe('end-to-end — counter', () => {
   })
   it('var snapshot does not update', async () => {
     const fn = await compileAndExec(
-      `<script>let count = 0\nvar snap = count\nfunction inc(){count++}</script><p>{count}</p><p id="s">{snap}</p><button on:click={inc}>+</button>`,
+      `<script>let count = 0\nvar snap = count\nfunction inc(){count++}</script><p>{count}</p><p id="s">{snap}</p><button onclick={inc}>+</button>`,
       runtime
     )
     const app = mount(fn, runtime)
@@ -1957,14 +1945,14 @@ describe('end-to-end — counter', () => {
 
 describe('$.emit', () => {
   it('injects makeEmitter when $.emit used in script', async () => {
-    const out = await cx(`<script>export let value=0\nfunction go(){$.emit('change',value)}</script><button on:click={go}>go</button>`)
+    const out = await cx(`<script>export let value=0\nfunction go(){$.emit('change',value)}</script><button onclick={go}>go</button>`)
     expect(out).toContain('makeEmitter')
     expect(out).toContain("$.emit('change'")
   })
 
-  it('injects makeEmitter when $.emit used in template on:click (regression)', async () => {
+  it('injects makeEmitter when $.emit used in template onclick (regression)', async () => {
     // Before fix: $.emit in template event handlers was not detected, makeEmitter was not injected
-    const out = await cx(`<script>export let v=0</script><button on:click={() => $.emit('change', v+1)}>+</button>`)
+    const out = await cx(`<script>export let v=0</script><button onclick={() => $.emit('change', v+1)}>+</button>`)
     expect(out).toContain('const $$emit = $$runtime.makeEmitter')
     expect(out).toContain("$.emit('change'")
   })
@@ -1975,7 +1963,7 @@ describe('$.emit', () => {
   })
 
   it('$.emit calls the matching onX prop on parent', async () => {
-    const out = await cx(`<script>export let v=0</script><button on:click={() => $.emit('change', v)}>x</button>`)
+    const out = await cx(`<script>export let v=0</script><button onclick={() => $.emit('change', v)}>x</button>`)
     // The emitter is wired to $$option.props
     expect(out).toContain('makeEmitter($$option)')
   })
@@ -2005,7 +1993,7 @@ describe('end-to-end — {#if}', () => {
 
   it('shows/hides on condition change', async () => {
     const fn = await compileAndExec(
-      `<script>let show = true\nfunction toggle() { show = !show }</script>\n{#if show}<p id="yes">visible</p>{/if}\n<button on:click={toggle}>toggle</button>`,
+      `<script>let show = true\nfunction toggle() { show = !show }</script>\n{#if show}<p id="yes">visible</p>{/if}\n<button onclick={toggle}>toggle</button>`,
       runtime
     )
     const app = mount(fn, runtime)
@@ -2045,7 +2033,7 @@ describe('end-to-end — {#each}', () => {
   })
   it('updates list when signal changes', async () => {
     const fn = await compileAndExec(
-      `<script>let items = ['a','b']\nfunction add() { items = [...items, 'c'] }</script>{#each items as item}<li>{item}</li>{/each}<button on:click={add}>add</button>`,
+      `<script>let items = ['a','b']\nfunction add() { items = [...items, 'c'] }</script>{#each items as item}<li>{item}</li>{/each}<button onclick={add}>add</button>`,
       runtime
     )
     const app = mount(fn, runtime)
@@ -2062,7 +2050,7 @@ describe('end-to-end — watch+handler', () => {
 
   it('handler fires when dep changes', async () => {
     const fn = await compileAndExec(
-      `<script>let count = 0\nlet log = ''\n$: count, () => { log = 'fired:' + count }\nfunction inc() { count++ }</script><p>{log}</p><button on:click={inc}>+</button>`,
+      `<script>let count = 0\nlet log = ''\n$: count, () => { log = 'fired:' + count }\nfunction inc() { count++ }</script><p>{log}</p><button onclick={inc}>+</button>`,
       runtime
     )
     const app = mount(fn, runtime)
@@ -2079,7 +2067,7 @@ describe('end-to-end — {#if} + {#each} interaction', () => {
 
   it('does not crash when branch switches while each is active', async () => {
     const fn = await compileAndExec(
-      `<script>let searching = false\nlet results = []\nfunction search() { searching = true; results = [] }\nfunction finish() { searching = false; results = ['x','y'] }</script>{#if searching}<p id="s">Searching…</p>{:else if results.length}{#each results as r}<li>{r}</li>{/each}{/if}<button id="search" on:click={search}>search</button><button id="finish" on:click={finish}>finish</button>`,
+      `<script>let searching = false\nlet results = []\nfunction search() { searching = true; results = [] }\nfunction finish() { searching = false; results = ['x','y'] }</script>{#if searching}<p id="s">Searching…</p>{:else if results.length}{#each results as r}<li>{r}</li>{/each}{/if}<button id="search" onclick={search}>search</button><button id="finish" onclick={finish}>finish</button>`,
       runtime
     )
     const app = mount(fn, runtime)
@@ -2173,8 +2161,8 @@ describe('end-to-end — {#if} extended', () => {
   function toggle() { show = !show }
   function inc()    { count++ }
 </script>
-<button id="tog" on:click={toggle}>toggle</button>
-<button id="inc" on:click={inc}>+</button>
+<button id="tog" onclick={toggle}>toggle</button>
+<button id="inc" onclick={inc}>+</button>
 {#if show}
   <p id="yes">count: {count}</p>
 {:else}
@@ -2279,8 +2267,8 @@ describe('end-to-end — {#each} extended', () => {
   function addItem() { items = [...items, String.fromCharCode(97 + items.length)] }
   function clearItems() { items = [] }
 </script>
-<button id="add" on:click={addItem}>add</button>
-<button id="clr" on:click={clearItems}>clear</button>
+<button id="add" onclick={addItem}>add</button>
+<button id="clr" onclick={clearItems}>clear</button>
 <ul>{#each items as item (item)}<li>{item}</li>{/each}</ul>`, runtime)
     const app = mount(fn, runtime)
     expect(app.findAll('li').length).toBe(3)
@@ -2295,7 +2283,7 @@ describe('end-to-end — {#each} extended', () => {
   let items = ['a', 'b', 'c']
   function clearItems() { items = [] }
 </script>
-<button id="clr" on:click={clearItems}>clear</button>
+<button id="clr" onclick={clearItems}>clear</button>
 <ul>{#each items as item (item)}<li>{item}</li>{/each}</ul>`, runtime)
     const app = mount(fn, runtime)
     app.find('#clr').__click?.()
@@ -2310,8 +2298,8 @@ describe('end-to-end — {#each} extended', () => {
   function addItem() { items = [...items, 'd'] }
   function clearItems() { items = [] }
 </script>
-<button id="add" on:click={addItem}>add</button>
-<button id="clr" on:click={clearItems}>clear</button>
+<button id="add" onclick={addItem}>add</button>
+<button id="clr" onclick={clearItems}>clear</button>
 <ul>{#each items as item (item)}<li>{item}</li>{/each}</ul>`, runtime)
     const app = mount(fn, runtime)
     app.find('#clr').__click?.()
@@ -2328,7 +2316,7 @@ describe('end-to-end — {#each} extended', () => {
   let items = [{ id: 1, w: 50 }, { id: 2, w: 80 }]
   function grow() { items = items.map(i => ({ ...i, w: i.w + 20 })) }
 </script>
-<button id="grow" on:click={grow}>Grow</button>
+<button id="grow" onclick={grow}>Grow</button>
 {#each items as item (item.id)}
   <div class="bar" style="width:{item.w}px">{item.w}</div>
 {/each}`, runtime)
@@ -2359,7 +2347,7 @@ describe('end-to-end — watch+handler extended', () => {
 </script>
 <p id="count">{count}</p>
 <p id="last">{last}</p>
-<button id="inc" on:click={inc}>+</button>`, runtime)
+<button id="inc" onclick={inc}>+</button>`, runtime)
     const app = mount(fn, runtime)
     app.find('#inc').__click?.()
     runtime.flushSync()
@@ -2383,7 +2371,7 @@ describe('end-to-end — $: writable derived', () => {
   function shift() { items = ['x', 'y', 'z'] }
 </script>
 <p id="out">{selected}</p>
-<button id="btn" on:click={shift}>shift</button>`, runtime)
+<button id="btn" onclick={shift}>shift</button>`, runtime)
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('a')
     app.find('#btn').__click?.()
@@ -2401,8 +2389,8 @@ describe('end-to-end — $: writable derived', () => {
   function shift() { items = ['x', 'y'] }
 </script>
 <p id="out">{selected}</p>
-<button id="ov" on:click={override}>override</button>
-<button id="sh" on:click={shift}>shift</button>`, runtime)
+<button id="ov" onclick={override}>override</button>
+<button id="sh" onclick={shift}>shift</button>`, runtime)
     const app = mount(fn, runtime)
     app.find('#ov').__click?.()
     runtime.flushSync()
@@ -2421,7 +2409,7 @@ describe('end-to-end — $: writable derived', () => {
   function shift() { items = ['x', 'y'] }
 </script>
 <p id="out">{snap}</p>
-<button id="btn" on:click={shift}>shift</button>`, runtime)
+<button id="btn" onclick={shift}>shift</button>`, runtime)
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('a')
     app.find('#btn').__click?.()
@@ -2459,7 +2447,7 @@ describe('end-to-end — $: path watch on local let', () => {
   function rename() { user.name = 'Bob' }
 </script>
 <p id="out">{user.name}</p>
-<button id="btn" on:click={rename}>rename</button>`, runtime)
+<button id="btn" onclick={rename}>rename</button>`, runtime)
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('Alice')
     app.find('#btn').__click?.()
@@ -2476,7 +2464,7 @@ describe('end-to-end — $: path watch on local let', () => {
   function replace() { user = { name: 'Carol' } }
 </script>
 <p id="out">{user.name}</p>
-<button id="btn" on:click={replace}>replace</button>`, runtime)
+<button id="btn" onclick={replace}>replace</button>`, runtime)
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('Alice')
     app.find('#btn').__click?.()
@@ -2493,7 +2481,7 @@ describe('end-to-end — $: path watch on local let', () => {
   function add() { data.items.push('c') }
 </script>
 <p id="count">{data.items.length}</p>
-<button id="btn" on:click={add}>add</button>`, runtime)
+<button id="btn" onclick={add}>add</button>`, runtime)
     const app = mount(fn, runtime)
     expect(app.find('#count').textContent).toBe('2')
     app.find('#btn').__click?.()
@@ -2515,7 +2503,7 @@ describe('end-to-end — destructuring', () => {
   function rename() { user = { name: 'Bob' } }
 </script>
 <p id="out">{name}</p>
-<button id="btn" on:click={rename}>rename</button>`, runtime)
+<button id="btn" onclick={rename}>rename</button>`, runtime)
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('Alice')
     app.find('#btn').__click?.()
@@ -2532,7 +2520,7 @@ describe('end-to-end — destructuring', () => {
   function shift() { arr = [10, 2, 3] }
 </script>
 <p id="out">{first}</p>
-<button id="btn" on:click={shift}>shift</button>`, runtime)
+<button id="btn" onclick={shift}>shift</button>`, runtime)
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('1')
     app.find('#btn').__click?.()
@@ -2576,7 +2564,7 @@ describe('end-to-end — {#key}', () => {
   function next() { id++ }
 </script>
 {#key id}<p id="out">{id}</p>{/key}
-<button on:click={next}>next</button>`, runtime)
+<button onclick={next}>next</button>`, runtime)
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('1')
     app.find('button').__click?.()
@@ -2596,10 +2584,10 @@ describe('end-to-end — {#key}', () => {
   function reset() { key++ }
 </script>
 {#key key}
-  <button id="inc" on:click={inc}>+</button>
+  <button id="inc" onclick={inc}>+</button>
   <p id="val">{inner}</p>
 {/key}
-<button id="reset" on:click={reset}>reset</button>`, runtime)
+<button id="reset" onclick={reset}>reset</button>`, runtime)
     const app = mount(fn, runtime)
     app.find('#inc').__click?.()
     runtime.flushSync()
@@ -2622,7 +2610,7 @@ describe('end-to-end — {#key}', () => {
 </script>
 {#key id}<p id="out">{id}</p>{/key}
 <p id="other">{other}</p>
-<button on:click={bumpOther}>+</button>`, runtime)
+<button onclick={bumpOther}>+</button>`, runtime)
     const app = mount(fn, runtime)
     const firstP = app.find('#out')
     app.find('button').__click?.()
@@ -3069,7 +3057,7 @@ let show = true
 function toggle() { show = !show }
 </script>
 <h2>Title</h2>
-<div id="controls"><button on:click={toggle}>Toggle</button></div>
+<div id="controls"><button onclick={toggle}>Toggle</button></div>
 {#if show}
   <p id="shown">Shown</p>
 {:else}
@@ -3097,7 +3085,7 @@ const hasItems = items.length > 0
 function clear() { items = [] }
 </script>
 <h2>Title</h2>
-<div id="controls"><button on:click={clear}>Clear</button></div>
+<div id="controls"><button onclick={clear}>Clear</button></div>
 {#if !hasItems}
   <p id="empty">No items</p>
 {:else}
@@ -3160,7 +3148,7 @@ function grow() { items = items.map(i => ({ ...i, r: i.r + 10 })) }
     <circle class="dot" cx="50" cy="50" r={item.r}/>
   {/each}
 </svg>
-<button on:click={grow}>Grow</button>`, runtime)
+<button onclick={grow}>Grow</button>`, runtime)
 
     const app = mount(fn, runtime)
     const circles = () => app.findAll('.dot')
@@ -3223,7 +3211,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
   function toggle() { themeNew.style = themeNew.style === 'dark' ? 'light' : 'dark' }
 </script>
 <p id="out">{themeNew.style}</p>
-<button id="btn" on:click={toggle}>toggle</button>`, runtime, imports)
+<button id="btn" onclick={toggle}>toggle</button>`, runtime, imports)
 
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('dark')
@@ -3249,7 +3237,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
   function rename() { store.user.name = 'Bob' }
 </script>
 <p id="out">{store.user.name}</p>
-<button id="btn" on:click={rename}>rename</button>`, runtime, imports)
+<button id="btn" onclick={rename}>rename</button>`, runtime, imports)
 
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('Alice')
@@ -3269,7 +3257,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
   function toggle() { themeNew.style = themeNew.style === 'dark' ? 'light' : 'dark' }
 </script>
 <p id="out">{style.style}</p>
-<button id="btn" on:click={toggle}>toggle</button>`, runtime, imports)
+<button id="btn" onclick={toggle}>toggle</button>`, runtime, imports)
 
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('dark')
@@ -3289,7 +3277,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
   function toggle() { themeNew.style = themeNew.style === 'dark' ? 'light' : 'dark' }
 </script>
 <p id="out">{otherStyle}</p>
-<button id="btn" on:click={toggle}>toggle</button>`, runtime, imports)
+<button id="btn" onclick={toggle}>toggle</button>`, runtime, imports)
 
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('dark')
@@ -3311,7 +3299,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
 </script>
 <p id="t1">{style.style}</p>
 <p id="t2">{otherStyle}</p>
-<button id="btn" on:click={toggle}>toggle</button>`, runtime, imports)
+<button id="btn" onclick={toggle}>toggle</button>`, runtime, imports)
 
     const app = mount(fn, runtime)
     expect(app.find('#t1').textContent).toBe('dark')
@@ -3332,7 +3320,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
     const out = await cx(`<script>
   let user = { score: 0 }
   function bump() { user.score += 10; user = user }
-</script><p>{user.score}</p><button on:click={bump}>go</button>`)
+</script><p>{user.score}</p><button onclick={bump}>go</button>`)
     // forced write, not a plain setter call that Object.is would drop
     expect(out).toContain('$$runtime.set($$sig_user, $$runtime.get($$sig_user), true)')
     expect(out).not.toContain('$$set_user(user)')
@@ -3340,7 +3328,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
     const Comp = await compileAndExec(`<script>
   let user = { score: 0 }
   function bump() { user.score += 10; user = user }
-</script><p>{user.score}</p><button on:click={bump}>go</button>`, runtime)
+</script><p>{user.score}</p><button onclick={bump}>go</button>`, runtime)
     const c = document.createElement('div')
     document.body.appendChild(c)
     const anchor = document.createComment('')
@@ -3361,7 +3349,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
     const Comp = await compileAndExec(`<script>
   let user = { score: 0 }
   function bump() { user.score += 10 }
-</script><p>{user.score}</p><button on:click={bump}>go</button>`, runtime)
+</script><p>{user.score}</p><button onclick={bump}>go</button>`, runtime)
     const c = document.createElement('div')
     document.body.appendChild(c)
     const anchor = document.createComment('')
@@ -3426,7 +3414,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
   }
 </script>
 <p id="out">{themeNew.style}</p>
-<button id="btn" on:click={handleToggle}>toggle</button>`, runtime, imports)
+<button id="btn" onclick={handleToggle}>toggle</button>`, runtime, imports)
 
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('dark')
@@ -3460,7 +3448,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
   }
 </script>
 <p id="out">{counter.count}</p>
-<button id="btn" on:click={inc}>+</button>`, runtime, imports)
+<button id="btn" onclick={inc}>+</button>`, runtime, imports)
 
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('0')
@@ -3504,7 +3492,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
   function handleToggle() { toggleTheme() }
 </script>
 <p id="out">{themeNew.style}</p>
-<button id="btn" on:click={handleToggle}>toggle</button>`, runtime, imports)
+<button id="btn" onclick={handleToggle}>toggle</button>`, runtime, imports)
 
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('dark')
@@ -3535,7 +3523,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
 </script>
 <p id="style">{themeNew.style}</p>
 <p id="count">{toggleCount}</p>
-<button id="btn" on:click={handleToggle}>toggle</button>`, runtime, imports)
+<button id="btn" onclick={handleToggle}>toggle</button>`, runtime, imports)
 
     const app = mount(fn, runtime)
     expect(app.find('#style').textContent).toBe('dark')
@@ -3570,7 +3558,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
 </script>
 <p id="style">{themeNew.style}</p>
 <p id="mode">{themeNew.mode}</p>
-<button id="btn" on:click={handleUpdate}>update</button>`, runtime, imports)
+<button id="btn" onclick={handleUpdate}>update</button>`, runtime, imports)
 
     const app = mount(fn, runtime)
     expect(app.find('#style').textContent).toBe('dark')
@@ -3601,7 +3589,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
 <p id="style">{themeNew.style}</p>
 <p id="mode">{themeNew.mode}</p>
 <p id="accent">{themeNew.accent}</p>
-<button id="btn" on:click={handleUpdate}>update</button>`, runtime, imports)
+<button id="btn" onclick={handleUpdate}>update</button>`, runtime, imports)
 
     const app = mount(fn, runtime)
     app.find('#btn').__click?.()
@@ -3632,7 +3620,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
     setTheme({ style: themeNew.style === 'dark' ? 'light' : 'dark' })
   }
 </script>
-<button id="btn1" on:click={doToggle}>toggle</button>`, runtime, imports)
+<button id="btn1" onclick={doToggle}>toggle</button>`, runtime, imports)
 
     // File 2: just reads — no mutation logic
     const fn2 = await compileAndExec(`
@@ -3679,7 +3667,7 @@ describe('end-to-end — ifBlock + keyBlock param reactivity', () => {
     <p id="out">{slug}</p>
   {/key}
 {/if}
-<button id="btn" on:click={() => setSlug('world')}>change</button>`, runtime)
+<button id="btn" onclick={() => setSlug('world')}>change</button>`, runtime)
 
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('hello')
@@ -3700,8 +3688,8 @@ describe('end-to-end — ifBlock + keyBlock param reactivity', () => {
     <p id="out">{slug}</p>
   {/key}
 {/if}
-<button id="b" on:click={() => setSlug('b')}>b</button>
-<button id="c" on:click={() => setSlug('c')}>c</button>`, runtime)
+<button id="b" onclick={() => setSlug('b')}>b</button>
+<button id="c" onclick={() => setSlug('c')}>c</button>`, runtime)
 
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('a')
@@ -3727,7 +3715,7 @@ describe('end-to-end — ifBlock + keyBlock param reactivity', () => {
     <p id="out">{slug}</p>
   {/key}
 {/if}
-<button id="btn" on:click={() => setSlug('mesa-reactivity')}>change</button>`, runtime)
+<button id="btn" onclick={() => setSlug('mesa-reactivity')}>change</button>`, runtime)
 
     const app = mount(fn, runtime)
     expect(app.find('#out').textContent).toBe('hello')
@@ -3748,7 +3736,7 @@ describe('end-to-end — ifBlock + keyBlock param reactivity', () => {
 {:else}
   <p id="no">no</p>
 {/if}
-<button id="btn" on:click={toggle}>toggle</button>`, runtime)
+<button id="btn" onclick={toggle}>toggle</button>`, runtime)
 
     const app = mount(fn, runtime)
     expect(app.find('#yes')).not.toBeNull()
@@ -3773,11 +3761,11 @@ describe('end-to-end — ifBlock + keyBlock param reactivity', () => {
 </script>
 {#if mode === 'a'}
   <p id="count">{count}</p>
-  <button id="inc" on:click={inc}>+</button>
+  <button id="inc" onclick={inc}>+</button>
 {:else}
   <p id="other">other</p>
 {/if}
-<button id="switch" on:click={() => setMode('b')}>switch</button>`, runtime)
+<button id="switch" onclick={() => setMode('b')}>switch</button>`, runtime)
 
     const app = mount(fn, runtime)
     app.find('#inc').__click?.()
@@ -3805,7 +3793,7 @@ describe('end-to-end — ifBlock + keyBlock param reactivity', () => {
 {:else}
   <p id="empty">no post</p>
 {/if}
-<button id="btn" on:click={clearPost}>clear</button>`, runtime)
+<button id="btn" onclick={clearPost}>clear</button>`, runtime)
 
     const app = mount(fn, runtime)
     expect(app.find('#tag').textContent).toBe('hello')
@@ -3904,7 +3892,7 @@ describe('keyBlock — stable key does not remount', () => {
     <p id="inner">inner</p>
   {/key}
 </div>
-<button id="btn" on:click={bump}>bump</button>
+<button id="btn" onclick={bump}>bump</button>
 <p id="trigger">{trigger}</p>`, runtime)
 
     const app = mount(fn, runtime)
@@ -3937,7 +3925,7 @@ describe('keyBlock — stable key does not remount', () => {
     <p id="inner">{key}</p>
   {/key}
 </div>
-<button id="btn" on:click={swap}>swap</button>`, runtime)
+<button id="btn" onclick={swap}>swap</button>`, runtime)
 
     const app = mount(fn, runtime)
     const innerEl1 = app.find('#inner')

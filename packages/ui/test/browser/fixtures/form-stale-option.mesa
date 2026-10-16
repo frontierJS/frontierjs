@@ -52,6 +52,6 @@
 <div id="gen">
   <Form resource={resource(true)} bind:this={genApi} onsubmit={() => { genSent += 1; return {} }} />
   <output id="gen-sent">{genSent}</output>
-  <button type="button" id="gen-reset" on:click={() => genApi.reset()}>reset</button>
-  <button type="button" id="gen-reset-next" on:click={() => genApi.reset({ status: 'bravo' })}>reset next</button>
+  <button type="button" id="gen-reset" onclick={() => genApi.reset()}>reset</button>
+  <button type="button" id="gen-reset-next" onclick={() => genApi.reset({ status: 'bravo' })}>reset next</button>
 </div>

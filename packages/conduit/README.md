@@ -171,15 +171,20 @@ Resilience does not cross: the retry is the sender's, and there is no breaker on
 
 **A Provider that pushes over a socket you dial** — Mattermost's WebSocket — is a receiver that names a `broker` target in place of a path (`FJS-D1127`). Conduit dials it with the target's credential, reconnects without bound, reports `health()` under `conduit:<target>`, and runs each frame through the same order from parse on. No route is mounted, so nobody can post a frame to you; a receiver on a target carrying `path`, `credential` or a dialect `verify` is refused by name. The connector's `FrameDialect` adds `framing`: a `handshake` run after open and before the first frame is believed (handed the secret the dial spent, so the two cannot differ), a `decode` from text to `{ id, body }` or `null`, and an `ack` for a Provider that redelivers. Frames are handed over one at a time in arrival order, because an edit applied before its create is a wrong row and two copies of one frame applied side by side both pass the receipt.
 
+**`opened({ connection })` runs after every handshake conduit believes** — the first dial and each redial — ahead of that connection's first frame, handed what the handshake answered (`FJS-D1154`). A Provider that redelivers nothing lost what it sent while the socket was down, and this is where the gap's backfill starts; a throw is logged and the frames still flow. `deregister(target)` drops the receiver with the target, so the same id can be registered and received again.
+
 ```ts
-await app.conduit.register(mattermostSocketTarget({ address: 'https://chat.example' }))
+await app.conduit.register(mattermostSocketTarget({ address: 'https://chat.example', id: `broker:chat:${userId}`, ref: `CHAT_SOCKET:${userId}` }))
 await app.conduit.receive({
   provider: 'mattermost',
-  target:   MATTERMOST_SOCKET_TARGET,   // resolves once the first dial is tried
+  target:   `broker:chat:${userId}`,    // resolves once the first dial is tried
   dialect:  mattermostSocketDialect,    // { framing, parse, dedupeKey }
+  opened:   ({ connection }) => queueBackfill(userId, connection),
   apply:    async ev => { await land(ev); return 'applied' },
 })
 ```
+
+Every broker target registers readiness, so one that cannot connect makes the app's `/health` 503 — wrong for a target that is one person's view (`FJS-3150`).
 
 `stats().subscriptions[target].dropped` counts frames over `max_response_bytes` and frames the framing could not read; `stats().received[target]` counts outcomes as a route's do.
 

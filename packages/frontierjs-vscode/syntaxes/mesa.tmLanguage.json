@@ -464,8 +464,8 @@
           }
         },
         {
-          "comment": "on:click|debounce(300)|once={handler}",
-          "match": "\\b(on):([a-zA-Z][a-zA-Z0-9-]*)((?:\\|[a-zA-Z][a-zA-Z0-9]*(?:\\([^)]*\\))?)*)(?:(=)(\"[^\"]*\"|'[^']*'|\\{[^}]*\\}))?",
+          "comment": "onclick|debounce(300)|once={handler}",
+          "match": "(?<=\\s)(on)([a-z][a-zA-Z0-9-]*)((?:\\|[a-zA-Z][a-zA-Z0-9]*(?:\\([^)]*\\))?)*)(?:(=)(\"[^\"]*\"|'[^']*'|\\{[^}]*\\}))?",
           "captures": {
             "1": { "name": "keyword.operator.directive.event.mesa" },
             "2": { "name": "entity.other.attribute-name.event.mesa" },

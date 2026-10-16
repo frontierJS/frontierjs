@@ -271,7 +271,7 @@ describe('a derived const read only in teardown (FJS-1062)', () => {
       '<p style:width="{total}%"></p>',
       '<Box {...total} />',
       '<script>$.onMount(() => console.log(total))</script>',
-      '<script>function save() { return total }</script><button on:click={save}>s</button>',
+      '<script>function save() { return total }</script><button onclick={save}>s</button>',
       '<script>$: total, () => {}</script>',
     ]
     for (const r of reads) {

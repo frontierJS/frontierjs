@@ -14,7 +14,7 @@ owned, so the gap is written down rather than left to be rediscovered.
 would let junction and orion share litestone's types, so each declares the shape it
 holds. The count is here because it is the only place that cost is visible.
 
-Seams: **97**. With a stated owner: **97**. Stated and missing: **0**.
+Seams: **98**. With a stated owner: **98**. Stated and missing: **0**.
 
 **Every seam names an owner.** A callable is graded by where it is DECLARED; a key — a `$` on a
 wire, a schema keyword, a header — has no declaration anywhere, so its owner is where it is
@@ -32,8 +32,8 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 17 |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 13 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 10 |
+| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 9 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 9 |
-| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 8 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | 8 |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 8 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
@@ -66,6 +66,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | yes | 3 |
 | `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | yes | 3 |
 | `db.$readAs(accessor, row, principal)` | `packages/litestone/src/core/client.js` | yes | 1 |
+| `db.$checkWrite(accessor, op, row, changes?)` | `packages/litestone/src/core/client.js` | yes | 1 |
 | `db.$levelOf(accessor?, principal?)` | `packages/litestone/src/core/client.js` | yes | 1 |
 | `db.$primaryKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 1 |
 | `db.$mirrorKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 1 |
@@ -84,7 +85,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `controlFor(rule, {field, model})` / `formFieldList(fields, {only, except, model})` | `packages/sierra/src/resource/field-rules.js` | yes | — |
 | `labelFieldInfo(fields, fallback, declared)` | `packages/sierra/src/resource/field-rules.js` | yes | — |
 | `x-values` | `packages/litestone/src/jsonschema.js` | mentioned | — |
-| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | yes | 8 |
+| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | yes | 9 |
 | `toFieldErrors(err)` | `packages/sierra/src/resource/field-rules.js` | yes | — |
 | `$context.form` | `packages/ui/components/forms/Form.mesa` | mentions `form` — weak | — |
 | `buildRelations()` / `buildGate()` / `canAtLevel()` | `packages/sierra/src/resource/field-rules.js` | yes | — |

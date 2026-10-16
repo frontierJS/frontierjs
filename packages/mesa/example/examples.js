@@ -51,9 +51,9 @@ export const EXAMPLES = {
 <p>double: {double}</p>
 <p>initial (var snapshot): {initial}</p>
 <div>
-  <button on:click={decrement}>−</button>
-  <button on:click={increment}>+</button>
-  <button on:click={reset}>Reset</button>
+  <button onclick={decrement}>−</button>
+  <button onclick={increment}>+</button>
+  <button onclick={reset}>Reset</button>
 </div>`
   },
 
@@ -84,10 +84,10 @@ export const EXAMPLES = {
 <p>squared × factor = {scaled}</p>
 <p>{LABEL}: {display} {isLarge ? '(large!)' : ''} / {MAX}</p>
 
-<button on:click={() => base++}>base++</button>
-<button on:click={() => factor++}>factor++</button>
-<button on:click={() => offset += 5}>offset+5</button>
-<button on:click={() => { base = 2; factor = 3; offset = 10 }}>Reset</button>`
+<button onclick={() => base++}>base++</button>
+<button onclick={() => factor++}>factor++</button>
+<button onclick={() => offset += 5}>offset+5</button>
+<button onclick={() => { base = 2; factor = 3; offset = 10 }}>Reset</button>`
   },
 
   replaceNotMutate: {
@@ -146,20 +146,20 @@ export const EXAMPLES = {
 <p>{greeting} — score: {user.score}</p>
 <p>{itemCount} item{itemCount === 1 ? '' : 's'}: {items.join(', ')}</p>
 <div>
-  <button on:click={rename}>Rename to Bob</button>
-  <button on:click={addPoints}>+10 points</button>
-  <button on:click={addPointsByMutation}>+5 (mutate, then user = user)</button>
+  <button onclick={rename}>Rename to Bob</button>
+  <button onclick={addPoints}>+10 points</button>
+  <button onclick={addPointsByMutation}>+5 (mutate, then user = user)</button>
 </div>
 <div>
-  <button on:click={addItem}>Add cherry</button>
-  <button on:click={removeFirst}>Remove first</button>
+  <button onclick={addItem}>Add cherry</button>
+  <button onclick={removeFirst}>Remove first</button>
 </div>
 
 <p class="watched">
   theme: {prefs.theme} — mutated in place, and reactive because of <code>$: prefs</code>
 </p>
 <div>
-  <button on:click={toggleTheme}>Toggle theme</button>
+  <button onclick={toggleTheme}>Toggle theme</button>
 </div>
 
 <style>
@@ -210,23 +210,23 @@ export const EXAMPLES = {
 <h2>Values the proxy cannot see into</h2>
 
 <p><strong>Map</strong> — {tags.size} entries: {[...tags.keys()].join(', ')}</p>
-<button on:click={mutateMap}>tags.set(...) — nothing happens</button>
-<button on:click={replaceMap}>tags = new Map(tags) — updates</button>
+<button onclick={mutateMap}>tags.set(...) — nothing happens</button>
+<button onclick={replaceMap}>tags = new Map(tags) — updates</button>
 
 <p><strong>Set</strong> — {selected.size} selected: {[...selected].join(', ')}</p>
-<button on:click={mutateSet}>selected.add(...) — nothing happens</button>
-<button on:click={replaceSet}>selected = new Set(...) — updates</button>
+<button onclick={mutateSet}>selected.add(...) — nothing happens</button>
+<button onclick={replaceSet}>selected = new Set(...) — updates</button>
 
 <p><strong>Date</strong> — {seenAt.toDateString()}</p>
-<button on:click={advanceDate}>setDate(+1) — nothing happens</button>
-<button on:click={replaceDate}>seenAt = new Date(...) — updates</button>
+<button onclick={advanceDate}>setDate(+1) — nothing happens</button>
+<button onclick={replaceDate}>seenAt = new Date(...) — updates</button>
 
 <hr/>
 
 <p><strong>Plain object under a watch</strong> —
    legacy={flags.legacy} · fresh={flags.fresh}</p>
-<button on:click={dropFlag}>delete flags.legacy</button>
-<button on:click={addFlag}>flags.fresh = true</button>
+<button onclick={dropFlag}>delete flags.legacy</button>
+<button onclick={addFlag}>flags.fresh = true</button>
 
 <p class="keys">Object.keys: {Object.keys(flags).join(', ')} — see below</p>
 
@@ -288,9 +288,9 @@ export const EXAMPLES = {
 <p>Original snapshot (frozen): <strong>{snapshot}</strong></p>
 <p>Savings: {savings.toFixed(2)}</p>
 <p>Total: {total.toFixed(2)}</p>
-<button on:click={applyDiscount}>Apply 10% discount</button>
-<button on:click={rollback}>Rollback</button>
-<button on:click={() => quantity++}>qty+</button>`
+<button onclick={applyDiscount}>Apply 10% discount</button>
+<button onclick={rollback}>Rollback</button>
+<button onclick={() => quantity++}>qty+</button>`
   },
 
   destructuring: {
@@ -326,8 +326,8 @@ export const EXAMPLES = {
 <p>name: {name} — role: {role} — age: {age}</p>
 <p>displayName (alias): {displayName}</p>
 <p>arr[0]: {first} — arr[1]: {second}</p>
-<button on:click={updateUser}>Change user</button>
-<button on:click={shiftArr}>Change arr[0]</button>`
+<button onclick={updateUser}>Change user</button>
+<button onclick={shiftArr}>Change arr[0]</button>`
   },
 
   writableDerived: {
@@ -377,17 +377,17 @@ export const EXAMPLES = {
 <p>items: {items.join(', ')}</p>
 <p>selected (re-derives on items change): <strong>{selected}</strong></p>
 <div>
-  <button on:click={addItem}>Add item</button>
-  <button on:click={replaceItems}>Replace all</button>
-  <button on:click={pickSecond}>Pick second (override)</button>
+  <button onclick={addItem}>Add item</button>
+  <button onclick={replaceItems}>Replace all</button>
+  <button onclick={pickSecond}>Pick second (override)</button>
 </div>
 
 <hr/>
 
 <p>price: {price} — displayPrice: <strong>{displayPrice}</strong></p>
 <div>
-  <button on:click={applyDiscount}>Optimistic discount</button>
-  <button on:click={fetchNewPrice}>Fetch new price (re-derives)</button>
+  <button onclick={applyDiscount}>Optimistic discount</button>
+  <button onclick={fetchNewPrice}>Fetch new price (re-derives)</button>
 </div>`
   },
 
@@ -428,10 +428,10 @@ export const EXAMPLES = {
 <p>a={a} → b={b} → c={c}</p>
 
 <div>
-  <button on:click={changeA}>a++ (A fires, then B)</button>
-  <button on:click={changeB}>b+=5 (only B fires)</button>
-  <button on:click={changeBoth}>a=10, b=3 (A then B)</button>
-  <button on:click={reset}>Reset</button>
+  <button onclick={changeA}>a++ (A fires, then B)</button>
+  <button onclick={changeB}>b+=5 (only B fires)</button>
+  <button onclick={changeBoth}>a=10, b=3 (A then B)</button>
+  <button onclick={reset}>Reset</button>
 </div>
 
 <hr/>
@@ -474,9 +474,9 @@ export const EXAMPLES = {
 <p>Tax: {taxAmount.toFixed(2)}</p>
 <p><strong>Total: {total.toFixed(2)}</strong></p>
 <p>In stock: {inStock}</p>
-<button on:click={() => quantity++}>Add to cart</button>
-<button on:click={() => quantity = Math.max(0, quantity - 1)}>Remove</button>
-<button on:click={() => price = +(price * 0.9).toFixed(2)}>10% off</button>`
+<button onclick={() => quantity++}>Add to cart</button>
+<button onclick={() => quantity = Math.max(0, quantity - 1)}>Remove</button>
+<button onclick={() => price = +(price * 0.9).toFixed(2)}>10% off</button>`
   },
 
   attributeForwarding: {
@@ -600,21 +600,21 @@ export const EXAMPLES = {
 
 <p>
   <label>Name</label><br/>
-  <input bind:value={name} on:blur={() => touch('name')} placeholder="Full name" />
+  <input bind:value={name} onblur={() => touch('name')} placeholder="Full name" />
   {#if touched.name && nameErr}<span style="color:#ef4444;font-size:12px"> {nameErr}</span>{/if}
 </p>
 <p>
   <label>Email</label><br/>
-  <input bind:value={email} on:blur={() => touch('email')} placeholder="you@example.com" />
+  <input bind:value={email} onblur={() => touch('email')} placeholder="you@example.com" />
   {#if touched.email && emailErr}<span style="color:#ef4444;font-size:12px"> {emailErr}</span>{/if}
 </p>
 <p>
   <label>Age</label><br/>
-  <input bind:value={age} on:blur={() => touch('age')} placeholder="18+" type="number" />
+  <input bind:value={age} onblur={() => touch('age')} placeholder="18+" type="number" />
   {#if touched.age && ageErr}<span style="color:#ef4444;font-size:12px"> {ageErr}</span>{/if}
 </p>
 
-<button on:click={submit} style="opacity:{canSubmit?1:0.5}">
+<button onclick={submit} style="opacity:{canSubmit?1:0.5}">
   Submit
 </button>`
   },
@@ -651,8 +651,8 @@ export const EXAMPLES = {
 
   <div style="margin-bottom:8px">
     <input bind:value={filter} placeholder="Filter…" />
-    <button on:click={addItem}>Add random</button>
-    <button on:click={clear}>Clear all</button>
+    <button onclick={addItem}>Add random</button>
+    <button onclick={clear}>Clear all</button>
   </div>
 
   {#if !hasItems}
@@ -661,7 +661,7 @@ export const EXAMPLES = {
     {#each filtered as item (item)}
       <div>
         <span>{item}</span>
-        <button on:click={() => items = items.filter(i => i !== item)}>✕</button>
+        <button onclick={() => items = items.filter(i => i !== item)}>✕</button>
       </div>
     {:else}
       <p><em>No matches for "{filter}"</em></p>
@@ -708,8 +708,8 @@ export const EXAMPLES = {
 
 <div>
   <input bind:value={newText} placeholder="New todo…" />
-  <button on:click={addTodo}>Add</button>
-  <button on:click={clearDone}>Clear done</button>
+  <button onclick={addTodo}>Add</button>
+  <button onclick={clearDone}>Clear done</button>
 </div>
 
 {#if allDone && total > 0}
@@ -718,9 +718,9 @@ export const EXAMPLES = {
 
 {#each todos as todo (todo.id)}
   <div style="display:flex;align-items:center;gap:8px;padding:3px 0">
-    <input type="checkbox" on:click={() => toggle(todo.id)} />
+    <input type="checkbox" onclick={() => toggle(todo.id)} />
     <span style="text-decoration:{todo.done?'line-through':'none'};color:{todo.done?'#9ca3af':'inherit'}">{todo.text}</span>
-    <button on:click={() => remove(todo.id)}>✕</button>
+    <button onclick={() => remove(todo.id)}>✕</button>
   </div>
 {/each}`
   },
@@ -783,7 +783,7 @@ export const EXAMPLES = {
 
 <h2>Nested keyed lists</h2>
 
-<button on:click={shuffleColumns}>Shuffle columns</button>
+<button onclick={shuffleColumns}>Shuffle columns</button>
 
 <div class="board">
   {#each columns as col, ci (col.id)}
@@ -794,15 +794,15 @@ export const EXAMPLES = {
         <article class="card">
           <span class="idx">{ci + 1}.{i + 1}</span>
           <span class="text">{card.text}</span>
-          <button class="mini" on:click={() => move(col.id, i, i - 1)}>↑</button>
-          <button class="mini" on:click={() => move(col.id, i, i + 1)}>↓</button>
-          <button class="mini" on:click={() => rename(col.id, card.id)}>!</button>
+          <button class="mini" onclick={() => move(col.id, i, i - 1)}>↑</button>
+          <button class="mini" onclick={() => move(col.id, i, i + 1)}>↓</button>
+          <button class="mini" onclick={() => rename(col.id, card.id)}>!</button>
         </article>
       {:else}
         <p class="empty">nothing here</p>
       {/each}
 
-      <button class="rev" on:click={() => reverseCards(col.id)}>Reverse</button>
+      <button class="rev" onclick={() => reverseCards(col.id)}>Reverse</button>
     </section>
   {/each}
 </div>
@@ -863,8 +863,8 @@ export const EXAMPLES = {
 </script>
 
 <div style="display:flex;gap:8px;margin-bottom:12px">
-  <button on:click={nextUser}>Next user →</button>
-  <button on:click={forceReset}>Force reset ↺</button>
+  <button onclick={nextUser}>Next user →</button>
+  <button onclick={forceReset}>Force reset ↺</button>
 </div>
 
 <!-- {#key [userId, resetKey]} — recreates the card on any change to either value.
@@ -940,9 +940,9 @@ export const EXAMPLES = {
 </style>
 
 <div class="filters">
-  <button class={filter === 'all'      ? 'active' : ''} on:click={() => filter = 'all'}>All ({people.length})</button>
-  <button class={filter === 'active'   ? 'active' : ''} on:click={() => filter = 'active'}>Active ({activeCount})</button>
-  <button class={filter === 'inactive' ? 'active' : ''} on:click={() => filter = 'inactive'}>Inactive ({inactiveCount})</button>
+  <button class={filter === 'all'      ? 'active' : ''} onclick={() => filter = 'all'}>All ({people.length})</button>
+  <button class={filter === 'active'   ? 'active' : ''} onclick={() => filter = 'active'}>Active ({activeCount})</button>
+  <button class={filter === 'inactive' ? 'active' : ''} onclick={() => filter = 'inactive'}>Inactive ({inactiveCount})</button>
 </div>
 
 <table>
@@ -990,8 +990,8 @@ export const EXAMPLES = {
 
 <input bind:value={name} placeholder="name" />
 <br/>
-<button on:click={() => count++}>count++</button>
-<button on:click={() => count = 0}>Reset</button>`
+<button onclick={() => count++}>count++</button>
+<button onclick={() => count = 0}>Reset</button>`
   },
 
   objectPathWatch: {
@@ -1036,10 +1036,10 @@ export const EXAMPLES = {
 <p>theme: <strong>{settings.theme}</strong> · fontSize: <strong>{settings.fontSize}</strong>
    · name: <strong>{settings.profile.name}</strong></p>
 
-<button on:click={toggleTheme}>Toggle theme</button>
-<button on:click={bigger}>fontSize + 1</button>
-<button on:click={rename}>Rename</button>
-<button on:click={replace}>Replace whole object</button>
+<button onclick={toggleTheme}>Toggle theme</button>
+<button onclick={bigger}>fontSize + 1</button>
+<button onclick={rename}>Rename</button>
+<button onclick={replace}>Replace whole object</button>
 
 <hr/>
 
@@ -1107,9 +1107,9 @@ export const EXAMPLES = {
 <p>{quantity} × {unitPrice} = {subtotal} + {shipping} shipping =
    <strong>{total}</strong></p>
 
-<button on:click={() => quantity++}>quantity++</button>
-<button on:click={() => quantity += 4}>quantity += 4 (crosses free shipping)</button>
-<button on:click={reset}>Reset</button>
+<button onclick={() => quantity++}>quantity++</button>
+<button onclick={() => quantity += 4}>quantity += 4 (crosses free shipping)</button>
+<button onclick={reset}>Reset</button>
 
 <hr/>
 <p style="font-size:11px;color:#6b7280">
@@ -1251,8 +1251,8 @@ export const EXAMPLES = {
 <p>greeting: <strong>{greeting}</strong></p>
 <p>log (from $_updateLog): <em>{log}</em></p>
 <p><input bind:value={name} placeholder="name" /></p>
-<button on:click={() => count++}>count++</button>
-<button on:click={() => count = 0}>Reset</button>
+<button onclick={() => count++}>count++</button>
+<button onclick={() => count = 0}>Reset</button>
 <p style="font-size:11px;color:#9ca3af">
   Check the Graph tab — debug names appear on watch handlers.
 </p>`
@@ -1312,8 +1312,8 @@ export const EXAMPLES = {
   <p>{user?.address?.city}, {user?.address?.zipcode}</p>
 {/if}
 
-<button on:click={() => userId = Math.min(10, userId + 1)}>Next user →</button>
-<button on:click={() => userId = Math.max(1,  userId - 1)}>← Prev user</button>`
+<button onclick={() => userId = Math.min(10, userId + 1)}>Next user →</button>
+<button onclick={() => userId = Math.max(1,  userId - 1)}>← Prev user</button>`
   },
 
   asyncFunction: {
@@ -1335,8 +1335,8 @@ export const EXAMPLES = {
 
 <h2>Async function — saved {saved} times</h2>
 
-<button on:click={() => save(false)} disabled={$async.save.pending}>Save</button>
-<button on:click={() => save(true)} disabled={$async.save.pending}>Save (fails)</button>
+<button onclick={() => save(false)} disabled={$async.save.pending}>Save</button>
+<button onclick={() => save(true)} disabled={$async.save.pending}>Save (fails)</button>
 
 <p>Status: {$async.save.status}</p>
 {#if $async.save.error}
@@ -1443,16 +1443,16 @@ export const EXAMPLES = {
 
 <!-- Nav + theme toggle -->
 <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
-  <button on:click={() => tab = 'shop'}
+  <button onclick={() => tab = 'shop'}
     style="font-weight:{tab==='shop'?'700':'400'}">🛒 Shop</button>
-  <button on:click={() => tab = 'cart'}
+  <button onclick={() => tab = 'cart'}
     style="font-weight:{tab==='cart'?'700':'400'}">Cart ({cartCount})</button>
-  <button on:click={() => tab = 'orders'}
+  <button onclick={() => tab = 'orders'}
     style="font-weight:{tab==='orders'?'700':'400'}">Orders</button>
   <span style="margin-left:auto;font-size:11px;color:#9ca3af">
     {region} · {currency}
   </span>
-  <button on:click={toggleTheme}>{theme === 'light' ? '🌙' : '☀️'}</button>
+  <button onclick={toggleTheme}>{theme === 'light' ? '🌙' : '☀️'}</button>
 </div>
 
 <!-- Budget bar — uses writable derived $: budget -->
@@ -1489,7 +1489,7 @@ export const EXAMPLES = {
         <span style="font-size:18px">{p.emoji}</span>
         <span style="flex:1">{p.name}</span>
         {@render priceTag(p)}
-        <button on:click={() => addToCart(p)}>＋</button>
+        <button onclick={() => addToCart(p)}>＋</button>
       </div>
     {/each}
   {/if}
@@ -1503,11 +1503,11 @@ export const EXAMPLES = {
         <span style="font-size:18px">{item.emoji}</span>
         <span style="flex:1">{item.name} × {item.qty}</span>
         {@render priceTag({ price: item.price * item.qty })}
-        <button on:click={() => removeFromCart(item.id)}>✕</button>
+        <button onclick={() => removeFromCart(item.id)}>✕</button>
       </div>
     {/each}
     <p style="margin-top:10px"><strong>Total: \${cartTotal.toFixed(2)} {currency}</strong></p>
-    <button on:click={checkout}>Checkout</button>
+    <button onclick={checkout}>Checkout</button>
   {/if}
 
 {:else}
@@ -1555,7 +1555,7 @@ export const EXAMPLES = {
     file: 'EventModifiers.mesa',
     group: 'Events',
     src: `<script>
-  // on:event|modifier|modifier(arg)
+  // onevent|modifier|modifier(arg)
   //
   // Compile-time → addEventListener options:
   //   |once    — remove handler after first call
@@ -1600,14 +1600,14 @@ export const EXAMPLES = {
 <h2>Event modifiers</h2>
 
 <!-- |preventDefault on form submit -->
-<form on:submit|preventDefault={handleSubmit} style="margin-bottom:12px">
+<form onsubmit|preventDefault={handleSubmit} style="margin-bottom:12px">
   <input type="text" value="type anything" />
   <button type="submit">Submit (no reload)</button>
 </form>
 
 <!-- |once — listener removes itself after first call -->
 <div style="margin-bottom:8px">
-  <button on:click|once={handleOnce}>Click me (fires once only)</button>
+  <button onclick|once={handleOnce}>Click me (fires once only)</button>
   <span style="font-size:12px;color:#6b7280"> — clicked {clicks}×</span>
 </div>
 
@@ -1618,7 +1618,7 @@ export const EXAMPLES = {
   <br/>
   <input
     bind:value={input}
-    on:input|debounce({delay})={handleDebounced}
+    oninput|debounce({delay})={handleDebounced}
     placeholder="Type — fires {delay}ms after you stop"
     style="margin-top:4px;width:280px"
   />
@@ -1626,12 +1626,12 @@ export const EXAMPLES = {
 
 <!-- |self — fires only when clicking the container, not children -->
 <div
-  on:click|self={handleSelf}
+  onclick|self={handleSelf}
   style="padding:12px;background:#f3f4f6;border-radius:4px;
          margin-bottom:12px;cursor:pointer"
 >
   Click grey area (|self) — not the button below
-  <button on:click={() => addLog('inner button clicked')}>inner button</button>
+  <button onclick={() => addLog('inner button clicked')}>inner button</button>
 </div>
 
 <div style="font-size:12px;font-family:monospace;padding:8px;background:#f9fafb;
@@ -1745,9 +1745,9 @@ export const EXAMPLES = {
 </canvas>
 
 <div style="margin-bottom:16px">
-  <button on:click={() => recolor('#6366f1','#f59e0b')}>Indigo / Amber</button>
-  <button on:click={() => recolor('#10b981','#f43f5e')}>Green / Rose</button>
-  <button on:click={() => recolor('#8b5cf6','#06b6d4')}>Violet / Cyan</button>
+  <button onclick={() => recolor('#6366f1','#f59e0b')}>Indigo / Amber</button>
+  <button onclick={() => recolor('#10b981','#f43f5e')}>Green / Rose</button>
+  <button onclick={() => recolor('#8b5cf6','#06b6d4')}>Violet / Cyan</button>
 </div>
 
 <div>
@@ -1755,10 +1755,10 @@ export const EXAMPLES = {
     bind:this={inputEl}
     placeholder="Click the button to focus me"
     style="width:240px"
-    on:focus={() => focused = true}
-    on:blur={() => focused = false}
+    onfocus={() => focused = true}
+    onblur={() => focused = false}
   />
-  <button on:click={focusInput}>Focus</button>
+  <button onclick={focusInput}>Focus</button>
   <span style="font-size:12px;color:{focused?'#10b981':'#9ca3af'}">
     {focused ? '● focused' : '○ blurred'}
   </span>
@@ -1814,7 +1814,7 @@ export const EXAMPLES = {
   </strong>
 </div>
 
-<button on:click={toggle} style="margin-bottom:20px">Toggle active</button>
+<button onclick={toggle} style="margin-bottom:20px">Toggle active</button>
 
 <!-- style: with pure expression and mixed template value -->
 <div style="margin-bottom:8px">
@@ -1900,7 +1900,7 @@ export const EXAMPLES = {
 
 <button
   {@attach tooltip('Clicked ' + count + ' times')}
-  on:click={() => count++}
+  onclick={() => count++}
   style="margin-bottom:8px"
 >
   Hover me — clicked {count}×
@@ -1934,7 +1934,7 @@ export const EXAMPLES = {
     src: `<script>
   // <mesa:window> — bind events and properties to window
   //
-  // on:event={handler}      — window.addEventListener
+  // onevent={handler}      — window.addEventListener
   // bind:innerWidth={var}   — reactive, updates on resize
   // bind:scrollY={var}      — reactive, updates on scroll
   //
@@ -1958,8 +1958,8 @@ export const EXAMPLES = {
 <mesa:window
   bind:innerWidth={innerWidth}
   bind:scrollY={scrollY}
-  on:keydown={handleKey}
-  on:mousemove={handleMouse}
+  onkeydown={handleKey}
+  onmousemove={handleMouse}
 />
 
 <h2>&lt;mesa:window&gt;</h2>
@@ -2023,9 +2023,9 @@ export const EXAMPLES = {
 </p>
 
 <div style="display:flex;gap:8px;margin-bottom:16px">
-  <button on:click={() => showModal = true}>Open modal</button>
-  <button on:click={() => toast('Saved successfully ✓')}>Toast: Saved</button>
-  <button on:click={() => toast('Link copied to clipboard')}>Toast: Copied</button>
+  <button onclick={() => showModal = true}>Open modal</button>
+  <button onclick={() => toast('Saved successfully ✓')}>Toast: Saved</button>
+  <button onclick={() => toast('Link copied to clipboard')}>Toast: Copied</button>
 </div>
 
 <!-- Clipped container — normal absolute positioning would be clipped here -->
@@ -2042,14 +2042,14 @@ export const EXAMPLES = {
   <mesa:portal to={document.body}>
     <div style="position:fixed;inset:0;background:rgba(0,0,0,0.45);
                 display:flex;align-items:center;justify-content:center;z-index:1000"
-         on:click|self={() => showModal = false}>
+         onclick|self={() => showModal = false}>
       <div style="background:white;border-radius:12px;padding:24px 28px;
                   max-width:340px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.25)">
         <h3 style="margin:0 0 8px">Modal via portal</h3>
         <p style="color:#6b7280;margin:0 0 16px;font-size:14px">
           Rendered directly into document.body. Sits above everything.
         </p>
-        <button on:click={() => showModal = false}>Close</button>
+        <button onclick={() => showModal = false}>Close</button>
       </div>
     </div>
   </mesa:portal>
@@ -2116,7 +2116,7 @@ export const EXAMPLES = {
 
 <div style="margin-bottom:12px">
   <label style="font-size:12px">darkMode: {darkMode ? 'on' : 'off'}</label>
-  <button on:click={() => darkMode = !darkMode}>Toggle dark mode</button>
+  <button onclick={() => darkMode = !darkMode}>Toggle dark mode</button>
 </div>
 <div style="margin-bottom:12px">
   <label style="font-size:12px">accentHue: {accentHue}</label>
@@ -2168,9 +2168,9 @@ export const EXAMPLES = {
 <div class="value" style:color={accent}>{count}</div>
 
 <div class="row">
-  <button on:click={inc}>+1</button>
-  <button on:click={double}>&times;2</button>
-  <button on:click={reset}>reset</button>
+  <button onclick={inc}>+1</button>
+  <button onclick={double}>&times;2</button>
+  <button onclick={reset}>reset</button>
 </div>
 
 <style>
@@ -2306,7 +2306,7 @@ export const EXAMPLES = {
 <div style="display:flex;gap:4px;margin-bottom:0">
   {#each tabs as t (t)}
     <button
-      on:click={() => switchTab(t)}
+      onclick={() => switchTab(t)}
       style="padding:6px 14px;border:none;border-radius:6px 6px 0 0;cursor:pointer;
              background:{tab===t?'white':'#f3f4f6'};
              border-bottom:{tab===t?'2px solid #6366f1':'2px solid transparent'};
@@ -2325,8 +2325,8 @@ export const EXAMPLES = {
 <!-- List with transitions -->
 <h3 style="margin:0 0 8px;font-size:14px">Transitioning list</h3>
 <div style="margin-bottom:8px">
-  <button on:click={addItem}>+ Add</button>
-  <button on:click={removeFirst}>− Remove first</button>
+  <button onclick={addItem}>+ Add</button>
+  <button onclick={removeFirst}>− Remove first</button>
 </div>
 {#each items as item (item)}
   <div style="padding:7px 12px;background:#f3f4f6;border-radius:4px;margin-bottom:4px">
@@ -2399,7 +2399,7 @@ export const EXAMPLES = {
 
 <!-- Single toggle with WAAPI fade -->
 <div style="margin-bottom:16px">
-  <button on:click={() => show = !show}>
+  <button onclick={() => show = !show}>
     {show ? 'Hide' : 'Show'} banner
   </button>
   {#if show}
@@ -2413,7 +2413,7 @@ export const EXAMPLES = {
 
 <!-- Dynamic list with CSS slide -->
 <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
-  <button on:click={addItem}>+ Add item</button>
+  <button onclick={addItem}>+ Add item</button>
   <span style="font-size:11px;color:#9ca3af">slides in/out via <code>$.slide()</code></span>
 </div>
 
@@ -2426,7 +2426,7 @@ export const EXAMPLES = {
   >
     <span>{item.text}</span>
     <button
-      on:click={() => removeItem(item.id)}
+      onclick={() => removeItem(item.id)}
       style="border:none;background:none;cursor:pointer;font-size:16px;opacity:0.5"
     >×</button>
   </div>
@@ -2466,7 +2466,7 @@ export const EXAMPLES = {
   <!-- $.fade() -->
   <div>
     <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:#374151">$.fade()</div>
-    <button on:click={() => showFade = !showFade} style="margin-bottom:8px;display:block">
+    <button onclick={() => showFade = !showFade} style="margin-bottom:8px;display:block">
       {showFade ? 'Hide' : 'Show'}
     </button>
     {#if showFade}
@@ -2480,7 +2480,7 @@ export const EXAMPLES = {
   <!-- $.slide() -->
   <div>
     <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:#374151">$.slide()</div>
-    <button on:click={() => showSlide = !showSlide} style="margin-bottom:8px;display:block">
+    <button onclick={() => showSlide = !showSlide} style="margin-bottom:8px;display:block">
       {showSlide ? 'Hide' : 'Show'}
     </button>
     {#if showSlide}
@@ -2494,7 +2494,7 @@ export const EXAMPLES = {
   <!-- $.fly() -->
   <div>
     <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:#374151">$.fly()</div>
-    <button on:click={() => showFly = !showFly} style="margin-bottom:8px;display:block">
+    <button onclick={() => showFly = !showFly} style="margin-bottom:8px;display:block">
       {showFly ? 'Hide' : 'Show'}
     </button>
     {#if showFly}
@@ -2581,8 +2581,8 @@ Hello, {name}! Type your name: <input bind:value={name} style="border:1px solid 
 You have clicked the button **{count} time{count === 1 ? '' : 's'}**.
 
 <div style="display:flex;gap:8px;margin:12px 0">
-  <button on:click={dec} style="padding:4px 12px;border:1px solid #ccc;border-radius:4px">−</button>
-  <button on:click={inc} style="padding:4px 12px;background:#6366f1;color:#fff;border:none;border-radius:4px">+</button>
+  <button onclick={dec} style="padding:4px 12px;border:1px solid #ccc;border-radius:4px">−</button>
+  <button onclick={inc} style="padding:4px 12px;background:#6366f1;color:#fff;border:none;border-radius:4px">+</button>
 </div>
 
 {#if count === 0}
@@ -2681,7 +2681,7 @@ anything that changes at runtime.`,
 <hr/>
 
 <p>Dynamic: {@html bold ? '<strong>BOLD</strong>' : 'normal'}</p>
-<button on:click={() => bold = !bold}>Toggle bold</button>`,
+<button onclick={() => bold = !bold}>Toggle bold</button>`,
   },
 
   classStyling: {
@@ -2708,7 +2708,7 @@ anything that changes at runtime.`,
         <button
           class="like"
           class:liked={liked}
-          on:click={() => { liked = !liked; if (liked) count++ }}
+          onclick={() => { liked = !liked; if (liked) count++ }}
         >
           {liked ? '♥' : '♡'} {count}
         </button>
@@ -2797,15 +2797,15 @@ anything that changes at runtime.`,
 {#each items as item, i (i)}
   <div style="display:flex;align-items:center;gap:8px;margin:4px 0">
     <span>{item.name} — \${item.price.toFixed(2)}</span>
-    <button on:click={() => removeItem(i)}>✕</button>
+    <button onclick={() => removeItem(i)}>✕</button>
   </div>
 {:else}
   <p style="color:#9ca3af">Cart is empty.</p>
 {/each}
 
 <div style="margin-top:12px;display:flex;gap:8px">
-  <button on:click={addItem}>Add random item</button>
-  <button on:click={clearCart} disabled={isEmpty}>Clear</button>
+  <button onclick={addItem}>Add random item</button>
+  <button onclick={clearCart} disabled={isEmpty}>Clear</button>
 </div>`,
   },
 
@@ -2846,12 +2846,12 @@ anything that changes at runtime.`,
 {/each}
 
 <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">
-  <button on:click={push}>push()</button>
-  <button on:click={pop}>pop()</button>
-  <button on:click={shift}>shift()</button>
-  <button on:click={reverse}>reverse()</button>
-  <button on:click={sort}>sort()</button>
-  <button on:click={reset}>reset</button>
+  <button onclick={push}>push()</button>
+  <button onclick={pop}>pop()</button>
+  <button onclick={shift}>shift()</button>
+  <button onclick={reverse}>reverse()</button>
+  <button onclick={sort}>sort()</button>
+  <button onclick={reset}>reset</button>
 </div>`,
   },
 
@@ -2889,9 +2889,9 @@ anything that changes at runtime.`,
   <p>Followers: {user.stats.followers}</p>
 
   <div style="display:flex;gap:8px;flex-wrap:wrap">
-    <button on:click={rename}>Toggle name</button>
-    <button on:click={toggleTheme}>Toggle theme</button>
-    <button on:click={follow}>Follow</button>
+    <button onclick={rename}>Toggle name</button>
+    <button onclick={toggleTheme}>Toggle theme</button>
+    <button onclick={follow}>Follow</button>
   </div>
 </div>`,
   },
@@ -2920,9 +2920,9 @@ anything that changes at runtime.`,
 <h2>Async Boundary</h2>
 
 <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
-  <button on:click={() => userId = Math.max(1, userId - 1)}>← Prev</button>
+  <button onclick={() => userId = Math.max(1, userId - 1)}>← Prev</button>
   <span>User {userId}</span>
-  <button on:click={() => userId = Math.min(10, userId + 1)}>Next →</button>
+  <button onclick={() => userId = Math.min(10, userId + 1)}>Next →</button>
 </div>
 
 <mesa:boundary>
@@ -3006,7 +3006,7 @@ anything that changes at runtime.`,
   <div style="color:#ef4444;font-size:13px">
     <p style="margin:0 0 4px;font-weight:500">Failed to load</p>
     <p style="margin:0 0 12px">{err?.message ?? 'Unknown error'}</p>
-    <button on:click={() => window.location.reload()}>Retry</button>
+    <button onclick={() => window.location.reload()}>Retry</button>
   </div>
 {/snippet}`,
   },
@@ -3064,12 +3064,12 @@ anything that changes at runtime.`,
 
   <div class="controls">
     {#each themes as t (t)}
-      <button class={theme === t ? 'active' : ''} on:click={() => theme = t}>{t}</button>
+      <button class={theme === t ? 'active' : ''} onclick={() => theme = t}>{t}</button>
     {/each}
   </div>
   <div class="controls">
     {#each sizes as s (s)}
-      <button class={size === s ? 'active' : ''} on:click={() => size = s}>{s}</button>
+      <button class={size === s ? 'active' : ''} onclick={() => size = s}>{s}</button>
     {/each}
   </div>
 </div>`,
@@ -3164,7 +3164,7 @@ anything that changes at runtime.`,
     Total across all instances: <strong>{totalClicks}</strong> clicks,
     <strong>{totalInstances}</strong> mounted
   </p>
-  <button on:click={click}>Click me</button>
+  <button onclick={click}>Click me</button>
 </div>`,
   },
 
@@ -3282,7 +3282,7 @@ anything that changes at runtime.`,
       fill={selected === i ? '#fe8a11' : '#4f46e5'}
       rx="2"
       style="cursor:pointer;transition:fill .15s"
-      on:click={() => selected = selected === i ? null : i}
+      onclick={() => selected = selected === i ? null : i}
     />
     <text
       x={labelX(i)} y={H + 16}
@@ -3299,7 +3299,7 @@ anything that changes at runtime.`,
   {/each}
 </svg>
 
-<button on:click={randomize} style="margin-top:8px">Randomize</button>`,
+<button onclick={randomize} style="margin-top:8px">Randomize</button>`,
   },
 
   // ── 7GUIs ─────────────────────────────────────────────────────────────────────
@@ -3331,14 +3331,14 @@ anything that changes at runtime.`,
   <input
     type="number"
     value={celsius}
-    on:change={onCelsius}
+    onchange={onCelsius}
     style="width:100px"
   />
   <span>°C =</span>
   <input
     type="number"
     value={fahrenheit}
-    on:change={onFahrenheit}
+    onchange={onFahrenheit}
     style="width:100px"
   />
   <span>°F</span>
@@ -3401,7 +3401,7 @@ anything that changes at runtime.`,
     <input type="range" min="1" max="30" step="1" bind:value={duration} style="width:100%;margin-top:4px"/>
   </div>
 
-  <button on:click={reset}>Reset</button>
+  <button onclick={reset}>Reset</button>
 </div>`,
   },
 
@@ -3478,7 +3478,7 @@ anything that changes at runtime.`,
       {#each filtered as p (p.id)}
         <div
           class="list-item {selId === p.id ? 'active' : ''}"
-          on:click={() => select(p.id)}
+          onclick={() => select(p.id)}
         >{p.last}, {p.first}</div>
       {:else}
         <div style="color:#9ca3af;padding:4px 8px">No results</div>
@@ -3496,9 +3496,9 @@ anything that changes at runtime.`,
       <input bind:value={last} placeholder="Last name" />
     </div>
     <div class="actions">
-      <button on:click={create}>Create</button>
-      <button on:click={update} disabled={!selId}>Update</button>
-      <button on:click={remove} disabled={!selId}>Delete</button>
+      <button onclick={create}>Create</button>
+      <button onclick={update} disabled={!selId}>Update</button>
+      <button onclick={remove} disabled={!selId}>Delete</button>
     </div>
   </div>
 </div>`,
@@ -3665,8 +3665,8 @@ anything that changes at runtime.`,
   <p class="row"><em>nothing selected</em></p>
 {/each}
 
-<button on:click={addGenerated}>Add a file from code</button>
-<button on:click={clear} disabled={!chosen.length}>Clear</button>
+<button onclick={addGenerated}>Add a file from code</button>
+<button onclick={clear} disabled={!chosen.length}>Clear</button>
 
 <p class="note">
   Reading is a FileList, so <code>[...picked]</code> gives you the files.
@@ -3780,10 +3780,10 @@ anything that changes at runtime.`,
     <p style="font-size:13px;margin:6px 0 0">
       {regions.length} selected: {regions.join(', ') || '(none)'}
     </p>
-    <button on:click={() => regions = ['us', 'jp']} style="font-size:12px">
+    <button onclick={() => regions = ['us', 'jp']} style="font-size:12px">
       Set from code
     </button>
-    <button on:click={() => regions = []} style="font-size:12px">Clear</button>
+    <button onclick={() => regions = []} style="font-size:12px">Clear</button>
   </div>
 
   <div>
@@ -3859,7 +3859,7 @@ anything that changes at runtime.`,
   <input bind:value|mask({postalPattern})={postal} placeholder={postalHint} />
 </label>
 
-<button on:click={() => country = country === 'US' ? 'CA' : 'US'}>
+<button onclick={() => country = country === 'US' ? 'CA' : 'US'}>
   Country: {country} — switch
 </button>
 
@@ -3955,7 +3955,7 @@ anything that changes at runtime.`,
   <!-- clickOutside -->
   <div style="position:relative">
     <h3 style="font-size:13px;margin:0 0 6px">clickOutside</h3>
-    <button on:click|stopPropagation={() => dropdownOpen = true}>
+    <button onclick|stopPropagation={() => dropdownOpen = true}>
       Open dropdown
     </button>
     {#if dropdownOpen}
@@ -4056,10 +4056,10 @@ anything that changes at runtime.`,
   {/if}
 
   <div style="display:flex;gap:8px;margin-top:12px">
-    <button on:click={save} disabled={saving || saved}>
+    <button onclick={save} disabled={saving || saved}>
       {saving ? 'Saving…' : 'Apply 10% discount'}
     </button>
-    <button on:click={reset} disabled={saving}>Reset</button>
+    <button onclick={reset} disabled={saving}>Reset</button>
   </div>
 
   <details style="margin-top:16px;font-size:12px;color:#6b7280">
@@ -4152,10 +4152,10 @@ anything that changes at runtime.`,
   }, {})
 </script>
 
-<mesa:window on:keydown={handleKey} />
+<mesa:window onkeydown={handleKey} />
 
 <div style="text-align:center;padding:32px 0">
-  <button on:click={openPalette}
+  <button onclick={openPalette}
     style="padding:8px 20px;border-radius:6px;font-size:14px;
            cursor:pointer;background:#1e1e2e;color:#f0d8c0;
            border:1px solid #3d2a5e">
@@ -4168,7 +4168,7 @@ anything that changes at runtime.`,
 
 {#if open}
   <!-- Backdrop -->
-  <div on:click={closePalette}
+  <div onclick={closePalette}
     style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99">
   </div>
 
@@ -4208,8 +4208,8 @@ anything that changes at runtime.`,
           {#each cmds as cmd (cmd.id)}
             {@const idx = filtered.indexOf(cmd)}
             <div
-              on:click={() => run(cmd)}
-              on:mouseenter={() => activeIdx = idx}
+              onclick={() => run(cmd)}
+              onmouseenter={() => activeIdx = idx}
               style="display:flex;align-items:center;gap:12px;padding:8px 14px;
                      cursor:pointer;font-size:13px;
                      background:{activeIdx === idx ? 'rgba(200,122,220,.12)' : 'transparent'};
@@ -4371,12 +4371,12 @@ export const user = { name: 'Alice', role: 'admin' }`,
   </p>
 
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-    <button on:click={() => count++}>count++ ({count})</button>
-    <button on:click={() => cart.total += 10}>cart.total += 10</button>
-    <button on:click={() => user.name = user.name === 'Alice' ? 'Bob' : 'Alice'}>
+    <button onclick={() => count++}>count++ ({count})</button>
+    <button onclick={() => cart.total += 10}>cart.total += 10</button>
+    <button onclick={() => user.name = user.name === 'Alice' ? 'Bob' : 'Alice'}>
       toggle user.name
     </button>
-    <button on:click={() => tab = tab === 'A' ? 'B' : 'A'}>toggle tab ({tab})</button>
+    <button onclick={() => tab = tab === 'A' ? 'B' : 'A'}>toggle tab ({tab})</button>
   </div>
 
   <div style="background:#1a1a2e;border-radius:8px;padding:14px;font-family:monospace;font-size:12px;line-height:2;color:#888">
@@ -4426,7 +4426,7 @@ export const user = { name: 'Alice', role: 'admin' }`,
   <p class="bad">rejected: <strong>{err.message}</strong></p>
 {/await}
 
-<button on:click={() => attempt++}>retry</button>
+<button onclick={() => attempt++}>retry</button>
 <label><input type="checkbox" bind:checked={shouldFail} /> force failure</label>`,
   },
 
@@ -4459,7 +4459,7 @@ export const user = { name: 'Alice', role: 'admin' }`,
 <Panel>
   <h3 slot="title">Filled title</h3>
   <p>Default slot content — count is {n}.</p>
-  <button slot="actions" on:click={() => n++}>bump</button>
+  <button slot="actions" onclick={() => n++}>bump</button>
 </Panel>
 
 <Panel>
@@ -4516,7 +4516,7 @@ export const user = { name: 'Alice', role: 'admin' }`,
 <Chip label="status" class={'chip chip--' + tone} />
 <Field placeholder="type here" class="field" />
 
-<button on:click={() => tone = tone === 'ok' ? 'warn' : 'ok'}>toggle tone</button>
+<button onclick={() => tone = tone === 'ok' ? 'warn' : 'ok'}>toggle tone</button>
 
 <style>
   /* :global — every one of these classes is handed to a child component, and a
@@ -4543,7 +4543,7 @@ export const user = { name: 'Alice', role: 'admin' }`,
   <h3>Nested CSS, @layer, @container</h3>
   <p>Resize the container with the button.</p>
   <p class="repl-note">This line is styled by a :global() rule.</p>
-  <button on:click={() => wide = !wide}>{wide ? 'narrow' : 'widen'}</button>
+  <button onclick={() => wide = !wide}>{wide ? 'narrow' : 'widen'}</button>
 </div>
 
 <style>
@@ -4609,11 +4609,11 @@ export const user = { name: 'Alice', role: 'admin' }`,
 
 <h2>$: auto-effect</h2>
 <p>{title} — also written to document.title</p>
-<button on:click={() => count++}>bump</button>
+<button onclick={() => count++}>bump</button>
 
 <h2>$: multi-path watch</h2>
 <p>{cart.items} items — \${cart.total}</p>
-<button on:click={addToCart}>add item</button>`,
+<button onclick={addToCart}>add item</button>`,
     files: [{ name: 'store.js', content: `export const cart = { items: 2, total: 40 }\n` }],
   },
 
@@ -4650,8 +4650,8 @@ export const user = { name: 'Alice', role: 'admin' }`,
   <title>Mesa REPL — document globals</title>
 </mesa:head>
 
-<mesa:document on:keydown={() => keys++} />
-<mesa:body on:click={() => clicks++} />
+<mesa:document onkeydown={() => keys++} />
+<mesa:body onclick={() => clicks++} />
 
 <h2>Document-level listeners</h2>
 <p>keydown anywhere: <strong>{keys}</strong></p>

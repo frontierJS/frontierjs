@@ -88,10 +88,10 @@
     readonly={readonly}
     aria-invalid={hasError || null}
     style:resize={resize ? null : 'none'}
-    on:input={handleInput}
-    on:change={onchange}
-    on:blur={onblur}
-    on:focus={onfocus}
+    oninput={handleInput}
+    onchange={onchange}
+    onblur={onblur}
+    onfocus={onfocus}
     {...$attributes}
     value={value}
   >{value}</textarea>

@@ -32,7 +32,7 @@
       aria-label={s.label}
       aria-pressed={theme.value === s.name}
       style="background:{s.swatch}"
-      on:click={() => setTheme(s.name)}
+      onclick={() => setTheme(s.name)}
     ></button>
   {/each}
 </div>

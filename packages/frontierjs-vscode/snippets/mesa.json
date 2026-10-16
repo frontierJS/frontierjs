@@ -245,24 +245,24 @@
     ],
     "description": "Reactive inline style directive"
   },
-  "on:event": {
-    "prefix": "on:",
+  "onevent": {
+    "prefix": "on",
     "body": [
-      "on:${1:click}={${2:handler}}"
+      "on${1:click}={${2:handler}}"
     ],
-    "description": "Event listener directive"
+    "description": "Event listener"
   },
-  "on:event with modifier": {
-    "prefix": "on:mod",
+  "onevent with modifier": {
+    "prefix": "onmod",
     "body": [
-      "on:${1:click}|${2:preventDefault}={${3:handler}}"
+      "on${1:click}|${2:preventDefault}={${3:handler}}"
     ],
     "description": "Event listener with modifier"
   },
-  "on:debounce": {
-    "prefix": "on:debounce",
+  "ondebounce": {
+    "prefix": "ondebounce",
     "body": [
-      "on:${1:input}|debounce(${2:300})={${3:handler}}"
+      "on${1:input}|debounce(${2:300})={${3:handler}}"
     ],
     "description": "Debounced event listener"
   },

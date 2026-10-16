@@ -1573,7 +1573,7 @@ ${sc}
     <span class="badge" class:success={status.connected} class:muted={!status.connected}>
       {status.connected ? 'live' : 'offline'}
     </span>
-    <button class="btn ghost square" on:click={toggleTheme}
+    <button class="btn ghost square" onclick={toggleTheme}
             aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
       {theme.value === 'theme-dark' ? '☀' : '☾'}
     </button>
@@ -1625,7 +1625,7 @@ ${useApi ? `  // Naming a property in a $: line is what SUBSCRIBES this componen
 ${useApi ? `    <span class="badge" class:success={status.connected} class:muted={!status.connected}>
       {status.connected ? 'live' : 'offline'}
     </span>
-` : ''}    <button class="btn ghost square" on:click={toggleTheme}
+` : ''}    <button class="btn ghost square" onclick={toggleTheme}
             aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
       {theme.value === 'theme-dark' ? '☀' : '☾'}
     </button>
@@ -1752,7 +1752,7 @@ ${useApi ? `  <div class="cluster">
       <p>No store, no hook, no setter. Assign to it, and the markup that read it
          is what updates.</p>
       <div class="cluster">
-        <button class="btn primary" on:click={() => count++}>Press me</button>
+        <button class="btn primary" onclick={() => count++}>Press me</button>
         <span class="pill" class:muted={count === 0} class:success={count > 0}>pressed {count} times</span>
       </div>
     </article>
@@ -1916,7 +1916,7 @@ ${sc}
 
 <!-- A <form>, so Enter in either box signs in. Buttons that do not submit say
      type="button", or Enter would press the first of them. -->
-<form class="auth-card card stack gap-md" on:submit|preventDefault={session.awaitingCode ? handleCode : handleSubmit}>
+<form class="auth-card card stack gap-md" onsubmit|preventDefault={session.awaitingCode ? handleCode : handleSubmit}>
   <h1 class="text-xl">Sign in</h1>
 
   {#if error}
@@ -1929,7 +1929,7 @@ ${sc}
     <button class="btn primary" type="submit" disabled={loading}>
       {loading ? 'Checking…' : 'Verify'}
     </button>
-    <button class="btn ghost" type="button" on:click={startOver} disabled={loading}>Start over</button>
+    <button class="btn ghost" type="button" onclick={startOver} disabled={loading}>Start over</button>
   {:else}
     <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email"    autocomplete="username" />
     <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" autocomplete="current-password" />
@@ -2020,7 +2020,7 @@ title: Reset your password
   })
 ${sc}
 
-<form class="auth-card card stack gap-md" on:submit|preventDefault={token() ? confirm : request}>
+<form class="auth-card card stack gap-md" onsubmit|preventDefault={token() ? confirm : request}>
   <h1 class="text-xl">Reset your password</h1>
 
   {#if error}
@@ -2119,7 +2119,7 @@ ${sc}
     <a class="btn primary" href="/login/">Sign in</a>
   {:else if token()}
     <p class="text-sm text-muted">Confirm that this address is yours.</p>
-    <button class="btn primary" type="button" on:click={confirm} disabled={busy}>
+    <button class="btn primary" type="button" onclick={confirm} disabled={busy}>
       {busy ? 'Confirming…' : 'Confirm email'}
     </button>
   {:else}
@@ -2236,13 +2236,13 @@ ${sc}
         <dt>Email</dt>
         <dd>{session.user.email}</dd>
       </dl>
-${withName ? `      <form class="stack gap-sm" on:submit|preventDefault={saveName}>
+${withName ? `      <form class="stack gap-sm" onsubmit|preventDefault={saveName}>
         <input class="field" bind:value={name} placeholder="Your name" aria-label="Name" autocomplete="name" />
         <button class="btn primary" type="submit" disabled={busy}>Save name</button>
       </form>
 ` : ``}    </section>
 
-    <form class="card stack gap-sm" on:submit|preventDefault={changePassword}>
+    <form class="card stack gap-sm" onsubmit|preventDefault={changePassword}>
       <h2 class="text-lg">Password</h2>
       <input class="field" bind:value={current} type="password" placeholder="Current password" aria-label="Current password" autocomplete="current-password" />
       <input class="field" bind:value={next}    type="password" placeholder="New password"     aria-label="New password"     autocomplete="new-password" />
@@ -2253,7 +2253,7 @@ ${withName ? `      <form class="stack gap-sm" on:submit|preventDefault={saveNam
   <section class="card stack gap-sm sessions">
     <div class="split">
       <h2 class="text-lg">Where you are signed in</h2>
-      <button class="btn outlined" on:click={signOutOthers} disabled={busy || sessions.length < 2}>Sign out everywhere else</button>
+      <button class="btn outlined" onclick={signOutOthers} disabled={busy || sessions.length < 2}>Sign out everywhere else</button>
     </div>
     <dl class="facts divided">
       {#each sessions as s}
@@ -2263,7 +2263,7 @@ ${withName ? `      <form class="stack gap-sm" on:submit|preventDefault={saveNam
             <span class="badge success">this browser</span>
           {:else}
             <span class="text-sm text-muted">expires {at(s.expiresAt)}</span>
-            <button class="btn ghost" on:click={() => signOutOne(s.id)} disabled={busy}>Sign out</button>
+            <button class="btn ghost" onclick={() => signOutOne(s.id)} disabled={busy}>Sign out</button>
           {/if}
         </dd>
       {/each}
@@ -2317,7 +2317,7 @@ title: Create an account
   }
 ${sc}
 
-<form class="auth-card card stack gap-md" on:submit|preventDefault={handleSubmit}>
+<form class="auth-card card stack gap-md" onsubmit|preventDefault={handleSubmit}>
   <h1 class="text-xl">Create an account</h1>
 
   {#if error}

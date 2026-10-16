@@ -2407,8 +2407,70 @@ answer.
       `verify:tui` for the terminal. Native: `none`, since no kit overlay
       runs on a phone yet.
     - No § IV adjudication is in tension. Tier: Assessment, this entry.
-- [ ] 5.3 A phone's viewport for `placeAgainst`: its clamp reads `window`,
+- [x] 5.3 A phone's viewport for `placeAgainst`: its clamp reads `window`,
       which a phone does not have
+  - `$.viewport()` answers a Promise of `{ width, height }`, the area a
+    `position: fixed` box is placed against, in `$.measure`'s units. The DOM
+    answers `innerWidth`/`innerHeight`, the numbers the clamp read before. A
+    phone answers the page element's own box, so the unit agrees with
+    `$.measure` whatever the pixel ratio. A terminal answers the renderer's
+    cells. Each runtime exports it beside the 5.1 pair, `$$shared` takes the
+    target's, and VISION § 17 lists it.
+  - `placeAgainst(tr, pr, vp, opts)` takes the viewport as an argument and
+    reads no global. Each overlay's `position()` reads
+    `Promise.all([$.measure(a), $.measure(b), $.viewport()])`.
+  - Ruled by the owner, option A: the `typeof window` guard in `DropdownMenu`
+    and `ConfirmPanel` is gone, so every target places. The guard skipped a
+    phone as well as a terminal. A terminal reads no style, so its x and y
+    land nowhere. Its panel is shown one frame later, because a terminal's
+    `$.measure` waits for a frame.
+  - Measured:
+    - Emulator (`lynx34`, `-gpu swiftshader_indirect`), scratch fixture
+      logging to logcat, then removed: `{"box":[120,40],"vp":[411.43,785.52]}`.
+      That is 1080 px at a ratio of 2.625, in the units the box is in.
+    - Lynx for Web: `Probe` reads `$.viewport()` after its measure, and
+      `probe` asserts the screen is larger than the box. Native drive 71 of 71.
+    - Mesa vitest 2,363 and terminal 428 pass. One full vitest run showed 12
+      failures and the next one showed 1, while a peer session was editing
+      `compiler.js`. The run after that was clean. Corpus: 704 files, 0
+      invalid JS.
+    - ui `bun run test`: 1,891 passing, 83 of 83 components opened.
+    - `example` `verify:tui`: the confirmation and the menu still open under
+      their triggers, and Esc and focus return pass. The one failure is
+      `FJS-2931`, as in 5.2.
+    - `example` on the 7xxx slot. `verify` failed only `consoleErrors`, which
+      is `FJS-1598`. `verify:ui` threw at `modal.confirmRuns`, which is
+      `FJS-2905`: a Modal path, filed 2026-10-15, before this change.
+  - The nine. They were worked out before the code and put to the owner as
+    the guard question, but they were written down here after the code:
+    - Q1 origin: the viewport is read off the engine on every call. The kit
+      no longer has a second reading of `window`.
+    - Q2 concept: one new member on the door and no new noun. `viewport` is
+      the web's word (`visualViewport`, `<meta name=viewport>`). React
+      Native's `Dimensions.get('window')` and Floating UI's per-platform
+      `getDimensions` are the same seam under other names.
+    - Q3 complexity: belongs to the problem. A phone's screen comes back by
+      callback, as its boxes do.
+    - Q4 predictability: one spelling and one shape on all three targets. A
+      terminal's answer is its real size, not `null`, so it means the same
+      thing everywhere. That is why A was chosen over B.
+    - Q5 derived: a phone's size is derived from the page's box rather than
+      from `SystemInfo` and its pixel ratio, so the units cannot disagree.
+    - Q6 owner: each target's runtime, where 5.1 put `measure` and `focus`.
+      `placeAgainst` stays the one copy of the placement math.
+    - Q7 boundary: named on `$`, documented in VISION § 17, and graded by
+      `emission.test.js`'s door-against-VISION check.
+    - Q8 failure: on a phone, calling it before `mount()` rejects with a
+      message saying so. An engine refusal rejects, as `measure` does. Either
+      rejection leaves the panel hidden, which you can see.
+    - Q9 silence: what must stay true is that the viewport is in
+      `$.measure`'s units on every target. What fails when it stops: native
+      `probe` on Lynx for Web, the ui drive's overlay specs for the DOM, and
+      `verify:tui` for the terminal. Device units: `none`. The emulator check
+      above was one scratch run, since no new test files are wanted while
+      experimenting.
+    - No § IV adjudication is in tension. Tier: Map (VISION § 17), and this
+      entry as the Assessment.
 - [ ] 5.4 A phone's answer for `drag.js`, then `Slider`'s and `SignaturePad`'s
       rects through `$.measure`
 

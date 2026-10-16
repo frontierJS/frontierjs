@@ -44,13 +44,10 @@
     )?.finished,
   })
 
-  // A terminal has no window to place against: the panel paints where it is
-  // written, beside its anchor, and needs no placing.
   async function position() {
-    if (typeof window === 'undefined') return
-    const [ar, pr] = await Promise.all([$.measure(anchor), $.measure(panelEl)])
+    const [ar, pr, vp] = await Promise.all([$.measure(anchor), $.measure(panelEl), $.viewport()])
     if (!ar || !pr) return
-    ;({ x, y } = placeAgainst(ar, pr, { offset: 8 }))
+    ;({ x, y } = placeAgainst(ar, pr, vp, { offset: 8 }))
   }
 
   function onClickAway(e) {
@@ -88,7 +85,7 @@
   }
 </script>
 
-<mesa:window on:keydown={onKeydown} on:click|capture={onClickAway} />
+<mesa:window onkeydown={onKeydown} onclick|capture={onClickAway} />
 
 <mesa:portal to={overlayHost()}>
   <div
@@ -112,11 +109,11 @@
       <p class="text-sm text-muted" style:margin="0">{message}</p>
     {/if}
     <div class="cluster" style:justify-content="flex-end">
-      <button type="button" class="btn ghost" on:click={() => oncancel?.()}>
+      <button type="button" class="btn ghost" onclick={() => oncancel?.()}>
         {cancelLabel}
       </button>
       <button bind:this={confirmEl} type="button" class={cx('btn', toTone(tone) || 'danger')}
-              on:click={() => onconfirm?.()}>
+              onclick={() => onconfirm?.()}>
         {confirmLabel}
       </button>
     </div>

@@ -35,7 +35,7 @@ import { isNestedWrite } from '../plugins/reach.js'
 import { capabilityDeclarations, capabilityNames } from './capabilities.js'
 import {
   buildPolicyMap, buildScopeMap, compileScope, compileStatic, policyExprToString,
-  buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, evalJs,
+  buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, withLiteralDefaults, evalJs,
   compileFieldPredicate, delegationProblems, buildClaimSet, checkFieldPolicies,
   authClaimsUsed, readReach, fromReach,
 } from './policy.js'
@@ -12183,6 +12183,51 @@ function makeLockPrimitive(rawWriteDb) {
     }
   }
 
+  // ─── $checkWrite ────────────────────────────────────────────────────────
+  //
+  // $checkWrite(accessor, op, row, changes?) → { ok, message?, rule? }
+  //
+  // Would this client's caller be let make this write — asked by a write that
+  // does not reach this table first. A claimed mirror's forward sends to the
+  // Provider and lands the answer as the system, so without this the app's own
+  // `@@allow` for create, update and delete graded nobody, and a write the
+  // schema refuses landed whenever the Provider was laxer (`FJS-3147`).
+  //
+  // `create` grades `row` as the payload, read at its literal defaults as the
+  // insert would land it. `update` grades `row` as stored, then the stored row
+  // with `changes` over it under `post-update`. `delete` grades `row` as stored.
+  // The gate and the `@@capabilities` grid first, as the write's own plugins do.
+  //
+  // Field `@allow('write')` and `@@transitions` are not graded here. On a mirror
+  // the first is refused by the parser on every Provider column, and a `@local`
+  // one is written through the table; a claim on a model declaring the second
+  // is refused at its bind (`FJS-D1162`).
+  //
+  // **It fails closed.** `policyVerdict` throws on an undecidable policy and so
+  // does this; a refusal is a verdict, never a throw, so an affordance can ask.
+  // Off this flavor's own ctx, as `$levelOf` is, because `ctx.auth` refuses
+  // outside a table method.
+  function $checkWriteAs(ownCtx) {
+    return async function $checkWrite(accessor, op, row, changes = null) {
+      const modelName = modelForAccessor(accessor)?.name
+      if (!modelName) throw new Error(`$checkWrite: '${accessor}' is not a model accessor`)
+      if (op !== 'create' && op !== 'update' && op !== 'delete')
+        throw new Error(`$checkWrite: op is 'create', 'update' or 'delete', not '${op}'`)
+      try {
+        await ownCtx.gateCheck?.(modelName, op, ownCtx)
+        if (shapes[modelName].capabilities?.[op]) requireCapability(modelName, op, ownCtx)
+      } catch (e) {
+        if (!(e instanceof AccessDeniedError)) throw e
+        return { ok: false, message: e.message, rule: e.capability ? 'capability' : 'gate' }
+      }
+      if (op === 'create')
+        return policyVerdict(modelName, withLiteralDefaults(row, shapes[modelName].literalDefaults), ownCtx, 'create')
+      const before = policyVerdict(modelName, row, ownCtx, op)
+      if (!before.ok || op === 'delete') return before
+      return policyVerdict(modelName, { ...row, ...(changes ?? {}) }, ownCtx, 'post-update')
+    }
+  }
+
   // ─── $capabilitiesFor ───────────────────────────────────────────────────
   //
   // $capabilitiesFor(principal) → { held, unknown, byModel }
@@ -12941,7 +12986,7 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -12966,6 +13011,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(sysCtx)
+      if (prop === '$checkWrite')      return $checkWriteAs(sysCtx)
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
@@ -13078,7 +13124,7 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
     const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -13100,6 +13146,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(authCtx)
+      if (prop === '$checkWrite')      return $checkWriteAs(authCtx)
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
@@ -13254,7 +13301,7 @@ function makeLockPrimitive(rawWriteDb) {
     scopedFlavor.tables = rawTables
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -13285,6 +13332,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(sCtx)
+      if (prop === '$checkWrite')      return $checkWriteAs(sCtx)
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
@@ -13485,7 +13533,7 @@ function makeLockPrimitive(rawWriteDb) {
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -13523,6 +13571,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(ctx)
+      if (prop === '$checkWrite')      return $checkWriteAs(ctx)
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading

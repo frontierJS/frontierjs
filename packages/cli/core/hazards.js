@@ -18,8 +18,8 @@
 // reds zero or two, so rewording a bullet out from under its rule is a red
 // rather than a row that quietly turned `none`.
 
-import { readFileSync } from 'node:fs'
-import { join }         from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join }                      from 'node:path'
 
 export const REALMS = ['data', 'api', 'ui']
 
@@ -30,21 +30,47 @@ const read = p => { try { return readFileSync(p, 'utf8') } catch { return null }
 // Parsed from each skill's index rather than restated: a bullet whose line
 // opens with a bold lead, nested ones included, under the `## ` section it
 // sits in. The lead is the hazard's rule; the reference file holds the rest.
+//
+// `names` is what a session would write when it meets the hazard: the defect
+// ids and the error classes the entry cites, from the index line and the
+// reference bullet with the same lead. A ruling id is not a name — a session
+// drafting an owed ruling cites `FJS-D###` as its argument without meeting the
+// hazard — and neither is the lead's prose, whose code spans (`const`, `9`,
+// `asSystem()`) turn up in most sessions whatever they were doing.
 
 export function readHazards(root) {
   const out = []
   for (const realm of REALMS) {
-    const text = read(join(root, '.claude', 'skills', `${realm}-hazards`, 'SKILL.md'))
+    const dir  = join(root, '.claude', 'skills', `${realm}-hazards`)
+    const text = read(join(dir, 'SKILL.md'))
     if (text === null) continue
+    const detail = referenceLines(join(dir, 'references'))
     let section = null
     for (const line of text.split('\n')) {
       const h = /^## (.+)$/.exec(line)
       if (h) { section = h[1].trim(); continue }
       const b = /^(\s*)- \*\*(.+?)\*\*/.exec(line)
-      if (b && section) out.push({ realm, section, lead: b[2].trim(), nested: b[1].length > 0 })
+      if (!b || !section) continue
+      const lead = b[2].trim()
+      out.push({ realm, section, lead, nested: b[1].length > 0, names: namesIn(`${line}\n${detail.get(lead) ?? ''}`) })
     }
   }
   return out
+}
+
+function referenceLines(dir) {
+  const byLead = new Map()
+  let files = []
+  try { files = readdirSync(dir).filter(f => f.endsWith('.md')) } catch {}
+  for (const f of files) for (const line of (read(join(dir, f)) ?? '').split('\n')) {
+    const b = /^\s*- \*\*(.+?)\*\*/.exec(line)
+    if (b) byLead.set(b[1].trim(), line)
+  }
+  return byLead
+}
+
+function namesIn(text) {
+  return [...new Set([...text.matchAll(/\bFJS-\d+\b|\b[A-Z][A-Za-z]*Error\b/g)].map(m => m[0]))]
 }
 
 // ─── resolving a rule's `hazard:` ────────────────────────────────────────────

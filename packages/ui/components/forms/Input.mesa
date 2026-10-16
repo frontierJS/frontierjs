@@ -191,12 +191,12 @@
     autocomplete={autocomplete}
     list={listId}
     aria-invalid={hasError || null}
-    on:input={handleInput}
-    on:change={onchange}
-    on:blur={onblur}
-    on:focus={onfocus}
-    on:keydown={onkeydown}
-    on:keypress={onkeypress}
+    oninput={handleInput}
+    onchange={onchange}
+    onblur={onblur}
+    onfocus={onfocus}
+    onkeydown={onkeydown}
+    onkeypress={onkeypress}
     {...$attributes}
   />
 {/snippet}
@@ -226,8 +226,8 @@
           aria-pressed={revealed}
           aria-controls={inputId}
           disabled={resolvedDisabled}
-          on:mousedown={holdFocus}
-          on:click={toggleReveal}
+          onmousedown={holdFocus}
+          onclick={toggleReveal}
         >
           {#if revealed}
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">

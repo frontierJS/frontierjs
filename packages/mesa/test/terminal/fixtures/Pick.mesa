@@ -29,8 +29,8 @@
   <option value="Paris"></option>
   <option>Rome</option>
 </datalist>
-<select name="size" on:input={(e) => { inputs++; heard = e.target.value }}
-        on:change={(e) => { changed = e.target.value }}>
+<select name="size" oninput={(e) => { inputs++; heard = e.target.value }}
+        onchange={(e) => { changed = e.target.value }}>
   <option value="s">Small</option>
   <option value="m" disabled>Medium</option>
   <option value="l" selected>Large</option>
@@ -43,8 +43,8 @@
     <option value={s.value}>{s.label}</option>
   {/each}
 </select>
-<button type="button" on:click={load}>Load</button>
-<button type="button" on:click={reset}>Reset</button>
+<button type="button" onclick={load}>Load</button>
+<button type="button" onclick={reset}>Reset</button>
 <select bind:value={obj}>
   <option value={ALPHA}>Alpha</option>
   <option value={BETA}>Beta</option>

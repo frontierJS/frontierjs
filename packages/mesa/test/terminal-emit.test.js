@@ -23,7 +23,7 @@ const COUNTER = `<script>
 <div class="box">
   <h1>Counter</h1>
   <p>Count: {count}</p>
-  <button on:click={inc}>Add</button>
+  <button onclick={inc}>Add</button>
   {#if count > 2}
     <p>Many</p>
   {:else}
@@ -188,7 +188,7 @@ describe('terminal target', () => {
     // TERMINAL_EVENTS and the route that uses one stays refused.
     it('a pointer or wheel gesture', async () => {
       for (const event of ['pointerdown', 'pointermove', 'pointerup', 'wheel']) {
-        await refusal(`<div on:${event}={() => {}}></div>\n`, 'P.mesa', `on:${event} at P.mesa:1:6 has no terminal lowering`)
+        await refusal(`<div on${event}={() => {}}></div>\n`, 'P.mesa', `on${event} at P.mesa:1:6 has no terminal lowering`)
       }
     })
 
@@ -199,28 +199,28 @@ describe('terminal target', () => {
       await expect(terminal(`<script>let m = false</script>\n<select multiple={m}><option>a</option></select>\n`, 'L.mesa')).resolves.toBeTruthy()
     })
 
-    it('on:dblclick', async () => {
-      await refusal(`<div on:dblclick={() => {}}></div>\n`, 'D.mesa',
-        'on:dblclick at D.mesa:1:6 has no terminal lowering')
+    it('ondblclick', async () => {
+      await refusal(`<div ondblclick={() => {}}></div>\n`, 'D.mesa',
+        'ondblclick at D.mesa:1:6 has no terminal lowering')
     })
 
     // The window is the end of every event's path; nothing in the corpus
     // listens at a document or a body, and a window property has no terminal.
     it('<mesa:document>, <mesa:body>, and a bind: or an unknown event on <mesa:window>', async () => {
-      await refusal(`<mesa:document on:keydown={() => {}} />\n`, 'D.mesa',
+      await refusal(`<mesa:document onkeydown={() => {}} />\n`, 'D.mesa',
         '<mesa:document> at D.mesa:1:1 has no terminal lowering')
-      await refusal(`<mesa:body on:click={() => {}} />\n`, 'B.mesa',
+      await refusal(`<mesa:body onclick={() => {}} />\n`, 'B.mesa',
         '<mesa:body> at B.mesa:1:1 has no terminal lowering')
       await refusal(`<script>let y = 0</script>\n<mesa:window bind:scrollY={y} />\n`, 'Y.mesa',
         'bind:scrollY at Y.mesa:2:14 has no terminal lowering')
-      await refusal(`<mesa:window on:resize={() => {}} />\n`, 'R.mesa',
-        'on:resize at R.mesa:1:14 has no terminal lowering')
+      await refusal(`<mesa:window onresize={() => {}} />\n`, 'R.mesa',
+        'onresize at R.mesa:1:14 has no terminal lowering')
     })
 
     // A portal's children are checked where they paint, which is in place.
     it('an offender inside a <mesa:portal>', async () => {
-      await refusal(`<mesa:portal to={document.body}>\n  <div on:dblclick={() => {}}></div>\n</mesa:portal>\n`, 'P.mesa',
-        'on:dblclick at P.mesa:2:8 has no terminal lowering')
+      await refusal(`<mesa:portal to={document.body}>\n  <div ondblclick={() => {}}></div>\n</mesa:portal>\n`, 'P.mesa',
+        'ondblclick at P.mesa:2:8 has no terminal lowering')
     })
 
     // A browser moves live text into a field only until someone types.
@@ -328,7 +328,7 @@ describe('terminal target', () => {
 
   it('reports an attribute no component takes, as the DOM path does, and passes nothing', async () => {
     const source = `<script>import Card from './Card.mesa'; const f = () => {}</script>
-<Card on:pick={() => {}} class:on={true} #ref {*f} {@attach f} title="A" />
+<Card onpick|capture={() => {}} class:on={true} #ref {*f} {@attach f} title="A" />
 `
     const said = (target) => {
       const out = []
@@ -338,7 +338,7 @@ describe('terminal target', () => {
     const dom = await said(undefined)
     const tui = await said('terminal')
     expect(tui.out).toEqual(dom.out)
-    expect(tui.out.map((m) => m.split(' ')[0])).toEqual(['on:pick', '<Card', '<Card', '<Card', '{@attach}'])
+    expect(tui.out.map((m) => m.split(' ')[0])).toEqual(['<Card', '<Card', '<Card', '<Card', '{@attach}'])
     expect(tui.out.every((m) => m.endsWith('P.mesa:2:1'))).toBe(true)
     expect(tui.result).toContain("Card($$m0, {title: 'A'}, null);")
     expect(dom.result).toContain("Card($$el0, {title: `A`}, null);")
@@ -385,7 +385,7 @@ describe('terminal target', () => {
   // options are the DOM's: `capture` and `once`, never `passive`.
   it('hands an element to bind:this and passes capture and once as listener options', async () => {
     const { result } = await terminal(`<script>let el = null\nconst f = () => {}</script>
-<form bind:this={el} on:submit|preventDefault={f} on:blur|capture={f} on:input|once|passive={f}></form>
+<form bind:this={el} onsubmit|preventDefault={f} onblur|capture={f} oninput|once|passive={f}></form>
 `, 'E.mesa')
     expect(result).toContain([
       "const $$el0 = $$host.element('form');",
@@ -399,7 +399,7 @@ describe('terminal target', () => {
 
   it('binds an element value after its handlers, through the getter and setter the DOM path writes', async () => {
     const { result } = await terminal(`<script>let v = ''\nlet d = {}\nconst f = () => {}</script>
-<select bind:value={v} on:change={f}><option>a</option></select>
+<select bind:value={v} onchange={f}><option>a</option></select>
 <input bind:value={d.name} />
 `, 'V.mesa')
     expect(result).toContain([
@@ -503,14 +503,14 @@ describe('terminal target', () => {
 </script>
 <table><tr><td class={x} colspan={x}>{v}</td><td>z</td></tr></table>
 <input bind:value={v} bind:checked={v} />
-{#if v}<button on:click|once={() => {}} on:pointerenter={() => {}}>b</button>{/if}
-{#each [1] as n}<Foo {...v} bind:x={v} on:pick={() => {}}><iframe>{#snippet s()}x{/snippet}</iframe></Foo>{/each}
+{#if v}<button onclick|once={() => {}} onpointerenter={() => {}}>b</button>{/if}
+{#each [1] as n}<Foo {...v} bind:x={v} onpick={() => {}}><iframe>{#snippet s()}x{/snippet}</iframe></Foo>{/each}
 `, { filename: 'H.mesa', dev: false, warning: () => {} })
     expect(hostOffenses(ir, TARGETS.terminal).map((o) => [o.what, o.shape, o.loc])).toEqual([
       ['colspan on <td>', 'colspan on <td>', 'H.mesa:5:12'],
       ['bind:checked on <input type="text">', 'bind:checked on <input type="text">', 'H.mesa:6:23'],
-      ['on:pointerenter', 'on:pointerenter', 'H.mesa:7:41'],
-      ['<iframe>',     '<iframe>',          'H.mesa:8:59'],
+      ['onpointerenter', 'onpointerenter', 'H.mesa:7:40'],
+      ['<iframe>',     '<iframe>',          'H.mesa:8:58'],
     ])
   })
 })

@@ -88,10 +88,10 @@ siteName: Sierra example
       </span>
       {#if session.level > 0}
         <span class="badge info">gate level {session.level}</span>
-        <button class="btn ghost" on:click={signOut}>Sign out</button>
+        <button class="btn ghost" onclick={signOut}>Sign out</button>
       {:else}
-        <button class="btn outlined" on:click={() => signIn(false)}>Sign in (user)</button>
-        <button class="btn primary"  on:click={() => signIn(true)}>Sign in (admin)</button>
+        <button class="btn outlined" onclick={() => signIn(false)}>Sign in (user)</button>
+        <button class="btn primary"  onclick={() => signIn(true)}>Sign in (admin)</button>
       {/if}
     </span>
   </header>

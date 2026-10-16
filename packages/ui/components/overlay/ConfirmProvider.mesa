@@ -15,7 +15,7 @@
   // attribute, and no component wires anything:
   //
   //   <button class="btn danger" data-confirm="Delete this order?"
-  //           on:click={() => remove(order)}>Delete</button>
+  //           onclick={() => remove(order)}>Delete</button>
   //
   //   <a href="/leave/" data-confirm data-confirm-title="Leave the workspace?">Leave</a>
   //

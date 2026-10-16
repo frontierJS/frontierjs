@@ -82,7 +82,7 @@ Done when: `FJS-D1077`–`FJS-D1086`, `FJS-D668` and `FJS-D866` are closed by
 - [x] 2.1 `FJS-D1077` factory grammar (holds `FJS-2938`, `FJS-2953`)
 - [x] 2.2 `FJS-D1079` one service verb (holds `FJS-2937`, `FJS-1868`)
 - [x] 2.3 `FJS-D1080` one root on `createApp` (holds `FJS-2939`, `FJS-2975`)
-- [ ] 2.4 `FJS-D1078` one event spelling (holds `FJS-2941`)
+- [x] 2.4 `FJS-D1078` one event spelling (holds `FJS-2941`) — ruled C: `onclick={fn}` everywhere, the pipe modifiers kept on the DOM name
 - [x] 2.5 `FJS-D668` slot vs snippet (holds `FJS-2942`, `FJS-1230`) — ruled D: `slot=` is compile-time sugar for a snippet with no arguments, snippets the one runtime system
 - [ ] 2.6 `FJS-D1081` one gate literal (holds `FJS-2936`); `FJS-D1082` bare policy ops (holds `FJS-2947`)
 - [ ] 2.7 `FJS-D1083` one script table and `FJS-D1084` one front door (hold `FJS-2946`, `FJS-2944`'s sibling `FJS-1870`)
@@ -100,8 +100,8 @@ the three `verify:*` drives `fli proves --from main` names have run.
 - [ ] 3.2 Plugin names to the ruled grammar; `define*` to one spec-object shape, `defineJob` stops restating the filename (`FJS-2938`, `FJS-2953`); `auth({ auth })` schedules its own cleanup jobs, so no app writes the inline plugin (`FJS-1893`)
 - [ ] 3.3 `createApp({ root })`; `autoload`, `jobsDir`, `notifications`, `configPath` gone; the port read once by junction from the broker var (`FJS-2939`, `FJS-2975`, `FJS-2974`); `createApp`'s bag reduced to `db|tenants, auth, principal, system, config, root` (`FJS-2954`)
 - [ ] 3.4 `app.<slot>` typed present, an unconfigured read throwing the plugin's name; the scaffold ships no `!` (`FJS-2940`)
-- [ ] 3.5 Event spelling: compiler refuses the other two by name; `make:component`, VISION rule 23, ui README agree (`FJS-2941`)
-- [ ] 3.6 One runtime system: the compiler lowers `slot=` / `<slot>` to snippets with no arguments; `attachNamedSlotLegacy`, `makeSlots` and Form's hand fallback deleted; `slot=` with arguments refused naming the snippet form (`FJS-2942`, `FJS-1230`, `FJS-D668`)
+- [x] 3.5 Event spelling: compiler refuses the other two by name; `make:component`, VISION rule 23, ui README agree (`FJS-2941`) — built: `eventAttribute` in `compiler.js` is every reader's answer; a guard or timer modifier on a component wraps the value, a listener option is refused there; 1,680 `on:` in `.mesa` rewritten (596 workspace, 1,084 prototypes) plus 477 in tests and docs
+- [x] 3.6 One runtime system: the compiler lowers `slot=` / `<slot>` to snippets with no arguments; `attachNamedSlotLegacy`, `makeSlots` and Form's hand fallback deleted; `slot=` with arguments refused naming the snippet form (`FJS-2942`, `FJS-1230`, `FJS-D668`) — built: `lowerSlots` in `compiler.js`; a written prop beside same-name content is the override; residue (`__block`, sierra's own `<slot />` rewrite) is `FJS-3149`
 - [ ] 3.7 `createResource('products', opts?)` and nothing else; `client.resource` internal (`FJS-2933`, `FJS-2967`); `resource.list()` the one URL-driven list, `store`/`load`/`stale`/`more` its internals (`FJS-2968`)
 - [ ] 3.8 Gate literal; bare policy ops; comma-combo deleted (`FJS-2936`, `FJS-2947`) — digits-only moves landed with `FJS-2935`
 - [ ] 3.9 Script table written by `app-config.js`, the three apps moved to it, `fli dev` the printed door, `utils/dev.md` → `dev/index.md` (`FJS-2946`, `FJS-2944`)

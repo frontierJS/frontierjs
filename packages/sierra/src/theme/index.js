@@ -63,7 +63,7 @@ import { persisted, colorScheme } from '@frontierjs/mesa/browser'
  *
  *   import { theme, setTheme } from '@frontierjs/sierra/theme'
  *   $: theme.value
- *   <button on:click={() => setTheme('theme-dark')}>{theme.value}</button>
+ *   <button onclick={() => setTheme('theme-dark')}>{theme.value}</button>
  *
  * @property {string} value  the resolved theme name — never 'system'
  */

@@ -238,11 +238,11 @@
       autocapitalize="off"
       autocorrect="off"
       aria-invalid={hasError || null}
-      on:input={handleInput}
-      on:scroll={syncScroll}
-      on:change={onchange}
-      on:blur={onblur}
-      on:focus={onfocus}
+      oninput={handleInput}
+      onscroll={syncScroll}
+      onchange={onchange}
+      onblur={onblur}
+      onfocus={onfocus}
       {...$attributes}
       value={source}
     >{source}</textarea>

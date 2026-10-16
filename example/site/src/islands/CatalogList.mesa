@@ -132,7 +132,7 @@
       autocomplete="off"
       placeholder="name or description"
       bind:value={q}
-      on:input={onSearch}
+      oninput={onSearch}
     />
   </div>
 

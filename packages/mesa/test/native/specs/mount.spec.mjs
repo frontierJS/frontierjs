@@ -10,17 +10,17 @@ export const REFUSED = {
   Dates:    'type="date" on <input>',
   Dialogs:  '<dialog>',
   Disclose: '<details>',
-  Enter:    'on:keydown',
+  Enter:    'onkeydown',
   Files:    'type="file" on <input>',
-  Haven:    'on:keydown',
+  Haven:    'onkeydown',
   Image:    '<svg>',
-  Keys:     'on:keypress',
+  Keys:     'onkeypress',
   Kinds:    'type="checkbox" on <input>',
   Multi:    '<select>',
   Pick:     '<datalist>',
-  Press:    'on:touchstart',
-  Widget:   'on:keydown',
-  Within:   'on:focusin',
+  Press:    'ontouchstart',
+  Widget:   'onkeydown',
+  Within:   'onfocusin',
 }
 
 export async function run(t) {

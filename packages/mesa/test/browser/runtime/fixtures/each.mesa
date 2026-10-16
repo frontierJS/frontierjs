@@ -26,5 +26,5 @@
   {#each grid as _cell, i (i)}<span class="cell">{i}</span>{/each}
 </div>
 
-<button type="button" id="reverse" on:click={() => rows = [...rows].reverse()}>reverse</button>
-<button type="button" id="drop" on:click={() => rows = rows.filter((r) => r.id !== 'b')}>drop b</button>
+<button type="button" id="reverse" onclick={() => rows = [...rows].reverse()}>reverse</button>
+<button type="button" id="drop" onclick={() => rows = rows.filter((r) => r.id !== 'b')}>drop b</button>

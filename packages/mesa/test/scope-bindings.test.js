@@ -49,7 +49,7 @@ describe('a binding the rewriter must not touch', () => {
   it('a catch parameter shadowing a reactive let', async () => {
     const js = await clean(
       '<script>\nlet e = 1\nfunction go() { try { throw 1 } catch (e) { return e } }\n</script>' +
-      '<b on:click={go}>{e}</b>'
+      '<b onclick={go}>{e}</b>'
     )
     expect(js).not.toContain('catch ($$runtime.get')
   })
@@ -57,14 +57,14 @@ describe('a binding the rewriter must not touch', () => {
   it('a destructured catch parameter', async () => {
     await clean(
       '<script>\nlet msg = 1\nfunction go() { try { throw 1 } catch ({ message: msg }) { return msg } }\n</script>' +
-      '<b on:click={go}>{msg}</b>'
+      '<b onclick={go}>{msg}</b>'
     )
   })
 
   it('a class declared inside a function body', async () => {
     const js = await clean(
       '<script>\nlet Item = 1\nfunction go() { class Item { get n() { return 2 } }\n  return new Item().n }\n</script>' +
-      '<b on:click={go}>{Item}</b>'
+      '<b onclick={go}>{Item}</b>'
     )
     expect(js).not.toContain('class $$runtime.get')
   })
@@ -72,7 +72,7 @@ describe('a binding the rewriter must not touch', () => {
   it('a named function expression referring to itself', async () => {
     const js = await clean(
       '<script>\nlet f = 1\nfunction go() { const g = function f(n) { return n < 1 ? 0 : f(n - 1) }\n  return g(2) }\n</script>' +
-      '<b on:click={go}>{f}</b>'
+      '<b onclick={go}>{f}</b>'
     )
     expect(js).not.toContain('function $$runtime.get')
   })
@@ -82,14 +82,14 @@ describe('a binding the rewriter must not touch', () => {
   it('a let declared in a switch case', async () => {
     await clean(
       '<script>\nlet n = 1\nfunction go(k) { switch (k) { case 1: let n = 2; return n; default: return 0 } }\n</script>' +
-      '<b on:click={go}>{n}</b>'
+      '<b onclick={go}>{n}</b>'
     )
   })
 
   it('a class expression naming itself', async () => {
     await clean(
       '<script>\nlet C = 1\nfunction go() { const K = class C { self() { return C } }\n  return new K() }\n</script>' +
-      '<b on:click={go}>{C}</b>'
+      '<b onclick={go}>{C}</b>'
     )
   })
 })
@@ -101,7 +101,7 @@ describe('and the reads it still must rewrite', () => {
   it('reads the signal where no scope rebinds the name', async () => {
     const { js } = await emit(
       '<script>\nlet e = 1\nfunction go() { try { throw 1 } finally { return e } }\n</script>' +
-      '<b on:click={go}>{e}</b>'
+      '<b onclick={go}>{e}</b>'
     )
     expect(js).toContain('$$runtime.get($$sig_e)')
   })
@@ -109,7 +109,7 @@ describe('and the reads it still must rewrite', () => {
   it('reads the signal in a switch case that declares something else', async () => {
     const { js } = await emit(
       '<script>\nlet n = 1\nfunction go(k) { switch (k) { case 1: let m = 2; return n + m; default: return n } }\n</script>' +
-      '<b on:click={go}>{n}</b>'
+      '<b onclick={go}>{n}</b>'
     )
     expect(js).toContain('$$runtime.get($$sig_n)')
   })
@@ -117,7 +117,7 @@ describe('and the reads it still must rewrite', () => {
   it('reads the signal inside a class body that does not rebind it', async () => {
     const { js } = await emit(
       '<script>\nlet total = 1\nfunction go() { class Box { get v() { return total } }\n  return new Box().v }\n</script>' +
-      '<b on:click={go}>{total}</b>'
+      '<b onclick={go}>{total}</b>'
     )
     expect(js).toContain('$$runtime.get($$sig_total)')
   })
@@ -125,7 +125,7 @@ describe('and the reads it still must rewrite', () => {
   it('writes through the setter from inside a catch that rebinds another name', async () => {
     const { js } = await emit(
       '<script>\nlet n = 1\nfunction go() { try { throw 1 } catch (e) { n = 2 } }\n</script>' +
-      '<b on:click={go}>{n}</b>'
+      '<b onclick={go}>{n}</b>'
     )
     expect(js).toMatch(/\$\$set_n\(/)
   })

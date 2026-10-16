@@ -55,7 +55,7 @@ const SHELL = `<script>
     <footer class="dfoot">{@render foot?.()}</footer>
   </aside>
 {/if}
-<button class="toggle" on:click={() => open = !open}>menu</button>`
+<button class="toggle" onclick={() => open = !open}>menu</button>`
 
 const PARENT = `<script>
   import Child from './Shell.mesa'
@@ -71,10 +71,10 @@ const PARENT = `<script>
   {#snippet badge(e)}{counts[e.id]}{/snippet}
   {#snippet foot()}<span class="who">{user.name}</span>{/snippet}
 </Child>
-<button id="reassign" on:click={reassign}>r</button>
-<button id="mutate" on:click={mutate}>m</button>
-<button id="rename" on:click={rename}>n</button>
-<button id="renameIn" on:click={renameIn}>ni</button>`
+<button id="reassign" onclick={reassign}>r</button>
+<button id="mutate" onclick={mutate}>m</button>
+<button id="rename" onclick={rename}>n</button>
+<button id="renameIn" onclick={renameIn}>ni</button>`
 
 const text = (c, sel) => [...c.querySelectorAll(sel)].map(n => n.textContent.trim()).join(',')
 const click = (c, sel) => { c.querySelector(sel).click(); $rt.flushSync() }

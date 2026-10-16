@@ -32,6 +32,6 @@
   {#each rows as r}{@render row(r)}{/each}
 </ul>
 
-<button type="button" id="swap-pair"   on:click={() => pair = ['grace', 2]}>swap pair</button>
-<button type="button" id="swap-record" on:click={() => record = { id: 'x2', label: 'second' }}>swap record</button>
-<button type="button" id="swap-rows"   on:click={() => rows = [['queued', 9], ['running', 4]]}>swap rows</button>
+<button type="button" id="swap-pair"   onclick={() => pair = ['grace', 2]}>swap pair</button>
+<button type="button" id="swap-record" onclick={() => record = { id: 'x2', label: 'second' }}>swap record</button>
+<button type="button" id="swap-rows"   onclick={() => rows = [['queued', 9], ['running', 4]]}>swap rows</button>

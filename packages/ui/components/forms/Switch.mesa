@@ -85,7 +85,7 @@
       {@attach nativeValidationGuard}
       aria-describedby={description ? descId : null}
       aria-invalid={displayError ? 'true' : null}
-      on:change={handleChange}
+      onchange={handleChange}
       {...$attributes}
     />
     {#if resolvedLabel}<span>{resolvedLabel}</span>{/if}

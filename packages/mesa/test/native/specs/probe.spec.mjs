@@ -1,6 +1,6 @@
 /*
  * probe — the DOM habits a phone changes. A synchronous rect read finds
- * nothing, `$.measure` and `$.focus` answer by callback, and typing reaches
+ * nothing, `$.measure`, `$.viewport` and `$.focus` answer by callback, and typing reaches
  * `bind:value`. The runtime defers the answer even where Lynx for Web could
  * give it at once, so this fails here where it would fail on a phone.
  */
@@ -10,6 +10,7 @@ export async function run(t) {
   await t.tap('Measure')
   await t.eventually(t.shows('sync: none'), true, 'a synchronous read finds no rect')
   await t.eventually(t.shows('measure: 120x40'), true, '$.measure answers the box')
+  await t.eventually(t.shows('viewport: wider'), true, '$.viewport answers a screen larger than the box')
   await t.tap('Focus')
   await t.eventually(t.shows('focus: done'), true, '$.focus answers by callback')
   await t.typeInto(0, 'hi')

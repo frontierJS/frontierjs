@@ -738,6 +738,20 @@ export interface LitestoneClient {
    */
   $levelOf(accessor?: string, principal?: unknown): number | null
   /**
+   * Would this client's caller be let make this write — for a write that does
+   * not reach this table first, as a claimed mirror's forward does not.
+   *
+   * `create` grades `row` as the payload; `update` grades `row` as stored, then
+   * with `changes` over it under `post-update`; `delete` grades `row` as stored.
+   * The gate and the `@@capabilities` grid first. Field `@allow('write')` and
+   * `@@transitions` are not graded. A refusal is a verdict; an undecidable
+   * policy throws.
+   */
+  $checkWrite(
+    accessor: string, op: 'create' | 'update' | 'delete',
+    row: Record<string, unknown>, changes?: Record<string, unknown> | null,
+  ): Promise<{ ok: boolean, message?: string, rule?: 'gate' | 'capability' | 'allow' | 'deny' }>
+  /**
    * The `@@scope` names declared on a model → the predicate as source text.
    *
    * The published list `$checkWhere` validates a `where: { $scope }` against, so

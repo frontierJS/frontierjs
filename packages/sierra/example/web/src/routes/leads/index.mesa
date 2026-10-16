@@ -65,7 +65,7 @@ title: Leads
           <td>{lead.value}</td>
           <td class="text-muted">{lead.slug === null ? 'null' : lead.slug}</td>
           <td>
-            <button class="btn ghost danger" on:click={() => remove(lead.id)} disabled={!canDelete}>
+            <button class="btn ghost danger" onclick={() => remove(lead.id)} disabled={!canDelete}>
               Delete
             </button>
           </td>

@@ -3,5 +3,5 @@
   let innerHits = 0
 </script>
 
-<button type="button" id="inner-btn" on:click={() => innerHits++}>inner</button>
+<button type="button" id="inner-btn" onclick={() => innerHits++}>inner</button>
 <output id="inner-hits">{innerHits}</output>

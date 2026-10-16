@@ -223,11 +223,11 @@ const COMMON_EVENTS = [
   'animationstart', 'animationend', 'transitionend',
 ]
 
-function onColon() {
+function onEvents() {
   return COMMON_EVENTS.map((ev) =>
-    item(`on:${ev}`, K.Event, `DOM event: ${ev}`,
-      `\`on:${ev}={handler}\``,
-      `${ev}={\${1:handler}}`
+    item(`on${ev}`, K.Event, `DOM event: ${ev}`,
+      `\`on${ev}={handler}\``,
+      `on${ev}={\${1:handler}}`
     )
   )
 }
@@ -256,7 +256,7 @@ function pipeModifiers() {
 function mesaColonCompletions() {
   const elements = [
     { name: 'window',   detail: 'Window events + property bindings',
-      doc: '`<mesa:window>` — bind events and properties to `window`.\n\nSupports `on:` events and `bind:innerWidth`, `bind:scrollY` etc.' },
+      doc: '`<mesa:window>` — bind events and properties to `window`.\n\nSupports `onevent` listeners and `bind:innerWidth`, `bind:scrollY` etc.' },
     { name: 'document', detail: 'Document event listeners',
       doc: '`<mesa:document>` — bind event listeners to `document`.' },
     { name: 'body',     detail: 'Body event listeners',
@@ -396,12 +396,8 @@ function provideCompletionItems(document, position, _token, context) {
       return bindColon(inWindow ? 'window' : 'dom')
     }
 
-    // After "on:" — event names
-    const onMatch = before.match(/\bon:([a-zA-Z]*)$/)
-    if (onMatch) return onColon()
-
-    // After "on:event|" or "|modifier|" — modifiers
-    if (/\bon:[a-zA-Z]+(\|[a-zA-Z0-9()]*)*\|$/.test(before)) {
+    // After "onevent|" or "|modifier|" — modifiers
+    if (/\son[a-z]+(\|[a-zA-Z0-9()]*)*\|$/.test(before)) {
       return pipeModifiers()
     }
 
@@ -417,7 +413,6 @@ function provideCompletionItems(document, position, _token, context) {
     // General attribute completions when in a tag
     if (context.triggerCharacter === ':') {
       if (/\bbind:$/.test(before)) return bindColon('dom')
-      if (/\bon:$/.test(before))   return onColon()
       if (/\bclass:$/.test(before)) return classColonCompletions(document)
       if (/\bstyle:$/.test(before)) return styleColonCompletions(document)
     }
@@ -430,9 +425,8 @@ function provideCompletionItems(document, position, _token, context) {
         item('bind:group',    K.Property, 'Group binding',   '', 'bind:group={${1:arr}}'),
         item('class:',        K.Property, 'Class directive', '', 'class:${1:name}'),
         item('style:',        K.Property, 'Style directive', '', 'style:${1:prop}={${2:value}}'),
-        item('on:click',      K.Event,    'Click event',     '', 'on:click={${1:handler}}'),
-        item('on:input',      K.Event,    'Input event',     '', 'on:input={${1:handler}}'),
-        item('on:submit',     K.Event,    'Submit event',    '', 'on:submit|preventDefault={${1:handler}}'),
+        ...onEvents(),
+        item('onsubmit|preventDefault', K.Event, 'Submit event', '', 'onsubmit|preventDefault={${1:handler}}'),
         item('{@attach}',     K.Keyword,  'Attach lifecycle','', '{@attach ${1:fn}}'),
       ]
     }
@@ -448,9 +442,9 @@ function provideCompletionItems(document, position, _token, context) {
     return exportCompletions()
   }
 
-  // ── | trigger — modifiers after on:event ──────────────────────────────────
+  // ── | trigger — modifiers after onevent ──────────────────────────────────
   if (context.triggerCharacter === '|' && inTag) {
-    if (/\bon:[a-zA-Z]+/.test(before)) return pipeModifiers()
+    if (/\son[a-z]+/.test(before)) return pipeModifiers()
   }
 
   return []

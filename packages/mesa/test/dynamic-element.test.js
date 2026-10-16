@@ -53,7 +53,7 @@ const cx = src => compile(src, { debug: false, css: false })
 
 describe('unknown mesa: elements', () => {
   it('names a misspelling instead of emitting nothing', async () => {
-    const out = await cx(`<div><mesa:wndow on:click={f} /></div>`)
+    const out = await cx(`<div><mesa:wndow onclick={f} /></div>`)
     expect(out.analysis.errors.join('')).toContain('<mesa:wndow> is not a Mesa element')
   })
 
@@ -72,7 +72,7 @@ describe('unknown mesa: elements', () => {
 
   it('the elements that do exist still compile', async () => {
     for (const src of [
-      `<mesa:window on:resize={() => {}} />`,
+      `<mesa:window onresize={() => {}} />`,
       `<mesa:head><title>x</title></mesa:head>`,
       `<mesa:portal to={document.body}><p>x</p></mesa:portal>`,
     ]) {
@@ -115,7 +115,7 @@ describe('<mesa:element> — rendering', () => {
   it('a derived tag follows its source', async () => {
     const fn = await compileAndExec(
       `<script>let level = 2\nconst t = 'h' + level\nfunction deeper() { level++ }</script>` +
-      `<mesa:element this={t}>Title</mesa:element><button on:click={deeper}>+</button>`,
+      `<mesa:element this={t}>Title</mesa:element><button onclick={deeper}>+</button>`,
       runtime)
     const app = mount(fn, runtime)
     expect(app.find('h2')).toBeTruthy()
@@ -140,7 +140,7 @@ describe('<mesa:element> — rendering', () => {
   it('a reactive attribute updates without a rebuild', async () => {
     const fn = await compileAndExec(
       `<script>let t = 'div'\nlet n = 0\nfunction bump() { n++ }</script>` +
-      `<mesa:element this={t} data-n={n}>{n}</mesa:element><button on:click={bump}>+</button>`,
+      `<mesa:element this={t} data-n={n}>{n}</mesa:element><button onclick={bump}>+</button>`,
       runtime)
     const app = mount(fn, runtime)
     const before = app.find('div[data-n]')
@@ -156,7 +156,7 @@ describe('<mesa:element> — rendering', () => {
   it('handles its own events', async () => {
     const fn = await compileAndExec(
       `<script>let t = 'button'\nlet n = 0\nfunction bump() { n++ }</script>` +
-      `<mesa:element this={t} on:click={bump}>{n}</mesa:element>`, runtime)
+      `<mesa:element this={t} onclick={bump}>{n}</mesa:element>`, runtime)
     const app = mount(fn, runtime)
     app.find('button').__click?.()
     runtime.flushSync()

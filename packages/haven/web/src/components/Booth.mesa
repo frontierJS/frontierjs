@@ -234,7 +234,7 @@
   }
 </script>
 
-<mesa:window on:keydown={keydown} />
+<mesa:window onkeydown={keydown} />
 <div {@attach paint(stage)}>
   <Piece of={frame} />
   <Piece of={divider} x={22} y={1} />
@@ -256,6 +256,6 @@
 </div>
 <p>You and {nicks[themOf(here.get())] ?? '…'}, across the table{here.get().others.length ? '' : ' · they have stood up'} · Esc stands up{game ? '' : ' · /checkers plays'}</p>
 {#if note}<p>{note}</p>{/if}
-<form on:submit|preventDefault={say}>
+<form onsubmit|preventDefault={say}>
   <input {@attach focus} bind:value={draft} placeholder="Enter says it, Esc stands up" />
 </form>

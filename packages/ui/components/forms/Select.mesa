@@ -140,10 +140,10 @@
     {@attach nativeValidationGuard}
     multiple={multiple}
     aria-invalid={hasError || null}
-    on:input={oninput}
-    on:change={onchange}
-    on:blur={onblur}
-    on:focus={onfocus}
+    oninput={oninput}
+    onchange={onchange}
+    onblur={onblur}
+    onfocus={onfocus}
     {...$attributes}
   >
     {#if placeholder && !multiple}

@@ -61,13 +61,13 @@
 <div id="refused">
   <Select name="state" placeholder="" options={STATES} bind:value={draft}
           onchange={(e) => move(e.target.value)} />
-  <button type="button" id="elsewhere" on:click={elsewhere}>elsewhere</button>
+  <button type="button" id="elsewhere" onclick={elsewhere}>elsewhere</button>
   <output id="row">{row.state}</output>
 </div>
 
 <div id="passed">
   <Select name="state" value="progress" placeholder="" options={states} />
-  <button type="button" id="load" on:click={load}>load</button>
+  <button type="button" id="load" onclick={load}>load</button>
 </div>
 
 <div id="fetched">

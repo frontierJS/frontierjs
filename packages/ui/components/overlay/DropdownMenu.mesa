@@ -110,13 +110,10 @@
     if (restoreFocus) $.focus(controlOf())
   }
 
-  // A terminal has no window to place against: the panel paints where it is
-  // written, under its trigger, and needs no placing.
   async function position() {
-    if (typeof window === 'undefined') return
-    const [tr, pr] = await Promise.all([$.measure(triggerEl), $.measure(panelEl)])
+    const [tr, pr, vp] = await Promise.all([$.measure(triggerEl), $.measure(panelEl), $.viewport()])
     if (!tr || !pr) return
-    ;({ x, y } = placeAgainst(tr, pr, { placement, offset }))
+    ;({ x, y } = placeAgainst(tr, pr, vp, { placement, offset }))
   }
 
   // Heard on every click, open or not: closing a closed menu would still
@@ -207,7 +204,7 @@
   }
 </script>
 
-<mesa:window on:keydown={handleKeydown} on:click|capture={onClickAway} />
+<mesa:window onkeydown={handleKeydown} onclick|capture={onClickAway} />
 
 <!--
   The trigger announces the menu it controls. Without aria-haspopup and
@@ -225,8 +222,8 @@
   style:display="inline-block"
   {class}
   {...$attributes}
-  on:focusin={(e) => control = e.target}
-  on:click|stopPropagation={openMenu}
+  onfocusin={(e) => control = e.target}
+  onclick|stopPropagation={openMenu}
 >
   {@render trigger?.()}
 </span>

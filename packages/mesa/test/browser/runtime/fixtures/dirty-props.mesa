@@ -15,9 +15,9 @@
 <input id="box" type="checkbox" checked={on} />
 <input id="field" type="text" value={text} />
 
-<button type="button" id="on"    on:click={() => { on = true }}>on</button>
-<button type="button" id="off"   on:click={() => { on = false }}>off</button>
-<button type="button" id="clear" on:click={() => { text = null }}>clear</button>
+<button type="button" id="on"    onclick={() => { on = true }}>on</button>
+<button type="button" id="off"   onclick={() => { on = false }}>off</button>
+<button type="button" id="clear" onclick={() => { text = null }}>clear</button>
 
 <!-- ARIA: `false` is a statement, not an absence. -->
 <button id="aria" aria-expanded={on} aria-selected={on} aria-hidden={null} aria-label={on ? 'on' : false}>aria</button>

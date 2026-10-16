@@ -20,7 +20,7 @@
   {#each opts as o}<option value={o}>{o.toUpperCase()}</option>{/each}
 </select>
 
-<button type="button" id="load"  on:click={() => { opts = ['a', 'b', 'c'] }}>load</button>
-<button type="button" id="shift" on:click={() => { opts = ['c', 'a', 'b'] }}>shift</button>
+<button type="button" id="load"  onclick={() => { opts = ['a', 'b', 'c'] }}>load</button>
+<button type="button" id="shift" onclick={() => { opts = ['c', 'a', 'b'] }}>shift</button>
 
 <output id="state">{v}</output>

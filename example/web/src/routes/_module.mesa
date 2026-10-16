@@ -319,7 +319,7 @@ siteName: Kitchen sink
   ⌘K anywhere. `mesa:window` is the one place a global key listener belongs —
   a document listener added by hand in a component outlives the component.
 -->
-<mesa:window on:keydown={(e) => {
+<mesa:window onkeydown={(e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); commandPalette.toggle() }
 }} />
 

@@ -748,11 +748,11 @@ function registers() {
   }
 
   // A warning counts here too, now that every one of them is zero: `72 unnamed
-  // rulings` was a backlog and a NEW one is a regression. The clock rule is the
+  // rulings` was a backlog and a NEW one is a regression. A `noted` rule is the
   // exception and is reported instead — CI must not go red overnight on a
-  // branch that changed nothing.
-  const clockRules = new Set(REGISTER_RULES.filter(r => r.clock).map(r => r.id))
-  const graded     = result.findings.filter(f => !clockRules.has(f.rule))
+  // branch that changed nothing, nor on a backlog no edit can clear yet.
+  const notedRules = new Set(REGISTER_RULES.filter(r => r.noted).map(r => r.id))
+  const graded     = result.findings.filter(f => !notedRules.has(f.rule))
 
   if (graded.length) fail(
     `${graded.length} register finding(s)\n` +
@@ -763,7 +763,7 @@ function registers() {
     `      \`fli register:check\` runs these same rules against a client app; \`--rules\` prints the table.`
   )
 
-  for (const rule of REGISTER_RULES.filter(r => r.clock)) {
+  for (const rule of REGISTER_RULES.filter(r => r.noted)) {
     const n = result.byRule[rule.id] ?? 0
     if (n) note(`registers ${rule.id} × ${n} — ${rule.what}. \`fli register:check\` lists them.`)
   }

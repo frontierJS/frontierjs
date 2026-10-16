@@ -214,9 +214,9 @@
       required={resolvedRequired}
       readonly={readonly}
       aria-invalid={!!displayError || null}
-      on:input={(e) => { latText = e.target.value; commit() }}
-      on:blur={onblur}
-      on:focus={onfocus}
+      oninput={(e) => { latText = e.target.value; commit() }}
+      onblur={onblur}
+      onfocus={onfocus}
       {...$attributes}
     />
     <input
@@ -233,9 +233,9 @@
       required={resolvedRequired}
       readonly={readonly}
       aria-invalid={!!displayError || null}
-      on:input={(e) => { lngText = e.target.value; commit() }}
-      on:blur={onblur}
-      on:focus={onfocus}
+      oninput={(e) => { lngText = e.target.value; commit() }}
+      onblur={onblur}
+      onfocus={onfocus}
     />
   </div>
 {/snippet}

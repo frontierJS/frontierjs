@@ -24,7 +24,7 @@
  */
 
 import {
-  rewriteExpr, rewriteTextResult, extractKeywords, parseModifiers, applyEventModifiers,
+  rewriteExpr, rewriteTextResult, extractKeywords, eventAttribute, applyEventModifiers,
   unwrapExp, parseEachHeader, eachFrame, templateSource, componentAttributes, styleSource, classSource,
   bindSetter, elementBindTarget, snippetParam, parseRenderTag, constScope, constDeclaration,
 } from './compiler.js'
@@ -86,7 +86,7 @@ function lowerAttributes(ctx, n) {
   const attrs = [], handlers = [], directives = [], styles = [], classes = [], attachments = [], binds = []
   let ref = null
   for (const p of n.attributes) {
-    let name = p.name
+    const name = p.name
     const loc = ctx.posOf(p.start ?? n.start)
     const raw = p.content ?? p.raw ?? name
     if (p.type === 'attach' || name === '@attach') { attachments.push({ expr: write(ctx, p.value), loc }); continue }
@@ -98,11 +98,9 @@ function lowerAttributes(ctx, n) {
       continue
     }
     if (name[0] === '{' || name.startsWith('*{')) { directives.push({ name, raw, loc }); continue }
-    // The bare HTML spelling is the same handler, normalized the way bindProp does.
-    if (/^on[a-z]/.test(name) && !name.startsWith('on:')) name = 'on:' + name.slice(2)
-    if (name[0] === '@' || name.startsWith('on:')) {
-      const { directive, modifiers } = parseModifiers(name)
-      const event = directive.startsWith('on:') ? directive.slice(3) : directive.slice(1)
+    const on = eventAttribute(name)
+    if (on) {
+      const { event, modifiers } = on
       const rawHand = p.value ? unwrapExp(p.value) : '() => {}'
       const code = applyEventModifiers(ctx, modifiers, event, write(ctx, rawHand).code).handler
       handlers.push({ event, modifiers, expr: expr(ctx, rawHand, code), loc })
@@ -200,7 +198,11 @@ function lowerComponent(ctx, n) {
         break
       case 'prop': {
         let value
-        if (p.value === undefined) value = true
+        if (a.modifiers) {
+          const rawHand = unwrapExp(p.raw ?? p.value)
+          const code = applyEventModifiers(ctx, a.modifiers, a.event, write(ctx, rawHand).code).handler
+          value = { kind: 'binding', expr: expr(ctx, rawHand, code), to: 'prop' }
+        } else if (p.value === undefined) value = true
         else if (p.type === 'exp') value = { kind: 'binding', expr: write(ctx, unwrapExp(p.raw)), to: 'prop' }
         else if (p.value.includes('{')) value = { kind: 'binding', expr: interpolated(ctx, p.value), to: 'prop' }
         else value = p.value

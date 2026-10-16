@@ -89,7 +89,7 @@
       style:--avatar-size={sz}
       style:--avatar-radius={radius}
       style:object-fit="cover"
-      on:error={handleImgError}
+      onerror={handleImgError}
     />
   {:else if initials}
     <span

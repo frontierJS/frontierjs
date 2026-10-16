@@ -56,8 +56,8 @@
 <h2>a currency that arrives after the value</h2>
 <MoneyInput id="late" label="Deposit" name="deposit" currency={lateCurrency} value={1250}
             onvalue={(v) => { lateSeen = [...lateSeen, v] }} />
-<button type="button" id="late-usd" on:click={() => lateCurrency = 'USD'}>USD</button>
-<button type="button" id="late-jpy" on:click={() => lateCurrency = 'JPY'}>JPY</button>
+<button type="button" id="late-usd" onclick={() => lateCurrency = 'USD'}>USD</button>
+<button type="button" id="late-jpy" onclick={() => lateCurrency = 'JPY'}>JPY</button>
 <output id="late-seen">{JSON.stringify(lateSeen)}</output>
 
 <h2>generated — nothing here names a control</h2>

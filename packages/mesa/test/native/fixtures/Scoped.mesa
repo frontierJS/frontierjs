@@ -6,7 +6,7 @@
 <div class="card" class:on={on}>
   <p class="label">Scoped</p>
   <div class="swatch" style="width: 40px; height: 10px" style:background-color={tint}></div>
-  <button on:click={flip}>Flip</button>
+  <button onclick={flip}>Flip</button>
 </div>
 <style>
   .card { background-color: rgb(10, 20, 30); padding: 4px }

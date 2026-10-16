@@ -444,7 +444,7 @@
   })
 </script>
 
-<mesa:window on:click|capture={onClickOutside} />
+<mesa:window onclick|capture={onClickOutside} />
 
 {#snippet control()}
   <div bind:this={containerEl} class="fjs-multiselect">
@@ -460,7 +460,7 @@
       aria-invalid={hasError || null}
       style:opacity={resolvedDisabled ? 0.6 : null}
       style:cursor={resolvedDisabled ? 'not-allowed' : 'text'}
-      on:click={openDropdown}
+      onclick={openDropdown}
     >
       <!--
         Collapsed: one chip standing for the whole selection. A button and not
@@ -472,7 +472,7 @@
           type="button"
           class="pill fjs-multiselect-summary"
           aria-expanded="false"
-          on:click|stopPropagation={() => { expanded = true }}
+          onclick|stopPropagation={() => { expanded = true }}
         >{selectedValues.size} selected</button>
       {/if}
 
@@ -491,7 +491,7 @@
               type="button"
               class="pill-close"
               aria-label="Remove {opt.textContent}"
-              on:click|stopPropagation={() => remove(val)}
+              onclick|stopPropagation={() => remove(val)}
             >
               <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                 <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
@@ -519,9 +519,9 @@
           aria-autocomplete="list"
           aria-controls={listId}
           aria-activedescendant={open && filtered[activeIndex] ? rowId(activeIndex) : null}
-          on:keydown={handleKeydown}
-          on:blur={handleBlur}
-          on:focus={() => open = true}
+          onkeydown={handleKeydown}
+          onblur={handleBlur}
+          onfocus={() => open = true}
           {...$attributes}
         />
       {/if}
@@ -533,7 +533,7 @@
             type="button"
             class="btn ghost square"
             aria-label="Clear all"
-            on:click|stopPropagation={clearAll}
+            onclick|stopPropagation={clearAll}
           >
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
@@ -583,8 +583,8 @@
                 aria-selected={isSelected}
                 aria-disabled={opt.disabled || null}
                 data-active={isActive || null}
-                on:mousemove={() => { if (activeIndex !== i) activeIndex = i }}
-                on:click|preventDefault={() => isSelected ? remove(opt.value) : add(opt)}
+                onmousemove={() => { if (activeIndex !== i) activeIndex = i }}
+                onclick|preventDefault={() => isSelected ? remove(opt.value) : add(opt)}
               >
                 <!--
                   One line on purpose. Broken across lines, the whitespace

@@ -6,5 +6,5 @@
 <div>
   <Card {...card} />
   <Card title="Written" {...card} />
-  <button on:click={bump}>Bump</button>
+  <button onclick={bump}>Bump</button>
 </div>

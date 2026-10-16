@@ -7,7 +7,7 @@
   let count = 0
 </script>
 
-<button type="button" id="counter" on:click={() => count++}>count {count}</button>
+<button type="button" id="counter" onclick={() => count++}>count {count}</button>
 <p id="counter-version">v1</p>
 
 <style>

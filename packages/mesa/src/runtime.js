@@ -965,10 +965,10 @@ export function onDestroy(fn) {
   onCleanup(fn)
 }
 
-// `$.measure` and `$.focus`, the DOM's answer. A phone answers both by callback
-// (`runtime-native.js`), so the browser answers a Promise too: code that reads a
-// rect synchronously would pass here and find nothing on a phone. Each target's
-// runtime exports the same two, and the door takes the target's.
+// `$.measure`, `$.viewport` and `$.focus`, the DOM's answer. A phone answers
+// by callback (`runtime-native.js`), so the browser answers a Promise too: code
+// that reads a rect synchronously would pass here and find nothing on a phone.
+// Each target's runtime exports the same three, and the door takes the target's.
 
 /** The box `el` occupies, as `{ left, top, right, bottom, width, height }`.
  *  No node answers `null`, as `el?.getBoundingClientRect()` would. */
@@ -976,6 +976,12 @@ export function measure(el) {
   if (!el) return Promise.resolve(null)
   const { left, top, right, bottom, width, height } = el.getBoundingClientRect()
   return Promise.resolve({ left, top, right, bottom, width, height })
+}
+
+/** The area a `position: fixed` box is placed against, as `{ width, height }`
+ *  in the units `measure` answers. */
+export function viewport() {
+  return Promise.resolve({ width: window.innerWidth, height: window.innerHeight })
 }
 
 /** Move focus to `el`. No node does nothing, as `el?.focus()` would. */
@@ -1763,7 +1769,7 @@ export function addEvent(el, event, fn, opts) {
 }
 
 /**
- * <mesa:window|document|body on:event={fn}> — add listener to a global target.
+ * <mesa:window|document|body onevent={fn}> — add listener to a global target.
  * target: 'window' | 'document' | 'body'
  */
 export function addGlobalEvent(target, event, fn, opts) {
@@ -1819,7 +1825,7 @@ function _makeDelegatedHandler(root) {
     // `currentTarget` is the element the handler is WRITTEN on, which is what
     // it means under addEventListener and what every handler assumes. One
     // listener on the root gives every delegated handler the root instead, so
-    // `e.target === e.currentTarget` — which is what `on:click|self` compiles
+    // `e.target === e.currentTarget` — which is what `onclick|self` compiles
     // to — was false for exactly the events it is meant to admit. Overridden
     // per node and dropped again after, so a native listener further up the
     // same dispatch still reads its own.
@@ -5857,7 +5863,7 @@ export function island(anchor, Comp, props, block, meta) {
  *   <Child handler={bump} />            // named fn, length 0
  *
  * and the child's `export let ondone` compiles to track($option.props.ondone).
- * Both were therefore memoized and *invoked during setup*, so `on:click={ondone}`
+ * Both were therefore memoized and *invoked during setup*, so `onclick={ondone}`
  * bound the callback's return value instead of the callback. `let f = () => …`
  * had the same problem. Arity cannot distinguish a derivation the compiler
  * generated from a callback the user passed — both are `() => …` — so the
@@ -6026,7 +6032,7 @@ const _DYNAMIC_TAG_REFUSED = new Set([
  * element under a placeholder tag, and this transplants it — attributes copied,
  * children moved — onto an element created from the live expression. The block
  * source that follows then binds against the real element, so every directive
- * (`class`, `on:`, `style:`, `bind:`, `{@attach}`) works as it does anywhere.
+ * (`class`, `onclick`, `style:`, `bind:`, `{@attach}`) works as it does anywhere.
  *
  * Wrapped in a keyBlock by the compiler, so a tag that changes rebuilds rather
  * than mutating — an element's tag is not writable, and the alternative is a

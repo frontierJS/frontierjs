@@ -114,7 +114,7 @@ Done when: every `env: timing` row has a `repro:` segment written by the tool, o
 
 - [x] 3.1 `fli register:repro <id> [--runs N] [--load N]`: finds the test the row names and runs three cells of N: the file alone, the package's own `bun run test` (the file's result read from bun's junit report — the console prints a file's header only when that file printed something, so a clean file and an unrun one read alike there), and the file alone under N typechecks (`FJS-D1148`), all but the last on a quiet machine. Prints the three pass counts. The suite cell is what tells order from load (`FJS-D1146`): half the timing rows say *fails under the full suite, passes alone*, which is both at once. Named for the segment it writes; *flaky* is the symptom word `FJS-D1118` refused for the same reason. Rides `FJS-3019`'s quiet run — same rows, same machine.
 - [x] 3.2 The verdict goes into the row through `fli amend`. Fails alone, or passes alone and fails in the quiet suite: the tool strips `env: timing` and says so, because a test failing on a quiet machine — or leaking state into the next file — is code, and the loop should see it again (`repro: 9/9 alone · 3/9 in suite`); the loaded cell is not run, since it cannot change that. Passes both and fails loaded: `repro: 9/9 alone · 9/9 in suite · 4/9 under 7 typechecks`, tag kept. Clean in all three did not reproduce: counts written, tag kept, because nine quiet passes do not prove the guess wrong. `reproVerdict` reads the counts; `amendIssue` took a `drop` (one whole segment removed in the same write). `reproOf` in `next.js` parses the tool's shape only — six rows carry a free `repro:` that is a hand recipe — and `env-smell` is silent on a row it finds, or a stripped row would be told to put back the tag its measurement took off. `--dry` prints the segment and writes nothing.
-- [x] 3.3 `env-smell` learns the reverse: an `env: timing` row with no `repro:` segment is a warning. A guessed cause that nothing measured is the `stale?` fiction with a different label. The warning names the way out: `fli repro <id>` on a row linking one collected test, and on any other row the refusal `register:repro` would give (`linkedTest`, the row half of `reproTarget`), so five drive and spec rows are not told to run a command that refuses them. They warn until `repro` can measure a drive or the tag comes off, so Done-when is unmet by design. Building it found two timing rows and three `shared db` rows invisible to every segment parser: `registers.js` joined a row's cells on a space, so a Detail whose FIRST segment was `env:` followed the date, not a `·`. The cells join on ` · ` now. `FJS-3019` (a task, not a timing defect) traded `env: timing` for `by hand`, which fix:loop also skips.
+- [x] 3.3 `env-smell` learns the reverse: an `env: timing` row with no `repro:` segment is a warning. A guessed cause that nothing measured is the `stale?` fiction with a different label. The warning names the way out: `fli repro <id>` on a row linking one collected test, and on any other row the refusal `register:repro` would give (`linkedTest`, the row half of `reproTarget`), so five drive and spec rows are not told to run a command that refuses them. They warn until `repro` can measure a drive or the tag comes off, so Done-when is unmet by design. Building it found two timing rows and three `shared db` rows invisible to every segment parser: `registers.js` joined a row's cells on a space, so a Detail whose FIRST segment was `env:` followed the date, not a `·`. The cells join on ` · ` now. `FJS-3019` (a task, not a timing defect) traded `env: timing` for `by hand`, which fix:loop also skips. The reverse half is its own rule, `timing-unmeasured`, marked `noted` beside `stale-verified` so CI prints its count and does not fail on it (owner, 2026-10-16): the drive rows are a backlog no edit clears until `register:repro` measures a drive.
 
 ### Phase 4 — Hazards graded like invariants
 
@@ -122,7 +122,25 @@ Goal: a live hazard either has a rule or says why not.
 Done when: `hazards.snapshot.md` exists and `snapshots` fails a stale one.
 
 - [x] 4.1 `fli ws:hazards` writes `hazards.snapshot.md`: one row per entry in the three realm skills' indexes — hazard, and the `fli check` rule that grades it or `none`, the shape `invariants.snapshot.md` has for the invariants (`FJS-D190`). A rule names its hazard as `hazard: '<realm>: <prefix of the bold lead>'`, and `hazard-enforcer` reds a key matching zero bullets or two. A `none` carries no reason (owner, 2026-10-16): the gap is the finding. First run: 13 of 172 graded.
-- [ ] 4.2 Rank the `none` rows by how often the hazard is named in failed attempts' transcripts (`loop-review.mjs` already finds repeated reads; this is the same read keyed by hazard). A hazard that lives only in prose is one every new session re-learns by failing, and the count says which to grade first.
+- [x] 4.2 Rank the `none` rows by how often the hazard is named in failed attempts' transcripts (`loop-review.mjs` already finds repeated reads; this is the same read keyed by hazard). A hazard that lives only in prose is one every new session re-learns by failing, and the count says which to grade first. Built as § Hazards in `loop:review`. A hazard's names are the defect ids and error classes its entry cites, index line and reference bullet both (`readHazards` → `names`), matched in what the session wrote and never in a tool result. Ruling ids are left out: nearly every hit they made was a `blocked` session citing the ruling while drafting an owed question. The lead's code spans are left out too, because `const` and `9` match most sessions.
+
+**Done 2026-10-16.** Read over 234 failed, corrected or blocked attempts with a
+transcript. The count is too thin to order the work (owner, 2026-10-16: keep the
+section, since it grows with the log).
+
+- **14 of 159 `none` hazards are named at all, and the top is 3 rows.** In
+  order: a `@seals` move owes `before` (3 rows), a soft-deleted row keeps its
+  `@unique` (3), and `@zoned` is read by `due()` alone (3). Everything else is
+  on 1 or 2 rows.
+- **83 hazards cite no defect id and no error class, so they cannot rank.** The
+  index names a hazard by its ruling, and a ruling is the one name the read
+  cannot use.
+- **The failed side is mostly an owner's wait.** 211 of the 234 attempts are
+  `blocked`; only 24 failed or corrected attempts have a transcript. That
+  matches Phase 0's reading of sent-back rows.
+- **An error class closed attempts name as often is a topic, not a trap.**
+  `ValidationError` carries three hazards to 36 closed attempts against 2
+  failed ones, which is why the table prints the *closed* column.
 
 ### Phase 5 — Drives declare what they hold
 

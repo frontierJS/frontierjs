@@ -17,12 +17,12 @@
 <p>heard {heard} inputs {inputs}</p>
 <p>changed {changed} submits {submits}</p>
 <p>start {start} writes {writes} typed {typed}</p>
-<form on:submit|preventDefault={() => submits++} on:input={onInput} on:change={onChange}>
-  <textarea name="t" on:click={() => {}}></textarea>
+<form onsubmit|preventDefault={() => submits++} oninput={onInput} onchange={onChange}>
+  <textarea name="t" onclick={() => {}}></textarea>
   <button>Save</button>
 </form>
-<textarea name="s" on:focus={(e) => start = JSON.stringify(e.target.value)}>
+<textarea name="s" onfocus={(e) => start = JSON.stringify(e.target.value)}>
 first
 second</textarea>
-<button type="button" on:click={set}>Set</button>
-<textarea name="n" value={note} on:input={onNote}></textarea>
+<button type="button" onclick={set}>Set</button>
+<textarea name="n" value={note} oninput={onNote}></textarea>

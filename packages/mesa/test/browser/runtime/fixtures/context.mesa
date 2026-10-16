@@ -19,5 +19,5 @@
   {#each rows as row (row)}<Consumer tag={row} />{/each}
 </Provider>
 
-<button type="button" id="open" on:click={() => open = true}>open</button>
-<button type="button" id="add" on:click={() => rows = [...rows, 'late']}>add</button>
+<button type="button" id="open" onclick={() => open = true}>open</button>
+<button type="button" id="add" onclick={() => rows = [...rows, 'late']}>add</button>

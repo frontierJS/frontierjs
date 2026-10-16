@@ -108,7 +108,7 @@ describe('imported reads nothing here watches', () => {
   var snap = stateObject.count
 </script>
 <h1>{doubled} {stateObject.count} {fmt(snap)} {lib.go(1)}</h1>
-<button on:click={stateObject.reset}>x</button>
+<button onclick={stateObject.reset}>x</button>
 <Child />`
 
   const reads = async (src, opts) =>

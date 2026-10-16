@@ -177,7 +177,7 @@ date: 2025-01-15
   Thanks for {likes} likes!
 {/if}
 
-<p><button on:click={() => likes++}>Like</button></p>
+<p><button onclick={() => likes++}>Like</button></p>
 ```
 
 Mesa closes no element for you, so a bare inline element on its own line is
@@ -283,7 +283,7 @@ store during setup re-triggers the effect that is running it. See VISION
 
 `mount()` accepts a `root` option that scopes both event delegation and
 style injection to a shadow root. Mesa uses `adoptedStyleSheets` for shadow
-roots and per-root delegated event listeners — `on:click` and friends work
+roots and per-root delegated event listeners — `onclick` and friends work
 correctly inside shadow DOM with no extra wiring.
 
 ```js

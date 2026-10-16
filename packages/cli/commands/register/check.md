@@ -162,12 +162,18 @@ be in on the way somewhere:
   (a timeout, a hang, a port, a run that passes in a fresh worktree) and names
   no `env:` cause. A lead: the row may be code, and the answer is either the
   segment or a title that says what is wrong with the code.
+- **`timing-unmeasured`** — an open row naming `env: timing` with no `repro:`
+  segment. The message says how to measure it: `fli repro <id>`, or why that
+  refuses (a drive holds a port or a browser; the row links no test).
 
-## The one rule that reads the clock
+## Noted, never graded
 
 `stale-verified` is the only finding whose answer changes overnight, which means
 this command's output is **not reproducible** and must never feed a committed
 snapshot. `--stale-days 0` turns it off for a caller that needs a stable answer.
+`timing-unmeasured` is a backlog no edit can clear until `register:repro`
+measures a drive. Both are `noted` in the rule table: the repo's CI prints their
+counts and does not fail on them.
 
 ## In CI
 

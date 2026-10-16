@@ -56,7 +56,7 @@
 {:else if onclick}
   <!-- A real <button> when the action is not navigation: Enter and Space
        are then the platform's job, not a hand-rolled keydown handler. -->
-  <button type="button" class="tile fjs-tile-link" {class} {...$attributes} on:click={onclick}>
+  <button type="button" class="tile fjs-tile-link" {class} {...$attributes} onclick={onclick}>
     {@render body()}
   </button>
 {:else}

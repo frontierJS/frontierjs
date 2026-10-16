@@ -50,7 +50,7 @@
 
 <div id="passed">
   <Combobox name="crewId" value="c-2" options={crews} />
-  <button type="button" id="load" on:click={load}>load</button>
+  <button type="button" id="load" onclick={load}>load</button>
 </div>
 
 <div id="numeric">

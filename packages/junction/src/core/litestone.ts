@@ -118,6 +118,8 @@ interface LitestoneClientApi {
   $transaction: <T>(fn: (tx: LitestoneClient) => Promise<T>) => Promise<T>
   $schema?: unknown
   $claimsFor?: (principal: unknown) => Promise<Record<string, unknown>>
+  $checkWrite?: (accessor: string, op: 'create' | 'update' | 'delete', row: Record<string, unknown>, changes?: Record<string, unknown> | null) =>
+    Promise<{ ok: boolean, message?: string, rule?: string }>
   $search?: (q: string, opts?: { models?: string[]; limit?: number; offset?: number; prefix?: boolean }) => Promise<Array<Record<string, unknown>>>
   $rawDbs?: Record<string, unknown>
   $close?: () => void
@@ -1177,6 +1179,22 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     return getTable(ctx).findUnique({ where: { [m.key]: value } })
   }
 
+  // The app's own write policies, asked before the send: the row lands as the
+  // system, which grades none, so a Provider laxer than the schema would land
+  // a write the schema refuses (`FJS-3147`). A refusal names the verb the way
+  // `missOrRefused` does; the caller has already been shown the row.
+  async function refuseUnwritable(
+    ctx: ServiceContext, m: ClaimedMirror, op: 'create' | 'update' | 'delete',
+    row: Record<string, unknown>, changes?: Record<string, unknown>,
+  ): Promise<void> {
+    // No guard: a client that answered `$mirrorKey` answers this.
+    const v = await (ctx.locals.db as LitestoneClientApi).$checkWrite!(m.accessor, op, row, changes)
+    if (v.ok) return
+    throw new Forbidden(v.message ?? (op === 'create'
+      ? `${modelLabel(ctx)}: this is not one you may create`
+      : `${modelLabel(ctx)} with ${idField}=${ctx.id} is not one you may ${op === 'delete' ? 'remove' : 'update'}`))
+  }
+
   async function currentMirrored(ctx: ServiceContext): Promise<Record<string, unknown>> {
     assertNameable(ctx)
     const row = await getTable(ctx).findUnique({ where: { [idField]: ctx.id } }) as Record<string, unknown> | null
@@ -1186,6 +1204,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
 
   async function forwardCreate(ctx: ServiceContext, m: ClaimedMirror): Promise<unknown> {
     refuseBulkMirror(ctx, m, 'create')
+    await refuseUnwritable(ctx, m, 'create', ctx.data as Record<string, unknown>)
     const row = await m.forward.create!(ctx.data)
     if (!row) throw new BadGateway(`${providerOf(m)}: the Provider answered a create with nothing the claim reads as a row`)
     return landMirrored(ctx, m, row)
@@ -1194,6 +1213,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
   async function forwardUpdate(ctx: ServiceContext, m: ClaimedMirror, verb: 'update' | 'patch'): Promise<unknown> {
     refuseBulkMirror(ctx, m, verb)
     const current = await currentMirrored(ctx)
+    await refuseUnwritable(ctx, m, 'update', current, ctx.data as Record<string, unknown>)
     const row = await m.forward.update!(String(current[m.key]), ctx.data)
     // No row in the answer: the Provider took the write and the sync brings it.
     return row ? landMirrored(ctx, m, row) : current
@@ -1202,6 +1222,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
   async function forwardRemove(ctx: ServiceContext, m: ClaimedMirror): Promise<unknown> {
     refuseBulkMirror(ctx, m, 'remove')
     const current = await currentMirrored(ctx)
+    await refuseUnwritable(ctx, m, 'delete', current)
     const row = await m.forward.remove!(String(current[m.key]))
     // A Provider that soft-deletes answers the row with its deletion stamped;
     // one answering a bare OK is gone there, so it goes here.

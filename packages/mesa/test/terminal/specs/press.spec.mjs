@@ -6,7 +6,7 @@
  * `click`. Preventing the `mousedown` keeps focus where it was, which is what
  * the kit's show-password button relies on, and the `click` still fires;
  * without the prevention the engine moves focus to the pressed button. A node
- * with no `click` hears a press of its own. `on:scroll` compiles, and a wheel
+ * with no `click` hears a press of its own. `onscroll` compiles, and a wheel
  * over the field sends nothing, since no terminal node scrolls. The four
  * drop-target events compile, and a mouse drag onto their node sends none.
  *

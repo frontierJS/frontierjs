@@ -149,7 +149,7 @@ function makeLocator(source) {
 //
 // A miss here is silent in the worst way: the handler is registered on a root
 // the event never reaches, so the element renders, the browser does its half,
-// and the component's half never runs. `<dialog on:close>` is the case that was
+// and the component's half never runs. `<dialog onclose>` is the case that was
 // missing — Escape closed the dialog natively and `bind:open` was never written
 // back, so the caller's state said "open" forever and the drawer could not be
 // reopened. Every name below is measured, not assumed
@@ -253,8 +253,8 @@ export function toCamelCase(name) {
 
 /**
  * Parse modifier chain from an attribute name.
- * `on:click|preventDefault|debounce(300)` →
- *   { directive: 'on:click', modifiers: [{ name: 'preventDefault' }, { name: 'debounce', arg: '300' }] }
+ * `onclick|preventDefault|debounce(300)` →
+ *   { directive: 'onclick', modifiers: [{ name: 'preventDefault' }, { name: 'debounce', arg: '300' }] }
  *
  * Modifier args can be reactive expressions: `debounce({delay})` → arg: '{delay}'.
  * The `|` split respects nested parentheses so `debounce(fn(x))` parses correctly.
@@ -279,6 +279,30 @@ export function parseModifiers(fullName) {
   })
   return { directive, modifiers }
 }
+
+/**
+ * The one reading of an event attribute: the DOM's own name, with modifiers
+ * piped onto it — `onclick={fn}`, `onsubmit|preventDefault={save}` (`FJS-D1078`).
+ * Null for any other attribute. Every target and every reader of the parse
+ * tree asks here, so a second spelling cannot compile on one path and not another.
+ */
+export function eventAttribute(name) {
+  if (name.startsWith('on:') || (name[0] === '@' && name !== '@attach')) {
+    const written = name.slice(name[0] === '@' ? 1 : 3)
+    throw new Error(
+      `'${name}' is not an event spelling Mesa compiles. Write 'on${written}={handler}' — ` +
+      `the DOM's own name, with any modifier piped on (FJS-D1078).`
+    )
+  }
+  if (!/^on[a-z]/.test(name)) return null
+  const { directive, modifiers } = parseModifiers(name)
+  return { event: directive.slice(2), modifiers }
+}
+
+/** The modifiers that are `addEventListener` options rather than a wrap of the
+ *  handler. A component has no listener of its own, so these are refused on
+ *  one while the rest compile into the value it is handed. */
+export const LISTENER_OPTIONS = new Set(['once', 'passive', 'capture'])
 
 /**
  * Turn an event's modifier chain into what the emitted listener needs: the
@@ -4815,7 +4839,7 @@ export function buildHead() {
       w.writeLine('  onCleanup: $$runtime.onCleanup, tick: $$runtime.tick,')
       // Measuring and focusing are the target's own, so they come from its runtime.
       const own = TARGETS[ctx.config.target] ? '$$host' : '$$runtime'
-      w.writeLine(`  measure: ${own}.measure, focus: ${own}.focus,`)
+      w.writeLine(`  measure: ${own}.measure, viewport: ${own}.viewport, focus: ${own}.focus,`)
       w.writeLine('};')
     })
   )
@@ -5337,7 +5361,7 @@ export function buildBlock(data, option = {}) {
             ))
           } else if (n.elArg === 'window' || n.elArg === 'document' || n.elArg === 'body') {
             // <mesa:window> / <mesa:document> / <mesa:body>
-            // on:event — add listener to the global target, cleaned up on destroy.
+            // onevent — add listener to the global target, cleaned up on destroy.
             // bind:prop — window-only property bindings (scrollY, innerWidth etc.)
             // These are self-closing — children are silently ignored otherwise.
             const target = n.elArg   // 'window' | 'document' | 'body'
@@ -5349,16 +5373,16 @@ export function buildBlock(data, option = {}) {
             if (realChildren.length) {
               ctx.analysis.errors.push(
                 `<mesa:${target}> is self-closing and cannot have children. ` +
-                `Use <mesa:${target} on:event={handler} /> (self-closing syntax).`
+                `Use <mesa:${target} onevent={handler} /> (self-closing syntax).`
               )
             }
             n.attributes.forEach((p) => {
               if (p._skip) return
               const pname = p.name
 
-              if (pname[0] === '@' || pname.startsWith('on:')) {
-                const { directive, modifiers } = parseModifiers(pname)
-                const event = directive.startsWith('on:') ? directive.slice(3) : directive.slice(1)
+              const on = eventAttribute(pname)
+              if (on) {
+                const { event, modifiers } = on
                 const rawHand = p.value ? unwrapExp(p.value) : '() => {}'
                 let handler = ctx.accessors ? rewriteExpr(rawHand, ctx.accessors, ctx.setters, ctx.proxyFireFns) : rawHand
 
@@ -6981,7 +7005,9 @@ export const classSource = (attr, name) => attr.value ? unwrapExp(attr.value) : 
  * In attribute order, one entry per attribute that does anything:
  *
  * - `prop` — `name`, with `class` renamed `$class` (a reserved word), and the
- *   parsed `attr`, whose value each target lowers itself
+ *   parsed `attr`, whose value each target lowers itself. An event prop
+ *   written with modifiers (`onclick|preventDefault`) is named `onclick` and
+ *   carries `event` and `modifiers`, which the target wraps the value in
  * - `spread` — `{...expr}`; `expr` is the source after the dots
  * - `bind` — `bind:name={target}`; `target` defaults to the prop's own name
  * - `bind-this` — `bind:this={target}`, the child's exported interface
@@ -7010,18 +7036,20 @@ export function componentAttributes(node) {
       continue
     } else if (name.startsWith('client:')) {
       out.push({ kind: 'island', name, attr })
-    } else if (name[0] === '@' || name.startsWith('on:')) {
-      const spelled = name.startsWith('on:') ? name.slice(3) : name.slice(1)
-      // The prop this becomes is named after THIS event: a message naming
-      // `onclick` made the fix for `on:paid` a second wrong guess.
-      const event = spelled.split('|')[0]
-      const modifiers = spelled.slice(event.length)
-      refuse(
-        `on:${spelled} is not valid on a component. Use on${event}={fn} (a plain callback prop) instead.` +
-        // A modifier is a thing the compiler does to a DOM event before calling
-        // the handler; a component decides for itself what it passes.
-        (modifiers ? ` A modifier (${modifiers}) has no meaning on a component — the child decides what it passes, so handle it in the callback.` : '')
-      )
+    } else if (eventAttribute(name)?.modifiers.length) {
+      // A guard or a timer compiles into the value, so it survives the child
+      // forwarding it to an element; a listener option has no listener here.
+      const { event, modifiers } = eventAttribute(name)
+      const options = modifiers.filter((m) => LISTENER_OPTIONS.has(m.name)).map((m) => m.name)
+      if (options.length) {
+        refuse(
+          `<${node.name} ${name}> -- ${options.map((o) => `'${o}'`).join(', ')} is an addEventListener ` +
+          `option, and a component has no listener of its own to set it on. Put it on the element ` +
+          `inside the component, or handle it in the callback.`
+        )
+      } else {
+        out.push({ kind: 'prop', name: `on${event}`, attr, event, modifiers })
+      }
     } else if (name.startsWith('{...') && name.endsWith('}')) {
       out.push({ kind: 'spread', name, attr, expr: name.slice(4, -1) })
     } else if (name[0] === '{' || name.startsWith('*{') || name[0] === '#') {
@@ -7093,7 +7121,7 @@ export function elementBindTarget(ctx, attr, varName) {
       // road rather than only the rule: telling someone to declare it `let`
       // answers a question they did not ask, since re-rendering is the thing
       // the `var` was chosen to avoid.
-      ? `\`var ${varName}\` is outside the reactive graph (RULE 13), so the DOM would be written once at mount and never again. For two-way, declare it \`let\`. To capture input WITHOUT re-rendering, keep the \`var\` and write it from a handler: \`on:input={e => { ${varName} = e.target.value }}\`.`
+      ? `\`var ${varName}\` is outside the reactive graph (RULE 13), so the DOM would be written once at mount and never again. For two-way, declare it \`let\`. To capture input WITHOUT re-rendering, keep the \`var\` and write it from a handler: \`oninput={e => { ${varName} = e.target.value }}\`.`
       : varEntry?.kind === 'const'
       ? (varEntry.isDerived
           // A derived const is the documented case for the writable derived
@@ -7253,6 +7281,10 @@ export function makeComponent(node, option = {}) {
       }
       case 'prop': {
         const ip = ctx.inspectProp(a.attr)
+        if (a.modifiers) {
+          ip.value = applyEventModifiers(ctx, a.modifiers, a.event, ip.value).handler
+          ip.static = false
+        }
         allProps.push({ name: a.name, value: ip.value, isStatic: ip.static })
         // Non-static props need a $push effect to stay live when deps change.
         if (!ip.static) reactiveProps.push({ name: a.name, value: ip.value })
@@ -7394,13 +7426,6 @@ export function makeComponent(node, option = {}) {
 
 export function bindProp(prop, node, element) {
   const ctx = this
-  // Normalize bare HTML event attributes (onclick, onmouseenter, oninput…)
-  // to Mesa's on: form so they go through the event delegation system.
-  // Only applies to DOM elements — components use onclick= as a prop.
-  const _rawName = prop.name
-  if (/^on[a-z]/.test(_rawName) && !_rawName.startsWith('on:')) {
-    prop = { ...prop, name: 'on:' + _rawName.slice(2) }
-  }
   const name = prop.name
 
   // {@attach expr} — element-level lifecycle function
@@ -7532,10 +7557,10 @@ export function bindProp(prop, node, element) {
     }
   }
 
-  // on:event|mod1|mod2(arg)  or  @event  (modifiers optional)
-  if (name[0] === '@' || name.startsWith('on:')) {
-    const { directive, modifiers } = parseModifiers(name)
-    const event = directive.startsWith('on:') ? directive.slice(3) : directive.slice(1)
+  // onevent|mod1|mod2(arg)  (modifiers optional)
+  const on = eventAttribute(name)
+  if (on) {
+    const { event, modifiers } = on
     const rawHand = prop.value ? unwrapExp(prop.value) : '() => {}'
     // Scan raw handler for $$emit / $$props / $$attributes / $context / $.transition usage.
     ctx.detectDependency(rawHand)
@@ -7551,7 +7576,7 @@ export function bindProp(prop, node, element) {
     if (canDelegate) {
       ctx.delegatedEvents.add(event)
       // A delegated handler is a PROPERTY on the element, so a second
-      // `on:click` on one element overwrote the first and it fired never —
+      // `onclick` on one element overwrote the first and it fired never —
       // silently, and only on this path: the non-delegated branch below calls
       // `addEvent`, which appends, so the same markup behaved differently
       // depending on whether the event had a modifier on it. The merge is only
@@ -7695,7 +7720,7 @@ export function inspectProp(prop) {
     // rewritten as a READ: `() => $$runtime.get($$sig_open) = false`, which does
     // not parse. Nothing reported it: the compiler was happy, the module
     // loaded, and the click threw `Invalid left-hand side in assignment`, so a
-    // dialog's Cancel button did nothing. `on:click` on an ELEMENT has always
+    // dialog's Cancel button did nothing. `onclick` on an ELEMENT has always
     // passed setters here — this is the same call, on the component path.
     const exp = ctx.accessors ? rewriteExpr(rawExp, ctx.accessors, ctx.setters, ctx.proxyFireFns) : rawExp
     return { name, value: exp, static: false, mod: {} }
@@ -7795,11 +7820,11 @@ function _collectTemplateExpressions(body, out = []) {
       if (!attr || attr.type !== 'exp' || typeof attr.value !== 'string') continue
 
       // Skip attributes whose value is expected to BE a function rather than a
-      // value to render: event handlers and directives. `on:click={toggleTheme}`
+      // value to render: event handlers and directives. `onclick={toggleTheme}`
       // reads an imported function as a value, which is correct and common —
       // warning on it would make the diagnostic noisy enough to turn off.
       const an = attr.name ?? ''
-      if (/^on[:A-Za-z]/.test(an) || /^(use|attach|transition|in|out|animate|bind):/.test(an)) continue
+      if (/^on[A-Za-z]/.test(an) || /^(use|attach|transition|in|out|animate|bind):/.test(an)) continue
 
       const inner = attr.value.replace(/^\{|\}$/g, '').trim()
       if (inner) out.push(inner)
@@ -9862,7 +9887,7 @@ export const version = '2.0.0'
  *  - Has no `$:` watch handlers, path watches, or auto-tracked effects
  *  - Has no `$context` provides or consumes
  *  - Has no async derived `const` (would need runtime re-fetching)
- *  - Has no DOM event handlers (on:, @event)
+ *  - Has no DOM event handlers (onclick)
  *  - Has no `{@attach}` lifecycle directives
  *  - Has no `bind:value` / `bind:group` (these require let, caught above)
  *
@@ -9906,7 +9931,7 @@ export function detectStatic(analysis, dom) {
 
 /**
  * Walk the DOM AST and return true if any node has an event handler
- * (on:event, @event) or an {@attach} directive — both require JS at runtime.
+ * (onclick) or an {@attach} directive — both require JS at runtime.
  */
 function _domHasInteractivity(node) {
   if (!node || typeof node !== 'object') return false
@@ -9916,8 +9941,7 @@ function _domHasInteractivity(node) {
   if (Array.isArray(node.attributes)) {
     for (const attr of node.attributes) {
       const name = attr.name ?? ''
-      if (name.startsWith('on:'))    return true   // on:click etc.
-      if (name.startsWith('@'))      return true   // @click shorthand
+      if (eventAttribute(name))      return true   // onclick etc.
       if (name === '{@attach}')      return true   // lifecycle attachment
       if (attr.raw?.startsWith('{@attach')) return true
     }
@@ -10381,7 +10405,7 @@ export async function compile(source, config = {}) {
   } catch (e) {
     // An empty program is not a degraded compile, it is a different component:
     // the template is compiled against a script that declares nothing, so
-    // `{n}` and `on:click={bump}` are emitted for a `let n` and a `function
+    // `{n}` and `onclick={bump}` are emitted for a `let n` and a `function
     // bump` that have silently stopped existing and the browser throws
     // ReferenceError at mount. This was a warning, and `analysis.errors` is
     // the only channel that fails a build.
@@ -10491,7 +10515,7 @@ export async function compile(source, config = {}) {
     return rx.test(rawScript) || rx.test(templateExpressions(source))
   }
 
-  if ([...DOOR_MEMBERS, 'transition', 'entrance', 'fade', 'slide', 'fly', 'measure', 'focus'].some(reaches)) {
+  if ([...DOOR_MEMBERS, 'transition', 'entrance', 'fade', 'slide', 'fly', 'measure', 'viewport', 'focus'].some(reaches)) {
     ctx.require('$mesa')
   }
 
@@ -10625,8 +10649,8 @@ export async function compile(source, config = {}) {
           // Collect static string/number/boolean prop values (non-expression attrs)
           const props = {}
           for (const a of (n.attributes || [])) {
-            if (a.name.startsWith('client:') || a.name.startsWith('on:') ||
-                a.name.startsWith('bind:') || a.name.startsWith('@')) continue
+            if (a.name.startsWith('client:') || eventAttribute(a.name) ||
+                a.name.startsWith('bind:')) continue
             if (a.type !== 'exp' && a.value != null) props[a.name] = a.value
           }
           if (Object.keys(props).length) entry.props = props

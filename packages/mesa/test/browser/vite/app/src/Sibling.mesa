@@ -5,5 +5,5 @@
   let n = 0
 </script>
 
-<button type="button" id="sibling" on:click={() => n++}>bump</button>
+<button type="button" id="sibling" onclick={() => n++}>bump</button>
 <output id="sibling-count">{n}</output>

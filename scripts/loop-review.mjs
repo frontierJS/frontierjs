@@ -24,6 +24,9 @@
 // row and not its package, so the package is the register's — archive
 // included — and a row filed against two packages counts in both.
 //
+// § Hazards ranks the hazards no `fli check` rule grades by the failed attempts
+// that name one, over the whole log, so the next rule goes where sessions fail.
+//
 // The report is printed and written to ~/.fli/<log>-review.md. With --ask, one
 // `claude -p` session in plan mode reads it and answers with changes to make —
 // it edits nothing.
@@ -35,6 +38,8 @@ import { join }                                      from 'node:path'
 
 import { ROOT, LOG_DIR, readLog, sentBack, writes, atRoot, runSession, parseArgs, printHelp } from './headless.mjs'
 import { readRegisters }                                                             from '../packages/cli/core/registers.js'
+import { hazardCoverage }                                                            from '../packages/cli/core/hazards.js'
+import { RULES }                                                                     from '../packages/cli/core/checks.js'
 
 const args  = parseArgs(process.argv.slice(2))
 if (args.help) { printHelp(import.meta.url); process.exit(0) }
@@ -123,6 +128,29 @@ out(`### Files busy rows collided on\n`)
 out(`A file more than one row needed while another session held it is a split candidate. ${busyAttempts.length} busy attempts; ${unnamed} name no dirty file, or predate \`dirty\`.\n`)
 for (const [f, rows] of crowded) out(`- ${f} — ${rows.size} rows (${[...rows].join(', ')})`)
 if (!crowded.length) out('No file stopped more than one row.')
+out('')
+
+// A hazard is named by the defect ids and error classes its entry cites, in
+// what the session wrote — never in a tool's result, or one read of a skill's
+// reference file would name every hazard in it.
+const ungraded = hazardCoverage({ root: ROOT, rules: RULES }).hazards.filter(h => !h.rules.length)
+const failing  = attempts.filter(a => ['failed', 'corrected', 'blocked'].includes(a.outcome) && a.sessionId)
+const closing  = attempts.filter(a => a.outcome === 'closed' && a.sessionId)
+const written  = new Map([...failing, ...closing].map(a => [a, writtenText(join(transcripts(a.cwd ?? ROOT), `${a.sessionId}.jsonl`))]))
+const named    = h => {
+  const res = h.names.map(n => new RegExp(`\\b${n}\\b`))
+  return a => h.names.includes(a.id) || res.some(re => re.test(written.get(a)))
+}
+const ranked = ungraded.map(h => {
+  const hit = failing.filter(named(h))
+  return { h, rows: new Set(hit.map(a => a.id)).size, failed: hit.length, closed: closing.filter(named(h)).length }
+}).filter(r => r.failed).sort((x, y) => y.rows - x.rows || y.failed - x.failed || y.closed - x.closed)
+out('## Hazards failed attempts name\n')
+out(`The \`none\` rows of \`hazards.snapshot.md\` (${ungraded.length}), ranked by the failed, corrected or blocked attempts (${failing.length} with a transcript) that name one — a hazard that lives only in prose is one sessions re-learn by failing, so the top of this list is what to grade first. Named is the session writing a defect id or an error class the hazard's entry cites, or working a row it cites. *Closed* is the same count over closing attempts: a name closed attempts write as often is a topic, not a trap. ${ungraded.filter(h => !h.names.length).length} cite nothing and cannot rank.\n`)
+out('| hazard | rows | failed | closed |')
+out('| --- | --- | --- | --- |')
+for (const r of ranked) out(`| ${r.h.realm} · ${r.h.lead.replace(/\|/g, '\\|')} | ${r.rows} | ${r.failed} | ${r.closed} |`)
+if (!ranked.length) out('| no ungraded hazard is named by a failed attempt | | | |')
 out('')
 
 if (traced.length) {
@@ -278,6 +306,16 @@ function sessionText(path) {
       .filter(e => e.type === 'assistant' && !e.isSidechain)
       .flatMap(e => Array.isArray(e.message?.content) ? e.message.content : [])
       .filter(p => p.type === 'text').map(p => p.text).join('\n')
+  } catch { return '' }
+}
+
+// Text and tool inputs, without results.
+function writtenText(path) {
+  try {
+    return readFileSync(path, 'utf8').trim().split('\n').map(l => JSON.parse(l))
+      .filter(e => e.type === 'assistant' && !e.isSidechain)
+      .flatMap(e => Array.isArray(e.message?.content) ? e.message.content : [])
+      .map(p => p.type === 'text' ? p.text : p.type === 'tool_use' ? JSON.stringify(p.input) : '').join('\n')
   } catch { return '' }
 }
 

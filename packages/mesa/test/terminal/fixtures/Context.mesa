@@ -4,6 +4,6 @@
   let on = false
   let items = ['x']
 </script>
-<button on:click={() => { on = true; items = ['x', 'a'] }}>open</button>
-<button on:click={() => items = []}>empty</button>
+<button onclick={() => { on = true; items = ['x', 'a'] }}>open</button>
+<button onclick={() => items = []}>empty</button>
 <Provide {on} {items}><Hear where="slot" /></Provide>

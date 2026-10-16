@@ -12,8 +12,8 @@
 </Rows>
 <div aria-hidden="true"><svg viewBox="0 0 1 1"><path d="M0 0" /></svg></div>
 <svg aria-hidden="true"><path d="M0 0" /></svg>
-<button on:click={() => { items = [...items, 'cat']; n++ }}>More</button>
-<button on:click={() => { level = level === 2 ? 3 : 2 }}>Level</button>
-<button on:click={() => { items = [] }}>Clear</button>
+<button onclick={() => { items = [...items, 'cat']; n++ }}>More</button>
+<button onclick={() => { level = level === 2 ? 3 : 2 }}>Level</button>
+<button onclick={() => { items = [] }}>Clear</button>
 {@render label('end')}
 {#snippet label(text)}<span>[{text}]</span>{/snippet}

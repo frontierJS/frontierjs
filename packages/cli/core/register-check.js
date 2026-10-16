@@ -45,10 +45,11 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/
 // three and means the same by each.
 const BLANK = new Set(['', '—', '-', 'n/a'])
 
-// `clock: true` marks the one rule whose answer changes overnight. A caller
-// that must be reproducible — CI, a committed artefact — reports it and never
-// grades on it: a branch that changed nothing must not go red because a date
-// passed.
+// `noted: true` marks a rule a caller that must be reproducible — CI, a
+// committed artefact — reports and never grades on. Two reasons earn it: an
+// answer that changes overnight (a branch that changed nothing must not go red
+// because a date passed), and a backlog no edit to the tree can clear yet
+// (`timing-unmeasured` waits on `register:repro` measuring a drive).
 export const RULES = [
   { id: 'unparsed-record',  level: 'error', what: 'a line with a record\'s shape that produced no record — the reader could not see it, so every rule below passes over it' },
   { id: 'duplicate-id',     level: 'error', what: 'one id naming two records — an id is never reused' },
@@ -70,8 +71,9 @@ export const RULES = [
   { id: 'ruling-order',     level: 'warn',  what: 'a ruling dated later than the one above it — a section runs newest first, so the top of one is the current thinking' },
   { id: 'unnamed-ruling',   level: 'warn',  what: 'a ruling with no id — nothing can cite it' },
   { id: 'missing-anchor',   level: 'warn',  what: 'an open row with no anchor — nothing can link it' },
-  { id: 'stale-verified',   level: 'warn',  what: 'an open row nobody has re-checked in a long time', clock: true },
-  { id: 'env-smell',        level: 'warn',  what: 'an open row whose title reads like an environment failure — a timeout, a hang, a port, a run that passes elsewhere — and names no `env:` cause and no `register:repro` measurement; or one naming `env: timing` that nothing measured' },
+  { id: 'stale-verified',   level: 'warn',  what: 'an open row nobody has re-checked in a long time', noted: true },
+  { id: 'env-smell',        level: 'warn',  what: 'an open row whose title reads like an environment failure — a timeout, a hang, a port, a run that passes elsewhere — and names no `env:` cause and no `register:repro` measurement' },
+  { id: 'timing-unmeasured', level: 'warn', what: 'an open row naming `env: timing` that `register:repro` never measured', noted: true },
 ]
 
 // What an environment failure SAYS about itself in a title. A lead, never a
@@ -479,7 +481,7 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
       add('env-cause', row, `env: "${cause}" is not one of ${ENV_CAUSES.join(', ')}`)
     } else if (cause === 'timing' && !reproOf(row)) {
       const { reason } = linkedTest(row, root)
-      add('env-smell', row, `names env: timing and nothing measured it — ${reason ? `register:repro cannot: the row ${reason}` : `fli repro ${row.id} writes one`}`)
+      add('timing-unmeasured', row, `names env: timing and nothing measured it — ${reason ? `register:repro cannot: the row ${reason}` : `fli repro ${row.id} writes one`}`)
     } else if (cause === null && !reproOf(row) && envSmells(row.title)) {
       add('env-smell', row, 'reads like an environment failure and names no env: cause')
     }

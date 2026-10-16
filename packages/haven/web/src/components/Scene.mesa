@@ -446,7 +446,7 @@
   }
 </script>
 
-<mesa:window on:keydown={keydown} />
+<mesa:window onkeydown={keydown} />
 <div {@attach paint(stage, scale)}>
   <slot />
   {#if here}
@@ -480,7 +480,7 @@
   <p>{room.name} · {here.get().count} here{#each here.get().others as m (m.connectionId)} · {nicks[m.userId] ?? '…'}{/each}</p>
   {#if note}<p>{note}</p>{/if}
   {#if hints.length && partial(draft) !== null}<p>{hints.map((c) => `/${c}`).join('  ')} · {hints.length === 1 ? 'Tab completes, Enter runs' : 'Tab completes'}</p>{/if}
-  <form on:submit|preventDefault={say}>
+  <form onsubmit|preventDefault={say}>
     <input {@attach focus} bind:value={draft} placeholder="arrows walk, type and Enter says, PageUp reads back" />
   </form>
   <Profile {here} {nicks} {stage} {room} {facing} {x} {y} route={page.pathname} glyph={shape ?? '@'} />

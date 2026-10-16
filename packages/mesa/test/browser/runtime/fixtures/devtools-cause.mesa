@@ -14,4 +14,4 @@
 
 <output id="doubled">{doubled}</output>
 <output id="seen">{seen}</output>
-<button type="button" id="bump" on:click={() => count++}>bump</button>
+<button type="button" id="bump" onclick={() => count++}>bump</button>

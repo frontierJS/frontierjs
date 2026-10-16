@@ -7,7 +7,7 @@
 //   $: commandPalette.open   ← watch in any component
 //
 //   <!-- In App.mesa -->
-//   <mesa:window on:keydown={(e) => {
+//   <mesa:window onkeydown={(e) => {
 //     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
 //       e.preventDefault()
 //       commandPalette.toggle()

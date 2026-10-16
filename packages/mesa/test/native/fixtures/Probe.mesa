@@ -3,6 +3,7 @@
   let field = null
   let sync = 'untried'
   let size = 'pending'
+  let screen = 'pending'
   let focused = 'pending'
   let typed = ''
   const doMeasure = async () => {
@@ -10,6 +11,8 @@
     sync = r ? `${r.width}x${r.height}` : 'none'
     const m = await $.measure(box)
     size = `${Math.round(m.width)}x${Math.round(m.height)}`
+    const v = await $.viewport()
+    screen = v.width > m.width && v.height > m.height ? 'wider' : `${v.width}x${v.height}`
   }
   const doFocus = async () => { await $.focus(field); focused = 'done' }
 </script>
@@ -17,9 +20,10 @@
   <div bind:this={box} style="width: 120px; height: 40px"><p>box</p></div>
   <p>sync: {sync}</p>
   <p>measure: {size}</p>
+  <p>viewport: {screen}</p>
   <p>focus: {focused}</p>
   <p>typed: {typed}</p>
   <input bind:this={field} bind:value={typed} placeholder="type" />
-  <button on:click={doMeasure}>Measure</button>
-  <button on:click={doFocus}>Focus</button>
+  <button onclick={doMeasure}>Measure</button>
+  <button onclick={doFocus}>Focus</button>
 </div>

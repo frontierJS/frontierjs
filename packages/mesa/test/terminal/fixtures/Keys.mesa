@@ -15,10 +15,10 @@
 
 <p>downs {downs} presses {presses} heard {heard} last {last}</p>
 <p>value {value} submits {submits} held {held} other {other}</p>
-<form on:submit|preventDefault={() => submits++} on:keypress={() => heard++}>
-  <input name="a" on:keydown={() => downs++} on:keypress={press} on:input={(e) => value = e.target.value} />
+<form onsubmit|preventDefault={() => submits++} onkeypress={() => heard++}>
+  <input name="a" onkeydown={() => downs++} onkeypress={press} oninput={(e) => value = e.target.value} />
 </form>
-<form on:submit|preventDefault={() => held++}>
-  <input name="h" on:keypress={holdEnter} />
+<form onsubmit|preventDefault={() => held++}>
+  <input name="h" onkeypress={holdEnter} />
 </form>
-<input name="o" on:keydown={unset} on:keypress={unset} on:focus={unset} on:blur={unset} on:change={unset} on:input={(e) => other = e.target.value} />
+<input name="o" onkeydown={unset} onkeypress={unset} onfocus={unset} onblur={unset} onchange={unset} oninput={(e) => other = e.target.value} />

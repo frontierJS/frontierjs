@@ -723,6 +723,10 @@ model Note {
   body       String
 }`
 
+const TRANSITIONS_SCHEMA = 'enum Stage { draft live }\n' + MIRROR_SCHEMA
+  .replace('  message           String\n', '  message           String\n  stage             Stage   @default(draft)\n')
+  .replace('  @@mirror(key: externalId)\n}', '  @@mirror(key: externalId)\n  @@transitions(stage, publish: draft -> live)\n}')
+
 async function mirrorApp(opts: { claim?: MirrorClaim | null; schema?: string } = {}) {
   const acme = acmeProvider()
   const db = await createClient({ db: ':memory:', schema: opts.schema ?? MIRROR_SCHEMA })
@@ -802,6 +806,28 @@ describe('a claimed mirror model forwards its generated writes', () => {
     } finally { acme.server.stop(true) }
   })
 
+  it("grades the app's own write policies before it sends (FJS-3147)", async () => {
+    const schema = MIRROR_SCHEMA.replace('  @@mirror(key: externalId)\n}', `  @@mirror(key: externalId)
+  @@allow('read', true)
+  @@allow('create', channelExternalId != 'closed')
+  @@allow('update', message != 'frozen')
+  @@allow('delete', false)
+}`)
+    const { app, acme } = await mirrorApp({ schema })
+    try {
+      await app._startForTest()
+      const closed = await request(app).post('/posts').auth('test-token-u1').send({ channelExternalId: 'closed', message: 'hi' })
+      expect(closed.status).toBe(403)
+      expect(acme.seen).toEqual([])
+      const made = await request(app).post('/posts').auth('test-token-u1').send({ channelExternalId: 'c1', message: 'frozen' })
+      expect(made.status).toBe(201)
+      const id = (made.body as { id: number }).id
+      expect((await request(app).patch(`/posts/${id}`).auth('test-token-u1').send({ message: 'thawed' })).status).toBe(403)
+      expect((await request(app).delete(`/posts/${id}`).auth('test-token-u1')).status).toBe(403)
+      expect(acme.seen.map(r => r.method)).toEqual(['POST'])
+    } finally { acme.server.stop(true) }
+  })
+
   it('leaves an unclaimed mirror to the generated verb, which refuses the Provider\'s columns', async () => {
     const { app, db, acme } = await mirrorApp({ claim: null })
     try {
@@ -825,9 +851,10 @@ describe('boot refuses a claim the schema does not back', () => {
     ['a model the schema lacks', claimOn('Thread'), 'the schema has no model Thread'],
     ['a model that is not @@mirror', claimOn('Note'), 'Note is not @@mirror'],
     ['a key the schema does not name', claimOn('Post', 'providerId'), "keyed by 'providerId', and Post declares @@mirror(key: externalId)"],
+    ['a model declaring @@transitions', claimOn('Post'), 'Post declares @@transitions'],
   ] as const) {
     it(why, async () => {
-      const { app, acme } = await mirrorApp({ claim })
+      const { app, acme } = await mirrorApp({ claim, ...(why.includes('@@transitions') ? { schema: TRANSITIONS_SCHEMA } : {}) })
       try {
         await expect(app._startForTest()).rejects.toThrow(says)
       } finally { acme.server.stop(true) }

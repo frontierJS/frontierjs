@@ -195,7 +195,7 @@ function inputOffenses(t, n, add) {
 
 const elementOffenses = (t, n, add) => {
   for (const d of n.directives) add(d.name, directiveShape(d.name), d.loc)
-  for (const h of n.handlers) if (!t.events[h.event]) add(`on:${h.event}`, `on:${h.event}`, h.loc)
+  for (const h of n.handlers) if (!t.events[h.event]) add(`on${h.event}`, `on${h.event}`, h.loc)
 }
 
 // `passive` promises a browser the handler never prevents a scroll; a

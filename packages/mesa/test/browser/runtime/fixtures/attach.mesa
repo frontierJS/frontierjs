@@ -30,7 +30,7 @@
   <div id="faded" style="opacity: 0" {@attach fade}>faded</div>
 {/if}
 
-<button type="button" id="hide" on:click={() => show = false}>hide</button>
+<button type="button" id="hide" onclick={() => show = false}>hide</button>
 
 <output id="attached">{attached}</output>
 <output id="connected">{connected}</output>

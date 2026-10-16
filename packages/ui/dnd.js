@@ -30,7 +30,7 @@
  * first `onconsider` that wrote `items`. The getter is read inside this
  * module's own effect instead, and the zone lives as long as the element.
  *
- * Callbacks rather than `on:consider`: Mesa delegates `on:` to the mount root,
+ * Callbacks rather than `onconsider`: Mesa delegates `onclick` and its kin to the mount root,
  * and a CustomEvent that does not bubble never reaches it, while one that does
  * would reach every zone it is nested in.
  *

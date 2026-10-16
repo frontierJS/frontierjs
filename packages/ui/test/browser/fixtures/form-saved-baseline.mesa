@@ -53,10 +53,10 @@
   <Form resource={RESOURCE} record={{ ...ROW }} onsubmit={handSubmit} onready={(a) => hand = a} />
 </div>
 
-<button type="button" id="submit" on:click={() => api?.submit()}>submit</button>
-<button type="button" id="reset" on:click={() => api?.reset()}>reset</button>
-<button type="button" id="hand-submit" on:click={() => hand?.submit()}>hand submit</button>
-<button type="button" id="hand-reset" on:click={() => hand?.reset()}>hand reset</button>
+<button type="button" id="submit" onclick={() => api?.submit()}>submit</button>
+<button type="button" id="reset" onclick={() => api?.reset()}>reset</button>
+<button type="button" id="hand-submit" onclick={() => hand?.submit()}>hand submit</button>
+<button type="button" id="hand-reset" onclick={() => hand?.reset()}>hand reset</button>
 
 <output id="calls">{calls.join('|')}</output>
 <output id="hand-calls">{handCalls.join('|')}</output>

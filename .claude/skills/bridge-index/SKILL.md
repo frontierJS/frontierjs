@@ -29,6 +29,7 @@ Detail: `references/data-api.md`
 - `db.$checkWhere(accessor, where)` — is this a valid filter key; throws — `litestone/src/core/client.js`
 - `db.$checkOrderBy(accessor, orderBy)` — is this a sortable key, with the reason when it is not; throws — `litestone/src/core/client.js`
 - `db.$readAs(accessor, row, principal)` — the row as that principal would read it, for a broadcast; fails closed — `litestone/src/core/client.js`
+- `db.$checkWrite(accessor, op, row, changes?)` — would this client's caller be let make this write, for a write that does not reach the table first (a claimed mirror's forward); a verdict, gate and grid and row policy, never field or transition (`FJS-D1162`) — `litestone/src/core/client.js`
 - `db.$levelOf(accessor?, principal?)` — the level the app's own `getLevel` grades a caller at; `null` is *cannot grade* — `litestone/src/core/client.js`
 - `db.$primaryKey(accessor)` — the key's columns in key order — `litestone/src/core/client.js`
 - `db.$mirrorKey(accessor)` — the column `@@mirror(key:)` names, or `null` — `litestone/src/core/client.js`

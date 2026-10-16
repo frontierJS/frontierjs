@@ -11,6 +11,6 @@
   }
 </script>
 
-<button id="save" on:click={save}>Save</button>
-<button id="wrong" on:click={wrong}>Wrong</button>
+<button id="save" onclick={save}>Save</button>
+<button id="wrong" onclick={wrong}>Wrong</button>
 <output id="refused">{refused}</output>

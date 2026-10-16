@@ -248,7 +248,8 @@ function schemaModels(app: App): ParsedModel[] | null {
  * the schema lacks forwards a write nothing lands; one on a model that is not
  * `@@mirror` would let the Provider overwrite an app's own rows; a key that
  * disagrees with `@@mirror(key:)` matches every answer to no row and inserts
- * a duplicate per write.
+ * a duplicate per write; and `@@transitions` on one is a rule its forward
+ * cannot grade.
  */
 function refuseClaims(app: App, claimed: ClaimedModel[]): void {
   if (!claimed.length) return
@@ -263,6 +264,10 @@ function refuseClaims(app: App, claimed: ClaimedModel[]): void {
     if (!declared) { lines.push(`${at}, and ${c.model} is not @@mirror — declare @@mirror(key: ${c.key}) on it, or leave it out of the claim`); continue }
     if (declared.key !== c.key)
       lines.push(`${at} keyed by '${c.key}', and ${c.model} declares @@mirror(key: ${declared.key})`)
+    // A forward grades the row policies through `$checkWrite`, which grades no
+    // move; a machine on a mirrored row would be the Provider's to refuse.
+    if (model.attributes.some(a => a.kind === 'transitions'))
+      lines.push(`${at}, and ${c.model} declares @@transitions — a forwarded write grades no move (FJS-D1162). Leave it out of the claim and write its verbs by hand`)
   }
   if (lines.length) throw new Error(`[conduit] ${lines.join('\n  ')}`)
 }

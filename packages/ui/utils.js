@@ -259,13 +259,14 @@ export function cx(...parts) {
  * the trigger, kept 8px inside the viewport. Three overlays each carried a
  * copy that read only the end, so `top-*` opened below like `bottom-*` did.
  *
- *   const { x, y } = placeAgainst(triggerEl.getBoundingClientRect(),
- *                                 panelEl.getBoundingClientRect(),
- *                                 { placement, offset })
+ * `vp` is `$.viewport()`, so a phone, which has no `window`, places too.
+ *
+ *   const [tr, pr, vp] = await Promise.all([$.measure(triggerEl), $.measure(panelEl), $.viewport()])
+ *   const { x, y } = placeAgainst(tr, pr, vp, { placement, offset })
  */
-export function placeAgainst(tr, pr, { placement = 'bottom-start', offset = 4 } = {}) {
-  const winW = window.innerWidth
-  const winH = window.innerHeight
+export function placeAgainst(tr, pr, vp, { placement = 'bottom-start', offset = 4 } = {}) {
+  const winW = vp.width
+  const winH = vp.height
   const [side, align = 'start'] = placement.split('-')
 
   // The 8px margin never pushes the panel past its own trigger's edge: a

@@ -104,7 +104,7 @@ leads.gate           // the four levels, as declared on the Model`,
 <Select label="Status" name="status" options={leads.fields.status.enum}
         bind:value={draft.status} {errors} />
 
-<Button on:click={() => leads.service.create(draft)}>Save</Button>`,
+<Button onclick={() => leads.service.create(draft)}>Save</Button>`,
   S8: `# the Model
 db/schema.lite            16 lines
 

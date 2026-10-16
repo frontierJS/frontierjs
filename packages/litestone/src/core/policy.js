@@ -1279,7 +1279,7 @@ export function checkCreatePolicy(modelName, data, ctx, hidden = null) {
     { model: modelName, operation: 'create' })
 }
 
-function withLiteralDefaults(data, list) {
+export function withLiteralDefaults(data, list) {
   if (!list?.length) return data
   let out = data
   for (const { field, value } of list)

@@ -275,7 +275,7 @@ core/
                 so does a typecheck that exits nonzero. `reproVerdict` reads
                 the counts; the command writes them through `amendIssue`,
                 whose `drop` strips `env: timing` on a code verdict.
-                `linkedTest` is the row-only refusal, which `env-smell` asks
+                `linkedTest` is the row-only refusal, which `timing-unmeasured` asks
                 of an unmeasured timing row to name its way out
   find.js       the reader behind `register:find` — issue rows, archive and
                 rulings holding every term, answered as id, title and file:line

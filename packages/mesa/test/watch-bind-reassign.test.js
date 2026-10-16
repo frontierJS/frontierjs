@@ -51,7 +51,7 @@ const CHILD = `<script>
   export let record = {}
   function edit() { record = { ...record, notes: 'c1' } }
 </script>
-<span class="child">{record.notes}</span><b on:click={edit}>edit</b>`
+<span class="child">{record.notes}</span><b onclick={edit}>edit</b>`
 
 const parentWith = ({ watch, bind }) => `<script>
   import Child from './Child.mesa'
@@ -60,7 +60,7 @@ const parentWith = ({ watch, bind }) => `<script>
   ${watch ? '$: draft.notes, () => { seen = [...seen, draft.notes] }' : ''}
   function set() { draft = { ...draft, notes: 'n1' } }
 </script>
-<button on:click={set}>go</button>
+<button onclick={set}>go</button>
 <p class="own">{draft.notes}</p>
 <i class="seen">{seen.join(',')}</i>
 <Child ${bind ? 'bind:record={draft}' : 'record={draft}'} />`

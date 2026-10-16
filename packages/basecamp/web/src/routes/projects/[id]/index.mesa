@@ -157,7 +157,7 @@ title: Project
 
   {#if editing}
     <div class="container narrow">
-      <form class="card stack" on:submit|preventDefault={save}>
+      <form class="card stack" onsubmit|preventDefault={save}>
         <Input label="Name" name="name" id="name" required
                value={draft.name} oninput={(e) => draft.name = e.target.value} />
         <Input label="Description" name="description" id="description"

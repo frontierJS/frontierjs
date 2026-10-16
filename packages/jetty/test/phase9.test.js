@@ -40,7 +40,7 @@ group('injectJettyHMR against real compiler output')
 // The case that broke: a delegated event puts a trailing `$$delegate(…)` call
 // after the component function, which is what Step 2's lookahead has to clear.
 {
-  const js = await compile(`<script>let c = 0</script><p on:click={() => c++}>{c}</p>`)
+  const js = await compile(`<script>let c = 0</script><p onclick={() => c++}>{c}</p>`)
   if (!/\$\$delegate\(/.test(js)) bad('fixture does not delegate — the case under test is not present')
   else ok('fixture emits a trailing $$delegate call')
 

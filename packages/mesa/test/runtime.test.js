@@ -2730,7 +2730,7 @@ describe('track() stores values, trackDerived() derives', () => {
     const cb = () => { fired++; return 'RET' }
     // Exactly what the compiler emits for `export let ondone`. Arity used to
     // decide this, so `<Child ondone={() => n++} />` was memoized and called
-    // during setup, and on:click bound the return value instead of the callback.
+    // during setup, and onclick bound the return value instead of the callback.
     const sig = track(cb, undefined, undefined, null)
     expect(fired).toBe(0)
     expect(trackedGet(sig)).toBe(cb)
@@ -5364,7 +5364,7 @@ describe('event delegation — per-mount-container roots', () => {
 
   it('a delegated handler reads currentTarget as its OWN element', () => {
     // `e.target === e.currentTarget` is the standard "was this element itself
-    // clicked" test, and it is what `on:click|self` compiles to. Delegation
+    // clicked" test, and it is what `onclick|self` compiles to. Delegation
     // puts one listener on the root, so currentTarget was the root and the
     // comparison was false for every event that DID hit the element it was
     // written on — a backdrop that cannot be clicked away, silently.

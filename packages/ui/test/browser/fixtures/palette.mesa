@@ -24,14 +24,14 @@
   window.commandPalette = commandPalette
 </script>
 
-<mesa:window on:keydown={(e) => {
+<mesa:window onkeydown={(e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
     e.preventDefault()
     commandPalette.toggle()
   }
 }} />
 
-<button type="button" id="open-palette" on:click={() => commandPalette.show()}>Open</button>
+<button type="button" id="open-palette" onclick={() => commandPalette.show()}>Open</button>
 
 {#if commandPalette.open}
   <CommandPalette items={COMMANDS} onclose={() => commandPalette.hide()} />

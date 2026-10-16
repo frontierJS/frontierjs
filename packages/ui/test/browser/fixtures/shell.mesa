@@ -83,15 +83,15 @@
 </script>
 
 <div id="controls">
-  <button type="button" id="restore" on:click={() => checked = true}>Restore</button>
-  <button type="button" id="sign-in" on:click={() => user = { email: 'a@b.c' }}>Sign in</button>
-  <button type="button" id="promote" on:click={() => level = 5}>Promote</button>
-  <button type="button" id="more" on:click={() => unread++}>More</button>
-  <button type="button" id="collapse" on:click={() => layout = layout === 'rail' ? 'sidebar' : 'rail'}>Collapse</button>
+  <button type="button" id="restore" onclick={() => checked = true}>Restore</button>
+  <button type="button" id="sign-in" onclick={() => user = { email: 'a@b.c' }}>Sign in</button>
+  <button type="button" id="promote" onclick={() => level = 5}>Promote</button>
+  <button type="button" id="more" onclick={() => unread++}>More</button>
+  <button type="button" id="collapse" onclick={() => layout = layout === 'rail' ? 'sidebar' : 'rail'}>Collapse</button>
   <output id="signouts">{signouts}</output>
 </div>
 
-<div id="app" on:click={go}>
+<div id="app" onclick={go}>
   <Shell {groups} {sections} {path} {query} title="Leads"
          {user} {level} {checked} {isActive} {layout} {collapsible} bind:collapsed onsignout={out}>
     {#snippet brand()}<a href="/" data-brand>Acme</a>{/snippet}

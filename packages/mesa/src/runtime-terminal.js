@@ -1160,13 +1160,13 @@ const CHECK_KEYS = new Set(['space'])
 const disabled = (node) => 'disabled' in node.__attrs
 
 /**
- * `on:event` on a terminal node. The listener goes into a list of the
+ * `onevent` on a terminal node. The listener goes into a list of the
  * runtime's own rather than onto the engine, which wires one key slot per
  * node and keeps no way to take a listener back off; `dispatch` reads the
  * list. `capture` and `once` are the DOM's listener options.
  */
 export function on(node, event, handler, { capture = false, once = false } = {}) {
-  if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on:${event} has no terminal lowering`)
+  if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on${event} has no terminal lowering`)
   // A kit forwards its caller's handler props, most of them unset; `addEvent`
   // skips those on the DOM path, and a stored `undefined` throws on the event.
   if (!handler) return
@@ -1306,10 +1306,10 @@ function windowOf(r) {
   return w
 }
 
-/** `<mesa:window on:event>`: a listener on the window, taken off when the
+/** `<mesa:window onevent>`: a listener on the window, taken off when the
  *  component that wrote it is destroyed. */
 export function onWindow(event, handler, { capture = false, once = false } = {}) {
-  if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on:${event} has no terminal lowering`)
+  if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on${event} has no terminal lowering`)
   if (!handler) return
   const r = needRenderer('onWindow')
   if (event === 'mouseenter' || event === 'mouseleave') hoverSource(r)
@@ -1901,8 +1901,8 @@ export function focusPrev() { return cycle(-1) }
 
 // ─── measure and focus ────────────────────────────────────────────────
 
-// `$.measure` and `$.focus` on a terminal, in the shape `runtime.js` gives the
-// DOM's. A box has no place until a frame lays it out, and one mounted this
+// `$.measure`, `$.viewport` and `$.focus` on a terminal, in the shape
+// `runtime.js` gives the DOM's. A box has no place until a frame lays it out, and one mounted this
 // tick still reports zero, so the answer waits for the next frame.
 
 /** The cells `node` occupies on screen, as `{ left, top, right, bottom,
@@ -1920,6 +1920,12 @@ export function measure(node) {
     r.addPostProcessFn(read)
     r.requestRender()
   })
+}
+
+/** The renderer's area, as `{ width, height }` in cells. */
+export function viewport() {
+  const r = needRenderer('viewport')
+  return Promise.resolve({ width: r.width, height: r.height })
 }
 
 /** Move focus to `node`. No node does nothing. */

@@ -48,7 +48,7 @@
 
 <!-- Reassigning BOTH, which is what a reload does: the rows come back first
      and the second list a moment later. -->
-<button type="button" id="load" on:click={() => {
+<button type="button" id="load" onclick={() => {
   rows  = [{ id: 1, open: false }]
   notes = [{ rowId: 1, text: 'one' }, { rowId: 1, text: 'two' }]
 }}>load</button>
@@ -56,11 +56,11 @@
 <!-- The same two assignments, one flush apart — which is what any async
      reload does: the rows come back from one request and the second list from
      the next, with an await between them. -->
-<button type="button" id="load-async" on:click={async () => {
+<button type="button" id="load-async" onclick={async () => {
   rows = [{ id: 1, open: false }]
   await Promise.resolve()
   notes = [{ rowId: 1, text: 'one' }, { rowId: 1, text: 'two' }]
 }}>load async</button>
 
 <!-- And the outer list alone, unchanged in content but a new array. -->
-<button type="button" id="rows-only" on:click={() => { rows = [{ id: 1, open: true }] }}>rows only</button>
+<button type="button" id="rows-only" onclick={() => { rows = [{ id: 1, open: true }] }}>rows only</button>

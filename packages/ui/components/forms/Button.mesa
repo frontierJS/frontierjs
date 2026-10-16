@@ -95,7 +95,7 @@
     style:font-size={fontSize || null}
     {class}
     {...$attributes}
-    on:click={handleClick}
+    onclick={handleClick}
   >
     {#if leading}{@render leading?.()}{/if}
     <slot />

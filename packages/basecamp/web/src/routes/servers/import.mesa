@@ -83,7 +83,7 @@ title: Import a machine
 </div>
 
 <div class="container narrow">
-  <form class="card stack" novalidate on:submit={save}>
+  <form class="card stack" novalidate onsubmit={save}>
     {#if failed}
       <!-- id'd because the shell's fleet-notice bar is also `.alert.danger`. -->
       <article class="alert danger" id="form-error">

@@ -25,12 +25,13 @@ import '@frontierjs/css'
 <Button tone="danger" onclick={remove}>Delete</Button>
 ```
 
-**`onclick`, never `on:click`.** A handler reaches a component as a plain
-callback prop; the directive form is for elements. Mesa refuses it on a
-component (VISION rule 23) and the message names the prop to use — including
-for a component's own events, where `on:paid` means `onpaid={fn}`. A modifier
-has nowhere to go: the child decides what it passes, so `preventDefault` is the
-callback's business.
+**`onclick`, on an element and a component alike** (VISION rule 23). A handler
+reaches a component as a plain callback prop, and a component's own events are
+spelled the same way, `onpaid={fn}`. A guard modifier compiles into the value
+the component is handed, so `<Button onclick|preventDefault={save}>` works
+through the kit's forwarding; `once`, `passive` and `capture` are refused on a
+component, which has no listener of its own. `on:click` and `@click` do not
+compile.
 
 ---
 
@@ -123,7 +124,7 @@ component, and it works on an element this kit does not own:
 
 ```html
 <button class="btn danger" data-confirm="Delete this order?"
-        on:click={() => remove(order)}>Delete</button>
+        onclick={() => remove(order)}>Delete</button>
 
 <a href="/leave/" data-confirm data-confirm-title="Leave the workspace?"
    data-confirm-label="Leave">Leave</a>
@@ -367,7 +368,7 @@ bug:
 | `Fieldset` | `<fieldset disabled>` | `opacity` + `pointer-events: none`, which a keyboard user tabbed straight through |
 | `Select` | the UA's own chevron | `appearance: none` plus a hand-drawn arrow |
 | `FileUpload` | a real `<button>` dropzone | `role="button"` plus a keydown handler that also scrolled the page on Space |
-| `Table` | a `<button>` in the `<th>` | `on:click` on the `<th>`, which no keyboard user could reach |
+| `Table` | a `<button>` in the `<th>` | `onclick` on the `<th>`, which no keyboard user could reach |
 | `Tabs`, `Breadcrumbs` | `[aria-selected]`, `[aria-current]` | an `.active` class that could disagree with what was announced |
 
 `Tooltip` moved the other way for the same reason: it is now anchored rather

@@ -25,7 +25,7 @@ const COUNTER = `<script>
 <div class="box">
   <h1>Counter</h1>
   <p>Count: {count}</p>
-  <button on:click={inc}>Add</button>
+  <button onclick={inc}>Add</button>
   {#if count > 2}
     <p>Many</p>
   {:else}
@@ -117,7 +117,7 @@ describe('lower()', () => {
     const tree = await ir(`<script>
   let n = 0
 </script>
-<mesa:window on:keydown|preventDefault={() => n++} />
+<mesa:window onkeydown|preventDefault={() => n++} />
 `, 'W.mesa')
     const [global] = tree.children.filter((c) => c.kind !== 'text')
     expect(global).toMatchObject({ kind: 'global', target: 'window', loc: 'W.mesa:4:1', directives: [] })
@@ -157,7 +157,7 @@ describe('lower()', () => {
   import Card from './Card.mesa'
   let n = 0
 </script>
-<Card title="A" count={n} flag class="x" label="n is {n}" onpick={() => n++} bind:open={n} on:close={() => {}} client:load>
+<Card title="A" count={n} flag class="x" label="n is {n}" onpick={() => n++} bind:open={n} onclose|once={() => {}} client:load>
   <!-- not content -->
   <p>{n}</p>
   <b slot="actions">go</b>
@@ -181,7 +181,7 @@ describe('lower()', () => {
     expect(card.binds).toEqual([{ name: 'open', setter: '$$set_n' }])
     expect(card.ref).toBe(null)
     // Refused for every target by componentAttributes: reported, never passed.
-    expect(tree.diagnostics).toEqual([expect.stringMatching(/^on:close is not valid on a component\..* — C\.mesa:5:1$/)])
+    expect(tree.diagnostics).toEqual([expect.stringMatching(/^<Card onclose\|once> -- 'once' is an addEventListener option.* — C\.mesa:5:1$/)])
     // Every slot is a snippet with no arguments by now, the default one
     // `children` (`FJS-D668`): one projection for every target.
     expect(card.snippets.map((s) => [s.name, s.params])).toEqual([['row', ['r']], ['actions', []], ['aside', []], ['children', []]])

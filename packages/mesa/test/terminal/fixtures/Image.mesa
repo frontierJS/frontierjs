@@ -7,7 +7,7 @@
 <p>before</p>
 <img src="spacer.gif" alt="" />
 <p>after</p>
-<img src="me.png" alt={name} on:error={() => name = 'failed'} />
+<img src="me.png" alt={name} onerror={() => name = 'failed'} />
 <p>next</p>
 <span aria-hidden="true"><img src="icon.svg" /></span>
 <svg viewBox="0 0 10 10" role="img" aria-label="a chart"><defs><linearGradient id="g" /></defs><path d="M0 0L10 10" /></svg>
@@ -16,4 +16,4 @@
 <p>low</p>
 <span aria-hidden="true"><svg viewBox="0 0 1 1"><circle r="1" /></svg></span>
 <span>a <mark>hit</mark> here</span>
-<button on:click={() => name = name ? '' : 'bo'}>swap</button>
+<button onclick={() => name = name ? '' : 'bo'}>swap</button>

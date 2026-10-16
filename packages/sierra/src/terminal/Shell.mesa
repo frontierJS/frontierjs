@@ -61,7 +61,7 @@
   }
 </script>
 
-<mesa:window on:keydown={keydown} on:focusin={focusin} />
+<mesa:window onkeydown={keydown} onfocusin={focusin} />
 <h1>{state().app}</h1>
 {#if state().note}
   <p>{state().note}</p>
@@ -69,12 +69,12 @@
 {#if state().routes}
   <p>Tab or j/k moves, Enter opens, Esc goes back, Ctrl+C quits</p>
   {#each state().routes as r (r.path)}
-    <button on:click={() => onopen?.(r.path)} on:keydown={arrow}>{r.path}</button>
+    <button onclick={() => onopen?.(r.path)} onkeydown={arrow}>{r.path}</button>
   {:else}
     <p>No route without a param lowers yet.</p>
   {/each}
-  <form on:submit|preventDefault={go}>
-    <label>Path <input name="path" placeholder="/orders/7/" on:input={(e) => path = e.target.value} /></label>
+  <form onsubmit|preventDefault={go}>
+    <label>Path <input name="path" placeholder="/orders/7/" oninput={(e) => path = e.target.value} /></label>
   </form>
   {#if state().patterns.length}
     <p>By path: {state().patterns.join('  ')}</p>

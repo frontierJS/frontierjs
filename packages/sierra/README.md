@@ -1352,7 +1352,7 @@ import { theme, setTheme, toggleTheme } from '@frontierjs/sierra'
   $: theme.value
 </script>
 
-<button on:click={toggleTheme}>{theme.value}</button>
+<button onclick={toggleTheme}>{theme.value}</button>
 ```
 
 Without the `$:` the read is a snapshot taken at mount. Sierra passes

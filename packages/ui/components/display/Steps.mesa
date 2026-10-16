@@ -87,7 +87,7 @@
 
       {#if clickable && status !== 'pending'}
         <span class="step-label">
-          <button type="button" class="btn link" on:click={() => handleClick(step, i)}>
+          <button type="button" class="btn link" onclick={() => handleClick(step, i)}>
             {step.label}
           </button>
           {#if status === 'complete'}<span class="visually-hidden"> — completed</span>{/if}

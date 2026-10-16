@@ -72,9 +72,9 @@
   </Table>
 </div>
 
-<button type="button" id="toggle-loading" on:click={() => loading = !loading}>loading</button>
-<button type="button" id="empty-rows" on:click={() => rows = []}>empty</button>
-<button type="button" id="refill-rows" on:click={() => rows = everyone}>refill</button>
+<button type="button" id="toggle-loading" onclick={() => loading = !loading}>loading</button>
+<button type="button" id="empty-rows" onclick={() => rows = []}>empty</button>
+<button type="button" id="refill-rows" onclick={() => rows = everyone}>refill</button>
 
 <output id="page">{page}</output>
 <output id="changes">{changes}</output>

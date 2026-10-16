@@ -222,7 +222,7 @@ export const isInline = (tag) => {
 /**
  * DOM event names with a terminal meaning, and whether each bubbles as it
  * does in a browser. A listener on an ancestor hears a descendant's event by
- * that rule: `<form on:input>` sees every field under it, and `focus`/`blur`
+ * that rule: `<form oninput>` sees every field under it, and `focus`/`blur`
  * reach an ancestor only through a `|capture` listener, where `focusin` and
  * `focusout` are their bubbling twins, sent after each.
  *

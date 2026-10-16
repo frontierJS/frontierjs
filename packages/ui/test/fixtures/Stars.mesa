@@ -23,6 +23,6 @@
     min="0"
     {max}
     value={value ?? 0}
-    on:input={(e) => onvalue?.(Number(e.target.value))}
+    oninput={(e) => onvalue?.(Number(e.target.value))}
   />
 </div>

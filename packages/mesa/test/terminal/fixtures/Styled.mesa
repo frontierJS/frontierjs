@@ -5,6 +5,6 @@
 </script>
 <div style:gap={gap} style:flex-direction="row" class:row={hidden}>
   <p style:display={hidden ? 'none' : null} style:visibility="hidden" class:hidden>Shown</p>
-  <button on:click={flip} style:padding="{gap}ch" class:wide={gap > 1}>Flip</button>
+  <button onclick={flip} style:padding="{gap}ch" class:wide={gap > 1}>Flip</button>
   <p>hidden: {hidden}</p>
 </div>

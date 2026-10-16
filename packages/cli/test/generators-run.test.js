@@ -199,7 +199,7 @@ describe('the scaffold sign-in page', () => {
 
   test('is a form whose inputs a password manager can key on', async () => {
     const page = await loginOf()
-    expect(page).toMatch(/<form [^>]*on:submit\|preventDefault/)
+    expect(page).toMatch(/<form [^>]*onsubmit\|preventDefault/)
     expect(page).toContain('autocomplete="username"')
     expect(page).toContain('autocomplete="current-password"')
   })
@@ -265,6 +265,6 @@ describe('the scaffold verification link lands on a page fli new writes', () => 
     const src = text.match(/\nfunction makeRouteVerifyEmail\(\) \{[\s\S]*?\n\}\n/)[0]
     const page = new Function('sc', `${src}\nreturn makeRouteVerifyEmail`)('</' + 'script>')()
     expect(page).toContain('auth.verifyEmail(')
-    expect(page).not.toMatch(/on:load|onMount[^\n]*verifyEmail/)
+    expect(page).not.toMatch(/onload|onMount[^\n]*verifyEmail/)
   })
 })

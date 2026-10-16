@@ -272,7 +272,7 @@ function nodeOf(target) {
 
 export function on(node, event, handler, { capture = false, once = false } = {}) {
   const spec = ENGINE_EVENTS[event]
-  if (!spec) refuse(`on:${event}`)
+  if (!spec) refuse(`on${event}`)
   if (!handler) return
   ;((node.listeners ??= {})[event] ??= []).push({ fn: handler, capture, once })
   if (spec.via === 'root') listenAtRoot(event)
@@ -351,7 +351,7 @@ function dispatch(target, type, extra = {}) {
 
 // Only an event the page hears can reach the window.
 export function onWindow(event, handler, { capture = false, once = false } = {}) {
-  if (ENGINE_EVENTS[event]?.via !== 'root') refuse(`<mesa:window on:${event}>`)
+  if (ENGINE_EVENTS[event]?.via !== 'root') refuse(`<mesa:window on${event}>`)
   if (!handler) return
   listenAtRoot(event)
   const list = (win.listeners[event] ??= [])
@@ -451,8 +451,8 @@ export function eachBlock(marker, getItems, keyFn, rowFn, elseFn) {
 
 // ─── measure and focus ────────────────────────────────────────────────────────
 
-// `$.measure` and `$.focus` on a phone; `runtime.js` holds the DOM's answer
-// in the same shape.
+// `$.measure`, `$.viewport` and `$.focus` on a phone; `runtime.js` holds the
+// DOM's answer in the same shape.
 
 /** Move focus to `node`. No node does nothing. */
 export function focus(node) {
@@ -469,6 +469,14 @@ export function measure(node) {
     const { left, top, right, bottom, width, height } = typeof data === 'string' ? JSON.parse(data) : data
     return { left, top, right, bottom, width, height }
   })
+}
+
+/** The screen, as `{ width, height }`: the page's own box, so it is in the
+ *  units `measure` answers whatever the device's pixel ratio. A page is never
+ *  flattened, so it is not unflattened first. */
+export function viewport() {
+  if (!_page) return Promise.reject(new Error('[Mesa] $.viewport() before mount(): there is no page'))
+  return measure({ el: _page, tag: 'page', unflattened: true }).then(({ width, height }) => ({ width, height }))
 }
 
 // The answer is deferred a microtask even where the engine calls back at

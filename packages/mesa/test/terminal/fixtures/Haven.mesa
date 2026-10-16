@@ -19,7 +19,7 @@
   }
 </script>
 
-<mesa:window on:keydown={keydown} />
+<mesa:window onkeydown={keydown} />
 <pre>
 ################################
 ################################

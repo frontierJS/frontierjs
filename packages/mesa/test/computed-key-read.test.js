@@ -41,7 +41,7 @@ describe('a reactive name in a computed key is read', () => {
   let k = 'a'
   const pick = () => ({ [k]: 1, k: 2 })
 </script>
-<p on:click={() => k = 'b'}>{JSON.stringify(pick())}</p>`)
+<p onclick={() => k = 'b'}>{JSON.stringify(pick())}</p>`)
 
     expect(code(js)).toMatch(/\[\$\$runtime\.get\(\$\$sig_k\)\]:\s*1/)
     expect(code(js)).toMatch(/[{,]\s*k:\s*2/)

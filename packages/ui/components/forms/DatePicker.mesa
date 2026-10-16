@@ -715,7 +715,7 @@
   if (typeof startOfWeek === 'string') startOfWeek = parseInt(startOfWeek, 10)
 </script>
 
-<mesa:window on:click|capture={onWindowClick} />
+<mesa:window onclick|capture={onWindowClick} />
 
 <!--
   The four nav arrows. They were base64 PNGs — black pixels, so they were
@@ -778,7 +778,7 @@
         aria-label="Previous day"
         title="Previous day"
         disabled={!canStepBack}
-        on:click|preventDefault={() => stepBy(-1)}
+        onclick|preventDefault={() => stepBy(-1)}
       >
         {@render chevronStart()}
       </button>
@@ -788,7 +788,7 @@
         aria-label="Next day"
         title="Next day"
         disabled={!canStepForward}
-        on:click|preventDefault={() => stepBy(1)}
+        onclick|preventDefault={() => stepBy(1)}
       >
         {@render chevronEnd()}
       </button>
@@ -809,7 +809,7 @@
           <button
             type="button"
             class:active={checkActive(_startDate, option.start, _endDate, option.end)}
-            on:click|preventDefault={() => onPresetClick(option)}
+            onclick|preventDefault={() => onPresetClick(option)}
           >
             {option.text}
           </button>
@@ -823,7 +823,7 @@
         <button
           type="button"
           aria-label="Previous month"
-          on:click|preventDefault={toPrev}
+          onclick|preventDefault={toPrev}
         >
           {@render chevronStart()}
         </button>
@@ -832,8 +832,8 @@
           <div>{monthLabels[startDateMonth]} {startDateYear}</div>
           {#if showYearControls}
             <div class="fjs-dp-years">
-              <button type="button" aria-label="Next year"     on:click|preventDefault={toNextYear}>{@render chevronUp()}</button>
-              <button type="button" aria-label="Previous year" on:click|preventDefault={toPrevYear}>{@render chevronDown()}</button>
+              <button type="button" aria-label="Next year"     onclick|preventDefault={toNextYear}>{@render chevronUp()}</button>
+              <button type="button" aria-label="Previous year" onclick|preventDefault={toPrevYear}>{@render chevronDown()}</button>
             </div>
           {/if}
         </span>
@@ -842,7 +842,7 @@
           type="button"
           aria-label="Next month"
           class:hide={isRange && isMultipane}
-          on:click|preventDefault={toNext}
+          onclick|preventDefault={toNext}
         >
           {@render chevronEnd()}
         </button>
@@ -853,14 +853,14 @@
           <input
             type="time"
             bind:value={startDateTime}
-            on:input={() => { const ts = updateTime(startDateTime, _startDate); _startDate = startDate = ts; announceTime(ts, _endDate) }}
+            oninput={() => { const ts = updateTime(startDateTime, _startDate); _startDate = startDate = ts; announceTime(ts, _endDate) }}
           />
           {#if isRange}
             <input
               type="time"
               class="fjs-dp-endtime"
               bind:value={endDateTime}
-              on:input={() => { const ts = updateTime(endDateTime, _endDate); _endDate = endDate = ts; announceTime(_startDate, ts) }}
+              oninput={() => { const ts = updateTime(endDateTime, _endDate); _endDate = endDate = ts; announceTime(_startDate, ts) }}
             />
           {/if}
         </div>
@@ -910,9 +910,9 @@
                         class:last={isLastDayOfMonth(day, startDateCalendar)}
                         class:disabled={isDisabledDay(day, startDateMonth, startDateYear)}
                         class:norange={isRange && tempEndDate === _startDate}
-                        on:mouseenter={() => onMouseEnter(day, startDateMonth, startDateYear)}
-                        on:mouseleave={onMouseLeave}
-                        on:click|preventDefault={(e) => onClick(e, day, startDateMonth, startDateYear)}
+                        onmouseenter={() => onMouseEnter(day, startDateMonth, startDateYear)}
+                        onmouseleave={onMouseLeave}
+                        onclick|preventDefault={(e) => onClick(e, day, startDateMonth, startDateYear)}
                       >
                         <span class="chip fjs-dp-square">{day}</span>
                       </button>
@@ -936,7 +936,7 @@
             type="button"
             aria-label="Previous month"
             class:hide={true}
-            on:click|preventDefault={toPrev}
+            onclick|preventDefault={toPrev}
           >
             {@render chevronStart()}
           </button>
@@ -945,13 +945,13 @@
             <div>{monthLabels[endDateMonth]} {endDateYear}</div>
             {#if showYearControls}
               <div class="fjs-dp-years">
-                <button type="button" aria-label="Next year"     on:click|preventDefault={toNextYear}>{@render chevronUp()}</button>
-                <button type="button" aria-label="Previous year" on:click|preventDefault={toPrevYear}>{@render chevronDown()}</button>
+                <button type="button" aria-label="Next year"     onclick|preventDefault={toNextYear}>{@render chevronUp()}</button>
+                <button type="button" aria-label="Previous year" onclick|preventDefault={toPrevYear}>{@render chevronDown()}</button>
               </div>
             {/if}
           </span>
 
-          <button type="button" aria-label="Next month" on:click|preventDefault={toNext}>
+          <button type="button" aria-label="Next month" onclick|preventDefault={toNext}>
             {@render chevronEnd()}
           </button>
         </header>
@@ -961,7 +961,7 @@
             <input
               type="time"
               bind:value={endDateTime}
-              on:input={() => { const ts = updateTime(endDateTime, _endDate); _endDate = endDate = ts; announceTime(_startDate, ts) }}
+              oninput={() => { const ts = updateTime(endDateTime, _endDate); _endDate = endDate = ts; announceTime(_startDate, ts) }}
             />
           </div>
         {/if}
@@ -998,9 +998,9 @@
                           class:last={isLastDayOfMonth(day, endDateCalendar)}
                           class:disabled={isDisabledDay(day, endDateMonth, endDateYear)}
                           class:norange={isRange && tempEndDate === _startDate}
-                          on:mouseenter={() => onMouseEnter(day, endDateMonth, endDateYear)}
-                          on:mouseleave={onMouseLeave}
-                          on:click|preventDefault={(e) => onClick(e, day, endDateMonth, endDateYear)}
+                          onmouseenter={() => onMouseEnter(day, endDateMonth, endDateYear)}
+                          onmouseleave={onMouseLeave}
+                          onclick|preventDefault={(e) => onClick(e, day, endDateMonth, endDateYear)}
                         >
                           <span class="chip fjs-dp-square">{day}</span>
                         </button>

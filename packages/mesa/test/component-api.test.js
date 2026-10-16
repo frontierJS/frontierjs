@@ -90,12 +90,12 @@ describe('export function — emission', () => {
   })
 
   it('a component may call its own exported function from the template', async () => {
-    // The failure this closes: `on:click={bump}` referenced a name the output
+    // The failure this closes: `onclick={bump}` referenced a name the output
     // never declared, so the first click threw ReferenceError.
     const runtime = await import('../src/runtime.js')
     const fn = await compileAndExec(
       `<script>let n = 0\nexport function bump() { n++ }</script>` +
-      `<button on:click={bump}>{n}</button>`,
+      `<button onclick={bump}>{n}</button>`,
       runtime
     )
     const app = mount(fn, runtime)
@@ -144,7 +144,7 @@ describe('bind:this on a component', () => {
     import Child from './Child.mesa'
     let ref = null
     ${body}
-  </script><Child bind:this={ref} count={1} /><button on:click={act}>go</button>`
+  </script><Child bind:this={ref} count={1} /><button onclick={act}>go</button>`
 
   async function pair(parentSource) {
     const child = await compileAndExec(CHILD, runtime)
@@ -200,7 +200,7 @@ describe('bind:this on a component', () => {
     const fn = await compileAndExec(
       `<script>import Child from './Child.mesa'\nlet ref = null\n` +
       `function act() { globalThis.__bare = ref }</script>` +
-      `<Child bind:this={ref} /><button on:click={act}>go</button>`,
+      `<Child bind:this={ref} /><button onclick={act}>go</button>`,
       runtime, { './Child.mesa': { default: child } }
     )
     const app = mount(fn, runtime)
@@ -218,7 +218,7 @@ describe('bind:this on a DOM element', () => {
     const runtime = await import('../src/runtime.js')
     const fn = await compileAndExec(
       `<script>let el = null\nfunction act() { globalThis.__el = el }</script>` +
-      `<div bind:this={el} id="target"></div><button on:click={act}>go</button>`,
+      `<div bind:this={el} id="target"></div><button onclick={act}>go</button>`,
       runtime
     )
     const app = mount(fn, runtime)

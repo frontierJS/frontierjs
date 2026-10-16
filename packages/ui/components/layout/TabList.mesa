@@ -61,7 +61,7 @@
   class={cx('tablist', v, toTone(tone))}
   {class}
   {...$attributes}
-  on:keydown={handleKeyDown}
+  onkeydown={handleKeyDown}
 >
   <slot />
 </div>

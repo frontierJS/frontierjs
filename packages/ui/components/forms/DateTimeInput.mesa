@@ -226,9 +226,9 @@
       min={localMin}
       max={localMax}
       aria-invalid={!!displayError || null}
-      on:input={handleInput}
-      on:blur={onblur}
-      on:focus={onfocus}
+      oninput={handleInput}
+      onblur={onblur}
+      onfocus={onfocus}
       {...$attributes}
     />
 

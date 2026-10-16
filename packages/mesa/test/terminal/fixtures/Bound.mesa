@@ -8,7 +8,7 @@
   <Stepper label="A" bind:value={n} bind:this={ref} />
   <Stepper label="B" bind:value />
   <p>Parent: {n} {value}</p>
-  <button on:click={() => n = 10}>Ten</button>
-  <button on:click={() => ref.reset()}>Reset</button>
-  <button on:click={() => ref.value = 3}>Three</button>
+  <button onclick={() => n = 10}>Ten</button>
+  <button onclick={() => ref.reset()}>Reset</button>
+  <button onclick={() => ref.value = 3}>Three</button>
 </div>

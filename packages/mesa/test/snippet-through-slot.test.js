@@ -45,7 +45,7 @@ describe('snippet arg inside a nested component slot', () => {
       </script>
       {#snippet row(x)}<Child>{x.status}</Child>{/snippet}
       <div>{@render row(o)}</div>
-      <button on:click={bump}>go</button>`, 'Parent.mesa', Pill)
+      <button onclick={bump}>go</button>`, 'Parent.mesa', Pill)
 
     const c = mount(Parent)
     expect(c.querySelector('.pill').textContent.trim()).toBe('pending')
@@ -88,7 +88,7 @@ describe('table shape', () => {
           <tr><td>{o.ref}</td><td class="pill">{o.status}</td></tr>
         {/snippet}
       </Child>
-      <button on:click={bump}>go</button>`, 'Parent.mesa', Child)
+      <button onclick={bump}>go</button>`, 'Parent.mesa', Child)
 
     const c = mount(Parent)
     expect(c.querySelector('.pill').textContent).toBe('pending')

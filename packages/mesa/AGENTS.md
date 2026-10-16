@@ -51,7 +51,7 @@ title: Orders
   let open = false
 </script>
 
-<button class="btn" on:click={() => open = !open}>{rows.length}</button>
+<button class="btn" onclick={() => open = !open}>{rows.length}</button>
 
 <style>
   .btn { font-weight: 600; }
@@ -137,11 +137,11 @@ or no component watching that object hears it.
 
 {#key selectedId}<Profile id={selectedId} />{/key}
 
-<input bind:value={query} on:input|debounce(300)={search}>
+<input bind:value={query} oninput|debounce(300)={search}>
 <input type="checkbox" bind:checked={agreed}>
 <input type="checkbox" bind:group={picked} value="a">
 <div class:active={on} style:color={tone} {@attach focusOnMount}>…</div>
-<form on:submit|preventDefault={save}>…</form>
+<form onsubmit|preventDefault={save}>…</form>
 <p style="color: {c}" class="note {kind}">interpolated attributes work</p>
 {@html trustedHtml}                                 <!-- not sanitized -->
 ```
@@ -152,8 +152,9 @@ or no component watching that object hears it.
   Anything else is refused and names `attr={expr}`.
 - Modifiers: `once` `passive` `capture` `preventDefault` `stopPropagation`
   `self` `trusted` `debounce(ms)` `throttle(ms)`, on an element and on
-  `<mesa:window|document|body>` alike; an unknown one is refused by name.
-  `onclick={fn}` also works on an element.
+  `<mesa:window|document|body>` alike; an unknown one is refused by name. On
+  a component the guards and timers wrap the value it is handed, and `once`,
+  `passive`, `capture` are refused.
 - `{@attach fn}` runs `fn(el)` when the element mounts and a returned function
   is its cleanup. `$.fade()`, `$.slide()`, `$.fly()` and `$.entrance({ in, out })`
   return attachments.
@@ -178,7 +179,7 @@ or no component watching that object hears it.
   {#if $slots.header}<header><slot:header /></header>{/if}
   <slot>Nothing here.</slot>
   {@render children?.(id)}
-  <button on:click={() => onclose?.()}>Close</button>
+  <button onclick={() => onclose?.()}>Close</button>
 </section>
 ```
 
@@ -204,7 +205,9 @@ or no component watching that object hears it.
 - **`bind:this` on a component is its API** (props and `export function`s); on an
   element it is the node. `bind:x` on a component is two-way on an `export let`.
 - **`<slot />` carries content in; a snippet prop carries a value out.** A slot
-  accepts no attribute but `name`.
+  accepts no attribute but `name`. The two are one channel: `<slot name="x">`
+  is the prop `x`, `<slot />` the prop `children`, so `slot="x"` content meets
+  `{@render x?.()}` and `{#snippet x()}` meets `<slot name="x">`.
 - **Context flows down the tree**: provide with `$context.theme = expr` and read
   with `const theme = $context.theme` at the top of the script. A key nobody
   provides reads `undefined`, silently.
@@ -243,8 +246,8 @@ in the browser (the loader is Sierra's).
 | `let n = $state(0)` · `$derived(…)` · `$effect(…)` | `let n = 0` · `const d = …` · `$: …` | compiles; `$state is not defined` at mount |
 | `let { label } = $props()` | `export let label` | compiles; throws at mount |
 | `onMount` from `svelte` · bare `$onMount` | `$.onMount(fn)` | bare form refused by name |
-| `on:click` on a component · `createEventDispatcher` | `onclick={fn}` prop | refused by name |
-| `{@render children()}` for plain content | `<slot />` | throws at mount |
+| `on:click` · `@click` · `createEventDispatcher` | `onclick={fn}`, on an element or a component | refused by name |
+| `{@render children()}` with no `export let children` | `<slot />` | throws at mount |
 | `<slot item={x}>` · `let:item` | snippet prop + `{@render children?.(x)}` | refused |
 | `bind:class` · `bind:disabled` on an element | `{class}` · `disabled={expr}` | refused |
 | `{#await p then v}` | `{#await p}…{:then v}…{/await}` | refused by name |

@@ -10,7 +10,7 @@
 <div>
   <input {...field} />
   <button {...btn}>Go</button>
-  <button on:click={swap}>Swap</button>
-  <button on:click={lock}>Lock</button>
+  <button onclick={swap}>Swap</button>
+  <button onclick={lock}>Lock</button>
   <p>n: {n}</p>
 </div>

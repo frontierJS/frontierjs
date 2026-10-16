@@ -46,10 +46,10 @@
   </section>
 {/each}
 
-<button type="button" id="hide-b" on:click={() => { hideB = !hideB }}>Hide b</button>
+<button type="button" id="hide-b" onclick={() => { hideB = !hideB }}>Hide b</button>
 
 <BulkBar selection={picked} data-bar>
-  <button type="button" class="btn" data-act on:click={() => { acted = picked.keys.join(','); picked.clear() }}>Act</button>
+  <button type="button" class="btn" data-act onclick={() => { acted = picked.keys.join(','); picked.clear() }}>Act</button>
 </BulkBar>
 
 <output id="acted">{acted}</output>

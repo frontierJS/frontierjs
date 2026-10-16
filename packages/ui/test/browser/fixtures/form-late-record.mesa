@@ -64,5 +64,5 @@
 
 <div id="late">
   <Form resource={RESOURCE} record={row} bind:this={lateApi} />
-  <button type="button" id="late-reset" on:click={() => lateApi.reset()}>reset</button>
+  <button type="button" id="late-reset" onclick={() => lateApi.reset()}>reset</button>
 </div>

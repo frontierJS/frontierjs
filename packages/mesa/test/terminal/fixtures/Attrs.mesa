@@ -8,9 +8,9 @@
 </script>
 <div>
   <input value={name} placeholder="who" oninput={(e) => { log = [...log, 'in:' + e.target.value] }} />
-  <button on:click={shout}>Shout</button>
-  <button on:click={hit} disabled={locked}>Hit</button>
-  <button on:click={lock}>Lock</button>
+  <button onclick={shout}>Shout</button>
+  <button onclick={hit} disabled={locked}>Hit</button>
+  <button onclick={lock}>Lock</button>
   <p class="row {locked}">Locked: {locked}</p>
   <p>Log: {log.join(',')}</p>
 </div>

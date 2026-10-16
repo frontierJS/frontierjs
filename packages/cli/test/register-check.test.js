@@ -255,8 +255,9 @@ describe('warnings', () => {
   test('env: a cause outside the table errors, a smelling title with no segment warns, unmeasured timing warns, a measured or other cause is silent', () => {
     const result = runRegisterCheck({ root: ROOT, staleDays: 0, today: TODAY })
     expect(of(result, 'env-cause').map(h => h.id)).toEqual(['FJS-040'])
-    expect(of(result, 'env-smell').map(h => h.id)).toEqual(['FJS-041', 'FJS-042', 'FJS-047'])
-    expect(of(result, 'env-smell').find(h => h.id === 'FJS-042').message).toMatch(/register:repro cannot: the row links no \*\.test\.\* file/)
+    expect(of(result, 'env-smell').map(h => h.id)).toEqual(['FJS-041'])
+    expect(of(result, 'timing-unmeasured').map(h => h.id)).toEqual(['FJS-042', 'FJS-047'])
+    expect(of(result, 'timing-unmeasured').find(h => h.id === 'FJS-042').message).toMatch(/register:repro cannot: the row links no \*\.test\.\* file/)
     expect(result.findings.filter(f => ['FJS-045', 'FJS-046'].includes(f.id) && f.rule.startsWith('env-'))).toHaveLength(0)
   })
 

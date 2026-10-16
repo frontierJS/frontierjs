@@ -25,13 +25,13 @@ function execCompiled(js, userImports = {}) {
 
 const CHILD =
   `<script>\n  export let value = ''\n  export let other = 0\n</script>\n` +
-  `<button class="own" on:click={() => (value = 'mine')}>own</button>` +
+  `<button class="own" onclick={() => (value = 'mine')}>own</button>` +
   `<i>{value}</i><b>{other}</b>`
 
 const PARENT =
   `<script>\n  import Child from './Child.mesa'\n  let row = 'old'\n  let n = 0\n</script>\n` +
-  `<button class="bump" on:click={() => n++}>bump</button>` +
-  `<button class="swap" on:click={() => (row = 'next')}>swap</button>` +
+  `<button class="bump" onclick={() => n++}>bump</button>` +
+  `<button class="swap" onclick={() => (row = 'next')}>swap</button>` +
   `<Child value={row} other={n} />`
 
 describe('FJS-2589: an unchanged prop is not pushed again', () => {

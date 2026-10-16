@@ -54,7 +54,7 @@
 {/if}
 
 <output id="state">{row?.status}</output>
-<button type="button" id="go" on:click={async () => {
+<button type="button" id="go" onclick={async () => {
   await Promise.resolve()
   row = { status: 'draining' }
 }}>go</button>

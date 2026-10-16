@@ -9,5 +9,5 @@
     <p>empty card</p>
   </slot>
   <slot name="actions" />
-  <button on:click={() => onpick?.(count)}>Pick</button>
+  <button onclick={() => onpick?.(count)}>Pick</button>
 </section>

@@ -61,7 +61,7 @@
         {#if n.href}
           <!-- An anchor, not a button: it goes somewhere, so it is a link and
                middle-click and copy-link work. goto() keeps it client-side. -->
-          <a class="navlink" href={n.href} on:click={(e) => { e.preventDefault(); goto(n.href) }}>{n.action} →</a>
+          <a class="navlink" href={n.href} onclick={(e) => { e.preventDefault(); goto(n.href) }}>{n.action} →</a>
         {/if}
       </Alert>
     {/each}

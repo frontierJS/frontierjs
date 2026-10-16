@@ -184,10 +184,10 @@
         tabindex="0"
         aria-label={`${formatX(r[x])}: ${valueText(values[i])}`}
         data-index={i}
-        on:pointerenter={() => { active = i }}
-        on:pointerleave={() => { if (active === i) active = null }}
-        on:focus={() => { active = i }}
-        on:blur={() => { if (active === i) active = null }}
+        onpointerenter={() => { active = i }}
+        onpointerleave={() => { if (active === i) active = null }}
+        onfocus={() => { active = i }}
+        onblur={() => { if (active === i) active = null }}
       ><title>{formatX(r[x])}: {valueText(values[i])}</title></rect>
     {/each}
 

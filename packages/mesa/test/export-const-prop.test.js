@@ -123,7 +123,7 @@ describe('a write in the child is refused at compile time, naming the prop', () 
 
   it('refuses an assignment in a template handler', async () => {
     const { errors } = await errorsOf(
-      `<script>export const label = 'hi'</script><button on:click={() => label = 'x'}>b</button>`
+      `<script>export const label = 'hi'</script><button onclick={() => label = 'x'}>b</button>`
     )
     expect(errors.join('\n')).toMatch(/'label' is declared `export const`/)
   })
@@ -151,7 +151,7 @@ describe('a write in the child is refused at compile time, naming the prop', () 
 
   it('a LOCAL of the same name shadowing the prop is not the prop', async () => {
     const { errors } = await errorsOf(
-      `<script>export const label = 'hi'</script><button on:click={() => { let label = 1; label = 2 }}>b</button>`
+      `<script>export const label = 'hi'</script><button onclick={() => { let label = 1; label = 2 }}>b</button>`
     )
     expect(errors).toEqual([])
   })

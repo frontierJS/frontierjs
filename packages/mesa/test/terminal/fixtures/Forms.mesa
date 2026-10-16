@@ -27,16 +27,16 @@
 <p>heard {heard} left {left} changed {changed}</p>
 <p>submits {submits} by {by} cancels {cancels} once {once}</p>
 <p>quick {quick} pair {pair}</p>
-<form bind:this={formEl} on:submit|preventDefault={onSubmit} on:input={onInput} on:change={onChange} on:blur|capture={onLeave}>
+<form bind:this={formEl} onsubmit|preventDefault={onSubmit} oninput={onInput} onchange={onChange} onblur|capture={onLeave}>
   <input name="a" />
   <input name="b" />
-  <button type="button" on:click={() => cancels++}>Cancel</button>
-  <button on:click|once={() => once++}>Save</button>
+  <button type="button" onclick={() => cancels++}>Cancel</button>
+  <button onclick|once={() => once++}>Save</button>
 </form>
-<form on:submit|preventDefault={() => quick++}>
+<form onsubmit|preventDefault={() => quick++}>
   <input name="q" />
 </form>
-<form on:submit|preventDefault={() => pair++}>
+<form onsubmit|preventDefault={() => pair++}>
   <input name="x" />
   <input name="y" />
 </form>

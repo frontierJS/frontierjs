@@ -11,7 +11,7 @@
   </Card>
   <Card title="Beta" />
   <p>picked: {picked}</p>
-  <button on:click={() => show = !show}>Toggle</button>
+  <button onclick={() => show = !show}>Toggle</button>
   {#if show}
     <Card title="Gamma" count={n} />
   {/if}

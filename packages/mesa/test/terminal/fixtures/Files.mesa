@@ -11,10 +11,10 @@
 
 <p>before</p>
 <input bind:this={inputEl} type="file" class="visually-hidden"
-       on:click={() => heard++} on:change={(e) => { picked = describe(e.target) }} />
+       onclick={() => heard++} onchange={(e) => { picked = describe(e.target) }} />
 <input type="file" accept="application/json" hidden />
 <p>after</p>
-<button type="button" on:click={() => inputEl?.click()}>Browse</button>
+<button type="button" onclick={() => inputEl?.click()}>Browse</button>
 <p>heard [{heard}] picked [{picked}]</p>
-<input type="file" on:change={(e) => { shown = describe(e.target) }} />
+<input type="file" onchange={(e) => { shown = describe(e.target) }} />
 <p>shown [{shown}]</p>

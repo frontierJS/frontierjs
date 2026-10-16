@@ -67,7 +67,7 @@ const DRIVEN    = /(^|\/)verify[^/]*\.mjs$|\.spec\.[cm]?[jt]sx?$/
  * with paths absolute, or `{ ok: false, reason }`.
  */
 /** The one collected test a row links, or why it links none — the half of
- *  `reproTarget` that reads the row alone, which `env-smell` asks of every
+ *  `reproTarget` that reads the row alone, which `timing-unmeasured` asks of every
  *  `env: timing` row so a drive row is not told to run a command that refuses. */
 export function linkedTest(record, root) {
   const base   = dirname(join(root, record.file))

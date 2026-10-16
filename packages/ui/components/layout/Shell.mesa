@@ -134,7 +134,7 @@
      drawer's copy would be a second button on screen beside the bar's. -->
 {#snippet signOutButton()}
   {#if onsignout && user}
-    <button class="btn ghost" type="button" disabled={signingOut} on:click={signOut}>Sign out</button>
+    <button class="btn ghost" type="button" disabled={signingOut} onclick={signOut}>Sign out</button>
   {/if}
 {/snippet}
 
@@ -144,7 +144,7 @@
             aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
             aria-expanded={collapsed ? 'false' : 'true'}
             title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
-            on:click={() => collapsed = !collapsed}>
+            onclick={() => collapsed = !collapsed}>
       <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
@@ -235,7 +235,7 @@
              the drawer is ours. -->
         <button class="btn ghost square sidebar-toggle" type="button"
                 aria-label="Open navigation" aria-expanded={navOpen}
-                on:click={() => navOpen = true}>
+                onclick={() => navOpen = true}>
           <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z"/>
           </svg>

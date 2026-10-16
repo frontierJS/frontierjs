@@ -14,4 +14,4 @@ static one
 <pre class="code">{@html html}</pre>
 <div>{@html prose}</div>
 <span>a <del>gone</del> <ins>new</ins> <dfn>term</dfn></span>
-<button on:click={swap}>swap</button>
+<button onclick={swap}>swap</button>

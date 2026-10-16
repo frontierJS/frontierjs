@@ -185,7 +185,7 @@ siteName: Basecamp
   }
 
   // Select's `onchange` is the NATIVE callback — it hands over the event, not
-  // the value, exactly as `on:change` on a bare <select> would.
+  // the value, exactly as `onchange` on a bare <select> does.
   function pick(e) {
     switchWorkspace(e.target.value)
   }
@@ -315,7 +315,7 @@ siteName: Basecamp
            drawer is the app's job and is the `navOpen` flag below. -->
       {#if session.user}
         <button class="btn ghost square sidebar-toggle" aria-label="Open navigation"
-                aria-expanded={navOpen ? 'true' : 'false'} on:click={() => navOpen = true}>☰</button>
+                aria-expanded={navOpen ? 'true' : 'false'} onclick={() => navOpen = true}>☰</button>
       {/if}
       <a class="cluster" href="/" aria-label="{page.siteName} home" style:text-decoration="none" style:color="inherit">
         <img src="/favicon.svg" alt="" width="20" height="20" />
@@ -415,8 +415,6 @@ siteName: Basecamp
              fewer items is the app's half of the same answer. -->
         <DropdownMenu placement="bottom-end">
           {#snippet trigger()}
-            <!-- A kit component takes its handler as a PROP (`onclick`), not
-                 as `on:click` — that directive belongs to elements. -->
             <Button variant="ghost" id="account-menu">Account</Button>
           {/snippet}
           <DropdownLabel>{session.user.email}</DropdownLabel>
@@ -439,7 +437,7 @@ siteName: Basecamp
               aria-label={rail ? 'Expand the sidebar' : 'Collapse the sidebar'}
               aria-expanded={rail ? 'false' : 'true'}
               title={rail ? 'Expand the sidebar' : 'Collapse the sidebar'}
-              on:click={toggleRail}>
+              onclick={toggleRail}>
         {#if rail}<NavIcon name="panel-open" />{:else}<NavIcon name="panel-close" />{/if}
       </button>
       {@render navlists()}
@@ -470,7 +468,7 @@ siteName: Basecamp
   ⌘K anywhere. `mesa:window` is the one place a global key listener belongs —
   a document listener added by hand in a component outlives the component.
 -->
-<mesa:window on:keydown={(e) => {
+<mesa:window onkeydown={(e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); commandPalette.toggle() }
   if ((e.metaKey || e.ctrlKey) && e.key === '.' && session.user) { e.preventDefault(); toggleFocus() }
 }} />

@@ -99,7 +99,7 @@ src/
   runtime-native.js    — the native runtime, @frontierjs/mesa/runtime/native.js:
                          `$$host` over Lynx's Element PAPI, the main-thread
                          globals, so no engine import and no peer. The one file
-                         that names Lynx. `$.measure`/`$.focus` answer a Promise
+                         that names Lynx. `$.measure`/`$.viewport`/`$.focus` answer a Promise
                          here, in runtime.js and in runtime-terminal.js alike
   entities.js          — htmlEntitiesToText(): character references as text,
                          read by the compiler and the terminal runtime's {@html}
@@ -214,8 +214,8 @@ Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
 ## What bites here
 
 **`$` is the door, and it is emitted in two halves.** The instance-independent
-members — the five animation helpers, the four lifecycle functions, `measure`
-and `focus` — are a module-scope `$$shared`, the last two read off the target's
+members — the five animation helpers, the four lifecycle functions, `measure`,
+`viewport` and `focus` — are a module-scope `$$shared`, the last three read off the target's
 runtime (`$$host` on a host target); the per-instance `$` is `Object.create($$shared)` with
 only `option`, `slots`, `props`, `attributes`, `emit`, `context`, `mounted`,
 `inspect` and `async` assigned on top, and each of those only when the sniff
@@ -333,11 +333,20 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   is invisible to the panel and nothing says so. The one fact not on an edge —
   what DID wake a node — is `_cause`, stamped by `_notify` only while `_devOn`.
   `runtime/specs/devtools-cause` reads a chain back (`FJS-1324`).
+- **A slot is a snippet with no arguments, and nothing past the parser knows
+  slots exist** (`FJS-D668`). `lowerSlots` in `compiler.js` rewrites `slot=`
+  and unslotted content to `{#snippet name()}` / `{#snippet children()}` and
+  `<slot>` to `{@render}`, before `lower()` or the DOM builder reads the tree,
+  so every target and both runtimes see snippets only — a new target needs no
+  slot code. Content snippets are wrapped in `$$runtime.content()`, which is how
+  `unclaimedContent` tells dropped content from a function prop and how
+  `restProps` keeps it off `$attributes`. A prop written beside content of its
+  name is the override (`contentFallback`). The component's third parameter,
+  `__block`, is now always `null`.
 - **`<slot>` takes no attribute but `name`.** A slot carries content IN and
   never a value out; there is no `let:` to read one with. Refused at compile
   time (VISION RULE 35b, `FJS-304`). A hole the child must PARAMETERIZE is a
-  snippet prop — `export let children` + `{@render children?.(value)}` — which
-  §9.6 no longer calls legacy, because for that job it is the only form.
+  snippet prop — `export let children` + `{@render children?.(value)}`.
 - **Scoped styles do not reach into child components** — use `:global(...)`. The
   selector *subject* carries the hash (`button` → `button.mHASH`).
 - **A dynamic `class` merges, it never replaces** — everything routes through

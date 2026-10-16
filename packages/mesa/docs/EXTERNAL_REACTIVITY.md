@@ -141,10 +141,10 @@ quiet, because a signal and a constant are indistinguishable at that point — s
 this does not catch barrels. It does catch namespace imports, where the member is
 a known signal but the access isn't rewritten.
 
-Suppressed for callee position (`{fn(x)}`), event handlers (`on:click={h}`) and
+Suppressed for callee position (`{fn(x)}`), event handlers (`onclick={h}`) and
 directives, all of which legitimately read imported functions as values.
 Measured at **0 false positives across 36 real components** in the two smoke
-tests; without the event-handler exclusion it fired on `on:click={toggleTheme}`,
+tests; without the event-handler exclusion it fired on `onclick={toggleTheme}`,
 which would have been enough noise to justify turning it off.
 
 `mesa/test/external-reactivity.test.js` — 26 tests.
