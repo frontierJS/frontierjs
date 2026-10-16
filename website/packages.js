@@ -36,7 +36,7 @@ const PKGS = [
       r:[] },
     { k:'Access', v:'Gates on a 0–9 scale · policies compiled into <code>WHERE</code>',
       why:'A gate grades each operation against a trust level. A policy is a row predicate compiled into the query itself — so there is no code path that can forget to apply it.',
-      code:"@@gate(\"0.4.4.5\")            // read.create.update.delete\n@@allow('read', ownerId == auth().id)\n\n-- every read becomes:\nSELECT * FROM invoices WHERE ownerId = ?",
+      code:"@@gate(0.4.4.5)            // read.create.update.delete\n@@allow('read', ownerId == auth().id)\n\n-- every read becomes:\nSELECT * FROM invoices WHERE ownerId = ?",
       r:['CASL','Oso','Postgres RLS','hand-rolled middleware'] },
     { k:'Fields', v:'<code>@guarded</code> · <code>@secret</code> · <code>@encrypted</code> at rest',
       why:'Field-level protection travels with the field. Guarded fields never leave the data layer, secrets are redacted from logs and responses, and encrypted fields are ciphertext on disk.',

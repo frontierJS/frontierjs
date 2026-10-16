@@ -62,7 +62,7 @@ describe('amending a row', () => {
   test('the detail is appended after the register separator and Verified is today', () => {
     const root = project()
     const out  = amendIssue({ root, id: 'ELA-001', detail: 'Seen again from the web form', today: TODAY })
-    expect(out).toEqual({ ok: true, id: 'ELA-001', file: '.project/ISSUES.md', line: 7 })
+    expect(out).toEqual({ ok: true, id: 'ELA-001', file: '.project/ISSUES.md', line: 7, dropped: false })
     expect(row(root, 'ELA-001')).toBe('| <a id="ela-001"></a>ELA-001 | api | **STOP throws** | open | 2026-09-29 | `handleKeywords` patches two fields · [texts](../api/texts.js) · Seen again from the web form |')
 
     const rec = readRegisters(root).issues.find(r => r.id === 'ELA-001')

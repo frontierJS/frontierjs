@@ -106,13 +106,8 @@
   export let only   = undefined       // string[] — narrows AND orders
   export let except = undefined       // string[] — removes
 
-  // The buttons under the form. Two spellings because two protocols reach a
-  // component and the rest of this kit uses the other one: every other
-  // container here (Card, Table, EmptyState, SectionHeader) takes its trailing
-  // content as a snippet prop, so a caller who wrote `{#snippet actions()}`
-  // over a form got no buttons and no complaint. `slot="actions"` is what the
-  // apps in this repo already write and it keeps working; a snippet wins where
-  // both are given, because a prop is the more specific statement.
+  // The buttons under the form: `slot="actions"` and `{#snippet actions()}`
+  // are two spellings of this one snippet prop (`FJS-D668`).
   export let actions = null           // snippet
 
   export let disabled    = false
@@ -1070,11 +1065,7 @@
   <slot />
   {#if actions}
     <div class="cluster">
-      {@render actions?.()}
-    </div>
-  {:else if $slots.actions}
-    <div class="cluster">
-      <slot:actions />
+      {@render actions()}
     </div>
   {/if}
 </form>

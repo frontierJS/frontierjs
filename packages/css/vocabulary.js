@@ -5,10 +5,11 @@
  * is Structure: for each term, which element it is, and what it means. One
  * answer per concept, so "card" means the same thing on Monday and Thursday.
  *
- * ── Two exports, one subject ─────────────────────────────────────────
+ * ── Three tables ─────────────────────────────────────────────────────
  *
- *   VOCAB      which element and which class each term is
- *   ANATOMY    which children it expects, and the markup — further down
+ *   VOCAB        which element and which class each term is
+ *   ANATOMY      which children it expects, and the markup — further down
+ *   BREAKPOINTS  the widths a layout changes at — last, since it is not a term
  *
  * ── Five readers ─────────────────────────────────────────────────────
  *
@@ -728,6 +729,22 @@ const NOT_ANATOMY = {
   'theme-press': 'A theme', 'theme-field': 'A theme',
   'theme-dracula': 'A theme', 'theme-twilight': 'A theme',
 };
+
+/*
+ * The widths the package's layout changes at, in px — one scale for every
+ * `@media` width in src/, and the one an app's own queries match.
+ *
+ * They cannot be custom properties: `@media (min-width: var(--bp-md))` never
+ * matches, so a --bp-* token would look themable and do nothing. The CSS
+ * writes them as literals instead, and `vocabulary: every @media width is on
+ * the breakpoint scale` grades each literal against this table — a `min-width`
+ * at a value, a `max-width` one pixel under it. Off the table is a width a
+ * consumer cannot match (`47.99rem`), which nothing else would report.
+ *
+ * The scale is Tailwind's and UnoCSS's default, so an app running Uno beside
+ * the package has one set of breakpoints rather than two that nearly agree.
+ */
+const BREAKPOINTS = { sm: 640, md: 768, lg: 1024, xl: 1280, "2xl": 1536 };
 
 /*
  * The class a row names, or null for a term carried by its element.

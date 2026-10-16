@@ -19,7 +19,7 @@
  * The first is 8 of 216 field combinations; the second is 212 of 216, because
  * that fallback read nothing but *is there a user*. A schema declaring any
  * `@@gate` auto-installs a grader, so which of the three answered depended on
- * how the app happened to be wired, and the same `@@gate("4")` read was a 403
+ * how the app happened to be wired, and the same `@@gate(4)` read was a 403
  * under one and a 200 under another.
  *
  * The tripwire existed and could not fire: a test named *agrees with junction

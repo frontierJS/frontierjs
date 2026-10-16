@@ -3,7 +3,7 @@ import { createService } from '@frontierjs/junction'
 // What an order was billed for, as a list a screen can read.
 //
 // Read-only by declaration and read-only by gate: `OrderLine` is
-// @@gate("0.8.8.8") — anyone who may read the order may read its lines, and
+// @@gate(0.8.8.8) — anyone who may read the order may read its lines, and
 // only `asSystem()` writes one. `carts.checkout` is the sole writer and nothing
 // edits a line afterwards, so `find` and `get` are the whole surface; naming
 // only those two turns a create that would 403 at the Data boundary into a 405

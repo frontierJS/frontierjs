@@ -114,7 +114,7 @@ pipeline beside `litestone release --strict`. It opens the database read-only in
 effect — it runs no write, and says so in its own output.
 
 Reads happen through `asSystem()`, deliberately: a caller-scoped read of a
-`@@gate("8")` model answers `[]`, which is the same shape as a model with
+`@@gate(8)` model answers `[]`, which is the same shape as a model with
 nothing wrong, so the walk would pass most confidently on exactly the models
 whose rows are most protected.
 

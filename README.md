@@ -128,7 +128,7 @@ model Lead {              // PascalCase, singular — always. Accessor: db.lead
   createdAt DateTime   @default(now())
   updatedAt DateTime   @default(now()) @updatedAt
 
-  @@gate("0.4.4.6")   // Read=STRANGER  Create/Update=USER  Delete=OWNER
+  @@gate(0.4.4.6)   // Read=STRANGER  Create/Update=USER  Delete=OWNER
 }
 ```
 

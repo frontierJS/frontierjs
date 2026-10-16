@@ -62,6 +62,7 @@ import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
          COUNTABLES, checkRulesCountable, docStatusStale, docMapNarration,
          docUncheckedCount } from './doc-audit.js'
 import { invariantCoverage }                   from './invariants.js'
+import { hazardCoverage }                      from './hazards.js'
 import { seamOwnership, unlisted, keyLiteral, SKILL as SEAM_SKILL } from './seams.js'
 import { parseCommands, resolveCommands }      from './command-parse.js'
 import { typeScriptIn }                        from './scope.js'
@@ -93,8 +94,10 @@ export const RULES = [
   { id: 'drive-opens-chrome',   scope: 'both', severity: 'error', invariant: null,
     title: 'a drive opens Chrome through @frontierjs/mesa/drive' },
   { id: 'test-port-literal',   scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'api: A test may not name a port',
     title: 'a test asks for its port with portFor(), never a literal' },
   { id: 'body-tag-in-comment',  scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'ui: Vite injects the built',
     title: 'the body tag is never written inside a comment' },
   { id: 'untrusted-upload-root', scope: 'app', severity: 'warn', invariant: null,
     title: 'a static root serving uploads says so' },
@@ -103,6 +106,7 @@ export const RULES = [
   { id: 'app-layout',           scope: 'app',  severity: 'warn',  invariant: 3,
     title: 'db/ at the app root, each surface a directory beside it, and each file in its kind\'s folder' },
   { id: 'surface-config',       scope: 'app',  severity: 'warn',  invariant: 3,
+    hazard: 'api: A missing config DIRECTORY',
     title: 'a surface keeps its configuration in config/' },
   { id: 'mesa-compiles',        scope: 'app',  severity: 'error', invariant: null,
     title: 'every .mesa in a surface compiles' },
@@ -113,12 +117,16 @@ export const RULES = [
   { id: 'migration-history',    scope: 'app',  severity: 'error', invariant: null,
     title: 'an app whose container migrates on boot has a migration history to replay' },
   { id: 'raw-route-param',      scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'api: Raw routes',
     title: 'a raw route names a capture {id}, never :id' },
   { id: 'ctx-params',           scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'api: `ctx.params` does not exist',
     title: 'a service context has no ctx.params and no ctx.client' },
   { id: 'set-auth-discarded',   scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'data: `$setAuth(user)` RETURNS',
     title: '$setAuth answers a scoped client rather than mutating one' },
   { id: 'call-header-declared', scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'api: A header the caller varies per call',
     title: 'a per-call header is declared in http.callHeaders' },
   { id: 'service-model',        scope: 'app',  severity: 'error', invariant: 2,
     title: 'a service resolves to the model whose @@gate grades it' },
@@ -139,12 +147,14 @@ export const RULES = [
   { id: 'detail-read-dead',     scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a row a screen KEEPS is watched, not fetched once' },
   { id: 'envelope-hedge',       scope: 'app',  severity: 'warn',  invariant: null,
+    hazard: 'ui: `find()` answers the list envelope',
     title: 'a service answer is read in the one shape the server gives it' },
   { id: 'service-module-db',    scope: 'app',  severity: 'error', invariant: null,
     title: 'a service reads the request-scoped client, not the module one' },
   { id: 'service-as-system',    scope: 'app',  severity: 'warn',  invariant: 6,
     title: 'asSystem() off the app client crosses tenants; with no row tenancy, any asSystem() in a service crosses users' },
   { id: 'scheduler-dispatch',   scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'api: Caravan owns the clock',
     title: 'a timer that dispatches into a queue is the queue\'s schedule' },
   { id: 'battery-raw-secret',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a battery takes its credential by reference, not as a constructor argument' },
@@ -163,10 +173,13 @@ export const RULES = [
   { id: 'transition-methods',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a declared move and the code that makes it still name each other' },
   { id: 'required-system-unfilled', scope: 'app', severity: 'warn', invariant: null,
+    hazard: 'ui: `@system` is the column an application writes',
     title: 'a required @system column with no @default is filled by code the service runs' },
   { id: 'commitment-swept',     scope: 'app',  severity: 'warn',  invariant: null,
+    hazard: 'data: A row that stops counting at a date',
     title: 'a move a @@commitment owes is made by the commitment, not by a job too' },
   { id: 'capability-ladder',    scope: 'app',  severity: 'warn',  invariant: null,
+    hazard: 'data: A CAPABILITY is a grid',
     title: 'a model graded by capability is not also graded by ladder' },
   { id: 'polymorphic-subject',  scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a polymorphic pair names which models it can point at' },
@@ -179,6 +192,7 @@ export const RULES = [
   { id: 'command-resolves',     scope: 'app',  severity: 'error', invariant: 15,
     title: 'every name a project command uses is declared, imported, or one the shim injects' },
   { id: 'css-token-undefined',  scope: 'app',  severity: 'error', invariant: 13,
+    hazard: 'ui: A `var()` naming a token',
     title: 'a styled value names a token the stylesheets define' },
   { id: 'css-raw-literal',      scope: 'app',  severity: 'warn',  invariant: 13,
     title: 'a .mesa <style> holds no raw color, size or spacing value' },
@@ -230,6 +244,8 @@ export const RULES = [
     title: 'a number in prose is generated or absent' },
   { id: 'invariant-enforcer',   scope: 'repo', severity: 'error', invariant: null,
     title: 'a declared invariant enforcer resolves to something that exists' },
+  { id: 'hazard-enforcer',      scope: 'repo', severity: 'error', invariant: null,
+    title: 'a rule\'s hazard key names exactly one bullet of its realm skill' },
   { id: 'seam-owner',           scope: 'repo', severity: 'error', invariant: 4,
     title: 'a seam\'s stated owner exists and is where the name is declared' },
   { id: 'seam-listed',          scope: 'repo', severity: 'error', invariant: 4,
@@ -2626,7 +2642,7 @@ const CHECKS = {
   // left in place: a billing clerk holding `Invoice.create` is refused because
   // the clerk grades USER(4) and creates want ADMINISTRATOR(5) — a 403 that
   // reads as *not senior enough* about a person who was deliberately granted the
-  // capability. `@@gate("2")` flat at the read floor is the usual answer.
+  // capability. `@@gate(2)` flat at the read floor is the usual answer.
   //
   // A warning rather than an error: two authorities in front of one operation is
   // legitimate where the ladder is guarding something the grid does not model,
@@ -2651,7 +2667,7 @@ const CHECKS = {
       if (!above.length) continue
       findings.push({
         file: schema.path, line: m.gateLine,
-        message: `${m.name} declares @@capabilities and @@gate("${m.gateSource}") — ` +
+        message: `${m.name} declares @@capabilities and @@gate(${m.gateSource}) — ` +
                  `${above.join(', ')} need${above.length > 1 ? '' : 's'} level ` +
                  `${above.map(o => m.gate[o]).join('/')} where read needs ${m.gate.read}. The grid and ` +
                  `the ladder are ANDed, so a caller granted a capability on this model is still refused ` +
@@ -4086,6 +4102,7 @@ const CHECKS = {
   'doc-map-narration': ({ root }) => docMapNarration({ root }),
   'doc-unchecked-count': ({ root }) => docUncheckedCount({ root, countables: [...COUNTABLES, checkRulesCountable(RULES)] }),
   'invariant-enforcer': ({ root }) => invariantEnforcer({ root }),
+  'hazard-enforcer':    ({ root }) => hazardEnforcer({ root }),
 
   'seam-owner': ({ root }) => seamOwner({ root }),
 
@@ -4864,7 +4881,7 @@ const GATE_LEVELS = {
 }
 
 /**
- * Every level a schema requires — `@@gate("0.4.4.5")`, plus the `@gate(N)` a
+ * Every level a schema requires — `@@gate(0.4.4.5)`, plus the `@gate(N)` a
  * `@@transitions` clause hangs on one move.
  *
  * A line scan like `models()`, for its reason: this must answer with no
@@ -4896,7 +4913,7 @@ function capabilityModels({ text }) {
     // way — which was not true of either, and had not been true of any app: the
     // named form reached five declarations in litestone's own example and
     // nothing else, against 320 written as digits.
-    const compact = line.match(/@@gate\s*\(\s*['"`]([\d.]+)['"`]\s*\)/)
+    const compact = line.match(/@@gate\s*\(\s*([\d.]+)\s*\)/)
     if (compact) {
       // "R.C.U.D" with inheritance: a position not stated takes the one before it.
       const [r = 0, c = r, u = c, d = u] = compact[1].split('.').map(Number)
@@ -4914,7 +4931,7 @@ function capabilityModels({ text }) {
  *
  * One owner because there were two readings and both were wrong in the same
  * direction: a line scan that skips a line STARTING with `//` still reads a
- * trailing one, so `// was @@gate("7") once` declared a gate and a comma inside
+ * trailing one, so `// was @@gate(7) once` declared a gate and a comma inside
  * a note split a declared move in half. Both are the same mistake — comment
  * text is content to a regex and is not content to the language.
  *
@@ -4949,7 +4966,7 @@ function declaredGates({ text }) {
   let inBlock = false
   for (let i = 0; i < lines.length; i++) {
     // The comment goes before the match rather than the line being skipped when
-    // it STARTS with one: a trailing `// was @@gate("7") once` is a level this
+    // it STARTS with one: a trailing `// was @@gate(7) once` is a level this
     // schema does not declare, and `gate-unreachable` then reports a rung
     // nobody can reach that nobody wrote.
     const [line, still] = withoutComments(lines[i], inBlock)
@@ -4960,7 +4977,7 @@ function declaredGates({ text }) {
     const where = model ? `model ${model}'s` : 'a'
 
     for (const g of line.matchAll(/@@gate\s*\(([^)]*)\)/g)) {
-      const compact = g[1].match(/^\s*['"`]([\d.]+)['"`]\s*$/)
+      const compact = g[1].match(/^\s*([\d.]+)\s*$/)
       const levels  = compact ? compact[1].split('.').map(Number) : []
       for (const n of levels)
         if (n != null && !Number.isNaN(n)) out.push({ level: n, line: i + 1, what: `${where} @@gate` })
@@ -5558,6 +5575,31 @@ function invariantEnforcer({ root }) {
     }
   }
   return { findings }
+}
+
+// ─── hazard-enforcer ──────────────────────────────────────────────────────────
+//
+// A rule names the live hazard it grades by its realm and a prefix of the
+// bullet's bold lead (`core/hazards.js`), and `hazards.snapshot.md` is read off
+// that. A key that matches no bullet credits nothing, and the hazard it meant
+// turns `none` in the snapshot with nothing saying why — rewording a bullet is
+// all it takes. A key matching two is a guess. Both are one-word fixes, so both
+// are errors. A hazard no rule names is not reported: that is the gap the
+// snapshot publishes, the same line `invariant-enforcer` draws.
+
+function hazardEnforcer({ root }) {
+  const { hazards, unresolved } = hazardCoverage({ root, rules: RULES })
+  if (!hazards.length) return { skipped: 'no realm skill under .claude/skills/ lists a hazard' }
+
+  return {
+    findings: unresolved.map(u => ({
+      file: join(root, 'packages', 'cli', 'core', 'checks.js'),
+      message: `Rule \`${u.rule}\` names hazard '${u.key}', which matches ${u.matches} bullets of ` +
+               `its realm skill. A key must be the realm and a prefix of ONE bullet's bold lead — ` +
+               (u.matches ? 'lengthen the prefix until one is left.' :
+                            'the bullet was reworded or moved; point the key at what it says now.'),
+    })),
+  }
 }
 
 // ─── seam-owner ───────────────────────────────────────────────────────────────

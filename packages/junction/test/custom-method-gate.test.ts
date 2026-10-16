@@ -5,7 +5,7 @@
 // `OP_FOR_METHOD` names the six CRUD verbs, and a method it does not name was
 // gated by nothing here. That is not the same as unguarded — a body that writes
 // is still refused at the Data boundary by the model's own `@@gate` — but the
-// refusal arrived AFTER the body had run. Measured against a `@@gate("5.5.5.5")`
+// refusal arrived AFTER the body had run. Measured against a `@@gate(5.5.5.5)`
 // model: an anonymous `POST` with `X-Service-Method: refund` executed the
 // handler, charged the card, and only then took a 403 from the first write,
 // while every CRUD verb on the same service answered 401 having run nothing.
@@ -46,7 +46,7 @@ database main { path "./a.db" }
 model Order {
   id     Int    @id @default(autoincrement())
   status String @default("draft")
-  @@gate("1.4.4.5")
+  @@gate(1.4.4.5)
   @@db(main)
 }
 
@@ -55,7 +55,7 @@ model Order {
 model Variant {
   id  Int    @id @default(autoincrement())
   sku String @default("s")
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
   @@db(main)
 }
 `

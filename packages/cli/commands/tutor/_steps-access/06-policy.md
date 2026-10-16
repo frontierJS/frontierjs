@@ -44,7 +44,7 @@ if (!await refreshTokens($)) return
 const marked = /^\s*@@auth\b/m.test(readFileSync(schemaFile($), 'utf8'))
 
 for (const [from, to] of [
-  ...(marked ? [] : [['  @@gate("4.4.4.5")', '  @@auth\n  @@gate("4.4.4.5")']]),
+  ...(marked ? [] : [['  @@gate(4.4.4.5)', '  @@auth\n  @@gate(4.4.4.5)']]),
   ['  updatedAt DateTime  @updatedAt\n\n  ///',
    '  updatedAt DateTime  @updatedAt\n  authorId  String?   @default(auth().id)\n\n  @@allow(\'read\', authorId == auth().id)\n\n  ///'],
 ]) {

@@ -3,7 +3,7 @@
 Each of these is an assertion in one of the eight drives, or a line in the
 README's *Verified* section — not a claim.
 
-- **A stranger can buy something.** `Cart` and `CartLine` are `@@gate("0.0.0.5")`
+- **A stranger can buy something.** `Cart` and `CartLine` are `@@gate(0.0.0.5)`
   reached by `@@allow('read', id == auth().cartId)`, the claim comes from
   `bearerClaim` running for a caller with no session — which reads the token's
   digest off `CartGrant` and puts the BASKET'S ID on the principal — and the
@@ -75,7 +75,7 @@ README's *Verified* section — not a claim.
   sale, and stores the line total rather than multiplying it back at read time —
   so the itemization adds up to what was charged, to the penny, and a price
   edited in the catalog tomorrow does not rewrite what a customer paid today.
-  It is `@@gate("0.8.8.8")`: readable wherever the order is, written only
+  It is `@@gate(0.8.8.8)`: readable wherever the order is, written only
   through `asSystem()`, by `carts.checkout` and nothing else. `verify:cart`
   asserts the copy, the arithmetic and the 405 a caller trying to add one gets;
   `verify` reads the itemization off the detail screen and then opens an order
@@ -95,7 +95,7 @@ README's *Verified* section — not a claim.
   a hold moves available and leaves on hand alone, a shopper's own hold does not
   count against them, and the expiry is in the READ rather than in the cron —
   so `holds-release` is housekeeping and a queue outage cannot stop the shop
-  selling. The ledger is `@@gate("5.5.9.9")`: update and delete are 9, which
+  selling. The ledger is `@@gate(5.5.9.9)`: update and delete are 9, which
   nothing passes including `asSystem()`, and that is what append-only is spelled
   with.
 - **Every money column is `@money(USD)`, so what is stored is a whole number of

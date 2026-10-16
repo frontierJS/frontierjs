@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**121 words** — 13 declarations · 70 field attributes · 35 model attributes · 3 move words.
+**123 words** — 13 declarations · 71 field attributes · 36 model attributes · 3 move words.
 
 ## Declarations
 
@@ -53,6 +53,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@omit` | Hide or lock a value | [(all)] |  | level: all |  |
 | `@guarded` | Hide or lock a value |  | on a model's field · on a trait's field |  |  |
 | `@system` | Hide or lock a value |  |  |  |  |
+| `@local` | Hide or lock a value |  |  |  |  |
 | `@immutable` | Hide or lock a value | [(after: <move>)] |  |  |  |
 | `@sealed` | Hide or lock a value |  |  |  |  |
 | `@capability` | Hide or lock a value |  |  |  |  |
@@ -139,6 +140,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@auth` | Wire it to the app |  |  |  |  |
 | `@@person` | Wire it to the app | [(child)] |  | kind: child |  |
 | `@@trail` | Wire it to the app | (<database>[, reads: false][, writes: false]) |  |  |  |
+| `@@mirror` | Wire it to the app | (key: <field>) |  |  |  |
 | `@@anonymous` | Wire it to the app |  |  |  |  |
 | `@@db` | Wire it to the app | (<database>) | in a model |  |  |
 | `@@trait` | Wire it to the app | (<TraitName>) |  |  |  |

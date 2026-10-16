@@ -441,7 +441,7 @@ describe('a tool says what to send, or says nothing', () => {
   test('a column the boundary will not filter on is not offered as a filter', () => {
     // `x-filterable` is a REFUSAL — absent is permitted — so the control is the
     // plain column beside the two refused ones.
-    const src    = `model Note {\n  id    Int    @id\n  title String\n  body  String @encrypted\n  slug  String @computed\n  @@gate("1.1.1.1")\n}`
+    const src    = `model Note {\n  id    Int    @id\n  title String\n  body  String @encrypted\n  slug  String @computed\n  @@gate(1.1.1.1)\n}`
     const views  = schemaViews(parse(src).schema, generateJsonSchema as never)
     const find   = projectTools([{ name: 'notes', model: 'Note', methods: ['find'] }], views, 8).tools[0]
     const cols   = Object.keys(((find?.input.schema?.properties ?? {}) as Record<string, any>).query.properties)

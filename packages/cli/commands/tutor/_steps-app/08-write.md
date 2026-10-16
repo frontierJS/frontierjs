@@ -8,7 +8,7 @@ description: Write a row, and read it back out of the file
 Two requests, identical but for one header.
 
 The one **with** the token is accepted. The one **without** it is refused with a
-401, by a rule you have not written — `@@gate("0.4.4.6")` says writes need a
+401, by a rule you have not written — `@@gate(0.4.4.6)` says writes need a
 signed-in caller, and that is the only place it is said.
 
 A refusal on its own proves nothing: a service that refused everything would

@@ -163,7 +163,7 @@
       const which = grabbed ? grabbed.dataset.which : handleFor(posToValue(e.clientX))
       moved = false
       if (!grabbed) { set(which, posToValue(e.clientX)); emit(); moved = true }
-      sliderEl.querySelector('[data-which=' + which + ']')?.focus()
+      $.focus(sliderEl.querySelector('[data-which=' + which + ']'))
       dragging = which
       return which
     },

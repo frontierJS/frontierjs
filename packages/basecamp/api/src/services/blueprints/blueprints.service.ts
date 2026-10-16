@@ -6,7 +6,7 @@
 // `Blueprint` is `@@tenant(none)` because the catalog is curated for the whole
 // installation rather than authored per tenant — see the model's own comment —
 // so there is no `sessionScope` on this file and no `X-Workspace-Id` to send.
-// What stands in for it is the gate: `@@gate("1.7")` reads at VISITOR(1), so a
+// What stands in for it is the gate: `@@gate(1.7)` reads at VISITOR(1), so a
 // caller with no session is refused at the Data boundary rather than by a hook,
 // and every write is `requireSystemAdmin()`.
 //
@@ -172,7 +172,7 @@ export default createService({
 
   hooks: {
     before: {
-      // Reads are the gate's — `@@gate("1.7")` refuses a caller with no
+      // Reads are the gate's — `@@gate(1.7)` refuses a caller with no
       // session, which is every reader this catalog has to keep out.
       create:    [requireSystemAdmin(), refuseInlineParams],
       patch:     [requireSystemAdmin(), refuseInlineParams],

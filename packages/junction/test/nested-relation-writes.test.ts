@@ -138,14 +138,14 @@ describe('over HTTP, under the gate', () => {
       id    Int    @id
       title String
       notes Note[]
-      @@gate("4.4.4.4")
+      @@gate(4.4.4.4)
     }
     model Note {
       id       Int    @id
       folderId Int
       folder   Folder @relation(fields: [folderId], references: [id])
       text     String
-      @@gate("4.5.5.5")
+      @@gate(4.5.5.5)
     }
   `
 

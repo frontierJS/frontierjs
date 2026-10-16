@@ -25,7 +25,7 @@ model Person {
   name   String
   salary Float @guarded
 
-  @@gate("1.5.5.5")
+  @@gate(1.5.5.5)
 }
 ```
 

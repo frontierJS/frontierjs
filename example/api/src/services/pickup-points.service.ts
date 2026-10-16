@@ -1,6 +1,6 @@
 // Where an order can be collected from.
 //
-// `@@gate("0.5.5.5")` — read by anybody, written by staff, for
+// `@@gate(0.5.5.5)` — read by anybody, written by staff, for
 // `shipping-methods`' reason one degree sharper: a storefront asks *which
 // branch is near me* with no session at all.
 //

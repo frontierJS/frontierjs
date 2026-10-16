@@ -23,7 +23,7 @@ import { NOTIFICATION_KINDS, NOTIFICATION_KIND_NAMES, notificationKind } from '.
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** The caller, or a refusal. The Data boundary would refuse a stranger anyway —
- *  `@@gate("1")` is VISITOR — but it refuses with a level, and somebody who is
+ *  `@@gate(1)` is VISITOR — but it refuses with a level, and somebody who is
  *  simply signed out needs the sentence. */
 function me(): string {
   const id = ($.me as { userId?: string } | null | undefined)?.userId

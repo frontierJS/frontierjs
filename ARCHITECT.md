@@ -145,7 +145,7 @@ Clarifications settled by the code:
   Litestone's docs call them **policies**. Don't use one word for both.
 - **The gate ladder** is the 0–9 scale (`STRANGER`…`LOCKED`), owned by
   `@frontierjs/toolbelt/gate` — the scale, the comparison and the grader
-  (`FJS-D197`). A gate is written as digits, `@@gate("2.4.4.6")`, four positions
+  (`FJS-D197`). A gate is written as digits, `@@gate(2.4.4.6)`, four positions
   read.create.update.delete (`FJS-D239`).
 - **The Warden is the whole access system**: the principal and its claims, the
   gate, capabilities, row policies, field protection, and the authority half of a

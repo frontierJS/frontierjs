@@ -10,6 +10,12 @@
  *   unlayered rules last.
  * - Every selector list is split into one rule per member, and a member
  *   `cssOffense` refuses is dropped alone rather than taking its list with it.
+ *   A list inside `:where()` or `:is()` is split the same way (4.6), and the
+ *   members that survive are joined back into one list where their lowered
+ *   rules agree.
+ * - A type selector is written as the class the runtime gives its tag (4.5),
+ *   `.field-group > label` as `.field-group > ._label`. A tag with no element
+ *   on a phone is dropped.
  * - `@media`, `@supports`, `@container` and `@import` are dropped, since the
  *   device drops them anyway. Every other at-rule is kept as written.
  *
@@ -24,10 +30,10 @@
  * What unwrapping cannot keep: a layer beats an earlier one whatever the
  * specificity, and a flat sheet orders by specificity first. A rule in an
  * earlier layer that is more specific than a later one on the same element
- * now wins.
+ * now wins. A `:where()` member takes its own specificity in place of zero.
  */
 
-import { cssOffense, list } from './css.js'
+import { cssOffense, list, lowerTypes } from './css.js'
 import { lowerTokens } from './tokens.js'
 import { lowerValues } from './values.js'
 import { missingPeer } from '../optional-peer.js'
@@ -132,7 +138,7 @@ export function lowerSheet(src) {
       const body = csstree.generate(n.block)
       const source = sources++
       let member = 0
-      for (const sel of list(n.prelude.value).flatMap(unwrapLists)) {
+      for (const sel of list(n.prelude.value).flatMap(unwrapLists).map(lowerTypes)) {
         const o = cssOffense(sel)
         if (o) dropped.push({ what: o.what, line })
         else if (!plain) into.items.push({ text: sel + body })

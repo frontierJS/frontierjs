@@ -277,7 +277,7 @@ describe('terminal target', () => {
     })
   })
 
-  it('calls a component at a marker, with its props, slots and a push for the live ones', async () => {
+  it('calls a component at a marker, with its props, its content as snippets and a push for the live ones', async () => {
     const { result } = await terminal(`<script>
   import Card from './Card.mesa'
   let n = 0
@@ -289,11 +289,11 @@ describe('terminal target', () => {
 <Card />
 `, 'P.mesa')
     expect(() => acorn.parse(result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
-    const props = "{title: 'A', count: $$runtime.get($$sig_n), flag: true, 'aria-label': 'x', onpick: () => $$runtime.postUpdate($$sig_n, $$set_n, +1)}"
+    const props = "{title: 'A', count: $$runtime.get($$sig_n), flag: true, 'aria-label': 'x', onpick: () => $$runtime.postUpdate($$sig_n, $$set_n, +1), actions: $$snip0_actions, children: $$snip1_children}"
     expect(result).toContain('const $$m0 = $$host.marker();\n    $$host.append($$parentElement, $$m0);')
-    expect(result).toContain(`Card($$m0, ${props}, {\n      actions: () => {`)
-    expect(result).toContain("      actions: () => {\n        const $$b = $$host.fragment();\n        const $$el0 = $$host.element('b');")
-    expect(result).toContain("      default: () => {\n        const $$b = $$host.fragment();\n        const $$el1 = $$host.element('p');")
+    expect(result).toContain(`Card($$m0, ${props}, null);`)
+    expect(result).toContain("const $$snip0_actions = $$runtime.content((__anchor) => {\n      const $$b = $$host.fragment();\n      const $$el0 = $$host.element('b');")
+    expect(result).toContain("const $$snip1_children = $$runtime.content((__anchor) => {\n      const $$b = $$host.fragment();\n      const $$el1 = $$host.element('p');")
     expect(result).toContain(`$$runtime.registerComponentAnchor($$m0);\n    $$runtime.createEffect(() => { $$runtime.pushProps($$m0, ${props}); });`)
     // All-static props: nothing to push, so no registration either.
     expect(result).toContain('Card($$m1, {}, null);\n    $$host.append(__anchor, $$parentElement);')
@@ -447,15 +447,15 @@ describe('terminal target', () => {
     expect(out).toEqual([expect.stringMatching(/^bind:this=\{r\} — 'r' must be a top-level let variable — P\.mesa:2:1$/)])
   })
 
-  it('renders a <slot> from __block, its fallback when the caller passed none, and declares it', async () => {
+  it('renders a <slot> from the prop of its name, its fallback when the caller passed none, and declares the prop', async () => {
     const { result } = await terminal(`<section>
   <slot><p>empty</p></slot>
   <slot name="actions" />
 </section>
 `, 'Card.mesa')
-    expect(result).toContain(`const $$slots = $$runtime.makeSlots(__block, ["default","actions"], 'Card');`)
-    expect(result).toContain("$$host.slot($$m0, __block?.['default'], () => {")
-    expect(result).toContain("$$host.slot($$m1, __block?.['actions'], null);")
+    expect(result).toContain(`$$runtime.unclaimedContent(__props, ["children","actions"], 'Card', ["children","actions"]);`)
+    expect(result).toContain('$$host.ifBlock($$m0, () => ($$runtime.get($$sig_children)) ? 0 : 1, [')
+    expect(result).toContain('{ const $$sf = $$runtime.get($$sig_actions); if ($$sf) $$sf($$m2); }')
   })
 
   // The author marked it as carrying nothing a reader needs, so the terminal
@@ -505,14 +505,12 @@ describe('terminal target', () => {
 <input bind:value={v} bind:checked={v} />
 {#if v}<button on:click|once={() => {}} on:pointerenter={() => {}}>b</button>{/if}
 {#each [1] as n}<Foo {...v} bind:x={v} on:pick={() => {}}><iframe>{#snippet s()}x{/snippet}</iframe></Foo>{/each}
-<slot name="a" title="t" />
 `, { filename: 'H.mesa', dev: false, warning: () => {} })
     expect(hostOffenses(ir, TARGETS.terminal).map((o) => [o.what, o.shape, o.loc])).toEqual([
       ['colspan on <td>', 'colspan on <td>', 'H.mesa:5:12'],
       ['bind:checked on <input type="text">', 'bind:checked on <input type="text">', 'H.mesa:6:23'],
       ['on:pointerenter', 'on:pointerenter', 'H.mesa:7:41'],
       ['<iframe>',     '<iframe>',          'H.mesa:8:59'],
-      ['title on <slot>', 'attribute on <slot>', 'H.mesa:9:16'],
     ])
   })
 })

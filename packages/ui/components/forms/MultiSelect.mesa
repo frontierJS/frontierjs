@@ -345,7 +345,7 @@
   function openDropdown() {
     if (readonly || resolvedDisabled || (!canAdd() && !multiple)) return
     open = true
-    inputEl?.focus()
+    $.focus(inputEl)
   }
 
   function closeDropdown() {

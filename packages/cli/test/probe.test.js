@@ -198,7 +198,7 @@ describe('files', () => {
   let dir
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), 'fjs-probe-'))
-    writeFileSync(join(dir, 'schema.lite'), 'model Note {\n  id Int @id\n  @@gate("0.4.4.6")\n}\n')
+    writeFileSync(join(dir, 'schema.lite'), 'model Note {\n  id Int @id\n  @@gate(0.4.4.6)\n}\n')
   })
   afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -210,7 +210,7 @@ describe('files', () => {
   test('fileContains answers the MATCHING LINE, which is what a reader wants', () => {
     const r = fileContains({ path: join(dir, 'schema.lite'), needle: '@@gate' })
     expect(r.ok).toBe(true)
-    expect(r.got).toBe('@@gate("0.4.4.6")')
+    expect(r.got).toBe('@@gate(0.4.4.6)')
   })
 
   test('a RegExp needle works and a miss counts the lines it read', () => {

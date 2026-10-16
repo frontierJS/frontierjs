@@ -22,7 +22,7 @@
 ///       id         Int @id @default(autoincrement())
 ///       customerId Int
 ///       @@trait(Grant)
-///       @@gate("4")
+///       @@gate(4)
 ///       @@allow('create', check(customer, 'update'))
 ///     }
 ///

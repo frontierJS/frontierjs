@@ -118,7 +118,7 @@
   const hasError = !!resolveError(form, name, error, errors)
 
   let el
-  export function focus() { el?.focus() }
+  export function focus() { return $.focus(el) }
   // Native event callbacks. A <select> fires `input` as well as `change`, and
   // a caller validating as the user picks wants the same hook it uses on an
   // <Input> — see Input.mesa.

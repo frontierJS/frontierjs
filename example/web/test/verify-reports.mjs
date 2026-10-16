@@ -103,7 +103,7 @@ if (!await waitForServer(UI, 'web'))                 { stopAll(); process.exit(1
 // the SERVICE, and an API booted before these services landed answers
 // `Service 'employees' not found` — a 404 that reads exactly like a screen
 // asking for a row that does not exist. `/api/employees` cannot be the probe
-// either: `Employee` is `@@gate("5.5.5.5")`, so an unauthenticated GET is a
+// either: `Employee` is `@@gate(5.5.5.5)`, so an unauthenticated GET is a
 // 401, which is a working service refusing a stranger. `/manifest` is the one
 // answer to *what is mounted* that needs no session.
 const mounted = await (await fetch(`${API}/api/manifest`)).json()

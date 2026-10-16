@@ -119,7 +119,7 @@ describe('toDataPrincipal carries the kind of caller to the audit trail', () => 
         schema: `
           database main  { path ":memory:" }
           ${auditDatabase(dir)}
-          model Thing { id String @id @default(uuid())  name String  @@gate("0")  @@trail(audit) }
+          model Thing { id String @id @default(uuid())  name String  @@gate(0)  @@trail(audit) }
         `,
         resolveFrom: dir,
       })

@@ -14,6 +14,13 @@
  *   horizontal, left-to-right text, and so is `text-align: start | end`.
  *   Right-to-left is lost: the bundler's `:lang()` copies were the only RTL
  *   the kit had, and 4.1 drops them.
+ * - **Display.** The device lays out `block` as a row and ignores
+ *   `inline-flex`, which then stacks; an element with no `display` stacks as a
+ *   block does, because the engine's default is `linear` (§ 12, 4.7). There is
+ *   no inline flow on a device, so a value is lowered by its inner display
+ *   alone: flow becomes `linear`, and `flex` and `grid` stay. A value with any
+ *   other inner display (`-webkit-box`, `table`, `contents`) comes back on
+ *   `kept`, since the device would ignore it and stack.
  *
  * A two-value logical shorthand whose value is one `var()` is written to both
  * sides, which is wrong when the token itself holds two values.
@@ -28,9 +35,11 @@ export function lowerValues(rules) {
     if (!r.decls) return r
     const decls = []
     for (const d of r.decls) {
-      const value = colors(d.value, (what) => {
+      const keep = (what) => {
         if (!kept.some(k => k.what === what && k.line === r.line)) kept.push({ what, line: r.line })
-      })
+      }
+      let value = colors(d.value, keep)
+      if (d.prop.toLowerCase() === 'display') value = display(value, keep)
       for (const [prop, v] of physical(d.prop, value)) decls.push({ ...d, prop, value: v })
     }
     return { ...r, decls }
@@ -322,6 +331,23 @@ function colorEnd(s) {
 }
 
 const NAMED = { white: 'fff', black: '000' }
+
+// ── Display ────────────────────────────────────────────────────────────
+
+const DEVICE_DISPLAY = new Set(['none', 'linear', 'flex', 'grid', 'relative'])
+const OUTER = /^(block|inline|run-in|list-item)$/
+const INNER = { flow: 'linear', 'flow-root': 'linear', flex: 'flex', grid: 'grid' }
+
+/** `value` as the device's `display`: the outer display dropped, the inner one mapped (CSS Display 3 § 2). */
+export function display(value, keep = () => {}) {
+  const v = value.trim().toLowerCase()
+  if (DEVICE_DISPLAY.has(v) || v.includes('(') || /^(inherit|initial|unset|revert|revert-layer)$/.test(v)) return value
+  const words = v.split(/\s+/).flatMap(w => w.startsWith('inline-') ? ['inline', w.slice(7)] : [w])
+  const inner = words.find(w => !OUTER.test(w)) ?? 'flow'
+  if (INNER[inner]) return INNER[inner]
+  keep(`the display ${value.trim()}`)
+  return value
+}
 
 // ── Logical properties ─────────────────────────────────────────────────
 

@@ -59,7 +59,7 @@ const SCHEMA = `
   model Vault {
     id    Int    @id @default(autoincrement())
     label String
-    @@gate("7")
+    @@gate(7)
     @@db(main)
   }
 `

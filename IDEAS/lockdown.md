@@ -83,7 +83,7 @@ Done when: `FJS-D1077`–`FJS-D1086`, `FJS-D668` and `FJS-D866` are closed by
 - [x] 2.2 `FJS-D1079` one service verb (holds `FJS-2937`, `FJS-1868`)
 - [x] 2.3 `FJS-D1080` one root on `createApp` (holds `FJS-2939`, `FJS-2975`)
 - [ ] 2.4 `FJS-D1078` one event spelling (holds `FJS-2941`)
-- [ ] 2.5 `FJS-D668` slot vs snippet, widened to *snippets only* (holds `FJS-2942`, `FJS-1230`)
+- [x] 2.5 `FJS-D668` slot vs snippet (holds `FJS-2942`, `FJS-1230`) — ruled D: `slot=` is compile-time sugar for a snippet with no arguments, snippets the one runtime system
 - [ ] 2.6 `FJS-D1081` one gate literal (holds `FJS-2936`); `FJS-D1082` bare policy ops (holds `FJS-2947`)
 - [ ] 2.7 `FJS-D1083` one script table and `FJS-D1084` one front door (hold `FJS-2946`, `FJS-2944`'s sibling `FJS-1870`)
 - [ ] 2.8 `FJS-D1085` how an app mounts; `FJS-D1086` the implicit default form
@@ -99,9 +99,9 @@ the three `verify:*` drives `fli proves --from main` names have run.
 - [x] 3.1 Service verb across example (×36), basecamp (×42), haven, scaffold; loader drops the `create*Service` factory-name rule (`FJS-2937`) — definition only, a function default refused (`FJS-D1079` amended); `fli check` rule `service-definition`; left over: `FJS-2995`
 - [ ] 3.2 Plugin names to the ruled grammar; `define*` to one spec-object shape, `defineJob` stops restating the filename (`FJS-2938`, `FJS-2953`); `auth({ auth })` schedules its own cleanup jobs, so no app writes the inline plugin (`FJS-1893`)
 - [ ] 3.3 `createApp({ root })`; `autoload`, `jobsDir`, `notifications`, `configPath` gone; the port read once by junction from the broker var (`FJS-2939`, `FJS-2975`, `FJS-2974`); `createApp`'s bag reduced to `db|tenants, auth, principal, system, config, root` (`FJS-2954`)
-- [ ] 3.4 `app.<slot>` non-optional once declared, or `configure()` narrows the type; the scaffold ships no `!` (`FJS-2940`)
+- [ ] 3.4 `app.<slot>` typed present, an unconfigured read throwing the plugin's name; the scaffold ships no `!` (`FJS-2940`)
 - [ ] 3.5 Event spelling: compiler refuses the other two by name; `make:component`, VISION rule 23, ui README agree (`FJS-2941`)
-- [ ] 3.6 Snippets only: `<slot>`, `slot=`, `<mesa:slot>`, `attachNamedSlotLegacy` deleted; layouts take `children` (`FJS-2942`, `FJS-1230`)
+- [ ] 3.6 One runtime system: the compiler lowers `slot=` / `<slot>` to snippets with no arguments; `attachNamedSlotLegacy`, `makeSlots` and Form's hand fallback deleted; `slot=` with arguments refused naming the snippet form (`FJS-2942`, `FJS-1230`, `FJS-D668`)
 - [ ] 3.7 `createResource('products', opts?)` and nothing else; `client.resource` internal (`FJS-2933`, `FJS-2967`); `resource.list()` the one URL-driven list, `store`/`load`/`stale`/`more` its internals (`FJS-2968`)
 - [ ] 3.8 Gate literal; bare policy ops; comma-combo deleted (`FJS-2936`, `FJS-2947`) — digits-only moves landed with `FJS-2935`
 - [ ] 3.9 Script table written by `app-config.js`, the three apps moved to it, `fli dev` the printed door, `utils/dev.md` → `dev/index.md` (`FJS-2946`, `FJS-2944`)
@@ -144,9 +144,10 @@ list of what a later change to it must do.
   - **B** — `xPlugin(opts)` for every Plugin, so the word is in the identifier wherever it is read; bare nouns renamed up.
   - **Recommend A** — bare noun is already the majority (9 vs 7 vs 2), the subpath already carries the noun (`import { metrics } from '@frontierjs/junction/metrics'`), and `conduit()` / `orion()` / `outbox()` read well in a `configure` list where `metricsPlugin()` reads twice. § V *predictability*: knowing one teaches the next.
 
-- **FJS-D1078 — Which one event spelling does `.mesa` keep on an element?** `onclick`, `on:click` and `@click` all compile; VISION rule 23, the ui README and `make:component` each teach a different one.
+- ~~**FJS-D1078 — Which one event spelling does `.mesa` keep on an element?**~~ **Answered 2026-10-16 (`FJS-D1078`): C — `onclick={fn}` everywhere, with `parseModifiers`' pipe grammar kept on the DOM name: `onsubmit|preventDefault={save}`, `oninput|debounce(300)={search}`. A guard modifier (`preventDefault`, `stopPropagation`, `self`, `trusted`, `debounce`, `throttle`) compiles into a wrapped handler VALUE, so it survives a spread and a kit component's forwarding — the reason Svelte 5 dropped modifier syntax. A listener option (`once`, `capture`, `passive`) cannot be a value, so it is honored on an element and refused on a component by name. `on:` and `@` refused with the new spelling.** `onclick`, `on:click` and `@click` all compile; VISION rule 23, the ui README and `make:component` each teach a different one.
   - **A** — `onclick={fn}` everywhere, elements and components alike; modifiers as an options object (`onclick={[fn, { once: true }]}` or a `use:` action); `on:` and `@` refused by name.
   - **B** — `on:click` on elements (Svelte 4 habit, modifiers as `|once`), `onclick` on components as rule 23 says.
+  - **C** — `onclick={fn}` everywhere, with `parseModifiers`' pipe grammar kept on the DOM name: `onsubmit|preventDefault={save}`, `oninput|debounce(300)={search}`. A guard modifier (`preventDefault`, `stopPropagation`, `self`, `trusted`, `debounce`, `throttle`) compiles into a wrapped handler VALUE, so it survives a spread and a kit component's forwarding — the reason Svelte 5 dropped modifier syntax. A listener option (`once`, `capture`, `passive`) cannot be a value, so it is honored on an element and refused on a component by name. `on:` and `@` refused with the new spelling.
   - **Recommend A** — basecamp already writes `onclick` 68 files to 5, the kit forwards attributes so one spelling reaches both an element and a component, and Svelte 5 itself moved to it. § IV *familiarity vs. precision* is about ecosystem habits and the ecosystem moved.
 
 - ~~**FJS-D1079 — Which one verb defines a service, and what does it return?**~~ **Answered 2026-10-16 (`FJS-D1079`): A — `createService(def)` returns a definition; the file `export default`s it; the registry builds. `createBaseService` and the factory-name rule go.** `createBaseService(opts)` returns a definition (example ×36); `createService(def)` a built Service (basecamp ×43); the loader wraps either and demands a factory named `create*Service`.
@@ -159,22 +160,22 @@ list of what a later change to it must do.
   - **B** — keep per-battery keys, fix the defaults to probe from the caller's `import.meta.url`.
   - **Recommend A** — Invariant 3 already says the layout is fixed, so there is one fact to state; four keys restate it (§ V *derived*).
 
-- **FJS-D1081 — Which one literal form does the gate ladder take?** Model `@@gate("3.8.3.8")` is quoted; a move's `@gate(5)` is bare and `@gate("5")` refused. Both forms are digits-only — a level name is refused on each (`FJS-D239`, `FJS-2935`).
+- ~~**FJS-D1081 — Which one literal form does the gate ladder take?**~~ **Answered 2026-10-16 (`FJS-D1081`): B — bare on both: `@@gate(3.8.3.8)` as a dotted literal the lexer learns, `@gate(5)`; moves digits-only.** Model `@@gate("3.8.3.8")` is quoted; a move's `@gate(5)` is bare and `@gate("5")` refused. Both forms are digits-only — a level name is refused on each (`FJS-D239`, `FJS-2935`).
   - **A** — quoted on both: `@@gate("3.8.3.8")`, `@gate("5")`; moves digits-only.
   - **B** — bare on both: `@@gate(3.8.3.8)` as a dotted literal the lexer learns, `@gate(5)`; moves digits-only.
   - **Recommend A** — the model form has 95 uses in the tree and `FJS-D239`'s error message teaches it; the lexer stays small. The move form has 30 uses and changes mechanically.
 
-- **FJS-D1082 — Are policy operations bare identifiers like every sibling keyword argument?** `@@allow('read', …)` is the only quoted keyword argument in the language; `'update,delete'` parses with zero uses; field `@allow` has a different op list from model `@@allow`.
+- ~~**FJS-D1082 — Are policy operations bare identifiers like every sibling keyword argument?**~~ **Answered 2026-10-16 (`FJS-D1082`): A — bare: `@@allow(read, …)`, `@allow(write, …)`; comma-combo deleted; one op list, with field `write` = create+update stated in the reference.** `@@allow('read', …)` is the only quoted keyword argument in the language; `'update,delete'` parses with zero uses; field `@allow` has a different op list from model `@@allow`.
   - **A** — bare: `@@allow(read, …)`, `@allow(write, …)`; comma-combo deleted; one op list, with field `write` = create+update stated in the reference.
   - **B** — keep quoted; delete the comma-combo only.
   - **Recommend A** — `@@sync(server)`, `@@tenant(none)`, `@values(X, open)` already set the rule; an op is a keyword, not data.
 
-- **FJS-D1083 — What is the one script table an app's `package.json` carries?** Scaffold: `dev:api`, `dev:web`, `build:web`, `db:migrate`, `db:types`. Apps: `api`, `web`, `build`, `db:seed`, `db:reset`, `test`. `fli dev:api` branches on both.
+- ~~**FJS-D1083 — What is the one script table an app's `package.json` carries?**~~ **Answered 2026-10-16 (`FJS-D1083`): A — `dev`, `api`, `web`, `build`, `test`, `db:seed`, `db:reset`, `check`; written by `app-config.js`; graded by `fli check`; the three apps moved.** Scaffold: `dev:api`, `dev:web`, `build:web`, `db:migrate`, `db:types`. Apps: `api`, `web`, `build`, `db:seed`, `db:reset`, `test`. `fli dev:api` branches on both.
   - **A** — `dev`, `api`, `web`, `build`, `test`, `db:seed`, `db:reset`, `check`; written by `app-config.js`; graded by `fli check`; the three apps moved.
   - **B** — the scaffold's `dev:*` table, apps moved to it.
   - **Recommend A** — three real apps already converged on it, and `bun run api` is what every drive's *Start first* says.
 
-- **FJS-D1084 — Is `fli dev` the one front door?** The scaffold tail prints `bun run dev`; the cli README says `fli dev`; only `fli dev` runs the four preflights.
+- ~~**FJS-D1084 — Is `fli dev` the one front door?**~~ **Answered 2026-10-16 (`FJS-D1084`): A — `fli dev`; the scaffold prints it; `utils/dev.md` becomes `dev/index.md` aliased `dev`; the README drops `bun run dev`.** The scaffold tail prints `bun run dev`; the cli README says `fli dev`; only `fli dev` runs the four preflights.
   - **A** — `fli dev`; the scaffold prints it; `utils/dev.md` becomes `dev/index.md` aliased `dev`; the README drops `bun run dev`.
   - **B** — `bun run dev` with the preflights moved into a `predev` script.
   - **Recommend A** — the preflights need the port broker, which is fli's.
@@ -194,3 +195,8 @@ list of what a later change to it must do.
   - **B** — A for `@values` and `@@extensible` only; `@@relator`'s `once|many` stays a bare word because it is required, with `by: col` replacing `many: col`; `max: { … }` stays as the one structured literal and is documented as the exception.
   - **C** — fix only the infix: `on <col>` becomes `matching: col`; leave `open|suggested` positional and the `{}` literal, and rule positional strength the language's one enumerated-word form.
   - **Recommend B** — the infix and the keyword-as-key are the two real mixes; `strength:` is cheap and uniform, but forcing `max.text: 8` into dotted keys invents a form for a single use where the literal is already how an enum-keyed pool reads.
+
+- ~~**How is a configured plugin's `app.<slot>` typed, so no app writes `!`?**~~ **Answered 2026-10-16 (`FJS-D1138`): A — each slot is typed present; reading one whose plugin was never configured throws, naming the plugin to configure in `app.ts`. The augmenting package declares it non-optional.** `FJS-2940`: `auth?`, `mail?`, `conduit?`, `jobs?` and every augmented slot are optional on `App` (`packages/junction/src/core/app.ts`), so example, basecamp and the scaffold write `app.conduit!.receive()`, `ctx.app!.notify()`.
+  - **A** — each slot is typed present; reading one whose plugin was never configured throws, naming the plugin to configure in `app.ts`. The augmenting package declares it non-optional.
+  - **B** — `configure(plugin)` returns `App & { slot }`, so the type narrows in `app.ts`.
+  - **Recommend A** — a service reads `ctx.app`, typed as the general `App`, so B's narrowing never reaches the files that write the `!`; A's throw says what is missing where B's `undefined` would say nothing (§ V *failure*).

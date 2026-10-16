@@ -203,13 +203,13 @@ describe('parser', () => {
   // parse and a failure at boot (FJS-2948).
   test('a @@gate out of order is refused by parse, naming the model', () => {
     for (const g of ['6.4.2.1', '2.4.1', '1.5.3']) {
-      const r = parse(`model T { id Int @id\n @@gate("${g}") }`)
+      const r = parse(`model T { id Int @id\n @@gate(${g}) }`)
       expect(r.valid).toBe(false)
       expect(r.errors[0]).toContain('@@gate on "T"')
     }
-    expect(parse(`model T { id Int @id\n @@gate("2.1.") }`).valid).toBe(false)
-    expect(parse(`model T { id Int @id\n @@gate("2.4.4.5") }`).valid).toBe(true)
-    expect(parse(`model T { id Int @id\n @@gate("5.8.8.9") }`).valid).toBe(true)
+    expect(parse(`model T { id Int @id\n @@gate(2.1.) }`).valid).toBe(false)
+    expect(parse(`model T { id Int @id\n @@gate(2.4.4.5) }`).valid).toBe(true)
+    expect(parse(`model T { id Int @id\n @@gate(5.8.8.9) }`).valid).toBe(true)
   })
 
   test('a model name that is not PascalCase is refused unless @@external', () => {
@@ -1652,7 +1652,7 @@ const JEXT_SCHEMA = `
     name  String
     plan  Plan    @default(starter)
     users User[]
-    @@gate("2.5.5.6")
+    @@gate(2.5.5.6)
   }
 
   model User {
@@ -1661,7 +1661,7 @@ const JEXT_SCHEMA = `
     accountId Int
     email     String     @email
     posts     Post[]
-    @@gate("2.4.4.6")
+    @@gate(2.4.4.6)
   }
 
   model Post {
@@ -5983,7 +5983,7 @@ describe('a stamped column is not a caller write (FJS-565)', () => {
       owner  Int    @guarded @createdBy
       slot   String @system  @default(cuid())
       title  String
-      @@gate("4")
+      @@gate(4)
     }
   `
   const AS = { id: 7, role: 'user', activatedAt: new Date(), verifiedAt: new Date() }
@@ -6573,7 +6573,7 @@ describe('raw SQL and the access rules it cannot enforce', () => {
   })
 
   test('@@gate alone is enough to trigger it', async () => {
-    const g = await makeDb(`model Q { id Int @id  x String  @@gate("4") }`, 'raw-sql-gate')
+    const g = await makeDb(`model Q { id Int @id  x String  @@gate(4) }`, 'raw-sql-gate')
     let err: any = null
     try { await g.sql`SELECT x FROM q` } catch (e) { err = e }
     expect(err).not.toBeNull()
@@ -8823,9 +8823,9 @@ describe('GatePlugin', () => {
         model Drop {
           id   Int    @id
           body String
-          @@gate("${g}")
+          @@gate(${g})
         }
-      `, `gate-empty-${g.length}`, () => 0)).rejects.toThrow(/@@gate: empty/)
+      `, `gate-empty-${g.length}`, () => 0)).rejects.toThrow(/@@gate: empty|Malformed number '4\.\.6'/)
     }
   })
 
@@ -8857,7 +8857,7 @@ describe('GatePlugin', () => {
       model SurveyResponse {
         id   Int    @id
         body String
-        @@gate("6.4.9.9")
+        @@gate(6.4.9.9)
       }
     `, 'gate-dropbox', (user: any) => user?.level ?? 0)
     const employee = db.$setAuth({ id: 1, level: 4 })
@@ -8888,7 +8888,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model Post {
         id Int @id
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
     `, 'gate-read-ok', () => 3)   // level 3 >= read(2)
     await db.$db.run('INSERT INTO post VALUES (1)')
@@ -8902,7 +8902,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model Post {
         id Int @id
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
     `, 'gate-read-deny', () => 1)   // level 1 < read(2)
     await expect(db.post.findMany()).rejects.toThrow(AccessDeniedError)
@@ -8914,7 +8914,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model Post {
         id Int @id
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
     `, 'gate-create-deny', () => 3)   // level 3 < create(4)
     await expect(db.post.create({ data: { id: 1 } })).rejects.toThrow(AccessDeniedError)
@@ -8927,7 +8927,7 @@ describe('GatePlugin', () => {
       model Post {
         id Int @id
         val String
-        @@gate("2.4.5.6")
+        @@gate(2.4.5.6)
       }
     `, 'gate-update-deny', (_, model) => model === 'Post' ? 4 : 0)  // level 4 < update(5)
     await db.$db.run("INSERT INTO post VALUES (1, 'x')")
@@ -8940,7 +8940,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model Post {
         id Int @id
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
     `, 'gate-delete-deny', () => 5)   // level 5 < delete(6)
     await db.$db.run('INSERT INTO post VALUES (1)')
@@ -8954,7 +8954,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model AuditLog {
         id Int @id
-        @@gate("5.8.8.9")
+        @@gate(5.8.8.9)
       }
     `, 'gate-locked', () => 6)   // level 6 (OWNER) can't beat LOCKED (now 9)
     await db.$db.run('INSERT INTO audit_log VALUES (1)')
@@ -8966,7 +8966,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model AuditLog {
         id Int @id
-        @@gate("5.8.8.9")
+        @@gate(5.8.8.9)
       }
     `, 'gate-system', () => 6)   // level 6 can't create (SYSTEM=8)
     await expect(db.auditLog.create({ data: { id: 1 } })).rejects.toThrow('SYSTEM')
@@ -8983,7 +8983,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("4")
+        @@gate(4)
       }
     `, 'gate-setauth', {
       plugins: [new GatePlugin({
@@ -9007,7 +9007,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("4")
+        @@gate(4)
       }
     `, 'gate-setauth-pass', {
       plugins: [new GatePlugin({ getLevel: (user: any) => user?.level ?? 0 })]
@@ -9025,7 +9025,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("4")
+        @@gate(4)
       }
     `, 'gate-setauth-deny', {
       plugins: [new GatePlugin({ getLevel: (user: any) => user?.level ?? 0 })]
@@ -9041,7 +9041,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("2")
+        @@gate(2)
       }
     `, 'gate-setauth-null', {
       plugins: [new GatePlugin({ getLevel: (user: any) => user?.level ?? 0 })]
@@ -9056,7 +9056,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("5.8.8.8")
+        @@gate(5.8.8.8)
       }
     `, 'gate-clamp', {
       plugins: [new GatePlugin({ getLevel: () => 99 })]  // tries to return 99
@@ -9075,14 +9075,14 @@ describe('GatePlugin', () => {
       model Account {
         id   Int @id
         name String
-        @@gate("2.6.6.6")
+        @@gate(2.6.6.6)
       }
       model User {
         id        Int  @id
         account   Account @relation(fields: [accountId], references: [id])
         accountId Int
         email     String
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
     `, 'gate-nested-preflight', {
       plugins: [new GatePlugin({ getLevel: (_u: any, model: string) =>
@@ -9106,7 +9106,7 @@ describe('GatePlugin', () => {
       model User {
         id    Int    @id
         tasks Task[]
-        @@gate("2.6.6.6")
+        @@gate(2.6.6.6)
       }
       model Task {
         id      Int    @id
@@ -9132,7 +9132,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Secret {
         id Int @id
-        @@gate("7")
+        @@gate(7)
       }
     `, 'gate-sysadmin', {
       plugins: [new GatePlugin({
@@ -9165,7 +9165,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Restricted {
         id Int @id
-        @@gate("8")
+        @@gate(8)
       }
     `, 'gate-sysadmin-clamp', {
       plugins: [new GatePlugin({
@@ -9188,7 +9188,7 @@ describe('GatePlugin', () => {
       model OpenTable { id Int @id }
       model GatedTable {
         id Int @id
-        @@gate("5")
+        @@gate(5)
       }
     `, 'gate-open-model', {
       plugins: [new GatePlugin({ getLevel: () => 0 })]  // stranger
@@ -9214,11 +9214,11 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
       model Billing {
         id Int @id
-        @@gate("2.5.5.6")
+        @@gate(2.5.5.6)
       }
     `, 'gate-role-based', {
       plugins: [new GatePlugin({
@@ -9250,7 +9250,7 @@ describe('GatePlugin', () => {
 
   test('asSystem().$transaction hands the callback a SYSTEM client', async () => {
     const db = await makeGateDb(`
-      model Thing { id Int @id  name String  @@gate("4.8.8.8") }
+      model Thing { id Int @id  name String  @@gate(4.8.8.8) }
     `, 'gate-tx-system', () => 0)
 
     const row = await db.asSystem().$transaction(async (tx: any) =>
@@ -9261,7 +9261,7 @@ describe('GatePlugin', () => {
 
   test('$setAuth(u).$transaction hands the callback the SAME user', async () => {
     const db = await makeGateDb(`
-      model Thing { id Int @id  name String  @@gate("4") }
+      model Thing { id Int @id  name String  @@gate(4) }
     `, 'gate-tx-auth', (user: any) => user ? 4 : 0)
 
     const row = await db.$setAuth({ id: 'u1' }).$transaction(async (tx: any) =>
@@ -9281,7 +9281,7 @@ describe('GatePlugin', () => {
     // schema` — a message about tables, about a method every other flavor of
     // the client has. basecamp's seeder is written exactly that way.
     const db = await makeGateDb(`
-      model Thing { id Int @id  name String  @@gate("4.8.8.8") }
+      model Thing { id Int @id  name String  @@gate(4.8.8.8) }
     `, 'gate-assystem-idempotent', () => 0)
 
     const sys = db.asSystem()
@@ -9335,7 +9335,7 @@ describe('GatePlugin', () => {
         teamId Int
         team   Team @relation(fields: [teamId], references: [id])
         label  String
-        @@gate("7")
+        @@gate(7)
       }
     `, name, () => 4)
   }
@@ -9385,7 +9385,7 @@ describe('GatePlugin', () => {
         teamId Int
         team   Team @relation(fields: [teamId], references: [id])
         label  String
-        @@gate("7")
+        @@gate(7)
       }
     `, 'gate-include-nested', () => 4)
     await db.asSystem().org.create({ data: { id: 1 } })
@@ -11290,7 +11290,7 @@ describe('@@transitions — @system, the move the application makes', () => {
       name   String
       ownerId Int      @default(0)
 
-      @@gate("2.4.4.5")
+      @@gate(2.4.4.5)
       @@transitions(status,
         drain:  online              -> draining @gate(5),
         report: [pending, online]   -> stopped  @system,
@@ -13322,9 +13322,9 @@ describe('Factory — relations (has / attach / withParents)', () => {
     // A schema with any @@gate auto-installs GatePlugin — an unauthenticated
     // factory grades STRANGER and cannot create the parent, let alone the child.
     const r = await makeTestClient(`
-      model Shop  { id Int @id @default(autoincrement()); name String; items Item[]; @@gate("4") }
+      model Shop  { id Int @id @default(autoincrement()); name String; items Item[]; @@gate(4) }
       model Item  { id Int @id @default(autoincrement()); label String; shopId Int
-                    shop Shop @relation(fields: [shopId], references: [id]); @@gate("4") }
+                    shop Shop @relation(fields: [shopId], references: [id]); @@gate(4) }
     `, { autoFactories: true })
     await expect(r.factories.item.withParents().createOne()).rejects.toThrow(/requires level/)
     const item = await r.factories.item.asSystem().withParents().createOne()
@@ -13783,20 +13783,20 @@ const UTIL_SCHEMA = `
     createdAt DateTime?
     updatedAt DateTime?
     deletedAt DateTime?
-    @@gate("1.3.4.6")
+    @@gate(1.3.4.6)
     @@softDelete
   }
 
   model Locked {
     id    Int @id
     name  String
-    @@gate("9")
+    @@gate(9)
   }
 
   model Open {
     id   Int @id
     data String?
-    @@gate("0")
+    @@gate(0)
   }
 `
 
@@ -14124,7 +14124,7 @@ describe('generateGateMatrix', () => {
   })
 
   test('full is the default — every op against every reachable level', () => {
-    const matrix = generateGateMatrix(schema, 'Post')  // @@gate("1.3.4.6")
+    const matrix = generateGateMatrix(schema, 'Post')  // @@gate(1.3.4.6)
     expect(matrix.length).toBe(36)                      // 4 ops × levels 0–8
     expect(matrix).toEqual(generateGateMatrix(schema, 'Post', { levels: 'full' }))
   })
@@ -14161,7 +14161,7 @@ describe('generateGateMatrix', () => {
   })
 
   test('LOCKED gate (9): every level denied, SYSTEM included', () => {
-    const matrix = generateGateMatrix(schema, 'Locked')  // @@gate("9")
+    const matrix = generateGateMatrix(schema, 'Locked')  // @@gate(9)
     expect(matrix.length).toBe(36)
     expect(matrix.every(c => c.expect === 'deny')).toBe(true)
     expect(matrix.some(c => c.level === 8)).toBe(true)
@@ -14172,7 +14172,7 @@ describe('generateGateMatrix', () => {
   })
 
   test('STRANGER gate (0): every level allowed', () => {
-    const matrix = generateGateMatrix(schema, 'Open')    // @@gate("0")
+    const matrix = generateGateMatrix(schema, 'Open')    // @@gate(0)
     expect(matrix.length).toBe(36)
     expect(matrix.every(c => c.expect === 'allow')).toBe(true)
 
@@ -14183,7 +14183,7 @@ describe('generateGateMatrix', () => {
 
   test('SYSTEM gate (8): SYSADMIN is denied, only asSystem() passes', () => {
     const { schema: s } = parse(`
-      model Vault { id Int @id; name String; @@gate("8") }
+      model Vault { id Int @id; name String; @@gate(8) }
     `)
     const ladder = generateGateMatrix(s, 'Vault').filter(c => c.op === 'read')
     expect(ladder.find(c => c.level === 7)?.expect).toBe('deny')
@@ -14267,7 +14267,7 @@ const ACCESS_SCHEMA = `
     salary    Float?    @allow('read', auth().role == 'admin')
     deletedAt DateTime?
 
-    @@gate("2.4.4.6")
+    @@gate(2.4.4.6)
     @@softDelete
     @@allow('read', ownerId == auth().id || stage == 'published')
     @@deny('update', stage == 'published', "A published doc is frozen")
@@ -14284,13 +14284,13 @@ const ACCESS_SCHEMA = `
     token  String  @guarded
     pin    String  @encrypted
     apiKey String  @secret
-    @@gate("8")
+    @@gate(8)
   }
 
   model Ledger {
     id   Int @id
     note String
-    @@gate("9")
+    @@gate(9)
   }
 `
 
@@ -15011,9 +15011,9 @@ const ENV_SCHEMA = `
   model Doc {
     id      Int    @id
     title   String
-    @@gate("2.4.4.6")
+    @@gate(2.4.4.6)
   }
-  model Vault { id Int @id; secret String; @@gate("8") }
+  model Vault { id Int @id; secret String; @@gate(8) }
 `
 
 // For verifyConstraints: rules of several shapes, a @unique to collide on, and a
@@ -15043,7 +15043,7 @@ const LADDER_SCHEMA = `
     handle String @length(3, 12)
     teamId Int
     team   Team   @relation(fields: [teamId], references: [id])
-    @@gate("2.4.4.5")
+    @@gate(2.4.4.5)
   }
 `
 
@@ -15055,7 +15055,7 @@ const POLICY_LADDER_SCHEMA = `
     id      Int    @id
     ownerId String
     title   String
-    @@gate("2.4.4.5")
+    @@gate(2.4.4.5)
     @@allow('create', ownerId == auth().id)
   }
 `
@@ -15207,7 +15207,7 @@ describe('createTestEnv', () => {
       model Ghost {
         id   Int    @id
         name String
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
         @@external
       }
     ` })
@@ -15421,7 +15421,7 @@ describe('createTestEnv', () => {
       model Workspace {
         id    Int    @id @default(autoincrement())
         name  String
-        @@gate("8")
+        @@gate(8)
         @@tenant(none)
       }
 
@@ -15430,7 +15430,7 @@ describe('createTestEnv', () => {
         workspaceId Int?
         workspace   Workspace? @relation(fields: [workspaceId], references: [id])
         action      String
-        @@gate("5.8.9.9")
+        @@gate(5.8.9.9)
       }
     ` })
 
@@ -15450,9 +15450,9 @@ describe('createTestEnv', () => {
     // (`FJS-376`). All three key shapes here, so a fix for one cannot break
     // the two that were already working.
     const env = await createTestEnv({ schema: `
-      model Nonce { nonce String @id  seenAt DateTime @default(now())  @@gate("8") }
-      model Uuid  { id    String @id @default(uuid())  code String     @@gate("8") }
-      model Auto  { id    Int    @id @default(autoincrement())  code String  @@gate("8") }
+      model Nonce { nonce String @id  seenAt DateTime @default(now())  @@gate(8) }
+      model Uuid  { id    String @id @default(uuid())  code String     @@gate(8) }
+      model Auto  { id    Int    @id @default(autoincrement())  code String  @@gate(8) }
     ` })
 
     expect(await env.verifyGateLadder()).toEqual([])
@@ -15467,14 +15467,14 @@ describe('createTestEnv', () => {
       model Person {
         id    Int    @id @default(autoincrement())
         email String @allow('write', auth().isAdmin)
-        @@gate("2.4.4.5")
+        @@gate(2.4.4.5)
       }
     `
     const env = await createTestEnv({ schema })
     expect(await env.verifyGateLadder()).toEqual([])
 
     // Still a grade and not a pass: a stricter create is caught.
-    const stricter = parse(schema.replace('@@gate("2.4.4.5")', '@@gate("2.5.5.5")')).schema
+    const stricter = parse(schema.replace('@@gate(2.4.4.5)', '@@gate(2.5.5.5)')).schema
     const caught = await env.verifyGateLadder({ against: stricter, ops: ['create'] })
     expect(caught.map((m: any) => [m.level, m.got])).toEqual([[4, 'allow']])
 
@@ -15489,7 +15489,7 @@ describe('createTestEnv', () => {
     // from another. Here the client is built with delete at ADMINISTRATOR(5)
     // and asked against a schema that declares OWNER(6).
     const env = await createTestEnv({ schema: LADDER_SCHEMA })
-    const stricter = parse(LADDER_SCHEMA.replace('@@gate("2.4.4.5")', '@@gate("2.4.4.6")')).schema
+    const stricter = parse(LADDER_SCHEMA.replace('@@gate(2.4.4.5)', '@@gate(2.4.4.6)')).schema
     const bad = await env.verifyGateLadder({ against: stricter })
 
     expect(bad.length).toBeGreaterThan(0)
@@ -15510,7 +15510,7 @@ describe('createTestEnv', () => {
 
     // The other direction still grades: the client's gate is lower than the
     // schema under test, so it allows where the schema says deny.
-    const stricter = parse(POLICY_LADDER_SCHEMA.replace('@@gate("2.4.4.5")', '@@gate("3.4.4.5")')).schema
+    const stricter = parse(POLICY_LADDER_SCHEMA.replace('@@gate(2.4.4.5)', '@@gate(3.4.4.5)')).schema
     const caught = await env.verifyGateLadder({ against: stricter, ops: ['read'] })
     expect(caught.some((m: any) => m.got === 'allow' && m.expect === 'deny')).toBe(true)
     env.close()
@@ -15696,7 +15696,7 @@ describe('createTestEnv', () => {
   })
 
   test('verifyFieldProtection grades a @guarded column on a model no reader reaches', async () => {
-    // Every model in auth's fragment is @@gate("8"), so the SYSADMIN read is
+    // Every model in auth's fragment is @@gate(8), so the SYSADMIN read is
     // refused before a column is looked at, and all eight guarded-drop mutants
     // of basecamp's session and credential tokens survived (FJS-1594). What
     // the attribute still does there is keep the value out of the audit trail.
@@ -15704,7 +15704,7 @@ describe('createTestEnv', () => {
       model Session {
         id    Int    @id
         token String @guarded
-        @@gate("8")
+        @@gate(8)
       }
     `
     const original = parse(LOCKED).schema
@@ -15728,7 +15728,7 @@ describe('createTestEnv', () => {
         id    Int     @id
         label String
         token String? @hashed
-        @@gate("4.8.8.8")
+        @@gate(4.8.8.8)
       }
     `
     const original = parse(HASHED).schema
@@ -15778,7 +15778,7 @@ describe('createTestEnv', () => {
         id     String @id @default(uuid())
         userId String
         token  String @unique @guarded
-        @@gate("8")
+        @@gate(8)
       }
     `
     const env = await createTestEnv({ schema: SHAPE })
@@ -22788,7 +22788,7 @@ describe('findMany — recursive is a read, not a bypass', () => {
   `
 
   test('@@gate refuses a recursive read, not only a plain one', async () => {
-    const db = await makeDb(TREE('', '@@gate("5.5.5.5")'), 'rec-gate')
+    const db = await makeDb(TREE('', '@@gate(5.5.5.5)'), 'rec-gate')
     await db.asSystem().task.createMany({ data: [
       { id: 1, title: 'root' }, { id: 2, title: 'SECRET', parentId: 1 },
     ]})
@@ -22799,7 +22799,7 @@ describe('findMany — recursive is a read, not a bypass', () => {
 
   test('a refused read never runs the tree query', async () => {
     const seen: string[] = []
-    const db = await makeDb(TREE('', '@@gate("5.5.5.5")'), 'rec-gate-order', {
+    const db = await makeDb(TREE('', '@@gate(5.5.5.5)'), 'rec-gate-order', {
       onQuery: (e: any) => seen.push(String(e.sql)),
     })
     await db.asSystem().task.createMany({ data: [{ id: 1, title: 'root' }, { id: 2, title: 'x', parentId: 1 }] })
@@ -26188,7 +26188,7 @@ model Person {
   token  String @guarded
   teamId Int
   team   Team   @relation(fields: [teamId], references: [id])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 `
 
@@ -26434,7 +26434,7 @@ model Person {
   token  String? @guarded
   teamId Int
   team   Team   @relation(fields: [teamId], references: [id])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   @@allow('read', handle != null)
 }
 `
@@ -26464,7 +26464,7 @@ model Person {
 model Scan {
   id     Int  @id
   center Json @point(lat, lng) @immutable
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }
 `
     const r = await mutationScore({ schema: P, kinds: ['gate-drop'], build: (t: string) => createTestEnv({ schema: t }) })
@@ -26500,7 +26500,7 @@ model Scan {
     const r = await mutationScore({
       // update sits level with read, so lowering it leaves read ≤ update ≤
       // delete broken; create is free and a lowered create stays legal.
-      schema: S.replace('@@gate("2.4.4.5")', '@@gate("2.4.2.4")'),
+      schema: S.replace('@@gate(2.4.4.5)', '@@gate(2.4.2.4)'),
       kinds:  ['gate-lower'],
       build:  (t: string) => createTestEnv({ schema: t }),
     })
@@ -26999,7 +26999,7 @@ describe('every read applies the filter, the policy and the gate', () => {
 
   test('a @@gate refuses every read, including the three that never asked', async () => {
     const gated = await makeDb(
-      `model Vault { id Int @id @default(autoincrement())  name String  @@fts([name])  @@label(name)  @@gate("7") }`,
+      `model Vault { id Int @id @default(autoincrement())  name String  @@fts([name])  @@label(name)  @@gate(7) }`,
       'read-surface-gate',
       { plugins: [new GatePlugin({ getLevel: () => 4 })] },
     )
@@ -27601,7 +27601,7 @@ describe('a plugin has a name, and every client flavor will say it', () => {
   const schema = `model Post {
     id    Int    @id
     title String
-    @@gate("0.4.4.5")
+    @@gate(0.4.4.5)
   }`
 
   test('defaults to the class name — right for every plugin written as a class', async () => {

@@ -425,7 +425,7 @@ function viewToJsonSchema(view, schema, enumDefs, typeDefs, opts) {
   // The three writes are LOCKED and the declaration does not get a say. A
   // view's write verbs refuse by name at the Data boundary for every caller
   // and for `asSystem()` alike, which is what LOCKED means on the scale — so
-  // emitting the declared `@@gate("5")` across all four would tell a screen
+  // emitting the declared `@@gate(5)` across all four would tell a screen
   // that an ADMINISTRATOR may create one, which is false at every level.
   //
   // Read is the declaration's, and stays ABSENT when there is none: an unknown

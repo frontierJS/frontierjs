@@ -14,6 +14,10 @@
 // which is what that column dates. A § Needs a decision row has no Verified
 // column and takes the append alone.
 //
+// `drop` is the one removal: a whole ` · ` segment equal to it, backticks
+// aside. `register:repro` is its caller — a measurement that finds code strips
+// `env: timing` in the same write that records why (`FJS-D1146`).
+//
 // ── What it refuses ─────────────────────────────────────────────────────────
 //
 // An id no row holds, and a CLOSED row — a defect that came back is a new row
@@ -33,13 +37,14 @@ import { oneCell, isoDate, splitRow }    from './close.js'
 /**
  * Amend one open issue row.
  *
- * Answers `{ ok: true, id, file, line }` or `{ ok: false, reason }`.
+ * Answers `{ ok: true, id, file, line, dropped }` or `{ ok: false, reason }`;
+ * `dropped` is whether `drop` named a segment the row had.
  */
 export function amendIssue(opts) {
   return withRegisterGuard(opts.root, () => amendUnguarded(opts))
 }
 
-function amendUnguarded({ root, id, detail, today = new Date() }) {
+function amendUnguarded({ root, id, detail, drop = null, today = new Date() }) {
   const doc = readRegisters(root)
   if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no row can be read')
 
@@ -61,7 +66,8 @@ function amendUnguarded({ root, id, detail, today = new Date() }) {
   }
 
   const last = cells.length - 1
-  cells[last] = cells[last] && cells[last] !== '—' ? `${cells[last]} · ${added}` : added
+  const kept = dropSegment(cells[last], drop)
+  cells[last] = kept.text && kept.text !== '—' ? `${kept.text} · ${added}` : added
   // The open shape is `Id | Area | Title | Status | Verified | Detail`.
   if (cells.length >= 6) cells[4] = isoDate(today)
   lines[at] = `| ${cells.join(' | ')} |`
@@ -75,7 +81,15 @@ function amendUnguarded({ root, id, detail, today = new Date() }) {
     return refuse(`the amend was put back: register:check found ${found.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
   }
 
-  return { ok: true, id: record.id, file: record.file, line: record.line }
+  return { ok: true, id: record.id, file: record.file, line: record.line, dropped: kept.dropped }
+}
+
+function dropSegment(text, drop) {
+  const plain = (s) => s.replace(/`/g, '').trim()
+  if (!drop || !text) return { text, dropped: false }
+  const segments = text.split(' · ')
+  const rest     = segments.filter(s => plain(s) !== plain(drop))
+  return { text: rest.join(' · '), dropped: rest.length < segments.length }
 }
 
 function refuse(reason) { return { ok: false, reason } }

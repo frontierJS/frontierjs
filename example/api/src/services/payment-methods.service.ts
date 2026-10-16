@@ -3,7 +3,7 @@
 //
 // ─── Why there is a service at all, when every write is `@system` ─────────
 //
-// `PaymentMethod` is `@@gate("1.8.8.8")`: an instrument exists because the
+// `PaymentMethod` is `@@gate(1.8.8.8)`: an instrument exists because the
 // PROVIDER says it does, off a signed event, and no request writes one. So this
 // service is the reads — a person looking at which card is on file — plus
 // `startSetup`, which is not a write at all. It asks the provider to open a

@@ -28,7 +28,7 @@ interface Session {
   memberRole?: string
 }
 
-interface MemberRow { role?: string; workspace?: { status?: string } }
+interface MemberRow { role?: string; capabilities?: string[] | null; workspace?: { status?: string } }
 
 function userOf(ctx: ServiceContext): Session | undefined {
   return ctx.auth?.user as Session | undefined
@@ -186,7 +186,7 @@ export async function restandingFor(
   ctx.locals.workspaceId   = workspaceId
 
   applyClaims(ctx, db, member
-    ? { workspaceId, memberRole: member.role }
+    ? { workspaceId, memberRole: member.role, capabilities: member.capabilities ?? [] }
     : {})
 
   return member
@@ -377,7 +377,7 @@ export function refuseGrantAboveOwn(): Hook {
 //
 // A job handler has to reach the rows its run is about, and the four models it
 // writes — `DeploymentStep`, `JobRun`, `RecipeRun`, `CleanupRun` — are gated at
-// SYSTEM for update (`@@gate("2.4.8.8")`, `2.8`). That is the schema saying a
+// SYSTEM for update (`@@gate(2.4.8.8)`, `2.8`). That is the schema saying a
 // run's OUTCOME is written by the machine and not by the person who asked for
 // it, so no standing a workspace can grant reaches them: `owner` is 6.
 //

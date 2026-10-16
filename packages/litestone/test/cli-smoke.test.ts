@@ -358,7 +358,7 @@ model Team { id Int @id  name String }
 model Ticket {
   id     Int    @id
   ref    String @unique
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 `, 'utf8')
 
@@ -369,6 +369,19 @@ model Ticket {
     expect(r.stdout).toMatch(/1 mutants/)
     expect(r.exit).toBe(0)
   })
+
+  // FJS-3040. A 29-model schema is minutes per run, and a piped run printed the
+  // mutant count and then nothing — a slow run and a hung one read the same.
+  test('mutate names the mutant it is on while piped, every ten', async () => {
+    const models = Array.from({ length: 12 }, (_, i) =>
+      `model Thing${i} {\n  id Int @id\n  ref String @unique\n  @@gate(4.4.4.5)\n}`).join('\n')
+    const dir = makeFixtureDir('mutate-progress', { schema: models })
+    const r = await runCli(dir, ['mutate', '--kinds=unique-drop'], { timeoutMs: 120_000 })
+    expect(r.stdout).toMatch(/12 mutants/)
+    expect(r.stdout).toMatch(/10\/12 · \d+s · unique-drop \w+: /)
+    expect(r.stdout).toMatch(/12\/12 · /)
+    expect(r.exit).toBe(0)
+  }, 120_000)
 
   // The key is read from the environment by every other command in the CLI;
   // this one read `cfg.encryptionKey`, which loadConfig does not populate — so a
@@ -381,7 +394,7 @@ model Vault {
   id    Int    @id
   label String @unique
   data  String @secret
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
 }
 `,
     })
@@ -402,7 +415,7 @@ model Vault {
   id    Int    @id
   label String @unique
   data  String @secret
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
 }
 `,
     })
@@ -422,7 +435,7 @@ model Vault {
 model Vault {
   id    Int     @id
   label String? @unique
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
 }
 `
     const dir = makeFixtureDir('mutate-suite', { schema })
@@ -875,7 +888,7 @@ describe('CLI smoke — repl --eval', () => {
 model Note {
   id    Int    @id
   body  String
-  @@gate("5.5.5.5")
+  @@gate(5.5.5.5)
 }
 `
 
@@ -1171,7 +1184,7 @@ model Variant {
       OLD.replace('@@unique([productId, color, size])',
                   '@@unique([productId, color, size], nullsDistinct: true)') +
       `
-model Note { id Int @id  @@gate("2.4.4.5") }
+model Note { id Int @id  @@gate(2.4.4.5) }
 `, 'utf8')
 
     const out = JSON.parse((await runCli(dir, ['release', '--from', 'HEAD', '--json'])).stdout)
@@ -1214,7 +1227,7 @@ model Note { id Int @id  @@gate("2.4.4.5") }
 // parsed the text. So every executed check — verifyGateLadder, verifyRowPolicies,
 // verifyFieldProtection, verifyConstraints — graded a schema with the imported
 // models missing, and PASSED. A green ladder over models it never saw is worse
-// than no ladder, and `fli auth:install` puts the @@gate("8") credential models
+// than no ladder, and `fli auth:install` puts the @@gate(8) credential models
 // on exactly that side of the line.
 
 describe('createTestEnv over a schema that imports another file', () => {

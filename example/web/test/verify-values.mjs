@@ -17,7 +17,7 @@
  * because a `$scope` key survives junction's `autoFilter` on the way through.
  * A unit test on either side passes with the crossing broken.
  *
- * The offered list is read signed OUT — `Color` is `@@gate("0.4.4.5")` — which
+ * The offered list is read signed OUT — `Color` is `@@gate(0.4.4.5)` — which
  * is what keeps the picker assertions out of the 10-per-15-minutes login window
  * the other drives share. The two sections that need staff (a refused write, and
  * a colorway retired out from under a variant) take ONE token over HTTP between
@@ -158,7 +158,7 @@ t('order.headIsMarked', offered.recent.slice(0, head0.length), head0.map(() => t
 t('order.tailIsNot',    offered.recent.slice(head0.length).some(Boolean), false)
 
 // …and the boundary refuses exactly what the picker withheld. Signed in,
-// because `ProductVariant` is `@@gate("0.4.4.5")` and an anonymous patch is
+// because `ProductVariant` is `@@gate(0.4.4.5)` and an anonymous patch is
 // refused by the gate — which would look identical from here and prove nothing.
 
 // Through the app's own session module, which is what a screen uses — a token

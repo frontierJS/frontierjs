@@ -10,7 +10,7 @@
   // avoid.
   //
   // No markup half, and here the model says so most plainly of the three:
-  // `@@gate("5.8.9.9")` puts update and delete at 9 — LOCKED, which
+  // `@@gate(5.8.9.9)` puts update and delete at 9 — LOCKED, which
   // `asSystem()` does not pass either. This is the provider's own account of
   // what it told the shop, and the only thing a person does with it is read it.
 

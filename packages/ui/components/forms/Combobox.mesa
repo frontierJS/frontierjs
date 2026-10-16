@@ -279,7 +279,7 @@
     _typed = false
     onchange?.(null)
     form?.changed?.(name)
-    inputEl?.focus()
+    $.focus(inputEl)
   }
 
   function handleInput() {

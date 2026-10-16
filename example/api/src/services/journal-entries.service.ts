@@ -1,6 +1,6 @@
 // The books.
 //
-// `@@gate("5.9.9.9")` — read by staff, and every write is the system's. There
+// `@@gate(5.9.9.9)` — read by staff, and every write is the system's. There
 // is no `create` any caller can reach, which is the schema's statement rather
 // than this file's: `api/src/domain/ledger.ts` posts every journal in the application
 // and it is the only thing that does.

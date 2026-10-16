@@ -112,7 +112,7 @@ describe('@@gate must not fail open on a naming slip', () => {
 
   for (const accessor of ['post', 'posts', undefined]) {
     test(`gateAuth(${JSON.stringify(accessor)}) still rejects anonymous`, () => {
-      // @@gate("4") — every operation needs a user. Before the fix, the plural
+      // @@gate(4) — every operation needs a user. Before the fix, the plural
       // and omitted forms found no model, read that as "no gate declared",
       // and let the request through.
       expect(() => gateAuth(accessor, 'read')(ctx('posts'))).toThrow('Authentication required')
@@ -377,7 +377,7 @@ describe('autoFilter — unknown filter keys', () => {
   // A stand-in client cannot answer, and "I cannot judge this" is not "this is
   // wrong" — rejecting what it failed to understand would be worse than the bug.
   test('a client without $checkWhere no-ops', async () => {
-    // mkClient's Post is @@gate("4"), and gateAuth runs first — a 401 would
+    // mkClient's Post is @@gate(4), and gateAuth runs first — a 401 would
     // prove nothing about this hook. An ungated stand-in isolates it.
     const stub = {
       $setAuth() { return this },

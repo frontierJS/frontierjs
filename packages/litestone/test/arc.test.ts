@@ -243,3 +243,70 @@ describe('@@arc — the deploy question', () => {
     expect(classifyPivot(before, after).verdict).not.toBe('contract')
   })
 })
+
+describe('@@arc — a check() over one member (FJS-3130)', () => {
+  // `check(organization)` is TRUE for a row whose organizationId is null
+  // (FJS-382), which is right where the parent is the row's only scope. In an
+  // arc the null half IS the other member's row, so a bare check() OR'd beside
+  // `userId == auth().id` hands every personal row to every signed-in caller.
+  const vault = (rule: string) => `
+model User         { id Int @id  ciphers Cipher[]  @@auth }
+model Organization {
+  id      Int @id
+  ownerId Int
+  ciphers Cipher[]
+  @@allow('all', ownerId == auth().id)
+}
+model Cipher {
+  id             Int           @id @default(autoincrement())
+  userId         Int?
+  user           User?         @relation(fields: [userId], references: [id])
+  organizationId Int?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  @@arc([userId, organizationId])
+  @@allow('all', ${rule})
+}`
+  const BARE    = `userId == auth().id || check(organization, 'update')`
+  const GUARDED = `userId == auth().id || (organizationId != null && check(organization, 'update'))`
+
+  const warningsOf = (src: string) => (parse(src).warnings ?? []).map(String).filter(w => w.includes('check(organization'))
+
+  it('warns on the bare check(), naming the arc member and the guarded spelling', () => {
+    const [w, ...rest] = warningsOf(vault(BARE))
+    expect(rest).toEqual([])
+    expect(w).toContain("Model 'Cipher'")
+    expect(w).toContain('organizationId != null && check(organization')
+  })
+
+  it('is silent once the rule tests the key against null, either way', () => {
+    expect(warningsOf(vault(GUARDED))).toEqual([])
+    const open = vault(`userId == auth().id || organizationId == null || check(organization, 'update')`)
+    expect(warningsOf(open.replace('@@arc([userId, organizationId])', ''))).toEqual([])
+  })
+
+  it('warns on a bare check() that is one disjunct of an OR, arc or not', () => {
+    const src = vault(BARE).replace('@@arc([userId, organizationId])', '')
+    expect(warningsOf(src).length).toBe(1)
+  })
+
+  it('is silent on a check() that is the whole rule outside an arc', () => {
+    const src = vault(`check(organization, 'update')`).replace('@@arc([userId, organizationId])', '')
+    expect(warningsOf(src)).toEqual([])
+  })
+
+  it('is what the warning says: the bare rule admits another owner\'s personal row', async () => {
+    const run = async (rule: string) => {
+      const db = await createClient({ schema: vault(rule), db: ':memory:' })
+      const sys = db.asSystem()
+      await sys.user.create({ data: { id: 1 } })
+      await sys.user.create({ data: { id: 2 } })
+      await sys.organization.create({ data: { id: 10, ownerId: 2 } })
+      await sys.cipher.create({ data: { userId: 1 } })
+      await sys.cipher.create({ data: { organizationId: 10 } })
+      const rows = await db.$setAuth({ id: 2 }).cipher.findMany({})
+      return rows.map((r: any) => r.userId ? 'personal:1' : 'org:10').sort()
+    }
+    expect(await run(BARE)).toEqual(['org:10', 'personal:1'])
+    expect(await run(GUARDED)).toEqual(['org:10'])
+  })
+})

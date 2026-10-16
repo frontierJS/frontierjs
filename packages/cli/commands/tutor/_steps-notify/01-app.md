@@ -42,7 +42,7 @@ model Notification {
   createdAt   DateTime  @default(now())
 
   @@check("contextType IN ('Note')")
-  @@gate("0.8.4.8")
+  @@gate(0.8.4.8)
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)
 }

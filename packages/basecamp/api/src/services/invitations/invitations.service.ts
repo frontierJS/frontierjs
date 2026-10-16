@@ -165,7 +165,7 @@ export default createService({
   // moving their own expiry or their own role.
   // `preview` and `accept` state gate 0 because they run with NO SESSION and
   // that is the feature — the invitee has no account yet, which is what the
-  // invitation is for. The model is `@@gate("5")`, so without this they take a
+  // invitation is for. The model is `@@gate(5)`, so without this they take a
   // custom method's read-gate floor and the one caller they exist for is
   // refused (`FJS-826`). What guards them is the token in the link.
   methods: ['find', 'create', 'remove',

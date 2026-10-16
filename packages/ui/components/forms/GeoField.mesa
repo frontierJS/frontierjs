@@ -165,7 +165,7 @@
   const displayError = resolveError(form, name, error, errors) || localError
 
   let latEl
-  export function focus() { latEl?.focus() }
+  export function focus() { return $.focus(latEl) }
 
   function commit() {
     const { value: next, message } = readPair(latText, lngText, lat, lng)

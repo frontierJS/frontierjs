@@ -216,7 +216,7 @@ entry is then appended one event-loop tick later, never blocking the caller.
 ## Querying logs
 
 Log entries are queryable through the standard ORM API, at SYSTEM only: the
-synthesized model is `@@gate("8")`, as the auth models are, because a row holds
+synthesized model is `@@gate(8)`, as the auth models are, because a row holds
 the before- and after-image of a write in any tenant. A service that shows a
 caller their own history reads through `asSystem()` and narrows the `where`
 itself. A trail model the schema declares (`driver trail model AuditRow`)

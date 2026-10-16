@@ -7,7 +7,7 @@
  *   bun run web                      # terminal 2
  *
  * Run under BUN, not node, and that is forced rather than stylistic: the drive
- * has to clean up after itself and the books are `@@gate("5.8.9.9")`, so
+ * has to clean up after itself and the books are `@@gate(5.8.9.9)`, so
  * removing a journal it posted needs the app's own Litestone client and the one
  * hatch under the boundary (`asSystem().sql`). `verify:retro` explains it at
  * length; this is the second caller.
@@ -22,7 +22,7 @@
  * **`ladder.*`** — and what it found is not what it was written to find. The
  * expectation was that `approve: … @gate(5)` would be the one place a level-4
  * caller is told apart from a level-5 one. It is not: `PayRun` is
- * `@@gate("5.5.5.5")`, so a level below may not update the row at all and is
+ * `@@gate(5.5.5.5)`, so a level below may not update the row at all and is
  * offered NO move — the transition's gate is the same number as the model's and
  * adds nothing. **A per-transition gate is only visible ABOVE the model's own
  * update gate, and this application's ladder tops out at 5 for a person**, so
@@ -139,7 +139,7 @@ if (!await waitForServer(UI, 'web'))                 { stopAll(); process.exit(1
 // the SERVICE, and an API booted before these services landed answers
 // `Service 'employees' not found` — a 404 that reads exactly like a screen
 // asking for a row that does not exist. `/api/employees` cannot be the probe
-// either: `Employee` is `@@gate("5.5.5.5")`, so an unauthenticated GET is a
+// either: `Employee` is `@@gate(5.5.5.5)`, so an unauthenticated GET is a
 // 401, which is a working service refusing a stranger. `/manifest` is the one
 // answer to *what is mounted* that needs no session.
 const mounted = await (await fetch(`${API}/api/manifest`)).json()
@@ -211,7 +211,7 @@ const ago   = (days) => addToDate(stamp(Date.now()), { days: -days })
 /**
  * Read through the app's OWN client, in the page, rather than with `fetch`.
  *
- * Not tidiness: every model in this domain is `@@gate("5.…")`, so an
+ * Not tidiness: every model in this domain is `@@gate(5.…)`, so an
  * unauthenticated `fetch` to the API answers 401 — which from a drive looks
  * exactly like an empty table, and would have made four assertions here pass
  * for the wrong reason. In the page there is a session.
@@ -667,7 +667,7 @@ t('books.theWagesExpenseIsTheDebit', books.accounts[0] === 'wagesExpense')
 // the books answer 405, because `journalEntries` declares `find` and `get` and
 // nothing else — the service never mounts a write and the gate is not
 // consulted (`verify:money` asserts that half). What holds if somebody adds
-// `'update'` to that list is `@@gate("5.8.9.9")`: `9` is LOCKED, so
+// `'update'` to that list is `@@gate(5.8.9.9)`: `9` is LOCKED, so
 // `asSystem()` — which grades 8 — is refused BY NAME. That is the difference
 // between a ledger that is append-only by agreement and one that is
 // append-only at the Data boundary, and it needs a client to ask.

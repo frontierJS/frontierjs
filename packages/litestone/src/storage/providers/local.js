@@ -1,8 +1,10 @@
 // storage/providers/local.js — local filesystem provider for dev
 // Stores files in a directory, serves via a simple URL base.
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, createWriteStream } from 'fs'
 import { join, resolve, dirname } from 'path'
+import { Readable } from 'stream'
+import { pipeline } from 'stream/promises'
 
 export class LocalProvider {
   constructor(config) {
@@ -20,6 +22,9 @@ export class LocalProvider {
   async put(key, body, { contentType } = {}) {
     const path = this._filePath(key)
     mkdirSync(dirname(path), { recursive: true })
+    // A Blob is an upload or a file on disk, and is piped rather than read
+    // whole -- an upload's size again in heap per concurrent request (FJS-3094).
+    if (body instanceof Blob) return pipeline(Readable.fromWeb(body.stream()), createWriteStream(path))
     const buf = body instanceof Uint8Array ? body
       : body instanceof ArrayBuffer        ? Buffer.from(body)
       : typeof body === 'string'           ? Buffer.from(body, 'utf8')

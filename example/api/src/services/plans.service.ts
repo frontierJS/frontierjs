@@ -1,6 +1,6 @@
 // What the shop sells on a cycle, and what it costs.
 //
-// `@@gate("0.5.5.5")` on both — a pricing page is read by a caller with no
+// `@@gate(0.5.5.5)` on both — a pricing page is read by a caller with no
 // session, exactly as the catalog and the delivery options are, and only
 // staff change what a shop charges.
 //
@@ -38,7 +38,7 @@ export default createService({
    * in `gateAuth`'s map — the operation is a property of the method, and this
    * one is not CRUD — so what refuses a shopper is the Data boundary itself:
    * both writes go through `$.db`, the request's own scoped client, and
-   * `PlanVersion` is `@@gate("0.5.5.5")`.
+   * `PlanVersion` is `@@gate(0.5.5.5)`.
    *
    * Existing subscribers are untouched, which is the whole reason
    * `Subscription` names a version rather than a plan: somebody who signed up

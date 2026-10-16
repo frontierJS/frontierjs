@@ -141,7 +141,7 @@ describe('accessor consistency', () => {
 // The two `.lite` files this package ships are the source, and they are split by
 // WHO OWNS THE MODEL — which the gate already states. User is the app's: it gets
 // columns added, relations point at it, and `fli auth:install` appends it into
-// the app's own schema.lite. The other three are @@gate("8"), meaning nothing
+// the app's own schema.lite. The other three are @@gate(8), meaning nothing
 // outside asSystem() speaks to them, so they go in a file the app imports.
 //
 // A model that drifted across that line would be a real change with no other

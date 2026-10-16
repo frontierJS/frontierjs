@@ -1083,6 +1083,15 @@ class Parser {
           throw new ParseError('@system takes no arguments — it is a lock, not a level', this.peek())
         return { kind: 'system' }
       }
+      // @local → on a `@@mirror` model, this column is the app's own and not
+      // the Provider's. Every other column there is `@system` by derivation, so
+      // a caller's write to one is refused rather than overwritten by the next
+      // sync in silence (`FJS-D843`).
+      case 'local': {
+        if (this.check(TK.LPAREN))
+          throw new ParseError('@local takes no arguments — the column is the app\'s own, on a @@mirror model', this.peek())
+        return { kind: 'local' }
+      }
 
       // @immutable → written once, at create, and never again by anybody.
       //
@@ -1851,23 +1860,29 @@ class Parser {
   }
 
   // ── @@gate argument parser ──────────────────────────────────────────────────
-  // Supports two forms:
-  //   "2.4.4.6"                                — numeric dotted string (existing)
-  //   (read: READER, write: USER)              — named shorthand (write = C+U+D)
-  //   (read: READER, create: USER, update: USER, delete: OWNER) — fully named
-  //
-  // Named keys: read, create, update, delete, write (shorthand for create+update+delete)
-  // Level names: STRANGER VISITOR READER CREATOR USER ADMINISTRATOR OWNER SYSTEM LOCKED
-  // Returns a normalized dotted string "R.C.U.D" so gate.js stays unchanged.
+  // `@@gate(2.4.4.6)` — read.create.update.delete, bare (`FJS-D1081`). Returns
+  // the levels as written, `"2.4.4.6"`; the cascade of a missing position is
+  // `parseGateString`'s.
 
   parseGateArg() {
     this.eat(TK.LPAREN)
 
-    // Peek — if first token is a STRING, use original parseParenString path
-    if (this.check(TK.STRING)) {
-      const val = this.eat(TK.STRING).value
+    if (this.check(TK.RPAREN))
+      throw new ParseError('@@gate: empty — write the levels, read.create.update.delete, as @@gate(0.4.4.5)', this.peek())
+
+    if (this.check(TK.DOTTED) || this.check(TK.NUMBER)) {
+      const tok = this.advance()
       this.eat(TK.RPAREN)
-      return val
+      return tok.type === TK.DOTTED ? tok.value : tok.text
+    }
+
+    // A quote means text in this language, and a level is a number, so the
+    // quoted spelling is refused with the bare one in place (`FJS-D1081`).
+    if (this.check(TK.STRING)) {
+      const tok = this.eat(TK.STRING)
+      throw new ParseError(
+        `@@gate: a level is a number, not text — @@gate(${JSON.stringify(tok.value)}) is @@gate(${tok.value}).`,
+        tok)
     }
 
     // The named form is REFUSED, and the refusal computes the answer
@@ -1915,7 +1930,7 @@ class Parser {
     const d = named.delete ?? u
     throw new ParseError(
       `@@gate: the named form is not the gate syntax — write the levels. ` +
-      `@@gate(${spelled.join(', ')}) is @@gate("${r}.${c}.${u}.${d}"), ` +
+      `@@gate(${spelled.join(', ')}) is @@gate(${r}.${c}.${u}.${d}), ` +
       `read.create.update.delete on the level ladder.`,
       this.peek())
   }
@@ -2726,6 +2741,20 @@ class Parser {
           throw new ParseError(`@@exclude(${scope}): range names two fields, [start, end] — got ${range.length}`, close)
         return where ? { kind: 'exclude', scope, range, where } : { kind: 'exclude', scope, range }
       }
+      // @@mirror(key: <field>) — this model's rows are a Provider's, and the
+      // named column is the Provider's id for one (`FJS-D843`). A forward and a
+      // sync both land a row by this key, so a key that can repeat or be absent
+      // lands two Provider objects on one row; validate() refuses both.
+      case 'mirror': {
+        this.eat(TK.LPAREN)
+        const arg = this.eat(TK.IDENT)
+        if (arg.value !== 'key')
+          throw new ParseError(`@@mirror: unknown argument '${arg.value}' — expected key: <field>, the column holding the Provider's id`, arg)
+        this.eat(TK.COLON)
+        const key = this.eat(TK.IDENT).value
+        this.eat(TK.RPAREN)
+        return { kind: 'mirror', key }
+      }
       default: {
         // The block words disagree on number (`@@transitions` and
         // `@@capabilities` plural, `@@commitment` and `@@index` singular), so
@@ -3159,6 +3188,11 @@ class Parser {
         `@gate(${tok.value}) is @gate(${named}) on the level ladder.`,
         tok,
       )
+    } else if (tok.type === TK.STRING) {
+      throw new ParseError(
+        `@@transitions(${field}) '${name}': a level is a number, not text — @gate(${JSON.stringify(tok.value)}) is @gate(${tok.value}).`,
+        tok,
+      )
     } else {
       throw new ParseError(`@@transitions(${field}) '${name}': @gate expects a level 0–9, got '${tok.value}'`, tok)
     }
@@ -3480,7 +3514,7 @@ function attrAnswer(attr, at = '@@', ordinal = 'the first') {
   const tag = `${at}${typedAttr(attr.kind)}`
   return v === undefined || v === null || typeof v === 'object'
     ? `${ordinal} ${tag}`
-    : `${tag}(${JSON.stringify(v)})`
+    : `${tag}(${attr.kind === 'gate' ? v : JSON.stringify(v)})`
 }
 
 // The words `parseModelAttributeBody` accepts after `@@`, for its refusal's
@@ -3491,7 +3525,7 @@ const MODEL_ATTRIBUTE_WORDS = [
   'external', 'extensible', 'softDelete', 'capabilities', 'hasTemplates',
   'expires', 'effective', 'commitment', 'createdBy', 'updatedBy', 'allow',
   'deny', 'scope', 'tenant', 'check', 'export', 'gate', 'transitions', 'auth',
-  'person', 'trail', 'db', 'trait', 'sync', 'anonymous', 'exclude',
+  'person', 'trail', 'db', 'trait', 'sync', 'anonymous', 'exclude', 'mirror',
 ]
 
 // These are PARSE KINDS and not the words a reader types, which is the trap
@@ -4666,6 +4700,76 @@ function expandExtensible(schema) {
       if (order.length)
         model.attributes.push({ kind: 'index', fields: order.map(([s]) => s), sorts: null, where: null, generated: 'extensible' })
     }
+  }
+
+  return errors
+}
+
+// ─── @@mirror ─────────────────────────────────────────────────────────────────
+//
+// What `@@mirror(key:)` implies, written into the model as ordinary attributes
+// (`FJS-D843`), so the write path, the JSON Schema and every snapshot see a
+// `@system` column and have nothing to learn. A Provider's column the caller
+// could write is one the next sync overwrites in silence, so every stored
+// column is `@system` unless it says `@local`. The key is also `@immutable`,
+// since a row re-keyed here no longer matches the Provider's object, and
+// `@unique` unless a `@@unique` already names it — ELA's key is unique per
+// account, and a column-wide unique would refuse two accounts' copies of one id.
+//
+// No gate is derived: the key is `@system` and required, so a caller's create
+// is refused at the column already, and a claimed model's create runs the
+// caller's gate before the forward (`FJS-D1125`), which a derived 8 would refuse.
+const MIRROR_UNWRITTEN = new Set(['computed', 'from', 'derived', 'transient', 'edge', 'scoped', 'generated'])
+
+function expandMirror(schema) {
+  const errors = []
+  const models = new Set(schema.models.map(m => m.name))
+
+  for (const model of schema.models) {
+    const mirror = model.attributes.find(a => a.kind === 'mirror')
+    if (!mirror) continue
+    const has = (f, kind) => f.attributes.some(a => a.kind === kind)
+
+    for (const field of model.fields) {
+      if (field.generated || models.has(field.type.name)) continue
+      if (has(field, 'id') || has(field, 'local')) continue
+      if (field.attributes.some(a => MIRROR_UNWRITTEN.has(a.kind))) continue
+      if (!has(field, 'system')) field.attributes.push({ kind: 'system', generated: 'mirror' })
+      if (field.name !== mirror.key) continue
+      if (!has(field, 'immutable')) field.attributes.push({ kind: 'immutable', generated: 'mirror' })
+      const named = model.attributes.some(a => a.kind === 'uniqueIndex' && a.fields?.includes(field.name))
+      if (!has(field, 'unique') && !named) field.attributes.push({ kind: 'unique', global: false, generated: 'mirror' })
+    }
+
+    // A Provider sends rows in its own order -- a post before its author, a
+    // reply whose root is past a history cap -- so a foreign key over its ids
+    // would refuse the sync. The Provider owns that reference: a dangling one
+    // reads as no row, and as a refusal under check(). A @local key is the
+    // app's own and keeps its constraint.
+    for (const field of model.fields) {
+      const rel = field.attributes.find(a => a.kind === 'relation' && a.fields)
+      if (!rel) continue
+      const keys = [rel.fields].flat().map(n => model.fields.find(f => f.name === n))
+      if (keys.some(k => !k || has(k, 'local'))) continue
+      if (rel.onDelete || rel.onUpdate) {
+        errors.push(`Model '${model.name}': relation '${field.name}' is keyed by the Provider's ids, so @@mirror emits no foreign key and ${rel.onDelete ? 'onDelete' : 'onUpdate'} would act on nothing. Remove it`)
+        continue
+      }
+      rel.unenforced = 'mirror'
+    }
+
+    // The sync stamps a row the Provider no longer answers rather than
+    // deleting it, since a history cap and a deletion look the same from here.
+    if (model.fields.some(f => f.name === 'missingSince')) {
+      errors.push(`Model '${model.name}': @@mirror(key: ${mirror.key}) derives the column 'missingSince' and this model already declares one. Remove it`)
+      continue
+    }
+    model.fields.push({
+      name: 'missingSince',
+      type: { kind: 'scalar', name: 'DateTime', array: false, optional: true },
+      attributes: [{ kind: 'system', generated: 'mirror' }],
+      comments: [], generated: 'mirror',
+    })
   }
 
   return errors
@@ -6203,8 +6307,11 @@ function validate(schema) {
       // already refused above.
       if (!secret && field.attributes.some(a => a.kind === 'guarded'))
         errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @guarded — @hashed already strips the field from every read, asSystem() included`)
-      if (field.attributes.some(a => a.kind === 'fieldAllow'))
-        errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @allow — no caller can read a digest, so a read policy over one has nothing to permit`)
+      // Only the READ half has nothing to say. `@allow('write', …)` composes: it
+      // grades who may replace the digest, which is the one way a column nobody
+      // can read is ever changed by a caller who is not the row's owner.
+      if (field.attributes.some(a => a.kind === 'fieldAllow' && a.operations.includes('read')))
+        errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @allow('read', …) — no caller can read a digest, so a read policy over one has nothing to permit. @allow('write', …) is fine`)
 
       // A digest is TEXT. Hashing a number or a date and comparing it works, but the
       // column's declared type would then describe something it no longer holds.
@@ -7243,6 +7350,60 @@ function validate(schema) {
     }
   }
 
+  // ── a bare check() over an optional parent, beside another scope ───────────
+  //
+  // `check(rel)` is TRUE for a row whose key is null (FJS-382), which is right
+  // where the parent is the row's only scope. Where the rule ORs a second scope
+  // beside it, or the key is an @@arc member, the null-key row is the OTHER
+  // scope's row, and the bare check() admits it to every caller: an arc's
+  // `userId == auth().id || check(organization)` reads every personal row
+  // (FJS-3130). A rule that compares the key with null anywhere has answered
+  // the null row itself, so it is silent. A check() under `!` or in a @@deny
+  // over-refuses on a null key and is not walked.
+  for (const model of schema.models) {
+    const arcKeys = new Set(model.attributes.filter(a => a.kind === 'arc' && Array.isArray(a.fields)).flatMap(a => a.fields))
+    const keysOf  = name => {
+      const field = model.fields.find(f => f.name === name)
+      const rel   = field?.attributes.find(a => a.kind === 'relation' && Array.isArray(a.fields))
+      if (!rel || !rel.fields.every(k => model.fields.find(f => f.name === k)?.type.optional)) return null
+      return rel.fields
+    }
+    const isNull   = s => s?.type === 'literal' && s.value === null
+    const reported = new Set()
+    for (const a of model.attributes) {
+      if (a.kind !== 'allow' || a.generated || !a.expr) continue
+      const nullTested = new Set()
+      const checks     = []
+      ;(function walk(n, underOr) {
+        if (!n || typeof n !== 'object' || n.type === 'not') return
+        if (n.type === 'compare' && (n.op === '==' || n.op === '!=')) {
+          if (isNull(n.right) && n.left?.type === 'field') nullTested.add(n.left.name)
+          if (isNull(n.left) && n.right?.type === 'field') nullTested.add(n.right.name)
+        }
+        if (n.type === 'check' && !n.tenancy) checks.push({ n, underOr })
+        const or = underOr || n.type === 'or'
+        for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else']) walk(n[k], or)
+        if (Array.isArray(n.items)) n.items.forEach(i => walk(i, or))
+        if (Array.isArray(n.args))  n.args.forEach(i => walk(i, or))
+      })(a.expr, false)
+
+      for (const { n, underOr } of checks) {
+        const keys = keysOf(n.field)
+        if (!keys || keys.some(k => nullTested.has(k)) || reported.has(n.field)) continue
+        const inArc = keys.some(k => arcKeys.has(k))
+        if (!underOr && !inArc) continue
+        reported.add(n.field)
+        const op = n.operation ? `, '${n.operation}'` : ''
+        warnings.push(
+          `Model '${model.name}': a bare check(${n.field}${op}) is TRUE for a row whose ${keys.join(', ')} is null, ` +
+          `and here that row is ${inArc ? `the other @@arc member's` : 'the other disjunct\'s'} — every caller ` +
+          `is admitted to it. Write (${keys.map(k => `${k} != null`).join(' && ')} && check(${n.field}${op})) ` +
+          `to admit only rows naming a ${n.field}, or (${keys.map(k => `${k} == null`).join(' || ')} || check(${n.field}${op})) ` +
+          `if every caller is meant to have them.`)
+      }
+    }
+  }
+
   // ── @allow (field-level) validation ─────────────────────────────────────────
   for (const model of schema.models) {
     for (const field of model.fields) {
@@ -7983,7 +8144,7 @@ function validate(schema) {
     if (!(decl.attributes ?? []).some(a => a.kind === 'gate'))
       errors.push(
         `${what} '${decl.name}': @@export needs a @@gate beside it. An export is a bulk read of every ` +
-        `row a caller may see, so an ungated one is the whole table to anybody. Write @@gate("0") if ` +
+        `row a caller may see, so an ungated one is the whole table to anybody. Write @@gate(0) if ` +
         `this dataset is public on purpose.`)
 
     if (ex.since) {
@@ -8003,7 +8164,7 @@ function validate(schema) {
   // parse rather than at read: a view is a projection of rows a model gates, so
   // an ungated one is a way around every gate the schema declares — and it
   // cannot be inferred from `@@sql` without parsing SQL to find the sources.
-  // `@@gate("0")` is how a schema says a view is public deliberately.
+  // `@@gate(0)` is how a schema says a view is public deliberately.
   const schemaGuards = schema.models.some(m =>
     m.attributes?.some(a => a.kind === 'gate' || a.kind === 'allow' || a.kind === 'deny') ||
     m.fields?.some(f => f.attributes?.some(a => a.kind === 'fieldAllow' || a.kind === 'guarded')))
@@ -8015,7 +8176,7 @@ function validate(schema) {
     if (schemaGuards && !viewAttrs.some(a => a.kind === 'gate'))
       errors.push(
         `View '${view.name}' must declare @@gate — this schema declares access rules, and a view is a ` +
-        `read path onto the rows they guard. Write @@gate("0") if the view is public on purpose.`)
+        `read path onto the rows they guard. Write @@gate(0) if the view is public on purpose.`)
 
     if (rowTenancy && !viewAttrs.some(a => a.kind === 'tenant'))
       errors.push(
@@ -8303,6 +8464,37 @@ function validate(schema) {
       if (kinds.has('updatedAt') || (dflt?.kind === 'call' && dflt.fn === 'now'))
         errors.push(`${where}, and field '${field.name}' stamps the clock — a millisecond joins this row to the writer's other writes. Use a String @date the app sets`)
     }
+  }
+
+  // ── @@mirror: the key names one Provider object per row ───────────────────
+  // Its `@unique` is derived (expandMirror), so the shape is what is left to
+  // refuse: a key that can be absent lands two Provider objects on one row.
+  for (const model of schema.models) {
+    const mirror = model.attributes.find(a => a.kind === 'mirror')
+    const at     = mirror && `Model '${model.name}': @@mirror(key: ${mirror.key})`
+    for (const field of model.fields) {
+      if (!field.attributes.some(a => a.kind === 'local')) continue
+      const local = `Field '${model.name}.${field.name}': @local`
+      const kinds = new Set(field.attributes.map(a => a.kind))
+      if (!mirror)
+        errors.push(`${local} names a column the app owns on a model whose rows are a Provider's, and ${model.name} is not @@mirror. Drop it — every column here is the app's already`)
+      else if (field.name === mirror.key)
+        errors.push(`${local} is on the key, and the key is the Provider's id for the row. Drop it`)
+      else if (kinds.has('id'))
+        errors.push(`${local} is on the @id, which is the app's already. Drop it`)
+      else if (field.type.kind === 'relation' || field.type.kind === 'implicitM2M' || field.type.kind === 'backRefOne')
+        errors.push(`${local} is on a relation, which holds no column. Put it on the foreign key the relation names`)
+      else if (kinds.has('system'))
+        errors.push(`${local} and @system disagree: one says the caller writes it, the other that only the application does. Keep one`)
+    }
+    if (!mirror) continue
+    const { key } = mirror
+    const field = model.fields.find(f => f.name === key)
+    if (!field) { errors.push(`${at} — ${model.name} has no field '${key}'`); continue }
+    if (field.type.array || !(field.type.name === 'String' || field.type.name === 'Int'))
+      errors.push(`${at} — the key is one String or Int, the Provider's id; '${key}' is ${field.type.name}${field.type.array ? '[]' : ''}`)
+    else if (field.type.optional)
+      errors.push(`${at} — '${key}' is optional, and a row with no key cannot be matched to the Provider's object. Drop the ?`)
   }
 
   // ── @@expires / @@effective window shape ──────────────────────────────────
@@ -9140,6 +9332,7 @@ export function parseFile(filePath) {
   allErrors.push(...expandEdgeAttributes(schema))
   allErrors.push(...expandExtensible(schema))
   allErrors.push(...expandRelator(schema))
+  allErrors.push(...expandMirror(schema))
   const tenancy = expandTenancy(schema)
   allErrors.push(...tenancy.errors)
   allWarnings.push(...tenancy.warnings)
@@ -9189,10 +9382,11 @@ export function parse(src) {
   const edgeErrors = expandEdgeAttributes(schema)
   const extErrors  = expandExtensible(schema)
   const relatorErrors = expandRelator(schema)
+  const mirrorErrors  = expandMirror(schema)
   const tenancy = expandTenancy(schema)
   resolveTransitions(schema)
   const capabilityErrors = expandCapabilityType(schema)
   const { errors, warnings } = validate(schema)
-  const merged = [...compositeIdErrors, ...authorshipErrors, ...edgeErrors, ...extErrors, ...relatorErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
+  const merged = [...compositeIdErrors, ...authorshipErrors, ...edgeErrors, ...extErrors, ...relatorErrors, ...mirrorErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
   return { schema, valid: merged.length === 0, errors: merged, warnings: [...tenancy.warnings, ...warnings] }
 }

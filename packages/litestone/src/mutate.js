@@ -35,7 +35,7 @@ import { parse } from './core/parser.js'
 // there is nothing more precise to work from — every mutant is parsed before it
 // is used, and one that does not parse is a kill the parser made.
 
-const GATE_RE = /@@gate\(\s*"([^"]+)"\s*\)/
+const GATE_RE = /@@gate\(\s*([\d.]+)\s*\)/
 const RELATOR_RE = /@@relator\(\s*\[([^\]]*)\]\s*,\s*(once|many)(?:\s*:\s*(\w+))?\s*\)/
 
 const MUTATIONS = [
@@ -66,7 +66,7 @@ const MUTATIONS = [
         const to   = from - 1
         const next = [...four]; next[i] = String(to)
         out.push({
-          line: line.replace(GATE_RE, `@@gate("${next.join('.')}")`),
+          line: line.replace(GATE_RE, `@@gate(${next.join('.')})`),
           meta: { op: ops[i], from, to },
         })
       }

@@ -2141,7 +2141,7 @@ export function buildBase(
   // after this half.
   //
   // Auth is derived from the model's @@gate, per operation, so a model
-  // declaring `@@gate("0.4")` has public reads and authenticated writes with no
+  // declaring `@@gate(0.4)` has public reads and authenticated writes with no
   // service-level declaration at all.
   //
   // Marked as they are built, so EVERY branch of the merge below emits marked

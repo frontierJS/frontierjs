@@ -19,7 +19,7 @@
 /// Verification). api/db.ts appends them from `authSchemaFragments()` at
 /// startup rather than pasting a copy here, so there is one definition of them
 /// in the repo instead of two. The browser never sees them, which is correct —
-/// the three credential-material models are @@gate("8"), and `User` reads at
+/// the three credential-material models are @@gate(8), and `User` reads at
 /// USER(4) with a row policy and two field policies bounding it: 8 is for a
 /// model nothing outside auth has anything to say to, not for identity.
 
@@ -165,7 +165,7 @@ enum Size { one xs s m l xl xxl }
 // ─── What this shop did not write ─────────────────────────────────────────
 //
 // `@frontierjs/auth`'s machinery — Credential, Session, Verification, OauthFlow,
-// all `@@gate("8")` — and junction's OutboxMessage. Imported rather than pasted
+// all `@@gate(8)` — and junction's OutboxMessage. Imported rather than pasted
 // so a package upgrade reaches this app, and imported rather than APPENDED IN
 // MEMORY so that the four committed artefacts describe the schema that actually
 // runs (`FJS-626`). They did not, for as long as the API assembled its own: 39
@@ -338,7 +338,7 @@ model Product {
 
   @@softDelete(cascade)
 
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }
 
 /// The colorways this shop has run. `ProductVariant.color` stores the NAME
@@ -378,7 +378,7 @@ model Color {
   /// so the list the picker offers is the list the Data boundary will accept.
   @@scope(current, retired == false)
   
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }
 
 /// The list behind `ProductVariant.color`. `value name` rather than the id is
@@ -489,7 +489,7 @@ model ProductVariant {
   /// tables at all, so the cascade cannot touch them by construction.
   @@softDelete(cascade)
   
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
   @@trail(audit)
 }
 
@@ -536,7 +536,7 @@ model ProductImage {
   
   @@softDelete
   
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
   
   /// The gallery of one product, and the shots of one colorway. Neither read
   /// starts here — both arrive from the parent — and `Product`'s cascade walks
@@ -689,7 +689,7 @@ model Customer {
   /// actually declares rather than an ordering that is better.
   @@extensible(fields, declaredBy: CustomField, max: { text: 8, number: 4 })
 
-  @@gate("1.4.4.5")
+  @@gate(1.4.4.5)
   
   /// Staff read every customer. `isStaff` is a column on User and NOT a level:
   /// a verified shopper and a member of staff both grade USER(4), so the ladder
@@ -798,7 +798,7 @@ model CustomField {
   /// Staff-only, both directions. Reading the list is how a segment builder
   /// offers its options, so a shopper has no use for it; writing it changes
   /// what every customer form on the shop shows.
-  @@gate("5.5.5.5")
+  @@gate(5.5.5.5)
 }
 
 // ─── Money ────────────────────────────────────────────────────────────────
@@ -832,7 +832,7 @@ enum DiscountKind { percent fixed }
 ///
 /// ─── Why a shopper may not read this table ────────────────────────────────
 ///
-/// `@@gate("5.5.5.5")` — staff only, read included. Every other thing a
+/// `@@gate(5.5.5.5)` — staff only, read included. Every other thing a
 /// shopper interacts with here is readable at 0, because a storefront has to
 /// list it; a discount code is the exception, and the reason is that listing
 /// them IS the exploit. `GET /api/discounts` answering the table hands every
@@ -948,7 +948,7 @@ model Discount {
   @@check("kind != 'percent' OR value <= 10000",
           "a percentage discount cannot be more than 100%")
 
-  @@gate("5.5.5.5")
+  @@gate(5.5.5.5)
   @@trail(audit)
 }
 
@@ -998,7 +998,7 @@ model PickupPoint {
   
   version  Int      @version
   
-  @@gate("0.5.5.5")
+  @@gate(0.5.5.5)
 }
 
 /// What the shop charges to send it.
@@ -1037,7 +1037,7 @@ model ShippingMethod {
   /// A rate table two people maintain, and nothing else writes a column on it.
   version      Int      @version
   
-  @@gate("0.5.5.5")
+  @@gate(0.5.5.5)
 }
 
 /// The rate this shop collects, and what it is called where the shop is.
@@ -1072,7 +1072,7 @@ model TaxRate {
   /// a number nobody chose.
   version    Int      @version
   
-  @@gate("0.5.5.5")
+  @@gate(0.5.5.5)
 }
 
 // ─── Orders ───────────────────────────────────────────────────────────────
@@ -1271,7 +1271,7 @@ model Order {
   /// back-filling receipts is a write nobody asked for.
   userId         String?      @system
   
-  @@gate("1.4.4.5")
+  @@gate(1.4.4.5)
   
   /// ─── Bulk export ────────────────────────────────────────────────────────
   ///
@@ -1402,7 +1402,7 @@ model OrderLine {
   /// Read was 0. That is the catalog's answer and this is the sales ledger:
   /// every SKU, every quantity and every price the shop has ever charged,
   /// answerable to anyone with `curl`. Same paste as `Order` and `Customer`.
-  @@gate("1.8.8.8")
+  @@gate(1.8.8.8)
   
   @@allow('read', auth().isStaff)
   
@@ -1445,7 +1445,7 @@ view revenueByStatus {
   orders Int
   total  Int
   @@sql("SELECT status, COUNT(*) AS orders, SUM(total) AS total FROM [order] WHERE deletedAt IS NULL GROUP BY status")
-  @@gate("5")
+  @@gate(5)
   
   /// CSV, and no cursor: an aggregate has no column to resume from — every run
   /// is the whole answer, which is what a projection over the world IS.
@@ -1553,7 +1553,7 @@ model PaymentMethod {
   /// What is deliberately absent is removal by the person who added it, which
   /// wants rules this pass does not have — which card the default moves to, and
   /// what happens to a live subscription whose only instrument has gone.
-  @@gate("1.8.8.8")
+  @@gate(1.8.8.8)
   @@allow('read', auth().isStaff)
   @@allow('read', userId == auth().id)
 
@@ -1684,7 +1684,7 @@ model Payment {
   /// no PERSON at any standing writes one. Delete 9 — LOCKED. Money that was
   /// taken cannot stop having been taken, and 9 is how that is spelt for every
   /// caller including the application itself.
-  @@gate("1.8.8.9")
+  @@gate(1.8.8.9)
   @@allow('read', auth().isStaff)
   @@allow('read', userId == auth().id)
   @@trail(audit)
@@ -1730,7 +1730,7 @@ model PaymentEvent {
   /// Read 5, create 8, update and delete 9. Append-only, and LOCKED rather
   /// than SYSTEM for the two that would edit history: a ledger `asSystem()`
   /// can rewrite is a ledger.
-  @@gate("5.8.9.9")
+  @@gate(5.8.9.9)
 }
 
 // ─── Subscriptions ────────────────────────────────────────────────────────
@@ -1769,7 +1769,7 @@ model Plan {
 
   /// A pricing page is public, exactly as the catalog is. Editing what a shop
   /// charges is staff, at the same level as a `Discount`.
-  @@gate("0.5.5.5")
+  @@gate(0.5.5.5)
 }
 
 /// What a plan cost, over the window it cost it.
@@ -1803,7 +1803,7 @@ model PlanVersion {
 
   subscriptions Subscription[]
 
-  @@gate("0.5.5.5")
+  @@gate(0.5.5.5)
 
   /// The window, declared rather than spelled out at each read. ASKED and not
   /// imposed (`FJS-D352`): a closed version is the price every subscriber
@@ -1897,7 +1897,7 @@ model Subscription {
   /// Read at 1 and written at 4, like an `Order`: staff manage subscriptions,
   /// and the one move a subscriber makes for themselves is cancelling, which
   /// the policy below scopes to their own row.
-  @@gate("1.4.4.5")
+  @@gate(1.4.4.5)
   @@allow('read',   auth().isStaff)
   @@allow('read',   userId == auth().id)
   @@allow('update', auth().isStaff)
@@ -1975,7 +1975,7 @@ model SubscriptionPeriod {
   /// Written by billing alone: created at 8, so only the system writes one,
   /// and updated at 7, which is the shop's own principal making the move a
   /// fire makes. Every column a caller could name is `@system` or frozen.
-  @@gate("1.8.7.8")
+  @@gate(1.8.7.8)
   @@allow('read',   auth().isStaff)
   @@allow('read',   userId == auth().id)
   @@allow('update', auth().isStaff)
@@ -2121,7 +2121,7 @@ model Invoice {
   /// it on their client with the gate lifted (`FJS-D575`), and the lift keeps
   /// this policy. A draft exists only inside that transaction and its one move
   /// is `@system`, so this admits nothing a request can ask for.
-  @@gate("1.8.4.8")
+  @@gate(1.8.4.8)
   @@allow('read',   auth().isStaff)
   @@allow('read',   userId == auth().id)
   @@allow('update', auth().isStaff)
@@ -2200,7 +2200,7 @@ model InvoiceLine {
 
   userId      String?  @system
 
-  @@gate("1.8.8.8")
+  @@gate(1.8.8.8)
   @@allow('read', auth().isStaff)
   @@allow('read', userId == auth().id)
 
@@ -2225,7 +2225,7 @@ model CreditNote {
 
   userId     String?   @system
 
-  @@gate("1.8.8.8")
+  @@gate(1.8.8.8)
   @@allow('read', auth().isStaff)
   @@allow('read', userId == auth().id)
 
@@ -2329,7 +2329,7 @@ model Cart {
   /// update at 0 too, because the POLICY is what scopes them; a gate answers
   /// *what kind of caller*, never *which rows*. Delete needs an admin: a
   /// basket is abandoned by the sweep, not removed by its holder.
-  @@gate("0.0.0.5")
+  @@gate(0.0.0.5)
 
   @@allow('read',   id == auth().cartId)
   @@allow('update', id == auth().cartId)
@@ -2375,7 +2375,7 @@ model CartGrant {
   /// their own grant — they are holding the only half of it that matters — and
   /// the resolver reads it through the system client before any principal
   /// exists to be graded.
-  @@gate("8")
+  @@gate(8)
   @@index([cartId])
 }
 
@@ -2425,7 +2425,7 @@ model CartLine {
   /// carried for ever, and that no revocation could reach. The claim is the
   /// basket's id now, so the column the policy needs is the foreign key that
   /// was always there.
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
   @@allow('read',   cartId == auth().cartId)
   @@allow('create', cartId == auth().cartId)
   @@allow('update', cartId == auth().cartId)
@@ -2552,7 +2552,7 @@ model StockReservation {
   /// table exists to answer, and the one on the path of every add to basket.
   @@index([variantId, expiresAt])
 
-  @@gate("5.8.8.8")
+  @@gate(5.8.8.8)
 }
 
 /// Why the shelf is at the number it is at. Append-only.
@@ -2613,7 +2613,7 @@ model InventoryMovement {
   
   createdAt    DateTime           @default(now())
   
-  @@gate("5.5.9.9")
+  @@gate(5.5.9.9)
   
   /// A correction is made where the stock is — in a stockroom, on a phone, with
   /// one bar of signal — so a write to this ledger may be held on the device and
@@ -2672,7 +2672,7 @@ model StocktakeSheet {
   /// read/create/update at 5, delete LOCKED. A sheet is an administrator's
   /// record of what was on the shelf, and it is never deleted — a miscount is
   /// corrected by another count, which is the same argument the ledger makes.
-  @@gate("5.5.5.9")
+  @@gate(5.5.5.9)
 
   /// The whole point: the sheet is created where the stock is.
   @@sync(server)
@@ -2717,7 +2717,7 @@ model StocktakeCount {
   note       String?           @length(0, 200)
   createdAt  DateTime          @default(now())
 
-  @@gate("5.5.5.9")
+  @@gate(5.5.5.9)
 
   /// One shelf counted once is a row that is added and never edited — a
   /// miscount is corrected by counting again, which is the same argument the
@@ -2840,7 +2840,7 @@ model JournalEntry {
   /// column by column; this refuses the call. Between them there is no code
   /// path in this application that can change a posted journal, which is the
   /// property a period close would otherwise have to be built on.
-  @@gate("5.8.9.9")
+  @@gate(5.8.9.9)
   
   @@trail(audit)
   
@@ -2878,7 +2878,7 @@ model JournalLine {
   
   /// The header's ladder, for the header's reasons. A line that could be
   /// deleted is a balanced entry that stops balancing.
-  @@gate("5.8.9.9")
+  @@gate(5.8.9.9)
   
   /// Every read of this table is "the lines of one entry", and `Cascade` walks
   /// the same column. A balanced entry is only readable as a whole.
@@ -2919,7 +2919,7 @@ model Employee {
   
   /// Read and written by staff. There is no level below 5 with any business
   /// reading a payroll, and `example`'s ladder puts an administrator there.
-  @@gate("5.5.5.5")
+  @@gate(5.5.5.5)
   
   @@check("endedOn IS NULL OR startedOn < endedOn",
           "somebody cannot leave before they started")
@@ -2999,7 +2999,7 @@ model PayWindow {
   effectiveFrom String       @date @immutable @label("From")
   effectiveTo   String?      @date @label("To")
   
-  @@gate("5.5.5.5")
+  @@gate(5.5.5.5)
   
   /// ASKED (`FJS-D352`), so `payAsAt` states its day as `asOf` and the history
   /// panel and `setPay`'s overlap check read every window with no flag. Asked
@@ -3094,7 +3094,7 @@ model PayRate {
   /// person, so there is no argument for a higher floor — and unlike a product
   /// price there is no argument for a lower one, since a band table is what a
   /// payroll is computed from.
-  @@gate("5.5.5.5")
+  @@gate(5.5.5.5)
   
   /// ASKED, as `PayWindow` is: `ratesAsAt` states the day, and a payslip line
   /// pointing at a band that has since closed still reads it.
@@ -3200,7 +3200,7 @@ model PayRun {
   payslips    Payslip[]
   journals    JournalEntry[]
   
-  @@gate("5.5.5.5")
+  @@gate(5.5.5.5)
   
   @@check("periodStart < periodEnd", "a pay period has to end after it starts")
   @@check("periodIndex < periodsPerYear", "the period index has to fall inside the year")
@@ -3310,7 +3310,7 @@ model Payslip {
   ///
   /// `@immutable` is unaffected and still refuses every restatement, so what
   /// the two 8s buy is removal and one stamp, and nothing else.
-  @@gate("5.5.8.8")
+  @@gate(5.5.8.8)
   
   /// The declarable half. Three columns of one row, so SQLite holds it.
   @@check("net = gross - deductions", "a payslip's net has to be its gross less its deductions")
@@ -3390,7 +3390,7 @@ model PayslipLine {
   /// The header's ladder with `9` back on update, and the difference is
   /// deliberate: a payslip has a column something stamps after it is issued and
   /// a LINE has none, so nothing legitimate ever updates one.
-  @@gate("5.5.9.8")
+  @@gate(5.5.9.8)
   
   @@check("amount != 0", "a payslip line cannot be for nothing")
   
@@ -3515,7 +3515,7 @@ model Notification {
   /// uses. NOT 9 — that is LOCKED, which `asSystem()` does not pass either,
   /// so a 9 here would stop the driver from ever writing a row. Update is 4
   /// so a signed-in user can mark their own as read; delete is SYSTEM.
-  @@gate("0.8.4.8")
+  @@gate(0.8.4.8)
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)
 }
@@ -3575,7 +3575,7 @@ model User {
   // Registration is unaffected: every write this package makes goes through
   // asSystem(), which is above the ladder. Every model in auth.lite stays at 8
   // — they hold the credential material, and that is the case 8 is for.
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
   @@allow('update', id == auth().id || auth().isAdmin)
   @@trail(audit)
 

@@ -51,7 +51,7 @@
     setActive?.(next)
     // Focus the newly active tab button — query by data-tab-id attr
     const nextEl = e.currentTarget.querySelector(`[data-tab-id="${next}"]`)
-    nextEl?.focus()
+    $.focus(nextEl)
   }
 </script>
 

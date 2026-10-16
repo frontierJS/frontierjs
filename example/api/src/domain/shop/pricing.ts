@@ -361,7 +361,7 @@ export async function discountByCode(client: Client, code: string): Promise<Disc
  * Everything a cart's money depends on, in one place.
  *
  * Reads through whichever client it is handed, and the callers hand it the
- * SYSTEM one: `Discount` is `@@gate("5.5.5.5")` because listing a shop's codes
+ * SYSTEM one: `Discount` is `@@gate(5.5.5.5)` because listing a shop's codes
  * is the exploit the gate exists to stop, so a shopper's own client answers
  * nothing here — a wrong policy is an empty screen, and this one would be a
  * silently un-applied discount at the till.

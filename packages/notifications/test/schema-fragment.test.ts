@@ -67,7 +67,7 @@ describe('the schema fragment', () => {
 
   test('create is SYSTEM and not LOCKED — 9 would stop notify() writing a row', () => {
     const text = readFileSync(join(root, FRAGMENT), 'utf8')
-    const gate = text.match(/@@gate\("([\d.]+)"\)/)?.[1]
+    const gate = text.match(/@@gate\(([\d.]+)\)/)?.[1]
     expect(gate).toBe('0.8.4.8')
     expect(gate!.split('.')[1]).not.toBe('9')
   })

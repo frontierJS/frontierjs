@@ -18,7 +18,7 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }))
 const web = join(dir, 'web')
 const put = (path, text) => { mkdirSync(join(dir, path, '..'), { recursive: true }); writeFileSync(join(dir, path), text) }
 
-put('db/schema.lite', 'model Pin {\n  id    Int    @id\n  name  String\n  repo  String?\n  @@gate("4")\n}\n')
+put('db/schema.lite', 'model Pin {\n  id    Int    @id\n  name  String\n  repo  String?\n  @@gate(4)\n}\n')
 put('web/src/resources/Pin.mesa', '<script module>\n  export const pins = createResource(\'pins\')\n</script>\n')
 put('web/src/resources/Note.mesa', '<script module>\n  export const notes = createResource(\'notes\')\n</script>\n')
 put('web/src/routes/_module.mesa', '<script>\n  import { notes } from \'../resources/Note.mesa\'\n</script>\n<main>\n  <div class="screen-body">\n    <slot />\n  </div>\n</main>\n')

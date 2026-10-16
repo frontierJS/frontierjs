@@ -109,7 +109,7 @@ export const cart = {
    * basket holding nothing.
    *
    * Answered by the server rather than read from a table: `StockReservation` is
-   * `@@gate("5.8.8.8")`, so a shopper may not see the holds at all, including
+   * `@@gate(5.8.8.8)`, so a shopper may not see the holds at all, including
    * their own. What they get is this one number, on the basket the shop built
    * for them, which is the only part of it that is any of their business.
    */
@@ -374,7 +374,7 @@ export function setShipping(shippingMethodId) {
  * What the shop offers, for the picker.
  *
  * An ordinary CRUD read of a public table — `ShippingMethod` is
- * `@@gate("0.5.5.5")` — so it works with no session and no basket, which is
+ * `@@gate(0.5.5.5)` — so it works with no session and no basket, which is
  * what lets the options render before a shopper has added anything.
  */
 export async function loadShippingOptions() {

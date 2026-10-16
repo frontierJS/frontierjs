@@ -45,9 +45,9 @@ const { writeThrough, readLocal, localDbConfigured, _resetLocalDb, _useLocalDbCl
 const { createJunctionClient } = await import('../../junction/src/client/index.ts')
 
 const SOURCE = `
-model Sheet { id String @id @default(uuid())  name String  closedAt DateTime?  @@gate("0.0.0.0")  @@sync(server) }
-model Plain { id String @id @default(uuid())  name String                      @@gate("0.0.0.0") }
-model Note  { id Int @id  body String  version Int @version                     @@gate("0.0.0.0")  @@sync(server) }
+model Sheet { id String @id @default(uuid())  name String  closedAt DateTime?  @@gate(0.0.0.0)  @@sync(server) }
+model Plain { id String @id @default(uuid())  name String                      @@gate(0.0.0.0) }
+model Note  { id Int @id  body String  version Int @version                     @@gate(0.0.0.0)  @@sync(server) }
 `
 
 const offline = () => Promise.reject(new TypeError('Failed to fetch'))
@@ -246,7 +246,7 @@ describe('keeping what the server answered', () => {
     expect(await writeThrough('Sheet', [{ id: 'A' }])).toBe(false)
   })
 
-  // An append-only ledger, `@@gate("5.5.9.9")`: no row of it ever changes on
+  // An append-only ledger, `@@gate(5.5.9.9)`: no row of it ever changes on
   // the server, so replaying insert-only loses nothing (`FJS-1700`).
   test('a model whose update gate is LOCKED is kept insert-only, not dropped', async () => {
     const d = makeDevice({ lockedUpdate: true })
@@ -533,7 +533,7 @@ describe('a row the server no longer answers leaves the device', () => {
     expect(d.held().sort()).toEqual(['OLD', 'S1'])
   })
 
-  // `@@gate("5.5.9.9")`: nothing removes such a row on the server either, and
+  // `@@gate(5.5.9.9)`: nothing removes such a row on the server either, and
   // the rows that did arrive are still kept.
   test('a device whose delete is LOCKED keeps the answer and warns once', async () => {
     const d = makeDevice({ rows: [{ id: 'OLD' }], lockedDelete: true })

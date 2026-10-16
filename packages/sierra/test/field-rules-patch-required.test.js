@@ -32,7 +32,7 @@ model UserDaily {
   id         Int    @id @default(autoincrement())
   extraHours Float  @default(0)
   note       String?
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 `
 

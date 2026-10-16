@@ -152,7 +152,7 @@ describe('lower()', () => {
     expect(pre.children[0].value.code).not.toBe('markup')
   })
 
-  it('lowers a component call: props, binds, refusals, slots routed as the DOM path routes them', async () => {
+  it('lowers a component call: props, binds, refusals, slots as snippets', async () => {
     const tree = await ir(`<script>
   import Card from './Card.mesa'
   let n = 0
@@ -182,13 +182,18 @@ describe('lower()', () => {
     expect(card.ref).toBe(null)
     // Refused for every target by componentAttributes: reported, never passed.
     expect(tree.diagnostics).toEqual([expect.stringMatching(/^on:close is not valid on a component\..* — C\.mesa:5:1$/)])
-    expect(Object.keys(card.slots)).toEqual(['actions', 'aside', 'default'])
-    expect(card.slots.default.map((c) => c.kind === 'element' ? c.tag : c.kind)).toEqual(['comment', 'p'])
-    expect(card.slots.actions[0]).toMatchObject({ kind: 'element', tag: 'b', attrs: [] })
-    expect(card.slots.aside[0]).toMatchObject({ kind: 'if' })
-    expect(card.slots.aside[0].branches[0].children[0]).toMatchObject({ tag: 'i', attrs: [] })
-    expect(card.snippets).toEqual([expect.objectContaining({ kind: 'snippet', name: 'row', params: ['r'], varName: null })])
-    expect(slot).toMatchObject({ kind: 'slot', name: 'tail', directives: [], fallback: [expect.objectContaining({ tag: 'p' })] })
+    // Every slot is a snippet with no arguments by now, the default one
+    // `children` (`FJS-D668`): one projection for every target.
+    expect(card.snippets.map((s) => [s.name, s.params])).toEqual([['row', ['r']], ['actions', []], ['aside', []], ['children', []]])
+    const [, actions, aside, children] = card.snippets
+    expect(children.children.map((c) => c.kind === 'element' ? c.tag : c.kind)).toEqual(['comment', 'p'])
+    expect(actions.children[0]).toMatchObject({ kind: 'element', tag: 'b', attrs: [] })
+    expect(aside.children[0]).toMatchObject({ kind: 'if' })
+    expect(aside.children[0].branches[0].children[0]).toMatchObject({ tag: 'i', attrs: [] })
+    expect(card.snippets[0]).toMatchObject({ kind: 'snippet', name: 'row', varName: null })
+    // A <slot> with a fallback is the if a caller's snippet decides.
+    expect(slot).toMatchObject({ kind: 'if', else: [expect.objectContaining({ tag: 'p' })] })
+    expect(slot.branches[0].children[0]).toMatchObject({ kind: 'render' })
   })
 
   it('lowers a destructuring each with an index under the row frame', async () => {

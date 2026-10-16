@@ -30,7 +30,7 @@ model User {
   id    String @id @default(uuid())
   email String @email @unique
   @@db(main)
-  @@gate("4")
+  @@gate(4)
 }
 
 model Session {
@@ -39,7 +39,7 @@ model Session {
   token     String   @unique @guarded
   expiresAt DateTime
   @@db(main)
-  @@gate("8")
+  @@gate(8)
 }
 `
 
@@ -137,7 +137,7 @@ describe('extend model refuses', () => {
   test('a second answer to a single-valued attribute', () => {
     // @@gate twice is not a narrowing — it is two statements about who may read
     // the table, resolved by whichever the merge happened to put last.
-    const err = bad(HOST + `extend model Session { @@gate("5") }`)
+    const err = bad(HOST + `extend model Session { @@gate(5) }`)
     expect(err).toContain('@@gate is already declared')
   })
 
@@ -169,7 +169,7 @@ model Session {
   token     String   @unique @guarded
   expiresAt DateTime
   @@db(main)
-  @@gate("8")
+  @@gate(8)
 }
 `)
   })
@@ -186,7 +186,7 @@ model User {
   id    String @id @default(uuid())
   email String @email @unique
   @@db(main)
-  @@gate("4")
+  @@gate(4)
 }
 ${body}
 `)

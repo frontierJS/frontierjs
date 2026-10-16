@@ -36,7 +36,7 @@ const SCHEMA = `
     id          Int    @id @default(autoincrement())
     workspaceId String
     title       String
-    @@gate("4.5.5.5")
+    @@gate(4.5.5.5)
   }
 `
 

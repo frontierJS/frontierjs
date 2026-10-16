@@ -266,6 +266,17 @@ core/
                 open row's Detail after ` · `, Verified re-dated today; a closed
                 row refused (a regression is a new row). Put back on a new
                 `register:check` error
+  repro.js      the runner behind `register:repro` — the one `*.test.*` file
+                a row links, N runs each alone, in its package's `bun run
+                test`, and beside N of junction's `bun run typecheck`
+                (`FJS-D1146`, `FJS-D1148`). A file's result is read from bun's
+                junit report, because the console prints a file only when it
+                printed something; a report not naming it refuses the run, and
+                so does a typecheck that exits nonzero. `reproVerdict` reads
+                the counts; the command writes them through `amendIssue`,
+                whose `drop` strips `env: timing` on a code verdict.
+                `linkedTest` is the row-only refusal, which `env-smell` asks
+                of an unmeasured timing row to name its way out
   find.js       the reader behind `register:find` — issue rows, archive and
                 rulings holding every term, answered as id, title and file:line
                 and never the body; title hits and open rows first
@@ -275,7 +286,10 @@ core/
                 row. `WEIGHTS` is one frozen table and no flag moves it. A
                 `by hand` segment stays ranked as `byHand`; `fix:loop` skips it.
                 `env: <cause>` is the sibling, `ENV_CAUSES` the closed list it
-                is counted by, and `register-check` grades it
+                is counted by, and `register-check` grades it. `seam: <name>`
+                is the third (`seamOf`), graded as `seam-name` against the
+                § Bridge index key list `seams.js` reads; `bySeam` groups on
+                it for `fli next --by seam`
                 Proposals are not ranked; nothing measurable separates them
   register-atlas.js  the registers as one page to work from — `register:atlas`,
                 for any project declaring `registers`, not only this workspace.
@@ -731,7 +745,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   package if the app lacks it and then reads those bytes, resolving the subpaths
   through auth's own `exports` (`createRequire().resolve` from the app's
   `package.json`) rather than guessing at a path inside it. `User` is appended to
-  `schema.lite`, the `@@gate("8")` models are written to `db/auth.lite` and
+  `schema.lite`, the `@@gate(8)` models are written to `db/auth.lite` and
   imported. One rule is still restated — the `@@db(main)` swap — and auth's suite
   lifts this file's arrow out of the markdown and runs it (`FJS-038`).
 - **A git question asked from a package directory answers repo-wide.** In this
@@ -1213,6 +1227,13 @@ test/     one file per module under core/, plus the deploy pipeline's own
   (`FJS-D190`). An invariant with NO enforcer is not a finding: that is the gap
   `invariants.snapshot.md` exists to publish, and failing on it makes deleting the
   row the fastest fix.
+- **`core/hazards.js` is `invariants.js`'s shape for the realm skills' hazards,
+  and a rule names its hazard by a prefix of the bullet's bold lead.** A hazard
+  has no number, so `hazard: 'ui: Vite injects the built'` is the key, and
+  `hazard-enforcer` reds one matching zero bullets or two — rewording a bullet
+  out from under its rule is otherwise a row that quietly turns `none`. There is
+  no declared half and no `none` reason: the gap in `hazards.snapshot.md` is the
+  finding. Same no-import rule — `RULES` is handed in.
 - **`core/ask.js` answers a contributor's question with a citation, and
   `core/questions.js` is the graded set that says what answering cost.** Six
   intents, each naming ONE committed artefact, because *why is X this way* and

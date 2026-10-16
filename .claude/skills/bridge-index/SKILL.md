@@ -31,6 +31,7 @@ Detail: `references/data-api.md`
 - `db.$readAs(accessor, row, principal)` — the row as that principal would read it, for a broadcast; fails closed — `litestone/src/core/client.js`
 - `db.$levelOf(accessor?, principal?)` — the level the app's own `getLevel` grades a caller at; `null` is *cannot grade* — `litestone/src/core/client.js`
 - `db.$primaryKey(accessor)` — the key's columns in key order — `litestone/src/core/client.js`
+- `db.$mirrorKey(accessor)` — the column `@@mirror(key:)` names, or `null` — `litestone/src/core/client.js`
 - `db.$claimsFor(principal)` — the claims the schema reads off a row pointing at the caller — `litestone/src/core/client.js`
 - `db.$protectedFields(accessor)` — which columns are guarded, encrypted or hashed — `litestone/src/core/client.js`
 
@@ -62,6 +63,7 @@ Detail: `references/schema.md`
 **Machine ↔ control plane**
 Detail: `references/api-internals.md`
 - `app.conduit.receive(receiver)` / `Dialect` — the receiving end of a Provider: a connector's dialect, an app's receiver, conduit's order (`accept()`, beside the types) and applied-not-seen receipts (`FJS-D899`) — `conduit/src/conduit.ts`
+- `app.conduit.mirror(claim)` / `mirrored(accessor)` — a connector's claim on the models a Provider feeds; junction's generated writes forward through it (`FJS-D1125`) — `conduit/src/mirror.ts`, `junction/src/core/litestone.ts` (`mirrorClaimFor`)
 - `signRequest()` / `verifyRequest()` — what a signed machine-to-machine request is — `toolbelt/src/signature/signature.js`
 - `requestMeta().traceparent` / `.tracestate` — the inbound W3C trace, carried verbatim into conduit's `trace` — `junction/src/core/context.ts`
 - `ctx.$raw.rawBody` — the body as bytes, for a signature — `junction/src/transport/http.ts`

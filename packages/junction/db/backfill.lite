@@ -16,7 +16,7 @@
 // A backfill against a second `database` block would be a cursor over a table
 // on the other side of a connection this row cannot be read with.
 //
-// @@gate("8"): nothing outside asSystem() has anything to say to this model,
+// @@gate(8): nothing outside asSystem() has anything to say to this model,
 // and this package is the only thing that writes it. Same line `outbox.lite`
 // and `auth.lite` draw, and the same reason it is IMPORTED rather than pasted —
 // it changes when this package does.
@@ -94,6 +94,6 @@ model BackfillRun {
   updatedAt    DateTime  @updatedAt
 
   @@db(main)
-  @@gate("8")
+  @@gate(8)
   @@index([status])
 }

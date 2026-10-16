@@ -58,7 +58,7 @@ model Flow {
   // (`FJS-D278`). Pausing and archiving take reach away, so they stay at the
   // model's level. Delete is 5 and takes the versions and their runs with it —
   // `archived` is the way to retire a flow and keep its history.
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
   @@transitions(status,
     activate:  [draft, paused]         -> active @gate(5),
     pause:     active                  -> paused,
@@ -102,7 +102,7 @@ model FlowVersion {
 
   runs        Run[]
 
-  @@gate("4.4.9.8")
+  @@gate(4.4.9.8)
   // A version is an edit, so it is the owner's (`FJS-D289`), and a definition is
   // read by the owner of its flow, like the flow (`FJS-D295`).
   @@allow('read',   flow.ownerId == auth().id || auth().level >= 5)
@@ -119,7 +119,7 @@ model FlowLayout {
   layout    Json      @default("{}")
   updatedAt DateTime  @updatedAt
 
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
   @@allow('read',                 flow.ownerId == auth().id || auth().level >= 5)   // FJS-D295
   @@allow('create,update,delete', flow.ownerId == auth().id)                        // FJS-D289
 }
@@ -169,7 +169,7 @@ model Run {
   waits          Wait[]
 
   // Read by the inspector at USER(4); written by nothing but the engine.
-  @@gate("4.8.8.8")
+  @@gate(4.8.8.8)
   // By the owner the run acted as, which is the flow's owner at dispatch and
   // immutable after, and by an administrator (`FJS-D295`). A run's trigger is the
   // row as that owner read it, so the owner is the reader it was recorded for.
@@ -212,7 +212,7 @@ model RunStep {
   logs        Json?
 
   // Update is 9 because a step is history; delete is 8 so retention can run.
-  @@gate("4.8.9.8")
+  @@gate(4.8.9.8)
   // A step's output is the row as the owner read it, read by that owner and an
   // administrator (`FJS-D295`).
   @@allow('read', run.actorId == auth().id || auth().level >= 5)
@@ -231,7 +231,7 @@ model Wait {
   timeoutAt  DateTime?
   createdAt  DateTime   @default(now())
 
-  @@gate("8")
+  @@gate(8)
   @@index([timeoutAt])
 }
 
@@ -266,7 +266,7 @@ model FlowCredential {
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
 
-  @@gate("5")
+  @@gate(5)
 }
 
 // The `store` node's state (`FJS-D281`). `scope` is `global` or `flow:<id>`.
@@ -278,7 +278,7 @@ model KvEntry {
   expiresAt  DateTime?
   updatedAt  DateTime  @updatedAt
 
-  @@gate("8")
+  @@gate(8)
   @@unique([scope, key])
   @@index([expiresAt])
   @@expires(expiresAt)

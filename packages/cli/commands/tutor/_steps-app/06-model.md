@@ -16,7 +16,7 @@ Six files, and the only one you would edit by hand is the first. Look at what it
 put in `db/schema.lite`:
 
 ```text
-@@gate("0.4.4.6")
+@@gate(0.4.4.6)
 ```
 
 Different four numbers from `User`'s. **Reads are public** — anyone may list
@@ -60,7 +60,7 @@ if (!await must($, probe.fileContains({ path: schema, needle: /^model Note \{/m,
 })) return
 
 // The gate is the point of the step, so it is asserted rather than described.
-if (!await must($, probe.fileContains({ path: schema, needle: /@@gate\("0\.4\.4\.6"\)/, name: 'Note reads at 0 and writes at 4' }), {
+if (!await must($, probe.fileContains({ path: schema, needle: /@@gate\(0\.4\.4\.6\)/, name: 'Note reads at 0 and writes at 4' }), {
   likely:    'the scaffold template changed its default gate — the lesson text below it is now wrong',
   reproduce: `grep -A 14 '^model Note' ${schema}`,
 })) return

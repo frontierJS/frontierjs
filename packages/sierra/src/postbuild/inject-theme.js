@@ -28,14 +28,15 @@ import { buildThemeScript } from '../theme/script.js'
 /**
  * @param {object} themeConfig — sierra.config.js theme object
  * @param {string} outDir
+ * @param {string} [prefix] — the app's storage prefix (`storagePrefix`)
  * @returns {Promise<string|null>}
  */
-export async function injectThemeScript(themeConfig, outDir) {
+export async function injectThemeScript(themeConfig, outDir, prefix = '') {
   if (!themeConfig) return null
 
   // Built once: the script is the same on every page, and it is derived from
   // the config rather than from anything about the page it lands on.
-  const script = `  <script id="sierra-theme">${buildThemeScript(themeConfig)}</script>`
+  const script = `  <script id="sierra-theme">${buildThemeScript(themeConfig, { prefix })}</script>`
 
   const pages   = await htmlFiles(outDir)
   const touched = []

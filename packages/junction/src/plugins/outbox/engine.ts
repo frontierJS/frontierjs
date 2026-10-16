@@ -80,7 +80,7 @@ export function hasOutboxModel(client: unknown): boolean {
 /**
  * The outbox table, through the system bypass.
  *
- * `@@gate("8")` says nothing below `asSystem()` has anything to say to this
+ * `@@gate(8)` says nothing below `asSystem()` has anything to say to this
  * model, and that includes the request whose effect this is: an outbox row is
  * the framework's bookkeeping, not the caller's data.
  */

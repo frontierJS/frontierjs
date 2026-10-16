@@ -81,6 +81,8 @@ export type {
   BrokerMessage,
   BrokerHandler,
   BrokerHealth,
+  BrokerFraming,
+  BrokerLink,
 
   // Receiving
   Receipt,
@@ -95,18 +97,25 @@ export type {
 
 // Receiving — the other end of a Provider. A connector exports a `Dialect`,
 // an app declares a `Receiver` with it, conduit runs the order.
-export { assertReceiver, RECEIVE_RESULTS } from './receive.ts'
+export { assertReceiver, assertBrokerReceiver, RECEIVE_RESULTS } from './receive.ts'
 export type {
   Receiver,
   Dialect,
   Delivery,
   ReceivedEvent,
+  BrokerReceiver,
+  FrameDialect,
   Received,
   ReceiveResult,
   Outcome,
   Verdict,
   VerifyContext,
 } from './receive.ts'
+
+// Mirroring — a connector's claim on the app models a Provider feeds
+// (`FJS-D1125`); the app binds it with `app.conduit.mirror(claim)`.
+export { assertClaim } from './mirror.ts'
+export type { MirrorClaim, MirrorModel, MirrorVerb, MirrorRow, MirrorForward, ClaimedModel } from './mirror.ts'
 
 // Exported as values (classes, not just types)
 export { ConduitStreamError, CredentialError, MintError, CONDUIT_ERROR_KINDS } from './types.ts'

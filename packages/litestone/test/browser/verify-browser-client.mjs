@@ -75,7 +75,7 @@ model Shelf {
   id     String @id @default(uuid())
   label  String
   counts Count[]
-  @@gate("2")
+  @@gate(2)
 }
 model Count {
   id        String    @id @default(uuid())
@@ -83,7 +83,7 @@ model Count {
   shelf     Shelf     @relation(fields: [shelfId], references: [id])
   counted   Int
   deletedAt DateTime?
-  @@gate("2")
+  @@gate(2)
   @@softDelete
   @@index([shelfId])
 }
@@ -91,7 +91,7 @@ model Depot {
   id     String @id @default(uuid())
   name   String
   site   Json?  @point(lat, lng)
-  @@gate("2")
+  @@gate(2)
 }`
 
 // ─── build ────────────────────────────────────────────────────────────────

@@ -7,6 +7,8 @@ export interface SigV4Options {
   service?: string
   /** A key from `deriveSigningKey` for THIS day, region and service; derived per call when absent. */
   signingKey?: CryptoKey
+  /** S3: sign `UNSIGNED-PAYLOAD` rather than the body's hash, so a Blob body is never read. */
+  unsignedPayload?: boolean
 }
 
 export function amzDate(now: Date): string

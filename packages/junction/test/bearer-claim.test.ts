@@ -36,14 +36,14 @@ const SCHEMA = `
     tokenHash String    @unique @guarded
     expiresAt DateTime?
     revokedAt DateTime?
-    @@gate("8")
+    @@gate(8)
   }
 
   model FormResponse {
     id       Int    @id @default(autoincrement())
     clientId Int
     answer   String
-    @@gate("0")
+    @@gate(0)
     @@allow('read',   clientId == auth().portalClientId)
     @@allow('create', clientId == auth().portalClientId)
   }
@@ -239,7 +239,7 @@ describe('a claim column may name a relation path', () => {
       workspaceId Int
       title       String
       links       ShareLink[]
-      @@gate("0")
+      @@gate(0)
     }
 
     model ShareLink {
@@ -247,7 +247,7 @@ describe('a claim column may name a relation path', () => {
       pageId    Int
       page      Page   @relation(fields: [pageId], references: [id])
       tokenHash String @unique @guarded
-      @@gate("8")
+      @@gate(8)
     }
   `
   const nested = bearerClaim({
@@ -293,7 +293,7 @@ describe('a grant is found whoever else the holder is', () => {
       accountId Int
       surveyId  Int
       tokenHash String @unique(global) @guarded
-      @@gate("8")
+      @@gate(8)
     }
   `
   const grant = bearerClaim({
@@ -461,7 +461,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
     model Customer {
       id   Int    @id @default(autoincrement())
       name String
-      @@gate("0")
+      @@gate(0)
       @@allow('read', id == auth().portalCustomerId)
     }
     model PortalLink {
@@ -471,7 +471,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
       expiresAt  DateTime?
       revokedAt  DateTime?
       lastUsedAt DateTime? @system
-      @@gate("4")
+      @@gate(4)
       @@allow('create', customerId == auth().customerId)
     }
   `

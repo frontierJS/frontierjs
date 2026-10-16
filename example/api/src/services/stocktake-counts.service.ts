@@ -2,7 +2,7 @@
 //
 // The child half of the offline pair. Nothing here is clever, and that is the
 // claim worth making: a count arriving from a device that was in a stockroom is
-// an ordinary create, graded by the model's own `@@gate("5.5.5.9")` at the Data
+// an ordinary create, graded by the model's own `@@gate(5.5.5.9)` at the Data
 // boundary, carrying a `sheetId` the browser minted for a sheet that may still
 // be in the queue ahead of it.
 //

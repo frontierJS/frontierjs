@@ -9,7 +9,7 @@ The same broadcast, watched by two clients at once: one holding the session from
 step 3, one holding nothing at all.
 
 Both receive it, and that is **correct**. `fli scaffold` gave `Note` the gate
-`@@gate("0.4.4.6")`, and the first number is read: **0 means anybody**. A
+`@@gate(0.4.4.6)`, and the first number is read: **0 means anybody**. A
 stranger may already list these notes over HTTP, so a stranger being told about
 a new one takes nothing away.
 

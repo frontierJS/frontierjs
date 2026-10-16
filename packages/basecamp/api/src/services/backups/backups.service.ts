@@ -10,7 +10,7 @@
 // ─── The row is created here and finished by the job ──────────────────────
 //
 // `create` writes a `pending` row and dispatches; `backup:run` does the work and
-// writes the outcome. The outcome columns are gated at SYSTEM — `@@gate("7.7.8.7")`
+// writes the outcome. The outcome columns are gated at SYSTEM — `@@gate(7.7.8.7)`
 // — which is the schema saying what every `*Run` here says: a status a caller
 // can write is not evidence of anything.
 //

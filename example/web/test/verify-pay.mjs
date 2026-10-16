@@ -54,7 +54,7 @@ await requireServers([['api (bun run api)', `${API}/api/health`], ['the payment 
 /**
  * A stamp for this run's event ids.
  *
- * `PaymentEvent` is append-only by declaration — @@gate("5.8.9.9"), and no
+ * `PaymentEvent` is append-only by declaration — @@gate(5.8.9.9), and no
  * relation to delete it through — so a run's ledger rows outlive it and a
  * fixed id makes the SECOND run of this drive read every hand-signed event as
  * a redelivery of the first. That is the ledger doing exactly its job, and a
@@ -378,7 +378,7 @@ try {
   const paid = await json(await fetch(`${API}/api/orders/${orderId}`, { headers: auth }))
   t('webhook.settledTheOrder', { status: paid?.status })
 
-  // The payment row, read as an administrator — @@gate("5.8.8.9").
+  // The payment row, read as an administrator — @@gate(5.8.8.9).
   const payments = await json(await fetch(`${API}/api/payments?providerRef=${ref}`, { headers: auth }))
   const payment  = payments?.data?.[0]
   t('webhook.settledThePayment', {
@@ -557,7 +557,7 @@ try {
   const anon    = await fetch(`${API}/api/payments`)
   // The ledger refuses an edit TWICE, and the outer one answers first: the
   // service declares `methods: ['find','get']`, so PATCH is 405 and never
-  // reaches the Data boundary. Behind it `@@gate("5.8.9.9")` has update at 9 —
+  // reaches the Data boundary. Behind it `@@gate(5.8.9.9)` has update at 9 —
   // LOCKED, which `asSystem()` does not pass either, which is what append-only
   // is spelt with. Asserted as 405 because that is what a caller gets; the 9 is
   // asserted where it can be, in db/access.snapshot.md.

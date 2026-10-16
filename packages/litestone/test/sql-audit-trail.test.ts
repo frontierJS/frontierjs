@@ -93,7 +93,7 @@ describe('a trail in SQLite', () => {
   })
 
   test('the trail can be append-only at the Data boundary', async () => {
-    // `@@gate("5.8.9.9")` is `example`'s JournalEntry spelling: read at 5, the
+    // `@@gate(5.8.9.9)` is `example`'s JournalEntry spelling: read at 5, the
     // application writes at 8, and 9 is LOCKED so nothing amends or removes.
     // The engine's own write must still land — it goes through a system
     // context, which grades 8 — and that is the pair worth pinning, because
@@ -101,7 +101,7 @@ describe('a trail in SQLite', () => {
     // passes every check and refuses the first row the engine writes.
     const db = await client(`
       database main { path ":memory:" model AuditRow }
-      model AuditRow { ${TRAIL}  @@gate("5.8.9.9") }
+      model AuditRow { ${TRAIL}  @@gate(5.8.9.9) }
       model Thing { id Int @id  name String  @@trail(main) }
     `)
     await db.asSystem().thing.create({ data: { id: 1, name: 'one' } })

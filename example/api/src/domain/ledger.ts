@@ -44,7 +44,7 @@
 
 /** A Litestone client of some flavor — deliberately loose, like `inventory.ts`.
  *  Which one to pass is *whose act is this*, and for a journal the answer is
- *  always the shop's: `asSystem()`, because `@@gate("5.9.9.9")` means no caller
+ *  always the shop's: `asSystem()`, because `@@gate(5.9.9.9)` means no caller
  *  posts one. */
 type Client = Record<string, any>
 

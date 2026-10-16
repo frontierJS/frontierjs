@@ -138,7 +138,7 @@ API. The three left are the cross-workspace and derived reads.
 | `InfraGraphView` | 522 | Server, App, Network, Environment | **Built** — `/infra-graph/`, over a new `infra` service. Four node kinds and four edge kinds, each one a row; the layout is derived in the browser because a position is not a fact about the fleet. See § Phase 14 |
 | `SSHKeysView` + `AddKeyModal` | 320 + 104 | `Secret` (`SecretKind.ssh_key`) | **Built** — `/secrets/`, widened past SSH keys to what the model is. `Secret.data` is `@encrypted`, so a read has **no `data` key at all** — proved in the browser and against the database file |
 | `WorkspacesView` (sys) | 62 | `Workspace`, `Account` | **Built** — `/hub/workspaces/`. A cross-workspace read through a NEW service that takes no workspace at all: the alternative was `?scope=hub` on nineteen session-scoped services. Suspension is real and bites in `scopeToWorkspace`. See § Phase 10 |
-| `UsersView` (sys) | 68 | `User`, `WorkspaceMember`, `Credential` | **Built** — `/hub/users/`, written against `asSystem()` from the start because `User` was `@@gate("8")` then; it reads at USER(4) since `FJS-170` and the screen still goes through `asSystem()`, which is what keeps the hub a hub. Suspend/restore, grant/revoke the hub tier, and bot accounts — all three are `asSystem()` writes, because `isSystemAdmin`, `status` and `kind` are `@allow('write', auth().isSystemAdmin)` at the Data boundary. The mock's Invite button is deliberately absent here — inviting a HUMAN belongs to a workspace and lives on the Members screen (`FJS-032`, closed); Impersonate is `FJS-142`. See § Phase 10 |
+| `UsersView` (sys) | 68 | `User`, `WorkspaceMember`, `Credential` | **Built** — `/hub/users/`, written against `asSystem()` from the start because `User` was `@@gate(8)` then; it reads at USER(4) since `FJS-170` and the screen still goes through `asSystem()`, which is what keeps the hub a hub. Suspend/restore, grant/revoke the hub tier, and bot accounts — all three are `asSystem()` writes, because `isSystemAdmin`, `status` and `kind` are `@allow('write', auth().isSystemAdmin)` at the Data boundary. The mock's Invite button is deliberately absent here — inviting a HUMAN belongs to a workspace and lives on the Members screen (`FJS-032`, closed); Impersonate is `FJS-142`. See § Phase 10 |
 
 ### C. Needs new models (16)
 
@@ -1297,7 +1297,7 @@ only on `apps.get` — one request per app — and the onboarding read needs cou
 of two models the caller cannot see. One read here is one round trip.
 
 **Three of the six onboarding counts go through `asSystem()`**, and the reason
-is not convenience: `Secret` and `Invitation` are `@@gate("5")`, so a developer
+is not convenience: `Secret` and `Invitation` are `@@gate(5)`, so a developer
 asking *does this workspace have an SSH key* got a refusal rather than a zero,
 and `WorkspaceMember` reads only the caller's own rows, so *is anybody else
 here* was 1 for everyone. What crosses is a count of rows in the workspace the
@@ -1406,7 +1406,7 @@ teaching everyone to read past the one warning that means something.
 *this service has no model*, as opposed to *this model was not found*. Shipped
 in `packages/sierra/src/resource/resource.js`.
 
-**A `@@gate("5")` on a count is still a refusal.** The onboarding read was
+**A `@@gate(5)` on a count is still a refusal.** The onboarding read was
 written against the caller's own client and threw for anybody below admin — on
 the one screen whose whole audience is somebody who has just arrived.
 

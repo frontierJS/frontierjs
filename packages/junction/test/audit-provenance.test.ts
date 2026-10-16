@@ -141,9 +141,9 @@ describe('an audit row says where the write came from', () => {
         schema: `
           database main  { path ":memory:" }
           ${auditDatabase(dir)}
-          model Grant { id Int @id @default(autoincrement())  cartId Int  tokenHash String @unique @guarded  @@gate("8") }
+          model Grant { id Int @id @default(autoincrement())  cartId Int  tokenHash String @unique @guarded  @@gate(8) }
           model Note  { id Int @id @default(autoincrement())  cartId Int  body String
-                        @@gate("0")
+                        @@gate(0)
                         @@allow('create', cartId == auth().cartOwner)
                         @@allow('read',   cartId == auth().cartOwner)
                         @@trail(audit) }

@@ -191,7 +191,7 @@ model Invoice {
   total     Int      @money(USD) @gte(0)
   status    Status   @default(draft)
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   @@transitions(status, issue: draft -> issued, void: issued -> voided @gate(5))
 }
 ```
@@ -260,7 +260,7 @@ Above the columns sit two model-level words that answer different questions:
 
 | word | refuses how | what a wrong one looks like |
 |---|---|---|
-| `@@gate("r.c.u.d")` | **throws** | a 401/403 naming the model |
+| `@@gate(r.c.u.d)` | **throws** | a 401/403 naming the model |
 | `@@allow(op, expr)` | **filters** | an empty screen with a 200 |
 
 A gate is *what kind of caller*; a policy is *which rows*. A refusal must never
@@ -275,7 +275,7 @@ bypass.
 
 ### The gate ladder
 
-`@@gate("R.C.U.D")` is the minimum level for read, create, update and delete. **A
+`@@gate(R.C.U.D)` is the minimum level for read, create, update and delete. **A
 position not written takes the one before it**: `"4"` is `"4.4.4.4"`, `"2.4"` is
 `"2.4.4.4"`. A named form (`read: USER`) does not parse.
 
@@ -292,7 +292,7 @@ position not written takes the one before it**: `"4"` is `"4.4.4.4"`, `"2.4"` is
 | 8 | `SYSTEM` | `asSystem()` only — no session ever grades here |
 | 9 | `LOCKED` | nothing, `asSystem()` included |
 
-**A role-less session is 3, so `@@gate("4")` refuses every signed-in caller of an
+**A role-less session is 3, so `@@gate(4)` refuses every signed-in caller of an
 app that never sets `role`.** An ABSENT `verifiedAt` or `activatedAt` is no
 objection; only `null` grades down. The standing flags win over the lifecycle, and
 a `GatePlugin({ getLevel })` replaces the whole column. A row policy reads the
@@ -568,14 +568,14 @@ model Product {
 
 tier: **common**
 
-A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`. A column takes `@money`, `@scale` and `@unit` and no other field attribute, so a view summing a `@money` column can say its result is money.
+A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate(0)` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`. A column takes `@money`, `@scale` and `@unit` and no other field attribute, so a view summing a `@money` column can say its result is money.
 
 ```lite
 view accountStats {
   accountId Int
   total     Int
   @@sql("SELECT accountId, COUNT(*) AS total FROM Event GROUP BY accountId")
-  @@gate("5")
+  @@gate(5)
 }
 ```
 
@@ -863,6 +863,16 @@ Written by the application, never by the caller: readable by anyone, refused on 
 
 ```lite
 trackingCode String @system
+```
+
+#### `@local`
+
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · see also: `mirror`, `system`
+
+The app's own column on a @@mirror model, which every other stored column there is not: the Provider's columns are @system by derivation, so a caller's write to one is refused rather than overwritten by the next sync. A caller writes this one under the usual rules, and a claimed model's forward writes it as the caller after the Provider's row lands. Refused off a @@mirror model, on its key, on the @id, on a relation, and beside @system.
+
+```lite
+starred Boolean @default(false) @local
 ```
 
 #### `@immutable` [(after: <move>)]
@@ -1337,7 +1347,7 @@ total Int @money(USD)
 
 tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field, on a view column · see also: `scale`, `money`
 
-What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Five dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, ratio %. mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.
+What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Five dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, ratio "%" (quoted, since % is not an identifier: @unit("%")). mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.
 
 ```lite
 timeout Int @unit(s)
@@ -1590,14 +1600,14 @@ tier: **essential** · legal in: in a model, in a trait · also called: permissi
 The standing a caller needs, per operation, on the 0–9 ladder — read first, then create, update, delete. A missing position cascades from the left, so "4" is 4 for all four. Levels must hold read ≤ update ≤ delete and create ≤ delete (8 and 9 are sentinels and may appear anywhere), because a model easier to delete than to read is a mistake every time. Create is free relative to read, so a drop box — many may write, few may read — is "6.4.9.9", and a caller below the read level is refused by name rather than filtered to an empty list. A gate REFUSES — it throws naming the model and the level, where a policy filters. A schema declaring any gate auto-installs GatePlugin, since a declared-but-unenforced gate is fail-open. It is per MODEL, so a gate on the table getLevel reads from lets any signed-in caller rewrite anyone else's standing.
 
 ```lite
-@@gate("2.4.4.5")
+@@gate(2.4.4.5)
 ```
 
 #### `@@export` (ndjson | csv [, since: <column>])
 
 tier: **common** · legal in: in a model, in a trait · see also: `gate`, `allow`, `view`
 
-This dataset may leave in bulk. It adds NO way in: an export is a paginated scoped read, so the rows that leave are exactly the ones the named principal could read one at a time — the @@gate refuses below its level, the row policies narrow the file rather than failing it, a field policy or @guarded column is simply absent, and under tenancy the extract is one tenant's because the client is. A @@gate is REQUIRED beside it, even where the schema guards nothing else: a bulk read of every row is a different proposition from one row at a time, and @@gate("0") is how a schema says this dataset is public on purpose. `since:` names a sortable declared column and is what makes an incremental run expressible — the column decides what a resumed run CATCHES, so a createdAt cursor sees new rows and not edits to old ones. Protected columns (@encrypted, @secret, @guarded) are omitted from an extract even for a caller who may read them, because a screen and a file that leaves the machine are the same principal at a different blast radius; keeping them is explicit and is recorded in the manifest. Legal on a view too.
+This dataset may leave in bulk. It adds NO way in: an export is a paginated scoped read, so the rows that leave are exactly the ones the named principal could read one at a time — the @@gate refuses below its level, the row policies narrow the file rather than failing it, a field policy or @guarded column is simply absent, and under tenancy the extract is one tenant's because the client is. A @@gate is REQUIRED beside it, even where the schema guards nothing else: a bulk read of every row is a different proposition from one row at a time, and @@gate(0) is how a schema says this dataset is public on purpose. `since:` names a sortable declared column and is what makes an incremental run expressible — the column decides what a resumed run CATCHES, so a createdAt cursor sees new rows and not edits to old ones. Protected columns (@encrypted, @secret, @guarded) are omitted from an extract even for a caller who may read them, because a screen and a file that leaves the machine are the same principal at a different blast radius; keeping them is explicit and is recorded in the manifest. Legal on a view too.
 
 ```lite
 @@export(ndjson, since: updatedAt)
@@ -1696,6 +1706,16 @@ Record writes to this model in a trail database. Protected fields (@encrypted/@g
 
 ```lite
 @@trail(audit)
+```
+
+#### `@@mirror` (key: <field>)
+
+tier: **situational** · legal in: in a model, in a trait · also called: external id, replica, vendor data · see also: `local`, `external`, `system`
+
+The rows are a Provider's: a third party is the system of record, and the named column holds its id for each row. Every stored column but the @id and a @local one is derived @system, so a caller's write to the Provider's data is refused by name rather than overwritten by the next sync. The key is one required String or Int, derived @immutable, and @unique unless a @@unique already names it (a key unique per account). missingSince DateTime? @system is derived for the sync to stamp a row the Provider stopped answering, which it never deletes. A relation keyed by the Provider's ids emits no foreign key, since the Provider sends a child before its parent; a dangling one reads as no row, and onDelete there is refused. No gate is derived: the key's own refusal already stops a caller's create. A connector's claim, bound in app wiring, forwards a default service's writes to the Provider and applies the row it answers.
+
+```lite
+@@mirror(key: externalId)
 ```
 
 #### `@@anonymous`

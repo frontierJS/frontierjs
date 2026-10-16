@@ -45,9 +45,9 @@ const { listCache, listKey, _resetListCache } = await import('../src/resource/li
 // story: rows are only ever written to a device for a model whose schema said
 // they could be (`FJS-D298`).
 const SOURCE = `
-model Sheet { id String @id @default(uuid())  name String  closedAt DateTime?  @@gate("0.0.0.0")  @@sync(server) }
-model Roster { id String @id @default(uuid())  name String                     @@gate("0.0.0.0")  @@sync(read) }
-model Plain { id String @id @default(uuid())  name String                      @@gate("0.0.0.0") }
+model Sheet { id String @id @default(uuid())  name String  closedAt DateTime?  @@gate(0.0.0.0)  @@sync(server) }
+model Roster { id String @id @default(uuid())  name String                     @@gate(0.0.0.0)  @@sync(read) }
+model Plain { id String @id @default(uuid())  name String                      @@gate(0.0.0.0) }
 `
 
 /** A failure the client attaches no code to — a request that never got a reply. */

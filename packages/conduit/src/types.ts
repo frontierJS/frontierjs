@@ -17,7 +17,8 @@ export type TargetKind =
 
 import type { BodyEncoding } from './transports/encode.ts'
 export type { BodyEncoding }
-import type { Receiver, ReceivedEvent, Delivery, Received, ReceiveResult } from './receive.ts'
+import type { Receiver, BrokerReceiver, ReceivedEvent, Delivery, Received, ReceiveResult } from './receive.ts'
+import type { MirrorClaim, MirrorForward, ClaimedModel } from './mirror.ts'
 
 // ─── Target ─────────────────────────────────────────────────
 
@@ -910,9 +911,28 @@ export interface IConduit {
    * what a transport hands a delivery to.
    */
   receive<Cred, Ev extends ReceivedEvent, Owner>(receiver: Receiver<Cred, Ev, Owner>): void
+  /**
+   * Declare a Provider's socket (`FJS-D1127`): a receiver that names a
+   * `broker` target in place of a path. Conduit subscribes it and every frame
+   * runs `accept()`'s order from parse on; no route is mounted. Resolves once
+   * the first dial has been tried, as `subscribe()` does.
+   */
+  receive<Ev extends ReceivedEvent, Owner>(receiver: BrokerReceiver<Ev, Owner>): Promise<void>
 
   /** Run one delivery through the receiver declared at `path`. `now` is seconds. */
   accept(path: string, delivery: Delivery, now: number): Promise<Received>
+
+  /**
+   * Bind a connector's mirror claim (`FJS-D1125`): the models it names forward
+   * their generated writes to the Provider. Refused by name for a malformed
+   * claim or a model another claim holds; under junction, boot also refuses a
+   * model the schema lacks, one not `@@mirror`, or a key that disagrees.
+   */
+  mirror(claim: MirrorClaim): void
+  /** The forward for a claimed model's accessor (`post`), or undefined. */
+  mirrored(accessor: string): MirrorForward | undefined
+  /** Every claimed model, for the boot check. */
+  claimed(): ClaimedModel[]
 
   /** Synchronous snapshot for metrics — reads maintained counters, never the store. */
   stats(): ConduitStats
@@ -930,10 +950,42 @@ export interface BrokerMessage {
 
 export type BrokerHandler = (message: BrokerMessage) => void | Promise<void>
 
+/**
+ * The socket during a handshake (`FJS-D1127`). `next(match)` answers the
+ * first frame `match` accepts, from the frames that arrived since `open` —
+ * a Provider that greets before it is asked has already sent the greeting —
+ * and every frame before it is dropped. It rejects when the socket closes.
+ */
+export interface BrokerLink {
+  send(frame: string): void
+  next(match: (frame: string) => boolean): Promise<string>
+}
+
+/**
+ * How a broker's frames read, supplied by the connector of whoever runs it
+ * (`FJS-D1127`). The default is conduit's own: `{ id, type: 'message', body }`
+ * in, `{ id, type: 'ack' }` out, no handshake.
+ *
+ * `handshake` runs after `open` and before the first frame is believed, with
+ * the secret the target's `auth` resolved for the dial (`null` under
+ * `none`); what it answers is handed to every `decode` on that connection —
+ * the connection's own id, for a Provider whose sequence restarts per
+ * connection. A throw closes the socket and the reconnect dials again.
+ * `decode` answers a message or `null`, and a `null` is dropped and counted,
+ * never buffered. `ack` absent is a Provider that redelivers nothing.
+ */
+export interface BrokerFraming<State = unknown> {
+  handshake?(link: BrokerLink, secret: string | null): Promise<State>
+  decode(frame: string, state: State): BrokerMessage | null
+  ack?(message: BrokerMessage): string
+}
+
 export interface BrokerHealth {
   connected:        boolean
   last_received_at: number | null   // unix ms
   received:         number
+  // Frames over `max_response_bytes` and frames the framing could not read.
+  dropped:          number
 }
 
 export interface ConduitStats {
@@ -964,7 +1016,7 @@ export interface ConduitStats {
 
   // Inbound, per result. A receiver declared and never delivered to is a
   // zero row here, which is how a vendor pointed at the wrong URL shows up.
-  received: Record<string, Record<ReceiveResult, number>>   // keyed by receiver path
+  received: Record<string, Record<ReceiveResult, number>>   // keyed by receiver path, or by target for a socket
 
   errors: Record<string, number>   // keyed by ConduitErrorKind
 

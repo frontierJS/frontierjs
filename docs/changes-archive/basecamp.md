@@ -1063,7 +1063,7 @@ and billing `[]` on both models, so every grant is held at 4 or above, which is
 where the gate writes. The grid narrows WITHIN developers and admins, which is
 the thing a ladder cannot say.
 
-Flattening to `@@gate("2")` was the alternative and it is the worse one: it
+Flattening to `@@gate(2)` was the alternative and it is the worse one: it
 would make the hand-stamped grant table the only thing between a viewer and
 `Server.delete`, and seven writers stamp it.
 
@@ -1841,7 +1841,7 @@ machine, on the one screen whose whole job is to be right about how many there
 are (`FJS-1007`).
 
 `view fleetByProvider` replaces it: declared columns, a grouped `@@sql`,
-`@@gate("2")` and `@@tenant(column: "workspaceId")`. `fleet.service.ts` is
+`@@gate(2)` and `@@tenant(column: "workspaceId")`. `fleet.service.ts` is
 `methods: 'readOnly'` and **writes no where-clause**, which is the assertion
 rather than an omission — tenancy is declared once at the top of `schema.lite`,
 the parser gives a scoped view a generated READ deny, and `membershipClaim`
@@ -1886,7 +1886,7 @@ a MISSING reading is silence rather than a zero: an outpost that stopped
 reporting disk and a disk at 0% are different facts.
 
 **The read is confined by its parent, and the tidier option was refused.**
-`MetricSeries` is `@@gate("8")` and `@@tenant(none)` — right for
+`MetricSeries` is `@@gate(8)` and `@@tenant(none)` — right for
 `process.memoryMb`, and exactly what a per-server series is not. Opening the
 package's read slot so each app could declare a row policy is fail-open: an app
 that writes none then serves every reading it has to anyone, silently. So
@@ -2205,7 +2205,7 @@ projections assembled from several tables where storing either would be a second
 answer that goes stale. A browser cannot substitute for it: `apps.find` answers
 the environment and the domains, and WHERE an app runs is only on `apps.get`,
 one request per app. Three of the six onboarding counts go through `asSystem()`
-because `Secret` and `Invitation` are `@@gate("5")` and `WorkspaceMember` reads
+because `Secret` and `Invitation` are `@@gate(5)` and `WorkspaceMember` reads
 only the caller's own rows — so a developer asking *does this workspace have an
 SSH key* got a refusal rather than a zero, on the screen whose whole audience is
 somebody who just arrived.
@@ -2268,7 +2268,7 @@ merely skipped. Litestone's `Capability[]` guard covers every other door.
 
 **Two `capability-ladder` warnings are deliberate.** `fli check` says a model
 graded by capability usually wants its gate flat at the read floor, and `Server`
-and `Environment` keep `@@gate("2.4.4.5")`. The grant table is bounded by the
+and `Environment` keep `@@gate(2.4.4.5)`. The grant table is bounded by the
 gate — a developer is never handed `Server.drain`, which is `@gate(5)` — so the
 ladder never refuses a legitimate holder, and it is what still catches a grant
 mis-stamped by a bug, a migration or a hub screen. The warning names something
@@ -2878,7 +2878,7 @@ asking and running is refused rather than replayed (`FJS-384`).
 
 **What adopting it means is not what the register assumed.** Measured against
 this app's own schema: every row these handlers write is gated at SYSTEM for
-update — `RecipeRun`, `DeploymentStep` and `CleanupRun` at `@@gate("2.4.8.8")`,
+update — `RecipeRun`, `DeploymentStep` and `CleanupRun` at `@@gate(2.4.8.8)`,
 `JobRun` at `2.8` — and the highest standing a workspace grants is `owner`, 6.
 That is the schema saying a run's outcome belongs to the machine and not to
 whoever asked for it, and a gate refuses regardless of standing. `asSystem()`
@@ -3129,7 +3129,7 @@ two things nothing else can: shapes that parse and fail later, and words the
 schema never reached for.
 
 **A caller can no longer update their own membership** (`FJS-410`). A `@@gate` is
-per MODEL, so `@@gate("1.5")` says *an admin may update a membership* and has no
+per MODEL, so `@@gate(1.5)` says *an admin may update a membership* and has no
 way to say *not their own* — while `role` is the column every gate in this app is
 graded from. `setMemberRole` is hooked `requireWorkspaceRole('admin', 'owner')`
 with one guard on it, *cannot demote the last owner*, so an admin naming their
@@ -3935,7 +3935,7 @@ reads as an empty disk.
 
 ### What holds `User` at USER(4) (2026-08-14)
 
-`FJS-170` moved auth's own fragment from `@@gate("8")` to `"4.4.4.5"` so that an
+`FJS-170` moved auth's own fragment from `@@gate(8)` to `"4.4.4.5"` so that an
 app can list its own people, and this app's hand copy moved with it. The level
 alone was not enough here, and the gap was open for three days:
 
@@ -4094,7 +4094,7 @@ success. The plan as it was ordered, for history:
 **`@@gate` landed 2026-08-10 and closed `FJS-007`** — deferred to last, as
 decided 2026-08-06, and it cost nothing to defer: the admin zone everyone
 expected to break was already written through `asSystem()` because `User` was
-`@@gate("8")` at the time. All 45 models declare a level; the ladder is per WORKSPACE
+`@@gate(8)` at the time. All 45 models declare a level; the ladder is per WORKSPACE
 (`api/src/core/gate.ts`), which is the part `example/api/src/core/gate.ts` could not
 supply.
 
@@ -4168,7 +4168,7 @@ before the rest follow.
    **Phase 10 is the sysadmin tier — `WorkspacesView`, `UsersView`, `FlagsView`
    (hub scope) and `SysOverviewView`.** Done. It was the last group whose
    blocker was an API rather than a model, and it was written against
-   `asSystem()` throughout because `User` was `@@gate("8")`, which even SYSADMIN
+   `asSystem()` throughout because `User` was `@@gate(8)`, which even SYSADMIN
    does not pass — so when the gates landed the day after, it needed no change,
    and when auth moved the level to 4 it needed none either.
 
@@ -4284,7 +4284,7 @@ be removed between the two.
 **Nothing could create a placement.** `AppServer` was read by three engines and
 written by nothing — no service, no seed, no screen — which is what the stub was
 really hiding. `apps.place` / `apps.unplace` are the way in: the caller is
-checked against the workspace and the `@@gate("2.8")` row is written through
+checked against the workspace and the `@@gate(2.8)` row is written through
 `asSystem()`. The App screen's Placement card edits it, and the seed places its
 demo apps, because a seeded app that cannot deploy is a demo of a broken app.
 
@@ -5167,7 +5167,7 @@ the name, and a new assertion pins that a deploy can find it at all.
 
 ## 2026-08-14 — a level graded on a column the caller could write
 
-`FJS-177`, closed. `@frontierjs/auth` moved `model User` from `@@gate("8")` to
+`FJS-177`, closed. `@frontierjs/auth` moved `model User` from `@@gate(8)` to
 `"4.4.4.5"` (`FJS-170`) so an app can list its own people, and this app's hand
 copy of the fragment moved with it — one line in a mixed commit, with no doc
 following. The suite said so for three days as a single failing assertion about

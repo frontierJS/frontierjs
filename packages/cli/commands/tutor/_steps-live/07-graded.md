@@ -8,7 +8,7 @@ description: Raise the read gate, and watch one of the two sockets stop hearing
 One character in `db/schema.lite`:
 
 ```text
-@@gate("0.4.4.6")   →   @@gate("4.4.4.6")
+@@gate(0.4.4.6)   →   @@gate(4.4.4.6)
 ```
 
 Reads now need a signed-in caller. Push it, restart the API, and run **the same
@@ -33,7 +33,7 @@ $.config.__step = 7
 
 if (!needs($, ['appDir', 'userToken'], { from: '03-account' })) return
 
-const edit = editSchema($, '@@gate("0.4.4.6")', '@@gate("4.4.4.6")')
+const edit = editSchema($, '@@gate(0.4.4.6)', '@@gate(4.4.4.6)')
 if (!await must($, {
   ok:    edit.ok,
   name:  'reads on Note now need a signed-in caller',

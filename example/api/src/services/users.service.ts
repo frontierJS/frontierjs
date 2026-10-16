@@ -5,7 +5,7 @@
 // and extended by db/user.lite, so everything that guards this service is
 // declared in two files neither of which is this one:
 //
-//   @@gate("4.4.4.5")        read/create/update at USER(4), delete at ADMIN(5)
+//   @@gate(4.4.4.5)        read/create/update at USER(4), delete at ADMIN(5)
 //   @@allow('read', …)       your own row, or every row if you are staff
 //   @@allow('update', …)     your own row, or any row if you are an admin
 //   email, role, emailVerified  @allow('write', auth().isAdmin)
@@ -29,7 +29,7 @@
 //
 //   remove   `User` declares no @@softDelete, and `Credential.userId` /
 //            `Session.userId` are bare String columns with no relation behind
-//            them — auth keeps its own machinery at @@gate("8") rather than
+//            them — auth keeps its own machinery at @@gate(8) rather than
 //            wiring foreign keys into an app's schema. So a delete here would
 //            leave live sessions pointing at a row that is gone: the person
 //            stays signed in, and the next request they make is authenticated

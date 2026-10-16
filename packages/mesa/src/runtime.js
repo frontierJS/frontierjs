@@ -965,6 +965,25 @@ export function onDestroy(fn) {
   onCleanup(fn)
 }
 
+// `$.measure` and `$.focus`, the DOM's answer. A phone answers both by callback
+// (`runtime-native.js`), so the browser answers a Promise too: code that reads a
+// rect synchronously would pass here and find nothing on a phone. Each target's
+// runtime exports the same two, and the door takes the target's.
+
+/** The box `el` occupies, as `{ left, top, right, bottom, width, height }`.
+ *  No node answers `null`, as `el?.getBoundingClientRect()` would. */
+export function measure(el) {
+  if (!el) return Promise.resolve(null)
+  const { left, top, right, bottom, width, height } = el.getBoundingClientRect()
+  return Promise.resolve({ left, top, right, bottom, width, height })
+}
+
+/** Move focus to `el`. No node does nothing, as `el?.focus()` would. */
+export function focus(el) {
+  el?.focus()
+  return Promise.resolve()
+}
+
 // A component's mount callbacks run a microtask after it is built, and it can
 // be destroyed in between — an `{#if}` opened and closed in one flush. They ran
 // anyway and their teardowns went onto a root nothing would dispose again, so a
@@ -1988,6 +2007,11 @@ export function portal(getTarget, blockFactory) {
  * same tick, so a per-run count tore the listener down and started it again on
  * every update — and a memo, whose cleanups also clear per recompute, did the
  * same. A node that is gone for a whole microtask is gone.
+ *
+ * `start` runs with no owner and no listener. It outlives the reader that
+ * happened to start it: under that reader's owner, a root or effect made there
+ * was disposed with the reader while the others still read, and under its
+ * listener a signal read there subscribed that one reader to it.
  */
 export function subscribe(start) {
   const [version, bump] = createSignal(0)
@@ -2007,7 +2031,13 @@ export function subscribe(start) {
     const node = _listener
     if (readers.has(node)) return
     readers.add(node)
-    if (!started) { started = true; stop = start(update) }
+    if (!started) {
+      started = true
+      const prevOwner = _owner
+      _owner = null
+      _listener = null
+      try { stop = start(update) } finally { _owner = prevOwner; _listener = node }
+    }
     onCleanup(() => { readers.delete(node); if (readers.size === 0) _resolved.then(settle) })
   }
 }
@@ -3995,99 +4025,59 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
   })
 }
 
-export function attachNamedSlot(__block, name, fallbackFactory) {
-  // __block is the 3rd argument to the component function — the slots object.
-  // { default: makeBlock(...), sidebar: makeBlock(...) }
-  // Returns the DOM node/fragment for addBlock() to insert at the right place.
-  const slotFactory = __block?.[name] ?? fallbackFactory
-  if (!slotFactory) return null
-  return slotFactory()
-}
-
-// Legacy — kept for compatibility
-export function attachNamedSlotLegacy($option, name, fallbackFactory) {
-  return attachNamedSlot($option?.slots, name, fallbackFactory)
-}
-
-// Kept for old attachSlot tests / external callers
-export function attachSlot(anchor, slotFn, fallbackFactory) {
-  const factory = slotFn ?? fallbackFactory
-  if (!factory) return
-  const result = typeof factory === 'function' ? factory() : factory
-  const node = result?.$dom ?? result
-  if (!node) return
-  if (anchor && anchor.parentNode) {
-    anchor.parentNode.insertBefore(node, anchor)
-    anchor.parentNode.removeChild(anchor)
-  }
-}
-
-/**
- * makeSlots — create the $slots reactive object for a component.
- *
- * $slots.sidebar → true if the parent passed a 'sidebar' slot block
- * $slots.default → true if the parent passed default children
- *
- * Used in layout templates: {#if $slots.sidebar} ... {/if}
- *
- * @param {object|null} __block — the slots object passed as 3rd arg to Component()
- * @returns {object} — proxy-like object with boolean keys per slot name
+/*
+ * A snippet written inside a component tag — `slot=` content and unslotted
+ * content are rewritten to one by the compiler (`FJS-D668`) — is marked, so the
+ * child can tell content it drops from a function prop it does not declare.
  */
-export function makeSlots(__block, declared, componentName) {
-  if (!__block) return {}
-  const slots = {}
-  for (const key of Object.keys(__block)) {
-    slots[key] = true
-  }
-  if (declared) warnUnrenderableSlots(__block, declared, componentName)
-  return slots
+const CONTENT = Symbol.for('mesa.content')
+
+export function content(fn) {
+  fn[CONTENT] = true
+  return fn
 }
 
 /*
- * Children handed to a component that has no `<slot>` for them are dropped, and
- * were dropped in silence: `<Button>Go</Button>` against a component whose label
+ * Content handed to a component that takes no prop of its name is dropped, and
+ * was dropped in silence: `<Button>Go</Button>` against a component whose label
  * is a `text` prop rendered an empty button, and nothing said so at any layer
  * (`FJS-926`).
  *
- * Graded against the slot names the component's own template DECLARES, not
- * against the ones it has rendered so far. The difference is the whole design.
- * Svelte's equivalent asks the second question and has answered the same false
- * positive twice (their #4546, reopened as #6325): a component that renders its
- * slot conditionally — `{#if $slots.default}<slot />{/if}` — has rendered
- * nothing at the moment the check runs, and six components in this repo's own
- * kit are that shape. An accordion whose `<slot>` sits behind `{#if expanded}`
- * is the same trap one step further out. A DECLARED slot is right in all three.
+ * Graded against the props the component DECLARES, a `<slot>` declaring one,
+ * not against what it has rendered so far. Svelte's equivalent asks the second
+ * question and has answered the same false positive twice (their #4546,
+ * reopened as #6325): a component that renders its content conditionally —
+ * `{#if children}{@render children()}{/if}` — has rendered nothing at the
+ * moment the check runs, and an accordion whose content sits behind
+ * `{#if expanded}` is the same trap one step further out.
  *
  * Their other false positive cannot arise here: whitespace-only children
- * compile to `null`, so `<Child>\n</Child>` passes no block at all.
+ * compile to no snippet, so `<Child>\n</Child>` passes nothing.
  *
- * Once per component-and-slot, because a list renders one component many times
+ * Once per component-and-name, because a list renders one component many times
  * and a warning per row is a warning nobody reads. Not gated on a dev build —
- * the check is a set lookup against a static list, and a dropped child is a bug
- * in every build, including the server render an email goes out on.
+ * the check is a lookup against a static list, and dropped content is a bug in
+ * every build, including the server render an email goes out on.
  */
-const _warnedSlots = new Set()
+const _warnedContent = new Set()
 
-function warnUnrenderableSlots(__block, declared, componentName) {
-  for (const name of Object.keys(__block)) {
-    if (declared.includes(name)) continue
+export function unclaimedContent(props, declared, componentName, renders = []) {
+  if (!props) return
+  for (const name of Object.keys(props)) {
+    if (!props[name]?.[CONTENT] || declared.includes(name)) continue
     const key = `${componentName}:${name}`
-    if (_warnedSlots.has(key)) continue
-    _warnedSlots.add(key)
-    const what = name === 'default' ? 'children' : `content for slot "${name}"`
+    if (_warnedContent.has(key)) continue
+    _warnedContent.add(key)
     console.warn(
-      `[Mesa] <${componentName}> was given ${what} and renders no ` +
-      (name === 'default' ? '<slot />' : `<slot name="${name}" />`) +
-      `, so it has been dropped. ` +
-      (declared.length
-        ? `It renders: ${declared.map((d) => d === 'default' ? '<slot />' : `<slot name="${d}" />`).join(', ')}.`
-        : `It renders no slots at all — pass the content as a prop.`)
+      `[Mesa] <${componentName}> was given ${name === 'children' ? 'children' : `content for "${name}"`} ` +
+      `and renders no {@render ${name}}, so it has been dropped. ` +
+      (renders.length ? `It renders: ${renders.join(', ')}.` : 'It renders no content at all — pass it as a prop.')
     )
   }
 }
 
-/** Test seam: the warning fires once per component-and-slot for the process. */
-export function resetSlotWarnings() { _warnedSlots.clear() }
+/** Test seam: the warning fires once per component-and-name for the process. */
+export function resetContentWarnings() { _warnedContent.clear() }
 
 /**
  * restProps — everything the caller passed that the component did not declare.
@@ -4107,18 +4097,18 @@ export function resetSlotWarnings() { _warnedSlots.clear() }
 export const REST_PROPS = Symbol.for('mesa.restProps')
 
 export function restProps(props, declared) {
-  // `children` is the slot-content channel, not an attribute. A component that
-  // receives content it did not declare as a prop would otherwise spread the
-  // snippet onto its own root element, and `children` is getter-only on
-  // Element — so passing a `{#snippet children}` to a component built around
-  // `<slot />` threw from inside spreadAttributes and took the render with it.
+  // Content is not an attribute. A component that receives content it does not
+  // declare would otherwise spread the snippet onto its own root element, and
+  // `children` is getter-only on Element — so passing content to a component
+  // that renders none threw from inside spreadAttributes and took the render
+  // with it. `unclaimedContent` is what reports it.
   const skip = new Set([...(declared ?? []), 'class', '$class', 'children'])
   // OWN keys only. A caller spreading a class instance, or a payload built with
   // Object.create, hands over an object whose prototype carries data — and a
   // `for…in` walk paints every one of those onto the element as an attribute.
   const pick = (src) => {
     const out = {}
-    if (src) for (const k of Object.keys(src)) if (!skip.has(k)) out[k] = src[k]
+    if (src) for (const k of Object.keys(src)) if (!skip.has(k) && !src[k]?.[CONTENT]) out[k] = src[k]
     return out
   }
 

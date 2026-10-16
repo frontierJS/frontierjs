@@ -50,6 +50,7 @@ import { createRsbuild } from '@rsbuild/core'
 import { pluginLynx } from '@lynx-js/rsbuild-plugin'
 import { pluginVanillaLynx } from '@lynx-js/vanilla-rsbuild-plugin'
 import { compileTree } from '../../scripts/host-tree.js'
+import { userAgentSheet } from '../../src/native/tags.js'
 import { runSpecs, green, red } from '../browser/drive.mjs'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
@@ -84,8 +85,8 @@ for (const dir of SOURCES) {
       const url = await compileTree(join(dir, f), tmp, { target: 'native', styles })
       const entry = join(tmp, `entry-${name}.mjs`)
       writeFileSync(entry, entrySource(name, url, PROPS[name] ?? {}))
-      let css = false
-      if (styles.length) writeFileSync(css = join(tmp, `entry-${name}.css`), styles.join('\n'))
+      const css = join(tmp, `entry-${name}.css`)
+      writeFileSync(css, [userAgentSheet, ...styles].join('\n'))
       fixtures[name] = { entry, css }
     } catch (e) {
       fixtures[name] = { refusal: String(e.message).split('\n')[0] }

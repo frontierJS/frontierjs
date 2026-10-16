@@ -61,7 +61,7 @@ const makeLiteModel = (name, softDelete) => {
   lines.push('')
   lines.push('  /// read.create.update.delete — reads are public, writes need a user.')
   lines.push('  /// Above 4 nothing grades a caller until the app declares an isAdmin column.')
-  lines.push('  @@gate("0.4.4.4")')
+  lines.push('  @@gate(0.4.4.4)')
   lines.push(`}`)
   lines.push('')
   return lines.join('\n')

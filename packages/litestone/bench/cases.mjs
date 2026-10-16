@@ -53,7 +53,7 @@ export const cases = [
   {
     name: 'findMany-gated', ceiling: 2, ops: 2_000,
     async open() {
-      const db = await users('\n @@gate("2.4.4.6")', [new GatePlugin({ getLevel: () => 5 })])
+      const db = await users('\n @@gate(2.4.4.6)', [new GatePlugin({ getLevel: () => 5 })])
       const raw = db.$rawDbs.main.query('SELECT id, name, age FROM user WHERE age >= ? LIMIT ?')
       return { db: db.$setAuth({ id: 1 }), raw, close: () => db.$close() }
     },

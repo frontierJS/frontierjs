@@ -2049,20 +2049,368 @@ on the emulator as closely as `csskit-resolved` did.
       every label black and says nothing. `runtime-native.js` states this.
       Artefact: `none`, since no new test files are wanted while experimenting.
     - No § IV adjudication is in tension.
-- [ ] 4.5 Type selectors lowered to a scope-and-tag class (`FJS-D1088`):
-      `p.mHASH` becomes `.mHASH_p`, and each element carries one
-- [ ] 4.6 A whole-selector `:where(list)` unwrapped into its members, as
-      `FJS-D1069`'s A lists: the Block surface (card, alert, dialog ground,
-      border, tint) and the chip fill `--_fill` are both one such rule.
-      `.btn:is(.outlined, .link)`, which sets the outlined ink, is the same
-      shape under `:is()` (4.3)
+- [x] 4.5 Type selectors lowered to a class per tag (`FJS-D1139`, which
+      replaces `FJS-D1088`'s scope-and-tag class): `p.mHASH` becomes
+      `._p.mHASH`, and every element carries one
+  - The kit's type members are global (`.alert-content > strong`,
+    `.field-group > label`), so `.mHASH_p` could not serve them. The owner
+    picked one class per tag over two classes per element.
+  - `tagClass()` in `native/tags.js` is the spelling. `runtime-native.js`
+    paints it on every element beside the scope class, from the tag it built,
+    so `<mesa:element this>` gets it too. `lowerTypes()` in `native/css.js`
+    rewrites each type naming a tag in `NATIVE_TAGS`. `scopeCSS` runs it per
+    selector before scoping, as the native profile's `lowerSelector`, and
+    `lowerSheet` runs it per member before `cssOffense` judges. `cssOffense`
+    now refuses only a tag the target has no element for.
+  - Over the kit, every type member lowers but 8, which drop: `html`,
+    `body`, `summary`, `select` and four `dialog`. Apart from the new `._tag` rules,
+    the sheet is 4.7's, except that `kbd, .kbd` is now two rules: a hoisted
+    `--_vN` is placed after the first member that uses it, so the two runs
+    differ and do not join.
+  - Over the corpus, native lowering goes from 45% to 49%. Type selectors go
+    from 64 files and 449 uses to 10 and 33, every one a tag with no element:
+    `summary`, the `svg` family, `iframe`, `html`, `body`. DOM output is byte
+    for byte unchanged (`corpus --diff`).
+  - In Chrome against the shipped sheet, with each element given its tag
+    class and `linear` read back as `block`, since Chrome ignores `linear`:
+    4.7's sheet differs in 7,375 of 665,496 values, and this one in 5,919.
+    Every difference not in 4.7's is either the `:last-child` rule 4.1 drops,
+    which now shows because `.surface-body > p`'s margin applies, or the
+    1px width 4.7 already has, which now reaches a `strong` that is a block.
+    With that `:last-child` rule put back, 5,269.
+  - On the emulator (`csskit-types` against 4.7's `csskit-display`), the field
+    label takes its small medium-weight rule, the card body's `p` and the
+    alerts' lines take their spacing, and the rest paints as before. The
+    alert title is still not bold: the kit never bolds `strong`, and the
+    browser's own stylesheet does (4.8).
+  - Lost:
+    - A type is (0,0,1) and a class (0,1,0). `p.mHASH` goes to (0,2,0) and
+      still beats a single class, but a global `strong` now ties one it lost
+      to, and the later rule wins.
+  - Found and fixed: a `<style>` with a `@keyframes` lost count of its braces
+    in `lowerStyles`, so a later `to` or `from` was refused as a type
+    selector (`FJS-3121`).
+  - The nine were answered before the code. Q1/Q5: the class is derived from
+    the tag, and which tags lower from `NATIVE_TAGS`. Q6: the rewrite sits
+    beside `cssOffense`, and `scopeCSS` and `lowerSheet` call it. Q9: a
+    runtime class and a rewrite that disagree paint nothing in silence; one
+    function names both, and the artefact is `none`, since no new test files
+    are wanted while experimenting. *Doctrine vs. discovery*: `FJS-D1088` was
+    ruled before the kit's own type selectors were measured.
+  - The native drive passes 70 of 70 and vitest 2,364 of 2,364. Device run by
+    hand: `csskit-types` in the spike, whose screen gives each element its tag
+    class as the runtime does. One bundle per boot under `-gpu guest`, clean.
+- [x] 4.6 A `:where(list)` or `:is(list)` unwrapped into its members, and the
+      members that agree joined back into one list
+  - `unwrapLists()` in `native/sheet.js`. Each top-level `:where()`, `:is()`
+    and vendor copy of `:is()` becomes one selector per member, as a cross
+    product, and each is judged by `cssOffense` alone. A type member goes to
+    the front of its compound. A member holding a combinator is unwrapped
+    only where the pseudo is the whole selector. Anything inside `:not()` or
+    `:has()` is left as written. The bundler's three vendor copies become
+    identical rules, and only the last is kept.
+  - Unwrapping writes each token definition once per member, which took the
+    kit sheet to 713 KB. `joinLists()` groups a source rule's members by their
+    lowered rules and writes each group as one list, context by context. The
+    sheet is 357 KB, the bundle 741 KB (959 KB unjoined). Two fixes made the
+    groups agree. A hoisted `--_vN` is now one token per value. And
+    `lowerTokens`' rules per context now carry their source rule's fields,
+    `line` among them, which also gives `kept` a line for them.
+  - The chip base came with `--_fill: color(from … xyz-d65 …)`, which
+    `values.js` neither computed nor reported. `color()` is now computed over
+    `srgb`, `srgb-linear` and `xyz-d65`, with `infinity` in channel math.
+    `#0d83dd` gives `#0b78cb`, the value `chip.css` states. The channel
+    parser read `y - .35` as `y` and `-.35`, so minus is now unary there. The
+    same bug was in 4.3's `oklch(from …)`.
+  - In Chrome against the shipped sheet: 4.3's sheet differs in 22,956 of
+    665,496 values, and this one in 7,375. None of those 7,375 is new against
+    a reference that keeps the lists for Chrome to read. The remaining color
+    differences are 1/255 rounding or `label`, a type selector (4.5). The
+    rest are 4.1's drops.
+  - On the emulator (`csskit-where` against 4.4's `csskit-inherit`):
+    - The card paints its white ground, border and radius.
+    - The alerts paint their tint, border and toned ink.
+    - The outlined buttons paint their border and ink.
+    - Delete takes the darker clamped red, and Due's text goes dark.
+    - A list of members the device reads paints.
+    - Regression: the card's header, body and footer now sit in a row. The
+      surface base brings `display: block`, and the device lays that out as
+      a row where no `display` stacked them (4.7).
+  - The native drive passes 70 of 70, the device sweep exits 0, and vitest
+    passes 2,364 of 2,364. Nothing imports the lowering yet.
+  - Lost:
+    - A `:where()` member takes its own specificity in place of zero.
+    - An element carrying members of two groups, a `.dialog.surface`, can
+      see their rules in another order.
+  - The nine were answered before the code:
+    - Q1/Q6: `list()` stays the one splitter and `cssOffense` the one judge,
+      and the owner is `lowerSheet`.
+    - Q3: PostCSS's `:is()` lowering is the same move.
+    - Q9: the artefact is this run's Chrome diff, uncommitted, so `none`.
+    - No § IV adjudication is in tension. The join and the `color()` work
+      came after, from the measurements.
+  - Device run by hand. The emulator segfaulted on opening any bundle under
+    `-gpu swiftshader_indirect`. Under `-gpu guest`, both runs were clean,
+    each booted in the same call that drove it.
+- [x] 4.7 `display: block` lowered to the device's stacking layout: the
+      surface base sets it, and the device lays it out as a row
+  - Measured first, on the emulator: a probe gives each `display` value a box
+    of three bars, two fixed-width and one with no width.
+    - An unset `display` stacks the bars and stretches the third, as CSS
+      block does, because the engine's default is `linear`. So do `linear`,
+      `inline-block`, `flow-root` and `-webkit-box`, which the device ignores.
+    - `block` lays the bars out as a row, the way `flex` does.
+    - `inline-flex` stacks them, where CSS gives a row. Twelve kit rules set
+      it: `.btn`, `.badge`, `.pill`, `.chip`, `.tab` among them.
+    - `grid` with no template stacks them. That is CSS's answer too, so this
+      run does not show whether the device reads grid.
+  - `display()` in `native/values.js`, run by `lowerValues`. A value is
+    lowered by its inner display alone (CSS Display 3 § 2), since a device has
+    no inline flow. Flow and flow-root become `linear`, and `flex` and `grid`
+    stay. Any other inner display comes back on `kept` by line, because the
+    device would ignore it and stack. Over the kit, that is one rule:
+    `-webkit-box`, the line clamp.
+  - Over the kit, the lowered sheet is byte for byte 4.6's apart from the
+    `display` values: 7 `block` and 1 `inline-block` become `linear`, and 12
+    `inline-flex` become `flex`.
+  - On the emulator (`csskit-display` against 4.6's `csskit-where`), the card
+    stacks its header, body and footer again, and the footer's View button
+    sits at the right. The buttons, badges, pills and alerts paint as they did.
+  - The native drive passes 70 of 70, the device sweep exits 0 with 33
+    mounted, and vitest passes 2,364 of 2,364. Nothing imports the lowering
+    yet.
+  - Lost: an inline-level box shrinks to fit its content, and on the device
+    it stretches across a `linear` parent. A `.btn` straight inside a card
+    body would be full width. The kit screen has none.
+  - The nine were answered before the code:
+    - Q1/Q6: nothing else in the tree maps `display`. The owner is
+      `lowerValues`, beside the logical-property map.
+    - Q2: no new noun and no option. `linear` is the engine's word.
+    - Q5: the map is derived from the spec's outer and inner split rather
+      than written as a table, so `inline-grid` and `list-item` are covered
+      without being listed.
+    - Q8: as with colors, a value it cannot lower is kept and reported.
+    - Q9: a wrong map is silent on a device: the screen gets a row where a
+      stack belongs. The artefact is this run's device probe, uncommitted,
+      since no new test files are wanted while experimenting, so `none`.
+    - No § IV adjudication is in tension.
+  - Device run by hand: `display` and `csskit-display` in the spike. Under
+    `-gpu guest` the emulator died after the first of two bundles in one
+    boot. One bundle per boot was clean.
+- [x] 4.8 The browser's own stylesheet, for the tags it styles: `strong`
+      and `b` bold, `em` and `i` italic, `code` monospace, `small` smaller.
+      A phone has none, and the kit assumes it, so its alert title is not
+      bold on the emulator (4.5)
+  - `userAgentSheet` in `native/tags.js`, beside `tagClass`, which spells
+    every selector in it. It is 24 rules over the tags in `NATIVE_TAGS`,
+    written in the form `lowerSheet` produces. The four tags named above
+    were not the whole of it: the kit also leaves `p`, the headings, the
+    lists, `blockquote`, `fieldset` and `hr` to the browser.
+  - The rules were measured, not recalled. Each tag's Chrome computed style
+    was diffed against a bare `div` or `span`, and the values kept in the
+    `em` the HTML standard's rendering section writes them in.
+  - It goes first in a bundle's CSS. The native drive puts it before every
+    fixture's scoped rules, so every fixture now ships a sheet.
+  - Left out, each named in the source: `a`, the controls, table layout and
+    cell padding, list markers, `cursor`, and the rule zeroing a nested
+    list's margins. `a` is left out because the kit removes its underline
+    with `a:where([class])`, an attribute selector a phone never matches, so
+    every component link would be underlined.
+  - In Chrome, with its own sheet switched off by an `all: unset` layer that
+    every unlayered rule beats, each tag compared to Chrome's own sheet:
+    133 values differ with no sheet, 44 with this one. The 44 are the
+    left-out controls and tables, plus `hr`'s own text color, which paints
+    nothing.
+  - Over the kit screen, against the shipped sheet under Chrome's own:
+    6,790 differ without it and 6,738 with it. The 52 it closes are every
+    `font-weight` difference. Every one still left is older: 4.1's dropped
+    `surface-body` margin, 1/255 rounding, the controls' `cursor` and
+    `appearance`, and `strong`'s `display`, since Chrome reads the `linear`
+    the sheet writes as nothing.
+  - On the emulator (`csskit-ua` against 4.5's `csskit-types`), "Heads up."
+    and "Payment failed." paint bold. The rest paints as before.
+  - The screen was also run inside `.container`, the kit's page gutter.
+    The device paints its padding on both sides, its `auto` margins and its
+    `width: 100%` as Chrome does: 14.1 px each side. Chrome gives 16 px, and
+    a probe (`gutter` in the spike, a row per declaration) shows why.
+    The device's `rem` is 14 px, not 16 (4.9).
+  - The native drive passes 70 of 70, the device sweep exits 0, and vitest
+    passes 2,364 of 2,364.
+  - Lost:
+    - A browser keeps this sheet in an origin below every author rule. Here
+      only order and specificity do that, so an author `*` rule loses to it.
+    - `bolder` is written as 700, so a `strong` inside a heading does not
+      go to 900.
+  - The nine were answered before the code:
+    - Q1/Q5: the origin is Chrome's own sheet, measured, and the HTML
+      standard's rendering section. Which tags it may name is derived from
+      `NATIVE_TAGS`, and their class from `tagClass`.
+    - Q2: no new noun. *User-agent stylesheet* is CSS's own term.
+    - Q6/Q7: the bundle builder owns what goes into the bundle, as with 4.4's
+      option. Today that is the drive and the spike. A builder that forgets
+      it gets a screen without bold in silence (Q9). The artefact is `none`,
+      since no new test files are wanted while experimenting.
+    - *Doctrine vs. discovery*: the step named four tags, and the
+      measurement found the kit leans on the browser for more.
+  - Device run by hand: `csskit-ua` and `gutter` in the spike, one bundle per
+    boot under `-gpu guest`. The first boot segfaulted after boot completed,
+    and the retry was clean.
+- [x] 4.9 `rem` on a phone is 14 px, the engine's root size, where the kit
+      assumes 16. The lowered kit holds 189 `rem` values, so every text size
+      and gap it states in `rem` paints 12.5% small (4.8's `gutter` probe)
+  - Measured first, on the emulator, with two bundles of one sheet (`rem-root`
+    and `rem-bare` in the spike). The first gives the page `font-size: 16px`
+    and the second leaves it alone. With the page at 16px, `1rem` padding is
+    16.0 px, an inherited `1em` is 16.0, and text with no size set is as wide
+    as text at 16px. With the page left alone, all three are 14.1 and 14px.
+    So `rem` is the page's font-size, as in CSS. The engine's root is 14px,
+    and `em` and unsized text read it too, not only `rem`.
+  - The fix is a root font-size of 16px, CSS's `medium`, and not a rewrite of
+    `rem` to `px` in `lowerValues`. That rewrite would leave every `em` and
+    every unsized text at 14px.
+  - `userAgentSheet` gains `._html { font-size: 16px }`, first, and
+    `runtime-native`'s `mount` gives the page `tagClass('html')`. Nothing else
+    in the sheet moves.
+  - On the emulator (`csskit-rem` against 4.8's `csskit-ua`, Chrome's shot of
+    the same screen as the reference):
+    - The page gutter goes from 15.6 px to 17.5, Chrome's figure.
+    - The Save button goes from 50.3 × 33.9 px to 58.7 × 38.5, against
+      Chrome's 59.0 × 37.7.
+    - The danger alert's height is 73.9 px, against Chrome's 73.5. It sits
+      465.5 px below Save, against 477.3. The 12px left over is older, mostly
+      4.1's dropped `surface-body` margin.
+  - The native drive passes 70 of 70, the device sweep exits 0, and vitest
+    passes 2,364 of 2,364.
+  - Lost: a phone's own text-size setting. A browser's `medium` follows the
+    user's chosen size, and here it is a fixed 16px. Whether the engine's 14px
+    follows the system font scale was not measured.
+  - The nine were answered before the code:
+    - Q1/Q5: the value is CSS's initial `medium`, and the class is
+      `tagClass('html')`.
+    - Q2: no new noun. The page is the document's root, `html`.
+    - Q4: one rule puts `rem`, `em` and unsized text where a browser has them.
+      A `rem` rewrite would fix one of the three.
+    - Q6: both owners already existed: `userAgentSheet` for the rule, and the
+      runtime that paints every tag class for the page's class.
+    - Q9: a bundle without the sheet paints 12.5% small in silence, as 4.8's
+      missing bold did. The artefact is `none`, since no new test files are
+      wanted while experimenting.
+    - No § IV adjudication is in tension.
+  - Device run by hand. Under `-gpu guest`, the emulator segfaulted on opening
+    any kit bundle, 4.8's `csskit-ua` included, three boots in a row, while
+    the small probes and the sweep were clean.
+    `-gpu swiftshader_indirect` painted `csskit-rem` on the first try.
 
 ### Phase 5 — The kit's DOM habits
 
 Goal: the 41 kit files that measure or focus synchronously have a native
 answer.
 
-- [ ] 5.1 An async measure and focus member on `$`
+- [x] 5.1 An async measure and focus member on `$`
+  - `$.measure(el)` answers a Promise of `{ left, top, right, bottom, width,
+    height }`, and `$.focus(el)` a Promise that resolves once focus has moved.
+    No node answers `null` and does nothing, as the kit's `el?.` already
+    does. Each runtime exports the pair: `runtime.js` for the DOM,
+    `runtime-native.js` and `runtime-terminal.js` for the hosts. `$$shared`
+    reads them off `$$host` on a host target and off `$$runtime` otherwise.
+    VISION § 17 lists both, and `emission.test.js` grades that.
+  - Native rejects when the engine answers a code other than 0, naming the
+    method, the tag and the code. Before this, the raw `{ code, data }` came
+    back as data, so a refusal read as a rect of `undefined`. A terminal
+    answers in cells, after the next frame. A box mounted this tick reads
+    `0,0 0x0` synchronously and `0,1 49x1` from `$.measure`.
+  - Measured:
+    - Chrome, scratch probe: `28,18 120x40`, which is the 8px body margin
+      plus the padding. Focus lands, and both no-node cases answer as stated.
+    - Terminal, headless: as above.
+    - Lynx for Web: the Probe fixture now calls `$.measure` and `$.focus`.
+      The native drive passes 70 of 70.
+    - Emulator, scratch fixture logging to logcat:
+      `{"w":120,"h":40,"keys":"left|top|right|bottom|width|height","none":null}`.
+      The focus resolved, so the device answers code 0. Booted with
+      `-gpu swiftshader_indirect`, one bundle, clean.
+  - Mesa's `bun run test` exits 0: vitest 2,364, the browser drives, the
+    terminal drive 428, native 70, and the bench gate. The corpus has 715
+    files, 0 of them invalid JS.
+  - `$.focus` takes no options yet. `CopyButton`'s `preventScroll` stays on
+    `el.focus()` until 5.2 decides whether a phone has an answer for it.
+  - The nine were answered before the code:
+    - Q1/Q5: each answer is read off its engine on every call, and nothing
+      is cached. The shape is written once per runtime.
+    - Q2: no new noun. `focus` is the DOM's word. `measure` is Lynx's and
+      React Native's, because the DOM's word is a synchronous getter.
+    - Q3: the complexity is the problem's: a phone answers by callback (§ 9).
+    - Q4: one spelling and one shape on all three targets. The browser
+      answers asynchronously too, so code written on the web runs on a phone.
+    - Q6: the owners already existed. Native's pair dates from 1.3, and each
+      target's runtime is where its DOM habits live. The door only picks one.
+    - Q7: named on `$`, documented in VISION § 17, graded by `emission.test.js`.
+    - Q8: an engine refusal rejects, and a missing node is an answer.
+    - Q9: what must stay true is that `$.measure` answers the box on every
+      target. What fails when it stops: the native drive's `probe` spec, for
+      native only. DOM and terminal: `none`, since no new test files are
+      wanted while experimenting.
+    - No § IV adjudication is in tension. Tier: Map (VISION § 17), and this
+      entry as the Assessment.
+- [x] 5.2 The kit measures and focuses through `$`: the placement in
+      `Popover`, `DropdownMenu` and `ConfirmPanel`, and the 18 files that
+      call `.focus()`
+  - Each overlay's `position()` is async and reads both boxes with
+    `Promise.all([$.measure(a), $.measure(b)])`. `placed` is set after the
+    await, so the panel stays hidden until it is placed. `ConfirmPanel` is
+    still placed without waiting for a frame (`FJS-331`), since the DOM's
+    answer is a microtask. The terminal guard in `DropdownMenu` and
+    `ConfirmPanel` now asks for a `window` to place against, where it used to
+    sniff for `getBoundingClientRect`, which `$` has retired.
+  - Every `.focus()` in `components/` is `$.focus(x)`, except one. The nine
+    exported `focus()` methods return its Promise. `Json`'s `focusMe`
+    selects after the Promise. `CopyButton` keeps `el.focus({ preventScroll })`:
+    it restores focus after a `document.execCommand('copy')`, and a phone has
+    neither half. `dnd.js` is a plain module with no `$`, and it is DOM-only.
+  - Narrowed by the owner: `Slider` and `SignaturePad` keep
+    `getBoundingClientRect`. The measure is not what a phone lacks. Both run
+    through `drag.js` (pointer events, pointer capture), and the pad also
+    needs canvas, `Path2D` and `getComputedStyle`. An async read would also
+    break `drag.js`'s synchronous `start()`, whose return value is the
+    gesture's `from`. Their handle focus did move to `$.focus`. 5.4 is the
+    gesture.
+  - Measured:
+    - ui `bun run test` exits 0: 1,891 passing, 83 of 83 components opened in
+      a browser, the dropdown, confirm-in-dropdown and overlay-host specs
+      among them.
+    - `example` `verify:tui`: the confirmation and the menu open under their
+      triggers, Esc and focus return pass. The one failure is `FJS-2931`'s
+      path-field check, which is already filed and touches no kit file.
+    - `example` `verify`, on the 7xxx slot: 70 of 70. The first run failed
+      only `consoleErrors`, with `FJS-1598`'s known 1-in-2 warning.
+    - Corpus: 715 files, 0 invalid JS.
+  - Still no phone answer for placement: `placeAgainst` reads
+    `window.innerWidth`/`innerHeight`, and a phone has no `window`. That is
+    5.3.
+  - The nine, answered LATE (after the code was green):
+    - Q1/Q5: the box is read off the engine on each call. Nothing is cached
+      across a gesture or an open.
+    - Q2: no new noun.
+    - Q3: an async `position()` is the problem's: a phone answers by
+      callback.
+    - Q4: every kit focus now goes one way. The exceptions are named above,
+      each with what a phone lacks.
+    - Q6: the owner is 5.1's pair on `$`. No helper was added beside it.
+    - Q7: a caller of an exported `focus()` may await it or ignore it. On
+      the DOM, focus has moved before the call returns, as it did before.
+    - Q8: a missing node is still an answer (`null`, nothing). An engine
+      refusal rejects inside `position()`, and the panel stays hidden, which
+      is visible.
+    - Q9: what must stay true is that a kit panel opens placed and focus
+      lands where it did. What fails when it stops: ui's browser drive
+      (dropdown, confirm-in-dropdown, overlay-host) and `example`
+      `verify:tui` for the terminal. Native: `none`, since no kit overlay
+      runs on a phone yet.
+    - No § IV adjudication is in tension. Tier: Assessment, this entry.
+- [ ] 5.3 A phone's viewport for `placeAgainst`: its clamp reads `window`,
+      which a phone does not have
+- [ ] 5.4 A phone's answer for `drag.js`, then `Slider`'s and `SignaturePad`'s
+      rects through `$.measure`
 
 ---
 

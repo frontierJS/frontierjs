@@ -34,7 +34,7 @@ import { resolve }                                  from 'path'
 // User, it adds the columns its bell menu wants, and it answers
 // `polymorphic-subject` for contextType, which this package cannot answer for
 // it. `fli outbox:install` imports by name instead, and that is right there:
-// OutboxMessage is @@gate("8") machinery an app never writes.
+// OutboxMessage is @@gate(8) machinery an app never writes.
 //
 // What the copy costs is drift, which is why the package exports the file at
 // all: `fli check`'s `package-model-drift` compares the copy against it and

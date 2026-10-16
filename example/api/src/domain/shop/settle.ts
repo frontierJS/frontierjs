@@ -94,7 +94,7 @@ export async function refundOrder(orderId: number): Promise<SettledOrder> {
   const order = await ($.db as unknown as WithTransitions)
     .order.transition(orderId, 'refund') as SettledOrder
 
-  // The system client: an InventoryMovement is `@@gate("5.5.9.9")` and a
+  // The system client: an InventoryMovement is `@@gate(5.5.9.9)` and a
   // refund may be confirmed by a webhook, which is nobody. `restock` is handed
   // a client rather than reaching for one, which is what makes that a decision
   // at every call site (`api/src/domain/inventory.ts`).

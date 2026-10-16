@@ -36,7 +36,7 @@ model Lead {
   email   String @email
   status  String @default("new")
   value   Float  @default(0) @gte(0)
-  @@gate("4")
+  @@gate(4)
 }
 
 model Category {
@@ -284,7 +284,7 @@ model Session {
   id      String  @id @default(uuid())
   userId  String
   plan    Plan    @default(starter)
-  @@gate("8")
+  @@gate(8)
 }
 `
 
@@ -344,7 +344,7 @@ model Order {
   id     Int    @id
   status String
   total  Int
-  @@gate("1")
+  @@gate(1)
 }
 
 view revenueByStatus {
@@ -352,7 +352,7 @@ view revenueByStatus {
   orders Int
   total  Int
   @@sql("SELECT status, COUNT(*) AS orders, SUM(total) AS total FROM [order] GROUP BY status")
-  @@gate("5")
+  @@gate(5)
 }
 `
 
@@ -483,7 +483,7 @@ model Collection {
   id        Int        @id
   ownerId   Int
   bookmarks Bookmark[]
-  @@gate("0")
+  @@gate(0)
   ${collectionSync}
 }
 
@@ -491,7 +491,7 @@ model Bookmark {
   id           Int        @id
   collectionId Int
   collection   Collection @relation(fields: [collectionId], references: [id])
-  @@gate("0")
+  @@gate(0)
   @@allow('read', collection.ownerId == auth().id)
   @@sync(server)
 }

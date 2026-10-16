@@ -51,7 +51,7 @@ const file = join(app, 'api', 'test', 'doors.test.ts')
 // that has to be edited when the declaration moves is the thing this whole
 // lesson is arguing against.
 const gate = readFileSync(schemaFile($), 'utf8')
-  .match(/model Note \{[\s\S]*?@@gate\("(\d)/)
+  .match(/model Note \{[\s\S]*?@@gate\((\d)/)
 const readsAt = gate ? Number(gate[1]) : 0
 
 // Below the level, where there is one. At STRANGER(0) there is nothing below,

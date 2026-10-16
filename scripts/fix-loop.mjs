@@ -86,7 +86,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join }            from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
-import { ROOT, LOG_DIR, runSession, printAttempt, appendLog, lastEntry, readLog, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
+import { ROOT, LOG_DIR, runSession, printAttempt, appendLog, lastEntry, readLog, sentBack, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
 import { LANES_DIR, LINKED, openLane, syncLane, applyPatch, lanePatch, harvest } from './lanes.mjs'
 
 // Not `LADDER`: frame-loop shares that one and stays on Opus.
@@ -278,7 +278,7 @@ function nextRow() {
     if (skipped.has(r.id) || inFlight.has(r.id) || r.byHand || r.env || (ids && !ids.includes(r.id))) continue
     if (r.pkg.some(p => running.includes(p))) { wait = true; continue }
     if (stillBusy(r, log)) { console.log(`[fix-loop] ${r.id} skipped — busy last time, and the files that made it so are still dirty`); skipped.add(r.id); continue }
-    const verdicts = ids ? null : sentBack(r, log)
+    const verdicts = ids ? null : sentBack(r.id, log)
     if (verdicts) { console.log(`[fix-loop] ${r.id} skipped — ${verdicts.length} attempts ended ${verdicts.join(', ')} and it is still open`); skipped.add(r.id); dodged.push({ id: r.id, verdicts }); continue }
     return r
   }
@@ -291,15 +291,6 @@ function nextRow() {
 function stillBusy(row, log) {
   const last = log.filter(e => e.id === row.id && e.cost !== undefined).at(-1)
   return last?.outcome === 'busy' && last.dirty?.length > 0 && last.dirty.join('\n') === dirtyUnder(row).join('\n')
-}
-
-// Busy is a collision and an interrupted run no verdict, so neither counts;
-// blocked, failed and corrected each mean a session looked and handed the row
-// back. Two is the bar, and it lives here rather than in a const above because
-// the loop runs before this line is reached.
-function sentBack(row, log) {
-  const verdicts = log.filter(e => e.id === row.id && e.cost !== undefined && e.outcome && !['closed', 'busy'].includes(e.outcome)).map(e => e.outcome)
-  return verdicts.length >= 2 ? verdicts : null
 }
 
 function dirtyUnder(row) {

@@ -129,7 +129,7 @@
   const canIncrement = resolvedMax === undefined || value < resolvedMax
 
   let inputEl
-  export function focus() { inputEl?.focus() }
+  export function focus() { return $.focus(inputEl) }
 
   // ── Actions ───────────────────────────────────────────────────────────────
 

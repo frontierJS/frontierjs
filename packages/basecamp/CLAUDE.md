@@ -649,7 +649,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   `AccessDeniedError` alike (CRUD and a method's declared `gate:`); add to that
   mapper, never beside it.
 - **A placement is written by `apps.place`, through `asSystem()`.** `AppServer`
-  is `@@gate("2.8")` — a member may read it, only the system may write it — so
+  is `@@gate(2.8)` — a member may read it, only the system may write it — so
   the authority check is against the WORKSPACE in the service and the write is a
   system one. Nothing writing the row while three engines read it is what
   leaves a deploy with no machine to talk to.
@@ -686,7 +686,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   and the metric store is the line. A card draws both: the bar is what the box
   said a moment ago, the sparkline is the last day. Reading a series is
   `servers.metrics`, and **its confinement is the PARENT READ**:
-  `MetricSeries` is `@@gate("8")` and `@@tenant(none)`, so `getScoped('server')`
+  `MetricSeries` is `@@gate(8)` and `@@tenant(none)`, so `getScoped('server')`
   runs at the caller's own standing first and only then is the series read
   through `asSystem()`. Opening the package's gate for a row policy was refused
   — an app that declares none then serves every reading to anyone, fail-open

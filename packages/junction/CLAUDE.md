@@ -89,6 +89,14 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
   `test/bearer-claim.test.ts`). **A session beside a grant is a 400 before the
   grant is read, unless the grant states `session: 'merge'`** (`FJS-D832`, same
   file § a session beside a grant).
+- **A claimed mirror's generated write lands at the Provider first, here
+  second** (`FJS-D1125`): `create`/`update`/`patch`/`remove` ask
+  `app.conduit.mirrored(accessor)` at call time, the row validator steps aside
+  for the claim's input, the answer is upserted by `$mirrorKey` as the system,
+  a `@local` column the caller named is written as the caller, the row is
+  re-read as the caller, and a write naming no single row is refused.
+  `mirrorClaimFor` in `core/litestone.ts` is the one reader; the proof is
+  conduit's `junction-integration.test.ts` § *a claimed mirror model*.
 - **A test names no port** — `port: 0`, then read `app.http.port` (`FJS-900`,
   `test/test-ports.test.ts`).
 - **The whole package typechecks to zero, `test/` included** — junction has no

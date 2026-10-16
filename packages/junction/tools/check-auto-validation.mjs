@@ -19,7 +19,7 @@ const svc = buildBase({ name: 'leads', model: 'lead' })
 chk('hooks installed on the service', !!svc.hooks?.before?.create?.length)
 
 // Authenticated: gateAuth runs before validation and the Lead model is
-// @@gate("4"), so an anonymous context would 401 before reaching the validator.
+// @@gate(4), so an anonymous context would 401 before reaching the validator.
 const run = async (data) => {
   const ctx = { method: 'create', data, locals: { db: client }, auth: { user: { userId: 'u1' } }, app: {} }
   for (const h of svc.hooks.before.create) await h(ctx)

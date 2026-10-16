@@ -2895,12 +2895,20 @@ async function cmdMutate(cfg) {
     // which loadConfig does not populate, so a schema declaring `@secret` could
     // not be BUILT and every mutant came back refused by the loader.
     build:  (text) => createTestEnv({ schema: text, encryptionKey: getEncKey() }),
-    // Only on a terminal: `\r` does not erase in a pipe or a log, so a
-    // redirected run collected one progress line per tick on a single row.
-    onMutant: () => {
+    // `\r` does not erase in a pipe or a log, so a redirected run gets one
+    // line per ten mutants instead, naming the one just graded: a run that is
+    // slow and a run that is hung otherwise print the same nothing. `--json`
+    // keeps stdout for the result and reports on stderr.
+    onMutant: (m) => {
       done++
-      if (asJson || !process.stdout.isTTY) return
-      if (done % 5 === 0 || done === all.length) process.stdout.write(`\r  ${dim(`${done}/${all.length}`)}   `)
+      if (!asJson && process.stdout.isTTY) {
+        if (done % 5 === 0 || done === all.length) process.stdout.write(`\r  ${dim(`${done}/${all.length}`)}   `)
+        return
+      }
+      if (done % 10 !== 0 && done !== all.length) return
+      const line = `  ${done}/${all.length} · ${((Date.now() - started) / 1000).toFixed(0)}s · ${m.kind} ${m.outcome}: ${m.describe}`
+      if (asJson) process.stderr.write(`${line}\n`)
+      else console.log(dim(line))
     },
   })
   if (!asJson && process.stdout.isTTY) process.stdout.write('\r                    \r')

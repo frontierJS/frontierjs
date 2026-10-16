@@ -8,7 +8,7 @@ render: static
   There is no `publishes:` in the frontmatter above, which is a claim: this page
   contains nothing that is not public. The build CHECKS that claim rather than
   taking it — it taps the Litestone client while load() runs and compares every
-  model read against that model's @@gate. `Product` is @@gate("0.4.4.5"), so its
+  model read against that model's @@gate. `Product` is @@gate(0.4.4.5), so its
   read level is 0 and the page is allowed to exist.
 
   Point the load() at a gated model and `bun run build:site` fails, naming the

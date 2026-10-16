@@ -109,6 +109,16 @@ test('sigv4: S3 PUT Object, with a body and a `$` in the key', async () => {
   assert.match(signed.Authorization, /Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd$/)
 })
 
+test('sigv4: `unsignedPayload` signs the literal and never reads the body — a Blob is not hashed', async () => {
+  const url     = 'https://examplebucket.s3.amazonaws.com/test.txt'
+  const blob    = new Blob(['Welcome to Amazon S3.'])
+  const signed  = await signRequest('PUT', url, {}, blob, { ...S3, unsignedPayload: true })
+  assert.equal(signed['x-amz-content-sha256'], 'UNSIGNED-PAYLOAD')
+  assert.match(signed.Authorization, /SignedHeaders=host;x-amz-content-sha256;x-amz-date,/)
+  const hashed = await signRequest('PUT', url, {}, 'Welcome to Amazon S3.', S3)
+  assert.ok(signed.Authorization !== hashed.Authorization)
+})
+
 test('sigv4: S3 presigned GET, valid for a day', async () => {
   const url = new URL(await presignUrl('GET', 'https://examplebucket.s3.amazonaws.com/test.txt', S3, 86400))
   assert.equal(url.searchParams.get('X-Amz-Signature'), 'aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404')

@@ -57,7 +57,7 @@ model User {
   // app scaffolded with `fli new --auth` booted with that warning and its
   // policies unchecked.
   @@auth
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
   @@allow('update', id == auth().id || auth().isAdmin)
   @@trail(audit)
 }

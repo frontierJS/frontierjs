@@ -7,7 +7,7 @@
 // In flight:     an authorization mid-redirect (OauthFlow), a login that has
 //                passed a password and owes a second factor (LoginChallenge)
 //
-// Every model here is @@gate("8"): nothing outside asSystem() has anything to
+// Every model here is @@gate(8): nothing outside asSystem() has anything to
 // say to them, and this package is the only thing that calls asSystem() on
 // them. That
 // is the line between this file and user.lite beside it — User is the model an
@@ -58,7 +58,7 @@ model Credential {
   createdAt       DateTime   @default(now())
 
   @@db(main)
-  @@gate("8")
+  @@gate(8)
   @@index([userId, type])
   @@index([type, value])
   /// One (provider, subject) is one row. `oauthResolve` reads then writes in
@@ -100,7 +100,7 @@ model Session {
   impersonationEndsAt  DateTime?
 
   @@db(main)
-  @@gate("8")
+  @@gate(8)
   @@trail(audit)
 
   /// `expiresAt` is the window, so a lapsed session is not there to be read and
@@ -160,7 +160,7 @@ model Verification {
   createdAt   DateTime             @default(now())
 
   @@db(main)
-  @@gate("8")
+  @@gate(8)
 
   /// A lapsed proof is not a proof. Declared rather than filtered, so the four
   /// purposes cannot drift — the reset path and the verify path used to carry
@@ -201,7 +201,7 @@ model LoginChallenge {
   createdAt  DateTime  @default(now())
 
   @@db(main)
-  @@gate("8")
+  @@gate(8)
 
   /// `completeLogin` is the one read here that deliberately does NOT filter and
   /// now says so: it wants the lapsed row in hand, because *this ticket ran
@@ -249,7 +249,7 @@ model OauthFlow {
   createdAt   DateTime @default(now())
 
   @@db(main)
-  @@gate("8")
+  @@gate(8)
 
   /// Minutes rather than hours, and a flow that has run out is a flow nobody
   /// may finish.

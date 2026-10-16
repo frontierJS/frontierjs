@@ -11,7 +11,7 @@ import { tmpdir }        from 'os'
 import { fileURLToPath } from 'url'
 
 import { execFileSync } from 'child_process'
-import { rankNext, blockedBy, byHand, envCause, ENV_CAUSES, blockedLine, recentPaths, COMMIT_FILE_CAP, WEIGHTS } from '../core/next.js'
+import { rankNext, blockedBy, byHand, envCause, ENV_CAUSES, seamOf, bySeam, blockedLine, recentPaths, COMMIT_FILE_CAP, WEIGHTS } from '../core/next.js'
 
 // Every fixture declares the prefix its rows are written under.
 const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
@@ -182,6 +182,31 @@ describe('the declaration', () => {
     expect(envCause({ body: 'the env: var is unset · [d](test/verify.mjs)' })).toBe(null)
     expect(envCause({ body: '[d](test/verify.mjs) · env: bogus' })).toBe('bogus')
     expect(ENV_CAUSES).toContain('shared db')
+  })
+
+  test('seam: is read as its own segment, the name as the key list writes it, and not out of prose', () => {
+    expect(seamOf({ body: '[d](src/a.js) · seam: withLitestoneDb · by hand' })).toBe('withLitestoneDb')
+    expect(seamOf({ body: '[d](src/a.js) · `seam: $setAuth`' })).toBe('$setAuth')
+    expect(seamOf({ body: '[d](src/a.js) · seam: `resource.save(data, { mode })`' })).toBe('resource.save(data, { mode })')
+    expect(seamOf({ body: 'the seam: between them · [d](src/a.js)' })).toBe(null)
+  })
+
+  test('--by seam groups on the identifier, most rows first, and counts the rows naming none', () => {
+    const { root, cleanup } = fixture([
+      S3('FJS-001', 'cli', 'One.', '[a](src/a.js) · seam: withLitestoneDb'),
+      S3('FJS-002', 'cli', 'Two.', '[a](src/a.js) · seam: `$setAuth(user)`'),
+      S3('FJS-003', 'cli', 'Three.', '[a](src/a.js) · seam: $setAuth'),
+      S3('FJS-004', 'cli', 'Four.'),
+    ])
+    try {
+      const { ready } = rankNext(root, { touched: new Set() })
+      const { seams, none } = bySeam(ready)
+      expect(seams.map(g => [g.seam, g.count, g.rows.map(r => r.id)])).toEqual([
+        ['$setAuth(user)', 2, ['FJS-002', 'FJS-003']],
+        ['withLitestoneDb', 1, ['FJS-001']],
+      ])
+      expect(none).toBe(1)
+    } finally { cleanup() }
   })
 
   test('an env row stays ranked and carries its cause', () => {

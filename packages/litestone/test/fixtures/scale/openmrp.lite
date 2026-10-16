@@ -35,7 +35,7 @@ model InventoryIssueStatus {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Account {
@@ -152,7 +152,7 @@ model Account {
 
   @@index([accountTypeCode])
   @@index([onboardingStatusCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountAddress {
@@ -166,7 +166,7 @@ model AccountAddress {
 
   @@unique([accountId, addressId])
   @@index([addressId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountBilling {
@@ -189,7 +189,7 @@ model AccountBilling {
 
   @@index([accountPlanId])
   @@index([internalStripeCustomerId])
-  @@gate("4.5.5.6")
+  @@gate(4.5.5.6)
 }
 
 model AccountBranding {
@@ -207,7 +207,7 @@ model AccountBranding {
   updatedAt                          DateTime                           @updatedAt
   createdAt                          DateTime                           @default(now())
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountGroup {
@@ -234,7 +234,7 @@ model AccountGroup {
   @@index([ownerAccountId])
   @@index([accountGroupTypeCode])
   @@index([receiveCalendarId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountGroupProductLine {
@@ -248,7 +248,7 @@ model AccountGroupProductLine {
 
   @@unique([accountGroupId, productLineId])
   @@index([productLineId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountGroupQuantityDiscount {
@@ -262,7 +262,7 @@ model AccountGroupQuantityDiscount {
 
   @@unique([accountGroupId, quantityDiscountId])
   @@index([quantityDiscountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountIntegration {
@@ -279,7 +279,7 @@ model AccountIntegration {
   @@unique([accountId, integrationCode])
   @@index([integrationCode])
   @@index([isActive])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountInventorySetting {
@@ -291,7 +291,7 @@ model AccountInventorySetting {
   updatedAt                          DateTime                           @updatedAt
 
   @@index([inventoryPolicyCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountPlan {
@@ -322,7 +322,7 @@ model AccountPlan {
 
   @@index([planTypeCode, effectiveAt])
   @@index([isPubliclyVisible])
-  @@gate("4.5.5.6")
+  @@gate(4.5.5.6)
 }
 
 model AccountPlanFeature {
@@ -335,7 +335,7 @@ model AccountPlanFeature {
   updatedAt                          DateTime                           @updatedAt
 
   @@unique([accountPlanId, key])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountPlanLimit {
@@ -348,7 +348,7 @@ model AccountPlanLimit {
   updatedAt                          DateTime                           @updatedAt
 
   @@unique([accountPlanId, key])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountPortal {
@@ -358,7 +358,7 @@ model AccountPortal {
   updatedAt                          DateTime                           @updatedAt
   createdAt                          DateTime                           @default(now())
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountPrice {
@@ -377,7 +377,7 @@ model AccountPrice {
   @@index([ownerAccountId])
   @@index([productLineId])
   @@index([ownerAccountId, recipientAccountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountPriceAttribute {
@@ -391,7 +391,7 @@ model AccountPriceAttribute {
 
   @@unique([accountPriceId, attributeId])
   @@index([attributeId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountPriceItemCategory {
@@ -405,7 +405,7 @@ model AccountPriceItemCategory {
 
   @@unique([accountPriceId, itemCategoryId])
   @@index([itemCategoryId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountProductionScheduleSetting {
@@ -458,7 +458,7 @@ model AccountProductionScheduleSetting {
   @@index([isEnabled, generationCron])
   @@index([shipCalendarId])
   @@index([receiveCalendarId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountRelation {
@@ -519,7 +519,7 @@ model AccountRelation {
   @@index([ownerAccountId, accountGroupId])
   @@index([ownerAccountId, defaultSalesRepId])
   @@index([receiveCalendarId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountRelationNotificationPreference {
@@ -534,7 +534,7 @@ model AccountRelationNotificationPreference {
   @@index([accountRelationId])
   @@index([notificationTypeCode])
   @@index([recipientAccountUserId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountRelationNotificationType {
@@ -544,7 +544,7 @@ model AccountRelationNotificationType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model AccountRelationPriceGroup {
@@ -558,7 +558,7 @@ model AccountRelationPriceGroup {
 
   @@unique([accountRelationId, accountGroupId])
   @@index([accountGroupId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountRelationProductLine {
@@ -572,7 +572,7 @@ model AccountRelationProductLine {
 
   @@unique([accountRelationId, productLineId])
   @@index([productLineId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AccountStatus {
@@ -582,7 +582,7 @@ model AccountStatus {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model AccountUser {
@@ -613,7 +613,7 @@ model AccountUser {
   @@index([roleId])
   @@index([statusCode])
   @@index([accountId, statusCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ActionType {
@@ -623,7 +623,7 @@ model ActionType {
   code                               String                             @unique
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model Address {
@@ -642,7 +642,7 @@ model Address {
 
   @@index([geolocationId])
   @@index([receiveCalendarId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AdjustmentType {
@@ -652,7 +652,7 @@ model AdjustmentType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model AgentTokenBilling {
@@ -671,7 +671,7 @@ model AgentTokenBilling {
   updatedAt                          DateTime                           @updatedAt
 
   @@unique([accountId, periodStart])
-  @@gate("8")
+  @@gate(8)
 }
 
 model Announcement {
@@ -697,7 +697,7 @@ model Announcement {
 
   @@index([scope, accountId, publishAt, expiresAt])
   @@index([expiresAt])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model AnnouncementReceipt {
@@ -712,7 +712,7 @@ model AnnouncementReceipt {
   createdAt                          DateTime                           @default(now())
 
   @@unique([announcementId, accountUserId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ApiKey {
@@ -736,7 +736,7 @@ model ApiKey {
   @@index([roleId])
   @@index([ownerAccountId, revokedAt])
   @@index([ownerAccountId, expiresAt])
-  @@gate("8")
+  @@gate(8)
 }
 
 model Attribute {
@@ -758,7 +758,7 @@ model Attribute {
   @@index([propertyId])
   @@index([colorCode])
   @@index([accountId])
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model AuditEvent {
@@ -796,7 +796,7 @@ model AuditEvent {
   @@index([accountId, resourceType])
   @@index([accountId, actorId])
   @@index([accountId, rootResourceType, rootResourceId, occurredAt])
-  @@gate("8")
+  @@gate(8)
 }
 
 model Batch {
@@ -834,7 +834,7 @@ model Batch {
   @@index([productionRunId])
   @@index([accountId, scanningStationId])
   @@index([accountId, productionRunId, itemId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Carrier {
@@ -857,7 +857,7 @@ model Carrier {
 
   @@index([accountId])
   @@softDelete
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model CarrierOption {
@@ -881,7 +881,7 @@ model CarrierOption {
 
   @@index([carrierId])
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model CarrierTransitEstimate {
@@ -902,7 +902,7 @@ model CarrierTransitEstimate {
 
   @@unique([accountId, carrierOptionId, originCountry, originPostal, destCountry, destPostal])
   @@index([carrierOptionId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ChangeLog {
@@ -921,7 +921,7 @@ model ChangeLog {
   @@index([accountId, recordId, modelType])
   @@index([responsibleUserId])
   @@index([actionTypeCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Color {
@@ -933,7 +933,7 @@ model Color {
   code                               String                             @unique
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model Consumption {
@@ -951,7 +951,7 @@ model Consumption {
 
   @@index([productionStepId])
   @@index([itemId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Conversation {
@@ -993,7 +993,7 @@ model Conversation {
   @@index([emailInboxId])
   @@index([accountId, audience, isArchived])
   @@index([accountId, groupId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ConversationDmKey {
@@ -1005,7 +1005,7 @@ model ConversationDmKey {
   conversation                       Conversation                       @relation(fields: [conversationId], references: [id])
 
   @@unique([accountId, dmKey])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ConversationLink {
@@ -1021,7 +1021,7 @@ model ConversationLink {
 
   @@unique([conversationId, resourceType, resourceId])
   @@index([accountId, resourceType, resourceId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ConversationParticipant {
@@ -1056,7 +1056,7 @@ model ConversationParticipant {
   @@index([accountUserId, membership, conversationId])
   @@index([conversationId, membership])
   @@index([relationAccountId, membership, conversationId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model DcLocation {
@@ -1070,7 +1070,7 @@ model DcLocation {
 
   @@index([accountId])
   @@index([ownerAccountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model DeletedRecord {
@@ -1081,7 +1081,7 @@ model DeletedRecord {
   data                               Json
 
   @@index([resourceType, resourceId])
-  @@gate("8")
+  @@gate(8)
 }
 
 model Delivery {
@@ -1102,7 +1102,7 @@ model Delivery {
   @@index([accountId])
   @@index([deliveryStatusCode])
   @@index([accountId, deliveryStatusCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model DeliveryLine {
@@ -1127,7 +1127,7 @@ model DeliveryLine {
   @@index([receivingOrderLineId])
   @@index([storageLocationId])
   @@index([lotId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model DeliveryStatus {
@@ -1137,7 +1137,7 @@ model DeliveryStatus {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model DemandOverride {
@@ -1164,7 +1164,7 @@ model DemandOverride {
   @@index([accountId])
   @@index([accountId, scopeCode, scopeRefId, periodStartDate])
   @@index([accountId, isActive, periodStartDate, id])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model DemandOverrideType {
@@ -1174,7 +1174,7 @@ model DemandOverrideType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model Department {
@@ -1200,7 +1200,7 @@ model Department {
 
   @@unique([accountId, name])
   @@index([locationId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model DocApiKey {
@@ -1213,7 +1213,7 @@ model DocApiKey {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("8")
+  @@gate(8)
 }
 
 model EdiRun {
@@ -1228,7 +1228,7 @@ model EdiRun {
 
   @@index([accountId])
   @@index([accountId, hasSucceeded])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model EdiTransmission {
@@ -1254,7 +1254,7 @@ model EdiTransmission {
   @@unique([accountId, documentType, subjectId])
   @@index([accountId, status, availableAt])
   @@index([counterpartyAccountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model EmailDomain {
@@ -1270,7 +1270,7 @@ model EmailDomain {
   emailInboxes                       EmailInbox[]
 
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model EmailInbox {
@@ -1293,7 +1293,7 @@ model EmailInbox {
 
   @@index([accountId])
   @@index([emailDomainId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model EmailLog {
@@ -1312,7 +1312,7 @@ model EmailLog {
   @@index([accountId])
   @@index([sentById])
   @@index([sesMessageId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model EmailMessage {
@@ -1341,7 +1341,7 @@ model EmailMessage {
   @@index([conversationId, direction])
   @@index([inReplyTo])
   @@index([messageId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model EmailRecipient {
@@ -1353,7 +1353,7 @@ model EmailRecipient {
   emailLog                           EmailLog?                          @relation(fields: [emailLogId], references: [id])
 
   @@index([emailLogId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ErrorLog {
@@ -1375,7 +1375,7 @@ model ErrorLog {
   @@index([affectedUserId])
   @@index([apiLocationCode])
   @@index([errorSeverityCode])
-  @@gate("8")
+  @@gate(8)
 }
 
 model FulfillmentPolicy {
@@ -1385,7 +1385,7 @@ model FulfillmentPolicy {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Geolocation {
@@ -1405,7 +1405,7 @@ model Geolocation {
   timezone                           String?
   addresses                          Address[]
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model HubspotAccountUserLink {
@@ -1420,7 +1420,7 @@ model HubspotAccountUserLink {
 
   @@unique([ownerAccountId, customerAccountId, accountUserId])
   @@index([hubspotContactId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model HubspotCompanyReview {
@@ -1442,7 +1442,7 @@ model HubspotCompanyReview {
 
   @@unique([jobId, augnoCustomerId])
   @@index([jobId, status])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model HubspotSyncJob {
@@ -1461,7 +1461,7 @@ model HubspotSyncJob {
   updatedAt                          DateTime                           @updatedAt
 
   @@index([accountId, status])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model HubspotSyncRecord {
@@ -1480,7 +1480,7 @@ model HubspotSyncRecord {
 
   @@unique([accountId, augnoType, augnoId])
   @@index([accountId, hubspotType, hubspotId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model IdempotencyKey {
@@ -1513,7 +1513,7 @@ model IdempotencyKey {
   @@index([targetAccountId])
   @@index([lockExpiresAt])
   @@index([expiresAt])
-  @@gate("8")
+  @@gate(8)
 }
 
 model InventoryAllocation {
@@ -1531,7 +1531,7 @@ model InventoryAllocation {
 
   @@index([inventoryReceiptId])
   @@index([inventoryIssueId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model InventoryChangeLog {
@@ -1561,7 +1561,7 @@ model InventoryChangeLog {
   @@index([accountId, responsibleUserId])
   @@index([accountId, scanningStationId])
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model InventoryIssue {
@@ -1592,7 +1592,7 @@ model InventoryIssue {
   @@index([storageLocationId])
   @@index([lotId])
   @@index([batchId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model InventoryLog {
@@ -1610,7 +1610,7 @@ model InventoryLog {
   @@index([itemId])
   @@index([accountId])
   @@index([createdAt])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model InventoryPolicyType {
@@ -1620,7 +1620,7 @@ model InventoryPolicyType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model InventoryReceipt {
@@ -1655,7 +1655,7 @@ model InventoryReceipt {
   @@index([receivedAt])
   @@index([orderId])
   @@index([batchId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model InventoryReceiptStatus {
@@ -1665,7 +1665,7 @@ model InventoryReceiptStatus {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model Invoice {
@@ -1691,7 +1691,7 @@ model Invoice {
   @@index([createdAt])
   @@index([billingAddressId])
   @@index([accountId])
-  @@gate("4.5.5.6")
+  @@gate(4.5.5.6)
 }
 
 model InvoiceLine {
@@ -1708,7 +1708,7 @@ model InvoiceLine {
   @@index([invoiceId])
   @@index([salesOrderLineId])
   @@index([invoiceId, salesOrderLineId])
-  @@gate("4.5.5.6")
+  @@gate(4.5.5.6)
 }
 
 model Item {
@@ -1757,7 +1757,7 @@ model Item {
   @@index([accountId, itemTypeCode])
   @@index([accountId, itemCategoryId])
   @@softDelete
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ItemCategory {
@@ -1779,7 +1779,7 @@ model ItemCategory {
   @@unique([accountId, name], nullsDistinct: true)
   @@index([unitGroupId])
   @@index([itemCategoryTypeCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ItemCategoryType {
@@ -1789,7 +1789,7 @@ model ItemCategoryType {
   code                               String                             @unique
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model ItemType {
@@ -1799,7 +1799,7 @@ model ItemType {
   name                               String?
   code                               String                             @unique
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model Job {
@@ -1827,7 +1827,7 @@ model Job {
 
   @@index([jobId])
   @@index([accountId, createdBy])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model JournalPosting {
@@ -1842,7 +1842,7 @@ model JournalPosting {
 
   @@index([accountTransactionId])
   @@index([accountId])
-  @@gate("4.5.5.6")
+  @@gate(4.5.5.6)
 }
 
 model LabelSize {
@@ -1852,7 +1852,7 @@ model LabelSize {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model LabelType {
@@ -1862,7 +1862,7 @@ model LabelType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model Lot {
@@ -1883,7 +1883,7 @@ model Lot {
   @@unique([accountId, itemId, lotNumber])
   @@index([itemId])
   @@index([expiresAt])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Machine {
@@ -1907,7 +1907,7 @@ model Machine {
   @@unique([accountId, name])
   @@index([departmentId])
   @@index([productionStepId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model MachineDowntimeEvent {
@@ -1945,7 +1945,7 @@ model MachineDowntimeEvent {
   @@index([accountId, reasonCode])
   @@index([accountId, machineId, endedAt])
   @@index([accountId, endedAt])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model MachineDowntimeReason {
@@ -1958,7 +1958,7 @@ model MachineDowntimeReason {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model Material {
@@ -1971,7 +1971,7 @@ model Material {
   leadTimeId                         String                             @unique
   supplierMaterials                  SupplierMaterial[]
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Message {
@@ -2028,7 +2028,7 @@ model Message {
   @@index([conversationId, status])
   @@index([accountId, status, scheduledFor, id])
   @@softDelete
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model MessageAttachment {
@@ -2053,7 +2053,7 @@ model MessageAttachment {
 
   @@index([messageId])
   @@softDelete
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model MessageInbox {
@@ -2076,7 +2076,7 @@ model MessageInbox {
   @@index([processedAt])
   @@index([requestId])
   @@index([parentMessageId])
-  @@gate("8")
+  @@gate(8)
 }
 
 model MessageOutbox {
@@ -2108,7 +2108,7 @@ model MessageOutbox {
   @@index([lockExpiresAt])
   @@index([requestId])
   @@index([parentMessageId])
-  @@gate("8")
+  @@gate(8)
 }
 
 model MessageReceipt {
@@ -2126,7 +2126,7 @@ model MessageReceipt {
 
   @@unique([messageId, accountUserId])
   @@index([accountUserId, readAt])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model MessagingBlock {
@@ -2139,7 +2139,7 @@ model MessagingBlock {
 
   @@unique([blockerAccountUserId, blockedAccountUserId])
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model MessagingGroup {
@@ -2152,7 +2152,7 @@ model MessagingGroup {
   updatedAt                          DateTime                           @updatedAt
 
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model MessagingGroupMember {
@@ -2169,7 +2169,7 @@ model MessagingGroupMember {
   @@unique([groupId, accountUserId], nullsDistinct: true)
   @@unique([groupId, agentConfigId], nullsDistinct: true)
   @@index([groupId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model MessagingReport {
@@ -2186,7 +2186,7 @@ model MessagingReport {
 
   @@index([conversationId])
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Notification {
@@ -2223,7 +2223,7 @@ model Notification {
   @@index([recipientAccountUserId, senderType, senderId])
   @@index([createdAt, readAt, dismissedAt])
   @@index([recipientAccountUserId, conversationId, dismissedAt])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model NotificationPreference {
@@ -2241,7 +2241,7 @@ model NotificationPreference {
   updatedAt                          DateTime                           @updatedAt
 
   @@unique([accountUserId, category])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model OnboardingStatus {
@@ -2251,7 +2251,7 @@ model OnboardingStatus {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model OperatingCalendar {
@@ -2273,7 +2273,7 @@ model OperatingCalendar {
   @@unique([accountId, code])
   @@index([accountId, operatingCalendarKindCode, isDefault])
   @@softDelete
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model OperatingCalendarClosure {
@@ -2289,7 +2289,7 @@ model OperatingCalendarClosure {
 
   @@unique([operatingCalendarId, closedOn])
   @@index([accountId, closedOn])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model OrderDiscount {
@@ -2308,7 +2308,7 @@ model OrderDiscount {
   @@unique([accountId, code])
   @@index([discountTypeCode])
   @@index([code])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model OrderEmailContact {
@@ -2324,7 +2324,7 @@ model OrderEmailContact {
   @@unique([salesOrderId, accountUserId, notificationTypeCode])
   @@index([notificationTypeCode])
   @@index([accountUserId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model OrderPaymentIntent {
@@ -2336,7 +2336,7 @@ model OrderPaymentIntent {
   salesOrder                         SalesOrder                         @relation(fields: [salesOrderId], references: [id])
 
   @@index([salesOrderId])
-  @@gate("4.5.5.6")
+  @@gate(4.5.5.6)
 }
 
 model Part {
@@ -2346,7 +2346,7 @@ model Part {
   itemId                             String                             @unique
   item                               Item                               @relation(fields: [itemId], references: [id])
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model PaymentTerm {
@@ -2362,7 +2362,7 @@ model PaymentTerm {
   registrationFlows                  RegistrationFlow[]
 
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Permission {
@@ -2375,7 +2375,7 @@ model Permission {
   permissionGroupCode                String
 
   @@index([permissionGroupCode])
-  @@gate("8")
+  @@gate(8)
 }
 
 model PermissionGroup {
@@ -2386,7 +2386,7 @@ model PermissionGroup {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("8")
+  @@gate(8)
 }
 
 model Pick {
@@ -2404,7 +2404,7 @@ model Pick {
 
   @@index([accountId, finishedAt])
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model PickLine {
@@ -2421,7 +2421,7 @@ model PickLine {
 
   @@index([pickId])
   @@index([salesOrderLineId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model PortalDomain {
@@ -2435,7 +2435,7 @@ model PortalDomain {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model PortalRegistrationSession {
@@ -2456,7 +2456,7 @@ model PortalRegistrationSession {
 
   @@index([sellerAccountId])
   @@index([userId, sellerAccountId, completedAt])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Priority {
@@ -2466,7 +2466,7 @@ model Priority {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model Product {
@@ -2483,7 +2483,7 @@ model Product {
 
   @@index([productLineId])
   @@index([productTypeCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductLine {
@@ -2513,7 +2513,7 @@ model ProductLine {
   @@unique([accountId, name], nullsDistinct: true)
   @@index([unitGroupId])
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductLineTarget {
@@ -2532,7 +2532,7 @@ model ProductLineTarget {
   @@index([salesRepId])
   @@index([productLineId])
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductType {
@@ -2542,7 +2542,7 @@ model ProductType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model Production {
@@ -2558,7 +2558,7 @@ model Production {
 
   @@index([itemId])
   @@index([productionStepId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionRun {
@@ -2579,7 +2579,7 @@ model ProductionRun {
   @@unique([accountId, number])
   @@index([responsibleUserId])
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionSchedule {
@@ -2620,7 +2620,7 @@ model ProductionSchedule {
   @@unique([accountId, version])
   @@index([accountId])
   @@index([accountId, statusCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionScheduleDerivedLine {
@@ -2651,7 +2651,7 @@ model ProductionScheduleDerivedLine {
   @@index([accountId, departmentId, weekStartDate, id])
   @@index([sourceLineId])
   @@index([productionScheduleId, weekStartDate, explosionDepth, id])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionScheduleDeviation {
@@ -2682,7 +2682,7 @@ model ProductionScheduleDeviation {
   @@index([accountId])
   @@index([productionScheduleLineId])
   @@index([productionScheduleId, isFrozenWeek])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionScheduleFinishedPolicy {
@@ -2711,7 +2711,7 @@ model ProductionScheduleFinishedPolicy {
   @@unique([productionScheduleId, itemId])
   @@index([productionScheduleId, greigeItemId, sku])
   @@index([accountId, itemId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionScheduleFinishingLine {
@@ -2750,7 +2750,7 @@ model ProductionScheduleFinishingLine {
   @@index([productionScheduleId, itemId, weekStartDate, id])
   @@index([productionScheduleId, greigeItemId, weekStartDate, id])
   @@index([accountId, departmentId, weekStartDate, id])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionScheduleItemPolicy {
@@ -2802,7 +2802,7 @@ model ProductionScheduleItemPolicy {
   @@unique([productionScheduleId, itemId])
   @@index([productionScheduleId, id])
   @@index([accountId, itemId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionScheduleItemSetting {
@@ -2826,7 +2826,7 @@ model ProductionScheduleItemSetting {
 
   @@unique([accountId, itemId])
   @@index([accountId, isExcluded])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionScheduleLine {
@@ -2872,7 +2872,7 @@ model ProductionScheduleLine {
   @@index([accountId, departmentId, weekStartDate, id])
   @@index([accountId, itemId, weekStartDate, id])
   @@index([productionRunId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionScheduleLineOrder {
@@ -2894,7 +2894,7 @@ model ProductionScheduleLineOrder {
   @@index([productionScheduleId, salesOrderId, id])
   @@index([productionScheduleLineId, id])
   @@index([accountId, salesOrderId, id])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionScheduleLineStatus {
@@ -2904,7 +2904,7 @@ model ProductionScheduleLineStatus {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model ProductionScheduleResourceSetting {
@@ -2931,7 +2931,7 @@ model ProductionScheduleResourceSetting {
 
   @@unique([accountId, scopeCode, scopeRefId])
   @@index([accountId, isExcluded, scopeCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionScheduleStatus {
@@ -2941,7 +2941,7 @@ model ProductionScheduleStatus {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model ProductionShift {
@@ -2963,7 +2963,7 @@ model ProductionShift {
 
   @@index([accountId, isActive, code])
   @@index([accountId, departmentId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ProductionStep {
@@ -2997,7 +2997,7 @@ model ProductionStep {
   @@index([departmentId])
   @@index([scanningStationId])
   @@index([accountId, scanningStationId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Property {
@@ -3012,7 +3012,7 @@ model Property {
   itemCategories                     ItemCategory[]
 
   @@unique([accountId, name])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Quantity {
@@ -3038,7 +3038,7 @@ model Quantity {
   shipmentLines                      ShipmentLine[]
 
   @@index([unitId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model QuantityDiscount {
@@ -3056,7 +3056,7 @@ model QuantityDiscount {
   units                              Unit[]
 
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model QuantityDiscountTier {
@@ -3072,7 +3072,7 @@ model QuantityDiscountTier {
 
   @@index([parentTierId])
   @@index([quantityDiscountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Rate {
@@ -3085,7 +3085,7 @@ model Rate {
 
   @@index([numeratorUnitId])
   @@index([denominatorUnitId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ReceivingOrder {
@@ -3100,7 +3100,7 @@ model ReceivingOrder {
   receivingOrderLines                ReceivingOrderLine[]
 
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ReceivingOrderLine {
@@ -3118,7 +3118,7 @@ model ReceivingOrderLine {
 
   @@index([receivingOrderId])
   @@index([salesOrderLineId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model RefreshToken {
@@ -3131,7 +3131,7 @@ model RefreshToken {
   updatedAt                          DateTime                           @updatedAt
 
   @@index([userId])
-  @@gate("8")
+  @@gate(8)
 }
 
 model RegistrationFlow {
@@ -3146,7 +3146,7 @@ model RegistrationFlow {
   shippingTerms                      ShippingTerm[]
 
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model RegistrationQueue {
@@ -3163,7 +3163,7 @@ model RegistrationQueue {
   @@index([email])
   @@index([planCode])
   @@index([contacted])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model RegistrationSession {
@@ -3193,7 +3193,7 @@ model RegistrationSession {
   @@index([email])
   @@index([stripeCustomerId])
   @@index([userId, completedAt])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model RequestLog {
@@ -3247,7 +3247,7 @@ model RequestLog {
   @@index([accountId, actorId])
   @@index([accountId, statusCode])
   @@index([accountId, errorCode])
-  @@gate("8")
+  @@gate(8)
 }
 
 model Role {
@@ -3264,7 +3264,7 @@ model Role {
 
   @@index([accountId])
   @@index([roleTypeCode])
-  @@gate("8")
+  @@gate(8)
 }
 
 model RolePermission {
@@ -3281,7 +3281,7 @@ model RolePermission {
 
   @@index([permissionCode])
   @@index([roleId])
-  @@gate("8")
+  @@gate(8)
 }
 
 model RoleType {
@@ -3291,7 +3291,7 @@ model RoleType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model SalesOrder {
@@ -3375,7 +3375,7 @@ model SalesOrder {
   @@index([ownerAccountId, customerPoNumber])
   @@index([ownerAccountId, issuedAt])
   @@index([ownerAccountId, salesOrderStatusCode, shipByDate, id])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model SalesOrderLine {
@@ -3405,7 +3405,7 @@ model SalesOrderLine {
   @@index([productId])
   @@index([itemId])
   @@index([salesOrderId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model SalesOrderStatus {
@@ -3415,7 +3415,7 @@ model SalesOrderStatus {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model SalesOrderType {
@@ -3425,7 +3425,7 @@ model SalesOrderType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model SandboxAccount {
@@ -3438,7 +3438,7 @@ model SandboxAccount {
   account                            Account                            @relation(fields: [accountId], references: [id])
 
   @@index([ownerAccountId])
-  @@gate("8")
+  @@gate(8)
 }
 
 model ScanningStation {
@@ -3464,7 +3464,7 @@ model ScanningStation {
   @@index([scanningStationTypeCode])
   @@index([labelSizeCode])
   @@index([labelTypeCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ScanningStationType {
@@ -3474,7 +3474,7 @@ model ScanningStationType {
   code                               String                             @unique
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model ScheduleDeviationType {
@@ -3484,7 +3484,7 @@ model ScheduleDeviationType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model ServiceIdempotencyKey {
@@ -3510,7 +3510,7 @@ model ServiceIdempotencyKey {
   @@index([idempotencyKey])
   @@index([lockExpiresAt])
   @@index([expiresAt])
-  @@gate("8")
+  @@gate(8)
 }
 
 model Settlement {
@@ -3526,7 +3526,7 @@ model Settlement {
 
   @@index([responsibleUserId])
   @@index([accountId])
-  @@gate("4.5.5.6")
+  @@gate(4.5.5.6)
 }
 
 model Shipment {
@@ -3563,7 +3563,7 @@ model Shipment {
   @@index([accountId])
   @@index([createdAt])
   @@index([accountId, shipmentStatusCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ShipmentLine {
@@ -3580,7 +3580,7 @@ model ShipmentLine {
   @@index([shipmentId])
   @@index([salesOrderLineId])
   @@index([createdAt])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ShipmentStatus {
@@ -3590,7 +3590,7 @@ model ShipmentStatus {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model ShippingCase {
@@ -3616,7 +3616,7 @@ model ShippingCase {
   @@index([carrierId])
   @@index([accountId])
   @@index([createdAt])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ShippingTerm {
@@ -3636,7 +3636,7 @@ model ShippingTerm {
   registrationFlows                  RegistrationFlow[]
 
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model ShippingTermFreeShippingRule {
@@ -3649,7 +3649,7 @@ model ShippingTermFreeShippingRule {
 
   @@unique([shippingTermId, carrierOptionId])
   @@index([carrierOptionId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model StorageLocation {
@@ -3671,7 +3671,7 @@ model StorageLocation {
   @@index([addressId])
   @@index([storageLocationTypeCode])
   @@index([parentId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model StorageLocationType {
@@ -3681,7 +3681,7 @@ model StorageLocationType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model StripeEventLog {
@@ -3696,7 +3696,7 @@ model StripeEventLog {
   @@index([eventId])
   @@index([eventType])
   @@index([objectId])
-  @@gate("8")
+  @@gate(8)
 }
 
 model SupplierMaterial {
@@ -3714,7 +3714,7 @@ model SupplierMaterial {
   @@unique([materialId, supplierAccountId, ownerAccountId])
   @@index([supplierAccountId])
   @@index([ownerAccountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model SupportRoute {
@@ -3727,7 +3727,7 @@ model SupportRoute {
   updatedAt                          DateTime                           @updatedAt
 
   @@unique([accountId, relationAccountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model SysProperty {
@@ -3742,7 +3742,7 @@ model SysProperty {
   @@unique([accountId, sysPropertyTypeCode])
   @@index([accountId])
   @@index([sysPropertyTypeCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model SysPropertyType {
@@ -3752,7 +3752,7 @@ model SysPropertyType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model Target {
@@ -3768,7 +3768,7 @@ model Target {
 
   @@index([salesRepId])
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model TaskLease {
@@ -3778,7 +3778,7 @@ model TaskLease {
   expiresAt                          DateTime
 
   @@index([expiresAt])
-  @@gate("8")
+  @@gate(8)
 }
 
 model Territory {
@@ -3797,7 +3797,7 @@ model Territory {
   @@index([salesRepId])
   @@index([productLineId])
   @@index([accountId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model TokenPackPurchase {
@@ -3816,7 +3816,7 @@ model TokenPackPurchase {
   @@index([accountId])
   @@index([status])
   @@index([accountId, status])
-  @@gate("4.5.5.6")
+  @@gate(4.5.5.6)
 }
 
 model Transaction {
@@ -3848,7 +3848,7 @@ model Transaction {
   @@index([accountId, customerAccountId])
   @@index([accountId, transactionMethodCode])
   @@index([accountId, adjustmentTypeCode])
-  @@gate("4.5.5.6")
+  @@gate(4.5.5.6)
 }
 
 model TransactionAllocation {
@@ -3868,7 +3868,7 @@ model TransactionAllocation {
   @@index([transactionId])
   @@index([invoiceId])
   @@index([createdAt])
-  @@gate("4.5.5.6")
+  @@gate(4.5.5.6)
 }
 
 model TransactionMethod {
@@ -3878,7 +3878,7 @@ model TransactionMethod {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model TransactionType {
@@ -3889,7 +3889,7 @@ model TransactionType {
   createdAt                          DateTime                           @default(now())
   updatedAt                          DateTime                           @updatedAt
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model Unit {
@@ -3916,7 +3916,7 @@ model Unit {
   @@unique([accountId, name], nullsDistinct: true)
   @@index([accountId, id, createdAt])
   @@index([unitDimensionCode])
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model UnitGroup {
@@ -3937,7 +3937,7 @@ model UnitGroup {
   @@index([baseUnitId])
   @@index([accountId])
   @@index([unitTypeCode])
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model UnitGroupUnit {
@@ -3954,7 +3954,7 @@ model UnitGroupUnit {
 
   @@unique([unitId, unitGroupId])
   @@index([unitGroupId])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model UnitType {
@@ -3964,7 +3964,7 @@ model UnitType {
   name                               String?
   code                               String                             @unique
 
-  @@gate("1.5.5.6")
+  @@gate(1.5.5.6)
 }
 
 model User {
@@ -3984,5 +3984,5 @@ model User {
   registrationSessions               RegistrationSession[]
 
   @@index([statusCode])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }

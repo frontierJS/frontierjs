@@ -22,7 +22,7 @@ if (!needs($, ['appDir'], { from: '01-app' })) return
 // `tutor:access` raises the same line, so an app arriving here already changed
 // is ordinary. Normalized rather than assumed: the alternative is a lesson
 // whose headline depends on which lessons you ran before it.
-const lowered = editSchema($, '@@gate("4.4.4.6")', '@@gate("0.4.4.6")')
+const lowered = editSchema($, '@@gate(4.4.4.6)', '@@gate(0.4.4.6)')
 if (lowered.ok && !lowered.already) {
   log.info('  reads on Note were already gated — put back to 0, which is where this lesson starts')
   pushSchema($)

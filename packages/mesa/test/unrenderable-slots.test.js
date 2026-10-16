@@ -1,8 +1,9 @@
 /**
- * Children handed to a component with no `<slot>` for them are dropped, and
- * were dropped in silence (`FJS-926`).
+ * Content handed to a component that takes no prop of its name is dropped, and
+ * was dropped in silence (`FJS-926`). A `<slot>` declares the prop it reads,
+ * since a slot is a snippet (`FJS-D668`).
  *
- * The grading is against the slot names the child's own template DECLARES.
+ * The grading is against the props the child DECLARES.
  * Svelte's equivalent grades against what has been RENDERED and has answered
  * the resulting false positive twice — a component whose `<slot>` sits inside
  * an `{#if}` has rendered nothing at the moment the check runs. Those two
@@ -12,7 +13,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { writeFileSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { compileSource } from '../src/compiler.js'
-import { flushSync, mount, resetSlotWarnings } from '../src/runtime.js'
+import { flushSync, mount, resetContentWarnings } from '../src/runtime.js'
 
 // Written into the package root and unlinked as soon as they are imported,
 // which is what the other compiled-fixture suites here do. Not a temp
@@ -64,7 +65,7 @@ async function run(childSrc, parentBody) {
   } finally { console.warn = real }
 }
 
-beforeEach(() => { resetSlotWarnings(); document.body.innerHTML = '' })
+beforeEach(() => { resetContentWarnings(); document.body.innerHTML = '' })
 
 describe('a component that cannot render the children it was given', () => {
   it('names itself, the content, and what it does render', async () => {
@@ -77,7 +78,7 @@ describe('a component that cannot render the children it was given', () => {
     // fixture is renamed and says nothing about the warning.
     expect(warnings[0]).toContain(`<${child}>`)
     expect(warnings[0]).toContain('children')
-    expect(warnings[0]).toContain('renders no slots at all')
+    expect(warnings[0]).toContain('renders no content at all')
   })
 
   it('names the other slots when it has some', async () => {
@@ -85,8 +86,8 @@ describe('a component that cannot render the children it was given', () => {
       `<div><slot name="left" /></div>`,
       `<div><Child><span slot="right">R</span></Child></div>`)
     expect(warnings.length).toBe(1)
-    expect(warnings[0]).toContain('slot "right"')
-    expect(warnings[0]).toContain('<slot name="left" />')
+    expect(warnings[0]).toContain('content for "right"')
+    expect(warnings[0]).toContain('It renders: left.')
   })
 
   it('warns once, not once per instance', async () => {
@@ -98,6 +99,22 @@ describe('a component that cannot render the children it was given', () => {
 })
 
 describe('the shapes that must NOT warn', () => {
+  it('a snippet prop given slot= content — FJS-1230', async () => {
+    const { warnings, html } = await run(
+      `<script>export let header = null</script>\n<div>{@render header?.()}</div>`,
+      `<div><Child><h2 slot="header">KEPT</h2></Child></div>`)
+    expect(warnings).toEqual([])
+    expect(html).toContain('<h2>KEPT</h2>')
+  })
+
+  it('a <slot> given a snippet of its name', async () => {
+    const { warnings, html } = await run(
+      `<div><slot name="header" /></div>`,
+      `<div><Child>{#snippet header()}<h2>KEPT</h2>{/snippet}</Child></div>`)
+    expect(warnings).toEqual([])
+    expect(html).toContain('<h2>KEPT</h2>')
+  })
+
   it('a slot rendered inside an {#if} — Svelte #4546 / #6325', async () => {
     const { warnings, html } = await run(
       `<div>{#if $slots.default}<slot />{/if}</div>`,

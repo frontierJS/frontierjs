@@ -185,7 +185,7 @@
   const localMax = max === undefined ? undefined : toLocalInput(max, { seconds })
 
   let inputEl
-  export function focus() { inputEl?.focus() }
+  export function focus() { return $.focus(inputEl) }
 
   // A segment backspaced reports '' with `badInput` set, the same '' a cleared
   // box reports. Written through, it clears the record, and the re-render

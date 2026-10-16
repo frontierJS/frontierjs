@@ -115,7 +115,7 @@ function makeSchemaStanza(name, fields, softDelete) {
   lines.push('  /// derives its 401s from this, and the UI reads it back as')
   lines.push('  /// resource.gate to decide which buttons to offer.')
   lines.push('  /// Above 4 nothing grades a caller until the app declares an isAdmin column.')
-  lines.push('  @@gate("0.4.4.4")')
+  lines.push('  @@gate(0.4.4.4)')
   lines.push('}')
   lines.push('')
 

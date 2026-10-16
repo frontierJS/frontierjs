@@ -1876,14 +1876,6 @@ export function eachBlock(marker, getItems, keyFn, rowFn, elseFn) {
   })
 }
 
-/** `<slot>`: the caller's block for this name, or the fallback when the
- *  caller passed none. Either is a factory returning a fragment, built once —
- *  which slots a caller passed is fixed by its markup. */
-export function slot(marker, block, fallback) {
-  const factory = block ?? fallback
-  if (factory) mountBlock(marker, factory)
-}
-
 // ─── focus ────────────────────────────────────────────────────────────
 
 // A node a run paints is hidden from layout and is still where Tab stops.
@@ -1906,6 +1898,35 @@ function cycle(step) {
 
 export function focusNext() { return cycle(1) }
 export function focusPrev() { return cycle(-1) }
+
+// ─── measure and focus ────────────────────────────────────────────────
+
+// `$.measure` and `$.focus` on a terminal, in the shape `runtime.js` gives the
+// DOM's. A box has no place until a frame lays it out, and one mounted this
+// tick still reports zero, so the answer waits for the next frame.
+
+/** The cells `node` occupies on screen, as `{ left, top, right, bottom,
+ *  width, height }`. No node answers `null`. */
+export function measure(node) {
+  if (!node) return Promise.resolve(null)
+  const r = needRenderer('measure')
+  return new Promise((resolve) => {
+    const read = () => {
+      r.removePostProcessFn(read)
+      const left = node.screenX
+      const top = node.screenY
+      resolve({ left, top, right: left + node.width, bottom: top + node.height, width: node.width, height: node.height })
+    }
+    r.addPostProcessFn(read)
+    r.requestRender()
+  })
+}
+
+/** Move focus to `node`. No node does nothing. */
+export function focus(node) {
+  node?.focus()
+  return Promise.resolve()
+}
 
 // ─── renderers ────────────────────────────────────────────────────────
 

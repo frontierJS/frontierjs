@@ -36,7 +36,7 @@ import { contentTypeFor, sniff, baseType, extensionFor, sameType } from '@fronti
 import { buildWhere }         from '../core/query.js'
 import { ValidationError }    from '../core/validate.js'
 import { extname, basename }  from 'path'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, openAsBlob } from 'fs'
 
 // ─── MIME type matching ───────────────────────────────────────────────────────
 
@@ -192,30 +192,39 @@ function displayName(raw) {
   return name || undefined
 }
 
+// A Blob is handed to the provider as itself and only this much of it is read,
+// for `sniff`. Read whole it cost its size again in heap on top of the
+// transport's copies: four 40 MB uploads took an API from 89 to 580 MB
+// (FJS-3094). `body` is the Blob or the bytes; `head` is what the type is read from.
+const SNIFF_HEAD = 4096
+
+async function blobValue(blob, fields) {
+  const head = new Uint8Array(await blob.slice(0, SNIFF_HEAD).arrayBuffer())
+  return { body: blob, head, size: blob.size, ...fields }
+}
+
+function bytesValue(bytes, fields) {
+  return { body: bytes, head: bytes, size: bytes.length, ...fields }
+}
+
 async function readValue(value, fieldName, model) {
-  if (typeof File !== 'undefined' && value instanceof File) {
-    const bytes = new Uint8Array(await value.arrayBuffer())
-    return { bytes, mime: value.type || 'application/octet-stream', filename: value.name || fieldName, name: displayName(value.name), size: bytes.length }
-  }
-  if (value instanceof Blob) {
-    const bytes = new Uint8Array(await value.arrayBuffer())
-    return { bytes, mime: value.type || 'application/octet-stream', filename: fieldName, size: bytes.length }
-  }
-  if (value instanceof Buffer || value instanceof Uint8Array) {
-    const bytes = value instanceof Buffer ? value : Buffer.from(value)
-    return { bytes, mime: 'application/octet-stream', filename: fieldName, size: bytes.length }
-  }
-  if (value instanceof ArrayBuffer) {
-    const bytes = Buffer.from(value)
-    return { bytes, mime: 'application/octet-stream', filename: fieldName, size: bytes.length }
-  }
+  if (typeof File !== 'undefined' && value instanceof File)
+    return blobValue(value, { mime: value.type || 'application/octet-stream', filename: value.name || fieldName, name: displayName(value.name) })
+  if (value instanceof Blob)
+    return blobValue(value, { mime: value.type || 'application/octet-stream', filename: fieldName })
+  if (value instanceof Buffer || value instanceof Uint8Array)
+    return bytesValue(value instanceof Buffer ? value : Buffer.from(value), { mime: 'application/octet-stream', filename: fieldName })
+  if (value instanceof ArrayBuffer)
+    return bytesValue(Buffer.from(value), { mime: 'application/octet-stream', filename: fieldName })
   if (value instanceof FromPath) {
     const { path } = value
     if (!existsSync(path)) throw new Error(`@file: file not found: ${path}`)
-    const bytes = readFileSync(path)
-    return { bytes, mime: guessMime(path), filename: basename(path), name: displayName(basename(path)), size: bytes.length }
+    return blobValue(await openAsBlob(path), { mime: guessMime(path), filename: basename(path), name: displayName(basename(path)) })
   }
-  if (isInlineFile(value) || (typeof value === 'string' && DATA_URL.test(value))) return readInline(value, fieldName, model)
+  if (isInlineFile(value) || (typeof value === 'string' && DATA_URL.test(value))) {
+    const { bytes, ...fields } = readInline(value, fieldName, model)
+    return bytesValue(bytes, fields)
+  }
   if (typeof value === 'string') {
     throw refuse(model, fieldName,
       'a File column takes bytes (a File, Blob or Buffer), a data URL (data:<type>;base64,<data>) or { name, type, data } ' +
@@ -329,15 +338,15 @@ class FileStoragePlugin extends ExternalRefPlugin {
   // serialize: Buffer/File/fromPath → upload → return ref object
   async serialize(value, { field, model, id, ctx }) {
     const fieldOpts = this._maps(ctx).fieldMap[model]?.[field] ?? {}
-    const { bytes, mime, filename, name, size } = await readValue(value, field, model)
+    const { body, head, mime, filename, name, size } = await readValue(value, field, model)
     // The stored type is the evidence and never the claim: `mime` is what the
     // client or the filename SAID, and it is also what gets persisted on the ref
     // and handed to the provider as `contentType`, which is what a public bucket
     // later serves under. Both must be the same answer, so it is resolved once.
-    const { type, evidence } = resolveType(mime, bytes)
+    const { type, evidence } = resolveType(mime, head)
     checkAccept(type, fieldOpts.accept, model, field, evidence ? mime : null)
     const key = resolveKey(this.config.keyPattern, { model, field, filename, type })
-    await this._provider.put(key, bytes, { contentType: type, size })
+    await this._provider.put(key, body, { contentType: type, size })
     return {
       key,
       ...(name ? { name } : {}),
@@ -384,6 +393,21 @@ class FileStoragePlugin extends ExternalRefPlugin {
       `{ name, type, data } with base64 data`)
   }
 
+  // A File column's ref text is what isFileValue passes through as stored, so
+  // a principal's would name another row's key and this row's delete or
+  // replace would remove that file (FJS-3114). asSystem() is the server, the
+  // ref's author (FJS-D666), and writes one when it restores or seeds a row.
+  _refuseRefText(model, row, fields, ctx) {
+    if (ctx.isSystem || !row) return
+    for (const [field, opts] of Object.entries(fields)) {
+      const v = row[field]
+      if (opts.isArray || typeof v !== 'string' || !v.trimStart().startsWith('{')) continue
+      throw refuse(model, field,
+        `${field} is a File column and was given a stored reference. A stored reference is written by the server, ` +
+        `never sent. Send the bytes: a data URL (data:<type>;base64,<data>) or { name, type, data } with base64 data`)
+    }
+  }
+
   // The refs every row `where` matches holds under `field`, by key; null when
   // they cannot be read, so a ref is refused rather than kept on a guess.
   _heldRefs(model, field, where, ctx) {
@@ -404,6 +428,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
     if (fields && args.data) {
       const many = Array.isArray(args.data)
       for (const row of [].concat(args.data)) {
+        this._refuseRefText(model, row, fields, ctx)
         for (const [field, opts] of Object.entries(fields)) {
           if (!opts.isArray || row?.[field] == null) continue
           ;[].concat(row[field]).forEach((item, i) => {
@@ -425,6 +450,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
   async onBeforeUpdate(model, args, ctx) {
     const fields = this._maps(ctx).fieldMap[model]
     if (!fields || !args.data) return
+    this._refuseRefText(model, args.data, fields, ctx)
 
     for (const [field, opts] of Object.entries(fields)) {
       if (!opts.isArray || args.data[field] == null) continue

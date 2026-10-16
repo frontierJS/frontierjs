@@ -74,7 +74,7 @@ public function store(StoreLeadRequest $request) {
   createdAt DateTime @default(now())
 
   // read · create · update · delete
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
   @@allow('read', ownerId == auth().id)
 }`,
   S7: `// name  ← this filename   ('leads.service.ts' → /api/leads)

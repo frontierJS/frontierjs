@@ -53,7 +53,7 @@ ${FILLER}
     id      Int    @id @default(autoincrement())
     title   String
     ownerId Int
-    @@gate("0.4.4.5")
+    @@gate(0.4.4.5)
     @@allow('read', auth().id == ownerId)
     @@db(main)
   }

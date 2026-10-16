@@ -31,7 +31,7 @@ model LeaveRequest {
   decidedById String?   @system
   outcome     Status?   @system
   note        String?   @length(1, 20)
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 `
 

@@ -10,5 +10,5 @@ model PortalLink {
   id          Int @id @default(autoincrement())
   workspaceId Int
   @@trait(Grant)
-  @@gate("4")
+  @@gate(4)
 }

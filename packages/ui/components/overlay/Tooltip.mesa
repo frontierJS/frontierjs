@@ -43,10 +43,9 @@
   //   </Tooltip>
   //
   // Mesa has no `let:` directive, and a `<slot>` carries no values to its
-  // caller — an attribute written on one is silently ignored. The snippet
-  // parameter is the only way a child hands something back, so the generated
-  // id travels through `children` and `<slot />` is the fallback for content
-  // that does not need it.
+  // caller. The snippet parameter is the only way a child hands something
+  // back, so the generated id travels through `children`; plain content is the
+  // same snippet with no parameter, and ignores the id.
 
   import { uid } from '../../utils.js'
 
@@ -72,11 +71,7 @@
   on:mouseenter={onEnter}
   on:focusin={onEnter}
 >
-  {#if children}
-    {@render children(tipId)}
-  {:else}
-    <slot />
-  {/if}
+  {@render children?.(tipId)}
 
   {#if label}
     <span class="tooltip" role="tooltip" id={tipId} hidden={dismissed || null}>

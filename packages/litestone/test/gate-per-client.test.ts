@@ -16,7 +16,7 @@ model Note {
   id       String @id
   authorId String
   author   Author @relation(fields: [authorId], references: [id])
-  @@gate("${gate}")
+  @@gate(${gate})
 }
 `
 

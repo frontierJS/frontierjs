@@ -84,7 +84,7 @@ Specifically confirmed, because these were the open questions:
 - `deleteUser` cascades — sessions, credentials, and verifications all reach 0.
 
 **Gates genuinely enforce.** The three credential-material models are
-`@@gate("8")` — SYSTEM, `asSystem()` only — and refuse reads and writes from an
+`@@gate(8)` — SYSTEM, `asSystem()` only — and refuse reads and writes from an
 anonymous client and a `$setAuth`'d normal user alike. `User` was 8 too until
 `FJS-170`, which is a level at which an app cannot list its own people; it now
 reads at USER(4) with the two declarations that bound the level rather than

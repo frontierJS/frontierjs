@@ -670,3 +670,30 @@ model Doc {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
+
+describe('a scalar where a claim is read as a LIST', () => {
+  // FJS-3038: `$setAuth({ teachingCourseIds: course.id })` is a mistake the SQL
+  // half silently forgave by wrapping the scalar, while the JS half read a
+  // string as a JSON document and a number as a one-item list.
+  for (const [label, claim] of [['a string', 'u1'], ['a number', 7]] as const) {
+    it(`reads ${label} in a list claim as an empty list, in both halves`, async () => {
+      const { readable, creatable } = await verdicts(
+        DOC(`ownerId in auth().teamIds`, ''),
+        [{ id: 'r1', ownerId: 'u1' }, { id: 'r2', ownerId: '7' }],
+        { id: 'u9', teamIds: claim },
+        { claims: ['teamIds'] })
+      expect([...readable]).toEqual([])
+      expect([...creatable]).toEqual([])
+    })
+  }
+
+  it('still admits a row the array claim names', async () => {
+    const { readable, creatable } = await verdicts(
+      DOC(`ownerId in auth().teamIds`),
+      [{ id: 'r1', ownerId: 'u1' }, { id: 'r2', ownerId: 'u2' }],
+      { id: 'u9', teamIds: ['u1'] },
+      { claims: ['teamIds'] })
+    expect([...readable]).toEqual(['r1'])
+    expect([...creatable]).toEqual(['r1'])
+  })
+})

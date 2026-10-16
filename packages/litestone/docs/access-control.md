@@ -434,7 +434,7 @@ are different answers).
 ```lite
 model User    { id Int @id  accountId Int  role String?  @@auth }
 model Team    { id Int @id  secrets Vault[] }
-model Vault   { id Int @id  teamId Int  team Team @relation(fields: [teamId], references: [id])  @@gate("7") }
+model Vault   { id Int @id  teamId Int  team Team @relation(fields: [teamId], references: [id])  @@gate(7) }
 model Account { id Int @id  posts Post[] }
 model Post {
   id        Int     @id
@@ -454,7 +454,7 @@ for (const accountId of [1, 2]) {
   await sys.post.create({ data: { id: accountId, accountId, title: `post ${accountId}` } })
 }
 
-// Vault is @@gate("7"); the caller is level 4
+// Vault is @@gate(7); the caller is level 4
 try {
   await userDb.team.findMany({ include: { secrets: true } })
   throw new Error('expected the gate to refuse the query')
@@ -509,7 +509,7 @@ restriction at all* — `createClient` warns, naming the model, the operation an
 what the parent is actually protected by.
 
 ```lite
-model Vault { id Int @id  docs Doc[]  @@gate("7") }        // ← no row policy
+model Vault { id Int @id  docs Doc[]  @@gate(7) }        // ← no row policy
 model Doc   { id Int @id  vaultId Int  vault Vault @relation(fields: [vaultId], references: [id])  @@allow('read', check(vault)) }
 // [litestone] Doc: @@allow/@@deny('read', check(vault)) delegates to Vault, whose protection
 // for 'read' is a @@gate and no row policy ... places no restriction at all on Doc
@@ -712,7 +712,7 @@ model ApiKey {
   id      Int    @id @default(autoincrement())
   token   String @guarded @default(nanoid())   // minted here; only asSystem() reads or writes it
   label   String
-  @@gate("4")
+  @@gate(4)
 }
 ```
 
@@ -732,7 +732,7 @@ about — which is why it arrives as a `WHERE` injection, a correlated `EXISTS`
 under `check(field)`, and a set of interactions that gets intricate exactly
 where a query gets interesting. A gate is answered from the session alone,
 before any SQL runs, so it composes with the query object model for free:
-`findMany` with four levels of `include` reaching a `@@gate("7")` model refuses
+`findMany` with four levels of `include` reaching a `@@gate(7)` model refuses
 the whole query and names the model it refused (§ Reaching a model through
 `include`), whatever the shape of the query that got there.
 
@@ -840,7 +840,7 @@ Junction's `sessionGateLevel()` is the same BINDING, not a copy of it: both are
 dependency graph and so importable from either side (`FJS-D197`). They were a
 hand copy, each carrying a comment saying *change one, change both*, and they
 drifted — a signed-in caller with no `role` graded CREATOR(3) here and USER(4)
-there, so one `@@gate("4")` read was a 403 or a 200 depending on which resolver
+there, so one `@@gate(4)` read was a 403 or a 200 depending on which resolver
 the app had installed.
 
 ### @@gate syntax
@@ -849,10 +849,10 @@ A gate is a digit string: four positions, `Read.Create.Update.Delete`, each one
 the level that operation requires.
 
 ```lite fragment
-@@gate("R.C.U.D")      // four positions — required level for each op
-@@gate("4")            // one position: every op requires USER (level 4+)
-@@gate("2.4.4.6")      // READER to read, USER to write, OWNER to delete
-@@gate("1.8.8.9")      // anyone signed in reads, SYSTEM writes, LOCKED deletes
+@@gate(R.C.U.D)      // four positions — required level for each op
+@@gate(4)            // one position: every op requires USER (level 4+)
+@@gate(2.4.4.6)      // READER to read, USER to write, OWNER to delete
+@@gate(1.8.8.9)      // anyone signed in reads, SYSTEM writes, LOCKED deletes
 ```
 
 **A position not written takes the one before it**, so `"4"` is `"4.4.4.4"` and
@@ -880,14 +880,14 @@ model User {
   emailVerified  Boolean  @default(false) @allow('write', auth().isAdmin)
   role           String   @default("user") @allow('write', auth().isAdmin)
 
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
   @@allow('update', id == auth().id || auth().isAdmin)
   @@auth
 }
 
-model Credential   { id Int @id  userId Int  hash  String @hashed  @@gate("8") }   // the password hash, the API key HMAC
-model Session      { id Int @id  userId Int  token String @hashed  @@gate("8") }   // the bearer token
-model Verification { id Int @id  userId Int  token String @hashed  @@gate("8") }   // the reset token
+model Credential   { id Int @id  userId Int  hash  String @hashed  @@gate(8) }   // the password hash, the API key HMAC
+model Session      { id Int @id  userId Int  token String @hashed  @@gate(8) }   // the bearer token
+model Verification { id Int @id  userId Int  token String @hashed  @@gate(8) }   // the reset token
 ```
 
 Three declarations answering three different questions, and **you need all
@@ -899,7 +899,7 @@ three**:
 | `@@allow` | WHOSE row | filters — the write matches nothing and answers |
 | field `@allow('write', …)` | WHICH columns | drops the field, keeps the rest of the write |
 
-A gate is per model, never per row, so `@@gate("4.4.4.5")` on its own says *any
+A gate is per model, never per row, so `@@gate(4.4.4.5)` on its own says *any
 signed-in caller may write any user row*. That is not an argument for raising
 the level — at `8` an app cannot list its own people, and every screen that
 needs to ends up in `asSystem()`, where nothing is enforced at all. It is an
@@ -937,7 +937,7 @@ model Invoice {
   note   String        @capability
   status InvoiceStatus @default(draft)
 
-  @@gate("2")
+  @@gate(2)
   @@capabilities(all)
   @@transitions(status, issue: draft -> issued, void: issued -> voided @gate(5))
 }
@@ -987,7 +987,7 @@ and `.note`.
 **Who holds one is data; that the column holds capabilities is schema.**
 
 ```lite
-model Invoice { id Int @id  note String @capability  @@gate("2")  @@capabilities(all) }
+model Invoice { id Int @id  note String @capability  @@gate(2)  @@capabilities(all) }
 
 model Role {
   id           String       @id @default(cuid())
@@ -995,7 +995,7 @@ model Role {
   name         String       @label("Role")
   capabilities Capability[]
 
-  @@gate("2.5.5.6")
+  @@gate(2.5.5.6)
   @@unique([workspaceId, name])
 }
 ```
@@ -1031,7 +1031,7 @@ predicate, and the literal in it is resolved against the same derived set:
 model Employee {
   id     Int   @id
   salary Float @capability @allow('read', 'Employee.salary' in auth().capabilities)
-  @@gate("2")
+  @@gate(2)
   @@capabilities(all)
 }
 ```
@@ -1056,7 +1056,7 @@ rejected before any SQL runs; a caller who clears it then meets the policies as
 model Post {
   ownerId Int @default(auth().id)
 
-  @@gate("1.2.4.6")                           // level check first
+  @@gate(1.2.4.6)                           // level check first
   @@allow('update', ownerId == auth().id)     // row check second
 }
 ```

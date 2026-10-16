@@ -177,7 +177,7 @@ mounts the real router, `RouterView` and `ChainRenderer` and is red without the 
 
 ## 2026-10-04 — the device keeps an append-only model insert-only rather than nothing (`FJS-1700`)
 
-`writeRows` mirrors server rows with `asSystem().upsertMany`, and litestone now grades that call's conflict half as an update. Example's `InventoryMovement` is `@@gate("5.5.9.9")`, and a 9 refuses the system client too, so the offline warm kept nothing of `inventory` and `example verify` failed on the console warning. A refusal naming `update` at 9 is retried with `update: []`. Such a row never changes on the server, so insert-only replay loses nothing. Any other refusal is still reported. `test/local-db.test.js` has both halves.
+`writeRows` mirrors server rows with `asSystem().upsertMany`, and litestone now grades that call's conflict half as an update. Example's `InventoryMovement` is `@@gate(5.5.9.9)`, and a 9 refuses the system client too, so the offline warm kept nothing of `inventory` and `example verify` failed on the console warning. A refusal naming `update` at 9 is retried with `update: []`. Such a row never changes on the server, so insert-only replay loses nothing. Any other refusal is still reported. `test/local-db.test.js` has both halves.
 
 ## 2026-10-03 — a build no longer empties the dev server's route table (`FJS-1695`)
 
@@ -744,7 +744,7 @@ in an answer the server gave this caller, so it is read back through
 `asSystem()` and dropped when the identity changes. Re-grading would be done by
 the wrong grader: a local client auto-installs `FrontierGateGetLevel` and an
 app's own resolver is a different function — measured on `example`, 3 against 4
-on one account, with `Order` at `@@gate("0.4.4.5")`.
+on one account, with `Order` at `@@gate(0.4.4.5)`.
 
 **Three things were paid for by measuring, and each is now a comment where it
 bites.**

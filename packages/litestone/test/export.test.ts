@@ -26,7 +26,7 @@ model Order {
   cardTok   String   @secret
   memo      String?  @guarded
   updatedAt DateTime @default(now())
-  @@gate("1.4.4.5")
+  @@gate(1.4.4.5)
   @@allow('read', auth().isStaff == true)
   @@allow('read', ownerId == auth().id)
   @@export(ndjson, since: updatedAt)
@@ -35,14 +35,14 @@ model Order {
 model Ledger {
   id   Int    @id @default(autoincrement())
   memo String
-  @@gate("5.8.9.9")
+  @@gate(5.8.9.9)
   @@export(ndjson)
 }
 
 view revenue {
   total Int
   @@sql("SELECT SUM(total) AS total FROM [order]")
-  @@gate("5")
+  @@gate(5)
   @@export(csv)
 }
 `
@@ -71,11 +71,11 @@ describe('what may be declared exportable', () => {
     const e = errs('model O { id Int @id  @@export(ndjson) }')
     expect(e.length).toBe(1)
     expect(e[0]).toContain('@@export needs a @@gate beside it')
-    expect(e[0]).toContain('@@gate("0")')
+    expect(e[0]).toContain('@@gate(0)')
   })
 
   test('and the control — the same declaration with a gate parses clean', () => {
-    expect(errs('model O { id Int @id  @@gate("4") @@export(ndjson) }')).toEqual([])
+    expect(errs('model O { id Int @id  @@gate(4) @@export(ndjson) }')).toEqual([])
   })
 
   test('the rule fires even where the schema guards nothing else', () => {
@@ -85,19 +85,19 @@ describe('what may be declared exportable', () => {
   })
 
   test('a format this cannot write is refused by name, and the two it can are not', () => {
-    expect(errs('model O { id Int @id @@gate("4") @@export(parquet) }')[0]).toContain("format 'parquet' is not one this can write")
-    expect(errs('model O { id Int @id @@gate("4") @@export(ndjson) }')).toEqual([])
-    expect(errs('model O { id Int @id @@gate("4") @@export(csv) }')).toEqual([])
+    expect(errs('model O { id Int @id @@gate(4) @@export(parquet) }')[0]).toContain("format 'parquet' is not one this can write")
+    expect(errs('model O { id Int @id @@gate(4) @@export(ndjson) }')).toEqual([])
+    expect(errs('model O { id Int @id @@gate(4) @@export(csv) }')).toEqual([])
   })
 
   test('a cursor naming no column is refused; one naming a real column is not', () => {
-    expect(errs('model O { id Int @id  u DateTime @@gate("4") @@export(ndjson, since: nope) }')[0])
+    expect(errs('model O { id Int @id  u DateTime @@gate(4) @@export(ndjson, since: nope) }')[0])
       .toContain('names no column this model declares')
-    expect(errs('model O { id Int @id  u DateTime @@gate("4") @@export(ndjson, since: u) }')).toEqual([])
+    expect(errs('model O { id Int @id  u DateTime @@gate(4) @@export(ndjson, since: u) }')).toEqual([])
   })
 
   test('a cursor on a @computed field is refused — it is not a column to order by', () => {
-    expect(errs('model O { id Int @id  d String @computed @@gate("4") @@export(ndjson, since: d) }')[0])
+    expect(errs('model O { id Int @id  d String @computed @@gate(4) @@export(ndjson, since: d) }')[0])
       .toContain('@computed')
   })
 
@@ -207,7 +207,7 @@ describe('protected columns leave the extract even for a caller who may read the
         title   String
         draft   String   @transient
         seen    String   @computed
-        @@gate("0")
+        @@gate(0)
         @@export(csv)
       }
     `

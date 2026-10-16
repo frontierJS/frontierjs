@@ -113,7 +113,7 @@ model Lead {
 
   // RCUD = read, create, update, delete
   // 0 = stranger (public), 4 = user, 5 = administrator
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }
 `
 

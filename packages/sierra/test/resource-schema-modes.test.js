@@ -111,7 +111,7 @@ model Invoice {
   @@transitions(status,
     issue: draft -> issued @seals
   )
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 
 model Plan {
@@ -119,7 +119,7 @@ model Plan {
   code    String @immutable
   name    String
   rev     Int    @version
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 `
 
@@ -320,7 +320,7 @@ describe('the read mode, which is what a display surface reads', () => {
         id      Int    @id @default(autoincrement())
         email   String
         confirm String @transient
-        @@gate("0.0.0.0")
+        @@gate(0.0.0.0)
       }
     `
     const { defs, readPatch } = await build(src)
@@ -345,7 +345,7 @@ describe('the row\'s own timestamps are read columns (FJS-1803)', () => {
       body      String?
       createdAt DateTime @default(now())
       updatedAt DateTime @default(now()) @updatedAt
-      @@gate("0.0.0.0")
+      @@gate(0.0.0.0)
     }
   `
 
@@ -416,7 +416,7 @@ describe('a detail view is a model plus its relations', () => {
         id     Int    @id @default(autoincrement())
         name   String
         orders Order[]
-        @@gate("0.0.0.0")
+        @@gate(0.0.0.0)
       }
       model Order {
         id       Int      @id @default(autoincrement())
@@ -425,13 +425,13 @@ describe('a detail view is a model plus its relations', () => {
         courier  Courier? @relation(fields: [courierId], references: [id])
         courierId Int?
         ref      String
-        @@gate("0.0.0.0")
+        @@gate(0.0.0.0)
       }
       model Courier {
         id     Int     @id @default(autoincrement())
         name   String
         orders Order[]
-        @@gate("0.0.0.0")
+        @@gate(0.0.0.0)
       }
     `)
     // `Order` carries TWO belongsTo — a Shop and a Courier — so taking the
@@ -495,13 +495,13 @@ describe('a search box is offered only where the boundary will answer', () => {
       slug    String
       @@fts([body, title])
       @@label(body)
-      @@gate("0.0.0.0")
+      @@gate(0.0.0.0)
     }
 
     model Tag {
       id   Int    @id @default(autoincrement())
       name String
-      @@gate("0.0.0.0")
+      @@gate(0.0.0.0)
     }
   `
 
@@ -571,7 +571,7 @@ describe('a search box is offered only where the boundary will answer', () => {
         a6 String
         a7 String
         a8 String
-        @@gate("0.0.0.0")
+        @@gate(0.0.0.0)
       }
     `)
     const wide  = createResource('wides', { model: 'Wide' })
@@ -593,7 +593,7 @@ describe('a search box is offered only where the boundary will answer', () => {
         amount   Int    @money(field: currency)
         currency String
         fee      Int    @money(USD)
-        @@gate("0.0.0.0")
+        @@gate(0.0.0.0)
       }
     `)
     const filters = createResource('payments', { model: 'Payment' }).filters({ limit: 99 }).filters
@@ -610,7 +610,7 @@ describe('a relation column names the label of the row it points at', () => {
       id    Int    @id @default(autoincrement())
       email String
       name  String
-      @@gate("0.0.0.0")
+      @@gate(0.0.0.0)
     }
 
     model Order {
@@ -618,7 +618,7 @@ describe('a relation column names the label of the row it points at', () => {
       customerId Int
       customer   Customer @relation(fields: [customerId], references: [id])
       ref        String
-      @@gate("0.0.0.0")
+      @@gate(0.0.0.0)
     }
   `
 
@@ -647,7 +647,7 @@ model Doc {
   @@transitions(status,
     issue: draft -> issued @seals
   )
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 
 model DocLine {
@@ -655,7 +655,7 @@ model DocLine {
   docId  Int
   doc    Doc    @relation(fields: [docId], references: [id])
   label  String
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 
 model DocNote {
@@ -663,7 +663,7 @@ model DocNote {
   docId  Int
   doc    Doc    @relation(fields: [docId], references: [id])
   body   String
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 `
 

@@ -20,7 +20,7 @@
 
   ── Anonymous, and that is the check ───────────────────────────────────────
 
-  `Plan` is `@@gate("0.5.5.5")`, which is why this page is allowed to be public
+  `Plan` is `@@gate(0.5.5.5)`, which is why this page is allowed to be public
   at all. So there is no token here and the fallback on a refusal is the baked
   number rather than an error dialog: the file is still true, it is only old.
 -->

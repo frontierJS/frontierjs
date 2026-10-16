@@ -262,7 +262,7 @@ export function virtualSierraPlugin(config, sierraContext) {
  * when set, `''` turning it off; else the name in the nearest package.json above
  * the Vite root, which for an app whose surfaces carry no manifest is the app's.
  */
-function storagePrefix(config, root) {
+export function storagePrefix(config, root) {
   if (config.prefix !== undefined) return config.prefix ?? ''
   for (let dir = resolve(root); ; dir = dirname(dir)) {
     const manifest = resolve(dir, 'package.json')

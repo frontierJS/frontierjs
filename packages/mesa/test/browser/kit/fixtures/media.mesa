@@ -1,0 +1,16 @@
+<script>
+  import { media, reducedMotion, colorScheme } from '@frontierjs/mesa/browser'
+
+  const wide  = media('(min-width: 768px)')
+  const wide2 = media('(min-width: 768px)')
+  const motion = reducedMotion()
+  const scheme = colorScheme()
+  let first = true
+  window.kitMedia = media
+  window.kitDropFirst = () => { first = false }
+</script>
+
+{#if first}<p id="wide">{wide.matches}</p>{/if}
+<p id="wide2">{wide2.matches}</p>
+<p id="motion">{motion.matches}</p>
+<p id="scheme">{scheme.value}</p>

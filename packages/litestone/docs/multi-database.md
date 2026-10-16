@@ -58,7 +58,7 @@ await db.user.create({ data: { id: 1, email: 'a@example.com' } })               
 await db.pageView.create({ data: { id: 1, path: '/', duration: 12 } })          // → analytics.db
 await db.apiRequest.create({ data: { method: 'GET', path: '/', status: 200 } }) // → logs/ApiRequest.jsonl
 
-// audit/ (auto-generated model, @@gate("8") — read it as the system; an entry
+// audit/ (auto-generated model, @@gate(8) — read it as the system; an entry
 // lands one event-loop tick after the write that produced it)
 await new Promise(r => setTimeout(r, 0))
 const entries = await db.asSystem().auditTrail.findMany()

@@ -45,7 +45,7 @@ model Sheet {
   /// Prose on a field that crosses.
   note   String?
   counts Count[]
-  @@gate("5.5.5.9")
+  @@gate(5.5.5.9)
   @@sync(server)
 }
 
@@ -58,7 +58,7 @@ model Count {
   kind      Kind
   where     Json?    @type(Position)
   counted   Int
-  @@gate("5.5.5.9")
+  @@gate(5.5.5.9)
   @@allow('read', counted >= 0)
   @@index([sheetId])
   @@sync(append)
@@ -69,7 +69,7 @@ model Variant {
   id     Int     @id
   colour Colour
   counts Count[]
-  @@gate("5.5.5.9")
+  @@gate(5.5.5.9)
 }
 `
 
@@ -97,7 +97,7 @@ describe('the set is @@sync and nothing else', () => {
   })
 
   test('a schema where nothing declares @@sync answers no models, and says so', () => {
-    const r = deviceSchema(parse('model A { id Int @id  @@gate("0") }'))
+    const r = deviceSchema(parse('model A { id Int @id  @@gate(0) }'))
     expect(r.models).toEqual([])
     expect(noteFor(r, 'the schema')?.grade).toBe('noted')
   })
@@ -274,7 +274,7 @@ model Collection {
   id        Int        @id
   ownerId   Int
   bookmarks Bookmark[]
-  @@gate("0")
+  @@gate(0)
   ${collectionSync}
 }
 
@@ -283,7 +283,7 @@ model Bookmark {
   collectionId Int
   collection   Collection @relation(fields: [collectionId], references: [id])
   url          String
-  @@gate("0")
+  @@gate(0)
   ${rule}
   @@sync(server)
 }
@@ -317,8 +317,8 @@ model Bookmark {
 
   test('rel.some(...) on a to-many is refused the same way', () => {
     const src = PORTAL('', '@@sync(server)')
-      .replace('  @@gate("0")\n  @@sync(server)\n}\n\nmodel Bookmark',
-               '  @@gate("0")\n  @@allow(\'read\', tags.some(name == "x"))\n  @@sync(server)\n}\n\nmodel Bookmark')
+      .replace('  @@gate(0)\n  @@sync(server)\n}\n\nmodel Bookmark',
+               '  @@gate(0)\n  @@allow(\'read\', tags.some(name == "x"))\n  @@sync(server)\n}\n\nmodel Bookmark')
       .replace('  bookmarks Bookmark[]', '  bookmarks Bookmark[]\n  tags      Tag[]') +
       '\nmodel Tag {\n  id Int @id\n  name String\n  collectionId Int\n  collection Collection @relation(fields: [collectionId], references: [id])\n}\n'
     expect(() => deviceSchema(parse(src)))

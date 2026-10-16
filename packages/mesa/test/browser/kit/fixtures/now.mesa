@@ -1,0 +1,14 @@
+<script>
+  import { now } from '@frontierjs/mesa/browser'
+
+  const a    = now()
+  const b    = now({ every: 1000 })
+  const slow = now({ every: 60000 })
+  let first = true
+  window.kitNow = now
+  window.kitDropFirst = () => { first = false }
+</script>
+
+{#if first}<p id="a">{a.value}</p>{/if}
+<p id="b">{b.value}</p>
+<p id="slow">{slow.value}</p>

@@ -64,15 +64,14 @@
     placed = false
     open   = true
     // Position after mesa renders the panel into the portal
-    requestAnimationFrame(() => { position(); placed = true })
+    requestAnimationFrame(async () => { await position(); placed = true })
     document.addEventListener('click', onClickAway, { capture: true })
   }
 
-  function position() {
-    if (!triggerEl || !panelEl) return
-    const at = placeAgainst(triggerEl.getBoundingClientRect(), panelEl.getBoundingClientRect(), { placement, offset })
-    x = at.x
-    y = at.y
+  async function position() {
+    const [tr, pr] = await Promise.all([$.measure(triggerEl), $.measure(panelEl)])
+    if (!tr || !pr) return
+    ;({ x, y } = placeAgainst(tr, pr, { placement, offset }))
   }
 
   function closePopover(restoreFocus = true) {
@@ -80,7 +79,7 @@
     document.removeEventListener('click', onClickAway, { capture: true })
     // Return focus to the trigger — otherwise a keyboard user is dropped at
     // the top of the document when the panel unmounts.
-    if (restoreFocus) (control ?? triggerEl?.querySelector?.('button, a, [tabindex]'))?.focus?.()
+    if (restoreFocus) $.focus(control ?? triggerEl?.querySelector?.('button, a, [tabindex]'))
   }
 
   function onClickAway(e) {

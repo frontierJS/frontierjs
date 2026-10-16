@@ -57,7 +57,7 @@ const source = readFileSync(srcPath, 'utf8');
 let bindings;
 try {
   bindings = new Function(
-    `${source}\n;return { VOCAB, ANATOMY, NOT_ANATOMY, NOT_A_TERM };`
+    `${source}\n;return { VOCAB, ANATOMY, NOT_ANATOMY, NOT_A_TERM, BREAKPOINTS };`
   )();
 } catch (err) {
   console.error(`\n  ✗ vocabulary.js did not evaluate: ${err.message}\n` +
@@ -65,7 +65,7 @@ try {
   process.exit(1);
 }
 
-const { VOCAB, ANATOMY, NOT_ANATOMY, NOT_A_TERM } = bindings;
+const { VOCAB, ANATOMY, NOT_ANATOMY, NOT_A_TERM, BREAKPOINTS } = bindings;
 
 /*
  * VOCAB is [tier, blurb, [[Term, element, meaning, class?], …]] — positional,
@@ -113,6 +113,7 @@ const payload = {
   anatomy: ANATOMY,
   notAnatomy: NOT_ANATOMY,
   notATerm: NOT_A_TERM,
+  breakpoints: BREAKPOINTS,
 };
 
 /*

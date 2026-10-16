@@ -75,7 +75,7 @@ describe('grading', () => {
 
   test('a plain authenticated session is a USER', () => {
     // The case that was broken: this is what a session looks like in an app
-    // with no verification flow, and it must satisfy @@gate("0.4.4.5") writes.
+    // with no verification flow, and it must satisfy @@gate(0.4.4.5) writes.
     expect(sessionGateLevel(session())).toBe(LEVELS.USER)
   })
 

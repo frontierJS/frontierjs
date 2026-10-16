@@ -29,7 +29,7 @@ const errs = (src: string) => parse(src).errors
 // ─── the schema guards something ─────────────────────────────────────────────
 
 const GUARDED = `
-model Order { id Int @id  total Int  @@gate("4") }
+model Order { id Int @id  total Int  @@gate(4) }
 `
 const UNGUARDED = `
 model Order { id Int @id  total Int }
@@ -41,15 +41,15 @@ describe('a view must be gated wherever the schema gates anything', () => {
     const e = errs(`${GUARDED}view revenue { total Int ${SQL} }`)
     expect(e.length).toBe(1)
     expect(e[0]).toContain("View 'revenue' must declare @@gate")
-    expect(e[0]).toContain('@@gate("0")')
+    expect(e[0]).toContain('@@gate(0)')
   })
 
   test('and the control — the same view with a gate parses clean', () => {
-    expect(errs(`${GUARDED}view revenue { total Int ${SQL} @@gate("5") }`)).toEqual([])
+    expect(errs(`${GUARDED}view revenue { total Int ${SQL} @@gate(5) }`)).toEqual([])
   })
 
-  test('@@gate("0") is how a schema says the view is public on purpose', () => {
-    expect(errs(`${GUARDED}view revenue { total Int ${SQL} @@gate("0") }`)).toEqual([])
+  test('@@gate(0) is how a schema says the view is public on purpose', () => {
+    expect(errs(`${GUARDED}view revenue { total Int ${SQL} @@gate(0) }`)).toEqual([])
   })
 
   test('the second control — a schema that guards NOTHING does not fire the rule', () => {
@@ -70,12 +70,12 @@ database main { path ":memory:" }
 model Order {
   id    Int @id @default(autoincrement())
   total Int
-  @@gate("4")
+  @@gate(4)
 }
 view revenue {
   total Int
   @@sql("SELECT SUM(total) AS total FROM [order]")
-  @@gate("5")
+  @@gate(5)
 }
 `
   const client = () => createClient({ schema: SCHEMA, resolveFrom: import.meta.dir })
@@ -112,13 +112,13 @@ model Order {
   id      Int    @id @default(autoincrement())
   ownerId String
   total   Int
-  @@gate("1")
+  @@gate(1)
 }
 view ownerTotals {
   ownerId String
   total   Int
   @@sql("SELECT ownerId, SUM(total) AS total FROM [order] GROUP BY ownerId")
-  @@gate("1")
+  @@gate(1)
   @@allow('read', ownerId == auth().id)
 }
 `
@@ -151,40 +151,40 @@ view ownerTotals {
 
 const ROW_TENANCY = `
 tenancy { strategy row  column tenantId  claim tenantId }
-model Order { id Int @id  tenantId String  total Int  @@gate("4") }
+model Order { id Int @id  tenantId String  total Int  @@gate(4) }
 `
 
 describe('under strategy row a view must say how it is scoped', () => {
   test('a view with no @@tenant is refused, naming both ways out', () => {
-    const e = errs(`${ROW_TENANCY}view revenue { total Int ${SQL} @@gate("4") }`)
+    const e = errs(`${ROW_TENANCY}view revenue { total Int ${SQL} @@gate(4) }`)
     expect(e.length).toBe(1)
     expect(e[0]).toContain("View 'revenue' must declare @@tenant")
     expect(e[0]).toContain('@@tenant(none)')
   })
 
   test('and the control — naming its own tenant column parses clean', () => {
-    const src = `${ROW_TENANCY}view revenue { tenantId String  total Int @@sql("SELECT tenantId, SUM(total) AS total FROM [order] GROUP BY tenantId") @@gate("4") @@tenant(column: "tenantId") }`
+    const src = `${ROW_TENANCY}view revenue { tenantId String  total Int @@sql("SELECT tenantId, SUM(total) AS total FROM [order] GROUP BY tenantId") @@gate(4) @@tenant(column: "tenantId") }`
     expect(errs(src)).toEqual([])
   })
 
   test('@@tenant(none) is the other way out and is not the same statement', () => {
-    expect(errs(`${ROW_TENANCY}view revenue { total Int ${SQL} @@gate("4") @@tenant(none) }`)).toEqual([])
+    expect(errs(`${ROW_TENANCY}view revenue { total Int ${SQL} @@gate(4) @@tenant(none) }`)).toEqual([])
   })
 
   test('a column the view does not declare is refused — the projection is the scope', () => {
     // The view selects no tenantId, so there is nothing for the predicate to
     // compare; inferring it would mean reading @@sql.
-    const e = errs(`${ROW_TENANCY}view revenue { total Int ${SQL} @@gate("4") @@tenant(column: "tenantId") }`)
+    const e = errs(`${ROW_TENANCY}view revenue { total Int ${SQL} @@gate(4) @@tenant(column: "tenantId") }`)
     expect(e[0]).toContain('names no column this view declares')
   })
 
   test('@@tenant(via:) is refused — a view declares no relations to hop', () => {
-    const e = errs(`${ROW_TENANCY}view revenue { total Int ${SQL} @@gate("4") @@tenant(via: order) }`)
+    const e = errs(`${ROW_TENANCY}view revenue { total Int ${SQL} @@gate(4) @@tenant(via: order) }`)
     expect(e.some(x => x.includes('needs a relation and a view declares none'))).toBe(true)
   })
 
   test('the scoped view gets a READ deny and nothing else — it has no writes to guard', () => {
-    const src = `${ROW_TENANCY}view revenue { tenantId String  total Int @@sql("SELECT tenantId, SUM(total) AS total FROM [order] GROUP BY tenantId") @@gate("4") @@tenant(column: "tenantId") }`
+    const src = `${ROW_TENANCY}view revenue { tenantId String  total Int @@sql("SELECT tenantId, SUM(total) AS total FROM [order] GROUP BY tenantId") @@gate(4) @@tenant(column: "tenantId") }`
     const view = parse(src).schema.views[0]
     const denies = view.attributes.filter((a: any) => a.kind === 'deny')
     expect(denies.length).toBe(1)
@@ -193,20 +193,20 @@ describe('under strategy row a view must say how it is scoped', () => {
   })
 
   test('and @@tenant(none) generates none, which is what makes it a statement', () => {
-    const src = `${ROW_TENANCY}view revenue { total Int ${SQL} @@gate("4") @@tenant(none) }`
+    const src = `${ROW_TENANCY}view revenue { total Int ${SQL} @@gate(4) @@tenant(none) }`
     const view = parse(src).schema.views[0]
     expect(view.attributes.filter((a: any) => a.kind === 'deny').length).toBe(0)
   })
 
   test('@@tenant on a view under strategy database is refused, as it is on a model', () => {
-    const src = `tenancy { strategy database  dir "./t"  registry "./r.db" }\nmodel Order { id Int @id  total Int  @@gate("4") }\nview revenue { total Int ${SQL} @@gate("4") @@tenant(none) }`
+    const src = `tenancy { strategy database  dir "./t"  registry "./r.db" }\nmodel Order { id Int @id  total Int  @@gate(4) }\nview revenue { total Int ${SQL} @@gate(4) @@tenant(none) }`
     expect(errs(src).some(x => x.includes('strategy row attribute'))).toBe(true)
   })
 })
 
 describe('the unknown-attribute message names what a view can carry', () => {
   test('an attribute a view does not take lists the access ones too', () => {
-    const e = errs(`${GUARDED}view revenue { total Int ${SQL} @@gate("4") @@index([total]) }`)
+    const e = errs(`${GUARDED}view revenue { total Int ${SQL} @@gate(4) @@index([total]) }`)
     expect(e[0]).toContain("Unknown view attribute '@@index'")
     expect(e[0]).toContain('@@gate')
     expect(e[0]).toContain('@@tenant')
@@ -232,12 +232,12 @@ describe('a view offers every read a model does, and no write', () => {
 
   const SCHEMA = `
     database main { path ":memory:" }
-    model Sale { id Int @id @default(autoincrement())  kind String  amount Int  @@gate("0") }
+    model Sale { id Int @id @default(autoincrement())  kind String  amount Int  @@gate(0) }
     view salesByKind {
       kind  String
       total Int
       @@sql("SELECT kind, SUM(amount) AS total FROM [sale] GROUP BY kind")
-      @@gate("0")
+      @@gate(0)
     }
   `
   const seeded = async () => {
@@ -328,13 +328,13 @@ describe('a view offers every read a model does, and no write', () => {
 describe('a view reaches the generated JSON Schema', () => {
   const SRC = `
     database main { path ":memory:" }
-    model Order { id Int @id @default(autoincrement())  total Int  @@gate("1") }
+    model Order { id Int @id @default(autoincrement())  total Int  @@gate(1) }
     view revenueByStatus {
       status String
       orders Int
       total  Int?
       ${SQL}
-      @@gate("5")
+      @@gate(5)
     }
   `
   const defs = (mode = 'create') =>
@@ -421,13 +421,13 @@ describe('a view on the ladder is a READ and nothing else', () => {
 model Order {
   id    String @id @default(uuid())
   total Int
-  @@gate("2")
+  @@gate(2)
 }
 
 view revenue {
   total Int
   @@sql("SELECT SUM(total) AS total FROM [order]")
-  @@gate("2")
+  @@gate(2)
 }
 `
 
@@ -473,14 +473,14 @@ describe('a view reaches the generated types', () => {
 model Order {
   id     String @id @default(uuid())
   total  Int
-  @@gate("2")
+  @@gate(2)
 }
 
 view revenue {
   status String
   total  Int?
   @@sql("SELECT status, SUM(total) AS total FROM [order] GROUP BY status")
-  @@gate("2")
+  @@gate(2)
 }
 `
   const ts = () => generateTypeScript(parse(SRC).schema)
@@ -562,11 +562,11 @@ describe('a view named in PascalCase', () => {
 
 describe('a view column takes the attributes that say what its number is', () => {
   const ORDER = `
-model Order { id Int @id  amount Int @money(field: currency)  currency String  customerId Int  @@gate("4") }
+model Order { id Int @id  amount Int @money(field: currency)  currency String  customerId Int  @@gate(4) }
 `
   const REV = `@@sql("SELECT customerId, currency, SUM(amount) AS revenue FROM [order] GROUP BY customerId, currency")`
   const view = (col: string) =>
-    `${ORDER}view customerRevenue { customerId Int  currency String  ${col}  ${REV}  @@gate("4") }`
+    `${ORDER}view customerRevenue { customerId Int  currency String  ${col}  ${REV}  @@gate(4) }`
 
   test('@money(field:) parses on a view column and keeps its attribute', () => {
     const r = parse(view('revenue Int @money(field: currency)'))

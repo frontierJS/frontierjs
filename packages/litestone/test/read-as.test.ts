@@ -24,7 +24,7 @@ model Order {
   margin     Int?    @allow('read', auth().isStaff == true)
   internal   String? @guarded
   userId     String?
-  @@gate("1.4.4.5")
+  @@gate(1.4.4.5)
   @@allow('read', auth().isStaff == true)
   @@allow('read', userId == auth().id)
 }
@@ -39,7 +39,7 @@ model Product {
 model Ledger {
   id   Int @id @default(autoincrement())
   memo String
-  @@gate("5.8.9.9")
+  @@gate(5.8.9.9)
 }
 
 // A policy and nothing else. Order carries a gate AND a policy, so a check that

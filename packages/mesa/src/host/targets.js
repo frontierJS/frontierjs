@@ -8,7 +8,7 @@
 
 import * as terminal from '../terminal/tags.js'
 import * as native from '../native/tags.js'
-import { cssOffense } from '../native/css.js'
+import { cssOffense, lowerTypes } from '../native/css.js'
 
 export const TARGETS = {
   terminal: {
@@ -35,5 +35,8 @@ export const TARGETS = {
     paintsClass: () => true,
     paintsCss:   true,
     cssOffense,
+    // Every element is a `view` or `text`, so a scoped rule's type selector
+    // is written as the class the runtime gives that tag.
+    lowerSelector: lowerTypes,
   },
 }

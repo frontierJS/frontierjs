@@ -281,7 +281,7 @@
     const stops = stopsIn(rowEl)
     if (!stops.length) return false
     const i = Math.max(0, Math.min(index, stops.length - 1))
-    stops[i].focus()
+    $.focus(stops[i])
     cursor = { row: rowEl.dataset.path, stop: i }
     return true
   }
@@ -410,7 +410,7 @@
 
   $.onDestroy(() => clearTimeout(_copyTimer))
 
-  const focusMe = (el) => { el.focus(); el.select?.() }
+  const focusMe = (el) => { $.focus(el).then(() => el.select?.()) }
   const noop    = () => {}
 
   function fail(key, message) { rowError = { ...rowError, [key]: message } }

@@ -9,7 +9,7 @@ Put `priority` back to optional, and change something that is not a column at
 all:
 
 ```text
-@@gate("0.4.4.6")   →   @@gate("4.4.4.6")
+@@gate(0.4.4.6)   →   @@gate(4.4.4.6)
 ```
 
 No table changes. No migration is generated. And it is still a **contract**,
@@ -43,7 +43,7 @@ if (!await must($, {
   got:   back.ok ? 'it is' : back.why,
 }, { likely: 'the seed has no `model Note {` block to change' })) return
 
-const raised = editSchema($, '@@gate("0.4.4.6")', '@@gate("4.4.4.6")')
+const raised = editSchema($, '@@gate(0.4.4.6)', '@@gate(4.4.4.6)')
 if (!await must($, {
   ok:    raised.ok,
   name:  'reads on Note now need a signed-in caller',

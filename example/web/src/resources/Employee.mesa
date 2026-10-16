@@ -5,7 +5,7 @@
   //
   // ─── The one-audience model ───────────────────────────────────────────────
   //
-  // `Employee` is `@@gate("5.5.5.5")` — read, create, update and delete all at
+  // `Employee` is `@@gate(5.5.5.5)` — read, create, update and delete all at
   // the same level — and it is the first model in this application shaped that
   // way. Every other noun here has at least two audiences and a ladder between
   // them: an order is read by a shopper at 1 and moved by staff at 5, a product

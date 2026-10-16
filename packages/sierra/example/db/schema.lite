@@ -21,7 +21,7 @@ model Account {
   leads Lead[]
 
   /// read is public, writes need a user
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }
 
 /// A required enum with NO @default. make() leaves it null on purpose: no blank
@@ -60,7 +60,7 @@ model Lead {
 
   createdAt DateTime @default(now())
 
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }
 
 model Tag {

@@ -9,7 +9,7 @@ reranked: 2026-10-10
 
 **Status: PROPOSAL, prototyped.** All twenty are built as prototypes in the
 sibling workspace `../conduit-connectors/`; postmark and mailgun are shaped as `packages/` members (2026-10-16) but held in the sibling workspace until the owner commits them, the rest not —
-§ *Prototyped 2026-10-11* is the state of each (20 built, all 10 conduit rows closed). Dated 2026-08-29. `FJS-D153` settled
+§ *Prototyped 2026-10-11* is the state of each (21 built, all 10 conduit rows closed). Dated 2026-08-29. `FJS-D153` settled
 *where* an official connector lives — its own package, `@frontierjs/conduit-<vendor>`,
 promoted out of `example/` once a second one exists to argue with the first. It did
 not settle **which ones**, and it did not settle what a connector package actually
@@ -252,6 +252,7 @@ that names a fixture names one wired to `FIXTURE_URL` and never run.
 | oidc | B | new; `origins` on the target (`FJS-D939`), two targets for two credentials (`FJS-D933`) | 38 | **panva oidc-provider proved in-process**; Dex unproved | Apple `client_secret_basic` unverified |
 | push | B | new (APNs + FCM); APNs 403 is a refusal predicate (`FJS-D941`); the FCM exchange is a send through its own target | 23 | — | APNs h2 unmeasured |
 | gmail | B | new; per-user OAuth over `per_caller` | 41 | — | after oidc; batch endpoint waits on `FJS-2700` |
+| mattermost | C | new; the mirror app's connector (`mirror-apps.md` 2.1–2.3): two bearer targets, service and `per_caller` user, the `mirror` claim (`FJS-D1125`), the backfill reads, the outgoing-webhook and slash-command Dialects (`FJS-D899`) with `respond()`, the socket as a `broker` target with a `FrameDialect` (`FJS-D1127`); `pending_post_id` the one key, in the body | 40 | — | `MirrorClaim` type moves into conduit at 2.4; webhook `Authorization: Token` and the socket's header-vs-challenge auth unverified on a real server; socket resume not built |
 | anthropic | C | new | 22 | — | nothing; streams through `conduit.stream()` (`FJS-D934`) |
 | openai | C | new, protocol connector; streams | 23 | Ollama, llama.cpp **unproved** | a local model server |
 | twilio | C | new; the built-in Basic signer (`FJS-D933`) | 12 | — | nothing |

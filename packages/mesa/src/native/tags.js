@@ -46,6 +46,70 @@ export const NATIVE_TAGS = {
   img:      { role: 'image' },
 }
 
+/**
+ * The class every element carries for the tag it was written with, since the
+ * engine's elements are all `view` or `text` and a type selector matches none
+ * (`FJS-D1139`). `css.js` lowers `p` to `._p`, in a component's `<style>` and
+ * a whole sheet alike. The underscore is the kit's mark for private, so no
+ * class an author writes is taken.
+ */
+export const tagClass = (tag) => `_${tag}`
+
+/**
+ * The browser's own stylesheet for the tags it styles, since a phone has none
+ * and `@frontierjs/css` leaves `strong`, `p` and the headings to it (4.8). The
+ * rules are what Chrome paints on each tag over a bare `div` or `span`, in the
+ * `em` the HTML standard's rendering section writes them in, and already in
+ * the form `lowerSheet` produces: physical sides, literal colors.
+ *
+ * It goes FIRST in a bundle's CSS. A browser keeps it in an origin below every
+ * author rule; here only order and specificity do that, so a later author
+ * rule of one class beats it and an author `*` does not.
+ *
+ * `html` is the page, which the runtime gives `._html`. Its `font-size` is
+ * CSS's `medium`, 16px, where the engine's root is 14px. `rem` is read off it,
+ * and so is every `em` and every text size an author leaves unset; without it
+ * the kit paints 12.5% small (4.9).
+ *
+ * Left out, each because the device has no answer or the answer would hurt:
+ * `a`, whose underline the kit takes off with `a:where([class])`, an
+ * attribute selector a phone never matches, so every component link would be
+ * underlined; the controls, which the engine draws; table layout and its
+ * cell padding, list markers and `cursor`; and the rule that zeroes a nested
+ * list's margins.
+ */
+const USER_AGENT = [
+  ['html', 'font-size: 16px'],
+  ['p, dl, pre', 'margin-top: 1em; margin-bottom: 1em'],
+  ['ul, ol, menu', 'margin-top: 1em; margin-bottom: 1em; padding-left: 40px'],
+  ['blockquote, figure', 'margin: 1em 40px'],
+  ['dd', 'margin-left: 40px'],
+  ['fieldset', 'margin-left: 2px; margin-right: 2px; padding: .35em .75em .625em; border-width: 2px; border-style: groove; border-color: rgb(239, 239, 239)'],
+  ['legend', 'padding-left: 2px; padding-right: 2px'],
+  ['h1', 'font-size: 2em; margin-top: .67em; margin-bottom: .67em'],
+  ['h2', 'font-size: 1.5em; margin-top: .83em; margin-bottom: .83em'],
+  ['h3', 'font-size: 1.17em; margin-top: 1em; margin-bottom: 1em'],
+  ['h4', 'margin-top: 1.33em; margin-bottom: 1.33em'],
+  ['h5', 'font-size: .83em; margin-top: 1.67em; margin-bottom: 1.67em'],
+  ['h6', 'font-size: .67em; margin-top: 2.33em; margin-bottom: 2.33em'],
+  ['h1, h2, h3, h4, h5, h6, th, strong, b', 'font-weight: 700'],
+  ['th', 'text-align: center'],
+  ['em, i, cite, dfn, var, address', 'font-style: italic'],
+  ['code, kbd, samp, pre', 'font-family: monospace'],
+  ['pre', 'white-space: pre'],
+  ['small, sup, sub', 'font-size: .83333em'],
+  ['sup', 'vertical-align: super'],
+  ['sub', 'vertical-align: sub'],
+  ['del, s', 'text-decoration: line-through'],
+  ['ins, u', 'text-decoration: underline'],
+  ['mark', 'background-color: rgb(255, 255, 0); color: rgb(0, 0, 0)'],
+  ['hr', 'margin-top: .5em; margin-bottom: .5em; border-width: 1px; border-style: inset; border-color: rgb(128, 128, 128)'],
+]
+
+export const userAgentSheet = USER_AGENT
+  .map(([tags, decls]) => `${tags.split(', ').map((t) => `.${tagClass(t)}`).join(', ')} { ${decls} }`)
+  .join('\n')
+
 /** The `<input>` types the engine's one field covers; the rest have no element. */
 export const INPUT_TYPES = {
   text: 'field', search: 'field', email: 'field', tel: 'field',

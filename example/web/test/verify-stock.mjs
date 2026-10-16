@@ -301,7 +301,7 @@ check('an administrator can',
       (await api('/inventory', { headers: admin })).status, 200)
 
 // No hook in `inventory.service.ts` checks a level. `InventoryMovement` is
-// `@@gate("5.5.9.9")` and `receive` writes the movement through the CALLER's
+// `@@gate(5.5.9.9)` and `receive` writes the movement through the CALLER's
 // own client, so the Data boundary is what refuses this — for every route in,
 // including ones nobody has thought of yet.
 const receiveAsUser = await post('inventory', 'receive', null, { variantId: V, quantity: 5 }, user)

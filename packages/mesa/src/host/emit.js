@@ -23,7 +23,7 @@
  * come too late, which is why the DOM builder makes its own at build time.
  */
 
-import { xNode, Q, PRESERVE_WHITESPACE } from '../compiler.js'
+import { xNode, Q, PRESERVE_WHITESPACE, contentFallback } from '../compiler.js'
 import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
 
@@ -44,7 +44,6 @@ function spelling(u) {
   switch (u.what) {
     case 'component':    return `<${n.name}>`
     case 'mesa-element': return `<mesa:${n.elArg}>`
-    case 'slot':         return n.type === 'node' ? '<slot>' : '{#slot}'
     case 'await':        return '{#await}'
     case 'snippet':      return '{#snippet}'
     case 'fragment':     return '{#fragment}'
@@ -264,9 +263,6 @@ export function hostOffenses(ir, t) {
       case 'text':
         for (const p of n.parts) if (p.kind === 'unlowered') add(spelling(p), spelling(p), p.loc)
         return
-      case 'slot':
-        for (const d of n.directives) add(`${d.name} on <slot>`, 'attribute on <slot>', d.loc)
-        return
       case 'comment':
       case 'portal':
       case 'component':
@@ -335,12 +331,15 @@ export function buildHost(ctx, t) {
 
   // The DOM path's shape: an anchor, then one getter per argument, and the
   // content placed before the anchor.
-  const emitSnippet = (n, name, ind) => {
-    line(ind, `const ${name} = (${['__anchor', ...n.params].join(', ')}) => {`)
+  // Content passed to a component is marked, as on the DOM path, so the
+  // child can report what it drops.
+  const emitSnippet = (n, name, ind, content = false) => {
+    const fn = `(${['__anchor', ...n.params].join(', ')}) => {`
+    line(ind, `const ${name} = ${content ? `$$runtime.content(${fn}` : fn}`)
     line(ind + 1, 'const $$b = $$host.fragment();')
     emitChildren(n.children, '$$b', ind + 1)
     line(ind + 1, '$$host.append(__anchor, $$b);')
-    line(ind, '};')
+    line(ind, content ? '});' : '};')
   }
 
   const emitRender = (n, parent, ind) => {
@@ -549,38 +548,33 @@ export function buildHost(ctx, t) {
   // registry is keyed by that marker, so each call gets one of its own.
   const emitComponent = (n, parent, ind) => {
     const m = marker(parent, ind)
-    const props = n.props.map((p) => {
-      const key = IDENT.test(p.name) ? p.name : q1(p.name)
-      if (p.value === true) return `${key}: true`
-      if (typeof p.value === 'string') return `${key}: ${q1(p.value)}`
+    const keyOf = (name) => (IDENT.test(name) ? name : q1(name))
+    const values = n.props.map((p) => {
+      if (p.value === true) return 'true'
+      if (typeof p.value === 'string') return q1(p.value)
       dep(p.value.expr)
-      return `${key}: ${p.value.expr.code}`
+      return p.value.expr.code
     })
+    const props = n.props.map((p, i) => `${keyOf(p.name)}: ${values[i]}`)
     // Spreads first and the written props last, so a written prop wins, as
     // on the DOM path.
     for (const e of n.spreads) dep(e)
     // A snippet passed to a component is declared in the calling scope, which
     // it closes over, under a name of its own: two calls may each take a `row`.
+    // A prop written under the same name is the override and the content its
+    // fallback, as on the DOM path.
     for (const s of n.snippets) {
       const name = `$$snip${seq.s++}_${s.name}`
-      emitSnippet(s, name, ind)
-      props.push(`${IDENT.test(s.name) ? s.name : q1(s.name)}: ${name}`)
+      emitSnippet(s, name, ind, true)
+      const written = n.props.findIndex((p) => p.name === s.name)
+      if (written === -1) props.push(`${keyOf(s.name)}: ${name}`)
+      else props[written] = `${keyOf(s.name)}: ${contentFallback(values[written], name)}`
     }
     const literal = `{${props.join(', ')}}`
     const obj = n.spreads.length
       ? `Object.assign({}, ${n.spreads.map((e) => `(${e.code})`).join(', ')}, ${literal})`
       : literal
-    const slots = Object.keys(n.slots)
-    if (!slots.length) line(ind, `${n.call}(${m}, ${obj}, null);`)
-    else {
-      line(ind, `${n.call}(${m}, ${obj}, {`)
-      slots.forEach((name, i) => {
-        line(ind + 1, `${IDENT.test(name) ? name : q1(name)}: () => {`)
-        emitFragment(n.slots[name], ind + 2)
-        line(ind + 1, i < slots.length - 1 ? '},' : '}')
-      })
-      line(ind, '});')
-    }
+    line(ind, `${n.call}(${m}, ${obj}, null);`)
     // The child's registry is found by its anchor, so every call below needs
     // it registered first; the order is the DOM path's.
     const live = n.spreads.length || n.props.some((p) => typeof p.value === 'object')
@@ -590,16 +584,6 @@ export function buildHost(ctx, t) {
     // The whole object, as the DOM path pushes it: an undeclared key is the
     // child's `$attributes`, rebuilt from each push.
     if (live) line(ind, `$$runtime.createEffect(() => { $$runtime.pushProps(${m}, ${obj}); });`)
-  }
-
-  const emitSlot = (n, parent, ind) => {
-    ;(ctx.slotNames ??= new Set()).add(n.name)
-    const m = marker(parent, ind)
-    const block = `__block?.[${q1(n.name)}]`
-    if (!n.fallback.length) { line(ind, `$$host.slot(${m}, ${block}, null);`); return }
-    line(ind, `$$host.slot(${m}, ${block}, () => {`)
-    emitFragment(n.fallback, ind + 1)
-    line(ind, '});')
   }
 
   // Wired where it is written, so it lives as long as the block around it.
@@ -619,7 +603,6 @@ export function buildHost(ctx, t) {
       case 'each':      return emitEach(n, parent, ind)
       case 'key':       return emitKey(n, parent, ind)
       case 'component': return emitComponent(n, parent, ind)
-      case 'slot':      return emitSlot(n, parent, ind)
       case 'render':    return emitRender(n, parent, ind)
       case 'html':      return emitHtml(n, parent, ind)
       case 'dynamic-element': return emitDynamicElement(n, parent, ind)

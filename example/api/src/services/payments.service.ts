@@ -12,8 +12,8 @@ import { settleInvoice, declineKind } from '../domain/billing'
 //   record  the provider TELLS the shop what happened — inbound, off a
 //           verified webhook, and the one place an order is settled by machine
 //
-// The CRUD half is the seller's read-only view: `Payment` is @@gate("5.8.8.9")
-// and `PaymentEvent` @@gate("5.8.9.9"), so `find` and `get` answer an
+// The CRUD half is the seller's read-only view: `Payment` is @@gate(5.8.8.9)
+// and `PaymentEvent` @@gate(5.8.9.9), so `find` and `get` answer an
 // administrator and every write below goes through `asSystem()` — the shop
 // recording what it was told. A person at no standing writes one of these
 // rows, which is what 8 says and what a level could not.
@@ -121,7 +121,7 @@ const start = async () => {
     // A policy FILTERS and a gate THROWS, so not being allowed to see this
     // order arrives here in two different shapes: a signed-in shopper who does
     // not own it reads `null`, and a caller at STRANGER(0) — which is every
-    // hosted checkout — is refused by `@@gate("1.4.4.5")` before any policy runs.
+    // hosted checkout — is refused by `@@gate(1.4.4.5)` before any policy runs.
     // Both mean the same thing to this method and both have to answer the same
     // sentence, or the status code is the oracle the code was added to close.
     // Anything that is not a refusal is a real failure and is rethrown.

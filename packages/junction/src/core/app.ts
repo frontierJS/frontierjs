@@ -133,14 +133,37 @@ export type PluginInput = PluginFn | Plugin
 /**
  * The shape of `app.conduit`.
  *
- * Empty here on purpose: Junction must not depend on @frontierjs/conduit.
- * That package augments this interface with its full `IConduit`, so a project
- * that installs conduit gets real types on `app.conduit` everywhere, and a
- * project that doesn't sees an empty object rather than a lie.
+ * Junction must not depend on @frontierjs/conduit. That package augments this
+ * interface with its full `IConduit`, so a project that installs conduit gets
+ * real types on `app.conduit` everywhere, and a project that doesn't sees only
+ * the one member junction's own code reads.
  *
  * Augment it, don't redeclare `App.conduit` — see the note on the field.
  */
-export interface AppConduit {}
+export interface AppConduit {
+  /**
+   * The forward for a model a connector's mirror claim holds (`FJS-D1125`),
+   * by accessor (`post`), or undefined. The generated create/update/patch/remove
+   * ask it at call time; conduit's `IConduit` must stay assignable to it, which
+   * the augmentation's compile checks.
+   */
+  mirrored(accessor: string): MirrorForward | undefined
+}
+
+/**
+ * The Provider half of a claimed model's write. Each verb answers the row
+ * parsed from the Provider's response, or null where it carries none; a verb
+ * the claim does not export is absent and the generated verb runs as it would
+ * on any model. Landing the row is the generated verb's.
+ */
+export interface MirrorForward {
+  provider: string
+  model:    string
+  key:      string
+  create?(input: unknown): Promise<Record<string, unknown> | null>
+  update?(key: string, patch: unknown): Promise<Record<string, unknown> | null>
+  remove?(key: string): Promise<Record<string, unknown> | null>
+}
 
 /**
  * The shape of `app.db`.

@@ -30,13 +30,13 @@
 //
 // ─── Schema syntax ───────────────────────────────────────────────────────────
 //
-//   @@gate("R.C.U.D")     — four positions: Read, Create, Update, Delete
-//   @@gate("2")           — all ops require level 2+
-//   @@gate("2.4")         — R=2, C=4, U=4(inherit), D=4(inherit)
-//   @@gate("2.4.5")       — R=2, C=4, U=5, D=5(inherit)
-//   @@gate("2.4.5.6")     — fully explicit
-//   @@gate("5.8.8.9")     — R=ADMIN, C/U=SYSTEM, D=LOCKED
-//   @@gate("7.8.9.9")     — R=SYSADMIN, C=SYSTEM, U/D=LOCKED
+//   @@gate(R.C.U.D)     — four positions: Read, Create, Update, Delete
+//   @@gate(2)           — all ops require level 2+
+//   @@gate(2.4)         — R=2, C=4, U=4(inherit), D=4(inherit)
+//   @@gate(2.4.5)       — R=2, C=4, U=5, D=5(inherit)
+//   @@gate(2.4.5.6)     — fully explicit
+//   @@gate(5.8.8.9)     — R=ADMIN, C/U=SYSTEM, D=LOCKED
+//   @@gate(7.8.9.9)     — R=SYSADMIN, C=SYSTEM, U/D=LOCKED
 //
 // ─── Install ──────────────────────────────────────────────────────────────────
 //
@@ -416,7 +416,7 @@ export class GatePlugin extends LitestonePlugin {
 // `sessionGateLevel` is the same binding from the other side: it was a hand
 // copy across a boundary this package cannot cross, the two carried a comment
 // each saying *change one, change both*, and they drifted anyway — 8 of 216
-// sessions graded CREATOR(3) here and USER(4) there, so one `@@gate("4")` read
+// sessions graded CREATOR(3) here and USER(4) there, so one `@@gate(4)` read
 // was a 403 or a 200 depending on which resolver an app had installed
 // (`FJS-520`, ruled `FJS-D197`). The scale is on the kit; what to read about a
 // caller is in `gradeStanding`'s own doc comment.

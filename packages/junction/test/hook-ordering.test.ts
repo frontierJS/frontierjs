@@ -25,14 +25,14 @@ const SCHEMA = `
   model Customer {
     id   Int    @id
     name String
-    @@gate("4.4.4.5")
+    @@gate(4.4.4.5)
   }
 
   model Order {
     id         Int    @id
     customerId Int
     total      Float
-    @@gate("4.4.4.5")
+    @@gate(4.4.4.5)
   }
 `
 
@@ -44,7 +44,7 @@ async function mkDb() {
   return db
 }
 
-// `@@gate("4.4.4.5")` — USER for read/create/update, ADMINISTRATOR for delete.
+// `@@gate(4.4.4.5)` — USER for read/create/update, ADMINISTRATOR for delete.
 // Two graders read this principal (junction's `sessionGateLevel` for the 401,
 // litestone's own for the 403) and only the explicit standing satisfies both
 // without modeling a lifecycle these tests are not about.

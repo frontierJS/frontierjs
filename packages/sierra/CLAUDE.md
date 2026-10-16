@@ -657,7 +657,11 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   somebody else** — an MCP host handing a view its `hostContext.theme` — and
   maps onto `theme.system`; from then on the OS listener yields to it, because
   a host in dark mode over a light OS said dark and the OS flipping underneath
-  must not take it back. Never persisted: the answer is the host's. A view's
+  must not take it back. Never persisted: the answer is the host's. **The stored
+  pick is a `persisted()` key and the OS answer `colorScheme()`**, under one
+  effect, so another tab's pick lands here — and the key is `prefix:key`, which
+  the `<head>` script restates (`theme/script.js` may import nothing) and the
+  island entry sets with `setPrefix`, since a static page has no router. A view's
   boot runs `initTheme` with `persist: false` whatever the app said, since a
   sandbox without `allow-same-origin` THROWS on a `localStorage` read and a
   `typeof` guard does not catch a throwing getter.

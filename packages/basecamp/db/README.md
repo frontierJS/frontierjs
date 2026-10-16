@@ -280,7 +280,7 @@ import "@frontierjs/litestone/references/AuditTrail.lite"
 
 database audit { path "./audit.db" retention 90d model AuditTrail }
 
-model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") @@tenant(none) }
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) @@tenant(none) }
 ```
 
 Every write to a `@@trail(audit)` model lands in the `AuditTrail` table of `./audit.db` with

@@ -13,7 +13,7 @@ model Order {
   cardToken String   @secret
   updatedAt DateTime @updatedAt
 
-  @@gate("1.4.4.5")
+  @@gate(1.4.4.5)
   @@allow('read', auth().isStaff)
   @@allow('read', ownerId == auth().id)
 
@@ -65,10 +65,10 @@ different proposition from one row at a time, and the refusal is at parse:
 ```
 Model 'Order': @@export needs a @@gate beside it. An export is a bulk read of
 every row a caller may see, so an ungated one is the whole table to anybody.
-Write @@gate("0") if this dataset is public on purpose.
+Write @@gate(0) if this dataset is public on purpose.
 ```
 
-`@@gate("0")` is how a schema says *public on purpose*.
+`@@gate(0)` is how a schema says *public on purpose*.
 
 ## The cursor decides what a resumed run catches
 

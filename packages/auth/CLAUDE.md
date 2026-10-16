@@ -133,7 +133,7 @@ index.ts     public API
   package is not beside it, and `fli` runs on **node** while this file is
   TypeScript, so even resolved it could not be imported. Bytes get past both
   (`FJS-038`). The split is by owner, and the gate already states it — `User` is
-  `@@gate("4.4.4.5")` with policies an app changes, so it is APPENDED into the
+  `@@gate(4.4.4.5)` with policies an app changes, so it is APPENDED into the
   app's own `schema.lite`; the other four are `8`, so they are a file the app
   imports and an upgrade reaches without a re-inject.
 - **A shipped `.lite` spells `@@db(main)` although an absent `@@db` already means
@@ -146,7 +146,7 @@ index.ts     public API
   out of `install.md` and runs it against the shipped bytes.
 - **`cookieAuth: true` works end to end** — the plugin declares the mode via
   `app.http.setAuthCookie('session')` and Junction reads it (FJS-002).
-- **`User` is `@@gate("4.4.4.5")` and the level is not what makes it safe.** A
+- **`User` is `@@gate(4.4.4.5)` and the level is not what makes it safe.** A
   gate is per MODEL, so that alone says *any signed-in caller may write any user
   row*. The fragment ships the two declarations that bound it:
   `@@allow('update', id == auth().id || auth().isAdmin)` for whose row, and

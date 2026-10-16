@@ -940,7 +940,7 @@ export default createService({
   //
   // ─── The access decision, and the tidier option was refused ──────────
   //
-  // `MetricSeries` and `MetricPoint` are `@@gate("8")` and `@@tenant(none)`:
+  // `MetricSeries` and `MetricPoint` are `@@gate(8)` and `@@tenant(none)`:
   // a reading is about a PROCESS and belongs to no workspace, which is right
   // for `process.memoryMb` and is exactly what a per-server series is not.
   //

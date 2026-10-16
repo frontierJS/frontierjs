@@ -261,7 +261,7 @@ function fieldProtection(attrs) {
 
 // ─── expectedVerdict ──────────────────────────────────────────────────────────
 //
-// What `@@gate("R.C.U.D")` MEANS, stated here and nowhere else in this file's
+// What `@@gate(R.C.U.D)` MEANS, stated here and nowhere else in this file's
 // dependency path. `levelPasses()` in the gate plugin says the same thing and
 // this deliberately does not call it.
 //

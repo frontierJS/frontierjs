@@ -57,7 +57,7 @@ router.delete('/leads/:id', requireRole('admin'),  leads.remove)
 // the role names now live in two repos`,
   S10: `model Lead {
   // read · create · update · delete
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }`,
   S11: `onChange={e => setValue(parseFloat(e.target.value))}
 // NaN when the box is empty

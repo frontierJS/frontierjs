@@ -1,4 +1,0 @@
-<script>
-  export let classes = ''
-</script>
-<section class="block {classes}"><slot /></section>

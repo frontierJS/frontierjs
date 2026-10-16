@@ -33,7 +33,7 @@ import { releaseExpired } from '../domain/shop'
  * fire runs — where a `releaseAll` flag would be a second code path proving
  * nothing about the first.
  *
- * `db.asSystem()` and not a service: StockReservation is `@@gate("5.8.8.8")`,
+ * `db.asSystem()` and not a service: StockReservation is `@@gate(5.8.8.8)`,
  * so nothing below a system context deletes one, and there is no service over
  * the table to route through. Nothing needs announcing either — a hold is never
  * broadcast (a channel does not re-check the gate), and the availability every

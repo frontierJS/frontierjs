@@ -244,6 +244,8 @@ export const RULES = [
       for (const model of schema.models ?? []) {
         for (const f of model.fields ?? []) {
           if (!has(f, 'system') || isOptional(f) || hasDefault(f)) continue
+          // A mirror's columns are the sync's to fill, and no form creates one.
+          if (f.attributes.some(a => a.kind === 'system' && a.generated === 'mirror')) continue
           out.push({
             model: model.name, field: f.name,
             message: `${model.name}.${f.name} is @system and required. It is out of create-mode required, so a generated form will not ask for it — the application must name it on the write (system: ['${f.name}']) or the create fails.`,

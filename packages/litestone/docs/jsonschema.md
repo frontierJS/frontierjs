@@ -54,7 +54,7 @@ model Article {
   comments  Comment[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@gate("2.4.4.6")
+  @@gate(2.4.4.6)
   @@allow('read', status == 'published')
   @@transitions(status, publish: draft -> published, archive: published -> archived @gate(5), settle: published -> settled @system)
 }

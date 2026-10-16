@@ -7,7 +7,7 @@ title: Account
   //
   // Every call is `client.auth`, which is the `account` service scoped to the
   // caller — nothing here names a user id, and there is no model behind the
-  // screen, because the credential rows are `@@gate("8")` and nothing outside the
+  // screen, because the credential rows are `@@gate(8)` and nothing outside the
   // provider may read one.
   //
   // Three of the four writes ask for the password again. They change what the

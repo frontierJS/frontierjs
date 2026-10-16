@@ -204,8 +204,8 @@ const TOP = [
     'schema',
     'declare',
     '<name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] }',
-    'A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`. A column takes `@money`, `@scale` and `@unit` and no other field attribute, so a view summing a `@money` column can say its result is money.',
-    'view accountStats {\n  accountId Int\n  total     Int\n  @@sql("SELECT accountId, COUNT(*) AS total FROM Event GROUP BY accountId")\n  @@gate("5")\n}'
+    'A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate(0)` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`. A column takes `@money`, `@scale` and `@unit` and no other field attribute, so a view summing a `@money` column can say its result is money.',
+    'view accountStats {\n  accountId Int\n  total     Int\n  @@sql("SELECT accountId, COUNT(*) AS total FROM Event GROUP BY accountId")\n  @@gate(5)\n}'
   ),
 
   t(
@@ -276,7 +276,7 @@ const TOP = [
     'extend model Session {\n  user User @relation(fields: [userId], references: [id], onDelete: Cascade)\n  @@index([userId])\n}',
     {
       context:
-        'model Session {\n  id     String @id @default(uuid())\n  userId String\n  @@gate("8")\n}\nmodel User {\n  id String @id @default(uuid())\n  @@gate("4")\n}',
+        'model Session {\n  id     String @id @default(uuid())\n  userId String\n  @@gate(8)\n}\nmodel User {\n  id String @id @default(uuid())\n  @@gate(4)\n}',
       seeAlso: ['schema:trait'],
       note: "The opposite direction of @@trait, and both exist: a trait is opted INTO by the model, which needs the model's author to have known about it. An extend does not. @@tenant(none) and @@trail(audit) are the other two an app usually adds here. Applied before traits, so an extend may carry a @@trait(T) of its own."
     }
@@ -508,6 +508,18 @@ const FIELD = [
     "Written by the application, never by the caller: readable by anyone, refused on write by name. Reaches the client as readOnly, so a generated form does not offer it, and it is out of create-mode `required`. The app fills it by naming the column — update({ …, system: ['trackingCode'] }).",
     'trackingCode String @system',
     { seeAlso: ['guarded', 'transient', 'immutable'] }
+  ),
+  t(
+    'local',
+    'field',
+    'protect',
+    '',
+    "The app's own column on a @@mirror model, which every other stored column there is not: the Provider's columns are @system by derivation, so a caller's write to one is refused rather than overwritten by the next sync. A caller writes this one under the usual rules, and a claimed model's forward writes it as the caller after the Provider's row lands. Refused off a @@mirror model, on its key, on the @id, on a relation, and beside @system.",
+    'starred Boolean @default(false) @local',
+    {
+      extraFields: 'externalId String\n  @@mirror(key: externalId)',
+      seeAlso: ['model:mirror', 'field:system']
+    }
   ),
   t(
     'immutable',
@@ -1188,7 +1200,7 @@ const MODEL = [
     'access',
     '("<read>.<create>.<update>.<delete>" | "<n>")',
     'The standing a caller needs, per operation, on the 0–9 ladder — read first, then create, update, delete. A missing position cascades from the left, so "4" is 4 for all four. Levels must hold read ≤ update ≤ delete and create ≤ delete (8 and 9 are sentinels and may appear anywhere), because a model easier to delete than to read is a mistake every time. Create is free relative to read, so a drop box — many may write, few may read — is "6.4.9.9", and a caller below the read level is refused by name rather than filtered to an empty list. A gate REFUSES — it throws naming the model and the level, where a policy filters. A schema declaring any gate auto-installs GatePlugin, since a declared-but-unenforced gate is fail-open. It is per MODEL, so a gate on the table getLevel reads from lets any signed-in caller rewrite anyone else\'s standing.',
-    '@@gate("2.4.4.5")',
+    '@@gate(2.4.4.5)',
     { seeAlso: ['model:allow', 'deny'] }
   ),
   t(
@@ -1196,10 +1208,10 @@ const MODEL = [
     'model',
     'access',
     '(ndjson | csv [, since: <column>])',
-    'This dataset may leave in bulk. It adds NO way in: an export is a paginated scoped read, so the rows that leave are exactly the ones the named principal could read one at a time — the @@gate refuses below its level, the row policies narrow the file rather than failing it, a field policy or @guarded column is simply absent, and under tenancy the extract is one tenant\'s because the client is. A @@gate is REQUIRED beside it, even where the schema guards nothing else: a bulk read of every row is a different proposition from one row at a time, and @@gate("0") is how a schema says this dataset is public on purpose. `since:` names a sortable declared column and is what makes an incremental run expressible — the column decides what a resumed run CATCHES, so a createdAt cursor sees new rows and not edits to old ones. Protected columns (@encrypted, @secret, @guarded) are omitted from an extract even for a caller who may read them, because a screen and a file that leaves the machine are the same principal at a different blast radius; keeping them is explicit and is recorded in the manifest. Legal on a view too.',
+    'This dataset may leave in bulk. It adds NO way in: an export is a paginated scoped read, so the rows that leave are exactly the ones the named principal could read one at a time — the @@gate refuses below its level, the row policies narrow the file rather than failing it, a field policy or @guarded column is simply absent, and under tenancy the extract is one tenant\'s because the client is. A @@gate is REQUIRED beside it, even where the schema guards nothing else: a bulk read of every row is a different proposition from one row at a time, and @@gate(0) is how a schema says this dataset is public on purpose. `since:` names a sortable declared column and is what makes an incremental run expressible — the column decides what a resumed run CATCHES, so a createdAt cursor sees new rows and not edits to old ones. Protected columns (@encrypted, @secret, @guarded) are omitted from an extract even for a caller who may read them, because a screen and a file that leaves the machine are the same principal at a different blast radius; keeping them is explicit and is recorded in the manifest. Legal on a view too.',
     '@@export(ndjson, since: updatedAt)',
     {
-      extraFields: 'updatedAt DateTime @updatedAt\n  @@gate("4")',
+      extraFields: 'updatedAt DateTime @updatedAt\n  @@gate(4)',
       seeAlso: ['model:gate', 'model:allow', 'view']
     }
   ),
@@ -1289,6 +1301,18 @@ const MODEL = [
     {
       context: 'database audit {\n  path   "./audit.db"\n  driver trail\n}',
       seeAlso: ['trail', 'database', 'anonymous']
+    }
+  ),
+  t(
+    'mirror',
+    'model',
+    'operate',
+    '(key: <field>)',
+    "The rows are a Provider's: a third party is the system of record, and the named column holds its id for each row. Every stored column but the @id and a @local one is derived @system, so a caller's write to the Provider's data is refused by name rather than overwritten by the next sync. The key is one required String or Int, derived @immutable, and @unique unless a @@unique already names it (a key unique per account). missingSince DateTime? @system is derived for the sync to stamp a row the Provider stopped answering, which it never deletes. A relation keyed by the Provider's ids emits no foreign key, since the Provider sends a child before its parent; a dangling one reads as no row, and onDelete there is refused. No gate is derived: the key's own refusal already stops a caller's create. A connector's claim, bound in app wiring, forwards a default service's writes to the Provider and applies the row it answers.",
+    '@@mirror(key: externalId)',
+    {
+      extraFields: 'externalId String',
+      seeAlso: ['field:local', 'model:external', 'field:system']
     }
   ),
   t(
@@ -1563,6 +1587,8 @@ export const DOCS = {
   'field:transient': 'modeling.md',
   'field:derived': 'modeling.md',
   'field:system': 'modeling.md',
+  'field:local': 'modeling.md',
+  'model:mirror': 'modeling.md',
   'field:immutable': 'modeling.md',
   'field:sealed': 'modeling.md',
   'field:generated': 'schema.md',
@@ -1779,6 +1805,8 @@ export const TIERS = {
     'move:seals'
   ],
   situational: [
+    'model:mirror',
+    'field:local',
     'field:zone',
     'field:zoned',
     // declarations
@@ -1891,7 +1919,7 @@ export const AXES = {
   ],
   life: [
     'field:keep', 'field:immutable', 'field:sealed', 'move:seals', 'field:updatedAt', 'field:updatedBy', 'field:createdBy',
-    'field:version', 'field:trail', 'model:sync', 'model:softDelete', 'model:expires',
+    'field:version', 'field:trail', 'model:sync', 'model:mirror', 'field:local', 'model:softDelete', 'model:expires',
     'model:effective', 'model:commitment', 'model:transitions', 'model:trail', 'model:createdBy',
     'model:updatedBy'
   ],
@@ -1972,6 +2000,7 @@ export const SYNONYMS = {
   'model:allow':       ['rls', 'row level security'],
   'model:tenant':      ['workspace', 'organization', 'organisation'],  // spelling-exempt — a searcher's word, not ours
   'model:external':    ['legacy table', 'existing table'],
+  'model:mirror':      ['external id', 'replica', 'vendor data'],
   'model:index':       ['performance', 'speed up'],
   'model:label':       ['display name', 'human name'],
   'model:trait':       ['mixin', 'shared fields'],

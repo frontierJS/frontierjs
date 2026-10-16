@@ -34,6 +34,16 @@
 // symptom shows — a hold TTL is code, but a drive failing because the last
 // drive left holds in a shared file is `env: shared db`.
 //
+// ── Seam ────────────────────────────────────────────────────────────────────
+//
+// A row whose bug crosses a named handoff says `seam: <name>` as its own
+// segment, the name from the root `CLAUDE.md` § Bridge index key list
+// (`FJS-D1135`). `env:` says where the fix lives; `seam:` says which handoff
+// the bug crosses, so eight rows on one seam read as one design and not eight
+// bugs. Written by hand like the cause; `register-check` grades the name.
+// `bySeam` is the count: rows grouped on the identifier a name ends in, the
+// key `register-check` grades by, so two spellings of one seam are one group.
+//
 // ── What this does not rank ─────────────────────────────────────────────────
 //
 // Proposals. `IDEAS/overview.md` ranks those by hand, and nothing a reader can
@@ -56,6 +66,7 @@ import { execFileSync } from 'node:child_process'
 import { readRegisters } from './registers.js'
 import { workspaceDeps } from './runnables.js'
 import { openDecisions, QUESTION_ID } from './decisions.js'
+import { identifierOf } from './seams.js'
 
 // One table, and no flag moves it: a weight somebody can pass is a ranking
 // that means whatever the last caller wanted.
@@ -87,6 +98,12 @@ const BY_HAND    = /(^|·)\s*`?by hand`?\s*(·|\|?\s*$)/im
 // cause is a row no count ever sees.
 export const ENV_CAUSES = Object.freeze(['port', 'shared db', 'stale process', 'timing', 'real machine', 'network'])
 const ENV_SEGMENT = /(^|·)\s*`?env:\s*([a-z][a-z ]*[a-z])`?\s*(·|\|?\s*$)/im
+// The name is whatever the key list writes — `$setAuth(user)`, `client.auth.*`
+// — so it runs to the next segment and a backtick on either side is quoting.
+const SEAM_SEGMENT = /(^|·)\s*`?seam:\s*`?([^`·|\s][^`·|]*?)`?\s*(·|\|?\s*$)/im
+// What `register:repro` writes, and only that: the counts span ` · ` parts, and
+// a free `repro: rg -n …` in a Detail cell is how somebody reproduced it by hand.
+const REPRO_SEGMENT = /(?:^|·)\s*`?(repro: \d+\/\d+ alone(?: · \d+\/\d+ in suite)?(?: · \d+\/\d+ under \d+ typechecks?)?)`?/gim
 
 /**
  * The open rows, ranked, plus the ones that cannot start and what the owner
@@ -162,6 +179,7 @@ export function rankNext(root, { pkg = null, sev = null, touched = null } = {}) 
       blockedBy: blockers.get(r.id),
       byHand:    byHand(r),
       env:       envCause(r),
+      seam:      seamOf(r),
       // A row inherited from an older audit is a lead: probe it before acting.
       probeFirst: r.status === 'stale?',
     }
@@ -210,6 +228,37 @@ export function byHand(record) {
 export function envCause(record) {
   const m = ENV_SEGMENT.exec(String(record.body ?? ''))
   return m ? m[2].trim() : null
+}
+
+/** The row's last `register:repro` measurement, or null — a row measured twice
+ *  keeps both, and the newer is the one written after. */
+export function reproOf(record) {
+  const all = [...String(record.body ?? '').matchAll(REPRO_SEGMENT)]
+  return all.length ? all.at(-1)[1] : null
+}
+
+export function seamOf(record) {
+  const m = SEAM_SEGMENT.exec(String(record.body ?? ''))
+  return m ? m[2].trim() : null
+}
+
+/**
+ * Ranked rows grouped by the seam they name, most rows first; a tie keeps the
+ * order the first row of each group was ranked in. A group is labelled with the
+ * spelling its highest-ranked row wrote. `none` is how many rows name no seam,
+ * so a count of three reads against the rows that could have said one.
+ */
+export function bySeam(rows) {
+  const groups = new Map()
+  let none = 0
+  for (const r of rows) {
+    if (!r.seam) { none++; continue }
+    const key = identifierOf(r.seam)
+    if (!groups.has(key)) groups.set(key, { seam: r.seam, rows: [] })
+    groups.get(key).rows.push(r)
+  }
+  const seams = [...groups.values()].sort((a, b) => b.rows.length - a.rows.length)
+  return { seams: seams.map(g => ({ ...g, count: g.rows.length })), none }
 }
 
 export function blockedBy(record) {

@@ -52,7 +52,7 @@ type DisplayLine = LineRow & {
  *
  *   the token     minting a basket (nothing can be scoped by a token that does
  *                 not exist yet) and reading one back to answer with it
- *   the holds     StockReservation is `@@gate("5.8.8.8")` — a stranger may
+ *   the holds     StockReservation is `@@gate(5.8.8.8)` — a stranger may
  *                 neither read the holds nor write one, and availability is a
  *                 sum over EVERYBODY's
  *   the sale      an InventoryMovement is the shop's own record of its act
@@ -326,7 +326,7 @@ export default createService({
 
     let chosen: number | null = null
     if (shippingMethodId != null) {
-      // The CALLER's client — `ShippingMethod` is `@@gate("0.5.5.5")` and a
+      // The CALLER's client — `ShippingMethod` is `@@gate(0.5.5.5)` and a
       // storefront has to be able to read it, so there is nothing here a
       // guest is not entitled to see.
       const method = await $.db.shippingMethod.findFirst({
@@ -704,7 +704,7 @@ async function view(cart: CartRow, client: Record<string, any> = $.db) {
   const lines = await linesOf(cart.id, client)
 
   // The SYSTEM client, and it is not a convenience. `Discount` is
-  // `@@gate("5.5.5.5")` — a shopper may not read the codes table at all, which
+  // `@@gate(5.5.5.5)` — a shopper may not read the codes table at all, which
   // is the whole reason the gate is there — so the caller's own client answers
   // null and the basket would price at no discount with nothing saying why. A
   // wrong policy is an empty screen, and here the empty screen is a shopper
@@ -736,7 +736,7 @@ async function view(cart: CartRow, client: Record<string, any> = $.db) {
     discountId:       cart.discountId ?? null,
     shippingMethodId: cart.shippingMethodId ?? null,
     // The clock on the basket. Answered here rather than read by the browser
-    // because StockReservation is `@@gate("5.…")` for reads — a shopper may not
+    // because StockReservation is `@@gate(5.…)` for reads — a shopper may not
     // see the holds table at all, including their own. They learn about their
     // own hold from the basket the shop builds for them, which is the only
     // place it is any of their business.
@@ -751,7 +751,7 @@ async function view(cart: CartRow, client: Record<string, any> = $.db) {
  * The join is nested — line → variant → product — and it goes through the
  * CALLER's client like everything else here. That works for a stranger because
  * the catalog reads at level 0: `Product` and `ProductVariant` are
- * `@@gate("0.4.4.5")`, so a guest may read them and may not write them. The
+ * `@@gate(0.4.4.5)`, so a guest may read them and may not write them. The
  * line itself is reached by the basket's own policy — `cartId == auth().cartId`.
  *
  * The image is the product's FIRST photograph rather than the variant's own,

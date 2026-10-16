@@ -120,7 +120,7 @@ const TREND_DAYS = 7
  *
  * ─── The access decision ──────────────────────────────────────────────
  *
- * `MetricSeries` and `MetricHour` are `@@gate("8")` and `@@tenant(none)`, so
+ * `MetricSeries` and `MetricHour` are `@@gate(8)` and `@@tenant(none)`, so
  * this reads at SYSTEM — and the confinement is `fleetOf()` one line up,
  * which ran at the caller's own standing. The ids reaching this function are
  * machines this caller may already read, which is the same shape

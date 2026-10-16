@@ -131,7 +131,7 @@ describe('getLevel is asked once per scoped client and model', () => {
 model Post {
   id    Int    @id
   title String
-  @@gate("2.4.4.6")
+  @@gate(2.4.4.6)
 }
 ${OWNER_OR_ADMIN}`
     const db = await createClient({ schema, db: ':memory:', plugins: [new GatePlugin({ getLevel: counted })] })

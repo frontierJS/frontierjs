@@ -28,7 +28,7 @@ model Issue {
   teamId  String
   title   String
   stateId String
-  @@gate("4.4.4.4")
+  @@gate(4.4.4.4)
   @@transitions(stateId, declaredBy: WorkflowTransition, scope: teamId)
 }`
 

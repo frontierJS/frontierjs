@@ -24,7 +24,7 @@ const haven = () => $.app as PlayApp
 
 export default createService({
   model:   'Room',
-  // `booth` makes a row, which no member may (`Room` is `@@gate("3.8")`):
+  // `booth` makes a row, which no member may (`Room` is `@@gate(3.8)`):
   // the method does it as the system, once it has checked who is asking.
   methods: ['find', 'get', 'booth', 'traces', 'bolt'],
   hooks: {

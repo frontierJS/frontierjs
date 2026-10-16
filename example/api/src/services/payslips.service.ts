@@ -1,6 +1,6 @@
 // The documents.
 //
-// `@@gate("5.5.8.8")` — read and created at 5, written only by the system.
+// `@@gate(5.5.8.8)` — read and created at 5, written only by the system.
 //
 // Not `9`, and the two are easy to confuse: `9` is LOCKED, so it would freeze
 // the ROW, and a payslip still has to move — `sentAt` is stamped after it is

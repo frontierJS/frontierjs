@@ -50,10 +50,10 @@ const { registerSchemas } = await import('../src/resource/schema-registry.js')
 const { createResource }  = await import('../src/resource/resource.js')
 
 const SOURCE = `
-model Sheet  { id String @id @default(uuid())   name String  @@gate("0.0.0.0")  @@sync(server) }
-model Tag    { id String @id @default(nanoid()) name String  @@gate("0.0.0.0")  @@sync(server) }
-model Ledger { id Int    @id                    name String  @@gate("0.0.0.0")  @@sync(server) }
-model Plain  { id String @id @default(uuid())   name String  @@gate("0.0.0.0") }
+model Sheet  { id String @id @default(uuid())   name String  @@gate(0.0.0.0)  @@sync(server) }
+model Tag    { id String @id @default(nanoid()) name String  @@gate(0.0.0.0)  @@sync(server) }
+model Ledger { id Int    @id                    name String  @@gate(0.0.0.0)  @@sync(server) }
+model Plain  { id String @id @default(uuid())   name String  @@gate(0.0.0.0) }
 `
 
 beforeEach(async () => {

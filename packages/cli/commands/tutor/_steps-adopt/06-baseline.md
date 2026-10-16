@@ -117,7 +117,7 @@ appendFileSync(schema, [
   '  owner_id  Int',
   '  path  String',
   '  @@noStrict',
-  '  @@gate("0.4.4.6")',
+  '  @@gate(0.4.4.6)',
   '}',
   '',
 ].join('\n'), 'utf8')

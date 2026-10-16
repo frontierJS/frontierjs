@@ -365,7 +365,7 @@ model Member {
   workspaceId String
   userId      String
   role        String
-  @@gate("8")
+  @@gate(8)
 }`, workspaceGate, membershipClaim({
       tenantFrom: header('x-ws'), model: 'member', subject: 'userId',
       tenant: 'workspaceId', standing: 'role', standingAs: 'memberRole',

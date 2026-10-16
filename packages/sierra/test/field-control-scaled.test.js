@@ -37,7 +37,7 @@ model Order {
   discount Int    @scale(2)
   qty      Int
   note     String?
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 `
 

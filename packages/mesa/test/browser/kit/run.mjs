@@ -67,6 +67,22 @@ if (serveOnly) {
       /** Run `fn` with the network down — `navigator.onLine` false and the
        *  `offline` event fired — and put it back whatever happens. */
       offline: async (fn) => (await createNetwork(browser)).withOffline(fn, { sever: false }),
+      /** Run `fn` with the media features set — `{ 'prefers-color-scheme':
+       *  'dark' }` — and the emulation cleared whatever happens. */
+      media: async (features, fn) => {
+        await browser.cmd('Emulation.setEmulatedMedia', {
+          features: Object.entries(features).map(([name, value]) => ({ name, value })),
+        })
+        try { return await fn() }
+        finally { await browser.cmd('Emulation.setEmulatedMedia', { features: [] }) }
+      },
+      /** Run `fn` at a viewport `width` px wide, and put the window's own back
+       *  whatever happens. */
+      viewport: async (width, fn) => {
+        await browser.cmd('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: false })
+        try { return await fn() }
+        finally { await browser.cmd('Emulation.clearDeviceMetricsOverride') }
+      },
       /** Run `fn` with this tab in the background: another tab in front, so
        *  this one is `hidden` and blurred, the way a person switching away
        *  leaves it. The drive's focus emulation keeps a page focused whatever
@@ -85,7 +101,10 @@ if (serveOnly) {
         }
       },
     }),
-    teardown: 'return window.mesaUnmount();',
+    // A fresh document per spec: a wrapper holds its listeners and pools for
+    // the life of the tab, so a spec counting what the first read adds would
+    // count nothing after an earlier spec had armed the same wrapper.
+    teardown: (browser) => browser.navigate(`${origin}/`, 'window.__mesaReady'),
     notes: () => compileWarnings.map(([file, w]) => `${file.replace(PKG, '')} — ${w}`),
   })
 

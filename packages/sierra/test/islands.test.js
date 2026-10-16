@@ -58,6 +58,17 @@ describe('islandEntrySource', () => {
     expect(src.indexOf('initTheme(')).toBeLessThan(src.indexOf('hydrateIslands('))
   })
 
+  // A static page has no router to set the prefix, and the <head> script reads
+  // the prefixed key — unset here, every pick on a site reverted on reload.
+  test('sets the app prefix before the theme boots', () => {
+    const src = islandEntrySource(
+      [{ component: 'Switch', module: '/a.mesa' }],
+      { theme: { themes: ['theme-a', 'theme-b'] }, prefix: 'shop' },
+    )
+    expect(src).toContain(`setPrefix("shop")`)
+    expect(src.indexOf('setPrefix(')).toBeLessThan(src.indexOf('initTheme('))
+  })
+
   test('an app with no theme block imports no theme code', () => {
     const src = islandEntrySource([{ component: 'Switch', module: '/a.mesa' }])
     expect(src).not.toContain('initTheme')

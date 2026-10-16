@@ -29,7 +29,6 @@ export default {
       'theme-twilight', 'theme-notebook', 'theme-press', 'theme-field',
     ],
     default: 'theme-basecamp',
-    key:     'basecamp_theme',
   },
 
   junction: {

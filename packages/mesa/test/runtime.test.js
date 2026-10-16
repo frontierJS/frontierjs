@@ -20,7 +20,7 @@
  *   13. ifBlock  (+ [FIX 3] multi-node fragment leak)
  *   14. $$eachBlock  (+ [FIX 4] multi-node reorder, reverse stress)
  *   15. awaitBlock
- *   16. Slots — attachSlot
+ *   16. Content — a snippet passed inside a component tag
  *   17. spreadAttributes
  *   18. watchProxy / watchPath  (+ [FIX 1] root sentinel, [FIX 2] cross-component isolation)
  *   19. makeAsyncState / asyncDerived  (+ edge cases)
@@ -90,9 +90,7 @@ import {
   mountedBlock,
   onMounted,
   // Slots
-  attachSlot,
-  attachNamedSlot,
-  makeSlots,
+  content,
   // Events
   bindGroup,
   debounce,
@@ -2564,48 +2562,14 @@ describe('awaitBlock', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §16  Slots — attachSlot
+// §16  Content — a snippet passed inside a component tag
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('attachSlot', () => {
-  it('replaces slot anchor with block factory content', () => {
-    const container = div()
-    const anchor = document.createComment('slot:test')
-    container.appendChild(anchor)
-
-    // attachSlot now receives makeBlock factories, not raw DOM nodes
-    const contentEl = span()
-    contentEl.textContent = 'slotted'
-    const slotFactory = () => ({ $dom: contentEl })
-
-    attachSlot(anchor, slotFactory, null)
-
-    expect(container.textContent).toBe('slotted')
-  })
-
-  it('uses fallback factory when no content provided', () => {
-    const container = div()
-    const anchor = document.createComment('slot:test')
-    container.appendChild(anchor)
-
-    const fallbackEl = span()
-    fallbackEl.textContent = 'fallback'
-    const fallbackFactory = () => ({ $dom: fallbackEl })
-
-    attachSlot(anchor, null, fallbackFactory)
-
-    expect(container.textContent).toBe('fallback')
-  })
-
-  it('renders nothing when both slot and fallback are null', () => {
-    const container = div()
-    const anchor = document.createComment('slot:test')
-    container.appendChild(anchor)
-
-    attachSlot(anchor, null, null)
-
-    // anchor removed, nothing inserted
-    expect(container.textContent).toBe('')
+describe('content', () => {
+  it('is never forwarded as an attribute, declared or not', () => {
+    const header = content(() => {})
+    const rest = restProps({ header, title: 't', onpick: () => {} }, [])
+    expect(Object.keys(rest)).toEqual(['title', 'onpick'])
   })
 })
 
@@ -5257,52 +5221,6 @@ describe('bindGroup', () => {
     bindGroup(el, get, set, () => 'L')
     flushSync()
     expect(el.checked).toBe(true)
-  })
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// §  makeSlots / attachNamedSlot
-// ─────────────────────────────────────────────────────────────────────────────
-describe('makeSlots', () => {
-  it('returns empty object when __block is null', () => {
-    expect(makeSlots(null)).toEqual({})
-  })
-
-  it('returns true for each slot key present in __block', () => {
-    const s = makeSlots({ default: () => {}, sidebar: () => {} })
-    expect(s.default).toBe(true)
-    expect(s.sidebar).toBe(true)
-  })
-
-  it('does not include absent slot keys', () => {
-    const s = makeSlots({ default: () => {} })
-    expect('sidebar' in s).toBe(false)
-  })
-})
-
-describe('attachNamedSlot', () => {
-  const mkFrag = (text) => () => {
-    const s = document.createElement('span')
-    s.textContent = text
-    return s
-  }
-
-  it('renders named slot content from __block', () => {
-    const result = attachNamedSlot({ sidebar: mkFrag('sidebar content') }, 'sidebar', null)
-    expect(result?.textContent).toBe('sidebar content')
-  })
-
-  it('uses fallback factory when slot absent from __block', () => {
-    const result = attachNamedSlot({}, 'sidebar', mkFrag('fallback'))
-    expect(result?.textContent).toBe('fallback')
-  })
-
-  it('returns null when no slot and no fallback', () => {
-    expect(attachNamedSlot({}, 'sidebar', null)).toBeNull()
-  })
-
-  it('returns null for null __block with no fallback', () => {
-    expect(attachNamedSlot(null, 'default', null)).toBeNull()
   })
 })
 

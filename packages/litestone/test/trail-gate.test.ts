@@ -23,7 +23,7 @@ const SCHEMA = (dir: string) => `
   model Secret {
     id   String @id @default(uuid())
     name String
-    @@gate("4")
+    @@gate(4)
     @@trail(audit)
   }
 `
@@ -42,7 +42,7 @@ async function withClient(fn: (db: any) => Promise<void>) {
 
 describe('the synthesized trail model is gated at SYSTEM', () => {
 
-  test('the model declares @@gate("8")', async () => {
+  test('the model declares @@gate(8)', async () => {
     await withClient(async (db) => {
       const model = db.$schema.models.find((m: any) => m.name === 'AuditTrail')
       const gate = model.attributes.find((a: any) => a.kind === 'gate')
@@ -99,9 +99,9 @@ describe('what the trail gate does not reach', () => {
           model     String
           createdAt DateTime @default(now())
           @@db(audit)
-          @@gate("6")
+          @@gate(6)
         }
-        model Note { id Int @id  body String  @@gate("2")  @@trail(audit) }
+        model Note { id Int @id  body String  @@gate(2)  @@trail(audit) }
       ` })
     try {
       await db.$setAuth({ id: 'u', level: 2 }).note.create({ data: { id: 1, body: 'x' } })
@@ -133,7 +133,7 @@ describe('a row policy on a trail model is refused by name', () => {
           actorId   String?
           createdAt DateTime @default(now())
           @@db(audit)
-          @@gate("2")
+          @@gate(2)
           ${rule}
         }
         model Note { id Int @id  body String  @@trail(audit) }

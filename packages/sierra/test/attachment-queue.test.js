@@ -43,9 +43,9 @@ const { pendingQueue, _resetPendingQueue }       = await import('../src/resource
 const { attachmentQueue, drainAttachments, _resetAttachmentQueue } = await import('../src/resource/attachments.js')
 
 const SOURCE = `
-model Shot   { id String @id @default(uuid())  name String  damage File?  @@gate("0.0.0.0")  @@sync(server) }
-model Keyed  { id Int    @id                   name String  damage File?  @@gate("0.0.0.0")  @@sync(server) }
-model Note   { id String @id @default(uuid())  name String  damage File?  version Int @version  @@gate("0.0.0.0")  @@sync(field) }
+model Shot   { id String @id @default(uuid())  name String  damage File?  @@gate(0.0.0.0)  @@sync(server) }
+model Keyed  { id Int    @id                   name String  damage File?  @@gate(0.0.0.0)  @@sync(server) }
+model Note   { id String @id @default(uuid())  name String  damage File?  version Int @version  @@gate(0.0.0.0)  @@sync(field) }
 `
 
 /** A failure the client attaches no code to — a request that never got a reply. */

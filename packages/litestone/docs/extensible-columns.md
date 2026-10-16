@@ -17,7 +17,7 @@ model CustomField {
   show         Boolean         @default(true)
 
   @@unique([model, key])
-  @@gate("5.5.5.5")
+  @@gate(5.5.5.5)
 }
 
 model Product {

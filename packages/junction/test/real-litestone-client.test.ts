@@ -41,7 +41,7 @@ async function mkDb(): Promise<AnyClient> {
         body      String?
         createdAt DateTime @default(now())
 
-        @@gate("0.4.4.5")
+        @@gate(0.4.4.5)
       }
     `,
   }) as unknown as AnyClient
@@ -94,7 +94,7 @@ describe('accessor resolution against a real Litestone client', () => {
 
 describe('derived hooks against a real Litestone client', () => {
 
-  test('@@gate("0.4.4.5") — anonymous read allowed, anonymous write rejected', async () => {
+  test('@@gate(0.4.4.5) — anonymous read allowed, anonymous write rejected', async () => {
     const db = await mkDb()
     expect(() => gateAuth(undefined, 'read')(ctx(db))).not.toThrow()
     expect(() => gateAuth(undefined, 'create')(ctx(db))).toThrow('Authentication required')
@@ -837,7 +837,7 @@ describe('a dot-path write key crosses autoValidate and is refused by the Data b
           id       Int    @id
           name     String
           settings Json   @type(Settings)
-          @@gate("0.0.0.0")
+          @@gate(0.0.0.0)
         }
       `,
     }) as unknown as AnyClient
@@ -926,7 +926,7 @@ describe('a $merge payload reaches the Data boundary and is graded there', () =>
           id  Int  @id
           doc Json @default("{}")
           typ Json @type(Settings)
-          @@gate("0.0.0.0")
+          @@gate(0.0.0.0)
         }
       `,
     }) as unknown as AnyClient

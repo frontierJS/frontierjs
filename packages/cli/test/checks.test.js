@@ -54,7 +54,7 @@ model Account {
   // in: the column declared, and no screen printing the integer it stores.
   balance     Int    @money(USD)
   workspaceId Int
-  @@gate("2")
+  @@gate(2)
   @@capabilities
 }
 model Lead {
@@ -74,7 +74,7 @@ model Lead {
   // on the clean tree rather than skipping — and finds nothing, because the
   // service's create hook names it, which is the one filler such a column has.
   code        String @system
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   @@transitions(status,
     qualify: new              -> qualified,
     close:   [new, qualified] -> closed)
@@ -92,7 +92,7 @@ model Note {
   workspaceId Int
   subjectType NoteSubject
   subjectId   Int
-  @@gate("2")
+  @@gate(2)
   @@index([subjectType, subjectId])
 }
 `
@@ -1227,7 +1227,7 @@ view revenueByStatus {
   status String
   total  Int
   @@sql("SELECT status, SUM(id) AS total FROM lead GROUP BY status")
-  @@gate("5")
+  @@gate(5)
   @@tenant(none)
 }
 `
@@ -3557,7 +3557,7 @@ describe('gate-unreachable', () => {
 
   test('the compact spelling is the same declaration', () => {
     const root = tree('gu-compact', app5({
-      'db/schema.lite': 'model Lead {\n  id Int @id\n  @@gate("0.4.4.5")\n}\n',
+      'db/schema.lite': 'model Lead {\n  id Int @id\n  @@gate(0.4.4.5)\n}\n',
     }))
     expect(only(root, 'gate-unreachable').findings).toHaveLength(1)
   })
@@ -3575,7 +3575,7 @@ describe('gate-unreachable', () => {
   test('a level named only in a trailing comment is not a declaration', () => {
     const root = tree('gu-comment-only', app5({
       'db/schema.lite':
-        'model Lead {\n  id Int @id\n  status String  // was @@gate("5") once\n  @@gate("0.0.0.0")\n}\n',
+        'model Lead {\n  id Int @id\n  status String  // was @@gate(5) once\n  @@gate(0.0.0.0)\n}\n',
     }))
     expect(only(root, 'gate-unreachable').findings).toHaveLength(0)
   })
@@ -3583,7 +3583,7 @@ describe('gate-unreachable', () => {
   test('…and the same level declared for real still is', () => {
     const root = tree('gu-comment-real', app5({
       'db/schema.lite':
-        'model Lead {\n  id Int @id\n  status String  // a note, mentioning nothing\n  @@gate("0.0.0.5")\n}\n',
+        'model Lead {\n  id Int @id\n  status String  // a note, mentioning nothing\n  @@gate(0.0.0.5)\n}\n',
     }))
     expect(only(root, 'gate-unreachable').findings).toHaveLength(1)
   })
@@ -3591,7 +3591,7 @@ describe('gate-unreachable', () => {
   test('a block comment spanning lines hides what is inside it', () => {
     const root = tree('gu-comment-block', app5({
       'db/schema.lite':
-        'model Lead {\n  id Int @id\n  /* the old shape was\n     @@gate("5")\n     and is not any more */\n  @@gate("0.0.0.0")\n}\n',
+        'model Lead {\n  id Int @id\n  /* the old shape was\n     @@gate(5)\n     and is not any more */\n  @@gate(0.0.0.0)\n}\n',
     }))
     expect(only(root, 'gate-unreachable').findings).toHaveLength(0)
   })
@@ -3612,7 +3612,7 @@ describe('gate-unreachable', () => {
     // the identity models ship that way — and `9` is locked. Neither is a level
     // a resolver was supposed to reach.
     const root = tree('gu-eight', app5({
-      'db/schema.lite': 'model Session {\n  id Int @id\n  @@gate("8")\n}\n',
+      'db/schema.lite': 'model Session {\n  id Int @id\n  @@gate(8)\n}\n',
     }))
     const { findings, skipped } = only(root, 'gate-unreachable')
     expect(findings).toEqual([])
@@ -4302,7 +4302,7 @@ describe('a model graded by capability is not also graded by ladder', () => {
   })
 
   test('a laddered gate on a grid model is reported, naming the operations', () => {
-    const root = tree('cap-ladder', grid('@@gate("2.5.5.6")'))
+    const root = tree('cap-ladder', grid('@@gate(2.5.5.6)'))
     const { findings } = only(root, 'capability-ladder')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/create, update, delete need level 5\/5\/6 where read needs 2/)
@@ -4310,14 +4310,14 @@ describe('a model graded by capability is not also graded by ladder', () => {
   })
 
   test('a flat gate is the shape it is asking for, and says nothing', () => {
-    const root = tree('cap-flat', grid('@@gate("2")'))
+    const root = tree('cap-flat', grid('@@gate(2)'))
     expect(only(root, 'capability-ladder').findings).toEqual([])
   })
 
   test('a laddered gate on a model with no grid is untouched', () => {
     const root = tree('cap-nogrid', {
       ...CLEAN,
-      'db/schema.lite': SCHEMA + '\nmodel Plain {\n  id Int @id\n  workspaceId Int\n  @@gate("2.5.5.6")\n}\n',
+      'db/schema.lite': SCHEMA + '\nmodel Plain {\n  id Int @id\n  workspaceId Int\n  @@gate(2.5.5.6)\n}\n',
     })
     expect(only(root, 'capability-ladder').findings).toEqual([])
   })
@@ -4332,7 +4332,7 @@ describe('a model graded by capability is not also graded by ladder', () => {
       ...CLEAN,
       'db/schema.lite': SCHEMA +
         '\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n' +
-        '  @@gate("2.4.4.5")\n  @@capabilities\n}\n',
+        '  @@gate(2.4.4.5)\n  @@capabilities\n}\n',
     })
     const { findings } = only(root, 'capability-ladder')
     expect(findings).toHaveLength(1)
@@ -4343,7 +4343,7 @@ describe('a model graded by capability is not also graded by ladder', () => {
     const root = tree('cap-flat', {
       ...CLEAN,
       'db/schema.lite': SCHEMA +
-        '\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n  @@gate("2.2.2.2")\n  @@capabilities\n}\n',
+        '\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n  @@gate(2.2.2.2)\n  @@capabilities\n}\n',
     })
     expect(only(root, 'capability-ladder').findings).toEqual([])
   })
@@ -4352,12 +4352,12 @@ describe('a model graded by capability is not also graded by ladder', () => {
     // A site provisioned by the operator: members read it by the grid, and no
     // grant can create one, because nobody climbs to SYSTEM. The grid cannot
     // say "nobody's" — an owner holding every capability could grant it.
-    const root = tree('cap-system', grid('@@gate("4.8")'))
+    const root = tree('cap-system', grid('@@gate(4.8)'))
     expect(only(root, 'capability-ladder').findings).toEqual([])
   })
 
   test('beside a system-only write, a write that does climb is still reported, alone', () => {
-    const root = tree('cap-system-mixed', grid('@@gate("2.5.8.9")'))
+    const root = tree('cap-system-mixed', grid('@@gate(2.5.8.9)'))
     const { findings } = only(root, 'capability-ladder')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/create needs level 5 where read needs 2/)
@@ -4385,7 +4385,7 @@ describe('schema-runs', () => {
   }
 
   test('a schema that parses and that createClient refuses is an error naming the refusal', () => {
-    const root = withLitestone('sr-bad', 'model Thing {\n  id Int @id\n  @@gate("6.4.5.6")\n}\n')
+    const root = withLitestone('sr-bad', 'model Thing {\n  id Int @id\n  @@gate(6.4.5.6)\n}\n')
     const { findings } = only(root, 'schema-runs')
     expect(findings).toHaveLength(1)
     expect(findings[0].severity).toBe('error')

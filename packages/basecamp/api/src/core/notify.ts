@@ -56,7 +56,7 @@ export async function transportsFor(
   if (!def) return []
 
   // asSystem(): this runs from jobs and from hooks alike, and a preference row
-  // is `@@gate("1")` with `userId == auth().id`. Reading somebody ELSE's row is
+  // is `@@gate(1)` with `userId == auth().id`. Reading somebody ELSE's row is
   // exactly what a sender does, and no caller's standing makes that legal —
   // which is why the bypass is stated rather than routed around.
   const row = await (app.db as any).asSystem().notificationPreference.findFirst({

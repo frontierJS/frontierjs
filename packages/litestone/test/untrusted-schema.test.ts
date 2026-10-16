@@ -26,14 +26,14 @@ model Order {
   status     Status
   amount     Int
   @@allow('read', customerId == auth().customerId)
-  @@gate("3.8.8.8")
+  @@gate(3.8.8.8)
 }
 // Lower camel: a PascalCase view is not readable yet (FJS-1631).
 view paidByCustomer {
   customerId String
   total      Int
   @@sql("SELECT customerId, SUM(amount) AS total FROM \\"order\\" WHERE status = 'paid' GROUP BY customerId")
-  @@gate("4")
+  @@gate(4)
 }
 `
 
@@ -50,7 +50,7 @@ describe('createClient({ untrusted: true })', () => {
     const other = join(dir, 'elsewhere.db')
     try {
       const noView = BASE.slice(0, BASE.indexOf('// Lower camel'))
-      const text = `database side { path "${other}" }\n` + noView.replace('@@gate("3.8.8.8")', '@@gate("3.8.8.8")\n  @@db(side)')
+      const text = `database side { path "${other}" }\n` + noView.replace('@@gate(3.8.8.8)', '@@gate(3.8.8.8)\n  @@db(side)')
       await expect(createClient({ schema: text, db: ':memory:', untrusted: true })).rejects.toThrow(/`database side` names a file[\s\S]*Order: `@@db`/)
       expect(existsSync(other)).toBe(false)
       // The same text as an ordinary client is what the guard is for.

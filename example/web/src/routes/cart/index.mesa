@@ -6,7 +6,7 @@ title: Basket
   //
   // Everything on this screen belongs to a STRANGER. There is no sign-in, no
   // account and no user id anywhere in it: `Cart` and `CartLine` are
-  // `@@gate("0.0.0.5")` and their rows are reached by `@@allow('read', token ==
+  // `@@gate(0.0.0.5)` and their rows are reached by `@@allow('read', token ==
   // auth().cartToken)`, so the only thing that makes these rows visible is a
   // token this browser is holding. Which is also why a wrong token is an empty
   // screen and not an error — a policy filters, it does not refuse.
@@ -331,7 +331,7 @@ title: Basket
 
   <!-- ── Delivery ──────────────────────────────────────────────────────────
        An ordinary CRUD read of a public table. `ShippingMethod` is
-       `@@gate("0.5.5.5")` and `Discount` beside it is `@@gate("5.5.5.5")` —
+       `@@gate(0.5.5.5)` and `Discount` beside it is `@@gate(5.5.5.5)` —
        one list a stranger may read and one they may not, on this same screen,
        which is the plainest statement in the app that a gate answers *what
        kind of caller* and never *what kind of table*. -->

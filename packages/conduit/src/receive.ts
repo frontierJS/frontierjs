@@ -12,6 +12,13 @@
 //               whose tenant an event is about, and what to do with it.
 //   conduit     credential → verify → parse → owner → receipt → apply → mark
 //
+// A Provider that pushes over a socket the app dials is the same order with
+// the first two steps moved to the dial (`FJS-D1127`): a BrokerReceiver names
+// a `broker` target, conduit holds the connection, the target's credential
+// opens it and the connector's framing proves it, and each frame runs
+// parse → owner → receipt → apply → mark. No route is mounted for it, so no
+// stranger can post a frame.
+//
 // Resilience does not cross. The retry is the sender's, so the only jobs are
 // to be idempotent and to answer quickly; a breaker has no inbound meaning.
 //
@@ -22,7 +29,7 @@
 // ============================================================
 
 import { valueOf } from './credentials.ts'
-import type { ConduitStore, CredentialResolver, Receipt } from './types.ts'
+import type { BrokerFraming, BrokerMessage, ConduitStore, CredentialResolver, Receipt } from './types.ts'
 
 // ─── What arrives ─────────────────────────────────────────────
 
@@ -115,6 +122,42 @@ export interface Receiver<Cred = string, Ev extends ReceivedEvent = ReceivedEven
   apply(ev: Ev, ctx: { owner: Owner | null; cred: Cred; delivery: Delivery }): Outcome | Promise<Outcome>
 }
 
+/**
+ * The vendor's half for a socket (`FJS-D1127`). No `verify`: the frames
+ * arrive on a connection the target's credential opened and `framing`'s
+ * handshake proved, so there is nothing on a frame to check. `framing` absent
+ * is conduit's own envelope.
+ */
+export interface FrameDialect<Ev extends ReceivedEvent = ReceivedEvent> {
+  framing?:  BrokerFraming<any>
+  /** `null` is *not an event* — counted `ignored`, and no receipt is written. */
+  parse(m: BrokerMessage): Ev | null | Promise<Ev | null>
+  dedupeKey(m: BrokerMessage, ev: Ev): string
+}
+
+/**
+ * The app's half for a socket: a Receiver that names a `broker` target in
+ * place of a path. `receive()` subscribes it and answers once the first dial
+ * has been tried; the subscription is the target's, one per target.
+ */
+export interface BrokerReceiver<Ev extends ReceivedEvent = ReceivedEvent, Owner = unknown> {
+  provider: string
+  /** A registered `broker` target, dialed and held by conduit. */
+  target:   string
+  dialect:  FrameDialect<Ev>
+  owner?:   (ev: Ev) => Owner | null | Promise<Owner | null>
+  /**
+   * After each handshake conduit believes — the first dial and every redial,
+   * before that connection's first frame is applied. A Provider that
+   * redelivers nothing lost whatever it sent while the socket was down, and
+   * this is the moment a gap's backfill starts; waiting for the next frame
+   * instead leaves a quiet room's gap unfilled. `connection` is what the
+   * framing's handshake answered. A throw is logged and the frames still flow.
+   */
+  opened?:  (ctx: { connection: unknown }) => void | Promise<void>
+  apply(ev: Ev, ctx: { owner: Owner | null; message: BrokerMessage }): Outcome | Promise<Outcome>
+}
+
 /** What the route answers, and why — `reason` is for the log and never the body. */
 export interface Received {
   status: number
@@ -158,6 +201,52 @@ export function assertReceiver(r: Receiver<unknown, ReceivedEvent, unknown>): vo
     throw new TypeError(`${where}: credential is a ref the resolver answers, or a function choosing the key for one delivery`)
   if (r.owner !== undefined && typeof r.owner !== 'function')
     throw new TypeError(`${where}: owner must be a function`)
+  if (typeof r.apply !== 'function')
+    throw new TypeError(`${where}: apply must be a function`)
+}
+
+const BROKER_RECEIVER_FIELDS: Record<keyof BrokerReceiver, true> = {
+  provider: true, target: true, dialect: true, owner: true, opened: true, apply: true,
+}
+const FRAME_DIALECT_FIELDS: Record<keyof FrameDialect, true> = { framing: true, parse: true, dedupeKey: true }
+
+// Each refusal names what the field would have meant on a route and why a
+// socket has no place for it, since a route receiver is the shape copied.
+const NOT_ON_A_SOCKET: Record<string, string> = {
+  path:       'conduit dials the target and mounts no route',
+  credential: 'the target\'s own auth is presented on the dial',
+}
+
+export function assertBrokerReceiver(r: BrokerReceiver<ReceivedEvent, unknown>): void {
+  const where = `Receiver for target '${String((r as { target?: unknown })?.target ?? '?')}'`
+  for (const key of Object.keys(r)) {
+    if (Object.hasOwn(NOT_ON_A_SOCKET, key))
+      throw new TypeError(`${where}: names a target, so it has no ${key} — ${NOT_ON_A_SOCKET[key]}`)
+    if (!Object.hasOwn(BROKER_RECEIVER_FIELDS, key))
+      throw new TypeError(`${where}: unknown field '${key}'. A receiver on a target holds ${Object.keys(BROKER_RECEIVER_FIELDS).join(', ')}`)
+  }
+  if (typeof r.provider !== 'string' || !r.provider)
+    throw new TypeError(`${where}: provider must name the Provider this is the other end of — 'mattermost'`)
+  if (typeof r.target !== 'string' || !r.target)
+    throw new TypeError(`${where}: target must name a registered broker target`)
+  if (!r.dialect || typeof r.dialect !== 'object')
+    throw new TypeError(`${where}: dialect is the connector's { framing?, parse, dedupeKey }`)
+  for (const key of Object.keys(r.dialect)) {
+    if (key === 'verify')
+      throw new TypeError(`${where}: dialect has a verify, and a frame has nothing to verify — the dial presented the credential and the framing's handshake proved it`)
+    if (!Object.hasOwn(FRAME_DIALECT_FIELDS, key))
+      throw new TypeError(`${where}: dialect has an unknown field '${key}'. A frame dialect holds ${Object.keys(FRAME_DIALECT_FIELDS).join(', ')}`)
+  }
+  for (const key of ['parse', 'dedupeKey'] as const)
+    if (typeof r.dialect[key] !== 'function')
+      throw new TypeError(`${where}: dialect.${key} must be a function`)
+  const framing = r.dialect.framing
+  if (framing !== undefined && (typeof framing !== 'object' || typeof framing.decode !== 'function'))
+    throw new TypeError(`${where}: dialect.framing is { handshake?, decode, ack? }`)
+  if (r.owner !== undefined && typeof r.owner !== 'function')
+    throw new TypeError(`${where}: owner must be a function`)
+  if (r.opened !== undefined && typeof r.opened !== 'function')
+    throw new TypeError(`${where}: opened must be a function`)
   if (typeof r.apply !== 'function')
     throw new TypeError(`${where}: apply must be a function`)
 }
@@ -207,12 +296,43 @@ export async function accept<Cred, Ev extends ReceivedEvent, Owner>(
 
   const owner = (await r.owner?.(ev, cred)) ?? null
   const key   = r.dialect.dedupeKey(d, ev, cred)
+  return land(r.provider, ev, owner, key, now, deps.store, 'the sender will retry', () => r.apply(ev, { owner, cred, delivery: d }))
+}
 
-  const seen = await deps.store.receipt(r.provider, key)
+/**
+ * One frame off a socket the app holds (`FJS-D1127`): `accept()`'s order from
+ * parse on. Credential and verify were the dial's. A `failed` here is the
+ * broker handler throwing, so a Provider that acks redelivers it.
+ */
+export async function acceptFrame<Ev extends ReceivedEvent, Owner>(
+  r:    BrokerReceiver<Ev, Owner>,
+  m:    BrokerMessage,
+  now:  number,
+  deps: { store: ConduitStore },
+): Promise<Received> {
+  const ev = await r.dialect.parse(m)
+  if (!ev) return { status: 200, body: { received: true, outcome: 'ignored' }, result: 'ignored', reason: 'not an event frame' }
+  const owner = (await r.owner?.(ev)) ?? null
+  const key   = r.dialect.dedupeKey(m, ev)
+  return land(r.provider, ev, owner, key, now, deps.store, 'a broker that acks redelivers it', () => r.apply(ev, { owner, message: m }))
+}
+
+// receipt → apply → mark, the half both ingresses share.
+async function land(
+  provider: string,
+  ev:       ReceivedEvent,
+  owner:    unknown,
+  key:      string,
+  now:      number,
+  store:    ConduitStore,
+  retry:    string,
+  apply:    () => Outcome | Promise<Outcome>,
+): Promise<Received> {
+  const seen = await store.receipt(provider, key)
   if (seen?.applied_at) return { status: 200, body: { received: true, outcome: 'duplicate' }, result: 'duplicate' }
   if (!seen) {
-    await deps.store.record({
-      provider:    r.provider,
+    await store.record({
+      provider,
       key,
       event_type:  ev.type,
       owner:       owner === null ? null : String(owner),
@@ -223,14 +343,14 @@ export async function accept<Cred, Ev extends ReceivedEvent, Owner>(
 
   let outcome: Outcome
   try {
-    outcome = await r.apply(ev, { owner, cred, delivery: d })
+    outcome = await apply()
   } catch (err) {
     return {
       status: 500, body: { error: 'not applied' }, result: 'failed',
-      reason: `${ev.type} ${ev.id} failed to apply, the sender will retry — ${(err as Error)?.message ?? String(err)}`,
+      reason: `${ev.type} ${ev.id} failed to apply, ${retry} — ${(err as Error)?.message ?? String(err)}`,
     }
   }
-  if (outcome !== 'parked') await deps.store.markApplied(r.provider, key, now * 1000)
+  if (outcome !== 'parked') await store.markApplied(provider, key, now * 1000)
   return { status: 200, body: { received: true, outcome }, result: outcome }
 }
 

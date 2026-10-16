@@ -21,8 +21,8 @@ const gateOf = (decl) => {
 afterAll(() => { for (const r of roots) rmSync(r, { recursive: true, force: true }) })
 
 test('a digit gate reads its first position', () => {
-  expect(gateOf('@@gate("4.4.4.5")')).toBe(4)
-  expect(gateOf('@@gate("8")')).toBe(8)
+  expect(gateOf('@@gate(4.4.4.5)')).toBe(4)
+  expect(gateOf('@@gate(8)')).toBe(8)
 })
 
 test('the named forms FJS-D239 deleted declare nothing', () => {

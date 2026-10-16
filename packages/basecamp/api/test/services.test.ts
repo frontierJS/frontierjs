@@ -1334,7 +1334,7 @@ describe('the proxy path list is what the app mounts', () => {
 describe('the catalog takes no workspace', () => {
   test('a caller with no membership anywhere can read it', async () => {
     // `outsider` is authenticated and belongs to nothing — VISITOR(1), which is
-    // exactly what `@@gate("1.7")` admits. Through a workspace-scoped service
+    // exactly what `@@gate(1.7)` admits. Through a workspace-scoped service
     // the same principal is refused by name ("not a member of this workspace"),
     // so this is the tenancy exemption and not a weak gate.
     const list = await env.as(outsider).service('blueprints').find()
@@ -2050,7 +2050,7 @@ describe('an alert rule says whether anything writes the metric it watches', () 
 
   test('…and one letter out answers null, which is the whole point', async () => {
     // One character apart from the row above. The series models are
-    // `@@gate("8")` and `@@tenant(none)`, so the lookup is `asSystem()` and the
+    // `@@gate(8)` and `@@tenant(none)`, so the lookup is `asSystem()` and the
     // only thing that reaches the response is the name, the type and the
     // freshness — never a reading.
     const r = await env.as(owner).service('alerts').get(typo.id) as any
@@ -2439,7 +2439,7 @@ describe('accepting an invitation puts somebody in the workspace', () => {
 // widget kinds said so on their own cards (`FJS-956`).
 //
 // The heartbeat records into the metric store now. What makes that worth its own
-// block is the READ: `MetricSeries` is `@@gate("8")` and `@@tenant(none)`,
+// block is the READ: `MetricSeries` is `@@gate(8)` and `@@tenant(none)`,
 // because a reading is about a PROCESS — which is right for `process.memoryMb`
 // and is exactly what a per-server series is not. Opening the package's read
 // slot and asking every app to declare a policy was refused: an app that writes

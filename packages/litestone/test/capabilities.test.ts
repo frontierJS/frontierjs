@@ -467,7 +467,7 @@ describe('the grid and the ladder are ANDed', () => {
       model Ledger {
         id   Int    @id @default(autoincrement())
         note String
-        @@gate("4")
+        @@gate(4)
         @@capabilities
       }` })
 
@@ -793,7 +793,7 @@ model Invoice {
   id   Int     @id @default(autoincrement())
   memo String? @capability
   st   St      @default(a)
-  @@gate("2")
+  @@gate(2)
   @@capabilities(all)
   @@transitions(st, issue: a -> b, seal: b -> c @gate(8))
 }

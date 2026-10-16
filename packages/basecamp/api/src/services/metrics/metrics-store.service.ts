@@ -43,7 +43,7 @@ const HOUR = 3_600_000
 const RAW_WINDOW_MS = 48 * HOUR
 const MAX_POINTS    = 5_000
 
-// The models are `@@gate("8")` — nothing below asSystem() has anything to say
+// The models are `@@gate(8)` — nothing below asSystem() has anything to say
 // to them, and this service is the only reader. The gate above is what makes
 // that safe; `asSystem()` here is the bypass said out loud rather than
 // assumed, as `hub.service.ts` does it next door.

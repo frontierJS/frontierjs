@@ -52,7 +52,7 @@ model Book {
   @@check("pages >= 0", "a book has pages")
   @@transitions(status, draft -> published)
   @@allow('read', auth().id == ownerId)
-  @@gate("0")
+  @@gate(0)
 }`
 
 async function world(mapped: boolean) {

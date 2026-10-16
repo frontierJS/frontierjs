@@ -44,7 +44,7 @@ const log = (...a) => (document.getElementById('log').textContent += a.join(' ')
 
 const client = createJunctionClient({ url: location.origin })
 
-// @@gate("0.4.4.5") — reads are public, writes need a user. The demo login
+// @@gate(0.4.4.5) — reads are public, writes need a user. The demo login
 // hands out a token; nothing about that is declared in the service.
 const { token } = await (await fetch('/login', { method: 'POST' })).json()
 client.token = token

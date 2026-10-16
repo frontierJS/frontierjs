@@ -176,7 +176,7 @@ describe('app.claim', () => {
   // `app.conduit` call site.
   it('leaves the value readable at app.<name> for augmented types', async () => {
     const app = await createTestApp()
-    const conduitLike = { send: () => {} }
+    const conduitLike = { send: () => {}, mirrored: () => undefined }
 
     app.claim('conduit', conduitLike)
 

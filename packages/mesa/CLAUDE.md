@@ -57,24 +57,33 @@ src/
                          `class:` names it paints, whether it paints CSS, the
                          runtime it imports
   native/tags.js       — the native target's table (FJS-D1074): what a phone
-                         builds. What it has no element for is absent, so refused
+                         builds. What it has no element for is absent, so refused.
+                         tagClass(): the `_p` every element carries (FJS-D1139).
+                         userAgentSheet: the browser's own sheet, which a phone
+                         lacks, for whatever builds a bundle to put first. Its
+                         `._html` rule is the 16px root, on the page the runtime
+                         classes; the engine's own root is 14px, read by rem and em
   native/css.js        — cssOffense(): the selectors and at-rules a phone's
                          stylesheet drops in silence, so a `<style>` rule using
-                         one is refused by line. A type selector is one: every
-                         element is the engine's view or text
+                         one is refused by line. lowerTypes(): a type selector
+                         as its tag class, since every element is the engine's
+                         view or text; scopeCSS and lowerSheet both run it
   native/sheet.js      — lowerSheet(): a whole stylesheet, the kit's bundle
                          first, flattened out of its layers and split one rule
-                         per list member, since the encoder drops a layer or a
-                         list whole, then its tokens evaluated. Returns what
+                         per list member, `:where()`/`:is()` lists included,
+                         since the encoder drops a layer or a list whole, then
+                         its tokens evaluated and agreeing members rejoined. Returns what
                          it dropped by line, an app knob it lost included
   native/tokens.js     — lowerTokens(): the token graph evaluated per (theme ×
                          axis × tone), so no var() on a phone is more than one
                          hop from a literal. The contexts are read off the
                          sheet: `.theme-*`, and each @property's setters
-  native/values.js     — lowerValues(): oklch(), oklab() and color-mix() over
+  native/values.js     — lowerValues(): oklch(), oklab(), color() and color-mix() over
                          literals computed to rgb()/rgba(), clipped as Chrome
-                         paints, and logical properties written physical for
-                         left-to-right. A color it cannot compute (currentColor)
+                         paints, logical properties written physical for
+                         left-to-right, and `display` by its inner display
+                         (flow → the engine's `linear`, since it lays `block`
+                         out as a row). A color or display it cannot lower
                          comes back by line
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
   runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal.js:
@@ -90,7 +99,8 @@ src/
   runtime-native.js    — the native runtime, @frontierjs/mesa/runtime/native.js:
                          `$$host` over Lynx's Element PAPI, the main-thread
                          globals, so no engine import and no peer. The one file
-                         that names Lynx. Measure and focus answer a Promise
+                         that names Lynx. `$.measure`/`$.focus` answer a Promise
+                         here, in runtime.js and in runtime-terminal.js alike
   entities.js          — htmlEntitiesToText(): character references as text,
                          read by the compiler and the terminal runtime's {@html}
   render-component.js  — renderComponent(): a component → HTML, at build time
@@ -113,7 +123,12 @@ src/
                          own module because sierra's router sets it in every app
                          and persisted.js carries /redact. tab.js is #8, an
                          object watched like session (`$: tab.online`), armed at
-                         its first read and held for the tab. result.js is the
+                         its first read and held for the tab. clock.js is #2,
+                         one timer per `every`, parked by a watch on
+                         tab.visible. media.js is #3, one MediaQueryList
+                         per query; every signal wrapper is a CALL held in a
+                         const, since a template read of an imported name is
+                         static (`FJS-060`, `FJS-3096`). result.js is the
                          one { ok, via, reason } an action returns;
                          browser.d.ts states each server answer
 
@@ -199,8 +214,9 @@ Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
 ## What bites here
 
 **`$` is the door, and it is emitted in two halves.** The instance-independent
-members — the five animation helpers and the four lifecycle functions — are a
-module-scope `$$shared`; the per-instance `$` is `Object.create($$shared)` with
+members — the five animation helpers, the four lifecycle functions, `measure`
+and `focus` — are a module-scope `$$shared`, the last two read off the target's
+runtime (`$$host` on a host target); the per-instance `$` is `Object.create($$shared)` with
 only `option`, `slots`, `props`, `attributes`, `emit`, `context`, `mounted`,
 `inspect` and `async` assigned on top, and each of those only when the sniff
 found it in use. So a component that reaches for nothing emits neither.

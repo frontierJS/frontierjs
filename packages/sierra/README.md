@@ -1365,6 +1365,12 @@ of the ones it held back.
 With `theme` configured, the post-build pipeline injects an inline `<head>` script that
 applies the persisted preference before first paint, so there is no flash.
 
+The preference is a `persisted()` value from `@frontierjs/mesa/browser`, stored as
+`<prefix>:<key>` — `key` defaults to `theme` and the prefix is the app's (`prefix` in
+`sierra.config.js`, else its `package.json` name), so `key` never carries the app's name.
+A pick made in one tab reaches the app's other open tabs. Under `default: 'system'` the
+theme follows the OS scheme (`colorScheme()`) until somebody picks one.
+
 `setScheme('light' | 'dark')` is for a page whose window somebody else owns — an MCP
 host handing a view its `hostContext.theme`. It maps onto the pair `theme.system` names,
 the same mapping the OS preference gets, and from then on the OS query yields to it. It is

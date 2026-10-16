@@ -1151,7 +1151,7 @@ columns (`@createdBy`, `@default(auth().field)`) are held out of the
 
 ### Access control
 ```
-@@gate("R.C.U.D")                level-based access (read.create.update.delete)
+@@gate(R.C.U.D)                level-based access (read.create.update.delete)
 @@auth                           marks model as auth subject for auth() expressions
 @@allow('read'|'create'|'update'|'delete'|'all', expr)
 @@allow('op', expr, "custom error message")

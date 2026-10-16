@@ -1,6 +1,6 @@
 // The documents.
 //
-// `@@gate("1.8.4.8")` — read at 1, created and deleted by the system alone,
+// `@@gate(1.8.4.8)` — read at 1, created and deleted by the system alone,
 // because an invoice is issued by billing and by nothing else. Update
 // is staff's, and reaches only the moves. There is no
 // `create` a person can reach, and that is the schema's statement rather than

@@ -337,14 +337,14 @@ test('the gate ladder builds the parents a create needs — @@arc, a keys-only @
     model A { id Int @id @default(autoincrement())
       ownerId Int?; owner User? @relation(fields: [ownerId], references: [id])
       runId Int?;   run   Run?  @relation(fields: [runId],   references: [id])
-      @@arc([ownerId, runId]); @@gate("4.4.4.8") }
+      @@arc([ownerId, runId]); @@gate(4.4.4.8) }
     model B { id Int @id @default(autoincrement())
       ownerId Int?; owner User? @relation(fields: [ownerId], references: [id])
       runId Int?;   run   Run?  @relation(fields: [runId],   references: [id])
-      @@check("ownerId IS NOT NULL OR runId IS NOT NULL"); @@gate("4.4.4.8") }
+      @@check("ownerId IS NOT NULL OR runId IS NOT NULL"); @@gate(4.4.4.8) }
     model C { id Int @id @default(autoincrement()); kind Kind @default(owned)
       ownerId Int? @required(where: kind == 'owned'); owner User? @relation(fields: [ownerId], references: [id])
-      @@gate("4.4.4.8") }` })
+      @@gate(4.4.4.8) }` })
   try { expect(await env.verifyGateLadder()).toEqual([]) }
   finally { env.close() }
 })
@@ -362,7 +362,7 @@ test('the gate ladder fills every key of a conjunction branch — kind != x OR (
     model D { id Int @id @default(autoincrement()); kind Kind
       ownerId Int?; owner User? @relation(fields: [ownerId], references: [id])
       runId Int?;   run   Run?  @relation(fields: [runId],   references: [id])
-      @@check("kind != 'push' OR (ownerId IS NOT NULL AND runId IS NOT NULL)"); @@gate("4.4.4.8") }` })
+      @@check("kind != 'push' OR (ownerId IS NOT NULL AND runId IS NOT NULL)"); @@gate(4.4.4.8) }` })
   try { expect(await env.verifyGateLadder()).toEqual([]) }
   finally { env.close() }
 })
@@ -429,7 +429,7 @@ describe('an optional @guarded column is left out of the generated row', () => {
 // every level as an error.
 describe('an @derived field is left out of the generated row', () => {
   const schema = `model T { id Int @id @default(autoincrement()); dueAt DateTime?; score Int
-    urgency Int @derived(dueAt < now() ? 2 : 0); @@gate("4.4.4.5") }`
+    urgency Int @derived(dueAt < now() ? 2 : 0); @@gate(4.4.4.5) }`
 
   test('the definition does not name it', () => {
     expect(row(schema)).not.toHaveProperty('urgency')

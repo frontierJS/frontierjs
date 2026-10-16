@@ -198,9 +198,9 @@ export const OPPORTUNITIES = [
         out.push({ model: model.name, field: null,
           confidence: owned ? 'likely' : 'possible',
           message: owned
-            ? `${model.name} is @@gate("${gate.value}"), carries the row's owner, and ${policy} ` +
+            ? `${model.name} is @@gate(${gate.value}), carries the row's owner, and ${policy} ` +
               `for ${ops} — so any caller who clears the gate reaches everybody's rows there.`
-            : `${model.name} is @@gate("${gate.value}") and ${policy} for ${ops}, so a caller who ` +
+            : `${model.name} is @@gate(${gate.value}) and ${policy} for ${ops}, so a caller who ` +
               `clears the gate reaches every row. Right for a catalog; worth stating either way.` })
       }
       return out
@@ -248,6 +248,9 @@ export const OPPORTUNITIES = [
       const NAMES = /^(status|state|stage|phase|lifecycle)$/i
       const out = []
       for (const model of authored(schema)) {
+        // A mirror's status is the Provider's, and moves where the Provider
+        // moves it; a machine here would refuse the sync (FJS-D843).
+        if ((model.attributes ?? []).some(a => a.kind === 'mirror')) continue
         const declared = new Set((model.attributes ?? [])
           .filter(a => a.kind === 'transitions').map(a => a.field))
         for (const f of model.fields ?? []) {
@@ -315,7 +318,9 @@ export const OPPORTUNITIES = [
       const where = new Map()
       for (const m of models)
         for (const f of m.fields ?? []) {
-          if (isRelation(f, schema) || has(f, 'id')) continue
+          // A column the parser derived (`missingSince` under @@mirror) is one
+          // the app may not declare, so no trait could hold it.
+          if (isRelation(f, schema) || has(f, 'id') || f.generated) continue
           ;(where.get(key(f)) ?? where.set(key(f), []).get(key(f))).push(m.name)
         }
 

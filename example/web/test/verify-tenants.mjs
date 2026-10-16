@@ -173,14 +173,14 @@ console.log('\n  the session')
 // Read through a GATE, not through a public list. `Customer` reads at STRANGER(0)
 // here, so an anonymous caller sees the same rows a signed-in one does and the
 // assertion would pass with the session doing nothing. `InventoryMovement` is
-// @@gate("5.5.9.9") — a refusal, and a refusal is unambiguous.
+// @@gate(5.5.9.9) — a refusal, and a refusal is unambiguous.
 check('a token from one shop is not a session at the other',
       (await at(HOST, '/inventory', { headers: { authorization: `Bearer ${homeToken}` } })).status, 401)
 check('…while the same token is a session at home',
       (await at(null, '/inventory', { headers: { authorization: `Bearer ${homeToken}` } })).status, 200)
 
 // A write is the sharper half: a read below a gate is an empty list, a write is
-// a refusal. `Customer` is @@gate("0.4.4.5") — create needs USER(4), and an
+// a refusal. `Customer` is @@gate(0.4.4.5) — create needs USER(4), and an
 // unrecognized token is STRANGER(0).
 const wrote = await at(HOST, '/customers', {
   method: 'POST',

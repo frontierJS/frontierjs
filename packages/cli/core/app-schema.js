@@ -52,7 +52,7 @@ const safeRead = (dir) => { try { return readdirSync(dir) } catch { return [] } 
  * "R.C.U.D" inherits: a position not stated takes the one before it.
  */
 function readGate(body) {
-  const compact = body.match(/@@gate\s*\(\s*['"`]([\d.]+)['"`]\s*\)/)
+  const compact = body.match(/@@gate\s*\(\s*([\d.]+)\s*\)/)
   return compact ? Number(compact[1].split('.')[0]) : null
 }
 
@@ -211,7 +211,7 @@ export function appSchemaModels(root) {
   if (existsSync(schema)) add(readFileSync(schema, 'utf8'), 'app', 'db/schema.lite')
 
   // A sibling under db/ — what an `import` in schema.lite reaches, and where
-  // `fli auth:install` puts the @@gate("8") machinery.
+  // `fli auth:install` puts the @@gate(8) machinery.
   const dbDir = join(root, 'db')
   for (const file of safeRead(dbDir)) {
     if (!file.endsWith('.lite') || file === 'schema.lite') continue

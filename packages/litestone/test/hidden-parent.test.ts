@@ -172,11 +172,11 @@ describe('the parent read is the caller\'s whole read', () => {
     const db: any = await createClient({ db: ':memory:', schema: `
       model Plan { id Int @id
         subs Sub[]
-        @@gate("8.8.8.8") }
+        @@gate(8.8.8.8) }
       model Sub { id Int @id @default(autoincrement())
         planId Int
         plan Plan @relation(fields: [planId], references: [id])
-        @@gate("1.1.1.1") }
+        @@gate(1.1.1.1) }
     `, plugins: [new GatePlugin({ getLevel: (u: any) => (u ? 1 : 0) })] })
     await db.asSystem().plan.create({ data: { id: 1 } })
     const user = db.$setAuth({ id: 'u' })
@@ -237,12 +237,12 @@ describe('the gate ladder over a parent its levels cannot read', () => {
     const env = await createTestEnv({ schema: `
       model Account { id Int @id @default(autoincrement())
         workspaces Workspace[]
-        @@gate("6.8") }
+        @@gate(6.8) }
       model Workspace { id Int @id @default(autoincrement())
         name String
         accountId Int
         account Account @relation(fields: [accountId], references: [id])
-        @@gate("1.1.5.5") }
+        @@gate(1.1.5.5) }
     ` })
     expect((await env.verifyGateLadder()).filter((m: any) => m.model === 'Workspace')).toEqual([])
     env.close()
@@ -306,7 +306,7 @@ describe('a create rule reading a parent the caller cannot read', () => {
       model Team {
         id     Int   @id
         guests Guest[]
-        @@gate("6.6.6.6")
+        @@gate(6.6.6.6)
         ${rule}
       }
       model Guest {

@@ -26,7 +26,7 @@ model Todo {
   id      Int       @id @default(autoincrement())
   title   String    @default("t")
   status  TodoState @default(open)
-  @@gate("1.1.1.1")
+  @@gate(1.1.1.1)
   @@transitions(status, complete: open -> done)
   @@db(main)
 }

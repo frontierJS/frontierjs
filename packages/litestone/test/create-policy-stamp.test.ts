@@ -65,7 +65,7 @@ model Invitee {
   email   String
   ownerId String  @default(auth().id)
   noteBy  String? @default(auth().id)
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 `
 

@@ -494,7 +494,7 @@ describe('the operator routes grade by the app\'s own mapping', () => {
 database main { path "./a.db" }
 model Thing {
   id Int @id @default(autoincrement())
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
   @@db(main)
 }
 `

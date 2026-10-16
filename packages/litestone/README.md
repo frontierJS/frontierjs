@@ -287,7 +287,7 @@ model Account {
   createdAt DateTime @default(now())
 
   @@index([slug])
-  @@gate("2.5.5.6")
+  @@gate(2.5.5.6)
 }
 
 model User {
@@ -407,7 +407,7 @@ model User {
 @@fts([field1, field2])          FTS5 full-text search virtual table
 @@index([col1, col2])            composite index
 @@unique([col1, col2])           composite unique constraint
-@@gate("R.C.U.D")                level-based access control — read.create.update.delete
+@@gate(R.C.U.D)                level-based access control — read.create.update.delete
 @@allow('read'|'create'|'update'|'delete'|'write'|'all', expr)  row-level policy
 @@allow('read'|..., expr, "custom error message")
 @@deny('read'|..., expr)         row-level deny (always wins over allow)
@@ -768,7 +768,7 @@ Level-based access control. Assign levels 0–9, declare required levels per ope
 ```lite
 model Post {
   id Int @id
-  @@gate("1.3.4.6")   // read=VISITOR, create=CREATOR, update=USER, delete=OWNER
+  @@gate(1.3.4.6)   // read=VISITOR, create=CREATOR, update=USER, delete=OWNER
 }
 ```
 
@@ -790,10 +790,10 @@ Levels: `STRANGER=0  VISITOR=1  READER=2  CREATOR=3  USER=4  ADMINISTRATOR=5  OW
 Reserved: `SYSTEM=8` (asSystem() only)  `LOCKED=9` (impassable — not even asSystem)
 
 ```
-@@gate("0")          anyone can do everything
-@@gate("4.4.4.6")    USER to read/create/update, OWNER to delete
-@@gate("9")          nobody can do anything (model is locked)
-@@gate("9.9.9.9")    same as above
+@@gate(0)          anyone can do everything
+@@gate(4.4.4.6)    USER to read/create/update, OWNER to delete
+@@gate(9)          nobody can do anything (model is locked)
+@@gate(9.9.9.9)    same as above
 ```
 
 **A schema declaring any `@@gate` auto-installs `GatePlugin`.** You cannot run
@@ -826,7 +826,7 @@ model Order {
   id           Int     @id
   reference    String  @unique
   trackingCode String? @system     // readable by anyone, written by the app
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 ```
 
@@ -2007,7 +2007,7 @@ model Lead    { id Int @id  email String @email  score Int @gte(0) @lte(100)  lo
 model User    { id Int @id  email String @email  role String @default("member")
                 accountId Int  account Account @relation(fields: [accountId], references: [id])  posts Post[] }
 model Post    { id Int @id  title String @length(3, 80)  authorId Int  author User @relation(fields: [authorId], references: [id])
-                tags Tag[]  @@gate("1.3.4.6") }
+                tags Tag[]  @@gate(1.3.4.6) }
 model Tag     { id Int @id  name String  posts Post[] }
 ```
 
@@ -2554,7 +2554,7 @@ wrong one.** `--as <who>` grades with the built-in `FrontierGateGetLevel` unless
 `--gate <path[#export]>` points at the application's own — and the two disagree
 by exactly the amount an app's role mapping adds. Measured on this repo's
 `example`, the gap is one level on a real row, which straddles the `4` in
-`@@gate("0.4.4.5")`: the same create is refused in the console and permitted in
+`@@gate(0.4.4.5)`: the same create is refused in the console and permitted in
 the app. A console that is *approximately* somebody's session is worse than none,
 because you act on what it shows you — so the banner names which resolver
 answered.

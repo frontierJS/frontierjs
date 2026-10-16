@@ -335,7 +335,7 @@ t('drift.fileCleanAtStart', await evaluate(`await driftLoad(); return _drift.fil
 
 // Edit the schema under the running server — the exact case Studio could not
 // see before, because it parses once at boot.
-writeFileSync(SCHEMA, ORIGINAL_SCHEMA.replace('@@gate("0.4.4.5")', '@@gate("0.4.4.4")'), 'utf8')
+writeFileSync(SCHEMA, ORIGINAL_SCHEMA.replace('@@gate(0.4.4.5)', '@@gate(0.4.4.4)'), 'utf8')
 
 t('drift.fileChangeSeen', await evaluate(`await driftLoad(); return _drift.file.changed`), true)
 t('drift.snapshotGoesStale', await evaluate(`return _drift.snapshot.current`), false)

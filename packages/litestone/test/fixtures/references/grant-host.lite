@@ -6,7 +6,7 @@ model Customer {
   id    Int          @id @default(autoincrement())
   name  String
   links PortalLink[]
-  @@gate("4")
+  @@gate(4)
   @@allow('update', id == auth().customerId)
 }
 
@@ -15,6 +15,6 @@ model PortalLink {
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
   @@trait(Grant)
-  @@gate("4")
+  @@gate(4)
   @@allow('create', check(customer, 'update'))
 }

@@ -492,7 +492,7 @@ function declares(m) {
   if (!m.gate && !policied.length)
     return 'declares neither @@gate nor @@allow — every caller reaches every row'
 
-  const parts = [m.gate ? `@@gate("${m.gate}")` : 'no @@gate']
+  const parts = [m.gate ? `@@gate(${m.gate})` : 'no @@gate']
   if (policied.length) parts.push(`policies on ${policied.sort().map(q).join(', ')}`)
   else                 parts.push('no row policy')
   if (protectedFields) parts.push(`${protectedFields} protected field${protectedFields !== 1 ? 's' : ''}`)
@@ -753,8 +753,8 @@ function compareAccess(b, m, f) {
 
   if (b.gate !== m.gate) {
     const was = levels(b.gate), now = levels(m.gate)
-    if (!b.gate)      add(f, CONTRACT, at, `@@gate("${m.gate}") added — every N-1 caller below the level is refused`, { access: NARROWS })
-    else if (!m.gate) add(f, EXPAND,   at, `@@gate("${b.gate}") removed — nothing at the Data boundary refuses this model now`, { access: WIDENS })
+    if (!b.gate)      add(f, CONTRACT, at, `@@gate(${m.gate}) added — every N-1 caller below the level is refused`, { access: NARROWS })
+    else if (!m.gate) add(f, EXPAND,   at, `@@gate(${b.gate}) removed — nothing at the Data boundary refuses this model now`, { access: WIDENS })
     else {
       const raised = OPS.filter((_, i) => now[i] > was[i])
       const eased  = OPS.filter((_, i) => now[i] < was[i])

@@ -681,7 +681,7 @@ actionable HOOK. The recording half is closed.
 
 `fli auth:install` carried a hand copy of these four models and it had drifted
 three times — pre-rename scalars that no longer parse, a missing `role`, and
-`@@gate("9")`, which is LOCKED and walled the auth tables off from this package
+`@@gate(9)`, which is LOCKED and walled the auth tables off from this package
 itself. Two walls had kept the copy there, not one: `fli` is global, so this
 package is not installed beside it — and **`fli` runs on node** while `schema.ts`
 is TypeScript, so even resolved it could not be imported.
@@ -691,7 +691,7 @@ Bytes get past both. `db/user.lite` and `db/auth.lite` are the source now;
 (`@frontierjs/auth/user.lite`, `@frontierjs/auth/schema.lite`). `FJS-038`.
 
 **The split is by owner, and the gate already stated it.** `User` is
-`@@gate("4.4.4.5")` with row and field policies an app changes; it grows columns,
+`@@gate(4.4.4.5)` with row and field policies an app changes; it grows columns,
 relations point at it, and `sessionFields` reads it — so it is APPENDED into the
 app's own `schema.lite` where it can be seen and edited. `Credential`, `Session`
 and `Verification` are `8`, meaning nothing outside `asSystem()` has anything to
@@ -712,7 +712,7 @@ the one thing the CLI still restates, and the suite lifts its arrow out of
 
 ## 2026-08-14 — the fragment ships what bounds the level, not just the level
 
-`FJS-170` moved `User` from `@@gate("8")` — a level no request reaches, so an
+`FJS-170` moved `User` from `@@gate(8)` — a level no request reaches, so an
 app could not list its own people — down to `"4.4.4.5"`, and stated the
 remaining gap in a comment rather than closing it: *update at USER means any
 signed-in caller may write any user row, its role column included*. Basecamp

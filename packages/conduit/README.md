@@ -169,6 +169,39 @@ A dialect whose signed timestamp bounds freshness needs nothing more; one whose 
 
 Resilience does not cross: the retry is the sender's, and there is no breaker on the inbound side. A receiver never mints a principal; `apply` runs as whoever you say.
 
+**A Provider that pushes over a socket you dial** — Mattermost's WebSocket — is a receiver that names a `broker` target in place of a path (`FJS-D1127`). Conduit dials it with the target's credential, reconnects without bound, reports `health()` under `conduit:<target>`, and runs each frame through the same order from parse on. No route is mounted, so nobody can post a frame to you; a receiver on a target carrying `path`, `credential` or a dialect `verify` is refused by name. The connector's `FrameDialect` adds `framing`: a `handshake` run after open and before the first frame is believed (handed the secret the dial spent, so the two cannot differ), a `decode` from text to `{ id, body }` or `null`, and an `ack` for a Provider that redelivers. Frames are handed over one at a time in arrival order, because an edit applied before its create is a wrong row and two copies of one frame applied side by side both pass the receipt.
+
+```ts
+await app.conduit.register(mattermostSocketTarget({ address: 'https://chat.example' }))
+await app.conduit.receive({
+  provider: 'mattermost',
+  target:   MATTERMOST_SOCKET_TARGET,   // resolves once the first dial is tried
+  dialect:  mattermostSocketDialect,    // { framing, parse, dedupeKey }
+  apply:    async ev => { await land(ev); return 'applied' },
+})
+```
+
+`stats().subscriptions[target].dropped` counts frames over `max_response_bytes` and frames the framing could not read; `stats().received[target]` counts outcomes as a route's do.
+
+### Mirroring
+
+A **mirror app** keeps rows whose system of record is a Provider (`IDEAS/mirror-apps.md`). The schema declares the model `@@mirror(key: externalId)` and names no vendor; the connector exports a **claim** naming the models it feeds, and the app binds it in wiring (`FJS-D1125`):
+
+```ts
+import { mirror } from '@frontierjs/conduit-mattermost'
+
+app.configure(conduit({ credentials, targets }))
+app.conduit.mirror(mirror)          // Post, Channel, ChannelMember, …
+```
+
+A claim is `{ provider, models }`, keyed by the schema's PascalCase model name. Each model states `key` (the row field holding the Provider's id), `target` (what its verbs spend), `parse(remote, scope?)` from a Provider object to a row, and any of `create(input)`, `update(key, patch)`, `delete(key)` building a request with no `target`.
+
+Junction's generated `create`, `update`, `patch` and `remove` on a claimed model forward through it. The caller's gate and hooks run first; the row validator steps aside, because the payload is the claim's input and not a row (a `pendingPostId` is no column). The request is sent as the caller — a `per_caller` target spends their own credential — the answer is parsed by the same `parse` the socket uses, upserted by the key as the system (the key left out of the update half, since it is `@immutable`), and re-read as the caller. A `@local` column the caller named — the app's own, like a `starred` — is written through the caller's client, under their policies; every other column of a `@@mirror` model is `@system`, so the caller cannot write it around the Provider (`FJS-D1142`). A delete answering no row removes the local one. A verb the claim does not export runs as it would on any model, and a write naming no single row is refused, since each is a call to the Provider.
+
+A Provider's refusal reaches the caller as a status: a 4xx it gave is 422 (404, 409 and 410 pass through), a credential it refused is 403, its rate limit 429, a timeout 504, an outage 502 or 503. A verb that throws building its request is a 400 and nothing is sent.
+
+Refused by name: a malformed claim and a second claim on one model, when `mirror()` is called; and at boot (or at `mirror()` after start), a claim on a model the schema lacks, on one that is not `@@mirror`, or with a `key` that `@@mirror(key:)` does not name.
+
 ### Resilience
 
 One conduit carries a card processor, a mail sink and a health probe, and 10s
@@ -653,7 +686,11 @@ Returns all registered targets, ordered by `registered_at`.
 
 ### `app.conduit.receive(receiver)`
 
-Declare the receiving end of a Provider and mount its route — see [Receiving](#receiving). Refused by name for an unknown field, a path without a leading `/`, a dialect missing a function, or a path already declared.
+Declare the receiving end of a Provider and mount its route — see [Receiving](#receiving). Refused by name for an unknown field, a path without a leading `/`, a dialect missing a function, or a path already declared. A receiver that names a `target` instead subscribes to that broker and mounts nothing; it returns a promise that settles once the first dial has been tried, and one target takes one receiver.
+
+### `app.conduit.mirror(claim)`
+
+Bind a connector's mirror claim — see [Mirroring](#mirroring). `app.conduit.mirrored(accessor)` answers the forward a claimed model's generated verbs use, or `undefined`; `app.conduit.claimed()` lists what is held.
 
 ### `app.conduit.accept(path, delivery, now)`
 
@@ -979,9 +1016,7 @@ const { conduit } = await createTestConduit(
 
 **Not a service mesh.** It does not proxy application traffic between services.
 
-**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it; `@frontierjs/outpost` is not reached this way — it is an `http` target with `hmac` auth. A third-party socket API is not reachable through this package; a third-party event stream is, over `http`.
-
-**Not a receiver — yet.** Conduit dials; it does not listen. Verifying a webhook is app code today (`example/api/src/providers/stripe/index.ts` is the reference), and `IDEAS/inbound-integrations.md` is where that is going.
+**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it; `@frontierjs/outpost` is not reached this way — it is an `http` target with `hmac` auth. A third-party socket is reachable only to be LISTENED to: a `broker` target whose connector supplies the framing. Nothing is sent over it but the handshake and the acks.
 
 **Not a boundary anything enforces.** Declaring a target is how you get the ring around a call, not a rule the framework applies to every outbound byte.
 
@@ -1000,6 +1035,8 @@ const { conduit } = await createTestConduit(
 │   ├── index.ts               public exports (no test doubles, no bun:sqlite)
 │   ├── types.ts               all types and interfaces
 │   ├── conduit.ts             createConduit() core factory + counters
+│   ├── receive.ts             the receiving end — Dialect, Receiver, the one order
+│   ├── mirror.ts              the mirror claim and the Provider half of a forward
 │   ├── plugin.ts              Junction plugin (app.configure)
 │   ├── router.ts              target ID → transport resolution + pool
 │   ├── credentials.ts         CredentialResolver implementations

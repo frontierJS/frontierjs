@@ -19,7 +19,7 @@
 // (`FJS-958`). The outbox lives in main for the first half of that reason and
 // this follows it.
 //
-// @@gate("8"): nothing outside asSystem() has anything to say to these models,
+// @@gate(8): nothing outside asSystem() has anything to say to these models,
 // and the plugin that owns them is the only thing that writes. Same line
 // auth.lite draws around the credential machinery, and the same reason it is
 // IMPORTED rather than pasted into the app's schema.lite — it changes when this
@@ -76,7 +76,7 @@ model MetricSeries {
   hours      MetricHour[]
 
   @@db(main)
-  @@gate("8")
+  @@gate(8)
   @@index([name])
   @@index([lastSeenAt])
 }
@@ -99,7 +99,7 @@ model MetricPoint {
   // which matters because the scrape is on a clock and a clock fires twice
   // eventually.
   @@id([seriesId, at])
-  @@gate("8")
+  @@gate(8)
 }
 
 // The same readings, folded, kept far longer.
@@ -132,5 +132,5 @@ model MetricHour {
 
   @@db(main)
   @@id([seriesId, hour])
-  @@gate("8")
+  @@gate(8)
 }

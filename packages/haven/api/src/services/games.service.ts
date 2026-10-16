@@ -4,7 +4,7 @@
 // caller must be one of the booth's two members, which the Room read policy
 // already says -- a stranger's `room.findFirst` for a booth is no row.
 //
-// The writes go through the system (`Game` is `@@gate("3.8.8.8")`), after the
+// The writes go through the system (`Game` is `@@gate(3.8.8.8)`), after the
 // caller has been checked against the game's own colors, never against what the
 // payload says about who they are. The pair is told by name on the booth's
 // channel, `checkers`, and each screen asks `get` again, so what a screen

@@ -19,7 +19,7 @@ import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor }
 import { MAX_SNOOZE_MINUTES } from '../../core/alerting.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
-/** The metric models are `@@gate("8")` and `@@tenant(none)` — a reading is
+/** The metric models are `@@gate(8)` and `@@tenant(none)` — a reading is
  *  about this process and belongs to nobody's workspace. So a scoped client
  *  has nothing to say to them, and the bypass is written out rather than
  *  assumed. Nothing from a series reaches the response but its name, type and

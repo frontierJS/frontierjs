@@ -36,7 +36,7 @@ model Post {
 model Secret {
   id    Int    @id
   label String
-  @@gate("8.8.8.8")
+  @@gate(8.8.8.8)
 }
 
 model Draft {

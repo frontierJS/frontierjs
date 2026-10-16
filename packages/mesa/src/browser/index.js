@@ -10,5 +10,7 @@
  * wrapper's server answer.
  */
 export { persisted } from './persisted.js'
+export { now } from './clock.js'
+export { media, reducedMotion, colorScheme } from './media.js'
 export { setPrefix } from './prefix.js'
 export { tab } from './tab.js'

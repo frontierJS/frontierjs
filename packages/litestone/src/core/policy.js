@@ -805,7 +805,7 @@ export function compileScope(modelName, name, ctx) {
 // restriction — which is correct where the target is genuinely open and is a
 // hole where its protection lives somewhere a compiled predicate cannot see it.
 // A `@@gate` is enforced in the plugin tier and a capability grid beside it, so
-// `check(vault)` at a `@@gate("7")` vault carries none of that 7 onto the child.
+// `check(vault)` at a `@@gate(7)` vault carries none of that 7 onto the child.
 //
 // Facts only. The two callers word their own sentence, because a refusal and a
 // warning do not say the same thing about the same shape.
@@ -1018,7 +1018,7 @@ export function writeClaims(field) {
 //
 // `asSystem()` means NO PERMISSION RULES. It does not mean no scope, and the
 // difference is FJS-519: row tenancy desugars to `@@deny`, which is a policy, so
-// a system context read every tenant's rows — and since a `@@gate("8")` model
+// a system context read every tenant's rows — and since a `@@gate(8)` model
 // can be read by nothing else, the only client that could read a credential was
 // the one that ignored tenancy.
 //
@@ -1604,7 +1604,10 @@ function compileSql(node, params, ctx, modelName, op, visited) {
           : right.type === 'auth'
             ? claimValue(ctx, right.field, modelName)
             : undefined
-        const list = Array.isArray(items) ? items : items == null ? [] : [items]
+        // A claim is a list only when it IS an array: a scalar named where a
+        // list is read is a principal built wrong, and wrapping it admits the
+        // one row the JS half refuses.
+        const list = Array.isArray(items) ? items : []
         if (!list.length) return '0'
         const L = left.type === 'field'
           ? `"${relationColumn(relationsOf(ctx, modelName)[left.name], left.name, modelName)}"`

@@ -777,7 +777,7 @@ db.sql`SELECT * FROM user WHERE id = ${1}`
   `FrontierGateGetLevel` unless `--gate <path[#export]>` points at the app's own.
   Measured on `example`: the default grades `ops@acme.test` at **3 (CREATOR)**
   and the app's `shopGateLevel` grades the same row at **4 (USER)** — and `Order`
-  is `@@gate("0.4.4.5")`, so a create is refused in the console and permitted in
+  is `@@gate(0.4.4.5)`, so a create is refused in the console and permitted in
   the app. A console that is *approximately* somebody's session is worse than
   none, because you act on what it shows you, so the banner names which resolver
   answered. Related: a `--level` standing has **no `auth()`**, so every

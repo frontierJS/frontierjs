@@ -31,7 +31,7 @@ function runner(app: App) {
   // so.
   //
   // `appServer` is still read as system, deliberately: resolving which machine
-  // an app sits on is a placement question, `AppServer` is `@@gate("2.8")`, and
+  // an app sits on is a placement question, `AppServer` is `@@gate(2.8)`, and
   // a cron fire has no standing to read it with at all.
   const db   = app.db!.asSystem()
   const jobs = app.service('jobs')

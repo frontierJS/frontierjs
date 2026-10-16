@@ -61,7 +61,7 @@ model Lead {
   accountId Int
   account   Account @relation(fields: [accountId], references: [id])
 
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
 }
 
 enum OrderStatus { draft paid shipped }

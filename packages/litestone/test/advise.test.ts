@@ -60,7 +60,7 @@ describe('required-guarded-uncreatable', () => {
       model Thing {
         id    Int    @id
         token String @guarded
-        @@gate("2.4.4.5")
+        @@gate(2.4.4.5)
       }`, 'required-guarded-uncreatable')
     expect(f.length).toBe(1)
     expect(f[0].field).toBe('token')
@@ -71,9 +71,9 @@ describe('required-guarded-uncreatable', () => {
     for (const body of [
       'token String? @guarded',
       'token String  @guarded @default("x")',
-    ]) expect(findings(`model Thing { id Int @id  ${body}  @@gate("2.4.4.5") }`, 'required-guarded-uncreatable')).toEqual([])
+    ]) expect(findings(`model Thing { id Int @id  ${body}  @@gate(2.4.4.5) }`, 'required-guarded-uncreatable')).toEqual([])
 
-    expect(findings(`model Thing { id Int @id  token String @guarded  @@gate("8") }`,
+    expect(findings(`model Thing { id Int @id  token String @guarded  @@gate(8) }`,
       'required-guarded-uncreatable')).toEqual([])
   })
 })
@@ -93,7 +93,7 @@ describe('required-system-unfilled', () => {
   // FJS-2044: an array column is NOT NULL DEFAULT '[]', so a create that never names it succeeds.
   test('silent on a scalar array, which already defaults to the empty list', () => {
     expect(findings(`model Job { id Int @id  ids String[] @system }`, 'required-system-unfilled')).toEqual([])
-    expect(findings(`model Thing { id Int @id  ids String[] @guarded  @@gate("2.4.4.5") }`,
+    expect(findings(`model Thing { id Int @id  ids String[] @guarded  @@gate(2.4.4.5) }`,
       'required-guarded-uncreatable')).toEqual([])
   })
 })
@@ -111,7 +111,7 @@ describe('gate-over-own-standing', () => {
         id      Int     @id
         isAdmin Boolean @default(false)
         @@auth
-        @@gate("4.4.4.5")
+        @@gate(4.4.4.5)
       }`, 'gate-over-own-standing')
     expect(f.length).toBe(1)
     expect(f[0].severity).toBe('error')
@@ -127,7 +127,7 @@ describe('gate-over-own-standing', () => {
         workspaceId String
         role        String @default("viewer")
         @@tenant(none)
-        @@gate("1.5")
+        @@gate(1.5)
       }`, 'gate-over-own-standing')
     expect(f.length).toBe(1)
     expect(f[0].model).toBe('WorkspaceMember')
@@ -143,7 +143,7 @@ describe('gate-over-own-standing', () => {
         id          String @id
         workspaceId String
         role        String @default("general")
-        @@gate("2.4.4.5")
+        @@gate(2.4.4.5)
       }`, 'gate-over-own-standing')
     expect(f.length).toBe(1)
     expect(f[0].model).toBe('Server')
@@ -158,7 +158,7 @@ describe('gate-over-own-standing', () => {
         id      Int     @id
         isAdmin Boolean @default(false)
         @@auth
-        @@gate("4.4.4.5")
+        @@gate(4.4.4.5)
         @@allow('update', id == auth().id)
       }`, 'gate-over-own-standing')
     expect(f.length).toBe(1)
@@ -171,13 +171,13 @@ describe('gate-over-own-standing', () => {
         id      Int     @id
         isAdmin Boolean @default(false) @allow('write', auth().isAdmin)
         @@auth
-        @@gate("4.4.4.5")
+        @@gate(4.4.4.5)
         @@allow('update', id == auth().id)
       }`, 'gate-over-own-standing')).toEqual([])
   })
 
   test('silent when the model is system-only for update', () => {
-    expect(findings(`model User { id Int @id  isAdmin Boolean @default(false)  @@auth  @@gate("2.4.8.8") }`,
+    expect(findings(`model User { id Int @id  isAdmin Boolean @default(false)  @@auth  @@gate(2.4.8.8) }`,
       'gate-over-own-standing')).toEqual([])
   })
 })
@@ -713,7 +713,7 @@ describe('the rule set', () => {
         plan    Plan    @default(free)
         isAdmin Boolean @default(false) @allow('write', auth().isAdmin)
         secret  String? @guarded
-        @@gate("2.4.4.5")
+        @@gate(2.4.4.5)
         @@allow('update', id == auth().id || auth().isAdmin)
       }`)).toEqual([])
   })
@@ -971,7 +971,7 @@ describe('advise --strict', () => {
 
   // A gate out of order is refused by parse() itself (FJS-2948), so advise
   // never reaches createClient with it.
-  const UNRUNNABLE = `model Thing {\n  id Int @id\n  @@gate("6.4.5.6")\n}\n`
+  const UNRUNNABLE = `model Thing {\n  id Int @id\n  @@gate(6.4.5.6)\n}\n`
 
   test('a schema parse refuses exits 1 with no flag', () => {
     expect(parse(UNRUNNABLE).valid).toBe(false)
@@ -1033,7 +1033,7 @@ describe('anonymous-create-auth-default', () => {
       model Note {
         id      Int    @id
         ownerId Int    @default(auth().id)
-        @@gate("0.0.0.0")
+        @@gate(0.0.0.0)
       }`, rule)
     expect(f.length).toBe(1)
     expect(f[0].severity).toBe('warn')
@@ -1047,7 +1047,7 @@ describe('anonymous-create-auth-default', () => {
       model Note {
         id      Int @id
         ownerId Int @default(auth().id)
-        @@gate("3.0.3")
+        @@gate(3.0.3)
       }`, rule).length).toBe(1)
   })
 
@@ -1056,7 +1056,7 @@ describe('anonymous-create-auth-default', () => {
       model Note {
         id      Int @id
         ownerId Int @default(auth().id)
-        @@gate("0.1.1")
+        @@gate(0.1.1)
       }`, rule)).toEqual([])
   })
 
@@ -1065,7 +1065,7 @@ describe('anonymous-create-auth-default', () => {
       model Note {
         id      Int  @id
         ownerId Int? @default(auth().id)
-        @@gate("0.0.0")
+        @@gate(0.0.0)
       }`, rule)).toEqual([])
   })
 
@@ -1146,7 +1146,7 @@ describe('rule: allow-needs-bearer-claim-under-gate', () => {
   const model = (gate: string, allows: string) => `
     claim contactId
     model Message { id String @id  senderContactId String  kind String
-      @@gate("${gate}")  ${allows} }`
+      @@gate(${gate})  ${allows} }`
   const rule = (src: string) => findings(src, 'allow-needs-bearer-claim-under-gate')
 
   test('fires when every create allow reads only a bare claim and create is gated above 0', () => {

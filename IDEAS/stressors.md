@@ -69,6 +69,7 @@ than started.
 | 26 | **serpgrid** — local SEO for agencies: a rank grid scanned on a schedule, beside the client's CRM and Google profile | an outbound call that costs money; one agency's Google grant spent by many client tenants; one scan fanned into N vendor tasks that finish out of order; a webhook signed by a JWT checked against published keys | `third-party-credentials.md` · `conduit-batteries.md` · `geo.md` · `bearer-access.md` · #21 · #23 · #24 |
 | 27 | **maid.tech** — the live legacy-FJS cleaning-business CRM the trunk came from, 148 accounts, being ported | a role a tenant wrote, read by the gate; a report that is a stored query, stored SQL and stored code on one row; a client who signs in but is not a user; a page a tenant authored, served on a domain the app does not own | `conversion-maid-tech.md` · `tenant-authored-queries.md` · `tenant-declared-fields.md` · `tables-from-the-seed.md` · #14 · #24 |
 | 28 | **Darkroom** — a browser photo editor: adjustments, curves, selective color, layers, crop, draw, export, batch, a social-card composer, ported from a React mockup | a bitmap as the record, with undo as thirty PNG snapshots of every layer; a slider at drag rate driving full-resolution pixel work on the main thread; a pointer drag owned twenty-eight times and never on touch; a color that IS the data under Invariant 13; one outbound call from an app with no `api/` | `@frontierjs/ui` `Slider.mesa` · `FileUpload.mesa` · `CommandPalette.mesa` · `static-safety.md` · `third-party-credentials.md` · #20 · #16 |
+| 42 | **page-performer** — a WebPageTest-shaped page-load tester: a URL in, headless Chromium, a waterfall, Core Web Vitals and a HAR out; a live Kobami tool, ported | one service call holding a browser for up to a minute, cancelled only by the caller hanging up; a stranger's URL whose subresources and redirects are the browser's requests, past any grader; a multi-MB document as one row; a second headless-Chromium owner beside print-kit, which the deploy image does not see ([`FJS-3113`](../ISSUES.md#fjs-3113)) | `print-kit` · `@frontierjs/junction/public-url` (`FJS-681`) · #8 |
 
 **#29–#40 are Phase 2** — a gap scan, none started, in § Phase 2 below the
 entries.
@@ -290,6 +291,15 @@ not what a build cancel button means. So this exercise names a real question —
 Caravan's problem or the app's? Pair it with log streaming, which is
 `chat-surface.md` § Part 1 paying for itself a second time, and with secrets at
 rest, already named as unowned.
+
+*Re-measured 2026-10-16 (ci-runner, `PLAN.md` 0.3): the first claim is stale.
+`cancel()` now aborts a running handler's `ctx.signal` — 1 ms in-process, 288–511 ms
+from another instance against `pollInterval` 1000 — but the signal stops at the
+handler. A job that spawned `sh -c` keeps its shell and both grandchildren alive
+with the row saying `cancelled`; killing the shell alone reparents the grandchildren
+to init. Spawned into its own process group and killed as one, a 10-process tree with
+a SIGTERM trapper is empty in 2.1 s (`FJS-3081`, the ruling this names; `FJS-3082`,
+the `db.ts` comment the paragraph above quotes).*
 
 ### 9. PostHog — the write that never stops, and the query the tenant wrote
 
@@ -1365,6 +1375,34 @@ with an alpha hole, each generated:
   with a reason rather than silently producing nothing.
 
 Port in `fjs-prototypes/darkroom`, with questions in its `PLAN.md`, as below.
+
+### 42. page-performer — a browser as the API's worker
+
+*Added 2026-10-16, ported from `KOBAMI/WEBSITE-TOOLS/page-performer`: a Bun
+server, a Playwright runner and a 4,100-line React page with no build step. The
+number continues past #41 so `#N` stays unique; the row sits here because it is
+started.*
+
+**Where it stands.** `fjs-prototypes/page-performer`, scaffolded `--no-auth`.
+The original is `mockup/` whole. Its runner is `api/src/perf/` unchanged, behind
+a `tests` service whose before-create hook runs the test and writes the result
+as `@system` columns on a `Test` row, so history survives a restart. The URL is
+graded by `assertPublicUrl`, which closes the original's SSRF item for the
+typed address only. The UI is Mesa: `/` runs a test, `/tests/` is history and
+`/tests/[id]` the stored report in eight tabs; the React `ui.html` survives only
+in `mockup/`.
+
+**Measured on the port:** cancellation reaches the hook only through
+`ctx.$raw.$raw.$req.signal`, so only over HTTP and with no `ctx` field of its
+own ([`FJS-3117`](../ISSUES.md#fjs-3117)); a run therefore posts through
+`client.fetch`, because a `tests.service.create` over the socket carries no
+signal and gives up at the client's 30s timeout while a five-run test is still
+loading. A fresh `--no-auth` scaffold has the [`FJS-3073`](../ISSUES.md#fjs-3073)
+prefix bug; `deploy-image-needs` passes an app that needs Chromium
+([`FJS-3113`](../ISSUES.md#fjs-3113)). A pixel-exact chart design met
+`css-raw-literal` 43 times, and only in `<style>` blocks: the same literals
+written as `style:` directives pass unchecked. They are tokens now, as
+`calc()` over a `--space-*` step so the default-density look is unchanged.
 
 ## Phase 2 — the gap scan
 

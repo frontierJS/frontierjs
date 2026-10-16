@@ -78,7 +78,7 @@
 
   let el
   let paint
-  export function focus() { el?.focus() }
+  export function focus() { return $.focus(el) }
 
   $: source    = value ?? ''
   $: paintable = source.endsWith('\n') ? source + ' ' : source

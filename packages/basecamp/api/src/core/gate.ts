@@ -18,7 +18,7 @@
 // `isSystemAdmin` still wins, because it is standing rather than membership:
 // the hub tier is not a role a workspace can grant. It is also the one field
 // this mapping shares with sessionGateLevel(), which is deliberate — the hub's
-// own reads go through asSystem() because `User` is @@gate("8"), a level even
+// own reads go through asSystem() because `User` is @@gate(8), a level even
 // SYSADMIN does not pass.
 //
 // ─── The ladder, and where the roles land ─────────────────────────────────
@@ -37,7 +37,7 @@
 //
 // The levels are not invented — they are read off the hooks that were doing
 // this job in service files. `requireWorkspaceRole('developer', …)` on a
-// create is what @@gate("2.4.…") says, in the schema, for every service at
+// create is what @@gate(2.4.…) says, in the schema, for every service at
 // once. See DECISIONS.md § Basecamp's gate ladder.
 //
 // ─── Two things it deliberately does not do ───────────────────────────────

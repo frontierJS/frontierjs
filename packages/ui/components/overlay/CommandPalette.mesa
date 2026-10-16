@@ -88,7 +88,7 @@
   // Focus search input immediately on mount
   var _opener = typeof document === 'undefined' ? null : document.activeElement
   $.onMount(() => {
-    inputEl?.focus()
+    $.focus(inputEl)
     return () => {
       clearTimeout(_timer); _asking?.abort()
       // Focus is still in the palette (or nowhere) when it goes; send it back
@@ -215,7 +215,7 @@
         e.preventDefault()
         const stops = [inputEl, ...e.currentTarget.querySelectorAll('.fjs-cp-clear')].filter(Boolean)
         const at    = stops.indexOf(document.activeElement)
-        stops[(at + (e.shiftKey ? -1 : 1) + stops.length) % stops.length]?.focus()
+        $.focus(stops[(at + (e.shiftKey ? -1 : 1) + stops.length) % stops.length])
         break
       }
     }
@@ -306,7 +306,7 @@
             type="button"
             class="fjs-cp-clear"
             aria-label="Clear search"
-            on:click={() => { query = ''; inputEl?.focus() }}
+            on:click={() => { query = ''; $.focus(inputEl) }}
           >✕</button>
         {/if}
         <kbd>Esc</kbd>

@@ -197,7 +197,7 @@ export default createService({
 
     // Three of the six cannot be counted through the caller's own client,
     // and the answer would not be 0 — it would be a refusal. `Secret` and
-    // `Invitation` are @@gate("5"), so a developer asking *does this
+    // `Invitation` are @@gate(5), so a developer asking *does this
     // workspace have an SSH key* throws; `WorkspaceMember` reads only the
     // caller's OWN rows (@@allow('read', userId == auth().id)), so the
     // count is 1 for everybody. What crosses is a COUNT of rows in the

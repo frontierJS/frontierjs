@@ -34,6 +34,47 @@ export function persisted<T>(
   options?: { parse?: (raw: string) => T, format?: (value: T) => string },
 ): Persisted<T>
 
+/** The time, read live. */
+export interface Clock {
+  /** Ms since the epoch, tracked: an effect reading it re-runs each `every`
+   *  ms while the tab is visible, and at once when it comes back. Every
+   *  reader of one `every` reads one instant. Server render: `Date.now()` at
+   *  the render, nothing started. */
+  readonly value: number
+}
+
+/**
+ * One timer per `every` (default 1000) shared by every reader, ticking on
+ * multiples of `every` since the epoch, cleared while the tab is hidden.
+ * `every` that is not a positive number throws. Throws on a terminal or a
+ * phone.
+ */
+export function now(options?: { every?: number }): Clock
+
+/** A media query, read live. Hold it in a component's own `const`: a
+ *  template read of an imported name, or of a call written inline, compiles
+ *  to a static value. */
+export interface Media {
+  /** Tracked: an effect reading it re-runs when the query flips. Every reader
+   *  of one query shares one `MediaQueryList` and one listener. A query the
+   *  browser does not parse matches false. Server render: false, nothing
+   *  subscribed. */
+  readonly matches: boolean
+}
+
+/** Whether `query` — `'(min-width: 768px)'`, `'(hover: none)'` — matches.
+ *  An empty or non-string query throws. Throws on a terminal or a phone. */
+export function media(query: string): Media
+
+/** `(prefers-reduced-motion: reduce)`. Server render: false. Throws on a
+ *  terminal or a phone. */
+export function reducedMotion(): Media
+
+/** The operating system's preference — not the app's theme, which is a class
+ *  on `<html>` that sierra's switch owns. Tracked. Server render: `'light'`.
+ *  Throws on a terminal or a phone. */
+export function colorScheme(): { readonly value: 'dark' | 'light' }
+
 /** The app's namespace for every stored key; sierra's router boot calls it
  *  from config's `prefix`. Without it the prefix is empty. */
 export function setPrefix(prefix: string | null | undefined): void

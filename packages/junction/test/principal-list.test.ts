@@ -30,26 +30,26 @@ const SCHEMA = `
     id        Int     @id @default(autoincrement())
     contactId Int
     tokenHash String  @unique @guarded
-    @@gate("8")
+    @@gate(8)
   }
   model SurveyGrant {
     id        Int     @id @default(autoincrement())
     surveyId  Int
     tokenHash String  @unique @guarded
-    @@gate("8")
+    @@gate(8)
   }
   model Message {
     id        Int    @id @default(autoincrement())
     contactId Int
     body      String
-    @@gate("0")
+    @@gate(0)
     @@allow('read', contactId == auth().contactId)
   }
   model Answer {
     id       Int    @id @default(autoincrement())
     surveyId Int
     text     String
-    @@gate("0")
+    @@gate(0)
     @@allow('read', surveyId == auth().surveyId)
   }
 `

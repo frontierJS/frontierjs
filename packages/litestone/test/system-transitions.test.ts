@@ -21,7 +21,7 @@ model Doc {
   id     Int      @id @default(autoincrement())
   title  String
   status DocState @default(draft)
-  @@gate("4.4.4.4")
+  @@gate(4.4.4.4)
   @@transitions(status,
     submit:  draft  -> review,
     approve: review -> published @gate(5),

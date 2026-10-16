@@ -699,6 +699,12 @@ export interface LitestoneClient {
    */
   $readGrading(accessor: string): 'open' | 'graded'
   /**
+   * The column `@@mirror(key:)` names, or `null` for a model that is not a
+   * mirror and for an unknown accessor (`FJS-D843`). Every flavor answers
+   * identically.
+   */
+  $mirrorKey(accessor: string): string | null
+  /**
    * The model names whose writes can change who may read a row of this model —
    * the model itself, every model a policy path or `.some()` crosses into, and
    * every model a `check()` delegates to, with its own reach. Where a reader

@@ -2,7 +2,7 @@
 //
 // `model:` is InventoryMovement, and that is the honest answer to "what is this
 // a service over": the ledger. `find` is the tape, and it needs no code here —
-// the model's own `@@gate("5.5.9.9")` is what refuses a shopper, so a service
+// the model's own `@@gate(5.5.9.9)` is what refuses a shopper, so a service
 // that adds nothing to a read adds nothing to a read.
 //
 // The three methods it does add are the ones a table cannot express:
@@ -37,7 +37,7 @@ const ADJUSTABLE: MovementKind[] = ['adjusted', 'damaged', 'returned']
 export default createService({
   model: 'InventoryMovement',
 
-  // No `channel:`. A movement is `@@gate("5.…")` for reads and a broadcast
+  // No `channel:`. A movement is `@@gate(5.…)` for reads and a broadcast
   // does not re-check the gate — publishing these would hand every connected
   // browser rows the Data boundary refuses them. The shelf itself DOES
   // announce: `move()` writes ProductVariant, junction taps Litestone's write

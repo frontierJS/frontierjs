@@ -33,7 +33,7 @@ const SCHEMA = `
     id         Int    @id @default(autoincrement())
     customerId Int?
     status     String @default("pending")
-    @@gate("1.4.4.5")
+    @@gate(1.4.4.5)
     @@allow('read', customerId == auth().id || auth().isAdmin)
   }
 `
@@ -230,7 +230,7 @@ describe('a background write is graded like a published one (FJS-672)', () => {
     // the shipped grader puts them at CREATOR(3) and this model reads at 4;
     // an app whose standing comes from somewhere else entirely — a membership
     // row, which is how every tenanted app here grades — says 5.
-    const schema = SCHEMA.replace('@@gate("1.4.4.5")', '@@gate("4.4.4.5")')
+    const schema = SCHEMA.replace('@@gate(1.4.4.5)', '@@gate(4.4.4.5)')
     const membership: Record<string, number> = { '5': 5 }
     const { db, port } = await mkApp({
       schema,
@@ -395,7 +395,7 @@ describe('a write from a second process is graded like a local one (FJS-2159)', 
         customerId Int?
         status     String @default("pending")
         @@db(main)
-        @@gate("1.4.4.5")
+        @@gate(1.4.4.5)
         @@allow('read', customerId == auth().id || auth().isAdmin)
       }`
     try {
@@ -430,7 +430,7 @@ const REACH_SCHEMA = `
     title  String
     shares Share[]
     blocks Block[]
-    @@gate("1.4.4.5")
+    @@gate(1.4.4.5)
     @@allow('read', shares.some(userId == auth().id))
   }
   model Share {
@@ -438,7 +438,7 @@ const REACH_SCHEMA = `
     pageId Int
     page   Page @relation(fields: [pageId], references: [id])
     userId Int
-    @@gate("1.4.4.5")
+    @@gate(1.4.4.5)
     @@allow('read', userId == auth().id)
   }
   model Block {
@@ -446,13 +446,13 @@ const REACH_SCHEMA = `
     pageId Int
     page   Page   @relation(fields: [pageId], references: [id])
     body   String
-    @@gate("1.4.4.5")
+    @@gate(1.4.4.5)
     @@allow('read', check(page))
   }
   model Tag {
     id   Int    @id @default(autoincrement())
     name String
-    @@gate("1.4.4.5")
+    @@gate(1.4.4.5)
   }
 `
 

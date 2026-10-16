@@ -9,7 +9,7 @@
 ///
 /// database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
 ///
-/// model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") @@tenant(none) }
+/// model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) @@tenant(none) }
 /// ```
 ///
 /// Naming the model `AuditTrail` keeps the accessor the jsonl trail had,
@@ -25,7 +25,7 @@
 ///
 /// **No `@@gate`.** Written by the host, as above: the trail
 /// holds the before- and after-image of every audited write, every tenant's
-/// included, so the host states who may read it. `@@gate("8")` is the system
+/// included, so the host states who may read it. `@@gate(8)` is the system
 /// level the auth models use.
 trait AuditTrail {
   operation     String

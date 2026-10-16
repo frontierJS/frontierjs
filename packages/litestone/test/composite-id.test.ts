@@ -316,7 +316,7 @@ model Series {
   id     String @id @default(uuid())
   name   String
   points Point[]
-  @@gate("2")
+  @@gate(2)
 }
 
 model Point {
@@ -325,7 +325,7 @@ model Point {
   value    Float
   series   Series @relation(fields: [seriesId], references: [id], onDelete: Cascade)
   @@id([seriesId, at])
-  @@gate("2")
+  @@gate(2)
 }
 `
 
@@ -350,7 +350,7 @@ model Point {
     // `@id` auto-increments where it is the WHOLE key. A fix that simply
     // stopped skipping `@id` would put a caller-supplied id in every ordinary
     // create, which the create JSON Schema declares `readOnly`.
-    const env = await createTestEnv({ schema: 'model Post {\n  id Int @id\n  title String\n  @@gate("2")\n}\n' })
+    const env = await createTestEnv({ schema: 'model Post {\n  id Int @id\n  title String\n  @@gate(2)\n}\n' })
     const s: any = await sampleWrites(env.schema, env.system, { models: ['Post'] })
     expect(s.Post.create.id).toBeUndefined()
     expect(s.Post.create.title).toBeDefined()

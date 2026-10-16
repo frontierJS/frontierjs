@@ -644,7 +644,7 @@ describe('the gate walls the credential tables off, and User is readable by a us
   // VERIFYING.md's headline failure is a gate that looks enforced and isn't.
   // asSystem() is this package's deliberate bypass; everything else is graded.
   //
-  // The three credential-material models are @@gate("8") — above every level a
+  // The three credential-material models are @@gate(8) — above every level a
   // request can reach. User is "4.5.5.6": an app's own screens legitimately list
   // its people, so read is USER, while writing identity stays privileged.
   // Registration is unaffected because every write this package makes is

@@ -1,6 +1,6 @@
 // What an invoice charged for, line by line.
 //
-// Read-only by declaration rather than by convention: `@@gate("1.8.8.8")` puts
+// Read-only by declaration rather than by convention: `@@gate(1.8.8.8)` puts
 // every write in a system context, and every column is `@immutable`, so even
 // that context cannot restate one. The service exists because a detail screen
 // needs the lines and a nested read would make the header's own policy the

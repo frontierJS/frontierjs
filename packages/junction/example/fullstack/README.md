@@ -115,7 +115,7 @@ getLevel: (u) => u?.role === 'staff' ? LEVELS.ADMINISTRATOR : sessionGateLevel(u
 
 This example now declares exactly one piece of standing — `isAdmin: true`, which
 is what lifts the demo session to level 5 so the page's delete button works
-against `@@gate("0.4.4.5")`. Everything else follows from having authenticated.
+against `@@gate(0.4.4.5)`. Everything else follows from having authenticated.
 
 ## Notes
 

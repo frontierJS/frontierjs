@@ -84,8 +84,8 @@
     // click-away deliberately lets it through, and the menu stays open.
     placed = false
     open   = true
-    requestAnimationFrame(() => {
-      position()
+    requestAnimationFrame(async () => {
+      await position()
       placed = true
       // After the flush, not before it: focus is refused on a `visibility:
       // hidden` element, and `placed` only reaches the DOM on mesa's microtask.
@@ -94,7 +94,7 @@
       // no tabindex, so focusing it moved nothing and the keyboard walk below
       // only worked because an absent focus and a focused panel both make
       // `indexOf(activeElement)` -1.
-      queueMicrotask(() => menuEl?.focus?.())
+      queueMicrotask(() => $.focus(menuEl))
     })
   }
 
@@ -107,16 +107,16 @@
 
   function closeMenu(restoreFocus = true) {
     open = false
-    if (restoreFocus) controlOf()?.focus?.()
+    if (restoreFocus) $.focus(controlOf())
   }
 
-  // A terminal node has no pixel box: the panel paints where it is written,
-  // under its trigger, and needs no placing.
-  function position() {
-    if (!triggerEl?.getBoundingClientRect || !panelEl?.getBoundingClientRect) return
-    const at = placeAgainst(triggerEl.getBoundingClientRect(), panelEl.getBoundingClientRect(), { placement, offset })
-    x = at.x
-    y = at.y
+  // A terminal has no window to place against: the panel paints where it is
+  // written, under its trigger, and needs no placing.
+  async function position() {
+    if (typeof window === 'undefined') return
+    const [tr, pr] = await Promise.all([$.measure(triggerEl), $.measure(panelEl)])
+    if (!tr || !pr) return
+    ;({ x, y } = placeAgainst(tr, pr, { placement, offset }))
   }
 
   // Heard on every click, open or not: closing a closed menu would still
@@ -189,7 +189,7 @@
         ? items[(cur + 1) % items.length]
         : items[(cur - 1 + items.length) % items.length]
     }
-    next?.el().focus()
+    $.focus(next?.el())
   }
 
   // Keep the caller's control in sync with the menu's state.
@@ -249,12 +249,6 @@
       style:visibility="{placed ? 'visible' : 'hidden'}"
       {@attach panelAnim}
     >
-      <!--
-        The items are ordinary children — `<DropdownMenu><DropdownItem/>…` —
-        which in Mesa is the default SLOT, not a `children` prop. This rendered
-        `{@render children?.()}` instead, so every menu opened empty unless the
-        caller wrapped its items in a snippet nobody documents.
-      -->
       <div bind:this={menuEl} class="items menu" role="menu" tabindex="-1">
         <slot />
       </div>

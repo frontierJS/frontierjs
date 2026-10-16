@@ -34,7 +34,7 @@
  *   first time something measures or focuses it.
  */
 import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext } from './runtime.js'
-import { NATIVE_TAGS, NATIVE_EVENTS, inputKind } from './native/tags.js'
+import { NATIVE_TAGS, NATIVE_EVENTS, inputKind, tagClass } from './native/tags.js'
 import { htmlEntitiesToText } from './entities.js'
 
 // A phone is a running client with no `document`, where `runtime.js` left to
@@ -141,7 +141,8 @@ export function element(tag, attrs = {}, scope = null) {
   if (role === 'input' && !inputKind(attrs.type)) refuse(`<input type="${attrs.type}">`)
   const node = wrap(create[role](_pid), tag, role)
   if (role === 'input' || role === 'textarea') node.value = ''
-  if (scope) { node.scope = scope; paintClasses(node) }
+  if (scope) node.scope = scope
+  paintClasses(node)
   for (const k in attrs) set_attribute(node, k, attrs[k])
   return node
 }
@@ -170,7 +171,7 @@ export function toggle_class(node, name, on) {
 
 function paintClasses(node) {
   const written = node.attrs.class == null ? '' : String(node.attrs.class)
-  __SetClasses(node.el, [written, ...(node.toggled ?? []), node.scope].filter(Boolean).join(' '))
+  __SetClasses(node.el, [written, ...(node.toggled ?? []), node.scope, tagClass(node.tag)].filter(Boolean).join(' '))
 }
 
 // A `style:` property, which a later `style=` write keeps, as on the DOM. A
@@ -448,35 +449,41 @@ export function eachBlock(marker, getItems, keyFn, rowFn, elseFn) {
   })
 }
 
-export function slot(marker, block, fallback) {
-  const factory = block ?? fallback
-  if (factory) mountBlock(marker, factory)
-}
-
 // ─── measure and focus ────────────────────────────────────────────────────────
 
-/** `el.focus()`, answered by callback. */
+// `$.measure` and `$.focus` on a phone; `runtime.js` holds the DOM's answer
+// in the same shape.
+
+/** Move focus to `node`. No node does nothing. */
 export function focus(node) {
-  return invoke(node, 'focus')
+  if (!node) return Promise.resolve()
+  return invoke(node, 'focus').then(() => {})
 }
 
-/** `el.getBoundingClientRect()`, answered by callback. A phone answers its
- *  `data` as a JSON string and Lynx for Web as an object; one shape out. */
+/** The box `node` occupies, as `{ left, top, right, bottom, width, height }`.
+ *  No node answers `null`. A phone answers its `data` as a JSON string and
+ *  Lynx for Web as an object. */
 export function measure(node) {
-  return invoke(node, 'boundingClientRect').then((r) =>
-    typeof r?.data === 'string' ? { ...r, data: JSON.parse(r.data) } : r)
+  if (!node) return Promise.resolve(null)
+  return invoke(node, 'boundingClientRect').then(({ data }) => {
+    const { left, top, right, bottom, width, height } = typeof data === 'string' ? JSON.parse(data) : data
+    return { left, top, right, bottom, width, height }
+  })
 }
 
 // The answer is deferred a microtask even where the engine calls back at
-// once, so the web run cannot pass code a phone would answer later.
+// once, so the web run cannot pass code a phone would answer later. A code
+// other than 0 is the engine refusing, and a caller reading it as a rect would
+// place a panel at undefined.
 function invoke(node, method, params = {}) {
   if (!node.unflattened) {
     node.unflattened = true
     __SetAttribute(node.el, 'flatten', false)
     __FlushElementTree()
   }
-  return new Promise((resolve) => __InvokeUIMethod(node.el, method, params, (r) => {
-    Promise.resolve().then(() => resolve(r))
+  return new Promise((resolve, reject) => __InvokeUIMethod(node.el, method, params, (r) => {
+    Promise.resolve().then(() => r?.code === 0 ? resolve(r)
+      : reject(new Error(`[Mesa] ${method} on <${node.tag}> was refused by the engine: code ${r?.code}${r?.data ? `, ${typeof r.data === 'string' ? r.data : JSON.stringify(r.data)}` : ''}`)))
   }))
 }
 
@@ -486,6 +493,9 @@ function invoke(node, method, params = {}) {
 export function mount(Component, { props = {} } = {}) {
   _page = __CreatePage('0', 0)
   _pid = __GetElementUniqueID(_page)
+  // The page is the document root: the user-agent sheet's 16px root font-size
+  // lands here, and without it every rem and em reads the engine's 14px.
+  __SetClasses(_page, tagClass('html'))
   const root = wrap(__CreateView(_pid), '#root', 'box')
   __AppendElement(_page, root.el)
   let disposeRoot = () => {}

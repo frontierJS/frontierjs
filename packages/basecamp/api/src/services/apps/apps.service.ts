@@ -223,7 +223,7 @@ export default createService({
   scope: keyScope('apps'),
   model: 'App',
   // The whole surface. `place` and `unplace` write AppServer as the app, which
-  // is `@@gate("2.8")`, so the level is stated here rather than read off it.
+  // is `@@gate(2.8)`, so the level is stated here rather than read off it.
   methods: [
     'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
     'logs',
@@ -316,7 +316,7 @@ export default createService({
   // no machine to talk to — which is the state the deploy stub was hiding
   // (FJS-257).
   //
-  // `AppServer` is `@@gate("2.8")`: readable by a member, writable only by a
+  // `AppServer` is `@@gate(2.8)`: readable by a member, writable only by a
   // system context. That is right — a placement is the app's topology, not a
   // row a caller edits — so the authority check is done here, against the
   // WORKSPACE, and the write goes through asSystem(). The second of the two

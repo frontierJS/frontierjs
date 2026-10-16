@@ -191,7 +191,7 @@ describe('an operator on a column carrying @allow(write)', () => {
       title String
       views Int      @default(0)  @allow('write', auth().role == 'admin')
       tags  String[] @default([]) @allow('write', auth().role == 'admin')
-      @@gate("0.0.0.0")
+      @@gate(0.0.0.0)
     }
   `
   let root: any, user: any, admin: any

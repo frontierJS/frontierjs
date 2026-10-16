@@ -27,7 +27,7 @@ const SCHEMA = `
     title  String
     status String
 
-    @@gate("0.4.4.5")
+    @@gate(0.4.4.5)
   }
 `
 

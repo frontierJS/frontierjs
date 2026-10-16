@@ -524,7 +524,7 @@ t('preview.raisingAGateIsContractAndNarrows', await evaluate(`
 
   const b   = exFindBlock(src, 'model', model.name);
   const cur = (model.attributes.find(a => a.kind === 'gate').value + '').trim();
-  const body = src.slice(b.open, b.close).replace('@@gate("' + cur + '")', '@@gate("7")');
+  const body = src.slice(b.open, b.close).replace('@@gate(' + cur + ')', '@@gate(7)');
   const proposed = src.slice(0, b.open) + body + src.slice(b.close);
 
   const p = await api('/preview', { source: proposed, model: model.name });
@@ -602,7 +602,7 @@ t('preview.aGateOutOfOrderIsNamedRatherThan500', await evaluate(`
   const b      = exFindBlock(src, 'model', target);
   const cur    = (model.attributes.find(a => a.kind === 'gate').value + '').trim();
   const bad    = src.slice(0, b.open)
-    + src.slice(b.open, b.close).replace('@@gate("' + cur + '")', '@@gate("4.4.2.5")')
+    + src.slice(b.open, b.close).replace('@@gate(' + cur + ')', '@@gate(4.4.2.5)')
     + src.slice(b.close);
 
   const res = await fetch(API + '/preview', {

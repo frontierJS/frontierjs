@@ -19,7 +19,7 @@ const SCHEMA = `
   model Usage {
     id     Int    @id @default(autoincrement())
     passId String
-    @@gate("4")
+    @@gate(4)
   }
 `
 

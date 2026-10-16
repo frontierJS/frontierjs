@@ -265,7 +265,7 @@ const upload = (name, type, alt, bytes = photo) => {
   return fetch(`${API}/api/product-images`, { method: 'POST', headers: asStaff, body: fd })
 }
 
-// `@@gate("0.4.4.5")` — reading a photograph is public and writing one is not.
+// `@@gate(0.4.4.5)` — reading a photograph is public and writing one is not.
 // Asserted before the happy path, because a route that accepts a file from
 // anybody is the same 201 as one that accepts it from staff.
 const anon = new FormData()

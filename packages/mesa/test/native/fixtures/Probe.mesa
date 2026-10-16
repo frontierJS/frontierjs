@@ -1,5 +1,4 @@
 <script>
-  import { measure, focus } from '@frontierjs/mesa/runtime/native.js'
   let box = null
   let field = null
   let sync = 'untried'
@@ -9,10 +8,10 @@
   const doMeasure = async () => {
     const r = box?.getBoundingClientRect?.()
     sync = r ? `${r.width}x${r.height}` : 'none'
-    const m = await measure(box)
-    size = m?.data ? `${Math.round(m.data.width)}x${Math.round(m.data.height)}` : JSON.stringify(m)
+    const m = await $.measure(box)
+    size = `${Math.round(m.width)}x${Math.round(m.height)}`
   }
-  const doFocus = async () => { const r = await focus(field); focused = String(r?.code) }
+  const doFocus = async () => { await $.focus(field); focused = 'done' }
 </script>
 <div>
   <div bind:this={box} style="width: 120px; height: 40px"><p>box</p></div>

@@ -57,7 +57,7 @@ await run('setAuth-rebuild', async () => {
 // ── 2. GatePlugin getLevel call amplification ───────────────────────────────
 await run('gate-getlevel', async () => {
   let calls = 0
-  const schema = `model Post { id Int @id; title String \n @@gate("2.4.4.6") }`
+  const schema = `model Post { id Int @id; title String \n @@gate(2.4.4.6) }`
   const db = await createClient({
     schema, db: ':memory:',
     plugins: [new GatePlugin({ getLevel: () => { calls++; return 5 } })],

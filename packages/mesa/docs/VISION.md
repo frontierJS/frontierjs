@@ -2131,7 +2131,7 @@ then a key; a call is a call.
 
 | bare and door | `$props` · `$attributes` · `$slots` · `$context` · `$async` |
 |---|---|
-| **door only** | `$.onMount` · `$.onDestroy` · `$.onCleanup` · `$.mounted` · `$.tick` · `$.emit` · `$.inspect` · `$.transition` · `$.entrance` · `$.fade` · `$.slide` · `$.fly` |
+| **door only** | `$.onMount` · `$.onDestroy` · `$.onCleanup` · `$.mounted` · `$.tick` · `$.emit` · `$.inspect` · `$.transition` · `$.entrance` · `$.fade` · `$.slide` · `$.fly` · `$.measure` · `$.focus` |
 
 **Four prefixes, and each line is a different kind of thing** (`FJS-D137`):
 
@@ -2210,9 +2210,18 @@ above. Two things wearing one character, and the character is all they share.
 | `$.fade(opts?)` | A ready-made entrance: opacity, `{ duration, easing }`. |
 | `$.slide(opts?)` | A ready-made entrance: height, `{ duration, easing }`. |
 | `$.fly(opts?)` | A ready-made entrance: offset, `{ x, y, duration, easing }`. |
+| `$.measure(el)` | A Promise of the box `el` occupies, `{ left, top, right, bottom, width, height }`, or `null` for no node. Pixels on a page and a phone, cells on a terminal. |
+| `$.focus(el)` | A Promise that resolves once focus has moved to `el`; no node does nothing. |
 
-The five animation helpers and the four lifecycle functions are the same for
-every instance, so they live on one object each component's `$` inherits from.
+The five animation helpers, the four lifecycle functions, `measure` and
+`focus` are the same for every instance, so they live on one object each
+component's `$` inherits from.
+
+**`$.measure` and `$.focus` answer a Promise on every target**, the browser's
+included, because a phone answers both by callback: a synchronous
+`el.getBoundingClientRect()` passes on the web and finds nothing on a phone.
+Each target's runtime gives its own answer in the one shape, and a native
+engine that refuses the call rejects the Promise with its code.
 The rest — `props`, `slots`, `attributes`, `emit`, `context`, `mounted`,
 `inspect`, `async` — differ per instance and are set on `$` itself, and only
 when the component reaches for them.

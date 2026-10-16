@@ -80,14 +80,14 @@ await db.lead.findMany({ where: { value: { gte: 5000 } }, limit: 20 })` },
       "  value     Float    @gte(0)",
       "  createdAt DateTime @default(now())",
       "",
-      "  @@gate(\"0.4.4.5\")",
+      "  @@gate(0.4.4.5)",
       "}",
     ],
     fresh:[6,7],
     rlabel:'Authorization, below every caller',
     rlang:['js', 'lite'],
     result:
-`@@gate("0.4.4.5")
+`@@gate(0.4.4.5)
 //       │ │ │ └── delete : 5  ADMINISTRATOR
 //       │ │ └──── update : 4  USER
 //       │ └────── create : 4  USER
@@ -112,7 +112,7 @@ await db.asSystem().lead.create({...}) // the one documented bypass` },
       "  ownerId   Int",
       "  createdAt DateTime @default(now())",
       "",
-      "  @@gate(\"0.4.4.5\")",
+      "  @@gate(0.4.4.5)",
       "  @@allow('read', ownerId == auth().id)",
       "}",
     ],
@@ -140,7 +140,7 @@ SELECT * FROM leads
       "  ownerId   Int",
       "  createdAt DateTime @default(now())",
       "",
-      "  @@gate(\"0.4.4.5\")",
+      "  @@gate(0.4.4.5)",
       "  @@allow('read', ownerId == auth().id)",
       "  @@index([ownerId, createdAt])",
       "  @@trail(audit)",

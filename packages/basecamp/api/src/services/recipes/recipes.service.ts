@@ -248,7 +248,7 @@ export default createService({
   // the membership for that actor and that workspace (`FJS-384`).
   //
   // What it cannot do is write the run at the actor's standing —
-  // `RecipeRun` is `@@gate("2.4.8.8")`, update at SYSTEM, which is the schema
+  // `RecipeRun` is `@@gate(2.4.8.8)`, update at SYSTEM, which is the schema
   // saying an outcome is written by the machine and not by whoever asked. So
   // the write is still `asSystem()` and the CONFINEMENT is the read above it:
   // the run is fetched through the caller's own client, which reaches its

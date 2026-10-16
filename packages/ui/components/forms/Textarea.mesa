@@ -50,7 +50,7 @@
   const resolvedMaxlength = stated(maxlength, rule?.maxLength)
 
   let el
-  export function focus() { el?.focus() }
+  export function focus() { return $.focus(el) }
 
   function handleInput(e) {
     value = e.target.value

@@ -18,8 +18,8 @@ title: Inventory
   //
   // ─── There is no authorization code on this screen ───────────────────────
   //
-  // `InventoryMovement` is `@@gate("5.5.9.9")` and `StockReservation` is
-  // `@@gate("5.8.8.8")`, so a caller below ADMINISTRATOR(5) is refused at the
+  // `InventoryMovement` is `@@gate(5.5.9.9)` and `StockReservation` is
+  // `@@gate(5.8.8.8)`, so a caller below ADMINISTRATOR(5) is refused at the
   // Data boundary — for the ledger, for the levels and for both writes. What
   // the level check below does is decide what to RENDER: a screen that offers
   // a form the server will refuse is a worse experience than one that says so,

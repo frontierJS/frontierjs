@@ -30,9 +30,9 @@ process.
 transport is generic. A `websocket` target is an **FJS-to-FJS control-plane
 link**: the transport speaks conduit's own frame envelope
 (`{ id, type: 'request' | 'response' | 'stream_chunk' | …, method, path, body, seq }`)
-and the far side must implement it. **A third-party WebSocket API is not
-reachable through this package**, and `@frontierjs/outpost` does not use this
-half either: basecamp registers an outpost as an `http` target with `hmac` auth. A
+and the far side must implement it. **A third-party socket is reachable only
+as a `broker` to listen to**, its framing the connector's (`FJS-D1127`), and
+`@frontierjs/outpost` does not use this half either: basecamp registers an outpost as an `http` target with `hmac` auth. A
 vendor's event stream is the `http` half's: `stream()` yields one chunk per SSE
 event, or the bytes of any other body (`FJS-D934`).
 
@@ -43,7 +43,8 @@ event, or the bytes of any other body (`FJS-D934`).
 ```
 src/
   conduit.ts        the core — declare targets and receivers, send, accept, apply resilience
-  receive.ts        the receiving end — Delivery, Dialect, Receiver, and the ONE order a delivery runs
+  receive.ts        the receiving end — Delivery, Dialect, Receiver, BrokerReceiver, and the ONE order a delivery or a frame runs
+  mirror.ts         the mirror claim — a connector's models, verbs and parse; the Provider half of a forward
   router.ts         target resolution
   observe.ts        the one place an observer is called
   plugin.ts         the Junction plugin (app.conduit)
@@ -227,6 +228,26 @@ src/
   subscription registers `conduit:<target>` through `registerReadiness` — *connected*,
   not *recent message*, since a quiet broker is not an outage — and a new broker
   path that cannot say so does not ship.
+- **A Provider's socket is a receiver that names a `target`, and it mounts no
+  route** (`FJS-D1127`). `receive()` branches on `'target' in receiver`, and
+  the junction plugin's wrapper must branch first: a route for a socket
+  receiver is a door where anyone posts a frame that nothing verifies, since
+  the dial was the verification. Frames are handed over in order through one
+  promise chain per connection — the concurrent handoff applied an edit
+  before its create and applied a doubled frame twice, both passing the
+  receipt check before either marked (`conduit-mattermost` drive, rows
+  `socket.editThenDeleteInOrder` and `socket.frameTwiceAppliedOnce`). The
+  framing is a value in code, never a descriptor field: a descriptor is
+  stored as JSON and a function does not survive the store.
+- **A mirror forward spends `self.send`, read at call time** (`FJS-D1125`).
+  The junction plugin replaces `send` after `createConduit` returns, to write
+  `who`; a forward holding the unwrapped one sends a per-caller verb with no
+  caller and every human write is `auth_failed` (the negative control in
+  `junction-integration.test.ts` § *a claimed mirror model*). The Data half is
+  junction's — the generated verb asks `mirrored(accessor)` and lands the row —
+  and a failure crosses as a thrown `Error` carrying `status`, so junction's
+  one mapper names the HTTP class. The boot check reads `@@mirror` off the
+  parsed schema, which `app.db.$schema` or `app.tenants.schema` carries.
 - **An `http` stream is opened by its first read, through `send()`'s ladder.**
   `stream()` calls the same `attempt()` with `open`, so a refusal before the
   first byte is the kind `send()` answers, thrown as a `ConduitStreamError`

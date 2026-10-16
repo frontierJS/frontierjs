@@ -1115,7 +1115,7 @@ export const auth = createLitestoneAuth(db, {
 
   // The one place this app says what 'admin' MEANS, and it is load-bearing.
   // gate.ts grades the gate on \`isAdmin\`, and schema.lite spends it three times —
-  // \`@@gate("4.4.4.5")\` for who may delete a person, \`@@allow('update', … ||
+  // \`@@gate(4.4.4.5)\` for who may delete a person, \`@@allow('update', … ||
   // auth().isAdmin)\` for whose row, \`@allow('write', auth().isAdmin)\` on role
   // and emailVerified. The User model ships a role STRING, which auth stores
   // and never interprets, so without this line \`isAdmin\` is never on the
@@ -1258,7 +1258,7 @@ import "@frontierjs/litestone/references/AuditTrail.lite"
 
 database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
 
-model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") }
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) }
 
 `
 }

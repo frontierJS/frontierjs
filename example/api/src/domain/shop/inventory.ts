@@ -37,7 +37,7 @@
 // this*:
 //
 //   $.db              an administrator receiving stock. InventoryMovement is
-//                     `@@gate("5.5.9.9")`, so the Data boundary is what refuses
+//                     `@@gate(5.5.9.9)`, so the Data boundary is what refuses
 //                     a caller below 5 and no code here checks anything.
 //   $.db.asSystem()   a shopper at level 0 checking out. The sale is the SHOP's
 //                     record of its own act, and a stranger may not write one.

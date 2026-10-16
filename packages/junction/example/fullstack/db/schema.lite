@@ -21,5 +21,5 @@ model Post {
 
   /// read is public, writes need a user: "0.4.4.5" is
   /// read 0 (STRANGER) . create 4 (USER) . update 4 . delete 5 (ADMINISTRATOR)
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }

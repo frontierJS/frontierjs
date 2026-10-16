@@ -174,7 +174,7 @@
   const displayError = resolveError(form, name, error, errors) || localError
 
   let inputEl
-  export function focus() { inputEl?.focus() }
+  export function focus() { return $.focus(inputEl) }
 
   function commit() {
     const { value: next, message } = readMoney(text, code)

@@ -1,6 +1,6 @@
 // What the shop charges to send it.
 //
-// `@@gate("0.5.5.5")` — read by anybody, written by staff. The storefront and
+// `@@gate(0.5.5.5)` — read by anybody, written by staff. The storefront and
 // the basket screen both list these to a caller with no session, which is the
 // difference from `discounts`: one table is public and its neighbor is not,
 // on the same screen, and the gate is the only thing that says so.

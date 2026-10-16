@@ -33,14 +33,14 @@ model Widget {
   id   Int    @id @default(autoincrement())
   name String
   @@db(main)
-  @@gate("0")
+  @@gate(0)
 }
 
 model Hit {
   id   Int    @id @default(autoincrement())
   path String
   @@db(analytics)
-  @@gate("0")
+  @@gate(0)
 }
 `
 

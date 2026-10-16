@@ -825,7 +825,7 @@ export function draftSchema (a) {
       ...lines,
       '',
       '  /// Who may read or change one is not something a screenshot shows. 4 is a placeholder.',
-      '  @@gate("4")',
+      '  @@gate(4)',
       '}',
     ].join('\n')
   })
@@ -842,7 +842,7 @@ export function draftSchema (a) {
       `  userId   Int`,
       '',
       `  @@unique([${o}Id, userId])`,
-      '  @@gate("4")',
+      '  @@gate(4)',
       '}',
     ].join('\n')
   }
@@ -852,6 +852,6 @@ export function draftSchema (a) {
 // a line that cannot say is a guess, and a gate is always one. Nothing reads
 // this file: move what survives into db/schema.lite by hand.`
   const tone = needTone ? '/// The seven tones @frontierjs/css draws with — a column that stores one.\nenum Tone { primary secondary muted info success warning danger }' : ''
-  const user = needUser ? '/// A stand-in so the draft parses on its own. In an app this is the User\n/// fli auth:install writes, and this block is deleted.\nmodel User {\n  id   Int    @id\n  name String\n\n  @@gate("4")\n}' : ''
+  const user = needUser ? '/// A stand-in so the draft parses on its own. In an app this is the User\n/// fli auth:install writes, and this block is deleted.\nmodel User {\n  id   Int    @id\n  name String\n\n  @@gate(4)\n}' : ''
   return [head, ...enums, tone, ...blocks, ...extra, user].filter(Boolean).map(b => b.trim()).join('\n\n') + '\n'
 }

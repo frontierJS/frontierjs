@@ -17,7 +17,7 @@ title: Users
   // Nothing on this page decides anything. Four rules do, and all four are in
   // the seed:
   //
-  //   @@gate("4.4.4.5")        a caller with no session gets 401 on the list.
+  //   @@gate(4.4.4.5)        a caller with no session gets 401 on the list.
   //                            A gate REFUSES.
   //
   //   @@allow('read', id == auth().id || auth().isStaff)

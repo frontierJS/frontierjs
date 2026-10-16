@@ -14,7 +14,7 @@ owned, so the gap is written down rather than left to be rediscovered.
 would let junction and orion share litestone's types, so each declares the shape it
 holds. The count is here because it is the only place that cost is visible.
 
-Seams: **95**. With a stated owner: **95**. Stated and missing: **0**.
+Seams: **97**. With a stated owner: **97**. Stated and missing: **0**.
 
 **Every seam names an owner.** A callable is graded by where it is DECLARED; a key — a `$` on a
 wire, a schema keyword, a header — has no declaration anywhere, so its owner is where it is
@@ -39,6 +39,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 6 |
 | `app.conduit.receive(receiver)` | `packages/conduit/src/conduit.ts` | 4 |
+| `app.conduit.mirror(claim)` | `packages/conduit/src/mirror.ts` | 4 |
 | `ctx.enqueue(job, payload)` | `packages/junction/src/plugins/outbox/engine.ts` | 4 |
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
@@ -67,6 +68,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `db.$readAs(accessor, row, principal)` | `packages/litestone/src/core/client.js` | yes | 1 |
 | `db.$levelOf(accessor?, principal?)` | `packages/litestone/src/core/client.js` | yes | 1 |
 | `db.$primaryKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 1 |
+| `db.$mirrorKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 1 |
 | `db.$claimsFor(principal)` | `packages/litestone/src/core/client.js` | yes | 1 |
 | `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | yes | 2 |
 ## Schema → API/UI
@@ -100,6 +102,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
 | `app.conduit.receive(receiver)` / `Dialect` | `packages/conduit/src/conduit.ts` | yes | 4 |
+| `app.conduit.mirror(claim)` / `mirrored(accessor)` | `packages/conduit/src/mirror.ts` | yes | 4 |
 | `signRequest()` / `verifyRequest()` | `packages/toolbelt/src/signature/signature.js` | yes | 3 |
 | `requestMeta().traceparent` / `.tracestate` | `packages/junction/src/core/context.ts` | yes | 1 |
 | `ctx.$raw.rawBody` | `packages/junction/src/transport/http.ts` | mentioned | — |

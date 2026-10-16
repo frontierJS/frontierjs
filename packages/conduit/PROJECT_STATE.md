@@ -61,9 +61,19 @@ Every open item is a row in `ISSUES.md`; this is the map of them.
   (`FJS-D1089`): its token is `per_caller` and the send names the row with
   `grant`. One on a LAN or a tailnet waits for Outpost vantage (`FJS-D1018`),
   or is the operator's fixed-address target per install.
-- **Transports reach HTTP-shaped vendors only.** `websocket` and `broker` speak
-  conduit's own frame envelope; a third-party WebSocket API, a real broker
-  (Kafka, NATS, AMQP) and `ssh` are not reachable. `IDEAS/conduit-batteries.md`.
+- **A mirror claim forwards one row per write** (`FJS-D1125`): no bulk. A
+  patch is sent to the Provider whole, and the `@local` columns it names (an
+  app-local `starred`) are then written through the caller's client; every
+  other column of a `@@mirror` model is `@system` (`FJS-D1142`), so a column a
+  claim's `parse` omits waits for the sync. `Thread`'s `scope` is not supplied
+  by a forward, since no Mattermost verb writes a thread. `conduit-mattermost`'s
+  drive (`mirror.forward*`) and `junction-integration.test.ts` are the proof.
+- **A third-party socket is reached to be listened to, and only that.** A
+  `broker` target takes its framing from the connector's `FrameDialect`
+  (`FJS-D1127`) and a receiver that names the target runs each frame through
+  `accept()`'s order; `conduit-mattermost`'s drive is the proof. A socket API
+  you SEND over, a real broker (Kafka, NATS, AMQP) and `ssh` are not
+  reachable. `IDEAS/conduit-batteries.md`.
 - **Junction's own webhooks plugin delivers beside conduit** (`FJS-2924`), and
   its `ai` and `mail` batteries dial out directly on purpose (`FJS-659`, closed
   per `FJS-D219`).

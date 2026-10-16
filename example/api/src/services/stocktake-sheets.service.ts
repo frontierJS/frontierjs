@@ -28,7 +28,7 @@ import { move } from '../domain/shop'
 export default createService({
   model: 'StocktakeSheet',
 
-  // No `channel:`. A sheet is `@@gate("5.…")` for reads and a broadcast does
+  // No `channel:`. A sheet is `@@gate(5.…)` for reads and a broadcast does
   // not re-check the gate, so publishing these would hand every connected
   // browser rows the Data boundary refuses them — the same reason
   // `inventory` declares none.

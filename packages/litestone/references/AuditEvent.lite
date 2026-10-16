@@ -112,7 +112,7 @@ model AuditEvent {
   ///
   /// Read at 5 is an administrator. Lower it with a policy if the product shows
   /// people their own activity; do not lower the gate.
-  @@gate("5.8.9.9")
+  @@gate(5.8.9.9)
 
   /// Two reads and they are different questions: the operator's feed for one
   /// tenant, and *everything that ever happened to this row*.

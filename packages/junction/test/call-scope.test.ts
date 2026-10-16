@@ -190,7 +190,7 @@ describe('db', () => {
   test('`transactional:` moves `$.db` — resolved per read, never snapshotted', async () => {
     const db: any = await createClient({
       db: ':memory:',
-      schema: 'model Post { id Int @id\n title String\n @@gate("0.0.0.0") }',
+      schema: 'model Post { id Int @id\n title String\n @@gate(0.0.0.0) }',
     })
     const MARKER = { marker: true } as never
     let outer: unknown, inner: unknown, moved = false
@@ -558,7 +558,7 @@ describe('a call that has ended (FJS-687)', () => {
     // held what a reader believes is "the transaction".
     const db: any = await createClient({
       db: ':memory:',
-      schema: 'model Post { id Int @id\n title String\n @@gate("0.0.0.0") }',
+      schema: 'model Post { id Int @id\n title String\n @@gate(0.0.0.0) }',
     })
     let before: unknown, during: unknown
     const a: any = createApp({

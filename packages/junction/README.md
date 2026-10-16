@@ -1260,7 +1260,7 @@ const SCHEMA = `
     createdAt DateTime @default(now())
     updatedAt DateTime @default(now()) @updatedAt
 
-    @@gate("0.4.4.6")   // R=public  C/U=USER  D=OWNER
+    @@gate(0.4.4.6)   // R=public  C/U=USER  D=OWNER
   }
 `
 
@@ -1589,18 +1589,26 @@ does.
   cancels now. The move announces through the Litestone tap under the
   transition's name either way.
 - **What a move owes beyond itself is a hook, run in the move's transaction**
-  (`FJS-D368`). `hooks: { 'SubscriptionPeriod.close': renewPeriod }` — keyed
-  `<Model>.<commitment>` — runs after the move inside one `$transaction` on the
+  (`FJS-D368`). `hooks: { 'SubscriptionPeriod.close': defineCommitment({ after: renewPeriod }) }`
+  — keyed `<Model>.<commitment>` — runs inside one `$transaction` on the
   fire's client, so a closed period and the invoice and next period it owes
   commit together or not at all; a throw rolls both back and fails the fire.
-  The plugin still makes the move, so a hook cannot lose the from-state lock.
+  **The tiers are the service pipeline's, in its order** (`FJS-D1022`):
+  `around` enter → `before` → the move → `after` → `around` exit, with
+  `around(ctx, next)` failing the fire if it never calls `next()`. A `@seals`
+  move's owed writes — the number, a refresh of the draft — go in `before`,
+  where `record` is the row at its from-state: after the seal they are refused,
+  and a look-up of the draft finds none (`FJS-2163`). A write the move's own
+  from-state would contend with — the next period, under an open-period guard
+  — goes in `after`. The plugin still makes the move, so a hook cannot lose the
+  from-state lock.
   `afterCommit(fn)` carries what a rollback could not take back — a dispatch to
   a queue in another file. **`enqueue(job, payload)` is the durable one**: an
   outbox row on the move's transaction, for an effect whose loss the move would
   lie about — a reminder's email, where `reminded` is set and a moved row is
   never due again (`FJS-D370`). It refuses by name with no `outbox()`
   installed. Only the fire runs a hook, and a key naming no declared
-  commitment is refused at start.
+  commitment, or a value that is not a spec, is refused at start.
 - **`fireCommitment(client, payload, { hooks, outbox, tenant })` is the fire
   itself**, exported for a drive with no app: the same re-derivation, move and
   hook on a client the caller scopes. `outbox` is `app.outbox`, which

@@ -34,7 +34,9 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { treePaths } from './tree.js'
 import { ideaQuestions } from './decisions.js'
-import { envCause, ENV_CAUSES } from './next.js'
+import { envCause, ENV_CAUSES, reproOf, seamOf } from './next.js'
+import { linkedTest } from './repro.js'
+import { readKeyList, identifierOf } from './seams.js'
 import { readRegisters, readOverviewRows, idPatterns, REGISTER_FILES, ISSUE_STATUS, IDEA_STATUS, RULING_STATUS, SEVERITY } from './registers.js'
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
@@ -62,18 +64,21 @@ export const RULES = [
   { id: 'unread-recommendation', level: 'error', what: 'an open question\'s `**Recommend …**` line naming no option letter — the queue shows no recommendation, and the line was once read as the words of the option above it' },
   { id: 'malformed-date',   level: 'error', what: 'a date that is not ISO-8601' },
   { id: 'env-cause',        level: 'error', what: 'an `env:` segment naming a cause outside the table — the row is counted under no cause' },
+  { id: 'seam-name',        level: 'error', what: 'a `seam:` segment naming no entry in the root `CLAUDE.md` § Bridge index key list — the row is counted under no seam' },
   { id: 'lives-in',         level: 'error', what: 'a ruling\'s `*Lives in:*` naming a path that is not in the tree, a symbol its file no longer mentions, or a package no package.json declares — advice that fails when taken' },
   { id: 'overview-status',  level: 'error', what: 'an `IDEAS/overview.md` row whose Status cell says the work is still open while its paper says `shipped` or `withdrawn`, or its only cited defects are closed' },
   { id: 'ruling-order',     level: 'warn',  what: 'a ruling dated later than the one above it — a section runs newest first, so the top of one is the current thinking' },
   { id: 'unnamed-ruling',   level: 'warn',  what: 'a ruling with no id — nothing can cite it' },
   { id: 'missing-anchor',   level: 'warn',  what: 'an open row with no anchor — nothing can link it' },
   { id: 'stale-verified',   level: 'warn',  what: 'an open row nobody has re-checked in a long time', clock: true },
-  { id: 'env-smell',        level: 'warn',  what: 'an open row whose title reads like an environment failure — a timeout, a hang, a port, a run that passes elsewhere — and names no `env:` cause' },
+  { id: 'env-smell',        level: 'warn',  what: 'an open row whose title reads like an environment failure — a timeout, a hang, a port, a run that passes elsewhere — and names no `env:` cause and no `register:repro` measurement; or one naming `env: timing` that nothing measured' },
 ]
 
 // What an environment failure SAYS about itself in a title. A lead, never a
 // verdict: the row may be code, which is why this warns and `env-cause`
-// errors. Matched on the title alone, since a Detail cell is links.
+// errors, and why a `repro:` measurement that found code answers it. Matched
+// on the title alone, since a Detail cell is links. The reverse is the same
+// rule: `env: timing` with no measurement is a guess the loop skips on.
 const ENV_SMELL = /\b(times? out|timed out|(hangs?|hung)(?=[:,.]|\s+(at|on|in|after|waiting|until|for|forever|when|and)\b)|within \d+ ?(s|sec|seconds|min|minutes)\b|passes? (alone|in (a )?(fresh|new|second) (worktree|clone|checkout))|fails in the main tree|port \d{4}|stale process|flaky|intermittent(ly)?|on a real machine|never run on)\b/i
 
 /** Whether a title reads like an environment failure — `env-smell`'s test,
@@ -343,6 +348,10 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
   // at code that has legitimately moved, and grading it would make the register
   // harder to close things in.
 
+  // Matched the way `seam-listed` matches, by the identifier a name ends in, so
+  // `seam: $setAuth` and `seam: $setAuth(user)` are one seam.
+  const seamKeys = readKeyList(root)
+
   for (const row of doc.issues) {
     // ── does the row line up with the table it is in ──
     //
@@ -468,8 +477,18 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
     const cause = envCause(row)
     if (cause !== null && !ENV_CAUSES.includes(cause)) {
       add('env-cause', row, `env: "${cause}" is not one of ${ENV_CAUSES.join(', ')}`)
-    } else if (cause === null && envSmells(row.title)) {
+    } else if (cause === 'timing' && !reproOf(row)) {
+      const { reason } = linkedTest(row, root)
+      add('env-smell', row, `names env: timing and nothing measured it — ${reason ? `register:repro cannot: the row ${reason}` : `fli repro ${row.id} writes one`}`)
+    } else if (cause === null && !reproOf(row) && envSmells(row.title)) {
       add('env-smell', row, 'reads like an environment failure and names no env: cause')
+    }
+
+    const seam = seamOf(row)
+    if (seam !== null && !seamKeys?.has(identifierOf(seam))) {
+      add('seam-name', row, seamKeys
+        ? `seam: "${seam}" is not in the CLAUDE.md § Bridge index key list`
+        : `seam: "${seam}" — this root's CLAUDE.md has no § Bridge index to name a seam from`)
     }
 
     const age = staleDays > 0 && ISO.test(row.verified) ? daysBetween(row.verified, today) : null

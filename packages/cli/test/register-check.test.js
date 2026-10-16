@@ -33,6 +33,13 @@ beforeAll(() => {
   mkdirSync(join(ROOT, 'IDEAS'))
   mkdirSync(join(ROOT, 'src'), { recursive: true })
   writeFileSync(join(ROOT, 'src', 'real.js'), '// a file that is really there\n')
+  writeFileSync(join(ROOT, 'CLAUDE.md'), [
+    '## Bridge index',
+    '',
+    '**Data → API** — `$setAuth(user)` / `asSystem()` · `withLitestoneDb(db)`',
+    '',
+    '## Where to look',
+  ].join('\n'))
 
   writeFileSync(join(ROOT, 'ISSUES.md'), [
     '## S1 — blockers',
@@ -58,10 +65,19 @@ beforeAll(() => {
     '| <a id="fjs-033"></a>FJS-033 | cli | **An escaped \\| pipe is not a cell.** | open | 2026-08-17 | — |',
     '| <a id="fjs-034"></a>FJS-034 | cli | **A blank date is a state, not a shape.** | open | — | — |',
     // The env segment: a cause outside the table is an error, a title that
-    // smells with no segment is a warning, and a listed cause is neither.
+    // smells with no segment is a warning, `timing` nothing measured is a
+    // warning, and a measured or other listed cause is neither.
     '| <a id="fjs-040"></a>FJS-040 | cli | **Drive fails after the last one.** | open | 2026-08-17 | [d](src/real.js) · env: bogus |',
     '| <a id="fjs-041"></a>FJS-041 | cli | **verify:x hangs: an evaluate times out after 30 s.** | open | 2026-08-17 | [d](src/real.js) |',
     '| <a id="fjs-042"></a>FJS-042 | cli | **verify:y times out waiting for the row.** | open | 2026-08-17 | [d](src/real.js) · env: timing |',
+    '| <a id="fjs-045"></a>FJS-045 | cli | **verify:z times out waiting for the row.** | open | 2026-08-17 | [d](src/real.js) · env: timing · repro: 9/9 alone · 9/9 in suite · 4/9 under 7 typechecks |',
+    '| <a id="fjs-046"></a>FJS-046 | cli | **verify:w times out on 8110.** | open | 2026-08-17 | [d](src/real.js) · env: port |',
+    // A segment FIRST in its Detail follows the date cell, not a dot.
+    '| <a id="fjs-047"></a>FJS-047 | cli | **Fails on alternating runs.** | open | 2026-08-17 | env: timing |',
+    // The seam segment: a name the key list does not hold is an error, and one
+    // it holds is silent however the call is spelled.
+    '| <a id="fjs-043"></a>FJS-043 | cli | **Scope lost across the handoff.** | open | 2026-08-17 | [d](src/real.js) · seam: setAuthority |',
+    '| <a id="fjs-044"></a>FJS-044 | cli | **Scope lost again.** | open | 2026-08-17 | [d](src/real.js) · seam: `$setAuth` |',
     '',
     '## Decisions awaiting a ruling',
     '| Id | Pkg | Question | Detail |',
@@ -236,11 +252,17 @@ describe('warnings', () => {
     expect(hits.map(h => h.id)).toEqual(['FJS-015'])
   })
 
-  test('env: a cause outside the table errors, a smelling title with no segment warns, a listed cause is silent', () => {
+  test('env: a cause outside the table errors, a smelling title with no segment warns, unmeasured timing warns, a measured or other cause is silent', () => {
     const result = runRegisterCheck({ root: ROOT, staleDays: 0, today: TODAY })
     expect(of(result, 'env-cause').map(h => h.id)).toEqual(['FJS-040'])
-    expect(of(result, 'env-smell').map(h => h.id)).toEqual(['FJS-041'])
-    expect(result.findings.filter(f => f.id === 'FJS-042' && f.rule.startsWith('env-'))).toHaveLength(0)
+    expect(of(result, 'env-smell').map(h => h.id)).toEqual(['FJS-041', 'FJS-042', 'FJS-047'])
+    expect(of(result, 'env-smell').find(h => h.id === 'FJS-042').message).toMatch(/register:repro cannot: the row links no \*\.test\.\* file/)
+    expect(result.findings.filter(f => ['FJS-045', 'FJS-046'].includes(f.id) && f.rule.startsWith('env-'))).toHaveLength(0)
+  })
+
+  test('seam: a name outside the Bridge index key list errors, a listed one is silent', () => {
+    const result = runRegisterCheck({ root: ROOT, staleDays: 0, today: TODAY })
+    expect(of(result, 'seam-name').map(h => h.id)).toEqual(['FJS-043'])
   })
 
   test('staleDays 0 turns the clock rule off, so the answer is reproducible', () => {

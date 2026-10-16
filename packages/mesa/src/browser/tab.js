@@ -62,21 +62,26 @@ function arm() {
   document.addEventListener('visibilitychange', sync)
 }
 
-function fact(key) {
-  return {
-    enumerable: true,
-    get() { arm(); return _v[key] },
-    set(v) {
-      if (!_writing) throw new Error(`tab.${key} is the browser's to say — read it; it cannot be written`)
-      _v[key] = v
-    },
-  }
+function get(key) {
+  arm()
+  return _v[key]
+}
+
+function put(key, v) {
+  if (!_writing) throw new Error(`tab.${key} is the browser's to say — read it; it cannot be written`)
+  _v[key] = v
 }
 
 /** This tab: `online`, `visible`, `focused`. Watched like `session` —
  *  `$: tab.visible` in a `.mesa` file, `watchPath(tab, 'visible')` in JS. */
-export const tab = Object.defineProperties({}, {
-  online:  fact('online'),
-  visible: fact('visible'),
-  focused: fact('focused'),
-})
+// A literal, not Object.defineProperties: a bundler keeps a top-level call, so
+// every import of the kit index — sierra's `setPrefix` among them — shipped
+// this module and its listeners.
+export const tab = {
+  get online()   { return get('online') },
+  set online(v)  { put('online', v) },
+  get visible()  { return get('visible') },
+  set visible(v) { put('visible', v) },
+  get focused()  { return get('focused') },
+  set focused(v) { put('focused', v) },
+}

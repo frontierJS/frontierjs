@@ -25,7 +25,7 @@ const SCHEMA = (dir: string) => `
     id    String @id @default(uuid())
     token String @default("t")
     name  String
-    @@gate("0")
+    @@gate(0)
     @@trail(audit)
   }
 `

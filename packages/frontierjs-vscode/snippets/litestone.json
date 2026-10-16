@@ -59,7 +59,7 @@
       "  id        Integer  @id",
       "  $0",
       "  createdAt DateTime @default(now())",
-      "  @@gate(\"${2:4}\")",
+      "  @@gate(${2:4})",
       "}"
     ],
     "description": "Model with GatePlugin access control"
@@ -402,13 +402,13 @@
 
   "@@gate": {
     "prefix": "@@gate",
-    "body": ["@@gate(\"${1:4}\")"],
+    "body": ["@@gate(${1:4})"],
     "description": "Level-based access control (0-9, or R.C.U.D notation)"
   },
 
   "@@gate RCUD": {
     "prefix": "@@gatercud",
-    "body": ["@@gate(\"${1:2}.${2:4}.${3:4}.${4:6}\")"],
+    "body": ["@@gate(${1:2}.${2:4}.${3:4}.${4:6})"],
     "description": "Gate with explicit Read.Create.Update.Delete levels"
   },
 

@@ -35,7 +35,7 @@ const SCHEMA = `
     deletedAt DateTime?
 
     @@softDelete
-    @@gate("0.4.4.5")
+    @@gate(0.4.4.5)
   }
 `
 

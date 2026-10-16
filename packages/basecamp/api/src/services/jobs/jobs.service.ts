@@ -26,7 +26,7 @@ async function assertAppInWorkspace(appId: string) {
 }
 
 
-/** `JobRun` is `@@gate("2.8")` — created and updated by the machine alone. */
+/** `JobRun` is `@@gate(2.8)` — created and updated by the machine alone. */
 const sys = () => $.db.asSystem() as any
 
 /**
@@ -193,7 +193,7 @@ export default createService({
   // ── The engine's writes ───────────────────────────────────────────
   //
   // `job:run` used to open `asSystem()` and write these itself. `JobRun` is
-  // `@@gate("2.8")` — created and updated by the machine — so what moves here
+  // `@@gate(2.8)` — created and updated by the machine — so what moves here
   // is not the standing but the CONFINEMENT and the announcement, which the
   // handler had to remember to do and once did not (`FJS-384`).
 

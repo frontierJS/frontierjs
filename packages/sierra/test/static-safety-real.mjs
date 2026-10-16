@@ -17,7 +17,7 @@
  *   1. `$tapQuery` reports the TABLE name (`invoice`); `$defs` is keyed by the
  *      MODEL name (`Invoice`). A fake emits whatever string the test author
  *      expected, so it would agree with a wrong implementation.
- *   2. `@@gate("4.4.4.5")` has to survive parse → generateJsonSchema → the
+ *   2. `@@gate(4.4.4.5)` has to survive parse → generateJsonSchema → the
  *      `x-gate.read` this check reads.
  *
  * Both are exactly the kind of "two things that look the same and aren't" that
@@ -52,14 +52,14 @@ const SCHEMA = `
 model Product {
   id   String @id @default(cuid())
   name String
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }
 
 model Customer {
   id       String    @id @default(cuid())
   name     String
   invoices Invoice[]
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }
 
 model Invoice {
@@ -67,7 +67,7 @@ model Invoice {
   total      Float    @default(0)
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id])
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
 }
 
 model Account {

@@ -165,7 +165,7 @@ answered when a terminal app asks, not before.
 
 ```js
 import {
-  persisted, now, media, reducedMotion, colorScheme,   // signals
+  persisted, now, media, reducedMotion, colorScheme,   // signals, each a call
   tab,                                                // watchProxy object
   visible, size, dropzone,                            // attachments ({@attach})
   hotkey,                                             // listener, scoped
@@ -209,15 +209,19 @@ persisted(key, fallback, { parse = JSON.parse, format = JSON.stringify } = {})
 
 // #2 — one interval per resolution, parked while hidden
 now({ every = 1000 } = {})  → { value }          // ms since epoch
-// All readers of `every: 1000` share one setInterval; it is cleared when
-// tab.visible goes false and restarted (with an immediate tick) when it
-// returns, so a tab brought back shows no stale minute.
+// All readers of `every: 1000` share one setInterval, aligned to multiples
+// of `every` since the epoch; it is cleared when tab.visible goes false and
+// restarted (with an immediate tick) when it returns, so a tab brought back
+// shows no stale minute.
 
 // #3 — media
 media(query)                → { matches }
-reducedMotion               → media('(prefers-reduced-motion: reduce)')
-colorScheme                 → { value: 'dark' | 'light' }
-breakpoint(name)            → media(css's query for `name`)         (Q3)
+reducedMotion()             → media('(prefers-reduced-motion: reduce)')
+colorScheme()               → { value: 'dark' | 'light' }
+breakpoint(name)            → media(css's query for `name`)         (Q3, Q8)
+// Calls, not exported constants: a template read of an imported name
+// compiles to a static value, so a module-level signal renders once — the
+// reason sierra exports none (FJS-060). A component holds each in a `const`.
 
 // #4 — observers, one per option set, pooled by a WeakMap on the options key
 visible(cb, { root, rootMargin, threshold, once } = {})  → attachment
@@ -402,6 +406,12 @@ compiler contract, its implementation is not.
 
 ---
 
+- **Q8** — Where does `breakpoint(name)` read css's table? `FJS-D1099` put it in mesa reading `vocabulary.js`, but mesa is a leaf (*no framework-package dependency, ever*), and `vocabulary.js` is a classic script that exports nothing. Only the generated `vocabulary.json` (37 KB, now carrying `breakpoints`) can be imported. Found building 1.4.
+  - **A** — sierra installs it, as it does the prefix (Q2): `virtual:sierra` reads `vocabulary.json` at build time and emits the five numbers, the router boot calls `setBreakpoints()`, and mesa's `breakpoint()` reads what was installed. A name off the table throws, listing the names; with no sierra it throws saying nothing installed one. Cost: a second setter beside `setPrefix`.
+  - **B** — `breakpoint()` lives in sierra, over mesa's `media()`, importing `breakpoints` from `@frontierjs/css/vocabulary.json`. Cost: sierra gains a runtime dependency on css, the bundle relies on Vite tree-shaking a named JSON import, and the kit's surface splits across two imports.
+  - **C** — drop `breakpoint()`: mesa ships `media()` and an app writes ``media(`(min-width: ${vocab.breakpoints.md}px)`)`` itself. Cost: the one `D1099` named — an app's off-scale `47.99rem` stays ungraded.
+  - **Recommend A** — mesa stays a leaf, no JSON reaches the page, and the shape is one already in the tree (`setPrefix`), so a reader who knows how the prefix arrives can predict this. B charges every sierra app a css dependency for five numbers. Q9 under A: a table not installed throws at the first call, so it cannot be silently empty.
+
 ## Phases
 
 ### Phase 0 — Groundwork
@@ -421,9 +431,10 @@ Done when: each has a drive on the CDP harness flipping the real condition, the 
 
 - [x] 1.1 `persisted()` with the credential refusal and cross-tab sync; `setPrefix()` and sierra's `prefix` config per Q2 — kit drive `persisted` (15 rows); SSR half owed to the phase's vitest
 - [x] 1.2 `tab` — online, visible, focused (`FJS-D1122`: `page` is the router's; `bind:online` removed, the compiler refuses an unbound prop) — kit drive `tab` (11 rows); SSR half owed to the phase's vitest
-- [ ] 1.3 `now()` on one interval per resolution, parked on `tab.visible`
-- [ ] 1.4 `media()`, `reducedMotion`, `colorScheme`; `breakpoint()` per Q3 — css's `breakpoints` table in `vocabulary.js` first, and its spec grading every literal `@media` width in `src/`
-- [ ] 1.5 The theme switch moved onto 1.1 and 1.4
+- [x] 1.3 `now()` on one interval per resolution, parked on `tab.visible` — kit drive `now` (15 rows); ticks land on multiples of `every`; parked by `watchPath(tab, 'visible')`, sierra `list.js`'s shape. `subscribe` now runs `start` with no owner and no listener: under the first reader's owner, the clock's watch was disposed when that reader unmounted while others still read (a row pins it). The kit drive now loads a fresh document per spec, since every wrapper holds its state for the tab; SSR half owed to the phase's vitest
+- [x] 1.4 `media()`, `reducedMotion()`, `colorScheme()` — kit drive `media` (16 rows); one `MediaQueryList` and one listener per query. The two named queries are calls, since an exported signal object is static in a template (`FJS-060`). Css's `BREAKPOINTS` table landed in `vocabulary.js`, emitted into `vocabulary.json`, and `vocabulary: every @media width is on the breakpoint scale` grades every literal width in `src/`. `breakpoint()` moved to 1.6 behind Q8; SSR half owed to the phase's vitest
+- [x] 1.5 The theme switch moved onto 1.1 and 1.4 — `initTheme` holds a `persisted(key)` (stored raw, since the `<head>` script reads it with `getItem`) and `colorScheme()` under one effect, so another tab's pick lands too; read in a tab only. The key is `prefix:key`: the `<head>` script restates the shape, pinned by a round trip in `prefetch-theme.test.js`, and the island entry calls `setPrefix`, since a static page has no router. `example` and `basecamp` drop their hand prefix (`shop_theme`, `basecamp_theme`) for the default `theme`. Found on the way: `tab.js` was built with `Object.defineProperties` at the top level, which a bundler keeps, so every import of the kit index shipped it — the router's `setPrefix` included. Now an object literal; sierra's bench spa and static floors are back under baseline
+- [ ] 1.6 `breakpoint(name)` per Q3, reading the table as Q8 rules
 
 ### Phase 2 — The attachments
 

@@ -633,7 +633,7 @@ const ATTR_DOCS: Record<string, string> = {
     'Soft delete + cascade: `remove()` and `restore()` walk the FK graph and apply to child models that also have `@@softDelete`.\n\nUse `@hardDelete` on a specific relation field to hard-delete those children instead.\n\nThe parser emits a warning when a `@@softDelete` model has `hasMany` relations to other `@@softDelete` models without cascade.',
 
   '@@gate':
-    'Declares the minimum access level required per CRUD operation.\n\n```\n@@gate("R.C.U.D")    // positional: Read.Create.Update.Delete\n@@gate("4")          // shorthand: all ops require USER (level 4+)\n@@gate("2.4.4.6")    // READER to read, USER to write, OWNER to delete\n@@gate("5.8.8.9")    // ADMIN to read, SYSTEM to write, LOCKED to delete\n```\n\n**Levels:** `0=STRANGER  1=VISITOR  2=READER  3=CREATOR  4=USER  5=ADMINISTRATOR  6=OWNER  7=SYSADMIN`\n\nReserved: `8=SYSTEM` (asSystem() only) · `9=LOCKED` (impassable)',
+    'Declares the minimum access level required per CRUD operation.\n\n```\n@@gate(R.C.U.D)    // positional: Read.Create.Update.Delete\n@@gate(4)          // shorthand: all ops require USER (level 4+)\n@@gate(2.4.4.6)    // READER to read, USER to write, OWNER to delete\n@@gate(5.8.8.9)    // ADMIN to read, SYSTEM to write, LOCKED to delete\n```\n\n**Levels:** `0=STRANGER  1=VISITOR  2=READER  3=CREATOR  4=USER  5=ADMINISTRATOR  6=OWNER  7=SYSADMIN`\n\nReserved: `8=SYSTEM` (asSystem() only) · `9=LOCKED` (impassable)',
 
   '@@auth':
     'Marks this model as the auth subject. `auth()` in policy expressions resolves to a row from this model.',

@@ -25,7 +25,7 @@
 
 import {
   rewriteExpr, rewriteTextResult, extractKeywords, parseModifiers, applyEventModifiers,
-  unwrapExp, parseEachHeader, eachFrame, templateSource, routeSlots, componentAttributes, styleSource, classSource,
+  unwrapExp, parseEachHeader, eachFrame, templateSource, componentAttributes, styleSource, classSource,
   bindSetter, elementBindTarget, snippetParam, parseRenderTag, constScope, constDeclaration,
 } from './compiler.js'
 
@@ -156,7 +156,7 @@ function lowerAttributes(ctx, n) {
   return { attrs, handlers, directives, styles, classes, ref, attachments, binds }
 }
 
-// ─── components and slots ─────────────────────────────────────────────────────
+// ─── components ───────────────────────────────────────────────────────────────
 
 /**
  * `<Child …>`: the call `makeComponent` emits on the DOM path, as data, read
@@ -171,11 +171,9 @@ function lowerAttributes(ctx, n) {
  * passes nothing on either target. `client:` is a hint to a
  * server render and is dropped, as the DOM path drops it without `islands`.
  *
- * `slots` maps a slot name to its lowered children, routed by `routeSlots`,
- * the one routing the DOM path builds from too. A `{#snippet}` child is a
- * prop on the DOM path, so it is kept apart rather than lowered into the
- * default slot: a `snippet` node, which the target names and passes under
- * its own name.
+ * `snippets` are its children: every child of a call is a snippet by now,
+ * `slot=` and unslotted content included (`lowerSlots`, `FJS-D668`), which
+ * the target names and passes as the prop of its name.
  */
 function lowerComponent(ctx, n) {
   const props = [], spreads = [], binds = []
@@ -212,10 +210,7 @@ function lowerComponent(ctx, n) {
     }
   }
 
-  const routing = routeSlots(n, ctx.config?.preserveComments)
-  const slots = {}
-  for (const [name, nodes] of routing.slots) slots[name] = lowerChildren(ctx, nodes)
-  const snippets = routing.snippets.map((s) => lowerSnippet(ctx, s))
+  const snippets = (n.body ?? []).filter((c) => c.type === 'snippet').map((s) => lowerSnippet(ctx, s))
 
   const accessor = ctx.accessors?.[n.name]
   return {
@@ -227,25 +222,7 @@ function lowerComponent(ctx, n) {
     spreads,
     binds,
     ref,
-    slots,
     snippets,
-  }
-}
-
-/** `<slot>` / `<slot:name>` / `<slot name="x">` with its fallback content.
- *  An attribute other than `name` is a directive: the DOM path reports it,
- *  and a slot carries nothing outward. */
-function lowerSlot(ctx, n) {
-  const nameAttr = n.attributes?.find((a) => a.name === 'name')
-  const directives = (n.attributes ?? [])
-    .filter((a) => a !== nameAttr)
-    .map((a) => ({ name: a.name, loc: ctx.posOf(a.start ?? n.start) }))
-  return {
-    kind: 'slot',
-    name: n.elArg || nameAttr?.value?.replace(/^['"]|['"]$/g, '') || 'default',
-    loc: ctx.posOf(n.start),
-    directives,
-    fallback: lowerChildren(ctx, n.body ?? []),
   }
 }
 
@@ -462,7 +439,6 @@ function lowerNode(ctx, n) {
       if (n.name === 'mesa') return unlowered(ctx, 'mesa-element', n)
       if (n.name === 'component') return unlowered(ctx, 'component', n)
       if (/^[A-Z]/.test(n.name)) return lowerComponent(ctx, n)
-      if (n.name === 'slot') return lowerSlot(ctx, n)
       return {
         kind: 'element',
         tag: n.name,
@@ -484,7 +460,6 @@ function lowerNode(ctx, n) {
     case 'key':
       return lowerKey(ctx, n)
     case 'await':
-    case 'slot':
     case 'fragment':
     case 'virtual-each':
     case 'block':
@@ -539,7 +514,7 @@ function lowerChildren(ctx, body, block = true) {
 
 /** Every node under `children`, each before its own contents, in document
  *  order: through an element's children, every arm of a block, a
- *  component's slots and snippets, a snippet's body and a slot's fallback.
+ *  component's snippets and a snippet's body.
  *  A visit answering `false` skips that node's contents. */
 export function eachNode(children, visit) {
   for (const n of children) {
@@ -563,11 +538,7 @@ export function eachNode(children, visit) {
         eachNode(n.children, visit)
         break
       case 'component':
-        for (const name in n.slots) eachNode(n.slots[name], visit)
         eachNode(n.snippets, visit)
-        break
-      case 'slot':
-        eachNode(n.fallback, visit)
         break
     }
   }
@@ -620,8 +591,7 @@ function lowerStyles(ctx) {
       if (c === '/' && src[i + 1] === '*') { const end = src.indexOf('*/', i + 2); i = end < 0 ? src.length : end + 1; continue }
       if (c === '"' || c === "'") { while (++i < src.length && src[i] !== c) if (src[i] === '\\') i++; continue }
       if (c === ';' || c === '}') {
-        if (c === '}' && opaque && --depth < opaque) opaque = 0
-        else if (c === '}') depth--
+        if (c === '}' && --depth < opaque) opaque = 0
         from = i + 1
         continue
       }

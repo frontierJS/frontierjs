@@ -20,7 +20,7 @@
 // ─── Why asSystem() ───────────────────────────────────────────────────────
 //
 // Not a convenience. `User` is the model auth's own schema fragment declares
-// `@@gate("8")` on — a level even SYSADMIN(7) does not reach — so once FJS-007
+// `@@gate(8)` on — a level even SYSADMIN(7) does not reach — so once FJS-007
 // lands there is NO caller-scoped client that can read a user list. Writing
 // these reads against the caller's client today would mean rewriting them
 // then. They are written the way they will have to be.

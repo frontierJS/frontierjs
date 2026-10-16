@@ -5,7 +5,7 @@
 // the query, the @@gate check and the field validation — pointed at one table.
 //
 // Getting that wrong fails OPEN rather than loudly: a service whose accessor
-// resolves to nothing finds no gate and no schema, so @@gate("0.4.4.5") would
+// resolves to nothing finds no gate and no schema, so @@gate(0.4.4.5) would
 // permit an anonymous write and autoValidate would check nothing.
 import { createService, $ } from '@frontierjs/junction'
 import { levelsFor } from '../domain/shop'
@@ -25,7 +25,7 @@ export default createService({
    *
    * ─── Why this reads through asSystem() ────────────────────────────────
    *
-   * `StockReservation` is `@@gate("5.8.8.8")`: an administrator may read the
+   * `StockReservation` is `@@gate(5.8.8.8)`: an administrator may read the
    * holds, a shopper may not. Availability is a sum over EVERYBODY's holds,
    * so a shopper's own client would answer `on hand − 0` — a number that is
    * always plausible, never right, and reported by nothing. That is the exact

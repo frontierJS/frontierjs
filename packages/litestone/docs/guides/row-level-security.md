@@ -8,7 +8,7 @@ Combine row-level policies and GatePlugin to build a complete permission system 
 
 **GatePlugin** answers: "can this user perform this operation at all?"
 - Integer levels: STRANGER (0) through SYSADMIN (7); 8 is `asSystem()` and 9 is LOCKED
-- Declared per-model with `@@gate("R.C.U.D")`
+- Declared per-model with `@@gate(R.C.U.D)`
 - Evaluated before any SQL runs
 
 **Row-level policies** answer: "which specific rows can this user access?"
@@ -48,7 +48,7 @@ model Post {
   @@softDelete
 
   // Level-based gate: viewers can read, editors can write, admins can delete
-  @@gate("1.3.4.5")
+  @@gate(1.3.4.5)
 
   // Row policies: published posts visible to all; drafts only to author or admin
   @@allow('read',   status == 'published' || authorId == auth().id || auth().role == 'admin')
@@ -93,20 +93,20 @@ const db = await createClient({ path: './schema.lite', db: './blog.db', plugins:
 For a viewer reading posts:
 
 1. `getLevel(viewer, 'Post')` → `VISITOR` (1)
-2. Gate check: `@@gate("1.3.4.5")` → read requires level 1 → ✓ passes
+2. Gate check: `@@gate(1.3.4.5)` → read requires level 1 → ✓ passes
 3. SQL injected: `WHERE "deletedAt" IS NULL AND (("status" = ? OR "authorId" = ?) OR ? = ?)` — bound to `'published'`, the viewer's id, the viewer's role and `'admin'`
 4. Returns only published posts (viewer can't see drafts they don't own)
 
 For an unauthenticated user:
 
 1. `getLevel(null, 'Post')` → `STRANGER` (0)
-2. Gate check: `@@gate("1...")` → read requires level 1 → ✗ blocked immediately
+2. Gate check: `@@gate(1...)` → read requires level 1 → ✗ blocked immediately
 3. No SQL runs — `AccessDeniedError` thrown
 
 For an editor trying to update an archived post:
 
 1. `getLevel(editor, 'Post')` → `CREATOR` (3)
-2. Gate check: `@@gate("1.3.4.5")` → update requires level 4 → ✗ blocked
+2. Gate check: `@@gate(1.3.4.5)` → update requires level 4 → ✗ blocked
 3. `AccessDeniedError` thrown before policy check even runs
 
 Measured, with the schema above:
@@ -264,7 +264,7 @@ model SystemConfig {
   id    Int    @id
   value String
 
-  @@gate("5.5.5.5")    // ADMINISTRATOR required for everything
+  @@gate(5.5.5.5)    // ADMINISTRATOR required for everything
 }
 ```
 
@@ -275,7 +275,7 @@ model InternalEvent {
   id      Int    @id
   payload String
 
-  @@gate("9")          // LOCKED — not even asSystem() can access
+  @@gate(9)          // LOCKED — not even asSystem() can access
 }
 ```
 

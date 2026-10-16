@@ -74,7 +74,7 @@ const db = await createClient<Db>({
       value     Float       @gte(0)
       createdAt DateTime   @default(now())
 
-      @@gate("0.4.4.5")
+      @@gate(0.4.4.5)
     }
   `,
   plugins: [new GatePlugin({
