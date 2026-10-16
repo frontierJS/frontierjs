@@ -19,6 +19,7 @@ const ICONS = {
   eel:      '~~>',
   pike:     '>>>',
   moonfish: '>*>',
+  penguin:  '(o>',
 }
 
 const LEFT   = 20

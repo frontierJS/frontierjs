@@ -13,6 +13,7 @@ import { cellsOf, inLane, riderOn, ridersAt } from './carousel.ts'
 import type { CarouselSpec } from './carousel.ts'
 import { pacerNow } from './pacer.ts'
 import type { PacerSpec } from './pacer.ts'
+import { almanacAt } from '../../web/src/sky.js'
 
 export interface SceneWorld {
   slug: string, width: number, height: number
@@ -26,35 +27,60 @@ export interface SceneWorld {
   pacers: (PacerSpec & { name: string })[]
   /** Targets riding a loop (`carousel.ts`); a bolt is scored on one. */
   carousels: CarouselSpec[]
+  /** The rows and solid pieces of a season whose walls are not the file's own (the pond's ice is floor). */
+  seasons?: Record<string, { rows: string[], pieces: SceneWorld['pieces'] }>
+  /** Set on the world `worldFor` hands back for such a season; the file's own has none. */
+  season?: string
 }
 
 const DIR = new URL('../../web/src/scenes/', import.meta.url)
 
-/** Read once and kept: a scene's file changes only with a deploy. */
+/** A world and the cells it is read through. */
 type Loaded = { world: SceneWorld, solid: Map<string, SceneWorld['pieces'][number]>, pickup: Map<string, SceneWorld['pickups'][number]> }
+
+function index (world: SceneWorld): Loaded {
+  const solid = new Map<string, SceneWorld['pieces'][number]>()
+  for (const p of world.pieces) for (const [x, y] of p.cells) solid.set(`${x},${y}`, p)
+  const pickup = new Map<string, SceneWorld['pickups'][number]>()
+  for (const p of world.pickups) for (const [x, y] of p.cells) pickup.set(`${x},${y}`, p)
+  return { world, solid, pickup }
+}
+
+/** Read once and kept: a scene's file changes only with a deploy. A season of its own is kept under `slug:season`. */
 const worlds = new Map<string, Loaded | null>()
 
-function load (slug: string): Loaded | null {
-  if (worlds.has(slug)) return worlds.get(slug)!
+function load (slug: string, season?: string): Loaded | null {
+  const key = season ? `${slug}:${season}` : slug
+  if (worlds.has(key)) return worlds.get(key)!
   let found: Loaded | null = null
   // A slug is a Room row's, so it is one a member can cause by sitting at a
   // table (`booth-3-7`); only a name made of letters reaches the filesystem.
-  if (/^[a-z]+$/.test(slug)) {
+  if (season) {
+    const base = load(slug)?.world
+    const turned = base?.seasons?.[season]
+    if (base && turned) found = index({ ...base, rows: turned.rows, pieces: turned.pieces, season })
+  } else if (/^[a-z]+$/.test(slug)) {
     try {
-      const world = JSON.parse(readFileSync(new URL(`${slug}.world.json`, DIR), 'utf8')) as SceneWorld
-      const solid = new Map<string, SceneWorld['pieces'][number]>()
-      for (const p of world.pieces) for (const [x, y] of p.cells) solid.set(`${x},${y}`, p)
-      const pickup = new Map<string, SceneWorld['pickups'][number]>()
-      for (const p of world.pickups) for (const [x, y] of p.cells) pickup.set(`${x},${y}`, p)
-      found = { world, solid, pickup }
+      found = index(JSON.parse(readFileSync(new URL(`${slug}.world.json`, DIR), 'utf8')) as SceneWorld)
     } catch { /* a room with no scene (a booth) has no world */ }
   }
-  worlds.set(slug, found)
+  worlds.set(key, found)
   return found
 }
 
-/** The scene a Room row's slug names, or null for a room with none. */
-export const worldFor = (slug: string): SceneWorld | null => load(slug)?.world ?? null
+/** The cells a world is read through: its season's, when `worldFor` handed it back turned. */
+const loaded = (world: SceneWorld): Loaded | null => load(world.slug, world.season)
+
+/**
+ * The scene a Room row's slug names, or null for a room with none. It is the
+ * scene in the season the server's almanac is in (or `season`): the ice a
+ * winter pond makes is floor only then, and a screen that holds `/season` to
+ * another draws what the server does not walk.
+ */
+export function worldFor (slug: string, season: string = almanacAt(Date.now()).season): SceneWorld | null {
+  const base = load(slug)?.world ?? null
+  return base?.seasons?.[season] ? load(slug, season)!.world : base
+}
 
 /** Whether a figure may stand on a cell: floor, and on the stage. */
 export function walkable (world: SceneWorld, x: number, y: number): boolean {
@@ -63,7 +89,7 @@ export function walkable (world: SceneWorld, x: number, y: number): boolean {
 
 /** The name of the solid piece on a cell, or null for floor, a door or a bare wall. */
 export const pieceAt = (world: SceneWorld, x: number, y: number): string | null =>
-  load(world.slug)?.solid.get(`${x},${y}`)?.name ?? null
+  loaded(world)?.solid.get(`${x},${y}`)?.name ?? null
 
 /** A carousel's rider by its id, and its cells `ms` into the clock, or null. */
 export function riderOf (world: SceneWorld, id: string, ms: number): { id: string, cells: [number, number][] } | null {
@@ -76,7 +102,7 @@ export function riderOf (world: SceneWorld, id: string, ms: number): { id: strin
 
 /** The pickup lying on a cell, or null. */
 export const pickupAt = (world: SceneWorld, x: number, y: number): SceneWorld['pickups'][number] | null =>
-  load(world.slug)?.pickup.get(`${x},${y}`) ?? null
+  loaded(world)?.pickup.get(`${x},${y}`) ?? null
 
 /**
  * Whether a figure may stand on a cell: floor, or the cell of a piece that is
@@ -86,7 +112,7 @@ export const pickupAt = (world: SceneWorld, x: number, y: number): SceneWorld['p
  */
 export function standable (world: SceneWorld, x: number, y: number, gone: ReadonlySet<string>): boolean {
   if (walkable(world, x, y)) return true
-  const piece = load(world.slug)?.solid.get(`${x},${y}`)
+  const piece = loaded(world)?.solid.get(`${x},${y}`)
   return !!piece && gone.has(piece.id)
 }
 
@@ -110,7 +136,7 @@ export function obstacleAt (world: SceneWorld, x: number, y: number, ms: number,
   }
   const ch = world.rows[y]?.[x]
   if (ch === '.') return null
-  const piece = load(world.slug)?.solid.get(`${x},${y}`)
+  const piece = loaded(world)?.solid.get(`${x},${y}`)
   if (piece) return { kind: piece.fragile ? 'piece' : 'wall', id: piece.id }
   return { kind: 'wall' }
 }

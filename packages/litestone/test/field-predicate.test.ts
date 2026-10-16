@@ -369,3 +369,41 @@ describe('a read-policied NOT NULL column stays required to create', () => {
     expect(requiredOf('update') ?? []).toEqual([])
   })
 })
+
+// FJS-2649: a create the column's write policy refuses is a refusal of the
+// whole write -- the dropped required value reached SQLite as a 500.
+describe("a create a required column's @allow('write') refuses", () => {
+  const SCHEMA = `
+model Member {
+  id    Int     @id
+  name  String
+  email String  @allow('write', auth().isAdmin)
+  tier  String  @default("free") @allow('write', auth().isAdmin)
+  note  String? @allow('write', auth().isAdmin)
+}
+`
+  const open = async () => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
+    return { user: db.$setAuth({ id: 'u' }), admin: db.$setAuth({ id: 'a', isAdmin: true }) }
+  }
+
+  it('refuses with AccessDeniedError naming the column', async () => {
+    const { user } = await open()
+    const err: any = await user.member.create({ data: { name: 'x', email: 'x@y.z' } }).catch((e: any) => e)
+    expect(err).toBeInstanceOf(AccessDeniedError)
+    expect(err.message).toContain('"email"')
+  })
+
+  it('an admin creates it', async () => {
+    const { admin } = await open()
+    expect((await admin.member.create({ data: { name: 'a', email: 'a@b.c' } })).email).toBe('a@b.c')
+  })
+
+  it('a default-carrying and an optional policied column are dropped, not refused', async () => {
+    const SCH = `model M { id Int @id\n name String\n tier String @default("free") @allow('write', auth().isAdmin)\n note String? @allow('write', auth().isAdmin) }`
+    const db: any = await createClient({ db: ':memory:', schema: SCH })
+    const row = await db.$setAuth({ id: 'u' }).m.create({ data: { name: 'x', tier: 'gold', note: 'n' } })
+    expect(row.tier).toBe('free')
+    expect(row.note).toBeNull()
+  })
+})

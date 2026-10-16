@@ -258,17 +258,16 @@ Graded by whether the workload is Mesa's:
 **Built 2026-09-24 as `packages/mesa/bench/` (`bun run bench`)**, in the three tiers above:
 gzip bytes per fixture and DOM mutations per operation are gated in `bench/baseline.json`,
 milliseconds are reported as a ratio to a hand-written floor measured in the same browser,
-and heap is recorded. It is in neither `test` nor CI yet — (2) below is that step. The
-first read found the reconciler at the floor on all sixteen operations and two outliers,
+and heap is recorded. **The gate (`bench -- --gate`) is the last step of mesa's `test`
+script** (`FJS-D532`, 2026-10-15); the timed run stays by hand. The first read found the reconciler at the floor on all sixteen operations and two outliers,
 [FJS-1332](../ISSUES_ARCHIVE.md#fjs-1332) and [FJS-1333](../ISSUES.md#fjs-1333).
 
 **Left for later, each on its trigger:**
 
-- **Re-adopt the baseline once the runtime settles.** It was written 2026-09-24 against a
-  tree carrying another session's uncommitted `runtime.js` and `compiler.js` edits. When
-  those land, `bun run bench -- --adopt` from a clean tree, and read any DOM count that
-  moved before accepting it. The FJS-1332 fix is one of them and adds ~194 B gzip to
-  `rows`, so until then `bytes.rows` reads as a rise — the ratchet working, not a fault.
+- **Baseline re-adopted 2026-10-15** from a tree with the runtime edits landed: DOM counts
+  unmoved at the floor on all sixteen operations, gzip bytes `floor` 5615 → 5833 and
+  `rows` 10539 → 10809 — the FJS-1332 fix and the runtime growth since 09-24. A Vite
+  upgrade can redden the byte numbers with nothing wrong, and `--adopt` is the answer then.
 - **The next fixtures** — signal-favoring, dbmon, effectful-list, in the table's order.
   Each is a `.mesa` file and a vanilla twin running one workload from `shared/`, and each
   owes the same two correctness checks before its numbers count.

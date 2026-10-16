@@ -3,7 +3,7 @@
 // the paths that assemble their own SQL.
 
 import { modelToTableName } from './ddl.js'
-import { coerceBooleans, deserializeRow, buildWhere, parseSelectArg, quoteIdent, inList, keyIn, tupleOf, tuplesOf } from './query.js'
+import { coerceBooleans, deserializeRow, buildWhere, buildOrderBy, parseSelectArg, quoteIdent, inList, keyIn, tupleOf, tuplesOf } from './query.js'
 import { ValidationError } from './validate.js'
 import { buildPolicyFilter } from './policy.js'
 import { CapabilityNotDeclaredError } from './errors.js'
@@ -569,8 +569,27 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       const ws = buildWhere(relWhere, p, null, extraAlias ?? null, null, null, shapes[rel.targetModel].fieldKinds)
       return { clause: ws ? ` AND (${ws})` : '', params: p }
     }
+    // Order and window. The order is the relation's ORDER BY, so it holds inside
+    // each parent's group; the window is cut per parent after grouping, because
+    // the query is one batch across every parent and a LIMIT there would cap the
+    // batch. The target's columns are named bare, which the m2m join resolves
+    // against its result columns before the join table's.
+    const relOrderBy = typeof relInclude === 'object' && relInclude !== true
+      ? relInclude.orderBy ?? null : null
+    /** @type {any[]} */
+    const orderParams = []
+    const orderSql    = relOrderBy
+      ? buildOrderBy(relOrderBy, orderParams, Object.keys(relMap).length ? relMap : null)
+      : ''
+    const orderClause = orderSql ? ` ORDER BY ${orderSql}` : ''
+    const relOffset   = typeof relInclude === 'object' && relInclude !== true ? relInclude.offset ?? 0 : 0
+    const relLimit    = typeof relInclude === 'object' && relInclude !== true ? relInclude.limit ?? null : null
+    const windowed    = (/** @type {Row[]} */ group) =>
+      relOffset || relLimit != null
+        ? group.slice(relOffset, relLimit == null ? undefined : relOffset + relLimit)
+        : group
     // Soft delete mode for related table
-    const nestedMode    = typeof relInclude === 'object' && relInclude !== true
+    const nestedMode   = typeof relInclude === 'object' && relInclude !== true
       ? relInclude.withDeleted ? 'withDeleted' : relInclude.onlyDeleted ? 'onlyDeleted' : 'live'
       : 'live'
     // @@hasTemplates mode for related table — same shape as soft-delete mode.
@@ -748,8 +767,8 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       const rawRows = runInclude(relDb, rel.targetModel, 'include',
         `SELECT t.*, j."${rel.selfKey}" AS __jSelfKey${edgeSelect}${m2mFrom} FROM "${modelToTable(rel.targetModel)}" t ` +
         `INNER JOIN "${rel.joinTable}" j ON j."${rel.targetKey}" = t.${m2mPk} ` +
-        `WHERE ${selfIn}${lifeClause}${rwM.clause}${policyInClause}`,
-        [...selfBinds, ...(effWhere?.params ?? []), ...rwM.params, ...policyParams])
+        `WHERE ${selfIn}${lifeClause}${rwM.clause}${policyInClause}${orderClause}`,
+        [...selfBinds, ...(effWhere?.params ?? []), ...rwM.params, ...policyParams, ...orderParams])
 
       // Strip __jSelfKey before processing so it doesn't leak into the output row
       const selfKeys = rawRows.map(r => { const k = r.__jSelfKey; delete r.__jSelfKey; return k })
@@ -790,7 +809,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       }
 
       for (const row of rows) {
-        row[relName] = grouped.get(row[pkField]) ?? []
+        row[relName] = windowed(grouped.get(row[pkField]) ?? [])
       }
 
     } else {
@@ -828,8 +847,8 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
 
       const related = finishRelated(
         runInclude(relDb, rel.targetModel, 'include',
-          `SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rwH.clause}${policyClause}`,
-          [...keyBinds, ...effBinds, ...rwH.params, ...policyParams]),
+          `SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rwH.clause}${policyClause}${orderClause}`,
+          [...keyBinds, ...effBinds, ...rwH.params, ...policyParams, ...orderParams]),
         parsedNested
           ? { mode: 'select', selectedFields: parsedNested.requestedFields }
           : { mode: 'list' },
@@ -848,7 +867,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       }
 
       for (const row of rows) {
-        const group = grouped.get(tupleOf(row, rel.referencedKeys)) ?? []
+        const group = windowed(grouped.get(tupleOf(row, rel.referencedKeys)) ?? [])
         const shaped = parsedNested
           ? group.map(r => Object.fromEntries(Object.entries(r).filter(([k]) => parsedNested.requestedFields.has(k) && !parsedNested.injectedFKs.has(k))))
           : group

@@ -3646,14 +3646,26 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   function dropFieldWriteDenied(transformed) {
+    const refused = []
     for (const [fieldName, policy] of Object.entries(fieldPolicy)) {
       if (!policy.allow?.write?.length) continue
       if (!(fieldName in transformed)) continue
       const permitted = policy.allow.write.some(expr =>
         evalJs(expr, ctx, transformed, modelName, 'create')
       )
-      if (!permitted) delete transformed[fieldName]
+      if (permitted) continue
+      delete transformed[fieldName]
+      // A dropped column nothing else fills leaves the INSERT without a value
+      // for a NOT NULL column, and SQLite's answer is a 500 that reads as a
+      // crash. The caller was refused that column, so the write is refused.
+      const f = shape.model.fields.find(x => x.name === fieldName)
+      if (f && !f.type.optional && !isServerFilled(f) && !isServerAssignedId(f, shape.model)
+          && !f.attributes?.some(a => a.kind === 'transient')) refused.push(fieldName)
     }
+    if (refused.length) throw new AccessDeniedError(
+      `${modelName}: ${refused.map(f => `"${f}"`).join(', ')} ${refused.length > 1 ? 'are' : 'is'} required, ` +
+      `and this caller may not write ${refused.length > 1 ? 'them' : 'it'}.`,
+      { model: modelName, operation: 'create' })
   }
 
   // A `File` column is a storage reference, and turning the bytes a caller
@@ -3672,7 +3684,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (fieldPolicy[f]?.encrypted || fieldPolicy[f]?.hashed) return false
     return !(t?.name === 'File' && !t.array)
   }))
-  const _needsStorage = (v) => v !== null && typeof v === 'object' && !(v instanceof Date)
+  // A string is storage's too: a data URL is bytes and anything else but ref
+  // text (`{` first, the one thing FileStorage passes through) is refused there,
+  // so with none installed the column would keep a caller's URL as-is and a
+  // reader trusting it would render a stranger's address (`FJS-2699`).
+  const _needsStorage = (v) => typeof v === 'string'
+    ? !v.trimStart().startsWith('{')
+    : v !== null && typeof v === 'object' && !(v instanceof Date)
   function refuseFileWithoutStorage(data) {
     if (!_fileFields.length || plugins?.handles('File')) return
     for (const k of _fileFields) {

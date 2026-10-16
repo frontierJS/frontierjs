@@ -631,3 +631,54 @@ describe('a relation column names the label of the row it points at', () => {
     expect(column).toMatchObject({ display: 'relation', model: 'Customer', relation: 'customer', labelField: 'name' })
   })
 })
+
+// FJS-2743 — the children a seal freezes are a RELATION, which has no property
+// to carry a marker, so the seal rides on the `x-relations` entry.
+describe('sealedFields — a @sealed hasMany', () => {
+  const DOC = `
+enum DocStatus { draft  issued }
+
+model Doc {
+  id      Int       @id @default(autoincrement())
+  title   String
+  status  DocStatus @default(draft)
+  lines   DocLine[] @sealed
+  notes   DocNote[]
+  @@transitions(status,
+    issue: draft -> issued @seals
+  )
+  @@gate("0.0.0.0")
+}
+
+model DocLine {
+  id     Int    @id @default(autoincrement())
+  docId  Int
+  doc    Doc    @relation(fields: [docId], references: [id])
+  label  String
+  @@gate("0.0.0.0")
+}
+
+model DocNote {
+  id     Int    @id @default(autoincrement())
+  docId  Int
+  doc    Doc    @relation(fields: [docId], references: [id])
+  body   String
+  @@gate("0.0.0.0")
+}
+`
+
+  test('the relation names the seal, and an unsealed relation does not', async () => {
+    const { defs } = await build(DOC)
+    const rel = (name) => defs.Doc['x-relations'].find(r => r.field === name)
+    expect(rel('lines').seal).toEqual({ field: 'status', states: ['issued'] })
+    expect(rel('notes').seal).toBeUndefined()
+  })
+
+  test('the relation is frozen for a row that has reached the seal, and only then', async () => {
+    await build(DOC)
+    const docs = createResource('docs', { model: 'Doc' })
+    expect(docs.sealedFields({ id: 1, title: 'x', status: 'draft' })).toEqual([])
+    expect(docs.sealedFields({ id: 1, title: 'x', status: 'issued' })).toEqual(['lines'])
+    expect(docs.sealedFields(null)).toEqual([])
+  })
+})

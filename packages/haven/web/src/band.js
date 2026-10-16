@@ -5,7 +5,10 @@
 // The clock is cut into songs of `SONG_MS`, and song `k` is drawn from `k`:
 // each choice — key, progression, tempo, drum feel, and a style for the
 // bass, guitar, keys and singer — is picked from a short list of options
-// that each work, and `VETO` rerolls the pairings that do not. What makes any
+// that each work, and `VETO` rerolls the pairings that do not. One song in
+// `STRINGS_ODDS` is not the band at all: a slow piece for a bowed voice over
+// a pad and a held bass, with no drums or guitar, drawn from a generator of
+// its own so the band's songs keep their numbers. What makes any
 // draw sound right is what is never drawn: one key for everyone, a
 // pentatonic melody that lands on a chord tone each downbeat, and each part
 // in its own register. Everything is synthesized; there are no samples.
@@ -67,6 +70,12 @@ const FEELS = [
 const BASSES  = ['on the kick', 'eighths', 'walking']
 const GUITARS = ['arpeggio', 'running', 'strummed']
 const KEYSETS = ['stabs', 'backbeat', 'pad']
+// The slow piece (`ensemble: 'strings'`): the tempos and progressions a band's
+// song is never drawn at, and a singer who holds a note a bar or two.
+const STRINGS_ODDS = 0.15
+const SLOW_TEMPOS  = [54, 60, 66, 72]
+const LAMENTS      = PROGRESSIONS.filter((p) => p.name !== 'blues')
+const BOWED        = { name: 'bowed', phrases: [[[0, 6], [6, 2], [8, 8]], [[0, 8], [8, 4], [12, 4]], [[0, 12], [12, 4]]] }
 const SINGERS = [
   { name: 'busy',  phrases: [[[0, 4], [4, 2], [6, 2], [8, 6]], [[0, 2], [2, 2], [4, 8]]] },
   { name: 'long',  phrases: [[[0, 6], [8, 6]], [[0, 4], [4, 4], [8, 8]]] },
@@ -134,6 +143,15 @@ export function songOf(k) {
     }
   } while (VETO.some((v) => v(s)))
   const name    = `${pick(rand, ADJECTIVES)} ${pick(rand, NOUNS)}`
+  const slow    = rng(Math.imul(k, 0x27d4eb2f) ^ 0x57121)
+  s.ensemble    = slow() < STRINGS_ODDS ? 'strings' : 'band'
+  if (s.ensemble === 'strings') {
+    s.progression = pick(slow, LAMENTS)
+    s.tonic       = Math.floor(slow() * 12)
+    s.bpm         = pick(slow, SLOW_TEMPOS)
+    s.singer      = BOWED
+    s.keys        = 'pad'
+  }
   const stepMs  = 60000 / s.bpm / 4
   const barN    = Math.round((stepMs * 16 / 1000) * RATE)
   const length  = s.progression.chords.length
@@ -143,8 +161,16 @@ export function songOf(k) {
     // Whole bars, the last the ending, with room after it for its ring.
     bars:  Math.floor(SONG_N / barN) - TAIL,
     cycle: length >= 8 ? length * 2 : length * 4,
-    about: `${name} — ${key}, ${s.progression.name}, ${s.bpm} bpm ${s.feel.name}; bass ${s.bass}, guitar ${s.guitar}, keys ${s.keys}, singer ${s.singer.name}`,
+    about: s.ensemble === 'strings'
+      ? `${name} — ${key}, ${s.progression.name}, ${s.bpm} bpm strings; held bass, keys pad, singer ${s.singer.name}`
+      : `${name} — ${key}, ${s.progression.name}, ${s.bpm} bpm ${s.feel.name}; bass ${s.bass}, guitar ${s.guitar}, keys ${s.keys}, singer ${s.singer.name}`,
   }
+}
+
+/** The first slow piece after song `k`. */
+export function stringsAfter(k) {
+  for (let n = k + 1; n <= MAX_SONG; n++) if (songOf(n).ensemble === 'strings') return n
+  return null
 }
 
 // ─── one bar, rendered ────────────────────────────────────────────────────
@@ -265,6 +291,29 @@ function renderBar(song, b) {
     })
   }
 
+  // A bow: a slow attack, vibrato that comes in after the note has settled,
+  // and the harmonics of a saw rolled off, which is what separates it from `sing`.
+  const bow = (t0, note, len) => {
+    const w = (2 * Math.PI * hz(note)) / RATE
+    let ph = 0
+    add(PART.singer, t0, len + 0.5, 0.09, (t) => {
+      ph += w * (1 + 0.012 * Math.sin(2 * Math.PI * 5.2 * t) * Math.min(1, Math.max(0, (t - 0.3) * 2)))
+      const env = Math.min(1, t * 6) * (t > len ? Math.exp(-(t - len) * 8) : 1)
+      // sin(h*ph) by recurrence: two trig calls a sample, not six
+      const c = 2 * Math.cos(ph)
+      let prev = 0
+      let cur  = Math.sin(ph)
+      let y    = cur
+      for (let h = 2; h <= 6; h++) {
+        const next = c * cur - prev
+        prev = cur
+        cur  = next
+        y   += cur / h
+      }
+      return env * y
+    })
+  }
+
   const scale = SCALES[song.progression.mode].map((d) => (song.tonic + d) % 12)
   const melody = []
   for (let n = 62; n <= 81; n++) if (scale.includes(n % 12)) melody.push(n)
@@ -272,18 +321,45 @@ function renderBar(song, b) {
   // The ending: every part on the tonic once, left to ring.
   if (b === song.bars - 1) {
     const home = chordOf({ ...song, progression: { chords: [[0, song.progression.mode]] } }, 0)
-    crash(0)
-    kick(0)
+    const tonic = melody.find((n) => n % 12 === song.tonic && n >= 64) ?? melody[0]
     bass(0, home.bass, S * 16)
     keys(0, home.keys, S * 16, true)
+    if (song.ensemble === 'strings') {
+      bow(0, tonic, S * 14)
+      return done()
+    }
+    crash(0)
+    kick(0)
     home.guitar.forEach((n, i) => guitar(i * 0.012, n))
-    sing(0, melody.find((n) => n % 12 === song.tonic && n >= 64) ?? melody[0], S * 12)
+    sing(0, tonic, S * 12)
     return done()
   }
 
   const c     = b % song.cycle
   const chord = chordOf(song, b)
   const next  = chordOf(song, b + 1)
+
+  if (song.ensemble === 'strings') {
+    // pad from the first bar, the bass a bar later, the voice from the third;
+    // the voice breathes every fourth bar and the pad carries on under it
+    keys(0, chord.keys, S * 16, true)
+    if (b < 1) return done()
+    bass(0, chord.bass, S * 8)
+    bass(step(8), chord.bass, S * 8)
+    if (b < 2 || c % 4 === 3) return done()
+    let mel = Math.floor(rand() * melody.length)
+    for (const [at, len] of song.singer.phrases[c % 3]) {
+      mel = Math.max(0, Math.min(melody.length - 1, mel + Math.round(rand() * 4 - 2)))
+      let note = melody[mel]
+      if (at === 0) {
+        const tones = melody.filter((n) => chord.pcs.includes(n % 12))
+        note = tones.reduce((best, n) => (Math.abs(n - note) < Math.abs(best - note) ? n : best))
+        mel  = melody.indexOf(note)
+      }
+      bow(step(at), note, len * S)
+    }
+    return done()
+  }
   const solo  = c >= (song.cycle * 3) / 4   // the instrumental quarter of the cycle
   const { feel } = song
 

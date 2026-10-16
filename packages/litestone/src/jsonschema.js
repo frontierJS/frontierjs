@@ -1100,7 +1100,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     const relAttr = field.attributes.find(a => a.kind === 'relation')
     const fields     = relAttr?.fields     ? (Array.isArray(relAttr.fields)     ? relAttr.fields     : [relAttr.fields])     : []
     const references = relAttr?.references ? (Array.isArray(relAttr.references) ? relAttr.references : [relAttr.references]) : []
-    relations.push({
+    const entry = {
       field:      field.name,
       model:      field.type.name,
       type:       fields.length ? 'belongsTo' : 'hasMany',
@@ -1108,7 +1108,17 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       references,
       onDelete:   relAttr?.onDelete ?? null,
       optional:   field.type.optional,
-    })
+    }
+    // @sealed — a relation has no property to carry `x-litestone-seal`, and the
+    // children it freezes are frozen by the PARENT's state, so the same
+    // { field, states } pair rides on the entry. Without it no screen can tell
+    // that a document's lines are locked.
+    if (field.attributes.some(a => a.kind === 'sealed')) {
+      const seal = sealedStates(model.attributes?.find(
+        a => a.kind === 'transitions' && sealedStates(a)))
+      if (seal) entry.seal = { field: seal.field, states: [...seal.states] }
+    }
+    relations.push(entry)
   }
   if (relations.length) result['x-relations'] = relations
 

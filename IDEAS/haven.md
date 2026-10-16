@@ -1731,7 +1731,7 @@ scene that wants one has it.
     (Lodge's `.[__].` club chair with a seat, Colin's wing chair). One sized
     piece each would redraw a picture, and 17.7 compares art, so a shared
     name over different drawings does not trip it.
-- [ ] 17.5 Out of doors. Lights: `torch`, `brazier`, `campfire` (Ravine's
+- [x] 17.5 Out of doors. Lights: `torch`, `brazier`, `campfire` (Ravine's
   `fire`). Growing: the tree's kinds — `oak` (Glade's), `palm` (Island's),
   `juniper` (Ravine's), `cactus` (Sheriff's) — `stump` and `log` (Woods'),
   `bush`, `reeds`. Stone: `rock(size)` for Mine's `rock`, Glade's `stone` and
@@ -1742,8 +1742,33 @@ scene that wants one has it.
   `stall` (Square's and Market's), `fountain`, `flag` (Range's). Work: `bales`
   (Range's), `woodpile` (Lodge's `firewood`), `rails(w)` (Mine's),
   `wheelbarrow`, `scarecrow`. Camp: `tent`, `bedroll`, `telescope` (Ravine's).
-- [ ] 17.6 What grows has seasons: `hedge`, `bush` and `flower` each stand on
-  the same cells in every season, as `tree` does (`checkSeasons`).
+  - Moved, every `*.frame.txt` unchanged: `pieces/growth.js` (`oak`, `palm`,
+    `juniper`, `cactus`, `stump`, `log`), `stone.js` (`stone`, `boulder`),
+    `campfire.js` (its `h` a light of 3, so Ravine's palette drops it),
+    `camp.js` (`telescope`), `work.js` (`bales(rows)`, `woodpile`, `rails(w)`),
+    `water.js` (`water(w, h, dry)` -- the pool with what stands in it cut out,
+    Canal's and Docks' one recipe -- `deck(name, w, h, options)`, which is
+    Canal's bridge, the docks' pier and the island's jetty, `rowboat`,
+    `bollard`) and `town.js` (`house(sign)` -- the workshop's and the town
+    hall's, one 20-wide house -- `well`, `stall`, `marketStall(name, awning,
+    wares, inks)`, `fence(posts, key)`, `milestone`, `flag`, `fountain`,
+    `basin`).
+  - Four `world.json` ids moved with their names: `rowboat`, `woodpile`,
+    `campfire`, and Ravine's `railing`, which is `fence(7, 'e')` -- the same
+    drawing as the road's.
+  - Kept scene-local: Mine's `rock` (the cavern, a map with the tunnels left
+    out), Glade's `pond` beside `home.js`'s (two drawings, one name, as 17.3
+    left them), the square's `houseB` and `houseC` (two sizes, no sign), and
+    the market stalls' `fruit-cart`. `torch`, `brazier`, `bush`, `reeds`,
+    `gate`, `wheelbarrow`, `scarecrow`, `tent`, `bedroll` wait until a scene
+    places one.
+- [x] 17.6 What grows has seasons: `hedge` and `flower` each stand on the same
+  cells in every season, as `tree` does. Every `*.frame.txt` and `*.world.json`
+  is unchanged (the frames are summer). A season's letters are its own, on
+  letters no scene names; the dormant flower is floor and `dye`s nobody.
+  `scenes.test.js` holds every seasonal piece in `pieces/` to the same floor
+  flag and the same non-overhead cells in each of its seasons, so `bush` is
+  held to it the day a scene places one.
 - [ ] 17.7 A twin is refused: `scenes.test.js` fails a scene-local piece whose
   art is a `pieces/` piece's, naming the import. Until then nothing stops
   17.1's duplicates from growing back.

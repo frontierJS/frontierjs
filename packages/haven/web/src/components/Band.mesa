@@ -9,6 +9,8 @@
   // that sounds wrong is reported: by its number. `/song <n>` asks for song
   // n (`api/src/setlist.ts`): the server answers a cue at the next bar line,
   // and the room's `song` event seats it on every screen in the loft.
+  // `/song strings` asks for the next slow piece after the one playing, and
+  // `/songs [n]` lists eight from n (the one playing, if none is named).
   //
   // It draws the scope too (`scope.js`): a trace per member in the box the
   // scene hangs over the stage, each lane in that member's ink, moving with
@@ -21,7 +23,7 @@
   import { getClient } from '@frontierjs/sierra/resource'
   import { stream } from '#sound'
   import { at, tint } from '#cell'
-  import { createBand, listening, songAt, songOf, startOf, MAX_SONG, PARTS, RATE } from '@/band.js'
+  import { createBand, listening, songAt, songOf, startOf, stringsAfter, MAX_SONG, PARTS, RATE } from '@/band.js'
   import { traces, COL_MS } from '@/scope.js'
 
   var verbs = $context.commands
@@ -48,13 +50,25 @@
   async function song({ args }) {
     const asked = args.trim()
     if (!asked) return playing()
-    const k = Number(asked)
-    if (!/^\d+$/.test(asked) || k > MAX_SONG) return `/song names what is playing; /song <n> asks for song n, 0 to ${MAX_SONG}`
+    const now = Date.now()
+    const k   = asked === 'strings' ? stringsAfter(songAt(now, band.cueOf(now))) : Number(asked)
+    if (k === null || !/^\d+$/.test(String(k)) || k > MAX_SONG) return `/song names what is playing; /song <n> asks for song n, 0 to ${MAX_SONG}; /song strings the next slow piece`
     try {
       const cue = await getClient().service('band').invoke('request', null, { roomId: room.id, song: k })
       band.seat(cue)
       return `#${k} ${cue.name} from the next bar`
     } catch (e) { return e.message }
+  }
+  function songs({ args }) {
+    const now   = Date.now()
+    const first = args.trim() ? Number(args.trim()) : songAt(now, band.cueOf(now))
+    if (!Number.isInteger(first) || first < 0 || first > MAX_SONG) return `/songs [n] lists eight songs from n, 0 to ${MAX_SONG}`
+    const rows = []
+    for (let k = first; k < first + 8 && k <= MAX_SONG; k++) {
+      const s = songOf(k)
+      rows.push(`#${k} ${s.name} ${s.key} ${s.bpm}${s.ensemble === 'strings' ? ' strings' : ''}`)
+    }
+    return rows.join(' · ')
   }
   function toggle() {
     if (stop) {
@@ -85,7 +99,8 @@
   })
   $.onDestroy(() => { gone = true; stop?.() })
   $.onDestroy(verbs.add({ word: 'music', help: '/music', run: toggle }))
-  $.onDestroy(verbs.add({ word: 'song', help: '/song [n]', run: song }))
+  $.onDestroy(verbs.add({ word: 'song', help: '/song [n|strings]', run: song }))
+  $.onDestroy(verbs.add({ word: 'songs', help: '/songs [n]', run: songs }))
 
   // ─── the scope ─────────────────────────────────────────────────────────────
 

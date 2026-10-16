@@ -2219,6 +2219,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // answer no schema can carry, which is why it is asked of the record.
       if (sealedFor(rule, record)) out.push(name)
     }
+    // A `@sealed` hasMany is frozen by the same state, and a relation has no
+    // field rule to carry it, so the seal rides on its `x-relations` entry.
+    for (const rel of modelDef?.['x-relations'] ?? []) {
+      if (rel?.seal && rel.seal.states.includes(record[rel.seal.field])) out.push(rel.field)
+    }
     return out
   }
 

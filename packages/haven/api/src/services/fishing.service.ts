@@ -76,7 +76,7 @@ export function createFishingService (app: HavenApp) {
       if (wait > 0) throw new TooManyRequests(`Your line is still out for ${Math.ceil(wait / 100) / 10}s`)
 
       const now    = Date.now()
-      const caught = castLine(almanacAt(now))
+      const caught = castLine(almanacAt(now), pieceAt(world!, at.x, at.y))
       // The answer is not a Member row for the bus to announce.
       $.dispatch = false
       const thief = caught === 'nothing' ? animalAt(channel, world, THIEF.name, now) : null

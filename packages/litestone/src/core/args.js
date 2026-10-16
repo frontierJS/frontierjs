@@ -259,6 +259,47 @@ function walkGuardedInclude(include, modelName, facet, shapes, out, depth = 0) {
 // `walkGuardedInclude` already recurses this exact shape to ask whether a
 // column is @guarded. This is the existence check beside it, and it calls the
 // same generic graders the top level does rather than restating their wording.
+// An include's order and window. `include.js` applies orderBy as the relation's
+// ORDER BY and limit/offset to each parent's own rows; what it cannot apply is
+// refused here, because a key read by nothing leaves the caller trusting an
+// order and a cap they never get (FJS-2692).
+/** @param {any} v @param {string} key @param {any} rel @param {string} target @param {string} method @param {Set<string>} relations */
+function checkIncludeWindow(v, key, rel, target, method, relations) {
+  for (const bad of ['take', 'skip']) {
+    if (bad in v) throw new ValidationError([{
+      path:    ['include', key, bad],
+      message: `'${bad}' is not a Litestone option on ${target}.${method} — use ` +
+               (bad === 'take' ? `'limit' (max rows per parent)` : `'offset' (rows to skip per parent)`),
+    }])
+  }
+  for (const opt of ['limit', 'offset']) {
+    if (v[opt] == null) continue
+    if (!Number.isInteger(v[opt]) || v[opt] < 0) throw new ValidationError([{
+      path:    ['include', key, opt],
+      message: `include.${key}.${opt} must be a non-negative integer, got: ${JSON.stringify(v[opt])}`,
+    }])
+    if (rel.toOne || rel.kind === 'belongsTo') throw new ValidationError([{
+      path:    ['include', key, opt],
+      message: `'${opt}' on include '${key}' has nothing to window: it is a to-one relation and answers one row or null.`,
+    }])
+  }
+  if (v.orderBy != null && rel.kind === 'belongsTo') throw new ValidationError([{
+    path:    ['include', key, 'orderBy'],
+    message: `'orderBy' on include '${key}' has nothing to order: a belongsTo relation answers one row or null.`,
+  }])
+  for (const item of Array.isArray(v.orderBy) ? v.orderBy : [v.orderBy]) {
+    if (!item || typeof item !== 'object') continue
+    for (const k of Object.keys(item)) {
+      if (!relations.has(k)) continue
+      throw new ValidationError([{
+        path:    ['include', key, 'orderBy', k],
+        message: `orderBy '${k}' inside include '${key}' sorts through a relation, which an include's query does not join. ` +
+                 `Order by a column of ${target}, or read ${target} directly.`,
+      }])
+    }
+  }
+}
+
 /** @param {any} include @param {string} modelName @param {string} method @param {Ctx} ctx @param {boolean} isWrite @param {number} [depth] */
 function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
   if (!include || typeof include !== 'object' || depth > 12) return
@@ -284,6 +325,7 @@ function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
       path:    ['include', k, 'orderBy', problems[0].key],
       message: problems[0].message.replace('%MODEL%', `${name}.${method}`),
     }])
+    checkIncludeWindow(v, k, rel, name, method, relations)
 
     if (v.select && typeof v.select === 'object' && !Array.isArray(v.select)) {
       const selectable = new Set()
