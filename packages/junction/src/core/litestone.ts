@@ -1879,9 +1879,14 @@ export function checkUnknownKeys(
     // The strip is for a column a client echoes back from a read. A @guarded
     // column is never read, so naming one is never an echo: dropping it would
     // answer 2xx for a value that was not stored (`FJS-1970`, `FJS-D427`).
+    // A hook that named the column in `ctx.system` meant to write it, and
+    // "leave it out" sends it to drop a value it was right to supply. The
+    // client's schema has no such key until validation is over.
     ...locked.map(field => ({
       field,
-      message: `is @guarded on ${what}, a system-context column no caller writes. Leave it out of the payload.`,
+      message: ctx.system?.has(field)
+        ? `is @guarded on ${what}, a system-context column the client schema omits, so a before hook cannot add it. Add it in a \`validated:\` hook, which runs after this check.`
+        : `is @guarded on ${what}, a system-context column no caller writes. Leave it out of the payload.`,
     })),
   ])
 }
@@ -4049,7 +4054,8 @@ export function cookie(name: string): BearerSource {
 export interface BearerClaimOptions {
   /** Where the token is on the request — `header('x-cart-token')`, `cookie('portal')`. */
   from:    BearerSource
-  /** The model holding the grants. Its accessor is the name with a lower first letter. */
+  /** The ACCESSOR of the model holding the grants — its name with a lower first
+   *  letter, so `model PortalLink` is `'portalLink'`. A PascalCase name is refused. */
   model:   string
   /** The column holding the token's DIGEST. Never the token: what is stored is
    *  `fingerprint(token, { key, purpose })` and the token itself is in the email
@@ -4160,6 +4166,14 @@ export interface BearerResolver extends SelfDescribedResolver {
 }
 
 export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
+  // Every request carrying the header would otherwise answer 500 *not a table
+  // in this schema*; a model's name reads as the right value for this option.
+  if (/^[A-Z]/.test(opts.model)) {
+    const accessor = opts.model[0].toLowerCase() + opts.model.slice(1)
+    throw new Error(
+      `bearerClaim: \`model\` is the client's accessor, not the model's name — ` +
+      `\`model ${opts.model}\` is \`'${accessor}'\`.`)
+  }
   const purpose = opts.purpose ?? `${opts.model}.${opts.column}`
   // A link and the cookie it is redeemed for digest under different purposes,
   // so an unredeemed link presented as the cookie matches nothing and a

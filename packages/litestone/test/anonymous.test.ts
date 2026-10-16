@@ -108,10 +108,10 @@ describe('@@anonymous — a logged write in the same transaction is refused', ()
     const { db, close } = await open()
     await expect(db.$transaction(async (tx: any) => {
       await tx.ballot.create({ data: { id: 1, rating: 4 } })
-      await tx.$audit({ operation: 'survey.answered', meta: { person: 'ana' } })
+      await tx.$audit({ operation: 'survey.answered', model: 'Ballot', meta: { person: 'ana' } })
     })).rejects.toThrow(/\$audit.*Ballot.*@@anonymous/s)
     await expect(db.$transaction(async (tx: any) => {
-      await tx.$audit({ operation: 'survey.answered', meta: { person: 'ana' } })
+      await tx.$audit({ operation: 'survey.answered', model: 'Ballot', meta: { person: 'ana' } })
       await tx.ballot.create({ data: { id: 2, rating: 4 } })
     })).rejects.toThrow(/Ballot.*\$audit.*@@anonymous/s)
     expect(await db.ballot.count()).toBe(0)

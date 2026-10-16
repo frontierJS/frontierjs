@@ -5,21 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Litestone Studio</title>
 <!--
-  The design system is @frontierjs/css, loaded from the registry. Studio is a
-  single embedded file with no build step and litestone has no runtime
-  dependencies, so there is nowhere to inline it from.
+  The design system is @frontierjs/css, served by Studio itself from
+  studio.css, a copy packages/css's build writes (FJS-D913). Litestone depends
+  on toolbelt alone, so it cannot resolve the package, and a host with no egress
+  cannot reach a CDN. Fonts are the system stack: Inter and JetBrains Mono lead
+  the list for a machine that has them, and nothing is fetched for one that does
+  not.
 
-  A Studio opened on a host with no egress gets no stylesheet. Nothing here may
-  therefore depend on CSS to WORK: views hide with the [hidden] attribute, every
-  control is a real button or field, and collapsibles are <details>. Unstyled is
-  ugly and still operable.
+  Nothing here may depend on CSS to WORK: views hide with the [hidden]
+  attribute, every control is a real button or field, and collapsibles are
+  <details>. Unstyled is ugly and still operable.
 -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@frontierjs/css@0.15.0/dist/frontier.min.css">
+<link rel="stylesheet" href="/studio.css">
 <!-- The mark, inline, so the tab icon is one more thing the file carries itself. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 26'%3E%3Cpath d='M10 .9c4.5 0 8.7 6.2 8.7 12.8 0 6.6-3.9 11.4-8.7 11.4s-8.7-4.8-8.7-11.4C1.3 7.1 5.5.9 10 .9Z' fill='%230A1219' stroke='%232A313C' stroke-width='.7'/%3E%3Cpath d='M10 3.2C7.4 6.6 5.6 10.1 5.6 13.3c0 2.5 1.7 4.4 4.4 5.5Z' fill='%234CCBFF'/%3E%3Cpath d='M10 3.2c2.6 3.4 4.4 6.9 4.4 10.1 0 2.5-1.7 4.4-4.4 5.5Z' fill='%2300A7FF'/%3E%3Cpath d='M10 3.2v19.2' stroke='%23D6F1FF' stroke-width='.85' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
 /*
  * Studio's own layer, on top of @frontierjs/css.
  *
@@ -5235,10 +5235,12 @@ function exCard(row, count) {
   const chips = (label, list, level) => !list?.length ? '' : `
     <div class="cluster"><span class="text-muted">${esc(label)}</span>
       ${list.map(w => {
-        const target = _catalog.find(r => r.word === w && r.level === level) ?? _catalog.find(r => r.word === w)
+        // `<level>:<word>` names the level; a bare word is the row's own level first
+        const [want, name] = w.includes(':') ? w.split(':') : [level, w]
+        const target = _catalog.find(r => r.word === name && r.level === want) ?? _catalog.find(r => r.word === name)
         return target
           ? `<button class="btn ghost compact ex-word" onclick="exGo({kind:'${target.level === 'schema' ? 'top' : 'word'}',word:'${target.word}',level:'${target.level}'})">${esc(exTyped(target.level, target.word))}</button>`
-          : `<span class="badge muted">${esc(w)}</span>`
+          : `<span class="badge muted">${esc(name)}</span>`
       }).join('')}
     </div>`
 

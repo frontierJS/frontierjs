@@ -17,6 +17,7 @@ import type { AuthPluginOptions }                                   from './type
 import { createAuthServices, asPrincipal, refuseDelegated }         from './services.ts'
 import { SupportEpisodeError }                                     from './errors.ts'
 import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
+import type { AuthCleanupHandle }                                 from './cleanup.ts'
 
 /**
  * Where a half-finished login lives in cookie mode.
@@ -78,14 +79,19 @@ export function createAuthPlugin(
   // a mistake worth naming at boot rather than a 500 on first click.
   const oauthAuth       = auth as Partial<AuthOAuth>
   const oauthPath       = `${prefix}/oauth`
+  // Feature-detected like the OAuth half: a third-party IAuth prunes its own rows.
+  const cleanup         = (auth as IAuth & { cleanup?: AuthCleanupHandle }).cleanup
 
   return {
     name: '@frontierjs/auth',
+
+    work() { cleanup?.start() },
 
     // Both limiters own a sweep timer. They are unref'd so they never hold the
     // process open, but a test process that builds many apps would otherwise
     // leave one running per app against a live counter map.
     shutdown() {
+      cleanup?.stop()
       ;(loginLimiter    as unknown as { dispose?(): void }).dispose?.()
       ;(registerLimiter as unknown as { dispose?(): void }).dispose?.()
       ;(resetLimiter    as unknown as { dispose?(): void }).dispose?.()

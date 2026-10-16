@@ -80,7 +80,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@slug` | Clean a value on write | [(<field>…)] |  |  |  |
 | `@values` | Refuse a bad value | (<ValueSetName>[, required\|open\|suggested][, dependsOn: <column>[ on <sourceColumn>]]) | on a model's field · on a trait's field | strength: required · open · suggested |  |
 | `@label` | Refuse a bad value | ("Human name") | on a model's field · on a type's field · on a trait's field · on an enum member |  |  |
-| `@required` | Refuse a bad value | [([where: <expr>][, message: "…"])] |  |  |  |
+| `@required` | Refuse a bad value | [([where: <expr>][, "message"])] |  |  |  |
 | `@email` | Refuse a bad value | [(message)] |  |  |  |
 | `@url` | Refuse a bad value | [(message)] |  |  |  |
 | `@phone` | Refuse a bad value | [(message)] |  |  |  |
@@ -195,6 +195,7 @@ Shapes the parser accepts and something later refuses.
 | `fts-over-a-column-search-cannot-read` | error | a @@fts index names a column whose stored text is not the value |
 | `validator-on-a-column-no-caller-writes` | error | a validator on a column no caller can write never runs |
 | `value-rule-on-a-relation` | error | a value validator on a relation grades nothing |
+| `validator-on-the-wrong-type` | error | a validator written for a type the column is not |
 | `foreign-key-without-index` | warn | a foreign key column with no index |
 | `transition-to-a-state-nothing-reaches` | warn | an enum value no transition can reach |
 | `label-column-that-may-be-null` | warn | @@label names a column that may be null |

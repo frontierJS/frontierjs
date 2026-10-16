@@ -27,7 +27,7 @@ errors.ts    named domain errors (AuthError and friends)
 db/*.lite    the models this package ships — user.lite (the app's) + auth.lite
 schema.ts    reads those two — authUserModel / authMachineryModels / both
 services.ts  account / sessions / api-keys / connections — the half that is not a route
-cleanup.ts   createAuthCleanupJobs() — expiry sweeps
+cleanup.ts   the expiry sweeps — `auth.cleanup`, started by the plugin's work()
 crypto.ts    hashing / token generation
 totp.ts      RFC 6238 codes, base32, recovery codes — clockless (`FJS-D261`)
 types.ts

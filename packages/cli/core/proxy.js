@@ -179,7 +179,10 @@ function writeText(socket, status, body) {
       'content-type: text/plain; charset=utf-8\r\n' +
       `content-length: ${bytes}\r\n` +
       'connection: close\r\n\r\n' + body)
-    socket.end()
+    // `connection: close` promises the proxy closes; end() only half-closes, and
+    // a client that keeps its own side open would hold the socket forever.
+    // destroySoon() ends, flushes, then destroys.
+    socket.destroySoon()
   } catch { socket.destroy() }
 }
 

@@ -167,7 +167,8 @@ and let `migrate dev` build it, which is what Prisma does; a development
 database is disposable, and this is the option that keeps the data.
 
 ```js
-import { create, apply, status, verify, parseFile } from '@frontierjs/litestone'
+import { parseFile } from '@frontierjs/litestone'
+import { create, apply, status, verify } from '@frontierjs/litestone/migrations'
 
 const parseResult = parseFile('./schema.lite')
 const raw         = db.$rawDbs.main          // apply, status and verify take the SQLite handle

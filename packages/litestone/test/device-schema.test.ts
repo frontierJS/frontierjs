@@ -136,17 +136,6 @@ describe('a relation out of the set comes out, and its column stays', () => {
     expect(fieldNames(r, 'Sheet')).toContain('counts')
   })
 
-  // `@@index([variant])` over a relation field is accepted by the parser and
-  // SQLite's double-quote-as-string-literal misfeature turns it into an index
-  // on the constant 'variant' (`FJS-1177`). In the device schema the field is
-  // gone outright, so the index is dropped rather than carried as a lie.
-  test('an index naming a dropped relation is dropped and graded', () => {
-    const r = deviceSchema(parse(SOURCE.replace('@@index([sheetId])', '@@index([variant])')))
-    const count = modelNamed(r, 'Count')
-    expect(count.attributes.some((a: any) => a.kind === 'index')).toBe(false)
-    expect(r.notes.some((n: any) => n.what.includes('@@index([variant])'))).toBe(true)
-  })
-
   test('an index over a column that stayed is untouched', () => {
     const count = modelNamed(project(), 'Count')
     expect(count.attributes.find((a: any) => a.kind === 'index').fields).toEqual(['sheetId'])
@@ -231,6 +220,17 @@ describe('the blocks a device cannot have', () => {
       '\ndatabase main { path "./m.db" }\n'
     const sheet = modelNamed(deviceSchema(parse(src)), 'Sheet')
     expect(sheet.attributes.some((a: any) => a.kind === 'db')).toBe(false)
+  })
+
+  // FJS-2406: the model-level trail names a database the device does not have,
+  // and the field-level one was already graded. Silence here is a trail that
+  // does nothing with no one told.
+  test('a model-level @@trail(audit) loses the attribute and is graded, as the field-level one is', () => {
+    const src = SOURCE.replace('  @@sync(server)', '  @@trail(audit)\n  @@sync(server)') +
+      '\ndatabase audit { path "./audit/" driver trail }\n'
+    const r = deviceSchema(parse(src))
+    expect(modelNamed(r, 'Sheet').attributes.some((a: any) => a.kind === 'trail')).toBe(false)
+    expect(noteFor(r, 'Sheet @@trail(audit)')?.grade).toBe('lost')
   })
 
   test('a tenancy block is dropped and graded', () => {

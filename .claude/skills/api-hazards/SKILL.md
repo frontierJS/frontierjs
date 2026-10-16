@@ -17,6 +17,7 @@ Detail: `references/ctx-and-the-call.md`
 - **A payload key that is not a column is declared `@transient`, and it arrives at `ctx.transients` — never at `ctx.data`.**
 - **A payload key that names no field of the model is a 400; one that names a field the caller may not WRITE is dropped in silence** (`FJS-889`)
 - **`PUT` to an id that does not exist is 404 and does not create the row** (`FJS-D207`)
+- **A write by id the row policy refuses is 403 for a row the caller can read, 404 for one they cannot** (`FJS-1750`)
 - **`update` is `patch` with an id REQUIRED, and it MERGES** (`FJS-D179`)
 - **The METHOD decides list vs single.**
 

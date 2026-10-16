@@ -219,7 +219,11 @@ export function generateLiteSchema(db, opts = {}) {
   return introspectToLite(db, opts).lite
 }
 
-export function introspectToLite(db, { camelCase = true } = {}) {
+// `database` is the name this file is in a multi-database schema. A SQLite file
+// cannot say it, so the caller who knows (the schema's `database` block) passes
+// it, and every model carries `@@db(name)` -- pasted into that schema, a model
+// without it lands in the default database.
+export function introspectToLite(db, { camelCase = true, database = null } = {}) {
   const schema = introspect(db)
 
   // Same shape the four import readers use, so one `summarize` reads both.
@@ -506,6 +510,8 @@ export function introspectToLite(db, { camelCase = true } = {}) {
     // name, which is the only fact this can check.
     if (tableNameFromModel(modelName) !== tableName)
       modelAttrs.push(`  @@map("${tableName}")`)
+
+    if (database) modelAttrs.push(`  @@db(${database})`)
 
     if (!strict) modelAttrs.push('  @@noStrict')
     if (hasSoftDelete) modelAttrs.push('  @@softDelete')

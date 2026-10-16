@@ -60,7 +60,8 @@
       "import": "./src/core/migrate.js"
     },
     "./migrations": {
-      "import": "./src/core/migrations.js"
+      "import": "./src/core/migrations.js",
+      "types": "./src/core/migrations.d.ts"
     },
     "./parser": {
       "import": "./src/core/parser.js"

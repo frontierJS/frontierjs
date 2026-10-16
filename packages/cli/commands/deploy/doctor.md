@@ -103,22 +103,22 @@ const deployConf     = await deployConfFor($, flag, log)
 renderHeader('Config')
 
 if (!frontierConfig) {
-  renderCheck('frontier.config.js', 'fail', 'fix: fli make:deploy')
+  renderCheck('frontier.config.js', 'fail', 'fix: fli make:deploy --server <host>')
   fail()
   echo('')
   log.error(`No frontier.config.js found in ${$.paths.root}`)
-  log.info(`Run \x1b[1mfli make:deploy\x1b[0m to scaffold one.`)
+  log.info(`Run \x1b[1mfli make:deploy --server <host>\x1b[0m to scaffold one.`)
   $.config.abort = true
   return
 }
 renderCheck('frontier.config.js exists', 'pass')
 
 if (!deployConf) {
-  renderCheck('deploy block in frontier.config.js', 'fail', 'fix: fli make:deploy')
+  renderCheck('deploy block in frontier.config.js', 'fail', 'fix: fli make:deploy --server <host>')
   fail()
   echo('')
   log.error('frontier.config.js has no deploy block')
-  log.info(`Run \x1b[1mfli make:deploy\x1b[0m to add one.`)
+  log.info(`Run \x1b[1mfli make:deploy --server <host>\x1b[0m to add one.`)
   $.config.abort = true
   return
 }

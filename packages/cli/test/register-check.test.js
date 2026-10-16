@@ -833,3 +833,74 @@ describe('the overview table', () => {
     expect(here('duplicate-id')).toHaveLength(0)
   })
 })
+
+// ─── a ruling's Lives in, held to the tree (FJS-771) ─────────────────────────
+
+describe('lives-in', () => {
+  let LROOT
+
+  beforeAll(() => {
+    LROOT = mkdtempSync(join(tmpdir(), 'fli-livesin-'))
+    writeFileSync(join(LROOT, 'package.json'), DECLARED)
+    mkdirSync(join(LROOT, 'packages', 'alpha', 'src', 'core'), { recursive: true })
+    writeFileSync(join(LROOT, 'packages', 'alpha', 'package.json'), JSON.stringify({ name: '@frontierjs/alpha' }))
+    writeFileSync(join(LROOT, 'packages', 'alpha', 'src', 'core', 'client.js'), 'export function openClient() {}\n')
+    writeFileSync(join(LROOT, 'ISSUES.md'), '## S1 — blockers\n| Id | Pkg | Title | Status | Verified | Detail |\n| --- | --- | --- | --- | --- | --- |\n')
+    writeFileSync(join(LROOT, 'DECISIONS.md'), [
+      '# Decisions', '', '## Rulings', '',
+      '### <a id="fjs-d11"></a>2026-08-18 · `FJS-D11` — every citation holds.',
+      '*Lives in:* `packages/alpha/src/core/client.js` (`openClient`) · `src/core/client.js` (`openClient`) · `@frontierjs/alpha/sub` · `FJS-D11` · `/a/route` · `*.glob` · `Name.md`.', '',
+      '### <a id="fjs-d12"></a>2026-08-18 · `FJS-D12` — a path nothing holds.',
+      '*Lives in:* `packages/alpha/src/core/gone.js` · `core/also-gone.js`.', '',
+      '### <a id="fjs-d13"></a>2026-08-18 · `FJS-D13` — a symbol the file dropped.',
+      '*Lives in:* `packages/alpha/src/core/client.js` (`openClient`, `closeClient`).', '',
+      '### <a id="fjs-d14"></a>2026-08-18 · `FJS-D14` — a package nobody declares, across two lines.',
+      '*Lives in:* `src/core/client.js`,',
+      '`@frontierjs/utils` and `@frontierjs/alpha`.', '',
+      '### <a id="fjs-d15"></a>2026-08-18 · `FJS-D15` — retired, so its paths are history.',
+      '**Status:** superseded-by [`FJS-D11`](#fjs-d11)',
+      '*Lives in:* `packages/alpha/src/core/gone.js`.', '',
+      '### <a id="fjs-d16"></a>2026-08-18 · `FJS-D16` — a bare path is ambiguous, so its symbol is not graded.',
+      '*Lives in:* `src/core/client.js` (`notHere`).', '',
+    ].join('\n'))
+  })
+
+  afterAll(() => { rmSync(LROOT, { recursive: true, force: true }) })
+
+  const hits = () => of(runRegisterCheck({ root: LROOT, staleDays: 0 }), 'lives-in').map(h => `${h.id}: ${h.message}`)
+
+  test('a citation that resolves, in any of the spellings in use, is silent', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D11:'))).toEqual([])
+  })
+
+  test('a path no package holds is reported, root-relative or package-relative', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D12:'))).toEqual([
+      'FJS-D12: Lives in names packages/alpha/src/core/gone.js, which is not in the tree',
+      'FJS-D12: Lives in names core/also-gone.js, which is not in the tree',
+    ])
+  })
+
+  test('a symbol the file no longer mentions is reported, one it still does is not', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D13:'))).toEqual([
+      'FJS-D13: Lives in names closeClient in packages/alpha/src/core/client.js, which the file no longer mentions',
+    ])
+  })
+
+  test('a package no package.json declares is reported, across a wrapped line', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D14:'))).toEqual([
+      'FJS-D14: Lives in names @frontierjs/utils, which no package.json declares',
+    ])
+  })
+
+  test('a retired ruling is exempt, as a closed row is', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D15:'))).toEqual([])
+  })
+
+  test('a bare package-relative path grades no symbol', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D16:'))).toEqual([])
+  })
+
+  test('the register this ships with has no stale citation', () => {
+    expect(of(runRegisterCheck({ root: REPO, staleDays: 0 }), 'lives-in')).toEqual([])
+  })
+})

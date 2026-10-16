@@ -50,7 +50,7 @@ Counts are files. *Prototypes* is 21 apps under `fjs-prototypes`; *repo* is
 | --- | --- | --- | --- | --- |
 | 1 | **Persisted preference** — `persisted(key, default)` | `localStorage` 82 prototypes, 68 repo; 25 distinct `*_KEY` constants; no namespace per app, no cross-tab sync, credentials mixed with preferences (`portal_token` ×17). `example`'s own config hand-prefixes two keys, `shop_theme` and `shop_token` | `/redact` already answers *is this key a credential*, so the wrapper refuses a token key by name — junction's `tokenStorage` owns tokens | signal + the `storage` event for cross-tab; sierra adds the app prefix from config. The theme switch (`sierra/src/theme`) is the one existing instance |
 | 2 | **Clock** — `now({ every })` | 42 copies of `now = Date.now()` + `setInterval` + cleanup | `/datetime` `relative()` and `format()` exist | one shared interval per resolution, paused while the page is hidden (#8) |
-| 3 | **Media query** — `media(q)`, `reducedMotion`, `colorScheme` | `matchMedia` 8 prototypes, 14 repo; the same four queries retyped as rems (`47.99rem`, `64rem`) | none — and `@frontierjs/css` names no breakpoint (Grid derives its count from width), so the retyped rems have no source (Q3) | subscriber over `MediaQueryList`; `setScheme` in the theme switch is the first consumer |
+| 3 | **Media query** — `media(q)`, `reducedMotion`, `colorScheme` | `matchMedia` 8 prototypes, 14 repo; the same four queries retyped as rems (`47.99rem`, `64rem`) | none — `@frontierjs/css`'s scale (sm 640 … 2xl 1536 px) was stated only in a `tokens.css` comment, so the retyped rems had no source to match; it becomes a table in `vocabulary.js` (Q3) | subscriber over `MediaQueryList`; `setScheme` in the theme switch is the first consumer |
 | 4 | **Element observers** — `visible(el)`, `size(el)` | `IntersectionObserver` 18, `ResizeObserver` 7; mesa's `$$virtualEach`, sierra's islands loader, `prefetch.js` and `mcp/index.js` each hold a private copy | — | one shared observer per option set, delivered through mesa `attach()`; infinite scroll becomes `visible(sentinel)` → `resource.more()` |
 | 5 | **Hotkeys** — `hotkey('mod+k', fn, { scope })` | 9 app files and 15 kit components bind `document` keydown each their own way. `FJS-2611`'s Escape defects closed 2026-10-15 at each owner, so this is consolidation, not a fix | the chord parser `'mod+k'` → `{ key, mods }` | scope is the nearest delegation root (Invariant 11; `_delegateRoots` in `runtime.js` is the table); CommandPalette, Popover and Dialog consume it |
 | 6 | **Clipboard, share, download** | `writeText` 6 repo + 12 prototypes; `download()` already sits in `ui/utils.js` — the precedent | — | `copy(text \| blob)` with the execCommand fallback, `share()` falling back to copy, `download` moved beside them |
@@ -329,7 +329,7 @@ listener was added to the happy-dom window. **A wrapper with no drive is
 5. **Derived** — the chord table, the credential predicate and the mime table
    are read from toolbelt, not restated; the prefix is read from config, where
    `shop_theme` and `shop_token` already imply it by hand. #3's breakpoints are
-   the one value with no source (Q3).
+   read from css's `vocabulary.js` (Q3).
 6. **Owner** — `bindWindow` is the existing owner of a window signal and is
    rewritten on the primitive rather than left beside it; `download` moves,
    it is not copied; junction keeps the token (`tokenStorage`); the theme
@@ -374,16 +374,18 @@ compiler contract, its implementation is not.
   defaulting to the app's `package.json` name — two apps on one dev origin
   (`FJS-740`'s world) otherwise read each other's preferences, and
   `shop_theme` / `shop_token` show the prefix being typed by hand today.
-- **Q3** — Where do breakpoints live? `@frontierjs/css` names none today and
-  the apps retype `47.99rem`. **Recommend css names them** in `vocabulary.js`
-  and `breakpoint(name)` reads them, so the spec that already checks the
-  vocabulary against the CSSOM grades the queries too (Invariant 13).
-- **Q4** — Is #10 this plan's Phase 5 or `homestead.md`'s? **Recommend
-  homestead's** — the service worker is release state, and this plan stops at
-  the subscription half that hands a token to the notifications package.
+- **Q3** — Where do breakpoints live? **Ruled `FJS-D1099`: a `breakpoints`
+  table in css's `vocabulary.js`** — the scale was a `tokens.css` comment, now
+  data; `breakpoint(name)` reads it and the vocabulary spec grades every
+  literal `@media` width in css `src/` against it (Invariant 13).
+- **Q4** — Is #10 this plan's Phase 5 or `homestead.md`'s? **Ruled
+  `FJS-D1099`: split** — the service worker is homestead's (release state),
+  and this plan stops at the subscription half that hands a token to the
+  notifications package.
 - **Q5** — Does `fli check` grade a hand-rolled `localStorage` or
-  `addEventListener('keydown')` once the kit exists? **Recommend warn**, on the
-  pattern `ui-hazards` already uses for `window.confirm`.
+  `addEventListener('keydown')` once the kit exists? **Ruled `FJS-D1099`:
+  `warn`, scope `app`, only in an app that imports `@frontierjs/mesa/browser`**
+  — the shape of `css-raw-literal`.
 - **Q6** — The terminal host. A clock, a hotkey, a persisted value, focus and
   size each mean something in haven and `fli dev:tui`. Lift them behind
   `$$host` now, or keep the kit browser-only and throw on a terminal?
@@ -407,8 +409,7 @@ Done when: `bindWindow` runs on `subscribe(start)`, mesa's browser drive still p
 
 - [x] 0.1 `subscribe(start)` in `runtime.js`, server-safe; `isBrowserClient()` and `delegationRootOf(el)` exported beside it — `test/subscribe.test.js`
 - [x] 0.2 Rewrite `bindWindow` on it; `<mesa:window>` unchanged
-- [ ] 0.3 Rule Q1–Q7
-  - Q1, Q2, Q6, Q7 ruled 2026-10-16 (`FJS-D1097`); Q3–Q5 open.
+- [x] 0.3 Rule Q1–Q7 — `FJS-D1097` (Q1, Q2, Q6, Q7), `FJS-D1099` (Q3–Q5)
 - [ ] 0.4 `src/browser/index.js` + `result.js` + `browser.d.ts` scaffolded, the `exports` line, the empty `test/browser/kit/` runner wired into `test:browser`
 
 ### Phase 1 — The signals
@@ -419,7 +420,7 @@ Done when: each has a drive on the CDP harness flipping the real condition, the 
 - [ ] 1.1 `persisted()` with the credential refusal and cross-tab sync; `setPrefix()` and sierra's `prefix` config per Q2
 - [ ] 1.2 `page` — online, visible, focused; `bindWindow('online')` and sierra `offline.js` read it
 - [ ] 1.3 `now()` on one interval per resolution, parked on `page.visible`
-- [ ] 1.4 `media()`, `reducedMotion`, `colorScheme`; `breakpoint()` per Q3
+- [ ] 1.4 `media()`, `reducedMotion`, `colorScheme`; `breakpoint()` per Q3 — css's `breakpoints` table in `vocabulary.js` first, and its spec grading every literal `@media` width in `src/`
 - [ ] 1.5 The theme switch moved onto 1.1 and 1.4
 
 ### Phase 2 — The attachments

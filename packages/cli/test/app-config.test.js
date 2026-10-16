@@ -449,3 +449,38 @@ describe('the agent guidance', () => {
     expect(appAgentsProjectMd({ name: 'demo' })).not.toContain('@AGENTS.md')
   })
 })
+
+// ─── the scaffold names a released set (FJS-2973) ─────────────────────────────
+// `latest` made two scaffolds a day apart build different frameworks, and left
+// `bun install --frozen-lockfile` in the generated workflow nothing to freeze
+// until someone had installed once. An exact version is what makes the manifest
+// the same file on both days.
+
+describe('every dependency a scaffold writes is an exact version', () => {
+  const EXACT = /^\d+\.\d+\.\d+$/
+  const written = { ...FJS_PACKAGES, ...APP_DEV_DEPS }
+  const pinned  = Object.entries(written).filter(([name]) => name.startsWith('@frontierjs/') || name === 'bun-types')
+
+  test('no framework package or bun-types floats', () => {
+    expect(pinned.length).toBeGreaterThan(12)
+    const loose = pinned.filter(([, spec]) => !EXACT.test(spec)).map(([n, s]) => `${n}: ${s}`)
+    expect(loose).toEqual([])
+  })
+
+  test('a pin never runs ahead of, or a minor behind, the package in this tree', () => {
+    // Peer ranges below 1.0 pin the MINOR, so a pin on the old minor installs a
+    // set whose peers the tree has already moved past. Behind by a patch is a
+    // lag a release has not yet caught up with, and is allowed.
+    const bad = []
+    for (const [name, spec] of pinned) {
+      if (!name.startsWith('@frontierjs/')) continue
+      let tree
+      try { tree = JSON.parse(readFileSync(join(CLI, '..', name.split('/')[1], 'package.json'), 'utf8')).version }
+      catch { continue }
+      const [pa, pb, pc] = spec.split('.').map(Number)
+      const [ta, tb, tc] = tree.split('.').map(Number)
+      if (pa !== ta || pb !== tb || pc > tc) bad.push(`${name}: pinned ${spec}, tree ${tree}`)
+    }
+    expect(bad).toEqual([])
+  })
+})

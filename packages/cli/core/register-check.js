@@ -29,7 +29,7 @@
 // not reproducible and this must never feed a committed snapshot. `staleDays: 0`
 // turns it off for a caller that needs a stable answer.
 
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { treePaths } from './tree.js'
@@ -60,6 +60,7 @@ export const RULES = [
   { id: 'ruling-status',    level: 'error', what: 'a ruling declaring a status outside the vocabulary, or retiring itself without naming what replaced it' },
   { id: 'unread-recommendation', level: 'error', what: 'an open question\'s `**Recommend …**` line naming no option letter — the queue shows no recommendation, and the line was once read as the words of the option above it' },
   { id: 'malformed-date',   level: 'error', what: 'a date that is not ISO-8601' },
+  { id: 'lives-in',         level: 'error', what: 'a ruling\'s `*Lives in:*` naming a path that is not in the tree, a symbol its file no longer mentions, or a package no package.json declares — advice that fails when taken' },
   { id: 'overview-status',  level: 'error', what: 'an `IDEAS/overview.md` row whose Status cell says the work is still open while its paper says `shipped` or `withdrawn`, or its only cited defects are closed' },
   { id: 'ruling-order',     level: 'warn',  what: 'a ruling dated later than the one above it — a section runs newest first, so the top of one is the current thinking' },
   { id: 'unnamed-ruling',   level: 'warn',  what: 'a ruling with no id — nothing can cite it' },
@@ -68,6 +69,87 @@ export const RULES = [
 ]
 
 const LEVEL_OF = Object.fromEntries(RULES.map(r => [r.id, r.level]))
+
+// ─── what a ruling's `*Lives in:*` can be held to ────────────────────────────
+//
+// Only what has an authority in the tree: a code-span path, the symbols in the
+// parenthesis after it, and an `@scope/name`. A path is written from the root
+// or from the package it concerns (`src/core/client.js`, `litestone/test/x`),
+// so it is dead only when no package holds it either. One that leaves the
+// root is another repository's file and not this one's to call dead.
+
+const DEAD_SHAPE = /\s|[*<>{}]|^\/|^\.\.?$/
+
+function workspaceNames(root) {
+  const names = new Set()
+  const dirs  = []
+  const pkgs  = resolve(root, 'packages')
+  if (existsSync(pkgs)) {
+    for (const d of readdirSync(pkgs)) if (existsSync(resolve(pkgs, d, 'package.json'))) dirs.push(resolve(pkgs, d))
+  }
+  for (const dir of [root, ...dirs]) {
+    try {
+      const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
+      if (pkg.name) names.add(pkg.name)
+      for (const k of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+        for (const dep of Object.keys(pkg[k] ?? {})) names.add(dep)
+      }
+    } catch {}
+  }
+  return { names, dirs }
+}
+
+function packageOf(token) {
+  const m = token.match(/^(@[a-z0-9-]+\/[a-z0-9-]+)(?:\/|$)/)
+  return m ? m[1] : null
+}
+
+/** [{ message, detail }] for each citation of one ruling that no longer holds. */
+function livesInFindings(ruling, { root, names, dirs, inTree }) {
+  const out = []
+  for (const { token, symbols } of ruling.livesIn ?? []) {
+    if (/^FJS-/i.test(token) || DEAD_SHAPE.test(token)) continue
+
+    const pkg = packageOf(token)
+    if (pkg) {
+      if (!names.has(pkg)) out.push({ message: `Lives in names ${pkg}, which no package.json declares` })
+      continue
+    }
+    if (!token.includes('/')) continue
+
+    const rel = token.replace(/#.*/, '')
+    const candidates = [
+      resolve(root, rel),
+      resolve(root, 'packages', rel),
+      ...dirs.flatMap(d => [resolve(d, rel), resolve(d, 'src', rel)]),
+    ]
+    const found = candidates.filter(inTree)
+    // A bare `src/index.ts` matches in every package, so the file it means is
+    // unknowable and a symbol missing from all of them proves nothing.
+    const exact = inTree(candidates[0]) || inTree(candidates[1])
+    if (!found.length) {
+      if (leavesTree(root, rel)) continue
+      out.push({ message: `Lives in names ${token}, which is not in the tree` })
+      continue
+    }
+
+    const files = found.filter(f => statSync(f).isFile())
+    if (!exact || !files.length || !symbols.length) continue
+    const texts = files.map(f => readFileSync(f, 'utf8'))
+    for (const sym of symbols) {
+      const bare = sym.replace(/\(.*$/, '').split('.').pop()
+      if (!/^[\w$]+$/.test(bare)) continue
+      if (texts.some(t => t.includes(bare))) continue
+      out.push({ message: `Lives in names ${sym} in ${token}, which the file no longer mentions` })
+    }
+  }
+  return out
+}
+
+// A sibling checkout (`conduit-connectors/…`) beside the root is somebody else's tree.
+function leavesTree(root, rel) {
+  return existsSync(resolve(root, '..', rel))
+}
 
 // ─── the check around a write ────────────────────────────────────────────────
 //
@@ -377,6 +459,8 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
 
   // ── decisions ──
 
+  const lives = { root, ...workspaceNames(root), inTree }
+
   // The ruling above this one, within the same section. `doc.decisions` is in
   // file order, so a section change resets it.
   let prevInSection = null
@@ -412,6 +496,11 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
         'a section runs newest first — move it above, or say in the ruling why it sits where it does')
     }
     prevInSection = ruling
+
+    // A retired ruling describes the tree as it was, as a closed row does.
+    if (ruling.status == null) {
+      for (const f of livesInFindings(ruling, lives)) add('lives-in', ruling, f.message, f.detail)
+    }
 
     // ── what a ruling says about itself ──
     //

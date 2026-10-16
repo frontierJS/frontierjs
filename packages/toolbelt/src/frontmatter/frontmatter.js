@@ -429,6 +429,10 @@ function read(text, offset) {
     let src = ''
     let depth = 0
     let q = null
+    // A quote opens a string only where a scalar can start, as the parser reads
+    // it; opening one anywhere made the two disagree about where the value ends.
+    let fresh = false
+    let closed = -1
     let s = rest
     let end = -1
     for (;;) {
@@ -439,21 +443,31 @@ function read(text, offset) {
           if (c === q) {
             if (q === "'" && s[k + 1] === "'") { k++; continue }
             q = null
+            closed = k + 1
           }
           continue
         }
-        if (c === '"' || c === "'") q = c
-        else if (c === '#' && (k === 0 || s[k - 1] === ' ' || s[k - 1] === '\t')) { s = s.slice(0, k); break }
-        else if (c === '[' || c === '{') {
+        if (c === ' ' || c === '\t') continue
+        const opens = fresh
+        fresh = false
+        if (opens && (c === '"' || c === "'")) { q = c; continue }
+        if (c === '#' && (k === 0 || s[k - 1] === ' ' || s[k - 1] === '\t')) { s = s.slice(0, k); break }
+        if (c === '[' || c === '{') {
           if (++depth > MAX_DEPTH) fail(`nested more than ${MAX_DEPTH} deep`, line)
+          fresh = true
         } else if (c === ']' || c === '}') {
           if (--depth === 0) { end = src.length + k + 1; break }
+        } else if (c === ',') fresh = true
+        else if (c === ':') {
+          const d = s[k + 1]
+          fresh = d === undefined || d === ' ' || d === '\t' || d === ',' || d === ']' || d === '}' || closed === k
         }
       }
       src += s
       if (end !== -1) break
       if (i >= lines.length) fail('this [ ] or { } never closes', line)
       s = lines[i++].trim()
+      closed = -1
       src += ' '
     }
     if (src.slice(end).trim() !== '') fail('text after the closing bracket', i - 1)

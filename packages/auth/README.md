@@ -18,9 +18,9 @@ bun add @frontierjs/auth
 
 ```typescript
 // api/src/auth.ts
-import { createLitestoneAuth, createAuthCleanupJobs } from '@frontierjs/auth'
-import { createClient, GatePlugin, LEVELS }           from '@frontierjs/litestone'
-import { defineEnv }                                  from '@frontierjs/junction'
+import { createLitestoneAuth }               from '@frontierjs/auth'
+import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
+import { defineEnv }                        from '@frontierjs/junction'
 
 export const env = defineEnv({
   ENCRYPTION_KEY: { required: true, minLength: 64 },
@@ -71,15 +71,13 @@ export const auth = createLitestoneAuth(db, {
     })
   },
 })
-
-export const authCleanup = createAuthCleanupJobs(db)
 ```
 
 ```typescript
 // api/src/server.ts
-import { auth, db, authCleanup } from './auth.ts'
-import { createAuthPlugin }      from '@frontierjs/auth'
-import { createApp }             from '@frontierjs/junction'
+import { auth, db }         from './auth.ts'
+import { createAuthPlugin } from '@frontierjs/auth'
+import { createApp }        from '@frontierjs/junction'
 
 // `db` on createApp installs withLitestoneDb for you — it is an around hook,
 // not a plugin, and it is what puts a per-request scoped client on
@@ -87,14 +85,10 @@ import { createApp }             from '@frontierjs/junction'
 // not a thing.
 const app = createApp({ auth, db })
 
-// Mounts /auth/* and registers the account / sessions / api-keys services.
+// Mounts /auth/* and registers the account / sessions / api-keys services. Its
+// work() phase starts the hourly sweep of expired sessions, verifications,
+// OAuth flows and login challenges; `auth.cleanup.sweepNow()` runs it on demand.
 app.configure(createAuthPlugin(auth))
-
-app.configure({
-  name: 'auth-cleanup',
-  register() {},
-  async work() { authCleanup.start() },
-})
 
 await app.start()
 ```

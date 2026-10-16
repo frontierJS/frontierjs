@@ -53,10 +53,6 @@ async function grade(root) {
 const LEAD_RESOURCE = ['make:resource', ['Lead'], {}]
 const LEAD_SERVICE  = { 'api/src/services/leads.service.ts': 'export default {}\n' }
 
-// make:model's default @@gate is unreachable in an app with no admin column —
-// FJS-1385, open; every other finding fails the case.
-const KNOWN = { 'make:model': ['gate-unreachable'] }
-
 const CASES = [
   { cmd: 'make:model',     arg: ['Invoice'], flag: { resource: true },   wrote: 'web/src/resources/Invoice.mesa' },
   { cmd: 'make:route',     arg: ['leads'],   flag: { resource: 'Lead' }, before: [LEAD_RESOURCE], wrote: 'web/src/routes/leads/index.mesa' },
@@ -76,8 +72,7 @@ describe('a generator writes what `fli check` accepts', () => {
         // A rule that skipped proves nothing about the file it would have judged.
         expect(ran).toContain('resource-file-name')
         expect(ran).toContain('resource-script')
-        const known = KNOWN[c.cmd] ?? []
-        expect(findings.filter(f => !known.includes(f.rule))).toEqual([])
+        expect(findings).toEqual([])
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
@@ -191,4 +186,40 @@ describe('make:scaffold lists the model in the nav table fli new writes', () => 
       rmSync(root, { recursive: true, force: true })
     }
   }, 30000)
+})
+
+// The reference and the example write `@updatedAt` alone; it stamps the create
+// too, so `@default(now())` beside it is a second spelling every new app copies
+// (`FJS-2952`).
+describe('a generated model stanza spells updatedAt as the reference does', () => {
+  const CASES = [
+    { cmd: 'make:model',    arg: ['Widget'],      flag: {} },
+    { cmd: 'make:scaffold', arg: ['SearchIndex'], flag: { 'skip-schema': false } },
+  ]
+  for (const c of CASES) {
+    test(`fli ${c.cmd}`, async () => {
+      const root = makeApp({ 'db/schema.lite': 'model Lead { id Int @id  name String }\n' })
+      try {
+        await run(root, c.cmd, c.arg, c.flag)
+        const schema = await Bun.file(join(root, 'db/schema.lite')).text()
+        const line = schema.split('\n').find(l => /^\s*updatedAt\b/.test(l))
+        expect(line).toBeDefined()
+        expect(line.trim().split(/\s+/)).toEqual(['updatedAt', 'DateTime', '@updatedAt'])
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }, 30000)
+  }
+})
+
+// FJS-1130: `db:schema` appended a Prisma model to `schema.prisma`, a file no
+// app has. `make:model` is the one command that writes a model, into schema.lite.
+describe('no command writes a Prisma schema', () => {
+  test('no command file names schema.prisma', async () => {
+    const hits = []
+    for await (const f of new Bun.Glob('**/*.md').scan({ cwd: join(CLI, 'commands') })) {
+      if ((await Bun.file(join(CLI, 'commands', f)).text()).includes('schema.prisma')) hits.push(f)
+    }
+    expect(hits).toEqual([])
+  })
 })

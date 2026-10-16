@@ -107,12 +107,14 @@ export function hoistedFieldRead(ctx, exprs) {
  * @param {Record<string, FieldPolicy> | null | undefined} fieldPolicy
  * @param {Ctx} ctx
  * @param {{ mode?: 'list' | 'single' | 'select', selectedFields?: Set<string> | null }} [options]
- * @returns {T | Record<string, unknown>}  the row as handed in, or a shaped copy
+ * @returns {T | Record<string, unknown>}  the row handed in, shaped in place
  */
 export function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'list', selectedFields = null } = {}) {
   if (!row || !fieldPolicy) return row
   const isSystem = ctx.isSystem
-  const out = { ...row }
+  // The caller owns the row: a decrypt run twice over one object would fail,
+  // and a row a caller keeps would lose its fields.
+  const out = /** @type {Record<string, any>} */ (row)
 
   for (const fieldName in fieldPolicy) {
     const policy = fieldPolicy[fieldName]

@@ -25,7 +25,8 @@ schema.ts    reads those two: authUserModel / authMachineryModels /
 crypto.ts    hashing / token generation
 totp.ts      RFC 6238 codes, base32, recovery codes — clockless, `at` is a
              parameter (`FJS-D261`)
-cleanup.ts   expired-session pruning
+cleanup.ts   expired-row pruning — `auth.cleanup` on the instance, started in
+             the plugin's work() and stopped at shutdown
 errors.ts    the auth error classes (each carries its own `status`)
 types.ts     the public types
 index.ts     public API

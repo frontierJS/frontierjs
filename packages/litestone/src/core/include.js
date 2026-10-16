@@ -251,14 +251,13 @@ function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
  * @param {T} row
  * @param {FromFields | null | undefined} fromFields
  * @param {Set<string> | null} [hidden]
- * @returns {T}  the row as handed in, or a copy of the same shape
+ * @returns {T}  the row handed in, deserialized in place; the caller owns it
  */
 export function deserializeFromRow(row, fromFields, hidden = null) {
   if (!row || !fromFields) return row
-  let out = row
+  const out = /** @type {Record<string, any>} */ (row)
   for (const [name, f] of Object.entries(fromFields)) {
     if (!(name in row)) continue
-    if (out === row) out = { ...row }
     if (hidden?.has(name)) {
       out[name] = null
     } else if (f.isObject) {
@@ -269,7 +268,7 @@ export function deserializeFromRow(row, fromFields, hidden = null) {
       out[name] = out[name] === 1 || out[name] === true
     }
   }
-  return out
+  return row
 }
 
 // ─── Include resolution ───────────────────────────────────────────────────────

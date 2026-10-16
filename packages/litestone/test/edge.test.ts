@@ -95,6 +95,14 @@ describe('litestone edge (FJS-D635)', () => {
     expect(reached).toEqual([])
   })
 
+  // `create` reads fine under /migrations and means nothing in '.', where it
+  // sits beside createClient (FJS-2979).
+  it('the main entry exports no bare migration verb', async () => {
+    const main = await import('../src/index.js')
+    const bare = ['create', 'apply', 'status', 'verify'].filter(v => v in main)
+    expect(bare).toEqual([])
+  })
+
   it('every battery has a subpath', () => {
     const pkg = JSON.parse(readFileSync(resolve(import.meta.dir, '../package.json'), 'utf8')) as { exports: Record<string, string | { import: string }> }
     // A string export is a file served as itself — `./references/*` is the

@@ -40,13 +40,20 @@ const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/register
 
 const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 
-const out = fileIssue({ root, severity: flag.sev, area: flag.area, title: flag.title, detail: flag.detail, blocks: flag.blocks })
+const out = fileIssue({ root, severity: flag.sev, area: flag.area, title: flag.title, detail: flag.detail, blocks: flag.blocks, dry: flag.dry })
 
 echo('')
 if (!out.ok) {
   echo(`  ✗ ${out.reason}`)
   echo('')
   process.exitCode = 1
+  return
+}
+
+if (out.dry) {
+  echo(`  ✓ ${out.id} would be filed — ${out.file}:${out.line} (--dry: nothing written, register:check not run)`)
+  if (out.blocks) echo(`    ${out.blocks} would wait on it`)
+  echo('')
   return
 }
 

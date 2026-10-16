@@ -2122,17 +2122,17 @@ export function trimAllToSelect(rows, requestedFields, injectedFKs) {
  * @template {Record<string, any> | null | undefined} T
  * @param {T} row
  * @param {any} jsonFields  the model's Json field names, as `client.js` keeps them
- * @returns {T}
+ * @returns {T}  the row handed in, parsed in place; the caller owns it
  */
 export function deserializeRow(row, jsonFields) {
   if (!row || !jsonFields.size) return row
-  const out = { ...row }
+  const out = /** @type {Record<string, any>} */ (row)
   for (const field of jsonFields) {
     if (field in out && typeof out[field] === 'string') {
       try { out[field] = JSON.parse(out[field]) } catch {}
     }
   }
-  return out
+  return row
 }
 
 /** @param {Record<string, any> | null | undefined} data @param {any} jsonFields */
@@ -2558,17 +2558,17 @@ export function extractCursorValues(row, fields) {
  * @template {Record<string, any> | null | undefined} T
  * @param {T} row
  * @param {any} boolFields  the model's Boolean field names, as `client.js` keeps them
- * @returns {T}
+ * @returns {T}  the row handed in, coerced in place; the caller owns it
  */
 export function coerceBooleans(row, boolFields) {
   if (!row || !boolFields.size) return row
-  const out = { ...row }
+  const out = /** @type {Record<string, any>} */ (row)
   for (const field of boolFields) {
     if (field in out && out[field] !== null) {
       out[field] = out[field] === 1 || out[field] === true
     }
   }
-  return out
+  return row
 }
 
 // A Boolean value as the 1/0 it is stored as, or undefined when it is not one.

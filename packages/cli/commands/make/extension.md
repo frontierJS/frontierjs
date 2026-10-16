@@ -55,6 +55,8 @@ const { scaffoldExtensionSurface, extensionScripts, extensionDevDeps } =
   await import(resolve(global.fliRoot, 'core/extension-surface.js'))
 const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
+const { FJS_PACKAGES } =
+  await import(resolve(global.fliRoot, 'core/app-config.js'))
 
 const dir  = flag.dir || 'extension'
 const root = $.paths.root
@@ -99,7 +101,7 @@ if (existsSync(pkgPath)) {
   const hasJetty = pkg.dependencies?.['@frontierjs/jetty'] || pkg.devDependencies?.['@frontierjs/jetty']
   if (!hasJetty) {
     pkg.dependencies ??= {}
-    pkg.dependencies['@frontierjs/jetty'] = 'latest'
+    pkg.dependencies['@frontierjs/jetty'] = FJS_PACKAGES['@frontierjs/jetty']
     log.info('Added @frontierjs/jetty to dependencies — run bun install before building.')
   }
   // jetty's build and dev server run on these but do not install them.

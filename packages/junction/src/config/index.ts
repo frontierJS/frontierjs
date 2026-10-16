@@ -552,7 +552,10 @@ export async function loadConfig(configDir = './config'): Promise<AppConfig & { 
  */
 function envOverrides(): Partial<AppConfig> {
   const out: Partial<AppConfig> = {}
-  if (process.env.PORT)          out.port  = parseInt(process.env.PORT, 10)
+  // PORT is a deploy's word and FLI_PORT_BE the broker's (`fli dev`), so an
+  // app that reads neither itself still lands on the slot it was handed.
+  const port = process.env.PORT || process.env.FLI_PORT_BE
+  if (port)                      out.port  = parseInt(port, 10)
   if (process.env.DEBUG === '1') out.debug = true
   return out
 }

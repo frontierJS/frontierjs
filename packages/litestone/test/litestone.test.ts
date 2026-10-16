@@ -177,6 +177,27 @@ describe('parser', () => {
     }
   })
 
+  // The block words disagree on number (`@@transitions`, `@@capabilities` plural;
+  // `@@commitment`, `@@index` singular), so the wrong number is the likeliest
+  // typo and the refusal has to name its neighbor (FJS-2977).
+  test('a misspelled model attribute names its neighbor', () => {
+    const cases: Array<[string, string]> = [
+      ['@@commitments', '@@commitment'],
+      ['@@transition', '@@transitions'],
+      ['@@capability', '@@capabilities'],
+      ['@@indexes', '@@index'],
+    ]
+    for (const [typed, near] of cases) {
+      const r = parse(`
+        model T { id Int @id
+          ${typed}([id]) }
+      `)
+      expect(r.valid).toBe(false)
+      expect(r.errors[0]).toContain(`Unknown model attribute '${typed}'`)
+      expect(r.errors[0]).toContain(`Did you mean '${near}'?`)
+    }
+  })
+
   // The gate-order rule and Invariant 2's model case were enforced in the
   // plugin and `fli check`, so a developer holding litestone alone got a valid
   // parse and a failure at boot (FJS-2948).
@@ -7153,18 +7174,20 @@ describe('onLog callback', () => {
   test('$audit throws rather than dropping the row', async () => {
     const db = await makeLogDb()
     await expect((db as any).$audit({ model: 'User' })).rejects.toThrow(/'operation' is required/)
+    // A jsonl trail would take a null model where a SQLite one refuses the row.
+    await expect((db as any).$audit({ operation: 'x' })).rejects.toThrow(/'model' is required/)
     // Refused BY NAME rather than dropped — a misspelled key is a caller that
     // meant to record something, and a silently thinner row is worse than none.
-    await expect((db as any).$audit({ operation: 'x', reason: 'oops' }))
+    await expect((db as any).$audit({ operation: 'x', model: 'User', reason: 'oops' }))
       .rejects.toThrow(/unknown key 'reason'/)
-    await expect((db as any).$audit({ operation: 'x' }, { database: 'nope' }))
+    await expect((db as any).$audit({ operation: 'x', model: 'User' }, { database: 'nope' }))
       .rejects.toThrow(/not a trail database/)
     db.$close()
   })
 
   test('the actor comes from the client when it is not stated', async () => {
     const db = await makeLogDb()
-    await (db as any).$setAuth({ id: 7, type: 'user' }).$audit({ operation: 'logout' })
+    await (db as any).$setAuth({ id: 7, type: 'user' }).$audit({ operation: 'logout', model: 'User' })
     await flush()
     const rows = await (db as any).asSystem().auditTrail.findMany({})
     const row  = rows.find((r: any) => r.operation === 'logout')
@@ -7177,8 +7200,8 @@ describe('onLog callback', () => {
   // has to be STATED — and stating it has to work.
   test('asSystem names no principal, so a stated actor is the only one', async () => {
     const db = await makeLogDb()
-    await (db as any).asSystem().$audit({ operation: 'a' })
-    await (db as any).asSystem().$audit({ operation: 'b', actorId: 'u9' })
+    await (db as any).asSystem().$audit({ operation: 'a', model: 'User' })
+    await (db as any).asSystem().$audit({ operation: 'b', model: 'User', actorId: 'u9' })
     await flush()
     const rows = await (db as any).asSystem().auditTrail.findMany({})
     expect(rows.find((r: any) => r.operation === 'a').actorId).toBe(null)
@@ -7190,8 +7213,8 @@ describe('onLog callback', () => {
   // a $audit caller is naming one event and knows more about it than it does.
   test('a stated actorId wins over onLog', async () => {
     const db = await makeLogDb(() => ({ actorId: 'from-onlog' }))
-    await (db as any).$audit({ operation: 'x', actorId: 'stated' })
-    await (db as any).$audit({ operation: 'y' })
+    await (db as any).$audit({ operation: 'x', model: 'User', actorId: 'stated' })
+    await (db as any).$audit({ operation: 'y', model: 'User' })
     await flush()
     const rows = await (db as any).asSystem().auditTrail.findMany({})
     expect(rows.find((r: any) => r.operation === 'x').actorId).toBe('stated')

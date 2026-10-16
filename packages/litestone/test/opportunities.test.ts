@@ -339,6 +339,25 @@ describe('json-column-with-no-shape', () => {
     expect(found(`type M { note String }\nmodel A { id Int @id  meta Json @type(M) }`, ID))
       .toEqual([])
   })
+
+  // FJS-1292: @type on an @@extensible column is a parse error, and the
+  // `<column>Slots` mirror is generated, so the advice pointed at both.
+  test('silent on an @@extensible column and the mirror the framework generated', () => {
+    const src = `
+      enum FieldKind { text number }
+      model CustomField {
+        id Int @id  model String  key String  type FieldKind  slot String?
+        @@unique([model, key])
+        @@unique([model, slot], nullsDistinct: true)
+      }
+      model Issue {
+        id Int @id
+        fields Json @default("{}")
+        @@extensible(fields, declaredBy: CustomField, max: { text: 2, number: 1 })
+      }
+      model Plain { id Int @id  meta Json }`
+    expect(found(src, ID).map(x => `${x.model}.${x.field}`)).toEqual(['Plain.meta'])
+  })
 })
 
 describe('field-group-repeated-across-models', () => {

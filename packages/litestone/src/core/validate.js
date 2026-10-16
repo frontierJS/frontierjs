@@ -595,7 +595,7 @@ export function validateJsonPatch(patch, typeName, typeMap, strict, path, rootMo
  * drifting the moment one of them is tuned.
  */
 // The rules about an array column's list rather than its elements.
-const ITEM_COUNT_RULES = new Set(['minItems', 'maxItems', 'uniqueItems'])
+export const ITEM_COUNT_RULES = new Set(['minItems', 'maxItems', 'uniqueItems'])
 
 export function validateField(fieldName, value, attributes) {
   const errors = []

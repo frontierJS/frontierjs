@@ -50,7 +50,7 @@ export function fileIssue(opts) {
   return withRegisterGuard(opts.root, () => fileUnguarded(opts))
 }
 
-function fileUnguarded({ root, severity, area, title, detail, blocks, today = new Date() }) {
+function fileUnguarded({ root, severity, area, title, detail, blocks, dry = false, today = new Date() }) {
   const doc = readRegisters(root)
   if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no id can be minted')
 
@@ -93,6 +93,13 @@ function fileUnguarded({ root, severity, area, title, detail, blocks, today = ne
 
   lines.splice(table.body, 0, `| ${row.join(' | ')} |`)
 
+  const filed = { id, file: abs.slice(root.length + 1), line: table.body + 1, blocks: blocks ? String(blocks).trim().toUpperCase() : null }
+
+  // `--dry` is on every command, and a preview that files the row hands the
+  // next id to a row nobody meant to keep. register:check is skipped: it grades
+  // the file on disk, and writing it to grade it is the write being refused.
+  if (dry) return { ok: true, dry: true, ...filed }
+
   const baseline = errorKeys(root)
   writeFileSync(abs, lines.join('\n'))
 
@@ -102,7 +109,7 @@ function fileUnguarded({ root, severity, area, title, detail, blocks, today = ne
     return refuse(`the row was put back: register:check found ${added.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
   }
 
-  return { ok: true, id, file: abs.slice(root.length + 1), line: table.body + 1, blocks: blocks ? String(blocks).trim().toUpperCase() : null }
+  return { ok: true, ...filed }
 }
 
 // ─── the id ───────────────────────────────────────────────────────────────────

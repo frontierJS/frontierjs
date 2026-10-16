@@ -356,6 +356,45 @@ describe('value-rule-on-a-relation', () => {
   })
 })
 
+describe('validator-on-the-wrong-type', () => {
+  const ID = 'validator-on-the-wrong-type'
+  const on = (field: string) => findings(`enum Role { a b }\nmodel T { id Int @id  ${field} }`, ID)
+
+  test.each([
+    'flag Boolean @gte(1)',
+    'name String @gte(1)',
+    'n Int @length(2, 5)',
+    'at DateTime @lt(10)',
+    'role Role @gt(0)',
+    'price Int @email',
+    'name String @minItems(1)',
+    'flag Boolean @uniqueItems',
+  ])('fires on %s', field => {
+    const f = on(field)
+    expect(f.map(x => [x.field, x.severity])).toEqual([[field.split(' ')[0], 'error']])
+  })
+
+  test.each([
+    'qty Int @gte(1) @lte(9)',
+    'ratio Float @lt(1)',
+    'price Int @money(USD) @gte(0)',
+    'name String @length(2, 5) @regex("^a") @email',
+    'at DateTime @date',
+    'doc Json @gte(1) @length(1, 4) @minItems(1)',
+    'tags String[] @minItems(1) @length(1, 4)',
+    'scores Int[] @gte(0) @maxItems(3)',
+  ])('silent on %s', field => {
+    expect(on(field)).toEqual([])
+  })
+
+  test('a relation is the other rule, not this one', () => {
+    expect(findings(`
+      model Order { id Int @id  lines OrderLine[] @gte(1) }
+      model OrderLine { id Int @id  orderId Int  order Order @relation(fields: [orderId], references: [id]) }`, ID))
+      .toEqual([])
+  })
+})
+
 describe('foreign-key-without-index', () => {
   const ID  = 'foreign-key-without-index'
   const REL = `model User { id Int @id }\n`

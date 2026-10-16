@@ -110,7 +110,7 @@ model active_users {
 }
 ```
 
-Common uses: SQLite views, FTS5 virtual tables, legacy tables from another tool, cross-database `ATTACH`ed tables. See [querying.md#external](querying.md) for the view pattern.
+Common uses: SQLite views, FTS5 virtual tables, legacy tables from another tool, cross-database `ATTACH`ed tables (read through raw SQL, since `@@external` says who creates the table, not which file holds it, and a `@relation` across two `@@db` files is refused whichever end is external). See [querying.md#external](querying.md) for the view pattern.
 
 ## Transactions across databases
 

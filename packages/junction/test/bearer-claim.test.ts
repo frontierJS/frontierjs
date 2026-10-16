@@ -606,6 +606,20 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
   })
 })
 
+// The option is the ACCESSOR, and a model's name reads as one until the first
+// request carrying the header answers 500 (`FJS-1449`).
+describe('bearerClaim refuses a model name where the accessor is wanted', () => {
+  const opts = { from: header('x-link'), column: 'tokenHash', key: KEY, claims: { id: 'id' } }
+
+  test('`PortalLink` is refused at construction, naming `portalLink`', () => {
+    expect(() => bearerClaim({ ...opts, model: 'PortalLink' })).toThrow(/portalLink/)
+  })
+
+  test('the accessor is accepted', () => {
+    expect(() => bearerClaim({ ...opts, model: 'portalLink' })).not.toThrow()
+  })
+})
+
 // A request is one caller. A person who also presents a grant is two standings
 // under one name, and merged they put the grant's ids on rows the person's own
 // rule admitted — an agent of one org opened a thread in their inbox naming

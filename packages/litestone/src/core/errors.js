@@ -388,8 +388,12 @@ export class UniqueConflictError extends Error {
   constructor(model, fields, values, opts = {}) {
     fields = Array.isArray(fields) ? fields : fields == null ? [] : [fields]
     values = Array.isArray(values) ? values : values == null ? [] : [values]
+    // A relation's key holds an id, which names a row and tells a reader nothing;
+    // the column is the sentence and `values` still carries the id for a page
+    // that wants to look the row up.
+    const isKey = (f) => opts.keys?.includes(f)
     const pairs = fields.map((f, i) => (
-      values[i] === undefined ? f : `${f} ${JSON.stringify(values[i])}`
+      values[i] === undefined || isKey(f) ? f : `${f} ${JSON.stringify(values[i])}`
     ))
     const taken = pairs.length === 0 ? 'a @unique value is already taken'
       : pairs.length === 1           ? `${pairs[0]} is already taken`
@@ -406,7 +410,7 @@ export class UniqueConflictError extends Error {
     // `team` is untrue on its own, and the constraint is about the tuple.
     const each = fields.length > 1
       ? () => `this combination is already taken (${fields.join(' + ')})`
-      : (i) => (values[i] === undefined ? 'is already taken'
+      : (i) => (values[i] === undefined || isKey(fields[i]) ? 'is already taken'
                                         : `${JSON.stringify(values[i])} is already taken`)
     this.errors    = fields.map((f, i) => ({ path: [f], message: each(i) }))
     // A conflict with a row that is there, like the two above. Retrying sends
@@ -428,13 +432,17 @@ export class UniqueConflictError extends Error {
 // Either may be absent when the client could not find the culprit; the class
 // alone still separates this from a datatype or a unique refusal.
 export class ForeignKeyError extends Error {
-  constructor(model, { relation, field, value, target, child } = {}) {
+  constructor(model, { relation, field, value, target, child, archived = false } = {}) {
     // A child the caller cannot read is named by its model alone.
     const childName = child && ('id' in child ? `${child.model} ${JSON.stringify(child.id)}` : `a ${child.model}`)
+    // `archived` is set only for a parent the caller could read with
+    // `withDeleted`; a hidden or missing one never says so.
     const msg = child
       ? `${model}: cannot delete — ${childName} still refers to it.`
       : relation
-        ? `${model}: ${field} ${JSON.stringify(value)} names no ${target} (relation \`${relation}\`).`
+        ? archived
+          ? `${model}: ${field} ${JSON.stringify(value)} names a ${target} that is archived (relation \`${relation}\`) — restore it or drop the link.`
+          : `${model}: ${field} ${JSON.stringify(value)} names no ${target} (relation \`${relation}\`).`
         : `${model}: a foreign key names a row that does not exist, or a row that still refers to it blocks the delete.`
     super(msg)
     this.name     = 'ForeignKeyError'
@@ -444,12 +452,15 @@ export class ForeignKeyError extends Error {
     this.value    = value
     this.target   = target
     this.child    = child
+    this.archived = archived
     // A composite key's `field` and `value` are parallel arrays, and every
     // column of it is marked, since no one of them is wrong on its own.
     this.errors   = Array.isArray(field)
-      ? field.map(f => ({ path: [f], message: `this combination names no ${target} (${field.join(' + ')})` }))
+      ? field.map(f => ({ path: [f], message: archived
+          ? `this combination names a ${target} that is archived (${field.join(' + ')})`
+          : `this combination names no ${target} (${field.join(' + ')})` }))
       : field
-      ? [{ path: [field], message: `${JSON.stringify(value)} does not exist` }]
+      ? [{ path: [field], message: archived ? `${JSON.stringify(value)} is archived` : `${JSON.stringify(value)} does not exist` }]
       :[{ path: [], message: child ? `${childName} still refers to this record` : 'a related record does not exist' }]
     // The identical request fails identically until the caller changes it.
     this.status    = 422

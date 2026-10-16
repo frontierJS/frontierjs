@@ -507,11 +507,26 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Every write path that can hit the constraint routes through here, because
   // they gave four different answers to one question — two of them silently
   // (FJS-276).
-  function asUniqueConflict(err, data) {
+  //
+  // An UPDATE names only the columns it changes, and a unique index (a partial
+  // one most of all) can span columns it leaves alone. `reached(cols)` reads
+  // those from the row the statement was aimed at, so the values are the row's
+  // own after the write rather than `undefined` (FJS-2691).
+  function asUniqueConflict(err, data, reached) {
     if (!isUniqueConflict(err) || err instanceof UniqueConflictError) return err
     const cols = uniqueConflictColumns(err)?.map(_fieldOf)
     if (!cols?.length) return err
-    const rows = Array.isArray(data) ? data : [data]
+    let rows = Array.isArray(data) ? data : [data]
+    if (reached && rows.length === 1 && rows[0] && typeof rows[0] === 'object'
+        && cols.some(c => !(c in rows[0]) || rows[0][c] === undefined)) {
+      let held = null
+      try { held = reached(cols) } catch { /* the plain answer below stands */ }
+      if (held) {
+        const merged = { ...held }
+        for (const [k, v] of Object.entries(rows[0])) if (v !== undefined) merged[k] = v
+        rows = [merged]
+      }
+    }
     if (softDelete) {
       for (const row of rows) {
         if (!row || typeof row !== 'object') continue
@@ -532,7 +547,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const named = rows.find(r => r && typeof r === 'object' && cols.some(c => r[c] !== undefined))
     return new UniqueConflictError(
       modelName, cols,
-      cols.map(c => (named?.[c] === undefined ? undefined : redactValue(c, named[c]))))
+      cols.map(c => (named?.[c] === undefined ? undefined : redactValue(c, named[c]))),
+      { keys: _parentKeys.flatMap(p => p.fields) })
   }
 
   // A CHECK the row did not satisfy.
@@ -650,11 +666,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // One owner for "SQLite refused this write". Every constraint routes through
   // here, because eight call sites each choosing which translator to try is how
   // one of them ends up trying neither.
-  function asConstraintError(err, data) {
+  function asConstraintError(err, data, reached) {
     if (isCheckViolation(err)) return asCheckViolation(err)
     if (isDatatypeMismatch(err)) return asDatatypeMismatch(err)
     if (isForeignKeyFailure(err)) return asMissingParent(err, data)
-    return asUniqueConflict(err, data)
+    return asUniqueConflict(err, data, reached)
   }
 
   // ── a foreign key naming a row that is not there (FJS-1454) ────────────────
@@ -696,13 +712,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   // The one spelling of *that parent is not there*, for a missing parent and a
   // hidden one alike: a difference between the two answers is the oracle.
-  function parentRefusal(relation, fields, values, target) {
+  function parentRefusal(relation, fields, values, target, archived = false) {
     const one = fields.length === 1
     const out = new ForeignKeyError(modelName, {
       relation,
       field:  one ? fields[0] : fields,
       value:  one ? redactValue(fields[0], values[0]) : fields.map((f, i) => redactValue(f, values[i])),
       target,
+      archived,
     })
     Object.defineProperty(out, 'key', { value: { fields, values }, enumerable: false })
     return out
@@ -764,9 +781,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // A template is a live row the caller may read, not a hidden one: the
   // template filter shapes which rows a statement is ABOUT, and grading a
   // parent by it refused every child added under a template (FJS-2630).
-  async function canRead(tbl, where, templates = false) {
-    try { return await tbl.exists({ where, ...(templates ? { withTemplates: true } : {}) }) }
+  async function canRead(tbl, where, templates = false, deleted = false) {
+    try { return await tbl.exists({ where, ...(templates ? { withTemplates: true } : {}), ...(deleted ? { withDeleted: true } : {}) }) }
     catch (e) { if (e instanceof AccessDeniedError) return false; throw e }
+  }
+
+  // A parent unreadable now and readable with `withDeleted` is archived. Any
+  // caller may pass that flag, so saying so tells her nothing she could not
+  // ask; a parent she could not read either way stays indistinguishable from
+  // a missing one.
+  async function isArchivedParent(tbl, target, where) {
+    return !!ctx.shapes?.[target]?.softDelete &&
+      await canRead(tbl, where, ctx.shapes?.[target]?.hasTemplates != null, true)
   }
 
   // A parent no read rule narrows hides a row from the caller only by the
@@ -827,7 +853,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
           continue
         }
         if (out[i]) { out[i].hidden.add(p.relation); continue }
-        out[i] = parentRefusal(p.relation, p.fields, values, p.target)
+        const archived = await isArchivedParent(tbl, p.target, Object.fromEntries(p.references.map((r, j) => [r, values[j]])))
+        out[i] = parentRefusal(p.relation, p.fields, values, p.target, archived)
         Object.defineProperty(out[i], 'hidden', { value: new Set([p.relation]), enumerable: false })
       }
     }
@@ -2717,10 +2744,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const ext = shape.model.attributes?.find(a => a.kind === 'extensible')
     return ext?.max ? `${ext.column}Slots` : null
   })()
+  // Every stage below shapes the row `read`/`readAll` cloned at the top, so a
+  // row a caller keeps is never written through.
   const _dropMirror = (r) => {
-    if (!_extMirror || !r || !(_extMirror in r)) return r
-    const { [_extMirror]: _m, ...rest } = r
-    return rest
+    if (_extMirror && r && _extMirror in r) delete r[_extMirror]
+    return r
   }
   const _hasJson     = jsonFields.size > 0
   const _hasBool     = boolFields.size > 0
@@ -2730,8 +2758,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // last/first return JSON strings from json_object() → parse to object
   // exists returns 0/1 integer → coerce to boolean
   // `hidden` is gatedFromFields' answer for this read: each is read as null.
-  function deserializeFromFields(row, hidden = null) {
-    const out = { ...row }
+  function deserializeFromFields(out, hidden = null) {
     for (const [name] of _fromEntries) {
       if (!(name in out)) continue
       if (hidden?.has(name)) {
@@ -2760,12 +2787,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // whenever a key happened to be missing would fire a query per row for a
   // `select` that legitimately excluded them.
   function hydrateFromFields(row) {
-    if (!_hasFrom || !row || row[idField] == null) return row
+    if (!_hasFrom || row[idField] == null) return row
     const cols = _fromEntries.map(([n, { subquerySql }]) => `${subquerySql} AS "${n}"`).join(', ')
     const vals = readDb
       .query(`SELECT ${cols} FROM "${tableName}" WHERE "${idField}" = ?`)
       .get(row[idField])
-    return vals ? { ...row, ...vals } : row
+    return vals ? Object.assign(row, vals) : row
   }
 
   // A hasMany child lands AFTER the parent's INSERT/UPDATE, so the row the unit
@@ -2789,97 +2816,66 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return opts.computedFields ?? opts.selectedFields ?? null
   }
 
-  // The JSON-parse and boolean-coerce pass, shared by read/readAll.
+  // The JSON-parse and boolean-coerce pass, shared by read/readAll. It writes
+  // into `r`, which the caller has already cloned.
   function shapeScalars(r) {
-    if (!_hasJson && !_hasBool) return r
-    const out = { ...r }
     if (_hasJson) {
       for (const field of jsonFields) {
-        if (field in out && typeof out[field] === 'string') {
-          try { out[field] = JSON.parse(out[field]) } catch {}
+        if (field in r && typeof r[field] === 'string') {
+          try { r[field] = JSON.parse(r[field]) } catch {}
         }
       }
     }
     if (_hasBool) {
       for (const field of boolFields) {
-        if (field in out && out[field] !== null) out[field] = out[field] === 1 || out[field] === true
+        if (field in r && r[field] !== null) r[field] = r[field] === 1 || r[field] === true
       }
     }
-    return out
+    return r
   }
 
+  // A row is cloned once, here, and every stage after writes into the clone.
+  // A stage that spread its own copy made a plain read 0.17 µs a row and a
+  // Json + Boolean + @computed + @omit one 0.40 (`FJS-3001`).
   function read(row, opts = {}) {
     if (!row) return null
-    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return _dropMirror(row)
-    let r = opts.hydrateFrom ? hydrateFromFields(row) : row
+    const r = { ...row }
+    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return _dropMirror(r)
+    if (opts.hydrateFrom) hydrateFromFields(r)
     // Row references resolve before applyComputed below, so a @computed field
     // over `row.lastOrder.amount` still sees a row rather than its id.
-    if (_hasJson || _hasBool) {
-      const out = { ...r }
-      if (_hasJson) {
-        for (const field of jsonFields) {
-          if (field in out && typeof out[field] === 'string') {
-            try { out[field] = JSON.parse(out[field]) } catch {}
-          }
-        }
-      }
-      if (_hasBool) {
-        for (const field of boolFields) {
-          if (field in out && out[field] !== null) {
-            out[field] = out[field] === 1 || out[field] === true
-          }
-        }
-      }
-      r = out
-    }
+    if (_hasJson || _hasBool) shapeScalars(r)
     if (_hasFrom) {
-      r = deserializeFromFields(r, gatedFromFields(_tableFrom, ctx))
+      deserializeFromFields(r, gatedFromFields(_tableFrom, ctx))
       if (_hasRowRef) resolveFromRowRefs(readDb, [r], _tableFrom, ctx)
     }
-    if (_hasComputed) r = applyComputed(r, modelName, computedFns, ctx, computedWanted(opts))
-    if (hasFieldPolicy) r = applyFieldPolicy(r, opts)
+    if (_hasComputed) applyComputed(r, modelName, computedFns, ctx, computedWanted(opts))
+    if (hasFieldPolicy) applyFieldPolicy(r, opts)
     return _dropMirror(r)
   }
   function readAll(rows, opts = {}) {
     // Fast path — no transforms needed, return rows as-is
-    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return _extMirror ? rows.map(_dropMirror) : rows
+    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return _extMirror ? rows.map(r => _dropMirror({ ...r })) : rows
     const wanted = computedWanted(opts)
     const hidden = _hasFrom ? gatedFromFields(_tableFrom, ctx) : null
+    const shapeRow = (r) => {
+      if (_hasComputed) applyComputed(r, modelName, computedFns, ctx, wanted)
+      if (hasFieldPolicy) applyFieldPolicy(r, opts)
+      return _dropMirror(r)
+    }
     // Two passes when a row reference is in play: every row's id is resolved in
     // one query, then the per-row transforms run. One pass would be a query per
     // row, and applyComputed would run before the row it reads exists.
     if (_hasRowRef) {
-      const staged = rows.map(r => deserializeFromFields(shapeScalars(r), hidden))
+      const staged = rows.map(r => deserializeFromFields(shapeScalars({ ...r }), hidden))
       resolveFromRowRefs(readDb, staged, _tableFrom, ctx)
-      return staged.map(r => {
-        let out = _hasComputed ? applyComputed(r, modelName, computedFns, ctx, wanted) : r
-        if (hasFieldPolicy) out = applyFieldPolicy(out, opts)
-        return _dropMirror(out)
-      })
+      return staged.map(shapeRow)
     }
-    return rows.map(r => {
-      if (_hasJson || _hasBool) {
-        const out = { ...r }
-        if (_hasJson) {
-          for (const field of jsonFields) {
-            if (field in out && typeof out[field] === 'string') {
-              try { out[field] = JSON.parse(out[field]) } catch {}
-            }
-          }
-        }
-        if (_hasBool) {
-          for (const field of boolFields) {
-            if (field in out && out[field] !== null) {
-              out[field] = out[field] === 1 || out[field] === true
-            }
-          }
-        }
-        r = out
-      }
-      if (_hasFrom)      r = deserializeFromFields(r, hidden)
-      if (_hasComputed)  r = applyComputed(r, modelName, computedFns, ctx, wanted)
-      if (hasFieldPolicy) r = applyFieldPolicy(r, opts)
-      return _dropMirror(r)
+    return rows.map(row => {
+      const r = { ...row }
+      if (_hasJson || _hasBool) shapeScalars(r)
+      if (_hasFrom) deserializeFromFields(r, hidden)
+      return shapeRow(r)
     })
   }
 
@@ -5444,7 +5440,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
           const named = Object.keys(ops.connect)
           const byKey = named.length === refs.length && refs.every(r => r in ops.connect)
           throw byKey
-            ? parentRefusal(fieldName, fks, refs.map(r => ops.connect[r]), rel.targetModel)
+            ? parentRefusal(fieldName, fks, refs.map(r => ops.connect[r]), rel.targetModel,
+                await isArchivedParent(tbl, rel.targetModel, ops.connect))
             : parentRefusal(fieldName, fks.length === 1 ? fks : [fieldName], [ops.connect], rel.targetModel)
         }
         grantsOf(target)
@@ -5720,7 +5717,24 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function writeRefusal(plan, err, st) {
     return plan.op === 'delete'
       ? refusedDelete(err, plan.where?.sql ?? null, plan.where?.params ?? [])
-      : asConstraintError(err, st.data)
+      : asConstraintError(err, st.data, plan.op === 'update' && plan.where ? reachedRow(plan.where) : null)
+  }
+
+  // The first row an UPDATE's WHERE reaches, as the named columns by field name.
+  // The statement failed and rolled back, so unwritten columns are still the
+  // row's own.
+  function reachedRow(where) {
+    return (cols) => {
+      const q = sqlJoin([
+        sqlFragment('SELECT '), sqlJoin(cols.map(c => ident(col(c))), ', '),
+        sqlFragment(' FROM '), T, KW.where, where, sqlFragment(' LIMIT 1'),
+      ], '')
+      const got = readDb.query(q.sql).get(...q.params)
+      if (!got) return null
+      const out = {}
+      for (const c of cols) out[c] = got[col(c)]
+      return out
+    }
   }
 
   function selectWhere(where) {
@@ -11958,7 +11972,7 @@ function makeLockPrimitive(rawWriteDb) {
     // 3. The shape.
     const fp = shapes[modelName].fieldPolicy
     return fp && shapesRead(fp)
-      ? applyFieldPolicyTo(row, modelName, fp, readCtx, { mode: 'single' })
+      ? applyFieldPolicyTo({ ...row }, modelName, fp, readCtx, { mode: 'single' })
       : row
   }
 
@@ -12268,6 +12282,11 @@ function makeLockPrimitive(rawWriteDb) {
   async function auditWith(principal, entry, opts = {}) {
     if (typeof entry?.operation !== 'string' || !entry.operation)
       throw new Error(`$audit: 'operation' is required — the name of what happened, e.g. 'login.failed'.`)
+    // The trail's `model` column is NOT NULL. Left to the row write, the refusal
+    // reads as a validation failure on a column, and a caller that reports its
+    // own audit failures as warnings (auth, mcp) loses a security event to noise.
+    if (typeof entry.model !== 'string' || !entry.model)
+      throw new Error(`$audit: 'model' is required — what '${entry.operation}' is about, e.g. 'User'. With no row, pass records: [].`)
 
     // Refused by name rather than dropped: a misspelled key is a caller that
     // meant to record something, and a silently thinner row is worse than none.

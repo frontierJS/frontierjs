@@ -156,48 +156,30 @@ const { resolveHealthPath, declaresHealth } =
 const { imageNeeds, CHROME_RUN } =
   await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 
+// Live keys only. The options an app does not set (`user`, `transport`,
+// `builder`, `api.domain`, per-target overrides) are documented in the deploy
+// namespace's own config reference, where one copy serves every app, and a
+// commented-out key here is a line to delete. A server or domain nobody named
+// is absent rather than a placeholder: `ssh your-server.com` reaches a stranger.
 const makeDeployBlock = (appId, server, domain, healthPath) => {
-  const serverLine = server ? `    server: '${server}',` : `    server: 'your-server.com',   // ← set this`
-  const domainLine = domain ? `      domain: '${domain}',` : `      domain: 'your-app.com',   // ← set this`
+  const serverLine = server ? `    server: '${server}',\n` : ''
+  const domainLine = domain ? `      domain: '${domain}',\n` : ''
 
   return `  deploy: {
-${serverLine}
-    // user: 'deploy',           // absent: the bare server, so an alias in
-    //                           // ~/.ssh/config supplies User, Port and key
-    path: '/apps/${appId}',      // deploy root on the server
+${serverLine}    path: '/apps/${appId}',
     app_id: '${appId}',
-    // transport: 'ssh',         // inferred from the server name; 'local' runs
-    //                           // the same scripts here, which is what a
-    //                           // localhost server already gets
-
-    // Where the image is BUILT. Absent, it is built on the api target — which
-    // means dev, stage and production each build their own bytes and no two can
-    // be shown to be one artefact. Name a machine here and it is built once and
-    // shipped (docker save | docker load), so one digest serves them all.
-    // builder: { server: 'build.your-app.com', path: '/apps/${appId}' },
 
     api: {
       port:       3000,
-      // Must include the app's apiPrefix — healthPlugin() registers through
-      // app.get(), which moves with it. A wrong path here rolls back a good deploy.
+      // Must include the app's apiPrefix. A wrong path here rolls back a good deploy.
       health:     '${healthPath}',
       dockerfile: 'deploy/Dockerfile',
       env:        '/apps/${appId}/.env.production',
-
-      // Set to true to validate server env against .env.example before deploying
-      envCheck: true,
-
-      // The API on a domain of its own (api.your-app.com beside the web domain).
-      // Unset, the web domain proxies /api/ and /ws and the page and the API are
-      // one origin. Set, setup writes a second Caddy route and the web build is
-      // run with VITE_API_URL=https://<this domain>. Caddy fetches the
-      // certificate for each domain, so there is no ssl key.
-      // domain: 'api.your-app.com',
+      envCheck:   true,
     },
 
     web: {
-${domainLine}
-      keep_releases: 3,
+${domainLine}      keep_releases: 3,
     },
 
     db: {
@@ -208,15 +190,10 @@ ${domainLine}
 
     // Docker's default log driver caps nothing, so a container that logs on
     // every request fills the disk and the database stops writing first.
-    // Set logs to false if the daemon is already pointed somewhere.
     logs: {
       max_size:  '10m',
       max_files: 5,
     },
-
-    // Per-target overrides (server/user/path only)
-    // production: { server: 'prod.your-app.com' },
-    // stage:      { server: 'stg.your-app.com' },
   },`
 }
 
@@ -308,7 +285,12 @@ const configPath = resolve($.paths.root, 'frontier.config.js')
 const health      = resolveHealthPath($.paths.root)
 const deployBlock = makeDeployBlock(appId, server, domain, health.path)
 
-if (!existsSync(configPath)) {
+// Written when the caller says where it deploys. Without a server or a domain
+// the block would be a file of defaults an app already has, and a missing config
+// is what every deploy command answers by naming this command.
+if (!server && !domain) {
+  log.info('frontier.config.js not written — pass --server and/or --domain to write the deploy block')
+} else if (!existsSync(configPath)) {
   // Create a minimal frontier.config.js
   const content = `export default {\n\n${deployBlock}\n}\n`
   if (!flag.dry) writeFileSync(configPath, content, 'utf8')
@@ -372,7 +354,7 @@ echo('')
 log.success('Done. Next steps:')
 echo('')
 echo('  1. Review deploy/Dockerfile and adjust for your app')
-echo('  2. Set server/domain in frontier.config.js deploy block')
+echo(server || domain ? '  2. Review the deploy block in frontier.config.js' : '  2. Write the deploy block:  fli make:deploy --server <host> --domain <domain>')
 echo(`  3. Make sure something answers ${health.path} (plugins: { health: true })`)
 echo('  4. Create .env.example with your required env keys')
 echo('  5. Test locally:      fli deploy:local')

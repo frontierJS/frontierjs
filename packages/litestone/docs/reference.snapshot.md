@@ -78,7 +78,7 @@ database logs {
 
 - **`driver`** — `sqlite` · `jsonl` · `trail`
 - **Deeper** — [multi-database.md](multi-database.md)
-- **See also** — [`@@db`](#db-model) · [`@trail`](#trail-field)
+- **See also** — [`@@db`](#db-model) · [`@@trail`](#trail-model)
 
 ### `tenancy` `{ strategy database | row, … }` <a id="tenancy-declaration"></a>
 
@@ -118,7 +118,7 @@ claim siteId     from Employee(userId).siteId
 - **Note** — Declared and never used in a policy is reported by `litestone advise`; used and never declared is a parse-time refusal.
 - **Also typed** — `token claim`
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@@auth`](#auth-model) · [`@allow`](#allow-field)
+- **See also** — [`@@auth`](#auth-model) · [`@@allow`](#allow-model)
 
 ### `model` `<PascalCaseSingular> { … }` <a id="model-declaration"></a>
 
@@ -184,7 +184,7 @@ valueset TaskTag {
 ```
 
 - **Also typed** — `lookup table` · `shared enum`
-- **See also** — [`@values`](#values-field) · [`scope`](#scope-declaration)
+- **See also** — [`@values`](#values-field) · [`@@scope`](#scope-model)
 
 ### `scope` `<name>(<field>[, <field>…])` <a id="scope-declaration"></a>
 
@@ -699,7 +699,7 @@ model Example {
 - **`category`** — `contact` · `device` · `location` · `government` · `financial` · `employment` · `communication` · `demographic` · `health` · `genetic` · `biometric` · `characteristic` · `criminal`
 - **Also typed** — `pii` · `gdpr` · `personal data`
 - **Deeper** — [audit-logging.md](audit-logging.md)
-- **See also** — [`@@person`](#person-model) · [`@trail`](#trail-field) · [`@omit`](#omit-field)
+- **See also** — [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@omit`](#omit-field)
 
 #### `@secret` `[(rotate: …)]` <a id="secret-field"></a>
 
@@ -925,7 +925,7 @@ model Example {
 - **Deeper** — [jsonschema.md](jsonschema.md)
 - **See also** — [`enum`](#enum-declaration) · [`@@label`](#label-model)
 
-#### `@required` `[([where: <expr>][, message: "…"])]` <a id="required-field"></a>
+#### `@required` `[([where: <expr>][, "message"])]` <a id="required-field"></a>
 
 Which rows need a value in this column, and what to say when one does not. Bare it only carries the MESSAGE — the absence of `?` is the rule — and it is refused on an optional field, where that message could never fire. `where:` is the other half and wants the opposite type: it MAKES the column required, in the rows the predicate admits, so it needs the `?` the bare form forbids. The predicate reads this row's own columns and nothing else, because it becomes a CHECK on the table — which is the reach a boundary rule cannot have, holding against a migration, a seed, asSystem() and a raw statement. auth(), now(), check() and a relation hop are each refused by name: a CHECK sees no caller, no clock it can be trusted with, and no other table. The boundary refuses FIRST and names the FIELD, which is the half a table constraint cannot do — SQLite reports a violation by the constraint's source text and has no field to blame. Adding one to a populated table whose rows do not satisfy it fails the migration with nothing applied. Either way the message reaches the browser as x-messages and renders in &lt;Form&gt;, beside the control it is about.
 
@@ -1314,7 +1314,7 @@ model Example {
 ```
 
 - **Deeper** — [geo.md](geo.md)
-- **See also** — [`type`](#type-declaration) · [`@generated`](#generated-field)
+- **See also** — [`@type`](#type-field) · [`@generated`](#generated-field)
 
 #### `@vector` `(<dimensions>)` <a id="vector-field"></a>
 
@@ -1382,7 +1382,7 @@ model Example {
 
 - **Legal** — in a model
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@id`](#id-field) · [`@unique`](#unique-field)
+- **See also** — [`@id`](#id-field) · [`@@unique`](#unique-model)
 
 ### Shape the table
 
@@ -1470,7 +1470,7 @@ model Example {
 ```
 
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@check`](#check-field) · [`@relation`](#relation-field)
+- **See also** — [`@@check`](#check-model) · [`@relation`](#relation-field)
 
 #### `@@relator` `([field, …], once | many | many: <column>)` <a id="relator-model"></a>
 
@@ -1493,7 +1493,7 @@ model Example {
 ```
 
 - **Deeper** — [relations.md](relations.md)
-- **See also** — [`@unique`](#unique-field) · [`@@index`](#index-model) · [`@@arc`](#arc-model) · [`@relation`](#relation-field)
+- **See also** — [`@@unique`](#unique-model) · [`@@index`](#index-model) · [`@@arc`](#arc-model) · [`@relation`](#relation-field)
 
 #### `@@map` `("table_name")` <a id="map-model"></a>
 
@@ -1597,7 +1597,7 @@ model Example {
 ```
 
 - **Deeper** — [extensible-columns.md](extensible-columns.md)
-- **See also** — [`type`](#type-declaration) · [`@generated`](#generated-field) · [`@@index`](#index-model) · [`@@gate`](#gate-model)
+- **See also** — [`@type`](#type-field) · [`@generated`](#generated-field) · [`@@index`](#index-model) · [`@@gate`](#gate-model)
 
 #### `@@softDelete` `[(cascade)]` <a id="softdelete-model"></a>
 
@@ -1660,7 +1660,7 @@ model Example {
 
 - **Also typed** — `valid time` · `validity` · `as of` · `effectivity`
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@@expires`](#expires-model) · [`@unique`](#unique-field) · [`@check`](#check-field)
+- **See also** — [`@@expires`](#expires-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model)
 
 #### `@@commitment` `([<relation>.]<transition>, on: <field> [+|- <n><unit> | <field>] [, while: <expr>])` <a id="commitment-model"></a>
 
@@ -1697,7 +1697,7 @@ model Example {
 
 - **`scope`** — `all`
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@capability`](#capability-field) · [`@@gate`](#gate-model) · [`@allow`](#allow-field) · [`@@transitions`](#transitions-model)
+- **See also** — [`@capability`](#capability-field) · [`@@gate`](#gate-model) · [`@@allow`](#allow-model) · [`@@transitions`](#transitions-model)
 
 #### `@@gate` `("<read>.<create>.<update>.<delete>" | "<n>")` <a id="gate-model"></a>
 
@@ -1712,7 +1712,7 @@ model Example {
 
 - **Also typed** — `permission` · `rbac` · `role` · `authorization`
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@allow`](#allow-field) · [`@@deny`](#deny-model)
+- **See also** — [`@@allow`](#allow-model) · [`@@deny`](#deny-model)
 
 #### `@@export` `(ndjson | csv [, since: <column>])` <a id="export-model"></a>
 
@@ -1728,7 +1728,7 @@ model Example {
 ```
 
 - **Deeper** — [export.md](export.md)
-- **See also** — [`@@gate`](#gate-model) · [`@allow`](#allow-field) · [`view`](#view-declaration)
+- **See also** — [`@@gate`](#gate-model) · [`@@allow`](#allow-model) · [`view`](#view-declaration)
 
 #### `@@allow` `('read'|'create'|'update'|'post-update'|'delete'|'write'|'all', <expression>[, message])` <a id="allow-model"></a>
 
@@ -1744,7 +1744,7 @@ model Example {
 
 - **Also typed** — `rls` · `row level security`
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@@deny`](#deny-model) · [`@@gate`](#gate-model) · [`scope`](#scope-declaration)
+- **See also** — [`@@deny`](#deny-model) · [`@@gate`](#gate-model) · [`@@scope`](#scope-model)
 
 #### `@@deny` `('read'|…, <expression>[, message])` <a id="deny-model"></a>
 
@@ -1759,7 +1759,7 @@ model Example {
 ```
 
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@allow`](#allow-field) · [`@@tenant`](#tenant-model)
+- **See also** — [`@@allow`](#allow-model) · [`@@tenant`](#tenant-model)
 
 #### `@@scope` `(<name>, <expression>)` <a id="scope-model"></a>
 
@@ -1898,7 +1898,7 @@ model Example {
 
 - **Also typed** — `unattributed` · `ballot` · `survey` · `confidential`
 - **Deeper** — [audit-logging.md](audit-logging.md)
-- **See also** — [`@trail`](#trail-field) · [`@createdBy`](#createdby-field) · [`@date`](#date-field)
+- **See also** — [`@@trail`](#trail-model) · [`@@createdBy`](#createdby-model) · [`@date`](#date-field)
 
 #### `@@db` `(<database>)` <a id="db-model"></a>
 
@@ -2020,7 +2020,7 @@ model Example {
 ```
 
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@@transitions`](#transitions-model) · [`@system`](#system-field)
+- **See also** — [`@@transitions`](#transitions-model) · [`@system`](#system-move)
 
 #### `@system` <a id="system-move"></a>
 
@@ -2041,7 +2041,7 @@ model Example {
 ```
 
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@@transitions`](#transitions-model) · [`@@gate`](#gate-model) · [`@guarded`](#guarded-field)
+- **See also** — [`@@transitions`](#transitions-model) · [`@gate`](#gate-move) · [`@guarded`](#guarded-field)
 
 ## Where a word is legal
 
@@ -2111,6 +2111,10 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `value-rule-on-a-relation` — a value validator on a relation grades nothing
 
 *error*. A relation field is a collection of ROWS, not a value, so a rule written to grade a value has nothing to read. @minItems and @maxItems are the two that do count there — they mean the same thing on a relation as they already mean on a Json array.
+
+### `validator-on-the-wrong-type` — a validator written for a type the column is not
+
+*error*. A rule grades a value of one kind: @gte a number, @length a string, @minItems a list. Written on any other column it parses, then either never runs or compares the wrong thing -- Number("abc") is NaN and fails every bound, String(5).length counts digits -- and a generated form is handed a numeric minimum on a checkbox.
 
 ### `foreign-key-without-index` — a foreign key column with no index
 

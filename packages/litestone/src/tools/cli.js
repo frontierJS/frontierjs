@@ -2076,7 +2076,7 @@ async function cmdAdvise(cfg) {
 
 
 async function cmdExplain(word) {
-  const { CATALOG, POSITIONS, positionsOf, typed, grouped, docFor, bySynonym } =
+  const { CATALOG, POSITIONS, positionsOf, typed, grouped, docFor, bySynonym, seeAlsoWord } =
     await import('../core/catalog.js')
   const { VISIBILITY, PER_CALLER } = await import('../core/advise.js')
 
@@ -2179,7 +2179,7 @@ async function cmdExplain(word) {
       console.log(`  ${dim(v.arg.padEnd(10))} ${v.of.map(e => typeof e === 'string' ? e : e.value).join(' · ')}`)
 
     if (row.excludes?.length) console.log(`  ${dim('not with')}   ${row.excludes.map(w => cyan('@' + w)).join(' ')}`)
-    if (row.seeAlso?.length)  console.log(`  ${dim('see also')}   ${row.seeAlso.map(cyan).join(' ')}`)
+    if (row.seeAlso?.length)  console.log(`  ${dim('see also')}   ${row.seeAlso.map(w => cyan(seeAlsoWord(w))).join(' ')}`)
     // `see also` leads to another word; this is the only line that leads out of
     // the catalog, which is the difference between finding a word and using it.
     if (docFor(row))          console.log(`  ${dim('read more')}  ${cyan(docFor(row))}`)
@@ -3405,9 +3405,11 @@ async function cmdIntrospect(dbArg, cfg) {
   // run this command could not run it. Same class as FJS-449: the declaration is
   // the answer, and `openSqliteDbs` has always known it.
   //
-  // One database in, one schema out — this emits no `@@db` — so a schema
-  // declaring several is asked which, by name, rather than served the first.
+  // One database in, one schema out, so a schema declaring several is asked
+  // which, by name, rather than served the first; its models then carry
+  // `@@db(name)`.
   let dbPath = dbArg
+  let dbName = null
   if (!dbPath && cfg.schema && existsSync(resolve(cfg.schema))) {
     const parsed = loadSchema(cfg.schema)
     if (parsed?.schema && declaresDatabases(parsed)) {
@@ -3420,7 +3422,10 @@ async function cmdIntrospect(dbArg, cfg) {
       if (pick.length > 1)
         fatal(`${rel(resolve(cfg.schema))} declares ${pick.length} databases — name one.\n` +
               `     litestone introspect --db=${pick[0].name}   (of ${pick.map(d => d.name).join(', ')})`)
-      if (pick.length === 1) dbPath = resolveDbPath(pick[0].path, null, schemaAnchor(cfg.schema))
+      if (pick.length === 1) {
+        dbPath = resolveDbPath(pick[0].path, null, schemaAnchor(cfg.schema))
+        if (sqlite.length > 1) dbName = pick[0].name
+      }
     }
   }
   dbPath ??= cfg.db
@@ -3441,7 +3446,7 @@ async function cmdIntrospect(dbArg, cfg) {
   const { tierOf }            = await import('../import/tiers.js')
 
   const db = openDatabase(abs, { readonly: true })
-  const { lite: liteSchema, gaps, summary } = introspectToLite(db, { camelCase: !noCamel })
+  const { lite: liteSchema, gaps, summary } = introspectToLite(db, { camelCase: !noCamel, database: dbName })
   db.close()
 
   if (out) {

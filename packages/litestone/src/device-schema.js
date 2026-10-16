@@ -115,8 +115,6 @@ export function deviceSchema(parseResult) {
   // ─── the models ─────────────────────────────────────────────────────────
 
   const models = syncable.map((model) => {
-    const droppedFields = new Set()
-
     const fields = []
     for (const field of model.fields ?? []) {
       const typeName = field.type?.name
@@ -131,7 +129,6 @@ export function deviceSchema(parseResult) {
         //
         // `StocktakeCount.variant` is the case: `variantId Int` is still there,
         // which is what the held write carries and what the server joins on.
-        droppedFields.add(field.name)
         note('lost', `${model.name}.${field.name}`,
           `a relation to ${typeName}, which does not declare @@sync` +
           (foreignKeyOf(field) ? ` — ${foreignKeyOf(field)} is still a column` : ''))
@@ -167,10 +164,9 @@ export function deviceSchema(parseResult) {
         // dropped, so the attribute naming one has nothing to name.
         continue
       }
-      if ((attr.kind === 'index' || attr.kind === 'unique') &&
-          (attr.fields ?? []).some(f => droppedFields.has(f))) {
-        note('lost', `${model.name} @@${attr.kind}([${(attr.fields ?? []).join(', ')}])`,
-          'it names a relation that is not in the device schema')
+      if (attr.kind === 'trail' && trailDbNames.has(attr.db)) {
+        note('lost', `${model.name} @@trail(${attr.db})`,
+          'a trail database is a fleet-wide file on a server; a device has one database')
         continue
       }
       attributes.push(attr)

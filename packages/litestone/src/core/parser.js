@@ -13,6 +13,7 @@ import { parseGateString, validateGate } from '../plugins/gate.js'
 // One owner for the range a value round-trips through a JS number in — the
 // validator's, so a refusal here and a refusal at the boundary name one number.
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
+import { suggestKey } from './args.js'
 import { compileStatic, policyExprToString } from './policy.js'
 import { pointColumnNames, isStoredField, mapIdentifiers } from './ddl.js'
 import { inferFromFk, inferFromHop, inferToOneFrom } from './schema-maps.js'
@@ -2725,8 +2726,15 @@ class Parser {
           throw new ParseError(`@@exclude(${scope}): range names two fields, [start, end] — got ${range.length}`, close)
         return where ? { kind: 'exclude', scope, range, where } : { kind: 'exclude', scope, range }
       }
-      default:
-        throw new ParseError(`Unknown model attribute '@@${name}'`, this.peek())
+      default: {
+        // The block words disagree on number (`@@transitions` and
+        // `@@capabilities` plural, `@@commitment` and `@@index` singular), so
+        // the wrong number is the likeliest typo and the refusal names the
+        // neighbor (`FJS-2977`).
+        const near = suggestKey(name, MODEL_ATTRIBUTE_WORDS)
+        throw new ParseError(
+          `Unknown model attribute '@@${name}'` + (near ? `. Did you mean '@@${near}'?` : ''), this.peek())
+      }
     }
   }
 
@@ -3474,6 +3482,17 @@ function attrAnswer(attr, at = '@@', ordinal = 'the first') {
     ? `${ordinal} ${tag}`
     : `${tag}(${JSON.stringify(v)})`
 }
+
+// The words `parseModelAttributeBody` accepts after `@@`, for its refusal's
+// *did you mean*. A word added to the switch and not here still parses and is
+// merely never suggested.
+const MODEL_ATTRIBUTE_WORDS = [
+  'index', 'id', 'unique', 'arc', 'relator', 'noStrict', 'fts', 'map', 'label',
+  'external', 'extensible', 'softDelete', 'capabilities', 'hasTemplates',
+  'expires', 'effective', 'commitment', 'createdBy', 'updatedBy', 'allow',
+  'deny', 'scope', 'tenant', 'check', 'export', 'gate', 'transitions', 'auth',
+  'person', 'trail', 'db', 'trait', 'sync', 'anonymous', 'exclude',
+]
 
 // These are PARSE KINDS and not the words a reader types, which is the trap
 // this list has already fallen into twice: `@@unique` parses as `uniqueIndex`
@@ -6668,6 +6687,18 @@ function validate(schema) {
                   : null
       if (!label) continue
       for (const name of attr.fields ?? []) {
+        // A relation field is no column: its DDL name is the foreign key. SQLite
+        // reads a double-quoted name that is not a column as a string literal,
+        // so the index builds over a constant and the unique constraint admits
+        // one row.
+        const rel = byName.get(name)
+        if (rel && (rel.type.kind === 'relation' || rel.type.kind === 'implicitM2M')) {
+          const fk = rel.attributes.find(a => a.kind === 'relation')?.fields
+          errors.push(`Model '${model.name}': ${label}([${(attr.fields ?? []).join(', ')}]) cannot be built — ` +
+                      `'${name}' is a relation, which has no column of its own. ` +
+                      (fk?.length ? `Name its foreign key instead: ${fk.join(', ')}` : `Name the stored columns it is built from`))
+          continue
+        }
         const why = reason(name)
         if (!why) continue
         errors.push(`Model '${model.name}': ${label}([${(attr.fields ?? []).join(', ')}]) cannot be built — ` +
@@ -6775,17 +6806,18 @@ function validate(schema) {
   // whose two ends are assigned to different `database` blocks parses clean,
   // emits an FK into whichever file the child is in, and throws
   // `no such table` on every create — measured. Refused here because the two
-  // `@@db` assignments are the only place this is decidable.
+  // `@@db` assignments are the only place this is decidable. `@@external` on
+  // either end is no exemption: it says who creates the table, not which file
+  // holds it (`FJS-1460`).
   {
     const dbOf = (m) => m.attributes.find(a => a.kind === 'db')?.name ?? 'main'
     const modelByName = new Map(schema.models.map(m => [m.name, m]))
     for (const model of schema.models) {
-      if (model.attributes.some(a => a.kind === 'external')) continue
       for (const field of model.fields) {
         const rel = field.attributes.find(a => a.kind === 'relation')
         if (!rel?.fields?.length) continue          // the owning side only
         const target = modelByName.get(typeof field.type === 'string' ? field.type : field.type?.name)
-        if (!target || target.attributes.some(a => a.kind === 'external')) continue
+        if (!target) continue
         if (dbOf(model) === dbOf(target)) continue
         errors.push(
           `Model '${model.name}', field '${field.name}': a relation cannot cross databases — ` +

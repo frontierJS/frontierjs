@@ -145,3 +145,19 @@ describe('filing from several processes at once', () => {
     expect(new Set(rows.map(r => r.id)).size).toBe(4)
   })
 })
+
+// FJS-2976: `--dry` is on every command, and a dry run that files is the row it was asked not to write.
+describe('filing a row dry', () => {
+  test('answers the id and the line it would take, and the file is not touched', () => {
+    const root   = project()
+    const before = file(root)
+    const out    = fileIssue({ root, ...input, dry: true })
+    expect(out).toMatchObject({ ok: true, dry: true, id: 'ELA-008' })
+    expect(file(root)).toBe(before)
+  })
+
+  test('refuses what the real run would refuse', () => {
+    const root = project()
+    expect(fileIssue({ root, ...input, detail: '', dry: true })).toMatchObject({ ok: false })
+  })
+})

@@ -273,13 +273,19 @@ export const OPPORTUNITIES = [
                 'free-form documents exist — this is the shape worth a second look, not a defect.',
     run(schema) {
       const out = []
-      for (const model of authored(schema))
+      for (const model of authored(schema)) {
+        // @@extensible closes its column to the keys a declaring model names, so
+        // the parser refuses @type there; its Slots mirror is generated, not written.
+        const extensible = new Set((model.attributes ?? [])
+          .filter(a => a.kind === 'extensible').map(a => a.column))
         for (const f of model.fields ?? []) {
           if (scalarOf(f) !== 'Json' || has(f, 'type')) continue
+          if (f.generated || extensible.has(f.name)) continue
           out.push({ model: model.name, field: f.name,
             message: `${model.name}.${f.name} is an undescribed Json column. \`type\` names its ` +
               `shape and @type(Name) binds it, which validates the write and generates a form.` })
         }
+      }
       return out
     },
   },

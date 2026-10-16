@@ -203,6 +203,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./engines/sqlite-wasm (import)` | `src/engines/sqlite-wasm.js` | yes |
 | exports | `./migrate (import)` | `src/core/migrate.js` | yes |
 | exports | `./migrations (import)` | `src/core/migrations.js` | yes |
+| exports | `./migrations (types)` | `src/core/migrations.d.ts` | yes |
 | exports | `./parser (import)` | `src/core/parser.js` | yes |
 | exports | `./device-schema (import)` | `src/device-schema.js` | yes |
 | exports | `./import (import)` | `src/import/index.js` | yes |

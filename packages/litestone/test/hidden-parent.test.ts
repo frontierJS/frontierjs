@@ -132,6 +132,28 @@ describe('a foreign key naming a parent the caller cannot read', () => {
     db.$close()
   })
 
+  // FJS-2800: a parent the caller could read with `withDeleted` is archived, not
+  // missing, and saying so discloses nothing she could not already ask for.
+  test('an archived parent the caller can read says archived; one she cannot read still reads as missing', async () => {
+    const { db, sys, alice } = await seeded()
+    await alice.project.remove({ where: { id: 2 } })
+    await sys.project.remove({ where: { id: 1 } })
+    const archived = await refusal(alice.task.create({ data: { ownerId: 'alice', projectId: 2 } }))
+    expect(archived).toBeInstanceOf(ForeignKeyError)
+    expect(archived.message).toMatch(/archived/)
+    expect(archived.errors[0].message).toMatch(/archived/)
+    expect(archived.status).toBe(422)
+    // Bob's archived project and Project 999 are the same refusal.
+    const bobs    = await refusal(alice.task.create({ data: { ownerId: 'alice', projectId: 1 } }))
+    const missing = await refusal(alice.task.create({ data: { ownerId: 'alice', projectId: 999 } }))
+    expect(shape(bobs)).toEqual(shape(missing))
+    expect(bobs.message).not.toMatch(/archived/)
+    // The nested connect says it too.
+    const nested = await refusal(alice.task.create({ data: { ownerId: 'alice', project: { connect: { id: 2 } } } }))
+    expect(nested.message).toMatch(/archived/)
+    db.$close()
+  })
+
   test('asSystem() is the blind reference, and a key the engine stamps is not graded', async () => {
     const { db, sys, alice } = await seeded()
     expect((await sys.task.create({ data: { ownerId: 'alice', projectId: 1 } })).projectId).toBe(1)

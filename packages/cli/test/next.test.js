@@ -10,7 +10,8 @@ import { join }          from 'path'
 import { tmpdir }        from 'os'
 import { fileURLToPath } from 'url'
 
-import { rankNext, blockedBy, byHand, blockedLine, WEIGHTS } from '../core/next.js'
+import { execFileSync } from 'child_process'
+import { rankNext, blockedBy, byHand, blockedLine, recentPaths, COMMIT_FILE_CAP, WEIGHTS } from '../core/next.js'
 
 // Every fixture declares the prefix its rows are written under.
 const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
@@ -231,5 +232,28 @@ describe('what a blocker holds', () => {
       expect(ids(ready)).toEqual(['FJS-003', 'FJS-004'])
       expect(ready[0].terms.find(t => t.term === 'blocks').note).toMatch(/S2/)
     } finally { cleanup() }
+  })
+})
+
+describe('recentPaths — the git side of the touched term', () => {
+  const git = (root, ...argv) => execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...argv], { stdio: 'ignore' })
+
+  test('a squash-style commit marks nothing, and a focused commit and the working tree still do', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-next-git-'))
+    try {
+      git(root, 'init', '-q')
+      mkdirSync(join(root, 'bulk'))
+      for (let i = 0; i < COMMIT_FILE_CAP + 1; i++) writeFileSync(join(root, 'bulk', `f${i}.js`), 'x')
+      git(root, 'add', '.'); git(root, 'commit', '-qm', 'updates')
+      writeFileSync(join(root, 'focused.js'), 'x')
+      git(root, 'add', '.'); git(root, 'commit', '-qm', 'fix')
+      writeFileSync(join(root, 'dirty.js'), 'x')
+      git(root, 'add', 'dirty.js')
+
+      const paths = recentPaths(root)
+      expect(paths.has('focused.js')).toBe(true)
+      expect(paths.has('dirty.js')).toBe(true)
+      expect([...paths].filter(p => p.startsWith('bulk/'))).toEqual([])
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 })

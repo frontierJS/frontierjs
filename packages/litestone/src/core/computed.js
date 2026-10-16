@@ -148,13 +148,13 @@ function needsHandler(modelName, field, needs) {
  * @param {Record<string, Record<string, any>> | null | undefined} computedFns  a model's bag mixes plans with `$`-keys
  * @param {unknown} ctx
  * @param {Set<string> | null} [wanted]
- * @returns {T | Record<string, unknown>}  the row as handed in, or a copy with the computed values on it
+ * @returns {T | Record<string, unknown>}  the row handed in, with the computed values on it; the caller owns it
  */
 export function applyComputed(row, modelName, computedFns, ctx, wanted = null) {
   if (!row) return row
   const fns = computedFns?.[modelName]
   if (!fns) return row
-  const out = { ...row }
+  const out = /** @type {Record<string, any>} */ (row)
   for (const field in fns) {
     const plan = fns[field]
     if (typeof plan?.compute !== 'function') continue

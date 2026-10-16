@@ -31,7 +31,9 @@
 // is where it surfaces, and it surfaces as a failure naming the call.
 
 import { describe, it, expect } from 'bun:test'
-import { readdirSync, readFileSync, statSync } from 'fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import { builtinModules }                      from 'module'
+import { tmpdir }                              from 'os'
 import { join, relative }                      from 'path'
 import { setEngine, clearEngine, currentEngine, openDatabase } from '../src/core/engine.js'
 
@@ -171,56 +173,66 @@ describe('a second engine, on a runtime that is not Bun', () => {
 // Walked from the two browser entries rather than declared, so a module that
 // joins the graph later is graded the day it joins.
 describe('the browser graph', () => {
-  const BUILTINS = new Set([
-    'fs', 'path', 'os', 'crypto', 'url', 'util', 'module', 'stream', 'zlib',
-    'child_process', 'worker_threads', 'perf_hooks', 'async_hooks', 'buffer',
-    'events', 'net', 'tls', 'http', 'https', 'dns', 'readline', 'tty', 'vm',
-  ])
+  // `bun build --target=browser` resolves a bare node builtin to a silent
+  // polyfill (930 KB for `path` and `node:crypto`) and refuses only `bun:`, so
+  // the bundle alone proves nothing (`FJS-2405`). The bundler is used as the
+  // WALK instead: its resolve hook sees every specifier the graph reaches --
+  // `export from`, `require`, a dynamic import, `fs/promises` -- which a regex
+  // over source text does not, and the builtin set is node's own list rather
+  // than one typed here.
+  const BUILTINS = new Set(builtinModules.map(m => m.replace(/^node:/, '')))
   const isBuiltin = (spec: string) =>
-    spec.startsWith('node:') || spec.startsWith('bun:') || BUILTINS.has(spec)
+    spec.startsWith('bun:') || spec.startsWith('node:') ||
+    BUILTINS.has(spec) || BUILTINS.has(spec.split('/')[0]!)
 
-  // `#host` and `#sql-engine` are the seam itself: resolved by CONDITION, so
-  // the browser build never sees the node file behind them.
-  const CONDITIONAL = new Set(['#host', '#sql-engine'])
-
-  const specifiersIn = (source: string): string[] => {
-    const out: string[] = []
-    for (const m of source.matchAll(/from\s*['"]([^'"]+)['"]/g))       out.push(m[1]!)
-    for (const m of source.matchAll(/import\s+['"]([^'"]+)['"]/g))     out.push(m[1]!)
-    for (const m of source.matchAll(/import\s*\(\s*(?:\/\*[^*]*\*\/\s*)?['"]([^'"]+)['"]/g)) out.push(m[1]!)
-    return out
+  // The imports a bundle of `entry` makes by a node builtin's own name, from
+  // any file under `root` (a polyfill's own imports are not ours to grade).
+  // `#host` and `#sql-engine` are resolved by CONDITION, so the browser build
+  // never sees the node file behind them.
+  async function builtinImports(entry: string, root: string): Promise<string[]> {
+    const hits = new Set<string>()
+    const built = await Bun.build({
+      entrypoints: [entry],
+      target: 'browser',
+      plugins: [{
+        name: 'builtin-imports',
+        setup(b) {
+          b.onResolve({ filter: /.*/ }, args => {
+            if (args.importer?.startsWith(root) && isBuiltin(args.path)) {
+              hits.add(`${relative(root, args.importer)} imports '${args.path}'`)
+            }
+            return undefined
+          })
+        },
+      }],
+    })
+    expect(built.success).toBe(true)
+    return [...hits].sort()
   }
 
-  it('reaches every host facility through #host, never by the builtin name', () => {
-    const seen = new Set<string>()
+  it('reaches every host facility through #host, never by the builtin name', async () => {
     const offenders: string[] = []
-
-    const walk = (file: string) => {
-      if (seen.has(file)) return
-      seen.add(file)
-      let source: string
-      try { source = readFileSync(file, 'utf8') } catch { return }
-
-      for (const spec of specifiersIn(source)) {
-        if (CONDITIONAL.has(spec)) continue
-        if (isBuiltin(spec)) {
-          offenders.push(`${relative(SRC, file)} imports '${spec}'`)
-          continue
-        }
-        if (!spec.startsWith('.')) continue          // a package, not our graph
-        const target = join(file, '..', spec)
-        walk(target)
-      }
+    for (const entry of ['browser/client.js', 'browser/worker.js', 'host/browser.js']) {
+      for (const hit of await builtinImports(join(SRC, entry), SRC)) offenders.push(`${entry}: ${hit}`)
     }
-
-    walk(join(SRC, 'browser/client.js'))
-    walk(join(SRC, 'browser/worker.js'))
-    walk(join(SRC, 'host/browser.js'))
-
-    // The walk having seen nothing and the walk having found nothing are one
-    // answer otherwise — a renamed entry file would report a clean graph.
-    expect(seen.size).toBeGreaterThan(20)
     expect(offenders).toEqual([])
+  })
+
+  // The control: a graph that DOES reach node by name is reported, including
+  // the spellings a source regex over a typed list misses.
+  it('sees a builtin reached as fs/promises, assert or node:crypto', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ls-browser-graph-'))
+    try {
+      writeFileSync(join(dir, 'leaf.js'), "import { readFile } from 'fs/promises'\nimport assert from 'assert'\nexport { readFile, assert }\n")
+      writeFileSync(join(dir, 'entry.js'), "import { createHash } from 'node:crypto'\nexport * from './leaf.js'\nexport { createHash }\n")
+      expect(await builtinImports(join(dir, 'entry.js'), dir)).toEqual([
+        "entry.js imports 'node:crypto'",
+        "leaf.js imports 'assert'",
+        "leaf.js imports 'fs/promises'",
+      ])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   // The worker is always handed a parse (sierra sends the device schema

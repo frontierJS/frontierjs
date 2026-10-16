@@ -758,8 +758,8 @@ export interface LitestoneClient {
    */
   $audit(entry: {
     operation: string
-    /** The model name (`User`); its accessor or table name is written as the model's. */
-    model?: string
+    /** The model name (`User`); its accessor or table name is written as the model's. A name that is no model (a dataset, a service) is kept as given. */
+    model: string
     field?: string | null
     records?: unknown[]
     before?: unknown
@@ -1000,10 +1000,6 @@ export interface VerifyResult {
   diff?:    string
 }
 
-export declare function create(db: unknown, parseResult: ParseResult, label?: string, dir?: string, opts?: { pluralize?: boolean }): CreateMigrationResult
-export declare function apply(db: unknown, dir?: string): Promise<ApplyResult>
-export declare function status(db: unknown, dir?: string): MigrationRow[]
-export declare function verify(db: unknown, parseResult: ParseResult, dir?: string, opts?: { pluralize?: boolean; dbName?: string }): VerifyResult
 /** An object the live database and the schema disagree about in a way the differ cannot name. */
 export interface SchemaResidue {
   type:     'table' | 'index' | 'trigger'
@@ -1278,7 +1274,7 @@ export declare class SealedDocumentError extends Error {
 export declare class UniqueConflictError extends Error {
   model:     string
   fields:    string[]
-  /** Redacted where the column is `@encrypted`/`@guarded`. */
+  /** Redacted where the column is `@encrypted`/`@guarded`. A relation key's id is here and not in `message`. */
   values:    unknown[]
   errors:    Array<{ path: string[], message: string }>
   status:    409
@@ -1481,15 +1477,16 @@ export interface LoadResult {
 }
 
 /**
- * Data somebody else wrote — CSV text or an array of records — read against the
- * schema row by row. A text cell is parsed as its column's type; a bad one is a
- * reject and the load goes on. A header naming no column, or a required column
- * the file lacks, throws before any row is read.
+ * Data somebody else wrote — CSV text or records, as an array or a (async)
+ * iterable such as an API's pages — read against the schema row by row. A text
+ * cell is parsed as its column's type; a bad one is a reject and the load goes
+ * on. A header naming no column, or a required column the file lacks, throws
+ * before any row is read. Rows are read as they are written, a `batch` at a time.
  */
 export declare function loadRows(
   db:        LitestoneClient,
   modelName: string,
-  source:    string | Record<string, unknown>[],
+  source:    string | Iterable<Record<string, unknown>> | AsyncIterable<Record<string, unknown>>,
   opts?:     LoadRowsOptions,
 ): Promise<LoadResult>
 
@@ -1620,7 +1617,7 @@ export declare function createTenantRegistry(options: TenantRegistryOptions): Pr
 
 // ─── Introspect ───────────────────────────────────────────────────────────────
 
-export declare function generateLiteSchema(db: unknown, opts?: { camelCase?: boolean }): string
+export declare function generateLiteSchema(db: unknown, opts?: { camelCase?: boolean; database?: string | null }): string
 
 // ─── Retention ────────────────────────────────────────────────────────────────
 

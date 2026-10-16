@@ -1,20 +1,13 @@
 // cleanup.ts
 // Scheduled jobs that prune expired sessions and verifications.
-// Call createAuthCleanupJobs(db) and .start() it from a plugin's work(), so a
-// one-shot boot (junction call, the snapshot tools) runs no sweep.
+//
+// createLitestoneAuth builds one as `auth.cleanup`, and createAuthPlugin starts
+// it from work() and stops it at shutdown, so a one-shot boot (junction call,
+// the snapshot tools) runs no sweep and an app writes no plugin for it.
+// `auth.cleanup.sweepNow()` drains the tables on demand.
 //
 // Expired rows don't create security problems — auth lookups always check
 // expiresAt > now() — but pruning keeps the tables lean.
-//
-// Usage in server.ts:
-//
-//   const cleanup = createAuthCleanupJobs(db)
-//
-//   app.configure({
-//     name: 'auth-cleanup',
-//     register() {},
-//     async work() { cleanup.start() },
-//   })
 
 import { createScheduler } from '@frontierjs/junction/scheduler'
 import type { JobHandle } from '@frontierjs/junction/scheduler'

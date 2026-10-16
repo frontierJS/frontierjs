@@ -130,6 +130,17 @@ describe('a key that names nothing is refused', () => {
       .rejects.toThrow(/secret: is @guarded on Post/)
   })
 
+  test('a @guarded column a before hook supplied is told to move to validated:, not to leave it out (FJS-1449)', async () => {
+    const db  = await createClient({ db: ':memory:', schema: SCHEMA })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({
+      name: 'posts', model: 'Post', db: db as never, methods: ['create'],
+      hooks: { before: { create: [(ctx: any) => { ctx.data = { ...ctx.data, secret: 'digest' }; ctx.system.add('secret') }] } },
+    } as never))
+    await app._startForTest()
+    await expect(call(app, 'create', null, { title: 'a' })).rejects.toThrow(/secret: is @guarded on Post.*validated:/)
+  })
+
   test('a @transient key is accepted — it is a declared field', async () => {
     // And it is the escape the refusal names, so this is what makes that
     // sentence true rather than advice.

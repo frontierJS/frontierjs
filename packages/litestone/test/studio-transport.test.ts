@@ -8,13 +8,14 @@
 // Run with:  bun test test/studio-transport.test.ts
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'fs'
 import { join, resolve } from 'path'
 import { tmpdir } from 'os'
 import { Database } from 'bun:sqlite'
 
 const CLI  = resolve(import.meta.dir, '..', 'src', 'tools', 'cli.js')
 const HTML = readFileSync(resolve(import.meta.dir, '..', 'src', 'tools', 'studio.html'), 'utf8')
+const STUDIO_CSS = readFileSync(resolve(import.meta.dir, '..', 'src', 'tools', 'studio.css'), 'utf8')
 
 const SCHEMA = `
 model Tag {
@@ -85,6 +86,27 @@ describe('Studio transport (FJS-2322)', () => {
   test('a client that does not ask for gzip gets plain bytes', async () => {
     const r = await fetch(`${base}/`, { headers: { 'Accept-Encoding': 'identity' } })
     expect(r.headers.get('content-encoding')).toBeNull()
+  })
+
+  // FJS-2665: a --host Studio with no egress renders unstyled if any asset is remote.
+  test('the page names no remote stylesheet or font, and serves its own stylesheet', async () => {
+    const page = await (await get('/')).text()
+    expect(page).not.toMatch(/<link[^>]+rel="stylesheet"[^>]+href="https?:/)
+    expect(page).not.toMatch(/@import\s+url\(\s*['"]?https?:/)
+    expect(page).toContain('href="/studio.css"')
+
+    const css = await get('/studio.css')
+    expect(css.status).toBe(200)
+    expect(css.headers.get('content-type')).toContain('text/css')
+    expect(css.headers.get('content-encoding')).toBe('gzip')
+    expect(await css.text()).toBe(STUDIO_CSS)
+    expect((await get('/studio.css', { 'If-None-Match': css.headers.get('etag')! })).status).toBe(304)
+  })
+
+  test('the vendored stylesheet is the one packages/css builds', () => {
+    const dist = resolve(import.meta.dir, '..', '..', 'css', 'dist', 'frontier.min.css')
+    if (!existsSync(dist)) return   // dist/ is gitignored; `bun run build` in packages/css writes both
+    expect(STUDIO_CSS).toBe(readFileSync(dist, 'utf8'))
   })
 
   test('/api/catalog is gzipped and revalidated', async () => {

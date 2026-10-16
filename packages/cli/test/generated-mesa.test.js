@@ -430,3 +430,42 @@ describe('a generated detail page and home page on an @@extensible model', () =>
     }
   })
 })
+
+// FJS-2970: make:component and make:resource are command files, so their
+// output is not importable. Read the source: neither may tell a developer Sierra
+// has no `@/` alias (appAliasPlugin provides it), and the component template
+// styles with the css package's own button, not a raw hex (Invariant 13).
+describe('make:component / make:resource text', async () => {
+  const { readFileSync } = await import('node:fs')
+  const read = (f) => readFileSync(resolve(HERE, '../commands/make', f), 'utf8')
+
+  test('neither command says Sierra has no @/ alias', () => {
+    for (const f of ['component.md', 'resource.md']) {
+      expect(read(f), f).not.toMatch(/no\s+`?@\/`?\s+alias|resolves no\s+`?@\/`?/)
+    }
+  })
+
+  test('the component template writes onclick and no raw color', () => {
+    const src = read('component.md')
+    expect(src).not.toContain('on:click')
+    expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+  })
+})
+
+// FJS-3004: the web: namespace and fli validate repeated make:*'s old text.
+describe('web:* / validate text', async () => {
+  const { readFileSync } = await import('node:fs')
+  const read = (f) => readFileSync(resolve(HERE, '../commands', f), 'utf8')
+
+  test('none says Sierra has no @/ alias', () => {
+    for (const f of ['web/component.md', 'web/resource.md', 'web/route.md', 'fli/validate.md']) {
+      expect(read(f), f).not.toMatch(/(?:no|resolves no)\s+`?@\/`?\s+alias/)
+    }
+  })
+
+  test('the web:component template writes onclick and no raw color', () => {
+    const src = read('web/component.md')
+    expect(src).not.toContain('on:click')
+    expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+  })
+})

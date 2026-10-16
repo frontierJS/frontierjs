@@ -928,7 +928,7 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `port` | `number` | `3000` | HTTP port |
+| `port` | `number` | `3000` | HTTP port. `PORT`, else the `FLI_PORT_BE` that `fli dev` hands the process, beats the file; a `port` passed to `createApp` beats both |
 | `hostname` | `string` | `'0.0.0.0'` | Bind address |
 | `apiPrefix` | `string` | `''` | Prefix for every route the app registers — `''` mounts services at `/{service}` |
 | `http.drainTimeout` | `number` | `5000` | ms a socket gets to finish during shutdown |

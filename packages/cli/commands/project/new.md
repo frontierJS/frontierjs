@@ -58,7 +58,7 @@ flags:
     description: Force-include or force-skip auth (use --auth or --no-auth); without flag, prompts during execution
   deploy:
     type: boolean
-    description: Scaffold Dockerfile and frontier.config.js deploy block (default true; use --no-deploy to skip)
+    description: Scaffold the Dockerfile, and the frontier.config.js deploy block when --server or --domain names where (default true; use --no-deploy to skip)
     defaultValue: true
   fli:
     type: boolean
@@ -175,8 +175,10 @@ function makePackageJson(spec) {
   const useUI   = useWeb || useWidgets || useSite
 
   // local source → `link:@frontierjs/x` (resolves to a live symlink via bun link);
-  // npm source → the version FJS_PACKAGES pins, which is `latest` while pre-alpha.
-  const specFor = (key) => source === 'local' ? `link:${key}` : (FJS_PACKAGES[key] || 'latest')
+  // npm source → the exact version FJS_PACKAGES or APP_DEV_DEPS pins.
+  const specFor = (key) => source === 'local'
+    ? `link:${key}`
+    : (FJS_PACKAGES[key] ?? APP_DEV_DEPS[key])
 
   const deps = {}
   if (useDb)   deps['@frontierjs/litestone'] = specFor('@frontierjs/litestone')
@@ -388,7 +390,7 @@ function makeFliJson(name) {
 }
 
 function makeReadme(spec) {
-  const { name, useAuth, useWeb, useApi = true, useDb = true, useFli = true, useWidgets = false, useSite = false, useExtension = false, withPkgs } = spec
+  const { name, useAuth, useWeb, useApi = true, useDb = true, useFli = true, useWidgets = false, useSite = false, useExtension = false, deployConfig = false, withPkgs } = spec
   const surface = [useApi && 'api/', useWeb && 'web/', useWidgets && 'widgets/', useSite && 'site/', useExtension && 'extension/'].filter(Boolean)
   const features = [
     `- ${useAuth ? 'Auth via `@frontierjs/auth` — sign in, register, `/account/` (name, password, sessions) and `/reset/`. Reset and verification links print to the API terminal until a mailer is wired' : 'No auth (add later with `fli auth:install`)'}`,
@@ -431,8 +433,9 @@ ports are derived, not chosen: \`env*1000 + category*100 + project*10 + service\
 
 ${useDb ? `Schema DDL runs automatically on first start — no migration step.
 
-\`.env\` is already written and \`ENCRYPTION_KEY\` already has a value${useAuth ? '' : " — if it is\nblank, `fli keygen aes --format hex --name ENCRYPTION_KEY --env` fills it"}. Copying
-\`.env.example\` over it blanks the key, and Litestone refuses to open with one.
+\`.env\` is already written and \`ENCRYPTION_KEY\` already has a value. Copying
+\`.env.example\` over it blanks the key, and Litestone refuses to open with one;
+\`fli keygen aes --format hex --name ENCRYPTION_KEY --env\` fills it again.
 ` : 'This app has no API and no database -- web/ is the whole project.\n'}
 ${useAuth ? `
 ### The first account
@@ -515,7 +518,7 @@ bun run build
 \`\`\`
 ${name}/
 ├── package.json
-${useApi ? '├── frontier.config.js          # FLI deploy config\n├── .env.example\n' : ''}├── tsconfig.json               # one line of extends — @frontierjs/config
+${useApi ? (deployConfig ? '├── frontier.config.js          # FLI deploy config\n' : '') + '├── .env.example\n' : ''}├── tsconfig.json               # one line of extends — @frontierjs/config
 ├── biome.json                  # ditto; linter only, no formatter
 ├── .editorconfig
 ├── README.md
@@ -600,15 +603,11 @@ await app.start()
 `
 }
 
-// `apiPrefix` is only set for the full-stack template, and it is the web half
-// that needs it: the client talks to the page's own origin and the Vite dev
-// proxy carries ONE rule, `/api`. With no prefix the services mount at
-// /{service}, the proxy does not match, and the request falls through to Vite's
-// SPA handler — 200 with an HTML body, which the client reports as the API
-// answering nonsense. An api-only app has no proxy and no such need, so it takes
-// Junction's own default: no prefix, routes at /.
-function makeApiAppTs(useAuth, useWeb, useQueue = false, useNotify = false) {
-  const prefixLine = useWeb ? `\n    apiPrefix: '/api',` : ''
+// `apiPrefix` is not stated here: junction.config.js states it once, for the
+// full-stack template only, and sierra.config.js reads it from there. A second
+// copy in this call would win the merge and move the routes under a proxy and a
+// client that still read the first.
+function makeApiAppTs(useAuth, useQueue = false, useNotify = false) {
   const queueImport = (useQueue ? `\nimport { createCaravan } from '@frontierjs/caravan'\nimport { commitments } from '@frontierjs/junction/commitments'` : '')
     + (useNotify ? `\nimport { notificationsPlugin } from '@frontierjs/notifications'` : '')
   const systemImport = useQueue ? `\nimport { SYSTEM }           from './core/gate.ts'` : ''
@@ -653,7 +652,7 @@ app.configure(notificationsPlugin({ db }))
 // file without binding a port.
 
 import { createApp, channels } from '@frontierjs/junction'${queueImport}
-import { auth, authPlugin, authCleanup } from './core/auth.ts'
+import { auth, authPlugin } from './core/auth.ts'
 import { joinChannels }     from './core/channels.ts'
 import { db }               from './core/db.ts'
 import { env }              from './core/env.ts'${systemImport}
@@ -669,7 +668,7 @@ const app = createApp({
   auth,
   db,${systemLine}
   config: {
-    port: env.PORT,${prefixLine}
+    port: env.PORT,
   },
 })
 
@@ -689,19 +688,9 @@ app.configure(channels((a) => {
 // ─── Auth routes ──────────────────────────────────────────────────────────
 // Mounts {apiPrefix}/auth/register, /auth/login, /auth/logout and the
 // rest — apiPrefix moves the plugin's routes with everything else.
+// Its work() phase also starts the hourly sweep of expired sessions and
+// tokens, which a one-shot boot (junction call) skips.
 app.configure(authPlugin)
-
-// ─── Auth cleanup ─────────────────────────────────────────────────────────
-// Expired sessions and verification tokens. In boot() rather than register(),
-// which junction never awaits — and here rather than in core/auth.ts, because
-// a module that starts a timer by being imported starts one in every test that
-// imports it too.
-app.configure({
-  name: 'auth-cleanup',
-  register() {},
-  async work() { authCleanup.start() },
-  async shutdown() { authCleanup.stop() },
-})
 
 ${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot
 // (configured in api/config/junction.config.js).
@@ -726,7 +715,7 @@ import { env }                                           from './core/env.ts'${s
 const app = createApp({
   db,${systemLine}
   config: {
-    port: env.PORT,${prefixLine}
+    port: env.PORT,
   },
 })
 
@@ -1117,7 +1106,7 @@ function makeApiCoreAuthTs() {
 // Both reference the same \`db\` import — auth uses db.asSystem()
 // internally so its writes bypass gates and policies.
 
-import { createLitestoneAuth, createAuthPlugin, createAuthCleanupJobs } from '@frontierjs/auth'
+import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { db }   from './db.ts'
 import { env }  from './env.ts'
 
@@ -1161,15 +1150,15 @@ export const authPlugin = createAuthPlugin(auth, {
   // Token in response body by default. Set true for httpOnly session cookie.
   cookieAuth: false,
 })
-
-// Expired sessions and verification tokens. app.ts starts these — nothing
-// starts a timer by being imported, so a cleanup that is only constructed here
-// is a table that grows for ever.
-export const authCleanup = createAuthCleanupJobs(db)
 `
 }
 
 function makeJunctionConfig(appName, useWeb, useQueue = false) {
+  // The one place the prefix is stated. Sierra's config imports this file, and
+  // the dev proxy follows Sierra's, so the three cannot disagree. Only the web
+  // half needs one: the dev proxy carries a single rule, and with no prefix the
+  // services mount at /{service}, miss it, and fall through to Vite's SPA
+  // handler -- 200 with an HTML body.
   const prefixLine = useWeb ? `\n    apiPrefix: '/api',` : ''
   // Anchored to THIS FILE: a relative queue path resolves against the working
   // directory, so the app would open a second, empty db/jobs.db from anywhere
@@ -1245,23 +1234,7 @@ export default {
     health:   true,
     manifest: true,
   },
-${caravan}
-  // Third-party services this app needs and does not own — an n8n, a mail
-  // server, a search cluster. Declared here, BOUND per environment as ordinary
-  // variables, and the app refuses to start if one is missing or bound halfway.
-  // Setting optional: true forgives a service nobody bound; it never forgives
-  // one bound halfway, because that is the shape that reaches production.
-  //
-  // attachments: {
-  //   n8n: {
-  //     describe: 'workflow automation',
-  //     env: {
-  //       N8N_URL:     { required: true, type: 'url' },
-  //       N8N_API_KEY: { required: true },
-  //     },
-  //   },
-  // },
-}
+${caravan}}
 `
 }
 
@@ -1398,9 +1371,9 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       // One entry: apiPrefix moves every route the app registers, raw ones
-      // and the auth plugin's included, so they are all under /api. /ws is
+      // and the auth plugin's included, so they are all under it. /ws is
       // the socket, which is not a route.
-      '/api':     { target: API, changeOrigin: true },
+      [sierraConfig.junction.apiPrefix]: { target: API, changeOrigin: true },
       '/ws':      { target: API, ws: true },
     },
   },
@@ -1413,7 +1386,9 @@ function makeSierraConfig(appName, useApi = true) {
 // Sierra runtime config — routes dir, build target${useApi ? ', junction connection' : ''}.
 // Paths are relative to the Vite root (web/), since dev:web cd's into web/
 // before invoking vite -c config/vite.config.js.
-
+${useApi ? `
+import api from '../../api/config/junction.config.js'
+` : ''}
 export default {
   target:        'spa',
   routesDir:     'src/routes',
@@ -1441,11 +1416,10 @@ ${useApi ? `
     // The client upgrades to ws itself, so this stays http.
     url:      'http://localhost:8000',
     tokenKey: '${appName}_token',
-    // Must match the API's config.apiPrefix (api/config/default.ts). Junction
-    // defaults to no prefix — services at /{service} — so this line and that
-    // one move together or the client requests paths the server never
-    // registered.
-    apiPrefix: '/api',
+    // Read from the API's config, which states it once: Junction defaults to
+    // no prefix, so a client that guessed would request paths the server
+    // never registered.
+    apiPrefix: api.app.apiPrefix,
   },
 ` : ''}}
 `
@@ -1705,7 +1679,7 @@ ${useApi ? `  import { status } from '@frontierjs/sierra/resource'
   // working app reporting itself broken on its own front page.
   // Same origin — web/config/vite.config.js proxies /api to the API in dev, and
   // a deployed build serves both from one host. '/api' is this app's apiPrefix,
-  // set in web/config/sierra.config.js and api/config/default.ts together.
+  // set in api/config/junction.config.js; change it there and here.
   // One request read by two blocks: the badge, and the sentence under it that
   // only a failure needs.
   const health = fetch('/api/health').then(r => {
@@ -2544,7 +2518,7 @@ if (fjsSource !== 'local' && fjsSource !== 'npm') {
 
 // What this project will be given, decided once. `makePackageJson` is the one
 // answer to that question and the manifest is written from it later.
-const spec = { name: appName, scope: flag.scope, useAuth, useWeb, useApi, useDb, useFli, useWidgets, useSite, useExtension, withPkgs, source: fjsSource }
+const spec = { name: appName, scope: flag.scope, deployConfig: useDeploy && !!(flag.server || flag.domain), useAuth, useWeb, useApi, useDb, useFli, useWidgets, useSite, useExtension, withPkgs, source: fjsSource }
 
 // The @frontierjs packages this project will actually depend on — READ OFF the
 // manifest rather than listed again beside it. A `link:` spec for a package
@@ -2593,7 +2567,7 @@ echo(`  Template:  ${template}`)
 echo(`  FJS pkgs:  ${fjsSource === 'local' ? `local — symlink to ${packagesDir} (live edits; a build packs them)` : 'npm (published)'}`)
 echo(`  Auth:      ${useAuth ? 'yes' : 'no'}`)
 echo(`  Web:       ${useWeb ? 'yes (Sierra + Mesa + Vite)' : 'no'}`)
-echo(`  Deploy:    ${useDeploy && useApi ? 'yes (deploy/Dockerfile + frontier.config.js)' : 'no'}`)
+echo(`  Deploy:    ${useDeploy && useApi ? (flag.server || flag.domain ? 'yes (deploy/Dockerfile + frontier.config.js)' : 'yes (deploy/Dockerfile; pass --server to write frontier.config.js)') : 'no'}`)
 echo(`  FLI:       ${useFli ? 'yes (cli/src/routes/)' : 'no'}`)
 echo(`  Example:   ${useExample ? 'yes (User CRUD vertical slice)' : 'no'}`)
 echo(`  Git:       ${useGit ? 'yes' : 'no'}`)
@@ -2664,7 +2638,7 @@ if (useDb) filesToWrite.push(
 if (useApi) {
   filesToWrite.push(
     ['api/index.ts',                makeApiIndexTs()],
-    ['api/src/app.ts',              makeApiAppTs(useAuth, useWeb, useQueue, useNotify)],
+    ['api/src/app.ts',              makeApiAppTs(useAuth, useQueue, useNotify)],
     ['api/src/core/env.ts',         makeApiEnvTs()],
     ['api/src/core/gate.ts',        makeApiCoreGateTs(useQueue)],
     ['api/src/core/db.ts',          makeApiCoreDbTs(useQueue)],
@@ -2716,8 +2690,12 @@ if (flag.ci !== false) {
   filesToWrite.push(['.github/workflows/ci.yml', appWorkflow({ name: appName })])
 }
 
-// .env (copy of .env.example, gitignored)
-if (useDb) filesToWrite.push(['.env', makeEnvExample(useAuth)])
+// .env (copy of .env.example, gitignored) with ENCRYPTION_KEY filled. env.ts
+// requires it with or without --auth, and auth:install is the only other writer,
+// so a --no-auth app left blank crashes at load on the first `bun run dev`.
+// Hex, because litestone parses this variable as hex.
+if (useDb) filesToWrite.push(['.env', makeEnvExample(useAuth)
+  .replace(/^ENCRYPTION_KEY=$/m, `ENCRYPTION_KEY=${randomBytes(32).toString('hex')}`)])
 
 const written = []
 for (const [relPath, content] of filesToWrite) {
@@ -2919,11 +2897,18 @@ if (useInstall && useDb) {
     // refuses a database its own initial file builds (FJS-1490). `baseline`
     // records the file as applied and refuses if the database lacks anything
     // the file builds, so it cannot record a lie.
+    //
+    // A schema whose only model sits on the audit database (--no-auth) is the
+    // other case: the client builds no table, `baseline` refuses to record
+    // what the database lacks, and a migration file on disk stops the client
+    // building tables at start. `apply` builds them.
     if (existsSync(join(finalTarget, 'db/app.db'))) {
-      $.exec({
-        command: `${$.bin('litestone', finalTarget)} migrate baseline --schema db/schema.lite`,
-        cwd: finalTarget, stdio: 'pipe',
-      })
+      const litestone = $.bin('litestone', finalTarget)
+      try {
+        $.exec({ command: `${litestone} migrate baseline --schema db/schema.lite`, cwd: finalTarget, stdio: 'pipe' })
+      } catch {
+        $.exec({ command: `${litestone} migrate apply --schema db/schema.lite`, cwd: finalTarget, stdio: 'pipe' })
+      }
     }
   } catch (e) {
     // Not fatal: the app runs from `db push` in development either way, and a
@@ -2962,11 +2947,10 @@ log.success(`${appName} created`)
 echo('')
 echo(`  cd ${useHere ? '.' : (useWorkspace ? finalTarget : name)}`)
 if (!useInstall) echo('  bun install')
-// `.env` is always written, and with --auth it comes back from auth:install with
-// both keys generated — so the old unconditional `cp .env.example .env` told
-// everyone to overwrite a filled file with a blank one, which breaks the app the
-// scaffold just finished building. The question is whether the key has a VALUE,
-// which is also the honest answer for --no-auth, where nothing fills it.
+// `.env` is written with its key filled, so `cp .env.example .env` here would
+// overwrite a filled file with a blank one and break the app the scaffold just
+// built. The question is whether the key has a VALUE, asked of the file rather
+// than assumed from the write.
 const envFile = resolve(finalTarget, '.env')
 const keySet  = existsSync(envFile) &&
   /^[ \t]*ENCRYPTION_KEY[ \t]*=[ \t]*\S/m.test(readFileSync(envFile, 'utf8'))

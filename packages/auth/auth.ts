@@ -26,6 +26,8 @@ import {
   beginFlow, exchangeCode, fetchIdentity, stateMatches, isAllowedReturnTo, OAuthError,
 } from './oauth.ts'
 import type { OAuthIdentity, TokenSet, AuthOAuth, OAuthResolution } from './oauth.ts'
+import { createAuthCleanupJobs } from './cleanup.ts'
+import type { AuthCleanupHandle } from './cleanup.ts'
 import {
   generateTotpSecret, otpauthUri, verifyTotp as verifyTotpCode,
   generateRecoveryCodes, normalizeRecoveryCode,
@@ -60,7 +62,7 @@ const PURGE = { withExpired: true } as const
 export function createLitestoneAuth(
   db:   LitestoneClient,
   opts: LitestoneAuthOptions = {}
-): IAuth & AuthOAuth & { _sessionTtl: string } {
+): IAuth & AuthOAuth & { _sessionTtl: string, cleanup: AuthCleanupHandle } {
 
   const {
     encryptionKey,
@@ -700,6 +702,11 @@ export function createLitestoneAuth(
     // to pass sessionTtl to both createLitestoneAuth and createAuthPlugin.
     _sessionTtl: sessionTtl,
 
+    // The expired-row sweep. createAuthPlugin starts it in work() and stops it at
+    // shutdown, so an app that mounts the plugin prunes without a plugin of its
+    // own, and a one-shot boot (junction call, the snapshot tools) sweeps nothing.
+    cleanup: createAuthCleanupJobs(db),
+
     // ── verifySession ────────────────────────────────────────────────────
     // Hot path — called on every authenticated request.
     // Two db lookups maximum: session → user.
@@ -1325,13 +1332,13 @@ export function createLitestoneAuth(
       // never started this flow, and there is nothing to look up on their behalf
       // — doing the lookup anyway would make the row's existence probeable.
       if (!stateMatches(args.cookieState, args.state)) {
-        await audit('oauth.refused', { meta: { provider: providerName, reason: 'state-mismatch' } })
+        await audit('oauth.refused', { model: 'OauthFlow', records: [], meta: { provider: providerName, reason: 'state-mismatch' } })
         throw new OAuthError('OAuth state did not match')
       }
 
       const flow = await sys.oauthFlow.findFirst({ where: { state: args.state } })
       if (!flow) {
-        await audit('oauth.refused', { meta: { provider: providerName, reason: 'no-flow' } })
+        await audit('oauth.refused', { model: 'OauthFlow', records: [], meta: { provider: providerName, reason: 'no-flow' } })
         throw new OAuthError('OAuth flow has expired or was already used')
       }
 
@@ -1346,7 +1353,7 @@ export function createLitestoneAuth(
       // code — the state matched and the cookie matched, and the only thing
       // left saying which provider this is, is the URL the browser came back on.
       if (flow.provider !== providerName) {
-        await audit('oauth.refused', { meta: { provider: providerName, reason: 'provider-mismatch' } })
+        await audit('oauth.refused', { model: 'OauthFlow', records: [flow.id], meta: { provider: providerName, reason: 'provider-mismatch' } })
         throw new OAuthError('OAuth state did not match')
       }
 
@@ -1573,7 +1580,8 @@ export function createLitestoneAuth(
 
       if (pending.provider !== providerName || pending.subject !== identity?.providerId) {
         await audit('oauth.link.refused', {
-          meta: { provider: providerName, reason: 'subject-mismatch' },
+          model: 'User', records: [],
+          meta:  { provider: providerName, reason: 'subject-mismatch', email: pending.identifier },
         })
         throw new OAuthError('The identity returned is not the one this link was sent for')
       }
@@ -1587,7 +1595,8 @@ export function createLitestoneAuth(
       const taken = await sys.credential.findFirst({ where: { type, value: pending.subject } })
       if (taken && taken.userId !== user?.id) {
         await audit('oauth.link.refused', {
-          meta: { provider: providerName, reason: 'subject-taken' },
+          model: 'User', records: user ? [user.id] : [], actorId: user?.id,
+          meta:  { provider: providerName, reason: 'subject-taken' },
         })
         throw new OAuthError('That identity is already connected to another account')
       }

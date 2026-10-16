@@ -493,6 +493,7 @@ function readDecisions({ root, dir, ids }) {
     open.record.body  = plain(body).trim()
     open.record.refs  = refsIn(body, ids)
     open.record.files = linkedFiles(body)
+    open.record.livesIn = livesIn(body)
     Object.assign(open.record, declaredStatus(bodyLines, ids))
     out.push(open.record)
     open = null
@@ -754,6 +755,28 @@ function linkedFiles(text = '') {
   }
 
   return [...out].sort()
+}
+
+/**
+ * What a ruling's `*Lives in:*` paragraph names in code spans — `{ token,
+ * symbols }`, the symbols being the spans in a parenthesis straight after it.
+ * Only code spans: a bare `VOCABULARY.md (Page, Layout)` names terms, and
+ * reading prose for a path is the checker for arbitrary prose this is not.
+ */
+function livesIn(body = '') {
+  const lines = body.split('\n')
+  const out   = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/\*Lives in:?\*:?/i)
+    if (!m) continue
+    const para = [lines[i].slice(m.index + m[0].length)]
+    for (let j = i + 1; j < lines.length && lines[j].trim(); j++) para.push(lines[j])
+    for (const [, token, group] of para.join(' ').matchAll(/`([^`]+)`(?:\s*\(([^)]*)\))?/g)) {
+      const symbols = [...(group ?? '').matchAll(/`([^`]+)`/g)].map(s => s[1])
+      out.push({ token, symbols })
+    }
+  }
+  return out
 }
 
 /** The `<a id="…">` a row leads with, where it has one. */

@@ -238,6 +238,43 @@ describe('loadRows keeps what no column takes in an overflow column', () => {
   })
 })
 
+// FJS-1645: a source is read as the load writes, so memory is a batch and not the file.
+describe('loadRows reads its source as it writes', () => {
+  it('takes an async iterable and has written a batch before the source ends', async () => {
+    const db = await open()
+    const seen: number[] = []
+    async function* pages() {
+      for (let i = 0; i < 2500; i++) {
+        if (i % 500 === 0) seen.push(db.$db.query('SELECT count(*) AS n FROM "Landed"').get().n)
+        yield { id: `r${i}`, amount: i, _loadId: 1, _syncedAt: '2025-10-01T00:00:00Z' }
+      }
+    }
+    const out = await loadRows(db, 'Landed', pages(), { key: 'id', batch: 1000 })
+    expect(out).toEqual({ loaded: 2500, rejects: [] })
+    expect(seen).toEqual([0, 0, 0, 1000, 1000])
+    db.$close()
+  })
+
+  it('decides a repeated key by position across batches, and names the line of the first', async () => {
+    const db = await open()
+    const rows = Array.from({ length: 30 }, (_, i) => `o${i},c01,2025-10-01T00:00:00Z,paid,USD,1.00,1,1`)
+    rows.push('o3,c01,2025-10-01T00:00:00Z,paid,USD,2.00,1,1')
+    const out = await loadRows(db, 'Order', csv(...rows), { key: 'id', batch: 4 })
+    expect(out.loaded).toBe(30)
+    expect(out.rejects).toEqual([{ row: 30, line: 32, key: 'o3', field: 'id', reason: 'repeats the key of line 5' }])
+    db.$close()
+  })
+
+  it('a row naming a stamped column throws and leaves nothing written, even after earlier batches', async () => {
+    const db = await open()
+    const rows: any[] = Array.from({ length: 20 }, (_, i) => ({ id: `r${i}`, amount: i }))
+    rows.push({ id: 'bad', amount: 1, _loadId: 9 })
+    await expect(loadRows(db, 'Landed', rows, { batch: 5, stamp: { _loadId: 1, _syncedAt: '2025-10-01T00:00:00Z' } })).rejects.toThrow("row 20 names '_loadId'")
+    expect(await db.landed.count()).toBe(0)
+    db.$close()
+  })
+})
+
 describe('loadFixture is loadRows that throws', () => {
   it('names every row that did not load, because a fixture is authored', async () => {
     const db = await open()

@@ -13,9 +13,12 @@ the proof). Built: `ReceivedMail` and the reply-tag kit in `@frontierjs/junction
 `postmarkMailDialect`; and `@frontierjs/conduit-mailgun`'s `mailgunMailDialect`
 over `fromMime` — the raw-MIME parser `FJS-D784` named, postal-mime underneath,
 the one SES imports; conduit's `Dialect.parse` may be a promise for it. Both
-connectors are shaped as `packages/` members and held in `../conduit-connectors/packages/` until the owner commits them (2026-10-16). Not built: the chatwoot
-stressor's hand-rolled `inbound.ts`/`mailgun.ts`/`token.ts` collapsing onto
-the kit. It is the email
+connectors are shaped as `packages/` members and held in `../conduit-connectors/packages/` until the owner commits them (2026-10-16); that commit is
+what is left. The chatwoot stressor's hand-rolled `inbound.ts`/`postmark.ts`/`mailgun.ts`/`token.ts`
+and its `InboundMail` model are gone (2026-10-16): two `app.conduit.receive()`
+declarations in its `app.ts` over the two dialects (`link:`ed from the sibling
+repo), `mailbox.ts` reading a `ReceivedMail` with the kit and answering
+`applied`/`ignored`, and `api/test/mail.test.ts` the round trip over both. It is the email
 leg that [`FJS-D177`](../DECISIONS.md#fjs-d177) excluded by name — *"Rails made
 that its own noun (`ActionMailbox`) and was right to"* — and that
 `ecosystem-gaps.md` § 14 recorded from the OpenMRP audit: FJS sends an order

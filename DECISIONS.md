@@ -1231,7 +1231,7 @@ The architecture question is still open: whether a server runs a resident proces
 at all, or Basecamp pushes over SSH, is argued in `IDEAS/deploy-plane.md` and
 ruled nowhere. **This decision reserves the name, not the design.**
 *Lives in:* `packages/basecamp/db/schema.lite` (`outpostVersion`, `outpostUrl`),
-`api/src/engine/fleet.engine.ts`, `api/src/engine/deployment.engine.ts`,
+`api/src/services/fleet/fleet.service.ts`, `api/src/services/deployments/deployments.service.ts`,
 `api/src/services/servers/servers.service.ts`, `docs/VISION.md`,
 `IDEAS/deploy-plane.md`.
 
@@ -2022,7 +2022,7 @@ Two clauses beyond the option. The level form is REMOVED, not kept beside the li
 Asked in [`IDEAS/static-safety.md`](IDEAS/static-safety.md) § Open questions. **D** was picked over **A** (the build refuses: before a page is written, scan each island's serialized props (`packages/mesa/src/runtime.js:5481`) for any column `db.$protectedFields(accessor)` names, failing like a gate overrun; `publishes: N` does not lift it, since `@guarded` takes no level), **B** (refuse an `asSystem()` build client in the tap, so litestone's own read path strips `@guarded` and the marker can never see one), **C** (leave it, documented as the author's responsibility under `publishes:`).
 
 A scans island props by NAME, so a column renamed into a prop, or interpolated into plain markup with no island at all, reaches the page unseen, and props carry no model so a harmless key collides. The read is the one place that knows a protected value was returned: probed, asSystem() returns @guarded and @encrypted values and a bare or $setAuth read strips both, so the check fires only on event.system. It also covers every @encrypted, @hashed and @secret column, since $protectedFields names them all, and it is the per-column read set FJS-D496 will want. Its cost is that a system read of a model with a protected column must write select, which is the declaration the page owed anyway.
-*Lives in:* `packages/sierra/src/build/static-safety.js` (`collectExposed`) · `packages/litestone/src/core/hooks.js` (`emitQuery`, `QueryEvent.system`) · `packages/sierra/test/static-safety-real.mjs` § FJS-1411 · `packages/litestone/test/query-tap.test.ts`.
+*Lives in:* `packages/sierra/src/build/static-safety.js` (`collectColumns`) · `packages/litestone/src/core/hooks.js` (`emitQuery`, `QueryEvent.system`) · `packages/sierra/test/static-safety-real.mjs` § FJS-1411 · `packages/litestone/test/query-tap.test.ts`.
 
 ### <a id="fjs-d470"></a>2026-09-28 · `FJS-D470` — Where may a row under an enum `@@transitions` START: is `@default` the one entry a caller may name, or does the machine declare its entries — `@default` is the only entry, for every principal. A create that names any other state is refused with `TransitionViolationError`, and the message names the default. `asSystem()` is held too (`FJS-D502`): a row that genuinely starts elsewhere is created at the default and walked there by its declared moves, or is put there by `sys.sql`. Nothing new to spell: the entry is derived from a declaration that already exists, and `IDEAS/shipped/state-machines.md`'s *a create is not graded* is struck.
 
@@ -2172,7 +2172,7 @@ given. An app for which that difference matters is an app whose service is doing
 access control a policy should be doing, which `@@allow` and Invariant 6 already
 have an answer for.
 
-*Lives in:* `packages/sierra/src/junction/local-db.js`, `junction/index.js`
+*Lives in:* `packages/sierra/src/resource/local-db.js`, `packages/sierra/src/resource/index.js`
 § `_tokenChanged`.
 
 ### <a id="fjs-d310"></a>2026-09-16 · `FJS-D310` — Under `tenancy { strategy row }`, a `@unique` on a scoped model is SCOPED rather than reported: the tenant column is prepended to the constraint, and a field-level one is lifted to a table constraint. `@unique(global)` / `@@unique([…], global: true)` is the opt-out and coins nothing new. A model scoped through a PARENT keeps the warning.
@@ -2397,7 +2397,7 @@ two-hop refusal) · `packages/litestone/src/core/policy.js` (`check(rel, 'read')
 already compiles a target's policy as a correlated subquery) ·
 `packages/litestone/src/core/schema-maps.js` (`subquerySql`, which already
 correlates on every column of a composite key) ·
-`packages/sierra/src/junction/resource.js` (`buildGate` / `canAtLevel`) ·
+`packages/sierra/src/resource/resource.js` (`buildGate` / `canAtLevel`) ·
 Invariant 6 · [`FJS-499`](ISSUES_ARCHIVE.md#fjs-499) is the implementation
 
 
@@ -2573,10 +2573,10 @@ of two small domains and is the only shape that could have caught this.
 declaration why: it is the oracle an exhaustive test grades `levelPasses`
 against, and an oracle that calls the thing it grades cannot fail.
 
-*Lives in:* `packages/toolbelt/src/gate/gate.js` (`LEVELS`, `LEVEL_NAMES`,
+*Lives in:* `packages/toolbelt/src/gate/gate.js` (`LEVELS`, `levelName`,
 `levelPasses`, `gradeStanding`) · `packages/litestone/src/plugins/gate.js` and
 `src/core/parser.js` · `packages/junction/src/core/litestone.ts` ·
-`packages/sierra/src/junction/field-rules.js`. Closes [`FJS-520`](ISSUES_ARCHIVE.md#fjs-520).
+`packages/sierra/src/resource/field-rules.js`. Closes [`FJS-520`](ISSUES_ARCHIVE.md#fjs-520).
 
 ### <a id="fjs-d183"></a>2026-09-03 · `FJS-D183` — the envelope names the KEY. A rotation is resumable because every value says which key wrote it, and the old key stays readable rather than being dropped.
 
@@ -2828,7 +2828,7 @@ could not be satisfied. The set is gone; the from-state is asked of the schema.
 *Lives in:* `packages/litestone/src/core/parser.js` (`parseTransitionsArg`),
 `src/core/client.js` (`checkTransitions`, `transition`, `transitions`,
 `TransitionSystemError`), `src/jsonschema.js`;
-`packages/sierra/src/junction/field-rules.js` (`transitionsAt`); adopted in
+`packages/sierra/src/resource/field-rules.js` (`transitionsAt`); adopted in
 `packages/basecamp/db/schema.lite` (`Server`) and
 `api/src/services/servers/servers.service.ts`. Reference:
 `packages/litestone/docs/schema.md` § `@@transitions`.
@@ -4091,7 +4091,7 @@ A bare `@money` meant *the app's default currency*, and nothing stated one. So `
 
 § V: origin (1) and derivation (5) decide it, because the currency is on the column where the scale is derived from it. No concept is added (2). Failure (8): a refusal at parse, naming both spellings that pass. Question 9: a bare `@money` must not parse, and `exact-numbers.test.ts` asserts the refusal and that both stated shapes still pass. No adjudication is in tension: nothing shipped depends on the old spelling, so there is nothing to preserve. Tier: Register.
 
-— `packages/litestone/src/core/parser.js` (validation), `jsonschema.js`, `packages/sierra/src/junction/resource.js` (`filters()`).
+— `packages/litestone/src/core/parser.js` (validation), `jsonschema.js`, `packages/sierra/src/resource/resource.js` (`filters()`).
 
 ### <a id="fjs-d513"></a>2026-09-29 · `FJS-D513` — Does the shared predicate language grow a value-assembling form, or do orion's assembling shapes stay documents — Grow `template` and `object` in the shared parser; litestone's policy compiler refuses both by name at parse of a `.lite` policy (a value-assembling form is not a predicate).
 
@@ -5082,7 +5082,7 @@ not ruled here.
 
 *Lives in:* `packages/litestone/src/core/parser.js` (`parseValueSet`'s `order`
 key, `orderColumnRefusal`), `src/jsonschema.js` (`x-values.order`),
-`packages/sierra/src/junction/resource.js` (`optionsOrder`, the one owner of a
+`packages/sierra/src/resource/resource.js` (`optionsOrder`, the one owner of a
 question three call sites answered separately). 11 tests in
 `test/valueset-order.test.ts` (23 with the head), 7 in `test/options-order.test.js`
 (3 red with the resolver stubbed), 10 in `test/options-recent.test.js` (5 red
@@ -9574,7 +9574,7 @@ which is `FJS-268`'s class. `test/client-types.test.ts` caught it by compiling a
 fixture the way an app does.
 
 `packages/junction/src/core/build-id.ts` · `test/build-id.test.ts` ·
-`packages/sierra/src/junction/index.js` · `_steps-docker/03-build-web.md`
+`packages/sierra/src/resource/index.js` · `_steps-docker/03-build-web.md`
 
 ### <a id="fjs-d159"></a>2026-08-29 · `FJS-D159` — a service filename derives ONE canonical name, and the filename's own spelling stays mounted as an alias.
 
@@ -10321,7 +10321,7 @@ refusal, the filter/sort/aggregate reasons, the policy check),
 `src/jsonschema.js`, `src/tools/typegen.js`, `src/testing.js`;
 `packages/junction/src/core/context.ts` (`ctx.transients`),
 `src/core/litestone.ts` (`liftTransient`), `src/transport/bridge.ts`,
-`src/core/app.ts`; `packages/sierra/src/junction/field-rules.js` (`writeOnly`).
+`src/core/app.ts`; `packages/sierra/src/resource/field-rules.js` (`writeOnly`).
 Tests in `packages/litestone/test/transient-field.test.ts`,
 `packages/junction/test/{context-contract,real-litestone-client}.test.ts`,
 `packages/sierra/test/form-fields.test.js`. Proven in basecamp's `channels`,
@@ -10421,8 +10421,7 @@ flavor of client for the refusal above.
 *Still open beside this:* delivery is at-least-once, so a handler must be
 idempotent — the framework hands it the outbox row id and says nothing else.
 
-*Lives in:* `packages/junction/src/core/outbox.ts`,
-`packages/junction/db/outbox.lite`, `packages/junction/src/plugins/outbox/`;
+*Lives in:* `packages/junction/db/outbox.lite`, `packages/junction/src/plugins/outbox/`;
 the worked example is `example/api/src/services/orders.service.ts` (`pay`).
 
 ### <a id="fjs-d30"></a>2026-08-17 · `FJS-D30` — Login stays HTTP; cycling the socket IS the login event.
@@ -10986,7 +10985,7 @@ would take), so the schema declaration buys the type, the JSON Schema `$def` and
 one home, not a database-enforced one. Moving basecamp's list into the schema is
 a live option and a migration; the decision above stands until someone takes it.
 *Lives in:* `packages/basecamp/api/src/services/cleanup/targets.ts`,
-`api/src/services/recipes/recipes.service.ts`, `api/src/engine/fleet.engine.ts`,
+`api/src/services/recipes/recipes.service.ts`, `api/src/services/fleet/fleet.service.ts`,
 `db/schema.lite` § FLEET ACTIONS; tests in `db/test/schema.test.ts` § Recipe and
 CleanupRun.
 
@@ -11056,7 +11055,7 @@ by the system, not by a user"* — and the two want one answer, not two.
 That paragraph is what `@transient` was built from, and both halves now have
 their word: `@system` (2026-08-15) and `@transient` (2026-08-17).
 *Lives in:* `packages/basecamp/api/src/services/channels/channels.service.ts`
-(`captureCredential`), `packages/basecamp/CLAUDE.md` § What bites here,
+(where captureCredential was deleted), `packages/basecamp/CLAUDE.md` § What bites here,
 `CLAUDE.md` § Live hazards.
 
 
@@ -11169,7 +11168,7 @@ character, which junction's ambient `$` (the service call in progress) then
 contradicted by existing at all. The two are unrelated: one is a prefix on a
 parameter name that the bridge strips, the other is an identifier a service
 reads. No `$`-prefixed key survives the bridge; that is the whole of it.
-*Lives in:* `packages/junction/src/transport/bridge.ts` (`parseDirectives`),
+*Lives in:* `packages/toolbelt/src/directives/directives.js` (`parseDirectives`), `packages/junction/src/transport/bridge.ts`,
 `src/core/context.ts` (`QueryDirectives`, `RESERVED_PARAMS`),
 `src/core/litestone.ts` (`parseQuery`).
 
@@ -11248,7 +11247,7 @@ mean a screen that never updates, and now means a broadcast on somebody else's
 rule — the plugin names at boot which services fall through, and `channel: false`
 takes them off the list.
 
-*Lives in:* `packages/cli/commands/make/model.md`, `make/scaffold.md`;
+*Lives in:* `packages/cli/commands/make/model.md`, `packages/cli/commands/make/scaffold.md`;
 rationale in `announceToChannels()`, the fallback in
 `packages/junction/src/transport/channels.ts` (`announceDefault`).
 
@@ -11271,9 +11270,19 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1099"></a>2026-10-16 · `FJS-D1099` — css's breakpoint scale becomes a table in `vocabulary.js` that `breakpoint(name)` reads; the service worker is homestead's and the browser kit keeps only the push subscription; `fli check` warns on a hand-rolled `localStorage` or `document` keydown in an app that imports the kit.
+
+Asked in [`IDEAS/browser-kit.md`](IDEAS/browser-kit.md) § Open questions (Q3, Q4, Q5), through the question tool, as three questions; the recommended answer was picked for each. With `FJS-D1097` this closes the paper's seven.
+
+- **Q3 — a `breakpoints` table in `packages/css/vocabulary.js`, `{ sm: 640, md: 768, lg: 1024, xl: 1280, '2xl': 1536 }` in px.** The paper said css names no breakpoint; a probe found the scale already stated, but only in a `tokens.css` comment and as literals in `layout.css`, `facts.css` and `frame.css`. The comment becomes data: `breakpoint('md')` is `media('(min-width: 768px)')`, and the css spec that grades the vocabulary against the CSSOM grades every literal `@media` width in `src/` against the table. They stay literals in the CSS, for the reason `tokens.css` gives — a custom property cannot sit in a media query. A table in toolbelt was refused as a second home for a styling fact (Invariant 13); dropping `breakpoint()` leaves the apps' off-scale `47.99rem` ungraded.
+- **Q4 — `homestead.md` owns service-worker registration and the precached shell; Phase 5 here keeps `pushSubscription()` → the notifications channel list.** The worker is release state and homestead already names it. Moving all of #10 there would lose the subscription's place beside the other wrappers, and owning the worker here would put two owners on one registration.
+- **Q5 — a `warn` rule, scope `app`, that fires only when the app imports `@frontierjs/mesa/browser`.** The hand copy stays legal; the rule names the paved road once the road exists. The paper cited a `window.confirm` rule in `ui-hazards` as the precedent and none exists; the shape taken is `css-raw-literal`'s. An `error` was refused because storage that is not a preference and raw key handling in a canvas are legitimate.
+
+The nine are the paper's, answered before the ruling; Q3's were re-answered late, after the probe moved its premise. Adjudications: *paved road vs. the workaround* for Q5, as the paper states it; *doctrine vs. discovery* for Q3's premise and Q5's precedent, both amended in the paper to match the tree. Q9 for Q3: an `@media` width off the table passes in silence today, and the vocabulary spec is the artefact once 1.4 lands. Tier: Register.
+
 ### <a id="fjs-d1097"></a>2026-10-16 · `FJS-D1097` — The browser kit is `@frontierjs/mesa/browser`, a subpath over one host-neutral primitive in `runtime.js`; a preference key carries sierra's `prefix`; a terminal call throws by name until a terminal app asks; an action returns `{ ok, via, reason }` and never throws for a missing API.
 
-Asked in [`IDEAS/browser-kit.md`](IDEAS/browser-kit.md) § Open questions (Q1, Q2, Q6, Q7), through the question tool, as four questions; the recommended answer was picked for each. Q3–Q5 stay open.
+Asked in [`IDEAS/browser-kit.md`](IDEAS/browser-kit.md) § Open questions (Q1, Q2, Q6, Q7), through the question tool, as four questions; the recommended answer was picked for each. Q3–Q5 were ruled the same day in `FJS-D1099`.
 
 - **Q1 — the home is a subpath, `src/browser/`, not a package.** Mesa is the leaf, so a package could not be consumed by `$$virtualEach` or `bindWindow`, which hold two of the private copies the kit removes; and the subpath is what mesa already does with a host or a tool (`/runtime/terminal`, `/runtime/native`, `/drive`, `/vite`). A `*-kit` package was priced: each of the three existing kits carries a dependency or a server half and this one has neither. **The trigger that moves it out is named** — a dependency, a server half, or a second host implementation `$$host` cannot carry. Folding into `/runtime` was refused because a terminal and a phone import that file.
 - **Q2 — `persisted()` prefixes the key with sierra config's `prefix`, defaulting to the app's `package.json` name.** `example` already types `shop_theme` and `shop_token` by hand, which is the prefix with no owner; two apps on one dev origin (`FJS-740`) otherwise read each other's preferences. Set once by the router at boot, `''` without sierra.
@@ -11652,7 +11661,7 @@ Asked in [`FJS-1582`](ISSUES_ARCHIVE.md#fjs-1582). A built-in control was picked
 
 § V answered before the first edit. The adjudication is *batteries vs. smallness*: this is a battery. Tier: Register. Question 9: a money box must write minor units. `packages/ui/test/browser/specs/money.spec.mjs` fails when it does not (8.29 → 829, 12.345 refused, the per-row re-derivation), and so do `filter-bar.spec.mjs` and sierra's `field-control-scaled.test.js`.
 
-— `packages/sierra/src/junction/field-rules.js`, `packages/ui/components/forms/MoneyInput.mesa`, `FormField.mesa`, `display/FilterBar.mesa`.
+— `packages/sierra/src/resource/field-rules.js`, `packages/ui/components/forms/MoneyInput.mesa`, `FormField.mesa`, `display/FilterBar.mesa`.
 
 ### <a id="fjs-d510"></a>2026-09-29 · `FJS-D510` — Where does the flow canvas live: a graph component in `@frontierjs/ui`, or a canvas local to orion's web surface — An orion-local canvas under `packages/orion/web/`, reading `FlowLayout` directly; one consumer, no kit API to design up front.
 
@@ -11680,7 +11689,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. *Pa
 
 ### <a id="fjs-d456"></a>2026-09-26 · `FJS-D456` — a picker that could not ask for its options says so in a note beside the count, never as a field error.
 
-**`resource.options(field)` answers `{ options, total, truncated, error }`, and `error` separates *there are none* from *I could not ask*; `optionsNote` words it beside `truncationNote` through one `withNote`, so `Select`, `Combobox` and `MultiSelect` say it identically in the field's hint.** Where it lives: `packages/sierra/src/junction/resource.js`, `packages/ui/utils.js`. Refused alternative: a field error, which would refuse a submit on every optional relation whose rows did not arrive.
+**`resource.options(field)` answers `{ options, total, truncated, error }`, and `error` separates *there are none* from *I could not ask*; `optionsNote` words it beside `truncationNote` through one `withNote`, so `Select`, `Combobox` and `MultiSelect` say it identically in the field's hint.** Where it lives: `packages/sierra/src/resource/resource.js`, `packages/ui/utils.js`. Refused alternative: a field error, which would refuse a submit on every optional relation whose rows did not arrive.
 
 Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: strictness follows cost, and a failed fetch says nothing about whether the value is valid.  **§ V's ninth question**: *the failure is said in the hint, and an empty list says nothing* — `packages/ui/test/browser/specs/options-truncated.spec.mjs` › "a picker that could not ask says so, and says why" and "a list that is genuinely empty says nothing at all". ([`FJS-587`](ISSUES_ARCHIVE.md#fjs-587), [`FJS-570`](ISSUES_ARCHIVE.md#fjs-570)) Picked by the owner in session.
 
@@ -11692,7 +11701,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. No 
 
 ### <a id="fjs-d462"></a>2026-09-26 · `FJS-D462` — a resource's create or patch drops the server's own columns first, and keeps the version column.
 
-**`stripReadOnly` runs first in the resource's create/patch pipeline, ahead of coerce, blank and validate, removing every `readOnly` key (`@system`, `@generated`, `@computed`, `@from`, a tenancy stamp) except `@version`, which the server requires back.** Rules are taken for the method, since `@immutable` is read-only on a patch and writable on a create. A key with no field rule is left alone, because a `@transient` is legitimate there. Where it lives: `packages/sierra/src/junction/resource.js`, `src/junction/field-rules.js`. Refused alternative: sending the row back whole, which the Data boundary refuses by name with a 403 about a column not on the screen.
+**`stripReadOnly` runs first in the resource's create/patch pipeline, ahead of coerce, blank and validate, removing every `readOnly` key (`@system`, `@generated`, `@computed`, `@from`, a tenancy stamp) except `@version`, which the server requires back.** Rules are taken for the method, since `@immutable` is read-only on a patch and writable on a create. A key with no field rule is left alone, because a `@transient` is legitimate there. Where it lives: `packages/sierra/src/resource/resource.js`, `src/junction/field-rules.js`. Refused alternative: sending the row back whole, which the Data boundary refuses by name with a 403 about a column not on the screen.
 
 Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *an edit form never sends a server column, and always sends the version it read* — `packages/sierra/test/resource-readonly.test.js` › "a save does not send the server its own columns back" and "stripReadOnly" › "a key the rules do not know is left alone". ([`FJS-526`](ISSUES_ARCHIVE.md#fjs-526)) Picked by the owner in session.
 
@@ -11940,7 +11949,7 @@ there. `@frontierjs/ui`'s drive opens the component, which it had never done.
 
 *Lives in:* `packages/litestone/src/jsonschema.js` ·
 `packages/toolbelt/src/directives/directives.js` ·
-`packages/sierra/src/junction/resource.js` ·
+`packages/sierra/src/resource/resource.js` ·
 `packages/ui/components/display/FilterBar.mesa` ·
 `packages/cli/core/crud-templates.js`; pinned in
 `litestone/test/model-search.test.ts` (every row a PAIR over ONE schema, since an
@@ -11992,8 +12001,8 @@ refused in the boundary's own words. It runs under bun beside
 whatever the table says, which is the entire thing under test. Measured against
 stubs — `text` → `equals` reds 1, `json` → `contains` 1, `list` → `contains` 2.
 
-*Lives in:* `packages/sierra/src/junction/field-rules.js` ·
-`packages/sierra/src/junction/resource.js` · `packages/ui/controls.js` ·
+*Lives in:* `packages/sierra/src/resource/field-rules.js` ·
+`packages/sierra/src/resource/resource.js` · `packages/ui/controls.js` ·
 `packages/ui/components/display/FilterBar.mesa` ·
 `packages/cli/core/crud-templates.js`; the argument is
 `IDEAS/shipped/tables-from-the-seed.md` § Question 4.
@@ -12029,7 +12038,7 @@ The registry WALK is one function for both — `_askRegistry(entries, rule, ctx,
 { noun, key })` — because the decline rule, the throw guard and the `by` stamp
 are three rules whose whole value is being the same for both surfaces.
 
-*Lives in:* `packages/sierra/src/junction/field-rules.js` ·
+*Lives in:* `packages/sierra/src/resource/field-rules.js` ·
 `packages/ui/controls.js` · `packages/ui/components/display/Cell.mesa`; pinned in
 `packages/sierra/test/display-for.test.js`, whose sharpest row is a PAIR on one
 `@computed` column — no control, and a display — since either alone is satisfied
@@ -12065,7 +12074,7 @@ also naming the order you want them in — and `omitted` is what stops that bein
 a silent escape: every field not returned is named with a reason, so a column
 added to `.lite` that does not appear is answerable without reading the page.
 
-*Lives in:* `packages/sierra/src/junction/field-rules.js` (`columnList`,
+*Lives in:* `packages/sierra/src/resource/field-rules.js` (`columnList`,
 `columnLabel`) · `packages/cli/core/crud-templates.js`, whose five-line `cell()`
 and second column mode are deleted by this ruling; pinned in
 `packages/sierra/test/column-list.test.js`.
@@ -12107,7 +12116,7 @@ ONCE and every detail page imports it; a copy per page is the written-twice
 failure `crud-templates.js` exists to end, and a single-model regeneration would
 leave the rest stale.
 
-*Lives in:* `packages/sierra/src/junction/resource.js` (`summary`, `children`) ·
+*Lives in:* `packages/sierra/src/resource/resource.js` (`summary`, `children`) ·
 `packages/cli/core/crud-templates.js` · `packages/cli/commands/admin/generate.md`
 (`_routes.js`); pinned in `packages/sierra/test/resource-schema-modes.test.js`.
 Argued in `IDEAS/shipped/tables-from-the-seed.md`.
@@ -12161,7 +12170,7 @@ an enum is a migration, not a stale row. A bound ARRAY marks per element. In a
 combobox the entry is pinned and is never a search hit, because a value that is
 not offered cannot be searched for.
 
-*Lives in:* `packages/sierra/src/junction/resource.js` and
+*Lives in:* `packages/sierra/src/resource/resource.js` and
 `@frontierjs/ui`'s `<Form>` · built — `FJS-960`.
 
 ### <a id="fjs-d216"></a>2026-09-05 · `FJS-D216` — `<mesa:*>` keeps its closing slash, and the spec's own examples were wrong
@@ -12803,7 +12812,7 @@ name→component binding. Neither of the other two ships until its generator doe
 because a registry with no consumer is a name nobody can call and there is no
 generated table, detail view or filter bar to call it. `IDEAS/overview.md` 1.1.
 
-*Lives in:* `packages/sierra/src/junction/field-rules.js` (`registerControl`,
+*Lives in:* `packages/sierra/src/resource/field-rules.js` (`registerControl`,
 `defaultControlFor`), `packages/ui/controls.js`,
 `packages/ui/components/forms/FormField.mesa`; pinned in
 `packages/sierra/test/form-fields.test.js` and `packages/ui/test/form.mjs`
@@ -12927,7 +12936,7 @@ assertions) and nothing had ever asserted that the selector matches the markup.
 
 This is a **breaking change** for any component that styled a child's internals.
 *Lives in:* `packages/mesa/src/compiler.js` (`_appendScope`, `_scopeSelector`, the
-element writer), VISION **RULE 55**, `packages/mesa/CHANGES.md`;
+element writer), VISION **RULE 55**;
 computed-style proof in `packages/sierra/test/fixtures/island-site/verify.mjs`.
 
 ### <a id="fjs-d86"></a>2026-08-03 · `FJS-D86` — CSS scope ids are content-addressed, never generated.
@@ -13013,7 +13022,7 @@ Found on the way and fixed with it: the `FJS-D597` re-check asked `$readReach` f
 
 *The nine were answered after the code, not before* — named late per `decision-rules`. The owner question failed on the first draft (the second walker) and was fixed rather than overridden.
 
-*Lives in:* `packages/litestone/src/core/client.js` (`tenantPath`, `tenantsOf`, `announceFor`) · `packages/junction/src/core/litestone.ts` (`sendToChannel`, `regrade`, `dependentsOf`) · `packages/junction/src/transport/channels.ts` (`ChannelFn`, `sendGraded`) · `write-events.test.ts` § FJS-1741 · `data-write-announcement.test.ts` § FJS-1741 · serpgrid `api/test/live.test.ts` · notion `probes/q2/out.txt` run 7.
+*Lives in:* `packages/litestone/src/core/client.js` (`tenantPath`, `tenantsOf`, `announceFor`) · `packages/junction/src/core/litestone.ts` (`sendToChannel`, `regrade`, `dependentsOf`) · `packages/junction/src/transport/channels.ts` (`ChannelFn`, `sendGraded`) · `write-events.test.ts` § FJS-1741 · `data-write-announcement.test.ts` § FJS-1741 · serpgrid's api/test/live.test.ts · notion's probes/q2/out.txt run 7.
 
 ### <a id="fjs-d952"></a>2026-10-13 · `FJS-D952` — What does an app shell own, and is it the kit's — A paper first: `IDEAS/app-shell.md` surveys the six nav shapes and proposes a `nav.js` contract (groups, section tabs, bare prefixes, drawer copy), then a kit `Shell` over `frame.css` that reads it.
 
@@ -13714,7 +13723,7 @@ Ruled by the owner over **B** (the tree compiles to placement data and `createSt
 
 **Why.** All three differ in who calls `stamp()`, a mounted tree or a loop over data. B's one gain is a stage the server builds without Mesa. For an owner's scene, 12.2's generated `world.json` already gives that. For a member's row, the API derives the same shape by mounting `<Placements>` headlessly when the row is saved, through the loader `web/test/stage.mjs` already uses, and never takes a world the caller sends. B would add a second way to build a stage for nothing. C undoes 5.5–5.8 a day after they were ruled. A row can name a piece only by key, so a piece a member may place lives in `pieces/index.js`; an owner's scene may still define one inline. A key the registry lacks, or two pieces on one cell, is refused by name when the row is saved, not when a screen draws it.
 
-*Lives in:* `packages/haven/web/src/components/Placements.mesa` (new, 12.1), `web/src/pieces/index.js`; the plan is `IDEAS/haven.md` 12.1.
+*Lives in:* `Placements.mesa` (new, 12.1, under `packages/haven/web/src/`), `web/src/pieces/index.js`; the plan is `IDEAS/haven.md` 12.1.
 
 ### <a id="fjs-d998"></a>2026-10-14 · `FJS-D998` — A Haven mod is a nick the server lists — `HAVEN_MODS`, read at every login both ways; the standing is `Member.role = 'mod'`, `@guarded`, and what a mod may do is two predicates in the schema, never a method or a hook.
 
@@ -16253,7 +16262,7 @@ file in a browser is what found `FJS-400`.
 Still open: §4.6's proposed check — *a route file may not be imported by a
 non-route file* — which this ruling unblocks.
 
-— `packages/sierra/src/junction/resource.js` (`save`, `detailQuery`),
+— `packages/sierra/src/resource/resource.js` (`save`, `detailQuery`),
 `packages/ui/components/forms/Form.mesa` (`_send`).
 
 ### <a id="fjs-d112"></a>2026-08-19 · `FJS-D112` — A resource file carries its model's default form. Invariant 18's "no markup" half is reversed.
@@ -16880,7 +16889,7 @@ It also answers the three questions `FJS-D153` left to a second connector:
   wrapping it is added once two apps write the same wrapper.
 
 The contract is graded by `fli check`'s `connector-contract`: each `packages/conduit-*` holds a sink, a drive and `@frontierjs/conduit` as a peer. The rest of the list is a judgement no rule makes.
-*Lives in:* this ruling · the first extraction, `@frontierjs/conduit-stripe`.
+*Lives in:* this ruling · the first extraction, conduit-stripe in the sibling conduit-connectors checkout.
 
 ### <a id="fjs-d889"></a>2026-10-10 · `FJS-D889` — A connector may own a PROTOCOL, and is then named for the protocol: `conduit-s3`, `conduit-oidc`, `conduit-openai`.
 
@@ -17498,7 +17507,7 @@ arrive. That is a fair exception and is baselined by name.
 
 Closes `FJS-533`. Extends `FJS-D138`.
 *Lives in:* `packages/junction/src/client/index.ts` (`RecordOptions.composed`)
-· `packages/sierra/src/junction/resource.js` (`record`) ·
+· `packages/sierra/src/resource/resource.js` (`record`) ·
 `packages/cli/core/checks.js` (`detail-read-dead`).
 
 ### <a id="fjs-d153"></a>2026-08-27 · `FJS-D153` — an official Conduit connector is its own package. Conduit owns the mechanism, never the vendor.
@@ -17595,7 +17604,7 @@ nobody made, which passes coercion and validation and is refused by SQLite as a
 refuses BY NAME so the form could not submit at all. Both are correct now
 because there is one implementation rather than because anyone noticed.
 *Lives in:* `packages/toolbelt/src/{hooks,jsonschema}/` ·
-`packages/sierra/src/junction/resource.js` · `packages/jetty/src/resources/`.
+`packages/sierra/src/resource/resource.js` · `packages/jetty/src/resources/`.
 
 ### <a id="fjs-d110"></a>2026-08-15 · `FJS-D110` — SQLite is the only database FrontierJS supports, and serverless follows from that rather than being refused separately.
 
@@ -17837,7 +17846,7 @@ target, which is Paraglide's bundle win out of a loop the build already runs.
 Closes `FJS-D12`, and retires the *1.5 precedes 1.1* dependency in
 `IDEAS/overview.md`.
 *Lives in:* `packages/litestone/src/core/parser.js` (`@label`) ·
-`packages/sierra/src/junction/field-rules.js` (`labelFieldFor`, `toFieldErrors`)
+`packages/sierra/src/resource/field-rules.js` (`labelFieldFor`, `toFieldErrors`)
 · `packages/toolbelt/src/inflect/inflect.js` · `IDEAS/ecosystem-gaps.md` 4.
 
 ### <a id="fjs-d31"></a>2026-08-14 · `FJS-D31` — FrontierJS wraps third-party binaries, it does not fork or republish them. It controls the VERSION, never the artifact.

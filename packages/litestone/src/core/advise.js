@@ -21,7 +21,7 @@
 import { parseGateString } from '../plugins/gate.js'
 import { authClaimsUsed, buildClaimSet, pickWhere } from './policy.js'
 import { ID_GENERATORS }   from './ids.js'
-import { VALIDATOR_KINDS } from './validate.js'
+import { VALIDATOR_KINDS, ITEM_COUNT_RULES } from './validate.js'
 
 // ─── The visibility table ─────────────────────────────────────────────────────
 //
@@ -435,6 +435,48 @@ export const RULES = [
               `or optional by its own '?'.`} A rule about the rows themselves belongs on ` +
               `${f.type.name}'s own columns.`,
           })
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'validator-on-the-wrong-type',
+    severity: 'error',
+    title:    'a validator written for a type the column is not',
+    blurb:    'A rule grades a value of one kind: @gte a number, @length a string, @minItems a list. ' +
+              'Written on any other column it parses, then either never runs or compares the wrong ' +
+              'thing -- Number("abc") is NaN and fails every bound, String(5).length counts digits -- ' +
+              'and a generated form is handed a numeric minimum on a checkbox.',
+    run(schema) {
+      const out = []
+      // Json holds any kind, so no rule is wrong for it. A relation is its own
+      // rule above.
+      const NUMBER = { kinds: ['lt', 'lte', 'gt', 'gte'],  holds: ['Int', 'Float'],      says: 'a number' }
+      const TEXT   = { kinds: ['length', 'startsWith', 'endsWith', 'contains', 'regex', 'email', 'url',
+                               'phone', 'date', 'datetime', 'time', 'zone'],
+                       holds: ['String', 'DateTime', 'File'],                         says: 'text' }
+      for (const model of schema.models ?? []) {
+        for (const f of model.fields ?? []) {
+          const kind = f.type?.kind
+          if (kind === 'relation' || kind === 'implicitM2M' || f.type?.name === 'Json') continue
+          for (const a of f.attributes ?? []) {
+            const group = [NUMBER, TEXT].find(g => g.kinds.includes(a.kind))
+            const wrong = group
+              ? kind === 'enum' || !group.holds.includes(f.type.name)
+              : ITEM_COUNT_RULES.has(a.kind) && !f.type.array
+            if (!wrong) continue
+            out.push({
+              model: model.name, field: f.name,
+              message: group
+                ? `${model.name}.${f.name} is ${f.type.name}, and @${a.kind} grades ${group.says} -- on this ` +
+                  `column it ${group === NUMBER ? 'compares NaN or nothing' : 'counts the wrong thing'}. ` +
+                  `Put the rule on a ${group.holds[0]} column, or take it off.`
+                : `${model.name}.${f.name} is not a list, and @${a.kind} counts a list's elements -- it never ` +
+                  `runs here. Declare the column as ${f.type.name}[], or use @length for the size of a string.`,
+            })
+          }
         }
       }
       return out

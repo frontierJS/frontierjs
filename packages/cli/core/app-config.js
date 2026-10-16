@@ -55,8 +55,8 @@ indent_style = tab
 `
 
 // ─── the dev dependencies an app is given ─────────────────────────────────────
-// `latest` matches how the framework packages themselves are pinned while this
-// is pre-alpha. Biome is a peer of @frontierjs/config and optional there, so an
+// The framework half and `bun-types` are exact versions (see FJS_PACKAGES
+// below). Biome is a peer of @frontierjs/config and optional there, so an
 // app that deletes biome.json can drop it without a broken install.
 
 // `@frontierjs/cli` is here rather than assumed on PATH. A globally installed
@@ -83,30 +83,35 @@ indent_style = tab
 // published is an app that cannot start, and nothing else in the repo compares
 // the two.
 //
-// `latest` while the framework is pre-alpha: a fresh install should pull the
-// most recent published version, and pinning sixteen ranges by hand is how a
-// scaffold ends up installing a set that was never released together.
+// **Every version here is exact, and the set is one that was published
+// together** (`FJS-2973`). `latest` made two scaffolds a day apart build
+// different frameworks, and left the generated workflow's `--frozen-lockfile`
+// nothing to freeze until someone had installed once. The pin may lag the tree
+// by a patch and may not lag it by a minor — below 1.0 a caret in a peer range
+// pins the MINOR, so a pin on the old one installs peers the tree has left —
+// and `test/app-config.test.js` fails the day it does. A pin is raised by hand
+// after the release that publishes it.
 
 export const FJS_PACKAGES = {
-  '@frontierjs/junction':       'latest',
-  '@frontierjs/sierra':         'latest',
-  '@frontierjs/mesa':           'latest',
-  '@frontierjs/litestone':      'latest',
-  '@frontierjs/css':            'latest',
-  '@frontierjs/ui':             'latest',
-  '@frontierjs/auth':           'latest',
-  '@frontierjs/conduit':        'latest',
-  '@frontierjs/caravan':        'latest',
-  '@frontierjs/notifications':  'latest',
-  '@frontierjs/jetty':          'latest',
-  '@frontierjs/toolbelt':       'latest',
+  '@frontierjs/junction':       '0.1.8',
+  '@frontierjs/sierra':         '0.1.7',
+  '@frontierjs/mesa':           '0.1.6',
+  '@frontierjs/litestone':      '1.1.9',
+  '@frontierjs/css':            '0.16.5',
+  '@frontierjs/ui':             '0.1.6',
+  '@frontierjs/auth':           '1.0.7',
+  '@frontierjs/conduit':        '0.1.4',
+  '@frontierjs/caravan':        '0.1.5',
+  '@frontierjs/notifications':  '0.1.5',
+  '@frontierjs/jetty':          '0.0.6',
+  '@frontierjs/toolbelt':       '0.1.5',
 }
 
 export const APP_DEV_DEPS = {
-  '@frontierjs/cli':    'latest',
-  '@frontierjs/config': 'latest',
+  '@frontierjs/cli':    '0.1.7',
+  '@frontierjs/config': '0.1.3',
   '@biomejs/biome':     '^2.5.0',
-  'bun-types':          'latest',
+  'bun-types':          '1.4.2',
   'typescript':         '^5.0.0',
 }
 

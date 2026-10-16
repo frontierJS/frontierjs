@@ -19,6 +19,7 @@
 import { describe, it, expect } from 'bun:test'
 import { createClient } from '../src/index.js'
 import { parse } from '../src/core/parser.js'
+import { CATALOG } from '../src/core/catalog.js'
 
 const M = (field: string, extra = '') => `
 enum S { draft shipped cancelled }
@@ -209,5 +210,19 @@ model Thing {
     const row = await db.asSystem().thing.create({ data: { id: 1 } })
     expect(row.note).toBeNull()
     await expect(db.asSystem().thing.create({ data: { id: 2, kind: 'x' } })).rejects.toThrow()
+  })
+})
+
+// FJS-2690 — the usage the catalog prints (`fli db:explain`, catalog.snapshot.md)
+// is what a person copies, so every form it names must parse.
+describe('@required — the documented usage parses', () => {
+  const entry: any = CATALOG.find((r: any) => r.word === 'required' && r.level === 'field')
+
+  it('names the message positionally, never as a `message:` argument', () => {
+    expect(entry.arity).not.toContain('message:')
+  })
+
+  it('the catalog example parses clean', () => {
+    expect(errsOf(M(entry.example))).toHaveLength(0)
   })
 })

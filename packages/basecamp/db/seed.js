@@ -25,7 +25,8 @@
 // if a field is not in the schema it is not here, and a wrong enum value fails
 // the CHECK constraint at insert rather than sliding through.
 
-import { Factory, Seeder, runSeeder, apply } from '@frontierjs/litestone'
+import { Factory, Seeder, runSeeder } from '@frontierjs/litestone'
+import { apply } from '@frontierjs/litestone/migrations'
 import { createLitestoneAuth } from '@frontierjs/auth'
 
 import { createBasecampDb } from '../api/src/core/db.ts'

@@ -315,6 +315,27 @@ describe('proxying an upgrade', () => {
     expect(said).not.toMatch(/101 Switching Protocols/)
   })
 
+  // FJS-1129: `connection: close` is the proxy's promise to close, and a bare
+  // `end()` is only a half-close. A client that reads the answer and keeps its
+  // own side open held the proxy's socket until the proxy's timer fired. The
+  // assertion is on the PROXY's socket: the client's `close` waits on its own
+  // half-open side, and its `end` fires under a half-close as well.
+  test('a refusal closes the proxy side rather than half-closing it', async () => {
+    const server = createProxy({ table: hostTable([row({ host: 'a.localhost', port: 1 })]) })
+    const closed = new Promise(ok => server.on('connection', c => c.on('close', () => ok(true))))
+    await new Promise(r => server.listen(0, '127.0.0.1', r))
+    shut.push(() => new Promise(r => server.close(r)))
+
+    const s = connect({ port: server.address().port, host: '127.0.0.1', allowHalfOpen: true }, () => {
+      s.write('GET / HTTP/1.1\r\nHost: nope.localhost\r\n\r\n')
+    })
+    s.on('data', () => {})
+    shut.push(async () => s.destroy())
+
+    const said = await Promise.race([closed, new Promise(ok => setTimeout(() => ok(false), 1000))])
+    expect(said).toBe(true)
+  })
+
 })
 
 describe('where it listens', () => {

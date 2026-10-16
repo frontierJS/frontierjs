@@ -51,7 +51,7 @@ const makeLiteModel = (name, softDelete) => {
     `model ${name} {`,
     `  id        Int       @id`,
     `  createdAt DateTime  @default(now())`,
-    `  updatedAt DateTime  @default(now()) @updatedAt`,
+    `  updatedAt DateTime  @updatedAt`,
   ]
   if (softDelete) {
     lines.push(`  deletedAt DateTime?`)
@@ -60,7 +60,8 @@ const makeLiteModel = (name, softDelete) => {
   }
   lines.push('')
   lines.push('  /// read.create.update.delete — reads are public, writes need a user.')
-  lines.push('  @@gate("0.4.4.6")')
+  lines.push('  /// Above 4 nothing grades a caller until the app declares an isAdmin column.')
+  lines.push('  @@gate("0.4.4.4")')
   lines.push(`}`)
   lines.push('')
   return lines.join('\n')

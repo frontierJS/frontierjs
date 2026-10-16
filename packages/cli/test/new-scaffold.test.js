@@ -14,6 +14,7 @@ import { Database } from 'bun:sqlite'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
+import { fenceBunGlobal } from '../core/bun-fence.js'
 import { scaffoldWidgetSurface, widgetTag, isLegalWidgetTag } from '../core/widget-surface.js'
 
 const NEW_MD = readFileSync(join(import.meta.dir, '../commands/project/new.md'), 'utf8')
@@ -179,3 +180,68 @@ test('a database app\'s README names the script that writes db/schema.d.ts', () 
   const app = scaffold('readme-types', '--full')
   expect(readFileSync(join(app, 'README.md'), 'utf8')).toContain('bun run db:types')
 }, 60_000)
+
+// FJS-2945 — only auth:install generated the key, so a --no-auth app came out
+// with ENCRYPTION_KEY= blank beside an env.ts that requires it, and the
+// `bun run dev` its README and next steps name crashed the API at load.
+test('a --no-auth scaffold writes .env with a key the API can open, and the example without one', () => {
+  const app = scaffold('no-auth-key', '--no-auth')
+  expect(readFileSync(join(app, '.env'), 'utf8')).toMatch(/^ENCRYPTION_KEY=[0-9a-f]{64}$/m)
+  expect(readFileSync(join(app, '.env.example'), 'utf8')).toMatch(/^ENCRYPTION_KEY=$/m)
+  expect(readFileSync(join(app, 'README.md'), 'utf8')).not.toContain('if it is\nblank')
+}, 60_000)
+
+// FJS-2972 — a scaffold shipped `server: 'your-server.com'` and a commented
+// attachments block, so a config was mostly text to delete and a deploy
+// placeholder was one typo from being somebody's box. A config carries live keys.
+test('a scaffold writes no deploy config until it is told where, and no config carries a placeholder', () => {
+  const app = scaffold('no-placeholder', '--full')
+  expect(existsSync(join(app, 'frontier.config.js'))).toBe(false)
+  expect(existsSync(join(app, 'deploy/Dockerfile'))).toBe(true)
+  expect(readFileSync(join(app, 'api/config/junction.config.js'), 'utf8')).not.toContain('attachments')
+}, 60_000)
+
+test('--server and --domain write a deploy block of live keys only', () => {
+  const app = scaffold('with-server', '--full', '--server', 'myvps', '--domain', 'shop.example.org')
+  const config = readFileSync(join(app, 'frontier.config.js'), 'utf8')
+  expect(config).toContain("server: 'myvps'")
+  expect(config).toContain("domain: 'shop.example.org'")
+  expect(config).not.toContain('your-')
+  expect(config).not.toMatch(/^\s*\/\/\s*\w+:/m)
+}, 60_000)
+
+// FJS-2971 — apiPrefix was written in junction.config.js, app.ts, sierra.config.js
+// and the vite proxy key, and the comment beside one pointed at a file that does
+// not exist. junction.config.js owns it; the web half reads it from there.
+test('a full-stack scaffold states apiPrefix once and the web half reads it', () => {
+  const app = scaffold('prefix-once', '--full')
+  const read = (rel) => readFileSync(join(app, rel), 'utf8')
+  expect(read('api/config/junction.config.js')).toMatch(/apiPrefix:\s*'\/api'/)
+  expect(read('api/src/app.ts')).not.toMatch(/apiPrefix:/)
+  const sierra = read('web/config/sierra.config.js')
+  expect(sierra).not.toMatch(/apiPrefix:\s*'\//)
+  expect(sierra).not.toContain('default.ts')
+  expect(read('web/config/vite.config.js')).not.toMatch(/'\/api'\s*:/)
+  const r = spawnSync(process.execPath, ['-e', `console.log((await import(${JSON.stringify(join(app, 'web/config/sierra.config.js'))})).default.junction.apiPrefix)`],
+    { cwd: tmpdir(), encoding: 'utf8' })
+  expect(r.stderr).toBe('')
+  expect(r.stdout.trim()).toBe('/api')
+}, 60_000)
+
+// FJS-2999 — a --no-auth schema holds one model, AuditTrail, on the audit
+// database. `migrate create` wrote its file but built no table, `baseline`
+// refused (the database lacks it), and with a migration file present the client
+// does not build tables at start, so the first boot warned about a schema the
+// scaffold had just made.
+test('a --no-auth scaffold leaves a database that holds its schema', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fjs-new-audit-db-'))
+  roots.push(dir)
+  const { env } = fenceBunGlobal()
+  const r = spawnSync(process.execPath, [join(import.meta.dir, '../bin/fli.js'), 'new', 'audited',
+    '--yes', '--no-git', '--no-auth', '--source', 'local'], { cwd: dir, encoding: 'utf8', env })
+  expect(r.status).toBe(0)
+  const audit = new Database(join(dir, 'audited/db/audit.db'), { readonly: true })
+  const tables = audit.query("select name from sqlite_master where type = 'table'").all().map(t => t.name)
+  audit.close()
+  expect(tables).toContain('audit_trail')
+}, 180_000)

@@ -95,9 +95,9 @@ ${userModel.trimStart()}`
 
 // ─── auth.ts scaffold ─────────────────────────────────────────────────────────
 
-const authScaffold = (db) => `import { createLitestoneAuth, createAuthCleanupJobs } from '@frontierjs/auth'
-import { createClient, GatePlugin, LEVELS }       from '@frontierjs/litestone'
-import { defineEnv }                               from '@frontierjs/junction'
+const authScaffold = (db) => `import { createLitestoneAuth }               from '@frontierjs/auth'
+import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
+import { defineEnv }                        from '@frontierjs/junction'
 
 // ─── Env ──────────────────────────────────────────────────────────────────────
 
@@ -175,10 +175,6 @@ export const auth = createLitestoneAuth(db, {
   //   })
   // },
 })
-
-// ─── Cleanup jobs (expired sessions + verifications) ──────────────────────────
-
-export const authCleanup = createAuthCleanupJobs(db)
 `
 
 // ─── app.ts wiring hint ────────────────────────────────────────────────────
@@ -186,9 +182,9 @@ export const authCleanup = createAuthCleanupJobs(db)
 const serverHint = `
 // ─── Add to api/src/app.ts ──────────────────────────────────────────────────
 
-import { auth, db, authCleanup }           from './auth.ts'
-import { createAuthPlugin }             from '@frontierjs/auth'
-import { withLitestoneDb }                 from '@frontierjs/junction'
+import { auth, db }         from './auth.ts'
+import { createAuthPlugin } from '@frontierjs/auth'
+import { withLitestoneDb }  from '@frontierjs/junction'
 
 const app = createApp({ auth })
 
@@ -198,13 +194,6 @@ app.configure(createAuthPlugin(auth, {
 }))
 
 app.configure(withLitestoneDb(db))
-
-// Timers start in work(), which a one-shot boot (junction call) skips
-app.configure({
-  name: 'auth-cleanup',
-  register() {},
-  async work() { authCleanup.start() },
-})
 `
 
 // ─── .env.example entries ─────────────────────────────────────────────────────

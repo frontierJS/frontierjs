@@ -841,9 +841,10 @@ export async function loadRows(db, modelName, source, opts = {}) {
     throw new Error(`loadRows(${modelName}): key '${key}' is not a column of ${modelName}`)
 
   const fromText = typeof source === 'string'
-  const { header, records, lines } = fromText ? readCsv(source) : { header: null, records: source, lines: null }
-  if (!Array.isArray(records))
-    throw new Error(`loadRows(${modelName}): expected CSV text or an array of records, got ${typeof source}`)
+  if (!fromText && !(source && (Symbol.iterator in source || Symbol.asyncIterator in source)))
+    throw new Error(`loadRows(${modelName}): expected CSV text or an iterable of records, got ${typeof source}`)
+  const csv    = fromText ? csvRows(source) : null
+  const header = csv ? (csv.next().value?.cells ?? []).map(h => String(h ?? '')) : null
 
   const columns = columnReader(model, schema, modelName, overflow)
   for (const name of Object.keys(stamp)) columns.of(name)
@@ -862,33 +863,20 @@ export async function loadRows(db, modelName, source, opts = {}) {
   }
 
   const rejects = []
-  const where   = (i) => (lines ? { row: i, line: lines[i] } : { row: i })
-  const reject  = (i, field, reason, keyValue) =>
-    rejects.push({ ...where(i), key: keyValue == null ? null : String(keyValue), field, reason })
+  const reject  = (at, field, reason, keyValue) =>
+    rejects.push({ row: at.i, ...(at.line === undefined ? {} : { line: at.line }), key: keyValue == null ? null : String(keyValue), field, reason })
 
-  // Read every row before writing any, so a repeated key is decided by
-  // position in the source and not by which batch a row happened to fall in.
-  const ready = []
-  const firstAt = new Map()
-  for (let i = 0; i < records.length; i++) {
-    const named = Object.keys(stamp).find(k => records[i] && k in records[i])
-    if (named) throw new Error(`loadRows(${modelName}): row ${i} names '${named}', which this load stamps`)
-    if (overflow && !header && records[i] && overflow in records[i])
-      throw new Error(`loadRows(${modelName}): row ${i} names '${overflow}', which this load fills with what no column takes`)
-    const out = columns.read(records[i], stamp)
-    const keyValue = key ? (out.data?.[key] ?? records[i]?.[key]) : null
-    if (out.reason) { reject(i, out.field, out.reason, keyValue); continue }
-    if (key) {
-      if (out.data[key] == null) { reject(i, key, 'required: it is the key', null); continue }
-      const k = String(out.data[key])
-      if (mode !== 'upsert' && firstAt.has(k)) {
-        const first = firstAt.get(k)
-        reject(i, key, `repeats the key of ${lines ? `line ${lines[first]}` : `row ${first}`}`, k)
-        continue
-      }
-      if (!firstAt.has(k)) firstAt.set(k, i)
+  // Records arrive one at a time and are written a batch at a time, so memory
+  // is a batch and the keys seen, never the source. A repeated key is still
+  // decided by position in the source, since `firstAt` fills in source order.
+  const records = async function* () {
+    if (csv) {
+      let i = 0
+      for (const { cells, line } of csv) yield { i: i++, line, record: Object.fromEntries(header.map((h, n) => [h, cells[n] ?? null])) }
+    } else {
+      let i = 0
+      for await (const record of source) yield { i: i++, record }
     }
-    ready.push({ i, data: out.data, keyValue })
   }
 
   const accessor = modelToAccessor(modelName)
@@ -901,22 +889,56 @@ export async function loadRows(db, modelName, source, opts = {}) {
 
   const run = async (tx) => {
     if (mode === 'replace') await tx[accessor].deleteMany({ where: {} })
-    for (const group of batches(ready, batch, mode === 'upsert' ? key : null)) {
+
+    // Under upsert a group also closes before a key it already holds, because
+    // one statement may not touch a row twice.
+    let group = [], inGroup = new Set()
+    const flush = async () => {
+      const rows = group
+      group = []; inGroup = new Set()
+      if (!rows.length) return
       try {
-        await tx.$transaction(t => write(t, group))
-        loaded += group.length
+        await tx.$transaction(t => write(t, rows))
+        loaded += rows.length
       } catch (e) {
         if (!refusesARow(e)) throw e
-        for (const r of group) {
+        for (const r of rows) {
           try { await tx.$transaction(t => write(t, [r])); loaded++ }
           catch (err) {
             if (!refusesARow(err)) throw err
             const why = reasonFor(err)
-            reject(r.i, why.field, why.reason, r.keyValue)
+            reject(r.at, why.field, why.reason, r.keyValue)
           }
         }
       }
     }
+
+    const firstAt = new Map()
+    for await (const at of records()) {
+      const { record } = at
+      const named = Object.keys(stamp).find(k => record && k in record)
+      if (named) throw new Error(`loadRows(${modelName}): row ${at.i} names '${named}', which this load stamps`)
+      if (overflow && !header && record && overflow in record)
+        throw new Error(`loadRows(${modelName}): row ${at.i} names '${overflow}', which this load fills with what no column takes`)
+      const out = columns.read(record, stamp)
+      const keyValue = key ? (out.data?.[key] ?? record?.[key]) : null
+      if (out.reason) { reject(at, out.field, out.reason, keyValue); continue }
+      let k = null
+      if (key) {
+        if (out.data[key] == null) { reject(at, key, 'required: it is the key', null); continue }
+        k = String(out.data[key])
+        if (mode !== 'upsert' && firstAt.has(k)) {
+          const first = firstAt.get(k)
+          reject(at, key, `repeats the key of ${first.line === undefined ? `row ${first.i}` : `line ${first.line}`}`, k)
+          continue
+        }
+        if (!firstAt.has(k)) firstAt.set(k, { i: at.i, line: at.line })
+      }
+      if (group.length >= batch || (mode === 'upsert' && inGroup.has(k))) await flush()
+      group.push({ at, data: out.data, keyValue })
+      if (mode === 'upsert') inGroup.add(k)
+    }
+    await flush()
     if (dryRun) throw DRY_RUN
   }
 
@@ -925,19 +947,6 @@ export async function loadRows(db, modelName, source, opts = {}) {
 
   rejects.sort((a, b) => a.row - b.row)
   return { loaded, rejects }
-}
-
-// Consecutive slices of `size`; under upsert a slice also closes before a key
-// it already holds, because one statement may not touch a row twice.
-function* batches(rows, size, key) {
-  let group = [], keys = new Set()
-  for (const r of rows) {
-    const k = key ? String(r.data[key]) : null
-    if (group.length >= size || (k !== null && keys.has(k))) { yield group; group = []; keys = new Set() }
-    group.push(r)
-    if (k !== null) keys.add(k)
-  }
-  if (group.length) yield group
 }
 
 // The refusals that are about one row's values. Anything else — a gate, a
@@ -1102,15 +1111,16 @@ async function _readFixture(path) {
  * unquoted postcode 0123 into the number 123 (FJS-1634).
  */
 export function parseCsv(text) {
-  return readCsv(text).records
+  const [header, ...body] = [...csvRows(text)].map(r => r.cells)
+  if (!header) return []
+  return body.map(cells => Object.fromEntries(header.map((h, idx) => [String(h), cells[idx] ?? null])))
 }
 
-// The records, plus the 1-based line each starts on — header included, so a
-// reject names the line an editor shows. Not the record's index: a quoted cell
-// may hold a newline, and from then on the two disagree.
-function readCsv(text) {
-  const rows  = []
-  const lines = []
+// The non-blank rows one at a time, header first, each with the 1-based line it
+// starts on — header included, so a reject names the line an editor shows. Not
+// the record's index: a quoted cell may hold a newline, and from then on the two
+// disagree. Lazy, so a load holds a row and not the file.
+function* csvRows(text) {
   let row       = []
   let field     = ''
   let quoted    = false
@@ -1120,9 +1130,14 @@ function readCsv(text) {
   let i         = 0
 
   const endField = () => { row.push(wasQuoted || field !== '' ? field : null); field = ''; wasQuoted = false }
-  const endRow   = () => { endField(); rows.push(row); lines.push(rowLine); row = []; rowLine = line }
+  const endRow   = () => {
+    endField()
+    const done = { cells: row, line: rowLine }
+    row = []; rowLine = line
+    return done.cells.length === 1 && done.cells[0] === null ? null : done
+  }
 
-  const src = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const src = text.replace(/\r\n?/g, '\n')
   while (i < src.length) {
     const c = src[i]
     if (quoted) {
@@ -1133,19 +1148,10 @@ function readCsv(text) {
     }
     if (c === '"' && field === '') { quoted = true; wasQuoted = true; i++; continue }
     if (c === ',')  { endField(); i++; continue }
-    if (c === '\n') { line++; endRow(); i++; continue }
+    if (c === '\n') { line++; const done = endRow(); if (done) yield done; i++; continue }
     field += c; i++
   }
-  if (field !== '' || wasQuoted || row.length) endRow()
-
-  const keep = rows.map((r, n) => [r, lines[n]]).filter(([r]) => r.length && !(r.length === 1 && r[0] === null))
-  if (!keep.length) return { header: [], records: [], lines: [] }
-  const [[header], ...body] = keep
-  return {
-    header:  header.map(h => String(h ?? '')),
-    records: body.map(([cells]) => Object.fromEntries(header.map((h, idx) => [String(h), cells[idx] ?? null]))),
-    lines:   body.map(([, l]) => l),
-  }
+  if (field !== '' || wasQuoted || row.length) { const done = endRow(); if (done) yield done }
 }
 
 export async function runSeeder(db, SeederClass) {

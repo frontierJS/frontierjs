@@ -30,7 +30,7 @@
  * the bottom refuses to write a bundle without it.
  */
 
-import { rmSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { rmSync, mkdirSync, readFileSync, writeFileSync, statSync, copyFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -95,6 +95,11 @@ for (const f of [plain, min]) {
     process.exit(1);
   }
 }
+
+/* Litestone Studio serves its own copy (FJS-D913): litestone depends on toolbelt alone, so it
+ * cannot resolve this package, and a host with no egress cannot reach a CDN. A litestone test
+ * fails when the copy differs from dist/. */
+copyFileSync(min, join(here, '..', 'litestone', 'src', 'tools', 'studio.css'));
 
 console.log(`\n  @frontierjs/css → dist/\n`);
 console.log(`  frontier.css      ${kb(statSync(plain).size)}`);

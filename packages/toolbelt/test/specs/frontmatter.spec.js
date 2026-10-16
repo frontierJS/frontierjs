@@ -137,6 +137,15 @@ test('frontmatter: flow collections, over several lines', function () {
   })
 })
 
+test('frontmatter: a quote opens a string only where a scalar starts (FJS-2200)', function () {
+  assert.deepEqual(read("a: [it's, fine]"), { a: ["it's", 'fine'] })
+  assert.deepEqual(read("a: {k: it's, j: 'x, y'}"), { a: { k: "it's", j: 'x, y' } })
+  assert.deepEqual(read('a: {"k":"v", x: [ "]", \'}\' ]}'), { a: { k: 'v', x: [']', '}'] } })
+  assert.deepEqual(read("a: [x,\n  it's]"), { a: ['x', "it's"] })
+  assert.throws(() => read("a: [a 'b]', c]"), /text after the closing bracket/)
+  assert.throws(() => read("a: {a: b 'c}', d: e}"), /text after the closing bracket/)
+})
+
 test('frontmatter: `__proto__` is an own key, not the prototype', function () {
   const fm = read('__proto__: 1\nb: 2')
   assert.ok(Object.hasOwn(fm, '__proto__'))

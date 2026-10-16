@@ -302,8 +302,8 @@ model Note   { id Int @id  body String  @@db(extra) }
     await runCli(dir, ['migrate', 'create', 'init'])
     await runCli(dir, ['migrate', 'apply'])
 
-    // One database in, one schema out — the output carries no @@db, so serving
-    // the first would silently answer half the question.
+    // One database in, one schema out, so serving the first would silently
+    // answer half the question.
     const r = await runCli(dir, ['introspect'])
     expect(r.exit).not.toBe(0)
     expect(r.stdout + r.stderr).toMatch(/--db=/)
@@ -312,6 +312,16 @@ model Note   { id Int @id  body String  @@db(extra) }
     expect(named.exit).toBe(0)
     expect(named.stdout).toMatch(/model\s+Note\b/)
     expect(named.stdout).not.toMatch(/model\s+Widget\b/)
+
+    // FJS-1555: the database was named, so the model says where it lives —
+    // pasted into the multi-database schema it would otherwise land in main.
+    expect(named.stdout).toMatch(/@@db\(extra\)/)
+    const outPath = join(dir, 'pulled.lite')
+    await runCli(dir, ['introspect', '--db=extra', `--out=${outPath}`])
+    const { parse } = await import('../src/core/parser.js')
+    const parsed = parse('database main { path "main.db" }\ndatabase extra { path "extra.db" }\n' + readFileSync(outPath, 'utf8'))
+    expect(parsed.errors ?? []).toEqual([])
+    expect(parsed.schema.models.find((m: any) => m.name === 'Note').attributes.find((a: any) => a.kind === 'db')?.name).toBe('extra')
   })
 
   // The property the six substring assertions above could never make (FJS-594).

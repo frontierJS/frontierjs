@@ -61,6 +61,9 @@ const BLOCKS_CAP    = 3
 const REACH_PER     = 3
 const REACH_CAP     = 3
 const RECENT_COMMITS = 10
+// A commit naming more files than this is a sweep, not work on any one of them:
+// two 170- and 233-file commits in range marked a quarter of the register touched.
+export const COMMIT_FILE_CAP = 40
 
 // Any prefix: a blocker is only counted when it names an open row, so the
 // register's own prefix is what survives the filter in `rankNext`.
@@ -216,14 +219,17 @@ export function dependentCounts(root) {
 // The working tree and the last few commits. `execFileSync` with a fixed argv:
 // nothing a caller supplies reaches git.
 
-function recentPaths(root) {
+export function recentPaths(root) {
   const git = argv => {
     try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
     catch { return '' }
   }
-  const out = new Set()
-  for (const text of [git(['diff', '--name-only', 'HEAD']), git(['log', `-n${RECENT_COMMITS}`, '--name-only', '--pretty=format:'])]) {
-    for (const line of text.split('\n')) if (line.trim()) out.add(line.trim())
+  const lines = text => text.split('\n').map(l => l.trim()).filter(Boolean)
+  const out = new Set(lines(git(['diff', '--name-only', 'HEAD'])))
+  // NUL opens each commit, so a commit's files can be counted before any is kept.
+  for (const commit of git(['log', `-n${RECENT_COMMITS}`, '--name-only', '--pretty=format:%x00']).split('\0')) {
+    const files = lines(commit)
+    if (files.length <= COMMIT_FILE_CAP) for (const f of files) out.add(f)
   }
   return out
 }

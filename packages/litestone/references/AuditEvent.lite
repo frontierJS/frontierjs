@@ -12,7 +12,7 @@
 /// permission grant that was refused, a webhook that was replayed — nothing the
 /// logger can see names the actor or the attempt.
 ///
-/// `db.$audit({ operation, model?, records?, actorId?, meta? })` is the other
+/// `db.$audit({ operation, model, records?, actorId?, meta? })` is the other
 /// half and needs no model: it writes into litestone's own trail by hand. Reach
 /// for THIS model instead when the trail has to be a first-class read — a
 /// screen with a filter and a window over it, a retention different from the

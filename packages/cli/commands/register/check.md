@@ -129,6 +129,13 @@ true on purpose:
 - **`dead-link`** — a linked path is in neither the file's own directory nor the
   project root. Closed records are exempt: their links describe the code as it
   was, and a file renamed by the fix is the fix working.
+- **`lives-in`** — a ruling's `*Lives in:*` code span names a path no package
+  holds, a symbol (in the parenthesis after a path) its file no longer mentions,
+  or an `@scope/name` no `package.json` declares. A path is written from the
+  root or from its package, so it is dead only when neither finds it; a bare
+  `src/index.ts` matches in every package and so grades no symbol. A ruling with
+  a `**Status:**` is exempt, as a closed row is. Prose after the marker is not
+  read: only code spans are claims.
 - **`unknown-status`**, **`unknown-severity`**, **`malformed-date`** — a value
   outside the vocabulary the register declares in its own conventions table.
 - **`id-section`** — a row filed under a section its ID PREFIX does not belong

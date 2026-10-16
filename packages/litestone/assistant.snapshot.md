@@ -452,6 +452,7 @@ Shapes the parser accepts and something later refuses. Check every proposal agai
 - **a @@fts index names a column whose stored text is not the value** (error). FTS5 indexes what the COLUMN HOLDS. For @encrypted that is a ciphertext and for @hashed a digest, so no query can ever match one — the index builds, the search runs and returns nothing. A @guarded column is the other half: it matches, and then read() strips it from every result, so callers can search text they may never see and highlight/snippet render it.
 - **a validator on a column no caller can write never runs** (error). A validator grades a value a request sent. @computed, @derived, @from and @generated are refused by name on every write, so a rule declared on one is unreachable — the schema states a constraint, the boundary never asks it, and the read schema carries it where it reads as one that holds.
 - **a value validator on a relation grades nothing** (error). A relation field is a collection of ROWS, not a value, so a rule written to grade a value has nothing to read. @minItems and @maxItems are the two that do count there — they mean the same thing on a relation as they already mean on a Json array.
+- **a validator written for a type the column is not** (error). A rule grades a value of one kind: @gte a number, @length a string, @minItems a list. Written on any other column it parses, then either never runs or compares the wrong thing -- Number("abc") is NaN and fails every bound, String(5).length counts digits -- and a generated form is handed a numeric minimum on a checkbox.
 - **a foreign key column with no index** (warn). SQLite indexes a PRIMARY KEY and a UNIQUE and nothing else — a foreign key column gets no index unless the schema asks for one, and litestone emits CREATE INDEX only for @@index. So every lookup by that key, every include of the children, and every @@softDelete(cascade) walk is a full table scan that is fast on the rows a test writes.
 - **an enum value no transition can reach** (warn). A @@transitions field is a closed machine: once declared, the only way the column moves is transition(). A value that is not the default and is on no transition's right-hand side is therefore unreachable — a state the application names, can write at create and can never move a row into.
 - **@@label names a column that may be null** (warn). @@label is what a picker SHOWS for a foreign key, and the options query sorts by that column and matches it with contains. A null there is a blank row in the list, sorted together at one end and matching no search — which reads as a broken picker rather than as a row with no name.
@@ -1070,7 +1071,7 @@ The human name for this column. Emitted as `title` in JSON Schema and read strai
 sku String @label("Stock code")
 ```
 
-#### `@required` [([where: <expr>][, message: "…"])]
+#### `@required` [([where: <expr>][, "message"])]
 
 tier: **essential** · legal in: on a model's field, on a type's field, on a trait's field · also called: not null, notnull, mandatory · see also: `check`, `label`
 

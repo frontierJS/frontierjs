@@ -23,6 +23,7 @@ import { bold, dim, green, red, cyan, rel, header, flag, getFlag,
 // An asset that must survive \`bun build --compile\`: a text import is embedded
 // in the binary, a readFileSync beside the source is not.
 import STUDIO_HTML from './studio.html' with { type: 'text' }
+import STUDIO_CSS from './studio.css' with { type: 'text' }
 
 // ─── EXPLAIN QUERY PLAN parser ────────────────────────────────────────────────
 // Converts a SQLite EXPLAIN QUERY PLAN detail string into a rating + advice.
@@ -838,6 +839,9 @@ export async function cmdStudio(cfg) {
         return fixedResponse(req, fixed('html', html, 'text/html'))
 
       if (isWrite(req, path, body)) generation++
+
+      if (path === '/studio.css')
+        return fixedResponse(req, fixed('css', STUDIO_CSS, 'text/css'))
 
       if (!path.startsWith('/api/')) return new Response('Not Found', { status: 404 })
 
