@@ -469,7 +469,12 @@ delete a \`User\`, asked of the real schema with the app's own resolver
 (\`api/src/core/gate.ts\`). Every rule it grades lives in \`db/schema.lite\`, so
 loosening one there is a red test rather than a quiet change.
 ` : ''}
-That is exactly what \`.github/workflows/ci.yml\` runs, so a green local run is a
+${useDb ? `\`db/schema.d.ts\` is the schema's own TypeScript and does not exist until
+\`bun run db:types\` has written it; until then every table on the client — in a
+job, a test or a service — is \`unknown\`. \`bun run typecheck\` runs it first, so
+run it by hand after editing \`db/schema.lite\` to refresh the types in your editor.
+
+` : ''}That is exactly what \`.github/workflows/ci.yml\` runs, so a green local run is a
 green pipeline. The order matters: **\`fli check\` goes first because it is the
 half a linter cannot reach** — Biome reads neither \`.mesa\` nor \`.lite\`, and a
 model name that is not PascalCase singular or a \`vite.config.js\` without
@@ -577,7 +582,7 @@ ${useDb ? `## Where to grow
 
 - **Add a model:** \`fli scaffold Lead --fields "name:string email:email status:string"\`
 - **Background jobs:** add \`@frontierjs/caravan\` and configure under the \`caravan\` block in \`junction.config.js\`
-- **Outbound integrations:** add \`@frontierjs/conduit\` and place targets in \`api/src/conduit/\`
+- **Third-party integrations:** add \`@frontierjs/conduit\` and place targets in \`api/src/conduit/\`
 - **Real-time:** already wired — \`api/src/core/channels.ts\` decides who listens, and joins every channel a service declares
 ` : ''}`
 }

@@ -94,7 +94,7 @@ of them is called a performance test:
 - `packages/caravan/test/scale.test.ts` asserts a QUERY PLAN — no `TEMP B-TREE` — and
   its header says why: a millisecond threshold in CI is a coin flip on a loaded machine.
 - The audit's H4 counts `getLevel` resolutions (0 across 200 gated reads) and M1 counts
-  statements through `$tapQuery` (one per `upsert()`).
+  statements through `$tapQuery` (one per `upsert()`) — both now tests (Order 2).
 - `packages/litestone/test/policy-paths.test.ts` asserts EXPLAIN names no `AUTOMATIC`
   index for a relation hop.
 
@@ -286,6 +286,25 @@ script** (`FJS-D532`, 2026-10-15); the timed run stays by hand. The first read f
    §What Order (1) found. The write half needs counts to resolve.
 2. **The gated tier.** Promote the counts already asserted into named cases, add the
    byte baselines per surface. The only tier that can fail a build, and the cheapest.
+   *Mesa's slice built* (§Mesa's slice). *Litestone's design facts built 2026-10-15*:
+   the audit's H4 and M1 are tests now, each seen red against its mechanism removed —
+   one executed statement per `upsert()` on both branches (`test/query-tap.test.ts`)
+   and zero `getLevel` calls across 100 reads after a scoped client's first grade
+   (`test/level-claim.test.ts`). Plan shape per hop was already
+   `test/policy-paths.test.ts`. *Sierra's bytes per surface built 2026-10-15*
+   (`FJS-D1070`): `packages/sierra/bench/`, one floor per target, brotli through
+   `packages/cli/core/bench.js`, the last step of sierra's `test` — seen red on 130
+   bytes added to the router. *Litestone's quantities built 2026-10-16*:
+   `packages/litestone/bench/statements.mjs`, the last step of litestone's `test`
+   (`FJS-D532`'s placement, `FJS-D1070`'s ratchet). It runs six request kinds over
+   every model in `example`'s schema, as system and as one signed-in user, twice with
+   other values, and counts at the `#sql-engine` seam: distinct statement texts per
+   kind, the total against the 500-entry cache, the shapes the second pass adds
+   (*churn*), evictions, and three workload-size guards (requests failed, models
+   unseeded, requests unasked) so a shrinking workload cannot read as an improvement.
+   Its first run found [FJS-2930](../ISSUES.md#fjs-2930): `LIMIT`/`OFFSET` written into
+   the text, 115 of 159 churned shapes and all 67 evictions. Seen red on a counter
+   stamped into `pageSql`. The churn left over is the IN-list arities `IN_INLINE` allows.
 3. **The runner and the reported phase.** `bench:core`-sized, since the full file is
    ~35 s and 31 s of it is `autocommit-vs-tx`.
 4. **The first recorded entry**, at the alpha release.
@@ -446,6 +465,20 @@ few µs, a single-row write is ~30 µs, and the round-to-round spread here is 2�
   - **C** — Stays manual until a second package has a slice, then one phase for all.
   - **Recommend A** — one owner (mesa's suite), no CI edit, and a rise is caught the
     day it lands. B and C are the shape once litestone's counts join, per Order (2).
+- ~~**How are Sierra's bytes per surface counted, and where?**~~ **Answered 2026-10-16 (`FJS-D1070`): A — `packages/sierra/bench/`: one floor fixture per target (spa, static, widget), counted by cli's `measureSurface` reached by relative path, ratcheted in `bench/bench.baseline.json`, run at the end of sierra's `test` script.** Two byte gates on a built
+  surface already exist and both count brotli: the offline shell's budget (`FJS-D302`)
+  and `packages/cli/core/bench.js`, which `fli test:bench` and the vanilla floor
+  (`scripts/scaffold-build.mjs --floor`, by hand) use. Mesa's bench counts gzip.
+  - **A** — `packages/sierra/bench/`: one floor fixture per target (spa, static,
+    widget), counted by cli's `measureSurface` reached by relative path, ratcheted in
+    `bench/bench.baseline.json`, run at the end of sierra's `test` script.
+  - **B** — No sierra bench: the vanilla floor scaffolds with `--site --widgets` and
+    `BUILT_SURFACES` gains `widgets`. One baseline, but it stays a by-hand run of a
+    full scaffold until `--floor` is wired into CI.
+  - **C** — Mesa's runner copied: sierra counts its own bytes, in gzip. Three
+    measurers in two units.
+  - **Recommend A** — one measurer and one unit for every built surface, and a rise is
+    caught the day it lands, which `FJS-D532` already ruled for mesa.
 
 ## Decision questions
 

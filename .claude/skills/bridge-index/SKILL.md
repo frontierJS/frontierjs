@@ -61,6 +61,7 @@ Detail: `references/schema.md`
 
 **Machine ↔ control plane**
 Detail: `references/api-internals.md`
+- `app.conduit.receive(receiver)` / `Dialect` — the receiving end of a Provider: a connector's dialect, an app's receiver, conduit's order (`accept()`, beside the types) and applied-not-seen receipts (`FJS-D899`) — `conduit/src/conduit.ts`
 - `signRequest()` / `verifyRequest()` — what a signed machine-to-machine request is — `toolbelt/src/signature/signature.js`
 - `requestMeta().traceparent` / `.tracestate` — the inbound W3C trace, carried verbatim into conduit's `trace` — `junction/src/core/context.ts`
 - `ctx.$raw.rawBody` — the body as bytes, for a signature — `junction/src/transport/http.ts`

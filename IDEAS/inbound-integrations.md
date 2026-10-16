@@ -1,13 +1,13 @@
 ---
 id: inbound-integrations
-status: proposed
+status: partial
 dated: 2026-09-02
 ---
 
 # Idea — receiving: two features, two owners
 
 **Status: the DIRECTION is ruled ([`FJS-D177`](../DECISIONS.md#fjs-d177), 2026-09-02);
-the MECHANISM is a proposal and nothing here is built.** Read the two halves
+half B is BUILT (2026-10-15, [`FJS-D899`](../DECISIONS.md#fjs-d899): `packages/conduit/src/receive.ts`), half A and the credential seam are not.** Read the two halves
 differently: conduit holding the relationship, the who-dials axis, the
 whose-scheme-is-it split, the three exclusions and the two records are settled and
 must not be relitigated here. The shape of the receiver record, the toolbelt
@@ -322,15 +322,15 @@ is the load-bearing half of the whole argument for merging. Built second, the
 receiver gets written against a resolver that cannot hold a per-user expiring
 credential anyway.
 
-**2 — `verifyRequest({ secrets })`.** One kit change, no consumer yet, and it is
+**2 — `verifyRequest({ secrets })`.** ~~Open~~ **Built 2026-10-15.** One kit change, and it is
 what stops A and B each inventing rotation.
 
 **3 — A, in junction.** Smaller, symmetric with code that already ships, and it
 gives an app that never installs conduit a receiving half.
 
-**4 — B, in conduit.** The receiver record, the route, the window, the dedupe.
+**4 — B, in conduit.** **Built 2026-10-15 as `FJS-D899` ruled it**: a connector's Dialect, an app's Receiver, conduit's order and receipts; the record is wider than this paper drew it (`FJS-1804`).
 
-**5 — move `example`'s hand-rolled Stripe route onto it.** `verify:pay` already
+**5 — move `example`'s hand-rolled Stripe route onto it.** **Done 2026-10-15**, the psp route with it; the throw-once-then-retry case is `receive.test.ts`'s. `verify:pay` already
 asserts four separate refusals against the hand-rolled version — a forged
 signature, a swapped body, a clock outside the window, a replayed nonce — plus a
 redelivered event. That drive is the acceptance test for B, and it exists before
@@ -347,6 +347,11 @@ integrations an app declares* — outbound shipped, inbound declared and not bui
 `ARCHITECT.md` domain 4 is already renamed to **Integrations** on that footing.
 What must NOT change is `FJS-D153`: a connector still owns its vendor's dialect,
 in both directions, and a vendor still does not live inside conduit.
+
+**Swept 2026-10-15:** the root `CLAUDE.md` and `README.md`, conduit's
+`package.json`, `CLAUDE.md` and `PROJECT_STATE.md`, junction's README, the
+website and `fli new`'s scaffold say *two-way*; since half B landed, the receiving end is described as built.
+*Outbound* names the end that ships, never the package.
 
 ---
 

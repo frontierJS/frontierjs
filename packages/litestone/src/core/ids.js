@@ -72,7 +72,10 @@ const SERVER_FILLED = new Set([
  * still STATE one of these — an explicit `@sequence` value is honored — so the
  * answer is *not required*, never *not writable*.
  */
-export function isServerFilled(field) {
+export function isServerFilled(field, model = null) {
+  // A declared machine's state column takes its scope's one entry when a
+  // create names none (`FJS-D365`); the attribute is the model's, not the field's.
+  if (model?.attributes?.some(a => a.kind === 'transitions' && a.declaredBy && a.field === field.name)) return true
   // An array column is filled with no attribute at all: ddl.js gives it
   // DEFAULT '[]', the empty list being its null state. The client's pre-flight
   // skipped arrays and the schema did not, so a browser create that omitted

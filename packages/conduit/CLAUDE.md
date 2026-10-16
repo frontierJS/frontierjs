@@ -1,17 +1,19 @@
 # conduit — package map
 
 **The third parties an app integrates with, declared in one place.** A
-counterparty is named once — with what credential, under what limits — and
-`app.conduit.send()` is how a call to it leaves the process. v0.1.3, deliberately
-narrow. `bun run test` (bun).
+counterparty is named once — with what credential, under what limits —
+`app.conduit.send()` is how a call to it leaves the process and
+`app.conduit.receive()` is how its deliveries arrive. Deliberately narrow.
+`bun run test` (bun).
 
-**Outbound is what ships; the relationship is the noun.** *Talk to* is a
-relationship rather than a dialing direction — a vendor holds two of our secrets
-and dials us about as often as we dial it — so the receiving end is conduit's too
-and is **not built** (`IDEAS/inbound-integrations.md`). What is NOT conduit's is a
-counterparty signing with FrontierJS's *own* scheme, which is junction's, and a
-machine caller becoming a principal, which is junction's auth door (`FJS-371`).
-The test is *whose scheme is it*.
+**Conduit is two-way** (`FJS-D177`). *Talk to* is a relationship rather than a
+dialing direction — a vendor holds two of our secrets and dials us about as often
+as we dial it — so a Provider has a Target (where we send) and a Receiver (the
+route it calls us on), and the two share a credential store and no code. Write
+*outbound* for the sending end, never for the package. What is NOT conduit's is a
+counterparty signing with FrontierJS's *own* scheme and becoming a caller, which
+is junction's door (`createApp({ credentials })`, `FJS-D475`). The test is *whose
+scheme is it*.
 
 **It is not a wall.** Nothing enforces the declaration — there is no check for a
 raw `fetch`, and junction's `ai` and `mail` batteries each dial out directly on
@@ -38,7 +40,8 @@ event, or the bytes of any other body (`FJS-D934`).
 
 ```
 src/
-  conduit.ts        the core — declare targets, send, apply resilience
+  conduit.ts        the core — declare targets and receivers, send, accept, apply resilience
+  receive.ts        the receiving end — Delivery, Dialect, Receiver, and the ONE order a delivery runs
   router.ts         target resolution
   observe.ts        the one place an observer is called
   plugin.ts         the Junction plugin (app.conduit)
@@ -241,6 +244,29 @@ src/
   credential goes to every declared origin, so the list is never a send's to
   widen. Breaker and concurrency are keyed per origin whenever a send names an
   address.
+- **A request-addressed target reaches public https and nothing else.**
+  `destinations.allowPrivate` opens the whole target to every row, so it is a
+  test receiver's switch, not how a self-hosted counterparty on a LAN is
+  reached. Registering one fixed-address target per row is never graded and is
+  the hole, not the workaround. That counterparty has no spelling yet
+  (`FJS-2923`).
+- **A Receiver is three parties and one order** (`FJS-D899`). A connector exports
+  the `Dialect` — `verify · parse · dedupeKey`, pure, the clock passed in as
+  `ctx.now` in seconds — the app declares the `Receiver` around it, and
+  `accept()` runs credential → verify → parse → owner → receipt → apply → mark.
+  `credential` is a ref through the installed resolver, or a function choosing
+  the key for one delivery BEFORE the body is believed (Quo's key is the
+  subscription's row). **Dedupe means APPLIED, not SEEN** (`FJS-1805`): the
+  receipt is written unapplied, only `markApplied` makes a redelivery a
+  duplicate, and an `apply` that throws answers 500 and leaves the receipt so the
+  sender's retry gets a clean run — so applying twice must be safe, which the
+  subject's own unique key inside the apply is for. `parked` leaves the receipt
+  unapplied on purpose. A refusal is one 401 sentence, `not verified`; the reason
+  reaches `onReceived` and the junction plugin's log, never the body. A nonce
+  memory is per receiver, `toolbelt/signature`'s `nonceMemory`, kept for what
+  the dialect states (twice its tolerance). A dialect that needs a step the
+  order lacks — a handshake, a batch — is the second asker `FJS-D899` waits for;
+  do not grow the record for one.
 - **`stub` and `not_implemented` are different answers.** A stub transport
   succeeds with a canned response; NotImplemented refuses. Do not use the first
   as a placeholder for a transport you meant to write.
@@ -326,6 +352,10 @@ src/
 `bun run test`, then `example`:
 
 - `bun run verify:notify` — the mail path runs over conduit to a real server.
+- `bun run verify:pay` — the RECEIVING end against a provider speaking this
+  project's own scheme: four refusals (forged, tampered, stale, replayed nonce)
+  and a redelivered event, over a real socket. Needs `bun run api` up on the dev
+  row; `verify:stripe` also posts Stripe's dialect at the app's receiver.
 - `bun run verify:stripe` — the TRANSPORT, against a real vendor's dialect. The
   only drive whose sink refuses a wrong content-type rather than parsing whatever
   arrives, so it can fail when the encoding is wrong; its negative control is the

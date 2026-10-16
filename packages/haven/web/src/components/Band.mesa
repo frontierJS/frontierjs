@@ -9,6 +9,8 @@
   // that sounds wrong is reported: by its number. `/song <n>` asks for song
   // n (`api/src/setlist.ts`): the server answers a cue at the next bar line,
   // and the room's `song` event seats it on every screen in the loft.
+  // `/volume [0-100]` sets how loud this machine hears it, and names the level
+  // with none (the scope is unchanged: it is the band, not the speaker).
   // `/song strings` asks for the next slow piece after the one playing, and
   // `/songs [n]` lists eight from n (the one playing, if none is named).
   //
@@ -38,7 +40,7 @@
   }
 
   function start() {
-    stop = stream((from, n) => band.samples(from, n), { rate: RATE })
+    stop = stream((from, n) => band.samples(from, n), { rate: RATE, gain: () => listening.volume / 100 })
     return stop ? `the band plays ${songOf(songAt(Date.now(), band.cueOf(Date.now()))).name}` : 'nothing here can play sound'
   }
   function playing() {
@@ -70,6 +72,14 @@
     }
     return rows.join(' · ')
   }
+  function volume({ args }) {
+    const asked = args.trim().replace(/%$/, '')
+    if (!asked) return `volume ${listening.volume}${listening.heard ? '' : ' (music is off)'}`
+    const v = Number(asked)
+    if (!/^\d+$/.test(asked) || v > 100) return '/volume [0-100] sets how loud the band is here'
+    listening.volume = v
+    return `volume ${v}`
+  }
   function toggle() {
     if (stop) {
       stop()
@@ -99,6 +109,7 @@
   })
   $.onDestroy(() => { gone = true; stop?.() })
   $.onDestroy(verbs.add({ word: 'music', help: '/music', run: toggle }))
+  $.onDestroy(verbs.add({ word: 'volume', help: '/volume [0-100]', run: volume }))
   $.onDestroy(verbs.add({ word: 'song', help: '/song [n|strings]', run: song }))
   $.onDestroy(verbs.add({ word: 'songs', help: '/songs [n]', run: songs }))
 

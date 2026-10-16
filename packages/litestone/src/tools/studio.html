@@ -1810,6 +1810,10 @@ function loadIfMoved(panel, load) {
 // database switch) takes that answer instead of asking again. One-shot and
 // short-lived: counts older than a few seconds are re-read.
 let _infoHandoff = null
+
+// Counts which switch of the open database a load began under. `reopenDatabase`
+// moves it; a load that finds it moved drops its answer.
+let _dbEpoch = 0
 const handOffInfo = info => { _infoHandoff = info && { info, at: Date.now() } }
 const takeInfo = () => {
   const h = _infoHandoff
@@ -2885,6 +2889,7 @@ addEventListener('keydown', e => {
 async function ovInit() {
   const body = document.getElementById('ovBody')
   body.innerHTML = '<div class="empty"><span class="spinner"></span></div>'
+  const epoch = _dbEpoch
   try {
     // Four independent reads, in parallel. A slow advisor must not hold up the
     // drift row, which is the one somebody came here for.
@@ -2900,6 +2905,12 @@ async function ovInit() {
     // re-points every data endpoint, so the snapshot taken at startup describes
     // a DIFFERENT database — and the front page would report the registry's row
     // counts under the tenant's name with nothing saying so.
+    //
+    // An answer to a question asked of the database that was open before a
+    // switch lands after it, and would put that database's counts, tenant and
+    // findings over the new one's. The switch re-runs this load when the panel
+    // is showing, so the stale one has nothing left to say.
+    if (epoch !== _dbEpoch) return
     if (info?.counts) {
       erCounts   = info.counts
       _erMaxRows = Math.max(0, ...Object.values(erCounts))
@@ -7291,6 +7302,7 @@ function applyDatabaseFacts(info) {
  * showing them.
  */
 async function reopenDatabase(what) {
+  _dbEpoch++
   const info = await api('/info').catch(() => null)
   handOffInfo(info)
   applyDatabaseFacts(info)

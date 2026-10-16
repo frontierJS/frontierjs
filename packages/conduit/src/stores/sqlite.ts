@@ -6,7 +6,7 @@
 // ============================================================
 
 import type { Database } from 'bun:sqlite'
-import type { ConduitStore, TargetDescriptor } from '../types.ts'
+import type { ConduitStore, TargetDescriptor, Receipt } from '../types.ts'
 
 const CREATE_TABLE = `
   CREATE TABLE IF NOT EXISTS conduit_targets (
@@ -18,6 +18,21 @@ const CREATE_TABLE = `
     extra           TEXT,
     registered_at   INTEGER NOT NULL,
     last_seen_at    INTEGER
+  )
+`
+
+// One row per delivery a Receiver accepted, keyed by the Provider and the
+// dialect's dedupe key. applied_at NULL is a receipt whose apply has not
+// finished: a retry applies it again, which is what FJS-1805 asks for.
+const CREATE_RECEIPTS = `
+  CREATE TABLE IF NOT EXISTS conduit_receipts (
+    provider     TEXT    NOT NULL,
+    key          TEXT    NOT NULL,
+    event_type   TEXT    NOT NULL,
+    owner        TEXT,
+    received_at  INTEGER NOT NULL,
+    applied_at   INTEGER,
+    PRIMARY KEY (provider, key)
   )
 `
 
@@ -60,6 +75,7 @@ export function createSQLiteStore(db: Database): ConduitStore {
 
   async function init() {
     db.run(CREATE_TABLE)
+    db.run(CREATE_RECEIPTS)
     ensureExtraColumn(db)
   }
 
@@ -114,7 +130,37 @@ export function createSQLiteStore(db: Database): ConduitStore {
     `, { $id: id, $now: Date.now() })
   }
 
-  return { init, get, set, delete: deleteTarget, list, touch }
+  async function receipt(provider: string, key: string): Promise<Receipt | null> {
+    const row = db.query(`
+      SELECT * FROM conduit_receipts WHERE provider = $provider AND key = $key
+    `).get({ $provider: provider, $key: key }) as Receipt | null
+    return row ?? null
+  }
+
+  // INSERT OR IGNORE: two deliveries of one key can both miss the lookup, and
+  // the second write must not throw past the receiver — both then apply, which
+  // the subject's own unique key makes safe.
+  async function record(r: Receipt): Promise<void> {
+    run(`
+      INSERT OR IGNORE INTO conduit_receipts (provider, key, event_type, owner, received_at, applied_at)
+      VALUES ($provider, $key, $event_type, $owner, $received_at, $applied_at)
+    `, {
+      $provider:    r.provider,
+      $key:         r.key,
+      $event_type:  r.event_type,
+      $owner:       r.owner,
+      $received_at: r.received_at,
+      $applied_at:  r.applied_at,
+    })
+  }
+
+  async function markApplied(provider: string, key: string, at: number): Promise<void> {
+    run(`
+      UPDATE conduit_receipts SET applied_at = $at WHERE provider = $provider AND key = $key
+    `, { $provider: provider, $key: key, $at: at })
+  }
+
+  return { init, get, set, delete: deleteTarget, list, touch, receipt, record, markApplied }
 }
 
 // ─── Internal ────────────────────────────────────────────────

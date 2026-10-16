@@ -246,6 +246,7 @@ const HELP = `
     ${dim('  --strict')}                               exit 1 unless the verdict is expand
     ${cyan('litestone mutate')}                       mutate the schema, report what the checks miss
     ${dim('  --kinds=a,b')}                            only these kinds of mutant
+    ${dim('  --suite="bun test api/test"')}            also run the app's own tests on each survivor
 
   ${bold('Options')}
     ${dim('--schema=<path>')}     path to schema.lite         ${dim('(auto-detected if omitted)')}
@@ -2848,6 +2849,33 @@ async function cmdMutate(cfg) {
   log(`  ${dim(`${all.length} mutants · ${basename(schemaPath)}`)}`)
   log()
 
+  // The app's own tests, run with the mutant's text written over the schema
+  // file: that is the only seam every app shares, since each one loads its
+  // schema from a path its own harness chose. The file's bytes go back in a
+  // finally AND on exit, because a killed run that left a mutant in db/ would
+  // ship it.
+  const suiteCmd = getFlag('suite')
+  let suite = null
+  if (suiteCmd) {
+    const { spawnSync } = await import('child_process')
+    const original = readFileSync(schemaPath)
+    const restore  = () => writeFileSync(schemaPath, original)
+    process.on('exit', restore)
+    process.on('SIGINT',  () => { restore(); process.exit(130) })
+    process.on('SIGTERM', () => { restore(); process.exit(143) })
+    suite = async (text) => {
+      try {
+        writeFileSync(schemaPath, text)
+        const r = spawnSync('sh', ['-c', suiteCmd], { cwd: process.cwd(), stdio: 'ignore', timeout: 600_000 })
+        // A timeout or a missing shell is `error`/`signal`, not a failing test.
+        if (r.error || r.signal) return 'inconclusive'
+        return r.status === 0 ? 'passed' : 'failed'
+      } finally {
+        restore()
+      }
+    }
+  }
+
   // Progress as it goes: a 232-mutant run is minutes, and a silent one is
   // indistinguishable from a hung one.
   let done = 0
@@ -2855,6 +2883,7 @@ async function cmdMutate(cfg) {
   const result  = await mutationScore({
     schema: schemaText,
     kinds,
+    suite,
     // `getEncKey()` is where every other command in this file reads the key —
     // env, because a key is not config. This alone read `cfg.encryptionKey`,
     // which loadConfig does not populate, so a schema declaring `@secret` could
@@ -2877,7 +2906,8 @@ async function cmdMutate(cfg) {
       mutants: all.length, graded: result.graded, killed: result.killed, score: pct,
       refused: result.refused.length, missing,
       errored:  result.errored.map(e => ({ kind: e.kind, lineNo: e.lineNo, describe: e.describe, thrown: String(e.thrown) })),
-      survived: result.survived.map(s => ({ kind: s.kind, lineNo: s.lineNo, describe: s.describe })),
+      ...(suite && { suiteKilled: result.suiteKilled }),
+      survived: result.survived.map(s => ({ kind: s.kind, lineNo: s.lineNo, describe: s.describe, ...(s.suite && { suite: s.suite }) })),
     }, null, 2))
     return
   }
@@ -2894,13 +2924,23 @@ async function cmdMutate(cfg) {
     console.log()
   }
 
-  if (!result.survived.length) {
+  // What the app's own tests caught is reported beside the derived checks'
+  // kills, and what is left is what NOTHING saw.
+  const left = suite ? result.survived.filter(s => s.suite !== 'killed') : result.survived
+  if (suite) {
+    console.log(`  ${dim(`${result.suiteKilled} of ${result.survived.length} survivors failed \`${suiteCmd}\` — killed by the app's own tests`)}`)
+    const unknown = result.survived.filter(s => s.suite === 'inconclusive').length
+    if (unknown) console.log(`  ${dim(`${unknown} could not be asked (timeout or no shell) — counted as survivors`)}`)
+    console.log()
+  }
+
+  if (!left.length) {
     console.log(`  ${dim('Every mutant was noticed. Nothing to do.')}`)
   } else {
-    console.log(`  ${yellow(`${result.survived.length} SURVIVED`)} ${dim('— nothing in the checks can see these changes')}`)
+    console.log(`  ${yellow(`${left.length} SURVIVED`)} ${dim(suite ? '— neither the checks nor the app\'s own tests can see these changes' : '— nothing in the checks can see these changes')}`)
     console.log()
     const byKind = {}
-    for (const s of result.survived) (byKind[s.kind] ??= []).push(s)
+    for (const s of left) (byKind[s.kind] ??= []).push(s)
     for (const [kind, rows] of Object.entries(byKind)) {
       console.log(`    ${kind}  ${dim(`(${rows.length})`)}`)
       for (const r of rows) console.log(`      ${dim(`${basename(schemaPath)}:${r.lineNo}`)}  ${r.describe}`)
@@ -2908,11 +2948,13 @@ async function cmdMutate(cfg) {
     console.log()
     console.log(`  ${dim('A survivor is a fact about the CHECKS, not the schema. Two are expected:')}`)
     console.log(`  ${dim('a nullable @unique (SQLite takes any number of NULLs) and a create-only')}`)
-    console.log(`  ${dim('@@allow (a create has no WHERE, so only its @@deny rules are graded).')}`)
+    console.log(`  ${dim('@@allow (a create has no WHERE, so only its @@deny rules are graded)')}`)
+    if (!suite) console.log(`  ${dim('unless --suite names the app\'s own tests, which can grade a create.')}`)
   }
 
   hints([
     `  ${dim('--kinds=<a,b>')}  ${dim(`narrow: ${[...new Set(all.map(m => m.kind))].join(', ')}`)}`,
+    `  ${dim('--suite=<cmd>')}  ${dim('run the app\'s own tests on each survivor, the mutant written over the schema file')}`,
     `  ${dim('--json')}         ${dim('the score and every survivor as data')}`,
   ])
 }

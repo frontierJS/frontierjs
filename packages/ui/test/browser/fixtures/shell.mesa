@@ -7,7 +7,8 @@
   // The table holds one of each case the Shell has to draw: an exact `/`, two
   // entries sharing a path that only `match` tells apart, a group `show`
   // hides until a level, one whose `show` throws (shown), and one left with
-  // no entries (dropped).
+  // no entries (dropped). Every group is for members unless `guests` opens
+  // the first one, which is what turns the signed-out frame on.
   //
   // The controls sit OUTSIDE the Shell so they exist in every branch, signed
   // out and still restoring included. Collapse flips a sidebar to a rail and
@@ -19,6 +20,7 @@
   export let level   = 1
   export let path    = '/leads/'
   export let layout  = 'sidebar'
+  export let guests  = false
 
   let query    = {}
   let unread   = 2
@@ -43,7 +45,7 @@
   }
 
   const groups = [
-    { label: null, entries: [
+    { label: null, show: (s) => guests || !!s.user, entries: [
       { href: '/',        label: 'Today',    icon: 'today', exact: true },
       { href: '/leads/',  label: 'Leads',    icon: 'users' },
       { href: '/contacts/?kind=customer', label: 'Clients', icon: 'users',
@@ -54,7 +56,7 @@
     { label: 'Admin', show: (s) => s.level >= 5, entries: [
       { href: '/settings/', label: 'Settings', icon: 'cog' },
     ] },
-    { label: 'Help', show: () => { throw new Error('the predicate broke') }, entries: [
+    { label: 'Help', show: (s) => { if (!s.user) return false; throw new Error('the predicate broke') }, entries: [
       { href: '/help/', label: 'Docs' },
     ] },
     { label: 'Hidden', entries: [
@@ -73,6 +75,7 @@
     signouts++
     await new Promise((r) => setTimeout(r, 60))
     user = null
+    level = 0
   }
 </script>
 

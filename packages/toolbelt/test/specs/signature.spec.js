@@ -10,7 +10,7 @@
  * Each refusal below is a real attack on the shape, not a spelling check.
  */
 
-import { canonicalRequest, canonicalQuery, signRequest, verifyRequest, sha256Hex, generateSigningKeys } from '../../src/signature/signature.js'
+import { canonicalRequest, canonicalQuery, signRequest, verifyRequest, sha256Hex, generateSigningKeys, nonceMemory } from '../../src/signature/signature.js'
 
 const SECRET = 'a-fleet-secret'
 const BODY   = JSON.stringify({ outpost_version: '0.4.1' })
@@ -71,6 +71,32 @@ test('signature: a key-pair signature replayed is refused by the same nonce stor
   const headers = await sign({ privateKey: keys.privateKey, ...req })
   assert.ok((await verify({ publicKey: keys.publicKey, ...req, headers, seenNonce })).ok)
   assert.equal((await verify({ publicKey: keys.publicKey, ...req, headers, seenNonce })).reason, 'nonce has already been used')
+})
+
+test('signature: a rotation — secrets[] verifies a request signed under either key, and under neither refuses', async function () {
+  const req = { method: 'POST', path: '/hooks', body: BODY }
+  const old = await sign({ secret: 'old-key', ...req })
+  const now = await sign({ secret: 'new-key', ...req })
+  const bad = await sign({ secret: 'stranger', ...req })
+  const both = { secrets: ['new-key', 'old-key'], ...req }
+  assert.ok((await verify({ ...both, headers: old })).ok)
+  assert.ok((await verify({ ...both, headers: now })).ok)
+  assert.deepEqual(await verify({ ...both, headers: bad }), { ok: false, reason: 'signature does not match' })
+  // An empty list is no key at all, not a key that matches everything.
+  assert.deepEqual(await verify({ secrets: [], ...req, headers: now }), { ok: false, reason: 'no secret is configured on this side' })
+  await assertRejects(() => verify({ secret: 'x', secrets: ['y'], ...req, headers: now }), /secret OR secrets/)
+  await assertRejects(() => verify({ secrets: 'x', ...req, headers: now }), /array of strings/)
+})
+
+test('signature: nonceMemory remembers a nonce for exactly what it is told to', function () {
+  const seen = nonceMemory()
+  assert.equal(seen('a', NOW, 600), false)
+  assert.equal(seen('a', NOW + 599, 600), true)
+  // Still remembered at the limit ahead: FJS-1833's window is the caller's to double.
+  assert.equal(seen('a', NOW + 600, 600), false)
+  assert.equal(seen('b', NOW, 600), false)
+  assert.throws(() => seen('c', NOW * 1000, 600), /milliseconds/)
+  assert.throws(() => seen('c', NOW, 0), /positive/)
 })
 
 test('signature: the canonical string has seven lines, the query is the third and the service method the fourth', async function () {

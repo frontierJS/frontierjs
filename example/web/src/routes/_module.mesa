@@ -17,6 +17,7 @@ siteName: Kitchen sink
   import Input          from '@frontierjs/ui/components/forms/Input.mesa'
   import Kbd            from '@frontierjs/ui/components/display/Kbd.mesa'
   import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
+  import Shell          from '@frontierjs/ui/components/layout/Shell.mesa'
   import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
   import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import DropdownLabel     from '@frontierjs/ui/components/overlay/DropdownLabel.mesa'
@@ -25,6 +26,9 @@ siteName: Kitchen sink
   import { alert }          from '@frontierjs/ui/stores/alertStore.js'
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
   import { toasts }         from '@frontierjs/ui/stores/toastStore.js'
+  import { paletteItems }   from '@frontierjs/ui/nav'
+
+  import { groups } from '@/lib/nav.js'
 
   import { notifications, isUnread } from '../resources/Notification.mesa'
   import { useStore } from '@frontierjs/sierra/resource'
@@ -85,27 +89,16 @@ siteName: Kitchen sink
   refreshCart()
 
   $: (cart.count)
-  $: (page.siteName, page.route)
-  $: (status.connected, session.user, session.level, session.error, session.awaitingCode)
+  $: (page.siteName, page.pathname, page.query)
+  $: (status.connected, session.user, session.level, session.checked, session.error, session.awaitingCode)
   $: commandPalette.open
 
   // ⌘K. The commands are ordinary functions — the palette is a way to reach
   // what the nav and the header already do, not a second set of behaviors.
-  const COMMANDS = [
-    { id: 'go-home',      group: 'Navigate', label: 'Home',       action: () => goto('/') },
-    { id: 'go-orders',    group: 'Navigate', label: 'Orders',     action: () => goto('/orders/') },
-    { id: 'go-new-order', group: 'Navigate', label: 'New order',  sub: 'Create an order', action: () => goto('/orders/create/') },
-    { id: 'go-products',  group: 'Navigate', label: 'Products',   action: () => goto('/products/') },
-    { id: 'go-cart',      group: 'Navigate', label: 'Basket',     action: () => goto('/cart/') },
-    { id: 'go-customers', group: 'Navigate', label: 'Customers',  action: () => goto('/customers/') },
-    { id: 'go-inventory', group: 'Navigate', label: 'Inventory',  sub: 'On hand, held, and the ledger', action: () => goto('/inventory/') },
-    { id: 'go-users',     group: 'Navigate', label: 'Users',      sub: 'Staff and shoppers', action: () => goto('/users/') },
-    { id: 'go-reports',       group: 'Navigate', label: 'Reports',       sub: 'What the shop took, by order state', action: () => goto('/reports/') },
-    { id: 'go-plans',         group: 'Navigate', label: 'Plans',         sub: 'What the shop sells on a cycle', action: () => goto('/plans/') },
-    { id: 'go-subscriptions', group: 'Navigate', label: 'Subscriptions', sub: 'Who is paying, and what state that is in', action: () => goto('/subscriptions/') },
-    { id: 'go-invoices',      group: 'Navigate', label: 'Invoices',      sub: 'The documents', action: () => goto('/invoices/') },
-    { id: 'go-settings',  group: 'Navigate', label: 'Settings',   action: () => goto('/settings/') },
-    { id: 'go-account',   group: 'Navigate', label: 'Account',    sub: 'Two-step sign-in and recovery codes', action: () => goto('/account/') },
+  // Navigate is derived from src/lib/nav.js through the same `show`, so it
+  // cannot offer a screen the nav hides or miss one the nav lists.
+  $: COMMANDS = [
+    ...paletteItems(groups, { user: session.user, level: session.level }, goto),
     { id: 'go-sign-in',   group: 'Session',  label: 'Sign in with an email and password', action: () => goto('/sign-in/') },
     { id: 'sign-in-user',  group: 'Session', label: 'Sign in as sam (level 4)',  action: () => as('user') },
     { id: 'sign-in-admin', group: 'Session', label: 'Sign in as alex (level 5)', action: () => as('admin') },
@@ -181,202 +174,146 @@ siteName: Kitchen sink
   app: the frame (shell / topbar / screen), the nav, the tables, the forms and
   the alerts are all vocabulary.
 
-  Current-page state is aria-current="page", not a class — the stylesheet keys
-  off the attribute, so what a screen reader announces and what you see cannot
-  drift. Mesa drops an attribute whose value is null, which is what makes the
-  ternary produce a bare <a> rather than aria-current="false".
-
-  The leading `page.route` in each expression is load-bearing. isActive() reads
-  that path internally, but Mesa decides what an expression depends on from the
-  expression's own text — without the read written here the attribute is set
-  once at mount and the highlight never moves.
+  The Shell draws the bar and the nav from src/lib/nav.js, and marks the current
+  page with aria-current through Sierra's isActive. A guest gets the same frame,
+  because the table offers a shopper Basket at level 0.
 -->
-<div class="shell">
-  <header class="topbar">
+<Shell {groups} layout="topbar"
+       path={page.pathname} query={page.query}
+       user={session.user} level={session.level} checked={session.checked}
+       {isActive} onsignout={out}>
+  {#snippet brand()}
     <span class="cluster">
       <strong>{page.siteName}</strong>
       <Badge tone="muted">pre-alpha</Badge>
     </span>
+  {/snippet}
 
-    <nav class="cluster" aria-label="Main">
-      <a class="navlink" href="/"          aria-current={(page.route, isActive('/', { exact: true })) ? 'page' : null}>Home</a>
-      <!-- exact, because isActive() prefix-matches and /orders/ is a prefix of
-           /orders/create/ — without it both links light up at once. -->
-      <a class="navlink" href="/orders/"   aria-current={(page.route, isActive('/orders/', { exact: true })) ? 'page' : null}>Orders</a>
-      <a class="navlink" href="/orders/create/" aria-current={(page.route, isActive('/orders/create/')) ? 'page' : null}>New order</a>
-      <a class="navlink" href="/products/" aria-current={(page.route, isActive('/products/')) ? 'page' : null}>Products</a>
-      <a class="navlink" href="/customers/" aria-current={(page.route, isActive('/customers/')) ? 'page' : null}>Customers</a>
-      <!-- The recurring half. One link rather than three: plans, subscriptions
-           and invoices cross-link, and a topbar that names every screen stops
-           being a way in and becomes a table of contents. -->
-      <a class="navlink" href="/subscriptions/" aria-current={(page.route, isActive('/subscriptions/') || isActive('/plans/') || isActive('/invoices/')) ? 'page' : null}>Billing</a>
-      <!-- A shopper is not a user: this one is here at level 0 with no
-           account, which is what the Cart gate says. -->
-      <a class="navlink" id="nav-basket" href="/cart/" aria-current={(page.route, isActive('/cart/')) ? 'page' : null}>
-        Basket{#if cart.count}<Badge tone="info" id="nav-basket-count">{cart.count}</Badge>{/if}
-      </a>
-      <!-- Level 5. An affordance and not a boundary: both tables behind that
-           screen are `@@gate("5.…")`, so hiding the link changes what is worth
-           clicking and changes nothing about what is reachable. -->
-      {#if session.level >= 5}
-        <a class="navlink" id="nav-inventory" href="/inventory/" aria-current={(page.route, isActive('/inventory/')) ? 'page' : null}>Inventory</a>
-        <!-- The one-audience half of this app. Every model behind it reads at
-             5, so unlike every other link here the level is not narrowing an
-             audience — it is the whole audience there is. One link for two
-             screens, for Billing's reason. -->
-        <a class="navlink" id="nav-payroll" href="/payroll/" aria-current={(page.route, isActive('/payroll/') || isActive('/people/')) ? 'page' : null}>Payroll</a>
-        <!-- Also 5, and for a different reason from Inventory's. `User` READS
-             at 4, so a shopper is not refused the screen — they are served
-             their own single row by the row policy, which is a working page
-             that says nothing. The link is at 5 because that is the level the
-             screen is FOR, not the level the boundary enforces. -->
-        <a class="navlink" id="nav-users" href="/users/" aria-current={(page.route, isActive('/users/')) ? 'page' : null}>Users</a>
-      {/if}
-      <!-- Administrator-only, and the link is hidden rather than the page being
-           a dead end: the view reads at 5 while every order reads at 1, so most
-           of the people who see this nav legitimately cannot open it. -->
-      {#if session.level >= 5}
-        <a class="navlink" id="nav-reports" href="/reports/" aria-current={(page.route, isActive('/reports/')) ? 'page' : null}>Reports</a>
-      {/if}
-      <!-- Orion's screens, mounted from the package (automations.mount.js). For
-           staff, who are the people db/schema.lite lets draft a flow; a shopper
-           grades the same 4 and may not (FJS-1169). Activating is the move at 5. -->
-      {#if session.user?.isStaff}
-        <a class="navlink" id="nav-automations" href="/automations/" aria-current={(page.route, isActive('/automations/')) ? 'page' : null}>Automations</a>
-      {/if}
-      <a class="navlink" href="/settings/"  aria-current={(page.route, isActive('/settings/')) ? 'page' : null}>Settings</a>
-      {#if session.user}
-        <a class="navlink" id="nav-account" href="/account/" aria-current={(page.route, isActive('/account/')) ? 'page' : null}>Account</a>
-      {/if}
-    </nav>
+  {#snippet badge(entry)}
+    {#if entry.href === '/cart/' && cart.count}<Badge tone="info" id="nav-basket-count">{cart.count}</Badge>{/if}
+  {/snippet}
 
-    <span class="cluster">
-      <!-- The live WebSocket, as a tone rather than a hand-mixed green. The kit
-           takes the tone as a prop; naming status.connected inside the
-           expression is what makes it re-evaluate when the socket drops. -->
-      <Pill tone={status.connected ? 'success' : 'muted'}>
-        {status.connected ? 'live' : 'offline'}
-      </Pill>
+  {#snippet topbar()}
+    <!-- The live WebSocket, as a tone rather than a hand-mixed green. The kit
+         takes the tone as a prop; naming status.connected inside the
+         expression is what makes it re-evaluate when the socket drops. -->
+    <Pill tone={status.connected ? 'success' : 'muted'}>
+      {status.connected ? 'live' : 'offline'}
+    </Pill>
 
-      <Button variant="ghost" id="palette-open" onclick={() => commandPalette.show()}>
-        Search <Kbd>⌘K</Kbd>
-      </Button>
+    <Button variant="ghost" id="palette-open" onclick={() => commandPalette.show()}>
+      Search <Kbd>⌘K</Kbd>
+    </Button>
 
-      {#if session.user}
-        <DropdownMenu>
-          {#snippet trigger()}
-            <Button variant="ghost" id="bell" aria-label="Notifications">
-              🔔{#if unread}<Badge tone="danger" id="bell-count">{unread}</Badge>{/if}
-            </Button>
-          {/snippet}
+    {#if session.user}
+      <DropdownMenu>
+        {#snippet trigger()}
+          <Button variant="ghost" id="bell" aria-label="Notifications">
+            🔔{#if unread}<Badge tone="danger" id="bell-count">{unread}</Badge>{/if}
+          </Button>
+        {/snippet}
 
-          {#if fresh.length}
-            <DropdownLabel>Unread</DropdownLabel>
-            {#each fresh as note}
-              <DropdownItem tone="info" onclick={() => openNote(note)}>
-                <!-- A pulsing dot is the unread marker rather than a word: the
-                     row already carries the notification's own words, and the
-                     dot names itself for a screen reader. -->
-                <Dot tone="info" pulse label="unread" />
-                {note.data?.title ?? note.type} — {note.data?.body ?? ''}
-              </DropdownItem>
-            {/each}
-          {/if}
+        {#if fresh.length}
+          <DropdownLabel>Unread</DropdownLabel>
+          {#each fresh as note}
+            <DropdownItem tone="info" onclick={() => openNote(note)}>
+              <!-- A pulsing dot is the unread marker rather than a word: the
+                   row already carries the notification's own words, and the
+                   dot names itself for a screen reader. -->
+              <Dot tone="info" pulse label="unread" />
+              {note.data?.title ?? note.type} — {note.data?.body ?? ''}
+            </DropdownItem>
+          {/each}
+        {/if}
 
-          {#if fresh.length && seen.length}<DropdownSeparator />{/if}
+        {#if fresh.length && seen.length}<DropdownSeparator />{/if}
 
-          {#if seen.length}
-            <DropdownLabel>Earlier</DropdownLabel>
-            {#each seen as note}
-              <DropdownItem onclick={() => openNote(note)}>
-                {note.data?.title ?? note.type} — {note.data?.body ?? ''}
-              </DropdownItem>
-            {/each}
-          {/if}
+        {#if seen.length}
+          <DropdownLabel>Earlier</DropdownLabel>
+          {#each seen as note}
+            <DropdownItem onclick={() => openNote(note)}>
+              {note.data?.title ?? note.type} — {note.data?.body ?? ''}
+            </DropdownItem>
+          {/each}
+        {/if}
 
-          {#if !notes().length}
-            <DropdownItem disabled>Nothing yet</DropdownItem>
-          {/if}
-        </DropdownMenu>
+        {#if !notes().length}
+          <DropdownItem disabled>Nothing yet</DropdownItem>
+        {/if}
+      </DropdownMenu>
 
-        <!--
-          The badge is the identity; the status is the STANDING, and they are
-          two facts. `verifiedAt: null` is what puts a registered account at
-          level 1 — api/gate.ts says so — so an account that has not verified
-          reads `pending` here rather than looking identical to one that has and
-          differing only in a number.
-        -->
-        <AccountStatus
-          status={session.level >= 4 ? 'active' : 'pending'}
-          sub={'level ' + session.level}
-        />
-        <Badge tone="info">{session.user.email} · level {session.level}</Badge>
-        <!-- A kit component takes its handler as a PROP (`onclick`), not as
-             `on:click` — that directive belongs to elements. -->
-        <Button variant="ghost" onclick={out}>Sign out</Button>
-      {:else}
-        <Button variant="outlined" onclick={() => as('user')}  disabled={busy}>Sign in (user)</Button>
-        <Button variant="primary"  onclick={() => as('admin')} disabled={busy}>Sign in (admin)</Button>
-        <a class="navlink" id="nav-sign-in" href="/sign-in/">Sign in…</a>
-        {#each providers as name}
-          <!-- signInWith LEAVES THE PAGE — the flow is a browser navigation, so
-               nothing after it runs and there is no promise to await. -->
-          <Button
-            variant="ghost"
-            data-oauth={name}
-            onclick={() => getClient().auth.signInWith(name, { returnTo: page.pathname + page.search })}
-          >Continue with {name}</Button>
-        {/each}
-      {/if}
-    </span>
-  </header>
-
-  <main class="screen">
-    {#if session.error}
-      <Alert tone="danger" id="session-error">{session.error}</Alert>
+      <!--
+        The badge is the identity; the status is the STANDING, and they are
+        two facts. `verifiedAt: null` is what puts a registered account at
+        level 1 — api/gate.ts says so — so an account that has not verified
+        reads `pending` here rather than looking identical to one that has and
+        differing only in a number.
+      -->
+      <AccountStatus
+        status={session.level >= 4 ? 'active' : 'pending'}
+        sub={'level ' + session.level}
+      />
+      <Badge tone="info">{session.user.email} · level {session.level}</Badge>
+    {:else}
+      <Button variant="outlined" onclick={() => as('user')}  disabled={busy}>Sign in (user)</Button>
+      <Button variant="primary"  onclick={() => as('admin')} disabled={busy}>Sign in (admin)</Button>
+      <a class="navlink" id="nav-sign-in" href="/sign-in/">Sign in…</a>
+      {#each providers as name}
+        <!-- signInWith LEAVES THE PAGE — the flow is a browser navigation, so
+             nothing after it runs and there is no promise to await. -->
+        <Button
+          variant="ghost"
+          data-oauth={name}
+          onclick={() => getClient().auth.signInWith(name, { returnTo: page.pathname + page.search })}
+        >Continue with {name}</Button>
+      {/each}
     {/if}
+  {/snippet}
 
-    <!--
-      A password was accepted and nothing is signed in yet: no token is stored and
-      no socket is open until this box is answered. `one-time-code` is what lets a
-      phone offer the code from the message it just received.
-    -->
-    {#if session.awaitingCode}
-      <form class="card stack" id="code-box" style="max-width: 28rem"
-            onsubmit={e => { e.preventDefault(); verify() }}>
-        <h2 class="h4">Enter the code from your authenticator</h2>
-        <p class="text-sm text-muted">A recovery code works here too. This attempt lapses at {lapses(session.awaitingCode)}.</p>
-        <Field label="Code">
-          <Input id="code-input" bind:value={code} autocomplete="one-time-code" required />
-        </Field>
-        <div class="cluster">
-          <Button type="submit" id="code-submit" disabled={codeBusy}>Verify</Button>
-          <Button variant="ghost" id="code-cancel" onclick={out}>Start over</Button>
-        </div>
-      </form>
-    {/if}
+  {#if session.error}
+    <Alert tone="danger" id="session-error">{session.error}</Alert>
+  {/if}
 
-    <!--
-      How a provider sign-in ended. It cannot arrive the way session.error does:
-      the callback is a redirect, so there is no promise to reject — the only
-      channel back is a query parameter, which sierra lifts off the URL at boot.
+  <!--
+    A password was accepted and nothing is signed in yet: no token is stored and
+    no socket is open until this box is answered. `one-time-code` is what lets a
+    phone offer the code from the message it just received.
+  -->
+  {#if session.awaitingCode}
+    <form class="card stack" id="code-box" style="max-width: 28rem"
+          onsubmit={e => { e.preventDefault(); verify() }}>
+      <h2 class="h4">Enter the code from your authenticator</h2>
+      <p class="text-sm text-muted">A recovery code works here too. This attempt lapses at {lapses(session.awaitingCode)}.</p>
+      <Field label="Code">
+        <Input id="code-input" bind:value={code} autocomplete="one-time-code" required />
+      </Field>
+      <div class="cluster">
+        <Button type="submit" id="code-submit" disabled={codeBusy}>Verify</Button>
+        <Button variant="ghost" id="code-cancel" onclick={out}>Start over</Button>
+      </div>
+    </form>
+  {/if}
 
-      TWO TONES, from one field. `link_required` is not a failure — the flow
-      worked and the next step is in the person's inbox — and rendering all five
-      codes in one red alert says the opposite. The sentence comes from sierra
-      (`session.oauthMessage`) so this app writes no switch; the code is what
-      the branch is on.
-    -->
-    {#if session.oauthError}
-      <Alert
-        id="oauth-alert"
-        tone={session.oauthError === 'link_required' ? 'info' : 'danger'}
-      >{session.oauthMessage}</Alert>
-    {/if}
+  <!--
+    How a provider sign-in ended. It cannot arrive the way session.error does:
+    the callback is a redirect, so there is no promise to reject — the only
+    channel back is a query parameter, which sierra lifts off the URL at boot.
 
-    <div class="container stack"><slot /></div>
-  </main>
-</div>
+    TWO TONES, from one field. `link_required` is not a failure — the flow
+    worked and the next step is in the person's inbox — and rendering all five
+    codes in one red alert says the opposite. The sentence comes from sierra
+    (`session.oauthMessage`) so this app writes no switch; the code is what
+    the branch is on.
+  -->
+  {#if session.oauthError}
+    <Alert
+      id="oauth-alert"
+      tone={session.oauthError === 'link_required' ? 'info' : 'danger'}
+    >{session.oauthMessage}</Alert>
+  {/if}
+
+  <div class="container stack"><slot /></div>
+</Shell>
 
 <!--
   ⌘K anywhere. `mesa:window` is the one place a global key listener belongs —

@@ -26,6 +26,11 @@
   // else. The session is a watched object mutated in place, so passed whole it
   // would reach this component once and never again; two scalars re-push.
   //
+  // Signed out, the frame is drawn when the table offers a guest anything — a
+  // shop's nav is public — and a narrow page with no frame when it offers
+  // nothing. A members-only table says so with `show: ({ user }) => !!user`;
+  // without it the sign-in page draws the members' nav.
+  //
   // `layout` is `sidebar`, `rail` (frame.css's `.sidebar.rail.peek`, the
   // icons alone until hovered or focused) or `topbar` (the groups drawn flat in
   // the bar, wrapping below md, with no drawer). It may change while
@@ -67,6 +72,7 @@
 
   $: shown   = visible(groups, { user, level })
   $: section = sectionFor(sections, path)
+  $: framed  = Boolean(user) || shown.length > 0
 
   const ids = uid('shell')
 
@@ -113,7 +119,7 @@
      and only there: its word would be clipped to two letters, and the
      drawer's copy would be a second button on screen beside the bar's. -->
 {#snippet signOutButton()}
-  {#if onsignout}
+  {#if onsignout && user}
     <button class="btn ghost" type="button" disabled={signingOut} on:click={signOut}>Sign out</button>
   {/if}
 {/snippet}
@@ -133,7 +139,7 @@
     </div>
   {/each}
   {@render foot?.(where)}
-  {#if shape === 'sidebar' && onsignout}
+  {#if shape === 'sidebar' && onsignout && user}
     <div>{@render signOutButton()}</div>
   {/if}
 {/snippet}
@@ -156,7 +162,7 @@
 {#if !checked}
   <!-- The restore is in flight: drawing the signed-out frame now is a flash
        of the wrong page on every cold load. -->
-{:else if user && shape === 'topbar'}
+{:else if framed && shape === 'topbar'}
   <!-- No drawer: the bar wraps below md, as every topbar app in the survey
        does. The groups are drawn flat and their labels dropped, and the
        section bar heads the Screen, because the bar is the nav's now. -->
@@ -186,7 +192,7 @@
       <slot />
     </main>
   </div>
-{:else if user}
+{:else if framed}
   <div class="shell sidebar-first" {class} {...$attributes}>
     <a class="skip-link" href="#screen">Skip to content</a>
 
@@ -208,7 +214,7 @@
         </button>
         {@render sectionBar()}
       </div>
-      {#if topbar || (shape === 'rail' && onsignout)}
+      {#if topbar || (shape === 'rail' && onsignout && user)}
         <div class="cluster">
           {@render topbar?.()}
           {#if shape === 'rail'}{@render signOutButton()}{/if}

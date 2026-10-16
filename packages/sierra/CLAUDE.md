@@ -305,6 +305,14 @@ src/
   devtools/              — the dev toolbar; plugin.js is what `devtools:` installs
   presence/  theme/  analytics/  fetch/  virtual/
   components/            — RouterView.mesa, ChainRenderer.mesa
+
+bench/                   — `bun run bench`: brotli bytes per target, the last step
+  run.mjs                of `test`. Counted by `../cli/core/bench.js`, the one byte
+  bench.baseline.json    measurer for a built surface (`FJS-D1070`). Ratchets down:
+  fixtures/              --update, --adopt. floor-spa · floor-static (its index.html
+                         is a page with no island, so `static.firstLoadJsBrotli`
+                         is 0) · floor-widget. Built in `bench/dist/`, since the
+                         scanner writes into the Vite root
 ```
 
 ---

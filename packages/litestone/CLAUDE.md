@@ -80,6 +80,13 @@ VERBS_REPORT=1  bun test test/verbs-rules.test.ts   # fill the grid from this,
 MATRIX_REPORT=1 bun test test/matrix.test.ts        # never by hand
 ```
 
+**`test` ends with `bench/statements.mjs`**, a ratchet on the SQL a request
+costs over `example`'s schema: distinct statement texts per request kind,
+cache evictions, and the texts a second pass with other values adds. A
+rise fails. A value written into statement text shows up there first. A
+model added to `example` legitimately moves it, and `--adopt` is the
+answer then. `--why` and `--all` say what moved.
+
 Then, because every other package sits on this one: `example` and `basecamp`
 `bun run verify`, and `sierra` `bun run test:safety`.
 

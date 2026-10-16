@@ -919,7 +919,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, sigh
     stamp(piece, x, y) {
       const inSeason = (s) => piece.seasons?.[s] ?? piece
       adopt(inSeason(season))
-      const cellsAt = (px, py, drawn = mark.drawn) => drawn.cells.map((c) => [px + c.dx, py + c.dy, { ch: c.ch, key: c.key, name: piece.name, floor: piece.floor || c.seat, overhead: c.overhead, burns: c.burns && mark, crumbles: piece.crumbles }])
+      const cellsAt = (px, py, drawn = mark.drawn) => drawn.cells.map((c) => [px + c.dx, py + c.dy, { ch: c.ch, key: c.key, name: piece.name, floor: drawn.floor || c.seat, overhead: c.overhead, burns: c.burns && mark, crumbles: piece.crumbles }])
       const lift = () => {
         for (const c of mark.drawn.cells) { unclaim(key(mark.x + c.dx, mark.y + c.dy)); crumbling.delete(key(mark.x + c.dx, mark.y + c.dy)) }
       }
@@ -943,13 +943,13 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, sigh
           changed()
         },
         remove() { lift(); drop(mark); readopt(); removed() },
-        /** Draw the piece as it is in season `s`; a cell the new look claims that another piece holds refuses it, and the old look stays. */
-        season(s) {
-          const next = inSeason(s)
-          if (next === mark.drawn) return
-          lift()
-          try { putAll(cellsAt(mark.x, mark.y, next)) }
-          catch (e) { putAll(cellsAt(mark.x, mark.y)); throw e }
+        /** The piece as it looks in season `s`. */
+        looks: inSeason,
+        /** Give up the cells of what is drawn. */
+        release: lift,
+        /** Claim the cells of `next` and draw it; a cell another piece holds refuses it, claiming nothing. */
+        show(next) {
+          putAll(cellsAt(mark.x, mark.y, next))
           mark.drawn = next
         },
       }
@@ -1141,12 +1141,18 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, sigh
      */
     toSeason(s) {
       if (!SEASONS.includes(s)) throw new Error(`no season is called ${s}; the seasons are ${SEASONS.join(', ')}`)
-      const was = season
-      const turned = []
+      // Every look that changes gives up its cells before any takes new ones,
+      // so a piece may take a cell another is leaving (the pond's ice and the
+      // hole in it).
+      const turning = marks.filter((m) => m.kind === 'piece' && m.piece.seasons && m.looks(s) !== m.drawn)
+      const was = turning.map((m) => m.drawn)
+      for (const m of turning) m.release()
+      const shown = []
       try {
-        for (const m of marks) if (m.kind === 'piece' && m.piece.seasons) { m.season(s); turned.push(m) }
+        for (const m of turning) { m.show(m.looks(s)); shown.push(m) }
       } catch (e) {
-        for (const m of turned.reverse()) m.season(was)
+        for (const m of shown) m.release()
+        turning.forEach((m, i) => m.show(was[i]))
         throw e
       }
       season = s

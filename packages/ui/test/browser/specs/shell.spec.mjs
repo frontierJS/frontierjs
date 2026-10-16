@@ -3,7 +3,8 @@
  *
  * nav.mjs pins which groups, entries and section a table answers. What only a
  * browser shows is the frame around them: nothing drawn while the session
- * restores, the signed-out frame, the nav present in BOTH the sidebar and the
+ * restores, the signed-out frame (and the frame a guest gets when the table
+ * offers one something), the nav present in BOTH the sidebar and the
  * drawer, which one of the two a width shows, `aria-current` moving when the
  * page does (Mesa takes an expression's dependencies from its text, so a
  * highlight set once at mount and never moved is the likely failure), and the
@@ -36,9 +37,9 @@ export async function run(t) {
 
   await t.clickAt('#stage #restore')
   await t.eventually(`!!document.querySelector('#stage main.screen > .container.narrow #page')`, 'true',
-    'signed out, the page sits in a narrow container with no frame')
+    'signed out with nothing in the table for a guest, the page sits in a narrow container with no frame')
   t.ok(await t.evaluate(`return !document.querySelector('#stage nav, #stage .shell');`),
-    'signed out, no nav is drawn')
+    'and no nav is drawn')
 
   await t.clickAt('#stage #sign-in')
   await t.eventually(`!!document.querySelector('#stage .shell.sidebar-first > main.screen#screen #page')`, 'true',
@@ -238,4 +239,21 @@ export async function run(t) {
     'below md every entry is still in the bar, inside the viewport')
   t.ok(await t.evaluate(`return document.documentElement.scrollWidth <= innerWidth;`), 'the bar wraps rather than scrolling the page sideways')
   t.ok(!(await t.evaluate(`return ${visibleBox('#stage .sidebar-toggle')};`)), 'and there is still no toggle')
+
+  /* ── a guest the table offers something ─────────────────────────────── */
+
+  // A shop's nav is public. The table says so by what `show` lets through,
+  // and the frame follows; Sign out is the one thing a guest never gets.
+  await t.viewport(1280)
+  await t.mount('shell', { guests: true, layout: 'topbar' })
+  await t.eventually(`[...document.querySelectorAll('#stage .shell > header.topbar nav[aria-label="Main"] .navlink-text')].map(s => s.textContent).join('|')`,
+    'Today|Leads|Clients|Contacts', 'signed out, a topbar draws the entries a guest is offered')
+  t.ok(await t.evaluate(`return !!document.querySelector('#stage #top-right') && ![...document.querySelectorAll('#stage button.btn')].some(b => b.textContent === 'Sign out');`),
+    'with the topbar snippet and no Sign out')
+
+  await t.mount('shell', { guests: true })
+  await t.eventually(`!!document.querySelector('#stage .shell.sidebar-first > nav.sidebar')`, 'true',
+    'signed out, a sidebar draws the frame too')
+  t.ok(await t.evaluate(`return ![...document.querySelectorAll('#stage button.btn, dialog.drawer button.btn')].some(b => b.textContent === 'Sign out');`),
+    'with no Sign out in the sidebar or the drawer')
 }

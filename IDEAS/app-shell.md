@@ -331,7 +331,20 @@ to be that touch screen.
 Goal: the in-repo apps run on the Shell; the prototypes follow.
 Done when: example's and basecamp's drives pass, and basecamp's ⌘K offers `/security/`.
 
-- [ ] 3.1 example: `src/lib/nav.js`, the Shell, `paletteItems` for `Navigate`
+- [x] 3.1 example: `src/lib/nav.js`, the Shell, `paletteItems` for `Navigate`. **Built,
+  `layout="topbar"`.** example is a shop and a guest reaches Basket at level 0, so the
+  Shell's signed-out branch had nothing to offer it. **`FJS-D1068`**: a guest gets the
+  frame when the table offers a guest any entry, and the narrow page only when it
+  offers none; Sign out needs a user (`shell.spec.mjs`, 77 checks). A members-only
+  table now says `show: ({ user }) => !!user`, which 3.2 and 3.3 owe. Billing and
+  Payroll are one entry each with `match`, so ⌘K offers Billing and no longer lists
+  Plans and Invoices apart. The drives select `nav[aria-label="Main"] a[href=…]`
+  rather than per-link ids, which a table entry has no field for. `nav-href-routes`
+  grades example with no findings. Drives: cart 34, reports 14, stock 41, users 105
+  (after fixing `FJS-2866`), automations 72, payroll 64, all green; `verify` fails only
+  `FJS-1598`'s warning; `verify:ui` stops at `FJS-2905` before its palette steps, so the
+  palette rows were probed directly and match its expectation. The build is over its
+  offline budget by other sessions' work (`FJS-2822`), and this adds 2 kB
 - [ ] 3.2 basecamp: same, with `PRIMARY` kept in its own topbar snippet
 - [ ] 3.3 ela, maidtech, sstime, serpgrid. Ask the owner first: `fjs-prototypes` is
   not a git repository, so an edit there cannot be undone

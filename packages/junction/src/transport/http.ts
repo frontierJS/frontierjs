@@ -8,7 +8,7 @@ import { Router }                         from './router.ts'
 import { BUILD_HEADER } from '../core/build-id.ts'
 import { WS_PROTOCOL, bearerFromProtocols, withoutBearer, CREDENTIAL_HEADER, CREDENTIAL_CHANGED } from '../core/ws-auth.ts'
 import { parsePathSegments, matchPathDirect } from './router.ts'
-import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError } from './body.ts'
+import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError, UnsafeIntegerError } from './body.ts'
 import { serveStatic }                    from './static.ts'
 import { REFUSE, resolvePrincipal, type CredentialVerifier } from '../auth/credentials.ts'
 // `type` matters: StaticOptions is an interface, and importing it as a value
@@ -765,6 +765,11 @@ export class HttpTransport {
           status:  413,
           headers: { 'content-type': 'text/plain', connection: 'close' },
         })
+      }
+      // The one malformed body that says why: the sender wrote digits this
+      // transport cannot keep, and "Bad Request" would send them hunting.
+      if (err instanceof UnsafeIntegerError) {
+        return new Response(err.message, { status: 400, headers: { 'content-type': 'text/plain' } })
       }
       return new Response('Bad Request', { status: 400 })
     }

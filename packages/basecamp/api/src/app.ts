@@ -298,7 +298,7 @@ export async function buildBasecampApp(
   // started the run drains it when the run ends.
   app.claim('workbench', createWorkbench({ dir: env.WORKBENCH_DIR || undefined, bin: env.CLAUDE_BIN, env }))
 
-  // ── Conduit — outbound transport ──────────────────────────────────────
+  // ── Conduit — integrations ────────────────────────────────────────────
   // Plugin augments app with app.conduit, wires /metrics, and registers
   // the management service. It is a Junction service, so it lands at
   // GET|DELETE /conduit-targets — verified, not the /api/conduit/targets this

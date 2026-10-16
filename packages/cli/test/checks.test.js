@@ -211,8 +211,12 @@ const CLEAN = {
   // must RUN over this tree. `migration-history` only applies to an app whose
   // container replays migrations on boot, so without a Dockerfile naming
   // `db:migrate` it would skip — and a rule that only ever skips is what this
-  // file exists to catch.
-  'deploy/Dockerfile':                  'FROM oven/bun\nCMD ["sh","-c","bun run db:migrate && bun run start"]\n',
+  // file exists to catch. The API renders a template out of web/src and the
+  // image copies it, so `deploy-image-needs` RUNS here too and finds nothing.
+  'deploy/Dockerfile':                  'FROM oven/bun\nCOPY web/src ./web/src\n' +
+                                        'CMD ["sh","-c","bun run db:migrate && bun run start"]\n',
+  'api/src/report.ts':                  "import { resolve } from 'path'\n" +
+                                        "export const template = resolve('web/src/components/lead.mesa')\n",
   'db/migrations/20260101000000_init.sql': 'CREATE TABLE "lead" ("id" INTEGER);\n',
   // And the service, for the same reason: `service-model` skips an app with no
   // `*.service.*` file in it, so without one here the rule would only ever skip.
@@ -3884,6 +3888,79 @@ describe('log-db-unbound', () => {
   test('no deploy block is skipped — nothing mounts a volume to be outside of', () => {
     const root = tree('ldu-nodeploy', { 'db/schema.lite': LOGGER('"./db/audit/"') })
     const { findings, skipped } = only(root, 'log-db-unbound')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+})
+
+describe('deploy-image-needs', () => {
+  const PRINTS   = JSON.stringify({ dependencies: { '@frontierjs/print-kit': '^0.1.0' } })
+  const SLIM     = 'FROM oven/bun:1 AS base\nCOPY api ./api\nCOPY db ./db\nFROM oven/bun:1-slim\nCOPY --from=base /app .\n'
+  const CHROME   = SLIM + 'RUN apt-get update && apt-get install -y chromium\n'
+  const RENDERS  = "import { resolve } from 'path'\nexport const file = resolve(root, 'web/src/components/Report.mesa')\n"
+
+  test('an app that prints, on an image with no Chrome, will not start — and that is reported', () => {
+    // transit, lago and serpgrid all carried make:deploy's slim image unchanged.
+    const root = tree('din-nochrome', { 'package.json': PRINTS, 'deploy/Dockerfile': SLIM })
+    const { findings } = only(root, 'deploy-image-needs')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].file).toBe('deploy/Dockerfile')
+    expect(findings[0].message).toMatch(/print-kit.*no Chrome/)
+  })
+
+  test('chromium installed, or $FJS_CHROME named, is clean', () => {
+    expect(only(tree('din-chrome', { 'package.json': PRINTS, 'deploy/Dockerfile': CHROME }),
+      'deploy-image-needs').findings).toEqual([])
+    expect(only(tree('din-env', { 'package.json': PRINTS, 'deploy/Dockerfile': SLIM + 'ENV FJS_CHROME=/opt/chrome/chrome\n' }),
+      'deploy-image-needs').findings).toEqual([])
+  })
+
+  test('a Chrome named only in a comment is not a Chrome', () => {
+    const root = tree('din-comment', { 'package.json': PRINTS, 'deploy/Dockerfile': '# needs chromium someday\n' + SLIM })
+    expect(only(root, 'deploy-image-needs').findings).toHaveLength(1)
+  })
+
+  test('print-kit as a devDependency needs no browser: the image installs --production', () => {
+    const root = tree('din-dev', {
+      'package.json': JSON.stringify({ devDependencies: { '@frontierjs/print-kit': '^0.1.0' } }),
+      'deploy/Dockerfile': SLIM,
+    })
+    const { findings, skipped } = only(root, 'deploy-image-needs')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+
+  test('an API reading a template from web/src, with web/ ignored whole, is reported', () => {
+    // serpgrid's ScanReport.mesa: Chrome present, and the render still fails.
+    const root = tree('din-websrc', {
+      'package.json': PRINTS, 'deploy/Dockerfile': CHROME + 'COPY web/src ./web/src\n',
+      '.dockerignore': 'node_modules\nweb/\n', 'api/src/report.ts': RENDERS,
+    })
+    const { findings } = only(root, 'deploy-image-needs')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/web\/src/)
+  })
+
+  test('web/src copied and let back through .dockerignore is clean', () => {
+    const root = tree('din-websrc-ok', {
+      'package.json': PRINTS, 'deploy/Dockerfile': CHROME.replace('COPY db ./db', 'COPY db ./db\nCOPY web/src ./web/src'),
+      '.dockerignore': 'node_modules\nweb/*\n!web/src\n', 'api/src/report.ts': RENDERS,
+    })
+    expect(only(root, 'deploy-image-needs').findings).toEqual([])
+  })
+
+  test('web/src named only in a comment asks nothing of the image', () => {
+    const root = tree('din-websrc-comment', {
+      'deploy/Dockerfile': SLIM, '.dockerignore': 'web/\n',
+      'api/src/app.ts': "// the share page lives in web/src/pages\nexport const x = 1\n",
+    })
+    const { findings, skipped } = only(root, 'deploy-image-needs')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+
+  test('no Dockerfile is skipped — not deployed this way', () => {
+    const { findings, skipped } = only(tree('din-nodocker', { 'package.json': PRINTS }), 'deploy-image-needs')
     expect(findings).toEqual([])
     expect(skipped).toHaveLength(1)
   })

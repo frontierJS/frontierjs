@@ -14,7 +14,7 @@ owned, so the gap is written down rather than left to be rediscovered.
 would let junction and orion share litestone's types, so each declares the shape it
 holds. The count is here because it is the only place that cost is visible.
 
-Seams: **94**. With a stated owner: **94**. Stated and missing: **0**.
+Seams: **95**. With a stated owner: **95**. Stated and missing: **0**.
 
 **Every seam names an owner.** A callable is graded by where it is DECLARED; a key — a `$` on a
 wire, a schema keyword, a header — has no declaration anywhere, so its owner is where it is
@@ -29,8 +29,8 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Other declaring files |
 | --- | --- | --- |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 16 |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 11 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 17 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 12 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 10 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 9 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 8 |
@@ -42,6 +42,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 3 |
+| `app.conduit.receive(receiver)` | `packages/conduit/src/conduit.ts` | 3 |
 | `signRequest()` | `packages/toolbelt/src/signature/signature.js` | 3 |
 
 ## Data → API
@@ -98,6 +99,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
+| `app.conduit.receive(receiver)` / `Dialect` | `packages/conduit/src/conduit.ts` | yes | 3 |
 | `signRequest()` / `verifyRequest()` | `packages/toolbelt/src/signature/signature.js` | yes | 3 |
 | `requestMeta().traceparent` / `.tracestate` | `packages/junction/src/core/context.ts` | yes | 1 |
 | `ctx.$raw.rawBody` | `packages/junction/src/transport/http.ts` | mentioned | — |
@@ -141,7 +143,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | — |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 8 |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 16 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 17 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |
@@ -157,7 +159,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `*.mount.js` | `packages/sierra/src/scanner/walk.js` | mentions `mount` — weak | — |
 | `page.query` / `page.directives` | `packages/sierra/src/router/page-fields.js` | mentions `query` — weak | — |
 | `watchProxy()` / `createSignal()` / `createRoot(fn)` | `packages/mesa/src/runtime.js` | yes | — |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 11 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 12 |
 | `renderComponent(src, opts)` | `packages/mesa/src/render-component.js` | yes | — |
 | `appSrcDir(root)` / `appAliasPlugin()` | `packages/sierra/src/build/app-alias-plugin.js` | yes | — |
 | `swapInstances(entries, newFn, newSetMark, label)` | `packages/mesa/mesa-vite/swap.js` | yes | 1 |

@@ -45,7 +45,17 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\
 // finer value mandatory. Strict leading zeros mean values sort lexicographically
 // the same as numerically — important for ORDER BY in admin queries that don't
 // bother parsing.
-const TIME_RE_HM   = /^([01]\d|2[0-3]):[0-5]\d$/
+// The patterns say a day is shaped like one; `2025-02-30` has that shape and no
+// such day exists, and SQLite's date functions read it as March 2.
+const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+function isCalendarDay(s) {
+  const y = +s.slice(0, 4), m = +s.slice(5, 7), d = +s.slice(8, 10)
+  if (m < 1 || m > 12 || d < 1) return false
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0
+  return d <= MONTH_DAYS[m - 1] + (m === 2 && leap ? 1 : 0)
+}
+
+const TIME_RE_HM   =/^([01]\d|2[0-3]):[0-5]\d$/
 const TIME_RE_HMS  = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/
 
 /**
@@ -120,8 +130,8 @@ const VALIDATORS = {
   // String validators
   email:       (v)          => EMAIL_RE.test(String(v)),
   url:         (v)          => URL_RE.test(String(v)),
-  date:        (v)          => DATE_RE.test(String(v)),
-  datetime:    (v)          => ISO_DATE_RE.test(String(v)),
+  date:        (v)          => DATE_RE.test(String(v)) && isCalendarDay(String(v)),
+  datetime:    (v)          => ISO_DATE_RE.test(String(v)) && isCalendarDay(String(v)),
   // @time(seconds: true) accepts HH:MM:SS as well as HH:MM. Default is
   // strict HH:MM (no seconds). Either form: 24-hour, leading zeros.
   time:        (v, seconds) => seconds

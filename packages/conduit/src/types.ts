@@ -17,6 +17,7 @@ export type TargetKind =
 
 import type { BodyEncoding } from './transports/encode.ts'
 export type { BodyEncoding }
+import type { Receiver, ReceivedEvent, Delivery, Received, ReceiveResult } from './receive.ts'
 
 // ─── Target ─────────────────────────────────────────────────
 
@@ -400,6 +401,27 @@ export interface ConduitStore {
   delete(id: string): Promise<void>
   list(): Promise<TargetDescriptor[]>
   touch(id: string): Promise<void>   // update last_seen_at — heartbeats
+
+  // ─── Receipts — one per inbound delivery a Receiver accepted ───
+  //
+  // Dedupe means APPLIED, not SEEN (`FJS-1805`): `record` writes the receipt
+  // unapplied, `markApplied` is the only thing that makes a later delivery of
+  // the same key a duplicate, and a receipt left unapplied by a throw is
+  // applied again by the sender's retry. `record` of a key that already exists
+  // is a no-op, since two deliveries of one key may race the lookup.
+  receipt(provider: string, key: string): Promise<Receipt | null>
+  record(receipt: Receipt): Promise<void>
+  markApplied(provider: string, key: string, at: number): Promise<void>
+}
+
+/** What a Receiver remembers of one delivery. Times are unix ms. */
+export interface Receipt {
+  provider:    string
+  key:         string
+  event_type:  string
+  owner:       string | null
+  received_at: number
+  applied_at:  number | null
 }
 
 // ─── Request / Response ─────────────────────────────────────
@@ -719,6 +741,11 @@ export interface ConduitObservers {
   onReconnect?:    (target: string) => ObserverResult
   onRegistered?:   (descriptor: TargetDescriptor) => ObserverResult
   onDeregistered?: (target: string) => ObserverResult
+
+  // One per inbound delivery a receiver answered, refusals included. An
+  // observer: it receives and cannot act. `reason` is the sentence the body
+  // never carries — why a 401 was a 401 — and the junction plugin logs it.
+  onReceived?:     (path: string, received: Received) => ObserverResult
 }
 
 // ─── Options ────────────────────────────────────────────────
@@ -859,6 +886,17 @@ export interface IConduit {
    */
   subscribe(target: string, handler: BrokerHandler): Promise<void>
 
+  /**
+   * Declare the receiving end of a Provider (`FJS-D899`). Refused by name
+   * when a field is unknown or a path is already taken. Under junction the
+   * plugin also mounts the route; here it only registers, and `accept()` is
+   * what a transport hands a delivery to.
+   */
+  receive<Cred, Ev extends ReceivedEvent, Owner>(receiver: Receiver<Cred, Ev, Owner>): void
+
+  /** Run one delivery through the receiver declared at `path`. `now` is seconds. */
+  accept(path: string, delivery: Delivery, now: number): Promise<Received>
+
   /** Synchronous snapshot for metrics — reads maintained counters, never the store. */
   stats(): ConduitStats
 
@@ -906,6 +944,10 @@ export interface ConduitStats {
     opened: number
     failed: number   // failed to establish
   }
+
+  // Inbound, per result. A receiver declared and never delivered to is a
+  // zero row here, which is how a vendor pointed at the wrong URL shows up.
+  received: Record<string, Record<ReceiveResult, number>>   // keyed by receiver path
 
   errors: Record<string, number>   // keyed by ConduitErrorKind
 

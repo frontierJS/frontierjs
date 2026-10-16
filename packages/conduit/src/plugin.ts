@@ -152,6 +152,32 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
         }
         return send({ ...req, who })
       }) as IConduit['send']
+      // The route is mounted here and the order runs in the core, which stays
+      // junction-free: `app.post` puts the path under `apiPrefix` like every
+      // route the app registers, and the handler runs inside the request scope,
+      // so an `apply` that sends through conduit carries the delivery's trace.
+      // Refusals and failures are logged with the reason the body withholds.
+      const receive = instance.receive
+      instance.receive = ((receiver) => {
+        receive(receiver)
+        app.post(receiver.path, async (ctx) => {
+          const received = await instance.accept(receiver.path, {
+            method:  ctx.method,
+            path:    ctx.path,
+            query:   new URL(ctx.$raw.url).search,
+            route:   ctx.route ?? {},
+            headers: ctx.headers,
+            rawBody: ctx.rawBody ?? '',
+            body:    ctx.body,
+          }, Math.floor(Date.now() / 1000))
+          if (received.reason) {
+            const line = `[conduit] ${receiver.provider} ${receiver.path} ${received.result} — ${received.reason}`
+            if (received.result === 'failed') app.logger.error(line)
+            else if (received.result === 'refused') app.logger.warn(line)
+          }
+          return ctx.json(received.body, received.status)
+        })
+      }) as IConduit['receive']
       app.claim('conduit', instance)
 
       // Wire into Junction's /metrics endpoint. Called straight rather than

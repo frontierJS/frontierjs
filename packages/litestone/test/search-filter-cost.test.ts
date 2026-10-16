@@ -87,7 +87,7 @@ describe('search() — the pre-LIMIT filter', () => {
         // The control: the same filter as a membership list.
         const filter = q.sql.match(/WHERE "comment"\.rowid = "comment_fts"\.rowid AND \((.*)\)\) ORDER BY rank/s)[1]
         const head   = q.sql.slice(0, q.sql.indexOf(' AND EXISTS'))
-        expect(plan(`${head} AND rowid IN (SELECT rowid FROM "comment" WHERE ${filter}) ORDER BY rank LIMIT 20`, q.params))
+        expect(plan(`${head} AND rowid IN (SELECT rowid FROM "comment" WHERE ${filter}) ORDER BY rank LIMIT ? OFFSET ?`, q.params))
           .toContain('LIST SUBQUERY')
       } finally { raw.close() }
       await db.$close()

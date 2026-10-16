@@ -13,6 +13,17 @@
 // pentatonic melody that lands on a chord tone each downbeat, and each part
 // in its own register. Everything is synthesized; there are no samples.
 //
+// A song has a form (`sectionOf`): each cycle of the progression is four
+// quarters -- a verse, a chorus, a verse or on odd cycles a bridge, and an
+// instrumental quarter the guitar solos over -- with a fill into every
+// quarter and a level per section (`VOL`), so a song swells and drops. The
+// chorus swaps the guitar's and the keys' style for a second pair drawn from
+// `k`, and the singer sings the `hook`, two bars drawn once for the song and
+// sung at every chorus: a tune is what comes back. Each hit is loosened by
+// a few ms and a few percent, odd steps swing by the feel's `swing`, and a
+// snare ghosts on an offbeat, all from the bar's own numbers, so every
+// screen loosens alike.
+//
 // `createBand().samples(from, n)` is what `#sound` pulls, `from` counted from
 // the epoch at `RATE`. A bar is rendered whole with `TAIL` bars of ring after
 // it (a crash outlasts a fast bar), so a sample is its own bar plus the tails
@@ -60,12 +71,13 @@ const euclid = (k, n, rot = 0) => Array.from({ length: n }, (_, i) => (((i + rot
 const steps  = (bools) => bools.flatMap((on, i) => (on ? [i] : []))
 const EIGHTS = [0, 2, 4, 6, 8, 10, 12, 14]
 
+// `swing` is how far an odd step is pushed late, in steps.
 const FEELS = [
-  { name: 'tresillo', kick: steps(euclid(3, 8).concat(euclid(3, 8))), snare: [4, 12], hat: steps(euclid(7, 16, 2)), open: [14] },
-  { name: 'rock',     kick: [0, 8, 10],     snare: [4, 12], hat: EIGHTS, open: [] },
-  { name: 'disco',    kick: [0, 4, 8, 12],  snare: [4, 12], hat: [],     open: [2, 6, 10, 14] },
-  { name: 'half-time', kick: [0, 10],       snare: [8],     hat: EIGHTS, open: [14] },
-  { name: 'bossa',    kick: [0, 3, 8, 11],  rim: [0, 3, 6, 10, 12],      hat: EIGHTS, open: [] },
+  { name: 'tresillo', kick: steps(euclid(3, 8).concat(euclid(3, 8))), snare: [4, 12], hat: steps(euclid(7, 16, 2)), open: [14], swing: 0.12 },
+  { name: 'rock',     kick: [0, 8, 10],     snare: [4, 12], hat: EIGHTS, open: [],             swing: 0 },
+  { name: 'disco',    kick: [0, 4, 8, 12],  snare: [4, 12], hat: [],     open: [2, 6, 10, 14], swing: 0 },
+  { name: 'half-time', kick: [0, 10],       snare: [8],     hat: EIGHTS, open: [14],           swing: 0.15 },
+  { name: 'bossa',    kick: [0, 3, 8, 11],  rim: [0, 3, 6, 10, 12],      hat: EIGHTS, open: [], swing: 0.08 },
 ]
 const BASSES  = ['on the kick', 'eighths', 'walking']
 const GUITARS = ['arpeggio', 'running', 'strummed']
@@ -81,6 +93,10 @@ const SINGERS = [
   { name: 'long',  phrases: [[[0, 6], [8, 6]], [[0, 4], [4, 4], [8, 8]]] },
   { name: 'call',  phrases: [[[0, 2], [2, 2], [4, 2], [6, 2]], [[8, 8]]] },
 ]
+const LONG = SINGERS[1]   // the bridge's singer, whoever the song's is
+
+/** Each section's level; the intro climbs to the verse's over its four bars. */
+const VOL = { verse: 0.9, chorus: 1, bridge: 0.72, solo: 0.95 }
 
 // Pairings that draw a song nobody would keep.
 const VETO = [
@@ -143,9 +159,12 @@ export function songOf(k) {
     }
   } while (VETO.some((v) => v(s)))
   const name    = `${pick(rand, ADJECTIVES)} ${pick(rand, NOUNS)}`
+  // The chorus lifts by changing two parts' styles; the same style twice would lift nothing.
+  const chorus  = { guitar: pick(rand, GUITARS.filter((g) => g !== s.guitar)), keys: pick(rand, KEYSETS.filter((x) => x !== s.keys)) }
+  const hook    = hookOf(rand, s)
   const slow    = rng(Math.imul(k, 0x27d4eb2f) ^ 0x57121)
-  s.ensemble    = slow() < STRINGS_ODDS ? 'strings' : 'band'
-  if (s.ensemble === 'strings') {
+  const strings = slow() < STRINGS_ODDS
+  if (strings) {
     s.progression = pick(slow, LAMENTS)
     s.tonic       = Math.floor(slow() * 12)
     s.bpm         = pick(slow, SLOW_TEMPOS)
@@ -157,14 +176,49 @@ export function songOf(k) {
   const length  = s.progression.chords.length
   const key     = `${KEYS[s.tonic]} ${s.progression.mode === M ? 'major' : 'minor'}`
   return {
-    ...s, k, name, stepMs, barN, key,
+    ...s, k, name, chorus, hook, stepMs, barN, key,
+    ensemble: strings ? 'strings' : 'band',
     // Whole bars, the last the ending, with room after it for its ring.
     bars:  Math.floor(SONG_N / barN) - TAIL,
     cycle: length >= 8 ? length * 2 : length * 4,
-    about: s.ensemble === 'strings'
+    about: strings
       ? `${name} — ${key}, ${s.progression.name}, ${s.bpm} bpm strings; held bass, keys pad, singer ${s.singer.name}`
-      : `${name} — ${key}, ${s.progression.name}, ${s.bpm} bpm ${s.feel.name}; bass ${s.bass}, guitar ${s.guitar}, keys ${s.keys}, singer ${s.singer.name}`,
+      : `${name} — ${key}, ${s.progression.name}, ${s.bpm} bpm ${s.feel.name}; bass ${s.bass}, guitar ${s.guitar}, keys ${s.keys}, singer ${s.singer.name}; chorus guitar ${chorus.guitar}, keys ${chorus.keys}`,
   }
+}
+
+/** The pentatonic of the song's key across the singer's register, as MIDI notes. */
+function melodyOf(song) {
+  const scale  = SCALES[song.progression.mode].map((d) => (song.tonic + d) % 12)
+  const melody = []
+  for (let n = 62; n <= 81; n++) if (scale.includes(n % 12)) melody.push(n)
+  return melody
+}
+
+/**
+ * Two bars of the singer's phrases walked once: `[at, len, index]` into
+ * `melodyOf`, the index so the downbeat can still be pulled to the bar's chord.
+ */
+function hookOf(rand, song) {
+  const melody = melodyOf(song)
+  let mel = Math.floor(rand() * melody.length)
+  return [0, 1].map((i) => song.singer.phrases[i % song.singer.phrases.length].map(([at, len]) => {
+    mel = Math.max(0, Math.min(melody.length - 1, mel + Math.round(rand() * 4 - 2)))
+    return [at, len, mel]
+  }))
+}
+
+/**
+ * The section bar `b` of a band's song is in: each cycle is a `verse`, a
+ * `chorus`, a `verse` (a `bridge` every other cycle) and a `solo`. The
+ * ending bar and a strings piece have none.
+ */
+export function sectionOf(song, b) {
+  if (song.ensemble === 'strings' || b >= song.bars - 1) return null
+  const c   = b % song.cycle
+  const q   = Math.floor(c / (song.cycle / 4))
+  const odd = Math.floor(b / song.cycle) % 2 === 1
+  return q === 1 ? 'chorus' : q === 3 ? 'solo' : q === 2 && odd ? 'bridge' : 'verse'
 }
 
 /** The first slow piece after song `k`. */
@@ -197,8 +251,12 @@ function renderBar(song, b) {
   const len   = song.barN * (1 + TAIL)
   const parts = PARTS.map(() => new Float32Array(len))
   const rand  = rng(Math.imul(song.k, 0x85ebca6b) ^ Math.imul(b + 1, 0xc2b2ae35))
-  const step  = (i) => (i * song.stepMs) / 1000
+  const swing = song.ensemble === 'strings' ? 0 : song.feel.swing
+  const step  = (i) => ((i % 2 ? i + swing : i) * song.stepMs) / 1000
   const S     = song.stepMs / 1000
+  // A hit a few ms off the grid, at a few percent off its gain: a player, not a sequencer.
+  const loose = (i) => Math.max(0, step(i) + (rand() - 0.5) * 0.006)
+  const vel   = () => 0.85 + 0.3 * rand()
 
   const add = (part, t0, dur, gain, fn) => {
     const out   = parts[part]
@@ -206,14 +264,15 @@ function renderBar(song, b) {
     const end   = Math.min(len - start, Math.floor(dur * RATE))
     for (let i = 0; i < end; i++) out[start + i] += gain * fn(i / RATE, i)
   }
-  // The mix, and each part's peak per BLOCK, which is all `levels` reads.
-  const done = () => {
+  // The mix at the section's level, and each part's peak per BLOCK, which is all `levels` reads.
+  const done = (vol = 1) => {
     const mix   = new Float32Array(len)
     const peaks = parts.map((p) => {
       const e = new Float32Array(Math.ceil(len / BLOCK))
       for (let i = 0; i < len; i++) {
-        mix[i] += p[i]
-        const a = Math.abs(p[i])
+        const v = p[i] * vol
+        mix[i] += v
+        const a = Math.abs(v)
         const j = (i / BLOCK) | 0
         if (a > e[j]) e[j] = a
       }
@@ -233,19 +292,20 @@ function renderBar(song, b) {
 
   const kick = (t0) => {
     let ph = 0
-    add(PART.drums, t0, 0.4, 0.9, (t) => {
+    add(PART.drums, t0, 0.4, 0.9 * vel(), (t) => {
       ph += (2 * Math.PI * (48 + 110 * Math.exp(-t * 35))) / RATE
       return Math.sin(ph) * Math.exp(-t * 7)
     })
   }
-  const snare = (t0) => {
+  const snare = (t0, g = 1) => {
     const n = noiseHp()
-    add(PART.drums, t0, 0.25, 0.35, (t) => n() * Math.exp(-t * 18) + 0.8 * Math.sin(2 * Math.PI * 185 * t) * Math.exp(-t * 30))
+    add(PART.drums, t0, 0.25, 0.35 * g * vel(), (t) => n() * Math.exp(-t * 18) + 0.8 * Math.sin(2 * Math.PI * 185 * t) * Math.exp(-t * 30))
   }
-  const rim = (t0) => add(PART.drums, t0, 0.06, 0.18, (t) => Math.sin(2 * Math.PI * 820 * t) * Math.exp(-t * 70))
-  const hat = (t0, open) => {
+  const rim = (t0) => add(PART.drums, t0, 0.06, 0.18 * vel(), (t) => Math.sin(2 * Math.PI * 820 * t) * Math.exp(-t * 70))
+  // A closed hat on the beat is louder than one between.
+  const hat = (t0, open, accent = true) => {
     const n = noiseHp()
-    add(PART.drums, t0, open ? 0.3 : 0.05, open ? 0.1 : 0.12, (t) => n() * Math.exp(-t * (open ? 10 : 90)))
+    add(PART.drums, t0, open ? 0.3 : 0.05, (open ? 0.1 : accent ? 0.12 : 0.08) * vel(), (t) => n() * Math.exp(-t * (open ? 10 : 90)))
   }
   const crash = (t0) => {
     const n = noiseHp()
@@ -255,7 +315,7 @@ function renderBar(song, b) {
     const inc = hz(note) / RATE
     let ph = 0
     let lp = 0
-    add(PART.bass, t0, len, 0.32, (t) => {
+    add(PART.bass, t0, len, 0.32 * vel(), (t) => {
       ph = (ph + inc) % 1
       lp += (0.04 + 0.25 * Math.exp(-t * 12)) * (ph * 2 - 1 - lp)
       return lp * Math.min(1, t * 200) * Math.exp(-t * 3)
@@ -274,7 +334,7 @@ function renderBar(song, b) {
   const guitar = (t0, note) => {
     const N   = Math.round(RATE / hz(note))
     const buf = Float32Array.from({ length: N }, () => rand() * 2 - 1)
-    add(PART.guitar, t0, 1.2, 0.16, (t, i) => {
+    add(PART.guitar, t0, 1.2, 0.16 * vel(), (t, i) => {
       const j = i % N
       const y = buf[j]
       buf[j] = 0.497 * (buf[j] + buf[(j + 1) % N])
@@ -314,9 +374,23 @@ function renderBar(song, b) {
     })
   }
 
-  const scale = SCALES[song.progression.mode].map((d) => (song.tonic + d) % 12)
-  const melody = []
-  for (let n = 62; n <= 81; n++) if (scale.includes(n % 12)) melody.push(n)
+  const melody = melodyOf(song)
+  // The chord's notes within the melody; a blues chord may have none there.
+  const snap = (chord, note) => {
+    const tones = melody.filter((n) => chord.pcs.includes(n % 12))
+    return tones.length ? tones.reduce((best, n) => (Math.abs(n - note) < Math.abs(best - note) ? n : best)) : note
+  }
+  // A walk through the melody a step or two at a time, pulled to the chord on a downbeat.
+  const walker = () => {
+    let mel = Math.floor(rand() * melody.length)
+    return (chord, downbeat) => {
+      mel = Math.max(0, Math.min(melody.length - 1, mel + Math.round(rand() * 4 - 2)))
+      if (!downbeat) return melody[mel]
+      const note = snap(chord, melody[mel])
+      mel = melody.indexOf(note)
+      return note
+    }
+  }
 
   // The ending: every part on the tonic once, left to ring.
   if (b === song.bars - 1) {
@@ -337,7 +411,7 @@ function renderBar(song, b) {
 
   const c     = b % song.cycle
   const chord = chordOf(song, b)
-  const next  = chordOf(song, b + 1)
+  const after = chordOf(song, b + 1)
 
   if (song.ensemble === 'strings') {
     // pad from the first bar, the bass a bar later, the voice from the third;
@@ -347,74 +421,93 @@ function renderBar(song, b) {
     bass(0, chord.bass, S * 8)
     bass(step(8), chord.bass, S * 8)
     if (b < 2 || c % 4 === 3) return done()
-    let mel = Math.floor(rand() * melody.length)
-    for (const [at, len] of song.singer.phrases[c % 3]) {
-      mel = Math.max(0, Math.min(melody.length - 1, mel + Math.round(rand() * 4 - 2)))
-      let note = melody[mel]
-      if (at === 0) {
-        const tones = melody.filter((n) => chord.pcs.includes(n % 12))
-        note = tones.reduce((best, n) => (Math.abs(n - note) < Math.abs(best - note) ? n : best))
-        mel  = melody.indexOf(note)
-      }
-      bow(step(at), note, len * S)
-    }
+    const next = walker()
+    for (const [at, len] of song.singer.phrases[c % 3]) bow(step(at), next(chord, at === 0), len * S)
     return done()
   }
-  const solo  = c >= (song.cycle * 3) / 4   // the instrumental quarter of the cycle
+
+  const section = sectionOf(song, b)
+  const qLen    = song.cycle / 4
+  const first   = c % qLen === 0           // the first bar of a quarter
+  const fill    = (c + 1) % qLen === 0     // the last bar of a quarter: a fill into the next
+  const solo    = section === 'solo'
+  const bridge  = section === 'bridge'
+  const chorus  = section === 'chorus'
+  const vol     = b < 4 ? Math.min(VOL.verse, 0.6 + 0.1 * b) : VOL[section]
   const { feel } = song
 
   // drums
-  if (c % 4 === 0) crash(0)
-  for (const i of feel.kick) kick(step(i))
-  for (const i of feel.snare ?? []) snare(step(i))
-  for (const i of feel.rim ?? []) rim(step(i))
-  for (const i of feel.hat) hat(step(i), false)
-  for (const i of feel.open) hat(step(i), true)
-  if (b < 1) return done()
+  if (first) crash(0)
+  if (bridge) {
+    // the bridge breathes: the kick on one and three, the backbeat a rim, the hat on the beat
+    for (const i of [0, 8]) kick(loose(i))
+    for (const i of feel.snare ?? feel.rim) rim(loose(i))
+    for (const i of [0, 4, 8, 12]) hat(loose(i), false, false)
+  } else {
+    // the fill takes the last beat: a backbeat under it would double the first hit
+    for (const i of feel.kick) kick(loose(i))
+    for (const i of feel.snare ?? []) if (!(fill && i >= 12)) snare(loose(i))
+    for (const i of feel.rim ?? []) if (!(fill && i >= 12)) rim(loose(i))
+    for (const i of feel.hat) if (!(fill && i >= 12)) hat(loose(i), false, i % 4 === 0)
+    for (const i of feel.open) if (!(fill && i >= 12)) hat(loose(i), true)
+    // a ghost on an offbeat half the time, never under the fill
+    if (feel.snare && rand() < 0.5) snare(loose(fill || rand() < 0.5 ? 7 : 15), 0.25)
+  }
+  // four sixteenths climbing; their tails overlap, so the last lands under the backbeat's gain
+  if (fill) [12, 13, 14, 15].forEach((i, j) => snare(loose(i), 0.4 + j * 0.15))
+  if (b < 1) return done(vol)
 
   // bass
-  if (song.bass === 'on the kick') {
-    for (const i of feel.kick) bass(step(i), chord.bass, S * 2.5)
-    bass(step(14), chord.bass + 12, S * 1.5)
+  if (bridge) {
+    bass(loose(0), chord.bass, S * 7.5)
+    bass(loose(8), chord.bass, S * 7.5)
+  } else if (song.bass === 'on the kick') {
+    for (const i of feel.kick) bass(loose(i), chord.bass, S * 2.5)
+    bass(loose(14), chord.bass + 12, S * 1.5)
   } else if (song.bass === 'eighths') {
-    for (const i of EIGHTS) bass(step(i), chord.bass + (i === 6 || i === 14 ? 12 : 0), S * 1.6)
+    for (const i of EIGHTS) bass(loose(i), chord.bass + (i === 6 || i === 14 ? 12 : 0), S * 1.6)
   } else {
-    const walk = [chord.bass, chord.bass + 7, chord.bass + 12, next.bass + (next.bass > chord.bass ? -1 : 1)]
-    walk.forEach((n, i) => bass(step(i * 4), n, S * 3.5))
+    const walk = [chord.bass, chord.bass + 7, chord.bass + 12, after.bass + (after.bass > chord.bass ? -1 : 1)]
+    walk.forEach((n, i) => bass(loose(i * 4), n, S * 3.5))
   }
-  if (b < 2) return done()
+  if (b < 2) return done(vol)
 
-  // keys, out for the first two bars of the instrumental quarter
+  // keys: the bridge's a pad, the chorus's its own; out for the solo's first two bars so the guitar steps forward alone
+  const keyset = bridge ? 'pad' : chorus ? song.chorus.keys : song.keys
   if (!(solo && c < (song.cycle * 3) / 4 + 2)) {
-    if (song.keys === 'stabs') for (const i of [2, 6, 10, 14]) keys(step(i), chord.keys)
-    else if (song.keys === 'backbeat') for (const i of [4, 12]) keys(step(i), chord.keys)
+    if (keyset === 'stabs') for (const i of [2, 6, 10, 14]) keys(step(i), chord.keys)
+    else if (keyset === 'backbeat') for (const i of [4, 12]) keys(step(i), chord.keys)
     else keys(0, chord.keys, S * 16, true)
   }
 
-  // guitar
-  if (song.guitar === 'strummed') {
-    for (const i of [0, 6, 10]) chord.guitar.forEach((n, j) => guitar(step(i) + j * 0.012, n))
-  } else {
-    const at = song.guitar === 'arpeggio' ? steps(euclid(5, 16, 3)) : steps(euclid(7, 16, 1))
-    at.forEach((i, j) => guitar(step(i), chord.guitar[j % 3]))
+  // guitar: the melody walked in the solo, out in the bridge, its chorus style in the chorus
+  if (solo) {
+    const next = walker()
+    steps(euclid(6, 16, c % 4)).forEach((i, j) => guitar(loose(i), next(chord, j === 0)))
+  } else if (!bridge) {
+    const style = chorus ? song.chorus.guitar : song.guitar
+    if (style === 'strummed') {
+      for (const i of [0, 6, 10]) {
+        const t = loose(i)
+        chord.guitar.forEach((n, j) => guitar(t + j * 0.012, n))
+      }
+    } else {
+      const at = style === 'arpeggio' ? steps(euclid(5, 16, 3)) : steps(euclid(7, 16, 1))
+      at.forEach((i, j) => guitar(loose(i), chord.guitar[j % 3]))
+    }
   }
 
-  // singer, from the fourth bar, resting every fourth bar and the instrumental
-  if (b < 4 || solo || c % 4 === 3) return done()
-  let mel = Math.floor(rand() * melody.length)
-  for (const [at, len] of song.singer.phrases[c % 2]) {
-    mel = Math.max(0, Math.min(melody.length - 1, mel + Math.round(rand() * 4 - 2)))
-    let note = melody[mel]
-    if (at === 0) {
-      const tones = melody.filter((n) => chord.pcs.includes(n % 12))
-      if (tones.length) {
-        note = tones.reduce((best, n) => (Math.abs(n - note) < Math.abs(best - note) ? n : best))
-        mel  = melody.indexOf(note)
-      }
-    }
-    sing(step(at), note, len * S)
+  // singer, from the fourth bar, resting under the fill and through the solo;
+  // the hook in the chorus, a walk elsewhere, the bridge's in long phrases
+  if (b < 4 || solo || fill) return done(vol)
+  if (chorus) {
+    for (const [at, len, mel] of song.hook[c % 2]) sing(step(at), at === 0 ? snap(chord, melody[mel]) : melody[mel], len * S)
+  } else {
+    const next    = walker()
+    const phrases = bridge ? LONG.phrases : song.singer.phrases
+    for (const [at, len] of phrases[c % 2]) sing(step(at), next(chord, at === 0), len * S)
   }
-  return done()
+  return done(vol)
 }
 
 // ─── the stream ───────────────────────────────────────────────────────────
@@ -527,5 +620,5 @@ export function createBand() {
   }
 }
 
-/** Whether this machine wants the band heard — `/music` turns it, and `HAVEN_MUSIC=off` starts it off. */
-export const listening = { heard: globalThis.process?.env?.HAVEN_MUSIC !== 'off' }
+/** Whether this machine wants the band heard — `/music` turns it, and `HAVEN_MUSIC=off` starts it off — and how loud, 0 to 100 (`/volume`). */
+export const listening = { heard: globalThis.process?.env?.HAVEN_MUSIC !== 'off', volume: 100 }

@@ -17,7 +17,7 @@ export const COL_N = (COL_MS / 1000) * RATE
 
 // Each part's loudest column over five songs drawn far apart (#0 #1 #7 #42 #99).
 // A gain changed in `band.js` moves its part's here.
-const CEIL  = { guitar: 0.3, singer: 0.18, drums: 1.3, bass: 0.32, keys: 0.22 }
+const CEIL  = { guitar: 0.35, singer: 0.18, drums: 1.75, bass: 0.44, keys: 0.22 }
 const RANGE = 20
 const GLYPHS = '▁▂▃▄▅▆▇█'
 

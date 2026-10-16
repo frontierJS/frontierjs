@@ -2283,7 +2283,7 @@ Dead jobs (exhausted retries) stay in the database — use `app.jobs.retry(id)` 
 
 ---
 
-### `@frontierjs/conduit` — Outbound Transport
+### `@frontierjs/conduit` — Integrations
 
 One interface for talking to third-party systems — REST APIs, server Outposts, local processes. Abstracts HTTP, WebSocket, and Unix socket protocols behind a single `send()` call.
 

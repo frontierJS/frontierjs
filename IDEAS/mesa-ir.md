@@ -1541,6 +1541,9 @@ with the terminal backend as its second consumer, not ahead of it.
    prerequisite. The IR does not change that argument. *Narrowed 2026-10-09 by
    [`FJS-D689`](../DECISIONS.md#fjs-d689): offline-first gates store release only.*
    *The Lynx spike (`FJS-D690`) ran 2026-10-10 on Lynx for Web: § 9.*
+   *Ruled 2026-10-15 ([`FJS-D1069`](../DECISIONS.md#fjs-d1069)): the next
+   move is the same bundles on a real Android device or emulator under Lynx
+   Explorer, and a Lynx backend in mesa only if native holds what web showed.*
 
 ---
 
@@ -1687,6 +1690,185 @@ most of the stylesheet and names what it drops:
 **What a web run cannot answer:** native layout, how gestures feel, and whether
 `elementRefptr` on a native event names the element the way it does on web.
 
+## 10. The device run, measured 2026-10-15
+
+This is `FJS-D1069`'s option C. Lynx Explorer 4.0.3 ran on an Android 14
+emulator (API 34, x86_64, KVM, headless), and the spike's fixtures were
+recompiled against current mesa and built for the `lynx` environment. The
+code is in `fjs-prototypes/lynx-spike/`, under `rsbuild.device.config.js`.
+`fjs-prototypes/lynx-spike-device/sweep.sh` opens each bundle through
+`lynx://open?url=…` and records the main thread's `MESA_SPIKE` logcat line
+and a screenshot. Neither directory is versioned.
+
+**Native agrees with web wherever both ran.**
+- **32 of 48 fixtures mount.** The 30 that mounted on web all mount, the
+  refused ones are refused by the same name, and the five fixtures new since
+  § 9 split 2 mounted and 3 refused.
+- **The three interaction specs pass by real taps:**
+  - Counter: taps, `{#if}`, `{#each}`.
+  - Bound: `bind:value` both ways, and `bind:this` calling an exported
+    function.
+  - Probe: a synchronous read finds no rect, `measure()` answers 120x40,
+    `focus()` answers 0, and keyboard typing reaches `bind:value`.
+- **The arm64 build matches the x86_64 one pixel for pixel** on all 48
+  screenshots, run under ARM translation. The x86_64 APK lacks
+  `liblynxtextra`, `libharfbuzz` and `libserval_svg`, and that made no
+  difference here.
+
+**Three gaps exist only on a device, and each was silent on web:**
+- **A native event's `target` is `{id, dataset, uid}` and has no
+  `elementRefptr`.** Every tap therefore landed on the window and did
+  nothing, with no error. The fix is to look nodes up by
+  `__GetElementUniqueID`, which both hosts answer.
+- **The native main thread (PrimJS) has no `queueMicrotask`.** Mesa's flush
+  calls it on every signal write, so the first tap threw `ReferenceError`.
+  The runtime now shims it over `Promise.resolve().then`.
+- **Native flattens a plain view, which then has no native view to answer a
+  UI method.** `boundingClientRect` on a `bind:this` box answered code 6,
+  `node does not have a LynxUI`. The fix is to retry once with
+  `flatten=false`. On a device the answer's `data` is also a JSON string,
+  where web gives an object. A real backend should set `flatten=false`
+  where a node is bound, not retry.
+
+**Still unmeasured:** the stylesheet painted on a device (fixtures build
+with `css: false`), how gestures feel, and timing. Under ARM translation a
+bundle sometimes took more than 4 s to report.
+
+## 11. The stylesheet on a device, measured 2026-10-15
+
+Same emulator and Explorer as § 10. `rsbuild.cssdevice.config.js` builds
+four bundles; `drive-cssdevice-ref.mjs` renders the same trees in Chrome at
+the emulator's geometry, and `lynx-spike-device/compare-probe.py` compares
+the two by pixel. Screenshots are in `lynx-spike-device/sweep-css/`.
+
+**The shipped kit paints nothing on a device, and unwrapping the layers
+does not fix it.** A kit sheet (buttons in three tones and two
+treatments, badges, pills, a card, two alerts, a field) shows zero colored
+pixels both as shipped and unlayered. Layout survives in part: the
+clusters lay out in rows and the card footer pushes its button right.
+Two causes, both silent at runtime:
+
+- **The token rule never arrives.** Every `--color-*` sits on
+  `:root, :host`, and the encoder drops a selector list whole when one
+  member is unsupported. `:host` is that member. `:root` alone works.
+- **A `var()` whose value holds another `var()` never resolves.** One hop
+  to a literal works, inherited from `:root`, `*` or an ancestor, and so
+  does `rgb(var(--raw))`. Two hops paint nothing: `--d: var(--a)`, a
+  fallback that is itself a `var()`, and `color-mix()` with a `var()`
+  argument. The kit's tones are all two hops or more, starting with
+  `--tone-fill: var(--bg-mix, var(--color-primary))`.
+
+**The feature probe: 21 of 45 rows paint what Chrome paints.**
+
+| Paints on device | Paints nothing on device |
+| --- | --- |
+| class, id, descendant, child, `+`, nesting | `:where`, `:nth-child`, `:first-child` |
+| plain `:is(...)` and `:not(...)` | attribute selectors, set with `__SetAttribute` |
+| one-hop `var()`, a literal fallback | `@layer`, `@media`, `@supports`: no warning |
+| hex, `rgb()`, `background:` shorthand | any `oklch()`, literal or relative |
+| `color-mix()` over literals | `color-mix()` over a `var()` |
+| `color` set on the `<text>` itself | `color` inherited from a parent view |
+
+§ 9's list of dropped selectors holds for `:is` and `:not` only in the
+`:lang(...)` forms the build generates. `@property { inherits: false }` is
+ignored, so the property inherits anyway.
+
+**With every value resolved first, the device paints the kit.** The
+`csskit-resolved` bundle takes Chrome's computed values, about 40 physical
+properties per node with colors turned to `rgba()`, and writes them as one
+literal rule per node, with the text properties copied onto each `<text>`.
+On the device that bundle matches Chrome's screenshot almost exactly:
+tones, outlines, radii, the card's header strip and divided footer, the
+tinted alerts, and the field. The remaining differences are small:
+
+- `text-transform` is dropped, so the badges are not uppercase.
+- The card body is about 16 dp taller, most likely because the spike
+  lowers block to a flex column, where margins do not collapse.
+- The spike did not carry `font-family` or `letter-spacing`.
+
+**So the gap is in the value language, not in layout.** `FJS-D1069`'s A
+listed the CSS lowering pass as *unwrap the layers, logicals to physical,
+unwrap `:where`*. The device adds the larger part: the pass has to
+evaluate the token graph down to one `var()` hop, compute `oklch()` and
+`color-mix()` itself, split selector lists, and copy text properties
+onto the `<text>` node. Invariant 13 is what makes this possible. A tone
+is one of seven words and a theme is a class, so the pass can expand
+(theme × tone) at build time, where a raw color would have needed runtime
+evaluation.
+
+**Still unmeasured:** gestures, timing, the theme switch, and `@media`
+(the build emits 8 of them).
+
+## 12. The native backend — plan
+
+`FJS-D1069`'s A, in the shape `FJS-D1074` ruled: `target: 'native'`, the one
+emitter with a profile per target, and a Lynx-for-Web drive in mesa's
+`test`. The spike in `fjs-prototypes/lynx-spike/` is the reference and is not
+copied whole: each step lands what a step needs.
+
+### Phase 0 — Measure on a device
+
+Goal: native parity known before any mesa code.
+Done when: § 10 and § 11 are written.
+
+- [x] 0.1 The emulator sweep: 32 of 48 mount, three specs pass (§ 10)
+- [x] 0.2 The stylesheet on a device (§ 11)
+
+### Phase 1 — One emitter, two targets
+
+Goal: `compile(src, { target: 'native' })` emits a module that runs on Lynx.
+Done when: the terminal drive and `terminal-emit.test.js` pass unchanged
+apart from `$$host`, the DOM corpus diff is empty, and a native compile of
+every terminal fixture either parses or is refused by name.
+
+- [ ] 1.1 Move `terminal/emit.js` to `host/emit.js`, reading a target profile
+      (tags, events, paints CSS, runtime specifier); `$$tui` becomes `$$host`
+- [ ] 1.2 `native/tags.js` and `target: 'native'`: the tags and events a
+      phone has, with the six § 9 found missing refused by name
+- [ ] 1.3 `runtime-native.js`, `@frontierjs/mesa/runtime/native.js`: the
+      spike's runtime with § 10's three fixes, `flatten=false` set on a bound
+      node up front instead of retried
+
+### Phase 2 — The drive
+
+Goal: a broken native backend fails `bun run test` in mesa.
+Done when: `test/native/run.mjs` mounts the fixtures in `<lynx-view>` and
+passes Counter, Bound and Probe, and `DRIVES.md` names the manual device
+sweep.
+
+- [ ] 2.1 `@lynx-js/*` devDependencies pinned exact; rsbuild builds one
+      bundle per fixture
+- [ ] 2.2 `test/native/run.mjs` in `test`, over `src/drive.js`
+- [ ] 2.3 The device sweep as a manual drive in `DRIVES.md`
+
+### Phase 3 — Classes and styles reach the device
+
+Goal: a component's `class`, `style` and scoped `<style>` paint on a phone.
+Done when: a fixture with scoped rules paints them in the drive.
+
+- [ ] 3.1 The native profile keeps `class` and `style`, which the terminal
+      drops
+- [ ] 3.2 Scoped `<style>` reaches the bundle's stylesheet
+
+### Phase 4 — The value-language lowering
+
+Goal: `@frontierjs/css` paints on a device without a browser resolving it first.
+Done when: § 11's kit sheet, built from the shipped bundle, matches Chrome
+on the emulator as closely as `csskit-resolved` did.
+
+- [ ] 4.1 Unwrap layers and split selector lists, so one unsupported member
+      no longer drops the token rule
+- [ ] 4.2 Evaluate the token graph to one `var()` hop per (theme × tone)
+- [ ] 4.3 Compute `oklch()` and `color-mix()`; logical properties to physical
+- [ ] 4.4 Text properties copied onto the `<text>` node
+
+### Phase 5 — The kit's DOM habits
+
+Goal: the 41 kit files that measure or focus synchronously have a native
+answer.
+
+- [ ] 5.1 An async measure and focus member on `$`
+
 ---
 
 ## Open questions
@@ -1751,7 +1933,8 @@ most of the stylesheet and names what it drops:
     backend, so the closed set should be read off its table rather than guessed
     before it, and A matches the tag answer. C rewrites 216 handlers to
     anticipate a set nobody has measured.
-- **Does FJS own Swift and Kotlin hosts (`FJS-D689` step 5)?** `FJS-D690` said
+- ~~**Does FJS own Swift and Kotlin hosts (`FJS-D689` step 5)?**~~ **Answered 2026-10-15 (`FJS-D1069`): C, then A — run the bundles on a real Android device or emulator under Lynx Explorer first, then build the Lynx backend in mesa. Never FJS-owned hosts.**
+  `FJS-D690` said
   this would be decided from the spike's numbers, and § 9 has them.
   - **A** — no, keep borrowing Lynx. The next step is a real Lynx backend:
     - a tag table, and the runtime moved into mesa behind an optional peer, as

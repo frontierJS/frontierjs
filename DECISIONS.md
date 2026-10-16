@@ -11227,6 +11227,30 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1074"></a>2026-10-15 · `FJS-D1074` — The Lynx backend is `target: 'native'`, read by the one emitter the terminal reads, and proved in mesa's `test` on Lynx for Web with the device run kept as a manual drive.
+
+Asked in chat when `FJS-D1069`'s A started, through the question tool, as three questions; the recommended answer was picked for each.
+
+- **The target is `'native'`, not `'lynx'`.** It names the medium, the way `'terminal'` does while OpenTUI stays inside `runtime-terminal.js`. Lynx is named only in `runtime-native.js`, so a second engine changes one file.
+- **One emitter with a profile per target.** `terminal/emit.js` moves to a host-neutral path and reads a per-target profile: the tag table, the event table, whether the target paints CSS, and the runtime specifier. The emitted `$$tui` becomes `$$host` in both targets. A native bundle calling `$$tui` from a file under `terminal/` was the rejected alternative.
+- **The drive is Lynx for Web in headless Chrome, in mesa's `test` script**, with the `@lynx-js/*` devDependencies pinned exact. The emulator sweep is a manual drive in `DRIVES.md`, because CI has no emulator. It is still owed per release, since web caught none of § 10's three device-only bugs.
+
+Adjudication: *batteries vs. smallness*, as in `FJS-D1069`. Tier: Register. Plan: `IDEAS/mesa-ir.md` § 12.
+
+### <a id="fjs-d1069"></a>2026-10-15 · `FJS-D1069` — FJS does not own Swift and Kotlin hosts. The spike's bundles run on a real Android device or emulator under Lynx Explorer first, and a Lynx backend is built in mesa only if native holds what Lynx for Web showed.
+
+Asked in [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) § Open questions (`FJS-D689` step 5), through the question tool. **C, then A** was picked over **A** (build the Lynx backend now, without a device run) and **B** (build FJS hosts in Swift and Kotlin).
+
+Research run before the ruling (`.cache/reports/Lynx versus own native hosts.md`, gitignored) found that every owned host with a published cost was carried by one large company for six to ten years, and that the hosts owned by a vendor, a consultancy or one person were retired or handed off. B buys nothing the spike measured, since the CSS layers, the missing controls and the async measure are FJS's on any host. The six ports to Lynx that are not React converged on the shape Mesa already emits: a background-thread tree, one batched op buffer per tick, and a fixed main-thread runtime replaying it through the Element PAPI. A device run comes first because § 9 ran on Lynx for Web, where a browser still does the cascade, inheritance and layout, and Lynx documents that its layout is not the web's. The Element PAPI carries no stability promise, so the backend talks to it through one runtime file, sits in mesa's own CI, and pins an exact engine version. A binding kept beside its host died with Svelte Native. **If native parity collapses, the answer is *not Lynx yet*, never *own hosts*.**
+The nine are the paper's, under the question; they were answered before the ruling, and checked again after it was written. Adjudication: *batteries vs. smallness*, because Lynx stays severable behind one runtime file. Tier: Register.
+— `IDEAS/mesa-ir.md` § 6 step 4.
+
+### <a id="fjs-d1068"></a>2026-10-15 · `FJS-D1068` — The Shell draws its frame for a guest when the nav table offers a guest any entry, and the narrow frameless page only when it offers none.
+
+Asked in chat while building [`IDEAS/app-shell.md`](IDEAS/app-shell.md) 3.1, through the question tool. **Derive it from the table** was picked over a boolean prop that opts a Shell into a signed-out frame, and over keeping example off the Shell.
+
+example is a shop: a guest reaches Basket at level 0, and its drives sign in from buttons in the signed-out bar. The table already says who sees each entry through `show`, so a second statement of the same fact as a prop is what `decision-rules` Q5 refuses. The cost falls on a members-only app: its groups say `show: ({ user }) => !!user`, or its sign-in page draws the members' nav, which is visible rather than silent. Sign out is drawn only with a user. In the same ask, example's ⌘K stopped listing Plans and Invoices on their own; Billing stands for all three, as it does in the nav. Where it lives: `packages/ui/components/layout/Shell.mesa`, `shell.spec.mjs` § a guest the table offers something, `packages/ui/AGENTS.md` § Layout.
+
 ### <a id="fjs-d1042"></a>2026-10-15 · `FJS-D1042` — How does a `sierra.config.js` say *the page's own origin* for `junction.url`, now that `FJS-D552` evaluates it in Node — The page decides: `virtual:sierra` emits `url: import.meta.env.VITE_API_URL || location.origin`, and `junction.url` in the config is the answer where there is no page (the terminal shell, a prerender) and what turns the client on. The four configs shrink to a plain URL. The price: a config `url` naming a remote API is ignored by the page unless the build sets `VITE_API_URL`.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a path-only `url` (`'/'`) means the page's origin, resolved by the client against `location`. One key, one meaning; the terminal then needs an absolute URL from `--api` and refuses a relative one by name, so `bun run tui`, `fli dev:tui` and `verify-tui` all change).
@@ -13561,6 +13585,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1073"></a>2026-10-15 · `FJS-D1073` — What shape is Basecamp's workbench stage — A grid of panes, rows × columns, every cell the same size; the owner arranges it in a Layout mode where the panes fold to cards and the grid is drawn one column wider and one row taller, each empty cell a box that takes a dropped tile or starts a new chat in a checkout it asks for. The two-pane split handle goes; zoom stays as one cell filling the stage.
+
+Asked in chat, for the workbench screen. **A** (replace the two-pane stage, split and zoom with the grid) was picked over **B** (the grid capped at 3 × 3) and **C** (keep two panes, Layout only reorders them). For what a box starts, **new chat in a checkout picked from the dock** was picked over **new chat in the freshest checkout** and **pin a new checkout**. For the grid's shape, **uniform rows × columns** was picked over **per-row columns**.
+
+One mechanism rather than two: a split is the one-row case of a grid, and a cap is a number nobody asked for. An empty trailing row or column is not kept, so docking a pane gives the stage back rather than leaving a hole, and the box a chat starts in asks which checkout because a cell holds a checkout and one checkout holds one cell. Proved by `packages/basecamp/web/test/verify-provision.mjs` § Layout, which replaced the split checks.
+
+### <a id="fjs-d1070"></a>2026-10-16 · `FJS-D1070` — How are Sierra's bytes per surface counted, and where — `packages/sierra/bench/`: one floor fixture per target (spa, static, widget), counted by cli's `measureSurface` reached by relative path, ratcheted in `bench/bench.baseline.json`, run at the end of sierra's `test` script.
+
+Asked in [`IDEAS/performance-regression-watch.md`](IDEAS/performance-regression-watch.md) § Open questions. **A** was picked over **B** (No sierra bench: the vanilla floor scaffolds with `--site --widgets` and `BUILT_SURFACES` gains `widgets`. One baseline, but it stays a by-hand run of a full scaffold until `--floor` is wired into CI), **C** (Mesa's runner copied: sierra counts its own bytes, in gzip. Three measurers in two units).
+
+The paper's recommendation, taken as written: one measurer and one unit for every built surface, and a rise is caught the day it lands, which `FJS-D532` already ruled for mesa.
 
 ### <a id="fjs-d1009"></a>2026-10-15 · `FJS-D1009` — When CI's structure phase grades a rule an app's `check-baseline.json` never adopted, is the debt adopted with a reasoned count or lowered to zero before CI goes green — Adopt the brand-new rules with `fli check --adopt` and a `//` reason each (css-raw-literal 33, css-class-collision 5, example app-layout 7), and fix the two +1 regressions, since a count that moved is a new site rather than old debt. CI goes green today; each adopted key is a ceiling that falls as rows move them.
 
@@ -16460,6 +16496,12 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d899"></a>2026-10-15 · `FJS-D899` — What a conduit Receiver holds, and whose each field is — Split by owner: a connector exports the **Dialect** (`verify · parse · dedupeKey`, pure functions of a delivery and a credential, the clock passed in), the app declares the **Receiver** (`provider · path · dialect · credential · owner · apply`), and conduit owns the route, the order (credential → verify → parse → owner → receipt → apply → mark) and what a duplicate means: an APPLIED receipt, never a seen one. Receipts live in conduit's own store beside its targets. A handshake, a batched delivery and a subscription's lifecycle events stay out until a second app asks.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions, found fixing `FJS-1804`. **C** was picked over **A** (one record carrying all seven steps, written by the connector — which puts the app's tenancy and domain into a vendor package) and **B** (`FJS-D681`'s four fields, `path · verify · window · dedupe`, with the rest left to the app — which the measured dialects do not fit, Quo's key being a row the path names and Standard Webhooks' dedupe key a header, and which leaves the record-then-apply order `FJS-1805` found wrong to every app). A second pick, through the question tool: the receipt row lives in conduit's store (`conduit_receipts`, the memory store's map) rather than in a litestone model the app declares, so an app with no litestone receives too and no schema moves; the cost is that a receipt is not in the audit trail or Studio.
+
+The paper's recommendation, taken as written: each field lands with the party that knows it — a vendor knows its signature, only the app knows its tenants — and conduit owns the one thing nine hand-built receivers got wrong or copied. `credential` is a ref through the installed `CredentialResolver` for the ordinary one-key relationship, or a function choosing the key for one delivery before the body is believed. `owner` is optional and found AFTER verify. `apply` answers `applied`, `ignored` or `parked`; the first two mark the receipt and the third leaves it for a retry. A refusal is one sentence, 401, with the reason in the log and never the body. Resilience does not cross and a receiver never mints a principal (`FJS-D177`); a partner signing with FrontierJS's own scheme and becoming a caller stays junction's door (`FJS-D475`). Amends `FJS-D681`'s record text: *path, signature check, freshness window, dedupe key* is the dialect's half plus the path. Where it lives: `packages/conduit/src/receive.ts`, `receive.test.ts`, `example/api/src/app.ts`'s two receivers, `verify:pay` and `verify:stripe`.
 
 ### <a id="fjs-d949"></a>2026-10-13 · `FJS-D949` — What does 1.0 mean here — The numbers are wrong: litestone and auth move to the train's `0.x`, their `1.x` releases are deprecated on npm, and 1.0 is defined as the first release whose surface diff is graded.
 

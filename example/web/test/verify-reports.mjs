@@ -170,7 +170,7 @@ await evaluate(`
 `)
 await go('/')
 
-t('nav.reportsIsOfferedAtLevelFive', await waitFor('#nav-reports', 5000), true)
+t('nav.reportsIsOfferedAtLevelFive', await waitFor('nav[aria-label="Main"] a[href="/reports/"]', 5000), true)
 
 await go('/reports/')
 t('screen.theTableRenders', await waitFor('[data-status]'), true)
@@ -274,7 +274,7 @@ t('staff.theRefusalNamesWhatTheyCANDo',
 // The link is hidden too, so the refusal is the second line of defence rather
 // than the first thing staff meet.
 t('staff.areNotOfferedTheNavLinkAtAll',
-  await evaluate(`return document.querySelectorAll('#nav-reports').length`), 0)
+  await evaluate(`return document.querySelectorAll('nav[aria-label="Main"] a[href="/reports/"]').length`), 0)
 
 t('consoleErrors', consoleErrors, [])
 

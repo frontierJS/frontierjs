@@ -173,12 +173,15 @@ const PKGS = [
   ],
 },
 {
-  id:'conduit', install:'npm i @frontierjs/conduit', page:'conduit.html', name:'Conduit', realm:'API · Egress', tone:'info', who:'@frontierjs/conduit',
+  id:'conduit', install:'npm i @frontierjs/conduit', page:'conduit.html', name:'Conduit', realm:'API · Integrations', tone:'info', who:'@frontierjs/conduit',
   pitch:'Every third party an app talks to, declared in one place.',
   rows:[
     { k:'Targets', v:'A counterparty is named once — credential, policy and all',
       why:'Because targets are declared, an application’s entire outbound surface is a list rather than an audit. Useful in review, and to anyone self-hosting who wants to know what the process can reach.',
       r:['scattered fetch calls','a per-vendor HTTP client each'] },
+    { k:'Receivers', v:'The route a Provider calls you on, declared beside its Target',
+      why:'A connector exports how the vendor signs, the app says which key verifies and what to do, conduit runs the order and keeps the receipt — so a redelivery is a duplicate only once the first was applied, and a throw hands the sender a clean retry.',
+      r:['a raw webhook route per vendor','an inbound-events table per app'] },
     { k:'Policy', v:'Seven numbers per target, falling back field by field',
       why:'One conduit carries a card processor, a mail sink and a health probe. One set of timeouts and retries fits none of them, so each target states its own and inherits the rest.',
       r:['one global axios instance'] },

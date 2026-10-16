@@ -4984,17 +4984,23 @@ export function announceDataWrites(
         // Every spelling, as `servicesFor` does: Litestone's accessor index is
         // exact, and a service named `pages` with no `model:` asked `pages` and
         // reached nothing, so no Share or PageAccess write ever regraded it.
-        let reach: string[] = []
-        try {
-          const fn = (db as { $readReach?: (a: string) => string[] }).$readReach
-          if (typeof fn === 'function')
-            for (const candidate of accessorCandidates(accessor)) {
-              reach = fn(candidate)
-              if (reach.length) break
-            }
-        } catch { /* a client predating $readReach, or a name it does not know */ }
+        const reachBy = (probe: '$readReach' | '$fromReach'): string[] => {
+          try {
+            const fn = (db as Record<string, ((a: string) => string[]) | undefined>)[probe]
+            if (typeof fn === 'function')
+              for (const candidate of accessorCandidates(accessor)) {
+                const reach = fn(candidate)
+                if (reach.length) return reach
+              }
+          } catch { /* a client predating the probe, or a name it does not know */ }
+          return []
+        }
         const spellings = new Set(accessorCandidates(accessor).map(c => c.toLowerCase()))
-        for (const reached of reach) {
+        // `$fromReach` joins `$readReach` as a reason to re-read: an `@from`
+        // count moves when a CHILD is written and the parent row never does, so
+        // no frame names it (`FJS-2632`). A model reading its own table through
+        // an `@from` is announced by its own write already, so only the others.
+        for (const reached of [...reachBy('$readReach'), ...reachBy('$fromReach')]) {
           const key = reached.toLowerCase()
           if (spellings.has(key)) { modelOf.set(name, reached); continue }
           let set = dependents.get(key)

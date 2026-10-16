@@ -18,8 +18,8 @@
 // method. Nothing in it is sensitive, which is why the whole column comes back
 // on a read while the credential never does.
 //
-// **`test` really sends.** It goes through `app.conduit`, the outbound
-// boundary, not `fetch()` in a service — the channel registers itself as a
+// **`test` really sends.** It goes through `app.conduit`, a declared
+// target, not `fetch()` in a service — the channel registers itself as a
 // conduit target and the credential is resolved from its Secret at send time
 // (core/credentials.ts). A `test` that stamped a timestamp and reported success
 // would be worse than no test at all, because the stamp is then read as

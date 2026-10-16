@@ -1364,19 +1364,22 @@ export function generateDDL(schema, { foreignKeys = true, pluralize = false } = 
  * @param {object} options
  */
 export function generateDDLForDatabase(schema, dbName, { foreignKeys = true, pluralize = false } = {}) {
-  // Filter models that belong to this database
+  return generateDDL(schemaForDatabase(schema, dbName), { foreignKeys, pluralize })
+}
+
+/**
+ * The slice of a schema one database holds. Anything derived per database —
+ * DDL, a migration's implicit m2m join tables — starts here: a join table
+ * emitted from the whole schema lands beside models whose tables exist only in
+ * another file (`FJS-2076`).
+ */
+export function schemaForDatabase(schema, dbName) {
   const models = schema.models.filter(m => {
     const dbAttr = m.attributes.find(a => a.kind === 'db')
     return (dbAttr?.name ?? 'main') === dbName
   })
-
-  // Filter views that belong to this database
   const views = (schema.views ?? []).filter(v => (v.db ?? 'main') === dbName)
-
-  // Build a filtered schema for topoSort and DDL generation
-  const filteredSchema = { ...schema, models, views }
-
-  return generateDDL(filteredSchema, { foreignKeys, pluralize })
+  return { ...schema, models, views }
 }
 
 /**

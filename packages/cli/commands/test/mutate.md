@@ -5,18 +5,27 @@ alias: test-mutate
 examples:
   - fli test:mutate
   - fli test:mutate --kinds gate-drop,allow-drop
+  - fli test:mutate --suite "bun test api/test"
 flags:
   kinds:
     char: k
     type: string
     description: Only these mutation kinds (comma-separated)
     defaultValue: ''
+  suite:
+    char: s
+    type: string
+    description: Also run this command (the app's own tests) on each mutant the checks missed
+    defaultValue: ''
 ---
 
 ```js
 // `args` is already bound in the compiled shim — a second declaration is a
 // SyntaxError the compiler reports as a clean build (Invariant 15).
-const opts = flag.kinds ? `--kinds ${flag.kinds}` : ''
+const opts = [
+  flag.kinds ? `--kinds ${flag.kinds}` : '',
+  flag.suite ? `--suite ${JSON.stringify(flag.suite)}` : '',
+].join(' ')
 
 $.exec({
   command: `${litestone($)} mutate --schema ${schemaPath($)} ${opts}`,
@@ -54,9 +63,22 @@ Not about the schema. Two are expected and mean nothing is wrong:
   column, so there is no duplicate to try.
 - **a create-only `@@allow`** — a create policy is checked by `evalJs` and
   nothing else, so there is no second implementation to grade it against.
-  Read, update and delete policies compile into a WHERE and are graded.
+  Read, update and delete policies compile into a WHERE and are graded. An
+  app's own drive can grade it: `--suite` below.
 
 Anything else is a check that stopped covering what it claims to.
+
+## The app's own tests: `--suite`
+
+`--suite "bun test api/test"` runs that command from the current directory
+for each mutant the derived checks missed, with the mutant's schema written over
+the schema file and the original put back after. The command exiting non-zero
+kills the mutant, and the report counts those beside the derived kills. The
+command must pass on the original schema first, or the run refuses. The score a
+CI floor reads stays the derived checks' alone.
+
+A schema read from anywhere but the file at `--schema` (a copy, a compiled
+bundle) is not seen by the command, and every mutant then survives it.
 
 ## Not in CI
 

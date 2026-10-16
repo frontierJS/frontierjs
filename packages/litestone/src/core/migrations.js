@@ -22,7 +22,7 @@ import {
   generateMigrationSQL, summarizeDiff, checksum, splitStatements, normalizeTableDdl,
 } from './migrate.js'
 import { resolveOperations, checkAgainstHistory, renameStatement, describeOperation, guessRenames } from './operations.js'
-import { generateDDLForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
+import { generateDDLForDatabase, schemaForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1036,9 +1036,7 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       // introspection — ensure they exist even when the model diff is in sync
       // (e.g. an m2m or an @edge added to an existing DB).
       try {
-        const dbModels = parseResult.schema.models.filter(m =>
-          (m.attributes?.find(a => a.kind === 'db')?.name ?? 'main') === dbName)
-        const scoped = { ...parseResult.schema, models: dbModels }
+        const scoped = schemaForDatabase(parseResult.schema, dbName)
         const m2mPairs = detectM2MPairs(scoped, pluralize)
         // planEdgeStorage attaches @edge columns to their pairs and collects
         // create-own side-table groups.

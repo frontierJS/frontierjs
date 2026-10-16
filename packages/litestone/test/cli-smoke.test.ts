@@ -404,6 +404,31 @@ model Vault {
     expect(r.stdout + r.stderr).not.toMatch(/100% killed/)
   })
 
+  // FJS-1942. A nullable @unique survives the derived checks (SQLite takes any
+  // number of NULLs), so only the app's own tests can fail on it. The mutant is
+  // written over the schema file for the length of the command, then removed.
+  test('mutate --suite runs the app\'s tests on each survivor and puts the schema back', async () => {
+    const schema = `
+model Vault {
+  id    Int     @id
+  label String? @unique
+  @@gate("4.4.4.5")
+}
+`
+    const dir = makeFixtureDir('mutate-suite', { schema })
+    const r = await runCli(dir, ['mutate', '--kinds=unique-drop', '--json', '--suite', `grep -q '@unique' schema.lite`], { timeoutMs: 60_000 })
+    expect(r.exit).toBe(0)
+    const out = JSON.parse(r.stdout)
+    expect(out.suiteKilled).toBe(1)
+    expect(out.survived[0].suite).toBe('killed')
+    expect(readFileSync(join(dir, 'schema.lite'), 'utf8')).toBe(schema)
+
+    const bad = await runCli(dir, ['mutate', '--kinds=unique-drop', '--suite', 'exit 1'], { timeoutMs: 60_000 })
+    expect(bad.exit).not.toBe(0)
+    expect(bad.stdout + bad.stderr).toMatch(/already fails/)
+    expect(readFileSync(join(dir, 'schema.lite'), 'utf8')).toBe(schema)
+  })
+
   test('jsonschema writes valid JSON with PascalCase model keys', async () => {
     const dir = makeFixtureDir('jsonschema')
     await runCli(dir, ['migrate', 'create', 'init'])

@@ -136,6 +136,19 @@ describe('the tap counts every statement an include runs', () => {
     expect(execs).toHaveLength(2)
     expect(tapped.map((t: any) => t.operation)).toEqual(['findMany', 'include:count'])
   })
+
+  // A read-then-write upsert is two statements and a lock, and nothing but this
+  // count separates it from the ON CONFLICT plan: the row comes back either way.
+  test('an upsert is one statement, on the create branch and the update branch', async () => {
+    const c = await counting()
+    const args = (id: number) => ({ where: { id }, create: { id, name: 'new' }, update: { name: 'upd' } })
+    for (const id of [99, 1]) {
+      const { tapped, execs } = await c.measure(() => c.sys.author.upsert(args(id)))
+      expect(execs).toHaveLength(1)
+      expect(execs[0]).toMatch(/ON CONFLICT/)
+      expect(tapped.map((t: any) => t.operation)).toEqual(['upsert'])
+    }
+  })
 })
 
 // ─── what the event says ──────────────────────────────────────────────────
@@ -265,5 +278,54 @@ describe('the event says whether the read ran as system', () => {
       ['findMany', true],
       ['sql', true],
     ])
+  })
+})
+
+// ─── a page is a bound value, not statement text ─────────────────────────
+
+describe('FJS-2930: LIMIT and OFFSET are binds', () => {
+  const PAGED = `
+    model Doc { id Int @id  title String  @@fts([title])  @@label(title) }
+  `
+
+  test('findMany, findManyAndCount and groupBy at page 1 and page 40 share one statement text', async () => {
+    const c = await counting()
+    const texts = async (fn: (page: number) => Promise<unknown>) => {
+      const seen = new Set<string>()
+      for (const page of [0, 1, 39]) {
+        const { tapped } = await c.measure(() => fn(page))
+        for (const t of tapped) if (t.operation !== 'include') seen.add(t.sql)
+      }
+      return [...seen]
+    }
+    const many  = await texts(p => c.sys.author.findMany({ orderBy: { id: 'asc' }, limit: 5, offset: p * 5 }))
+    const count = await texts(p => c.sys.author.findManyAndCount({ orderBy: { id: 'asc' }, limit: 5, offset: p * 5 }))
+    const group = await texts(p => c.sys.author.groupBy({ by: ['name'], _count: true, orderBy: { name: 'asc' }, limit: 5, offset: p * 5 }))
+    expect(many).toHaveLength(1)
+    expect(count).toHaveLength(1)
+    expect(group).toHaveLength(1)
+    expect(many[0]).toMatch(/LIMIT \?/)
+  })
+
+  test('a bound page still pages: the rows, the open-ended offset and a limit with no offset', async () => {
+    const c = await counting()
+    const ids = async (args: any) => (await c.sys.author.findMany({ orderBy: { id: 'asc' }, ...args })).map((r: any) => r.id)
+    expect(await ids({ limit: 3, offset: 2 })).toEqual([3, 4, 5])
+    expect(await ids({ limit: 2 })).toEqual([1, 2])
+    expect(await ids({ offset: 18 })).toEqual([19, 20])
+    expect((await c.sys.author.groupBy({ by: ['name'], _count: true, orderBy: { name: 'asc' }, limit: 2, offset: 1 })).length).toBe(2)
+  })
+
+  test('search pages by bind too', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: PAGED })
+    const sys = db.asSystem()
+    for (let i = 1; i <= 30; i++) await sys.doc.create({ data: { id: i, title: `word ${i}` } })
+    const seen = new Set<string>()
+    db.$tapQuery((e: any) => { if (e.operation === 'search') seen.add(e.sql) })
+    const first = await sys.doc.search('word', { limit: 5, offset: 0 })
+    const later = await sys.doc.search('word', { limit: 5, offset: 25 })
+    expect(first).toHaveLength(5)
+    expect(later).toHaveLength(5)
+    expect(seen.size).toBe(1)
   })
 })

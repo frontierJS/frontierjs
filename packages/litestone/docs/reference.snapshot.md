@@ -609,7 +609,7 @@ model Example {
 
 - **Also typed** — `write-once` · `append-only`
 - **Deeper** — [modeling.md](modeling.md)
-- **See also** — [`@system`](#system-field) · [`@guarded`](#guarded-field) · [`@version`](#version-field)
+- **See also** — [`@system`](#system-field) · [`@guarded`](#guarded-field) · [`@version`](#version-field) · [`@seals`](#seals-move)
 
 #### `@sealed` <a id="sealed-field"></a>
 
@@ -1796,9 +1796,9 @@ model Example {
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`tenancy`](#tenancy-declaration) · [`@@deny`](#deny-model)
 
-#### `@@transitions` `(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …)` <a id="transitions-model"></a>
+#### `@@transitions` `(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) | (<field>, declaredBy: Model, scope: <column>)` <a id="transitions-model"></a>
 
-A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.
+A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. `declaredBy:` is the machine a tenant edits: the field is a state's key, the moves are rows of the declaring model — `fromId?` (null is an entry, where a row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin — each move is checked inside the UPDATE's own WHERE, a create names one of its scope's entries or takes the only one, and a move is named for its target. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.
 
 ```lite
 enum OrderStatus { draft paid shipped cancelled }
@@ -2187,3 +2187,11 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `create-reaches-unpickable-relation` — a create policy reaches through a relation the picker cannot be narrowed by
 
 *warn*. A create @@allow that reads a related row (schedule.hostId == auth().id) accepts only some of that model, and a generated picker offers every row the caller can READ. Litestone derives the narrowing for a top-level rel.col == auth().claim conjunct (x-pick-where); any other shape — an ||, an in, a computed value — it cannot state, so the picker offers rows the write refuses unless the related model's own read policy already narrows them.
+
+### `read-allow-hides-tenant-members` — a read @@allow written for a claim the tenant's members do not carry hides the model from them
+
+*warn*. Under row tenancy a read @@allow is the WHOLE of who reads, not an addition to the tenant's scope: the generated @@deny still narrows to the tenant, and the allow then admits only the rows it names. One that compares a row to a claim only some principals carry (a share-link or widget bearer claim) reads as "and the link's holder may read this one", and is "only the link's holder" — every member reads an empty screen.
+
+### `allow-needs-bearer-claim-under-gate` — an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass
+
+*warn*. A bare `claim` (one no row supplies) is carried by a principal the app mints for a link or widget holder, and that principal grades at STRANGER(0). When every @@allow for an operation reads only such claims and the gate for that operation is above 0, the gate refuses the one caller who could satisfy the rule, and whoever passes the gate carries no claim and fails it. The rule never holds and nothing else says so. Lower the gate to 0 and let the rule decide, or add a branch the gated callers can satisfy.

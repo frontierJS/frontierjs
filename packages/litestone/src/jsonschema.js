@@ -657,7 +657,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     const isSystemWritten = field.attributes.some(a => a.kind === 'system') || tenancyStamped
     const authStamped = field.attributes.some(a => a.kind === 'createdBy' || a.kind === 'updatedBy')
     const owedByCaller = mode !== 'update' && !isSystemWritten && !authStamped &&
-      !field.type.optional && !isServerFilled(field) && (!isId || !isServerAssignedId(field, model))
+      !field.type.optional && !isServerFilled(field, model) && (!isId || !isServerAssignedId(field, model))
 
     // @allow('read', expr) — field is conditionally visible; mark as optional + annotate
     const readAllows = field.attributes.filter(a => a.kind === 'fieldAllow' && a.operations.includes('read'))

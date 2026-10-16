@@ -42,7 +42,7 @@ package is overhead.
 
 **Three — the vendor's cadence is not ours.** `FJS-D153`'s first cost. A thing that
 versions on somebody else's schedule cannot sit inside a package whose version means
-*what the outbound boundary guarantees*.
+*what the integration mechanism guarantees*.
 
 There is a fourth, and it applies to exactly one slot. **Does it argue with Stripe?**
 The ruling parks promotion until a second connector exists, because one implementation
@@ -272,6 +272,13 @@ Nine connectors were moved onto those seams. The last two closed 2026-10-13:
 `FJS-2722` (a mint through a second target throws `MintError`, so its failure
 keeps its own `retryable`) and `FJS-2724` (`byRef()` beside `withCache`). The
 contract clauses they bent are `CONTRACT.md` § Amendments there.
+
+**Promotion wraps each verifier in a `Dialect`** (`FJS-D899`, 2026-10-15): conduit's
+receiving end takes `verify(delivery, cred, { now, seenNonce }) · parse · dedupeKey`
+over one `Delivery` shape (lowercased headers, `rawBody`, the parsed body), where
+the prototypes' `verify<Name>Signature` take a header string (stripe), a `HeaderBag`
+(slack) or a typed object (telnyx). The pure verifier stays; the dialect is the
+adapter the connector exports beside it, as `example`'s `stripeDialect` does.
 
 **Promotion order** (the reasoning is `REPORT.md` there): stripe · resend ·
 turnstile · twilio · cloudflare · digitalocean + hetzner · postmark · slack,

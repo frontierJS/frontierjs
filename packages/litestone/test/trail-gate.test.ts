@@ -12,6 +12,7 @@ import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { createClient } from '../src/index.js'
+import { createTestEnv } from '../src/testing.js'
 import { GatePlugin } from '../src/plugins/gate.js'
 
 const tick = () => new Promise((r) => setImmediate(r))
@@ -144,4 +145,21 @@ describe('a row policy on a trail model is refused by name', () => {
       }
     })
   }
+})
+
+// FJS-2532 — a schema declaring only a trail database has no `database main`,
+// and the test env's template main.db had nowhere to land.
+describe('createTestEnv on a schema whose only declared database is a trail', () => {
+  test('boots, and the undeclared main is a working database', async () => {
+    const env = await createTestEnv({ schema: `
+      database audit { path "./audit/" driver trail }
+      model Thing { id Int @id @default(autoincrement())  name String  @@trail(audit) }
+    ` })
+    try {
+      await env.system.thing.create({ data: { name: 'a' } })
+      expect(await env.system.thing.findMany()).toHaveLength(1)
+    } finally {
+      env.close()
+    }
+  })
 })

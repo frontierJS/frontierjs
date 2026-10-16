@@ -283,3 +283,35 @@ model Tag {
     expect(db.asSystem().$readReach('block')).toEqual(db.$readReach('block'))
   })
 })
+
+describe('$fromReach — which writes move a @from value (FJS-2632)', () => {
+  const FROM = `
+database main { path ":memory:" }
+
+model Shift {
+  id          Int          @id @default(autoincrement())
+  adults      Int          @from(Assignment, count: true)
+  assignments Assignment[]
+}
+
+model Assignment {
+  id      Int   @id @default(autoincrement())
+  shiftId Int
+  shift   Shift @relation(fields: [shiftId], references: [id])
+  start   Int    @from(shift, id)
+}
+
+model Tag {
+  id   Int    @id @default(autoincrement())
+  name String
+}
+`
+  test('an aggregate reaches its target, a to-one column its parent, a plain model nothing', async () => {
+    const db = await createClient({ schema: FROM, resolveFrom: import.meta.dir })
+    expect(db.$fromReach('shift')).toEqual(['Assignment'])
+    expect(db.$fromReach('assignment')).toEqual(['Shift'])
+    expect(db.$fromReach('tag')).toEqual([])
+    expect(db.$fromReach('nope')).toEqual([])
+    expect(db.asSystem().$fromReach('shift')).toEqual(['Assignment'])
+  })
+})

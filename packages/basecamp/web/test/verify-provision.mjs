@@ -1227,35 +1227,70 @@ try {
   await evaluate(`document.querySelector('.workbench-dock .workbench-tile[data-branch="wb/try"] .workbench-tile-open').click()`)
   await until(onStage, s => s === 'parent wb/try', 'a chat staged and not touched since was kept over one touched after it')
   check('…and a chat staged and not touched since is the stalest', true)
+  // Layout: the panes fold to cards on a grid one column wider and one row
+  // taller, every empty cell a box. A box starts a chat in a checkout it
+  // asks for; a card dropped in the extra row or column grows the grid, and
+  // the grid is as big as what it holds.
+  const alt = (code) => evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', altKey: true, bubbles: true }))`)
+  const arranging = `!!document.querySelector('.workbench-panes[data-arranging]')`
+  const shape = `getComputedStyle(document.querySelector('.workbench-panes')).getPropertyValue('--cols').trim() + 'x' + getComputedStyle(document.querySelector('.workbench-panes')).getPropertyValue('--rows').trim()`
+  const slot  = (area) => `[...document.querySelectorAll('.workbench-slot')].find(s => s.style.gridArea === '${area}')`
+  const cardOf = (sel) => `[...document.querySelectorAll('.workbench-card')].find(c => c.id === ${sel}.id)`
+  const tops  = `[...document.querySelectorAll('#workbench-grid article[data-state]')].map(a => (a.dataset.branch ?? (a.id === 'workbench-${gammaPin?.id}' ? 'gamma' : 'parent')) + '@' + Math.round(a.getBoundingClientRect().top)).join(' ')`
+  await alt('KeyL')
+  await until(arranging, v => v, 'Alt+L did not open the layout')
+  check('Layout folds the panes to cards on a grid one column wider and one row taller',
+    await evaluate(`document.querySelectorAll('.workbench-card').length`) === 2 && await evaluate(`document.querySelectorAll('.workbench-slot').length`) === 4
+      && await evaluate(shape) === '3x2', await evaluate(shape))
+  await evaluate(`${slot('2 / 1')}.querySelector('.workbench-slot-new').click()`)
+  await until(`!!${slot('2 / 1')}.querySelector('select[name=pin]')`, v => v, 'the box did not ask which checkout')
+  check('a box asks which checkout, offering the ones in the dock',
+    (await evaluate(`[...${slot('2 / 1')}.querySelectorAll('select[name=pin] option')].map(o => o.textContent).join(',')`)) === 'gamma')
+  await evaluate(`${slot('2 / 1')}.querySelector('form').requestSubmit()`)
+  await until(shape, v => v === '3x3', 'starting a chat in the extra row did not grow the grid')
+  check('…and starts it there, the grid a row taller', await evaluate(`!!${cardOf(`document.getElementById('workbench-${gammaPin?.id}')`)}`))
+  await evaluate(`document.getElementById('workbench-layout').click()`)
+  await until(arranging, v => !v, 'Done did not bring the panes back')
+  const stacked = await until(tops, s => /parent@(\d+) wb\/try@\1 gamma@/.test(s), 'the third chat was not drawn under the first two')
+  check('Done draws the three panes, the new one under the first two', Number(stacked.match(/gamma@(\d+)/)[1]) > Number(stacked.match(/parent@(\d+)/)[1]), stacked)
+  await goto('/workbench/')
+  await until(shape, v => v === '2x2', 'a reload forgot the grid')
+  check('…and a reload keeps the grid', true)
+
+  // Dragging: a card to the extra row stacks them, which empties the second
+  // column; back to the extra column puts them side by side again.
+  const drag = (from, to) => evaluate(`(() => {
+    const dt = new DataTransfer()
+    const from = ${from}, to = ${to}
+    from.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }))
+    to.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
+    to.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+  })()`)
+  await alt('KeyL')
+  await until(arranging, v => v, 'Alt+L did not open the layout again')
+  await evaluate(`${cardOf(`document.getElementById('workbench-${gammaPin?.id}')`)}.querySelector('[aria-label^="Move"]').click()`)
+  await until(shape, v => v === '3x2', 'docking the third card did not shrink the grid')
+  check('a card sent to the dock shrinks the grid back', true)
+  await drag(`document.querySelector('.workbench-card[data-branch="wb/try"]')`, slot('2 / 1'))
+  await until(shape, v => v === '2x3', 'dropping the branch in the extra row did not stack the two')
+  check('a card dropped in the extra row stacks them, and the emptied column goes', true)
+  await evaluate(`document.getElementById('workbench-layout').click()`)
+  await until(tops, s => { const m = /parent@(\d+) wb\/try@(\d+)/.exec(s); return !!m && Number(m[2]) > Number(m[1]) }, 'the stacked panes were not drawn one under the other')
+  check('…and Done draws them one under the other', true)
+  await alt('KeyL')
+  await drag(`document.querySelector('.workbench-card[data-branch="wb/try"]')`, slot('1 / 2'))
+  await until(shape, v => v === '3x2', 'dropping the branch in the extra column did not put them side by side')
+  await alt('KeyL')
+  await until(onStage, s => s === 'parent wb/try', 'Alt+L did not close the layout')
+  check('…and back to the extra column puts them side by side, in their places', true)
+
   check('the unpinned third chat goes', (await call('POST', `/workbench/${gammaPin?.id}`, 'unpin')).status === 200)
   await goto('/workbench/')
   await until(panes, n => n === 2, 'unpinning a docked chat changed the stage')
 
-  // The split between the two panes: dragged with a real mouse, moved with
-  // the keys a separator promises, kept across a reload, evened by a
-  // double-click.
-  const handle = `document.querySelector('.workbench-split')`
-  const widths = `[...document.querySelectorAll('#workbench-grid article[data-state]')].map(a => Math.round(a.getBoundingClientRect().width))`
-  const at = await evaluate(`(() => { const r = ${handle}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
-  const mouse = (type, x, buttons) => send('Input.dispatchMouseEvent', { type, x, y: at.y, button: 'left', buttons, clickCount: 1 })
-  await mouse('mousePressed', at.x, 1)
-  for (const dx of [40, 80, 120]) await mouse('mouseMoved', at.x + dx, 1)
-  await mouse('mouseReleased', at.x + 120, 0)
-  const [wide, narrow] = await until(widths, ([a, b]) => a > b + 100, 'dragging the split did not widen the first pane')
-  check('dragging the split widens one pane at the other\'s cost', true, `${wide} / ${narrow}`)
-  await evaluate(`${handle}.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))`)
-  await until(`${handle}.getAttribute('aria-valuenow')`, v => v === '25', 'Home did not move the split to its least')
-  check('Home moves the split to its least, and the separator says so', true)
-  await goto('/workbench/')
-  await until(`${handle}?.getAttribute('aria-valuenow')`, v => v === '25', 'a reload forgot the split')
-  check('…and a reload keeps it', (await evaluate(widths)).reduce((a, b) => b - a) > 100)
-  await evaluate(`${handle}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)
-  const even = await until(widths, ([a, b]) => Math.abs(a - b) <= 2, 'a double-click did not even the panes')
-  check('a double-click evens them', true, even.join(' / '))
-
   // Zoom: one pane takes the stage, the other waits in the dock still staged.
-  const zoomOf = (sel) => `${sel}.querySelector('[aria-label^="Zoom"], [aria-label="Show both panes"]')`
-  const alt = (code) => evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', altKey: true, bubbles: true }))`)
+  const zoomOf = (sel) => `${sel}.querySelector('[aria-label^="Zoom"], [aria-label="Show every pane"]')`
+  const widths = `[...document.querySelectorAll('#workbench-grid article[data-state]')].map(a => Math.round(a.getBoundingClientRect().width))`
   const stageWidth = await evaluate(`document.querySelector('.workbench-panes').getBoundingClientRect().width`)
   await evaluate(`${zoomOf(card)}.click()`)
   await until(panes, n => n === 1, 'Zoom left both panes drawn')

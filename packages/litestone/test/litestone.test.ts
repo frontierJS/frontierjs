@@ -992,6 +992,22 @@ describe('@date field attribute', () => {
     db.$close()
   })
 
+  // FJS-2036 — the pattern passed a day the calendar does not have.
+  test('@date rejects a day the calendar does not have', async () => {
+    const db = await makeDb(schema, 'date-impossible')
+    for (const bad of ['2025-02-30', '2025-13-01', '2025-00-10', '2025-04-31', '2023-02-29', '2025-01-00']) {
+      await expect(
+        db.event.create({ data: { id: 1, name: 'Bad', startsOn: bad } })
+      ).rejects.toThrow('YYYY-MM-DD')
+    }
+    for (const good of ['2024-02-29', '2000-02-29', '2025-12-31']) {
+      const e = await db.event.create({ data: { id: 10, name: 'Ok', startsOn: good } })
+      expect(e.startsOn).toBe(good)
+      await db.event.delete({ where: { id: 10 } })
+    }
+    db.$close()
+  })
+
   test('@date rejects a full datetime string', async () => {
     const db = await makeDb(schema, 'date-reject-datetime')
     await expect(
@@ -5249,6 +5265,41 @@ describe('$ping()', () => {
     await expect(Promise.resolve().then(() => db.$ping())).rejects.toThrow(/closed/i)
   })
 
+})
+
+// FJS-1796: a client over a file that is not its schema's starts and answers
+describe('$schemaGaps()', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ls-gaps-'))
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+  const NOTION = `
+    database main { path "./x.db" }
+    model Workspace { id Int @id; name String; plan String }
+    model Page { id Int @id; title String }
+  `
+
+  test('names a model with no table and a table missing the model\'s columns', async () => {
+    const file = join(dir, 'other.db')
+    const other = new Database(file)
+    other.run('CREATE TABLE workspace (id INTEGER PRIMARY KEY, name TEXT NOT NULL)')
+    other.close()
+
+    const db = await createClient({ schema: NOTION, db: file })
+    expect(await db.$schemaGaps()).toEqual([
+      { db: 'main', model: 'Workspace', table: 'workspace', missing: ['plan'] },
+      { db: 'main', model: 'Page',      table: 'page',      missing: 'table' },
+    ])
+    db.$close()
+  })
+
+  test('is empty over a database built from the schema', async () => {
+    const file = join(dir, 'own.db')
+    const db = await createClient({ schema: NOTION, db: file })
+    const raw = db.$rawDbs.main
+    for (const stmt of splitStatements(generateDDL(parse(NOTION).schema, { foreignKeys: true }))) raw.run(stmt)
+    expect(await db.$schemaGaps()).toEqual([])
+    db.$close()
+  })
 })
 
 // ─── computed: inline object ──────────────────────────────────────────────────
@@ -15347,7 +15398,7 @@ describe('createTestEnv', () => {
 
     // And the policy still holds everywhere else this env opens a client.
     const user = await env.atLevel(4)
-    await expect(user.person.create({ data: { email: 'a@b.c' } })).rejects.toThrow(/NOT NULL/)
+    await expect(user.person.create({ data: { email: 'a@b.c' } })).rejects.toThrow(/"email" is required, and this caller may not write it/)
     env.close()
   })
 
@@ -18929,6 +18980,20 @@ describe('query() dispatcher', () => {
     expect(grouped.map((r: any) => r.id)).toEqual(all.slice(1).map((r: any) => r.id))
   })
 
+  // FJS-2174: findMany takes an array orderBy, so a groupBy over two keys needs one.
+  test('groupBy takes an array orderBy: group keys and aggregates in written order', async () => {
+    const by = ['accountId', 'status']
+    const keyed = await db.order.groupBy({ by, _count: true, orderBy: [{ accountId: 'desc' }, { status: 'asc' }] })
+    expect(keyed.map((r: any) => `${r.accountId}${r.status}`)).toEqual(['2pending', '2refund', '1paid'])
+    const mixed = await db.order.groupBy({ by: ['accountId'], _sum: { amount: true },
+      orderBy: [{ _sum: { amount: 'desc' } }, { accountId: 'asc' }] })
+    expect(mixed.map((r: any) => r.accountId)).toEqual([2, 1])
+    await expect(db.order.groupBy({ by: ['accountId'], _count: true, orderBy: [{ nope: 'asc' }] }))
+      .rejects.toThrow(/'nope'/)
+    await expect(db.order.groupBy({ by: ['accountId'], _count: true, orderBy: ['accountId'] as any }))
+      .rejects.toThrow(/orderBy\[0\]|orderBy\.0/)
+  })
+
   test('named aggregates route to aggregate', async () => {
     const result = await db.order.query({
       _countPaid: { count: true, filter: sql`status = 'paid'` },
@@ -22304,6 +22369,27 @@ describe('@updatedBy', () => {
     const row = await db.post.findFirst({ where: { id: 1 } })
     // updatedById should not be overwritten with null — skip silently
     expect(row?.updatedById).toBe(99)
+    db.$close()
+  })
+
+  // FJS-2261: the app's own principal (`createApp({ system })`) is a service,
+  // not a row; stamping its id into a User-typed column failed the foreign key.
+  test('@updatedBy leaves a User-typed column alone for a service principal', async () => {
+    const db = await makeDb(`
+      model User { id String @id }
+      model Post {
+        id          Int     @id
+        title       String
+        updatedById String? @updatedBy
+        updatedBy   User?   @relation(fields: [updatedById], references: [id])
+      }
+    `, 'updby-service')
+    await db.asSystem().user.create({ data: { id: 'u1' } })
+    await db.post.create({ data: { id: 1, title: 'Hello' } })
+    await db.$setAuth({ id: 'system', type: 'service' }).post.update({ where: { id: 1 }, data: { title: 'Moved' } })
+    expect((await db.post.findFirst({ where: { id: 1 } }))?.updatedById).toBeNull()
+    await db.$setAuth({ id: 'u1' }).post.update({ where: { id: 1 }, data: { title: 'Edited' } })
+    expect((await db.post.findFirst({ where: { id: 1 } }))?.updatedById).toBe('u1')
     db.$close()
   })
 
@@ -26154,6 +26240,55 @@ model Site { id Int @id  url String @default("http://x.test") @length(1, 200) }
     expect(res.survived).toHaveLength(0)
     expect(res.refused.length).toBeGreaterThan(0)
   })
+
+  // FJS-1942. A create-only @@allow has no WHERE for the derived checks to
+  // grade, so it survives them whatever the app does; the app's own tests are
+  // the only thing that can fail on it.
+  test('suite is asked about the derived survivors only, and its failure is a kill of its own', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    const asked: string[] = []
+    const base = { schema: S, kinds: ['guarded-drop'], build: () => ({ close() {} }) as any, check: async () => [] }
+
+    const res = await mutationScore({
+      ...base,
+      suite: async (text: string) => { asked.push(text); return text === S ? 'passed' : 'failed' },
+    })
+    expect(res.survived.length).toBeGreaterThan(0)
+    expect(res.suiteKilled).toBe(res.survived.length)
+    expect(res.survived.every(s => s.suite === 'killed')).toBe(true)
+    // The score is the derived checks' alone: it is what a CI floor reads.
+    expect(res.killed).toBe(0)
+    // One control on the original, then one per survivor.
+    expect(asked[0]).toBe(S)
+    expect(asked).toHaveLength(1 + res.survived.length)
+
+    const without = await mutationScore(base)
+    expect(without.suiteKilled).toBe(0)
+    expect(without.survived[0].suite).toBeUndefined()
+  })
+
+  test('a suite already failing on the ORIGINAL refuses the run', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    let threw: string | null = null
+    try {
+      await mutationScore({
+        schema: S, kinds: ['guarded-drop'], build: () => ({ close() {} }) as any, check: async () => [],
+        suite: async () => 'failed',
+      })
+    } catch (e: any) { threw = e.message }
+    expect(threw).toContain('already fails')
+  })
+
+  test('a suite that could not run is not a kill', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    let first = true
+    const res = await mutationScore({
+      schema: S, kinds: ['guarded-drop'], build: () => ({ close() {} }) as any, check: async () => [],
+      suite: async () => { if (first) { first = false; return 'passed' } return 'inconclusive' },
+    })
+    expect(res.suiteKilled).toBe(0)
+    expect(res.survived.every(s => s.suite === 'inconclusive')).toBe(true)
+  })
 })
 
 describe('mutationScore', () => {
@@ -26191,6 +26326,24 @@ model Person {
     // than passing it.
     expect(r.survived.map((m: any) => m.kind)).toEqual(['allow-drop'])
   }, 120_000)
+
+  test('a dropped @@gate is killed on a model whose read position is 0 and which carries a @point', async () => {
+    // FJS-2921. Read at 0 grades nothing, so the writes are the only verdicts;
+    // the auto-factory built `{}` for a @point, every create failed validation,
+    // and the ladder returned error rows only.
+    const { mutationScore } = await import('../src/mutate.js')
+    const P = `
+model Scan {
+  id     Int  @id
+  center Json @point(lat, lng) @immutable
+  @@gate("0.4.4.5")
+}
+`
+    const r = await mutationScore({ schema: P, kinds: ['gate-drop'], build: (t: string) => createTestEnv({ schema: t }) })
+    expect(r.total).toBe(1)
+    expect(r.survived).toHaveLength(0)
+    expect(r.killed).toBe(1)
+  }, 60_000)
 
   test('an error row never counts as a kill', async () => {
     // The trap this whole thing can fall into. Every mutant came back with the

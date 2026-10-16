@@ -15,7 +15,7 @@
 //                  add/drop/reorder a UNIQUE the table declares itself
 
 import { SEARCH_TABLE, createSearchIndex, searchBackfillSql,
-         generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField } from './ddl.js'
+         generateDDL, generateDDLForDatabase, schemaForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField } from './ddl.js'
 // `#host`, for the reason `drivers/jsonl.js` says: a bare node builtin in this
 // graph throws when the module is merely imported in a browser (`FJS-1179`).
 import { createHash } from '#host'
@@ -1196,6 +1196,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     droppedSearch,
     searchBackfills,
     residue,
+    dbName,
     hasChanges: newTables.length > 0 || newMatViews.length > 0 ||
                 newViews.length > 0   || changedViews.length > 0 ||
                 droppedTables.length  > 0 || tableDiffs.length > 0 ||
@@ -1414,7 +1415,7 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
   // prefix), so the diff never lists them — emit them unconditionally with
   // IF NOT EXISTS so adding an m2m to an existing DB creates its join table.
   {
-    const pairs = detectM2MPairs(parseResult.schema, pluralize)
+    const pairs = detectM2MPairs(schemaForDatabase(parseResult.schema, diffResult.dbName ?? 'main'), pluralize)
     if (pairs.length) {
       lines.push(`-- ─── implicit m2m join tables (idempotent) ${'─'.repeat(24)}`)
       for (const pair of pairs) lines.push(generateJoinTableDDL(pair, true))

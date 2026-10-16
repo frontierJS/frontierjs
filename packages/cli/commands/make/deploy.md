@@ -51,7 +51,7 @@ import { resolve, dirname } from 'path'
 // With nothing linked it writes a verbatim copy and the lockfile beside it, so
 // ONE template serves both source modes — which it has to, because the source
 // mode can change long after `fli make:deploy` ran once.
-const makeDockerfile = (appId) => `# FrontierJS API — ${appId}
+const makeDockerfile = (appId, needs = {}) => `# FrontierJS API — ${appId}
 # Built on the server via: docker build -t ${appId}:latest -f deploy/Dockerfile .
 # No registry required — image lives on the server.
 #
@@ -91,11 +91,19 @@ RUN cp deploy/generated/app-manifest.json package.json \\
 COPY tsconfig*.json ./
 COPY api ./api
 COPY db  ./db
-
+${needs.webSrc ? `
+# The API renders a template out of web/src -- the same .mesa file the browser
+# draws -- so the image needs that source, and .dockerignore lets it through.
+COPY web/src ./web/src
+` : ''}
 # Runtime image
 FROM oven/bun:1-slim
 WORKDIR /app
-
+${needs.chrome ? `
+# @frontierjs/print-kit drives a headless Chrome, and printerPlugin() refuses
+# to boot without one.
+${CHROME_RUN}
+` : ''}
 COPY --from=base /app .
 
 # Mount point for the live database — the deploy runs --volume {db path}:/db.
@@ -141,6 +149,12 @@ const healthHint = `// Add this route to your Junction API server (api/src/serve
 // written.
 const { resolveHealthPath, declaresHealth } =
   await import(new URL('file://' + global.fliRoot + '/core/health-target.js'))
+
+// What the image needs beyond api/ and db/ is core/deploy-image.js's to say:
+// `fli check`'s deploy-image-needs grades a Dockerfile written before the app
+// printed, and two readings of one app would disagree about it.
+const { imageNeeds, CHROME_RUN } =
+  await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 
 const makeDeployBlock = (appId, server, domain, healthPath) => {
   const serverLine = server ? `    server: '${server}',` : `    server: 'your-server.com',   // ← set this`
@@ -232,6 +246,7 @@ const server   = flag.server  || ''
 const domain   = flag.domain  || ''
 const editor   = process.env.EDITOR || 'vi'
 const created  = []
+const needs    = imageNeeds($.paths.root)
 
 echo(`\nScaffolding deploy artifacts for: ${appId}\n`)
 
@@ -244,9 +259,11 @@ if (existsSync(dockerfilePath)) {
 } else {
   if (!flag.dry) {
     mkdirSync(dockerfileDir, { recursive: true })
-    writeFileSync(dockerfilePath, makeDockerfile(appId), 'utf8')
+    writeFileSync(dockerfilePath, makeDockerfile(appId, needs), 'utf8')
   }
   log.success(`Created: deploy/Dockerfile`)
+  if (needs.chrome) log.info('  with Chromium: the app depends on @frontierjs/print-kit')
+  if (needs.webSrc) log.info('  with web/src: the API reads a template from it')
   created.push(dockerfilePath)
 }
 
@@ -261,7 +278,9 @@ if (existsSync(dockerignorePath)) {
     '.env*',
     '!.env.example',
     'node_modules',
-    'web/',
+    // The web app is built and served apart. An API that reads a template out
+    // of web/src gets that directory back and nothing else of web/.
+    ...(needs.webSrc ? ['web/*', '!web/src'] : ['web/']),
     // `**/` and every SQLite sidecar, and both halves are measured. A plain `*`
     // does not cross a separator (`FJS-555`), so `db/*.db` protects one directory
     // and nothing under it — and `*.db` alone never matched `app.db-wal`, so the

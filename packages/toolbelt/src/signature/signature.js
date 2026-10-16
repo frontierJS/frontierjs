@@ -289,8 +289,13 @@ export async function signRequest({ secret, privateKey, method, path, query, ser
  * The comparison is constant-time: a fast `!==` leaks how much of a forged
  * signature was right, one byte at a time.
  *
+ * `secrets` is `secret` during a rotation: every candidate is tried against the
+ * one digest, each compare constant-time, so the old and the new key both verify
+ * until the old one is dropped. One header, several keys — the receiver-side
+ * half of what Stripe and Svix do with several `v1=` values on the sender's side.
+ *
  * @param {{
- *   secret?: string, publicKey?: string, method: string, path: string, query?: string|object,
+ *   secret?: string, secrets?: string[], publicKey?: string, method: string, path: string, query?: string|object,
  *   body?: string|Uint8Array,
  *   headers: Record<string,string>|Headers, prefix?: string,
  *   toleranceSeconds?: number, now: number,
@@ -299,11 +304,15 @@ export async function signRequest({ secret, privateKey, method, path, query, ser
  * @returns {Promise<{ok: true} | {ok: false, reason: string}>}
  */
 export async function verifyRequest({
-  secret, publicKey, method, path, query, body = '', headers, prefix = 'X-Fjs', toleranceSeconds = 300,
+  secret, secrets, publicKey, method, path, query, body = '', headers, prefix = 'X-Fjs', toleranceSeconds = 300,
   now, seenNonce = null,
 }) {
-  if (secret && publicKey) throw new TypeError('verifyRequest: secret OR publicKey — the side that verifies states which scheme it accepts')
-  if (!secret && !publicKey) return { ok: false, reason: 'no secret is configured on this side' }
+  if (secret && secrets) throw new TypeError('verifyRequest: secret OR secrets — one key, or the list of keys a rotation is between')
+  if (secrets !== undefined && (!Array.isArray(secrets) || secrets.some(s => typeof s !== 'string')))
+    throw new TypeError('verifyRequest: secrets must be an array of strings')
+  const keys = secrets ?? (secret ? [secret] : [])
+  if (keys.length && publicKey) throw new TypeError('verifyRequest: secret OR publicKey — the side that verifies states which scheme it accepts')
+  if (!keys.some(Boolean) && !publicKey) return { ok: false, reason: 'no secret is configured on this side' }
   // Same rule as signing: the clock belongs to the caller. A default here would
   // be a clock read in the substrate package, and a receiver that forgot to
   // pass one would silently grade every timestamp against zero.
@@ -358,9 +367,17 @@ export async function verifyRequest({
   const canonical = canonicalRequest({
     method, path, query, serviceMethod, timestamp, nonce, bodyHash: await sha256Hex(body),
   })
-  const matches = publicKey
-    ? await ed25519Verify(publicKey, signature.slice(scheme.length), canonical)
-    : timingSafeEqual(signature.slice(scheme.length), await hmacHex(secret, canonical))
+  let matches = false
+  if (publicKey) {
+    matches = await ed25519Verify(publicKey, signature.slice(scheme.length), canonical)
+  } else {
+    // Every key is compared, match or not, so the number of keys tried is not
+    // a function of which one the sender holds.
+    for (const key of keys) {
+      if (!key) continue
+      if (timingSafeEqual(signature.slice(scheme.length), await hmacHex(key, canonical))) matches = true
+    }
+  }
   if (!matches) return { ok: false, reason: 'signature does not match' }
 
   // Last, and only once the signature is known good: a replay check that runs
@@ -424,6 +441,36 @@ function headerValue(headers, name) {
   if (typeof headers?.get === 'function') return headers.get(key) ?? undefined
   for (const [k, v] of Object.entries(headers ?? {})) if (k.toLowerCase() === key) return v
   return undefined
+}
+
+/**
+ * The replay half's memory — what `verifyRequest`'s `seenNonce` is handed.
+ *
+ * Three receivers kept one each and two of them forgot a nonce after ONE
+ * tolerance: a timestamp accepted at the limit ahead of the receiver's clock is
+ * fresh for another full tolerance, so the nonce replays inside it
+ * (`FJS-1833`). The memory here keeps a nonce for whatever `keepSeconds` the
+ * caller states, which a receiver sets to twice its tolerance.
+ *
+ * State and no I/O: the clock is the caller's argument, as everywhere in this
+ * file, and the set is bounded by the request rate inside one window. Entries
+ * are swept on each call in insertion order, which is expiry order while
+ * `keepSeconds` holds still.
+ *
+ * @returns {(nonce: string, now: number, keepSeconds: number) => boolean} true when `nonce` was already seen and is still remembered
+ */
+export function nonceMemory() {
+  const seen = new Map()
+  return (nonce, now, keepSeconds) => {
+    if (!Number.isFinite(now)) throw new TypeError('nonceMemory: now is required — seconds, from the receiver\'s clock')
+    if (!Number.isFinite(keepSeconds) || keepSeconds <= 0) throw new TypeError('nonceMemory: keepSeconds must be a positive number of seconds')
+    const wrongUnit = refuseMilliseconds('now', now)
+    if (wrongUnit) throw new TypeError(`nonceMemory: ${wrongUnit}`)
+    for (const [k, until] of seen) { if (until > now) break; seen.delete(k) }
+    if (seen.has(nonce)) return true
+    seen.set(nonce, now + keepSeconds)
+    return false
+  }
 }
 
 /** Constant-time compare of two hex strings of equal expected length. */

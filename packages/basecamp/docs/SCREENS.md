@@ -495,7 +495,7 @@ Two things are deliberately not columns on the new model:
   actually happened.
 
 **`test` really sends.** It registers the channel as a conduit target and posts
-through `app.conduit` — the outbound boundary, not `fetch()` in a service —
+through `app.conduit` — a declared target, not `fetch()` in a service —
 with the credential resolved from its Secret at send time by a resolver in
 `core/credentials.ts` (conduit's default reads `process.env`, which cannot see
 a credential a person typed into a form five seconds ago). Proved against a

@@ -20,7 +20,7 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { App }                    from '@frontierjs/junction'
-import type { TargetDescriptor }       from '@frontierjs/conduit'
+import type { TargetDescriptor, Dialect, ReceivedEvent } from '@frontierjs/conduit'
 
 export const STRIPE_TARGET = 'provider:stripe'
 
@@ -303,4 +303,30 @@ export function verifyStripeSignature(opts: {
   }
 
   return { ok: false, reason: 'signature does not match' }
+}
+
+/** An event as Stripe posts it. `id` is per event, so a redelivery carries the same one. */
+export interface StripeEvent extends ReceivedEvent {
+  id:      string
+  type:    string
+  payload: Record<string, unknown>
+}
+
+/**
+ * The receiving end, as conduit runs it (`FJS-D899`): Stripe's half is the
+ * three pure functions here, the app's half is the Receiver in `app.ts`.
+ * Stripe's timestamp is inside the signed string, so freshness is a check on
+ * a signed field and no nonce memory is needed.
+ */
+export const stripeDialect: Dialect<string, StripeEvent> = {
+  verify: (d, secret, { now }) => verifyStripeSignature({
+    rawBody: d.rawBody, header: d.headers['stripe-signature'], secret, now,
+  }),
+  parse: (d) => {
+    const b = d.body as Partial<StripeEvent> | null
+    return b && typeof b.id === 'string' && typeof b.type === 'string'
+      ? { id: b.id, type: b.type, payload: b }
+      : null
+  },
+  dedupeKey: (_d, ev) => ev.id,
 }

@@ -190,6 +190,12 @@ const roster = async (tok) => {
   const r = await fetch(`${API}/api/users?$limit=100`, { headers: tok ? { authorization: `Bearer ${tok}` } : {} })
   return { status: r.status, rows: (await r.json().catch(() => null))?.data ?? null }
 }
+// By email, never out of a roster read: the seed makes more users than one
+// page holds, so the shopper need not be in the first hundred (FJS-2866).
+const byEmail = async (email) => {
+  const r = await fetch(`${API}/api/users?email=${encodeURIComponent(email)}`, { headers: { authorization: `Bearer ${asAdmin}` } })
+  return (await r.json().catch(() => null))?.data?.[0]
+}
 const patch = async (tok, id, data) => {
   const r = await fetch(`${API}/api/users/${id}`, {
     method: 'PATCH',
@@ -228,7 +234,7 @@ check('DELETE /users is 405 — a live session would outlive the row', removed.s
 // what a shopper may do is what made the first version of this file report the
 // opposite of the truth.
 
-const robin = all.rows.find(u => u.email === SHOPPER)
+const robin = await byEmail(SHOPPER)
 check('the shopper starts as neither staff nor admin', [robin.isStaff, robin.role], [false, 'user'])
 
 const selfPromote = await patch(asShopper, robin.id, { isStaff: true })
@@ -257,7 +263,7 @@ check('an admin promoting the same person on the same column DOES move it',
 
 // Put the row back, so a second run starts where the first did.
 await patch(asAdmin, robin.id, { isStaff: false, role: 'user', name: 'Robin Vale' })
-const restored = (await roster(asAdmin)).rows.find(u => u.email === SHOPPER)
+const restored = await byEmail(SHOPPER)
 check('the row is restored, so this drive is repeatable',
       [restored.isStaff, restored.role, restored.name], [false, 'user', 'Robin Vale'])
 
@@ -643,7 +649,7 @@ await click('#totp-enable')
 await until(has('#account-error'))
 check('a wrong password is refused ON the screen, and no secret is shown',
       [await evaluate(has('#account-error')), await evaluate(has('[data-totp-secret]'))], [true, false])
-check('…and the tab is still signed in', [await stored(), await evaluate(has('#nav-account'))],
+check('…and the tab is still signed in', [await stored(), await evaluate(has('nav[aria-label="Main"] a[href="/account/"]'))],
       [screenJoin.body.token, true])
 
 await fill('#totp-password', PASSWORD)
@@ -679,7 +685,7 @@ await click('#si-submit')
 await until(has('#code-box'))
 check('a password alone opens the code box', await evaluate(has('#code-box')), true)
 check('…and stores no token', await stored(), null)
-check('…and the shell is not signed in', await evaluate(has('#nav-account')), false)
+check('…and the shell is not signed in', await evaluate(has('nav[aria-label="Main"] a[href="/account/"]')), false)
 
 await fill('#code-input', wrongCode(shownSecret))
 await click('#code-submit')
@@ -690,10 +696,10 @@ check('…and the box stays open, because the ticket is still good', await evalu
 
 await fill('#code-input', authenticator(shownSecret, 0))
 await click('#code-submit')
-await until(`!document.querySelector('#code-box') && !!document.querySelector('#nav-account')`)
+await until(`!document.querySelector('#code-box') && !!document.querySelector('nav[aria-label="Main"] a[href="/account/"]')`)
 const signedToken = await stored()
 check('the right code signs in: the box closes and the shell knows who',
-      [await evaluate(has('#code-box')), await evaluate(has('#nav-account'))], [false, true])
+      [await evaluate(has('#code-box')), await evaluate(has('nav[aria-label="Main"] a[href="/account/"]'))], [false, true])
 check('…and now a token is stored, which the account service accepts',
       [typeof signedToken, await whoami(signedToken)], ['string', 200])
 

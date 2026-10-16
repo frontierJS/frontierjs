@@ -433,8 +433,8 @@ await evaluate(`(() => {
   const b = [...document.querySelectorAll('header button')].find(b => b.textContent.includes('Sign in (admin)'))
   b.click(); return true
 })()`)
-await until(async () => await evaluate(`!!document.querySelector('#nav-inventory')`))
-check('an administrator gets the nav link', await evaluate(`!!document.querySelector('#nav-inventory')`), true)
+await until(async () => await evaluate(`!!document.querySelector('nav[aria-label="Main"] a[href="/inventory/"]')`))
+check('an administrator gets the nav link', await evaluate(`!!document.querySelector('nav[aria-label="Main"] a[href="/inventory/"]')`), true)
 
 await goto('/inventory/', '.level-row', 1)
 const row = await until(async () => await evaluate(`(() => {

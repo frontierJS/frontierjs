@@ -654,8 +654,9 @@ export function buildGeneratedMap(schema) {
 // way a forgotten `@from` is.
 //
 // It carries no parameters: the expression is compiled once at startup, and
-// `now()` becomes SQLite's own clock, which SQLite fixes for the duration of a
-// statement. That is what keeps `subquerySql` a static string like the rest.
+// `now()` becomes a marker on SQLite's clock, which SQLite fixes for the
+// duration of a statement. A client given `{ now }` has the marker swapped for
+// that instant by `clockedDb`. That keeps `subquerySql` a static string.
 export function addDerivedFields(map, model, schema) {
   const derived = model.fields.filter(f => f.attributes.find(a => a.kind === 'derived'))
   if (!derived.length) return
@@ -1221,6 +1222,10 @@ export function buildTransitionMap(schema) {
         // is a schema that never validated.
         entry:       field?.attributes?.find(a => a.kind === 'default')?.value?.value ?? null,
         transitions: attr.transitions,
+        // A machine whose moves are rows (`FJS-D365`): read per write from the
+        // declaring model, scoped by the column both models carry.
+        declaredBy:  attr.declaredBy ?? null,
+        scope:       attr.scope ?? null,
       }
     }
   }

@@ -10,6 +10,9 @@ import { Resilience, countsAsTargetFault } from './resilience.ts'
 import { Router }             from './router.ts'
 import { createObserverGuard } from './observe.ts'
 import { observedRequest, originOf } from './address.ts'
+import { accept, assertReceiver, RECEIVE_RESULTS } from './receive.ts'
+import type { Receiver, ReceivedEvent, Delivery, Received, ReceiveResult } from './receive.ts'
+import { nonceMemory } from '@frontierjs/toolbelt/signature'
 import type {
   IConduit,
   ConduitOptions,
@@ -357,6 +360,15 @@ export function createConduit(
   // check each one registers, so a deregistered target stops being reported
   // rather than reporting a connection nobody holds.
   const subscriptions = new Map<string, BrokerTransport>()
+
+  // Declared receivers by path, each with its own nonce memory — a nonce is
+  // one sender's, and one memory across receivers would let a Stripe nonce
+  // refuse a partner's.
+  const receivers = new Map<string, {
+    receiver:  Receiver<unknown, ReceivedEvent, unknown>
+    seenNonce: ReturnType<typeof nonceMemory>
+    counts:    Record<ReceiveResult, number>
+  }>()
 
   // Set by destroy(). The router evicts its pool, but without this flag a
   // late in-flight request simply rebuilds the transport and opens a fresh
@@ -772,6 +784,32 @@ export function createConduit(
     }
   }
 
+  function receive<Cred, Ev extends ReceivedEvent, Owner>(receiver: Receiver<Cred, Ev, Owner>): void {
+    // Erased once at the door: the map holds every dialect's shape, and the
+    // order in receive.ts reads none of the generics.
+    const erased = receiver as unknown as Receiver<unknown, ReceivedEvent, unknown>
+    assertReceiver(erased)
+    // Two receivers on one path is two dialects for one route, and the second
+    // would silently take every delivery the first was declared for.
+    if (receivers.has(receiver.path))
+      throw new TypeError(`Receiver '${receiver.path}' is already declared (provider '${receivers.get(receiver.path)!.receiver.provider}')`)
+    receivers.set(receiver.path, {
+      receiver:  erased,
+      seenNonce: nonceMemory(),
+      counts:    Object.fromEntries(RECEIVE_RESULTS.map(k => [k, 0])) as Record<ReceiveResult, number>,
+    })
+  }
+
+  async function acceptDelivery(path: string, delivery: Delivery, now: number): Promise<Received> {
+    const entry = receivers.get(path)
+    if (!entry) throw new TypeError(`No receiver declared at '${path}'`)
+    if (destroyed) return { status: 503, body: { error: 'not accepting' }, result: 'failed', reason: 'conduit has been destroyed' }
+    const received = await accept(entry.receiver, delivery, now, { store, credentials, seenNonce: entry.seenNonce })
+    entry.counts[received.result]++
+    safe('onReceived', () => observers.onReceived?.(path, received))
+    return received
+  }
+
   function stats(): ConduitStats {
     const { requests, latency, streams } = counters
 
@@ -796,6 +834,7 @@ export function createConduit(
         },
       },
       streams:  { ...streams },
+      received: Object.fromEntries([...receivers].map(([path, r]) => [path, { ...r.counts }])),
       errors:   Object.fromEntries(counters.errors),
       breakers: resilience.snapshot(),
     }
@@ -811,5 +850,5 @@ export function createConduit(
     resilience.clear()
   }
 
-  return { init, send, stream, register, deregister, touch, resolve, list, subscribe, stats, destroy }
+  return { init, send, stream, register, deregister, touch, resolve, list, subscribe, receive, accept: acceptDelivery, stats, destroy }
 }

@@ -13,7 +13,12 @@
 // are exercised together.
 
 import { describe, test, expect } from 'bun:test'
-import { createClient } from '../../litestone/src/index.js'
+import { Database } from 'bun:sqlite'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createClient, parse, generateDDL, splitStatements } from '../../litestone/src/index.js'
+import { createLogger } from '../src/core/logger.ts'
 import { createService, createBaseService } from '../src/core/service.ts'
 import { gateAuth, autoValidate, liftReservedQuery, resetReservedQueryChecks, withLitestoneDb } from '../src/core/litestone.ts'
 import { toFrameworkError } from '../src/core/errors.ts'
@@ -983,5 +988,45 @@ describe('a hook that hands a derived verb the system client', () => {
     expect(rows(await asU1())).toHaveLength(0)
     lift = true
     expect(rows(await asU1())).toHaveLength(1)
+  })
+})
+
+// FJS-1796: an app over a file that is not its schema's starts and answers
+// health, so the start says so. Warned rather than refused: a fresh deploy
+// starts before its first `db push`.
+describe('start over a database that is not the schema\'s', () => {
+  const schema = `
+    model Workspace { id Int @id; name String; plan String }
+    model Page { id Int @id; title String }
+  `
+
+  async function started(db: unknown) {
+    const entries: Array<{ level: string; message: string }> = []
+    const app = createApp({
+      db,
+      config: { port: 0, services: { dir: '/nonexistent' } },
+      logger: createLogger({ level: 'debug', writers: [(e) => entries.push(e as never)] }),
+    } as never)
+    await app.start()
+    await app.stop()
+    return entries.filter(e => e.level === 'warn' && /does not hold this app's schema/.test(e.message))
+  }
+
+  test('warns by model for a missing table and a missing column', async () => {
+    const file = `${mkdtempSync(join(tmpdir(), 'jn-gaps-'))}/other.db`
+    const other = new Database(file)
+    other.run('CREATE TABLE workspace (id INTEGER PRIMARY KEY, name TEXT NOT NULL)')
+    other.close()
+
+    const warned = await started(await createClient({ schema, db: file }))
+    expect(warned).toHaveLength(1)
+    expect(warned[0].message).toContain(`Workspace: table 'workspace' lacks plan`)
+    expect(warned[0].message).toContain(`Page: no table 'page'`)
+  })
+
+  test('says nothing over a database built from the schema', async () => {
+    const db: any = await createClient({ schema, db: ':memory:' })
+    for (const stmt of splitStatements((generateDDL as (s: unknown, o: unknown) => string)(parse(schema).schema, { foreignKeys: true }))) db.$rawDbs.main.run(stmt)
+    expect(await started(db)).toHaveLength(0)
   })
 })

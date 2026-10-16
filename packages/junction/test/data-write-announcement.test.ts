@@ -806,3 +806,80 @@ describe('a write before the services register (FJS-1739)', () => {
     expect(seen).toEqual(['orderFeed:updated#1'])
   })
 })
+
+// FJS-2632 — a `@from` value moves when a CHILD row is written, and the write
+// announced the child only. The parent a count was read off held the old number
+// on every screen, in the tab that wrote and in every other one.
+describe('a write moves a @from on another model (FJS-2632)', () => {
+  const FROM = `
+    model Shift      { id Int @id  name String  adults Int @from(Assignment, count: true)
+                       assignments Assignment[] }
+    model Assignment { id Int @id  shiftId Int  shift Shift @relation(fields: [shiftId], references: [id]) }
+    model Note       { id Int @id  text String }
+  `
+  type Sys = Record<string, Record<string, (a: unknown) => Promise<unknown>>>
+
+  async function mk() {
+    const db  = await createClient({ db: ':memory:', schema: FROM })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({ name: 'shifts', model: 'Shift', db: db as never }))
+    app.services.register(createService({ name: 'assignments', model: 'Assignment', db: db as never }))
+    app.services.register(createService({ name: 'notes', model: 'Note', db: db as never }))
+    await app._startForTest()
+    const sys = () => (db as never as { asSystem(): Sys }).asSystem()
+    await sys().shift.create({ data: { id: 1, name: 'am' } })
+    await tick()
+    const seen: string[] = []
+    for (const s of ['shifts', 'assignments', 'notes'])
+      app.events.on(`${s}:changed`, (d: { operation: string }) => { seen.push(`${s}:changed:${d.operation}`) })
+    return { db, app, sys, seen }
+  }
+
+  test('creating a child tells the parent\'s service to re-read', async () => {
+    const { sys, seen } = await mk()
+    await sys().assignment.create({ data: { id: 1, shiftId: 1 } })
+    await tick(); await tick()
+    expect(seen).toEqual(['shifts:changed:regrade'])
+  })
+
+  test('removing a child does too, and a write to an unrelated model does not', async () => {
+    const { sys, seen } = await mk()
+    await sys().assignment.create({ data: { id: 1, shiftId: 1 } })
+    await tick(); await tick()
+    seen.length = 0
+    await sys().note.create({ data: { id: 1, text: 'x' } })
+    await sys().assignment.delete({ where: { id: 1 } })
+    await tick(); await tick()
+    expect(seen).toEqual(['shifts:changed:regrade'])
+  })
+})
+
+// FJS-2255 — the service announces the row it removed and SQLite removes the
+// cascade children inside the same statement, so no `removed` frame named them
+// and every other open tab kept showing rows that no longer exist.
+describe('a delete that cascades announces the children (FJS-2255)', () => {
+  const FEED = `
+    model Follow { id Int @id  posts Post[] }
+    model Post   { id Int @id  followId Int
+                   follow Follow @relation(fields: [followId], references: [id], onDelete: Cascade) }
+  `
+
+  test('the child service announces removed, once per row, after a delete of the parent', async () => {
+    const db  = await createClient({ db: ':memory:', schema: FEED })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({ name: 'follows', model: 'Follow', db: db as never }))
+    app.services.register(createService({ name: 'posts', model: 'Post', db: db as never }))
+    await app._startForTest()
+    const sys: any = (db as any).asSystem()
+    await sys.follow.create({ data: { id: 1 } })
+    await sys.post.create({ data: { id: 10, followId: 1 } })
+    await sys.post.create({ data: { id: 11, followId: 1 } })
+    await tick(); await tick()
+    const seen: string[] = []
+    for (const s of ['follows', 'posts'])
+      app.events.on(`${s}:removed`, (row: { id: number }) => { seen.push(`${s}:removed#${row.id}`) })
+    await sys.follow.delete({ where: { id: 1 } })
+    await tick(); await tick()
+    expect(seen.sort()).toEqual(['follows:removed#1', 'posts:removed#10', 'posts:removed#11'])
+  })
+})

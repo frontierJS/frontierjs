@@ -15,27 +15,13 @@
  * opts OUT rather than in.
  */
 
-import { verifyRequest } from '@frontierjs/toolbelt/signature'
+import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector, checkRunConfig } from './docker.js'
 import { createStatic } from './static.js'
 import { createIngress, hostsOf, redirectsOf } from './ingress.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
-
-/** Nonces seen inside the freshness window. Per process, like basecamp's own:
- *  a captured signature is dead in five minutes either way, and a shared store
- *  is the change to make when an Outpost runs more than once on a machine. */
-function nonceMemory(windowMs) {
-  const seen = new Map()
-  return (nonce) => {
-    const now = Date.now()
-    for (const [n, at] of seen) if (now - at > windowMs) seen.delete(n)
-    if (seen.has(nonce)) return true
-    seen.set(nonce, now)
-    return false
-  }
-}
 
 export function createOutpostServer(config, {
   docker    = createDocker({ workDir: config.workDir }),
@@ -46,9 +32,13 @@ export function createOutpostServer(config, {
 } = {}) {
 
   const TOLERANCE_S = 300
-  // Twice the tolerance: a timestamp accepted at the limit ahead stays fresh for
-  // another full tolerance, and a nonce forgotten sooner replays (FJS-1833).
-  const seenNonce   = nonceMemory(2 * TOLERANCE_S * 1_000)
+  // Per process, like basecamp's own: a captured signature is dead in five
+  // minutes either way, and a shared store is the change to make when an
+  // Outpost runs more than once on a machine. Twice the tolerance: a timestamp
+  // accepted at the limit ahead stays fresh for another full tolerance, and a
+  // nonce forgotten sooner replays (FJS-1833).
+  const seen      = nonceMemory()
+  const seenNonce = (nonce) => seen(nonce, Math.floor(Date.now() / 1000), 2 * TOLERANCE_S)
 
   // After any change to which containers exist. A failed refill leaves the
   // release standing: the set fails closed, and the posture report says so.

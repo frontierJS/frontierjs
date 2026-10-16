@@ -515,7 +515,7 @@ try {
   const unknownRows = await ledgerFor(`pi_${RUN}_never`)
   t('webhook.unknownPaymentIsRecorded', {
     status: unknown.status,
-    said:   unknownBody?.status,
+    said:   unknownBody?.outcome,
     rows:   unknownRows.length,
   })
 
@@ -791,7 +791,7 @@ const expected = {
   'webhook.declinedLeavesTheOrderPayable': {
     payment: 'failed', reason: true, order: 'pending', retry: 200,
   },
-  'webhook.unknownPaymentIsRecorded': { status: 200, said: 'unknown-payment', rows: 1 },
+  'webhook.unknownPaymentIsRecorded': { status: 200, said: 'ignored', rows: 1 },
   'start.reportsAProviderOutage': { status: 502, retryable: true, rows: 0 },
   'surface.isDeclared': { create: 405, anonymousRead: 401, ledgerPatch: 405 },
 

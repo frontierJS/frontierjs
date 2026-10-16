@@ -2167,6 +2167,12 @@ function _fieldValue(schema, ownerName, field, seq, rng, { fkFields = new Set(),
       // `@type`d one is validated member by member, so `{}` is refused the
       // same way and the type's own fields are what it gets.
       if (opt) return null
+      // A `@point` value is refused unless both of its keys hold a coordinate,
+      // so `{}` made every create of the model fail validation: the ladder
+      // reported an error row at each level, and a dropped `@@gate` on it
+      // survived `mutate` for want of a verdict.
+      const pt = attrs.find(a => a.kind === 'point')
+      if (pt) return { [pt.lat]: 40 + (seq % 40) / 10, [pt.lng]: -75 - (seq % 40) / 10 }
       return typeAttr ? _typeValue(schema, typeAttr.name, seq, rng, depth) : {}
     }
 

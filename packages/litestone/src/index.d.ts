@@ -551,7 +551,7 @@ export interface TableClient<
   optimizeFts(): void
   findManyAndCount(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; select?: Record<string, boolean> }): Promise<{ rows: TRow[]; total: number }>
   aggregate(args: { _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean>; where?: TWhere }): Promise<Record<string, unknown>>
-  groupBy(args: { by: (string | { field: string; interval: 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour' })[]; interval?: Record<string, string>; fillGaps?: boolean | { start: string | number | Date; end: string | number | Date }; /** IANA zone the interval is cut in; UTC when absent. */ timeZone?: string; /** First day of a `week` bucket, which is also its label; Monday when absent. */ weekStart?: 'monday' | 'sunday'; where?: TWhere; having?: Record<string, unknown>; orderBy?: Record<string, unknown>; limit?: number; offset?: number; _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean> }): Promise<Record<string, unknown>[]>
+  groupBy(args: { by: (string | { field: string; interval: 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour' })[]; interval?: Record<string, string>; fillGaps?: boolean | { start: string | number | Date; end: string | number | Date }; /** IANA zone the interval is cut in; UTC when absent. */ timeZone?: string; /** First day of a `week` bucket, which is also its label; Monday when absent. */ weekStart?: 'monday' | 'sunday'; where?: TWhere; having?: Record<string, unknown>; orderBy?: Record<string, unknown> | Record<string, unknown>[]; limit?: number; offset?: number; _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean> }): Promise<Record<string, unknown>[]>
   query(args?: Record<string, unknown>): Promise<TRow[] | Record<string, unknown>[] | Record<string, unknown>>
 }
 
@@ -707,6 +707,12 @@ export interface LitestoneClient {
    */
   $readReach(accessor: string): string[]
   /**
+   * The model names an `@from` on this model is computed off — a write to one
+   * moves a value on a row the write never touched, so a holder of that row
+   * must ask again. Read off the schema; an unknown accessor answers `[]`.
+   */
+  $fromReach(accessor: string): string[]
+  /**
    * What level the app grades a caller at for one model — `getLevel(auth, model)`,
    * asked rather than re-derived.
    *
@@ -790,6 +796,8 @@ export interface LitestoneClient {
   $clearBackupStamp(): void
   /** True while every SQLite connection answers; throws when one does not, a closed client included. */
   $ping(): true
+  /** Declared tables and columns the opened database does not hold: a model with no table, or a table missing the model's columns. Empty when it holds them all. */
+  $schemaGaps(): Promise<{ db: string; model: string; table: string; missing: 'table' | string[] }[]>
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>
   /**
    * One ranked list across every `@@fts` model, graded per model before the

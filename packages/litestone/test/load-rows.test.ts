@@ -282,3 +282,56 @@ model Note {
     db.$close()
   })
 })
+
+// FJS-2034: a moved row keeps its history, so a source may state @updatedAt.
+describe('loadRows takes a stated @updatedAt', () => {
+  const stamped = `
+model Job {
+  id        String   @id
+  name      String
+  updatedAt DateTime @updatedAt
+}
+`
+  const openStamped = async () => (await createClient({ schema: stamped, db: ':memory:' })) as any
+
+  it('keeps the stated value on insert and upsert, and stamps a row that states none', async () => {
+    const db = await openStamped()
+    const old = '2020-01-02T03:04:05.000Z'
+    const out = await loadRows(db, 'Job', [{ id: 'a', name: 'x', updatedAt: old }, { id: 'b', name: 'y' }])
+    expect(out).toEqual({ loaded: 2, rejects: [] })
+    expect((await db.job.findFirst({ where: { id: 'a' } })).updatedAt).toBe(old)
+    expect((await db.job.findFirst({ where: { id: 'b' } })).updatedAt > old).toBe(true)
+    const older = '2019-05-06T07:08:09.000Z'
+    await loadRows(db, 'Job', [{ id: 'a', name: 'z', updatedAt: older }], { mode: 'upsert', key: 'id' })
+    expect(await db.job.findFirst({ where: { id: 'a' } })).toMatchObject({ name: 'z', updatedAt: older })
+    db.$close()
+  })
+
+  it('reads the column from a file, and a file without it still loads', async () => {
+    const db = await openStamped()
+    const old = '2020-01-02T03:04:05.000Z'
+    expect(await loadRows(db, 'Job', `id,name,updatedAt\na,x,${old}\n`)).toEqual({ loaded: 1, rejects: [] })
+    expect(await loadRows(db, 'Job', 'id,name\nb,y\n')).toEqual({ loaded: 1, rejects: [] })
+    expect((await db.job.findFirst({ where: { id: 'a' } })).updatedAt).toBe(old)
+    db.$close()
+  })
+
+  it('rejects a row past the entry state of a @@transitions field, and loads the rest', async () => {
+    const db = (await createClient({ schema: `
+enum Stage { lead client lost }
+model Client {
+  id    String @id
+  stage Stage  @default(lead)
+  @@transitions(stage, win: lead -> client, drop: lead -> lost)
+}`, db: ':memory:' })) as any
+    const out = await loadRows(db.asSystem(), 'Client', [
+      { id: 'a', stage: 'lead' },
+      { id: 'b', stage: 'client' },
+      { id: 'c' },
+    ], { key: 'id' })
+    expect(out.loaded).toBe(2)
+    expect(out.rejects.map((r: any) => [r.row, r.key, r.field])).toEqual([[1, 'b', 'stage']])
+    expect((await db.client.findMany({ orderBy: { id: 'asc' } })).map((r: any) => r.id)).toEqual(['a', 'c'])
+    db.$close()
+  })
+})

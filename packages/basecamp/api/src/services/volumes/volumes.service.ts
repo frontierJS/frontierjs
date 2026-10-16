@@ -17,7 +17,7 @@
 //
 // **Deleting a row is not deleting a volume.** The disk stays exactly as full,
 // and the fleet is one row less honest. `remove` and `prune` therefore ASK the
-// outpost — through `app.conduit`, the outbound boundary, at the `outpost:<id>`
+// outpost — through `app.conduit`, not `fetch()`, at the `outpost:<id>`
 // target `servers.heartbeat` registers — and only forget the row once the outpost
 // says it is gone. Nothing is registered for a server whose outpost has never
 // checked in, and that is a refusal in words rather than a silent local delete.

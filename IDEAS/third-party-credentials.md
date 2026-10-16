@@ -418,7 +418,7 @@ at one boundary asking *may this caller see this row* on axes that are not compa
 
 **This does not join that group**, and the reason is the boundary. Those four all
 answer a question at our own Data boundary; this one asks *as whom do we call out, and
-with what*, which is the outbound boundary conduit owns. A fifth member would blur what
+with what*, which is the dialing end of the relationship conduit owns. A fifth member would blur what
 makes the group coherent, and the group is already large enough to be at risk.
 
 **They meet at exactly one place: the principal.** The group produces a richer one — a

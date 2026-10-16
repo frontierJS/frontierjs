@@ -14,7 +14,7 @@ A counterparty is named once — its address, which credential authorises it, ho
      (http · generic)       (http · hmac-signed)
 ```
 
-**What ships is the outbound end.** *Integrating with* is a relationship rather than a direction — a vendor holds two of your secrets and dials you about as often as you dial it — so the receiving end belongs here too and is **not built yet**; see `IDEAS/inbound-integrations.md` for the shape and for the two things that are deliberately *not* conduit's (a counterparty signing with FrontierJS's own scheme, and a machine caller becoming a principal — both junction's).
+**Both ends.** *Integrating with* is a relationship rather than a direction — a vendor holds two of your secrets and dials you about as often as you dial it — so a Provider has a **Target**, where you send, and a **Receiver**, the route it calls you on (see [Receiving](#receiving)). The one thing that is deliberately *not* conduit's is a counterparty signing with FrontierJS's own scheme and becoming a caller — that is junction's door, `createApp({ credentials })`.
 
 **Conduit is optional and is not a wall.** Nothing stops a raw `fetch`, and junction's own `IMail` and `IAIModel` ship working defaults that dial out directly so an app that never installs this package still sends mail. What conduit gives a call is the ring around it: a resolved credential, retry with a deadline, a circuit breaker, observers, and a line in `/metrics`. An app that has conduit can back those same contracts with it — `packages/basecamp/api/src/core/mailer.ts` is `IMail` over `app.conduit`, and junction's email campaign tier requires conduit by name.
 
@@ -82,7 +82,7 @@ A **target** is a named remote endpoint. Every call goes through a target — yo
 ```ts
 interface TargetDescriptor {
   id:            string      // "provider:stripe" | "outpost:srv-abc"
-  kind:          'provider' | 'outpost' | 'local'
+  kind:          'provider' | 'outpost' | 'local' | 'broker'   // broker: subscribed to, never sent to
   protocol:      'http' | 'websocket' | 'unix'
   address:       string      // base URL or socket path
   auth:          TargetAuth
@@ -112,10 +112,49 @@ await app.conduit.send({ target: 'hook:slack', address: row.url, method: 'POST',
 
 Each attempt checks the URL as one a stranger chose (junction's
 `assertPublicUrl`): public https only, unless `destinations: { allowHttp,
-allowPrivate }` says otherwise for a local receiver. The breaker is kept per
+allowPrivate }` says otherwise for a test receiver on localhost. `allowPrivate`
+opens the whole target to every row, so it does not reach a self-hosted
+counterparty on a private network; nothing does yet (`FJS-2923`). The breaker is kept per
 origin, and observers see the origin, never the path. Such a target takes
 `none` or `hmac` auth and follows no redirect. A stored key would go
 wherever the row says.
+
+### Receiving
+
+A Provider that dials you — Stripe posting an event, a carrier posting a receipt — is declared as a **Receiver**. Three parties write it and conduit runs it (`FJS-D899`):
+
+- the **connector** exports the Provider's `Dialect` — how it signs, what its envelope is, what names one delivery. Pure: the clock is passed in.
+- the **app** declares the `Receiver` — the path, which credential verifies a delivery, whose tenant an event is about, and what to do with it.
+- **conduit** mounts the route and runs the order: credential → verify → parse → owner → receipt → apply → mark.
+
+```ts
+// the connector's half
+export const stripeDialect: Dialect<string, StripeEvent> = {
+  verify:    (d, secret, { now }) => verifyStripeSignature({ rawBody: d.rawBody, header: d.headers['stripe-signature'], secret, now }),
+  parse:     (d)                  => isEvent(d.body) ? { id: d.body.id, type: d.body.type, payload: d.body } : null,
+  dedupeKey: (_d, ev)             => ev.id,
+}
+
+// the app's half
+app.conduit.receive({
+  provider:   'stripe',
+  path:       '/webhooks/stripe',          // under apiPrefix, like app.post
+  dialect:    stripeDialect,
+  credential: 'STRIPE_WEBHOOK_SECRET',     // a ref → the installed CredentialResolver
+  owner:      async ev => shopFor(ev.payload.account),
+  apply:      async (ev, { owner }) => { await settle(owner, ev); return 'applied' },
+})
+```
+
+`credential` is a ref for the ordinary one-key relationship, or a function choosing the key for ONE delivery before the body is believed — a per-subscription secret the path names: `credential: d => keyFor(d.route.hookId)`. `null` refuses.
+
+**What the route answers.** A refusal — forged, stale, a replayed nonce, a key that did not resolve — is a 401 with one sentence, `not verified`; the reason goes to the log (`observers.onReceived`), never to the sender. A body that is not an event is 200 and `ignored`, because a 4xx retries forever. An `apply` that throws is a 500 and the sender retries.
+
+**Dedupe means applied, not seen.** Conduit keeps a receipt per delivery in its store (`conduit_receipts` beside `conduit_targets`), written before `apply` and marked after it. Only an applied receipt makes a redelivery a `duplicate`; a receipt left unapplied by a throw is applied again by the retry. So applying twice must be safe, and the subject's own unique key inside your `apply` is what makes it so — one fact can also arrive as two deliveries with two ids, which no receipt can see. `apply` answers `applied`, `ignored` (recorded and done, marked too) or `parked` (left unapplied on purpose: a receipt that arrived before the send that minted its id).
+
+A dialect whose signed timestamp bounds freshness needs nothing more; one whose scheme carries a nonce (FrontierJS's own) is handed `seenNonce(nonce, keepSeconds)` in `verify`'s context — one memory per receiver, kept for twice the tolerance.
+
+Resilience does not cross: the retry is the sender's, and there is no breaker on the inbound side. A receiver never mints a principal; `apply` runs as whoever you say.
 
 ### Resilience
 
@@ -591,6 +630,14 @@ Look up a target by ID. Returns `TargetDescriptor | null`.
 ### `app.conduit.list()`
 
 Returns all registered targets, ordered by `registered_at`.
+
+### `app.conduit.receive(receiver)`
+
+Declare the receiving end of a Provider and mount its route — see [Receiving](#receiving). Refused by name for an unknown field, a path without a leading `/`, a dialect missing a function, or a path already declared.
+
+### `app.conduit.accept(path, delivery, now)`
+
+Run one delivery through the receiver declared at `path`; `now` is seconds. The plugin's route calls it; a test calls it directly with a hand-built `Delivery`. Answers `{ status, body, result, reason? }`.
 
 ### `app.conduit.destroy()`
 

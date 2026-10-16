@@ -168,7 +168,7 @@ render: static
           <tr><td><strong>mesa</strong></td><td>UI</td><td>Reactive compiler + signal runtime. Renders to HTML, email, fragment or JS</td><td><span class="badge success">869 tests</span></td></tr>
           <tr><td><strong>auth</strong></td><td>Identity</td><td>Native provider over Litestone, ships schema fragments and <code>/auth/*</code></td><td><span class="badge warning">thin coverage</span></td></tr>
           <tr><td><strong>caravan</strong></td><td>Jobs</td><td>SQLite job queue and cron, exposed as <code>app.jobs</code></td><td><span class="badge success">67 tests</span></td></tr>
-          <tr><td><strong>conduit</strong></td><td>Egress</td><td>Outbound boundary — declared targets over http, ws or unix</td><td><span class="badge success">169 tests</span></td></tr>
+          <tr><td><strong>conduit</strong></td><td>Integrations</td><td>Third-party integrations, both ends — declared targets over http, ws or unix</td><td><span class="badge success">169 tests</span></td></tr>
           <tr><td><strong>notifications</strong></td><td>Slice</td><td>In-app record + WebSocket event + email fan-out via <code>app.notify</code></td><td><span class="badge">working</span></td></tr>
           <tr><td><strong>cli</strong> (<code>fli</code>)</td><td>Tooling</td><td>Markdown-native command runtime, scaffolds, deploy pipeline</td><td><span class="badge success">142 tests</span></td></tr>
           <tr><td><strong>css</strong></td><td>UI</td><td>Semantics-first design system. Plain CSS, no build step — this page uses it</td><td><span class="badge success">v0.10 · 202 tests</span></td></tr>

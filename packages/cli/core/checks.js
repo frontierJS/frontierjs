@@ -68,6 +68,7 @@ import { kindOf }                              from './file-kind.js'
 import { readConfig }                          from './config.js'
 import { previewScope }                        from './preview.js'
 import { dockerfileScripts }                   from './utils.js'
+import { imageNeeds, installsChrome, carriesWebSrc } from './deploy-image.js'
 
 export const RULES = [
   { id: 'model-name-case',      scope: 'app',  severity: 'error', invariant: 2,
@@ -166,6 +167,8 @@ export const RULES = [
     title: 'a polymorphic pair names which models it can point at' },
   { id: 'log-db-unbound',       scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a jsonl/trail database the deploy can point at the volume' },
+  { id: 'deploy-image-needs',   scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'the deploy image carries what the API needs at runtime: a Chrome to print, web/src to render from' },
   { id: 'command-parses',       scope: 'app',  severity: 'error', invariant: 15,
     title: 'every project command compiles, with its namespace module, to JavaScript that parses' },
   { id: 'command-resolves',     scope: 'app',  severity: 'error', invariant: 15,
@@ -2668,6 +2671,39 @@ const CHECKS = {
           `${db.envVar} and point it under the volume the deploy mounts.` })
       }
     }
+    return { findings }
+  },
+
+  // ─── deploy-image-needs ────────────────────────────────────────────────────
+  // make:deploy writes the image an app needs on the day it runs, and skips a
+  // Dockerfile that exists. An app that started printing after that day keeps
+  // an image with no Chrome, or one whose .dockerignore drops the template the
+  // API renders, and the first sight of either is a release that will not
+  // start or a PDF that fails (FJS-2269). core/deploy-image.js says what is
+  // needed; this grades the Dockerfile against it. A warning: an image built
+  // FROM one that already holds a Chrome is correct and invisible here.
+  'deploy-image-needs': ({ root }) => {
+    const dockerfile = ['Dockerfile', join('deploy', 'Dockerfile')]
+      .map(p => join(root, p)).find(p => existsSync(p))
+    if (!dockerfile) return { skipped: 'no Dockerfile — not deployed this way' }
+
+    const needs = imageNeeds(root)
+    if (!needs.chrome && !needs.webSrc) return { skipped: 'the API needs nothing beyond api/ and db/' }
+
+    const text = readFileSync(dockerfile, 'utf8')
+    const ignorePath = join(root, '.dockerignore')
+    const ignore = existsSync(ignorePath) ? readFileSync(ignorePath, 'utf8') : ''
+    const file = relative(root, dockerfile)
+
+    const findings = []
+    if (needs.chrome && !installsChrome(text)) findings.push({ file, message:
+      'the app depends on @frontierjs/print-kit and this image installs no Chrome, so printerPlugin() ' +
+      'refuses to boot and the release does not start. Install chromium in the runtime stage, or point ' +
+      '$FJS_CHROME at a binary the image holds — fli make:deploy writes the lines for a new Dockerfile' })
+    if (needs.webSrc && !carriesWebSrc(text, ignore)) findings.push({ file, message:
+      'the API reads a template from web/src and the image does not carry it — no COPY names it, or ' +
+      '.dockerignore drops web/ whole — so the first render fails in production. COPY web/src into the ' +
+      'image and write web/* then !web/src in .dockerignore' })
     return { findings }
   },
 

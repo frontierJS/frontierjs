@@ -80,6 +80,9 @@ export type {
   BrokerHandler,
   BrokerHealth,
 
+  // Receiving
+  Receipt,
+
   // Config
   ConduitOptions,
   ConduitObservers,
@@ -87,6 +90,21 @@ export type {
   // Protocols
   Protocol,
 } from './types.ts'
+
+// Receiving — the other end of a Provider. A connector exports a `Dialect`,
+// an app declares a `Receiver` with it, conduit runs the order.
+export { assertReceiver, RECEIVE_RESULTS } from './receive.ts'
+export type {
+  Receiver,
+  Dialect,
+  Delivery,
+  ReceivedEvent,
+  Received,
+  ReceiveResult,
+  Outcome,
+  Verdict,
+  VerifyContext,
+} from './receive.ts'
 
 // Exported as values (classes, not just types)
 export { ConduitStreamError, CredentialError, MintError, CONDUIT_ERROR_KINDS } from './types.ts'

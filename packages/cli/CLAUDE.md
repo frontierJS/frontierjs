@@ -549,6 +549,11 @@ core/
                 `deploy:doctor` both ask, and asking separately is how they came
                 to disagree with an app that worked. It also answers the CLASH,
                 which `start()` refuses by name
+  deploy-image.js  what an API image needs beyond api/ and db/ — a Chrome
+                when the app depends on print-kit, web/src when the API reads a
+                template from it (`FJS-2269`). `make:deploy` writes the lines
+                and `fli check`'s `deploy-image-needs` grades a Dockerfile
+                written before the need, so the two read one answer
   argv.js       the command line into `{ _, ...flags }`, read before the command
                 is known, so a value's type is how it LOOKS and getConfig
                 coerces toward the declaration after. `BOOL_ARGV` never takes a

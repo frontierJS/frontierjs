@@ -245,7 +245,7 @@ await evaluate(`
 `)
 await go('/')
 
-t('nav.payrollIsOfferedAtLevelFive', await waitFor('#nav-payroll', 5000))
+t('nav.payrollIsOfferedAtLevelFive', await waitFor('nav[aria-label="Main"] a[href="/payroll/"]', 5000))
 
 // ─── the roster ───────────────────────────────────────────────────────────
 
@@ -545,7 +545,7 @@ t('ladder.aLevelFourCallerSeesNoRunAtAll', await evaluate(`
   return !document.querySelector('[data-reference="${RREF}"]');
 `))
 t('ladder.andTheNavLinkIsGoneWithIt', await evaluate(`
-  return !document.querySelector('#nav-payroll');
+  return !document.querySelector('nav[aria-label="Main"] a[href="/payroll/"]');
 `))
 
 const graded = await evaluate(`

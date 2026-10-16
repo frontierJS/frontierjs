@@ -171,3 +171,11 @@ test('the database the scaffold leaves already has its initial migration recorde
   db.close()
   expect(JSON.stringify(recorded)).toContain(files[0])
 }, 120_000)
+
+// FJS-1845 — db/schema.d.ts does not exist until `db:types` has run, and until
+// then every table a job or a test reads off the client is `unknown`. The
+// script was in package.json and in no README.
+test('a database app\'s README names the script that writes db/schema.d.ts', () => {
+  const app = scaffold('readme-types', '--full')
+  expect(readFileSync(join(app, 'README.md'), 'utf8')).toContain('bun run db:types')
+}, 60_000)

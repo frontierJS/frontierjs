@@ -1,0 +1,9 @@
+---
+title: Island
+render: static
+---
+<script>
+  import Counter from '../islands/Counter.mesa'
+</script>
+
+<main><Counter client:load /></main>

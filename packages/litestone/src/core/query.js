@@ -416,6 +416,12 @@ const NOW_TOKEN     = /\bnow\s*\(\s*\)/gi
 const NOW_TOKEN_ARG = /\bnow\s*\(/gi
 export const NOW_SQL = `strftime('%Y-%m-%dT%H:%M:%fZ','now')`
 
+// A `@derived` is static SQL compiled before any client exists, so it cannot
+// carry `createClient({ now })` as a bind. The marker is valid SQL that reads
+// SQLite's clock; a client given a clock swaps it for that instant as the
+// statement is prepared (`clockedDb`), and one given none runs it as written.
+export const DERIVED_NOW_ARG = `'now'/*clock*/`
+
 /** @param {string} sqlText */
 export function expandNowTokens(sqlText) {
   if (!sqlText || !/\bnow\s*\(/i.test(sqlText)) return sqlText
@@ -1461,12 +1467,21 @@ function vectorOrderSql(field, col, val, vectorInfo, sqlDistanceFn, outParams) {
  * The LIMIT/OFFSET tail of a statement. SQLite's grammar has OFFSET only after
  * LIMIT, so a caller paging by offset alone gets `LIMIT -1` (no cap) rather
  * than a syntax error at prepare.
+ *
+ * Both are BINDS, so page 40 of a list is the statement page 1 already
+ * prepared; written into the text each page was a new entry in the statement
+ * cache and pushed the hot set out. The binds close the list, which positional
+ * binding allows only where nothing is pushed after the page — every caller
+ * puts it last. `null` means no page.
  * @param {any} limit
  * @param {any} offset
+ * @returns {SqlFragment | null}
  */
 export function pageSql(limit, offset) {
-  if (limit == null && offset == null) return ''
-  return ` LIMIT ${limit == null ? -1 : Number(limit)}` + (offset == null ? '' : ` OFFSET ${Number(offset)}`)
+  if (limit == null && !offset) return null
+  return offset == null
+    ? sqlFragment(' LIMIT ?', [Number(limit)])
+    : sqlFragment(' LIMIT ? OFFSET ?', [limit == null ? -1 : Number(limit), Number(offset)])
 }
 
 /**

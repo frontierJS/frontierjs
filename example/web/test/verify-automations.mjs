@@ -230,7 +230,7 @@ try {
   await signInAs('alex@shop.test')
   await go('/automations/')
 
-  t('admin.theNavOffersAutomations', await waitFor('#nav-automations', 5000), true)
+  t('admin.theNavOffersAutomations', await waitFor('nav[aria-label="Main"] a[href="/automations/"]', 5000), true)
   t('admin.theListRenders', await waitFor('#orion-new'), true)
   t('admin.anEarlierRunLeftNothingActive', typeof await archiveLeftovers(), 'number')
 
@@ -500,7 +500,7 @@ try {
   await signInAs('sam@shop.test')
   await go(`/automations/flows/${flowId}/`)
 
-  t('staff.theNavOffersAutomationsAtFour', await waitFor('#nav-automations', 5000), true)
+  t('staff.theNavOffersAutomationsAtFour', await waitFor('nav[aria-label="Main"] a[href="/automations/"]', 5000), true)
   t('staff.anotherPersonsFlowIsNotFound', await waitFor('#flow-error'), true)
   t('staff.andNothingOfItIsDrawn', await exists('#flow-status'), false)
   t('staff.readNoneOfItAndAreRefusedWithoutBeingToldItExists', await readsNothing(), NOTHING)
@@ -522,7 +522,7 @@ try {
   await signInAs('robin@buyer.test')
   await go('/')
   t('shopper.readsNoRunAndSoNoCustomersRow', await readsNothing(), NOTHING)
-  t('shopper.theNavDoesNotOfferAutomations', await exists('#nav-automations'), false)
+  t('shopper.theNavDoesNotOfferAutomations', await exists('nav[aria-label="Main"] a[href="/automations/"]'), false)
   t('shopper.andDraftingAFlowIsRefused', await evaluate(`
     const { flows } = await import(${JSON.stringify(FLOW_MODULE)});
     try { await flows.service.create({ name: ${JSON.stringify(`${PREFIX} ${RUN_ID} shopper`)} }); return 'created' }

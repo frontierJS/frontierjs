@@ -1367,6 +1367,29 @@ This is shorthand: it desugars into a `@@transitions` on each model using the en
 
 **The two spellings differ in exactly one thing: a gate needs the model form**, because the same enum on two models would otherwise force them to share one authority level. Writing `@gate` inside the enum block is refused at parse and the message names the model form to write instead. Everything else — a from-list, an optional name, the compare-and-swap — is the same feature.
 
+#### Moves a tenant declares
+
+When every team edits its own workflow, the states and the moves are rows, and `declaredBy:` names the model holding the moves (`FJS-D365`). The declarer's shape is fixed: `fromId?` (null is an **entry**, where a new row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin.
+
+```lite
+model WorkflowTransition {
+  id     Int     @id @default(autoincrement())
+  teamId String
+  fromId String?
+  toId   String
+  gate   Int?
+}
+
+model Issue {
+  id      Int    @id @default(autoincrement())
+  teamId  String
+  stateId String
+  @@transitions(stateId, declaredBy: WorkflowTransition, scope: teamId)
+}
+```
+
+A write moving `stateId` must match a row of the issue's own team, checked inside the UPDATE's `WHERE`, so a move a team deletes mid-flight is not made and `asSystem()` is bound by it as by an enum machine. A create names one of the team's entries, or names none and takes the team's only one; with two entries it must name one. A move has no name in the file, so `transition(id, 'done')` and `transitions(row)` name it for its target. The field takes no `@default` — the entries are where a row starts — and it is not in the create schema's `required`. `x-transitions` does not describe a declared machine yet.
+
 ## Schema functions
 
 Reusable named SQL expressions — define once, reference on any model:

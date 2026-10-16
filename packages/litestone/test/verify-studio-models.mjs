@@ -625,6 +625,29 @@ t('tenant.closingPutsItAllBack', {
   badge:   afterClose.badge,
 }, { nonZero: true, size: true, erSum: true, badge: null })
 
+// The flake behind `closingPutsItAllBack` was an Overview load that asked
+// /info while a tenant was open and answered after the close, writing the
+// tenant's counts over the base database's. Forced here by holding that one
+// answer until the close has finished.
+t('tenant.aLateOverviewLoadDoesNotOverwriteTheDatabaseNowOpen', await probe(`
+  const sum = () => Object.values(erCounts).reduce((a, b) => a + b, 0);
+  const realApi = api;
+  const base = sum();
+  try {
+    await tenantOpen('flagship');
+    takeInfo();
+    let release; const gate = new Promise(r => { release = r });
+    api = async (p, b, m) => { const r = await realApi(p, b, m); if (p === '/info') await gate; return r };
+    const pending = ovInit();
+    await new Promise(r => setTimeout(r, 500));
+    api = realApi;
+    await tenantClose();
+    release();
+    await pending;
+    return { restored: sum() === base };
+  } finally { api = realApi }
+`), { restored: true })
+
 // The base database is not EMPTY, and that is the thing that makes an
 // unselected tenant so confusing: a `logger` database is shared across every
 // tenant, so the audit log has rows while all 43 other tables read zero. It is

@@ -2963,6 +2963,33 @@ class Parser {
     if (!this.maybeEat(TK.COMMA))
       throw new ParseError(`@@transitions(${field}): expected at least one transition after the field name`, this.peek())
 
+    // `declaredBy: Model, scope: column` — the moves are rows a tenant writes
+    // (`FJS-D365`). Told from a move named `scope` by what follows the value:
+    // an argument ends at a comma or the paren, a move goes on to `->`.
+    const isArg = () => this.check(TK.IDENT) && this.peek(1)?.type === TK.COLON
+      && this.peek(2)?.type === TK.IDENT && this.peek(3)?.type !== TK.ARROW
+    if (isArg()) {
+      const args = {}
+      do {
+        if (this.check(TK.RPAREN)) break
+        const name = this.eat(TK.IDENT)
+        if (name.value !== 'declaredBy' && name.value !== 'scope')
+          throw new ParseError(`@@transitions(${field}): unknown argument '${name.value}' — expected 'declaredBy' and 'scope'`, name)
+        if (name.value in args)
+          throw new ParseError(`@@transitions(${field}): ${name.value} stated twice`, name)
+        this.eat(TK.COLON)
+        args[name.value] = this.eat(TK.IDENT).value
+      } while (this.maybeEat(TK.COMMA))
+      this.eat(TK.RPAREN)
+      if (!args.declaredBy)
+        throw new ParseError(`@@transitions(${field}, scope: …) needs declaredBy: — the model whose rows are the moves`, this.peek())
+      if (!args.scope)
+        throw new ParseError(
+          `@@transitions(${field}, declaredBy: ${args.declaredBy}) needs scope: — the column both models carry ` +
+          `that says whose machine a row follows`, this.peek())
+      return { field, transitions: {}, declaredBy: args.declaredBy, scope: args.scope }
+    }
+
     const transitions = {}
     do {
       if (this.check(TK.RPAREN)) break   // tolerate a trailing comma
@@ -7679,6 +7706,8 @@ function validate(schema) {
         else seenMoves.set(name, attr.field)
       }
 
+      if (attr.declaredBy) { checkDeclaredMachine(model, attr, schema, errors); continue }
+
       // The @default is where every row starts, whoever creates it (`FJS-D470`),
       // so a machine without one has no legal create.
       const stateField = model.fields.find(f => f.name === attr.field)
@@ -8445,6 +8474,48 @@ function validate(schema) {
   validateClaimSources(schema, errors)
 
   return { valid: errors.length === 0, errors, warnings }
+}
+
+// ─── @@transitions(field, declaredBy:, scope:) ───────────────────────────────
+//
+// A machine whose moves are rows (`FJS-D365`). The declarer's shape is fixed
+// so the Data boundary can read it with no configuration: `fromId?` (null is
+// an entry, where a new row may start), `toId`, an optional `gate`, and the
+// scope column's twin. The move is checked inside the UPDATE's own WHERE, so
+// the declarer has to live in the same database file.
+function checkDeclaredMachine(model, attr, schema, errors) {
+  const where = `Model '${model.name}': @@transitions(${attr.field}, declaredBy: ${attr.declaredBy})`
+  const field = model.fields.find(f => f.name === attr.field)
+  if (!field) { errors.push(`${where} — no such field`); return }
+  const keyType = field.type.name
+  if ((keyType !== 'String' && keyType !== 'Int') || field.type.array || field.type.kind === 'enum')
+    errors.push(`${where} — '${attr.field}' is ${keyType}${field.type.array ? '[]' : ''}; a declared machine's states are rows, so the field is their key — String or Int`)
+  // The entries are where a row starts, so a literal default would be a second
+  // answer that no team's table agrees with.
+  if (field.attributes.some(a => a.kind === 'default'))
+    errors.push(`${where} — '${attr.field}' has a @default, and the entries declared in ${attr.declaredBy} are where a row starts. Drop the @default`)
+  if (!model.fields.some(f => f.name === attr.scope))
+    errors.push(`${where} — scope: names '${attr.scope}' and this model has no field '${attr.scope}'`)
+
+  const decl = schema.models.find(m => m.name === attr.declaredBy)
+  if (!decl) { errors.push(`${where} — there is no model '${attr.declaredBy}'`); return }
+  const need = [
+    ['fromId', f => f.type.name === keyType && f.type.optional,  `${keyType}? — the state a move leaves, null for an entry`],
+    ['toId',   f => f.type.name === keyType && !f.type.optional, `${keyType} — the state a move reaches`],
+    [attr.scope, f => !f.type.array && f.type.kind !== 'relation', `the twin of ${model.name}.${attr.scope} — whose machine a move belongs to`],
+  ]
+  for (const [name, ok, want] of need) {
+    const f = decl.fields.find(x => x.name === name)
+    if (!f)          errors.push(`${where} — '${attr.declaredBy}' has no '${name}' column. A declaring model needs ${name}: ${want}`)
+    else if (!ok(f)) errors.push(`${where} — '${attr.declaredBy}.${name}' is ${f.type.name}${f.type.optional ? '?' : ''} and has to be ${want}`)
+  }
+  const gate = decl.fields.find(x => x.name === 'gate')
+  if (gate && !(gate.type.name === 'Int' && gate.type.optional))
+    errors.push(`${where} — '${attr.declaredBy}.gate' is ${gate.type.name}${gate.type.optional ? '?' : ''} and has to be Int? — the level a move needs, null for none`)
+
+  const dbOf = m => m.attributes.find(a => a.kind === 'db')?.name ?? null
+  if (dbOf(decl) !== dbOf(model))
+    errors.push(`${where} — '${attr.declaredBy}' is in database '${dbOf(decl) ?? 'main'}' and '${model.name}' in '${dbOf(model) ?? 'main'}'. A move is checked in the UPDATE's own WHERE, so both live in one file`)
 }
 
 // ─── claim … from ────────────────────────────────────────────────────────────

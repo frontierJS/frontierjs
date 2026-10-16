@@ -3,7 +3,7 @@
 import { modelToAccessor } from './core/ddl.js'
 import { parseSql } from './check-sql.js'
 import { ValidationError } from './core/validate.js'
-import { UniqueConflictError, ForeignKeyError } from './core/errors.js'
+import { UniqueConflictError, ForeignKeyError, TransitionViolationError } from './core/errors.js'
 import { parseCell } from '@frontierjs/toolbelt/cells'
 import { minorUnits } from '@frontierjs/toolbelt/units'
 
@@ -80,7 +80,9 @@ function _machineWalk(schema, modelName, data) {
   const model = schema?.models?.find(m => m.name === modelName)
   const moves = []
   for (const attr of model?.attributes ?? []) {
-    if (attr.kind !== 'transitions' || data[attr.field] == null) continue
+    // A declared machine's moves are rows the seed has not written yet, so the
+    // state is the create's to grade against the scope's entries.
+    if (attr.kind !== 'transitions' || attr.declaredBy || data[attr.field] == null) continue
     const entry = model.fields.find(f => f.name === attr.field)
       ?.attributes.find(a => a.kind === 'default')?.value?.value
     const want  = data[attr.field]
@@ -818,7 +820,9 @@ export class Seeder {
 
 const LOAD_MODES = ['insert', 'upsert', 'replace']
 // Not a column a source can fill: the engine or the schema computes it.
-const DERIVED = new Set(['computed', 'from', 'generated', 'derived', 'sequence', 'rank', 'updatedAt'])
+// `@updatedAt` is absent on purpose: a create keeps a stated value, so a moved
+// row can carry its history, and a row that states none is stamped.
+const DERIVED = new Set(['computed', 'from', 'generated', 'derived', 'sequence', 'rank'])
 // An implicit many-to-many is a relation the parser retags, so `kind === 'relation'` alone misses it.
 const isRelation = (f) => f.type.kind === 'relation' || f.type.kind === 'implicitM2M'
 const DRY_RUN = Symbol('loadRows.dryRun')
@@ -940,6 +944,7 @@ function* batches(rows, size, key) {
 // closed client, a disk — is about the load, and is thrown.
 function refusesARow(e) {
   return e instanceof ValidationError || e instanceof UniqueConflictError || e instanceof ForeignKeyError
+    || e instanceof TransitionViolationError
     || /constraint failed/i.test(e?.message ?? '')
 }
 
@@ -950,6 +955,8 @@ function reasonFor(e) {
     return { field: e.fields?.join(' + ') || null, reason: 'already taken by a stored row' }
   if (e instanceof ForeignKeyError)
     return { field: Array.isArray(e.field) ? e.field.join(' + ') : e.field ?? null, reason: `names no ${e.target ?? 'row'}` }
+  if (e instanceof TransitionViolationError)
+    return { field: e.field ?? null, reason: 'is past the state a new row starts at' }
   if (e instanceof ValidationError) {
     const first = e.errors?.[0]
     return { field: first?.path?.at(-1) ?? null, reason: e.errors.map(x => x.message).join('; ') }
@@ -992,14 +999,14 @@ function columnReader(model, schema, modelName, overflow) {
     else if (money)                      col = { kind: 'scaled', scale: minorUnits(money.currency) }
     else if (scale)                      col = { kind: 'scaled', scale: scale.places }
     else col = { kind: { String: 'string', Int: 'int', Float: 'float', Boolean: 'boolean', DateTime: 'datetime', Json: 'json' }[t] }
-    col = { ...col, name, optional: f.type.optional, defaulted: f.attributes.some(a => a.kind === 'default' || a.kind === 'id') }
+    col = { ...col, name, optional: f.type.optional, defaulted: f.attributes.some(a => a.kind === 'default' || a.kind === 'id' || a.kind === 'updatedAt') }
     cache.set(name, col)
     return col
   }
 
   function required(f) {
     if (f.type.optional || isRelation(f)) return false
-    if (f.attributes.some(a => DERIVED.has(a.kind) || a.kind === 'default')) return false
+    if (f.attributes.some(a => DERIVED.has(a.kind) || a.kind === 'default' || a.kind === 'updatedAt')) return false
     // An Int @id with no default is the rowid, which SQLite assigns.
     if (f.attributes.some(a => a.kind === 'id') && f.type.name === 'Int') return false
     return true

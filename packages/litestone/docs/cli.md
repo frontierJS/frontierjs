@@ -46,6 +46,7 @@ litestone access --from=<ref|path> [--strict] [--json]   # the permission diff
 litestone ddl [--check] [--stdout] [--pluralize] [--out=<path>]
 litestone release [--from=<ref|path>] [--strict] [--check] [--json] [--out=<path>]
 litestone mutate                                         # mutate the schema, report what the checks miss
+litestone mutate --suite "bun test api/test"           # ...and run the app's own tests on each survivor
 litestone replicate [config.js] [--url=<url>] [--interval=<s>] [--retention=<d>] [--db=<name>]
 litestone restore [config.js] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]]
 litestone rsync <dest>                                   # every SQLite db to a destination via sqlite3_rsync

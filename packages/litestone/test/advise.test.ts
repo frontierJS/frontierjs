@@ -939,6 +939,18 @@ describe('advise --strict', () => {
     expect(exitOf(UNRUNNABLE, '--json')).toBe(1)
   })
 
+  // @@auth makes the claim set active, so a policy naming a claim no row, tenancy
+  // or `claim` declaration supplies is refused at boot (FJS-1936).
+  const UNDECLARED_CLAIM = (decl: string) =>
+    `${decl}model User {\n  id Int @id\n  @@auth\n}\n` +
+    `model Contact {\n  id Int @id\n  @@allow('read', id == auth().contactId)\n}\n`
+
+  test('a policy naming an undeclared claim under @@auth exits 1', () => {
+    expect(parse(UNDECLARED_CLAIM('')).valid).toBe(true)
+    expect(exitOf(UNDECLARED_CLAIM(''))).toBe(1)
+    expect(exitOf(UNDECLARED_CLAIM('claim contactId\n'))).toBe(0)
+  })
+
   test('an @encrypted field is not a refusal when no key is in the environment', () => {
     expect(exitOf(`model Vault {\n  id Int @id\n  secret String @encrypted\n}\n`)).toBe(0)
   })
@@ -1053,5 +1065,62 @@ describe('create-reaches-unpickable-relation', () => {
   test('silent when the related model narrows its own read', () => {
     expect(findings(SCHEMA(`@@allow('create', schedule.hostId == auth().id || auth().isAdmin)`,
       `@@allow('read', hostId == auth().id)`), 'create-reaches-unpickable-relation')).toEqual([])
+  })
+})
+
+// FJS-2234 — under row tenancy a read @@allow is the whole of who reads, so one written
+// for a bearer claim hides the model from every member of the tenant.
+describe('rule: read-allow-hides-tenant-members', () => {
+  const head = `
+    tenancy { strategy row  column agencyId  claim agencyId }
+    claim memberRole
+    claim sharedScanId
+  `
+  const model = (allows: string, tenant = '') => `${head}
+    model Scan { id String @id  agencyId String  ${allows}  ${tenant} }`
+  const rule = (src: string) => findings(src, 'read-allow-hides-tenant-members')
+
+  test('fires when the only read allow compares a row to a claim members do not carry', () => {
+    const f = rule(model(`@@allow('read', id == auth().sharedScanId)`))
+    expect(f.length).toBe(1)
+    expect(f[0].model).toBe('Scan')
+    expect(f[0].message).toContain('sharedScanId')
+  })
+
+  test('is quiet once a branch lets the tenant\'s members in', () => {
+    expect(rule(model(`@@allow('read', auth().memberRole != null || id == auth().sharedScanId)`))).toEqual([])
+    expect(rule(model(`@@allow('read', agencyId == auth().agencyId || id == auth().sharedScanId)`))).toEqual([])
+    expect(rule(model(`@@allow('read', id == auth().sharedScanId)
+      @@allow('read', auth().memberRole != null)`))).toEqual([])
+  })
+
+  test('is quiet where the model is not scoped by the tenant, or has no read allow', () => {
+    expect(rule(model(`@@allow('read', id == auth().sharedScanId)`, '@@tenant(none)'))).toEqual([])
+    expect(rule(model(`@@allow('update', id == auth().sharedScanId)`))).toEqual([])
+  })
+})
+
+// FJS-1954 — a row policy only a claims-only caller can satisfy, under a gate above 0
+// for that operation, is dead: a bearer is STRANGER(0) and refused before the policy runs.
+describe('rule: allow-needs-bearer-claim-under-gate', () => {
+  const model = (gate: string, allows: string) => `
+    claim contactId
+    model Message { id String @id  senderContactId String  kind String
+      @@gate("${gate}")  ${allows} }`
+  const rule = (src: string) => findings(src, 'allow-needs-bearer-claim-under-gate')
+
+  test('fires when every create allow reads only a bare claim and create is gated above 0', () => {
+    const f = rule(model('0.4', `@@allow('create', kind == 'incoming' && senderContactId == auth().contactId)`))
+    expect(f.length).toBe(1)
+    expect(f[0].model).toBe('Message')
+    expect(f[0].message).toContain('contactId')
+  })
+
+  test('is quiet when the operation is open, a branch reads auth().id, or a branch reads no claim', () => {
+    expect(rule(model('0.0', `@@allow('create', senderContactId == auth().contactId)`))).toEqual([])
+    expect(rule(model('0.4', `@@allow('create', senderContactId == auth().contactId || senderContactId == auth().id)`))).toEqual([])
+    expect(rule(model('0.4', `@@allow('create', senderContactId == auth().contactId)
+      @@allow('create', kind == 'note')`))).toEqual([])
+    expect(rule(model('0.4', `@@allow('read', senderContactId == auth().contactId)`))).toEqual([])
   })
 })

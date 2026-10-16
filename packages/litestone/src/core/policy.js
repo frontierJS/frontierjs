@@ -31,7 +31,7 @@ import { modelToTableName, sqlType, columnMapFor, isStoredField } from './ddl.js
 import { sqlFragment, inList, pairsOn } from './query.js'
 import { comparisonEncoderFor } from './encryption.js'
 import { ValidationError }     from './validate.js'
-import { NOW_SQL, rawClause }  from './query.js'
+import { DERIVED_NOW_ARG, rawClause }  from './query.js'
 // The evaluator itself. It was here, and a condition cannot cross to a browser
 // as a value — so the pure half moved below the dependency graph (`FJS-D26`)
 // and litestone became one of its two callers. A MOVE and not a third
@@ -488,7 +488,7 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
 const DERIVED_SQL_OPS = { '==': 'IS', '!=': 'IS NOT', '<': '<', '>': '>', '<=': '<=', '>=': '>=' }
 const DERIVED_NULL_SAFE = new Set(['==', '!='])
 
-// `now() + 2d` as a SQLite date modifier on the same clock NOW_SQL reads. The
+// `now() + 2d` as a SQLite date modifier on the same clock `now()` reads. The
 // value is a whole number the grammar parsed and the unit comes from a closed
 // table, so the modifier is spliced as a literal: a derived field is static SQL
 // and has no parameters to bind it to. `mo` and `yr` are SQLite's calendar
@@ -501,7 +501,7 @@ const SQLITE_MODIFIER = {
 function nowShifted(n) {
   const [unit, per] = SQLITE_MODIFIER[n.unit]
   const amount = +(n.sign * n.value * per).toFixed(3)
-  return `strftime('%Y-%m-%dT%H:%M:%fZ','now','${amount > 0 ? '+' : ''}${amount} ${unit}')`
+  return `strftime('%Y-%m-%dT%H:%M:%fZ',${DERIVED_NOW_ARG},'${amount > 0 ? '+' : ''}${amount} ${unit}')`
 }
 
 export function compileDerived(model, fieldName, node) {
@@ -517,7 +517,7 @@ export function compileDerived(model, fieldName, node) {
       case 'and':     return `(${truth(n.left)} AND ${truth(n.right)})`
       case 'not':     return `(NOT ${truth(n.expr)})`
       case 'ternary': return `CASE WHEN ${walk(n.cond)} THEN ${walk(n.then)} ELSE ${walk(n.else)} END`
-      case 'now':     return NOW_SQL
+      case 'now':     return `strftime('%Y-%m-%dT%H:%M:%fZ',${DERIVED_NOW_ARG})`
       case 'shift':   return nowShifted(n)
       case 'field': {
         const f = model.fields.find(x => x.name === n.name)
@@ -1100,6 +1100,22 @@ export function readReach(modelName, ctx, op = 'read') {
     for (const v of Object.values(node)) if (v && typeof v === 'object') walk(v, model, operation)
   }
   delegate(modelName, op)
+  return [...reach].sort()
+}
+
+// ─── What a value reads ──────────────────────────────────────────────────────
+//
+// The models whose rows an `@from` on `modelName` is computed off, itself not
+// included unless a field reads its own table. A write to one of them moves the
+// value on a row of this model that the write never touched: a child
+// removed leaves the parent row as it was and its count wrong on every screen
+// holding it (`FJS-2632`). `through` is the parent a to-one column reads past.
+export function fromReach(modelName, ctx) {
+  const reach = new Set()
+  for (const entry of Object.values(shapeOf(ctx, modelName).fromFields ?? {})) {
+    if (entry.target) reach.add(entry.target)
+    for (const m of entry.through ?? []) reach.add(m)
+  }
   return [...reach].sort()
 }
 

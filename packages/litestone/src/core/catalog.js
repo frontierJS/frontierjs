@@ -516,7 +516,7 @@ const FIELD = [
     '[(after: <move>)]',
     "Written once, at create, and never again by anybody — an update payload naming the column is refused by NAME, whether or not the value differs. What a document is: an invoice's number, the instant it was issued and the total it was issued for. It is the constraint tier, so asSystem() does not drop it, where the gate, the row policies and @guarded all fall away there; a raw UPDATE still bypasses it, as it does a @check. Reaches the client as readOnly in the UPDATE schema alone, so a generated create form still offers the box. On a model with a @seals move the bare word freezes at the seal instead. (after: <move>) names a later instant: writable until that move's target, refused from there and from every state reachable from it — a signature written by the accept, after the terms sealed at approve.",
     'issuedAt DateTime @immutable',
-    { seeAlso: ['system', 'guarded', 'version'] }
+    { seeAlso: ['system', 'guarded', 'version', 'seals'] }
   ),
   t(
     'sealed',
@@ -1247,8 +1247,8 @@ const MODEL = [
     'transitions',
     'model',
     'access',
-    '(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …)',
-    "A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.",
+    '(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) | (<field>, declaredBy: Model, scope: <column>)',
+    "A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. `declaredBy:` is the machine a tenant edits: the field is a state's key, the moves are rows of the declaring model — `fromId?` (null is an entry, where a row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin — each move is checked inside the UPDATE's own WHERE, a create names one of its scope's entries or takes the only one, and a move is named for its target. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.",
     '@@transitions(status,\n    pay:    draft        -> paid,\n    ship:   paid         -> shipped,\n    cancel: [draft, paid] -> cancelled @gate(5))',
     {
       context: 'enum OrderStatus { draft paid shipped cancelled }',

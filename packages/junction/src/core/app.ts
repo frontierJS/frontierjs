@@ -2106,6 +2106,25 @@ export function createApp(opts: AppOptions = {}): App {
         }
       }},
 
+      // A database that is not the schema's still answers health: no migration
+      // runs at start (`FJS-D123`), so an app pointed at the wrong file, or two
+      // apps in one process sharing one, hears about a missing table at the
+      // first read of it (`FJS-1796`). A warning, not a refusal -- a fresh
+      // deploy legitimately starts before `db push`. After boot-plugins, which
+      // may create tables of their own; needsHost, because a test env builds
+      // its tables after the app is mounted.
+      { name: 'check-schema-gaps', needsHost: true, run: async () => {
+        if (!db || typeof db !== 'object' || !('$schemaGaps' in db)) return
+        const gaps = await (db as { $schemaGaps(): Promise<Array<{ db: string; model: string; table: string; missing: 'table' | string[] }>> }).$schemaGaps()
+        if (!gaps.length) return
+        logger.warn(
+          `[Junction] the database does not hold this app's schema -- ` +
+          gaps.map(g => g.missing === 'table'
+            ? `${g.model}: no table '${g.table}'`
+            : `${g.model}: table '${g.table}' lacks ${g.missing.join(', ')}`).join('; ') +
+          `. Wrong file, or a migration not applied: \`litestone migrate apply\`.`)
+      }},
+
       // Service routes are registered AFTER plugins so plugin middleware wraps
       // them. Registering at createApp() time would add them before
       // CORS/helmet/rateLimit patched the router, so they'd never get those headers.
