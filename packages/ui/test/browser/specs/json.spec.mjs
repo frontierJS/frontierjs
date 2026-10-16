@@ -48,8 +48,14 @@ export async function run(t) {
   // A stored Json value 100000 deep is one author's write and every reader's
   // render; the walkers refuse it, so the viewer has to say so, not die.
   t.is(await t.evaluate(`return document.querySelector('#abyss').textContent.trim();`),
-    'Nested more than 100 levels deep, too deep to show',
+    'Nested more than 100 levels deep or refers back to itself, too deep to show',
     'a document nested past the bound is named and not walked')
+
+  // exceedsDepth walks a cycle to the bound, so the message has to name both
+  // causes; blaming depth alone sends the reader looking for a deep document.
+  t.is(await t.evaluate(`return document.querySelector('#loop').textContent.trim();`),
+    'Nested more than 100 levels deep or refers back to itself, too deep to show',
+    'a document that refers back to itself is refused with a message that names the cycle')
 
   /* ── a key that would collide with a path ─────────────────────────────── */
 
@@ -587,6 +593,35 @@ export async function run(t) {
   t.is(await t.evaluate(`
     return document.querySelectorAll('#viewer .fjs-json-history').length;
   `), 0, 'a viewer without `editable` offers no history at all')
+
+  /* ── history={false}: the page's stack is the only one ────────────────── */
+
+  // FJS-1624: a tree that is one editor among several over a document the page
+  // keeps history for must not keep a second stack beside it.
+  const hAt = (path) => `#historyless [data-path='${JSON.stringify(path)}']`
+  t.is(await t.evaluate(`return document.querySelectorAll('#historyless .fjs-json-history').length;`), 0,
+    'history={false} draws no undo or redo buttons')
+
+  await t.clickAt(`${hAt(['a'])} .fjs-json-edit`)
+  await t.type('7')
+  await t.press('Enter')
+  await t.eventually(`JSON.parse(document.querySelector('#h-last').textContent).a`, 7,
+    'an edit is still announced')
+  const hCount = await t.evaluate(`return document.querySelector('#h-count').textContent;`)
+
+  // Focus is inside the tree (the edit just committed there); the shortcut must
+  // neither run an undo nor be swallowed from the page above.
+  await t.evaluate(`
+    window.__hKey = null;
+    document.addEventListener('keydown', (e) => { window.__hKey = e.defaultPrevented }, { once: true });
+    document.querySelector('#historyless').focus();
+  `)
+  await t.key('z', { modifiers: 2 })
+  await t.eventually(`window.__hKey`, false, 'Ctrl+Z inside the tree is left to the page')
+  t.is(await t.evaluate(`return document.querySelector('#h-count').textContent;`), hCount,
+    'and announces nothing')
+  t.is(JSON.parse(await t.evaluate(`return document.querySelector('#h-last').textContent;`)).a, 7,
+    'and the document stays as the page last held it')
 
   /* ── diff ─────────────────────────────────────────────────────────────── */
 

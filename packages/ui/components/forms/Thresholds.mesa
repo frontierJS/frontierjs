@@ -177,6 +177,9 @@
     // reads as a color with no meaning.
     for (let k = i - 1; k >= 0; k--) next[k] = Math.min(next[k], next[k + 1] - gap)
     for (let k = i + 1; k < n; k++)  next[k] = Math.max(next[k], next[k - 1] + gap)
+    // 0.7 + 0.1 is 0.7999999999999999: a pushed neighbor is a sum, not a
+    // slider position, so it is not on the step grid until it is put there.
+    for (let k = 0; k < n; k++) next[k] = parseFloat(next[k].toFixed(decimals))
     values = next
     syncRows(next)
     onchange?.(next)

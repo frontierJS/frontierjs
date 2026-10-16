@@ -1,0 +1,88 @@
+<script>
+  // Composer.mesa
+  // The box a chat message is typed into: Enter sends, Shift+Enter breaks the
+  // line, and the box grows with what is typed up to a few lines, then scrolls.
+  //
+  // `onsend(text)` is handed the text trimmed, and the box clears after it
+  // returns. A caller whose send can fail and wants the words back writes them
+  // into `value` again (`bind:value`); nothing here retries.
+  //
+  // An empty or whitespace-only box sends nothing, and neither does one that is
+  // `disabled` — set that while a reply is being waited for.
+  //
+  // Enter while an input method is composing (`isComposing`) confirms the
+  // composition, not the message, so a Japanese or Chinese reader is not
+  // sent mid-word.
+  //
+  // Usage:
+  //   <Composer onsend={(text) => ask(text)} disabled={waiting} />
+  //   <Composer bind:value={draft} placeholder="Ask anything" label="Ask" onsend={ask} />
+  //
+  // bind:this exposes: focus()
+
+  import Button from '../forms/Button.mesa'
+
+  export let value       = ''
+  export let placeholder = 'Write a message'
+  export let label       = 'Send'
+  export let disabled    = false
+  export let onsend      = undefined
+
+  let el
+  export function focus() { el?.focus() }
+
+  function grow() {
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }
+
+  function handleInput(e) {
+    value = e.target.value
+    grow()
+  }
+
+  function send() {
+    const text = (value ?? '').trim()
+    if (disabled || !text) return
+    onsend?.(text)
+    value = ''
+    if (el) el.value = ''
+    grow()
+  }
+
+  function handleKey(e) {
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return
+    e.preventDefault()
+    send()
+  }
+</script>
+
+<div class="fjs-composer" {class} {...$attributes}>
+  <textarea
+    bind:this={el}
+    class="field"
+    rows="1"
+    aria-label={placeholder}
+    placeholder={placeholder}
+    disabled={disabled}
+    on:input={handleInput}
+    on:keydown={handleKey}
+    value={value}
+  >{value}</textarea>
+  <Button type="button" disabled={disabled || !(value ?? '').trim()} onclick={send}>{label}</Button>
+</div>
+
+<style>
+  .fjs-composer {
+    display:     flex;
+    gap:         var(--space-sm);
+    align-items: flex-end;
+  }
+  .fjs-composer > textarea {
+    flex:            1 1 auto;
+    min-inline-size: 0;
+    max-block-size:  8lh;
+    resize:          none;
+  }
+</style>

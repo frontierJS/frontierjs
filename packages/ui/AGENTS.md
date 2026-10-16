@@ -102,6 +102,7 @@ the package has no root entry.
 | a JSON document, read, diffed or `editable` | `@frontierjs/ui/components/display/Json.mesa` |
 | a command or snippet somebody pastes — a block with a copy button in its corner | `@frontierjs/ui/components/display/Code.mesa` |
 | Markdown somebody else wrote — a model's reply, a `@syntax(md)` column — read | `@frontierjs/ui/components/display/Markdown.mesa` — `text`, `headingBase` (the level a `#` draws at; 3 inside a card), `breaks`. Raw HTML in the text draws as text and a link goes only to http, https, mailto or this site, so it is safe on a public page with no sanitizer |
+| a chat screen — the log, a bubble, the box typed into | `@frontierjs/ui/components/display/Transcript.mesa` (a scrolling `role="log"` that follows the newest message until the reader scrolls up; give it a height; `scrollToEnd()` after the reader's own send) · `@frontierjs/ui/components/display/Message.mesa` (`side` `mine`/`theirs`, `tone`; a `<Markdown>` inside for a model's reply) · `@frontierjs/ui/components/display/Composer.mesa` (`onsend(text)`, `bind:value`, `disabled`, `label`; Enter sends, Shift+Enter breaks) |
 | copy to clipboard · a shortcut · a token or id · a rule | `@frontierjs/ui/components/display/CopyButton.mesa` · `@frontierjs/ui/components/display/Kbd.mesa` · `@frontierjs/ui/components/display/Mono.mesa` · `@frontierjs/ui/components/display/Divider.mesa` |
 
 **Layout, overlay, feedback**
@@ -113,7 +114,7 @@ the package has no root entry.
 | tabs | `@frontierjs/ui/components/layout/Tabs.mesa` around `@frontierjs/ui/components/layout/TabList.mesa`, `@frontierjs/ui/components/layout/Tab.mesa`, `@frontierjs/ui/components/layout/TabPanel.mesa` |
 | disclosure sections | `@frontierjs/ui/components/layout/Accordion.mesa` around `@frontierjs/ui/components/layout/AccordionItem.mesa` |
 | a blocking dialog · a side panel | `@frontierjs/ui/components/overlay/Modal.mesa` · `@frontierjs/ui/components/overlay/Drawer.mesa` |
-| a menu of actions | `@frontierjs/ui/components/overlay/DropdownMenu.mesa` with `@frontierjs/ui/components/overlay/DropdownItem.mesa`, `@frontierjs/ui/components/overlay/DropdownLabel.mesa`, `@frontierjs/ui/components/overlay/DropdownSeparator.mesa` |
+| a menu of actions | `@frontierjs/ui/components/overlay/DropdownMenu.mesa` with `@frontierjs/ui/components/overlay/DropdownItem.mesa`, `@frontierjs/ui/components/overlay/DropdownGroup.mesa`, `@frontierjs/ui/components/overlay/DropdownSeparator.mesa` |
 | content that must escape a scroll container · a description on hover and focus | `@frontierjs/ui/components/overlay/Popover.mesa` · `@frontierjs/ui/components/overlay/Tooltip.mesa` |
 | confirm a destructive click | `@frontierjs/ui/components/overlay/ConfirmProvider.mesa` once, then `data-confirm` on any element — the provider's document listener is what reads the attribute, so with none mounted the click runs unconfirmed; `@frontierjs/ui/components/overlay/ConfirmationPopover.mesa` when a component owns its trigger or cannot be sure a provider is mounted |
 | ⌘K | `@frontierjs/ui/components/overlay/CommandPalette.mesa` with `@frontierjs/ui/stores/commandPaletteStore.js` |

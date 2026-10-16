@@ -1,5 +1,5 @@
 /*
- * dropdown.spec.mjs — DropdownMenu, DropdownItem, DropdownLabel, DropdownSeparator.
+ * dropdown.spec.mjs — DropdownMenu, DropdownItem, DropdownGroup, DropdownSeparator.
  *
  * Four components that had never been opened in a browser. Everything they add
  * over `@frontierjs/css` is behavior that only exists at runtime: a panel
@@ -18,7 +18,7 @@
 export const name = 'DropdownMenu'
 export const covers = [
   'overlay/DropdownMenu', 'overlay/DropdownItem',
-  'overlay/DropdownLabel', 'overlay/DropdownSeparator',
+  'overlay/DropdownGroup', 'overlay/DropdownSeparator',
 ]
 
 const items    = `[...document.querySelectorAll('[role=menu] [role=menuitem]')]`
@@ -79,7 +79,18 @@ export async function run(t) {
   // A heading and a rule are not actions, and a keyboard walk that lands on
   // one is a walk that stops working.
   t.is(await t.evaluate(`return document.querySelectorAll('[role=menu] .navlist-label').length;`), 2,
-    'a label is a heading, not an item')
+    'a group heading is a heading, not an item')
+
+  // The heading is the group's name and the rows are INSIDE the group. A
+  // heading beside its rows names nothing, so a screen reader moving through
+  // the menu is never told which section a row is in.
+  t.is(await t.evaluate(`
+    return [...document.querySelectorAll('[role=menu] [role=group]')].map((g) => {
+      const name = document.getElementById(g.getAttribute('aria-labelledby'))?.textContent.trim();
+      return name + ':' + [...g.querySelectorAll('[role=menuitem]')].map((i) => i.textContent.trim().replace(/\\s+/g, ' ')).join('|');
+    }).join(';');
+  `), 'Manage:Edit ⌘E|Settings|Coming soon;Danger zone:Delete',
+  'each group is named by its heading and holds its own rows')
   t.is(await t.evaluate(`
     const hr = document.querySelector('[role=menu] hr');
     return hr && hr.getAttribute('role') === null && hr.matches(':not([role=menuitem])');

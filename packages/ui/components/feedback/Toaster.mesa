@@ -61,6 +61,7 @@
 <mesa:portal to={visibleItems && overlayHost()}>
   <div
     class="toast-stack"
+    {class}
     style:top={pos.top}
     style:right={pos.right}
     style:bottom={pos.bottom}

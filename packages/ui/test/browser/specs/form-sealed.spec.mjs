@@ -139,4 +139,18 @@ export async function run(t) {
     'with what was typed in it')
   t.is(await t.evaluate(`return window.kitSent()[2].data.state;`), 'issued',
     'alongside the move that seals it')
+
+  /* ── the stored row moves under an open form ──────────────────────────── */
+  //
+  // The seal is read off the row the form was opened on, and the same row read
+  // again after a move is a new reading of it: the same id, the sealing state
+  // now stored. Re-opening only on a new id left the columns live (`FJS-2745`).
+
+  t.ok(!await t.evaluate(`return ${isDisabled('#moved [name=number]')};`),
+    'a draft the form opened on has its column editable')
+  await t.evaluate(`window.kitMove(); return true;`)
+  await t.eventually(isDisabled('#moved [name=number]'), true,
+    'the same row read again as issued freezes the column')
+  t.ok(!await t.evaluate(`return ${isDisabled('#moved [name=note]')};`),
+    'and leaves the ordinary column alone')
 }

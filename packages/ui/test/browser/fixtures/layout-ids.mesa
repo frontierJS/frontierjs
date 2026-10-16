@@ -1,0 +1,68 @@
+<script>
+  // layout-ids.mesa -- FJS-2610. Two Tabs strips that name their tabs alike, a
+  // tab whose id holds a quote, an Accordion whose items state no id, a
+  // Pagination handed a string page, and an Avatar whose image fails and is
+  // then given another.
+  import Tabs          from '../../../components/layout/Tabs.mesa'
+  import TabList       from '../../../components/layout/TabList.mesa'
+  import Tab           from '../../../components/layout/Tab.mesa'
+  import TabPanel      from '../../../components/layout/TabPanel.mesa'
+  import Accordion     from '../../../components/layout/Accordion.mesa'
+  import AccordionItem from '../../../components/layout/AccordionItem.mesa'
+  import Pagination    from '../../../components/display/Pagination.mesa'
+  import Avatar        from '../../../components/display/Avatar.mesa'
+
+  let src  = 'http://127.0.0.1:1/missing.png'
+  let seen = ''
+  const good = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+</script>
+
+<div id="strip-a">
+  <Tabs activeId="one">
+    <TabList label="A">
+      <Tab id="one">One</Tab>
+      <Tab id="two">Two</Tab>
+    </TabList>
+    <TabPanel id="one"><p>A one</p></TabPanel>
+    <TabPanel id="two"><p>A two</p></TabPanel>
+  </Tabs>
+</div>
+
+<div id="strip-b">
+  <Tabs activeId="one">
+    <TabList label="B">
+      <Tab id="one">One</Tab>
+      <Tab id="two">Two</Tab>
+    </TabList>
+    <TabPanel id="one"><p>B one</p></TabPanel>
+    <TabPanel id="two"><p>B two</p></TabPanel>
+  </Tabs>
+</div>
+
+<div id="strip-q">
+  <Tabs activeId='a"b'>
+    <TabList label="Q">
+      <Tab id='a"b'>Quoted</Tab>
+      <Tab id="plain">Plain</Tab>
+    </TabList>
+    <TabPanel id='a"b'><p>quoted body</p></TabPanel>
+    <TabPanel id="plain"><p>plain body</p></TabPanel>
+  </Tabs>
+</div>
+
+<div id="acc">
+  <Accordion>
+    <AccordionItem label="First"><p>first body</p></AccordionItem>
+    <AccordionItem label="Second"><p>second body</p></AccordionItem>
+  </Accordion>
+</div>
+
+<div id="pager">
+  <Pagination page="3" total={200} perPage={20} onchange={(p) => { seen = String(p) }} />
+</div>
+<output id="seen">{seen}</output>
+
+<div id="avatar">
+  <Avatar {src} name="Dana Ortiz" />
+</div>
+<button id="new-src" on:click={() => { src = good }}>new</button>

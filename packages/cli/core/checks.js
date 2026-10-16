@@ -178,6 +178,8 @@ export const RULES = [
     title: 'an app\'s markup holds more raw color utilities than semantic classes' },
   { id: 'css-class-collision', scope: 'app',  severity: 'warn',  invariant: 13,
     title: 'a .mesa <style> names no class the kit already owns' },
+  { id: 'kit-prop-unknown',    scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a kit component is passed only props it declares or attributes HTML has' },
   { id: 'preview-ui-only',      scope: 'app',  severity: 'error', invariant: null,
     title: 'a preview branch changes web/ and nothing else' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
@@ -3818,6 +3820,35 @@ const CHECKS = {
     return { findings }
   },
 
+  'kit-prop-unknown': ({ root }) => {
+    // A prop the component does not declare is not an error to Mesa: it is the
+    // component's `$attributes`, spread onto its root element. So a prop
+    // misremembered from a sibling (`<EmptyState sub="…">` after `<StatCard
+    // sub>`) renders as `sub="…"` on a div and the sentence never appears.
+    // Nothing throws and a drive asserting the title passes (FJS-1648).
+    const files = sources(root, ['.mesa'], ...CLIENT_SURFACES)
+    if (!files.length) return { skipped: 'no client surface' }
+
+    const findings = []
+    let importers = 0
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8')
+      if (!text.includes('@frontierjs/ui/')) continue
+      importers++
+      for (const use of kitUnknownProps(text, dirname(file))) {
+        findings.push({
+          file, line: lineOf(text, use.index),
+          message: `<${use.tag} ${use.name}> — ${use.tag} declares ${use.declared.length ? use.declared.join(', ') : 'no props'}, ` +
+                   `and ${use.name} is not an HTML attribute either, so it lands on the root element as ` +
+                   `${use.name}="…" and renders nothing. A misremembered prop name; the text of a component ` +
+                   `that takes none is its children (FJS-1648).`,
+        })
+      }
+    }
+    if (!importers) return { skipped: 'no screen imports a kit component' }
+    return { findings }
+  },
+
   'package-root-md': ({ root }) => {
     const pkgs = []
     for (const name of safeRead(join(root, 'packages'))) {
@@ -4233,6 +4264,108 @@ function srcLayoutFindings(root) {
   }
 
   return findings
+}
+
+// ─── kit-prop-unknown ──────────────────────────────────────────────────────
+
+// Names HTML itself gives an element, so a component that spreads `$attributes`
+// is rightly handed them. Lowercase only: a camelCase name is a prop's spelling.
+const HTML_ATTRS = new Set((
+  'accept action allow alt async autocapitalize autocomplete autofocus autoplay capture checked cite class cols colspan ' +
+  'content contenteditable controls coords crossorigin datetime decoding default defer dir dirname disabled download ' +
+  'draggable enctype enterkeyhint for form formaction formenctype formmethod formnovalidate formtarget headers height ' +
+  'hidden high href hreflang id inert inputmode integrity is itemid itemprop itemref itemscope itemtype kind label lang ' +
+  'list loading loop low max maxlength media method min minlength multiple muted name nonce novalidate open optimum ' +
+  'pattern ping placeholder playsinline popover poster preload readonly referrerpolicy rel required reversed role rows ' +
+  'rowspan sandbox scope selected shape size sizes slot span spellcheck src srcdoc srclang srcset start step style ' +
+  'tabindex target title translate type usemap value width wrap key part exportparts'
+).split(' '))
+
+/** The text with comments, `<script>` and `<style>` blanked to spaces, offsets intact. */
+function markupOnly(text) {
+  const blank = s => s.replace(/[^\n]/g, ' ')
+  return text.replace(/<!--[\s\S]*?-->|<(script|style)\b[\s\S]*?<\/\1>/g, blank)
+}
+
+/** Where `@frontierjs/ui` is installed as seen from `dir`, or null. */
+function installedKit(dir) {
+  for (let here = dir; ; here = dirname(here)) {
+    const kit = join(here, 'node_modules', '@frontierjs', 'ui')
+    if (existsSync(join(kit, 'package.json'))) return kit
+    if (dirname(here) === here) return null
+  }
+}
+
+/**
+ * Every attribute written on a kit component that the component does not
+ * declare and HTML does not name, as `{ tag, name, index, declared }`.
+ * Judged only where the component's `export let` list is readable: one that
+ * reads `$$props` consumes undeclared names itself, and a file that is not
+ * found is not a component this rule can speak for.
+ */
+function kitUnknownProps(text, dir) {
+  const imports = new Map()
+  for (const m of text.matchAll(/\bimport\s+([A-Z]\w*)\s+from\s+['"]@frontierjs\/ui\/(components\/[^'"]+?)(\.mesa)?['"]/g)) {
+    imports.set(m[1], m[2])
+  }
+  if (!imports.size) return []
+  const kit = installedKit(dir)
+  if (!kit) return []
+
+  const declaredBy = new Map()
+  for (const [tag, rel] of imports) {
+    const file = join(kit, `${rel}.mesa`)
+    if (!existsSync(file)) continue
+    const code = readCode(file)
+    if (/\$\$props\b/.test(code)) continue
+    declaredBy.set(tag, [...code.matchAll(/\bexport\s+(?:let|var)\s+([A-Za-z_$][\w$]*)/g)].map(m => m[1]))
+  }
+
+  const markup = markupOnly(text)
+  const found = []
+  for (const open of markup.matchAll(/<([A-Z]\w*)(?=[\s/>])/g)) {
+    const declared = declaredBy.get(open[1])
+    if (!declared) continue
+    let i = open.index + open[0].length
+    while (i < markup.length) {
+      while (/\s/.test(markup[i] ?? '')) i++
+      const c = markup[i]
+      if (c === undefined || c === '>' || (c === '/' && markup[i + 1] === '>')) break
+      if (c === '{') { i = skipBraces(markup, i); continue }
+      const start = i
+      while (i < markup.length && !/[\s=/>{]/.test(markup[i])) i++
+      const name = markup.slice(start, i)
+      if (!name) { i++; continue }
+      while (/\s/.test(markup[i] ?? '')) i++
+      if (markup[i] === '=') {
+        i++
+        while (/\s/.test(markup[i] ?? '')) i++
+        const q = markup[i]
+        if (q === '"' || q === "'") i = markup.indexOf(q, i + 1) + 1 || markup.length
+        else if (q === '{') i = skipBraces(markup, i)
+        else while (i < markup.length && !/[\s>]/.test(markup[i])) i++
+      }
+      // Only a plain lowercase word: `data-*`, `aria-*`, `bind:`, `on:` and
+      // `onclick` are the transport's, and a camelCase name is a prop's.
+      if (!/^[a-z]+$/.test(name) || name.startsWith('on')) continue
+      if (declared.includes(name) || HTML_ATTRS.has(name)) continue
+      found.push({ tag: open[1], name, index: start, declared })
+    }
+  }
+  return found
+}
+
+/** The index just past the `}` closing the `{` at `i`; strings and templates are skipped whole. */
+function skipBraces(text, i) {
+  let depth = 0
+  for (; i < text.length; i++) {
+    const c = text[i]
+    if (c === '"' || c === "'" || c === '`') {
+      for (i++; i < text.length && text[i] !== c; i++) if (text[i] === '\\') i++
+    } else if (c === '{') depth++
+    else if (c === '}' && --depth === 0) return i + 1
+  }
+  return text.length
 }
 
 /** Every file of the given extensions under the named directories, in tree order. */

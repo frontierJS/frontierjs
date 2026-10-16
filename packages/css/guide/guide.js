@@ -3688,8 +3688,9 @@ function tablesPage() {
         `
         <p>
           <code>striped</code> zebras rows; <code>hover</code> highlights on
-          mouseover; <code>compact</code> tightens padding for dense data.
-          Combinable.
+          mouseover; <code>compact</code> tightens padding for dense data;
+          <code>top</code> reads each row from its top edge, for rows of
+          blocks of different heights. Combinable.
         </p>
         ${preview(`
           <table class="table striped hover compact">
@@ -7786,6 +7787,25 @@ function feedbackPage() {
           </div>`)}
         ${code(`<progress class="progress" value="70" max="100">70%</progress>
 <progress class="progress success" value="100" max="100">Done</progress>`)}`,
+      )}
+
+      ${section(
+        "Meter",
+        `
+        <p>
+          Built on native <code>&lt;meter&gt;</code>: a reading against a known
+          whole, such as a disk or a quota. A screen reader announces it as a
+          measurement, where <code>&lt;progress&gt;</code> would announce a task
+          underway. The tone colors the fill; the browser's own green, yellow
+          and red bands are not used.
+        </p>
+        ${preview(`
+          <div class="stack" style="width: 100%">
+            <meter class="meter success" value="30" max="100">30%</meter>
+            <meter class="meter warning" value="72" max="100">72%</meter>
+            <meter class="meter danger" value="94" max="100">94%</meter>
+          </div>`)}
+        ${code(`<meter class="meter warning" value="72" max="100">72%</meter>`)}`,
       )}
 
       ${section(

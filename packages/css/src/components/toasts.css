@@ -24,6 +24,14 @@
   box-shadow: var(--shadow-lg);
   z-index:    var(--z-toast);
   --overlay-from: translateY(8px);
+
+  /*
+   * A toast's ground and corner are its own: a theme with square cards can
+   * still draw a pill. The ground goes through --surface-ground and not
+   * --surface-bg, so .outlined and .ghost keep winning (see dialogs.css).
+   */
+  --surface-ground: var(--toast-bg, var(--surface));
+  border-radius:    var(--toast-radius, var(--card-radius));
 }
 
 .toast-stack {

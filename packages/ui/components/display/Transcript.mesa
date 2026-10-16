@@ -1,0 +1,95 @@
+<script>
+  // Transcript.mesa
+  // A conversation's scrolling log. It follows the newest message — a reply
+  // that streams in a token at a time stays in view — until the reader scrolls
+  // up, and from then on it leaves them where they are. It follows again when
+  // they scroll back to the bottom, or when the caller says so with
+  // `scrollToEnd()` (their own message, just sent).
+  //
+  // The bubbles are <Message>s and the box they are typed into is <Composer>;
+  // this is only the part that scrolls. Give it a height — a log with none
+  // grows with its content and has nothing to follow.
+  //
+  // Usage:
+  //   <Transcript style="height: 24rem" bind:this={log}>
+  //     {#each turns as turn}
+  //       <Message side={turn.role === 'user' ? 'mine' : 'theirs'}>
+  //         <Markdown text={turn.body} />
+  //       </Message>
+  //     {/each}
+  //   </Transcript>
+  //
+  //   log.scrollToEnd()
+
+  // How far from the bottom still counts as "at the bottom". Sub-pixel scroll
+  // positions and a zoomed page both leave the last pixel or two unreached,
+  // and a reader never sits exactly on it.
+  const SLACK = 24
+
+  let box
+  let following = true
+  let placed    = 0   // where this component last left the scroll position
+
+  const atEnd = (el) => el.scrollHeight - el.scrollTop - el.clientHeight <= SLACK
+
+  export function scrollToEnd() {
+    following = true
+    if (box) { box.scrollTop = box.scrollHeight; placed = box.scrollTop }
+  }
+
+  // One owner of the follow/leave decision. Mutation covers a message arriving
+  // and a token landing in one; resize covers an image loading above the fold
+  // and the log's own box changing height under a growing composer.
+  //
+  // A scroll event is delivered with the next frame, so a message that lands
+  // first would drag a reader who had just scrolled up back down. `keep` reads
+  // the position itself: below where we left it, clamped to what a taller box
+  // can still reach, means the reader moved it.
+  function follow(el) {
+    box = el
+    const onScroll = () => { following = atEnd(el); placed = el.scrollTop }
+    const keep = () => {
+      if (el.scrollTop < Math.min(placed, el.scrollHeight - el.clientHeight) - 1) following = false
+      if (following) { el.scrollTop = el.scrollHeight; placed = el.scrollTop }
+    }
+
+    el.addEventListener('scroll', onScroll, { passive: true })
+    keep()
+
+    const watchers = []
+    if (typeof MutationObserver === 'function') {
+      const m = new MutationObserver(keep)
+      m.observe(el, { childList: true, subtree: true, characterData: true })
+      watchers.push(m)
+    }
+    if (typeof ResizeObserver === 'function') {
+      const r = new ResizeObserver(keep)
+      r.observe(el)
+      watchers.push(r)
+    }
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      for (const w of watchers) w.disconnect()
+      if (box === el) box = undefined
+    }
+  }
+</script>
+
+<!--
+  role="log" is a polite live region, so a screen reader hears each new
+  message once without the caller wiring aria-live; tabindex="0" because a
+  scroller with no focusable child cannot be scrolled from the keyboard.
+-->
+<div class="fjs-transcript" role="log" tabindex="0" aria-label="Conversation" {class} {...$attributes} {@attach follow}>
+  <slot />
+</div>
+
+<style>
+  .fjs-transcript {
+    display:        flex;
+    flex-direction: column;
+    gap:            var(--space-md);
+    overflow-y:     auto;
+    overscroll-behavior: contain;
+  }
+</style>

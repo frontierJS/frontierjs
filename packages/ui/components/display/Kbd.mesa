@@ -14,7 +14,7 @@
   export let keys = []     // string[] — each key gets its own badge
   export let size = ''     // '' | 'xs' | 'md'
 
-  const sizeMap = { xs: '0.625rem', sm: '', md: '0.8125rem' }
+  const sizeMap = { xs: 'var(--text-2xs)', sm: '', md: 'var(--text-sm)' }
   const fontSize = sizeMap[size] ?? ''
 </script>
 

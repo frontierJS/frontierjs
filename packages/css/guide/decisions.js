@@ -96,6 +96,7 @@ var QUESTIONS = {
     note: 'Three different answers, and picking the wrong one is an accessibility bug rather than a style choice — see each.',
     options: [
       { label: 'How far along it is', hint: 'a percentage, 7 of 12', on: 'Progress' },
+      { label: 'How full something is', hint: 'a disk, a quota, memory', on: 'Meter' },
       { label: 'Nothing — it is just working', on: 'Spinner' },
       { label: 'The shape of what is coming', hint: 'three rows of a table, a card', on: 'Skeleton' },
     ],
@@ -382,6 +383,19 @@ var OUTCOMES = {
     states: [],
     instead: [
       { term: 'Spinner', when: 'you do not know how far along it is' },
+      { term: 'Meter', when: 'it is a reading against a limit, not a task getting done' },
+    ],
+  },
+
+  Meter: {
+    page: 'feedback',
+    lead: 'How full something is against a known whole.',
+    markup: function (c) { return '<meter class="' + c + '" value="72" max="100">72%</meter>' },
+    tones: true,
+    treatments: [],
+    states: [],
+    instead: [
+      { term: 'Progress', when: 'a task is getting done and will finish' },
     ],
   },
 
@@ -500,7 +514,7 @@ var OUTCOMES = {
       return '<div class="table-wrap">\n  <table class="' + c + '">\n    <thead><tr><th>Service</th><th>Status</th></tr></thead>\n    <tbody><tr><td>api-gateway</td><td><span class="badge success">Healthy</span></td></tr></tbody>\n  </table>\n</div>'
     },
     tones: false,
-    treatments: ['striped', 'hover', 'compact'],
+    treatments: ['striped', 'hover', 'compact', 'top'],
     states: [],
     instead: [
       { term: 'Facts', when: 'it is one record’s label/value pairs rather than many records' },

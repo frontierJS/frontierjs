@@ -19,7 +19,7 @@ siteName: Kitchen sink
   import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
   import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
   import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
-  import DropdownLabel     from '@frontierjs/ui/components/overlay/DropdownLabel.mesa'
+  import DropdownGroup     from '@frontierjs/ui/components/overlay/DropdownGroup.mesa'
   import DropdownMenu      from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import { alert }          from '@frontierjs/ui/stores/alertStore.js'
@@ -271,27 +271,29 @@ siteName: Kitchen sink
           {/snippet}
 
           {#if fresh.length}
-            <DropdownLabel>Unread</DropdownLabel>
-            {#each fresh as note}
-              <DropdownItem tone="info" onclick={() => openNote(note)}>
-                <!-- A pulsing dot is the unread marker rather than a word: the
-                     row already carries the notification's own words, and the
-                     dot names itself for a screen reader. -->
-                <Dot tone="info" pulse label="unread" />
-                {note.data?.title ?? note.type} — {note.data?.body ?? ''}
-              </DropdownItem>
-            {/each}
+            <DropdownGroup heading="Unread">
+              {#each fresh as note}
+                <DropdownItem tone="info" onclick={() => openNote(note)}>
+                  <!-- A pulsing dot is the unread marker rather than a word: the
+                       row already carries the notification's own words, and the
+                       dot names itself for a screen reader. -->
+                  <Dot tone="info" pulse label="unread" />
+                  {note.data?.title ?? note.type} — {note.data?.body ?? ''}
+                </DropdownItem>
+              {/each}
+            </DropdownGroup>
           {/if}
 
           {#if fresh.length && seen.length}<DropdownSeparator />{/if}
 
           {#if seen.length}
-            <DropdownLabel>Earlier</DropdownLabel>
-            {#each seen as note}
-              <DropdownItem onclick={() => openNote(note)}>
-                {note.data?.title ?? note.type} — {note.data?.body ?? ''}
-              </DropdownItem>
-            {/each}
+            <DropdownGroup heading="Earlier">
+              {#each seen as note}
+                <DropdownItem onclick={() => openNote(note)}>
+                  {note.data?.title ?? note.type} — {note.data?.body ?? ''}
+                </DropdownItem>
+              {/each}
+            </DropdownGroup>
           {/if}
 
           {#if !notes().length}

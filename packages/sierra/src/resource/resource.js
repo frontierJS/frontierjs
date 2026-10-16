@@ -2582,8 +2582,10 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // which is not a worse order, it is a wrong one. A literal set is the case
     // where the author's order needs no declaration because the declaration IS
     // the order (`FJS-D121`).
-    if (rule?.options || Array.isArray(rule?.enum)) {
-      const all = rule.options ?? rule.enum.map(v => ({ value: v, label: v }))
+    // A list of an enum's members offers the same members, one per pick.
+    const member = Array.isArray(rule?.enum) || rule?.options ? rule : rule?.items?.enum ? rule.items : null
+    if (member) {
+      const all = member.options ?? member.enum.map(v => ({ value: v, label: v }))
 
       // A declared set is small and entirely in hand, so `search` is applied
       // here rather than sent anywhere — and `total` is the whole set, never a

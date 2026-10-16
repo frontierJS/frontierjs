@@ -157,25 +157,50 @@ export async function run(t) {
   await t.eventually(`document.querySelector('#picked').textContent`, '',
     'and clicking it selects nothing')
 
-  // A month that is genuinely ahead of the real clock, so `future` is decided
-  // by the component's own rule rather than by the pinned prop.
-  const nextYear = `${new Date().getFullYear() + 1}-06-15`
-  await t.mount('datepicker', { todayISO: nextYear })
-  t.ok(await t.evaluate(`
-    return [...document.querySelectorAll('#stage button.fjs-dp-day')].every(b => b.classList.contains('future'));
-  `), 'with enableFutureDates off, a future month is entirely future')
-  await t.evaluate(`
-    const b = [...document.querySelectorAll('#stage button.fjs-dp-day')][10];
-    b.click();
-    return true;
-  `)
+  // `future` and `past` are judged against the `today` prop, so a pinned
+  // clock decides them and the suite does not drift with the real date.
+  const dayBtn = (n) => `[...document.querySelectorAll('#stage button.fjs-dp-day')].find(x => x.querySelector('.fjs-dp-square').textContent.trim() === '${n}')`
+  await t.mount('datepicker', { todayISO: JAN_2026, enableFutureDates: false })
+  t.ok(await t.evaluate(`return ${dayBtn(20)}.classList.contains('future') && !${dayBtn(10)}.classList.contains('future') && !${dayBtn(15)}.classList.contains('future');`),
+    'with enableFutureDates off, the days after the today prop are future and the rest are not')
+  await t.evaluate(`${dayBtn(20)}.click(); return true;`)
   await t.eventually(`document.querySelector('#picked').textContent`, '',
     'and a future day refuses the click')
+  await t.evaluate(`${dayBtn(10)}.click(); return true;`)
+  await t.eventually(`document.querySelector('#picked').textContent`, '2026-01-10',
+    'while a day before it is still pickable')
 
-  await t.mount('datepicker', { todayISO: nextYear, enableFutureDates: true })
+  await t.mount('datepicker', { todayISO: JAN_2026, enablePastDates: false })
+  t.ok(await t.evaluate(`return ${dayBtn(10)}.classList.contains('past') && !${dayBtn(20)}.classList.contains('past');`),
+    'with enablePastDates off, the days before the today prop are past')
+  await t.evaluate(`${dayBtn(10)}.click(); return true;`)
+  await t.eventually(`document.querySelector('#picked').textContent`, '',
+    'and a past day refuses the click')
+
+  await t.mount('datepicker', { todayISO: JAN_2026, enableFutureDates: true })
   t.ok(await t.evaluate(`
     return [...document.querySelectorAll('#stage button.fjs-dp-day')].every(b => !b.classList.contains('future'));
   `), 'enableFutureDates={true} clears the whole month')
+
+  /* ── a locked picker, and what a day says about itself (FJS-2609) ────── */
+
+  await t.mount('datepicker', { todayISO: JAN_2026, disabled: true })
+  await t.evaluate(`${dayBtn(10)}.click(); return true;`)
+  await t.eventually(`document.querySelector('#picked').textContent`, '',
+    'a disabled picker refuses a day')
+  t.is(await t.evaluate(`return ${dayBtn(10)}.getAttribute('aria-disabled');`), 'true',
+    'and the day says so to assistive tech')
+
+  await t.mount('datepicker', { todayISO: JAN_2026, disabledDates: ['2026-01-12'] })
+  t.is(await t.evaluate(`return ${dayBtn(12)}.getAttribute('aria-disabled');`), 'true',
+    'a day in disabledDates carries aria-disabled, not only a class')
+  t.is(await t.evaluate(`return ${dayBtn(11)}.getAttribute('aria-disabled');`), null,
+    'and its neighbor does not')
+  t.is(await t.evaluate(`return ${dayBtn(11)}.getAttribute('aria-label');`).then(s => /January 11, 2026/.test(s)), true,
+    'a day is named by its whole date, not the bare digit')
+  await t.evaluate(`${dayBtn(11)}.click(); return true;`)
+  await t.eventually(`${dayBtn(11)}.getAttribute('aria-pressed')`, 'true', 'the picked day is aria-pressed')
+  t.is(await t.evaluate(`return ${dayBtn(10)}.getAttribute('aria-pressed');`), 'false', 'and an unpicked one is not')
 
   /* ── it is styled from the design system, not from its own scale ─────── */
 

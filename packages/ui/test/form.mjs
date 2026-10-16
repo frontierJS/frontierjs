@@ -161,6 +161,31 @@ await check(
   },
 )
 
+// `<Input name>` over a `@date` String draws what the generated form draws:
+// type="date" (FJS-2746). A date-time stays text -- DateTimeInput owns it.
+await check(
+  'a @date column is type="date" under a hand-written Input',
+  `<script>
+     import Form from '../forms/Form.mesa'
+     import Input from '../forms/Input.mesa'
+     export let resource
+   </script>
+   <Form {resource}>
+     <Input name="dueOn" />
+     <Input name="at" />
+   </Form>`,
+  { resource: { ...RESOURCE, fields: {
+      dueOn: { type: 'string', required: false, format: 'date' },
+      at:    { type: 'string', required: false, format: 'date-time' },
+    } } },
+  {
+    'format: date became type="date"':
+      has(/name="dueOn"[^>]*type="date"|type="date"[^>]*name="dueOn"/),
+    'format: date-time did not':
+      hasNot(/name="at"[^>]*type="date"|type="date"[^>]*name="at"/),
+  },
+)
+
 // A foreign key with no `@label` is named for its RELATION, as sierra's
 // `columnLabel` names its table header: the form read *Assignee Id* over a
 // column whose header said *Assignee* (FJS-1962).

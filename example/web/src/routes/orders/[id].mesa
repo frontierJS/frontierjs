@@ -26,7 +26,7 @@ title: Order
   import Json           from '@frontierjs/ui/components/display/Json.mesa'
   import Divider        from '@frontierjs/ui/components/display/Divider.mesa'
   import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
-  import DropdownLabel     from '@frontierjs/ui/components/overlay/DropdownLabel.mesa'
+  import DropdownGroup     from '@frontierjs/ui/components/overlay/DropdownGroup.mesa'
   import DropdownMenu      from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import Mono           from '@frontierjs/ui/components/display/Mono.mesa'
@@ -342,28 +342,30 @@ title: Order
           a tone alone leaves it to be inferred from a color.
         -->
         {#if forward.length}
-          <DropdownLabel>Move it on</DropdownLabel>
-          {#each forward as move}
-            <DropdownItem
-              disabled={!move.allowed || busy !== null}
-              kbd={move.allowed ? '' : 'level ' + move.gate}
-              onclick={() => ask(move)}
-            >{move.name}</DropdownItem>
-          {/each}
+          <DropdownGroup heading="Move it on">
+            {#each forward as move}
+              <DropdownItem
+                disabled={!move.allowed || busy !== null}
+                kbd={move.allowed ? '' : 'level ' + move.gate}
+                onclick={() => ask(move)}
+              >{move.name}</DropdownItem>
+            {/each}
+          </DropdownGroup>
         {/if}
 
         {#if forward.length && terminal.length}<DropdownSeparator />{/if}
 
         {#if terminal.length}
-          <DropdownLabel>No way back</DropdownLabel>
-          {#each terminal as move}
-            <DropdownItem
-              tone="danger"
-              disabled={!move.allowed || busy !== null}
-              kbd={move.allowed ? '' : 'level ' + move.gate}
-              onclick={() => ask(move)}
-            >{move.name}</DropdownItem>
-          {/each}
+          <DropdownGroup heading="No way back">
+            {#each terminal as move}
+              <DropdownItem
+                tone="danger"
+                disabled={!move.allowed || busy !== null}
+                kbd={move.allowed ? '' : 'level ' + move.gate}
+                onclick={() => ask(move)}
+              >{move.name}</DropdownItem>
+            {/each}
+          </DropdownGroup>
         {/if}
       </DropdownMenu>
     {/snippet}

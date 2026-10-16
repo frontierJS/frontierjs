@@ -48,7 +48,11 @@
   const rule = resolveRule(form, name)
 
   const resolvedLabel    = stated(label, ruleLabel(name, rule), '') ?? ''
-  const resolvedRequired = stated(required, rule?.required)
+  // The schema's own `required`, never the form's list of columns that are
+  // necessary on this write: that list holds every not-null column on a patch,
+  // and an unticked Boolean already satisfies it. Folded in, the native box
+  // reads `valueMissing` and draws `:user-invalid` on a form that is fine.
+  const resolvedRequired = stated(required, form?.fields?.[name]?.required)
   const displayError     = resolveError(form, name, error, undefined)
 
   const t = displayError ? 'danger' : toTone(tone)

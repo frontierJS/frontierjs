@@ -14,7 +14,10 @@
 
   export let todayISO          = '2026-01-15'
   export let isRange           = false
-  export let enableFutureDates = false
+  export let enableFutureDates = true
+  export let enablePastDates   = true
+  export let disabled          = undefined
+  export let enabledDates      = []
   export let disabledDates     = []
 
   const [y, m, d] = todayISO.split('-').map(Number)
@@ -47,6 +50,9 @@
   alwaysShow
   isOpen
   enableFutureDates={enableFutureDates}
+  enablePastDates={enablePastDates}
+  disabled={disabled}
+  enabledDates={enabledDates}
   disabledDates={disabledDates}
   bind:startDate={startDate}
   bind:endDate={endDate}

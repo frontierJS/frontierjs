@@ -1,0 +1,42 @@
+<script>
+  // Message.mesa
+  // One bubble in a <Transcript>. `side` puts it at the reader's end (`mine`)
+  // or the other party's (`theirs`); the fill is a tone, never a color, so a
+  // theme restyles every bubble at once.
+  //
+  // `mine` is `primary` unless told otherwise and `theirs` is untoned, which is
+  // what separates the two sides to the eye without a second rule. A tone on
+  // either side overrides that — `tone="danger"` is the bubble that failed to
+  // send.
+  //
+  // The body is whatever is inside: <Markdown> for a model's reply, plain text
+  // for a person's.
+  //
+  // Usage:
+  //   <Message side="mine">Where is my order?</Message>
+  //   <Message><Markdown text={reply} /></Message>
+  //   <Message side="mine" tone="danger">Could not send</Message>
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let side = 'theirs'   // 'mine' | 'theirs'
+  export let tone = ''         // pin the fill instead of deriving it from `side`
+
+  const mine = side === 'mine'
+  const t    = toTone(tone) || (mine ? 'primary' : '')
+</script>
+
+<div class={cx('surface', 'fjs-message', t)} data-side={mine ? 'mine' : 'theirs'} {class} {...$attributes}>
+  <slot />
+</div>
+
+<style>
+  .fjs-message {
+    max-inline-size: min(85%, 42rem);
+    padding:         var(--space-md) var(--space-lg);
+    line-height:     1.5;
+    overflow-wrap:   anywhere;
+    align-self:      flex-start;
+  }
+  .fjs-message[data-side="mine"] { align-self: flex-end; }
+</style>

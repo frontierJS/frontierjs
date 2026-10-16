@@ -1,7 +1,7 @@
 {
   "$comment": "Generated from vocabulary.js by build-vocabulary.js — do not edit. vocabulary.js is the source and is a classic script by necessity; see that file.",
   "counts": {
-    "terms": 58,
+    "terms": 59,
     "tiers": 8,
     "anatomy": 27
   },
@@ -367,6 +367,14 @@
       "class": "progress"
     },
     {
+      "term": "Meter",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<meter>",
+      "meaning": "How full something is against a known whole -- a disk, a quota. Not task completion; that is Progress",
+      "class": "meter"
+    },
+    {
       "term": "Spinner",
       "tier": "Inline",
       "tierBlurb": "Things that sit in a line of content.",
@@ -702,7 +710,7 @@
         ],
         [
           ".tab",
-          "One tab. Selection comes from aria-selected, never a class"
+          "One tab. Selection comes from aria-selected, never a class — a tab that is a link to a route takes aria-current=\"page\" instead, and `.tablist.divided` rules a section bar's links off from each other and from the title"
         ]
       ]
     },
@@ -968,6 +976,7 @@
       "stretch",
       "striped",
       "text",
+      "top",
       "vertical",
       "viewport",
       "wide",

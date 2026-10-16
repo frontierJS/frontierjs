@@ -1,0 +1,33 @@
+<!--
+  DropdownGroup — a titled section of a DropdownMenu, wrapped AROUND its rows.
+
+  The heading is the group's accessible name (`aria-labelledby`), so a screen
+  reader moving through the menu hears which section a row is in. A heading
+  written as a sibling above its rows names nothing: the rows are not inside it.
+
+  `.navlist-label` is the package's class for the heading: a small uppercase
+  line over a group of navigation or menu rows. `.items` stacks the rows with
+  the menu's own gap; `.items.menu .item` still reaches them from the menu above.
+
+  Usage:
+    <DropdownGroup heading="Account">
+      <DropdownItem onclick={profile}>Profile</DropdownItem>
+      <DropdownItem onclick={settings}>Settings</DropdownItem>
+    </DropdownGroup>
+    <DropdownSeparator />
+    <DropdownGroup heading="Danger zone">
+      <DropdownItem tone="danger" onclick={signOut}>Sign out</DropdownItem>
+    </DropdownGroup>
+-->
+<script>
+  import { uid } from '../../utils.js'
+
+  export let heading = ''
+
+  const headingId = uid('dd-group')
+</script>
+
+<div role="group" aria-labelledby={headingId} class="items" {class} {...$attributes}>
+  <div id={headingId} class="navlist-label">{heading}</div>
+  <slot />
+</div>

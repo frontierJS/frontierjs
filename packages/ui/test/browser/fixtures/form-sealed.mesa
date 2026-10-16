@@ -55,6 +55,16 @@
 
   const ISSUED = { id: 'i-1', number: 'A-1', note: 'as issued', state: 'issued' }
   const DRAFT  = { id: 'i-2', number: 'A-2', note: 'still open', code: 'C-2', state: 'draft' }
+
+  // The same id pushed again with the sealing state stored: a move made on the
+  // screen that shows the row, and the parent re-reads it (`FJS-2745`).
+  let movedRow = { id: 'i-3', number: 'A-3', note: 'about to issue', state: 'draft' }
+  window.kitMove = () => { movedRow = { ...movedRow, state: 'issued' } }
+
+  // The bound shape: the form writes what is typed back to the parent, and the
+  // parent's own re-read is the only thing that reopens the row.
+  let boundRow = { id: 'i-4', number: 'A-4', note: 'bound', state: 'draft' }
+  window.kitMoveBound = () => { boundRow = { ...boundRow, state: 'issued' } }
 </script>
 
 <div id="issued">
@@ -67,4 +77,12 @@
 
 <div id="create">
   <Form resource={RESOURCE} />
+</div>
+
+<div id="moved">
+  <Form resource={RESOURCE} record={movedRow} />
+</div>
+
+<div id="bound">
+  <Form resource={RESOURCE} bind:record={boundRow} />
 </div>

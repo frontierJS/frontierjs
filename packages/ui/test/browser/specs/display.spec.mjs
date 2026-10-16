@@ -74,7 +74,8 @@ export async function run(t) {
       bars: bars.map(b => ({ top: b.y, bottom: b.y + b.height, w: b.width })),
       zero: Number(zero),
       values: [...svg.querySelectorAll('.fjs-chart-value')].map(t => t.textContent),
-      hits: svg.querySelectorAll('.fjs-chart-hit[tabindex="0"]').length,
+      hits: svg.querySelectorAll('.fjs-chart-hit[tabindex]').length,
+      stops: svg.querySelectorAll('.fjs-chart-hit[tabindex="0"]').length,
     };
   `)
   t.is(chart.label, 'Net per month', 'the chart is a labeled group')
@@ -84,6 +85,7 @@ export async function run(t) {
   t.ok(Math.abs(chart.bars[2].top - chart.zero) < 0.5 && chart.bars[2].bottom > chart.zero, 'a negative bar hangs below it')
   t.is(JSON.stringify(chart.values), JSON.stringify(['50 u', '-10 u']), 'only the largest and the last value are labeled, through format')
   t.is(chart.hits, 3, 'one focusable hit target per row')
+  t.is(chart.stops, 1, 'and only one of them is in the tab order (FJS-2610)')
 
   // The readout: a real pointer on a band, then the keyboard onto the next.
   const tip = () => t.evaluate(`return {
@@ -93,9 +95,9 @@ export async function run(t) {
   await t.clickAt('#probe-chart .fjs-chart-hit[data-index="0"]')
   const hovered = await tip()
   t.ok(hovered.value === '30 u' && hovered.at === 'Jan', 'pointing at a band reads out its category and value')
-  await t.press('Tab')
+  await t.press('ArrowRight')
   const tabbed = await tip()
-  t.ok(tabbed.value === '50 u' && tabbed.at === 'Feb', 'Tab moves the readout to the next mark')
+  t.ok(tabbed.value === '50 u' && tabbed.at === 'Feb', 'the right arrow moves the readout to the next mark')
 
   // And it redraws when the rows change.
   await t.clickAt('#grow-chart')
@@ -138,14 +140,17 @@ export async function run(t) {
 
   /* ── Bar ─────────────────────────────────────────────────────────────── */
 
-  // Bar is a native <progress>, so the fill is the UA's and the value is the
-  // component's. Reading the property rather than the attribute is the point:
-  // an attribute that never became a property renders an empty track.
+  // Bar is a native <meter> (FJS-1930: a disk is a reading, not a task under
+  // way), so the fill is the UA's and the value is the component's. Reading
+  // the property rather than the attribute is the point: an attribute that
+  // never became a property renders an empty track.
   t.ok(await t.evaluate(`
-    const p = document.querySelector('#probe-bar progress.progress');
+    const p = document.querySelector('#probe-bar meter.meter');
     const r = p.getBoundingClientRect();
     return p.value === 74 && p.max === 100 && r.width > 0;
-  `), 'the bar carries the value it was given, as a real <progress>')
+  `), 'the bar carries the value it was given, as a real <meter>')
+  t.ok(await t.evaluate(`return !document.querySelector('#probe-bar progress');`),
+    'and is not announced as task progress')
   t.ok(await t.evaluate(`return !!byText('#probe-bar', '74');`), 'and shows the number with its unit')
 
   /* ── Avatar / AvatarGroup ────────────────────────────────────────────── */

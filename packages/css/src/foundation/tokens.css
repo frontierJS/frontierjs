@@ -665,6 +665,9 @@
   --bg-mix:     initial;
   --on-bg-mix:  initial;
   --ring-color: initial;
+  --surface-ground: initial;
+  --tab-fade-start: 0px;
+  --tab-fade-end:   0px;
 }
 
 /*
@@ -715,9 +718,23 @@
   --topbar-bg:            initial;
   --sidebar-bg:           initial;
   --dialog-bg:            initial;
+  --toast-bg:             initial;
+  --toast-radius:         initial;
   --font-display:         initial;
   --heading-font-weight:  initial;
   --heading-letter-spacing: initial;
+  --h1-size:              initial;
+  --h2-size:              initial;
+  --h3-size:              initial;
+  --h4-size:              initial;
+  --h5-size:              initial;
+  --h6-size:              initial;
+  --h1-ink:               initial;
+  --h2-ink:               initial;
+  --h3-ink:               initial;
+  --h4-ink:               initial;
+  --h5-ink:               initial;
+  --h6-ink:               initial;
   --measure:              initial;
 
   --code-bg:        initial;

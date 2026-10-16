@@ -261,6 +261,7 @@ var GROUNDS = [
   { name: '.sidebar', html: '<nav class="sidebar">x</nav>', token: '--sidebar-bg', fallback: '--surface' },
   { name: '.dialog', html: '<div class="dialog">x</div>', token: '--dialog-bg', fallback: '--surface' },
   { name: '.drawer', html: '<div class="drawer">x</div>', token: '--dialog-bg', fallback: '--surface' },
+  { name: '.toast', html: '<div class="toast">x</div>', token: '--toast-bg', fallback: '--surface' },
 ];
 
 GROUNDS.forEach(function (subject) {
@@ -281,6 +282,21 @@ GROUNDS.forEach(function (subject) {
   });
 });
 
+test('theming: --toast-bg does not break .outlined, and --toast-radius corners a toast apart from a card', function () {
+  /* FJS-1948. A pill toast in a rounded-card theme needs its own corner. */
+  var node = themedBy('--toast-bg: rgb(9, 8, 7)', '<div class="toast outlined">x</div>');
+  assert.sameColor(style(node, 'background-color'), 'rgba(0, 0, 0, 0)', '.outlined lost to --toast-bg');
+  cleanup();
+
+  var plain = themedBy('--card-radius: 5px', '<div class="toast">x</div>');
+  assert.equal(style(plain, 'border-top-left-radius'), '5px', 'a toast stopped following --card-radius');
+  cleanup();
+
+  var pill = themedBy('--card-radius: 5px; --toast-radius: 999px', '<div class="toast">x</div>');
+  assert.equal(style(pill, 'border-top-left-radius'), '999px', 'a toast ignored --toast-radius');
+  cleanup();
+});
+
 test('theming: --dialog-bg does not break .outlined on a dialog', function () {
   /*
    * Why the ground is assigned to --surface-ground and not to
@@ -292,6 +308,23 @@ test('theming: --dialog-bg does not break .outlined on a dialog', function () {
   var node = themedBy('--dialog-bg: rgb(9, 8, 7)', '<div class="dialog outlined">x</div>');
   assert.sameColor(style(node, 'background-color'), 'rgba(0, 0, 0, 0)', '.outlined lost to --dialog-bg');
   cleanup();
+});
+
+test('theming: a dark Surface inside a Dialog or Drawer draws its own ground, not the dialog\'s', function () {
+  /*
+   * FJS-2635. The dialog sets --surface-ground on itself, the property
+   * inherited, and .surface reads it before --surface, so the theme's own
+   * --surface lost inside every overlay: white text on the dialog's white.
+   */
+  ['dialog', 'drawer'].forEach(function (host) {
+    var node = themedBy(
+      '--dialog-bg: rgb(250, 250, 250)',
+      '<div class="' + host + '"><div class="surface theme-dark" id="in">x</div></div>',
+      '#in'
+    );
+    assert.sameColor(style(node, 'background-color'), 'rgb(26, 26, 26)', 'a dark Surface in a .' + host + ' drew the overlay ground');
+    cleanup();
+  });
 });
 
 test('theming: a theme class on a region inverts the whole ramp, not just a ground', function () {
@@ -549,6 +582,42 @@ test('theming: --heading-font-weight moves all six and is unset by default', fun
   var themed_ = themedBy('--heading-font-weight: 400', '<div><h1>One</h1><h3>Three</h3></div>');
   assert.equal(style(themed_.querySelector('h1'), 'font-weight'), '400', '--heading-font-weight did not reach h1');
   assert.equal(style(themed_.querySelector('h3'), 'font-weight'), '400', '--heading-font-weight did not reach h3');
+  cleanup();
+});
+
+test('theming: --h1-size … --h6-size size a heading without moving .text-*', function () {
+  /*
+   * FJS-2705. h1–h6 read the shared --text-* ladder, so a theme wanting a
+   * 22px h1 over a 15px body had to retune --text-4xl and drag every
+   * .text-4xl with it. The fallback arm keeps the ladder when unset.
+   */
+  var html = '<div><h1>One</h1><h5>Five</h5><span class="text-lg">Big</span></div>';
+  var plain = themedBy('--text-4xl: 40px', html);
+  assert.equal(style(plain.querySelector('h1'), 'font-size'), '40px', 'unset, h1 no longer follows --text-4xl');
+  cleanup();
+
+  var themed_ = themedBy('--h1-size: 22px; --h5-size: 11px; --text-lg: 17px', html);
+  assert.equal(style(themed_.querySelector('h1'), 'font-size'), '22px', '--h1-size did not reach h1');
+  assert.equal(style(themed_.querySelector('h5'), 'font-size'), '11px', '--h5-size did not reach h5');
+  assert.equal(style(themed_.querySelector('.text-lg'), 'font-size'), '17px', '--h5-size moved the .text-lg utility');
+  cleanup();
+});
+
+test('theming: --h1-ink … --h6-ink give a heading level its own ink and leave --ink alone', function () {
+  /*
+   * FJS-2704. Every level read --ink, so a theme whose h1/h2, h3/h4 and
+   * body text are three different greys had no way to say so. The
+   * fallback arm keeps --ink when unset.
+   */
+  var html = '<div><h1>One</h1><h3>Three</h3><h4>Four</h4></div>';
+  var plain = themedBy('--ink: rgb(10, 20, 30)', html);
+  assert.equal(style(plain.querySelector('h1'), 'color'), 'rgb(10, 20, 30)', 'unset, h1 no longer follows --ink');
+  cleanup();
+
+  var themed_ = themedBy('--ink: rgb(10, 20, 30); --h1-ink: rgb(1, 2, 3); --h3-ink: rgb(4, 5, 6)', html);
+  assert.equal(style(themed_.querySelector('h1'), 'color'), 'rgb(1, 2, 3)', '--h1-ink did not reach h1');
+  assert.equal(style(themed_.querySelector('h3'), 'color'), 'rgb(4, 5, 6)', '--h3-ink did not reach h3');
+  assert.equal(style(themed_.querySelector('h4'), 'color'), 'rgb(10, 20, 30)', '--h3-ink moved h4');
   cleanup();
 });
 

@@ -10,7 +10,7 @@
 
   export let value       = ''
   export let placeholder = ''
-  export let rows        = 3
+  export let rows        = 4         // the empty box's height in lines; css draws no fewer
   export let maxlength   = undefined
   export let disabled    = undefined  // undefined = ask the form; false overrides it
   export let required    = undefined

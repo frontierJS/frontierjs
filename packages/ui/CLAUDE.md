@@ -21,11 +21,12 @@ components/
               FileUpload · FileField · GeoField · MoneyInput · Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
-              Json · Markdown · SignatureView · BulkBar · …
+              Json · Markdown · SignatureView · BulkBar ·
+              Transcript · Message · Composer (chat) · …
   layout/     Card · Tabs (Tabs/TabList/Tab/TabPanel) · Accordion(+Item) ·
               Shell (the app frame, drawn from a nav.js table; Sierra's
               page, session and isActive arrive as props)
-  overlay/    Modal · Drawer · Popover · Tooltip · DropdownMenu(+Item/Label/
+  overlay/    Modal · Drawer · Popover · Tooltip · DropdownMenu(+Item/Group/
               Separator) · ConfirmationPopover · ConfirmPanel · ConfirmProvider ·
               CommandPalette
   feedback/   Alert(+Provider) · Toast(+er) · Progress · Spinner · Skeleton
@@ -67,7 +68,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   wrote the result back, so under `@version` a second write from one open form
   carried a revision the row had passed.
 - **`$context.form` is the seam.** `forms/Form.mesa` provides
-  `{ errors, submitting, disabled, fields, submitted, optionsFor, reportInvalid, changed }`;
+  `{ errors, submitting, disabled, fields, sealed, withheld, required, submitted, optionsFor, reportInvalid, changed, committed }`;
   **every control reads it**
   to resolve its own label, constraints, `aria-invalid` and message. An absent form
   reads `undefined` and every fallback is what the control did standing alone.
@@ -125,7 +126,9 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   back a zoneless string that is parsed as UTC — two shifts, opposite
   directions, different sizes, on a control that looks correct. The component
   converts at both edges and NAMES the zone it is showing in a `.field-addon`.
-  It has no `oninput` on purpose: a handler reading `e.target.value` would get
+  The zone is the browser's unless `timeZone` (IANA) names the app's own; the
+  pure helpers take it too and `test/datetime-zone.mjs` holds them without a
+  browser. It has no `oninput` on purpose: a handler reading `e.target.value` would get
   the wall clock, so `onvalue(iso)` is the callback that carries a value. A
   `Date` column is still a plain `input type="date"` — no zone, nothing to
   lose.
@@ -203,9 +206,9 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   suite's own exception list, with the reason.
 - **A component exposes a method with `export function`, reached by `bind:this`**
   — `Input`/`Select`/`Textarea`/`NumberInput` (`focus()`, `select()`) and `Form`
-  (`submit()`, `reset()`, `clearErrors()`). It was dropped from the compiled
+  (`submit()`, `reset()`, `clearErrors()`, `flushAutosave()`). It was dropped from the compiled
   output until mesa closed `FJS-087`, so those four had documented a method they
-  did not have. `Form` also still hands the same three out through `onready`.
+  did not have. `Form` also still hands the same four out through `onready`.
 - **A panel positioned in a frame callback must not be visible before that
   frame.** The frame that PAINTS a newly inserted panel is the one before the
   callback that places it — input is dispatched, mesa's flush inserts the
@@ -354,7 +357,10 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
     over somebody else's edit rather than letting it vanish. An undo is
     announced like any other write, a fresh edit drops the forward stack, and
     ⌘Z is bound to the TREE — a document-level handler takes the shortcut off a
-    page that has its own.
+    page that has its own. **A page that keeps history over the same document
+    states `history={false}`** (`FJS-1624`): no stack, no ↶/↷, no binding, every
+    write still announced. Left on, each stack can undo the other's undo — the
+    tree announces its undo as a new write, which the page records as a step.
   - **`against` is diff mode, and it walks a MERGED document.** A removed key
     is in neither `value` nor any tree built from it, so a diff that walks
     `value` shows every change except the ones that took something away.

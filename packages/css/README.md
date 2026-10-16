@@ -132,9 +132,12 @@ rule of its own, the token that would have carried it is missing.
 | `--space-*-base` | the ladder's **shape** — a rung is `base × density`, so this is how a theme is tight at the small rungs and generous at the large ones |
 | `--text-*` · `--leading-*` · `--font-*` | the type scale, the leading ladder, both faces |
 | `--app-bg` · `--topbar-bg` · `--sidebar-bg` · `--dialog-bg` | the frame's own grounds, so the shell can differ from the content. `--app-bg` feeds the `background` shorthand, so it takes a gradient |
+| `--toast-bg` · `--toast-radius` | a toast's own ground and corner (defaults `--surface`, `--card-radius`), so a dark pill can sit in a theme of rounded light cards; scope a ramp onto `<Toaster class="theme-dark">` |
 | `--glass-alpha` · `--glass-blur` | the `.glass` treatment. **`--glass-alpha` is a contrast floor, not a look** — at the default 85% `--ink` and `--ink-soft` clear AA over any ground, and below it the guarantee is gone. The suite grades every shipped theme; it cannot grade an app's override |
 | `--label-font-weight` · `--label-text-transform` · `--label-letter-spacing` | the small caps that name a region — table head, tile label, nav group. One role, one triple |
 | `--heading-font-weight` · `--heading-letter-spacing` | all six heading levels at once. Unset, each keeps its own optical value |
+| `--h1-size` … `--h6-size` | one heading level's size, without moving the `.text-*` utilities that share its `--text-*` rung. Unset, the level reads its rung |
+| `--h1-ink` … `--h6-ink` | one heading level's color. Unset, the level reads `--ink`, so a theme can give h1/h2, h3/h4 and body text three different inks |
 | `--motion-fast` · `--motion-base` · `--motion-enter` · `--motion-slow` | how quickly the product moves. `--motion-spin` and `--motion-shimmer` are the two loops |
 | `--motion-ease` · `--motion-ease-out` · `--motion-ease-enter` | and how it moves |
 | `--ring` · `--ring-width` · `--ring-offset` · `--ring-style` | the focus ring. **`--ring-style` takes `solid`, `dashed` or `double` and nothing else** — it is registered with `@property`, so `none` is invalid and falls back to `solid`. A theme can restyle the ring and cannot turn it off |

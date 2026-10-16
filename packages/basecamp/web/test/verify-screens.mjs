@@ -1030,6 +1030,11 @@ try {
   await until(`!!document.getElementById('app-edit-save')`, v => v, 'the app form never opened')
   check('an app\'s address is shown frozen on an edit', await frozen('dialog[open] [name=slug]'))
   check('and so is the environment it lives in', await frozen('dialog[open] [name=environmentId]'))
+  // The live picker reads a name; the frozen one read the raw key (`FJS-1542`).
+  await until(`document.querySelector('dialog[open] [name=environmentId]')?.value ?? ''`,
+    v => v && !/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(v), 'the frozen environment still reads as its key')
+  check('and it reads the environment\'s name rather than its key',
+    !/^[0-9a-f]{8}-/.test(await evaluate(`document.querySelector('dialog[open] [name=environmentId]')?.value ?? ''`)))
   check('and the status the machine reports is not offered at all',
     !(await present('dialog[open] [name=status]')))
   await typeIn('dialog[open] [name=name]', 'web-edited')

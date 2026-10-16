@@ -199,15 +199,20 @@
   function write(f, next) {
     const query = { ...held }
 
+    // A range is empty when neither bound survives, and a bound cleared by
+    // hand is `''`, so the test is on the bounds kept and not on the keys.
+    const range = {}
+    if (f.kind === 'range') {
+      if (next?.gte !== undefined && next.gte !== '') range.gte = next.gte
+      if (next?.lte !== undefined && next.lte !== '') range.lte = next.lte
+    }
+
     const empty = next === undefined || next === null || next === ''
       || (Array.isArray(next) && !next.length)
-      || (f.kind === 'range' && next.gte === undefined && next.lte === undefined)
+      || (f.kind === 'range' && !Object.keys(range).length)
 
     if (empty) delete query[keyOf(f)]
     else if (f.kind === 'range') {
-      const range = {}
-      if (next.gte !== undefined && next.gte !== '') range.gte = next.gte
-      if (next.lte !== undefined && next.lte !== '') range.lte = next.lte
       query[keyOf(f)] = range
     } else {
       const asked = { [Array.isArray(f.op) ? f.op[0] : f.op]: next }
@@ -277,7 +282,7 @@
       />
     {:else if f.kind === 'exact'}
       <Select
-        value={current(f) ?? ''}
+        value={current(f) === undefined || current(f) === null ? '' : String(current(f))}
         options={[{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }]}
         placeholder={f.label}
         aria-label={f.label}

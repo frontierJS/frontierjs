@@ -168,3 +168,14 @@ test('layout: a chip holding a sentence wraps with .wrap and widens its box with
     '.badge.wrap fits its box, ' + Math.round(b[2].getBoundingClientRect().width) + 'px');
   cleanup();
 });
+
+/* ── [hidden] ─────────────────────────────────────────────────────── */
+
+test('layout: a hidden Stack, Cluster, Group, Center, Split or Grid is not displayed', function () {
+  ['stack', 'cluster', 'group', 'center', 'split', 'grid'].forEach(function (term) {
+    var node = el('<div class="' + term + '" hidden><span>x</span></div>');
+    assert.equal(style(node, 'display'), 'none',
+      '.' + term + ' states a display, which beats the UA rule behind [hidden]');
+    cleanup();
+  });
+});

@@ -78,11 +78,17 @@
  *
  * Where field-sizing is not supported the declaration drops and min-height
  * alone applies, which is the box this had before.
+ *
+ * The floor is the `rows` attribute, 4 lines where none is stated. A fixed
+ * floor beat it, so rows="1" drew four lines and no compact textarea could
+ * be asked for. The plain 4lh above the typed attr() is for a browser that
+ * drops the second declaration.
  */
 textarea.field {
   field-sizing: content;
   resize:       vertical;
   min-height:   4lh;
+  min-height:   calc(attr(rows type(<number>), 4) * 1lh);
   max-height:   16lh;
   font-family:  var(--font-primary);
 }

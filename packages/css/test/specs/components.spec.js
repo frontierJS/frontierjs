@@ -227,6 +227,25 @@ test('form: a textarea grows with its value and stops at the cap', function () {
   assert.ok(capped > grown, 'the cap was already reached at eight lines, so nothing is growing');
 });
 
+test('form: a textarea\'s rows sets its floor, 4 lines only where none is stated (FJS-2798)', function () {
+  /*
+   * `rows` is the caller's statement of how tall the empty box is. A fixed
+   * 4lh floor beat it, so rows="1" drew four lines and a compact textarea
+   * could not be asked for.
+   */
+  if (!CSS.supports('field-sizing', 'content')) return;
+  var bare = el('<textarea class="field"></textarea>');
+  var lh = parseFloat(style(bare, 'line-height'));
+  var one  = el('<textarea class="field" rows="1"></textarea>').getBoundingClientRect().height;
+  var two  = el('<textarea class="field" rows="2"></textarea>').getBoundingClientRect().height;
+  var six  = el('<textarea class="field" rows="6"></textarea>').getBoundingClientRect().height;
+  var none = bare.getBoundingClientRect().height;
+  assert.ok(one < lh * 2, 'rows="1" drew ' + one + 'px against a line of ' + lh);
+  assert.ok(two < lh * 3, 'rows="2" drew ' + two + 'px against a line of ' + lh);
+  assert.atLeast(six, lh * 6 - 1, 'rows="6" fell below six lines');
+  assert.atLeast(none, lh * 4 - 1, 'a textarea with no rows lost its 4-line floor');
+});
+
 test('form: a file input\'s button is the package\'s, not the UA\'s', function () {
   /*
    * The button is a shadow part, so this is the only way to ask. It is
@@ -767,6 +786,57 @@ test('tabs: a scrolling strip does not grow a scrollbar on the other axis', func
   assert.equal(style(v, 'overflow-y'), 'visible', 'a vertical strip clips its own tabs');
 });
 
+test('tabs: an overflowing strip hides its scrollbar and fades the edge that has more', function () {
+  /*
+   * FJS-2383. A crowded strip drew a 16px scrollbar track under the tabs, and
+   * nothing but a cut-off last tab said there was more. The bar is hidden and
+   * the edge fades instead -- the fade is a scroll-driven mask, so a strip that
+   * fits (no scroll timeline) keeps a flat mask and fades nothing.
+   */
+  var many = '';
+  for (var i = 0; i < 12; i++) many += '<button class="tab" role="tab">Tab number ' + i + '</button>';
+  var html = '<div style="inline-size:300px"><div class="tablist" role="tablist">' + many + '</div></div>';
+  var h = el(html, '.tablist');
+  assert.ok(h.scrollWidth > h.clientWidth, 'fixture does not overflow');
+  assert.equal(style(h, 'scrollbar-width'), 'none', 'an overflowing strip draws a scrollbar under its tabs');
+  assert.equal(
+    h.offsetHeight - h.clientHeight,
+    parseFloat(style(h, 'border-bottom-width')),
+    'the strip reserves room for a scrollbar track'
+  );
+  assert.notEqual(style(h, 'mask-image'), 'none', 'nothing fades the edge that has more tabs');
+  var fade = h.getAnimations().filter(function (a) { return a.animationName === 'tablist-edges' })[0];
+  assert.ok(fade, 'no animation drives the edge fade');
+  assert.ok(
+    typeof ScrollTimeline === 'undefined' || fade.timeline instanceof ScrollTimeline,
+    'the edge fade is not tied to the strip\'s own scroll'
+  );
+  cleanup();
+
+  var fits = el(TABS, '.tablist');
+  var flat = getComputedStyle(fits).maskImage;
+  assert.ok(flat, 'mask-image unreadable');
+  cleanup();
+
+  var v = el(TABS.replace('class="tabs"', 'class="tabs vertical"'), '.tablist');
+  assert.equal(style(v, 'mask-image'), 'none', 'a vertical strip does not scroll sideways, so it fades nothing');
+});
+
+test('tabs: a stretch strip narrows its tabs to the column it is in', function () {
+  /*
+   * FJS-2383. `.stretch` set flex:1 but each tab kept padding-inline
+   * var(--space-xl) and nowrap, so three short labels in a 204px sidebar
+   * measured 207px and drew a scrollbar for 3px. Stretch shares the width;
+   * it must not be what overflows.
+   */
+  var html = '<div style="inline-size:190px"><div class="tablist stretch" role="tablist">' +
+    '<button class="tab" role="tab">Curves</button>' +
+    '<button class="tab" role="tab">Levels</button>' +
+    '<button class="tab" role="tab">HSL</button></div></div>';
+  var h = el(html, '.tablist');
+  assert.ok(h.scrollWidth <= h.clientWidth, 'stretch tabs overflow their column: ' + h.scrollWidth + ' > ' + h.clientWidth);
+});
+
 test('tabs: a vertical panel cannot blow the layout out sideways', function () {
   /*
    * A flex item defaults to min-inline-size: auto, so a wide table inside
@@ -968,4 +1038,68 @@ test('popover: outside an anchor it is still unplaced', function () {
     'a popover outside an anchor was placed below its trigger anyway — the placement is on .popover ' +
       'itself, so anchor positioning and a style attribute now fight it'
   );
+});
+
+/* ── Link tabs ───────────────────────────────────────────────────────*/
+
+var LINK_TABS =
+  '<nav class="tablist" aria-label="Section">' +
+  '<a class="tab" href="/a" aria-current="page" id="l1">One</a>' +
+  '<a class="tab" href="/b" id="l2">Two</a>' +
+  '<a class="tab" href="/c" id="l3">Three</a>' +
+  '</nav>';
+
+test('tabs: a link tab is current through aria-current, as a tab is selected through aria-selected', function () {
+  /*
+   * FJS-1947. A strip of routes under a page title is Tabs whose members are
+   * links, so the current one answers aria-current="page" and no tabpanel is
+   * announced for it.
+   */
+  var cur = style(el(LINK_TABS, '#l1'), 'border-bottom-color');
+  var other = style(document.getElementById('l2'), 'border-bottom-color');
+  assert.differentColor(cur, other, 'the current link tab looks like every other');
+  assert.equal(
+    style(document.getElementById('l1'), 'text-decoration-line'),
+    'none',
+    'a link tab is underlined like prose'
+  );
+  cleanup();
+
+  var faked = el(LINK_TABS.replace('id="l2"', 'class="active" id="l2"'), '#l2');
+  assert.sameColor(style(faked, 'border-bottom-color'), other, 'an .active class faked the current link tab');
+});
+
+test('tabs: .divided rules the tabs off from each other and from the title before them', function () {
+  var plain = el(LINK_TABS, '#l2');
+  assert.equal(parseFloat(style(plain, 'border-left-width')), 0, 'a plain tab carries a side rule');
+  cleanup();
+
+  var d = el(LINK_TABS.replace('class="tablist"', 'class="tablist divided"'), '#l2');
+  assert.ok(parseFloat(style(d, 'border-left-width')) > 0, 'a divided tab has no rule before it');
+  assert.equal(style(d, 'border-left-style'), 'solid', 'the rule is not drawn');
+  var first = document.getElementById('l1');
+  assert.ok(parseFloat(style(first, 'border-left-width')) > 0, 'the first tab is not ruled off from the title');
+  assert.equal(style(d.parentNode, 'border-bottom-style'), 'none', 'a divided strip draws a baseline rule');
+  assert.equal(style(first, 'border-bottom-style'), 'none', 'a divided tab draws an underline');
+  assert.differentColor(
+    style(first, 'color'),
+    style(document.getElementById('l2'), 'color'),
+    'the current divided tab is not set apart by colour'
+  );
+});
+
+test('meter: a <meter> is drawn as the fill bar .progress is, in the tone it is given', function () {
+  /*
+   * FJS-1930. The UA paints a <meter> in its own green/yellow/red bands, so
+   * the tone has to reach the fill through the meter pseudos.
+   */
+  var m = el('<meter class="meter danger" id="m" value="70" max="100">70%</meter>');
+  assert.equal(style(m, 'appearance'), 'none', 'the UA meter look was kept');
+  assert.ok(parseFloat(style(m, 'block-size')) > 0 && parseFloat(style(m, 'block-size')) <= 16, 'the meter has no bar height');
+  assert.equal(style(m, 'border-top-left-radius'), '999px', 'the meter is not pill-shaped');
+  var rules = allRules().filter(function (r) {
+    return r.selectorText && r.selectorText.indexOf('.meter::-webkit-meter-optimum-value') !== -1;
+  });
+  assert.ok(rules.length > 0 && /--bg-mix/.test(rules[0].cssText), 'the meter fill does not read the tone');
+  cleanup();
 });

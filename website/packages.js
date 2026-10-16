@@ -343,7 +343,7 @@ const PKGS = [
     ['Forms','Form Button Field Fieldset Label Input Textarea Select Checkbox Switch RadioGroup NumberInput Slider Combobox MultiSelect DatePicker DateTimeInput JsonInput FileUpload'],
     ['Display','Badge Pill Tag Dot Kbd Mono Divider Breadcrumbs Pagination Steps SectionHeader Callout EmptyState CopyButton Code Avatar AvatarGroup Stat StatCard Table Bar Sparkline AccountStatus Json'],
     ['Layout','Card Accordion AccordionItem Tabs TabList Tab TabPanel'],
-    ['Overlay','Modal Drawer Popover Tooltip DropdownMenu DropdownItem DropdownLabel DropdownSeparator CommandPalette ConfirmationPopover ConfirmPanel ConfirmProvider'],
+    ['Overlay','Modal Drawer Popover Tooltip DropdownMenu DropdownItem DropdownGroup DropdownSeparator CommandPalette ConfirmationPopover ConfirmPanel ConfirmProvider'],
     ['Feedback & stores','Alert AlertProvider Toast Toaster Progress Spinner Skeleton toastStore alertStore commandPaletteStore'],
   ],
 },

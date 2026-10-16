@@ -144,6 +144,14 @@ test('markdown: headings, shifted by headingBase', function () {
   assert.equal(markdown('#hashtag'), '<p>#hashtag</p>')
 })
 
+// FJS-2610: a base from an attribute is a string, and 0 or 9 is no heading level.
+test('markdown: headingBase is a number from 1 to 6 however it arrives', function () {
+  assert.equal(markdown('# One\n## Two', { headingBase: '3' }), '<h3>One</h3>\n<h4>Two</h4>')
+  assert.equal(markdown('# One', { headingBase: 0 }), '<h1>One</h1>')
+  assert.equal(markdown('# One', { headingBase: 9 }), '<h6>One</h6>')
+  assert.equal(markdown('# One', { headingBase: 'big' }), '<h1>One</h1>')
+})
+
 test('markdown: paragraphs split on a blank line', function () {
   assert.equal(markdown('one\ntwo\n\nthree'), '<p>one\ntwo</p>\n<p>three</p>')
 })

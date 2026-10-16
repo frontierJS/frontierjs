@@ -19,6 +19,9 @@
   const setActive = $context.setActive
 
   const isActive = activeId === id
+  // Two Tabs on a page may both have a tab named "general"; the scope is what
+  // keeps one strip's ARIA pairing off the other's.
+  const scope = $context.scope
 
   // Capture context functions at top level (Rule 25) then use in lifecycle callbacks
   const registerTab   = $context.registerTab
@@ -39,9 +42,9 @@
 <button
   type="button"
   role="tab"
-  id="tab-{id}"
+  id="{scope}-tab-{id}"
   aria-selected={isActive}
-  aria-controls="panel-{id}"
+  aria-controls="{scope}-panel-{id}"
   tabindex={isActive ? 0 : -1}
   disabled={disabled}
   data-tab-id={id}

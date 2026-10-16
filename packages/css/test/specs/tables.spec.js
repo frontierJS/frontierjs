@@ -178,3 +178,33 @@ test('table-wrap: a hidden header label scrolls with the table, not the page', f
     'a .visually-hidden label inside .table-wrap is positioned against the page, not the scroller'
   );
 });
+
+test('table: a <tfoot> <th> reads as a totals label, not a column head (FJS-1985)', function () {
+  /*
+   * `.table th` is the column-head look: uppercase, muted, 2xs. A <th> in a
+   * <tfoot> labels a row, so it took that look and sat at a smaller size than
+   * the footer's own <td> cells beside it.
+   */
+  var t = el(
+    '<table class="table"><tbody><tr><td>1</td></tr></tbody>' +
+    '<tfoot><tr><th id="fl" scope="row">Total</th><td id="fv">9</td></tr></tfoot></table>'
+  );
+  var th = t.querySelector('#fl');
+  var td = t.querySelector('#fv');
+  assert.equal(style(th, 'text-transform'), 'none', 'footer label is uppercased like a column head');
+  assert.sameColor(style(th, 'color'), rootProp('--ink'), 'footer label is muted like a column head');
+  assert.equal(style(th, 'font-size'), style(td, 'font-size'), 'footer label and footer cell differ in size');
+  assert.equal(style(th, 'padding-left'), style(td, 'padding-left'), 'footer label and cell differ in padding');
+});
+
+test('table: .top reads a row from its top, and a plain table stays centred (FJS-2703)', function () {
+  /*
+   * A row of blocks of different heights (a card beside an address and a
+   * note) wants every cell to start at the row's top. The UA's middle stands
+   * otherwise, and the kit had no word to change it.
+   */
+  var plain = el(ROWS);
+  var top = el(ROWS.replace('class="table"', 'class="table top"'));
+  assert.equal(style(plain.querySelector('#r1 td'), 'vertical-align'), 'middle', 'a plain table no longer centres');
+  assert.equal(style(top.querySelector('#r1 td'), 'vertical-align'), 'top', '.table.top does not read a row from its top');
+});

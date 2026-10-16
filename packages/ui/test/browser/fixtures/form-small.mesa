@@ -1,0 +1,128 @@
+<script>
+  // form-small.mesa — twelve small Form and simple-control defects (FJS-2608).
+  //
+  // Each block is one claim and none has a render-time symptom: a timer firing
+  // after a lock, a mode the form answers wrongly, a flag a button never read.
+  // The service records and answers; nothing else is stubbed.
+  import Form        from '../../../components/forms/Form.mesa'
+  import Button      from '../../../components/forms/Button.mesa'
+  import RadioGroup  from '../../../components/forms/RadioGroup.mesa'
+  import {
+    formFieldList, validateAgainstFields, coerceToSchema, toFieldErrors,
+  } from '@frontierjs/sierra/field-rules'
+
+  const FIELDS = {
+    id:        { type: 'string',  readOnly: true, title: 'Id' },
+    reference: { type: 'string',  required: true, minLength: 3, title: 'Reference' },
+    total:     { type: 'number',  required: true, minimum: 1, title: 'Total' },
+  }
+
+  let calls = []
+  let failCommitted = false
+  window.kitFailCommitted = () => { failCommitted = true }
+
+  function write(kind) {
+    calls = [...calls, kind]
+    if (failCommitted) {
+      failCommitted = false
+      const err = new Error('The row was written but a hook failed')
+      err.committed = true
+      return Promise.reject(err)
+    }
+    return Promise.resolve({ id: 'o-7' })
+  }
+
+  const resourceOver = (fields, extra = {}) => ({
+    context: { model: 'Order', service: 'orders', idField: 'id' },
+    fields,
+    formFields: (opts) => formFieldList(fields, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ reference: '', total: 0 }),
+    coerce:      (data) => coerceToSchema(fields, data),
+    validate:    (data, mode) => validateAgainstFields(fields, data, mode),
+    fieldErrors: (err) => toFieldErrors(err),
+    save: (data, opts) => write('save:' + (opts?.mode ?? '-') + ':' + (data?.reference ?? '')),
+    ...extra,
+  })
+
+  const RESOURCE = resourceOver(FIELDS)
+  const UP_ROW   = { id: 'o-7', reference: 'ORD-7', total: 12 }
+  const LATE_ROW = { id: 'o-7', reference: 'ORD-7', total: 12 }
+  const BOOL_ROW = { id: 'o-1', active: false }
+
+  // -7: upsert over a row that has an id is a patch, so it autosaves.
+  // -6: the window is armed, then the form is locked before it fires.
+  let lateOff = false
+  window.kitLock = () => { lateOff = true }
+
+  // -8: a non-null Boolean on a patch.
+  const BOOL_FIELDS = {
+    id:     { type: 'string',  readOnly: true, title: 'Id' },
+    active: { type: 'boolean', title: 'Active' },
+  }
+  const BOOL = resourceOver(BOOL_FIELDS, {
+    make: () => ({ active: false }),
+    requiredFields: (rec, mode) => (mode === 'patch' ? ['active'] : []),
+  })
+
+  // -10, -17
+  let picked = null
+  const ITEMS = [
+    { value: 1,      label: 'One',    description: 'the first' },
+    { value: 2,      label: 'Two',    description: 'the second' },
+    { value: 'a b',  label: 'Spaced', description: 'has a space' },
+  ]
+
+  // -14
+  let savedRef = ''
+  // -13
+  let after = { reference: '', total: 0 }
+  let afterErrors = {}
+
+  // -15
+  const BIG_FIELDS = {
+    id:  { type: 'string', readOnly: true, title: 'Id' },
+    big: { type: 'string', 'x-big': true, pattern: '^-?[0-9]+$', title: 'Big' },
+  }
+  const BIG = resourceOver(BIG_FIELDS, { make: () => ({ big: '' }) })
+</script>
+
+<div id="upsert">
+  <Form resource={RESOURCE} record={UP_ROW} method="upsert" autosave={120} />
+</div>
+
+<div id="late">
+  <Form resource={RESOURCE} record={LATE_ROW} autosave={200} disabled={lateOff} />
+</div>
+
+<div id="bool">
+  <Form resource={BOOL} record={BOOL_ROW} />
+</div>
+
+<div id="radio">
+  <RadioGroup name="pick" items={ITEMS} value={null} onchange={(v) => picked = v} />
+</div>
+<output id="picked">{picked === null ? '' : typeof picked + ':' + picked}</output>
+
+<div id="done">
+  <Form resource={RESOURCE} resetOnDone ondone={(r, rec) => savedRef = rec?.reference ?? '(none)'} />
+</div>
+<output id="saved-ref">{savedRef}</output>
+
+<div id="again">
+  <Form resource={RESOURCE} bind:record={after} bind:errors={afterErrors}
+        ondone={() => after = { reference: '', total: 0 }} />
+</div>
+<output id="again-errors">{Object.keys(afterErrors).join(',')}</output>
+
+<div id="commit">
+  <Form resource={RESOURCE}>
+    <Button slot="actions" type="submit">Save</Button>
+  </Form>
+</div>
+
+<div id="big">
+  <Form resource={BIG} />
+</div>
+
+<output id="calls">{calls.join('|')}</output>

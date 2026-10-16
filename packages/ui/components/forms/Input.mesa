@@ -110,11 +110,14 @@
   // The control type the schema implies. Only the cases where the mapping is
   // exact: a `format` that names a real input type, and a numeric column.
   //
+  // `date` has no zone, so `<input type="date">` round-trips it and matches
+  // what the generated form draws (field-rules `controlFor`).
+  //
   // `date-time` is deliberately NOT mapped. Litestone stores ISO-8601 with a
   // zone; `<input type="datetime-local">` accepts and emits a value without
   // one, so the round trip silently shifts the time. That needs a real date
   // control (DatePicker), not a type attribute.
-  const FORMAT_TYPES = { email: 'email', uri: 'url', url: 'url' }
+  const FORMAT_TYPES = { email: 'email', uri: 'url', url: 'url', date: 'date' }
   const schemaType =
     FORMAT_TYPES[rule?.format] ??
     (rule?.type === 'integer' || rule?.type === 'number' ? 'number' : undefined)
@@ -256,8 +259,12 @@
   {/if}
 {/snippet}
 
-{#if label || name}
+{#if label || name || hasError || hint}
   <!--
+    A message or hint with no label and no name still needs Field to draw it:
+    label="" keeps the page's own heading and must not cost the reason a field
+    is invalid.
+
     label/required/type go through UNRESOLVED where the caller stated nothing:
     Field reads the same rule off the same form and resolves them once. Two
     components resolving the same fact from the same source is how they drift.

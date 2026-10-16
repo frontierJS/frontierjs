@@ -25,6 +25,8 @@
   //     <TabPanel id="security"><SecuritySettings /></TabPanel>
   //   </Tabs>
 
+  import { uid } from '../../utils.js'
+
   export let activeId  = ''     // bindable — set by parent or defaulted on mount
   export let onchange  = undefined  // called with new activeId whenever tab changes
   // Tab registration list for keyboard nav — not reactive, used imperatively only.
@@ -85,6 +87,7 @@
   // Provide reactive activeId and imperative controls to all descendants.
   // const consumers (Tab, TabPanel) always track this value (Rule 25a).
   $context.activeId = activeId
+  $context.scope    = uid('tabs')
 
   $context.setActive = (id) => {
     activeId = id

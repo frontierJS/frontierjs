@@ -4,18 +4,19 @@
   // escapes overflow:hidden containers. Keyboard navigable via ArrowUp/Down, Home, End and
   // type-to-jump.
   //
-  // Compound component — compose with DropdownItem, DropdownSeparator, DropdownLabel.
+  // Compound component — compose with DropdownItem, DropdownSeparator, DropdownGroup.
   //
   // Usage:
   //   <DropdownMenu>
   //     {#snippet trigger()}
   //       <Button variant="ghost" icon><IconDots /></Button>
   //     {/snippet}
-  //     <DropdownLabel>Actions</DropdownLabel>
-  //     <DropdownItem onclick={handleEdit}>
-  //       {#snippet icon()}<IconEdit />{/snippet}
-  //       Edit
-  //     </DropdownItem>
+  //     <DropdownGroup heading="Actions">
+  //       <DropdownItem onclick={handleEdit}>
+  //         {#snippet icon()}<IconEdit />{/snippet}
+  //         Edit
+  //       </DropdownItem>
+  //     </DropdownGroup>
   //     <DropdownSeparator />
   //     <DropdownItem tone="danger" onclick={handleDelete}>Delete</DropdownItem>
   //   </DropdownMenu>

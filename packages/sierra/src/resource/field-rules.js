@@ -245,6 +245,21 @@ export function buildFieldRules(schema, resolve = resolveRef, resolveName = mode
     // declared `type T` is still a document no row of controls describes.
     if (type === 'array' && _SCALAR_ITEMS.includes(def.items?.type)) rule.items = { type: def.items.type }
 
+    // A list of an enum's members (`Capability[]`) has its items behind a
+    // `$ref`, so the branch above misses it and the column reads as a document.
+    // The members travel on `items` and never on `rule.enum`: that key judges
+    // the whole value, and an array is not one of its own members.
+    if (type === 'array' && !rule.items) {
+      const item = derefFieldSchema(def.items, resolve)
+      if (Array.isArray(item.enum)) {
+        rule.items = { type: item.type ?? 'string', enum: item.enum }
+        const labels = item['x-labels']
+        if (labels && typeof labels === 'object') {
+          rule.items.options = item.enum.map(v => ({ value: v, label: labels[v] ?? v }))
+        }
+      }
+    }
+
     // `title` is the FIELD's label (@label) and is read off the field's OWN
     // schema, never the deref'd target. Litestone titles every enum $def with
     // the type name, so following the ref would make `status OrderStatus`
@@ -749,6 +764,7 @@ function _builtinControl(rule) {
     // described by the schema at the point a form would need a field list, so
     // the only editor that covers every value it may hold is its own syntax.
     case 'array':
+      if (rule.items?.enum) return { control: 'multiselect', task: 'select', allowNew: false }
       if (rule.items) return { control: 'multiselect', task: 'text', allowNew: true, itemType: rule.items.type }
       return { control: 'json', task: 'text' }
     case 'object': return { control: 'json', task: 'text' }
@@ -1663,6 +1679,10 @@ function _checkConstraints(name, rule, value, errors) {
   }
 
   if (Array.isArray(value)) {
+    if (rule.items?.enum) {
+      const stray = value.filter(v => !rule.items.enum.includes(v))
+      if (stray.length) say('enum', `${label} must be members of: ${rule.items.enum.join(', ')} (not ${stray.join(', ')})`)
+    }
     if (rule.minItems != null && value.length < rule.minItems) say('minItems', `${label} must have at least ${rule.minItems} items`)
     if (rule.maxItems != null && value.length > rule.maxItems) say('maxItems', `${label} must have at most ${rule.maxItems} items`)
     // Litestone's own comparison (`String(item)`), so the two boundaries agree

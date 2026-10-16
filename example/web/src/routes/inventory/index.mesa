@@ -257,7 +257,7 @@ title: Inventory
   <SectionHeader title="Shelves" level={2} sub="ProductVariant.stock, minus the holds against it" />
 
   {#if loading}
-    <Skeleton lines={8} />
+    <Skeleton variant="card" />
   {:else}
     <Table columns={levelColumns} rows={levels} striped compact>
       {#snippet row(r)}

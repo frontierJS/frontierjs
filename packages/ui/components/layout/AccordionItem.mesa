@@ -9,29 +9,45 @@
   //
   // Usage: see Accordion.mesa
 
+  import { uid } from '../../utils.js'
+
   export let id       = ''
   export let label    = ''
   export let disabled = false
   // Consume context from nearest Accordion ancestor
   // const → always tracks provider (Rule 25a)
+  const ownKey  = uid('acc-item')
   const openIds = $context.openIds   // reactive — re-derives when Accordion.toggle() runs
   const toggle  = $context.toggle    // function — static ref, mutates Accordion's openIds signal
 
   // Derived: is this specific item open?
-  const isOpen = !!openIds[id]
+  // An item with no id would share the key '' with every other one and open
+  // as a group, so it is keyed by one of its own. The header id is always its
+  // own too: two accordions may both hold an item named 'faq-1'.
+  const key      = id || ownKey
+  const isOpen   = !!openIds[key]
+  const headerId = uid('acc-header')
+
+  // The browser opens a <details> itself -- find-in-page, a URL fragment --
+  // without a click, and the state this component holds then says closed over
+  // an open item. Anything that left the element disagreeing with the state is
+  // reported back as the toggle it was.
+  function handleToggle(e) {
+    if (e.currentTarget.open !== isOpen && !disabled) toggle(key)
+  }
 
   function handleClick(e) {
     // The summary is the toggle; let context own the state rather than the
     // element, or exclusive mode would be fighting the UA on every click.
     e.preventDefault()
-    if (!disabled) toggle(id)
+    if (!disabled) toggle(key)
   }
 </script>
 
-<details class="disclosure" open={isOpen} {class} {...$attributes}>
+<details class="disclosure" open={isOpen} {class} {...$attributes} on:toggle={handleToggle}>
   <summary
     class="disclosure-summary"
-    id="{id}-header"
+    id={headerId}
     aria-disabled={disabled ? 'true' : null}
     style:opacity={disabled ? 0.5 : null}
     style:cursor={disabled ? 'not-allowed' : null}
@@ -40,7 +56,7 @@
     <span>{label}</span>
   </summary>
 
-  <div class="disclosure-body" role="region" aria-labelledby="{id}-header">
+  <div class="disclosure-body" role="region" aria-labelledby={headerId}>
     <slot />
   </div>
 </details>

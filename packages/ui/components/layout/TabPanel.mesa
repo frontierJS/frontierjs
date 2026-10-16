@@ -25,14 +25,15 @@
   // const — always tracks when Tabs changes activeId (Rule 25a)
   const activeId = $context.activeId
   const isActive = activeId === id
+  const scope    = $context.scope
 </script>
 
 {#if unmount}
   {#if isActive}
     <article
-      id="panel-{id}"
+      id="{scope}-panel-{id}"
       role="tabpanel"
-      aria-labelledby="tab-{id}"
+      aria-labelledby="{scope}-tab-{id}"
       tabindex="0"
       class="view"
       {class}
@@ -48,9 +49,9 @@
     class did nothing and the attribute was doing it all along.
   -->
   <article
-    id="panel-{id}"
+    id="{scope}-panel-{id}"
     role="tabpanel"
-    aria-labelledby="tab-{id}"
+    aria-labelledby="{scope}-tab-{id}"
     tabindex="0"
     hidden={!isActive}
     class="view"

@@ -65,7 +65,7 @@ title: Customer fields
 </script>
 
 <SectionHeader title="Customer fields"
-  description="What this shop records about a person. Declared here, offered on every customer form, and available to build an audience out of." />
+  sub="What this shop records about a person. Declared here, offered on every customer form, and available to build an audience out of." />
 
 {#if error}<Callout tone="danger">{error}</Callout>{/if}
 

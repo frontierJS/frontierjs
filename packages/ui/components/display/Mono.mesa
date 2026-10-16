@@ -10,7 +10,7 @@
 
   export let size = ''    // '' | 'xs' | 'md'
 
-  const sizeMap = { xs: '0.6875rem', sm: '', md: '0.875rem' }
+  const sizeMap = { xs: 'var(--text-2xs)', sm: '', md: 'var(--text-md)' }
   const fontSize = sizeMap[size] ?? ''
 </script>
 

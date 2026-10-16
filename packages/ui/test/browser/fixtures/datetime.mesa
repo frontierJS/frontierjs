@@ -17,6 +17,8 @@
 
   let value = iso
   let seen  = ''
+  let zoned = iso
+  let zonedSeen = ''
 
   const FIELDS = {
     reference:   { type: 'string', required: true,  title: 'Reference' },
@@ -49,5 +51,16 @@
 <!-- Generated: nothing here names a control. -->
 <Form resource={RESOURCE} bind:record={record} auto />
 
+<!-- An app that works in its account's zone, whatever zone the browser is in. -->
+<DateTimeInput
+  label="Account time"
+  name="accountAt"
+  timeZone="America/Chicago"
+  bind:value={zoned}
+  onvalue={(v) => zonedSeen = v}
+/>
+
 <output id="value">{value}</output>
 <output id="seen">{seen}</output>
+<output id="zoned">{zoned}</output>
+<output id="zonedSeen">{zonedSeen}</output>

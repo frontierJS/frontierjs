@@ -50,7 +50,8 @@
     e.preventDefault()
     setActive?.(next)
     // Focus the newly active tab button — query by data-tab-id attr
-    const nextEl = e.currentTarget.querySelector(`[data-tab-id="${next}"]`)
+    // Matched by property: an id holding a quote is not a valid selector.
+    const nextEl = [...e.currentTarget.querySelectorAll('[data-tab-id]')].find(el => el.dataset.tabId === next)
     nextEl?.focus()
   }
 </script>

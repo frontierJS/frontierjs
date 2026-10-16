@@ -44,7 +44,7 @@
   // otherwise `variant` IS the tone, which is how it read before.
   const t = toTone(tone) || (treatment ? '' : toTone(variant)) || (treatment ? '' : 'primary')
 
-  const sizeMap = { xs: '0.75rem', sm: '0.8125rem', md: '', lg: '1rem' }
+  const sizeMap = { xs: 'var(--text-xs)', sm: 'var(--text-sm)', md: '', lg: 'var(--text-lg)' }
   const fontSize = sizeMap[size] ?? ''
 
   const isSquare = square || icon
@@ -59,7 +59,7 @@
   // A form the caller has disabled disables every button under it, including
   // the way out — that is the caller saying the whole form is off, which is a
   // different statement from "a save is running".
-  const isOff     = disabled || !!form?.disabled
+  const isOff     = disabled || !!form?.disabled || (type === 'submit' && !!form?.committed)
 
   function handleClick(e) {
     if (!isLoading) onclick?.(e)

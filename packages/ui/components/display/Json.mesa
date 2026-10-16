@@ -90,6 +90,10 @@
   // inventing one here would be a second definition of what a write is.
   export let editable = false
   export let onchange = undefined     // (next) => void
+  // `false` keeps no stack, draws no ↶/↷ and binds no ⌘Z; every write is still
+  // announced. A page that keeps history over the document this tree edits owns
+  // the only stack: two of them undo each other's undo.
+  export let history  = true
 
   // The draft is `undefined` until the first edit, so a viewer always shows the
   // live prop and only an EDITED tree holds its own copy. Seeding a working
@@ -137,7 +141,8 @@
   const HISTORY = 50   // documents, not edits; a person does not scroll past it
 
   function remember(previous) {
-    past   = [...past, previous].slice(-HISTORY)
+    if (!history) return
+    past   =[...past, previous].slice(-HISTORY)
     future = []
   }
 
@@ -241,7 +246,7 @@
   /** ⌘Z / ⌃Z, and ⇧⌘Z or ⌃Y for redo — bound to the TREE, not the document.
    *  A global handler would take the shortcut off a page that has its own. */
   function onHistoryKey(e) {
-    if (!canEdit || !(e.metaKey || e.ctrlKey)) return
+    if (!canEdit || !history || !(e.metaKey || e.ctrlKey)) return
     const k = e.key.toLowerCase()
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
     else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo() }
@@ -591,7 +596,7 @@
 {/snippet}
 
 {#if tooDeep}
-  <p class="fjs-json-empty" {class} {...$attributes}>Nested more than {MAX_DEPTH} levels deep, too deep to show</p>
+  <p class="fjs-json-empty" {class} {...$attributes}>Nested more than {MAX_DEPTH} levels deep or refers back to itself, too deep to show</p>
 {:else if isEmpty}
   <p class="fjs-json-empty" {class} {...$attributes}>{empty}</p>
 {:else if mode === 'raw'}
@@ -611,9 +616,9 @@
     on:keydown={onGridKey}
     on:focusin={onGridFocus}
   >
-    {#if copy || canEdit}
+    {#if copy || (canEdit && history)}
       <div class="fjs-json-actions">
-        {#if canEdit}
+        {#if canEdit && history}
           <button
             type="button"
             class="fjs-json-history"

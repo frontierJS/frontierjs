@@ -26,7 +26,7 @@
   export let float = false    // pin to the top-right of a positioned parent
 
   // .badge is 0.75rem/1rem. Only a departure needs an override.
-  const sizeMap = { xs: '0.625rem', sm: '', md: '0.8125rem' }
+  const sizeMap = { xs: 'var(--text-2xs)', sm: '', md: 'var(--text-sm)' }
   const fontSize = sizeMap[size] ?? ''
 
   const t = toTone(color || tone)

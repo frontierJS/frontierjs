@@ -133,6 +133,29 @@ export async function run(t) {
   await t.eventually(held(`q.rate?.gte ?? null`), '5',
     'a plain number range still writes through the Input as it is typed')
 
+  // FJS-2610: clearing the last bound removes the key. It wrote an empty range,
+  // {rate: {}}, a filter on nothing that kept Clear lit.
+  await t.evaluate(`
+    const el = document.querySelector('${BAR} input[placeholder="Rate from"]');
+    el.value = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  `)
+  await t.eventually(held(`'rate' in q`), 'false',
+    'clearing a range\'s last bound deletes the key rather than writing an empty range')
+
+  // FJS-2610: the choice, once made, is shown. The query holds the boolean and
+  // the option holds its text, so a strict compare found no option selected.
+  await t.evaluate(`
+    const el = document.querySelector('${BAR} select[aria-label="Active"]');
+    el.value = 'true';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  `)
+  await t.eventually(held(`q.active?.equals ?? null`), 'true', 'a boolean filter writes true')
+  await t.eventually(`document.querySelector('${BAR} select[aria-label="Active"]').selectedIndex`, '1',
+    'and the select shows Yes once it is chosen')
+
   /* ── a day range over an instant ──────────────────────────────────────── */
   //
   // The box holds a day and the column an instant. Written through bare, *to

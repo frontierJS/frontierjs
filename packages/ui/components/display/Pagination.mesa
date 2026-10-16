@@ -29,8 +29,14 @@
 
   const pageCount = Math.max(1, Math.ceil(total / perPage))
 
-  const rangeStart = Math.min((page - 1) * perPage + 1, total)
-  const rangeEnd   = Math.min(page * perPage, total)
+  // A page arrives as a string off a URL or an <input>, where '3' + 1 is '31',
+  // and may sit past the last page after a filter shrinks the list. Everything
+  // below reads the clamped number, so the strip, the range and the buttons
+  // agree on which page this is.
+  const current = Math.min(pageCount, Math.max(1, Math.trunc(Number(page)) || 1))
+
+  const rangeStart = Math.min((current - 1) * perPage + 1, total)
+  const rangeEnd   = Math.min(current * perPage, total)
 
   // Visible window — page entries plus the two gap markers.
   //
@@ -47,7 +53,7 @@
     if (pageCount <= window) return Array.from({ length: pageCount }, (_, i) => at(i + 1))
 
     const half  = Math.floor(window / 2)
-    let start   = Math.max(1, page - half)
+    let start   = Math.max(1, current - half)
     let end     = Math.min(pageCount, start + window - 1)
 
     if (end === pageCount) start = Math.max(1, end - window + 1)
@@ -60,7 +66,7 @@
   })()
 
   function goTo(p) {
-    if (p < 1 || p > pageCount || p === page) return
+    if (p < 1 || p > pageCount || p === current) return
     page = p
     onchange?.(p)
   }
@@ -80,9 +86,9 @@
     <button
       type="button"
       class="pagination-link"
-      disabled={page <= 1}
+      disabled={current <= 1}
       aria-label="Previous page"
-      on:click={() => goTo(page - 1)}
+      on:click={() => goTo(current - 1)}
     >
       <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
         <path fill-rule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd"/>
@@ -90,7 +96,7 @@
     </button>
 
     {#if compact}
-      <span class="text-sm text-muted">Page {page} of {pageCount}</span>
+      <span class="text-sm text-muted">Page {current} of {pageCount}</span>
     {:else}
       {#each pages as p (p.id)}
         {#if p.n === undefined}
@@ -100,7 +106,7 @@
             type="button"
             class="pagination-link"
             aria-label="Page {p.n}"
-            aria-current={p.n === page ? 'page' : null}
+            aria-current={p.n === current ? 'page' : null}
             on:click={() => goTo(p.n)}
           >{p.n}</button>
         {/if}
@@ -111,9 +117,9 @@
     <button
       type="button"
       class="pagination-link"
-      disabled={page >= pageCount}
+      disabled={current >= pageCount}
       aria-label="Next page"
-      on:click={() => goTo(page + 1)}
+      on:click={() => goTo(current + 1)}
     >
       <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
         <path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/>

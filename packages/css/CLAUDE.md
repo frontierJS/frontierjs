@@ -277,6 +277,13 @@ test/run.js        the harness
   reporting 200px in both. Measure the child (409px inside a 200px row), and
   give the title `nowrap`, because wrapping text never exceeds its container
   and the question does not exist without it.
+- **`.tablist`'s edge fade is a scroll-driven animation, and headless Chrome
+  never ticks it.** `--tab-fade-start/-end` read `0px` from `getComputedStyle`
+  whether or not the strip overflows, so the spec asserts the animation is
+  attached to a `ScrollTimeline` rather than a computed value. The two tokens
+  are registered, so `tokens.css` § shadow tree resets them on `:host *` by
+  hand. `.stretch` narrows by padding: a tab's inline padding is part of its
+  min-content width, and `flex: 1` alone cannot shrink below it (`FJS-2383`).
 - **A box with one overflow axis set is not a box with one axis scrolling.**
   Setting `overflow-x` alone promotes the other axis from `visible` to `auto`,
   so `.tablist`'s sideways scroll plus `.tab`'s `-1px` underline bleed drew a

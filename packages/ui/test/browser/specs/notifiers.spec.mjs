@@ -41,6 +41,13 @@ export async function run(t) {
     return document.querySelector('.toast-stack .toast').classList.contains('success');
   `), 'and carries its tone')
 
+  // FJS-1948: a theme scopes a ramp onto the stack by class, so it must reach
+  // the element and not replace `toast-stack`.
+  t.ok(await t.evaluate(`
+    const cl = document.querySelector('.toast-stack').classList;
+    return cl.contains('fixture-stack') && cl.contains('toast-stack');
+  `), 'the stack carries its caller\'s class beside toast-stack')
+
   // Each toast must be a DIRECT child of the stack: `.toast-stack > .toast` is
   // what re-statics them, and a wrapper div left every toast `position: fixed`
   // in the same corner, stacked on top of one another.

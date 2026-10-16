@@ -80,6 +80,42 @@
    */
   overflow-x: auto;
   overflow-y: hidden;
+
+  /*
+   * The scrollbar track is 16px of chrome under the tabs and says nothing a
+   * cut-off tab does not. What says "more this way" is the edge fading: the
+   * two fade lengths are driven by the strip's own scroll position, so one
+   * that fits has no scroll timeline and keeps the 0px initial values.
+   */
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, transparent, #000 var(--tab-fade-start),
+                              #000 calc(100% - var(--tab-fade-end)), transparent);
+  animation: tablist-edges linear both;
+  animation-timeline: scroll(self inline);
+}
+.tablist::-webkit-scrollbar {
+  display: none;
+}
+.tablist:dir(rtl) {
+  mask-image: linear-gradient(to left, transparent, #000 var(--tab-fade-start),
+                              #000 calc(100% - var(--tab-fade-end)), transparent);
+}
+
+@property --tab-fade-start {
+  syntax:        "<length>";
+  inherits:      false;
+  initial-value: 0px;
+}
+@property --tab-fade-end {
+  syntax:        "<length>";
+  inherits:      false;
+  initial-value: 0px;
+}
+@keyframes tablist-edges {
+  0%        { --tab-fade-start: 0px;                   --tab-fade-end: var(--space-3xl); }
+  5%        { --tab-fade-start: var(--space-3xl); }
+  95%       { --tab-fade-end: var(--space-3xl); }
+  100%      { --tab-fade-start: var(--space-3xl);      --tab-fade-end: 0px; }
 }
 
 .tab {
@@ -99,6 +135,7 @@
   font-weight:      600;
   color:            var(--ink-soft);
   white-space:      nowrap;
+  text-decoration:  none;
   border-block-end: var(--tab-indicator-width) solid transparent;
   /* Pull the underline down onto the tablist's own rule. */
   margin-block-end: calc(var(--border-width) * -1);
@@ -121,7 +158,7 @@
   border-radius: var(--btn-radius);
 }
 
-.tab[aria-selected="true"] {
+.tab:is([aria-selected="true"], [aria-current="page"]) {
   color:                  var(--tab-accent);
   border-block-end-color: var(--tab-accent);
 }
@@ -136,6 +173,12 @@
 .tablist.stretch .tab {
   flex:            1;
   justify-content: center;
+  /*
+   * A tab's own inline padding is part of its minimum width, so at --space-xl
+   * stretch can widen a tab and never narrow one: three short labels in a
+   * 204px column overflowed by 3px.
+   */
+  padding-inline:  var(--space-sm);
 }
 
 /* ── Pills — a filled strip with no baseline rule ────────────────── */
@@ -149,12 +192,41 @@
   border-radius:    var(--btn-radius);
   padding:          var(--space-xs) var(--space-lg);
 }
-.tablist.pills .tab:hover:not([aria-selected="true"]) {
+.tablist.pills .tab:hover:not([aria-selected="true"], [aria-current="page"]) {
   background: var(--surface-sunken);
 }
-.tablist.pills .tab[aria-selected="true"] {
+.tablist.pills .tab:is([aria-selected="true"], [aria-current="page"]) {
   background: color-mix(in srgb, var(--tab-accent) 12%, var(--surface));
   color:      var(--tab-accent);
+}
+
+/*
+ * ── Divided — a section bar: title, then routes ruled off from each other ──
+ *
+ *   <div class="bar">
+ *     <h1>Leads</h1>
+ *     <nav class="tablist divided" aria-label="Leads">
+ *       <a class="tab" href="/leads" aria-current="page">All</a>
+ *       <a class="tab" href="/leads/mine">Mine</a>
+ *     </nav>
+ *   </div>
+ *
+ * Tabs whose members are links to routes: the current one answers
+ * aria-current="page" and not aria-selected, because role="tab" on a route
+ * link would announce a tabpanel that is not there. A plain strip underlines
+ * the current tab; a divided one has no baseline to underline, so the current
+ * tab is the accent colour with no fill and each tab carries a rule BEFORE
+ * it. The first one's rule is what separates the strip from the title ahead
+ * of it, so a divided strip is for a place a title sits ahead of it.
+ */
+.tablist.divided {
+  gap:              0;
+  border-block-end: none;
+}
+.tablist.divided .tab {
+  border-block-end:   none;
+  margin-block-end:   0;
+  border-inline-start: var(--border-width) solid var(--rule);
 }
 
 /* Panels sit below the strip with a little air. */
@@ -201,6 +273,8 @@
    * same defect the horizontal case has, turned ninety degrees.
    */
   overflow:        visible;
+  mask-image:      none;
+  animation-name:  none;
   flex-shrink:     0;
   min-inline-size: 11rem;
 }
@@ -218,7 +292,7 @@
   white-space:     normal;
 }
 
-.tabs.vertical .tab[aria-selected="true"] {
+.tabs.vertical .tab:is([aria-selected="true"], [aria-current="page"]) {
   border-inline-end-color: var(--tab-accent);
 }
 

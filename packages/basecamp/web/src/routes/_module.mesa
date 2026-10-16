@@ -14,7 +14,7 @@ siteName: Basecamp
   import Drawer         from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import DropdownMenu      from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
-  import DropdownLabel     from '@frontierjs/ui/components/overlay/DropdownLabel.mesa'
+  import DropdownGroup     from '@frontierjs/ui/components/overlay/DropdownGroup.mesa'
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
   import ConfirmProvider from '@frontierjs/ui/components/overlay/ConfirmProvider.mesa'
@@ -481,19 +481,20 @@ siteName: Basecamp
             >🔔{#if unread.length} <Badge tone="danger" id="bell-count">{unread.length}</Badge>{/if}</Button>
           {/snippet}
           {#if unread.length}
-            <DropdownLabel>Unread</DropdownLabel>
-            {#each unread.slice(0, BELL_MAX) as n}
-              <DropdownItem onclick={() => openNote(n)}>
-                <span class="stack">
-                  <strong>{titleOf(n)}</strong>
-                  {#if bodyOf(n)}<span class="text-sm text-muted">{bodyOf(n)}</span>{/if}
-                </span>
-              </DropdownItem>
-            {/each}
+            <DropdownGroup heading="Unread">
+              {#each unread.slice(0, BELL_MAX) as n}
+                <DropdownItem onclick={() => openNote(n)}>
+                  <span class="stack">
+                    <strong>{titleOf(n)}</strong>
+                    {#if bodyOf(n)}<span class="text-sm text-muted">{bodyOf(n)}</span>{/if}
+                  </span>
+                </DropdownItem>
+              {/each}
+            </DropdownGroup>
             <DropdownSeparator />
             <DropdownItem onclick={() => markAllRead().catch(() => {})}>Mark all read</DropdownItem>
           {:else}
-            <DropdownLabel>Nothing unread</DropdownLabel>
+            <DropdownItem disabled>Nothing unread</DropdownItem>
             <DropdownSeparator />
           {/if}
           <DropdownItem onclick={() => goto('/notifications/')}>All notifications</DropdownItem>
@@ -511,10 +512,10 @@ siteName: Basecamp
                  as `on:click` — that directive belongs to elements. -->
             <Button variant="ghost" id="account-menu">Account</Button>
           {/snippet}
-          <DropdownLabel>{session.user.email}</DropdownLabel>
-          <DropdownSeparator />
-          <DropdownItem onclick={() => goto('/settings/')}>Your settings</DropdownItem>
-          <DropdownItem onclick={out}>Sign out</DropdownItem>
+          <DropdownGroup heading={session.user.email}>
+            <DropdownItem onclick={() => goto('/settings/')}>Your settings</DropdownItem>
+            <DropdownItem onclick={out}>Sign out</DropdownItem>
+          </DropdownGroup>
         </DropdownMenu>
       {/if}
     </span>

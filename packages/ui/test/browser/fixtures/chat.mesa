@@ -1,0 +1,40 @@
+<script>
+  // chat.mesa — the fixture for Transcript, Message and Composer.
+  //
+  // `#log` is a 12rem log that grows by a button: `#add` appends a message,
+  // `#token` appends a word to the last one the way a streamed reply lands.
+  // `#sent` lists what the composer handed over, in order.
+  import Transcript from '../../../components/display/Transcript.mesa'
+  import Message from '../../../components/display/Message.mesa'
+  import Composer from '../../../components/display/Composer.mesa'
+
+  let turns = Array.from({ length: 12 }, (_, i) => ({ id: i, mine: i % 2 === 0, text: 'Line number ' + i }))
+  let sent  = []
+  let log
+  let n = 12
+
+  const add   = () => { turns = [...turns, { id: n, mine: n % 2 === 0, text: 'Line number ' + n }]; n++ }
+  const token = () => {
+    const last = turns[turns.length - 1]
+    turns = [...turns.slice(0, -1), { ...last, text: last.text + ' more words that stream in' }]
+  }
+  const ask   = (text) => { sent = [...sent, text]; add(); log.scrollToEnd() }
+</script>
+
+<button id="add" type="button" on:click={add}>add</button>
+<button id="token" type="button" on:click={token}>token</button>
+
+<Transcript id="log" bind:this={log} style="height: 12rem; inline-size: 20rem">
+  {#each turns as turn (turn.id)}
+    <Message side={turn.mine ? 'mine' : 'theirs'}>{turn.text}</Message>
+  {/each}
+</Transcript>
+
+<div id="composer" style="inline-size: 20rem">
+  <Composer onsend={ask} />
+</div>
+<output id="sent">{sent.join('|')}</output>
+
+<div id="failed" style="inline-size: 20rem">
+  <Message side="mine" tone="danger">Could not send</Message>
+</div>

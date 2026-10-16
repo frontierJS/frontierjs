@@ -128,6 +128,7 @@ const VOCAB = [
       ["Avatar", "<img> / <span>", "A person, org or bot marker"],
       ["Kbd", "<kbd>", "A key the user is meant to press"],
       ["Progress", "<progress>", "Determinate completion. The native element announces value and max for free"],
+      ["Meter", "<meter>", "How full something is against a known whole -- a disk, a quota. Not task completion; that is Progress"],
       ["Spinner", "<span aria-hidden>", "Indeterminate waiting. Say what is loading in a role=\"status\" region beside it — the spinner itself announces nothing"],
       ["Skeleton", "<div aria-hidden>", "A placeholder for content still arriving. Put aria-busy on the container"],
     ],
@@ -195,13 +196,13 @@ const NOT_A_TERM = {
   /*
    * Scoped modifiers — the fourth group the Kinds-of-class page warns about.
    * They read like Treatments and are not: each only works on one Element.
-   * `striped` only on Table, `circle` only on Skeleton and Avatar, `menu`
+   * `striped` and `top` only on Table, `circle` only on Skeleton and Avatar, `menu`
    * only on Items. Naming them as vocabulary would imply they compose.
    */
   modifier: [
     'bottom', 'circle', 'compact', 'complete', 'disabled', 'divided', 'end',
     'focusable', 'hover', 'menu', 'narrow', 'peek', 'pills', 'removable',
-    'rail', 'segmented', 'square', 'start', 'stretch', 'striped', 'text', 'vertical', 'viewport',
+    'rail', 'segmented', 'square', 'start', 'stretch', 'striped', 'text', 'top', 'vertical', 'viewport',
     'wide', 'wrap',
   ],
 
@@ -511,7 +512,7 @@ const ANATOMY = {
 </div>`,
     parts: [
       ['.tablist', 'The strip. role="tablist", and the indicator rides it'],
-      ['.tab', 'One tab. Selection comes from aria-selected, never a class'],
+      ['.tab', 'One tab. Selection comes from aria-selected, never a class — a tab that is a link to a route takes aria-current="page" instead, and `.tablist.divided` rules a section bar\'s links off from each other and from the title'],
     ],
   },
 

@@ -50,6 +50,25 @@
 }
 
 /*
+ * A <tfoot> is a totals line ABOUT the rows, so its <th> labels a row and
+ * is not a column head: it takes the cell's own type, not the head's
+ * uppercase 2xs, or it sits at a smaller size than the figures beside it.
+ * Both kinds of footer cell share one band and one rule above it.
+ */
+.table tfoot th,
+.table tfoot td {
+  background: var(--table-head-bg);
+  border-top: var(--table-border-width, var(--border-width)) solid var(--table-border);
+  color:      var(--ink);
+  font-size:  inherit;
+}
+.table tfoot th {
+  font-weight:    var(--label-font-weight);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/*
  * ── Row background — one declaration, three inputs ──────────────
  *
  * Stripe, hover and tone all want a say in what a row looks like, and
@@ -82,6 +101,17 @@
 
 .table.hover tbody tr:hover {
   --row-base: color-mix(in srgb, var(--ring, var(--color-primary)) 5%, var(--table-bg));
+}
+
+/*
+ * The UA centres a cell's content vertically, so a row of blocks of
+ * different heights (a card beside an address and a note) floats each at
+ * its own middle and the eye cannot read across. `top` anchors every cell
+ * to the row's top edge.
+ */
+.table.top th,
+.table.top td {
+  vertical-align: top;
 }
 
 .table.compact th,

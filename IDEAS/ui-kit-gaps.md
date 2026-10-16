@@ -20,7 +20,7 @@ onto something that ships; what follows is the remainder.
 | --- | --- | --- |
 | **Tag Input** | free entry of a list of strings — Enter, comma and paste each add, Backspace removes | `controlFor()` answers a `String[]` with no value set as `control: 'json'` (`sierra/src/resource/field-rules.js`, `case 'array'`), so a person editing tags types JSON. `MultiSelect` covers the array only when the values are KNOWN. This is the control that branch should name for an array of strings. Each entry renders as the existing `Tag`, whose header already names tag inputs as a caller |
 | **Toggle / Toggle Group** | a button that stays pressed (`aria-pressed`); a row of them with single or multiple selection | list/grid switches and filter chips; `FilterBar` is the first caller. Small |
-| **Context Menu** | the actions for what was right-clicked | a trigger, not a menu: it reuses `DropdownItem`/`DropdownLabel`/`DropdownSeparator` and positions at the pointer instead of the trigger's rect. Table rows in Basecamp and Studio |
+| **Context Menu** | the actions for what was right-clicked | a trigger, not a menu: it reuses `DropdownItem`/`DropdownGroup`/`DropdownSeparator` and positions at the pointer instead of the trigger's rect. Table rows in Basecamp and Studio |
 | **Gauge** | a radial meter for usage against a limit | `Progress`, `Bar` and `Sparkline` ship, nothing radial. Basecamp's fleet readings (disk, CPU, memory) are the caller. The platform's word is `<meter>` (`low`/`high`/`optimum`), which is the semantics and the a11y for free; the radial drawing is the only new part, so the name is open |
 
 ## Maybe

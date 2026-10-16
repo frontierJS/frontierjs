@@ -6,6 +6,7 @@
  *
  *   .spinner   indeterminate "working"
  *   .progress  determinate, on native <progress>
+ *   .meter     how full, on native <meter>
  *   .skeleton  content-shaped placeholder
  *   .empty     the nothing-here state, with a way out
  *
@@ -72,6 +73,42 @@
   transition:    inline-size var(--motion-slow) var(--motion-ease);
 }
 .progress::-moz-progress-bar {
+  background:    var(--bg-mix, var(--color-primary));
+  border-radius: 999px;
+}
+
+/*
+ * ── Meter ───────────────────────────────────────────────────────────
+ * How full something is -- a disk, a quota -- on native <meter>, which a
+ * screen reader announces as a reading rather than as task progress. The
+ * same drawing as .progress; the tone, not the UA's green/yellow/red
+ * bands, colors the fill, so all three WebKit value states are painted.
+ *
+ *   <meter class="meter warning" value="72" max="100">72%</meter>
+ */
+.meter {
+  appearance:    none;
+  inline-size:   100%;
+  block-size:    0.5rem;
+  border:        none;
+  border-radius: 999px;
+  overflow:      hidden;
+  background:    var(--surface-sunken);
+  color:         var(--bg-mix, var(--color-primary));
+}
+.meter::-webkit-meter-bar {
+  background:    var(--surface-sunken);
+  border:        none;
+  border-radius: 999px;
+}
+.meter::-webkit-meter-optimum-value,
+.meter::-webkit-meter-suboptimum-value,
+.meter::-webkit-meter-even-less-good-value {
+  background:    var(--bg-mix, var(--color-primary));
+  border-radius: 999px;
+  transition:    inline-size var(--motion-slow) var(--motion-ease);
+}
+.meter::-moz-meter-bar {
   background:    var(--bg-mix, var(--color-primary));
   border-radius: 999px;
 }

@@ -1,0 +1,43 @@
+<script>
+  // form-sealed-picker.mesa — a frozen foreign key on an edit form.
+  //
+  // `@immutable` on a relation column is frozen on every row that exists, so
+  // the edit form draws its picker disabled. The control table, the resource's
+  // `sealedFields` and a request that answers after the row are all the real
+  // shapes; the network is the one stub.
+  import Form from '../../../components/forms/Form.mesa'
+  import { formFieldList, coerceToSchema } from '@frontierjs/sierra/field-rules'
+
+  const FIELDS = {
+    id:            { type: 'string', readOnly: true, title: 'Id' },
+    name:          { type: 'string', title: 'Name' },
+    environmentId: { type: 'string', title: 'Environment', 'x-litestone-kind': 'immutable',
+                     references: { model: 'Environment', field: 'id', relation: 'environment' } },
+  }
+  const ROWS = [
+    { value: 'e-1', label: 'Production' }, { value: 'e-2', label: 'Staging' }, { value: 'e-3', label: 'Preview' },
+  ]
+
+  const RESOURCE = {
+    context: { model: 'App', service: 'apps', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => new Promise((r) => setTimeout(() => r({ options: ROWS, total: ROWS.length, truncated: false }), 50)),
+    make: () => ({ name: '', environmentId: '' }),
+    coerce: (data) => coerceToSchema(FIELDS, data),
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    sealedFields: (record) => record ? ['environmentId'] : [],
+    save: () => Promise.resolve({ ok: true }),
+    service: {},
+  }
+
+  const ROW = { id: 'a-1', name: 'web', environmentId: 'e-2' }
+</script>
+
+<div id="frozen">
+  <Form resource={RESOURCE} record={ROW} />
+</div>
+
+<div id="make">
+  <Form resource={RESOURCE} />
+</div>

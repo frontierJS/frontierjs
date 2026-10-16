@@ -8,28 +8,45 @@
   // UTC. Both halves shift the value, in opposite directions and by different
   // amounts, which is why `Input` refuses to map the format at all.
   //
-  // The conversion is exact in both directions as long as the zone shown is
-  // the reader's own: an instant is rendered into local components going in,
-  // and local components are read as local going out. What it cannot do is
-  // preserve some OTHER zone the value was authored in — an instant does not
-  // carry one, so there is nothing to preserve. The addon names the zone being
+  // The conversion is exact in both directions in ONE zone: the reader's own
+  // by default, or the IANA zone the caller names with `timeZone`. An instant
+  // does not carry the zone it was authored in, so the app that works in its
+  // account's zone says so; without it, the control and the app's own labels
+  // show different hours for the same instant. The addon names the zone being
   // shown, because "14:30" without one is the ambiguity this whole file exists
   // to close.
+
+  const _p = (n) => String(n).padStart(2, '0')
+
+  // The wall clock `d` reads in `timeZone`; undefined is the browser's own.
+  function _wall(d, timeZone) {
+    if (!timeZone) {
+      return { y: d.getFullYear(), mo: d.getMonth() + 1, d: d.getDate(),
+               h: d.getHours(), mi: d.getMinutes(), s: d.getSeconds() }
+    }
+    const got = {}
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).formatToParts(d)
+    for (const part of parts) got[part.type] = Number(part.value)
+    return { y: got.year, mo: got.month, d: got.day, h: got.hour, mi: got.minute, s: got.second }
+  }
 
   /**
    * An instant → the string the element takes. `''` for an absent or
    * unparseable value, which is what the element shows for "nothing".
    *
    * @param {string|Date|null|undefined} value
-   * @param {{seconds?: boolean}} [opts]  include `:ss`, for a stored value that has them
+   * @param {{seconds?: boolean, timeZone?: string}} [opts]  `seconds` includes `:ss`, for a stored value that has them; `timeZone` is an IANA zone, the browser's own when absent
    */
-  export function toLocalInput(value, { seconds = false } = {}) {
+  export function toLocalInput(value, { seconds = false, timeZone = undefined } = {}) {
     const d = _asDate(value)
     if (!d) return ''
-    const p = (n) => String(n).padStart(2, '0')
-    const ymd = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-    const hm  = `${p(d.getHours())}:${p(d.getMinutes())}`
-    return seconds ? `${ymd}T${hm}:${p(d.getSeconds())}` : `${ymd}T${hm}`
+    const w   = _wall(d, timeZone)
+    const ymd = `${String(w.y).padStart(4, '0')}-${_p(w.mo)}-${_p(w.d)}`
+    const hm  = `${_p(w.h)}:${_p(w.mi)}`
+    return seconds ? `${ymd}T${hm}:${_p(w.s)}` : `${ymd}T${hm}`
   }
 
   /**
@@ -44,11 +61,45 @@
    * for every state short of a whole date and time. The component tells a
    * partial from a cleared box by `validity.badInput`, which this string
    * cannot carry.
+   *
+   * With a `timeZone` the wall clock is read in THAT zone. The offset of a zone
+   * depends on the instant, which is the thing being solved for, so it is
+   * estimated at the wall clock read as UTC and re-estimated at the first
+   * answer; a time that falls in a DST gap or fold lands on one of its two
+   * neighbors rather than failing.
    */
-  export function fromLocalInput(local) {
+  export function fromLocalInput(local, { timeZone = undefined } = {}) {
     if (!local) return ''
-    const d = new Date(local)
-    return Number.isNaN(d.getTime()) ? '' : d.toISOString()
+    if (!timeZone) {
+      const d = new Date(local)
+      return Number.isNaN(d.getTime()) ? '' : d.toISOString()
+    }
+    const m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)(?::(\d\d)(?:\.(\d{1,3}))?)?$/.exec(local)
+    if (!m) return ''
+    const [y, mo, day, h, mi, s, ms] = m.slice(1).map((n) => Number(n ?? 0))
+    const asUtc = Date.UTC(y, mo - 1, day, h, mi, s, ms)
+    if (Number.isNaN(asUtc)) return ''
+    const offsetAt = (t) => {
+      const w = _wall(new Date(t), timeZone)
+      return Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi, w.s) - Math.floor(t / 1000) * 1000
+    }
+    const first = asUtc - offsetAt(asUtc)
+    return new Date(asUtc - offsetAt(first)).toISOString()
+  }
+
+  /**
+   * Is this wall clock one the zone skipped? 02:30 on the night clocks spring
+   * forward never happens, and `fromLocalInput` answers the instant beside it,
+   * so the box would say 02:30 and the record hold 03:30. A time that does not
+   * survive the round trip is in the gap. A fold (two instants for one wall
+   * clock) survives it and is not reported here.
+   */
+  export function inDstGap(local, { timeZone = undefined } = {}) {
+    if (!local) return false
+    const iso = fromLocalInput(local, { timeZone })
+    if (!iso) return false
+    const asked = local.slice(0, 19)
+    return toLocalInput(iso, { seconds: true, timeZone }) !== (asked.length === 16 ? `${asked}:00` : asked)
   }
 
   /**
@@ -65,18 +116,25 @@
   }
 
   /**
-   * The short name of the zone the browser is in — `GMT+1`, `MST`, `AEST`.
-   * Falls back to the offset where `Intl` cannot name it.
+   * The short name of the zone being shown — the browser's own, or `timeZone`
+   * — `GMT+1`, `MST`, `AEST`. Falls back to the offset where `Intl` cannot
+   * name it, or to the zone's own name when one was stated.
+   *
+   * Named AT `value`: the same zone is CST in January and CDT in July, so a
+   * stored summer instant labeled from today reads the wrong abbreviation for
+   * half the year. No value, or one that does not parse, is now.
    */
-  export function localZoneLabel(date = new Date()) {
+  export function localZoneLabel(value = undefined, timeZone = undefined) {
+    const date = _asDate(value) ?? new Date()
     try {
-      const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(date)
+      const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short', timeZone }).formatToParts(date)
       const named = parts.find(p => p.type === 'timeZoneName')?.value
       if (named) return named
     } catch {
       // Intl is present everywhere this runs; the guard is for a locale with
       // no short name, where formatToParts throws rather than omitting it.
     }
+    if (timeZone) return timeZone
     const offset = -date.getTimezoneOffset()
     const sign   = offset < 0 ? '-' : '+'
     const abs    = Math.abs(offset)
@@ -135,6 +193,10 @@
   export let max      = undefined
   export let step     = undefined     // seconds; derived from the value when unstated
   export let showZone = true
+  // An IANA zone ('America/Chicago') the wall clock is read and written in.
+  // Absent is the browser's own; an app that works in its account's zone
+  // states it, or the control shows a different hour than its own labels.
+  export let timeZone = undefined
 
   // Field integration
   export let name        = ''
@@ -175,14 +237,14 @@
   // keeps the shorter control. `step` stated by the caller wins either way.
   const seconds       = hasSeconds(value)
   const resolvedStep  = stated(step, seconds ? 1 : undefined)
-  const localValue    = toLocalInput(value, { seconds })
-  const zone          = localZoneLabel()
+  const localValue    = toLocalInput(value, { seconds, timeZone })
+  const zone          = localZoneLabel(value, timeZone)
 
   // A bound converts the same way the value does, and an ABSENT one has to
   // stay absent: `toLocalInput(undefined)` is `''`, and `min=""` is an
   // attribute the element then carries with no constraint in it.
-  const localMin = min === undefined ? undefined : toLocalInput(min, { seconds })
-  const localMax = max === undefined ? undefined : toLocalInput(max, { seconds })
+  const localMin = min === undefined ? undefined : toLocalInput(min, { seconds, timeZone })
+  const localMax = max === undefined ? undefined : toLocalInput(max, { seconds, timeZone })
 
   let inputEl
   export function focus() { inputEl?.focus() }
@@ -195,8 +257,12 @@
       setLocalError('Enter a whole date and time')
       return
     }
+    if (inDstGap(e.target.value, { timeZone })) {
+      setLocalError(`${e.target.value.slice(11, 16)} does not exist on that date in ${localZoneLabel(fromLocalInput(e.target.value, { timeZone }), timeZone)}`)
+      return
+    }
     setLocalError('')
-    value = fromLocalInput(e.target.value)
+    value = fromLocalInput(e.target.value, { timeZone })
     onvalue?.(value)
   }
 

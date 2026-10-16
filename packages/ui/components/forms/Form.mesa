@@ -234,10 +234,15 @@
   //
   // The write mode goes with it: on a patch a non-null column with a default is
   // necessary too, because blanking it is refused (`FJS-2065`).
-  $: _required = resource?.requiredFields?.(
-    record,
-    method === 'patch' || (method === 'auto' && record?.[idField] != null) ? 'patch' : 'create',
-  ) ?? []
+  $: _required = resource?.requiredFields?.(record, _writeKind(record)) ?? []
+
+  // `upsert` is an alias of `auto` in the resource's `save`, so it asks the
+  // same question here: answering `create` for it graded an existing row as a
+  // draft and sealed nothing, required nothing and armed no autosave.
+  function _writeKind(rec) {
+    return method === 'patch' || ((method === 'auto' || method === 'upsert') && rec?.[idField] != null)
+      ? 'patch' : 'create'
+  }
 
   // A parent that re-pushes its props sends `record: undefined` a second time —
   // which is *not stated*, not *cleared* (the same distinction Invariant 9 makes
@@ -260,20 +265,34 @@
   // with no id, so the next `auto` submit created a second row (`FJS-2588`).
   // A different row pushed in later is a different row opened, by the same rule.
   //
+  // The same row pushed again is opened again. A move made on the screen that
+  // shows the row (Reject) stores a new state under the same id, and the seal
+  // is a fact about the state, so keying on the id alone left the newly sealed
+  // columns as live boxes (`FJS-2745`). What the form wrote to `record` itself
+  // is the one thing that must not reopen -- it is a draft, and the boundary
+  // grades the stored row.
+  //
   // An id the person TYPED opens nothing: on a natural key that box is the
   // id, and opening the draft would freeze the box under the first keystroke.
-  var _typed = undefined
+  var _own = undefined
 
+  //
+  // What was withheld is settled by the FIRST read of a row and survives a
+  // re-push of the same id. A parent that echoes the draft back as a new object
+  // on every keystroke sends the typed column as a key it never read, and
+  // re-grading off that pushes the column out of the withheld set -- so the
+  // value typed over an unseen one stops being dropped on the way out.
   function _openRow(row) {
+    const again = _opened != null && _opened[idField] === row[idField]
     _opened   = row
     _sealed   = resource?.sealedFields?.(row) ?? []
-    _withheld = resource?.withheld?.(row) ?? []
+    _withheld = again ? _withheld : (resource?.withheld?.(row) ?? [])
     pristine  = { ...row }
   }
 
   $: {
-    if (method !== 'create' && record !== _typed && record?.[idField] != null
-        && record[idField] !== _opened?.[idField]) _openRow(record)
+    if (method !== 'create' && record !== _own && record !== _opened
+        && record?.[idField] != null) _openRow(record)
   }
 
   // What descendants read. Rebuilt whenever any part changes, which is what
@@ -326,6 +345,7 @@
         }),
     reportInvalid,
     changed,
+    committed,
   }
 
   // ── The generated fields ─────────────────────────────────────────────
@@ -372,8 +392,8 @@
   // because a member expression is not a bindable target and mutation would
   // not be seen. Same shape every hand-written form in this repo used.
   function writeField(name, value) {
-    _typed = { ...record, [name]: value }
-    record = _typed
+    _own = { ...record, [name]: value }
+    record = _own
     _gradeStale(name, value)
     changed(name)
   }
@@ -458,9 +478,7 @@
     reportInvalid(name, same ? raised.message : null)
   }
 
-  const _mode = () =>
-    method === 'patch' || (method === 'auto' && record?.[idField] != null)
-      ? 'patch' : 'create'
+  const _mode = () => _writeKind(record)
 
   // Validate what the resource would SEND — coerced, then blanks nulled, the
   // order its own pipeline runs — never the raw record: every DOM control hands
@@ -549,7 +567,8 @@
 
   // ── The imperative API ───────────────────────────────────────────────
   //
-  // Reachable two ways, and they are the same three functions:
+  // Reachable two ways, and they are the same four functions (`submit`,
+  // `reset`, `clearErrors`, `flushAutosave`):
   //
   //   <Form {resource} bind:this={form} />        form.submit()
   //   <Form {resource} onready={api => …} />      api.submit()
@@ -614,8 +633,19 @@
     const out = await _perform()
     if (!out.ok) return undefined
 
+    // The record that was saved, taken before `reset()` replaces it: `ondone`
+    // is told what was written, not the blank the form went back to.
+    const saved = record
+
+    // The submit that just succeeded revealed every field. Left revealed, a
+    // form that goes on to take another record speaks for all of them at its
+    // first keystroke -- save-and-add-another opens on a wall of errors.
+    _revealed = []
+    _touched  = []
+    _recompute()
+
     if (resetOnDone) reset()
-    ondone?.(out.result, record)
+    ondone?.(out.result, saved)
     return out.result
   }
 
@@ -712,7 +742,8 @@
     const vf = resource?.versionField
     if (!vf || !result || typeof result !== 'object') return
     if (result[vf] === undefined || record?.[vf] === result[vf]) return
-    record = { ...record, [vf]: result[vf] }
+    _own = { ...record, [vf]: result[vf] }
+    record = _own
   }
 
   /**
@@ -779,6 +810,11 @@
 
   async function _autosaveNow() {
     _autoTimer = null
+
+    // Armed before the form was disabled or committed: the guard in
+    // `_autoBump` is checked when the window opens, and a write that fires
+    // after it lands on a row the caller locked or one already written.
+    if (disabled || committed) { _setAutoState('idle'); return }
 
     // The button is already writing this record. Wait for it rather than
     // sending a second copy: <Form> refuses a re-entrant submit, and that
@@ -1000,7 +1036,7 @@
     // capped at the server's limit reads identically to a complete one once
     // the number is gone, which is the whole of `FJS-391`.
     for (const f of rendered) {
-      if (!f.rule?.references && !f.rule?.values) continue
+      if (!f.rule?.references && !f.rule?.values && !f.rule?.items?.enum) continue
       resource?.options?.(f.name)?.then?.(r => {
         pickers = { ...pickers, [f.name]: Array.isArray(r) ? r : (r?.options ?? []) }
         totals  = { ...totals,  [f.name]: Array.isArray(r) ? null : (r?.total ?? null) }

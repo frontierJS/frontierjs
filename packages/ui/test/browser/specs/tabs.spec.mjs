@@ -84,19 +84,19 @@ export async function run(t) {
     return document.querySelectorAll('#t-main [role=tabpanel]:not([hidden])').length;
   `), 1, 'and hides all but the active one')
   t.ok(await t.evaluate(`
-    return document.querySelector('#panel-general').offsetParent !== null
-        && document.querySelector('#panel-security').offsetParent === null;
+    return document.querySelector('[id$="-panel-general"]').offsetParent !== null
+        && document.querySelector('[id$="-panel-security"]').offsetParent === null;
   `), 'hidden is real hiding, not an attribute nothing reads')
-  t.is(await t.evaluate(`return document.querySelector('#panel-general').tabIndex;`), 0,
+  t.is(await t.evaluate(`return document.querySelector('[id$="-panel-general"]').tabIndex;`), 0,
     'the panel is a tab stop, so content that is not focusable is still reachable')
 
   /* ── clicking ─────────────────────────────────────────────────────────── */
 
-  await t.clickAt('#tab-security')
+  await t.clickAt('[id$="-tab-security"]')
   await t.eventually(selected, 'security', 'clicking a tab selects it')
-  await t.eventually(`document.querySelector('#panel-security').hidden`, 'false',
+  await t.eventually(`document.querySelector('[id$="-panel-security"]').hidden`, 'false',
     'and shows its panel')
-  await t.eventually(`document.querySelector('#panel-general').hidden`, 'true',
+  await t.eventually(`document.querySelector('[id$="-panel-general"]').hidden`, 'true',
     'and hides the one that was open')
   await t.eventually(`document.querySelector('#active').textContent`, 'security',
     'the binding follows')
@@ -144,7 +144,7 @@ export async function run(t) {
   // A key the strip does not own has to travel: swallowing ArrowDown here is
   // how a tablist inside a scrollable page stops the page scrolling.
   const untouched = await t.evaluate(`
-    const el = document.querySelector('#tab-general');
+    const el = document.querySelector('[id$="-tab-general"]');
     const ev = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
     el.dispatchEvent(ev);
     return { prevented: ev.defaultPrevented, still: ${selected} };
@@ -154,9 +154,9 @@ export async function run(t) {
 
   /* ── a disabled tab ───────────────────────────────────────────────────── */
 
-  t.ok(await t.evaluate(`return document.querySelector('#tab-archived').disabled;`),
+  t.ok(await t.evaluate(`return document.querySelector('[id$="-tab-archived"]').disabled;`),
     'a disabled Tab is a disabled button')
-  await t.evaluate(`document.querySelector('#tab-archived').click(); return true;`)
+  await t.evaluate(`document.querySelector('[id$="-tab-archived"]').click(); return true;`)
   await t.eventually(selected, 'general', 'and clicking it selects nothing')
 
   /* ── two strips are two strips ────────────────────────────────────────── */
@@ -171,11 +171,11 @@ export async function run(t) {
 
   t.is(await t.evaluate(`return document.querySelectorAll('#t-unmount [role=tabpanel]').length;`), 1,
     'with unmount, an inactive panel is absent rather than hidden')
-  t.ok(await t.evaluate(`return !!document.querySelector('#panel-two');`),
+  t.ok(await t.evaluate(`return !!document.querySelector('[id$="-panel-two"]');`),
     'and the active one is there')
 
-  await t.clickAt('#tab-one')
-  await t.eventually(`document.querySelector('#panel-one')?.textContent?.trim()`, 'One body',
+  await t.clickAt('[id$="-tab-one"]')
+  await t.eventually(`document.querySelector('[id$="-panel-one"]')?.textContent?.trim()`, 'One body',
     'switching builds the panel that was not in the DOM')
   t.is(await t.evaluate(`return document.querySelectorAll('#t-unmount [role=tabpanel]').length;`), 1,
     'and destroys the one that was')
@@ -186,10 +186,10 @@ export async function run(t) {
   // Tab from the selected tab must land on the panel it controls, not on the
   // next tab button — that is the whole point of the roving tabindex, and it
   // is the half a `tabindex` written once at render time gets wrong.
-  await t.clickAt('#tab-security')
+  await t.clickAt('[id$="-tab-security"]')
   await t.eventually(focusedTab, 'security', 'focus is on the selected tab')
   await t.press('Tab')
-  await t.eventually(`document.activeElement?.id`, 'panel-security',
+  await t.eventually(`document.activeElement?.id?.replace(/^tabs-[a-z0-9]+-/, '')`, 'panel-security',
     'Tab from the strip lands on the active panel, not the next tab')
 
   /* ── disabled after registration ──────────────────────────────────────── */
@@ -199,9 +199,9 @@ export async function run(t) {
   // every assertion above and then walks straight onto a tab the app has since
   // turned off.
   await t.clickAt('#off-billing')
-  await t.eventually(`document.querySelector('#tab-billing').disabled`, 'true',
+  await t.eventually(`document.querySelector('[id$="-tab-billing"]').disabled`, 'true',
     'a tab can be disabled after it has registered')
-  await t.clickAt('#tab-security')
+  await t.clickAt('[id$="-tab-security"]')
   await t.eventually(focusedTab, 'security', 'from the tab before it')
   await t.press('ArrowRight')
   await t.eventually(selected, 'general',
@@ -214,6 +214,6 @@ export async function run(t) {
   await t.mount('tabs', { firstDisabled: true })
   await t.eventually(selected, 'security',
     'with the first tab disabled, the strip defaults to the first SELECTABLE one')
-  await t.eventually(`document.querySelector('#panel-security').hidden`, 'false',
+  await t.eventually(`document.querySelector('[id$="-panel-security"]').hidden`, 'false',
     'and opens its panel')
 }

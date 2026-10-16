@@ -7,9 +7,12 @@
   //
   // @frontierjs/css drives field state from `:user-invalid`, which needs no
   // JS and no class, and matches only after the user has actually interacted
-  // — so client-side validation is already handled with nothing here. What
-  // the stylesheet cannot know about is a *server* error, and that is the
-  // only case this component handles.
+  // — so the BROWSER's constraints (`required`, `pattern`, a type) are already
+  // handled with nothing here. What the stylesheet cannot know about is a
+  // message the schema or the server wrote: inside a Form both arrive as the
+  // `error`, the schema's once the field is revealed (on leaving it, or on
+  // submit) and the server's after a refused write. That is what this
+  // component renders.
   //
   // The tone goes on the HINT ITSELF, not on the group. A tone class sets
   // `--bg-mix`, which tones.css registers with `inherits: false`, so a tone on

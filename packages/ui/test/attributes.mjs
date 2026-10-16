@@ -66,8 +66,8 @@ const PROPS = {
 // spread never sees it. A caller addressing one of these writes data-*.
 const ID_IS_A_PROP = {
   'feedback/Toast':       'id is the toast identity the store dismisses by',
-  'layout/Tab':           'id names the pairing, and renders as id="tab-{id}"',
-  'layout/TabPanel':      'id names the pairing, and renders as id="panel-{id}"',
+  'layout/Tab':           'id names the pairing, and renders as id="{scope}-tab-{id}"',
+  'layout/TabPanel':      'id names the pairing, and renders as id="{scope}-panel-{id}"',
   'layout/AccordionItem': 'id names the summary/body pairing',
   'forms/Field':          'id is the CONTROL\'s id — it goes on the <label for>, not the wrapper',
   'overlay/Tooltip':      'id overrides the generated tooltip id the trigger describes itself by',

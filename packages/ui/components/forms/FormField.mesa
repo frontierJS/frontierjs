@@ -135,6 +135,8 @@
       component: Input,
       props: ({ field: f, value: v, onvalue }) => ({
         name: f.name, type: f.type, step: f.step, value: v,
+        ...(f.inputMode ? { inputmode: f.inputMode } : {}),
+        ...(f.pattern ? { pattern: f.pattern } : {}),
         oninput: (e) => onvalue(e.target.value),
       }),
     },

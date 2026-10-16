@@ -30,8 +30,10 @@
   // from one pass rather than the template re-deriving it against a length
   // that may already have been cut down.
   const visible = (() => {
-    const list = (!maxItems || items.length <= maxItems)
-      ? items
+    // slice(-0) is the whole array, so a tail of zero is spelled out: one slot
+    // is the current page alone.
+    const list = (!maxItems || items.length <= maxItems) ? items
+      : maxItems < 2 ? items.slice(-1)
       : [items[0], { label: '…', href: undefined, _ellipsis: true }, ...items.slice(-(maxItems - 1))]
     return list.map((item, i) => ({ ...item, _isLast: i === list.length - 1 }))
   })()

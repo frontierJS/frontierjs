@@ -234,7 +234,7 @@ title: Product
 {/if}
 
 {#if loading}
-  <Skeleton lines={6} />
+  <Skeleton variant="card" />
 {:else if !product}
   <EmptyState title="No such product">It may have been removed.</EmptyState>
 {:else}

@@ -173,7 +173,7 @@ title: Pay run
 {#if error}<Alert tone="danger" id="rd-error">{error}</Alert>{/if}
 
 {#if !run}
-  <Skeleton lines={4} />
+  <Skeleton variant="card" />
 {:else}
   <SectionHeader title={run.reference} level={1}>
     {#snippet action()}

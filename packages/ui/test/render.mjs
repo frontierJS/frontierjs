@@ -27,6 +27,10 @@ const CASES = [
   ['components/forms/Button.mesa',      { variant: 'outlined' },     ['btn', 'outlined']],
   ['components/forms/Input.mesa',       { label: 'Email' },          ['field-group', 'field']],
   ['components/forms/Input.mesa',       { label: 'Email', error: 'Taken' }, ['field-group', 'danger']],
+  // FJS-2517: no label and no name still draws its message and hint.
+  ['components/forms/Input.mesa',       { label: '', error: 'Taken' }, ['field-group', 'field-hint', 'danger']],
+  ['components/forms/Input.mesa',       { error: 'Taken' },          ['field-group', 'field-hint', 'danger']],
+  ['components/forms/Input.mesa',       { hint: 'Paste a URL' },     ['field-group', 'field-hint']],
   ['components/forms/Select.mesa',      { options: ['a'] },          ['field']],
   ['components/forms/Textarea.mesa',    {},                          ['field']],
   // A nullable @length column hands a generated form null, and the counter
@@ -74,7 +78,7 @@ const CASES = [
   ['components/feedback/Skeleton.mesa', { variant: 'text' },         ['skeleton', 'text']],
   ['components/overlay/Modal.mesa',     { title: 'T' },              ['dialog', 'surface-header']],
   ['components/overlay/Drawer.mesa',    { title: 'T' },              ['drawer', 'from-right']],
-  ['components/overlay/DropdownLabel.mesa', {},                      ['navlist-label']],
+  ['components/overlay/DropdownGroup.mesa', { heading: 'Account' },  ['items', 'navlist-label']],
 ]
 
 let failed = 0
@@ -116,6 +120,35 @@ for (const [file, data, expected] of CASES) {
   }
 }
 
+// ── A menu section is named by its heading ──────────────────────────────────
+//
+// `FJS-1688`. A heading written as a sibling above its rows named nothing, so a
+// screen reader moving through a menu was never told which section it was in.
+// The group has to wrap the rows and point at the heading's own id.
+{
+  const GROUP = `<script>
+  import DropdownGroup from '../overlay/DropdownGroup.mesa'
+  import DropdownItem  from '../overlay/DropdownItem.mesa'
+</script>
+<DropdownGroup heading="Account"><DropdownItem>Profile</DropdownItem></DropdownGroup>`
+  const out = await renderComponent(GROUP, {
+    cwd: ROOT, filename: 'components/layout/GroupFixture.mesa', styleTag: false,
+    tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+  })
+  const group   = out.html.match(/<div[^>]*role="group"[^>]*>/)?.[0] ?? ''
+  const labelled = group.match(/aria-labelledby="([^"]+)"/)?.[1]
+  const heading = labelled && out.html.match(new RegExp(`<div[^>]*id="${labelled}"[^>]*>([^<]*)<`))
+  const problems = []
+  if (!group) problems.push('no role="group" wrapper')
+  else if (!labelled) problems.push(`group has no aria-labelledby: ${group}`)
+  else if (!heading || heading[1].trim() !== 'Account') problems.push(`aria-labelledby ${labelled} does not reach the heading`)
+  if (group && !/role="group"[\s\S]*menuitem/.test(out.html)) problems.push('the rows are not inside the group')
+  if (problems.length) {
+    console.error(`✗ DropdownGroup names its section\n    ${problems.join('\n    ')}`)
+    failed++
+  }
+}
+
 // ── A caller's trigger draws the button ─────────────────────────────────────
 //
 // `FJS-2511`. A trigger-only CopyButton is the third usage its header shows, and
@@ -141,6 +174,35 @@ const TRIGGER = `<script>
   if (/aria-label/.test(button)) problems.push(`named over its own content: ${button}`)
   if (problems.length) {
     console.error(`✗ CopyButton with a trigger snippet\n    ${problems.join('\n    ')}`)
+    failed++
+  }
+}
+
+// ── Long category labels ────────────────────────────────────────────────────
+//
+// `FJS-2735`. formatX is the tick, the tooltip and the mark's accessible name,
+// so a long category either collided with its neighbors on the axis or was
+// shortened by the caller and shortened for assistive tech too. The tick fits
+// its slot; the tooltip and the accessible name keep the whole label.
+{
+  const LONG = 'Final Details (cleaning pavement, closing fence gate, etc.)'
+  const rows = [LONG, 'Prep', 'Framing', 'Roofing', 'Paint', 'Trim'].map((c, i) => ({ x: c, y: i + 2 }))
+  const out = await renderComponent(readFileSync(join(ROOT, 'components/display/Chart.mesa'), 'utf8'), {
+    data: { rows, x: 'x', y: 'y', width: 640, label: 'Hours by phase' },
+    cwd: ROOT, filename: 'components/display/Chart.mesa', styleTag: false,
+    tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+  })
+  const ticks = [...out.html.matchAll(/<text[^>]*text-anchor="middle"[^>]*fjs-chart-tick[^>]*>([^<]*)</g)].map(m => m[1])
+  const problems = []
+  if (!ticks.length) problems.push('no x ticks rendered')
+  // ~6.5 units a character at the tick size, inside a 96-unit band.
+  const over = ticks.filter(s => s.length * 6.5 > 96)
+  if (over.length) problems.push(`tick wider than its slot: ${over.join(' | ')}`)
+  if (ticks.includes(LONG)) problems.push('the long label was drawn whole on the axis')
+  if (!out.html.includes(`aria-label="${LONG}: 2"`)) problems.push('the accessible name lost the full label')
+  if (!out.html.includes(`${LONG}: 2</title>`)) problems.push('the <title> lost the full label')
+  if (problems.length) {
+    console.error(`✗ Chart with a long category label\n    ${problems.join('\n    ')}`)
     failed++
   }
 }

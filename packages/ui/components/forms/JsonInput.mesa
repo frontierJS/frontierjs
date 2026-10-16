@@ -106,14 +106,28 @@
     }
 
     const parsed = tryParse(text)
-    if (parsed.ok) {
+    const unsafe = parsed.ok ? unsafeInteger(text) : null
+    if (parsed.ok && !unsafe) {
       setParseError('')
       onvalue?.(parsed.value)
       return
     }
 
-    setParseError(parsed.error)
-    oninvalid?.(parsed.error, text)
+    const message = unsafe
+      ? `${unsafe} is beyond 2^53 and would be stored rounded; write it as a string`
+      : parsed.error
+    setParseError(message)
+    oninvalid?.(message, text)
+  }
+
+  // JSON.parse has already rounded an integer past 2^53 by the time the value
+  // is in hand, so the literal is found in the TEXT, outside any string.
+  function unsafeInteger(src) {
+    const bare = src.replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    for (const m of bare.matchAll(/(?<![\w.+-])-?\d{16,}(?![\d.eE])/g)) {
+      if (!Number.isSafeInteger(Number(m[0]))) return m[0]
+    }
+    return null
   }
 
   // One place, because the form has to hear about both directions: a control

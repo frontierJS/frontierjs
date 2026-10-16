@@ -4863,3 +4863,47 @@ describe('a .mesa <style> names no class the kit already owns (FJS-2512)', () =>
     expect(only(tree('collide-skip', CLEAN), 'css-class-collision').skipped).toBeTruthy()
   })
 })
+
+// FJS-1648: a name a kit component does not declare is its `$attributes`,
+// spread onto the root element, so `<EmptyState sub="…">` rendered no text.
+describe('a kit component is passed only props it declares or attributes HTML has (FJS-1648)', () => {
+  const KIT = {
+    'node_modules/@frontierjs/ui/package.json': '{"name":"@frontierjs/ui"}',
+    'node_modules/@frontierjs/ui/components/display/EmptyState.mesa':
+      '<script>\n  export let title = \'\'\n  export let compact = false\n  export var side = \'right\'\n</script>\n<div {...$attributes}></div>\n',
+    'node_modules/@frontierjs/ui/components/display/Loose.mesa':
+      '<script>\n  export let title = \'\'\n  const all = $$props\n</script>\n<div></div>\n',
+  }
+  const IMPORTS =
+    '<script>\n  import EmptyState from \'@frontierjs/ui/components/display/EmptyState.mesa\'\n' +
+    '  import Loose from \'@frontierjs/ui/components/display/Loose.mesa\'\n</script>\n'
+  const screen = (name, markup) => tree(name, { ...CLEAN, ...KIT, 'web/src/pages/panel.mesa': IMPORTS + markup })
+
+  test('a prop the component does not declare is reported at its line, naming the props it has', () => {
+    const root = screen('kpu-bad', '<EmptyState title="None" sub="Pick another." />\n')
+    const { findings } = only(root, 'kit-prop-unknown')
+    expect(findings.map(f => [f.line, f.message.split(' — ')[0]])).toEqual([[5, '<EmptyState sub>']])
+    expect(findings[0].message).toMatch(/declares title, compact, side/)
+  })
+
+  test('a declared prop, an HTML attribute, data-*, aria-*, an event and a directive are not', () => {
+    const root = screen('kpu-ok', [
+      '<EmptyState title="x" compact id="a" class="b" data-test="c" aria-label="d" onclick={() => go(a > b)}',
+      '  bind:this={el} side="left" role="status" {...rest} {title} />',
+    ].join('\n') + '\n')
+    expect(only(root, 'kit-prop-unknown').findings).toEqual([])
+  })
+
+  test('a component reading $$props takes undeclared names itself and is left alone', () => {
+    expect(only(screen('kpu-loose', '<Loose title="x" anything="y" />\n'), 'kit-prop-unknown').findings).toEqual([])
+  })
+
+  test('a tag in a comment, a script or a style is not a use', () => {
+    const root = screen('kpu-blank', '<!-- <EmptyState sub="x" /> -->\n<style>\n  /* <EmptyState sub="x" /> */\n</style>\n')
+    expect(only(root, 'kit-prop-unknown').findings).toEqual([])
+  })
+
+  test('an app importing no kit component is skipped', () => {
+    expect(only(tree('kpu-skip', CLEAN), 'kit-prop-unknown').skipped).toBeTruthy()
+  })
+})

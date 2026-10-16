@@ -178,7 +178,7 @@ title: Person
 {#if error}<Alert tone="danger" id="pd-error">{error}</Alert>{/if}
 
 {#if !person}
-  <Skeleton lines={4} />
+  <Skeleton variant="card" />
 {:else}
   <SectionHeader title={person.name} level={1}>
     {#snippet action()}

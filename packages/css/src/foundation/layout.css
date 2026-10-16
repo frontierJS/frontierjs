@@ -119,6 +119,21 @@
 }
 
 /*
+ * A [hidden] element is display:none by UA default, but the UA sheet sits
+ * below every author layer, so each `display` above beats it and a hidden
+ * Stack stayed on screen (`FJS-2529`). Restated here, in the layer that
+ * states the display, the way `.view[hidden]` does it in frame.css.
+ */
+.stack[hidden],
+.cluster[hidden],
+.group[hidden],
+.center[hidden],
+.split[hidden],
+.grid[hidden] {
+  display: none;
+}
+
+/*
  * ── Container ───────────────────────────────────────────────────────
  * Centers content and holds it to a readable width, with gutters that
  * step up at the breakpoints (640 / 768 / 1024 / 1280 / 1536 — see the

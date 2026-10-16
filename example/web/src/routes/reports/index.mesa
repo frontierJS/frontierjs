@@ -113,7 +113,7 @@ title: Reports
   </div>
 
   {#if (rows() ?? []).length === 0}
-    <EmptyState title="Nothing taken yet" sub="A paid order will show up here." />
+    <EmptyState title="Nothing taken yet">A paid order will show up here.</EmptyState>
   {:else}
     <Table {columns} rows={rows()} striped hover compact={prefs.dense}>
       {#snippet row(r)}

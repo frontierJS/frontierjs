@@ -401,7 +401,9 @@ license.
   `RangeError`, and `tryParse` reports it as `{ok: false}`.** A path key is as
   long as the path and a walk makes one per ancestor, so work was cubic in the
   depth and 100k deep overflowed the stack (`FJS-2198`). A view of a stored Json
-  value asks `exceedsDepth(value)` first and says so, as `Json.mesa` does. The
+  value asks `exceedsDepth(value)` first and says so, as `Json.mesa` does. **A
+  cycle answers `true` too** (it is walked to the bound), so the message names
+  both causes (`FJS-2920`). The
   predicate parser bounds nesting the same way, as a `ParseError`.
 - **`patchText(text, prev, next)` is the way back to TEXT, and `format()` of the
   whole document is the wrong one.** It replaces only the changed spans, so a

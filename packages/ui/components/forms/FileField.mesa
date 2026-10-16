@@ -49,6 +49,7 @@
   import FileUpload, { isImage } from './FileUpload.mesa'
   import Button                  from './Button.mesa'
   import { formatBytes }         from '@frontierjs/toolbelt/units'
+  import { filePreviews }        from '../../utils.js'
   // `storedUrl` and `isPicked` are this file's own <script module> exports and
   // are in scope here already — importing them back would redeclare them.
 
@@ -70,6 +71,10 @@
 
   $: existing = storedUrl(value)
   $: picked   = isPicked(value) ? value : null
+
+  const previews = filePreviews()
+  $: previews.keep(picked ? [picked] : [])
+  $.onDestroy(previews.release)
   // A value that is neither, and is not empty. The one shape that means
   // something is wrong upstream rather than in this form — a row read by a path
   // that did not resolve the reference. Said out loud, because an <img> pointed
@@ -102,7 +107,7 @@
 {#if picked}
   <div class="file-field-current">
     {#if isImage(picked)}
-      <img class="file-field-thumb" src={URL.createObjectURL(picked)} alt="" data-file-preview />
+      <img class="file-field-thumb" src={previews.url(picked)} decoding="async" alt="" data-file-preview />
     {/if}
     <div class="file-field-meta">
       <p class="text-sm">{picked.name}</p>

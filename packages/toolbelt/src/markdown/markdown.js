@@ -313,7 +313,9 @@ function blocks(lines, opts) {
     }
 
     if ((m = HEADING.exec(line))) {
-      const level = Math.min(6, m[1].length + (opts.headingBase ?? 1) - 1)
+      // A base read off an attribute is a string, and '3' + 1 is '31'.
+      const base  = Math.min(6, Math.max(1, Math.trunc(Number(opts.headingBase ?? 1)) || 1))
+      const level = Math.min(6, m[1].length + base - 1)
       out.push(`<h${level}>${inline(m[2], opts)}</h${level}>`)
       i++
       continue

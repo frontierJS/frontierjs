@@ -107,7 +107,7 @@ The old six-value `variant` conflated the two, which is why `outline` and
 **layout** — `Card` `Accordion` `AccordionItem` `Tabs` `TabList` `Tab` `TabPanel`
 
 **overlay** — `Modal` `Drawer` `Popover` `Tooltip` `DropdownMenu`
-`DropdownItem` `DropdownLabel` `DropdownSeparator` `CommandPalette`
+`DropdownItem` `DropdownGroup` `DropdownSeparator` `CommandPalette`
 `ConfirmationPopover` `ConfirmPanel` `ConfirmProvider`
 
 **feedback** — `Alert` `AlertProvider` `Toast` `Toaster` `Progress` `Spinner`
@@ -205,7 +205,9 @@ the value on screen is not the value on the wire. Litestone stores an instant;
 at each edge and names the zone it is showing you. Its callback is
 `onvalue(iso)` rather than `oninput` — a handler reading `e.target.value` would
 get the wall clock, which is the one thing that must never reach the column. A
-`Date` column has no zone to lose and stays a plain `type="date"`.
+`Date` column has no zone to lose and stays a plain `type="date"`. The zone is
+the browser's own unless `timeZone="America/Chicago"` names the one the app
+works in, so the box reads the same hour as the app's own labels.
 
 ```svelte
 <DateTimeInput
@@ -361,7 +363,8 @@ bug:
 | --- | --- | --- |
 | `Modal`, `Drawer` | `<dialog>` + `showModal()` | a hand-rolled Tab focus trap that could not make the background inert |
 | `Accordion` | `<details>` / `<summary>` | a button with `aria-expanded` and a grid-rows animation |
-| `Progress`, `Bar` | `<progress>` | a div with `role="progressbar"` and three ARIA attributes to keep in sync |
+| `Progress` | `<progress>` | a div with `role="progressbar"` and three ARIA attributes to keep in sync |
+| `Bar` | `<meter>` | a `<progress>`, which a screen reader announces as a task and not as a reading |
 | `Switch` | `<input type="checkbox">` | a `<button role="switch">` that no form ever submitted |
 | `RadioGroup` | real radios + `:has(:checked)` | a selected-state class beside the checked state |
 | `Fieldset` | `<fieldset disabled>` | `opacity` + `pointer-events: none`, which a keyboard user tabbed straight through |

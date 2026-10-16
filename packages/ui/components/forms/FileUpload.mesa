@@ -37,7 +37,7 @@
 
   import Field from './Field.mesa'
   import { formatBytes } from '@frontierjs/toolbelt/units'
-  import { uid, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, lockedBy, filePreviews } from '../../utils.js'
 
   export let accept       = '*/*'     // MIME types e.g. 'image/*' or '.pdf,.doc'
   export let multiple     = false
@@ -63,6 +63,12 @@
   let inputEl
   let localError   = ''
 
+  // The parent can replace `files` as well as this component, so the revoke
+  // follows the list and not removeFile.
+  const previews = filePreviews()
+  $: previews.keep(files)
+  $.onDestroy(previews.release)
+
   function validate(fileList) {
     if (maxSizeMB <= 0) return ''
     const oversized = fileList.find(f => f.size > maxSizeMB * 1024 * 1024)
@@ -70,9 +76,26 @@
     return ''
   }
 
+  // The same grammar the native picker reads `accept` by: `.ext`, `type/*`,
+  // `type/sub`, comma-separated. A drop skips the picker's filter, so without
+  // this `accept="image/*"` stops nothing but the dialog.
+  function accepts(file) {
+    const tokens = String(accept || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+    if (!tokens.length || tokens.includes('*/*')) return true
+    const type = (file.type || '').toLowerCase()
+    const fname = file.name.toLowerCase()
+    return tokens.some(tok =>
+      tok.startsWith('.')   ? fname.endsWith(tok)
+      : tok.endsWith('/*')  ? type.startsWith(tok.slice(0, -1))
+      : type === tok)
+  }
+
   function addFiles(newFiles) {
     if (resolvedDisabled) return
     const list = Array.from(newFiles)
+    const bad  = list.find(f => !accepts(f))
+    if (bad) { localError = `"${bad.name}" is not an accepted file type`; return }
+    if (!multiple && list.length > 1) { localError = 'Only one file can be added'; return }
     const err  = validate(list)
     if (err) { localError = err; return }
     localError = ''
@@ -136,7 +159,7 @@
       data-invalid={displayError ? 'true' : null}
       disabled={resolvedDisabled}
       aria-required={resolvedRequired ? 'true' : null}
-      aria-label="Choose a file to upload"
+      aria-label="Choose a file"
       on:dragover|preventDefault={() => dragging = true}
       on:dragleave={() => dragging = false}
       on:drop={handleDrop}
@@ -153,7 +176,7 @@
       </svg>
 
       <span class="stack" style:gap="0.125rem">
-        <span>{dragging ? 'Drop to upload' : 'Drag & drop or click to browse'}</span>
+        <span>{dragging ? 'Drop to add' : 'Drag & drop or click to browse'}</span>
         <span class="text-xs text-muted">
           {accept !== '*/*' ? accept : 'Any file type'}
           {maxSizeMB > 0 ? ` · Max ${maxSizeMB} MB` : ''}
@@ -190,7 +213,8 @@
                 style:--avatar-size="2.5rem"
                 style:--avatar-radius="var(--card-radius)"
                 style:object-fit="cover"
-                src={URL.createObjectURL(file)}
+                src={previews.url(file)}
+                decoding="async"
                 alt=""
               />
             {:else}

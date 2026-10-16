@@ -87,8 +87,12 @@
   const segmented = layout === 'segmented'
   const groupName = name || uid('radio')
 
+  // The DOM hands back a string, and the item it came from holds the value
+  // the column takes: a number item written as '2' fails `value === item.value`
+  // on the next render, so no card reads as selected.
   function handleChange(e) {
-    value = e.target.value
+    const raw = e.target.value
+    value = resolvedItems.find((it) => String(it.value) === raw)?.value ?? raw
     onchange?.(value)
   }
 </script>
@@ -108,10 +112,10 @@
     style:gap={segmented ? null : '0.5rem'}
     {...$attributes}
   >
-    {#each resolvedItems as item (item.value)}
+    {#each resolvedItems as item, i (item.value)}
       {@const isSelected = value === item.value}
       {@const isDisabled = resolvedDisabled || item.disabled}
-      {@const descId = `${groupName}-${item.value}-desc`}
+      {@const descId = `${groupName}-${i}-desc`}
 
       {#if segmented}
         <label>

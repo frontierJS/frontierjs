@@ -60,7 +60,7 @@ title: Security
 
   <h2 class="h4">Machines</h2>
   {#if !fleet.servers.length}
-    <EmptyState title="No machines" description="A server's Outpost reports its posture every six hours once it is enrolled." />
+    <EmptyState title="No machines">A server's Outpost reports its posture every six hours once it is enrolled.</EmptyState>
   {:else}
     <table class="table" id="security-machines">
       <thead>

@@ -13,6 +13,8 @@
   let tlast      = undefined
   let ulast      = undefined
   let uannounced = 0
+  let hlast      = undefined
+  let hannounced = 0
   let ndoc       = { a: 1 }
 
   const doc = {
@@ -36,6 +38,9 @@
   // built to prevent, and nothing on screen would show it.
   let abyss = {}
   for (let i = 0; i < 100000; i++) abyss = { a: abyss }
+
+  const loop = { name: 'root' }
+  loop.self = loop
 
   const pristine = { name: 'Ada', count: 3, live: true, missing: null, tags: ['x', 'y'], nested: { deep: 1 } }
   let edited = undefined
@@ -103,6 +108,9 @@
 <h2>viewer — a document nested far past the bound</h2>
 <Json id="abyss" value={abyss} search />
 
+<h2>viewer — a document that refers back to itself</h2>
+<Json id="loop" value={loop} />
+
 <h2>editable</h2>
 <Json id="editor-tree" value={pristine} expand={2} editable
       onchange={(next) => { edited = next; edits++ }} />
@@ -149,6 +157,12 @@
 <Json id="normalizing" value={ndoc} expand={1} editable
   onchange={(next) => { ndoc = { ...next } }} />
 <output id="n-doc">{JSON.stringify(ndoc)}</output>
+
+<h2>undo — history={false}, the page owns the stack</h2>
+<Json id="historyless" value={{ a: 1, b: 2 }} expand={1} editable history={false}
+  onchange={(next) => { hlast = next; hannounced++ }} />
+<output id="h-last">{JSON.stringify(hlast)}</output>
+<output id="h-count">{hannounced}</output>
 
 <h2>diff — the old document against the new one</h2>
 <Json id="diffed" expand={0}

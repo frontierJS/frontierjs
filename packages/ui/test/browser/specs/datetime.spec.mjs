@@ -123,6 +123,34 @@ export async function run(t) {
   await t.eventually(`document.querySelector('input[name=startsAt]').getAttribute('aria-invalid')`, 'null',
     'and a cleared box retracts the refusal')
 
+  /* ── a stated timeZone replaces the browser's ─────────────────────────── */
+
+  // FJS-2636: an app that works in its account's zone showed the viewer's hour
+  // here and its own everywhere else. The expectations are written out by hand
+  // for America/Chicago, so they hold whatever zone this browser is in.
+  t.is(await t.evaluate(`return document.querySelector('input[name=accountAt]').value;`),
+    '2026-03-04T03:30', 'a stated timeZone shows the wall clock of THAT zone (CST, UTC-6)')
+  t.match(await t.evaluate(`
+    return document.querySelector('input[name=accountAt]').closest('.field-group').querySelector('.fjs-dt-zone').textContent.trim();
+  `), /^(CST|CDT|GMT-[56])$/, 'and the addon names that zone, not the browser\'s')
+
+  const zonedBack = await t.evaluate(`
+    const el = document.querySelector('input[name=accountAt]');
+    const out = [];
+    for (const wall of ['2026-07-01T14:45', '2026-03-08T12:00', '2026-12-25T00:00']) {
+      el.value = wall;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 0));
+      out.push(document.querySelector('#zonedSeen').textContent);
+    }
+    return out;
+  `)
+  t.is(zonedBack[0], '2026-07-01T19:45:00.000Z', 'a wall clock typed in summer is read as CDT (UTC-5)')
+  t.is(zonedBack[1], '2026-03-08T17:00:00.000Z', 'and one just after the spring-forward is CDT too')
+  t.is(zonedBack[2], '2026-12-25T06:00:00.000Z', 'and one in winter is CST (UTC-6)')
+  await t.eventually(`document.querySelector('input[name=accountAt]').value`, '2026-12-25T00:00',
+    're-rendering that instant shows the wall clock it was typed as')
+
   /* ── the schema path, with no control named anywhere ──────────────────── */
 
   // One generated form, three columns. What is asserted is the CONTROL each

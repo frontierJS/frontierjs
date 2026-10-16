@@ -12,7 +12,7 @@
   // exactly the disabled one and the arrow keys are what nobody has ever run.
   import DropdownMenu      from '../../../components/overlay/DropdownMenu.mesa'
   import DropdownItem      from '../../../components/overlay/DropdownItem.mesa'
-  import DropdownLabel     from '../../../components/overlay/DropdownLabel.mesa'
+  import DropdownGroup     from '../../../components/overlay/DropdownGroup.mesa'
   import DropdownSeparator from '../../../components/overlay/DropdownSeparator.mesa'
 
   export let placement = 'bottom-start'
@@ -42,13 +42,15 @@
     <button type="button" class="btn" id="dd-trigger">Actions</button>
   {/snippet}
 
-  <DropdownLabel>Manage</DropdownLabel>
-  <DropdownItem onclick={pick('edit')} kbd="⌘E">Edit</DropdownItem>
-  <DropdownItem href="/settings/">Settings</DropdownItem>
-  <DropdownItem disabled onclick={pick('never')}>Coming soon</DropdownItem>
+  <DropdownGroup heading="Manage">
+    <DropdownItem onclick={pick('edit')} kbd="⌘E">Edit</DropdownItem>
+    <DropdownItem href="/settings/">Settings</DropdownItem>
+    <DropdownItem disabled onclick={pick('never')}>Coming soon</DropdownItem>
+  </DropdownGroup>
   <DropdownSeparator />
-  <DropdownLabel>Danger zone</DropdownLabel>
-  <DropdownItem tone="danger" onclick={pick('delete')}>Delete</DropdownItem>
+  <DropdownGroup heading="Danger zone">
+    <DropdownItem tone="danger" onclick={pick('delete')}>Delete</DropdownItem>
+  </DropdownGroup>
 </DropdownMenu>
 </div>
 

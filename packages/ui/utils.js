@@ -485,6 +485,39 @@ export function download(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), SAVE_GRACE_MS)
 }
 
+/**
+ * Object URLs for the Files a component previews, one per File and given back
+ * when the File leaves the list. A URL is registered with the document until
+ * it is revoked, so one minted in markup stays for the page's life -- and an
+ * `{#each}` that re-keys a row mints a second for the same File.
+ *
+ *   const previews = filePreviews()
+ *   $: previews.keep(files)            // revoke what is no longer listed
+ *   $.onDestroy(previews.release)
+ *   <img src={previews.url(file)}>
+ */
+export function filePreviews() {
+  const held = new Map()
+  return {
+    url(file) {
+      let u = held.get(file)
+      if (!u) held.set(file, u = URL.createObjectURL(file))
+      return u
+    },
+    keep(files) {
+      for (const [file, u] of held) {
+        if (files.includes(file)) continue
+        URL.revokeObjectURL(u)
+        held.delete(file)
+      }
+    },
+    release() {
+      for (const u of held.values()) URL.revokeObjectURL(u)
+      held.clear()
+    },
+  }
+}
+
 // What a click can hand focus to. An overlay closing on a click-away leaves
 // focus alone when the click landed on one of these, and restores it to the
 // trigger otherwise.

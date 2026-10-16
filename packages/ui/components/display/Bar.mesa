@@ -3,10 +3,10 @@
   // Horizontal percentage fill bar. CPU/mem/disk style — "how full is this",
   // as opposed to Progress.mesa's "how far through a task are we".
   //
-  // Also a native <progress class="progress">, so the value and max are
-  // announced by the platform. The difference from Progress is the threshold
-  // tone: `tone="auto"` grades the fill success → warning → danger as the
-  // resource fills up.
+  // A native <meter class="meter">, so the reading is announced as a
+  // measurement and not as a task under way (that is <progress>). The
+  // threshold tone: `tone="auto"` grades the fill success → warning → danger
+  // as the resource fills up.
   //
   // Usage — full:
   //   <Bar label="CPU" value={74} unit="%" />
@@ -22,7 +22,6 @@
   export let label   = ''       // left label — omitted when size="sm"
   export let unit    = ''       // appended to the value display: "74%" / "8.2GB"
   export let tone    = 'auto'   // 'auto' | one of the 7 css tones
-  export let color   = ''       // legacy alias for `tone`
   export let size    = 'md'     // 'sm' | 'md'
   export let showVal = true     // show the numeric value (md only)
 
@@ -31,25 +30,24 @@
   const displayVal = unit ? `${value}${unit}` : `${Math.round(pct)}%`
 
   // Threshold grading: success < 60, warning < 80, danger >= 80
-  const requested = color || tone
-  const t = requested === 'auto'
+  const t = tone === 'auto'
     ? (pct >= 80 ? 'danger' : pct >= 60 ? 'warning' : 'success')
-    : toTone(requested)
+    : toTone(tone)
 
   const isCompact = size === 'sm'
   const height = isCompact ? '0.375rem' : '0.5rem'
 </script>
 
 {#if isCompact}
-  <progress
-    class={cx('progress', t)}
+  <meter
+    class={cx('meter', t)}
     style:block-size={height}
     value={value}
     max={max}
     aria-label={label || displayVal}
     {class}
     {...$attributes}
-  >{displayVal}</progress>
+  >{displayVal}</meter>
 
 {:else}
   <div class="stack" style:gap="0.375rem" {class} {...$attributes}>
@@ -64,12 +62,12 @@
       </div>
     {/if}
 
-    <progress
-      class={cx('progress', t)}
+    <meter
+      class={cx('meter', t)}
       style:block-size={height}
       value={value}
       max={max}
       aria-label={label || displayVal}
-    >{displayVal}</progress>
+    >{displayVal}</meter>
   </div>
 {/if}

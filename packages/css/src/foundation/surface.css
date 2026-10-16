@@ -25,6 +25,18 @@
  * rules in their own file.
  */
 
+/*
+ * Unset on every element but the one that declares it. Inherited, a
+ * Dialog's ground reaches a `.surface.theme-dark` inside it, which reads
+ * --surface-ground before the theme's own --surface and draws the
+ * dialog's light ground under light-on-dark ink. Same registration shape
+ * as --bg-mix (tones.css), and the same shadow-tree line (tokens.css).
+ */
+@property --surface-ground {
+  syntax:   "*";
+  inherits: false;
+}
+
 :where(.surface, .card, .tile, .alert, .toast, .dialog, .popover, .drawer, .band) {
   /*
    * The percentages are not here — they are the --tint-* ramp in tones.css,

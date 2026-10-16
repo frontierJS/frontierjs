@@ -84,7 +84,7 @@
   // and choosing it should not cost the schema wiring every other control has.
 
   import Field from './Field.mesa'
-  import { resolveError, resolveRule, stated } from '../../utils.js'
+  import { resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
 
   // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -94,6 +94,7 @@
   export let endDateTime      = '08:00'
   export let isRange          = false
   export let isOpen           = false
+  export let disabled         = undefined  // undefined = ask the form; false overrides it
   export let inclusiveEnd     = true
   export let isMultipane      = false
   export let align            = 'left'    // 'left' | 'right'
@@ -298,11 +299,8 @@
     const d    = new Date(cur)
     while (d.getTime() <= stop) {
       const s = formatYMD(d)
-      if ((!enabled.length && !disabled.length) ||
-          (enabled.length && enabled.includes(normalizeTimestamp(d.getTime()))) ||
-          !disabled.includes(normalizeTimestamp(d.getTime()))) {
-        out.push(s)
-      }
+      const ts = normalizeTimestamp(d.getTime())
+      if (!(enabled.length && !enabled.includes(ts)) && !blocked.includes(ts)) out.push(s)
       d.setDate(d.getDate() + 1)
     }
     return out
@@ -331,6 +329,11 @@
   // source is how they drift.
   const resolvedRequired = stated(required, rule?.required)
   const displayError     = resolveError(form, name, error, errors)
+
+  // A <Form> that is disabled, saving or sealed on this field locks the days
+  // as well as the trigger: the trigger is the caller's markup, so this is the
+  // only place the lock can reach a day cell, a preset or the stepper.
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
 
   // What the hidden input carries. A date with no zone, matching what
   // `<input type="date">` submits for the same column — the picker works in
@@ -372,7 +375,7 @@
   const endDateCalendar = calendarize(new Date(endDateYear, endDateMonth), startOfWeek)
 
   // Disabled / enabled lookup sets — recompute when prop arrays change
-  const disabled = getDatesFromArray(disabledDates)
+  const blocked  = getDatesFromArray(disabledDates)
   const enabled  = getDatesFromArray(enabledDates)
 
   // ── Watchers ─────────────────────────────────────────────────────────────
@@ -517,26 +520,31 @@
 
   function isDisabledDay(day, month, year) {
     const ts = createTimestamp(year, month, day)
-    if (!enabled.length && !disabled.length) return false
+    if (!enabled.length && !blocked.length) return false
     if (enabled.length && !enabled.includes(ts)) return true
-    if (disabled.length && disabled.includes(ts)) return true
+    if (blocked.length && blocked.includes(ts)) return true
     return false
   }
 
   function isFutureDate(day, month, year) {
     if (enableFutureDates) return false
-    return normalizeTimestamp(new Date()) < createTimestamp(year, month, day)
+    return normalizeTimestamp(today) < createTimestamp(year, month, day)
   }
 
   function isPastDate(day, month, year) {
     if (enablePastDates) return false
-    return normalizeTimestamp(new Date()) > createTimestamp(year, month, day)
+    return normalizeTimestamp(today) > createTimestamp(year, month, day)
   }
 
   // Asked of the day, not read off its classes: a terminal node has no
   // className, so a class test there lets a disabled day be picked.
   function unpickable(day, month, year) {
-    return isPastDate(day, month, year) || isFutureDate(day, month, year) || isDisabledDay(day, month, year)
+    return resolvedDisabled || isPastDate(day, month, year) || isFutureDate(day, month, year) || isDisabledDay(day, month, year)
+  }
+
+  // A day cell's text is its bare number, which names nothing out of context.
+  function dayName(day, month, year) {
+    return new Date(year, month, day).toLocaleDateString(undefined, { dateStyle: 'full' })
   }
 
   function isFirstDayOfMonth(day) { return day === 1 }
@@ -633,7 +641,7 @@
   // ── Presets ─────────────────────────────────────────────────────────────────
 
   function onPresetClick(option) {
-    if (!option.start || !option.end) return
+    if (resolvedDisabled || !option.start || !option.end) return
     _startDate = normalizeTimestamp(new Date(option.start).getTime())
     _endDate   = inclusiveEnd ? makeEndInclusive(option.end) : normalizeTimestamp(option.end)
     startDate  = _startDate
@@ -677,7 +685,7 @@
    * the calendar is how a date nobody chose gets saved.
    */
   function stepTarget(days) {
-    if (!_startDate) return null
+    if (resolvedDisabled || !_startDate) return null
     const start = shiftDays(_startDate, days)
     const end   = isRange && _endDate ? shiftDays(_endDate, days) : null
     if (!daySelectable(start)) return null
@@ -800,7 +808,7 @@
     class:right={align === 'right'}
     class:range={isRange && isMultipane}
     class:presets={isRange && showPresets}
-    class:show={isOpen}
+    class:show={isOpen && !resolvedDisabled}
   >
     <!-- ── Preset sidebar ── -->
     {#if isRange && showPresets}
@@ -909,6 +917,10 @@
                         class:first={isFirstDayOfMonth(day)}
                         class:last={isLastDayOfMonth(day, startDateCalendar)}
                         class:disabled={isDisabledDay(day, startDateMonth, startDateYear)}
+                        aria-label={dayName(day, startDateMonth, startDateYear)}
+                        aria-disabled={unpickable(day, startDateMonth, startDateYear) ? 'true' : null}
+                        aria-pressed={inRange(day, startDateMonth, startDateYear) ? 'true' : 'false'}
+                        aria-current={isToday(day, startDateMonth, startDateYear) ? 'date' : null}
                         class:norange={isRange && tempEndDate === _startDate}
                         on:mouseenter={() => onMouseEnter(day, startDateMonth, startDateYear)}
                         on:mouseleave={onMouseLeave}
@@ -997,6 +1009,10 @@
                           class:first={isFirstDayOfMonth(day)}
                           class:last={isLastDayOfMonth(day, endDateCalendar)}
                           class:disabled={isDisabledDay(day, endDateMonth, endDateYear)}
+                        aria-label={dayName(day, endDateMonth, endDateYear)}
+                        aria-disabled={unpickable(day, endDateMonth, endDateYear) ? 'true' : null}
+                        aria-pressed={inRange(day, endDateMonth, endDateYear) ? 'true' : 'false'}
+                        aria-current={isToday(day, endDateMonth, endDateYear) ? 'date' : null}
                           class:norange={isRange && tempEndDate === _startDate}
                           on:mouseenter={() => onMouseEnter(day, endDateMonth, endDateYear)}
                           on:mouseleave={onMouseLeave}
