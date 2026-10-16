@@ -98,7 +98,7 @@ describe('the three strengths', () => {
     // queried and then ignored the answer would pass every other test here.
     const db = await createClient({
       schema: `
-        model Tag { id Int @id  label String @unique  @@label(label)  @@gate("8") }
+        model Tag { id Int @id  label String @unique  @@label(label)  @@gate(8) }
         valueset TaskTag { source Tag value label }
         model Task { id Int @id  title String  free String? @values(TaskTag, suggested) }`,
       db: ':memory:',
@@ -450,7 +450,7 @@ describe('a write the gate refuses is not answered by the value set', () => {
       id    Int     @id
       title String
       tag   String? @values(TaskTag)
-      @@gate("4")
+      @@gate(4)
     }`
 
   const gated: Record<string, (db: any) => Promise<unknown>> = {

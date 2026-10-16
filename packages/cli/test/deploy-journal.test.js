@@ -198,7 +198,7 @@ database main   { path "${join(root, 'db', 'main.db')}" }
 database deploy { path "${join(root, 'db', 'deploy.db')}" }
 
 model Thing   { id String @id @default(uuid())  name String  @@db(main) }
-model Release { id String @id  pivot String  @@db(deploy)  @@gate("8") }
+model Release { id String @id  pivot String  @@db(deploy)  @@gate(8) }
 `
     const app = await createClient({ schema })
     await app.thing.create({ data: { name: 'a' } })

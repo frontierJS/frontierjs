@@ -33,7 +33,7 @@ model Notification {
   readAt      DateTime?
   createdAt   DateTime  @default(now())
 
-  @@gate("0.8.4.8")
+  @@gate(0.8.4.8)
   @@unique([userId, type, deliveryKey], nullsDistinct: true)
 }
 `

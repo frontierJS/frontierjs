@@ -1,17 +1,21 @@
 # conduit — package map
 
 **The third parties an app integrates with, declared in one place.** A
-counterparty is named once — with what credential, under what limits — and
-`app.conduit.send()` is how a call to it leaves the process. v0.1.3, deliberately
-narrow. `bun run test` (bun).
+counterparty is named once — with what credential, under what limits —
+`app.conduit.send()` is how a call to it leaves the process and
+`app.conduit.receive()` is how its deliveries arrive. Deliberately narrow.
+`bun run test` (bun).
 
-**Outbound is what ships; the relationship is the noun.** *Talk to* is a
-relationship rather than a dialing direction — a vendor holds two of our secrets
-and dials us about as often as we dial it — so the receiving end is conduit's too
-and is **not built** (`IDEAS/inbound-integrations.md`). What is NOT conduit's is a
-counterparty signing with FrontierJS's *own* scheme, which is junction's, and a
-machine caller becoming a principal, which is junction's auth door (`FJS-371`).
-The test is *whose scheme is it*.
+**Conduit is two-way** (`FJS-D177`). *Talk to* is a relationship rather than a
+dialing direction — a vendor holds two of our secrets and dials us about as often
+as we dial it — so a Provider has a Target (where we send) and a Receiver (the
+route it calls us on), and the two share a credential store and no code. Write
+*outbound* for the sending end, never for the package. What is NOT conduit's is a
+counterparty signing with FrontierJS's *own* scheme: becoming a caller is
+junction's door (`createApp({ credentials })`, `FJS-D475`), and a far app's
+webhook deliveries are a webhooks SUBSCRIPTION (`FJS-D1087`), which restates
+`accept()`'s applied-not-seen order over one fixed dialect — a change to that
+order here is owed there too. The test is *whose scheme is it*.
 
 **It is not a wall.** Nothing enforces the declaration — there is no check for a
 raw `fetch`, and junction's `ai` and `mail` batteries each dial out directly on
@@ -26,9 +30,9 @@ process.
 transport is generic. A `websocket` target is an **FJS-to-FJS control-plane
 link**: the transport speaks conduit's own frame envelope
 (`{ id, type: 'request' | 'response' | 'stream_chunk' | …, method, path, body, seq }`)
-and the far side must implement it. **A third-party WebSocket API is not
-reachable through this package**, and `@frontierjs/outpost` does not use this
-half either: basecamp registers an outpost as an `http` target with `hmac` auth. A
+and the far side must implement it. **A third-party socket is reachable only
+as a `broker` to listen to**, its framing the connector's (`FJS-D1127`), and
+`@frontierjs/outpost` does not use this half either: basecamp registers an outpost as an `http` target with `hmac` auth. A
 vendor's event stream is the `http` half's: `stream()` yields one chunk per SSE
 event, or the bytes of any other body (`FJS-D934`).
 
@@ -38,7 +42,9 @@ event, or the bytes of any other body (`FJS-D934`).
 
 ```
 src/
-  conduit.ts        the core — declare targets, send, apply resilience
+  conduit.ts        the core — declare targets and receivers, send, accept, apply resilience
+  receive.ts        the receiving end — Delivery, Dialect, Receiver, BrokerReceiver, and the ONE order a delivery or a frame runs
+  mirror.ts         the mirror claim — a connector's models, verbs and parse; the Provider half of a forward
   router.ts         target resolution
   observe.ts        the one place an observer is called
   plugin.ts         the Junction plugin (app.conduit)
@@ -222,6 +228,26 @@ src/
   subscription registers `conduit:<target>` through `registerReadiness` — *connected*,
   not *recent message*, since a quiet broker is not an outage — and a new broker
   path that cannot say so does not ship.
+- **A Provider's socket is a receiver that names a `target`, and it mounts no
+  route** (`FJS-D1127`). `receive()` branches on `'target' in receiver`, and
+  the junction plugin's wrapper must branch first: a route for a socket
+  receiver is a door where anyone posts a frame that nothing verifies, since
+  the dial was the verification. Frames are handed over in order through one
+  promise chain per connection — the concurrent handoff applied an edit
+  before its create and applied a doubled frame twice, both passing the
+  receipt check before either marked (`conduit-mattermost` drive, rows
+  `socket.editThenDeleteInOrder` and `socket.frameTwiceAppliedOnce`). The
+  framing is a value in code, never a descriptor field: a descriptor is
+  stored as JSON and a function does not survive the store.
+- **A mirror forward spends `self.send`, read at call time** (`FJS-D1125`).
+  The junction plugin replaces `send` after `createConduit` returns, to write
+  `who`; a forward holding the unwrapped one sends a per-caller verb with no
+  caller and every human write is `auth_failed` (the negative control in
+  `junction-integration.test.ts` § *a claimed mirror model*). The Data half is
+  junction's — the generated verb asks `mirrored(accessor)` and lands the row —
+  and a failure crosses as a thrown `Error` carrying `status`, so junction's
+  one mapper names the HTTP class. The boot check reads `@@mirror` off the
+  parsed schema, which `app.db.$schema` or `app.tenants.schema` carries.
 - **An `http` stream is opened by its first read, through `send()`'s ladder.**
   `stream()` calls the same `attempt()` with `open`, so a refusal before the
   first byte is the kind `send()` answers, thrown as a `ConduitStreamError`
@@ -241,6 +267,37 @@ src/
   credential goes to every declared origin, so the list is never a send's to
   widen. Breaker and concurrency are keyed per origin whenever a send names an
   address.
+- **A request-addressed target reaches public https, and the only credential
+  it carries is the row's own** (`FJS-D1089`). `destinations.allowPrivate`
+  opens the whole target to every row, so it is a test receiver's switch: a
+  counterparty on a LAN is a fixed-address target the operator declares, or an
+  Outpost vantage (`FJS-D1018`), never a row's to name. A self-hosted instance
+  behind a public name is one `address_from` target with `per_caller` auth, the
+  send naming the row with `grant` — refused by name without it, because
+  `withCache` keyed on the tenant alone sends the first row's token to the
+  second row's address (`FJS-2232` per row). What conduit cannot see is a
+  `getFor` that ignores `grant` and answers a tenant-wide token for every row;
+  nothing grades that. Registering one fixed-address target per row is never
+  graded and is the hole, not the workaround.
+- **A Receiver is three parties and one order** (`FJS-D899`). A connector exports
+  the `Dialect` — `verify · parse · dedupeKey`, pure, the clock passed in as
+  `ctx.now` in seconds; `parse` may be a promise, because a raw-MIME vendor's
+  parse is a MIME parser's (conduit-mailgun, `FJS-D784`) — the app declares
+  the `Receiver` around it, and
+  `accept()` runs credential → verify → parse → owner → receipt → apply → mark.
+  `credential` is a ref through the installed resolver, or a function choosing
+  the key for one delivery BEFORE the body is believed (Quo's key is the
+  subscription's row). **Dedupe means APPLIED, not SEEN** (`FJS-1805`): the
+  receipt is written unapplied, only `markApplied` makes a redelivery a
+  duplicate, and an `apply` that throws answers 500 and leaves the receipt so the
+  sender's retry gets a clean run — so applying twice must be safe, which the
+  subject's own unique key inside the apply is for. `parked` leaves the receipt
+  unapplied on purpose. A refusal is one 401 sentence, `not verified`; the reason
+  reaches `onReceived` and the junction plugin's log, never the body. A nonce
+  memory is per receiver, `toolbelt/signature`'s `nonceMemory`, kept for what
+  the dialect states (twice its tolerance). A dialect that needs a step the
+  order lacks — a handshake, a batch — is the second asker `FJS-D899` waits for;
+  do not grow the record for one.
 - **`stub` and `not_implemented` are different answers.** A stub transport
   succeeds with a canned response; NotImplemented refuses. Do not use the first
   as a placeholder for a transport you meant to write.
@@ -291,9 +348,13 @@ src/
   bytes `serialize()` produced and may return a replacement body — an http
   transport sends `authorize().body`, never its own `rawBody`, or the signed bytes
   were not the ones sent. A minted JWT or OAuth token is the RESOLVER's:
-  `withCache({ get: mint }, { ttl_ms })` is its expiry, so conduit holds no
-  credential lifetime. `put()` refuses an unknown signer by name, and a signed
-  target beside `follow_redirects` or `address_from`. A per-target fact the
+  its `get` answers `{ value, expires_at }` and `withCache({ get: mint }, { ttl_ms:
+  Infinity })` holds it exactly that long (`FJS-D1075`) — a fixed `ttl_ms` beside a
+  minted token is a copy of the provider's number, and 3CX ships `expires_in` as
+  3600 or 60 by build. `valueOf()` is the one place an answer becomes the string
+  a transport sends; a non-finite `expires_at` is `auth_failed` by name. `put()` refuses an unknown signer by name, and a signed
+  target beside `follow_redirects`, or beside `address_from` unless it is
+  `per_caller` (`FJS-D1089`). A per-target fact the
   scheme signs under (SigV4's region) is `auth.params`, strings only, never a
   secret — not a signer registered per value (`FJS-2725`). **A resolver or signer
   that throws has sent nothing**, so `beforeDispatch` makes any throw a
@@ -326,6 +387,10 @@ src/
 `bun run test`, then `example`:
 
 - `bun run verify:notify` — the mail path runs over conduit to a real server.
+- `bun run verify:pay` — the RECEIVING end against a provider speaking this
+  project's own scheme: four refusals (forged, tampered, stale, replayed nonce)
+  and a redelivered event, over a real socket. Needs `bun run api` up on the dev
+  row; `verify:stripe` also posts Stripe's dialect at the app's receiver.
 - `bun run verify:stripe` — the TRANSPORT, against a real vendor's dialect. The
   only drive whose sink refuses a wrong content-type rather than parsing whatever
   arrives, so it can fail when the encoding is wrong; its negative control is the

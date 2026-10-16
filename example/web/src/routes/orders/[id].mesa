@@ -529,7 +529,7 @@ title: Order
       {#if !maySeeMoney}
         <p class="text-sm text-muted">
           Payments read at <Mono>ADMINISTRATOR</Mono>; this session is level
-          {session.level}. That is <Mono>@@gate("5.8.8.9")</Mono> in
+          {session.level}. That is <Mono>@@gate(5.8.8.9)</Mono> in
           <Mono>db/schema.lite</Mono>, and the server would refuse the request
           whatever this page drew.
         </p>

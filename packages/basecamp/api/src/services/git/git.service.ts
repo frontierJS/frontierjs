@@ -17,38 +17,35 @@ import { LEVELS }                  from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { localMachineRefusal }     from '../../core/env.ts'
 import { resolveRoot, listLocalRepos } from '../../core/local-git.ts'
-import type { BasecampApp }        from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
-export function createGitService(app: BasecampApp) {
-  return createService({
-    name: 'git',
-    scope: keyScope('git'),
-    reservedQuery: [...WORKSPACE_QUERY, 'root', 'depth'],
+export default createService({
+  name: 'git',
+  scope: keyScope('git'),
+  reservedQuery: [...WORKSPACE_QUERY, 'root', 'depth'],
 
-    // `methods:` rather than the scan: a service with no model otherwise
-    // answers every CRUD verb it was never given. A read, so a keyed retry
-    // scans again rather than replaying a stale listing.
-    methods: [{ method: 'localRepos', read: true, gate: LEVELS.ADMINISTRATOR }],
+  // `methods:` rather than the scan: a service with no model otherwise
+  // answers every CRUD verb it was never given. A read, so a keyed retry
+  // scans again rather than replaying a stale listing.
+  methods: [{ method: 'localRepos', read: true, gate: LEVELS.ADMINISTRATOR }],
 
-    // ── localRepos — GET /git  X-Service-Method: localRepos ─────────────
-    //
-    // 404 rather than an empty list when it is not offered, so a screen can
-    // tell *no repositories here* from *not on this machine*.
-    async localRepos() {
-      const refused = localMachineRefusal()
-      if (refused) throw new NotFound(`The local repository listing is ${refused}`)
-      const data  = ($.data ?? {}) as Record<string, unknown>
-      const where = resolveRoot(data.root ?? $.reserved.root)
-      if ('refused' in where) throw new BadRequest(where.refused)
-      const depth = Number(data.depth ?? $.reserved.depth ?? 4)
-      if (!Number.isInteger(depth) || depth < 0 || depth > 8)
-        throw new BadRequest('depth must be a whole number from 0 to 8 — how many folders down to look')
-      return listLocalRepos(where.root, { depth })
-    },
+  // ── localRepos — GET /git  X-Service-Method: localRepos ─────────────
+  //
+  // 404 rather than an empty list when it is not offered, so a screen can
+  // tell *no repositories here* from *not on this machine*.
+  async localRepos() {
+    const refused = localMachineRefusal()
+    if (refused) throw new NotFound(`The local repository listing is ${refused}`)
+    const data  = ($.data ?? {}) as Record<string, unknown>
+    const where = resolveRoot(data.root ?? $.reserved.root)
+    if ('refused' in where) throw new BadRequest(where.refused)
+    const depth = Number(data.depth ?? $.reserved.depth ?? 4)
+    if (!Number.isInteger(depth) || depth < 0 || depth > 8)
+      throw new BadRequest('depth must be a whole number from 0 to 8 — how many folders down to look')
+    return listLocalRepos(where.root, { depth })
+  },
 
-    hooks: {
-      before: { all: [sessionScope(app)] },
-    },
-  })
-}
+  hooks: {
+    before: { all: [sessionScope()] },
+  },
+})

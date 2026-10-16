@@ -11,7 +11,7 @@
   import { INDOORS } from '@/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
-  import { piece }  from '@/pieces/index.js'
+  import { piece, withSeasons } from '@/pieces/index.js'
   import { framed } from '@/pieces/frame.js'
   import { table }  from '@/pieces/table.js'
   import { barrel } from '@/pieces/barrel.js'
@@ -106,6 +106,17 @@ iiiiiiiii
   const side = Math.floor((STAGE.w - NAME.length) / 2)
   const curtain = piece('curtain', hung('~'), `${'q'.repeat(side)}${'B'.repeat(NAME.length)}${'q'.repeat(STAGE.w - NAME.length - side)}`)
 
+  // The year dresses the loft, never moves a wall. Summer is the scene's own
+  // letters; every other season brings letters no scene names, one set to a
+  // piece: the curtain's cloth, the dance floor's tiles, the chandelier's
+  // flames, and what drifts over the room in place of notes.
+  const cloth = (fg) => ({ paint: { q: 'V' }, palette: { V: { fg } } })
+  const dressed = withSeasons(curtain, {
+    spring: cloth('#15803d'),
+    fall:   cloth('#9a3412'),
+    winter: cloth('#1d4ed8'),
+  })
+
   // The scope over the stage: a trace per member, each lane labelled in its
   // member's paint, which is where `Band.mesa` reads the lane's ink. The
   // traces are drawn in `inner` by the band, so the picture is the box bare.
@@ -134,6 +145,22 @@ iiiiiiiii
   const tiles = (pick) => Array.from({ length: floor.h }, (_, r) =>
     Array.from({ length: floor.w }, (_, c) => pick((r + c) % 2)).join('')).join('\n')
   const dance = piece('dance floor', tiles(() => '+'), tiles((p) => 'gG'[p]), { floor: true })
+  const checks = (a, b, chars) => ({
+    paint: { g: 'A', G: 'D' },
+    palette: { A: { fg: a, chars, ms: 600 }, D: { fg: b, chars: [...chars].reverse().join(''), ms: 600 } },
+  })
+  const tiled = withSeasons(dance, {
+    spring: checks(['#f9a8d4', '#86efac', '#fde047', '#c4b5fd'], ['#86efac', '#f9a8d4', '#c4b5fd', '#fde047'], '+x'),
+    fall:   checks(['#f97316', '#d97706', '#b45309', '#facc15'], ['#facc15', '#b45309', '#d97706', '#f97316'], '+x'),
+    winter: checks(['#e0f2fe', '#7dd3fc', '#bfdbfe', '#ffffff'], ['#ffffff', '#bae6fd', '#7dd3fc', '#e0f2fe'], '*+'),
+  })
+
+  const glow = (fg, light) => ({ paint: { C: 'H' }, palette: { H: { fg, ms: 900, flicker: true, light } } })
+  const lit = withSeasons(chandelier, {
+    spring: glow(['#fef9c3', '#fde68a', '#fef08a', '#fef9c3'], 5),
+    fall:   glow(['#fb923c', '#f97316', '#fbbf24', '#fb923c'], 6),
+    winter: glow(['#fde047', '#facc15', '#fb923c', '#fde047'], 7),
+  })
 
   // Notes in the air over the room between the stage and the dance floor, each
   // letter a note cycling through the four at a different place in the turn.
@@ -154,6 +181,18 @@ iiiiiiiii
   const notes = piece('notes', rows.join('\n'),
     rows.map((r, i) => [...r].map((ch, c) => (ch === ' ' ? ' ' : NOTES[(Math.floor((c + i * 3) / 9) + i) % 3])).join('')).join('\n'),
     { overhead: 3 })
+
+  // Petals, leaves and snow drift where the notes do, on the same cells.
+  const drift = (chars, a, b, c) => ({
+    art: { '♪': chars[0] },
+    paint: { n: 'I', N: 'J', m: 'L' },
+    palette: { I: { fg: a, chars, ms: 600 }, J: { fg: b, chars: chars.slice(1) + chars[0], ms: 600 }, L: { fg: c, chars: chars.slice(2) + chars.slice(0, 2), ms: 600 } },
+  })
+  const drifting = withSeasons(notes, {
+    spring: drift('✿❀✾❁', ['#f9a8d4', '#fef9c3', '#fda4af', '#ffffff'], ['#ffffff', '#f9a8d4', '#fde047', '#fda4af'], ['#fde047', '#f9a8d4', '#ffffff', '#c4b5fd']),
+    fall:   drift('❧☙❦❧', ['#f97316', '#c2410c', '#d97706', '#92400e'], ['#d97706', '#f97316', '#92400e', '#c2410c'], ['#b45309', '#d97706', '#f97316', '#c2410c']),
+    winter: drift('❄❅❆*', ['#ffffff', '#e0f2fe', '#bae6fd', '#ffffff'], ['#e0f2fe', '#ffffff', '#ffffff', '#bae6fd'], ['#bae6fd', '#ffffff', '#e0f2fe', '#ffffff']),
+  })
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -187,7 +226,7 @@ iiiiiiiii
   <Piece of={stairs} x={2} y={28} />
   <Door  x={17} y={28} to="/tavern/" />
   <Piece of={scope}   x={18} y={1} />
-  <Piece of={curtain} x={18} y={8} />
+  <Piece of={dressed} x={18} y={8} />
   <Piece of={planks}  x={18} y={9} />
   <Piece of={guitarist} x={22} y={10} />
   <Piece of={singer}    x={32} y={10} />
@@ -196,9 +235,9 @@ iiiiiiiii
   <Piece of={keys}      x={68} y={10} />
   <Piece of={sconce} x={8}  y={1} />
   <Piece of={sconce} x={86} y={1} />
-  <Piece of={notes}  x={18} y={14} />
-  <Piece of={chandelier} x={43} y={14} />
-  <Piece of={dance}  x={30} y={17} />
+  <Piece of={drifting} x={18} y={14} />
+  <Piece of={lit} x={43} y={14} />
+  <Piece of={tiled}  x={30} y={17} />
   <Piece of={table}  x={6}  y={17} />
   <Piece of={table}  x={6}  y={21} />
   <Piece of={table}  x={80} y={17} />

@@ -220,7 +220,28 @@ test('parse: an ordering against a literal null is refused, == and != are not', 
 test('parse: a malformed number literal is refused rather than lexed as NaN', function () {
   // A NaN literal compared equal to every number on the JS side, so
   // @@allow('create', qty <= 1.000.000) admitted any qty while SQL hid the row.
-  for (const src of ['1.000.000', '1.5.0', '1..', '-1.2.3']) assert.throws(() => tokenize(src), /Malformed number/)
+  for (const src of ['1..', '-1.2.3']) assert.throws(() => tokenize(src), /Malformed number/)
   assert.equal(tokenize('1.5')[0].value, 1.5)
   assert.equal(tokenize('-2')[0].value, -2)
+  // `1.000.000` is a gate's dotted literal (`FJS-D1081`), and a predicate has
+  // no value of that kind, so the comparison is still refused rather than NaN.
+  const dotted = tokenize('qty <= 1.000.000').slice(0, 3)
+  assert.equal(dotted[2].type, T.DOTTED)
+  assert.throws(() => parseExpression(cursor(dotted)), /Expected a value/)
+})
+
+test('tokenize: a number keeps its text as written, so 2.0 is not 2', function () {
+  assert.equal(tokenize('2.0')[0].value, 2)
+  assert.equal(tokenize('2.0')[0].text, '2.0')
+  assert.equal(tokenize('3.8.3.8')[0].type, T.DOTTED)
+  assert.equal(tokenize('3.8.3.8')[0].value, '3.8.3.8')
+})
+
+test('tokenize: an unterminated string, a trailing backslash and an unclosed block comment are refused', function () {
+  // 'abc to EOF lexed as a string, a trailing backslash made the value
+  // 'abcundefined', and an unclosed /* silently dropped the rest of the source.
+  for (const src of [`'abc`, `"abc`, `x == 'abc\\`, `'abc\\`]) assert.throws(() => tokenize(src), /Unterminated string/)
+  assert.throws(() => tokenize('a /* never closed\nb'), /Unterminated block comment/)
+  assert.equal(tokenize(`'a\\'b'`)[0].value, `a'b`)
+  assert.equal(tokenize('a /* x */ b').length, 3)
 })

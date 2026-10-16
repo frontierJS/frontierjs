@@ -23,7 +23,7 @@ const SALES = `
     name    String
     startAt DateTime
     endAt   DateTime
-    @@gate("0")
+    @@gate(0)
     @@allow('read', startAt < now() && now() < endAt)
   }
 `

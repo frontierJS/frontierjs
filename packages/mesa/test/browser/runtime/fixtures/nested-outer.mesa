@@ -9,9 +9,9 @@
   let siblingHits = 0
 </script>
 
-<div id="wrap" on:click={() => wrapHits++}>
+<div id="wrap" onclick={() => wrapHits++}>
   <span id="inner-host"></span>
-  <button type="button" id="sibling" on:click={() => siblingHits++}>sibling</button>
+  <button type="button" id="sibling" onclick={() => siblingHits++}>sibling</button>
 </div>
 
 <output id="wrap-hits">{wrapHits}</output>

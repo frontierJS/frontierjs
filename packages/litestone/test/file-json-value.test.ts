@@ -117,6 +117,27 @@ describe('a File column takes its bytes inline over JSON (FJS-D666)', () => {
     db.$close()
   })
 
+  // The same ref as JSON text named another row's key, and this row's delete
+  // or replace then removed that row's file from the provider (FJS-3114).
+  test('a stored ref sent as JSON text is refused on create and on update', async () => {
+    const { db, puts, user } = await client()
+    const ref = JSON.stringify({ key: 'Photo/original/someone-elses.png', bucket: 'test', provider: 'local', size: 1, mime: 'image/png', uploadedAt: new Date().toISOString() })
+    await expect(user.photo.create({ data: { id: 1, original: ref } })).rejects.toThrow(/is a File column[\s\S]*data:<type>;base64/)
+    await user.photo.create({ data: { id: 2 } })
+    await expect(user.photo.update({ where: { id: 2 }, data: { original: ` ${ref}` } })).rejects.toThrow(/is a File column/)
+    expect(await stored(db, 2)).toBe(null)
+    expect(puts).toEqual([])
+    db.$close()
+  })
+
+  test('the server writes a ref as JSON text, as asSystem()', async () => {
+    const { db } = await client()
+    const ref = JSON.stringify({ key: 'Photo/original/restored.png', bucket: 'test' })
+    await db.asSystem().photo.create({ data: { id: 1, original: ref } })
+    expect((await stored(db, 1)).key).toBe('Photo/original/restored.png')
+    db.$close()
+  })
+
   test('an object with keys beyond name, type and data is not read as a file', async () => {
     const { db, puts, user } = await client()
     await expect(user.photo.create({ data: { id: 1, original: { data: PNG.toString('base64'), key: 'x' } } }))

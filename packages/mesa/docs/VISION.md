@@ -40,7 +40,7 @@ export default function Counter(__anchor, __props, __block) {
   // In prod: $$runtime.push_component()
   $$runtime.push_component();
   const $$option = { props: __props };
-  const $$slots  = $$runtime.makeSlots(__block);
+  $$runtime.unclaimedContent(__props, [/* declared props */], 'Counter');
 
   // Reactive signals (let → track, const → createMemo, export let → makeExternalProperty)
   const $$sig_count = $$runtime.track(0, void 0, void 0, __block);
@@ -71,7 +71,7 @@ Key properties of the output:
 - **`push_component()` in prod, `push_component(name, file)` in dev** — dev mode passes the component name and source filename for DevTools instance tracking. The compiler emits the dev form when `config.dev: true`.
 - **Sequential traversal** — `child()`/`sibling()`/`pop()` replace path strings; calculated at compile time, O(1) per node at runtime
 - **`render()` dirty-checking** — groups multiple text/attr bindings into one `createEffect`, compares with a `__prev` object, only updates changed nodes
-- **`$slots`** — reads the compiler-injected `$$slots`, built from `$$runtime.makeSlots(__block)`; a reactive object indicating which named slots have content (used as `{#if $slots.sidebar}`)
+- **`$slots`** — reads the compiler-injected `$$slots`, which answers whether the caller passed content under a name (`$slots.default` is the `children` prop); fixed by the caller's markup, so not reactive. It indicates which named slots have content (used as `{#if $slots.sidebar}`)
 
 ### Static Component Detection
 
@@ -939,7 +939,7 @@ the external-reactivity check, which owns that question
 > without notifying. In the template it is the declared snapshot, and nothing warns.
 
 > **RULE 13a** — `bind:` on a `var` is a compile error, and the error names
-> `on:input` rather than `let`. Write-without-re-render is a real thing to want —
+> `oninput` rather than `let`. Write-without-re-render is a real thing to want —
 > §2.3's own `stagedInput` is it — and a handler writing a `var` is how it is
 > spelled. What `bind:value={someVar}` gave instead was a half-binding: the DOM
 > written once at mount and never again, so `bind:` meant one thing on a `let`
@@ -952,7 +952,7 @@ the external-reactivity check, which owns that question
   var staged = ''
 </script>
 <!-- captures every keystroke, re-renders nothing -->
-<input on:input={e => { staged = e.target.value }} />
+<input oninput={e => { staged = e.target.value }} />
 ```
 
 ---
@@ -1039,10 +1039,10 @@ var   theme = $context.theme    // snapshot at mount — non-reactive
 ### 8.1 DOM Events
 
 ```html
-<button on:click={handler}>Click</button>
-<form on:submit|preventDefault={onSubmit}>...</form>
-<input on:input|debounce(300)={search}>
-<div on:click|once|stopPropagation={handler}>...</div>
+<button onclick={handler}>Click</button>
+<form onsubmit|preventDefault={onSubmit}>...</form>
+<input oninput|debounce(300)={search}>
+<div onclick|once|stopPropagation={handler}>...</div>
 ```
 
 **Modifiers:**
@@ -1059,9 +1059,12 @@ var   theme = $context.theme    // snapshot at mount — non-reactive
 | `debounce(ms)` | Debounce — arg can be reactive: `\|debounce({delay})` |
 | `throttle(ms)` | Throttle |
 
+`on:click` and `@click` are refused, and the refusal names the spelling to write.
+
 ### 8.2 Component Events
 
-`on:event` on a **component** is a compiler error. Component communication uses props:
+A component takes a handler as a prop of the same name, so `onclick={fn}` is one spelling on
+an element and a component alike:
 
 ```js
 // MyButton.mesa
@@ -1078,7 +1081,15 @@ function handleClick(e) {
 `$.emit(name, data)` looks for `on{name}` and `on{Name}` in `$$option.props` and calls it
 if present.
 
-> **RULE 23** — `on:event` on a component is always a compiler error. Use `onclick={fn}` prop.
+A modifier on a component compiles into the value it is handed: `<Button
+onclick|preventDefault={save}>` passes `onclick` already wrapped, so the guard survives the
+child forwarding it to its own element. `once`, `passive` and `capture` are options to
+`addEventListener`, and a component has no listener of its own, so they are refused there.
+
+> **RULE 23** — One event spelling: the DOM's own name, `onclick={fn}`, with modifiers
+> piped on (`onsubmit|preventDefault={save}`). `on:click` and `@click` are refused by name.
+> On a component a guard or timer modifier wraps the value and a listener option is refused
+> (`FJS-D1078`).
 
 ---
 
@@ -1271,6 +1282,27 @@ snippet props (which require an `export let` declaration and `{@render}` call),
 a slot is a single tag that mounts whatever content the parent passes inside
 the component's tag.
 
+**A slot IS a snippet with no arguments** (`FJS-D668`). The compiler rewrites
+the HTML spelling before any target reads the tree, so the runtime has one way
+content reaches a component and either spelling on one side meets either on
+the other:
+
+| Written | Is |
+| --- | --- |
+| `<h2 slot="header">…</h2>` at a call | `{#snippet header()}<h2>…</h2>{/snippet}` |
+| unslotted content at a call | `{#snippet children()}…{/snippet}` |
+| `<slot name="header">fallback</slot>` | `{#if header}{@render header()}{:else}fallback{/if}` |
+| `<slot />` | `{@render children?.()}` |
+
+A `<slot>` declares the prop it reads (`header`, `children`) when the script
+does not. Content given twice under one name — `slot="actions"` beside
+`{#snippet actions()}` — is a compile error, as is a slot name that is not an
+identifier. A prop WRITTEN on the tag under the same name is the override and
+the content its fallback: `<Form {actions}><Button slot="actions" />…` passes
+`actions ?? <the button>`, which is how a resource file lets its own caller
+replace the row. Content a component takes no prop for is dropped with a
+`[Mesa]` warning naming it (`FJS-926`).
+
 **Default slot** — for unattributed content from the parent:
 
 ```html
@@ -1314,8 +1346,8 @@ fallback rendered when the parent provides nothing for that slot.
 </slot:header>
 ```
 
-**`$slots` — checking for slot content** — `$slots` is the door's slot record. `$slots.name` is true when the parent provided content for that slot,
-false otherwise. Use it to conditionally render slot wrappers:
+**`$slots` — checking for slot content** — `$slots` is the door's slot record. `$slots.name` is true when the parent provided content for that slot —
+under either spelling, since both are the prop `name` — and false otherwise. Use it to conditionally render slot wrappers:
 
 ```html
 {#if $slots.footer}
@@ -1355,13 +1387,12 @@ which is a parameterized slot and the only form that can take parameters:
 </Tooltip>
 ```
 
-**`<slot />` vs the `children` snippet pattern** — older Mesa code used
-`export let children = null` plus `{@render children?.()}` to receive
-unattributed content with no parameters. For that job `<slot />` is the
-preferred form: it removes the prop declaration, removes the optional-chain
-call, and supports named slots and fallback content directly. The `children`
-pattern is not legacy where it is doing something a slot cannot — passing a
-value to the caller, or handing slot content on to a deeper child as a snippet.
+**`<slot />` vs the `children` snippet pattern** — they are one prop, so
+`export let children = null` plus `{@render children?.()}` and `<slot />` both
+receive unattributed content. For content with no parameters `<slot />` is the
+preferred spelling: it needs no declaration and takes fallback content
+directly. The `children` pattern is the form for doing what a slot cannot —
+passing a value to the caller.
 
 > **RULE 35a** — `<slot />` is the preferred mechanism for receiving
 > unattributed content. The `export let children` + `{@render children?.()}`
@@ -1668,24 +1699,24 @@ this component file.
 
 ```html
 <mesa:window
-    on:resize={handleResize}
-    on:keydown|preventDefault={handleKey}
+    onresize={handleResize}
+    onkeydown|preventDefault={handleKey}
     bind:innerWidth={width}
     bind:scrollY={scrollPos}
-    bind:online={isOnline}
 />
 ```
 
 Bindable: `innerWidth`, `innerHeight`, `outerWidth`, `outerHeight`, `scrollX`, `scrollY`,
-`devicePixelRatio`, `online`.
+`devicePixelRatio`; any other prop is a compile error. Whether the network is up is
+`tab.online` from `@frontierjs/mesa/browser`.
 
 ### 12.2 `<mesa:document>` and `<mesa:body>`
 
 Bind event listeners to `document` or `document.body`.
 
 ```html
-<mesa:document on:visibilitychange={handleVisibility} />
-<mesa:body on:mouseenter={startTracking} on:mouseleave={stopTracking} />
+<mesa:document onvisibilitychange={handleVisibility} />
+<mesa:body onmouseenter={startTracking} onmouseleave={stopTracking} />
 ```
 
 ### 12.3 `<mesa:head>`
@@ -2131,7 +2162,7 @@ then a key; a call is a call.
 
 | bare and door | `$props` · `$attributes` · `$slots` · `$context` · `$async` |
 |---|---|
-| **door only** | `$.onMount` · `$.onDestroy` · `$.onCleanup` · `$.mounted` · `$.tick` · `$.emit` · `$.inspect` · `$.transition` · `$.entrance` · `$.fade` · `$.slide` · `$.fly` |
+| **door only** | `$.onMount` · `$.onDestroy` · `$.onCleanup` · `$.mounted` · `$.tick` · `$.emit` · `$.inspect` · `$.transition` · `$.entrance` · `$.fade` · `$.slide` · `$.fly` · `$.measure` · `$.viewport` · `$.focus` |
 
 **Four prefixes, and each line is a different kind of thing** (`FJS-D137`):
 
@@ -2210,9 +2241,19 @@ above. Two things wearing one character, and the character is all they share.
 | `$.fade(opts?)` | A ready-made entrance: opacity, `{ duration, easing }`. |
 | `$.slide(opts?)` | A ready-made entrance: height, `{ duration, easing }`. |
 | `$.fly(opts?)` | A ready-made entrance: offset, `{ x, y, duration, easing }`. |
+| `$.measure(el)` | A Promise of the box `el` occupies, `{ left, top, right, bottom, width, height }`, or `null` for no node. Pixels on a page and a phone, cells on a terminal. |
+| `$.viewport()` | A Promise of the area a `position: fixed` box is placed against, `{ width, height }`, in `$.measure`'s units: the window on a page, the page's box on a phone, the renderer on a terminal. |
+| `$.focus(el)` | A Promise that resolves once focus has moved to `el`; no node does nothing. |
 
-The five animation helpers and the four lifecycle functions are the same for
-every instance, so they live on one object each component's `$` inherits from.
+The five animation helpers, the four lifecycle functions, `measure`,
+`viewport` and `focus` are the same for every instance, so they live on one object each
+component's `$` inherits from.
+
+**`$.measure`, `$.viewport` and `$.focus` answer a Promise on every target**, the browser's
+included, because a phone answers each by callback: a synchronous
+`el.getBoundingClientRect()` passes on the web and finds nothing on a phone.
+Each target's runtime gives its own answer in the one shape, and a native
+engine that refuses the call rejects the Promise with its code.
 The rest — `props`, `slots`, `attributes`, `emit`, `context`, `mounted`,
 `inspect`, `async` — differ per instance and are set on `$` itself, and only
 when the component reaches for them.
@@ -2477,7 +2518,7 @@ The compiler sets `ctx.isStatic = true` when a component has:
 - No `$:` watch handlers, path watches, or side effects
 - No `$context` provides or consumes
 - No `async` derived values
-- No DOM event handlers (`on:event`)
+- No DOM event handlers (`onclick`)
 - No `{@attach}` lifecycle directives
 
 Static components can be rendered to HTML at build time with no JavaScript shipped.
@@ -2607,7 +2648,8 @@ components hydrate to their initial render and serialize cleanly.
 | Assigning to a derived `const` | Cannot assign to derived const |
 | `bind:` on `export const` prop | Cannot two-way bind an immutable prop |
 | `bind:` on `export var` prop | Cannot two-way bind a non-reactive prop |
-| `on:event` on a component | Use `onclick={fn}` prop instead |
+| `on:click` or `@click` anywhere | Write `onclick={handler}`, the modifiers piped on |
+| `once`, `passive` or `capture` on a component | An `addEventListener` option, and a component has no listener of its own |
 | `$async.x` where `x` is neither an awaited top-level `const` nor a top-level `async function` | `$async.x` names no async state (RULE 16) |
 | `$.mounted(fn)` used more than once | Only one `$.mounted` per component — use `Promise.all` for multiple operations |
 | `bind:value\|mask` without pattern argument | `\|mask` requires a pattern wrapped in `{ }` |
@@ -2634,7 +2676,7 @@ components hydrate to their initial render and serialize cleanly.
 | Multiple root elements | Fully supported — components may have any number of top-level elements |
 | CSS scoping | Styles in `<style>` block are component-scoped by default — the scope class is appended to the selector's SUBJECT, so a component can style its own root and cannot reach into a child (RULE 55) |
 | `{#each}` keying | Unkeyed is keyed by index; state `(item.id)` when a row's DOM state must travel with the item |
-| DOM events | `on:eventname={handler}` with optional `\|modifier` chain |
+| DOM events | `oneventname={handler}` with optional `\|modifier` chain |
 | Component events | `onclick={fn}` prop preferred; `$.emit('click', data)` supported |
 | Two-way binding | `bind:value={variable}` (with optional `\|mask({pattern})` modifier) |
 | Group binding | `bind:group={array}` for checkboxes; `bind:group={scalar}` for radios |
@@ -2667,7 +2709,7 @@ components hydrate to their initial render and serialize cleanly.
 | 11 | Static paths → targeted accessors; dynamic paths → runtime effects |
 | 12 | Template path references always safe — compiler wraps with `?.` and `?? ''` |
 | 13 | `var` is a non-reactive sampler — reads without subscribing, writes without notifying; in the template it is the declared snapshot |
-| 13a | `bind:` on a `var` is a compile error naming `on:input` — the capability keeps its road, the half-binding does not |
+| 13a | `bind:` on a `var` is a compile error naming `oninput` — the capability keeps its road, the half-binding does not |
 | 14 | `let` initializers are snapshots — use `$: name = expr` for ongoing re-derivation |
 | 14a | Writable derived overrides are temporary — dep change always wins back; use `let` + watch+handler for permanent detachment |
 | 14b | `$: (a, b)` is a multi-path watch (sequence). `$: { ... }` is an auto-tracked block effect. Wrapping a sequence inside a block produces a block effect, not multi-path watches. |
@@ -2685,7 +2727,7 @@ components hydrate to their initial render and serialize cleanly.
 | 21 | Compiler target is `@frontierjs/mesa/runtime` — full stack ownership |
 | 22 | `bind:` is only valid on `export let` props |
 | 22a | On an ELEMENT `bind:` is `value`, `checked`, `files` (plus `group`, `this`) — the DOM writes back for a form value and nothing else. Everything else is `attr={expr}`. On a COMPONENT `bind:` is unchanged (`FJS-D136`) |
-| 23 | `on:event` on a component is a compiler error — use `onclick={fn}` prop |
+| 23 | One event spelling, `onclick={fn}` with modifiers piped on; `on:` and `@` refused by name |
 | 24 | `bind:group` requires a top-level `let` variable |
 | 25 | `$context` provides and consumes must be at the top level of the script block |
 | 25a | `const` context consumers always track the provider; `let` initializes at mount then is independent; `var` snapshots at mount only |
@@ -2801,7 +2843,7 @@ export const cart = { items: [], total: 0 }
 </script>
 
 <!-- Global keyboard shortcut -->
-<mesa:window on:keydown|self={handleKey} />
+<mesa:window onkeydown|self={handleKey} />
 
 <!-- Reactive head -->
 <mesa:head>

@@ -41,8 +41,7 @@ const keysOf = (userId: string) => h.sys.credential.findMany({ where: { userId, 
 
 describe('expiresAt from the caller', () => {
 
-  // FJS-1849: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing("'never' is refused rather than stored as a key with an unreadable expiry", async () => {
+  test("'never' is refused rather than stored as a key with an unreadable expiry", async () => {
     const u = await person()
     const t = await u.login()
     const res = await mint(t, { name: 'never', expiresAt: 'never' })
@@ -79,16 +78,14 @@ describe('expiresAt from the caller', () => {
     }
   })
 
-  // FJS-1849: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a past expiresAt is refused rather than minting a key that is born dead', async () => {
+  test('a past expiresAt is refused rather than minting a key that is born dead', async () => {
     const u = await person()
     const t = await u.login()
     const res = await mint(t, { name: 'dead', expiresAt: '2000-01-01T00:00:00Z' })
     expect(res.status).toBe(400)
   })
 
-  // FJS-1849: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a numeric expiresAt is not silently read as epoch milliseconds', async () => {
+  test('a numeric expiresAt is not silently read as epoch milliseconds', async () => {
     const u = await person()
     const t = await u.login()
     const res = await mint(t, { name: 'num', expiresAt: 4102444800000 })

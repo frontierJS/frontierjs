@@ -5,8 +5,8 @@
 //
 //   OUT  a declared conduit target, `auth: { type: 'hmac' }`, so every call
 //        the shop makes is signed with `@frontierjs/toolbelt/signature`
-//   IN   `verifyWebhook`, which verifies with the SAME function, over the
-//        raw bytes the request arrived as
+//   IN   `pspDialect`, the receiving end conduit runs — verified with the SAME
+//        function, over the raw bytes the request arrived as
 //
 // ─── Two secrets, not one ────────────────────────────────────────────────
 //
@@ -23,6 +23,7 @@
 
 import { verifyRequest } from '@frontierjs/toolbelt/signature'
 import type { App }      from '@frontierjs/junction'
+import type { Dialect, ReceivedEvent } from '@frontierjs/conduit'
 
 export const PSP_TARGET = 'provider:payments'
 
@@ -43,81 +44,54 @@ const PREFIX = 'X-Psp'
  *  events on a laptop that has been asleep. */
 const TOLERANCE_SECONDS = 300
 
-// ─── The replay window ────────────────────────────────────────────────────
+// ─── The receiving end — the provider's dialect ───────────────────────────
 //
-// `verifyRequest` binds a nonce and leaves STORING it to the caller, because
-// the kit does no I/O. This is that store, and it is deliberately in memory
-// and deliberately small.
+// Conduit runs the order (credential → verify → parse → owner → receipt →
+// apply) and keeps the receipt that makes a redelivery a duplicate; this is the
+// vendor's half, three pure functions (`FJS-D899`). The provider speaks this
+// project's own scheme, so `verify` is `verifyRequest` over the bytes that
+// arrived — `rawBody`, never a re-serialized parse, since both ends would then
+// have to agree about key order forever.
 //
-// It is not the shop's idempotency and must not be mistaken for it. Two
-// different questions, two different lifetimes:
+// Two replay refusals with two lifetimes, and neither is the other:
 //
-//   this        has this exact SIGNATURE been presented inside its five-minute
-//               freshness window — a captured request being replayed
-//   the ledger  has this EVENT ever been handled — for all time
-//
-// `model PaymentEvent`'s @unique is the second, and it is the one correctness
-// depends on. This one is a cheap refusal in front of it, and a process that
-// restarts with a cold set is not a bug: every replay it would have caught is
-// refused by the ledger a moment later, for the same 200 and a row saying the
-// event was already handled. Which is also why a shared store across replicas
-// would buy nothing here — worth saying out loud, because "the nonce set is
-// per-process" reads like a defect until you ask what it is guarding.
-const seen = new Map<string, number>()
-
-function noteNonce(nonce: string, now: number): boolean {
-  // Swept on use rather than on a timer: the set is bounded by the request
-  // rate inside one window, and a timer would be a second thing to shut down.
-  if (seen.size > 1_000) for (const [k, t] of seen) if (now - t > TOLERANCE_SECONDS) seen.delete(k)
-  const already = seen.has(nonce)
-  if (!already) seen.set(nonce, now)
-  return already
-}
-
-/**
- * Is this request really from the provider?
- *
- * Answers `{ ok }` or `{ ok: false, reason }` — the reason is for the log and
- * never for the response, because "your signature is wrong" and "your clock is
- * out" are one 401 to a forger and two different problems to whoever is
- * on call.
- *
- * `rawBody` is REQUIRED and is why this takes a context rather than a parsed
- * body: the signature covers a hash of the bytes that were sent, and
- * re-serializing `ctx.body` to check it means both ends have to agree about
- * key order forever. Junction keeps the bytes for exactly this
- * (`ctx.rawBody` on a raw route, `ctx.$raw.rawBody` in a hook).
- */
-export async function verifyWebhook(ctx: {
-  method: string
-  path: string
-  /**
-   * The RAW search string, as it arrived. Part of the canonical string since
-   * `FJS-678`; it is taken raw rather than off a parsed query bag, because a
-   * signature covers the bytes the sender put on the wire and a
-   * re-serialization of a parsed query is a different string.
-   */
-  query?: string
-  headers: Record<string, string> | Headers
-  rawBody?: string
-}): Promise<{ ok: true } | { ok: false; reason: string }> {
-  return verifyRequest({
-    secret:  process.env.SHOP_PSP_WEBHOOK_SECRET,
-    method:  ctx.method,
-    // The path AS THE PROVIDER ADDRESSED IT, prefix included. `apiPrefix`
-    // moves every route the app registers, so deriving this from
-    // WEBHOOK_PATH alone would verify a different string than the one signed
-    // the day somebody changes the prefix — and the failure is a 401 on every
-    // real event, which reads as the provider being broken.
-    path:    ctx.path,
-    query:   ctx.query ?? '',
-    body:    ctx.rawBody ?? '',
-    headers: ctx.headers,
+//   the nonce    has this exact SIGNATURE been presented inside its window — a
+//                captured request replayed. Conduit's memory, per receiver,
+//                kept for twice the tolerance (FJS-1833); a process restarting
+//                with a cold memory loses nothing, because
+//   the receipt  has this EVENT been applied — for all time, in conduit's
+//                store, and `model PaymentEvent`'s @unique behind it is what
+//                makes applying twice safe.
+export const pspDialect: Dialect<string, PspEvent> = {
+  verify: (d, secret, { now, seenNonce }) => verifyRequest({
+    secret,
+    method: d.method,
+    // The path AS THE PROVIDER ADDRESSED IT, prefix included, and the raw
+    // search string: `apiPrefix` moves every route, and a signature covers the
+    // bytes the sender put on the wire (`FJS-678`).
+    path:    d.path,
+    query:   d.query,
+    body:    d.rawBody,
+    headers: d.headers,
     prefix:  PREFIX,
     toleranceSeconds: TOLERANCE_SECONDS,
-    now:     Math.floor(Date.now() / 1000),
-    seenNonce: (nonce) => noteNonce(nonce, Math.floor(Date.now() / 1000)),
-  })
+    now,
+    seenNonce: nonce => seenNonce(nonce, 2 * TOLERANCE_SECONDS),
+  }),
+  parse: (d) => {
+    const b = d.body as Partial<PspEvent> | null
+    return b && typeof b.id === 'string' && typeof b.type === 'string'
+      ? { id: b.id, type: b.type, payload: b }
+      : null
+  },
+  dedupeKey: (_d, ev) => ev.id,
+}
+
+/** What the provider posts: `id` names the event, `data.paymentRef` the intent. */
+export interface PspEvent extends ReceivedEvent {
+  id:      string
+  type:    string
+  payload: Record<string, unknown>
 }
 
 /**

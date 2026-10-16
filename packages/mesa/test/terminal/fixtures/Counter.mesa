@@ -7,7 +7,7 @@
 <div class="box">
   <h1>Counter</h1>
   <p>Count: {count}</p>
-  <button on:click={inc}>Add</button>
+  <button onclick={inc}>Add</button>
   {#if count > 2}
     <p>Many</p>
   {:else}

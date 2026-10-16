@@ -13,7 +13,7 @@ import { tmpdir } from 'os'
 import { keyLiteral, weakLiteral, buildIndex } from '../core/seams.js'
 import { spawnSync } from 'child_process'
 import { RULES, runChecks, findApps, applyFixes, verdictOf, blindSkips,
-         BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline } from '../core/checks.js'
+         BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline, AUTH_SERVICES } from '../core/checks.js'
 
 let ROOT
 
@@ -54,7 +54,7 @@ model Account {
   // in: the column declared, and no screen printing the integer it stores.
   balance     Int    @money(USD)
   workspaceId Int
-  @@gate("2")
+  @@gate(2)
   @@capabilities
 }
 model Lead {
@@ -74,7 +74,7 @@ model Lead {
   // on the clean tree rather than skipping — and finds nothing, because the
   // service's create hook names it, which is the one filler such a column has.
   code        String @system
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   @@transitions(status,
     qualify: new              -> qualified,
     close:   [new, qualified] -> closed)
@@ -92,7 +92,7 @@ model Note {
   workspaceId Int
   subjectType NoteSubject
   subjectId   Int
-  @@gate("2")
+  @@gate(2)
   @@index([subjectType, subjectId])
 }
 `
@@ -163,6 +163,11 @@ const CLEAN = {
     "const plugins = [FileStorage({ provider: 'local', localPath: STORAGE_ROOT })]\n" +
     "export default { http: { static: { root: STORAGE_ROOT, untrusted: true } } }\n",
   'api/config/junction.config.js':      'export default {}\n',
+  // The auth plugin with its services on, so `auth-service-collision` RUNS on the
+  // clean tree rather than skipping — a rule that only ever skips is the failure
+  // this file exists to prevent — and finds nothing, because no model here
+  // derives a service name auth registers.
+  'api/src/core/auth.ts':               "import { createAuthPlugin } from '@frontierjs/auth'\nexport const plugin = createAuthPlugin(auth)\n",
   'web/index.html':                     '<!doctype html>\n<body><div id="app"></div></body>\n',
   'web/config/vite.config.js':          'export default { server: { port: 8010, strictPort: true } }\n',
   // A `const` local read, so `detail-read-dead` RUNS over the clean tree rather
@@ -211,8 +216,12 @@ const CLEAN = {
   // must RUN over this tree. `migration-history` only applies to an app whose
   // container replays migrations on boot, so without a Dockerfile naming
   // `db:migrate` it would skip — and a rule that only ever skips is what this
-  // file exists to catch.
-  'deploy/Dockerfile':                  'FROM oven/bun\nCMD ["sh","-c","bun run db:migrate && bun run start"]\n',
+  // file exists to catch. The API renders a template out of web/src and the
+  // image copies it, so `deploy-image-needs` RUNS here too and finds nothing.
+  'deploy/Dockerfile':                  'FROM oven/bun\nCOPY web/src ./web/src\n' +
+                                        'CMD ["sh","-c","bun run db:migrate && bun run start"]\n',
+  'api/src/report.ts':                  "import { resolve } from 'path'\n" +
+                                        "export const template = resolve('web/src/components/lead.mesa')\n",
   'db/migrations/20260101000000_init.sql': 'CREATE TABLE "lead" ("id" INTEGER);\n',
   // And the service, for the same reason: `service-model` skips an app with no
   // `*.service.*` file in it, so without one here the rule would only ever skip.
@@ -227,8 +236,8 @@ const CLEAN = {
     "  console.log(open)\n" +
     "}, { cron: '0 8 * * 1' })\n",
   'api/src/services/leads.service.ts':
-    "import { createBaseService } from '@frontierjs/junction'\n" +
-    "export default () => createBaseService({})\n" +
+    "import { createService } from '@frontierjs/junction'\n" +
+    "export default createService({})\n" +
     "export const qualify = () => $.db.lead.transition($.id, 'qualify')\n" +
     "export const close   = () => $.db.lead.update({ where: {}, data: { status: 'closed' } })\n" +
     "export const stamp   = (ctx) => { ctx.data.code = 'L-1'; ctx.system.add('code') }\n",
@@ -1218,7 +1227,7 @@ view revenueByStatus {
   status String
   total  Int
   @@sql("SELECT status, SUM(id) AS total FROM lead GROUP BY status")
-  @@gate("5")
+  @@gate(5)
   @@tenant(none)
 }
 `
@@ -2227,10 +2236,61 @@ describe('call-header-declared', () => {
   })
 })
 
+describe('auth-service-collision', () => {
+  const plugin = (opts = '') =>
+    `import { createAuthPlugin } from '@frontierjs/auth'\nexport const plugin = createAuthPlugin(auth${opts})\n`
+  const SCHEMA3 = SCHEMA + 'model Connection { id Int @id }\n'
+  const at = (name, authSrc, schema = SCHEMA3, extra = {}) =>
+    tree(name, { ...CLEAN, 'db/schema.lite': schema, 'api/src/core/auth.ts': authSrc, ...extra })
+
+  test('a model whose service name is one auth registers is named before any service is written (FJS-2237)', () => {
+    const { findings } = only(at('asc-hit', plugin()), 'auth-service-collision')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/Connection/)
+    expect(findings[0].message).toMatch(/connections: false/)
+  })
+
+  test('switching auth\'s service off is the answer', () => {
+    const root = at('asc-off', plugin(', { services: { connections: false } }'))
+    expect(only(root, 'auth-service-collision').findings).toEqual([])
+  })
+
+  test('renaming auth\'s service is the answer', () => {
+    const root = at('asc-rename', plugin(", { services: { connections: 'linkedProviders' } }"))
+    expect(only(root, 'auth-service-collision').findings).toEqual([])
+  })
+
+  test('services: false registers none, so nothing collides', () => {
+    expect(only(at('asc-none', plugin(', { services: false }')), 'auth-service-collision').findings).toEqual([])
+  })
+
+  test('a model auth ships itself is the service over it, not a collision', () => {
+    const root = at('asc-shipped', plugin(), SCHEMA + 'model Session { id Int @id }\n', {
+      'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*', '@acme/skin': '*', '@frontierjs/auth': '*' } }),
+      'node_modules/@frontierjs/auth/package.json':
+        JSON.stringify({ name: '@frontierjs/auth', exports: { './auth.lite': './db/auth.lite' } }),
+      'node_modules/@frontierjs/auth/db/auth.lite': 'model Session {\n  id String @id\n}\n',
+    })
+    expect(only(root, 'auth-service-collision').findings).toEqual([])
+  })
+
+  test('the names are the ones auth registers', () => {
+    const src = readFileSync(join(import.meta.dir, '../../auth/services.ts'), 'utf8')
+    const block = src.match(/DEFAULT_SERVICE_NAMES = \{([^}]*)\}/)[1]
+    const theirs = Object.fromEntries([...block.matchAll(/(\w+):\s*'([^']+)'/g)].map(m => [m[1], m[2]]))
+    expect(AUTH_SERVICES).toEqual(theirs)
+  })
+
+  test('an app that does not install the auth plugin is judged on nothing', () => {
+    const root = at('asc-no-auth', 'export const x = 1\n')
+    expect(only(root, 'auth-service-collision').skipped[0].why).toMatch(/createAuthPlugin/)
+  })
+})
+
 describe('service-model', () => {
   const SCHEMA2 = SCHEMA + 'model ProductVariant { id Int @id }\nmodel Person { id Int @id }\n'
   const base = (body = '{}') =>
-    `import { createBaseService } from '@frontierjs/junction'\nexport default () => createBaseService(${body})\n`
+    `import { createService } from '@frontierjs/junction'\nexport default createService(${body})\n`
 
   test('a hyphenated service name resolves — junction registers the file camelised (FJS-1218)', () => {
     // `product-variants.service.ts` is the service `productVariants`, which
@@ -2288,7 +2348,7 @@ describe('service-model', () => {
     const root = tree('sm-custom', {
       ...CLEAN, 'db/schema.lite': SCHEMA2,
       'api/src/services/hub.service.ts':
-        "import { createService } from '@frontierjs/junction'\nexport default () => createService({ find: () => [] })\n",
+        "import { createService } from '@frontierjs/junction'\nexport default createService({ find: () => [] })\n",
     })
     expect(only(root, 'service-model').findings).toEqual([])
   })
@@ -2304,6 +2364,61 @@ describe('service-model', () => {
   })
 })
 
+
+describe('service-definition', () => {
+  const file = (body) => ({ ...CLEAN, 'api/src/services/leads.service.ts': body })
+
+  test('a default-exported definition is the shape, and is quiet', () => {
+    const root = tree('sd-def', file(
+      "import { createService } from '@frontierjs/junction'\nexport default createService({ model: 'Lead' })\n"))
+    expect(only(root, 'service-definition').findings).toEqual([])
+  })
+
+  test('createBaseService is reported, naming the ruling', () => {
+    const root = tree('sd-base', file(
+      "import { createBaseService } from '@frontierjs/junction'\nexport const x = createBaseService({})\n"))
+    const { findings } = only(root, 'service-definition')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(1)
+    expect(findings[0].message).toMatch(/createBaseService/)
+    expect(findings[0].message).toMatch(/FJS-D1079/)
+  })
+
+  test('an exported create*Service factory is reported', () => {
+    const root = tree('sd-factory', file(
+      "import { createService } from '@frontierjs/junction'\n\n" +
+      "export function createLeadsService() {\n  return createService({})\n}\n"))
+    const { findings } = only(root, 'service-definition')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(3)
+    expect(findings[0].message).toMatch(/create\*Service factory/)
+    expect(findings[0].message).toMatch(/FJS-D1079/)
+  })
+
+  test('a default-exported function is reported — the loader refuses it', () => {
+    const root = tree('sd-fn', file(
+      "import { createService } from '@frontierjs/junction'\nexport default (app) => createService({})\n"))
+    const { findings } = only(root, 'service-definition')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/default-exports a function/)
+  })
+
+  test('a factory named in a comment is not a factory', () => {
+    const root = tree('sd-comment', file(
+      "import { createService } from '@frontierjs/junction'\n" +
+      "// was export function createLeadsService() { return createBaseService({}) }\n" +
+      "export default createService({})\n"))
+    expect(only(root, 'service-definition').findings).toEqual([])
+  })
+
+  test('a create*Services helper outside a *.service.ts file is not judged', () => {
+    const root = tree('sd-helper', {
+      ...CLEAN,
+      'api/src/services/helpers.ts': "export function createLeadsService() { return 1 }\n",
+    })
+    expect(only(root, 'service-definition').findings).toEqual([])
+  })
+})
 
 // ─── the cross-realm hazards ──────────────────────────────────────────────────
 //
@@ -2590,33 +2705,33 @@ describe('service-as-system', () => {
   })
 
   test('the app client elevated inside a service is a warning', () => {
-    const root = tree('sas-app', svc('export default (app) => createService({\n' +
-      '  find: () => app.data.asSystem().lead.findMany({ where: {} }),\n})\n'))
+    const root = tree('sas-app', svc('export default createService({\n' +
+      '  find: () => $.app.data.asSystem().lead.findMany({ where: {} }),\n})\n'))
     const { findings } = only(root, 'service-as-system')
     expect(findings).toHaveLength(1)
     expect(findings[0].line).toBe(3)
-    expect(findings[0].message).toMatch(/app\.data\.asSystem\(\)/)
+    expect(findings[0].message).toMatch(/\$\.app\.data\.asSystem\(\)/)
     expect(findings[0].message).toMatch(/EVERY tenant/)
   })
 
   test('a cast does not hide the receiver', () => {
     // Three of basecamp's sites are spelled this way.
-    const root = tree('sas-cast', svc('export default (app) => createService({\n' +
-      '  find: () => (app.data as any).asSystem().lead.findMany({ where: {} }),\n})\n'))
+    const root = tree('sas-cast', svc('export default createService({\n' +
+      '  find: () => ($.app.data as any).asSystem().lead.findMany({ where: {} }),\n})\n'))
     const { findings } = only(root, 'service-as-system')
     expect(findings).toHaveLength(1)
-    expect(findings[0].message).toMatch(/^app\.data\.asSystem/)
+    expect(findings[0].message).toMatch(/^\$\.app\.data\.asSystem/)
   })
 
   test('the request client, either spelling, is the correct shape', () => {
-    const root = tree('sas-scoped', svc('export default () => createService({\n' +
+    const root = tree('sas-scoped', svc('export default createService({\n' +
       '  find: () => $.db.asSystem().lead.findMany({ where: {} }),\n' +
       '  get:  (ctx) => ctx.locals.db.asSystem().lead.findFirst({ where: {} }),\n})\n'))
     expect(only(root, 'service-as-system').findings).toEqual([])
   })
 
   test('a local bound to the request client is the same shape', () => {
-    const root = tree('sas-local', svc('export default () => createService({\n' +
+    const root = tree('sas-local', svc('export default createService({\n' +
       '  find: (ctx) => {\n    const db = ctx.locals.db\n' +
       '    return db.asSystem().lead.findMany({ where: {} })\n  },\n})\n'))
     expect(only(root, 'service-as-system').findings).toEqual([])
@@ -2627,8 +2742,8 @@ describe('service-as-system', () => {
   // generated apps declare no tenancy (theirs is membership policies), and the
   // rule skipping them is how four elevations went unreported.
   test('no tenancy block: every elevation in a service crosses every user', () => {
-    const root = tree('sas-none', svc('export default (app) => createService({\n' +
-      '  find:  () => app.data.asSystem().lead.findMany({ where: {} }),\n' +
+    const root = tree('sas-none', svc('export default createService({\n' +
+      '  find:  () => $.app.data.asSystem().lead.findMany({ where: {} }),\n' +
       '  place: () => $.db.asSystem().lead.create({ data: {} }),\n' +
       '  get:   (ctx) => ctx.locals.db.asSystem().lead.findFirst({ where: {} }),\n})\n', ''))
     const { findings } = only(root, 'service-as-system')
@@ -2641,7 +2756,7 @@ describe('service-as-system', () => {
     // notifications' README § Sending shows `db.asSystem().user.findUnique(…)`
     // in an `after` hook. service-module-db's pattern cannot match it by design.
     const root = tree('sas-none-db', svc('import { db } from "../core/db.ts"\n' +
-      'export default () => createService({\n' +
+      'export default createService({\n' +
       '  after: { create: async () => { await db.asSystem().user.findUnique({ where: { id: 1 } }) } },\n})\n', ''))
     const { findings } = only(root, 'service-as-system')
     expect(findings).toHaveLength(1)
@@ -2650,14 +2765,14 @@ describe('service-as-system', () => {
 
   test('no tenancy block: a job is still not inside a call', () => {
     const root = tree('sas-none-job', {
-      ...svc('export default () => createService({})\n', ''),
+      ...svc('export default createService({})\n', ''),
       'api/src/jobs/sweep.job.ts': 'export default (app) => app.data.asSystem().lead.findMany({ where: {} })\n',
     })
     expect(only(root, 'service-as-system').findings).toEqual([])
   })
 
   test('no tenancy block and no elevation is quiet', () => {
-    const root = tree('sas-none-clean', svc('export default () => createService({\n' +
+    const root = tree('sas-none-clean', svc('export default createService({\n' +
       '  find: () => $.db.lead.findMany({ where: {} }),\n})\n', ''))
     expect(only(root, 'service-as-system').findings).toEqual([])
   })
@@ -2665,8 +2780,8 @@ describe('service-as-system', () => {
   test('strategy database is skipped — one client is one file', () => {
     // The hazard is physical there: a system context cannot reach a second
     // tenant's database, so every finding would be noise. `example` is this.
-    const root = tree('sas-db', svc('export default (app) => createService({\n' +
-      '  find: () => app.data.asSystem().lead.findMany({ where: {} }),\n})\n',
+    const root = tree('sas-db', svc('export default createService({\n' +
+      '  find: () => $.app.data.asSystem().lead.findMany({ where: {} }),\n})\n',
       'tenancy { strategy database  dir "./shops" }\n'))
     const { findings, skipped } = only(root, 'service-as-system')
     expect(findings).toEqual([])
@@ -2677,8 +2792,8 @@ describe('service-as-system', () => {
     // This repo's own schema says *declared once in the `tenancy { }` block
     // below*, and an unblanked match reads that empty pair as the declaration
     // and skips the whole app.
-    const root = tree('sas-comment', svc('export default (app) => createService({\n' +
-      '  find: () => app.data.asSystem().lead.findMany({ where: {} }),\n})\n',
+    const root = tree('sas-comment', svc('export default createService({\n' +
+      '  find: () => $.app.data.asSystem().lead.findMany({ where: {} }),\n})\n',
       '/// scoped by the `tenancy { }` block below\n' +
       'tenancy { strategy row  column workspaceId  claim workspaceId }\n'))
     expect(only(root, 'service-as-system').findings).toHaveLength(1)
@@ -2693,7 +2808,7 @@ describe('service-module-db', () => {
   })
 
   test('the module client inside a service is an error', () => {
-    const root = tree('md-module', svc('export default () => createService({\n' +
+    const root = tree('md-module', svc('export default createService({\n' +
       '  find: () => db.lead.findMany({ where: {} }),\n})\n'))
     const { findings } = only(root, 'service-module-db')
     expect(findings).toHaveLength(1)
@@ -2702,7 +2817,7 @@ describe('service-module-db', () => {
   })
 
   test('the request-scoped client, either spelling, is the correct shape', () => {
-    const root = tree('md-scoped', svc('export default () => createService({\n' +
+    const root = tree('md-scoped', svc('export default createService({\n' +
       '  find:   () => $.db.lead.findMany({ where: {} }),\n' +
       '  get:    (ctx) => ctx.locals.db.lead.findFirst({ where: {} }),\n})\n'))
     expect(only(root, 'service-module-db').findings).toEqual([])
@@ -2711,7 +2826,7 @@ describe('service-module-db', () => {
   test('asSystem() off the module client is the deliberate bypass', () => {
     // It says which client it means, in the one word that means it. The shape
     // this rule is for is the one that says nothing.
-    const root = tree('md-system', svc('export default () => createService({\n' +
+    const root = tree('md-system', svc('export default createService({\n' +
       '  find: () => db.asSystem().lead.findMany({ where: {} }),\n})\n'))
     expect(only(root, 'service-module-db').findings).toEqual([])
   })
@@ -2721,7 +2836,7 @@ describe('service-module-db', () => {
       ...CLEAN,
       'api/src/services/leads.service.ts':
         "import { createService } from '@frontierjs/junction'\n" +
-        'export default () => createService({\n' +
+        'export default createService({\n' +
         '  find: (ctx) => { const db = ctx.locals.db; return db.lead.findMany({ where: {} }) },\n})\n',
     })
     expect(only(root, 'service-module-db').findings).toEqual([])
@@ -2796,7 +2911,7 @@ describe('queue-operator-verb', () => {
   test('a service that pauses a queue is an error, and names the gate it skips', () => {
     const root = tree('qov-service', {
       'api/src/services/ops.service.ts':
-        "export default () => createService({ halt: (ctx) => ctx.app.jobs.queue('mail').pause() })\n",
+        "export default createService({ halt: (ctx) => ctx.app.jobs.queue('mail').pause() })\n",
     })
     const { findings } = only(root, 'queue-operator-verb')
     expect(findings).toHaveLength(1)
@@ -2819,7 +2934,7 @@ describe('queue-operator-verb', () => {
   test('pausing EVERY queue from a service is an error too', () => {
     const root = tree('qov-every', {
       'api/src/services/ops.service.ts':
-        "export default () => createService({ halt: (ctx) => ctx.app.jobs.pause({ reason: 'x' }) })\n",
+        "export default createService({ halt: (ctx) => ctx.app.jobs.pause({ reason: 'x' }) })\n",
     })
     const { findings } = only(root, 'queue-operator-verb')
     expect(findings).toHaveLength(1)
@@ -2829,7 +2944,7 @@ describe('queue-operator-verb', () => {
   test('purging a queue from a service is an error', () => {
     const root = tree('qov-purge', {
       'api/src/services/ops.service.ts':
-        "export default () => createService({ wipe: (ctx) => ctx.app.jobs.queue('mail').purge() })\n",
+        "export default createService({ wipe: (ctx) => ctx.app.jobs.queue('mail').purge() })\n",
     })
     const { findings } = only(root, 'queue-operator-verb')
     expect(findings).toHaveLength(1)
@@ -2840,7 +2955,7 @@ describe('queue-operator-verb', () => {
   test('reading a queue from a service is silent', () => {
     const root = tree('qov-read', {
       'api/src/services/ops.service.ts':
-        "export default () => createService({ status: (ctx) => ctx.app.jobs.queue('mail').state(), all: (ctx) => ctx.app.jobs.stats() })\n",
+        "export default createService({ status: (ctx) => ctx.app.jobs.queue('mail').state(), all: (ctx) => ctx.app.jobs.stats() })\n",
     })
     expect(only(root, 'queue-operator-verb').findings).toEqual([])
   })
@@ -2865,7 +2980,7 @@ describe('transition-methods', () => {
   // over the model serves every move it does not narrow away (`FJS-1255`) — so
   // these cases grade the literal spellings and nothing else. `service`
   // replaces the declaration for the cases about that third spelling.
-  const NARROW = "createBaseService({ methods: ['find', 'get'] })"
+  const NARROW = "createService({ methods: ['find', 'get'] })"
   const app = (moves, drives, { owed = false, service = NARROW } = {}) => {
     const files = {
       ...CLEAN,
@@ -2874,7 +2989,7 @@ describe('transition-methods', () => {
         `@@transitions(status,\n    ${moves})\n`)
         .replace(owed ? /$^/ : /\n\s*@@commitment\(close[^\n]*/, ''),
       'api/src/services/leads.service.ts':
-        "import { createBaseService } from '@frontierjs/junction'\n" +
+        "import { createService } from '@frontierjs/junction'\n" +
         `export default () => ${service}\n` + drives,
     }
     if (service === null) delete files['api/src/services/leads.service.ts']
@@ -3054,7 +3169,7 @@ describe('transition-methods', () => {
   const QUALIFY = "export const q = () => $.db.lead.transition($.id, 'qualify')\n"
 
   test('a base service with no methods: list reaches every move by its own name', () => {
-    expect(only(tree('tm-served', app(MOVES, '', { service: 'createBaseService({})' })),
+    expect(only(tree('tm-served', app(MOVES, '', { service: 'createService({})' })),
       'transition-methods').findings).toHaveLength(0)
     const narrowed = only(tree('tm-served-narrow', app(MOVES, QUALIFY)), 'transition-methods').findings
     expect(narrowed).toHaveLength(1)
@@ -3064,13 +3179,13 @@ describe('transition-methods', () => {
 
   test('a methods: list reaches the moves it names, bare or as { method }', () => {
     for (const [name, service] of [
-      ['tm-list-bare', "createBaseService({ methods: ['find', 'close'] })"],
-      ['tm-list-obj',  "createBaseService({ methods: ['find', { method: 'close', gate: 5 }] })"],
+      ['tm-list-bare', "createService({ methods: ['find', 'close'] })"],
+      ['tm-list-obj',  "createService({ methods: ['find', { method: 'close', gate: 5 }] })"],
     ]) expect(only(tree(name, app(MOVES, QUALIFY, { service })), 'transition-methods').findings).toHaveLength(0)
   })
 
   test("'readOnly' serves no move", () => {
-    const service = "createBaseService({ methods: 'readOnly' })"
+    const service = "createService({ methods: 'readOnly' })"
     expect(only(tree('tm-readonly', app(MOVES, QUALIFY, { service })), 'transition-methods').findings).toHaveLength(1)
   })
 
@@ -3090,7 +3205,7 @@ describe('transition-methods', () => {
   test('a hand-written method naming a move the schema dropped is still reported', () => {
     const root = tree('tm-dropped', app(MOVES,
       QUALIFY + "export const r = () => $.db.lead.transition($.id, 'reopen')\n",
-      { service: 'createBaseService({})' }))
+      { service: 'createService({})' }))
     const { findings } = only(root, 'transition-methods')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/'reopen'\) names no move/)
@@ -3169,8 +3284,8 @@ describe('required-system-unfilled', () => {
   })
 
   test('a methods: list serves create only when it names it', () => {
-    const svc = (methods) => "import { createBaseService } from '@frontierjs/junction'\n" +
-      `export default () => createBaseService({ methods: ${methods} })\n`
+    const svc = (methods) => "import { createService } from '@frontierjs/junction'\n" +
+      `export default createService({ methods: ${methods} })\n`
     expect(only(tree('rsu-readonly', app({ service: svc("'readOnly'") })), 'required-system-unfilled').findings).toHaveLength(0)
     expect(only(tree('rsu-no-create', app({ service: svc("['find', 'get']") })), 'required-system-unfilled').findings).toHaveLength(0)
     expect(only(tree('rsu-create', app({ service: svc("['find', 'create']") })), 'required-system-unfilled').findings).toHaveLength(1)
@@ -3442,7 +3557,7 @@ describe('gate-unreachable', () => {
 
   test('the compact spelling is the same declaration', () => {
     const root = tree('gu-compact', app5({
-      'db/schema.lite': 'model Lead {\n  id Int @id\n  @@gate("0.4.4.5")\n}\n',
+      'db/schema.lite': 'model Lead {\n  id Int @id\n  @@gate(0.4.4.5)\n}\n',
     }))
     expect(only(root, 'gate-unreachable').findings).toHaveLength(1)
   })
@@ -3460,7 +3575,7 @@ describe('gate-unreachable', () => {
   test('a level named only in a trailing comment is not a declaration', () => {
     const root = tree('gu-comment-only', app5({
       'db/schema.lite':
-        'model Lead {\n  id Int @id\n  status String  // was @@gate("5") once\n  @@gate("0.0.0.0")\n}\n',
+        'model Lead {\n  id Int @id\n  status String  // was @@gate(5) once\n  @@gate(0.0.0.0)\n}\n',
     }))
     expect(only(root, 'gate-unreachable').findings).toHaveLength(0)
   })
@@ -3468,7 +3583,7 @@ describe('gate-unreachable', () => {
   test('…and the same level declared for real still is', () => {
     const root = tree('gu-comment-real', app5({
       'db/schema.lite':
-        'model Lead {\n  id Int @id\n  status String  // a note, mentioning nothing\n  @@gate("0.0.0.5")\n}\n',
+        'model Lead {\n  id Int @id\n  status String  // a note, mentioning nothing\n  @@gate(0.0.0.5)\n}\n',
     }))
     expect(only(root, 'gate-unreachable').findings).toHaveLength(1)
   })
@@ -3476,7 +3591,7 @@ describe('gate-unreachable', () => {
   test('a block comment spanning lines hides what is inside it', () => {
     const root = tree('gu-comment-block', app5({
       'db/schema.lite':
-        'model Lead {\n  id Int @id\n  /* the old shape was\n     @@gate("5")\n     and is not any more */\n  @@gate("0.0.0.0")\n}\n',
+        'model Lead {\n  id Int @id\n  /* the old shape was\n     @@gate(5)\n     and is not any more */\n  @@gate(0.0.0.0)\n}\n',
     }))
     expect(only(root, 'gate-unreachable').findings).toHaveLength(0)
   })
@@ -3497,7 +3612,7 @@ describe('gate-unreachable', () => {
     // the identity models ship that way — and `9` is locked. Neither is a level
     // a resolver was supposed to reach.
     const root = tree('gu-eight', app5({
-      'db/schema.lite': 'model Session {\n  id Int @id\n  @@gate("8")\n}\n',
+      'db/schema.lite': 'model Session {\n  id Int @id\n  @@gate(8)\n}\n',
     }))
     const { findings, skipped } = only(root, 'gate-unreachable')
     expect(findings).toEqual([])
@@ -3889,6 +4004,79 @@ describe('log-db-unbound', () => {
   })
 })
 
+describe('deploy-image-needs', () => {
+  const PRINTS   = JSON.stringify({ dependencies: { '@frontierjs/print-kit': '^0.1.0' } })
+  const SLIM     = 'FROM oven/bun:1 AS base\nCOPY api ./api\nCOPY db ./db\nFROM oven/bun:1-slim\nCOPY --from=base /app .\n'
+  const CHROME   = SLIM + 'RUN apt-get update && apt-get install -y chromium\n'
+  const RENDERS  = "import { resolve } from 'path'\nexport const file = resolve(root, 'web/src/components/Report.mesa')\n"
+
+  test('an app that prints, on an image with no Chrome, will not start — and that is reported', () => {
+    // transit, lago and serpgrid all carried make:deploy's slim image unchanged.
+    const root = tree('din-nochrome', { 'package.json': PRINTS, 'deploy/Dockerfile': SLIM })
+    const { findings } = only(root, 'deploy-image-needs')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].file).toBe('deploy/Dockerfile')
+    expect(findings[0].message).toMatch(/print-kit.*no Chrome/)
+  })
+
+  test('chromium installed, or $FJS_CHROME named, is clean', () => {
+    expect(only(tree('din-chrome', { 'package.json': PRINTS, 'deploy/Dockerfile': CHROME }),
+      'deploy-image-needs').findings).toEqual([])
+    expect(only(tree('din-env', { 'package.json': PRINTS, 'deploy/Dockerfile': SLIM + 'ENV FJS_CHROME=/opt/chrome/chrome\n' }),
+      'deploy-image-needs').findings).toEqual([])
+  })
+
+  test('a Chrome named only in a comment is not a Chrome', () => {
+    const root = tree('din-comment', { 'package.json': PRINTS, 'deploy/Dockerfile': '# needs chromium someday\n' + SLIM })
+    expect(only(root, 'deploy-image-needs').findings).toHaveLength(1)
+  })
+
+  test('print-kit as a devDependency needs no browser: the image installs --production', () => {
+    const root = tree('din-dev', {
+      'package.json': JSON.stringify({ devDependencies: { '@frontierjs/print-kit': '^0.1.0' } }),
+      'deploy/Dockerfile': SLIM,
+    })
+    const { findings, skipped } = only(root, 'deploy-image-needs')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+
+  test('an API reading a template from web/src, with web/ ignored whole, is reported', () => {
+    // serpgrid's ScanReport.mesa: Chrome present, and the render still fails.
+    const root = tree('din-websrc', {
+      'package.json': PRINTS, 'deploy/Dockerfile': CHROME + 'COPY web/src ./web/src\n',
+      '.dockerignore': 'node_modules\nweb/\n', 'api/src/report.ts': RENDERS,
+    })
+    const { findings } = only(root, 'deploy-image-needs')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/web\/src/)
+  })
+
+  test('web/src copied and let back through .dockerignore is clean', () => {
+    const root = tree('din-websrc-ok', {
+      'package.json': PRINTS, 'deploy/Dockerfile': CHROME.replace('COPY db ./db', 'COPY db ./db\nCOPY web/src ./web/src'),
+      '.dockerignore': 'node_modules\nweb/*\n!web/src\n', 'api/src/report.ts': RENDERS,
+    })
+    expect(only(root, 'deploy-image-needs').findings).toEqual([])
+  })
+
+  test('web/src named only in a comment asks nothing of the image', () => {
+    const root = tree('din-websrc-comment', {
+      'deploy/Dockerfile': SLIM, '.dockerignore': 'web/\n',
+      'api/src/app.ts': "// the share page lives in web/src/pages\nexport const x = 1\n",
+    })
+    const { findings, skipped } = only(root, 'deploy-image-needs')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+
+  test('no Dockerfile is skipped — not deployed this way', () => {
+    const { findings, skipped } = only(tree('din-nodocker', { 'package.json': PRINTS }), 'deploy-image-needs')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+})
+
 describe('static-publish-db', () => {
   const site = (config, extra = {}) => ({
     ...CLEAN,
@@ -4114,7 +4302,7 @@ describe('a model graded by capability is not also graded by ladder', () => {
   })
 
   test('a laddered gate on a grid model is reported, naming the operations', () => {
-    const root = tree('cap-ladder', grid('@@gate("2.5.5.6")'))
+    const root = tree('cap-ladder', grid('@@gate(2.5.5.6)'))
     const { findings } = only(root, 'capability-ladder')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/create, update, delete need level 5\/5\/6 where read needs 2/)
@@ -4122,14 +4310,14 @@ describe('a model graded by capability is not also graded by ladder', () => {
   })
 
   test('a flat gate is the shape it is asking for, and says nothing', () => {
-    const root = tree('cap-flat', grid('@@gate("2")'))
+    const root = tree('cap-flat', grid('@@gate(2)'))
     expect(only(root, 'capability-ladder').findings).toEqual([])
   })
 
   test('a laddered gate on a model with no grid is untouched', () => {
     const root = tree('cap-nogrid', {
       ...CLEAN,
-      'db/schema.lite': SCHEMA + '\nmodel Plain {\n  id Int @id\n  workspaceId Int\n  @@gate("2.5.5.6")\n}\n',
+      'db/schema.lite': SCHEMA + '\nmodel Plain {\n  id Int @id\n  workspaceId Int\n  @@gate(2.5.5.6)\n}\n',
     })
     expect(only(root, 'capability-ladder').findings).toEqual([])
   })
@@ -4144,7 +4332,7 @@ describe('a model graded by capability is not also graded by ladder', () => {
       ...CLEAN,
       'db/schema.lite': SCHEMA +
         '\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n' +
-        '  @@gate("2.4.4.5")\n  @@capabilities\n}\n',
+        '  @@gate(2.4.4.5)\n  @@capabilities\n}\n',
     })
     const { findings } = only(root, 'capability-ladder')
     expect(findings).toHaveLength(1)
@@ -4155,7 +4343,7 @@ describe('a model graded by capability is not also graded by ladder', () => {
     const root = tree('cap-flat', {
       ...CLEAN,
       'db/schema.lite': SCHEMA +
-        '\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n  @@gate("2.2.2.2")\n  @@capabilities\n}\n',
+        '\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n  @@gate(2.2.2.2)\n  @@capabilities\n}\n',
     })
     expect(only(root, 'capability-ladder').findings).toEqual([])
   })
@@ -4164,12 +4352,12 @@ describe('a model graded by capability is not also graded by ladder', () => {
     // A site provisioned by the operator: members read it by the grid, and no
     // grant can create one, because nobody climbs to SYSTEM. The grid cannot
     // say "nobody's" — an owner holding every capability could grant it.
-    const root = tree('cap-system', grid('@@gate("4.8")'))
+    const root = tree('cap-system', grid('@@gate(4.8)'))
     expect(only(root, 'capability-ladder').findings).toEqual([])
   })
 
   test('beside a system-only write, a write that does climb is still reported, alone', () => {
-    const root = tree('cap-system-mixed', grid('@@gate("2.5.8.9")'))
+    const root = tree('cap-system-mixed', grid('@@gate(2.5.8.9)'))
     const { findings } = only(root, 'capability-ladder')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/create needs level 5 where read needs 2/)
@@ -4197,7 +4385,7 @@ describe('schema-runs', () => {
   }
 
   test('a schema that parses and that createClient refuses is an error naming the refusal', () => {
-    const root = withLitestone('sr-bad', 'model Thing {\n  id Int @id\n  @@gate("6.4.5.6")\n}\n')
+    const root = withLitestone('sr-bad', 'model Thing {\n  id Int @id\n  @@gate(6.4.5.6)\n}\n')
     const { findings } = only(root, 'schema-runs')
     expect(findings).toHaveLength(1)
     expect(findings[0].severity).toBe('error')

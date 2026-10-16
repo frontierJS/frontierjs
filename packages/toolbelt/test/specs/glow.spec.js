@@ -308,7 +308,7 @@ test('glow: a .lite schema is highlighted as one', function () {
     'model Lead {',
     '  createdAt DateTime @default(now())',
     '  payload   Json?',
-    '  @@gate("0.4.4.5")',
+    '  @@gate(0.4.4.5)',
     '}'
   ].join('\n')
   const out = glow(src, { language: 'lite', prefix: false })

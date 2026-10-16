@@ -33,7 +33,7 @@ let ROOT
 function appRoot(name, extra = {}) {
   const dir = join(ROOT, name)
   mkdirSync(join(dir, 'db'), { recursive: true })
-  writeFileSync(join(dir, 'db', 'schema.lite'), 'model Product { id Int @id  name String  @@gate("0.4.4.5") }\n')
+  writeFileSync(join(dir, 'db', 'schema.lite'), 'model Product { id Int @id  name String  @@gate(0.4.4.5) }\n')
   for (const [path, body] of Object.entries(extra)) {
     mkdirSync(join(dir, path, '..'), { recursive: true })
     writeFileSync(join(dir, path), body)

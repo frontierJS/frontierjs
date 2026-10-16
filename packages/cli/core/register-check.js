@@ -29,11 +29,14 @@
 // not reproducible and this must never feed a committed snapshot. `staleDays: 0`
 // turns it off for a caller that needs a stable answer.
 
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { treePaths } from './tree.js'
 import { ideaQuestions } from './decisions.js'
+import { envCause, ENV_CAUSES, reproOf, seamOf } from './next.js'
+import { linkedTest } from './repro.js'
+import { readKeyList, identifierOf } from './seams.js'
 import { readRegisters, readOverviewRows, idPatterns, REGISTER_FILES, ISSUE_STATUS, IDEA_STATUS, RULING_STATUS, SEVERITY } from './registers.js'
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
@@ -42,10 +45,11 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/
 // three and means the same by each.
 const BLANK = new Set(['', '—', '-', 'n/a'])
 
-// `clock: true` marks the one rule whose answer changes overnight. A caller
-// that must be reproducible — CI, a committed artefact — reports it and never
-// grades on it: a branch that changed nothing must not go red because a date
-// passed.
+// `noted: true` marks a rule a caller that must be reproducible — CI, a
+// committed artefact — reports and never grades on. Two reasons earn it: an
+// answer that changes overnight (a branch that changed nothing must not go red
+// because a date passed), and a backlog no edit to the tree can clear yet
+// (`timing-unmeasured` waits on `register:repro` measuring a drive).
 export const RULES = [
   { id: 'unparsed-record',  level: 'error', what: 'a line with a record\'s shape that produced no record — the reader could not see it, so every rule below passes over it' },
   { id: 'duplicate-id',     level: 'error', what: 'one id naming two records — an id is never reused' },
@@ -60,14 +64,113 @@ export const RULES = [
   { id: 'ruling-status',    level: 'error', what: 'a ruling declaring a status outside the vocabulary, or retiring itself without naming what replaced it' },
   { id: 'unread-recommendation', level: 'error', what: 'an open question\'s `**Recommend …**` line naming no option letter — the queue shows no recommendation, and the line was once read as the words of the option above it' },
   { id: 'malformed-date',   level: 'error', what: 'a date that is not ISO-8601' },
+  { id: 'env-cause',        level: 'error', what: 'an `env:` segment naming a cause outside the table — the row is counted under no cause' },
+  { id: 'seam-name',        level: 'error', what: 'a `seam:` segment naming no entry in the root `CLAUDE.md` § Bridge index key list — the row is counted under no seam' },
+  { id: 'lives-in',         level: 'error', what: 'a ruling\'s `*Lives in:*` naming a path that is not in the tree, a symbol its file no longer mentions, or a package no package.json declares — advice that fails when taken' },
   { id: 'overview-status',  level: 'error', what: 'an `IDEAS/overview.md` row whose Status cell says the work is still open while its paper says `shipped` or `withdrawn`, or its only cited defects are closed' },
   { id: 'ruling-order',     level: 'warn',  what: 'a ruling dated later than the one above it — a section runs newest first, so the top of one is the current thinking' },
   { id: 'unnamed-ruling',   level: 'warn',  what: 'a ruling with no id — nothing can cite it' },
   { id: 'missing-anchor',   level: 'warn',  what: 'an open row with no anchor — nothing can link it' },
-  { id: 'stale-verified',   level: 'warn',  what: 'an open row nobody has re-checked in a long time', clock: true },
+  { id: 'stale-verified',   level: 'warn',  what: 'an open row nobody has re-checked in a long time', noted: true },
+  { id: 'env-smell',        level: 'warn',  what: 'an open row whose title reads like an environment failure — a timeout, a hang, a port, a run that passes elsewhere — and names no `env:` cause and no `register:repro` measurement' },
+  { id: 'timing-unmeasured', level: 'warn', what: 'an open row naming `env: timing` that `register:repro` never measured', noted: true },
 ]
 
+// What an environment failure SAYS about itself in a title. A lead, never a
+// verdict: the row may be code, which is why this warns and `env-cause`
+// errors, and why a `repro:` measurement that found code answers it. Matched
+// on the title alone, since a Detail cell is links. The reverse is the same
+// rule: `env: timing` with no measurement is a guess the loop skips on.
+const ENV_SMELL = /\b(times? out|timed out|(hangs?|hung)(?=[:,.]|\s+(at|on|in|after|waiting|until|for|forever|when|and)\b)|within \d+ ?(s|sec|seconds|min|minutes)\b|passes? (alone|in (a )?(fresh|new|second) (worktree|clone|checkout))|fails in the main tree|port \d{4}|stale process|flaky|intermittent(ly)?|on a real machine|never run on)\b/i
+
+/** Whether a title reads like an environment failure — `env-smell`'s test,
+ *  which `register:file` asks before the row is in the file. */
+export function envSmells(title) {
+  return ENV_SMELL.test(String(title ?? ''))
+}
+
 const LEVEL_OF = Object.fromEntries(RULES.map(r => [r.id, r.level]))
+
+// ─── what a ruling's `*Lives in:*` can be held to ────────────────────────────
+//
+// Only what has an authority in the tree: a code-span path, the symbols in the
+// parenthesis after it, and an `@scope/name`. A path is written from the root
+// or from the package it concerns (`src/core/client.js`, `litestone/test/x`),
+// so it is dead only when no package holds it either. One that leaves the
+// root is another repository's file and not this one's to call dead.
+
+const DEAD_SHAPE = /\s|[*<>{}]|^\/|^\.\.?$/
+
+function workspaceNames(root) {
+  const names = new Set()
+  const dirs  = []
+  const pkgs  = resolve(root, 'packages')
+  if (existsSync(pkgs)) {
+    for (const d of readdirSync(pkgs)) if (existsSync(resolve(pkgs, d, 'package.json'))) dirs.push(resolve(pkgs, d))
+  }
+  for (const dir of [root, ...dirs]) {
+    try {
+      const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
+      if (pkg.name) names.add(pkg.name)
+      for (const k of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+        for (const dep of Object.keys(pkg[k] ?? {})) names.add(dep)
+      }
+    } catch {}
+  }
+  return { names, dirs }
+}
+
+function packageOf(token) {
+  const m = token.match(/^(@[a-z0-9-]+\/[a-z0-9-]+)(?:\/|$)/)
+  return m ? m[1] : null
+}
+
+/** [{ message, detail }] for each citation of one ruling that no longer holds. */
+function livesInFindings(ruling, { root, names, dirs, inTree }) {
+  const out = []
+  for (const { token, symbols } of ruling.livesIn ?? []) {
+    if (/^FJS-/i.test(token) || DEAD_SHAPE.test(token)) continue
+
+    const pkg = packageOf(token)
+    if (pkg) {
+      if (!names.has(pkg)) out.push({ message: `Lives in names ${pkg}, which no package.json declares` })
+      continue
+    }
+    if (!token.includes('/')) continue
+
+    const rel = token.replace(/#.*/, '')
+    const candidates = [
+      resolve(root, rel),
+      resolve(root, 'packages', rel),
+      ...dirs.flatMap(d => [resolve(d, rel), resolve(d, 'src', rel)]),
+    ]
+    const found = candidates.filter(inTree)
+    // A bare `src/index.ts` matches in every package, so the file it means is
+    // unknowable and a symbol missing from all of them proves nothing.
+    const exact = inTree(candidates[0]) || inTree(candidates[1])
+    if (!found.length) {
+      if (leavesTree(root, rel)) continue
+      out.push({ message: `Lives in names ${token}, which is not in the tree` })
+      continue
+    }
+
+    const files = found.filter(f => statSync(f).isFile())
+    if (!exact || !files.length || !symbols.length) continue
+    const texts = files.map(f => readFileSync(f, 'utf8'))
+    for (const sym of symbols) {
+      const bare = sym.replace(/\(.*$/, '').split('.').pop()
+      if (!/^[\w$]+$/.test(bare)) continue
+      if (texts.some(t => t.includes(bare))) continue
+      out.push({ message: `Lives in names ${sym} in ${token}, which the file no longer mentions` })
+    }
+  }
+  return out
+}
+
+// A sibling checkout (`conduit-connectors/…`) beside the root is somebody else's tree.
+function leavesTree(root, rel) {
+  return existsSync(resolve(root, '..', rel))
+}
 
 // ─── the check around a write ────────────────────────────────────────────────
 //
@@ -247,6 +350,10 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
   // at code that has legitimately moved, and grading it would make the register
   // harder to close things in.
 
+  // Matched the way `seam-listed` matches, by the identifier a name ends in, so
+  // `seam: $setAuth` and `seam: $setAuth(user)` are one seam.
+  const seamKeys = readKeyList(root)
+
   for (const row of doc.issues) {
     // ── does the row line up with the table it is in ──
     //
@@ -369,6 +476,23 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
       add('missing-anchor', row, 'has no <a id> — a ruling cannot link to it')
     }
 
+    const cause = envCause(row)
+    if (cause !== null && !ENV_CAUSES.includes(cause)) {
+      add('env-cause', row, `env: "${cause}" is not one of ${ENV_CAUSES.join(', ')}`)
+    } else if (cause === 'timing' && !reproOf(row)) {
+      const { reason } = linkedTest(row, root)
+      add('timing-unmeasured', row, `names env: timing and nothing measured it — ${reason ? `register:repro cannot: the row ${reason}` : `fli repro ${row.id} writes one`}`)
+    } else if (cause === null && !reproOf(row) && envSmells(row.title)) {
+      add('env-smell', row, 'reads like an environment failure and names no env: cause')
+    }
+
+    const seam = seamOf(row)
+    if (seam !== null && !seamKeys?.has(identifierOf(seam))) {
+      add('seam-name', row, seamKeys
+        ? `seam: "${seam}" is not in the CLAUDE.md § Bridge index key list`
+        : `seam: "${seam}" — this root's CLAUDE.md has no § Bridge index to name a seam from`)
+    }
+
     const age = staleDays > 0 && ISO.test(row.verified) ? daysBetween(row.verified, today) : null
     if (age !== null && age > staleDays) {
       add('stale-verified', row, `last verified ${age} days ago (${row.verified})`)
@@ -376,6 +500,8 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
   }
 
   // ── decisions ──
+
+  const lives = { root, ...workspaceNames(root), inTree }
 
   // The ruling above this one, within the same section. `doc.decisions` is in
   // file order, so a section change resets it.
@@ -412,6 +538,11 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
         'a section runs newest first — move it above, or say in the ruling why it sits where it does')
     }
     prevInSection = ruling
+
+    // A retired ruling describes the tree as it was, as a closed row does.
+    if (ruling.status == null) {
+      for (const f of livesInFindings(ruling, lives)) add('lives-in', ruling, f.message, f.detail)
+    }
 
     // ── what a ruling says about itself ──
     //

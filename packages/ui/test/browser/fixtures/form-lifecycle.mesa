@@ -118,11 +118,11 @@
   <Form resource={RESOURCE} disabled />
 </div>
 
-<button type="button" id="api-submit" on:click={() => api?.submit()}>api submit</button>
-<button type="button" id="api-reset" on:click={() => api?.reset()}>api reset</button>
-<button type="button" id="api-clear" on:click={() => api?.clearErrors()}>api clear</button>
-<button type="button" id="ref-submit" on:click={() => ref?.submit()}>ref submit</button>
-<button type="button" id="rebaseline" on:click={() => ref?.reset({ reference: 'BASE', total: 5, status: 'sent' })}>rebaseline</button>
+<button type="button" id="api-submit" onclick={() => api?.submit()}>api submit</button>
+<button type="button" id="api-reset" onclick={() => api?.reset()}>api reset</button>
+<button type="button" id="api-clear" onclick={() => api?.clearErrors()}>api clear</button>
+<button type="button" id="ref-submit" onclick={() => ref?.submit()}>ref submit</button>
+<button type="button" id="rebaseline" onclick={() => ref?.reset({ reference: 'BASE', total: 5, status: 'sent' })}>rebaseline</button>
 
 <output id="calls">{calls.join('|')}</output>
 <output id="held">{record?.reference ?? ''}</output>

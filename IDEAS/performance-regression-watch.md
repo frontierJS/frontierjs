@@ -10,8 +10,8 @@ dated: 2026-09-13
 `4f46e5b` and is reproducible by §Method. The three-tier shape in §What a performance
 claim is was added 2026-09-12 from the prior art in §What the field does, ahead of alpha.
 Order (1) was built 2026-09-13 and §What Order (1) found is its result. Mesa's slice
-of the tiers was built 2026-09-24 (§Mesa's slice); the shared runner and the phase are
-not built.
+of the tiers was built 2026-09-24 (§Mesa's slice). The shared runner and the `perf`
+phase were built 2026-10-16 (Order (3)); instruction counting is deferred.
 
 `packages/litestone/bench/audit-bench.mjs` exists, covers eleven cases, and is run by
 hand. It has been run twice: at the audit that produced it (`bench/PERFORMANCE_AUDIT.md`,
@@ -94,7 +94,7 @@ of them is called a performance test:
 - `packages/caravan/test/scale.test.ts` asserts a QUERY PLAN — no `TEMP B-TREE` — and
   its header says why: a millisecond threshold in CI is a coin flip on a loaded machine.
 - The audit's H4 counts `getLevel` resolutions (0 across 200 gated reads) and M1 counts
-  statements through `$tapQuery` (one per `upsert()`).
+  statements through `$tapQuery` (one per `upsert()`) — both now tests (Order 2).
 - `packages/litestone/test/policy-paths.test.ts` asserts EXPLAIN names no `AUTOMATIC`
   index for a relation hop.
 
@@ -193,13 +193,20 @@ package up as a geomean.
 **Each case declares its ceiling as a ratio to a floor it measures in the same
 process**, and the case file is where that number lives:
 
-- litestone read ≤ 1.25× raw `bun:sqlite` (measured 1.13× in `speed-and-footprint.md`)
-- litestone bare write ≤ 3× raw (measured 2.6×)
+- litestone over raw `bun:sqlite` — a many-row read, a gated one, a point read by
+  key, a single-row create (`packages/litestone/bench/cases.mjs`)
 - each declaration in the ablation ≤ a stated µs delta over the bare schema
 - junction request ≤ a stated factor over a raw `Bun.serve` handler
-- mesa's js-framework-benchmark operations ≤ a stated factor over vanilla
+  (`packages/junction/bench/cases.mjs`)
+- mesa's compile, server render and signal fan-out ≤ a stated factor over
+  hand-written code (`packages/mesa/bench/cases.mjs`). Its js-framework-benchmark
+  operations are timed against vanilla by `run.mjs` and not yet against a base ref
 
-The first two are starting points read off one measurement, not ratified numbers.
+Litestone's ceilings were set 2026-10-16 from what was measured, with headroom over
+1.35–1.65×, 1.24–1.49×, 3.4–4.8× and 3.9–4.9× (min of six rounds, a loaded
+machine). The starting numbers this list held before (1.25× a read, 3× a write)
+came from a many-row read. A point read against a ~1 µs raw `get` is mostly the fixed cost
+of one call, so it needs a ceiling of its own.
 A ratio whose both sides run in-process on `:memory:` can be asked as an instruction
 count instead, and then it gates (§Spike); the timing stays for what a count cannot see. A
 case with no declared ceiling is refused by the runner rather than run unjudged.
@@ -258,17 +265,16 @@ Graded by whether the workload is Mesa's:
 **Built 2026-09-24 as `packages/mesa/bench/` (`bun run bench`)**, in the three tiers above:
 gzip bytes per fixture and DOM mutations per operation are gated in `bench/baseline.json`,
 milliseconds are reported as a ratio to a hand-written floor measured in the same browser,
-and heap is recorded. It is in neither `test` nor CI yet — (2) below is that step. The
-first read found the reconciler at the floor on all sixteen operations and two outliers,
+and heap is recorded. **The gate (`bench -- --gate`) is the last step of mesa's `test`
+script** (`FJS-D532`, 2026-10-15); the timed run stays by hand. The first read found the reconciler at the floor on all sixteen operations and two outliers,
 [FJS-1332](../ISSUES_ARCHIVE.md#fjs-1332) and [FJS-1333](../ISSUES.md#fjs-1333).
 
 **Left for later, each on its trigger:**
 
-- **Re-adopt the baseline once the runtime settles.** It was written 2026-09-24 against a
-  tree carrying another session's uncommitted `runtime.js` and `compiler.js` edits. When
-  those land, `bun run bench -- --adopt` from a clean tree, and read any DOM count that
-  moved before accepting it. The FJS-1332 fix is one of them and adds ~194 B gzip to
-  `rows`, so until then `bytes.rows` reads as a rise — the ratchet working, not a fault.
+- **Baseline re-adopted 2026-10-15** from a tree with the runtime edits landed: DOM counts
+  unmoved at the floor on all sixteen operations, gzip bytes `floor` 5615 → 5833 and
+  `rows` 10539 → 10809 — the FJS-1332 fix and the runtime growth since 09-24. A Vite
+  upgrade can redden the byte numbers with nothing wrong, and `--adopt` is the answer then.
 - **The next fixtures** — signal-favoring, dbmon, effectful-list, in the table's order.
   Each is a `.mesa` file and a vanilla twin running one workload from `shared/`, and each
   owes the same two correctness checks before its numbers count.
@@ -287,17 +293,57 @@ first read found the reconciler at the floor on all sixteen operations and two o
    §What Order (1) found. The write half needs counts to resolve.
 2. **The gated tier.** Promote the counts already asserted into named cases, add the
    byte baselines per surface. The only tier that can fail a build, and the cheapest.
+   *Mesa's slice built* (§Mesa's slice). *Litestone's design facts built 2026-10-15*:
+   the audit's H4 and M1 are tests now, each seen red against its mechanism removed —
+   one executed statement per `upsert()` on both branches (`test/query-tap.test.ts`)
+   and zero `getLevel` calls across 100 reads after a scoped client's first grade
+   (`test/level-claim.test.ts`). Plan shape per hop was already
+   `test/policy-paths.test.ts`. *Sierra's bytes per surface built 2026-10-15*
+   (`FJS-D1070`): `packages/sierra/bench/`, one floor per target, brotli through
+   `packages/cli/core/bench.js`, the last step of sierra's `test` — seen red on 130
+   bytes added to the router. *Litestone's quantities built 2026-10-16*:
+   `packages/litestone/bench/statements.mjs`, the last step of litestone's `test`
+   (`FJS-D532`'s placement, `FJS-D1070`'s ratchet). It runs six request kinds over
+   every model in `example`'s schema, as system and as one signed-in user, twice with
+   other values, and counts at the `#sql-engine` seam: distinct statement texts per
+   kind, the total against the 500-entry cache, the shapes the second pass adds
+   (*churn*), evictions, and three workload-size guards (requests failed, models
+   unseeded, requests unasked) so a shrinking workload cannot read as an improvement.
+   Its first run found [FJS-2930](../ISSUES.md#fjs-2930): `LIMIT`/`OFFSET` written into
+   the text, 115 of 159 churned shapes and all 67 evictions. Seen red on a counter
+   stamped into `pageSql`. The churn left over is the IN-list arities `IN_INLINE` allows.
 3. **The runner and the reported phase.** `bench:core`-sized, since the full file is
-   ~35 s and 31 s of it is `autocommit-vs-tx`.
+   ~35 s and 31 s of it is `autocommit-vs-tx`. *Timing half built 2026-10-16* (`FJS-D1076`):
+   `scripts/bench-ab.mjs` runs every `packages/*/bench/cases.mjs` on this tree and
+   on the base ref in a worktree. It runs six rounds, alternated, and copies the
+   branch's case file over the base's so both sides run one harness. Each case
+   reports its min, the rounds it won, `~` when the spreads overlap, and its
+   ratio to an in-process floor against its declared ceiling. A package rolls up
+   as a geomean. CI's `perf` phase (full tier) prints it, fails only on a case
+   that threw, declared no ceiling or did not run, and takes ~25 s. Seen red on a
+   scratch package with all three. Litestone's four cases are the first.
+   On a machine at load 12–19, identical code read ±30% and every row was marked
+   `~`. That is the instrument being honest about the machine, not a finding.
+   *Junction's and mesa's case files built 2026-10-16*, both in-process, and
+   the timing loop moved to `scripts/bench-round.mjs`, which the runner copies
+   to the base side with the case file. Junction times four requests through
+   `app.http.fetch` against a hand-written fetch handler on the same statement.
+   Mesa times a compile against acorn parsing the same script, a 100-row server
+   render against a string join, and one signal write fanned out to ten effects
+   against plain closures. The browser half stays in `run.mjs` on its own
+   trigger (§Mesa's slice). Both packages' ceilings are measured with headroom,
+   and the first measurements found two costs:
+   [FJS-2992](../ISSUES.md#fjs-2992), a service call at 14–39× a raw handler, and
+   [FJS-2993](../ISSUES.md#fjs-2993), server rendering at 180–265× a string
+   join. The phase now takes under two minutes.
 4. **The first recorded entry**, at the alpha release.
 
-Instruction counting for the CPU-bound cases lands with (3), since it is the same
-runner with valgrind in front of it (§Spike).
-
-Deferred, each on a named trigger: change-point detection once a series exists to run
-it over; a dedicated runner once the reported tier's noise is shown to hide a real
-regression; CodSpeed once its Bun support is known — its simulation mode is this spike's
-instrument, hosted.
+Deferred, each on a named trigger: **the counted half of (3)**, `--count` on the same
+runner (cachegrind, §Spike's environment, three runs a side, a count refused when its
+repeats disagree), once valgrind is on the CI runner; change-point detection once a
+series exists to run it over; a dedicated runner once the reported tier's noise is shown
+to hide a real regression; CodSpeed once its Bun support is known — its simulation mode
+is this spike's instrument, hosted.
 
 ## Spike — instruction counts on Bun
 
@@ -447,6 +493,33 @@ few µs, a single-row write is ~30 µs, and the round-to-round spread here is 2�
   - **C** — Stays manual until a second package has a slice, then one phase for all.
   - **Recommend A** — one owner (mesa's suite), no CI edit, and a rise is caught the
     day it lands. B and C are the shape once litestone's counts join, per Order (2).
+- ~~**How are Sierra's bytes per surface counted, and where?**~~ **Answered 2026-10-16 (`FJS-D1070`): A — `packages/sierra/bench/`: one floor fixture per target (spa, static, widget), counted by cli's `measureSurface` reached by relative path, ratcheted in `bench/bench.baseline.json`, run at the end of sierra's `test` script.** Two byte gates on a built
+  surface already exist and both count brotli: the offline shell's budget (`FJS-D302`)
+  and `packages/cli/core/bench.js`, which `fli test:bench` and the vanilla floor
+  (`scripts/scaffold-build.mjs --floor`, by hand) use. Mesa's bench counts gzip.
+  - **A** — `packages/sierra/bench/`: one floor fixture per target (spa, static,
+    widget), counted by cli's `measureSurface` reached by relative path, ratcheted in
+    `bench/bench.baseline.json`, run at the end of sierra's `test` script.
+  - **B** — No sierra bench: the vanilla floor scaffolds with `--site --widgets` and
+    `BUILT_SURFACES` gains `widgets`. One baseline, but it stays a by-hand run of a
+    full scaffold until `--floor` is wired into CI.
+  - **C** — Mesa's runner copied: sierra counts its own bytes, in gzip. Three
+    measurers in two units.
+  - **Recommend A** — one measurer and one unit for every built surface, and a rise is
+    caught the day it lands, which `FJS-D532` already ruled for mesa.
+
+- ~~**Where does the A/B timing runner live, and what lands first?**~~ **Answered 2026-10-16 (`FJS-D1076`): A — `scripts/bench-ab.mjs`, a repo tool `scripts/ci.mjs` imports for a `perf` phase in the full tier. Each package declares `bench/cases.mjs`. Timing lands first and the counted half follows as `--count` once valgrind is on CI.** Order (3) is a
+  worktree of the base ref, rounds alternated, min and win count per case, a
+  geomean per package, a CI phase that reports. valgrind is on neither this
+  machine nor the CI runner.
+  - **A** — `scripts/bench-ab.mjs`, a repo tool `scripts/ci.mjs` imports for a
+    `perf` phase in the full tier. Each package declares `bench/cases.mjs`. Timing
+    lands first and the counted half follows as `--count` once valgrind is on CI.
+  - **B** — `packages/cli/core/` beside `bench.js`, as `fli bench:ab`, so an app
+    could A/B its own cases. That adds surface for a caller nobody has yet.
+  - **C** — A, with `--count` from day one and valgrind installed by the workflow.
+  - **Recommend A** — A/B against a base ref is a question about this repo, and
+    the timing half is useful without valgrind. B waits for an app that asks.
 
 ## Decision questions
 

@@ -1342,7 +1342,7 @@ export async function createTestEnv(opts = {}) {
           // boundary answering before the field one is reached. No reader is
           // left to hide the column from, but the audit trail and an app's own
           // trail still are, and both redact by `$protectedFields`. Grading
-          // nothing here let every guarded-drop on auth's @@gate("8") fragment
+          // nothing here let every guarded-drop on auth's @@gate(8) fragment
           // survive (`FJS-1594`).
           let row
           try { [row] = await (await env.atLevel(7, who))[acc].findMany({ limit: 1 }) }
@@ -1879,7 +1879,12 @@ export function restore(db, snap) {
     raw.run('PRAGMA foreign_keys = OFF')
     raw.run('BEGIN IMMEDIATE')
     try {
-      for (const t of _userTables(raw)) raw.run(`DELETE FROM "${t}"`)
+      // A DELETE on an EMPTY table still costs up to a millisecond on a schema
+      // with triggers and indexes, and a write touches a few tables of thirty:
+      // clearing all of them dominated a gate ladder (5s of 9s on a 29-model
+      // schema, repeated per mutant). A one-row probe is 40x cheaper.
+      for (const t of _userTables(raw))
+        if (raw.query(`SELECT 1 FROM "${t}" LIMIT 1`).get()) raw.run(`DELETE FROM "${t}"`)
       for (const [table, rows] of Object.entries(perDb)) {
         if (!rows.length) continue
         const cols        = Object.keys(rows[0])
@@ -2167,6 +2172,12 @@ function _fieldValue(schema, ownerName, field, seq, rng, { fkFields = new Set(),
       // `@type`d one is validated member by member, so `{}` is refused the
       // same way and the type's own fields are what it gets.
       if (opt) return null
+      // A `@point` value is refused unless both of its keys hold a coordinate,
+      // so `{}` made every create of the model fail validation: the ladder
+      // reported an error row at each level, and a dropped `@@gate` on it
+      // survived `mutate` for want of a verdict.
+      const pt = attrs.find(a => a.kind === 'point')
+      if (pt) return { [pt.lat]: 40 + (seq % 40) / 10, [pt.lng]: -75 - (seq % 40) / 10 }
       return typeAttr ? _typeValue(schema, typeAttr.name, seq, rng, depth) : {}
     }
 
@@ -2785,14 +2796,18 @@ function withPolicyClaims(who, schema) {
     const walk = (node, deny) => {
       if (!node || typeof node !== 'object') return
       if (node.type === 'compare') {
-        for (const [a, f] of [[node.left, node.right], [node.right, node.left]]) {
+        // `X in auth().claim` reads the claim as a LIST, and a scalar there is
+        // an empty one, so the original schema would fail its own checks.
+        const pairs = node.op === 'in' ? [[node.right, node.left]] : [[node.left, node.right], [node.right, node.left]]
+        for (const [a, f] of pairs) {
           if (a?.type !== 'auth' || !a.field) continue
           if (a.field === 'level' || out[a.field] !== undefined) continue
-          if (f?.type === 'literal' && deny && f.value !== null) { out[a.field] = f.value; continue }
+          const wrap = node.op === 'in' ? (v) => [v] : (v) => v
+          if (f?.type === 'literal' && deny && f.value !== null) { out[a.field] = wrap(f.value); continue }
           if (f?.type !== 'field') continue
           const t = model.fields.find(x => x.name === f.name)?.type?.name
-          if (t === 'Int')    out[a.field] = 4242
-          if (t === 'String') out[a.field] = `policy-${a.field}`
+          if (t === 'Int')    out[a.field] = wrap(4242)
+          if (t === 'String') out[a.field] = wrap(`policy-${a.field}`)
         }
       }
       for (const v of Object.values(node)) Array.isArray(v) ? v.forEach(n => walk(n, deny)) : walk(v, deny)

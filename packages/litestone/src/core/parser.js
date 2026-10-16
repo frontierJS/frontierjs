@@ -9,9 +9,11 @@ import { isKnownCurrency, minorUnits, isKnownUnit, unitInfo, suggestUnit, MEASUR
 import { LEVELS }                       from '@frontierjs/toolbelt/gate'
 import { parseExpression, tokenize, TK, ParseError } from '@frontierjs/toolbelt/predicate'
 import { expandCapabilityType } from './capabilities.js'
+import { parseGateString, validateGate } from '../plugins/gate.js'
 // One owner for the range a value round-trips through a JS number in — the
 // validator's, so a refusal here and a refusal at the boundary name one number.
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
+import { suggestKey } from './args.js'
 import { compileStatic, policyExprToString } from './policy.js'
 import { pointColumnNames, isStoredField, mapIdentifiers } from './ddl.js'
 import { inferFromFk, inferFromHop, inferToOneFrom } from './schema-maps.js'
@@ -67,8 +69,9 @@ export const VIEW_COLUMN_ATTRS = new Set(['money', 'scale', 'unit'])
 // added is likelier to be a third member than a fourth policy.
 export const SYNC_NEEDS_VERSION = new Set(['refuse', 'field'])
 
-// The 0–9 scale, by name — `@@gate`'s named form and `@@transitions`' per-move
-// `@gate()` both read it, so a level can never mean two things. It used to be a
+// The 0–9 scale, by name — `@@gate` and `@@transitions`' per-move `@gate()`
+// both read it to name the digit a refused level name means, so a level can
+// never mean two things. It used to be a
 // copy of the runtime's, described here as mirroring it; the mirror is what
 // went wrong one file over (`FJS-D197`), so both come off the kit now and the
 // parse and the enforcement cannot disagree about what a name is worth.
@@ -1080,6 +1083,15 @@ class Parser {
           throw new ParseError('@system takes no arguments — it is a lock, not a level', this.peek())
         return { kind: 'system' }
       }
+      // @local → on a `@@mirror` model, this column is the app's own and not
+      // the Provider's. Every other column there is `@system` by derivation, so
+      // a caller's write to one is refused rather than overwritten by the next
+      // sync in silence (`FJS-D843`).
+      case 'local': {
+        if (this.check(TK.LPAREN))
+          throw new ParseError('@local takes no arguments — the column is the app\'s own, on a @@mirror model', this.peek())
+        return { kind: 'local' }
+      }
 
       // @immutable → written once, at create, and never again by anybody.
       //
@@ -1531,6 +1543,11 @@ class Parser {
           this.eat(TK.LPAREN)
           const args = []
           while (!this.check(TK.RPAREN)) {
+            // A schema function takes field names, so a literal here means the
+            // name was a misspelled attribute, not a call.
+            if (!this.check(TK.IDENT)) throw new ParseError(
+              `Unknown field attribute '@${name}'. If it is a schema function, its arguments are field names, not '${this.peek().value}'`,
+              this.peek())
             args.push(this.eat(TK.IDENT).value)
             this.maybeEat(TK.COMMA)
           }
@@ -1843,23 +1860,29 @@ class Parser {
   }
 
   // ── @@gate argument parser ──────────────────────────────────────────────────
-  // Supports two forms:
-  //   "2.4.4.6"                                — numeric dotted string (existing)
-  //   (read: READER, write: USER)              — named shorthand (write = C+U+D)
-  //   (read: READER, create: USER, update: USER, delete: OWNER) — fully named
-  //
-  // Named keys: read, create, update, delete, write (shorthand for create+update+delete)
-  // Level names: STRANGER VISITOR READER CREATOR USER ADMINISTRATOR OWNER SYSTEM LOCKED
-  // Returns a normalized dotted string "R.C.U.D" so gate.js stays unchanged.
+  // `@@gate(2.4.4.6)` — read.create.update.delete, bare (`FJS-D1081`). Returns
+  // the levels as written, `"2.4.4.6"`; the cascade of a missing position is
+  // `parseGateString`'s.
 
   parseGateArg() {
     this.eat(TK.LPAREN)
 
-    // Peek — if first token is a STRING, use original parseParenString path
-    if (this.check(TK.STRING)) {
-      const val = this.eat(TK.STRING).value
+    if (this.check(TK.RPAREN))
+      throw new ParseError('@@gate: empty — write the levels, read.create.update.delete, as @@gate(0.4.4.5)', this.peek())
+
+    if (this.check(TK.DOTTED) || this.check(TK.NUMBER)) {
+      const tok = this.advance()
       this.eat(TK.RPAREN)
-      return val
+      return tok.type === TK.DOTTED ? tok.value : tok.text
+    }
+
+    // A quote means text in this language, and a level is a number, so the
+    // quoted spelling is refused with the bare one in place (`FJS-D1081`).
+    if (this.check(TK.STRING)) {
+      const tok = this.eat(TK.STRING)
+      throw new ParseError(
+        `@@gate: a level is a number, not text — @@gate(${JSON.stringify(tok.value)}) is @@gate(${tok.value}).`,
+        tok)
     }
 
     // The named form is REFUSED, and the refusal computes the answer
@@ -1907,7 +1930,7 @@ class Parser {
     const d = named.delete ?? u
     throw new ParseError(
       `@@gate: the named form is not the gate syntax — write the levels. ` +
-      `@@gate(${spelled.join(', ')}) is @@gate("${r}.${c}.${u}.${d}"), ` +
+      `@@gate(${spelled.join(', ')}) is @@gate(${r}.${c}.${u}.${d}), ` +
       `read.create.update.delete on the level ladder.`,
       this.peek())
   }
@@ -2718,8 +2741,29 @@ class Parser {
           throw new ParseError(`@@exclude(${scope}): range names two fields, [start, end] — got ${range.length}`, close)
         return where ? { kind: 'exclude', scope, range, where } : { kind: 'exclude', scope, range }
       }
-      default:
-        throw new ParseError(`Unknown model attribute '@@${name}'`, this.peek())
+      // @@mirror(key: <field>) — this model's rows are a Provider's, and the
+      // named column is the Provider's id for one (`FJS-D843`). A forward and a
+      // sync both land a row by this key, so a key that can repeat or be absent
+      // lands two Provider objects on one row; validate() refuses both.
+      case 'mirror': {
+        this.eat(TK.LPAREN)
+        const arg = this.eat(TK.IDENT)
+        if (arg.value !== 'key')
+          throw new ParseError(`@@mirror: unknown argument '${arg.value}' — expected key: <field>, the column holding the Provider's id`, arg)
+        this.eat(TK.COLON)
+        const key = this.eat(TK.IDENT).value
+        this.eat(TK.RPAREN)
+        return { kind: 'mirror', key }
+      }
+      default: {
+        // The block words disagree on number (`@@transitions` and
+        // `@@capabilities` plural, `@@commitment` and `@@index` singular), so
+        // the wrong number is the likeliest typo and the refusal names the
+        // neighbor (`FJS-2977`).
+        const near = suggestKey(name, MODEL_ATTRIBUTE_WORDS)
+        throw new ParseError(
+          `Unknown model attribute '@@${name}'` + (near ? `. Did you mean '@@${near}'?` : ''), this.peek())
+      }
     }
   }
 
@@ -2952,7 +2996,7 @@ class Parser {
   //     cancel: [pending, paid] -> cancelled)
   //
   // The leading name is optional — `pending -> paid` names itself after the
-  // target value. `@gate(N)` takes a number or a level name (ADMINISTRATOR).
+  // target value. `@gate(N)` takes a level 0–9, written as a digit.
   //
   // Values are checked against the field's enum in validate(), not here: the
   // enum may be declared after the model, or in another file.
@@ -2962,6 +3006,33 @@ class Parser {
     const field = this.eat(TK.IDENT).value
     if (!this.maybeEat(TK.COMMA))
       throw new ParseError(`@@transitions(${field}): expected at least one transition after the field name`, this.peek())
+
+    // `declaredBy: Model, scope: column` — the moves are rows a tenant writes
+    // (`FJS-D365`). Told from a move named `scope` by what follows the value:
+    // an argument ends at a comma or the paren, a move goes on to `->`.
+    const isArg = () => this.check(TK.IDENT) && this.peek(1)?.type === TK.COLON
+      && this.peek(2)?.type === TK.IDENT && this.peek(3)?.type !== TK.ARROW
+    if (isArg()) {
+      const args = {}
+      do {
+        if (this.check(TK.RPAREN)) break
+        const name = this.eat(TK.IDENT)
+        if (name.value !== 'declaredBy' && name.value !== 'scope')
+          throw new ParseError(`@@transitions(${field}): unknown argument '${name.value}' — expected 'declaredBy' and 'scope'`, name)
+        if (name.value in args)
+          throw new ParseError(`@@transitions(${field}): ${name.value} stated twice`, name)
+        this.eat(TK.COLON)
+        args[name.value] = this.eat(TK.IDENT).value
+      } while (this.maybeEat(TK.COMMA))
+      this.eat(TK.RPAREN)
+      if (!args.declaredBy)
+        throw new ParseError(`@@transitions(${field}, scope: …) needs declaredBy: — the model whose rows are the moves`, this.peek())
+      if (!args.scope)
+        throw new ParseError(
+          `@@transitions(${field}, declaredBy: ${args.declaredBy}) needs scope: — the column both models carry ` +
+          `that says whose machine a row follows`, this.peek())
+      return { field, transitions: {}, declaredBy: args.declaredBy, scope: args.scope }
+    }
 
     const transitions = {}
     do {
@@ -3096,7 +3167,8 @@ class Parser {
     return { field, transitions }
   }
 
-  // @gate(5) or @gate(ADMINISTRATOR) — a single level, unlike @@gate's R.C.U.D tuple
+  // @gate(5) — a single level, unlike @@gate's R.C.U.D tuple. A level name is
+  // refused with the digit it means, for `parseGateArg`'s reason (`FJS-D239`).
   parseTransitionGate(field, name) {
     this.eat(TK.LPAREN)
     const tok = this.advance()
@@ -3105,14 +3177,24 @@ class Parser {
       level = tok.value
     } else if (tok.type === TK.IDENT) {
       // Guarded for FJS-984's reason — see the `@@gate` site above.
-      level = Object.hasOwn(LEVELS, tok.value) ? LEVELS[tok.value] : undefined
-      if (level === undefined)
+      const named = Object.hasOwn(LEVELS, tok.value) ? LEVELS[tok.value] : undefined
+      if (named === undefined)
         throw new ParseError(
-          `@@transitions(${field}) '${name}': unknown level '${tok.value}'. Valid: ${Object.keys(LEVELS).join(', ')}`,
+          `@@transitions(${field}) '${name}': @gate expects a level 0–9, got '${tok.value}'`,
           tok,
         )
+      throw new ParseError(
+        `@@transitions(${field}) '${name}': the named form is not the gate syntax — write the level. ` +
+        `@gate(${tok.value}) is @gate(${named}) on the level ladder.`,
+        tok,
+      )
+    } else if (tok.type === TK.STRING) {
+      throw new ParseError(
+        `@@transitions(${field}) '${name}': a level is a number, not text — @gate(${JSON.stringify(tok.value)}) is @gate(${tok.value}).`,
+        tok,
+      )
     } else {
-      throw new ParseError(`@@transitions(${field}) '${name}': @gate expects a level 0–9 or a level name, got '${tok.value}'`, tok)
+      throw new ParseError(`@@transitions(${field}) '${name}': @gate expects a level 0–9, got '${tok.value}'`, tok)
     }
     if (!Number.isInteger(level) || level < 0 || level > 9)
       throw new ParseError(`@@transitions(${field}) '${name}': @gate level must be an integer 0–9, got ${level}`, tok)
@@ -3432,8 +3514,19 @@ function attrAnswer(attr, at = '@@', ordinal = 'the first') {
   const tag = `${at}${typedAttr(attr.kind)}`
   return v === undefined || v === null || typeof v === 'object'
     ? `${ordinal} ${tag}`
-    : `${tag}(${JSON.stringify(v)})`
+    : `${tag}(${attr.kind === 'gate' ? v : JSON.stringify(v)})`
 }
+
+// The words `parseModelAttributeBody` accepts after `@@`, for its refusal's
+// *did you mean*. A word added to the switch and not here still parses and is
+// merely never suggested.
+const MODEL_ATTRIBUTE_WORDS = [
+  'index', 'id', 'unique', 'arc', 'relator', 'noStrict', 'fts', 'map', 'label',
+  'external', 'extensible', 'softDelete', 'capabilities', 'hasTemplates',
+  'expires', 'effective', 'commitment', 'createdBy', 'updatedBy', 'allow',
+  'deny', 'scope', 'tenant', 'check', 'export', 'gate', 'transitions', 'auth',
+  'person', 'trail', 'db', 'trait', 'sync', 'anonymous', 'exclude', 'mirror',
+]
 
 // These are PARSE KINDS and not the words a reader types, which is the trap
 // this list has already fallen into twice: `@@unique` parses as `uniqueIndex`
@@ -4612,6 +4705,76 @@ function expandExtensible(schema) {
   return errors
 }
 
+// ─── @@mirror ─────────────────────────────────────────────────────────────────
+//
+// What `@@mirror(key:)` implies, written into the model as ordinary attributes
+// (`FJS-D843`), so the write path, the JSON Schema and every snapshot see a
+// `@system` column and have nothing to learn. A Provider's column the caller
+// could write is one the next sync overwrites in silence, so every stored
+// column is `@system` unless it says `@local`. The key is also `@immutable`,
+// since a row re-keyed here no longer matches the Provider's object, and
+// `@unique` unless a `@@unique` already names it — ELA's key is unique per
+// account, and a column-wide unique would refuse two accounts' copies of one id.
+//
+// No gate is derived: the key is `@system` and required, so a caller's create
+// is refused at the column already, and a claimed model's create runs the
+// caller's gate before the forward (`FJS-D1125`), which a derived 8 would refuse.
+const MIRROR_UNWRITTEN = new Set(['computed', 'from', 'derived', 'transient', 'edge', 'scoped', 'generated'])
+
+function expandMirror(schema) {
+  const errors = []
+  const models = new Set(schema.models.map(m => m.name))
+
+  for (const model of schema.models) {
+    const mirror = model.attributes.find(a => a.kind === 'mirror')
+    if (!mirror) continue
+    const has = (f, kind) => f.attributes.some(a => a.kind === kind)
+
+    for (const field of model.fields) {
+      if (field.generated || models.has(field.type.name)) continue
+      if (has(field, 'id') || has(field, 'local')) continue
+      if (field.attributes.some(a => MIRROR_UNWRITTEN.has(a.kind))) continue
+      if (!has(field, 'system')) field.attributes.push({ kind: 'system', generated: 'mirror' })
+      if (field.name !== mirror.key) continue
+      if (!has(field, 'immutable')) field.attributes.push({ kind: 'immutable', generated: 'mirror' })
+      const named = model.attributes.some(a => a.kind === 'uniqueIndex' && a.fields?.includes(field.name))
+      if (!has(field, 'unique') && !named) field.attributes.push({ kind: 'unique', global: false, generated: 'mirror' })
+    }
+
+    // A Provider sends rows in its own order -- a post before its author, a
+    // reply whose root is past a history cap -- so a foreign key over its ids
+    // would refuse the sync. The Provider owns that reference: a dangling one
+    // reads as no row, and as a refusal under check(). A @local key is the
+    // app's own and keeps its constraint.
+    for (const field of model.fields) {
+      const rel = field.attributes.find(a => a.kind === 'relation' && a.fields)
+      if (!rel) continue
+      const keys = [rel.fields].flat().map(n => model.fields.find(f => f.name === n))
+      if (keys.some(k => !k || has(k, 'local'))) continue
+      if (rel.onDelete || rel.onUpdate) {
+        errors.push(`Model '${model.name}': relation '${field.name}' is keyed by the Provider's ids, so @@mirror emits no foreign key and ${rel.onDelete ? 'onDelete' : 'onUpdate'} would act on nothing. Remove it`)
+        continue
+      }
+      rel.unenforced = 'mirror'
+    }
+
+    // The sync stamps a row the Provider no longer answers rather than
+    // deleting it, since a history cap and a deletion look the same from here.
+    if (model.fields.some(f => f.name === 'missingSince')) {
+      errors.push(`Model '${model.name}': @@mirror(key: ${mirror.key}) derives the column 'missingSince' and this model already declares one. Remove it`)
+      continue
+    }
+    model.fields.push({
+      name: 'missingSince',
+      type: { kind: 'scalar', name: 'DateTime', array: false, optional: true },
+      attributes: [{ kind: 'system', generated: 'mirror' }],
+      comments: [], generated: 'mirror',
+    })
+  }
+
+  return errors
+}
+
 // ─── @@relator expansion ─────────────────────────────────────────────
 //
 // The declaration is the origin and every constraint derives from it here, so
@@ -5080,6 +5243,27 @@ function validate(schema) {
   const enumNames  = new Set(schema.enums.map(e => e.name))
   const modelNames = new Set(schema.models.map(m => m.name))
   const allTypes   = new Set([...SCALAR_TYPES, ...enumNames])
+
+  // A gate that the plugin refuses at boot is refused here, so the author of
+  // a schema meets the rule where they wrote it and not at the first request.
+  for (const decl of [...schema.models, ...(schema.views ?? [])]) {
+    const gateAttr = decl.attributes?.find(a => a.kind === 'gate')
+    if (!gateAttr) continue
+    try { validateGate(parseGateString(gateAttr.value), decl.name) }
+    catch (e) { errors.push(e.message) }
+  }
+
+  // `db.<accessor>`, the service name and the JSON Schema `$defs` key are all
+  // derived from the model name and do not derive the same way from any other
+  // case (Invariant 2). `@@external` is exempt: it names a table somebody
+  // else made.
+  for (const model of schema.models) {
+    if (model.attributes.some(a => a.kind === 'external')) continue
+    if (!/^[A-Z][A-Za-z0-9]*$/.test(model.name))
+      errors.push(
+        `Model '${model.name}': a model name is PascalCase (letters and digits, starting with a capital) — ` +
+        `\`db.<accessor>\`, the service name and the JSON Schema $defs key are all derived from it.`)
+  }
 
   for (const model of schema.models) {
     // Collect all field names first so @relation can reference fields declared later
@@ -6123,8 +6307,11 @@ function validate(schema) {
       // already refused above.
       if (!secret && field.attributes.some(a => a.kind === 'guarded'))
         errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @guarded — @hashed already strips the field from every read, asSystem() included`)
-      if (field.attributes.some(a => a.kind === 'fieldAllow'))
-        errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @allow — no caller can read a digest, so a read policy over one has nothing to permit`)
+      // Only the READ half has nothing to say. `@allow('write', …)` composes: it
+      // grades who may replace the digest, which is the one way a column nobody
+      // can read is ever changed by a caller who is not the row's owner.
+      if (field.attributes.some(a => a.kind === 'fieldAllow' && a.operations.includes('read')))
+        errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @allow('read', …) — no caller can read a digest, so a read policy over one has nothing to permit. @allow('write', …) is fine`)
 
       // A digest is TEXT. Hashing a number or a date and comparing it works, but the
       // column's declared type would then describe something it no longer holds.
@@ -6607,6 +6794,18 @@ function validate(schema) {
                   : null
       if (!label) continue
       for (const name of attr.fields ?? []) {
+        // A relation field is no column: its DDL name is the foreign key. SQLite
+        // reads a double-quoted name that is not a column as a string literal,
+        // so the index builds over a constant and the unique constraint admits
+        // one row.
+        const rel = byName.get(name)
+        if (rel && (rel.type.kind === 'relation' || rel.type.kind === 'implicitM2M')) {
+          const fk = rel.attributes.find(a => a.kind === 'relation')?.fields
+          errors.push(`Model '${model.name}': ${label}([${(attr.fields ?? []).join(', ')}]) cannot be built — ` +
+                      `'${name}' is a relation, which has no column of its own. ` +
+                      (fk?.length ? `Name its foreign key instead: ${fk.join(', ')}` : `Name the stored columns it is built from`))
+          continue
+        }
         const why = reason(name)
         if (!why) continue
         errors.push(`Model '${model.name}': ${label}([${(attr.fields ?? []).join(', ')}]) cannot be built — ` +
@@ -6714,17 +6913,18 @@ function validate(schema) {
   // whose two ends are assigned to different `database` blocks parses clean,
   // emits an FK into whichever file the child is in, and throws
   // `no such table` on every create — measured. Refused here because the two
-  // `@@db` assignments are the only place this is decidable.
+  // `@@db` assignments are the only place this is decidable. `@@external` on
+  // either end is no exemption: it says who creates the table, not which file
+  // holds it (`FJS-1460`).
   {
     const dbOf = (m) => m.attributes.find(a => a.kind === 'db')?.name ?? 'main'
     const modelByName = new Map(schema.models.map(m => [m.name, m]))
     for (const model of schema.models) {
-      if (model.attributes.some(a => a.kind === 'external')) continue
       for (const field of model.fields) {
         const rel = field.attributes.find(a => a.kind === 'relation')
         if (!rel?.fields?.length) continue          // the owning side only
         const target = modelByName.get(typeof field.type === 'string' ? field.type : field.type?.name)
-        if (!target || target.attributes.some(a => a.kind === 'external')) continue
+        if (!target) continue
         if (dbOf(model) === dbOf(target)) continue
         errors.push(
           `Model '${model.name}', field '${field.name}': a relation cannot cross databases — ` +
@@ -7146,6 +7346,60 @@ function validate(schema) {
           `Model '${model.name}': @@arc([${a.fields.join(', ')}]) cannot be enforced — ` +
           `${required.map(n => `'${n}'`).join(', ')} ${many ? 'are' : 'is'} required, and a member that is ` +
           `always set is always the answer. Make ${many ? 'them' : 'it'} optional`)
+      }
+    }
+  }
+
+  // ── a bare check() over an optional parent, beside another scope ───────────
+  //
+  // `check(rel)` is TRUE for a row whose key is null (FJS-382), which is right
+  // where the parent is the row's only scope. Where the rule ORs a second scope
+  // beside it, or the key is an @@arc member, the null-key row is the OTHER
+  // scope's row, and the bare check() admits it to every caller: an arc's
+  // `userId == auth().id || check(organization)` reads every personal row
+  // (FJS-3130). A rule that compares the key with null anywhere has answered
+  // the null row itself, so it is silent. A check() under `!` or in a @@deny
+  // over-refuses on a null key and is not walked.
+  for (const model of schema.models) {
+    const arcKeys = new Set(model.attributes.filter(a => a.kind === 'arc' && Array.isArray(a.fields)).flatMap(a => a.fields))
+    const keysOf  = name => {
+      const field = model.fields.find(f => f.name === name)
+      const rel   = field?.attributes.find(a => a.kind === 'relation' && Array.isArray(a.fields))
+      if (!rel || !rel.fields.every(k => model.fields.find(f => f.name === k)?.type.optional)) return null
+      return rel.fields
+    }
+    const isNull   = s => s?.type === 'literal' && s.value === null
+    const reported = new Set()
+    for (const a of model.attributes) {
+      if (a.kind !== 'allow' || a.generated || !a.expr) continue
+      const nullTested = new Set()
+      const checks     = []
+      ;(function walk(n, underOr) {
+        if (!n || typeof n !== 'object' || n.type === 'not') return
+        if (n.type === 'compare' && (n.op === '==' || n.op === '!=')) {
+          if (isNull(n.right) && n.left?.type === 'field') nullTested.add(n.left.name)
+          if (isNull(n.left) && n.right?.type === 'field') nullTested.add(n.right.name)
+        }
+        if (n.type === 'check' && !n.tenancy) checks.push({ n, underOr })
+        const or = underOr || n.type === 'or'
+        for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else']) walk(n[k], or)
+        if (Array.isArray(n.items)) n.items.forEach(i => walk(i, or))
+        if (Array.isArray(n.args))  n.args.forEach(i => walk(i, or))
+      })(a.expr, false)
+
+      for (const { n, underOr } of checks) {
+        const keys = keysOf(n.field)
+        if (!keys || keys.some(k => nullTested.has(k)) || reported.has(n.field)) continue
+        const inArc = keys.some(k => arcKeys.has(k))
+        if (!underOr && !inArc) continue
+        reported.add(n.field)
+        const op = n.operation ? `, '${n.operation}'` : ''
+        warnings.push(
+          `Model '${model.name}': a bare check(${n.field}${op}) is TRUE for a row whose ${keys.join(', ')} is null, ` +
+          `and here that row is ${inArc ? `the other @@arc member's` : 'the other disjunct\'s'} — every caller ` +
+          `is admitted to it. Write (${keys.map(k => `${k} != null`).join(' && ')} && check(${n.field}${op})) ` +
+          `to admit only rows naming a ${n.field}, or (${keys.map(k => `${k} == null`).join(' || ')} || check(${n.field}${op})) ` +
+          `if every caller is meant to have them.`)
       }
     }
   }
@@ -7679,6 +7933,8 @@ function validate(schema) {
         else seenMoves.set(name, attr.field)
       }
 
+      if (attr.declaredBy) { checkDeclaredMachine(model, attr, schema, errors); continue }
+
       // The @default is where every row starts, whoever creates it (`FJS-D470`),
       // so a machine without one has no legal create.
       const stateField = model.fields.find(f => f.name === attr.field)
@@ -7888,7 +8144,7 @@ function validate(schema) {
     if (!(decl.attributes ?? []).some(a => a.kind === 'gate'))
       errors.push(
         `${what} '${decl.name}': @@export needs a @@gate beside it. An export is a bulk read of every ` +
-        `row a caller may see, so an ungated one is the whole table to anybody. Write @@gate("0") if ` +
+        `row a caller may see, so an ungated one is the whole table to anybody. Write @@gate(0) if ` +
         `this dataset is public on purpose.`)
 
     if (ex.since) {
@@ -7908,7 +8164,7 @@ function validate(schema) {
   // parse rather than at read: a view is a projection of rows a model gates, so
   // an ungated one is a way around every gate the schema declares — and it
   // cannot be inferred from `@@sql` without parsing SQL to find the sources.
-  // `@@gate("0")` is how a schema says a view is public deliberately.
+  // `@@gate(0)` is how a schema says a view is public deliberately.
   const schemaGuards = schema.models.some(m =>
     m.attributes?.some(a => a.kind === 'gate' || a.kind === 'allow' || a.kind === 'deny') ||
     m.fields?.some(f => f.attributes?.some(a => a.kind === 'fieldAllow' || a.kind === 'guarded')))
@@ -7920,7 +8176,7 @@ function validate(schema) {
     if (schemaGuards && !viewAttrs.some(a => a.kind === 'gate'))
       errors.push(
         `View '${view.name}' must declare @@gate — this schema declares access rules, and a view is a ` +
-        `read path onto the rows they guard. Write @@gate("0") if the view is public on purpose.`)
+        `read path onto the rows they guard. Write @@gate(0) if the view is public on purpose.`)
 
     if (rowTenancy && !viewAttrs.some(a => a.kind === 'tenant'))
       errors.push(
@@ -8210,6 +8466,37 @@ function validate(schema) {
     }
   }
 
+  // ── @@mirror: the key names one Provider object per row ───────────────────
+  // Its `@unique` is derived (expandMirror), so the shape is what is left to
+  // refuse: a key that can be absent lands two Provider objects on one row.
+  for (const model of schema.models) {
+    const mirror = model.attributes.find(a => a.kind === 'mirror')
+    const at     = mirror && `Model '${model.name}': @@mirror(key: ${mirror.key})`
+    for (const field of model.fields) {
+      if (!field.attributes.some(a => a.kind === 'local')) continue
+      const local = `Field '${model.name}.${field.name}': @local`
+      const kinds = new Set(field.attributes.map(a => a.kind))
+      if (!mirror)
+        errors.push(`${local} names a column the app owns on a model whose rows are a Provider's, and ${model.name} is not @@mirror. Drop it — every column here is the app's already`)
+      else if (field.name === mirror.key)
+        errors.push(`${local} is on the key, and the key is the Provider's id for the row. Drop it`)
+      else if (kinds.has('id'))
+        errors.push(`${local} is on the @id, which is the app's already. Drop it`)
+      else if (field.type.kind === 'relation' || field.type.kind === 'implicitM2M' || field.type.kind === 'backRefOne')
+        errors.push(`${local} is on a relation, which holds no column. Put it on the foreign key the relation names`)
+      else if (kinds.has('system'))
+        errors.push(`${local} and @system disagree: one says the caller writes it, the other that only the application does. Keep one`)
+    }
+    if (!mirror) continue
+    const { key } = mirror
+    const field = model.fields.find(f => f.name === key)
+    if (!field) { errors.push(`${at} — ${model.name} has no field '${key}'`); continue }
+    if (field.type.array || !(field.type.name === 'String' || field.type.name === 'Int'))
+      errors.push(`${at} — the key is one String or Int, the Provider's id; '${key}' is ${field.type.name}${field.type.array ? '[]' : ''}`)
+    else if (field.type.optional)
+      errors.push(`${at} — '${key}' is optional, and a row with no key cannot be matched to the Provider's object. Drop the ?`)
+  }
+
   // ── @@expires / @@effective window shape ──────────────────────────────────
   // The declaration names columns rather than injecting them, so every way it
   // can be wrong is a mismatch with what the model already says.
@@ -8447,6 +8734,48 @@ function validate(schema) {
   return { valid: errors.length === 0, errors, warnings }
 }
 
+// ─── @@transitions(field, declaredBy:, scope:) ───────────────────────────────
+//
+// A machine whose moves are rows (`FJS-D365`). The declarer's shape is fixed
+// so the Data boundary can read it with no configuration: `fromId?` (null is
+// an entry, where a new row may start), `toId`, an optional `gate`, and the
+// scope column's twin. The move is checked inside the UPDATE's own WHERE, so
+// the declarer has to live in the same database file.
+function checkDeclaredMachine(model, attr, schema, errors) {
+  const where = `Model '${model.name}': @@transitions(${attr.field}, declaredBy: ${attr.declaredBy})`
+  const field = model.fields.find(f => f.name === attr.field)
+  if (!field) { errors.push(`${where} — no such field`); return }
+  const keyType = field.type.name
+  if ((keyType !== 'String' && keyType !== 'Int') || field.type.array || field.type.kind === 'enum')
+    errors.push(`${where} — '${attr.field}' is ${keyType}${field.type.array ? '[]' : ''}; a declared machine's states are rows, so the field is their key — String or Int`)
+  // The entries are where a row starts, so a literal default would be a second
+  // answer that no team's table agrees with.
+  if (field.attributes.some(a => a.kind === 'default'))
+    errors.push(`${where} — '${attr.field}' has a @default, and the entries declared in ${attr.declaredBy} are where a row starts. Drop the @default`)
+  if (!model.fields.some(f => f.name === attr.scope))
+    errors.push(`${where} — scope: names '${attr.scope}' and this model has no field '${attr.scope}'`)
+
+  const decl = schema.models.find(m => m.name === attr.declaredBy)
+  if (!decl) { errors.push(`${where} — there is no model '${attr.declaredBy}'`); return }
+  const need = [
+    ['fromId', f => f.type.name === keyType && f.type.optional,  `${keyType}? — the state a move leaves, null for an entry`],
+    ['toId',   f => f.type.name === keyType && !f.type.optional, `${keyType} — the state a move reaches`],
+    [attr.scope, f => !f.type.array && f.type.kind !== 'relation', `the twin of ${model.name}.${attr.scope} — whose machine a move belongs to`],
+  ]
+  for (const [name, ok, want] of need) {
+    const f = decl.fields.find(x => x.name === name)
+    if (!f)          errors.push(`${where} — '${attr.declaredBy}' has no '${name}' column. A declaring model needs ${name}: ${want}`)
+    else if (!ok(f)) errors.push(`${where} — '${attr.declaredBy}.${name}' is ${f.type.name}${f.type.optional ? '?' : ''} and has to be ${want}`)
+  }
+  const gate = decl.fields.find(x => x.name === 'gate')
+  if (gate && !(gate.type.name === 'Int' && gate.type.optional))
+    errors.push(`${where} — '${attr.declaredBy}.gate' is ${gate.type.name}${gate.type.optional ? '?' : ''} and has to be Int? — the level a move needs, null for none`)
+
+  const dbOf = m => m.attributes.find(a => a.kind === 'db')?.name ?? null
+  if (dbOf(decl) !== dbOf(model))
+    errors.push(`${where} — '${attr.declaredBy}' is in database '${dbOf(decl) ?? 'main'}' and '${model.name}' in '${dbOf(model) ?? 'main'}'. A move is checked in the UPDATE's own WHERE, so both live in one file`)
+}
+
 // ─── claim … from ────────────────────────────────────────────────────────────
 //
 // A claim read off a row that points at the caller. Every refusal here is a
@@ -8634,28 +8963,68 @@ export function hasImports(text) {
  * rather than silently describing a smaller schema.
  */
 export function inlineImports(text, parent, opts, into = null) {
+  return inlineTraced(text, parent, opts, into).text
+}
+
+/**
+ * `inlineImports` that also answers where each line of the splice came from:
+ * `origins[i]` is the `{ file, line }` of line `i`. A line of a spliced text is
+ * otherwise a number that exists in no file, so a report keyed on it points at
+ * a line of whichever file happens to be that long.
+ */
+function inlineTraced(text, parent, opts, into = null) {
   // This file's OWN models are retargeted before its imports are expanded, so a
   // nested `into` cannot be overwritten by the outer one — the same nearest-wins
   // rule parseFile applies to the AST. Retargeting after the splice would rewrite
   // the child's destination back to the parent's.
-  const own = into ? retargetDbText(text, into) : text
+  const ownFrom = []        // own line i came from line ownFrom[i] of `text`
+  const own     = into ? retargetDbText(text, into, ownFrom) : text
+  const lineOf  = (i) => ({ file: parent, line: (ownFrom[i] ?? i) + 1 })
 
-  return own.replace(IMPORT_LINE, (_line, spec, childInto) => {
+  let out     = ''
+  let origins = []
+  let at      = 0           // how much of `own` is consumed
+  let ownLine = 0           // newlines in own[0..at)
+
+  // A piece continues the line the splice is already on, so its first line has
+  // an origin already and only the lines after it add one.
+  const append = (piece, pieceOrigins) => {
+    if (!piece) return
+    const n = piece.split('\n').length
+    for (let j = out ? 1 : 0; j < n; j++) origins.push(pieceOrigins(j))
+    out += piece
+  }
+  const ownPiece = (to) => {
+    const piece = own.slice(at, to)
+    const base  = ownLine
+    append(piece, j => lineOf(base + j))
+    ownLine += piece.split('\n').length - 1
+    at = to
+  }
+
+  for (const m of own.matchAll(IMPORT_LINE)) {
+    const [line, spec, childInto] = m
+    ownPiece(m.index)
+    at += line.length
     const child = opts.resolveChild(parent, spec)
-    if (child === null) { opts.missing.push(spec); return '' }
-    if (opts.seen.has(child)) return ''         // already inlined — and cycles end here
+    if (child === null) { opts.missing.push(spec); continue }
+    if (opts.seen.has(child)) continue          // already inlined — and cycles end here
     opts.seen.add(child)
     const source = opts.read(child)
-    if (source === null) { opts.missing.push(spec); return '' }
+    if (source === null) { opts.missing.push(spec); continue }
     // An import with no `into` of its own inherits the one it was reached by.
-    const spliced = inlineImports(source, child, opts, childInto ?? into)
+    const spliced = inlineTraced(source, child, opts, childInto ?? into)
     // parseFile's `shippedBy`, for a caller that parses the splice: each model
     // a package's text brought in, by name, the innermost package first.
     if (opts.shipped && !RELATIVE_SPEC.test(spec) && !isAbsolute(spec))
-      for (const [, name] of spliced.matchAll(MODEL_NAME))
+      for (const [, name] of spliced.text.matchAll(MODEL_NAME))
         if (!opts.shipped.has(name)) opts.shipped.set(name, spec)
-    return spliced
-  })
+    append(spliced.text, j => spliced.origins[j])
+  }
+  ownPiece(own.length)
+
+  if (!origins.length) origins = [lineOf(0)]
+  return { text: out, origins }
 }
 
 const MODEL_NAME = /^[ \t]*model\s+([A-Za-z_]\w*)\s*\{/gm
@@ -8676,7 +9045,9 @@ export function markShipped(schema, shipped) {
 const BLOCK_OPEN = /^[ \t]*(?:model|view)\s+[A-Za-z_]\w*\s*\{/
 const DB_ATTR    = /^([ \t]*)@@db\(\s*[A-Za-z_]\w*\s*\)[ \t]*$/
 
-function retargetDbText(text, db) {
+// `from`, when given, is filled with the index in `text` each output line came
+// from; a line added here answers with the block's opening line.
+function retargetDbText(text, db, from = []) {
   const out    = []
   let   openAt = -1        // index in `out` of the open block's first line
   let   hasDb  = false
@@ -8687,35 +9058,43 @@ function retargetDbText(text, db) {
     if (openAt >= 0 && !hasDb) {
       const indent = (out[openAt].match(/^[ \t]*/)?.[0] ?? '') + '  '
       out.splice(openAt + 1, 0, `${indent}@@db(${db})`)
+      from.splice(openAt + 1, 0, from[openAt])
     }
     openAt = -1
     hasDb  = false
   }
 
-  for (const line of text.split('\n')) {
+  const lines = text.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     if (BLOCK_OPEN.test(line)) {
       finish()
       out.push(line)
+      from.push(i)
       openAt = out.length - 1
     } else if (openAt >= 0 && DB_ATTR.test(line)) {
       out.push(line.replace(DB_ATTR, `$1@@db(${db})`))
+      from.push(i)
       hasDb = true
     } else if (openAt >= 0 && /^[ \t]*\}/.test(line)) {
       out.push(line)
+      from.push(i)
       finish()
     } else {
       out.push(line)
+      from.push(i)
     }
   }
   finish()
   return out.join('\n')
 }
 
-/** inlineImports against the working tree. Returns the text and what was missing. */
+/** inlineImports against the working tree. Returns the text, where each of its
+ *  lines came from (`origins`), and what was missing. */
 export function inlineImportsFromDisk(filePath) {
   const abs     = resolve(filePath)
   const missing = []
-  const text    = inlineImports(readFileSync(abs, 'utf8'), abs, {
+  const { text, origins } = inlineTraced(readFileSync(abs, 'utf8'), abs, {
     // The same resolver parseFile uses, so a bare package specifier follows to
     // the same file in both — otherwise a schema parses and its test environment
     // does not, or worse, quietly describes less.
@@ -8724,7 +9103,7 @@ export function inlineImportsFromDisk(filePath) {
     seen:         new Set([abs]),
     missing,
   })
-  return { text, missing }
+  return { text, origins, missing }
 }
 
 export function parseFile(filePath) {
@@ -8788,22 +9167,14 @@ export function parseFile(filePath) {
       return null
     }
 
-    let tokens
-    try { tokens = tokenize(src) }
-    catch (e) {
-      // Re-raise with the file path so the user sees which file failed when
-      // imports chain across multiple files.
-      if (e && e.message) e.message = `In ${currentPath}:\n  ${e.message}`
-      throw e
-    }
     // A ParseError is a RESULT here, exactly as it is in parse() — the two have
     // to answer the same shape or every caller has to know which one it called,
     // and a caller that warns and keeps going (sierra's build, the CLI's error
-    // box) got a stack trace instead. Named with its file, since imports chain.
-    const parser = new Parser(tokens)
+    // box) got a stack trace instead. The lexer's refusal is one too. Named
+    // with its file, since imports chain.
     let schema
     try {
-      schema = parser.parseSchema()
+      schema = new Parser(tokenize(src)).parseSchema()
     } catch (e) {
       if (!(e instanceof ParseError)) throw e
       allErrors.push(`In ${currentPath}: ${e.message}`)
@@ -8961,6 +9332,7 @@ export function parseFile(filePath) {
   allErrors.push(...expandEdgeAttributes(schema))
   allErrors.push(...expandExtensible(schema))
   allErrors.push(...expandRelator(schema))
+  allErrors.push(...expandMirror(schema))
   const tenancy = expandTenancy(schema)
   allErrors.push(...tenancy.errors)
   allWarnings.push(...tenancy.warnings)
@@ -8981,11 +9353,10 @@ export function parseFile(filePath) {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export function parse(src) {
-  const tokens = tokenize(src)
-  const parser = new Parser(tokens)
   let schema
   try {
-    schema = parser.parseSchema()
+    // The lexer throws a ParseError too, so it sits inside the same catch.
+    schema = new Parser(tokenize(src)).parseSchema()
   } catch (e) {
     if (e instanceof ParseError)
       return { schema: null, valid: false, errors: [e.message], warnings: [] }
@@ -9011,10 +9382,11 @@ export function parse(src) {
   const edgeErrors = expandEdgeAttributes(schema)
   const extErrors  = expandExtensible(schema)
   const relatorErrors = expandRelator(schema)
+  const mirrorErrors  = expandMirror(schema)
   const tenancy = expandTenancy(schema)
   resolveTransitions(schema)
   const capabilityErrors = expandCapabilityType(schema)
   const { errors, warnings } = validate(schema)
-  const merged = [...compositeIdErrors, ...authorshipErrors, ...edgeErrors, ...extErrors, ...relatorErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
+  const merged = [...compositeIdErrors, ...authorshipErrors, ...edgeErrors, ...extErrors, ...relatorErrors, ...mirrorErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
   return { schema, valid: merged.length === 0, errors: merged, warnings: [...tenancy.warnings, ...warnings] }
 }

@@ -12,7 +12,7 @@
   <input id="first" name="first" value="a" />
   <input id="second" name="second" value="b" />
   <button type="button" id="hold" class="btn danger"
-          on:click={(e) => held = { el: e.currentTarget, note: 'held' }}>Hold</button>
+          onclick={(e) => held = { el: e.currentTarget, note: 'held' }}>Hold</button>
 </form>
 
 <output id="held">{held ? held.note : ''}</output>

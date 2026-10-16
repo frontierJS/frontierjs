@@ -234,7 +234,7 @@ describe('mounted', () => {
       `<script>\n  let o = { a: 1 }\n  let log = ''\n` +
       `  $: o.a, (cur, prev) => { log = cur + '<-' + prev }\n` +
       `  function bump() { o.a = o.a + 1 }\n</script>\n` +
-      `<button on:click={bump}>+</button><p>v={o.a} log={log}</p>`)
+      `<button onclick={bump}>+</button><p>v={o.a} log={log}</p>`)
 
     expect(r.container.textContent).toContain('v=1')
     expect(r.container.textContent).toContain('log=')   // deferred: nothing on mount
@@ -251,7 +251,7 @@ describe('mounted', () => {
     const r = await render(
       `<script>\n  let a = 1\n  let log = ''\n` +
       `  $: { a, () => { log = 'a=' + a } }\n</script>\n` +
-      `<button on:click={() => a++}>+</button><p>{log}</p>`)
+      `<button onclick={() => a++}>+</button><p>{log}</p>`)
 
     expect(r.container.textContent).toContain('a=1')    // group runs on mount
 

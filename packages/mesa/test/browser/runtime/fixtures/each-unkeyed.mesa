@@ -19,6 +19,6 @@
   {#each grid as _cell, i}<span class="cell">{i}</span>{/each}
 </div>
 
-<button type="button" id="grow" on:click={() => items = ['a', 'b', 'a', 'c']}>grow</button>
-<button type="button" id="swap" on:click={() => items = ['b', 'a', 'a']}>swap</button>
-<button type="button" id="distinct" on:click={() => items = ['x', 'y', 'z']}>distinct</button>
+<button type="button" id="grow" onclick={() => items = ['a', 'b', 'a', 'c']}>grow</button>
+<button type="button" id="swap" onclick={() => items = ['b', 'a', 'a']}>swap</button>
+<button type="button" id="distinct" onclick={() => items = ['x', 'y', 'z']}>distinct</button>

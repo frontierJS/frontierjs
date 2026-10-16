@@ -19,6 +19,9 @@ import { NotFound, createService, requestMeta, warnEffectInDrain } from '@fronti
 import { createConduit }    from './conduit.ts'
 import { createTraceContext, parseTraceparent, traceIdFrom } from './trace.ts'
 import type { ConduitOptions, IConduit } from './types.ts'
+import type { Receiver, BrokerReceiver, ReceivedEvent } from './receive.ts'
+import { assertClaim } from './mirror.ts'
+import type { ClaimedModel } from './mirror.ts'
 
 // ─── App augmentation ────────────────────────────────────────
 // Adds app.conduit to Junction's App type across the entire project.
@@ -98,6 +101,7 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
   // hooks read the instance off the app they were handed. register() stays
   // synchronous, which is what the factory-time instance was protecting.
   const instances = new WeakMap<App, IConduit>()
+  const booted    = new WeakSet<App>()
 
   const conduitFor = (app: App, phase: string): IConduit => {
     const instance = instances.get(app)
@@ -152,6 +156,46 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
         }
         return send({ ...req, who })
       }) as IConduit['send']
+      // The route is mounted here and the order runs in the core, which stays
+      // junction-free: `app.post` puts the path under `apiPrefix` like every
+      // route the app registers, and the handler runs inside the request scope,
+      // so an `apply` that sends through conduit carries the delivery's trace.
+      // Refusals and failures are logged with the reason the body withholds.
+      // A receiver on a broker target gets no route: its frames arrive on a
+      // socket conduit dialed, and a route would let anyone post one.
+      const receive = instance.receive as (r: unknown) => void | Promise<void>
+      instance.receive = ((receiver: Receiver<unknown, ReceivedEvent, unknown> | BrokerReceiver) => {
+        if ('target' in receiver) return receive(receiver)
+        receive(receiver)
+        app.post(receiver.path, async (ctx) => {
+          const received = await instance.accept(receiver.path, {
+            method:  ctx.method,
+            path:    ctx.path,
+            query:   new URL(ctx.$raw.url).search,
+            route:   ctx.route ?? {},
+            headers: ctx.headers,
+            rawBody: ctx.rawBody ?? '',
+            body:    ctx.body,
+          }, Math.floor(Date.now() / 1000))
+          if (received.reason) {
+            const line = `[conduit] ${receiver.provider} ${receiver.path} ${received.result} — ${received.reason}`
+            if (received.result === 'failed') app.logger.error(line)
+            else if (received.result === 'refused') app.logger.warn(line)
+          }
+          return ctx.json(received.body, received.status)
+        })
+      }) as IConduit['receive']
+      // A claim made before start is checked at boot, against the schema the
+      // app booted with; one made after is checked as it is made.
+      const mirror = instance.mirror
+      instance.mirror = (claim) => {
+        if (booted.has(app)) {
+          assertClaim(claim)
+          refuseClaims(app, Object.entries(claim.models).map(([model, m]) =>
+            ({ provider: claim.provider, model, accessor: '', key: m.key })))
+        }
+        mirror(claim)
+      }
       app.claim('conduit', instance)
 
       // Wire into Junction's /metrics endpoint. Called straight rather than
@@ -168,7 +212,10 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
     // boot() runs during app.start() — safe to do async work here.
     // Initializes the store and loads any static targets from opts.targets.
     async boot(app: App): Promise<void> {
-      await conduitFor(app, 'boot').init()
+      const instance = conduitFor(app, 'boot')
+      await instance.init()
+      refuseClaims(app, instance.claimed())
+      booted.add(app)
     },
 
     // ready() fires after the server is listening.
@@ -182,6 +229,47 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
       await conduitFor(app, 'shutdown').destroy()
     },
   }
+}
+
+// ─── Mirror claims against the schema ────────────────────────
+
+type ParsedModel = { name: string; attributes: Array<{ kind: string; key?: string }> }
+
+function schemaModels(app: App): ParsedModel[] | null {
+  // A Litestone client throws on a property it lacks, so every read is `in`-guarded.
+  const db = app.db as Record<string, unknown> | undefined
+  const fromDb = db && typeof db === 'object' && '$schema' in db ? (db.$schema as { models?: ParsedModel[] }) : undefined
+  const fromTenants = (app.tenants as { schema?: { models?: ParsedModel[] } } | undefined)?.schema
+  return (fromDb ?? fromTenants)?.models ?? null
+}
+
+/**
+ * Boot's refusals (`FJS-D1125`), all named in one throw: a claim on a model
+ * the schema lacks forwards a write nothing lands; one on a model that is not
+ * `@@mirror` would let the Provider overwrite an app's own rows; a key that
+ * disagrees with `@@mirror(key:)` matches every answer to no row and inserts
+ * a duplicate per write; and `@@transitions` on one is a rule its forward
+ * cannot grade.
+ */
+function refuseClaims(app: App, claimed: ClaimedModel[]): void {
+  if (!claimed.length) return
+  const models = schemaModels(app)
+  const lines: string[] = []
+  for (const c of claimed) {
+    const at = `mirror claim '${c.provider}' names ${c.model}`
+    if (!models) { lines.push(`${at}, and the app has no schema — a mirrored model is a model in db/schema.lite`); continue }
+    const model = models.find(m => m.name === c.model)
+    if (!model) { lines.push(`${at}, and the schema has no model ${c.model}`); continue }
+    const declared = model.attributes.find(a => a.kind === 'mirror')
+    if (!declared) { lines.push(`${at}, and ${c.model} is not @@mirror — declare @@mirror(key: ${c.key}) on it, or leave it out of the claim`); continue }
+    if (declared.key !== c.key)
+      lines.push(`${at} keyed by '${c.key}', and ${c.model} declares @@mirror(key: ${declared.key})`)
+    // A forward grades the row policies through `$checkWrite`, which grades no
+    // move; a machine on a mirrored row would be the Provider's to refuse.
+    if (model.attributes.some(a => a.kind === 'transitions'))
+      lines.push(`${at}, and ${c.model} declares @@transitions — a forwarded write grades no move (FJS-D1162). Leave it out of the claim and write its verbs by hand`)
+  }
+  if (lines.length) throw new Error(`[conduit] ${lines.join('\n  ')}`)
 }
 
 // ─── Management service ──────────────────────────────────────

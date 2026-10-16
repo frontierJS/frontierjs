@@ -36,8 +36,7 @@ test/            harness.ts, fanout.test.ts, hook.test.ts, email-render.test.ts,
 
 **Transport = delivery medium** (`inApp`, `email`, a Slack driver). **Channel =
 junction's broadcast set**, which the in-app driver publishes on. Both are in
-this package; `FJS-D06` ruled which is which. A `channels:` plugin option is
-refused by name.
+this package; `FJS-D06` ruled which is which.
 
 **A Recipient is not a User.** `id` is optional, and `inApp` refuses a recipient
 without one rather than writing a row nothing can read (`FJS-096`). `email` is

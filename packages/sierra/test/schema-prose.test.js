@@ -54,11 +54,11 @@ model Article {
   body        String?
 }
 
-/// The books. @@gate("9") on update and delete is deliberate.
+/// The books. @@gate(9) on update and delete is deliberate.
 model Ledger {
   id     Int    @id
   amount Float
-  @@gate("8")
+  @@gate(8)
 }
 `
 

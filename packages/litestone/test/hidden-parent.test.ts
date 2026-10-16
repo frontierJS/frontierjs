@@ -132,6 +132,28 @@ describe('a foreign key naming a parent the caller cannot read', () => {
     db.$close()
   })
 
+  // FJS-2800: a parent the caller could read with `withDeleted` is archived, not
+  // missing, and saying so discloses nothing she could not already ask for.
+  test('an archived parent the caller can read says archived; one she cannot read still reads as missing', async () => {
+    const { db, sys, alice } = await seeded()
+    await alice.project.remove({ where: { id: 2 } })
+    await sys.project.remove({ where: { id: 1 } })
+    const archived = await refusal(alice.task.create({ data: { ownerId: 'alice', projectId: 2 } }))
+    expect(archived).toBeInstanceOf(ForeignKeyError)
+    expect(archived.message).toMatch(/archived/)
+    expect(archived.errors[0].message).toMatch(/archived/)
+    expect(archived.status).toBe(422)
+    // Bob's archived project and Project 999 are the same refusal.
+    const bobs    = await refusal(alice.task.create({ data: { ownerId: 'alice', projectId: 1 } }))
+    const missing = await refusal(alice.task.create({ data: { ownerId: 'alice', projectId: 999 } }))
+    expect(shape(bobs)).toEqual(shape(missing))
+    expect(bobs.message).not.toMatch(/archived/)
+    // The nested connect says it too.
+    const nested = await refusal(alice.task.create({ data: { ownerId: 'alice', project: { connect: { id: 2 } } } }))
+    expect(nested.message).toMatch(/archived/)
+    db.$close()
+  })
+
   test('asSystem() is the blind reference, and a key the engine stamps is not graded', async () => {
     const { db, sys, alice } = await seeded()
     expect((await sys.task.create({ data: { ownerId: 'alice', projectId: 1 } })).projectId).toBe(1)
@@ -150,11 +172,11 @@ describe('the parent read is the caller\'s whole read', () => {
     const db: any = await createClient({ db: ':memory:', schema: `
       model Plan { id Int @id
         subs Sub[]
-        @@gate("8.8.8.8") }
+        @@gate(8.8.8.8) }
       model Sub { id Int @id @default(autoincrement())
         planId Int
         plan Plan @relation(fields: [planId], references: [id])
-        @@gate("1.1.1.1") }
+        @@gate(1.1.1.1) }
     `, plugins: [new GatePlugin({ getLevel: (u: any) => (u ? 1 : 0) })] })
     await db.asSystem().plan.create({ data: { id: 1 } })
     const user = db.$setAuth({ id: 'u' })
@@ -215,12 +237,12 @@ describe('the gate ladder over a parent its levels cannot read', () => {
     const env = await createTestEnv({ schema: `
       model Account { id Int @id @default(autoincrement())
         workspaces Workspace[]
-        @@gate("6.8") }
+        @@gate(6.8) }
       model Workspace { id Int @id @default(autoincrement())
         name String
         accountId Int
         account Account @relation(fields: [accountId], references: [id])
-        @@gate("1.1.5.5") }
+        @@gate(1.1.5.5) }
     ` })
     expect((await env.verifyGateLadder()).filter((m: any) => m.model === 'Workspace')).toEqual([])
     env.close()
@@ -284,7 +306,7 @@ describe('a create rule reading a parent the caller cannot read', () => {
       model Team {
         id     Int   @id
         guests Guest[]
-        @@gate("6.6.6.6")
+        @@gate(6.6.6.6)
         ${rule}
       }
       model Guest {

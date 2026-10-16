@@ -23,7 +23,7 @@ model LeaveRequest {
   reason String
   status LeaveState @default(requested)
   @@unique([reason])
-  @@gate("4.4.5.5")
+  @@gate(4.4.5.5)
   @@transitions(status,
     approve: requested -> approved  @gate(5),
     refuse:  requested -> refused   @gate(5),

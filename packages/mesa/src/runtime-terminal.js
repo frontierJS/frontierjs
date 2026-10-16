@@ -1,5 +1,5 @@
 /**
- * The terminal runtime — `$$tui`, what a component compiled with
+ * The terminal runtime — `$$host`, what a component compiled with
  * `target: 'terminal'` calls in place of the DOM half of `runtime.js`. The
  * signal graph, the flush and the component frame are the same `runtime.js`;
  * only the tree the effects write into differs, and this file is that tree.
@@ -479,7 +479,7 @@ function blank(buffer) {
 let _renderer = null
 
 function needRenderer(what) {
-  if (!_renderer) throw new Error(`[Mesa] $$tui.${what}() before mount(): no renderer is current`)
+  if (!_renderer) throw new Error(`[Mesa] $$host.${what}() before mount(): no renderer is current`)
   return _renderer
 }
 
@@ -1160,13 +1160,13 @@ const CHECK_KEYS = new Set(['space'])
 const disabled = (node) => 'disabled' in node.__attrs
 
 /**
- * `on:event` on a terminal node. The listener goes into a list of the
+ * `onevent` on a terminal node. The listener goes into a list of the
  * runtime's own rather than onto the engine, which wires one key slot per
  * node and keeps no way to take a listener back off; `dispatch` reads the
  * list. `capture` and `once` are the DOM's listener options.
  */
 export function on(node, event, handler, { capture = false, once = false } = {}) {
-  if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on:${event} has no terminal lowering`)
+  if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on${event} has no terminal lowering`)
   // A kit forwards its caller's handler props, most of them unset; `addEvent`
   // skips those on the DOM path, and a stored `undefined` throws on the event.
   if (!handler) return
@@ -1306,10 +1306,10 @@ function windowOf(r) {
   return w
 }
 
-/** `<mesa:window on:event>`: a listener on the window, taken off when the
+/** `<mesa:window onevent>`: a listener on the window, taken off when the
  *  component that wrote it is destroyed. */
 export function onWindow(event, handler, { capture = false, once = false } = {}) {
-  if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on:${event} has no terminal lowering`)
+  if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on${event} has no terminal lowering`)
   if (!handler) return
   const r = needRenderer('onWindow')
   if (event === 'mouseenter' || event === 'mouseleave') hoverSource(r)
@@ -1876,14 +1876,6 @@ export function eachBlock(marker, getItems, keyFn, rowFn, elseFn) {
   })
 }
 
-/** `<slot>`: the caller's block for this name, or the fallback when the
- *  caller passed none. Either is a factory returning a fragment, built once —
- *  which slots a caller passed is fixed by its markup. */
-export function slot(marker, block, fallback) {
-  const factory = block ?? fallback
-  if (factory) mountBlock(marker, factory)
-}
-
 // ─── focus ────────────────────────────────────────────────────────────
 
 // A node a run paints is hidden from layout and is still where Tab stops.
@@ -1907,6 +1899,41 @@ function cycle(step) {
 export function focusNext() { return cycle(1) }
 export function focusPrev() { return cycle(-1) }
 
+// ─── measure and focus ────────────────────────────────────────────────
+
+// `$.measure`, `$.viewport` and `$.focus` on a terminal, in the shape
+// `runtime.js` gives the DOM's. A box has no place until a frame lays it out, and one mounted this
+// tick still reports zero, so the answer waits for the next frame.
+
+/** The cells `node` occupies on screen, as `{ left, top, right, bottom,
+ *  width, height }`. No node answers `null`. */
+export function measure(node) {
+  if (!node) return Promise.resolve(null)
+  const r = needRenderer('measure')
+  return new Promise((resolve) => {
+    const read = () => {
+      r.removePostProcessFn(read)
+      const left = node.screenX
+      const top = node.screenY
+      resolve({ left, top, right: left + node.width, bottom: top + node.height, width: node.width, height: node.height })
+    }
+    r.addPostProcessFn(read)
+    r.requestRender()
+  })
+}
+
+/** The renderer's area, as `{ width, height }` in cells. */
+export function viewport() {
+  const r = needRenderer('viewport')
+  return Promise.resolve({ width: r.width, height: r.height })
+}
+
+/** Move focus to `node`. No node does nothing. */
+export function focus(node) {
+  node?.focus()
+  return Promise.resolve()
+}
+
 // ─── renderers ────────────────────────────────────────────────────────
 
 /** The engine's renderer on this process's TTY, for `mount`. A caller outside
@@ -1928,7 +1955,7 @@ export async function createHeadlessRenderer({ width = 80, height = 24 } = {}) {
 // ─── mount ────────────────────────────────────────────────────────────
 
 export function mount(Component, { renderer, props = {}, parent = null } = {}) {
-  if (!renderer) throw new Error('[Mesa] $$tui.mount() needs a renderer')
+  if (!renderer) throw new Error('[Mesa] $$host.mount() needs a renderer')
   parent ??= documentOf(renderer)
   _renderer = renderer
   const before = new Set(parent.getChildren())

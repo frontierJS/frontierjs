@@ -8,31 +8,13 @@ import { toFrameworkError, FrameworkError, BadRequest, sanitizeError, type Error
 import { accessorCandidates } from '../core/litestone.ts'
 import { omitBy } from '@frontierjs/toolbelt/redact'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
-
-// ─── Context types — moved to core (core/context.ts) ─────────────────────
-// The service layer's vocabulary (ServiceContext, ServiceResult, hook and
-// method types, request meta, freezeUser) is owned by core; this module
-// re-exports it so existing `from '.../transport/bridge.ts'` imports keep
-// working unchanged.
 import {
-  CRUD_METHODS, RESERVED_PARAMS, enterRequest, requestMeta, freezeUser, withCallEffects,
-  type ServiceContext, type ServiceContextLocals, type ServiceResult,
-  type ServiceMethod, type AnyMethod, type HookType,
-  type CallOptions, type RequestMeta, type QueryDirectives,
+  CRUD_METHODS, RESERVED_PARAMS, requestMeta, freezeUser, withCallEffects,
+  type ServiceContext, type ServiceMethod, type AnyMethod,
+  type CallOptions, type QueryDirectives,
 } from '../core/context.ts'
 import { isServiceResult, unwrapResult } from '../core/envelope.ts'
-// `RESERVED_PARAMS` comes through `../core/context.ts` above — the same kit
-// binding, re-exported there so junction has one import point for it.
 import { invalidDirectives, listedDirectives, splitParams, transportFlags, unknownDirectives } from '@frontierjs/toolbelt/directives'
-
-export {
-  RESERVED_PARAMS, enterRequest, requestMeta, freezeUser,
-}
-export type {
-  ServiceContext, ServiceContextLocals, ServiceResult,
-  ServiceMethod, AnyMethod, HookType,
-  CallOptions, RequestMeta,
-}
 
 // ─── HTTP method → service method map ────────────────────────────────────
 // PUT -> update, PATCH -> patch. Both MERGE (`FJS-D179`): Feathers' word for
@@ -67,6 +49,12 @@ const CRUD_METHOD_BLOCK = new Set<string>(CRUD_METHODS.filter(m => !HEADER_BUILT
 
 
 // ─── Bridge ───────────────────────────────────────────────────────────────
+
+
+// What a context made outside any app holds as `ctx.app`. One object, not a
+// fresh one per call: state a hook keeps per app (a rate limiter's buckets) is
+// keyed on it, and a new object each call is a new app each call.
+const NO_APP = {} as import('../core/app.ts').App
 
 export const bridge = {
 
@@ -215,7 +203,7 @@ export const bridge = {
       locals: {},
       transients: {},             // filled by autoValidate, from what the model declares
       reserved:   {},             // filled by callService, from what the service reserved
-      app:       appRef ?? ({} as import('../core/app.ts').App),
+      app:       appRef ?? NO_APP,
       result:    null,
       error:     null,
       statusCode: undefined,
@@ -315,7 +303,7 @@ export const bridge = {
       locals: locals ? { ...locals } : {},   // fresh; explicit seed only
       transients: {},
       reserved:   {},
-      app:       appRef ?? ({} as import('../core/app.ts').App),
+      app:       appRef ?? NO_APP,
       result:    null,
       error:     null,
       statusCode: undefined,
@@ -432,6 +420,12 @@ function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
  * table was built to end.
  */
 export function refuseBadDirectives(params: unknown): void {
+  // Every check below grades a `$` key, and most calls carry none; the three
+  // table walks ran on every request regardless (`FJS-2992`).
+  if (!params || typeof params !== 'object') return
+  let dollar = false
+  for (const key in params) if (key[0] === '$') { dollar = true; break }
+  if (!dollar) return
   refuseListedDirectives(params)
   refuseInvalidFlags(params)
   const unknown = unknownDirectives(params as Record<string, unknown>)

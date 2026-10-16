@@ -114,3 +114,42 @@ describe('createClient says a File column has nothing to store it (FJS-2908)', (
     expect(await built(`model Ledger { id Int @id  att File? }`, [], { readOnly: true })).toBe('')
   })
 })
+
+// A File column with nothing to store it kept any string written to it, so a
+// reader trusting the column rendered a stranger's URL (FJS-2699).
+describe('a string written to a File column with no FileStorage installed', () => {
+  test.each([
+    ['an outside URL', 'https://evil.example/x.png'],
+    ['a data URL', 'data:text/html;base64,PHNjcmlwdD4='],
+    ['a path', '/etc/passwd'],
+  ])('%s is refused naming FileStorage', async (_name, value) => {
+    const sys = await client()
+    const err = await sys.doc.create({ data: { name: 'g', resume: value } }).catch((e: any) => e)
+    expect(err?.name).toBe('ValidationError')
+    expect(err.message).toContain('resume is a File column')
+    expect(err.message).toContain('FileStorage')
+    expect(await sys.doc.count()).toBe(0)
+  })
+
+  test('an update is refused and the stored value stands', async () => {
+    const sys = await client()
+    await sys.doc.create({ data: { id: 1, name: 'h' } })
+    const err = await sys.doc.update({ where: { id: 1 }, data: { resume: 'https://evil.example/x.png' } }).catch((e: any) => e)
+    expect(err?.message).toContain('FileStorage')
+    expect((await sys.doc.findUnique({ where: { id: 1 } })).resume).toBeNull()
+  })
+
+  test('a string inside a File[] is refused too', async () => {
+    const sys = await client()
+    const err = await sys.doc.create({ data: { name: 'i', photos: ['https://evil.example/x.png'] } }).catch((e: any) => e)
+    expect(err?.message).toContain('photos is a File column')
+  })
+})
+
+// Ref text is what FileStorage itself leaves alone, so refusing it here would
+// break a factory-built row without closing anything storage leaves open.
+test('stored-ref text still writes with no FileStorage installed (FJS-2699)', async () => {
+  const sys = await client()
+  const row = await sys.doc.create({ data: { name: 'j', resume: JSON.stringify({ key: 'k/cv.pdf' }) } })
+  expect(row.resume).toEqual({ key: 'k/cv.pdf' })
+})

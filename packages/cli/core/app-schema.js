@@ -44,31 +44,16 @@ import { join, basename }                        from 'node:path'
 
 const safeRead = (dir) => { try { return readdirSync(dir) } catch { return [] } }
 
-// The level scale as the @@gate grammar spells it. Litestone owns the numbers;
-// this is a reading of a declaration, not a second definition of the scale.
-const GATE_LEVELS = {
-  STRANGER: 0, VISITOR: 1, READER: 2, CREATOR: 3, USER: 4,
-  ADMINISTRATOR: 5, OWNER: 6, SYSADMIN: 7, SYSTEM: 8, LOCKED: 9,
-}
-
 /**
  * The READ level a model's `@@gate` requires, or null where it declares none.
  *
- * Both spellings, because an app that writes its gate by name would otherwise
- * be graded as declaring none — which is the shape both apps in this repo use.
+ * Digits only (`FJS-D239`): the named form is deleted and Litestone's parser
+ * refuses it, so a model written that way declares none here too.
  * "R.C.U.D" inherits: a position not stated takes the one before it.
  */
 function readGate(body) {
-  const compact = body.match(/@@gate\s*\(\s*['"`]([\d.]+)['"`]\s*\)/)
-  if (compact) return Number(compact[1].split('.')[0])
-
-  const named = body.match(/@@gate\s*\(([^)]*[A-Za-z][^)]*)\)/)
-  if (!named) return null
-  const read = named[1].match(/read\s*:\s*([A-Za-z_]+)/)
-  if (read) return GATE_LEVELS[read[1]] ?? null
-  // `@@gate(SYSTEM)` — one level for every operation.
-  const flat = named[1].trim().match(/^([A-Za-z_]+)$/)
-  return flat ? GATE_LEVELS[flat[1]] ?? null : null
+  const compact = body.match(/@@gate\s*\(\s*([\d.]+)\s*\)/)
+  return compact ? Number(compact[1].split('.')[0]) : null
 }
 
 /** Models declared in one `.lite` text. A line scan — no parser, no database. */
@@ -226,7 +211,7 @@ export function appSchemaModels(root) {
   if (existsSync(schema)) add(readFileSync(schema, 'utf8'), 'app', 'db/schema.lite')
 
   // A sibling under db/ — what an `import` in schema.lite reaches, and where
-  // `fli auth:install` puts the @@gate("8") machinery.
+  // `fli auth:install` puts the @@gate(8) machinery.
   const dbDir = join(root, 'db')
   for (const file of safeRead(dbDir)) {
     if (!file.endsWith('.lite') || file === 'schema.lite') continue

@@ -12,13 +12,13 @@
   let hostEl
 </script>
 
-<button type="button" id="portal-open" on:click={() => open = true}>open</button>
+<button type="button" id="portal-open" onclick={() => open = true}>open</button>
 
 <div id="portal-host" bind:this={hostEl}></div>
 
 {#if open}
   <mesa:portal to={hostEl}>
-    <button type="button" id="portal-close" on:click={() => { hits++; open = false }}>close</button>
+    <button type="button" id="portal-close" onclick={() => { hits++; open = false }}>close</button>
   </mesa:portal>
 {/if}
 

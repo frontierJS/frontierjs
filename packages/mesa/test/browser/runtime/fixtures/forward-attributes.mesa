@@ -26,5 +26,5 @@
 <!-- Two hops — a component forwarding what it was itself forwarded. -->
 <Relay id="relayed" data-rate={rate} />
 
-<button type="button" id="bump" on:click={() => { rate += 1 }}>bump</button>
-<button type="button" id="drop" on:click={() => { extra = false }}>drop</button>
+<button type="button" id="bump" onclick={() => { rate += 1 }}>bump</button>
+<button type="button" id="drop" onclick={() => { extra = false }}>drop</button>

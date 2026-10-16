@@ -26,6 +26,7 @@
 // exactly when this is worth asking.
 
 import { lookup } from './catalog.js'
+import { parseGateString } from '../plugins/gate.js'
 
 const has        = (f, kind) => (f.attributes ?? []).some(a => a.kind === kind)
 const modelAttr  = (m, kind) => (m.attributes ?? []).find(a => a.kind === kind)
@@ -154,29 +155,52 @@ export const OPPORTUNITIES = [
       const authModel = authored(schema).find(m => modelAttr(m, 'auth'))?.name ?? null
       const claim     = schema.tenancy?.column ?? schema.tenancy?.claim ?? null
 
+      const models = new Map((schema.models ?? []).map(m => [m.name, m]))
+
+      // Owned means structurally owned, never name-shaped: a relation whose
+      // target is the principal, or the column the tenancy block names — or a
+      // REQUIRED relation to a model that is itself owned, since a row that
+      // must have an owned parent belongs to whoever the parent does. An
+      // optional parent proves nothing: some rows have none.
+      // `Product` in a shop schema has neither, and every caller reading every
+      // product is what a catalog IS.
+      const isOwned = (model, seen = new Set()) => {
+        if (seen.has(model.name)) return false
+        seen.add(model.name)
+        return (model.fields ?? []).some(f =>
+          (authModel && f.type?.name === authModel) || (claim && f.name === claim) ||
+          (f.type?.kind === 'relation' && !f.type.array && !f.type.optional &&
+            models.has(f.type.name) && isOwned(models.get(f.type.name), seen)))
+      }
+
+      // A gate the parser cannot read is `advise`'s to refuse, not this check's.
+      const gradeGate = value => {
+        try { return parseGateString(value) } catch { return { read: 0, update: 0, delete: 0 } }
+      }
+
       const out = []
       for (const model of authored(schema)) {
         const gate = modelAttr(model, 'gate')
         if (!gate) continue
-        const policied = (model.attributes ?? []).some(a => a.kind === 'allow' || a.kind === 'deny')
-        if (policied) continue
-        // A model only reachable from a system context has no *whose row* to
-        // answer — nothing below level 8 reaches it either way.
-        if (/^8|^9/.test(String(gate.value ?? ''))) continue
+        // The ops that reach an existing row. A model with a read policy and no
+        // delete policy still lets any caller past the gate delete everybody's.
+        // A policy that names an op answers it; an op gated to system (8, 9)
+        // has no *whose row* to answer, since nothing below 8 reaches it.
+        const levels = gradeGate(gate.value)
+        const policies = (model.attributes ?? []).filter(a => a.kind === 'allow' || a.kind === 'deny')
+        const open = ['read', 'update', 'delete'].filter(op =>
+          levels[op] < 8 && !policies.some(a => a.operations?.includes(op)))
+        if (!open.length) continue
 
-        // Owned means structurally owned, never name-shaped: a relation whose
-        // target is the principal, or the column the tenancy block names.
-        // `Product` in a shop schema has neither, and every caller reading every
-        // product is what a catalog IS.
-        const owned = (model.fields ?? []).some(f =>
-          (authModel && f.type?.name === authModel) || (claim && f.name === claim))
-
+        const owned  = isOwned(model)
+        const policy = policies.length ? 'declares no policy' : 'declares no @@allow'
+        const ops    = open.join(', ')
         out.push({ model: model.name, field: null,
           confidence: owned ? 'likely' : 'possible',
           message: owned
-            ? `${model.name} is @@gate("${gate.value}"), carries the row's owner, and declares no ` +
-              `@@allow — so any caller who clears the gate reads and writes everybody's rows.`
-            : `${model.name} is @@gate("${gate.value}") and declares no @@allow, so a caller who ` +
+            ? `${model.name} is @@gate(${gate.value}), carries the row's owner, and ${policy} ` +
+              `for ${ops} — so any caller who clears the gate reaches everybody's rows there.`
+            : `${model.name} is @@gate(${gate.value}) and ${policy} for ${ops}, so a caller who ` +
               `clears the gate reaches every row. Right for a catalog; worth stating either way.` })
       }
       return out
@@ -224,6 +248,9 @@ export const OPPORTUNITIES = [
       const NAMES = /^(status|state|stage|phase|lifecycle)$/i
       const out = []
       for (const model of authored(schema)) {
+        // A mirror's status is the Provider's, and moves where the Provider
+        // moves it; a machine here would refuse the sync (FJS-D843).
+        if ((model.attributes ?? []).some(a => a.kind === 'mirror')) continue
         const declared = new Set((model.attributes ?? [])
           .filter(a => a.kind === 'transitions').map(a => a.field))
         for (const f of model.fields ?? []) {
@@ -249,13 +276,19 @@ export const OPPORTUNITIES = [
                 'free-form documents exist — this is the shape worth a second look, not a defect.',
     run(schema) {
       const out = []
-      for (const model of authored(schema))
+      for (const model of authored(schema)) {
+        // @@extensible closes its column to the keys a declaring model names, so
+        // the parser refuses @type there; its Slots mirror is generated, not written.
+        const extensible = new Set((model.attributes ?? [])
+          .filter(a => a.kind === 'extensible').map(a => a.column))
         for (const f of model.fields ?? []) {
           if (scalarOf(f) !== 'Json' || has(f, 'type')) continue
+          if (f.generated || extensible.has(f.name)) continue
           out.push({ model: model.name, field: f.name,
             message: `${model.name}.${f.name} is an undescribed Json column. \`type\` names its ` +
               `shape and @type(Name) binds it, which validates the write and generates a form.` })
         }
+      }
       return out
     },
   },
@@ -285,7 +318,9 @@ export const OPPORTUNITIES = [
       const where = new Map()
       for (const m of models)
         for (const f of m.fields ?? []) {
-          if (isRelation(f, schema) || has(f, 'id')) continue
+          // A column the parser derived (`missingSince` under @@mirror) is one
+          // the app may not declare, so no trait could hold it.
+          if (isRelation(f, schema) || has(f, 'id') || f.generated) continue
           ;(where.get(key(f)) ?? where.set(key(f), []).get(key(f))).push(m.name)
         }
 

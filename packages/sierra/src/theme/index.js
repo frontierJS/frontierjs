@@ -13,7 +13,7 @@
  *     default: 'system'                         // a name, or 'system'
  *     system:  { light: 'theme-default', dark: 'theme-dark' }
  *     persist: true                             // save to localStorage
- *     key:     'theme'                          // localStorage key
+ *     key:     'theme'                          // stored as `${prefix}:theme`
  *     apply:   'class'                          // 'class' | 'attribute'
  *     attribute: 'data-theme'                   // only when apply: 'attribute'
  *   }
@@ -21,6 +21,11 @@
  * A tiny inline script is injected into <head> at build time
  * (by the post-build pipeline) that reads the persisted preference
  * and applies it before first paint — preventing flash.
+ *
+ * The preference is a `persisted()` key and the OS answer is `colorScheme()`
+ * (`@frontierjs/mesa/browser`), so the key carries the app's prefix and a
+ * theme picked in one tab reaches the others. Both are read in a tab only: a
+ * terminal throws at either call, and a server render has nothing to read.
  *
  * ── Why a class on <html>, and why that is not a knob ──────────────────────
  *
@@ -43,7 +48,8 @@
  * documents. It is not this switcher's job.
  */
 
-import { watchProxy } from '@frontierjs/mesa/runtime.js'
+import { watchProxy, createRoot, createEffect, untrack, isBrowserClient } from '@frontierjs/mesa/runtime.js'
+import { persisted, colorScheme } from '@frontierjs/mesa/browser'
 
 // ─── Public state ────────────────────────────────────────────────────────────
 
@@ -57,7 +63,7 @@ import { watchProxy } from '@frontierjs/mesa/runtime.js'
  *
  *   import { theme, setTheme } from '@frontierjs/sierra/theme'
  *   $: theme.value
- *   <button on:click={() => setTheme('theme-dark')}>{theme.value}</button>
+ *   <button onclick={() => setTheme('theme-dark')}>{theme.value}</button>
  *
  * @property {string} value  the resolved theme name — never 'system'
  */
@@ -84,8 +90,17 @@ let _config = normalize({})
 
 // The light/dark answer somebody who owns the window stated (`setScheme`), or
 // null while the OS query is the only source. Two sources for one answer and
-// the stated one wins: the OS listener below yields to it.
+// the stated one wins: the effect in initTheme yields to it.
 let _scheme = null
+
+// The stored preference and the OS scheme, in a tab; null elsewhere.
+let _pref = null
+let _os   = null
+let _stop = null
+
+// Stored as the bare name, not JSON: the <head> script reads it with getItem
+// before any parser has loaded.
+const RAW = { parse: (s) => s, format: String }
 
 function normalize(config) {
   const themes = Array.isArray(config.themes) && config.themes.length
@@ -127,39 +142,39 @@ function normalize(config) {
  * Boot the theme system. Called by virtual:sierra, the island bundle and the
  * terminal shell.
  *
- * The value is resolved on every surface, and the document and OS-preference
- * work happens only where they exist. A terminal has a `window` (OpenTUI plants
+ * The value is resolved on every surface; the stored preference and the OS
+ * scheme are read in a tab only. A terminal has a `window` (OpenTUI plants
  * one) with no `matchMedia` and no `document`, so `typeof window` is the test
- * for neither (`FJS-2565`).
+ * for neither (`FJS-2565`) — `isBrowserClient()` is.
  *
  * @param {object} config — theme config from sierra.config.js
  */
 export function initTheme(config = {}) {
   _config = normalize(config)
   _scheme = null
+  _stop?.()
+  _stop = null
 
-  const resolved = resolveTheme()
-  _w().value = resolved
-  applyTheme(resolved)
+  const tab = isBrowserClient()
+  _pref = tab && _config.persist ? persisted(_config.key, null, RAW) : null
+  _os   = tab ? colorScheme() : null
 
-  // Watch system preference changes (only relevant if default === 'system' or
-  // if user hasn't overridden)
-  const mq = systemQuery()
-  if (!mq) return
-  mq.addEventListener('change', () => {
-    // A stated scheme outranks the OS: an MCP host in dark mode over a light
-    // OS said dark, and the OS flipping underneath must not take it back.
+  // One effect over both sources: another tab's pick and an OS flip land here.
+  // A stated scheme outranks them until the next initTheme — an MCP host in
+  // dark mode over a light OS said dark, and the OS flipping underneath must
+  // not take it back.
+  const follow = () => {
     if (_scheme) return
-    // Only react to system changes if the user hasn't persisted an override
-    if (_config.persist) {
-      const stored = localStorage.getItem(_config.key)
-      if (stored) return  // user has a preference — don't override
-    }
-    if (_config.default === 'system') {
-      const next = mq.matches ? _config.system.dark : _config.system.light
+    const next = resolveTheme()
+    untrack(() => {
       _w().value = next
       applyTheme(next)
-    }
+    })
+  }
+  if (!tab) return follow()
+  _stop = createRoot((dispose) => {
+    createEffect(follow)
+    return dispose
   })
 }
 
@@ -190,10 +205,7 @@ export function setTheme(value) {
 
   _w().value = value
   applyTheme(value)
-
-  if (_config.persist && typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
-    localStorage.setItem(_config.key, value)
-  }
+  if (_pref) _pref.value = value
 }
 
 /**
@@ -216,8 +228,8 @@ export function toggleTheme() {
  * set is the same: `'light'` or `'dark'`. It maps onto the two names
  * `theme.system` declares, which is what the OS query maps onto — the caller
  * here is a window owner that answers the OS's question itself, an MCP host
- * handing a view its `hostContext.theme`. From then on the OS query yields
- * to it, until the next `initTheme`.
+ * handing a view its `hostContext.theme`. From then on the OS query and the
+ * stored preference yield to it, until the next `initTheme`.
  *
  * Not persisted: the answer is the host's, and a view that remembered it
  * would disagree with the host the next time it opened under the other one.
@@ -243,24 +255,15 @@ function resolveTheme() {
   // 1. Persisted user preference — only if this app still offers it. A theme
   //    removed from the config would otherwise be restored from storage for
   //    every reader who had ever selected it, with no stylesheet behind it.
-  if (_config.persist && typeof localStorage !== 'undefined') {
-    const stored = localStorage.getItem(_config.key)
-    if (stored && _config.themes.includes(stored)) return stored
-  }
+  const stored = _pref?.value
+  if (stored && _config.themes.includes(stored)) return stored
 
   // 2. Config default. With no OS preference to read, 'system' is its light theme.
   if (_config.default === 'system') {
-    return systemQuery()?.matches ? _config.system.dark : _config.system.light
+    return _os?.value === 'dark' ? _config.system.dark : _config.system.light
   }
 
   return _config.themes.includes(_config.default) ? _config.default : _config.themes[0]
-}
-
-/** The OS dark-mode query, or null where there is no `matchMedia`: a server, and a terminal. */
-function systemQuery() {
-  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    ? window.matchMedia('(prefers-color-scheme: dark)')
-    : null
 }
 
 function applyTheme(value) {

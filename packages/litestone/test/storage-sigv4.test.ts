@@ -52,6 +52,40 @@ describe('S3Provider against a local server', () => {
   })
 })
 
+// ─── a Blob upload is not read into the heap (FJS-3115) ───────────────────────
+
+describe('S3Provider.put with a Blob', () => {
+  const realFetch = globalThis.fetch
+  afterAll(() => { globalThis.fetch = realFetch })
+
+  const put = async (endpoint: string, body: unknown) => {
+    let sent: { body: unknown, headers: Record<string, string> } | undefined
+    globalThis.fetch = (async (_url: string, init: any) => {
+      sent = { body: init.body, headers: init.headers }
+      return new Response(null, { status: 200 })
+    }) as any
+    const provider = new S3Provider({
+      provider: 'r2', endpoint, bucket: 'shop', accessKeyId: 'AKIDEXAMPLE', secretAccessKey: 'secret',
+    })
+    await provider.put('k.bin', body, { contentType: 'application/octet-stream', size: (body as Blob).size })
+    return sent!
+  }
+
+  test('over https the Blob itself is sent, under an unsigned payload', async () => {
+    const blob = new Blob(['x'.repeat(1000)])
+    const sent = await put('https://acct.r2.example.com', blob)
+    expect(sent.body).toBe(blob)
+    expect(sent.headers['x-amz-content-sha256']).toBe('UNSIGNED-PAYLOAD')
+    expect(sent.headers.Authorization).toContain('x-amz-content-sha256')
+  })
+
+  test('over plain http the payload is still hashed, so the signature covers the bytes', async () => {
+    const sent = await put('http://localhost:9000', new Blob(['hello']))
+    expect(sent.body).toBeInstanceOf(Uint8Array)
+    expect(sent.headers['x-amz-content-sha256']).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
+  })
+})
+
 describe('the caller\'s half of the pure kit', () => {
   test('a presigned URL carries today\'s date and the signature of the cached key', async () => {
     const opts = { accessKeyId: 'AKIDEXAMPLE', secretAccessKey: 'secret', region: 'us-east-1' }

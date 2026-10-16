@@ -13,33 +13,31 @@
 // the whole point: there is no second place for the two halves to disagree.
 //
 // In your own project the import is: '@frontierjs/junction'
-import { createBaseService } from '../../../index.ts'
+import { createService } from '../../../index.ts'
 
-export function createPostsService() {
-  return createBaseService({
-    // Broadcast every mutation to the 'posts' channel. One line, declared next
-    // to the service it belongs to — this used to be three steps in app.ts:
-    // import announce(), build the hook, attach it to create/patch/remove
-    // individually (and know that `after: { all }` would broadcast READS).
-    //
-    // Scope this before you ship: every connection in the channel receives
-    // every row, and @@allow policies are enforced on READ, not on broadcast.
-    // For per-tenant delivery use the function form:
-    //   channel: (row) => app.channel(`workspace:${row.workspaceId}`)
-    // Read the target off the row: a write outside any service call -- a job,
-    // a webhook -- calls it with ctx null.
-    channel: 'posts',
+export default createService({
+  // Broadcast every mutation to the 'posts' channel. One line, declared next
+  // to the service it belongs to — this used to be three steps in app.ts:
+  // import announce(), build the hook, attach it to create/patch/remove
+  // individually (and know that `after: { all }` would broadcast READS).
+  //
+  // Scope this before you ship: every connection in the channel receives
+  // every row, and @@allow policies are enforced on READ, not on broadcast.
+  // For per-tenant delivery use the function form:
+  //   channel: (row) => `workspace:${row.workspaceId}`
+  // Read the target off the row: a write outside any service call -- a job,
+  // a webhook -- calls it with ctx null.
+  channel: 'posts',
 
-    // Bulk writes are opt-in — POSTing an array
-    // without this is a 400, so a missing `id` in a patch can't wipe a table by
-    // accident. With it on, a bulk create returns PARTIAL SUCCESS: the rows
-    // that saved in `data`, the ones that didn't in `errors`, each paired with
-    // its input and the reason.
-    //
-    //   curl -X POST .../api/posts -H 'content-type: application/json' \
-    //        -H "authorization: Bearer $TOKEN" \
-    //        -d '[{"title":"fine"},{"title":""}]'
-    //   → { kind:'list', data:[…1 row…], errors:[{ data:{title:''}, error:{…} }] }
-    allowBulk: true,
-  })
-}
+  // Bulk writes are opt-in — POSTing an array
+  // without this is a 400, so a missing `id` in a patch can't wipe a table by
+  // accident. With it on, a bulk create returns PARTIAL SUCCESS: the rows
+  // that saved in `data`, the ones that didn't in `errors`, each paired with
+  // its input and the reason.
+  //
+  //   curl -X POST .../api/posts -H 'content-type: application/json' \
+  //        -H "authorization: Bearer $TOKEN" \
+  //        -d '[{"title":"fine"},{"title":""}]'
+  //   → { kind:'list', data:[…1 row…], errors:[{ data:{title:''}, error:{…} }] }
+  allowBulk: true,
+})

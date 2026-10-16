@@ -29,7 +29,7 @@ import { pathToFileURL }                            from 'node:url'
 // `@frontierjs/junction` ships `db/outbox.lite` and this imports it BY NAME.
 // Nothing is copied, which is the difference from `fli auth:install`: auth
 // writes out `model User` because the app owns it and adds columns to it, and
-// imports the three @@gate("8") models. Every model here is machinery — the
+// imports the three @@gate(8) models. Every model here is machinery — the
 // app reads the table when something did not arrive and writes it never — so
 // there is nothing to hand over and an upgrade reaches an installed app.
 //
@@ -55,7 +55,7 @@ const schemaBlock = (db) => `
 // only if the write it belongs to committed; the relay hands it to app.jobs and
 // marks it delivered.
 //
-// Imported rather than pasted: OutboxMessage is @@gate("8") framework
+// Imported rather than pasted: OutboxMessage is @@gate(8) framework
 // machinery, so it changes when @frontierjs/junction does and not when this app
 // does. The specifier resolves through node, so the package must be installed
 // for this schema to parse.${db === 'main' ? '' : `\n// \`into ${db}\` is what lands it in your ${db} database.`}

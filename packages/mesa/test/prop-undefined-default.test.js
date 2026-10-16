@@ -77,8 +77,8 @@ describe('FJS-1538: a later undefined from the parent restores the default', () 
       const childFn = execCompiled((await compile(child, { debug: false, css: false })).result)
       const parentCtx = await compile(
         `<script>\n  import Child from './Child.mesa'\n  let v = 'GIVEN'\n</script>\n` +
-        `<button on:click={() => (v = undefined)}>u</button>` +
-        `<button class="n" on:click={() => (v = null)}>n</button>` +
+        `<button onclick={() => (v = undefined)}>u</button>` +
+        `<button class="n" onclick={() => (v = null)}>n</button>` +
         `<Child source={v} />`,
         { debug: false, css: false }
       )

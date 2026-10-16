@@ -27,7 +27,7 @@ errors.ts    named domain errors (AuthError and friends)
 db/*.lite    the models this package ships — user.lite (the app's) + auth.lite
 schema.ts    reads those two — authUserModel / authMachineryModels / both
 services.ts  account / sessions / api-keys / connections — the half that is not a route
-cleanup.ts   createAuthCleanupJobs() — expiry sweeps
+cleanup.ts   the expiry sweeps — `auth.cleanup`, started by the plugin's work()
 crypto.ts    hashing / token generation
 totp.ts      RFC 6238 codes, base32, recovery codes — clockless (`FJS-D261`)
 types.ts
@@ -84,7 +84,7 @@ Specifically confirmed, because these were the open questions:
 - `deleteUser` cascades — sessions, credentials, and verifications all reach 0.
 
 **Gates genuinely enforce.** The three credential-material models are
-`@@gate("8")` — SYSTEM, `asSystem()` only — and refuse reads and writes from an
+`@@gate(8)` — SYSTEM, `asSystem()` only — and refuse reads and writes from an
 anonymous client and a `$setAuth`'d normal user alike. `User` was 8 too until
 `FJS-170`, which is a level at which an app cannot list its own people; it now
 reads at USER(4) with the two declarations that bound the level rather than

@@ -46,7 +46,7 @@ const P_SLUG = `cdp-tee-${P_RUN}`
 // `Order` and `Customer` read at level 1 with a row policy apiece, so the
 // assertions below that check what LANDED — as opposed to what the screen
 // shows — need a caller. They used to ask anonymously and be answered, which
-// is the leak those gates closed: the catalog's `@@gate("0.4.4.5")` had been
+// is the leak those gates closed: the catalog's `@@gate(0.4.4.5)` had been
 // pasted onto the sales ledger.
 let _staff = null
 async function ledger(path) {
@@ -336,7 +336,7 @@ try {
 
   // ─── Creating a product ────────────────────────────────────────────────
   //
-  // `Product` is `@@gate("0.4.4.5")` — read 0, create 4 — so any signed-in
+  // `Product` is `@@gate(0.4.4.5)` — read 0, create 4 — so any signed-in
   // member of staff may. It sits HERE, right after sign-in, rather than beside
   // the level-4 section further down, because everything below the order form
   // is downstream of `ORD-CDP-1` and a section that never runs asserts nothing
@@ -770,7 +770,7 @@ try {
 
   // And the order this drive raised BY HAND has none. A line is written by
   // `carts.checkout` at the moment of sale and by nothing else — `OrderLine` is
-  // @@gate("0.8.8.8") and the service declares find and get — so the empty state
+  // @@gate(0.8.8.8) and the service declares find and get — so the empty state
   // here is the feature working rather than the feature missing, and the page
   // says which.
   const raised = await (await ledger('/orders?reference=ORD-CDP-1')).json()
@@ -833,7 +833,7 @@ try {
   //   /invoices/      a composed read — a header and its lines — on a row that
   //                   moves from outside every browser
   //
-  // Still at level 5, deliberately: `PlanVersion` is `@@gate("0.5.5.5")`, so
+  // Still at level 5, deliberately: `PlanVersion` is `@@gate(0.5.5.5)`, so
   // the level-4 section below would refuse the reprice for a reason that has
   // nothing to do with the form.
   await goto('/plans/')
@@ -1301,7 +1301,7 @@ try {
   `))
 
   // The pair, and the one that is about the COMPONENT rather than the boundary.
-  // Level 4 may update a customer (`@@gate("1.4.4.5")`), so the drawer opens and
+  // Level 4 may update a customer (`@@gate(1.4.4.5)`), so the drawer opens and
   // the form declares `notes` like it does for everyone — the schema is the same
   // document for every caller, and only the ROW is policed. What arrived has no
   // `notes` key at all, so the control is locked and BADGED, because a disabled
@@ -1390,7 +1390,7 @@ const expected = {
   // boundary, with nothing in the component saying so.
   // `Orders` is a @from count and is what makes `orders Order[] @keep` visible:
   // a removed customer still reads its real number. `Actions` is present for
-  // both, because Customer is @@gate("1.4.4.5") — update is 4, so a USER may
+  // both, because Customer is @@gate(1.4.4.5) — update is 4, so a USER may
   // edit and only an ADMINISTRATOR may remove, and the buttons say which.
   'customers.headersUser':  ['Name', 'Email', 'Orders', 'Actions'],
   'customers.headersAdmin': ['Name', 'Email', 'Orders', 'Notes', 'Actions'],

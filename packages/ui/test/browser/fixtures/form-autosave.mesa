@@ -111,9 +111,9 @@
   <Form resource={RESOURCE} record={{ ...EXISTING }} />
 </div>
 
-<button type="button" id="push" on:click={pushFromParent}>push</button>
-<button type="button" id="submit" on:click={() => apiA?.submit()}>submit</button>
-<button type="button" id="flush" on:click={() => apiA?.flushAutosave()}>flush</button>
+<button type="button" id="push" onclick={pushFromParent}>push</button>
+<button type="button" id="submit" onclick={() => apiA?.submit()}>submit</button>
+<button type="button" id="flush" onclick={() => apiA?.flushAutosave()}>flush</button>
 
 <output id="calls">{calls.join('|')}</output>
 <output id="count">{calls.length}</output>

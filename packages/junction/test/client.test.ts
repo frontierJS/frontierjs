@@ -1004,7 +1004,7 @@ describe('config.http.cors', () => {
     const { createService } = await import('../src/core/service.ts')
     return createTestApp({
       config: cors || Object.keys(http).length ? { http: { ...http, ...(cors ? { cors } : {}) } } : {},
-      services: [() => createService({ name: 'items', find: async () => [] })],
+      services: [createService({ name: 'items', find: async () => [] })],
     } as never)
   }
 

@@ -425,7 +425,7 @@ function viewToJsonSchema(view, schema, enumDefs, typeDefs, opts) {
   // The three writes are LOCKED and the declaration does not get a say. A
   // view's write verbs refuse by name at the Data boundary for every caller
   // and for `asSystem()` alike, which is what LOCKED means on the scale — so
-  // emitting the declared `@@gate("5")` across all four would tell a screen
+  // emitting the declared `@@gate(5)` across all four would tell a screen
   // that an ADMINISTRATOR may create one, which is false at every level.
   //
   // Read is the declaration's, and stays ABSENT when there is none: an unknown
@@ -657,7 +657,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     const isSystemWritten = field.attributes.some(a => a.kind === 'system') || tenancyStamped
     const authStamped = field.attributes.some(a => a.kind === 'createdBy' || a.kind === 'updatedBy')
     const owedByCaller = mode !== 'update' && !isSystemWritten && !authStamped &&
-      !field.type.optional && !isServerFilled(field) && (!isId || !isServerAssignedId(field, model))
+      !field.type.optional && !isServerFilled(field, model) && (!isId || !isServerAssignedId(field, model))
 
     // @allow('read', expr) — field is conditionally visible; mark as optional + annotate
     const readAllows = field.attributes.filter(a => a.kind === 'fieldAllow' && a.operations.includes('read'))
@@ -1100,7 +1100,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     const relAttr = field.attributes.find(a => a.kind === 'relation')
     const fields     = relAttr?.fields     ? (Array.isArray(relAttr.fields)     ? relAttr.fields     : [relAttr.fields])     : []
     const references = relAttr?.references ? (Array.isArray(relAttr.references) ? relAttr.references : [relAttr.references]) : []
-    relations.push({
+    const entry = {
       field:      field.name,
       model:      field.type.name,
       type:       fields.length ? 'belongsTo' : 'hasMany',
@@ -1108,7 +1108,17 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       references,
       onDelete:   relAttr?.onDelete ?? null,
       optional:   field.type.optional,
-    })
+    }
+    // @sealed — a relation has no property to carry `x-litestone-seal`, and the
+    // children it freezes are frozen by the PARENT's state, so the same
+    // { field, states } pair rides on the entry. Without it no screen can tell
+    // that a document's lines are locked.
+    if (field.attributes.some(a => a.kind === 'sealed')) {
+      const seal = sealedStates(model.attributes?.find(
+        a => a.kind === 'transitions' && sealedStates(a)))
+      if (seal) entry.seal = { field: seal.field, states: [...seal.states] }
+    }
+    relations.push(entry)
   }
   if (relations.length) result['x-relations'] = relations
 
@@ -1257,11 +1267,10 @@ function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false, fileDef =
   // Read as `string[]` it named no file at all, so a form drew a text list.
   if (type.array && type.name === 'File') return { type: 'array', items: { '$ref': `#/$defs/${fileDef}` } }
 
-  // Array types — String[] / Int[]
-  if (type.array) {
-    const itemType = type.name === 'Int' ? 'integer' : 'string'
-    return { type: 'array', items: { type: itemType } }
-  }
+  // An item is what the scalar column of the same type is. Every array but
+  // Int[] read as string items, so a realm grading by this refused a Json[]
+  // of objects with `volumes[0] must be a string`.
+  if (type.array) return { type: 'array', items: typeToJsonSchema({ ...type, array: false }, schema, enumDefs, inlineEnums, fileDef) }
 
   switch (type.name) {
     case 'String':     return { type: 'string' }
@@ -1416,14 +1425,26 @@ function applyValidators(schema, attributes) {
       case 'lte':
         if (attr.value != null) schema.maximum = attr.value
         break
+      // The `pattern` enforces; the `x-` key beside it carries the literal, which
+      // a regex cannot be read back into. Without it a refusal can only say
+      // "not in the expected format" and never what the value needed.
       case 'startsWith':
-        if (attr.text) schema.pattern = `^${escapeRegex(attr.text)}`
+        if (attr.text) {
+          schema.pattern = `^${escapeRegex(attr.text)}`
+          schema['x-starts-with'] = attr.text
+        }
         break
       case 'endsWith':
-        if (attr.text) schema.pattern = `${escapeRegex(attr.text)}$`
+        if (attr.text) {
+          schema.pattern = `${escapeRegex(attr.text)}$`
+          schema['x-ends-with'] = attr.text
+        }
         break
       case 'contains':
-        if (attr.text) schema.pattern = escapeRegex(attr.text)
+        if (attr.text) {
+          schema.pattern = escapeRegex(attr.text)
+          schema['x-contains'] = attr.text
+        }
         break
       // Array validators
       case 'minItems':

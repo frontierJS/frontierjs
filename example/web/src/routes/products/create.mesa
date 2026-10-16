@@ -36,7 +36,7 @@ title: New product
 {#if session.level < createLevel}
   <Alert tone="warning">
     Not signed in at level {createLevel}. Reading products is public —
-    <code>@@gate("0.4.4.5")</code> — and creating one is not, so this will come
+    <code>@@gate(0.4.4.5)</code> — and creating one is not, so this will come
     back 401. The button is NOT disabled: the server is the thing that decides,
     and <code>x-gate</code> in the browser is an affordance.
   </Alert>

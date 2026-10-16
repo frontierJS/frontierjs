@@ -14,7 +14,7 @@ them — which is the one thing you have to add before serving any of it.
 So this step says it, once, on each model:
 
 ```text
-@@gate("0.4.4.6")     reads are public, writes need a signed-in caller
+@@gate(0.4.4.6)     reads are public, writes need a signed-in caller
 ```
 
 Then the models are appended to `db/schema.lite`, `DATABASE_URL` is pointed at
@@ -66,7 +66,7 @@ const models = readFileSync($.config.imported, 'utf8')
   .split('\n').filter(l => !l.startsWith('///')).join('\n')
   // The one thing a database could not say. Written per model rather than
   // once, because a gate is per model — that is the whole of what it means.
-  .replace(/^\}/gm, '  @@gate("0.4.4.6")\n}')
+  .replace(/^\}/gm, '  @@gate(0.4.4.6)\n}')
 
 const current = readFileSync(schema, 'utf8')
 const head    = current.includes(MARK)

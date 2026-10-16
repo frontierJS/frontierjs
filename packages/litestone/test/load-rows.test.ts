@@ -238,6 +238,43 @@ describe('loadRows keeps what no column takes in an overflow column', () => {
   })
 })
 
+// FJS-1645: a source is read as the load writes, so memory is a batch and not the file.
+describe('loadRows reads its source as it writes', () => {
+  it('takes an async iterable and has written a batch before the source ends', async () => {
+    const db = await open()
+    const seen: number[] = []
+    async function* pages() {
+      for (let i = 0; i < 2500; i++) {
+        if (i % 500 === 0) seen.push(db.$db.query('SELECT count(*) AS n FROM "Landed"').get().n)
+        yield { id: `r${i}`, amount: i, _loadId: 1, _syncedAt: '2025-10-01T00:00:00Z' }
+      }
+    }
+    const out = await loadRows(db, 'Landed', pages(), { key: 'id', batch: 1000 })
+    expect(out).toEqual({ loaded: 2500, rejects: [] })
+    expect(seen).toEqual([0, 0, 0, 1000, 1000])
+    db.$close()
+  })
+
+  it('decides a repeated key by position across batches, and names the line of the first', async () => {
+    const db = await open()
+    const rows = Array.from({ length: 30 }, (_, i) => `o${i},c01,2025-10-01T00:00:00Z,paid,USD,1.00,1,1`)
+    rows.push('o3,c01,2025-10-01T00:00:00Z,paid,USD,2.00,1,1')
+    const out = await loadRows(db, 'Order', csv(...rows), { key: 'id', batch: 4 })
+    expect(out.loaded).toBe(30)
+    expect(out.rejects).toEqual([{ row: 30, line: 32, key: 'o3', field: 'id', reason: 'repeats the key of line 5' }])
+    db.$close()
+  })
+
+  it('a row naming a stamped column throws and leaves nothing written, even after earlier batches', async () => {
+    const db = await open()
+    const rows: any[] = Array.from({ length: 20 }, (_, i) => ({ id: `r${i}`, amount: i }))
+    rows.push({ id: 'bad', amount: 1, _loadId: 9 })
+    await expect(loadRows(db, 'Landed', rows, { batch: 5, stamp: { _loadId: 1, _syncedAt: '2025-10-01T00:00:00Z' } })).rejects.toThrow("row 20 names '_loadId'")
+    expect(await db.landed.count()).toBe(0)
+    db.$close()
+  })
+})
+
 describe('loadFixture is loadRows that throws', () => {
   it('names every row that did not load, because a fixture is authored', async () => {
     const db = await open()
@@ -279,6 +316,59 @@ model Note {
     const db = (await createClient({ schema: tagSchema, db: ':memory:' })) as any
     expect(await loadRows(db, 'Tag', 'name\nx\ny\n')).toEqual({ loaded: 2, rejects: [] })
     await expect(loadRows(db, 'Tag', 'name,posts\nz,1\n')).rejects.toThrow("'posts' is not a column a source fills")
+    db.$close()
+  })
+})
+
+// FJS-2034: a moved row keeps its history, so a source may state @updatedAt.
+describe('loadRows takes a stated @updatedAt', () => {
+  const stamped = `
+model Job {
+  id        String   @id
+  name      String
+  updatedAt DateTime @updatedAt
+}
+`
+  const openStamped = async () => (await createClient({ schema: stamped, db: ':memory:' })) as any
+
+  it('keeps the stated value on insert and upsert, and stamps a row that states none', async () => {
+    const db = await openStamped()
+    const old = '2020-01-02T03:04:05.000Z'
+    const out = await loadRows(db, 'Job', [{ id: 'a', name: 'x', updatedAt: old }, { id: 'b', name: 'y' }])
+    expect(out).toEqual({ loaded: 2, rejects: [] })
+    expect((await db.job.findFirst({ where: { id: 'a' } })).updatedAt).toBe(old)
+    expect((await db.job.findFirst({ where: { id: 'b' } })).updatedAt > old).toBe(true)
+    const older = '2019-05-06T07:08:09.000Z'
+    await loadRows(db, 'Job', [{ id: 'a', name: 'z', updatedAt: older }], { mode: 'upsert', key: 'id' })
+    expect(await db.job.findFirst({ where: { id: 'a' } })).toMatchObject({ name: 'z', updatedAt: older })
+    db.$close()
+  })
+
+  it('reads the column from a file, and a file without it still loads', async () => {
+    const db = await openStamped()
+    const old = '2020-01-02T03:04:05.000Z'
+    expect(await loadRows(db, 'Job', `id,name,updatedAt\na,x,${old}\n`)).toEqual({ loaded: 1, rejects: [] })
+    expect(await loadRows(db, 'Job', 'id,name\nb,y\n')).toEqual({ loaded: 1, rejects: [] })
+    expect((await db.job.findFirst({ where: { id: 'a' } })).updatedAt).toBe(old)
+    db.$close()
+  })
+
+  it('rejects a row past the entry state of a @@transitions field, and loads the rest', async () => {
+    const db = (await createClient({ schema: `
+enum Stage { lead client lost }
+model Client {
+  id    String @id
+  stage Stage  @default(lead)
+  @@transitions(stage, win: lead -> client, drop: lead -> lost)
+}`, db: ':memory:' })) as any
+    const out = await loadRows(db.asSystem(), 'Client', [
+      { id: 'a', stage: 'lead' },
+      { id: 'b', stage: 'client' },
+      { id: 'c' },
+    ], { key: 'id' })
+    expect(out.loaded).toBe(2)
+    expect(out.rejects.map((r: any) => [r.row, r.key, r.field])).toEqual([[1, 'b', 'stage']])
+    expect((await db.client.findMany({ orderBy: { id: 'asc' } })).map((r: any) => r.id)).toEqual(['a', 'c'])
     db.$close()
   })
 })

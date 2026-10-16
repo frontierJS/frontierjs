@@ -9,7 +9,7 @@ title: People
   // This is the first screen in `example` with exactly one audience. Every
   // other one has at least two — a shop and a shopper, staff and a customer,
   // the console and the storefront — and each of those asymmetries is what a
-  // gate ladder is FOR. `Employee` is `@@gate("5.5.5.5")`: read, create, update
+  // gate ladder is FOR. `Employee` is `@@gate(5.5.5.5)`: read, create, update
   // and delete at one level, so `can('create', level)` and `can('read', level)`
   // are the same answer and a disabled button would be disabled for nobody who
   // can see the page.

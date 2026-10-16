@@ -51,9 +51,9 @@
 <div id="outside">
   <GeoField label="Pin" name="pin" value={pin} />
 </div>
-<button type="button" id="drop-pin" on:click={() => pin = { lat: 10, lng: 20 }}>drop pin</button>
-<button type="button" id="same-pin" on:click={() => pin = { lat: 10.0, lng: 20.0 }}>same pin</button>
-<button type="button" id="clear-pin" on:click={() => pin = null}>clear pin</button>
+<button type="button" id="drop-pin" onclick={() => pin = { lat: 10, lng: 20 }}>drop pin</button>
+<button type="button" id="same-pin" onclick={() => pin = { lat: 10.0, lng: 20.0 }}>same pin</button>
+<button type="button" id="clear-pin" onclick={() => pin = null}>clear pin</button>
 
 <h2>generated — nothing here names a control</h2>
 <Form id="generated" resource={RESOURCE} bind:record={record}

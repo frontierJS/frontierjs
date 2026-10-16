@@ -27,6 +27,8 @@ without conduit is [`FJS-659`](../ISSUES_ARCHIVE.md#fjs-659).
 | **Record and replay** | Capture a target's real answers and serve them in a test | The test half of a connector; `example`'s `verify:stripe` hand-builds what this would record. |
 | **Mock-server helper** | A declared fake target for a drive | Overlaps record and replay; build one of the two. |
 | **Proxy and mTLS** | Dial through a proxy, or present a client certificate | Belongs on the descriptor, beside `policy`. |
+| **A third-party WebSocket client** | Reach a vendor's socket API — Slack socket mode, a realtime model endpoint, a carrier's media stream | The `websocket` transport speaks conduit's own frame envelope, so a vendor's frames are unreadable to it. A second websocket transport, chosen by the target, or the one transport with the envelope made a per-target fact. |
+| **A real broker driver** | Subscribe to Kafka, NATS or AMQP | `broker` is `FJS-D235`'s seam and the transport is conduit's own frame protocol over a socket; `nats` is in the `Protocol` union and `not_implemented`. An app whose orders arrive on a broker it already runs is the asker. |
 
 A redacting request log is not listed: observers already receive the body,
 headers and query through `redactSecrets`, so a log is an observer.

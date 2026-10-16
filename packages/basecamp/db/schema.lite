@@ -165,7 +165,7 @@ import "@frontierjs/litestone/references/AuditTrail.lite"
 
 database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
 
-model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") @@tenant(none) }
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) @@tenant(none) }
 
 // ============================================================
 // TENANCY
@@ -355,6 +355,14 @@ type AppPlace {
 type AppUnplace {
   serverId     String
   replicaIndex Int?
+}
+
+/// What `apps.restoreVolume` accepts: an archive already on that server, under
+/// its Outpost's restore directory (`FJS-D943`).
+type AppVolumeRestore {
+  serverId  String
+  path      String
+  overwrite Boolean?
 }
 
 /// What `flags.setOverride` and `flags.clearOverride` accept. A rollout outside
@@ -584,8 +592,9 @@ enum NotificationKind {
 // The other four are imported and adjusted with `extend model`; see the
 // section below them.
 //
-// `accountId` is String, not Int. Account.id is a uuid and Int cannot hold it.
-// Safe for auth.ts, which only does String(user.accountId).
+// `accountId` is this app's, not auth's: the fleet Account a workspace is
+// created under, carried onto the session by sessionFields. The tenant is
+// workspaceId, through a membership, so auth neither writes nor reads it.
 //
 // Everything Basecamp adds to User is nullable or defaulted ON PURPOSE:
 // auth's createUser() writes only { email, name, role }, so a required
@@ -670,7 +679,7 @@ model User {
   // the field policies above keep the columns a person may not write about
   // themselves. Create is SYSTEM: registration, setup, an accepted invitation
   // and the hub's bots all write through asSystem(), which passes all of it.
-  @@gate("1.8.1.5")
+  @@gate(1.8.1.5)
   @@allow('read',   id == auth().id || auth().level >= 4)
   @@allow('update', id == auth().id)
   @@softDelete
@@ -794,7 +803,7 @@ model Account {
   users       User[]
   workspaces  Workspace[]
 
-  @@gate("6.8")
+  @@gate(6.8)
   @@softDelete(cascade)
   @@trail(audit)
 
@@ -850,7 +859,7 @@ model Workspace {
   flags       FeatureFlag[]
   auditEvents AuditEvent[]
 
-  @@gate("1.1.5.6")
+  @@gate(1.1.5.6)
   @@softDelete(cascade)
   @@trail(audit)
   @@index([accountId])
@@ -886,7 +895,7 @@ model WorkspaceMember {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @default(now()) @updatedAt
 
-  @@gate("1.5")
+  @@gate(1.5)
   @@trail(audit)
   // A person is in a workspace once. The membership IS the pair, so `once`
   // emits the key, and *which workspaces is this person in* — what the switcher
@@ -894,7 +903,7 @@ model WorkspaceMember {
   // workspaceId could never serve (`FJS-413`).
   @@relator([workspaceId, userId], once)
 
-  // FJS-410. A @@gate is per MODEL, so `@@gate("1.5")` says *an admin may update
+  // FJS-410. A @@gate is per MODEL, so `@@gate(1.5)` says *an admin may update
   // a membership* and has no way to say *not their own* — while `role` is the
   // column every gate in this app is graded from. `setMemberRole` is hooked
   // requireWorkspaceRole('admin', 'owner') with one guard, *cannot demote the
@@ -1001,7 +1010,7 @@ model Invitation {
 
   // Read at 5 as well as written: the row names a person who is not a member
   // yet, and who has been asked to join is an administrator's business.
-  @@gate("5")
+  @@gate(5)
   @@trail(audit)
   @@unique([workspaceId, email])
   @@index([workspaceId])
@@ -1062,7 +1071,7 @@ model Secret {
   @@check("kind != 'provider_key' OR providerKind IS NOT NULL",
           "a provider key names the cloud it opens")
 
-  @@gate("5")
+  @@gate(5)
   @@softDelete
   @@trail(audit)
   @@unique([workspaceId, name])
@@ -1140,7 +1149,7 @@ model ApiKey {
   // visible state, not a hidden row; delete means the operator is done looking
   // at it. A second, invisible deleted state on top would make "revoked" and
   // "gone" four combinations instead of two.
-  @@gate("5")
+  @@gate(5)
   @@trail(audit)
   @@unique([workspaceId, name])
   @@index([credentialId])
@@ -1246,7 +1255,7 @@ model Server {
   appServers       AppServer[]
   serverNetworks   ServerNetwork[]
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 
   // A second axis, ANDed with the gate above (`FJS-D146`). The gate answers
   // *is this caller senior enough*; this answers *is a machine theirs to touch
@@ -1375,7 +1384,7 @@ model ServerEvent {
   metadata  Json     @default("{}")
   createdAt DateTime @default(now())
 
-  @@gate("2.4.8.8")
+  @@gate(2.4.8.8)
   @@index([serverId])
 }
 
@@ -1394,7 +1403,7 @@ model ServerEvent {
 // this exists for, and both would find the nonce absent. A duplicate key is
 // refused by SQLite, atomically, and that refusal IS the replay.
 //
-// @@gate("8"): nothing outside asSystem() has anything to say to this table.
+// @@gate(8): nothing outside asSystem() has anything to say to this table.
 // @@tenant(none): a machine's credential belongs to no workspace, and the
 // endpoints that spend one carry no session to resolve a claim from.
 // No @@trail(audit): one row per signed request would bury the human trail.
@@ -1402,7 +1411,7 @@ model OutpostNonce {
   nonce  String   @id
   seenAt DateTime @default(now())
 
-  @@gate("8")
+  @@gate(8)
   @@tenant(none)
   @@index([seenAt])
 }
@@ -1454,7 +1463,7 @@ model Volume {
   discoveredAt    DateTime @default(now())
   lastSeenAt      DateTime @default(now())
 
-  @@gate("2.5.5.5")
+  @@gate(2.5.5.5)
   @@trail(audit)
   @@unique([serverId, name])
   @@index([serverId])
@@ -1483,7 +1492,7 @@ model Network {
   appNetworks    AppNetwork[]
   serverNetworks ServerNetwork[]
 
-  @@gate("2.5")
+  @@gate(2.5)
   @@softDelete
   @@trail(audit)
   @@unique([workspaceId, slug])
@@ -1498,7 +1507,7 @@ model ServerNetwork {
   ipAddress String?
   joinedAt  DateTime @default(now())
 
-  @@gate("2.5")
+  @@gate(2.5)
   @@relator([serverId, networkId], once)
 }
 
@@ -1528,7 +1537,7 @@ model Project {
   // rather than keeping rows nothing can restore a reason for.
   dependencyUses DependencyUse[] @hardDelete
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   // Scoped by the tenancy block at the top of this file. Every path that
   // legitimately crosses a workspace is asSystem() — the jobs and the hub —
   // because a policy FILTERS where a gate refuses, so a scoped read that
@@ -1565,7 +1574,7 @@ model Environment {
   flagOverrides FlagOverride[]
   variables   Variable[]
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   @@capabilities
 
   // The production guard: a developer deploys to a protected environment and
@@ -1652,7 +1661,7 @@ model App {
   domains       Domain[]
   variables     Variable[]
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   // The deploy job writes App.status through asSystem(), which is how it
   // crosses the tenancy the block at the top of this file compiles in.
   @@softDelete(cascade)
@@ -1707,7 +1716,7 @@ model Variable {
 
   // Reading them is reading the environment; writing one is its own grant, as
   // setting production's DATABASE_URL and renaming production are not one act.
-  @@gate("2.4.4.4")
+  @@gate(2.4.4.4)
   @@capabilities
 
   // An environment-wide variable is the environment's to guard (see
@@ -1758,7 +1767,7 @@ model Domain {
   updatedAt     DateTime  @default(now()) @updatedAt
   deletedAt     DateTime?
 
-  @@gate("2.5")
+  @@gate(2.5)
   @@softDelete
   @@trail(audit)
   @@unique([workspaceId, hostname])
@@ -1780,7 +1789,7 @@ model AppServer {
   startedAt    DateTime?
   stoppedAt    DateTime?
 
-  @@gate("2.8")
+  @@gate(2.8)
   // An app runs on a server more than once, and `replicaIndex` is the whole of
   // what makes two placements different. Without the column named here, two
   // replicas of one app on one machine is a constraint violation and the app
@@ -1798,7 +1807,7 @@ model AppNetwork {
   dnsName   String?
   joinedAt  DateTime @default(now())
 
-  @@gate("2.8")
+  @@gate(2.8)
   // `once`, where AppServer above is `many` — an app joins a network or it does
   // not, and there is no second membership to tell apart.
   @@relator([appId, networkId], once)
@@ -1844,7 +1853,7 @@ model Deployment {
 
   steps                DeploymentStep[]
 
-  @@gate("2.4.4.4")
+  @@gate(2.4.4.4)
   // The release pipeline, declared once and enforced at the Data boundary
   // rather than as a TERMINAL/CANCELLABLE list in the service.
   //
@@ -1892,7 +1901,7 @@ model DeploymentStep {
   finishedAt   DateTime?
   durationMs   Int?
 
-  @@gate("2.4.8.8")
+  @@gate(2.4.8.8)
   @@index([deploymentId])
 }
 
@@ -1931,7 +1940,7 @@ model Job {
 
   runs           JobRun[]
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   // A job's status is its CURRENT state, not the outcome of its last run —
   // that is `lastRunStatus`, and JobRun.status is the run's own. So a run that
   // succeeds returns the job to `pending`, which is what "idle, awaiting the
@@ -1973,7 +1982,7 @@ model JobRun {
 
   createdAt  DateTime     @default(now())
 
-  @@gate("2.8")
+  @@gate(2.8)
   @@index([jobId])
 }
 
@@ -2040,7 +2049,7 @@ model Recipe {
 
   runs           RecipeRun[]
 
-  @@gate("4.5")
+  @@gate(4.5)
   @@softDelete
   @@trail(audit)
   @@unique([workspaceId, slug])
@@ -2075,7 +2084,7 @@ model RecipeRun {
   durationMs  Int?
   createdAt   DateTime  @default(now())
 
-  @@gate("2.4.8.8")
+  @@gate(2.4.8.8)
   // `many`, and no key, because running a recipe on a server is something that
   // HAPPENS rather than a standing fact — which is what `script` above is
   // copied for. Set beside AppServer: identical foreign keys, identical
@@ -2125,7 +2134,7 @@ model DiskUsage {
 
   reportedAt                 DateTime @default(now())
 
-  @@gate("2.8")
+  @@gate(2.8)
   @@unique([serverId])
 }
 
@@ -2161,7 +2170,7 @@ model ServerPosture {
 
   createdAt DateTime @default(now())
 
-  @@gate("2.8")
+  @@gate(2.8)
   @@index([serverId, at])
 }
 
@@ -2198,7 +2207,7 @@ model CleanupRun {
   durationMs  Int?
   createdAt   DateTime  @default(now())
 
-  @@gate("2.4.8.8")
+  @@gate(2.4.8.8)
   @@trail(audit)
   @@index([serverId])
 }
@@ -2251,7 +2260,7 @@ model FeatureFlag {
 
   overrides   FlagOverride[]
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   @@softDelete
   @@trail(audit)
   @@unique([workspaceId, key])
@@ -2274,7 +2283,7 @@ model FlagOverride {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @default(now()) @updatedAt
 
-  @@gate("2.4.4.4")
+  @@gate(2.4.4.4)
   @@trail(audit)
   @@relator([flagId, environmentId], once)
 }
@@ -2336,7 +2345,7 @@ model NotificationChannel {
   rules       AlertRuleChannel[]
   monitors    MonitorChannel[]
 
-  @@gate("2.5")
+  @@gate(2.5)
   @@softDelete
   @@trail(audit)
   @@unique([workspaceId, name])
@@ -2392,7 +2401,7 @@ model AlertRule {
   events      AlertEvent[]
   channels    AlertRuleChannel[]
 
-  @@gate("2.5")
+  @@gate(2.5)
   @@trail(audit)
   @@index([workspaceId])
 }
@@ -2413,7 +2422,7 @@ model AlertRuleChannel {
 
   createdAt DateTime            @default(now())
 
-  @@gate("2.5")
+  @@gate(2.5)
   @@relator([ruleId, channelId], once)
 }
 
@@ -2438,7 +2447,7 @@ model AlertEvent {
   acknowledgedBy String?
   acknowledgedAt DateTime?
 
-  @@gate("2.8.4.8")
+  @@gate(2.8.4.8)
   @@index([ruleId])
   @@index([status])
 }
@@ -2521,7 +2530,7 @@ model Monitor {
     markDown: [pending, up]   -> down   @system,
     pause:    [pending, up, down] -> paused  @gate(5),
     resume:   paused          -> pending @gate(5))
-  @@gate("2.5")
+  @@gate(2.5)
   @@trail(audit)
   @@index([workspaceId])
   @@index([status, nextCheckAt])
@@ -2539,7 +2548,7 @@ model MonitorCheck {
   latencyMs  Int?
   message    String
 
-  @@gate("2.8")
+  @@gate(2.8)
   @@index([monitorId, at])
 }
 
@@ -2554,7 +2563,7 @@ model MonitorEvent {
   toStatus   MonitorStatus
   message    String
 
-  @@gate("2.8")
+  @@gate(2.8)
   @@index([monitorId, at])
 }
 
@@ -2568,7 +2577,7 @@ model MonitorChannel {
 
   createdAt DateTime            @default(now())
 
-  @@gate("2.5")
+  @@gate(2.5)
   @@relator([monitorId, channelId], once)
 }
 
@@ -2614,7 +2623,7 @@ model Dashboard {
 
   widgets     DashboardWidget[]
 
-  @@gate("2.4.4.4")
+  @@gate(2.4.4.4)
   @@softDelete
   @@trail(audit)
   @@unique([workspaceId, slug])
@@ -2658,7 +2667,7 @@ model DashboardWidget {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @default(now()) @updatedAt
 
-  @@gate("2.4.4.4")
+  @@gate(2.4.4.4)
   @@trail(audit)
   @@index([dashboardId])
   @@index([serverId])
@@ -2701,7 +2710,7 @@ model AuditEvent {
   diff        Json?
   createdAt   DateTime   @default(now())
 
-  @@gate("5.8.9.9")
+  @@gate(5.8.9.9)
   @@index([workspaceId])
   @@index([subjectType, subjectId])
 
@@ -2805,7 +2814,7 @@ model Blueprint {
 
   // Read by anyone signed in — VISITOR(1), because browsing the catalog is
   // what a person with no workspace yet is doing. Written by the hub tier only.
-  @@gate("1.7")
+  @@gate(1.7)
   @@trail(audit)
   @@index([category])
 
@@ -2849,7 +2858,7 @@ model BlueprintParam {
   // an order its author chose and `createdAt` is not it.
   position     Int             @default(0)
 
-  @@gate("1.7")
+  @@gate(1.7)
   @@unique([blueprintId, key])
   @@index([blueprintId])
 
@@ -2904,7 +2913,7 @@ model RegistryImage {
   // Read by a viewer; written only by the sync. Deleting a TAG is an
   // administrator's action and really removes it at the registry, which is why
   // delete is 5 and not 8.
-  @@gate("2.8.8.5")
+  @@gate(2.8.8.5)
   @@trail(audit)
   @@unique([workspaceId, repository, tag])
   @@index([workspaceId])
@@ -2956,7 +2965,7 @@ model Dependency {
 
   // A viewer reads; a developer's push creates the name. The registry columns
   // are @system whatever the level.
-  @@gate("2.4.4.4")
+  @@gate(2.4.4.4)
   @@unique([workspaceId, name])
   @@index([workspaceId])
 }
@@ -2987,7 +2996,7 @@ model DependencyUse {
   // The push that last reported this declaration.
   observedAt   DateTime       @default(now())
 
-  @@gate("2.4.4.4")
+  @@gate(2.4.4.4)
   @@unique([projectId, member, dependencyId, kind])
   @@index([workspaceId])
   @@index([projectId])
@@ -3034,7 +3043,7 @@ model Backup {
 
   // A sysadmin reads them and asks for one; the job writes the outcome;
   // pruning an old archive is a sysadmin's again.
-  @@gate("7.7.8.7")
+  @@gate(7.7.8.7)
   @@trail(audit)
   @@index([status])
   @@index([createdAt])
@@ -3107,7 +3116,7 @@ model HubConfig {
 
   // Nothing below the hub tier reads or writes this — it is the installation,
   // not a tenant's.
-  @@gate("7")
+  @@gate(7)
   @@trail(audit)
 
   // @@tenant(none) — one row for the whole installation
@@ -3189,7 +3198,7 @@ model Notification {
   //
   // Create is 8 and NOT 9. `9` is LOCKED — a wall `asSystem()` does not pass
   // either — so a 9 here would stop the driver from ever writing a row.
-  @@gate("0.8.1.8")
+  @@gate(0.8.1.8)
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)
   @@index([userId, readAt])
@@ -3229,7 +3238,7 @@ model NotificationPreference {
   // names `userId` on create rather than defaulting the column: a create policy
   // is checked BEFORE a default is stamped, so `@default(auth().id)` here would
   // grade an absent column and admit everybody.
-  @@gate("1")
+  @@gate(1)
   @@allow('all', userId == auth().id)
   @@unique([userId, kind])
   @@index([userId])
@@ -3285,7 +3294,7 @@ view fleetByProvider {
   // different fact from one shopper's order, and a fleet's shape is the same
   // fact as its machines. Gating it higher would hide a summary from the
   // people who can already read every row it summarizes.
-  @@gate("2")
+  @@gate(2)
 
   // WHICH workspace — the tenancy block at the top of this file, resolved per
   // request off the caller's `WorkspaceMember` row. The projection carries the

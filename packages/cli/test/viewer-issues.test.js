@@ -4,7 +4,7 @@
 // they ever printed.
 //
 // `gateAuth` was read out of the per-method `before` chain. It is an
-// `around.all` hook that `createBaseService` installs unconditionally — zero
+// `around.all` hook that the service builder installs unconditionally — zero
 // occurrences in any `before` chain of any snapshot in this repo — so the check
 // fired on exactly the services that expose a write method and reported
 // *ungated* about the one thing gated on every path (`FJS-1016`).

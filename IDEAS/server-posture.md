@@ -569,7 +569,7 @@ posture report.
     orphaning every `@encrypted` column, and the HMAC is one-way, so the Outpost's
     config never holds anything that decrypts a `Secret`.
 
-- **FJS-D1023 — How does `fli deploy` know to install the report-only host Outpost, and what does it install from?**
+- ~~**FJS-D1023 — How does `fli deploy` know to install the report-only host Outpost, and what does it install from?**~~ **Answered 2026-10-16 (`FJS-D1023`): A — A deploy config key the app states, `deploy.hostOutpost: true` in basecamp's `frontier.config.js`. `deploy:setup` installs the Outpost from the pushed checkout's `packages/outpost` (it is in the build context already) as `outpost-host.service`, sandboxed like the fleet unit, and writes the key it derives from the server's `.env.production`, the loopback API URL and the two paths fli itself laid out (the deploy root's env file and the `/db` volume's host directory).**
   Step 2.2. Everything on the Basecamp side of it is built: the Outpost runs
   report-only when `OUTPOST_HOST_KEY` is set (with `BASECAMP_URL`,
   `OUTPOST_HOST_DB_PATH`, `OUTPOST_HOST_ENV_PATH`), the API verifies a

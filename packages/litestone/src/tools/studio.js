@@ -23,6 +23,7 @@ import { bold, dim, green, red, cyan, rel, header, flag, getFlag,
 // An asset that must survive \`bun build --compile\`: a text import is embedded
 // in the binary, a readFileSync beside the source is not.
 import STUDIO_HTML from './studio.html' with { type: 'text' }
+import STUDIO_CSS from './studio.css' with { type: 'text' }
 
 // ─── EXPLAIN QUERY PLAN parser ────────────────────────────────────────────────
 // Converts a SQLite EXPLAIN QUERY PLAN detail string into a rating + advice.
@@ -839,6 +840,9 @@ export async function cmdStudio(cfg) {
 
       if (isWrite(req, path, body)) generation++
 
+      if (path === '/studio.css')
+        return fixedResponse(req, fixed('css', STUDIO_CSS, 'text/css'))
+
       if (!path.startsWith('/api/')) return new Response('Not Found', { status: 404 })
 
       // ── Token auth (--token) ────────────────────────────────────────────────
@@ -1406,7 +1410,7 @@ export async function cmdStudio(cfg) {
           const before = currentSchemaParse()
 
           // Each pane is asked separately, because parse() is more permissive
-          // than the layers above it: a gate string parses and then throws the
+          // than the layers above it: a schema can parse and then throw the
           // moment deriveAccess reads it. A preview whose whole job is to say
           // what a word does must answer with the message, not a 500 that says
           // nothing about the other three realms.

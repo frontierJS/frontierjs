@@ -53,7 +53,7 @@ describe('a derived is wrapped once, however it is reached', () => {
   const cellFor = (x) => rows.find(v => v === x)
   function go() { pick = cellFor(1) }
 </script>
-<p on:click={go}>{pick}</p>`)
+<p onclick={go}>{pick}</p>`)
 
     expect(doubleWrapped(js)).toBe(false)
     // Wrapped once, and still wrapped — an over-eager fix that stopped
@@ -92,7 +92,7 @@ describe('a derived is wrapped once, however it is reached', () => {
   const n = rows.length
   function go() { pick = n + 1 }
 </script>
-<p on:click={go}>{pick}</p>`)
+<p onclick={go}>{pick}</p>`)
 
     expect(doubleWrapped(js)).toBe(false)
     expect(code(js)).toContain('$$runtime.get(n) + 1')
@@ -105,7 +105,7 @@ describe('a derived is wrapped once, however it is reached', () => {
   const cellFor = (x) => rows.find(v => v === x)
   function go() { pick ??= cellFor(1) }
 </script>
-<p on:click={go}>{pick}</p>`)
+<p onclick={go}>{pick}</p>`)
 
     expect(doubleWrapped(js)).toBe(false)
   })
@@ -117,7 +117,7 @@ describe('a derived is wrapped once, however it is reached', () => {
   const cellFor = (x) => rows.find(v => v === x)
   function go() { pick = (sz) => cellFor(sz) }
 </script>
-<p on:click={go}>{pick}</p>`)
+<p onclick={go}>{pick}</p>`)
 
     expect(doubleWrapped(js)).toBe(false)
   })
@@ -130,7 +130,7 @@ describe('what was already correct stays correct', () => {
   let pick = null
   function go() { pick = rows.length }
 </script>
-<p on:click={go}>{pick}</p>`)
+<p onclick={go}>{pick}</p>`)
 
     expect(doubleWrapped(js)).toBe(false)
     expect(code(js)).toContain('$$runtime.get($$sig_rows).length')
@@ -142,7 +142,7 @@ describe('what was already correct stays correct', () => {
   const cellFor = (x) => rows.find(v => v === x)
   function go() { console.log(cellFor(1)) }
 </script>
-<p on:click={go}>x</p>`)
+<p onclick={go}>x</p>`)
 
     expect(doubleWrapped(js)).toBe(false)
     expect(code(js)).toContain('$$runtime.get(cellFor)(1)')
@@ -165,7 +165,7 @@ describe('what was already correct stays correct', () => {
     pick = cellFor(1)
   }
 </script>
-<p on:click={go}>{pick}</p>`)
+<p onclick={go}>{pick}</p>`)
 
     expect(doubleWrapped(js)).toBe(false)
     // The LOCAL one, called plainly. Reading the derived here would call the

@@ -22,7 +22,7 @@
 
 <Drawer bind:open={open} title="Card">
   <button type="button" id="remove" class="btn danger" data-confirm="Remove this card?"
-          on:click={() => did('remove')}>Remove card</button>
+          onclick={() => did('remove')}>Remove card</button>
 
   <ConfirmationPopover title="Archive board?" confirmLabel="Archive"
                        onconfirm={() => did('archive')}>

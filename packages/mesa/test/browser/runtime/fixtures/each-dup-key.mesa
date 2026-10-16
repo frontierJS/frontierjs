@@ -37,6 +37,6 @@
   {#each items as it (it.id)}<li>{it.label}</li>{/each}
 </ul>
 
-<button type="button" id="relabel" on:click={relabel}>relabel</button>
-<button type="button" id="reorder" on:click={reorder}>reorder</button>
-<button type="button" id="fix" on:click={fix}>fix</button>
+<button type="button" id="relabel" onclick={relabel}>relabel</button>
+<button type="button" id="reorder" onclick={reorder}>reorder</button>
+<button type="button" id="fix" onclick={fix}>fix</button>

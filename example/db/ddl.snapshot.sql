@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS "credential" (
   "tokenExpiresAt" TEXT,
   "scope" TEXT,
   "totpLastStep" INTEGER,
+  "linked" INTEGER,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_credential_userId_type" ON "credential" ("userId", "type");
@@ -303,7 +304,7 @@ CREATE TABLE IF NOT EXISTS "custom_field" (
 -- 
 -- ─── Why a shopper may not read this table ────────────────────────────────
 -- 
--- `@@gate("5.5.5.5")` — staff only, read included. Every other thing a
+-- `@@gate(5.5.5.5)` — staff only, read included. Every other thing a
 -- shopper interacts with here is readable at 0, because a storefront has to
 -- list it; a discount code is the exception, and the reason is that listing
 -- them IS the exploit. `GET /api/discounts` answering the table hands every
@@ -581,7 +582,6 @@ CREATE TABLE IF NOT EXISTS "user" (
   "name" TEXT,
   "emailVerified" INTEGER NOT NULL DEFAULT 0,
   "role" TEXT NOT NULL DEFAULT 'user',
-  "accountId" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "isStaff" INTEGER NOT NULL DEFAULT 0,

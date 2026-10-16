@@ -276,7 +276,7 @@ export function note(context, stepName, facts) {
 
 export function pointAtLocalServer(source, { serverDir, port }) {
   const next = source
-    .replace(/path: '[^']*',(\s*\/\/ deploy root)/, `path: '${serverDir}',$1`)
+    .replace(/\n    path: '[^']*',/,                 `\n    path: '${serverDir}',`)
     .replace(/env:\s*'[^']*'/,                      `env:        '${serverDir}/.env.production'`)
     .replace(/port:\s*3000,/,                       `port:       ${port},`)
     .replace(/path:\s*'[^']*\/db',/,                `path:         '${serverDir}/db',`)

@@ -120,7 +120,7 @@
 
 <h2>editable, controlled — the caller binds onchange back into value</h2>
 <Json id="controlled" value={cdoc} expand={1} editable onchange={(next) => { cdoc = next }} />
-<button type="button" id="replace-doc" on:click={() => { cdoc = { swapped: true } }}>replace from outside</button>
+<button type="button" id="replace-doc" onclick={() => { cdoc = { swapped: true } }}>replace from outside</button>
 
 <h2>copy — a value, and where it is</h2>
 <!-- The keys are chosen to break a naive path: one that is not a valid
@@ -190,7 +190,7 @@
 
 <h2>the control, controlled — a value can change from outside</h2>
 <JsonInput id="jcontrolled" value={jdoc} onvalue={(v) => { jdoc = v }} />
-<button type="button" id="replace-jdoc" on:click={() => { jdoc = { b: 2 } }}>replace from outside</button>
+<button type="button" id="replace-jdoc" onclick={() => { jdoc = { b: 2 } }}>replace from outside</button>
 <output id="jdoc">{JSON.stringify(jdoc)}</output>
 
 <h2>the same control inside a form</h2>
@@ -219,7 +219,7 @@
     <Button type="submit" id="gone-save">Save</Button>
   {/snippet}
 </Form>
-<button type="button" id="gone-hide" on:click={() => { goneShown = false }}>hide the control</button>
+<button type="button" id="gone-hide" onclick={() => { goneShown = false }}>hide the control</button>
 <output id="gone-saves">{goneSaves}</output>
 
 <h2>a control that never retracts, unmounted</h2>
@@ -231,7 +231,7 @@
     <Button type="submit" id="leak-save">Save</Button>
   {/snippet}
 </Form>
-<button type="button" id="leak-hide" on:click={() => { leakShown = false }}>hide the control</button>
+<button type="button" id="leak-hide" onclick={() => { leakShown = false }}>hide the control</button>
 <output id="leak-saves">{leakSaves}</output>
 
 <output id="saves">{saves}</output>

@@ -8,7 +8,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createClient, autoMigrate } from '../src/index.js'
-import { Plugin } from '../src/core/plugin.js'
+import { LitestonePlugin } from '../src/core/plugin.js'
 
 const tick = () => new Promise((r) => setImmediate(r))
 
@@ -60,7 +60,7 @@ const SCHEMA = `
   }
 `
 
-class Spy extends Plugin {
+class Spy extends LitestonePlugin {
   deleted: Record<string, number[]> = {}
   async onAfterDelete(model: string, rows: any[]) {
     ;(this.deleted[model] ??= []).push(...rows.map(r => r.id))
@@ -267,12 +267,12 @@ describe('a child a foreign key\'s onDelete: SetNull clears is an updated row (F
     }
   `
 
-  class Writes extends Plugin {
+  class Writes extends LitestonePlugin {
     written: Array<[string, string, any]> = []
     async onAfterWrite(model: string, op: string, row: any) { this.written.push([model, op, row]) }
   }
 
-  async function seededNotes(plugin?: Plugin) {
+  async function seededNotes(plugin?: LitestonePlugin) {
     const db: any = await createClient({ schema: NULLED, db: ':memory:', ...(plugin ? { plugins: [plugin] } : {}) })
     await autoMigrate(db)
     const sys = db.asSystem()
@@ -324,6 +324,104 @@ describe('a child a foreign key\'s onDelete: SetNull clears is an updated row (F
     await sys.person.delete({ where: { id: 1 } })
     const lines = await updateLines(sys)
     expect(lines.flatMap((l: any) => l.records)).not.toContain(20)
+    db.$close()
+  })
+})
+
+// FJS-2255 — a cascade is a delete the OPEN TABS hear about. The announcer is a
+// `$tapEvents` tap, installed after the client is built, on models with no
+// plugin and no trail: the one audience the cascade walk did not count.
+describe('a cascade is announced as removed rows (FJS-2255)', () => {
+  const FEED = `
+    model Follow {
+      id     Int @id
+      posts  Post[]
+      pins   Pin[]
+    }
+    model Post {
+      id        Int @id
+      followId  Int
+      follow    Follow @relation(fields: [followId], references: [id], onDelete: Cascade)
+      replies   Reply[]
+    }
+    model Reply {
+      id      Int @id
+      postId  Int
+      post    Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+    }
+    model Pin {
+      id        Int @id
+      followId  Int?
+      follow    Follow? @relation(fields: [followId], references: [id], onDelete: SetNull)
+    }
+  `
+
+  async function feed(tap = true) {
+    const db: any = await createClient({ schema: FEED, db: ':memory:' })
+    await autoMigrate(db)
+    const sys = db.asSystem()
+    await sys.follow.create({ data: { id: 1 } })
+    await sys.follow.create({ data: { id: 2 } })
+    await sys.post.create({ data: { id: 10, followId: 1 } })
+    await sys.post.create({ data: { id: 11, followId: 1 } })
+    await sys.post.create({ data: { id: 20, followId: 2 } })
+    await sys.reply.create({ data: { id: 100, postId: 10 } })
+    await sys.pin.create({ data: { id: 1, followId: 1 } })
+    await tick()
+    const seen: string[] = []
+    if (tap) db.$tapEvents((e: any) => { seen.push(`${e.model}:${e.event}:${e.result?.id}`) })
+    return { db, sys, seen }
+  }
+
+  test('delete() — each child row and each grandchild row is a removed event, with its row', async () => {
+    const { db, sys, seen } = await feed()
+    await sys.follow.delete({ where: { id: 1 } })
+    await tick(); await tick()
+    expect(seen.sort()).toEqual([
+      'Follow:remove:1', 'Pin:update:1', 'Post:remove:10', 'Post:remove:11', 'Reply:remove:100',
+    ])
+    db.$close()
+  })
+
+  test('deleteMany() — the set\'s children', async () => {
+    const { db, sys, seen } = await feed()
+    await sys.follow.deleteMany({ where: { id: { in: [1, 2] } } })
+    await tick(); await tick()
+    expect(seen.filter(s => s.startsWith('Post:')).sort()).toEqual(['Post:remove:10', 'Post:remove:11', 'Post:remove:20'])
+    db.$close()
+  })
+
+  test('a tap installed after a first cascade still hears the next one', async () => {
+    const { db, sys } = await feed(false)
+    await sys.follow.delete({ where: { id: 2 } })
+    const seen: string[] = []
+    db.$tapEvents((e: any) => { seen.push(`${e.model}:${e.event}:${e.result?.id}`) })
+    await sys.follow.delete({ where: { id: 1 } })
+    await tick(); await tick()
+    expect(seen).toContain('Post:remove:10')
+    db.$close()
+  })
+
+  test('a cascade inside a transaction is announced on commit, and not at all on rollback', async () => {
+    const { db, sys, seen } = await feed()
+    await db.$transaction(async (tx: any) => { await tx.follow.delete({ where: { id: 1 } }) })
+    await tick(); await tick()
+    expect(seen).toContain('Post:remove:10')
+    seen.length = 0
+    await expect(db.$transaction(async (tx: any) => {
+      await tx.follow.delete({ where: { id: 2 } })
+      throw new Error('no')
+    })).rejects.toThrow('no')
+    await tick(); await tick()
+    expect(seen).toEqual([])
+    expect(await sys.post.count({})).toBe(1)
+    db.$close()
+  })
+
+  test('a delete under no audience walks nothing', async () => {
+    const { db, sys } = await feed(false)
+    await sys.follow.delete({ where: { id: 1 } })
+    expect(await sys.post.count({})).toBe(1)
     db.$close()
   })
 })

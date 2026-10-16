@@ -35,7 +35,7 @@ import { parse } from './core/parser.js'
 // there is nothing more precise to work from — every mutant is parsed before it
 // is used, and one that does not parse is a kill the parser made.
 
-const GATE_RE = /@@gate\(\s*"([^"]+)"\s*\)/
+const GATE_RE = /@@gate\(\s*([\d.]+)\s*\)/
 const RELATOR_RE = /@@relator\(\s*\[([^\]]*)\]\s*,\s*(once|many)(?:\s*:\s*(\w+))?\s*\)/
 
 const MUTATIONS = [
@@ -66,7 +66,7 @@ const MUTATIONS = [
         const to   = from - 1
         const next = [...four]; next[i] = String(to)
         out.push({
-          line: line.replace(GATE_RE, `@@gate("${next.join('.')}")`),
+          line: line.replace(GATE_RE, `@@gate(${next.join('.')})`),
           meta: { op: ops[i], from, to },
         })
       }
@@ -269,7 +269,10 @@ export function schemaMutants(schemaText, { kinds = null } = {}) {
     const code    = cut === -1 ? line : line.slice(0, cut)
     const comment = cut === -1 ? ''   : line.slice(cut)
 
-    const open = code.match(/^\s*model\s+([A-Za-z_][A-Za-z0-9_]*)/)
+    // The brace belongs to the match: an indented FIELD can be named `model`
+    // (`model ChargeModel @default(standard)`), and without it every mutant
+    // after that line is attributed to the field's type.
+    const open = code.match(/^\s*model\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{/)
     // A model opened on this line is still mutable ON this line — `.lite`
     // permits the whole model on one, and skipping the opening line skipped
     // every attribute such a model has, silently. Its own fixtures are written
@@ -329,8 +332,16 @@ export function schemaMutants(schemaText, { kinds = null } = {}) {
  * `check(env, original)` returns the mismatches. The default runs both executed
  * checks; `original` is the parsed ORIGINAL schema and is what the expectations
  * must come from — deriving them from the env would make every mutant survive.
+ *
+ * `suite(text)` runs the app's OWN tests with `text` as its schema and answers
+ * `'passed'`, `'failed'` or `'inconclusive'` (it could not run — a timeout, a
+ * missing command). It is asked only about a mutant the derived checks missed,
+ * because a create-only `@@allow` has no WHERE for them to grade and only an
+ * app's own drive can (FJS-1942). A `'failed'` is recorded on the survivor as
+ * `suite: 'killed'` and counted in `suiteKilled`; `score` stays the derived
+ * checks' alone, since scripts/mutate-baselines.json floors it.
  */
-export async function mutationScore({ schema, build, check, kinds = null, onMutant = null }) {
+export async function mutationScore({ schema, build, check, suite = null, kinds = null, onMutant = null }) {
   const original = parse(schema)
   if (!original.valid) throw new Error(`mutationScore: the original schema does not parse:\n${original.errors.join('\n')}`)
 
@@ -378,8 +389,18 @@ export async function mutationScore({ schema, build, check, kinds = null, onMuta
     try { control.close?.() } catch { /* nothing to close */ }
   }
 
+  // The same control, one level out: a suite already failing on the ORIGINAL
+  // fails under every mutant, and each would be reported killed by it.
+  if (suite) {
+    const verdict = await suite(schema)
+    if (verdict !== 'passed') throw new Error(
+      `mutationScore: the app's own suite ${verdict === 'failed' ? 'already fails' : 'could not run'} on the ORIGINAL schema, ` +
+      `so nothing can be graded — every mutant would be reported killed by a failure that is not about the mutation.`)
+  }
+
   const mutants  = schemaMutants(schema, { kinds })
   const survived = []
+  let suiteKilled = 0
   const errored  = []
   const refused  = []
   let killed     = 0
@@ -390,10 +411,8 @@ export async function mutationScore({ schema, build, check, kinds = null, onMuta
 
     // Built in its own try, because refusing to build and failing to check are
     // different answers. A schema the framework will not LOAD is killed — it
-    // cannot ship — and several are: `parse()` accepts a non-monotonic
-    // `@@gate("4.4.3.5")` and the gate plugin refuses it at construction, so
-    // the two halves of "is this schema legal" do not agree and only the second
-    // one is reached here.
+    // cannot ship. What `parse()` accepts and a plugin refuses at construction
+    // lands here, so the two halves of "is this schema legal" can disagree.
     let env, outcome
     try {
       env = await build(mutant.text)
@@ -434,6 +453,12 @@ export async function mutationScore({ schema, build, check, kinds = null, onMuta
     } finally {
       try { env.close?.() } catch { /* nothing to close */ }
     }
+    if (suite && outcome === 'survived') {
+      const row     = survived[survived.length - 1]
+      const verdict = await suite(mutant.text)
+      row.suite = verdict === 'failed' ? 'killed' : verdict === 'passed' ? 'survived' : 'inconclusive'
+      if (row.suite === 'killed') suiteKilled++
+    }
     onMutant?.({ ...mutant, outcome })
   }
 
@@ -443,6 +468,7 @@ export async function mutationScore({ schema, build, check, kinds = null, onMuta
     graded,
     killed,
     byParser,
+    suiteKilled,
     refused,
     survived,
     errored,

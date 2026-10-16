@@ -328,7 +328,7 @@ title: Decide
   {:else}
     <label class="decide-file text-sm" data-empty={section ? null : 'true'}>
       <span>{section ? 'Rulings go under' : 'First: which DECISIONS.md section do rulings go under?'}</span>
-      <select class="field" id="decide-section" value={section} on:change={(e) => chooseSection(e.target.value)}>
+      <select class="field" id="decide-section" value={section} onchange={(e) => chooseSection(e.target.value)}>
         <option value="">Choose a section…</option>
         {#each queue.sections as s}<option value={s} selected={s === section}>{s}</option>{/each}
       </select>
@@ -341,7 +341,7 @@ title: Decide
     {#each top() as q (q.id)}
       <article class="decide-card {dragging ? 'dragging' : ''} {flying ? 'flying' : ''}" id="decide-card" data-id={q.id}
                style:transform={dx ? `translateX(${dx}px) rotate(${dx / 30}deg)` : null}
-               on:pointerdown={down} on:pointermove={move} on:pointerup={up} on:pointercancel={cancel}>
+               onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={cancel}>
         {#if q.recommend}<span class="pill success decide-stamp decide-stamp-right" style:opacity={stamp('right')}>{q.recommend.letter} ✓</span>{/if}
         <span class="pill decide-stamp decide-stamp-left" style:opacity={stamp('left')}>Later</span>
 
@@ -402,10 +402,10 @@ title: Decide
             {/each}
             {#if ex.error}<article class="alert danger"><div class="alert-content text-sm">{ex.error}</div></article>{/if}
             {#if ex.state !== 'working'}
-              <form class="decide-follow" on:submit={(e) => ask(e, q)}>
+              <form class="decide-follow" onsubmit={(e) => ask(e, q)}>
                 <label class="visually-hidden" for="decide-follow">Ask Claude a follow-up</label>
                 <input class="field" id="decide-follow" placeholder={ex.state === 'error' ? 'Ask again…' : 'Ask a follow-up…'}
-                       value={follow} on:input={(e) => follow = e.target.value} />
+                       value={follow} oninput={(e) => follow = e.target.value} />
                 <Button type="submit" size="sm" disabled={!follow.trim() || explaining}>Ask</Button>
               </form>
               {#if ex.state === 'error' && !ex.turns.some(t => t.text)}
@@ -452,12 +452,12 @@ title: Decide
 
       {#if current()}
         {#if asking}
-          <form class="stack gap-xs" id="decide-reason" on:submit={confirmWhy}>
+          <form class="stack gap-xs" id="decide-reason" onsubmit={confirmWhy}>
             <label class="text-sm" for="decide-why">
               Why <strong>{asking.letter}</strong>{current().recommend ? ` over ${current().recommend.letter}` : ''}?
               <span class="text-muted">It becomes the ruling's reason.</span>
             </label>
-            <textarea class="field" rows="3" id="decide-why" value={why} on:input={(e) => why = e.target.value}></textarea>
+            <textarea class="field" rows="3" id="decide-why" value={why} oninput={(e) => why = e.target.value}></textarea>
             <div class="decide-actions">
               <Button variant="ghost" onclick={() => asking = null}>Cancel</Button>
               <Button type="submit" disabled={!why.trim()}>Rule {asking.letter}</Button>

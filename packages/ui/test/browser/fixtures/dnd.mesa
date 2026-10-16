@@ -33,7 +33,7 @@
 <div class="board">
   <ul id="todo" {@attach dndzone(() => ({ items: todo, type: 'task', onconsider: record('todo', 'c'), onfinalize: record('todo', 'f') }))}>
     {#each todo as it (it.id)}
-      <li data-id={it.id}>{it.t} <button class="poke" on:click={() => clicks++}>·</button></li>
+      <li data-id={it.id}>{it.t} <button class="poke" onclick={() => clicks++}>·</button></li>
     {/each}
   </ul>
   <ul id="done" {@attach dndzone(() => ({ items: done, type: 'task', onconsider: record('done', 'c'), onfinalize: record('done', 'f') }))}>

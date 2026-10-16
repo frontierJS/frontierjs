@@ -16,14 +16,14 @@
 
 <p>value {value} held {held} moved {moved}</p>
 <p>around {around} target {target} row {row} scrolls {scrolls} start {start}</p>
-<div on:mousedown={heard}>
-  <input name="a" on:input={(e) => value = e.target.value} />
-  <button type="button" on:mousedown={hold} on:click={() => held++}>Hold</button>
-  <button type="button" on:click={() => moved++}>Move</button>
+<div onmousedown={heard}>
+  <input name="a" oninput={(e) => value = e.target.value} />
+  <button type="button" onmousedown={hold} onclick={() => held++}>Hold</button>
+  <button type="button" onclick={() => moved++}>Move</button>
 </div>
-<p on:mousedown={() => row++} on:touchstart={() => row += 10}>Row</p>
-<div on:drop={() => drops++}>
-  <p on:dragenter={() => drops++} on:dragover|preventDefault={() => drops++} on:dragleave={() => drops++}>Drop drops {drops}</p>
+<p onmousedown={() => row++} ontouchstart={() => row += 10}>Row</p>
+<div ondrop={() => drops++}>
+  <p ondragenter={() => drops++} ondragover|preventDefault={() => drops++} ondragleave={() => drops++}>Drop drops {drops}</p>
 </div>
-<textarea name="t" on:scroll={() => scrolls++} on:focus={(e) => start = JSON.stringify(e.target.value)}>one</textarea>
+<textarea name="t" onscroll={() => scrolls++} onfocus={(e) => start = JSON.stringify(e.target.value)}>one</textarea>
 <textarea name="v" value={kept}>{kept}</textarea>

@@ -200,7 +200,7 @@
       "relation": "Model to API automatically, with ACLs declared on the model. Same gate instinct.",
       "gap": "Drowned in decorators. Cautionary case for declaration ergonomics.",
       "stance": "warning",
-      "fjsWay": "Same instinct, opposite ergonomics, and the reason declarations here are attributes rather than decorators. `@@gate(\"0.4.4.5\")` on the model is one line you can read at a glance; the equivalent in decorator form is a paragraph of imports and generics wrapped around the thing it describes. Being declarative is not enough — the declaration has to stay smaller than what it replaces."
+      "fjsWay": "Same instinct, opposite ergonomics, and the reason declarations here are attributes rather than decorators. `@@gate(0.4.4.5)` on the model is one line you can read at a glance; the equivalent in decorator form is a paragraph of imports and generics wrapped around the thing it describes. Being declarative is not enough — the declaration has to stay smaller than what it replaces."
     },
     {
       "rank": 15,

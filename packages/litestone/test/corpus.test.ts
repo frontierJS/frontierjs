@@ -67,6 +67,11 @@ describe('the roster names every fixture that is here', () => {
   })
 })
 
+// Builds a database from a 300-model schema twice, which takes 6–12s here; bun's
+// 5s default fails erpnext, discourse and triggerdev on the clock rather than on
+// what they check.
+const BUILD_TIMEOUT_MS = 60_000
+
 describe('the corpus — schemas converted from real applications', () => {
   for (const name of [...COMMITTED, ...FETCHED, ...LOCAL]) {
     const source = read(name)
@@ -112,6 +117,6 @@ describe('the corpus — schemas converted from real applications', () => {
       } finally {
         clean()
       }
-    })
+    }, BUILD_TIMEOUT_MS)
   }
 })

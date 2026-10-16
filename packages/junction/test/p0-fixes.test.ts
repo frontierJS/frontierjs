@@ -17,11 +17,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { describe, it, expect } from 'bun:test'
-import {
-  createTestApp, request, testCtx,
-  createService, callService,
-  protect,
-} from '../index.ts'
+import { createTestApp, request, testCtx, callService, protect } from '../index.ts'
+import { buildService } from '../src/core/service.ts'
 import { webhooks, createSqliteWebhookStore } from '../src/plugins/webhooks/index.ts'
 import { Database } from 'bun:sqlite'
 import { parseBody, extractIP } from '../src/transport/body.ts'
@@ -33,7 +30,7 @@ describe('P0: service cache reference isolation', () => {
   function makeCachedService() {
     let hits = 0
     const record = { id: '1', name: 'Ada', password: 'hunter2' }
-    const svc = createService({
+    const svc = buildService({
       name: 'accounts',
       cache: true,
       async get() { hits++; return { ...record } },
@@ -77,7 +74,7 @@ describe('P0: update() method', () => {
     const store = new Map<string, Record<string, unknown>>([
       ['1', { id: '1', name: 'old', extra: 'field' }],
     ])
-    return createService({
+    return buildService({
       name: 'things',
       async get(ctx)    { return store.get(String(ctx.id)) ?? null },
       async update(ctx) {
@@ -89,14 +86,14 @@ describe('P0: update() method', () => {
   }
 
   it('app.service().update() dispatches instead of throwing NotFound', async () => {
-    const app = await createTestApp({ services: [() => makeThings()] })
+    const app = await createTestApp({ services: [makeThings()] })
     const result = await app.service('things').update('1', { name: 'new' }) as Record<string, unknown>
     expect(result.name).toBe('new')
     expect(result.id).toBe('1')
   })
 
   it('emits the things:updated auto-event', async () => {
-    const app = await createTestApp({ services: [() => makeThings()] })
+    const app = await createTestApp({ services: [makeThings()] })
     let payload: unknown = null
     app.events.on('things:updated', (p: unknown) => { payload = p })
     await app.service('things').update('1', { name: 'evented' })
@@ -111,8 +108,8 @@ describe('P0: update() method', () => {
 describe('P0: hooks added after start take effect', () => {
 
   it('service.hooks() after first request still runs new hooks', async () => {
-    const svc = createService({ name: 'ping', async find() { return [1] } })
-    const app = await createTestApp({ services: [() => svc] })
+    const svc = buildService({ name: 'ping', async find() { return [1] } })
+    const app = await createTestApp({ services: [svc] })
 
     // First request compiles pipelines (setAppHooks via _startForTest)
     const r1 = await request(app).get('/ping')
@@ -129,7 +126,7 @@ describe('P0: hooks added after start take effect', () => {
 
   it('app.hooks() after first request still runs new hooks', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'pong', async find() { return [1] } })],
+      services: [buildService({ name: 'pong', async find() { return [1] } })],
     })
     await request(app).get('/pong')
 

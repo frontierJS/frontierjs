@@ -17,7 +17,7 @@
  *
  *   <FilterBar {filters} {search} value={list.query} directives={list.directives} onchange={list.apply} />
  *   <Table {columns} rows={list.rows} orderBy={list.directives.orderBy} onsort={list.sort} />
- *   {#if list.hasMore}<button on:click={list.more}>Load more</button>{/if}
+ *   {#if list.hasMore}<button onclick={list.more}>Load more</button>{/if}
  *   <h1>{list.total ?? list.rows.length} Invoices</h1>        // total is null until the first answer
  *
  * ─── Where the state lives ─────────────────────────────────────────────────

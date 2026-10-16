@@ -2,11 +2,11 @@
 // Scans a directory for *.job.ts files and registers their default exports.
 // Mirrors Junction's autoloadServices pattern exactly.
 //
-// A job in `jobsDir` is NAMED BY ITS FILE. `defineJob` still states the name —
-// it is what a dispatch handle carries — but a stated name that disagrees with
-// the file is refused here rather than registered: the symptom otherwise is a
-// handler answering to `send-emial` while every dispatch says `send-email`, and
-// a job that silently never runs is the worst failure this package has.
+// A job in `jobsDir` is NAMED BY ITS FILE, and the loader stamps the name onto
+// a definition that states none. A stated `name:` that disagrees with the file
+// is refused here rather than registered: the symptom otherwise is a handler
+// answering to `send-emial` while every dispatch says `send-email`, and a job
+// that silently never runs is the worst failure this package has.
 //
 // Two things the file name cannot say, and both are handled here rather than by
 // bending the rule above. A job name is commonly NAMESPACED with a colon
@@ -20,6 +20,16 @@
 import type { JobDefinition, JobRegistrar } from './types.ts'
 
 const JOB_SUFFIX = /\.job\.(ts|js)$/
+
+/** Where a definition takes the name its file gives it. A symbol, so no job
+ *  declaration can state it and nothing but the loader can set it. */
+export const JOB_STAMP = Symbol.for('frontierjs.caravan.stamp')
+
+/** The loader's half of the file-name rule: a definition that states no name is
+ *  named by its file. A name it states is left to the check below. */
+function stampJobName(def: JobDefinition, name: string): void {
+  ;(def as unknown as Record<symbol, (n: string) => void>)[JOB_STAMP]?.(name)
+}
 
 /** The name a job file declares by existing: `jobs/send-email.job.ts` → `send-email`. */
 export function jobNameFromFile(path: string): string {
@@ -39,9 +49,11 @@ export function fileNameForJob(name: string): string {
  *
  * @example
  * // jobs/send-email.job.ts
- * export default defineJob('send-email', async (ctx) => {
- *   await mailer.send(ctx.data)
- * }, { queue: 'email', maxAttempts: 5 })
+ * export default defineJob({
+ *   queue: 'email',
+ *   maxAttempts: 5,
+ *   handler: async (ctx) => { await mailer.send(ctx.data) },
+ * })
  */
 export async function autoloadJobs(
   rawDir: string,
@@ -87,9 +99,10 @@ export async function autoloadJobs(
     }
 
     const expected = jobNameFromFile(entry)
+    stampJobName(def, expected)
     if (def.name !== expected && fileNameForJob(def.name) !== expected) {
       throw new Error(
-        `[Caravan] ${entry}: defineJob('${def.name}') does not match the file name. ` +
+        `[Caravan] ${entry}: defineJob({ name: '${def.name}' }) does not match the file name. ` +
         `A job in jobsDir is named by its file, so this would register '${def.name}' ` +
         `while every dispatch naming '${expected}' waits for a handler that never arrives. ` +
         `Rename the file to '${fileNameForJob(def.name)}.job.ts', or the job to '${expected}'.`

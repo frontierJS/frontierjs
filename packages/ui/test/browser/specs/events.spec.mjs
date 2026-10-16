@@ -5,7 +5,7 @@
  * (Invariant 11), and keeps a list of the events that do not bubble and
  * therefore have to be bound on the element itself. A name missing from that
  * list fails in the worst available way: the element renders, the BROWSER does
- * its half, and the component's half never runs. `<dialog on:close>` was
+ * its half, and the component's half never runs. `<dialog onclose>` was
  * missing, so Escape closed a Drawer natively while `bind:open` was never
  * written back — the caller's state said "open" for the rest of the page's
  * life and the drawer could not be reopened. Nothing threw.
@@ -63,9 +63,9 @@ export async function run(t) {
   await t.clickAt('#stage #drive')
 
   await t.eventually(`document.querySelector('#closes').textContent`, '1',
-    'on:close fires on a <dialog>')
+    'onclose fires on a <dialog>')
   await t.eventually(`document.querySelector('#toggles').textContent`, '1',
-    'on:toggle fires on a <details>')
+    'ontoggle fires on a <details>')
   await t.eventually(`document.querySelector('#invalids').textContent`, '1',
-    'on:invalid fires on a field that fails constraint validation')
+    'oninvalid fires on a field that fails constraint validation')
 }

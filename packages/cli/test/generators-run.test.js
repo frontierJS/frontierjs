@@ -53,10 +53,6 @@ async function grade(root) {
 const LEAD_RESOURCE = ['make:resource', ['Lead'], {}]
 const LEAD_SERVICE  = { 'api/src/services/leads.service.ts': 'export default {}\n' }
 
-// make:model's default @@gate is unreachable in an app with no admin column —
-// FJS-1385, open; every other finding fails the case.
-const KNOWN = { 'make:model': ['gate-unreachable'] }
-
 const CASES = [
   { cmd: 'make:model',     arg: ['Invoice'], flag: { resource: true },   wrote: 'web/src/resources/Invoice.mesa' },
   { cmd: 'make:route',     arg: ['leads'],   flag: { resource: 'Lead' }, before: [LEAD_RESOURCE], wrote: 'web/src/routes/leads/index.mesa' },
@@ -76,8 +72,7 @@ describe('a generator writes what `fli check` accepts', () => {
         // A rule that skipped proves nothing about the file it would have judged.
         expect(ran).toContain('resource-file-name')
         expect(ran).toContain('resource-script')
-        const known = KNOWN[c.cmd] ?? []
-        expect(findings.filter(f => !known.includes(f.rule))).toEqual([])
+        expect(findings).toEqual([])
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
@@ -147,48 +142,129 @@ describe('a generated link names the URL its directory is served at', () => {
 
 // make:scaffold ended on *Add a nav link to your layout* and nothing added one,
 // so in 0 of 21 apps the Charter stressor generated did the page after sign-up
-// reach a model's list (`FJS-1808`). The layout here is the one `fli new`
+// reach a model's list (`FJS-1808`). The table here is the one `fli new`
 // writes, read out of new.md, so a change to it is graded too.
-describe('make:scaffold links the list from the layout fli new writes', () => {
+describe('make:scaffold lists the model in the nav table fli new writes', () => {
   const NEW_MD = Bun.file(join(CLI, 'commands/project/new.md')).text()
-  const layoutOf = async (useAuth) => {
-    const src = (await NEW_MD).match(/\nfunction makeRouteModule\(appName, useAuth(?:, useApi = true)?\) \{[\s\S]*?\n\}\n/)[0]
-    return new Function('sc', `${src}\nreturn makeRouteModule`)('</' + 'script>')('demo', useAuth)
+  const navOf = async (useAuth) => {
+    const src = (await NEW_MD).match(/\nfunction makeNavJs\(useAuth\) \{[\s\S]*?\n\}\n/)[0]
+    return new Function(`${src}\nreturn makeNavJs`)()(useAuth)
   }
   const SCHEMA = { 'db/schema.lite': 'model SearchIndex { id Int @id  name String }\n' }
-  const LAYOUT = 'web/src/routes/_module.mesa'
+  const NAV = 'web/src/lib/nav.js'
 
   for (const useAuth of [true, false]) {
-    test(useAuth ? 'behind the signed-in check, as the Users link is' : 'with no sign-in, for everyone', async () => {
-      const root = makeApp({ ...SCHEMA, [LAYOUT]: await layoutOf(useAuth) })
+    test(useAuth ? 'behind the signed-in check, as the Users entry is' : 'with no sign-in, for everyone', async () => {
+      const root = makeApp({ ...SCHEMA, [NAV]: await navOf(useAuth) })
       try {
         await run(root, 'make:scaffold', ['SearchIndex'], { 'skip-schema': true })
-        const layout = await Bun.file(join(root, LAYOUT)).text()
-        const nav = layout.slice(layout.indexOf('aria-label="Main"'), layout.indexOf('</nav>'))
-        expect(nav).toContain(`<a class="navlink" href="/searchindexes/" aria-current={(page.route, isActive('/searchindexes/')) ? 'page' : null}>Search Indexes</a>`)
-        expect(/\{#if session\.user\}\s*<a class="navlink" href="\/searchindexes\/"/.test(nav)).toBe(useAuth)
+        const nav = await Bun.file(join(root, NAV)).text()
+        const entry = nav.split('\n').find(l => l.includes("href: '/searchindexes/'"))
+        expect(entry.trim()).toBe(`{ href: '/searchindexes/', label: 'Search Indexes'${useAuth ? ', show: members' : ''} },`)
 
-        // Run again, and the link is not added a second time.
+        // Run again, and the entry is not added a second time.
         await run(root, 'make:scaffold', ['SearchIndex'], { 'skip-schema': true })
-        expect((await Bun.file(join(root, LAYOUT)).text()).split('href="/searchindexes/"').length).toBe(2)
+        expect((await Bun.file(join(root, NAV)).text()).split("href: '/searchindexes/'").length).toBe(2)
 
-        const { compileSource } = await import(resolve(CLI, '../mesa/src/compiler.js'))
-        const ctx = await compileSource(layout.replace(/^---[\s\S]*?\n---\n/, ''), { filename: '_module.mesa', css: false, debug: false })
-        expect(ctx.analysis.errors).toEqual([])
+        // The result is a module that loads, and the entry sits in the group.
+        const mod = await import(`data:text/javascript;base64,${Buffer.from(nav).toString('base64')}`)
+        const hrefs = mod.groups.flatMap(g => g.entries.map(e => e.href))
+        expect(hrefs).toContain('/searchindexes/')
+        expect(hrefs[0]).toBe('/')
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
     }, 30000)
   }
 
-  test('a layout with no main nav is left alone', async () => {
-    const own = '<div class="shell"><slot /></div>\n'
-    const root = makeApp({ ...SCHEMA, [LAYOUT]: own })
+  test('an app with no nav table is left alone', async () => {
+    const root = makeApp({ ...SCHEMA })
     try {
       await run(root, 'make:scaffold', ['SearchIndex'], { 'skip-schema': true })
-      expect(await Bun.file(join(root, LAYOUT)).text()).toBe(own)
+      expect(existsSync(join(root, NAV))).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
   }, 30000)
+})
+
+// FJS-2696 — the sign-in page is a form a password manager can read, and its
+// dev hint does not tell a visitor with an account that nobody has one.
+describe('the scaffold sign-in page', () => {
+  const loginOf = async () => {
+    const text = await Bun.file(join(CLI, 'commands/project/new.md')).text()
+    const src = text.match(/\nfunction makeRouteLogin\(\) \{[\s\S]*?\n\}\n/)[0]
+    return new Function('sc', `${src}\nreturn makeRouteLogin`)('</' + 'script>')()
+  }
+
+  test('is a form whose inputs a password manager can key on', async () => {
+    const page = await loginOf()
+    expect(page).toMatch(/<form [^>]*onsubmit\|preventDefault/)
+    expect(page).toContain('autocomplete="username"')
+    expect(page).toContain('autocomplete="current-password"')
+  })
+
+  test('never states that no user exists', async () => {
+    expect(await loginOf()).not.toMatch(/no user exists/i)
+  })
+})
+
+// The reference and the example write `@updatedAt` alone; it stamps the create
+// too, so `@default(now())` beside it is a second spelling every new app copies
+// (`FJS-2952`).
+describe('a generated model stanza spells updatedAt as the reference does', () => {
+  const CASES = [
+    { cmd: 'make:model',    arg: ['Widget'],      flag: {} },
+    { cmd: 'make:scaffold', arg: ['SearchIndex'], flag: { 'skip-schema': false } },
+  ]
+  for (const c of CASES) {
+    test(`fli ${c.cmd}`, async () => {
+      const root = makeApp({ 'db/schema.lite': 'model Lead { id Int @id  name String }\n' })
+      try {
+        await run(root, c.cmd, c.arg, c.flag)
+        const schema = await Bun.file(join(root, 'db/schema.lite')).text()
+        const line = schema.split('\n').find(l => /^\s*updatedAt\b/.test(l))
+        expect(line).toBeDefined()
+        expect(line.trim().split(/\s+/)).toEqual(['updatedAt', 'DateTime', '@updatedAt'])
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }, 30000)
+  }
+})
+
+// FJS-1130: `db:schema` appended a Prisma model to `schema.prisma`, a file no
+// app has. `make:model` is the one command that writes a model, into schema.lite.
+describe('no command writes a Prisma schema', () => {
+  test('no command file names schema.prisma', async () => {
+    const hits = []
+    for await (const f of new Bun.Glob('**/*.md').scan({ cwd: join(CLI, 'commands') })) {
+      if ((await Bun.file(join(CLI, 'commands', f)).text()).includes('schema.prisma')) hits.push(f)
+    }
+    expect(hits).toEqual([])
+  })
+})
+
+// FJS-2486 — the verification mail links to a web page that posts the token
+// (GET /auth/email/verify is gone), so `fli new --auth` has to write that page.
+describe('the scaffold verification link lands on a page fli new writes', () => {
+  const newMd = () => Bun.file(join(CLI, 'commands/project/new.md')).text()
+
+  test('every route the auth callbacks link to is in the file list', async () => {
+    const text = await newMd()
+    const links = [...text.matchAll(/\$\{env\.WEB_URL\}\/([a-z-]+)\/\?token=/g)].map(m => m[1])
+    expect(links).toContain('verify-email')
+    for (const route of links) {
+      expect(text).toContain(`'web/src/routes/${route}/index.mesa'`)
+      expect(text).toContain(`'web/src/routes/${route}'`)
+    }
+  })
+
+  test('the page posts the token with client.auth.verifyEmail and signs nobody in', async () => {
+    const text = await newMd()
+    const src = text.match(/\nfunction makeRouteVerifyEmail\(\) \{[\s\S]*?\n\}\n/)[0]
+    const page = new Function('sc', `${src}\nreturn makeRouteVerifyEmail`)('</' + 'script>')()
+    expect(page).toContain('auth.verifyEmail(')
+    expect(page).not.toMatch(/onload|onMount[^\n]*verifyEmail/)
+  })
 })

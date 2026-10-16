@@ -483,7 +483,10 @@ describe('api keys', () => {
   test('an EXPIRED key does not verify', async () => {
     const u    = await freshUser('ak-expired')
     const user = await h.sys.user.findFirst({ where: { email: u.email } })
-    const { key } = await h.auth.createApiKey!(user.id, { expiresAt: new Date(Date.now() - 60_000) })
+    // Issued live and lapsed by writing the row: createApiKey refuses a past
+    // expiresAt at the door (FJS-1849), so verify is the only place left to see one.
+    const { key, id } = await h.auth.createApiKey!(user.id, { expiresAt: new Date(Date.now() + 60_000) })
+    await h.sys.credential.update({ where: { id }, data: { tokenExpiresAt: new Date(Date.now() - 60_000) } })
 
     expect(await h.auth.verifyApiKey!(key)).toBeNull()
   })
@@ -641,7 +644,7 @@ describe('the gate walls the credential tables off, and User is readable by a us
   // VERIFYING.md's headline failure is a gate that looks enforced and isn't.
   // asSystem() is this package's deliberate bypass; everything else is graded.
   //
-  // The three credential-material models are @@gate("8") — above every level a
+  // The three credential-material models are @@gate(8) — above every level a
   // request can reach. User is "4.5.5.6": an app's own screens legitimately list
   // its people, so read is USER, while writing identity stays privileged.
   // Registration is unaffected because every write this package makes is

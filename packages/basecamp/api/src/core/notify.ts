@@ -28,11 +28,11 @@
 // the screen already says the app has no mailer.
 
 import { NOTIFICATION_KINDS, notificationKind } from '../services/notification-preferences/kinds.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 /** The transports this app can actually deliver on. `inApp` always; `email`
  *  only where a provider is configured, which `app.mail` is the one answer to. */
-function available(app: BasecampApp): Set<string> {
+function available(app: App): Set<string> {
   const set = new Set(['inApp'])
   if ((app as { mail?: unknown }).mail) set.add('email')
   return set
@@ -48,7 +48,7 @@ function available(app: BasecampApp): Set<string> {
  * schema test refuses, so reaching it means the two lists have already parted.
  */
 export async function transportsFor(
-  app:    BasecampApp,
+  app:    App,
   userId: string,
   kind:   string,
 ): Promise<string[]> {
@@ -56,7 +56,7 @@ export async function transportsFor(
   if (!def) return []
 
   // asSystem(): this runs from jobs and from hooks alike, and a preference row
-  // is `@@gate("1")` with `userId == auth().id`. Reading somebody ELSE's row is
+  // is `@@gate(1)` with `userId == auth().id`. Reading somebody ELSE's row is
   // exactly what a sender does, and no caller's standing makes that legal —
   // which is why the bypass is stated rather than routed around.
   const row = await (app.db as any).asSystem().notificationPreference.findFirst({
@@ -90,7 +90,7 @@ export interface Addressee {
  * whole deploy's worth of recipients.
  */
 export async function notifyPeople(
-  app:     BasecampApp,
+  app:     App,
   kind:    string,
   userIds: string[],
   payload: unknown,
@@ -146,7 +146,7 @@ export async function notifyPeople(
  * mailing one is telling a stranger about a fleet.
  */
 export async function workspaceMembers(
-  app:         BasecampApp,
+  app:         App,
   workspaceId: string,
   roles?:      string[],
 ): Promise<string[]> {

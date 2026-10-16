@@ -12,7 +12,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
-import { createService, createBaseService } from '../src/core/service.ts'
+import { createService, buildBase } from '../src/core/service.ts'
 import { describeSurface } from '../src/core/app-model.ts'
 import { renderSurfaceSnapshot } from '../tools/surface.ts'
 import { $ } from '../index.ts'
@@ -26,7 +26,7 @@ model Todo {
   id      Int       @id @default(autoincrement())
   title   String    @default("t")
   status  TodoState @default(open)
-  @@gate("1.1.1.1")
+  @@gate(1.1.1.1)
   @@transitions(status, complete: open -> done)
   @@db(main)
 }
@@ -47,7 +47,7 @@ beforeAll(async () => {
 
   // The generated shape: no body, the moves are derived.
   app.services.register(createService({
-    name: 'todos', ...(createBaseService({ channel: 'todos' }) as unknown as Record<string, unknown>),
+    name: 'todos', ...(buildBase({ channel: 'todos' }) as unknown as Record<string, unknown>),
   } as never))
 
   app.services.register(createService({

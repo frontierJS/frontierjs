@@ -223,14 +223,14 @@ describe('bind: on a local binding that cannot hold a write', () => {
   // answer to it — so the refusal names the road instead of only the rule.
   it('names the write-only road rather than only `let`', async () => {
     const { errors } = await cx("<script>\nvar g = 'hi'\n</script><input bind:value={g} />")
-    expect(errors.join('\n')).toMatch(/on:input=\{e => \{ g = e\.target\.value \}\}/)
+    expect(errors.join('\n')).toMatch(/oninput=\{e => \{ g = e\.target\.value \}\}/)
   })
 
   // Advice that fails when taken is worse than none: the shape the message
   // hands the author is compiled here, not merely quoted.
   it('and that road compiles, with the var still untracked', async () => {
     const { ctx, errors, warnings } = await cx(
-      "<script>\nvar g = 'hi'\n</script><input on:input={e => { g = e.target.value }} />"
+      "<script>\nvar g = 'hi'\n</script><input oninput={e => { g = e.target.value }} />"
     )
     expect(errors).toEqual([])
     expect(warnings).toEqual([])

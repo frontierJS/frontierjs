@@ -14,8 +14,10 @@
 import type { IAuth, SessionContext, App, Plugin, TransportContext } from '@frontierjs/junction'
 import { parseTtl, normalizePrefix, Unauthorized, BadRequest, Forbidden, NotFound, rateLimitHook } from '@frontierjs/junction'
 import type { AuthPluginOptions }                                   from './types.ts'
-import { createAuthServices, asPrincipal }                          from './services.ts'
+import { createAuthServices, asPrincipal, refuseDelegated }         from './services.ts'
+import { SupportEpisodeError }                                     from './errors.ts'
 import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
+import type { AuthCleanupHandle }                                 from './cleanup.ts'
 
 /**
  * Where a half-finished login lives in cookie mode.
@@ -77,14 +79,19 @@ export function createAuthPlugin(
   // a mistake worth naming at boot rather than a 500 on first click.
   const oauthAuth       = auth as Partial<AuthOAuth>
   const oauthPath       = `${prefix}/oauth`
+  // Feature-detected like the OAuth half: a third-party IAuth prunes its own rows.
+  const cleanup         = (auth as IAuth & { cleanup?: AuthCleanupHandle }).cleanup
 
   return {
     name: '@frontierjs/auth',
+
+    work() { cleanup?.start() },
 
     // Both limiters own a sweep timer. They are unref'd so they never hold the
     // process open, but a test process that builds many apps would otherwise
     // leave one running per app against a live counter map.
     shutdown() {
+      cleanup?.stop()
       ;(loginLimiter    as unknown as { dispose?(): void }).dispose?.()
       ;(registerLimiter as unknown as { dispose?(): void }).dispose?.()
       ;(resetLimiter    as unknown as { dispose?(): void }).dispose?.()
@@ -150,7 +157,7 @@ export function createAuthPlugin(
       if (services === false) return
 
       for (const svc of createAuthServices(auth, services)) {
-        if (app.services?.has?.(svc.name)) {
+        if (app.services?.has?.(svc.name!)) {
           throw new Error(
             `[auth] service '${svc.name}' is already registered by this app. ` +
             `Rename or drop auth's — createAuthPlugin(auth, { services: { ` +
@@ -254,11 +261,19 @@ export function createAuthPlugin(
         if (!ticket) throw new BadRequest('challenge is required')
         if (!code)   throw new BadRequest('code is required')
 
-        const result = await auth.completeLogin(ticket, code)
-        // Spent either way: the ticket is single-use, and leaving the cookie in
-        // place means the next failed password login answers with a stale one
-        // still in the jar.
-        if (cookieAuth) ctx.setCookie?.(CHALLENGE_COOKIE, '', { maxAge: 0, path: '/' })
+        let result
+        try {
+          result = await auth.completeLogin(ticket, code)
+        } catch (err) {
+          // A refusal that cannot be retried has spent the ticket, and leaving
+          // the cookie in place means the next failed password login answers
+          // with a stale one still in the jar. A retryable one keeps it: the
+          // person is typing the next code against the same ticket.
+          if (cookieAuth && (err as { retryable?: boolean })?.retryable === false) clearChallengeCookie(ctx)
+          throw err
+        }
+        // Spent either way: the ticket is single-use.
+        if (cookieAuth) clearChallengeCookie(ctx)
         return respond(ctx, result, cookieAuth, cookieMaxAge)
       })
 
@@ -357,6 +372,10 @@ export function createAuthPlugin(
         verifyLimiter(ctx)
 
         const user = ctx.user as SessionContext
+        // Inside an episode `ctx.user` is the subject, so this would mail THEM a
+        // fresh token and purge the one they hold, in the operator's name and
+        // with the trail naming nobody (`FJS-1854`).
+        refuseDelegated(ctx, user, 'request a verification email')
 
         if (auth.requestEmailVerification) {
           await auth.requestEmailVerification(user.userId)
@@ -376,19 +395,23 @@ export function createAuthPlugin(
       // written one gets a 403 naming the option. Impersonation is not
       // something to acquire by upgrading a dependency.
       //
-      // The guard is handed the OPERATOR, which is `ctx.user` here because
-      // starting an episode from inside one is refused a layer down: while an
-      // episode is live `ctx.user` is the subject, and an app grading THAT
-      // would be asked whether the person being helped may impersonate.
+      // The guard is handed the OPERATOR, so a start from inside an episode is
+      // refused HERE, before the guard and before the subject is looked up:
+      // while an episode is live `ctx.user` is the subject, so an app grading
+      // it would be asked whether the person being helped may impersonate, and
+      // a 404 for the next subject would answer whether an account exists to a
+      // call that was going to be refused anyway (`FJS-1851`).
 
       app.post(`${prefix}/support/start`, async (ctx: TransportContext) => {
         if (!ctx.user) throw new Unauthorized('Authentication required')
         if (!auth.startSupport) throw new BadRequest('Support sessions are not supported by this auth provider')
 
         const operator = ctx.user as SessionContext
+        if (operator.support) throw new SupportEpisodeError('Already in a support session — end it before starting another')
         const { subjectId, reason, ttl } = body(ctx) as { subjectId?: string; reason?: string; ttl?: string }
         if (!subjectId) throw new BadRequest('subjectId is required')
         if (!reason)    throw new BadRequest('reason is required')
+        if (subjectId === operator.userId) throw new BadRequest('Cannot start a support session against yourself')
 
         if (!canStartSupport)
           throw new Forbidden('Support sessions are not enabled — the app must supply canStartSupport')
@@ -717,6 +740,11 @@ function respond(
   // Only strip it when the cookie was actually set: if a transport has no
   // setCookie, stripping would leave the caller with no token at all.
   if (cookieAuth && payload?.token && typeof ctx.setCookie === 'function') {
+    // A session supersedes any half-finished login: the ticket stands in for
+    // the password, and a full login that follows one leaves it in the jar
+    // until it lapses (`FJS-1855`). Only when the jar had one, and before the
+    // session cookie, because a reader that keeps one Set-Cookie keeps the last.
+    if (ctx.cookies?.[CHALLENGE_COOKIE]) clearChallengeCookie(ctx)
     ctx.setCookie('session', payload.token, {
       httpOnly: true,
       sameSite: 'lax',
@@ -828,4 +856,9 @@ function setChallengeCookie(ctx: TransportContext, challenge: string, expiresAt:
     // from a config value would be a second answer to how long a ticket lives.
     maxAge:   Math.max(1, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000)),
   })
+}
+
+// The same Path the set used, or the browser keeps the one it has.
+function clearChallengeCookie(ctx: TransportContext): void {
+  ctx.setCookie?.(CHALLENGE_COOKIE, '', { maxAge: 0, path: '/' })
 }

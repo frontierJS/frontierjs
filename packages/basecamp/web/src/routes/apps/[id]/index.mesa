@@ -191,7 +191,7 @@ title: App
   }
 
   // Placement — POST /apps/:id with X-Service-Method. The row it writes is
-  // `@@gate("2.8")`, so the service does it through asSystem() after checking
+  // `@@gate(2.8)`, so the service does it through asSystem() after checking
   // the caller against the workspace; nothing here needs to know that.
   async function place() {
     if (!placeOn) return

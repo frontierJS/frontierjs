@@ -28,7 +28,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { createApp } from '../src/core/app.ts'
-import { createService, createBaseService } from '../src/core/service.ts'
+import { createService, buildBase } from '../src/core/service.ts'
 import { channels } from '../src/transport/channels.ts'
 
 const SCHEMA = `
@@ -466,7 +466,7 @@ describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
 // Everything above declares `model: 'Order'` by hand, and that is the whole
 // reason the mechanism could be dead for two months without a red test.
 //
-// No real service file writes that. `createBaseService({})` in orders.service.ts
+// No real service file writes that. `buildBase({})` in orders.service.ts
 // is the canonical shape — the accessor is resolved per call from the service
 // NAME through accessorCandidates — and the model → service index this file
 // exercises was built from `svc.model ?? singularize(name)`, where `svc.model`
@@ -475,7 +475,7 @@ describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
 // service in every app.
 //
 // Two spellings are legal and both have to resolve: the accessor may be the
-// singular or the plural (`createBaseService({ model: 'posts' })` is
+// singular or the plural (`buildBase({ model: 'posts' })` is
 // documented), and Litestone announces the model name.
 
 describe('the model → service index (FJS-464)', () => {
@@ -519,12 +519,12 @@ describe('the model → service index (FJS-464)', () => {
     expect(seen).toEqual(['created#1'])
   })
 
-  // The option-drop half of the same defect: `createBaseService` returned an
+  // The option-drop half of the same defect: `buildBase` returned an
   // object with no `model` key, so the loader's `createService({ name, ...base })`
   // saw none and substituted the file name. A service declaring which model it
   // is reported a different one.
-  test('createBaseService carries its declared model through createService', async () => {
-    const base = createBaseService({ model: 'Order' }) as unknown as Record<string, unknown>
+  test('buildBase carries its declared model through createService', async () => {
+    const base = buildBase({ model: 'Order' }) as unknown as Record<string, unknown>
     expect(base.model).toBe('Order')
     expect((createService({ name: 'orders', ...base }) as { model?: string }).model).toBe('Order')
   })
@@ -804,5 +804,82 @@ describe('a write before the services register (FJS-1739)', () => {
     await sys().order.update({ where: { id: 1 }, data: { status: 'b' } })
     await tick()
     expect(seen).toEqual(['orderFeed:updated#1'])
+  })
+})
+
+// FJS-2632 — a `@from` value moves when a CHILD row is written, and the write
+// announced the child only. The parent a count was read off held the old number
+// on every screen, in the tab that wrote and in every other one.
+describe('a write moves a @from on another model (FJS-2632)', () => {
+  const FROM = `
+    model Shift      { id Int @id  name String  adults Int @from(Assignment, count: true)
+                       assignments Assignment[] }
+    model Assignment { id Int @id  shiftId Int  shift Shift @relation(fields: [shiftId], references: [id]) }
+    model Note       { id Int @id  text String }
+  `
+  type Sys = Record<string, Record<string, (a: unknown) => Promise<unknown>>>
+
+  async function mk() {
+    const db  = await createClient({ db: ':memory:', schema: FROM })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({ name: 'shifts', model: 'Shift', db: db as never }))
+    app.services.register(createService({ name: 'assignments', model: 'Assignment', db: db as never }))
+    app.services.register(createService({ name: 'notes', model: 'Note', db: db as never }))
+    await app._startForTest()
+    const sys = () => (db as never as { asSystem(): Sys }).asSystem()
+    await sys().shift.create({ data: { id: 1, name: 'am' } })
+    await tick()
+    const seen: string[] = []
+    for (const s of ['shifts', 'assignments', 'notes'])
+      app.events.on(`${s}:changed`, (d: { operation: string }) => { seen.push(`${s}:changed:${d.operation}`) })
+    return { db, app, sys, seen }
+  }
+
+  test('creating a child tells the parent\'s service to re-read', async () => {
+    const { sys, seen } = await mk()
+    await sys().assignment.create({ data: { id: 1, shiftId: 1 } })
+    await tick(); await tick()
+    expect(seen).toEqual(['shifts:changed:regrade'])
+  })
+
+  test('removing a child does too, and a write to an unrelated model does not', async () => {
+    const { sys, seen } = await mk()
+    await sys().assignment.create({ data: { id: 1, shiftId: 1 } })
+    await tick(); await tick()
+    seen.length = 0
+    await sys().note.create({ data: { id: 1, text: 'x' } })
+    await sys().assignment.delete({ where: { id: 1 } })
+    await tick(); await tick()
+    expect(seen).toEqual(['shifts:changed:regrade'])
+  })
+})
+
+// FJS-2255 — the service announces the row it removed and SQLite removes the
+// cascade children inside the same statement, so no `removed` frame named them
+// and every other open tab kept showing rows that no longer exist.
+describe('a delete that cascades announces the children (FJS-2255)', () => {
+  const FEED = `
+    model Follow { id Int @id  posts Post[] }
+    model Post   { id Int @id  followId Int
+                   follow Follow @relation(fields: [followId], references: [id], onDelete: Cascade) }
+  `
+
+  test('the child service announces removed, once per row, after a delete of the parent', async () => {
+    const db  = await createClient({ db: ':memory:', schema: FEED })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({ name: 'follows', model: 'Follow', db: db as never }))
+    app.services.register(createService({ name: 'posts', model: 'Post', db: db as never }))
+    await app._startForTest()
+    const sys: any = (db as any).asSystem()
+    await sys.follow.create({ data: { id: 1 } })
+    await sys.post.create({ data: { id: 10, followId: 1 } })
+    await sys.post.create({ data: { id: 11, followId: 1 } })
+    await tick(); await tick()
+    const seen: string[] = []
+    for (const s of ['follows', 'posts'])
+      app.events.on(`${s}:removed`, (row: { id: number }) => { seen.push(`${s}:removed#${row.id}`) })
+    await sys.follow.delete({ where: { id: 1 } })
+    await tick(); await tick()
+    expect(seen.sort()).toEqual(['follows:removed#1', 'posts:removed#10', 'posts:removed#11'])
   })
 })

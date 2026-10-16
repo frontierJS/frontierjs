@@ -23,7 +23,7 @@ model User {
   role   String  @default("user")
 
   @@auth
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
   @@allow('update', id == auth().id)
 }
 `
@@ -126,7 +126,7 @@ describe('emit', () => {
     delete a.entities[0].access.roles
     const out = emit(a, { scaffold: SCAFFOLD })
     const membership = out.text.slice(out.text.indexOf('model Membership {'))
-    expect(membership.slice(0, membership.indexOf('\n}'))).toMatch(/@@gate\("4\.8\.8\.8"\)\n {2}@@allow\('read', +userId == auth\(\)\.id \|\| check\(company\)\)$/)
+    expect(membership.slice(0, membership.indexOf('\n}'))).toMatch(/@@gate\(4\.8\.8\.8\)\n {2}@@allow\('read', +userId == auth\(\)\.id \|\| check\(company\)\)$/)
     expect(out.findings.map(f => f.message).join('\n')).toContain('No member administers a Company')
     expect(parses(out.text)).toBe(true)
   })
@@ -210,7 +210,7 @@ describe('emit', () => {
 
   test('a public create stamps no owner, since a visitor has no id to stamp (FJS-1793)', () => {
     const text = emit(PUBLIC_OWNED, { scaffold: SCAFFOLD }).text
-    expect(text).toContain('@@gate("4.0.4.4")')
+    expect(text).toContain('@@gate(4.0.4.4)')
     expect(text).toMatch(/ownerId +String\n/)
     expect(text).not.toContain('@default(auth().id)')
   })
@@ -218,19 +218,19 @@ describe('emit', () => {
   test('an op nobody holds is raised to 8, not left signed-in', () => {
     const a = { entities: [{ name: 'Receipt', rung: 'novel', why: 'probe', fields: [{ name: 'total', type: 'money', required: true }], links: [{ name: 'customer', to: 'User', actor: 'subject', required: true }], access: { system: true } }] }
     const text = emit(a, { scaffold: SCAFFOLD }).text
-    expect(text).toContain('@@gate("4.8.8.8")')
+    expect(text).toContain('@@gate(4.8.8.8)')
     expect(text).toContain("@@allow('read', customerId == auth().id)")
   })
 
   test('shared opens the read only; the writes stay with the links, and an administrator holds the rest', () => {
     const text = emit(TIMETABLE, { scaffold: SCAFFOLD }).text
-    expect(text).toContain('@@gate("4.4.4.5")')
+    expect(text).toContain('@@gate(4.4.4.5)')
     expect(text).toContain("@@allow('create', instructorId == auth().id)")
     expect(text).toContain("@@allow('update', instructorId == auth().id)")
     expect(text).not.toContain("@@allow('read'")
     const bare = clone(TIMETABLE)
     bare.entities[0].links = []
-    expect(emit(bare, { scaffold: SCAFFOLD }).text).toContain('@@gate("4.5.5.5")')
+    expect(emit(bare, { scaffold: SCAFFOLD }).text).toContain('@@gate(4.5.5.5)')
     expect(checkAnswer(TIMETABLE).findings.map(f => f.message)).toEqual(['Every signed-in user reads every YogaClass, and its instructor creates or updates one, and an administrator deletes one: the timetable every member books from'])
     // FJS-2552: a link that holds every write leaves the administrator none, and the finding says so.
     const owned = clone(TIMETABLE)
@@ -251,7 +251,7 @@ describe('emit', () => {
     expect(said).toContain('Every signed-in user reads every BookingRequest')
     const text = emit(BOOKING, { scaffold: SCAFFOLD }).text
     expect(parses(text)).toBe(true)
-    expect(text).toContain('@@gate("4.0.4.5")')
+    expect(text).toContain('@@gate(4.0.4.5)')
     const both = clone(BOOKING)
     both.entities[0].access.public = ['read']
     expect(checkAnswer(both).refusals.map(x => x.message).join('\n')).toContain('already covers every signed-in user')
@@ -259,7 +259,7 @@ describe('emit', () => {
 
   test('public is the gate at 0, and a condition narrows it', () => {
     const text = emit(hiring, { scaffold: SCAFFOLD }).text
-    expect(text).toContain('@@gate("0.4.4.4")')
+    expect(text).toContain('@@gate(0.4.4.4)')
     expect(text).toMatch(/@@allow\('read', +managerId == auth\(\)\.id \|\| check\(company\) \|\| status == 'open'\)/)
   })
 })

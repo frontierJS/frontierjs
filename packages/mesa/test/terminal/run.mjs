@@ -23,7 +23,7 @@
  * - Mesa flushes on a microtask, so every key helper waits a tick and renders
  *   once before returning; a spec that reads the frame straight after a
  *   mockInput call of its own sees the previous state.
- * - A fixture is compiled with its imports by `scripts/terminal-tree.js`,
+ * - A fixture is compiled with its imports by `scripts/host-tree.js`,
  *   which `bun run tui` shares; its header carries the module traps.
  */
 import { readdirSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
@@ -69,8 +69,8 @@ function makeT(rows, tmp) {
     compile: async (name) => {
       // Loaded here rather than at the top: a compiler that fails to import
       // fails the spec that asked for it, not the drive and every spec in it.
-      const { compileTree } = await import('../../scripts/terminal-tree.js')
-      const mod = await import(await compileTree(join(HERE, 'fixtures', `${name}.mesa`), tmp))
+      const { compileTree } = await import('../../scripts/host-tree.js')
+      const mod = await import(await compileTree(join(HERE, 'fixtures', `${name}.mesa`), tmp, { target: 'terminal' }))
       return mod.default
     },
 

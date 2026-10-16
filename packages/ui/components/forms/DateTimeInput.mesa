@@ -247,7 +247,7 @@
   const localMax = max === undefined ? undefined : toLocalInput(max, { seconds, timeZone })
 
   let inputEl
-  export function focus() { inputEl?.focus() }
+  export function focus() { return $.focus(inputEl) }
 
   // A segment backspaced reports '' with `badInput` set, the same '' a cleared
   // box reports. Written through, it clears the record, and the re-render
@@ -292,9 +292,9 @@
       min={localMin}
       max={localMax}
       aria-invalid={!!displayError || null}
-      on:input={handleInput}
-      on:blur={onblur}
-      on:focus={onfocus}
+      oninput={handleInput}
+      onblur={onblur}
+      onfocus={onfocus}
       {...$attributes}
     />
 

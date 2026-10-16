@@ -34,7 +34,7 @@ model Order {
   total     Float    @default(0)
   note      String?
   status    Status   @default("pending")
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 enum Status { pending paid shipped }
@@ -108,12 +108,12 @@ describe('expand — N-1 keeps serving', () => {
   })
 
   it('an added index — it changes how long a query takes and nothing it answers', () => {
-    const r = verdictOf(BASE, BASE.replace('@@gate("2.4.4.5")', '@@gate("2.4.4.5")\n  @@index([total])'))
+    const r = verdictOf(BASE, BASE.replace('@@gate(2.4.4.5)', '@@gate(2.4.4.5)\n  @@index([total])'))
     expect(r.verdict).toBe('expand')
   })
 
   it('an eased gate', () => {
-    const r = verdictOf(BASE, BASE.replace('@@gate("2.4.4.5")', '@@gate("0.4.4.5")'))
+    const r = verdictOf(BASE, BASE.replace('@@gate(2.4.4.5)', '@@gate(0.4.4.5)'))
     expect(r.verdict).toBe('expand')
   })
 
@@ -174,7 +174,7 @@ describe('contract — the deploy is the pivot', () => {
   })
 
   it('an added @@unique', () => {
-    const r = verdictOf(BASE, BASE.replace('@@gate("2.4.4.5")', '@@gate("2.4.4.5")\n  @@unique([reference, total])'))
+    const r = verdictOf(BASE, BASE.replace('@@gate(2.4.4.5)', '@@gate(2.4.4.5)\n  @@unique([reference, total])'))
     expect(r.verdict).toBe('contract')
   })
 
@@ -189,19 +189,19 @@ describe('contract — the deploy is the pivot', () => {
   })
 
   it('a raised gate — the half no generic deployer can see', () => {
-    const r = verdictOf(BASE, BASE.replace('@@gate("2.4.4.5")', '@@gate("4.4.4.5")'))
+    const r = verdictOf(BASE, BASE.replace('@@gate(2.4.4.5)', '@@gate(4.4.4.5)'))
     expect(r.verdict).toBe('contract')
     expect(about(r, 'model Order')!.detail).toContain('read needs USER')
   })
 
   it('an added row policy — the failure that arrives as a 200', () => {
-    const r = verdictOf(BASE, BASE.replace('@@gate("2.4.4.5")', `@@gate("2.4.4.5")\n  @@allow('read', total > 0)`))
+    const r = verdictOf(BASE, BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow('read', total > 0)`))
     expect(r.verdict).toBe('contract')
     expect(about(r, '@@allow(`read`) added')!.detail).toContain('200')
   })
 
   it('one policy declaration is one finding, not one per operation it expands to', () => {
-    const r = verdictOf(BASE, BASE.replace('@@gate("2.4.4.5")', `@@gate("2.4.4.5")\n  @@allow('all', total > 0)`))
+    const r = verdictOf(BASE, BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow('all', total > 0)`))
     const policy = r.findings.filter((x: any) => x.detail.includes('@@allow'))
 
     expect(policy).toHaveLength(1)
@@ -210,7 +210,7 @@ describe('contract — the deploy is the pivot', () => {
   })
 
   it('@@softDelete turned on — delete means something different in the two releases', () => {
-    const r = verdictOf(BASE, BASE.replace('  note      String?', '  note String?\n  deletedAt DateTime?').replace('@@gate("2.4.4.5")', '@@gate("2.4.4.5")\n  @@softDelete'))
+    const r = verdictOf(BASE, BASE.replace('  note      String?', '  note String?\n  deletedAt DateTime?').replace('@@gate(2.4.4.5)', '@@gate(2.4.4.5)\n  @@softDelete'))
     expect(r.verdict).toBe('contract')
   })
 
@@ -223,8 +223,8 @@ describe('contract — the deploy is the pivot', () => {
 
 describe('unknown — counts as a contract, because a wrong "reversible" is the costly answer', () => {
   it('a policy predicate that moved: nothing here can say which way', () => {
-    const before = BASE.replace('@@gate("2.4.4.5")', `@@gate("2.4.4.5")\n  @@allow('read', total > 0)`)
-    const after  = BASE.replace('@@gate("2.4.4.5")', `@@gate("2.4.4.5")\n  @@allow('read', total > 100)`)
+    const before = BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow('read', total > 0)`)
+    const after  = BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow('read', total > 100)`)
     const r = verdictOf(before, after)
     expect(r.verdict).toBe('unknown')
     expect(about(r, '@@allow(`read`) predicate changed')!.detail).toContain('not decidable')
@@ -266,7 +266,7 @@ model User {
   role          String   @default("user") @allow('write', auth().isAdmin)
   apiKey        String?  @secret
   status        Status   @default("draft")
-  @@gate("4.4.5.6")
+  @@gate(4.4.5.6)
   @@allow('read', id == auth().id)
   @@transitions(status, publish: draft -> live @gate(5), retire: live -> archived)
 }
@@ -279,7 +279,7 @@ describe('the deploy axis and the access axis disagree, which is why there are t
     const after = GUARDED
       .replace(`@allow('write', auth().isAdmin)`, '')
       .replace('@secret', '')
-      .replace('@@gate("4.4.5.6")', '@@gate("2.4.5.6")')
+      .replace('@@gate(4.4.5.6)', '@@gate(2.4.5.6)')
       .replace(`  @@allow('read', id == auth().id)\n`, '')
       .replace('publish: draft -> live @gate(5)', 'publish: draft -> live')
 
@@ -322,7 +322,7 @@ describe('what a permission diff has to see', () => {
   })
 
   it('a gate eased per operation names the level it dropped to', () => {
-    const r = accessOf(GUARDED, GUARDED.replace('@@gate("4.4.5.6")', '@@gate("0.4.5.6")'))
+    const r = accessOf(GUARDED, GUARDED.replace('@@gate(4.4.5.6)', '@@gate(0.4.5.6)'))
     expect(about(r, 'gate')!.detail).toContain('read drops to STRANGER')
   })
 
@@ -351,7 +351,7 @@ describe('the verdict is the alarming answer, not the common one', () => {
     const before = GUARDED
     const after  = GUARDED
       .replace(`@allow('write', auth().isAdmin)`, '')                 // widens
-      .replace('@@gate("4.4.5.6")', '@@gate("6.6.6.6")')              // narrows, four ops
+      .replace('@@gate(4.4.5.6)', '@@gate(6.6.6.6)')              // narrows, four ops
       .replace('publish: draft -> live @gate(5)', 'publish: draft -> live @gate(7)')
 
     const r = accessOf(before, after)
@@ -528,7 +528,7 @@ const NEWMODEL = (extra = '') => `
 model Post {
   id     Int    @id
   title  String
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 ${extra}`
 
@@ -538,13 +538,13 @@ describe('a model the baseline never had (FJS-444)', () => {
 model Secret {
   id    Int    @id
   token String @secret
-  @@gate("8.8.8.8")
+  @@gate(8.8.8.8)
 }`))
     expect(r.verdict).toBe('new')
     expect(r.counts.new).toBe(1)
     const f = r.findings.find((x: any) => x.subject === 'model Secret')!
     expect(f.access).toBe('new')
-    expect(f.accessDetail).toContain('@@gate("8.8.8.8")')
+    expect(f.accessDetail).toContain('@@gate(8.8.8.8)')
     expect(f.accessDetail).toContain('1 protected field')
   })
 
@@ -558,10 +558,10 @@ model Open {
   })
 
   it('is ranked below narrows, so a branch that also narrows still reads as narrowing', () => {
-    const r = accessOf(NEWMODEL(), NEWMODEL().replace('@@gate("2.4.4.5")', '@@gate("4.4.4.5")') + `
+    const r = accessOf(NEWMODEL(), NEWMODEL().replace('@@gate(2.4.4.5)', '@@gate(4.4.4.5)') + `
 model Extra {
   id Int @id
-  @@gate("2.2.2.2")
+  @@gate(2.2.2.2)
 }`)
     expect(r.verdict).toBe('narrows')
     expect(r.counts.new).toBe(1)
@@ -576,7 +576,7 @@ model Extra {
   })
 
   it('reports a REMOVED model as narrowing — nothing reaches it through the client now', () => {
-    const r = accessOf(NEWMODEL(`model Gone { id Int @id  @@gate("2.4.4.5") }`), NEWMODEL())
+    const r = accessOf(NEWMODEL(`model Gone { id Int @id  @@gate(2.4.4.5) }`), NEWMODEL())
     expect(r.verdict).toBe('narrows')
     expect(r.findings.find((x: any) => x.subject === 'model Gone')!.access).toBe('narrows')
   })
@@ -587,7 +587,7 @@ model Doc {
   id          Int    @id
   workspaceId Int
   title       String
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 ${policy}
 }
 `
@@ -702,7 +702,7 @@ describe('@@transitions — @system reaches the artefacts a reviewer reads', () 
 model Sub {
   id     Int    @id
   status SubState @default("trialing")
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
   @@transitions(status, cancel: [trialing, active] -> cancelled${tok})
 }
 

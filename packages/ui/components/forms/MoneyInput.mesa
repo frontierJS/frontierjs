@@ -174,7 +174,7 @@
   const displayError = resolveError(form, name, error, errors) || localError
 
   let inputEl
-  export function focus() { inputEl?.focus() }
+  export function focus() { return $.focus(inputEl) }
 
   function commit() {
     const { value: next, message } = readMoney(text, code)
@@ -233,9 +233,9 @@
       readonly={readonly}
       aria-invalid={!!displayError || null}
       data-currency={code || null}
-      on:input={(e) => { text = e.target.value; _typed = true; commit() }}
-      on:blur={onblur}
-      on:focus={onfocus}
+      oninput={(e) => { text = e.target.value; _typed = true; commit() }}
+      onblur={onblur}
+      onfocus={onfocus}
       {...$attributes}
     />
   </div>

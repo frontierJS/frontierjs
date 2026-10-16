@@ -103,7 +103,7 @@ if (!await waitForServer(UI, 'web'))                 { stopAll(); process.exit(1
 // the SERVICE, and an API booted before these services landed answers
 // `Service 'employees' not found` — a 404 that reads exactly like a screen
 // asking for a row that does not exist. `/api/employees` cannot be the probe
-// either: `Employee` is `@@gate("5.5.5.5")`, so an unauthenticated GET is a
+// either: `Employee` is `@@gate(5.5.5.5)`, so an unauthenticated GET is a
 // 401, which is a working service refusing a stranger. `/manifest` is the one
 // answer to *what is mounted* that needs no session.
 const mounted = await (await fetch(`${API}/api/manifest`)).json()
@@ -170,7 +170,7 @@ await evaluate(`
 `)
 await go('/')
 
-t('nav.reportsIsOfferedAtLevelFive', await waitFor('#nav-reports', 5000), true)
+t('nav.reportsIsOfferedAtLevelFive', await waitFor('nav[aria-label="Main"] a[href="/reports/"]', 5000), true)
 
 await go('/reports/')
 t('screen.theTableRenders', await waitFor('[data-status]'), true)
@@ -274,7 +274,7 @@ t('staff.theRefusalNamesWhatTheyCANDo',
 // The link is hidden too, so the refusal is the second line of defence rather
 // than the first thing staff meet.
 t('staff.areNotOfferedTheNavLinkAtAll',
-  await evaluate(`return document.querySelectorAll('#nav-reports').length`), 0)
+  await evaluate(`return document.querySelectorAll('nav[aria-label="Main"] a[href="/reports/"]').length`), 0)
 
 t('consoleErrors', consoleErrors, [])
 

@@ -470,7 +470,19 @@ try {
       groupText: getComputedStyle(n.querySelector('.nav-group > summary .navlink-text')).opacity,
     }
   })()`
-  await click('#rail-toggle')
+  // A pointer click, not el.click(): the pointer stays over the rail it just
+  // collapsed, which is where a rail that opened under it undid the click
+  // (FJS-2847). The cleared override resizes the page late, and a toggle
+  // measured at 1024px is clicked where it no longer is.
+  await until(`innerWidth`, w => w !== 1024, 'the 1024px override never cleared')
+  const toggleAt = await evaluate(`(() => {
+    const t = document.getElementById('rail-toggle')
+    t.scrollIntoView({ block: 'center' })
+    const r = t.getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...toggleAt })
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...toggleAt, button: 'left', clickCount: 1 })
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...toggleAt, button: 'left', clickCount: 1 })
   const shut = await until(railGeometry, v => v && Math.abs(v.w - v.want) < 1,
     'the collapsed sidebar never settled at --rail-width')
   check('a collapsed sidebar is the kit\'s rail, --rail-width wide', true, JSON.stringify(shut))
@@ -478,12 +490,13 @@ try {
   check('the labels fade and the group glyphs stay',
     shut.text === '0' && shut.groupText === '0' && shut.group === '1', JSON.stringify(shut))
 
-  // The rail is the document's height, so its middle can be below the fold.
+  // Settling at --rail-width is not staying there: a peeking rail reaches it
+  // and then opens again under the same pointer, after its transition.
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: shut.left + shut.w / 2, y: shut.top + 120 })
-  const opened = await until(railGeometry, v => v && v.w > v.want + 100 && v.text === '1',
-    'the rail never opened under the pointer')
-  check('under the pointer it opens over the page, and the page does not move',
-    Math.abs(opened.screen - shut.screen) < 1, `screen ${shut.screen} → ${opened.screen}`)
+  await sleep(800)
+  const held = await evaluate(railGeometry)
+  check('under the pointer that collapsed it, the rail stays shut',
+    held && Math.abs(held.w - held.want) < 1 && held.text === '0', JSON.stringify(held))
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1200, y: 600 })
   await click('#rail-toggle')
   await until(`!document.querySelector('.sidebar.rail')`, v => v, 'the sidebar never expanded again')

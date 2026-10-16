@@ -120,6 +120,35 @@ describe('getLevel is synchronous', () => {
   })
 })
 
+describe('getLevel is asked once per scoped client and model', () => {
+  // An app's resolver may read a session or a role table, so a call per read
+  // multiplies its cost by every request. Nothing else shows it: the answer is
+  // the same whether the cache is there or not.
+  it('a gated read and a row policy both read the cache after the first grade', async () => {
+    let calls = 0
+    const counted = (user: any) => { calls++; return byRole(user) }
+    const schema = `
+model Post {
+  id    Int    @id
+  title String
+  @@gate(2.4.4.6)
+}
+${OWNER_OR_ADMIN}`
+    const db = await createClient({ schema, db: ':memory:', plugins: [new GatePlugin({ getLevel: counted })] })
+    await db.asSystem().post.create({ data: { id: 1, title: 'x' } })
+    const scoped = db.$setAuth({ id: 'u1' })
+    await scoped.post.findMany({})
+    await scoped.note.findMany({})
+    calls = 0
+    for (let i = 0; i < 50; i++) {
+      await scoped.post.findMany({})
+      await scoped.note.findMany({})
+    }
+    expect(calls).toBe(0)
+    db.$close()
+  })
+})
+
 // ─── $levelOf ────────────────────────────────────────────────────────────────
 //
 // The same grade, asked from outside — the seam Junction's method gate reads

@@ -33,7 +33,8 @@
     "sierra": "./src/tools/cli.js"
   },
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'vitest run'",
+    "test": "node ../../scripts/tmp-run.mjs 'vitest run && node bench/run.mjs'",
+    "bench": "node bench/run.mjs",
     "test:safety": "bun test/static-safety-real.mjs && bun test/filter-operators-real.mjs",
     "test:installable": "node test/browser/installable.mjs",
     "test:widgets": "cd test/fixtures/widget-site && node ../../../src/tools/cli.js widgets --config config/sierra.config.js && node test/verify.mjs",

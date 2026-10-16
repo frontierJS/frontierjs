@@ -17,22 +17,22 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createClient }           from '../../litestone/src/index.js'
-import { createService, callService } from '../src/core/service.ts'
+import { buildService, callService } from '../src/core/service.ts'
 import { bridge }                 from '../src/transport/bridge.ts'
-import type { ServiceContext }    from '../src/transport/bridge.ts'
+import type { ServiceContext }    from '../src/core/context.ts'
 
 const SCHEMA = `
   model Customer {
     id   Int    @id
     name String
-    @@gate("4.4.4.5")
+    @@gate(4.4.4.5)
   }
 
   model Order {
     id         Int    @id
     customerId Int
     total      Float
-    @@gate("4.4.4.5")
+    @@gate(4.4.4.5)
   }
 `
 
@@ -44,7 +44,7 @@ async function mkDb() {
   return db
 }
 
-// `@@gate("4.4.4.5")` — USER for read/create/update, ADMINISTRATOR for delete.
+// `@@gate(4.4.4.5)` — USER for read/create/update, ADMINISTRATOR for delete.
 // Two graders read this principal (junction's `sessionGateLevel` for the 401,
 // litestone's own for the 403) and only the explicit standing satisfies both
 // without modeling a lifecycle these tests are not about.
@@ -74,7 +74,7 @@ describe('FJS-403 — the gate leads the chain', () => {
     const db  = await mkDb()
     const ran: string[] = []
 
-    const svc = createService({
+    const svc = buildService({
       name: 'orders', model: 'Order', db: () => db,
       hooks: {
         before: {
@@ -106,7 +106,7 @@ describe('FJS-403 — the gate leads the chain', () => {
     const db  = await mkDb()
     const ran: string[] = []
 
-    const svc = createService({
+    const svc = buildService({
       name: 'orders', model: 'Order', db: () => db,
       hooks: { before: { all: [function everything() { ran.push('all') }] } },
     })
@@ -121,7 +121,7 @@ describe('FJS-403 — the gate leads the chain', () => {
     const db  = await mkDb()
     const ran: string[] = []
 
-    const svc = createService({ name: 'orders', model: 'Order', db: () => db })
+    const svc = buildService({ name: 'orders', model: 'Order', db: () => db })
     const app = { before: { all: [function appEverything() { ran.push('app') }] } }
 
     await callService(svc, anonCtx(db, 'create', { id: 1, customerId: 1, total: 12.5 }), app as never)
@@ -133,7 +133,7 @@ describe('FJS-403 — the gate leads the chain', () => {
   test('a real customer and a missing one are indistinguishable to a stranger', async () => {
     const db = await mkDb()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'orders', model: 'Order', db: () => db,
       hooks: {
         before: {
@@ -159,7 +159,7 @@ describe('FJS-403 — the gate leads the chain', () => {
     const db  = await mkDb()
     const seen: string[] = []
 
-    const svc = createService({
+    const svc = buildService({
       name: 'orders', model: 'Order', db: () => db,
       hooks: {
         before: {
@@ -180,7 +180,7 @@ describe('FJS-403 — the gate leads the chain', () => {
 
 describe('the `validated` phase', () => {
 
-  const svcWith = (db: unknown, seen: string[]) => createService({
+  const svcWith = (db: unknown, seen: string[]) => buildService({
     name: 'orders', model: 'Order', db: () => db,
     hooks: {
       before:    { create: [function shape(ctx: ServiceContext) {
@@ -215,7 +215,7 @@ describe('the `validated` phase', () => {
     const db   = await mkDb()
     const seen: string[] = []
 
-    const svc = createService({
+    const svc = buildService({
       name: 'orders', model: 'Order', db: () => db,
       hooks: {
         before:    { get: [function answer(ctx: ServiceContext) { ctx.result = { id: 7 } as never }] },
@@ -231,7 +231,7 @@ describe('the `validated` phase', () => {
     const db  = await mkDb()
     let   ran = false
 
-    const svc = createService({
+    const svc = buildService({
       name: 'orders', model: 'Order', db: () => db,
       find: async () => { ran = true; return [] },
       hooks: { validated: { find: [function answer(ctx: ServiceContext) {
@@ -251,7 +251,7 @@ describe('the `validated` phase', () => {
     const db   = await mkDb()
     const seen: string[] = []
 
-    const svc = createService({ name: 'orders', model: 'Order', db: () => db })
+    const svc = buildService({ name: 'orders', model: 'Order', db: () => db })
     const app = { validated: { all: [function appCheck() { seen.push('app') }] } }
 
     await callService(svc, userCtx(db, 'find', null), app as never)

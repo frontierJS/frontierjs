@@ -31,7 +31,7 @@
 
 import { defineJob }   from '@frontierjs/caravan'
 import { runsAsCaller } from './context.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 /** How long a machine has to reach `installing` before this gives up on it.
  *  A cloud that has not made a machine in five minutes is not making one, and
@@ -44,7 +44,7 @@ const BUILD_DEADLINE_MS = 5 * 60 * 1000
  *  on an answer that has not changed. */
 const POLL_MS = 5_000
 
-async function provision(app: BasecampApp, serverId: string): Promise<void> {
+async function provision(app: App, serverId: string): Promise<void> {
   const log     = app.logger.child('server-provision')
   const servers = app.service('servers')
 

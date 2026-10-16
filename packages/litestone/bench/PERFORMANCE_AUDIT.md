@@ -40,7 +40,9 @@
 >
 > **2026-08-31**: `FJS-112` is about the METHOD — no owner, no gate, no committed
 > baselines — and the list it names in passing does not cover the medium findings.
-> `FJS-620` is the pointer that makes **M4, M5, M11 and M12** open; `FJS-621` is
+> The medium findings' rows: **M4** is `FJS-3002`, the 2026-10-09 audit's row
+> cloning (R7) is `FJS-3001`, and **M12**'s unindexed sweep is `FJS-2291`;
+> **M5** and **M11** are closed (`FJS-620`). `FJS-621` is
 > the gap this file cannot see from where it stands, which is that both this audit
 > and `IDEAS/speed-and-footprint.md` measure the WRITE path while every
 > expensive-by-shape feature — nested policy subqueries, per-query policy

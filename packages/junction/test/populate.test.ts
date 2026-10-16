@@ -14,8 +14,8 @@
 import { describe, test, expect, mock } from 'bun:test'
 import { createJunctionClient } from '../src/client/index.ts'
 import { createClient } from '../../litestone/src/index.js'
-import { createService } from '../src/core/service.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import { buildService } from '../src/core/service.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 function mockFetch(body: unknown) {
   const original = globalThis.fetch
@@ -150,7 +150,7 @@ describe('and the server answers it with real rows', () => {
     await db.asSystem().customer!.create({ data: { id: 1, name: 'Ada' } })
     await db.asSystem().order!.create({ data: { id: 1, reference: 'ORD-1', customerId: 1 } })
 
-    const svc = createService({ name: 'orders', model: 'order' })
+    const svc = buildService({ name: 'orders', model: 'order' })
     const out = await svc.find(ctx(db, { directives: { populate: 'customer' } })) as {
       data: { customer?: { name: string } }[]
     }
@@ -164,7 +164,7 @@ describe('and the server answers it with real rows', () => {
     await db.asSystem().customer!.create({ data: { id: 1, name: 'Ada' } })
     await db.asSystem().order!.create({ data: { id: 1, reference: 'ORD-1', customerId: 1 } })
 
-    const svc = createService({ name: 'orders', model: 'order' })
+    const svc = buildService({ name: 'orders', model: 'order' })
     const out = await svc.find(ctx(db)) as { data: { customer?: unknown }[] }
 
     expect(out.data[0]!.customer).toBeUndefined()
@@ -220,7 +220,7 @@ describe('a nested relation has a spelling (FJS-2429)', () => {
 
   test('words.lemma reaches the second level', async () => {
     const db = await seeded()
-    const svc = createService({ name: 'verses', model: 'verse' })
+    const svc = buildService({ name: 'verses', model: 'verse' })
     const out = await svc.find(ctx(db, 'words.lemma')) as Out
     expect(out.data[0]!.words?.[0]?.text).toBe('amat')
     expect(out.data[0]!.words?.[0]?.lemma?.root).toBe('amo')
@@ -228,7 +228,7 @@ describe('a nested relation has a spelling (FJS-2429)', () => {
 
   test('a dotted path and its own parent in one list merge', async () => {
     const db = await seeded()
-    const svc = createService({ name: 'verses', model: 'verse' })
+    const svc = buildService({ name: 'verses', model: 'verse' })
     const out = await svc.find(ctx(db, 'words:text,words.lemma:root')) as Out
     expect(out.data[0]!.words?.[0]?.text).toBe('amat')
     expect(out.data[0]!.words?.[0]?.lemma?.root).toBe('amo')
@@ -236,7 +236,7 @@ describe('a nested relation has a spelling (FJS-2429)', () => {
 
   test('an unknown nested relation is still refused by name', async () => {
     const db = await seeded()
-    const svc = createService({ name: 'verses', model: 'verse' })
+    const svc = buildService({ name: 'verses', model: 'verse' })
     await expect(svc.find(ctx(db, 'words.nope'))).rejects.toThrow(/nope/)
   })
 })

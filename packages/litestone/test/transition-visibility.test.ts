@@ -24,7 +24,7 @@ model Inv {
   ownerId Int
   shop    String  @default("a")
   status  S       @default(issued)
-  @@gate("1.8.4.8")
+  @@gate(1.8.4.8)
   @@allow('read',   auth().isStaff || ownerId == auth().id)
   @@allow('update', auth().isStaff)
   @@transitions(status,

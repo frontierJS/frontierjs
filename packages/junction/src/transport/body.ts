@@ -92,6 +92,69 @@ export class BodyTooLargeError extends Error {
 }
 
 /**
+ * The body holds an integer a JSON number cannot carry. `JSON.parse` rounds it
+ * to the nearest double before any validator or hook can see the digits sent, so
+ * the only honest answer is to refuse it. A 64-bit value crosses as a string of
+ * digits (`FJS-D174`), and a string is never inspected.
+ */
+export class UnsafeIntegerError extends Error {
+  readonly path: string
+  constructor(path: string) {
+    super(`Request body: ${path} is an integer outside the safe range (±${Number.MAX_SAFE_INTEGER}) and would be rounded; send it as a string of digits`)
+    this.name = 'UnsafeIntegerError'
+    this.path = path
+  }
+}
+
+/**
+ * The path of the first integer literal in valid JSON `text` that a double
+ * cannot hold exactly, or null. A float or an exponent is rounded by its own
+ * spelling and is left alone; only a literal written as digits is a claim of
+ * exactness.
+ */
+export function firstUnsafeInteger(text: string): string | null {
+  // Sixteen digits is the shortest literal that can leave the safe range.
+  if (!/\d{16}/.test(text)) return null
+
+  type Frame = { arr: boolean, index: number, key: string }
+  const stack: Frame[] = []
+  const at = (): string => {
+    let out = ''
+    for (const f of stack) out += f.arr ? `[${f.index}]` : out ? `.${f.key}` : f.key
+    return out || 'body'
+  }
+
+  const n = text.length
+  for (let i = 0; i < n; i++) {
+    const c = text[i]!
+    const top = stack[stack.length - 1]
+    if (c === '"') {
+      let j = i + 1
+      while (j < n && text[j] !== '"') j += text[j] === '\\' ? 2 : 1
+      // A string directly after `{` or `,` inside an object is a key.
+      if (top && !top.arr && top.key === '') {
+        try { top.key = JSON.parse(text.slice(i, j + 1)) as string } catch { top.key = '?' }
+        if (top.key === '') top.key = '""'
+      }
+      i = j
+    } else if (c === '{') stack.push({ arr: false, index: 0, key: '' })
+    else if (c === '[') stack.push({ arr: true, index: 0, key: '' })
+    else if (c === '}' || c === ']') stack.pop()
+    else if (c === ',') {
+      if (top?.arr) top.index++
+      else if (top) top.key = ''
+    } else if (c === '-' || (c >= '0' && c <= '9')) {
+      let j = i + 1
+      while (j < n && /[0-9eE+\-.]/.test(text[j]!)) j++
+      const lit = text.slice(i, j)
+      if (/^-?\d+$/.test(lit) && !Number.isSafeInteger(Number(lit))) return at()
+      i = j - 1
+    }
+  }
+  return null
+}
+
+/**
  * Read a body that declared no length, stopping at `maxSize`.
  *
  * A chunked request states no Content-Length, so the pre-read check has nothing
@@ -207,13 +270,16 @@ export async function parseBody(
 
   // ── JSON ────────────────────────────────────────────────────────────
   if (baseType === CT_JSON || baseType === CT_TEXT_JSON) {
+    const text = DECODER.decode(buffer)
+    let data: unknown
     try {
-      const text = DECODER.decode(buffer)
-      const data = JSON.parse(text)
-      return { type: 'json', data, files: [], size, raw: text, bytes: buffer }
+      data = JSON.parse(text)
     } catch {
       return { type: 'json', data: null, files: [], size, bytes: buffer }
     }
+    const unsafe = firstUnsafeInteger(text)
+    if (unsafe) throw new UnsafeIntegerError(unsafe)
+    return { type: 'json', data, files: [], size, raw: text, bytes: buffer }
   }
 
   // ── URL-encoded ─────────────────────────────────────────────────────
@@ -248,6 +314,8 @@ export async function parseBody(
       const { [MULTIPART_JSON]: json, ...text } = fields
       let typed: unknown
       try { typed = JSON.parse(json) } catch { typed = null }
+      const unsafe = typed ? firstUnsafeInteger(json) : null
+      if (unsafe) throw new UnsafeIntegerError(unsafe)
       if (!typed || typeof typed !== 'object' || Array.isArray(typed))
         return { type: 'multipart', data: null, files, size, bytes: buffer }
       return { type: 'multipart', data: { ...text, ...typed as Record<string, unknown> }, files, size, bytes: buffer }

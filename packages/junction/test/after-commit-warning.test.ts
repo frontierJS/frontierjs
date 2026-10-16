@@ -8,10 +8,10 @@
 import { describe, test, expect } from 'bun:test'
 
 import { createClient }  from '../../litestone/src/index.js'
-import { createService, callService } from '../src/core/service.ts'
+import { buildService, callService } from '../src/core/service.ts'
 import { mailerPlugin } from '../src/mail/index.ts'
 import { inAfterCommitDrain, warnEffectInDrain } from '../src/core/context.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const SCHEMA = `model Post { id Int @id @default(autoincrement())  title String }`
 
@@ -46,7 +46,7 @@ describe('FJS-2070 — mail inside an afterCommit drain', () => {
   test('warns once per call site and names ctx.enqueue', async () => {
     const db = await createClient({ db: ':memory:', schema: SCHEMA }) as any
     const { app, sent } = appWithMail()
-    const svc = createService({
+    const svc = buildService({
       name: 'posts',
       async create(c: ServiceContext) { return (c.locals.db as any).post.create({ data: c.data }) },
       hooks: { after: { create: [(c: ServiceContext) => {
@@ -77,7 +77,7 @@ describe('FJS-2070 — mail inside an afterCommit drain', () => {
     process.env.NODE_ENV = 'production'
     try {
       const db = await createClient({ db: ':memory:', schema: SCHEMA }) as any
-      const svc = createService({
+      const svc = buildService({
         name: 'posts',
         async create(c: ServiceContext) { return (c.locals.db as any).post.create({ data: c.data }) },
         hooks: { after: { create: [(c: ServiceContext) => { c.afterCommit(() => warnEffectInDrain('x')) }] } },

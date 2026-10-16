@@ -203,11 +203,12 @@ export function transportFlags(params) {
  */
 export function invalidDirectives(params) {
   if (!params || typeof params !== 'object') return []
-  return DIRECTIVES
-    .filter(({ read, param }) => (read === asBool || read === asCount)
-      && params[param] != null && params[param] !== '' && read(params[param]) === undefined)
+  return GRAMMAR_DIRECTIVES
+    .filter(({ read, param }) => params[param] != null && params[param] !== '' && read(params[param]) === undefined)
     .map(({ param }) => param)
 }
+
+const GRAMMAR_DIRECTIVES = DIRECTIVES.filter(({ read }) => read === asBool || read === asCount)
 
 /**
  * The single-valued directives (count, text, flag, and `$first`/`$wrap`) given a
@@ -223,9 +224,13 @@ export function invalidDirectives(params) {
  */
 export function listedDirectives(params) {
   if (!params || typeof params !== 'object') return []
-  return [...DIRECTIVES.filter(({ read }) => read !== asIs && read !== asNames).map(({ param }) => param), ...TRANSPORT_PARAMS]
-    .filter((param) => Array.isArray(params[param]))
+  return SINGLE_VALUED_PARAMS.filter((param) => Array.isArray(params[param]))
 }
+
+const SINGLE_VALUED_PARAMS = Object.freeze([
+  ...DIRECTIVES.filter(({ read }) => read !== asIs && read !== asNames).map(({ param }) => param),
+  ...TRANSPORT_PARAMS,
+])
 
 /**
  * The `$` keys this table does not know, in the order they arrived.

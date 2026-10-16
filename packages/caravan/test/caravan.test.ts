@@ -621,19 +621,21 @@ describe('Junction plugin protocol', () => {
 describe('defineJob', () => {
 
   it('returns an object with __caravanJob marker', () => {
-    const def = defineJob('my-job', async () => {})
+    const def = defineJob({ name: 'my-job', handler: async () => {} })
     expect(def.__caravanJob).toBe(true)
   })
 
   it('sets default options', () => {
-    const def = defineJob('my-job', async () => {})
+    const def = defineJob({ name: 'my-job', handler: async () => {} })
     expect(def.queue).toBe('default')
     expect(def.maxAttempts).toBe(3)
     expect(def.retryDelay).toEqual([])
   })
 
   it('respects provided options', () => {
-    const def = defineJob('my-job', async () => {}, {
+    const def = defineJob({
+      name:        'my-job',
+      handler:     async () => {},
       queue:       'email',
       maxAttempts: 5,
       retryDelay:  [1000, 5000],
@@ -645,9 +647,16 @@ describe('defineJob', () => {
 
   it('stores the handler function', () => {
     const handler = async () => {}
-    const def = defineJob('my-job', handler)
+    const def = defineJob({ name: 'my-job', handler })
     expect(def.handler).toBe(handler)
     expect(def.name).toBe('my-job')
+  })
+
+  // FJS-2953: a job in jobsDir states no name; reading one nobody named is an
+  // error, not a registration under `undefined`.
+  it('has no name until the file or the spec gives it one', () => {
+    const def = defineJob({ handler: async () => {} })
+    expect(() => def.name).toThrow(/no name/)
   })
 
 })

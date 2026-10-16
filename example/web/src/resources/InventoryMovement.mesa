@@ -10,7 +10,7 @@
   // ─── Why this file has no markup half ─────────────────────────────────────
   //
   // A resource file carries its model's default form, and this model has none
-  // to carry: `InventoryMovement` is `@@gate("5.5.9.9")` — append-only, with
+  // to carry: `InventoryMovement` is `@@gate(5.5.9.9)` — append-only, with
   // update and delete LOCKED at 9, which nothing passes including `asSystem()`.
   // A movement is written beside a shelf moving, by `inventory.receive` and
   // `inventory.adjust`, and a generated form over the row itself would offer to

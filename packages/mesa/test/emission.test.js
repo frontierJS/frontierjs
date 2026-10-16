@@ -65,7 +65,7 @@ describe('++ and -- on a reactive let, as an expression', () => {
     out = [pre, post, comp, n].join(',')
   }
 </script>
-<button on:click={go}>go</button><p>{out}</p>`, 'Update.mesa')
+<button onclick={go}>go</button><p>{out}</p>`, 'Update.mesa')
 
     const c = mount(C)
     c.querySelector('button').click()
@@ -88,8 +88,8 @@ describe('++ and -- on a reactive let, as an expression', () => {
   }
   function go() { try { save() } catch {} }
 </script>
-<button id="go" on:click={go}>go</button>
-<button id="ok" on:click={() => fail = false}>ok</button>
+<button id="go" onclick={go}>go</button>
+<button id="ok" onclick={() => fail = false}>ok</button>
 <output>{done}</output>`, 'Save.mesa')
 
     const c = mount(C)
@@ -104,7 +104,7 @@ describe('++ and -- on a reactive let, as an expression', () => {
 
   it('still writes the signal when it is a statement', async () => {
     const C = await build(
-      `<script>let n = 0</script><button on:click={() => n++}>go</button><p>{n}</p>`,
+      `<script>let n = 0</script><button onclick={() => n++}>go</button><p>{n}</p>`,
       'Bump.mesa')
     const c = mount(C)
     const read = () => c.querySelector('p').textContent
@@ -127,7 +127,7 @@ describe('bind: on a component prop', () => {
       `<script>import Child from './Child.mesa'\n let name = 'start'</script>
 <Child bind:value={name} />
 <p>parent: {name}</p>
-<button on:click={() => name = 'from-parent'}>set</button>`, 'Parent.mesa', Child)
+<button onclick={() => name = 'from-parent'}>set</button>`, 'Parent.mesa', Child)
 
     const c = mount(Parent)
     const read = () => c.querySelector('p').textContent.replace('parent: ', '')
@@ -200,7 +200,7 @@ describe('$: fn(), handler — a post-call hook that writes state', () => {
         function bump() { n = n + 1 }
         $: bump(), () => { hits = hits + 1 }
       </script>
-      <button on:click={bump}>go</button><p>{n}:{hits}</p>`, 'C.mesa')
+      <button onclick={bump}>go</button><p>{n}:{hits}</p>`, 'C.mesa')
     const c = mount(C)
     c.querySelector('button').click()
     $rt.flushSync()
@@ -222,7 +222,7 @@ describe('an attribute that depends on a {@const}', () => {
   {@const state = i === step ? 'active' : 'done'}
   <li aria-current={state === 'active' ? 'step' : null} data-state={state}></li>
 {/each}
-<button on:click={() => step = 1}>go</button>`, 'C.mesa')
+<button onclick={() => step = 1}>go</button>`, 'C.mesa')
 
     const c = mount(C)
     const li = () => [...c.querySelectorAll('li')]
@@ -237,7 +237,7 @@ describe('an attribute that depends on a {@const}', () => {
 })
 
 describe('an assignment inside a component prop', () => {
-  // `on:click` on an element has always passed ctx.setters to rewriteExpr; the
+  // `onclick` on an element has always passed ctx.setters to rewriteExpr; the
   // component-prop path did not, so the assignment target was rewritten as a
   // READ. Clean compile, module loads, and the click throws `Invalid left-hand
   // side in assignment` — found when a Modal's Cancel button did nothing.
@@ -252,7 +252,7 @@ describe('an assignment inside a component prop', () => {
 
   it('runs — the parent state actually changes', async () => {
     const Child = await build(
-      `<script>export let onclick = undefined</script><button on:click={onclick}>go</button>`,
+      `<script>export let onclick = undefined</script><button onclick={onclick}>go</button>`,
       'Child.mesa')
     const Parent = await build(
       `<script>import Child from './Child.mesa'\n let open = true</script>
@@ -360,7 +360,7 @@ describe('a snippet declared inside a component tag', () => {
     const Parent = await build(
       `<script>import Child from './Child.mesa'\n let n = 1</script>
 <Child value={n}>{#snippet body(v)}<i>{v}</i>{/snippet}</Child>
-<button on:click={() => n = 2}>go</button>`, 'Parent.mesa', Child)
+<button onclick={() => n = 2}>go</button>`, 'Parent.mesa', Child)
 
     const c = mount(Parent)
     expect(c.querySelector('i').textContent).toBe('1')
@@ -381,7 +381,7 @@ describe('a snippet declared inside a component tag', () => {
     const Parent = await build(
       `<script>import Child from './Child.mesa'\n let items = [{n:'a'}]</script>
 <Child rows={items}>{#snippet row(r)}<b>{r.n}</b>{/snippet}</Child>
-<button on:click={() => items = [{n:'z'}]}>go</button>`, 'Parent.mesa', Child)
+<button onclick={() => items = [{n:'z'}]}>go</button>`, 'Parent.mesa', Child)
 
     const c = mount(Parent)
     expect(c.querySelector('b').textContent).toBe('a')
@@ -526,7 +526,7 @@ describe('bind: to a member expression', () => {
     const C = await build(
       `<script>let draft = { name: 'start' }\n let seen = ''</script>
 <input bind:value={draft.name} />
-<button on:click={() => seen = draft.name}>read</button>
+<button onclick={() => seen = draft.name}>read</button>
 <p>{seen}</p>`, 'Static.mesa')
 
     const c = mount(C)
@@ -547,7 +547,7 @@ describe('bind: to a member expression', () => {
     const C = await build(
       `<script>let draft = { a: '' }\n const key = 'a'\n let seen = ''</script>
 <input bind:value={draft[key]} />
-<button on:click={() => seen = draft.a}>read</button>
+<button onclick={() => seen = draft.a}>read</button>
 <p>{seen}</p>`, 'Computed.mesa')
 
     const c = mount(C)
@@ -622,14 +622,14 @@ describe('a const holding a function that writes to a reactive let', () => {
    */
   it('rewrites the write through the setter, not the getter', async () => {
     const { result } = await compile(
-      `<script>let n = 0\nconst bump = () => { n = n + 1 }</script><button on:click={bump}>{n}</button>`)
+      `<script>let n = 0\nconst bump = () => { n = n + 1 }</script><button onclick={bump}>{n}</button>`)
     expect(result).not.toMatch(/\$\$runtime\.get\([^)]*\)\s*=[^=]/)
     expect(result).toContain('$$set_n')
   })
 
   it('actually increments when clicked', async () => {
     const C = await build(
-      `<script>let n = 0\nconst bump = () => { n = n + 1 }</script><button on:click={bump}>{n}</button>`,
+      `<script>let n = 0\nconst bump = () => { n = n + 1 }</script><button onclick={bump}>{n}</button>`,
       'Bump.mesa')
     const c = mount(C)
     const btn = c.querySelector('button')
@@ -693,21 +693,21 @@ describe('a destructuring assignment to reactive lets', () => {
   it('swaps two reactive lets', async () => {
     expect(await drive('Swap.mesa',
       `let a = 1\nlet b = 2`,
-      `<p>{a}{b}</p><button on:click={() => { [a, b] = [b, a] }}>go</button>`
+      `<p>{a}{b}</p><button onclick={() => { [a, b] = [b, a] }}>go</button>`
     )).toEqual({ before: '12', after: '21' })
   })
 
   it('swaps them from a const handler in the script', async () => {
     expect(await drive('SwapScript.mesa',
       `let a = 1\nlet b = 2\nconst swap = () => { [a, b] = [b, a] }`,
-      `<p>{a}{b}</p><button on:click={swap}>go</button>`
+      `<p>{a}{b}</p><button onclick={swap}>go</button>`
     )).toEqual({ before: '12', after: '21' })
   })
 
   it('takes an object pattern, shorthand or keyed', async () => {
     expect(await drive('Obj.mesa',
       `let p = 1\nlet q = 2\nconst o = { p: 8, q: 9, r: 7 }`,
-      `<p>{p}{q}</p><button on:click={() => { ({ p } = o); ({ r: q } = o) }}>go</button>`
+      `<p>{p}{q}</p><button onclick={() => { ({ p } = o); ({ r: q } = o) }}>go</button>`
     )).toEqual({ before: '12', after: '87' })
   })
 
@@ -716,7 +716,7 @@ describe('a destructuring assignment to reactive lets', () => {
     // rewritten in place rather than carried across verbatim.
     expect(await drive('Default.mesa',
       `let fallback = 5\nlet a = 1\nlet b = 2`,
-      `<p>{a}{b}</p><button on:click={() => { ({ a = fallback } = {}); [b = fallback + 1] = [] }}>go</button>`
+      `<p>{a}{b}</p><button onclick={() => { ({ a = fallback } = {}); [b = fallback + 1] = [] }}>go</button>`
     )).toEqual({ before: '12', after: '56' })
   })
 
@@ -724,7 +724,7 @@ describe('a destructuring assignment to reactive lets', () => {
     expect(await drive('Shapes.mesa',
       `let a = 0\nlet tail = []\nlet deep = 0`,
       `<p>{a}{tail.join('-')}{deep}</p>` +
-      `<button on:click={() => { [, a, ...tail] = [1, 2, 3, 4]; [{ v: deep }] = [{ v: 9 }] }}>go</button>`
+      `<button onclick={() => { [, a, ...tail] = [1, 2, 3, 4]; [{ v: deep }] = [{ v: 9 }] }}>go</button>`
     )).toEqual({ before: '00', after: '23-49' })
   })
 
@@ -734,14 +734,14 @@ describe('a destructuring assignment to reactive lets', () => {
     expect(await drive('Mixed.mesa',
       `let a = 0\nlet seen = ''\nconst o = { x: 0 }`,
       `<p>{a}{seen}</p>` +
-      `<button on:click={() => { let plain = 0; [a, plain, o.x] = [1, 2, 3]; seen = plain + ':' + o.x }}>go</button>`
+      `<button onclick={() => { let plain = 0; [a, plain, o.x] = [1, 2, 3]; seen = plain + ':' + o.x }}>go</button>`
     )).toEqual({ before: '0', after: '12:3' })
   })
 
   it('still evaluates to the right-hand value', async () => {
     expect(await drive('Value.mesa',
       `let a = 0\nlet seen = ''`,
-      `<p>{a}{seen}</p><button on:click={() => { seen = JSON.stringify(([a] = [3])) }}>go</button>`
+      `<p>{a}{seen}</p><button onclick={() => { seen = JSON.stringify(([a] = [3])) }}>go</button>`
     )).toEqual({ before: '0', after: '3[3]' })
   })
 
@@ -754,8 +754,8 @@ describe('a destructuring assignment to reactive lets', () => {
 
   it('emits JS that parses, whichever path rewrote it', async () => {
     for (const src of [
-      `<script>let a = 1\nlet b = 2\nconst swap = () => { [a, b] = [b, a] }</script><b on:click={swap}>{a}{b}</b>`,
-      `<script>let a = 1\nlet b = 2</script><b on:click={() => { [a, b] = [b, a] }}>{a}{b}</b>`,
+      `<script>let a = 1\nlet b = 2\nconst swap = () => { [a, b] = [b, a] }</script><b onclick={swap}>{a}{b}</b>`,
+      `<script>let a = 1\nlet b = 2</script><b onclick={() => { [a, b] = [b, a] }}>{a}{b}</b>`,
       `<script>let a = 1\nlet o = {}\n$: { ({ a = 0, ...o } = { a: 3 }) }</script><b>{a}{o}</b>`,
     ]) {
       const { result, analysis } = await compile(src)
@@ -780,7 +780,7 @@ describe('{@const} inside {#each} reading the loop index', () => {
   const row = (each, label) =>
     `<script>let list = [{ id: 1, a: 'x' }, { id: 2, a: 'y' }]</script>` +
     `<ul>{#each ${each}}{@const last = idx === list.length - 1}<li>{${label}}:{last}</li>{/each}</ul>` +
-    `<button on:click={() => { list = [...list, { id: 3, a: 'z' }] }}>go</button>`
+    `<button onclick={() => { list = [...list, { id: 3, a: 'z' }] }}>go</button>`
 
   it('reads the index in a plain, a keyed and a destructured each', async () => {
     for (const [name, each, label] of [
@@ -1283,7 +1283,7 @@ describe('VISION documents every member of the door', () => {
 
     const vision = readFileSync(resolve(here, '../docs/VISION.md'), 'utf8')
     // Either spelling documents a member: the five data bags are listed under
-    // their canonical BARE name (`FJS-D135`), the other twelve under the door.
+    // their canonical BARE name (`FJS-D135`), the rest under the door.
     const documented = new Set(
       [...vision.matchAll(/^\| `\$\.?([a-zA-Z]+)/gm)].map((m) => m[1]))
 
@@ -1532,7 +1532,7 @@ describe('{@const} with a destructuring pattern', () => {
   {@const [lo, hi] = [base + n, base * 2 + n]}
   <p data-lo={lo}>{lo}-{hi}</p>
 {/each}
-<button on:click={() => n = 2}>go</button>`, 'ArrConst.mesa')
+<button onclick={() => n = 2}>go</button>`, 'ArrConst.mesa')
     const c = mount(C)
     const text = () => [...c.querySelectorAll('p')].map(p => p.textContent)
     expect(text()).toEqual(['11-21', '21-41'])
@@ -1567,7 +1567,7 @@ describe('{@const} bound to an object literal', () => {
   {@const t = { w: x, h: x * k }}
   <p>{t.w}x{t.h}</p>
 {/each}
-<button on:click={() => k = 3}>go</button>`, 'EachObjConst.mesa')
+<button onclick={() => k = 3}>go</button>`, 'EachObjConst.mesa')
     const c = mount(C)
     const text = () => [...c.querySelectorAll('p')].map(p => p.textContent)
     expect(text()).toEqual(['1x2', '3x6'])

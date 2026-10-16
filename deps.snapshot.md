@@ -10,14 +10,14 @@ left out. The latest version and any advisory are NOT here: they change with
 no commit, so they live in Basecamp, which `fli ws:deps --push` feeds.
 
 ```
-45 package(s) · 23 runtime · 22 dev only · 100 declaration(s) · 30 member(s) · 0 finding(s)
+54 package(s) · 26 runtime · 28 dev only · 110 declaration(s) · 30 member(s) · 0 finding(s)
 ```
 
 ## Findings
 
 None — one installed copy and one range per package, and every declaration installed.
 
-## Runtime (23)
+## Runtime (26)
 
 Installed by anyone who installs the declaring package — a dependency, a peer
 or an optional one. A package also declared as dev somewhere is here, with
@@ -31,6 +31,8 @@ that declaration listed beside the others.
 | `@modelcontextprotocol/server` | `2.0.0` | @frontierjs/mcp `^2.0.0` |
 | `@opentui/core` | `0.5.17` | @frontierjs/haven `0.5.17`<br>@frontierjs/mesa (dev) `0.5.17`<br>@frontierjs/mesa (peer) `0.5.17` |
 | `@sqlite.org/sqlite-wasm` | `3.53.4-build1` | @frontierjs/example `^3.53.4-build1`<br>@frontierjs/litestone (dev) `^3.53.4-build1` |
+| `@xterm/addon-fit` | `0.11.0` | @frontierjs/basecamp `0.11.0` |
+| `@xterm/xterm` | `6.0.0` | @frontierjs/basecamp `6.0.0` |
 | `acorn` | `8.18.0` | @frontierjs/mesa `^8.0.0`<br>@frontierjs/site-kit (dev) `^8.0.0`<br>@frontierjs/ui (dev) `^8.0.0` |
 | `css-tree` | `2.3.1` | @frontierjs/email-kit (dev) `^2.0.0`<br>@frontierjs/email-kit (peer) `^2.0.0`<br>@frontierjs/mesa (dev) `^2.0.0`<br>@frontierjs/mesa (peer) `^2.0.0` |
 | `happy-dom` | `20.11.6` | @frontierjs/email-kit (dev) `^20.11.6`<br>@frontierjs/email-kit (peer) `^20.11.6`<br>@frontierjs/mesa (dev) `^20.11.6`<br>@frontierjs/mesa (peer) `^20.11.6`<br>@frontierjs/sierra (dev) `^20.11.6`<br>@frontierjs/site-kit `^20.11.6` |
@@ -40,6 +42,7 @@ that declaration listed beside the others.
 | `remark-gfm` | `4.0.1` | @frontierjs/mesa (dev) `^4.0.1`<br>@frontierjs/mesa (peer) `^4.0.1`<br>@frontierjs/site-kit `^4.0.1` |
 | `remark-parse` | `11.0.0` | @frontierjs/mesa (dev) `^11.0.0`<br>@frontierjs/mesa (peer) `^11.0.0`<br>@frontierjs/site-kit `^11.0.0` |
 | `remark-rehype` | `11.1.2` | @frontierjs/mesa (dev) `^11.1.2`<br>@frontierjs/mesa (peer) `^11.1.2`<br>@frontierjs/site-kit `^11.1.2` |
+| `tslib` | `2.8.1` | @frontierjs/mesa (dev) `^2.8.1`<br>@frontierjs/mesa (peer) `^2.8.1` |
 | `turndown` | `7.2.4` | @frontierjs/site-kit `^7.2.4` |
 | `typescript` | `5.9.3` | @frontierjs/config (peer) `>=5.0.0`<br>frontierjs (dev) `^5.9.3`<br>vscode-frontierjs (dev) `^5.9.3` |
 | `unified` | `11.0.5` | @frontierjs/mesa (dev) `^11.0.5`<br>@frontierjs/mesa (peer) `^11.0.5`<br>@frontierjs/site-kit `^11.0.5` |
@@ -49,7 +52,7 @@ that declaration listed beside the others.
 | `vscode-languageserver-textdocument` | `1.0.12` | vscode-frontierjs `^1.0.11` |
 | `ws` | `8.21.1` | @frontierjs/example (dev) `^8.20.0`<br>@frontierjs/jetty (dev) `^8.20.0`<br>@frontierjs/jetty (peer) `^8.20.0` |
 
-## Dev only (22)
+## Dev only (28)
 
 Every declaration is a devDependency: building, testing and tooling, and
 never installed by a consumer.
@@ -64,7 +67,13 @@ never installed by a consumer.
 | `@codemirror/state` | `6.7.6` | @frontierjs/mesa (dev) `^6` |
 | `@codemirror/view` | `6.43.13` | @frontierjs/mesa (dev) `^6` |
 | `@lezer/highlight` | `1.2.5` | @frontierjs/mesa (dev) `^1` |
+| `@lynx-js/lynx-core` | `0.1.4` | @frontierjs/mesa (dev) `0.1.4` |
+| `@lynx-js/rsbuild-plugin` | `0.1.4` | @frontierjs/mesa (dev) `0.1.4` |
+| `@lynx-js/vanilla-rsbuild-plugin` | `0.1.3` | @frontierjs/mesa (dev) `0.1.3` |
+| `@lynx-js/web-core` | `0.26.3` | @frontierjs/mesa (dev) `0.26.3` |
+| `@lynx-js/web-elements` | `0.12.13` | @frontierjs/mesa (dev) `0.12.13` |
 | `@replit/codemirror-vim` | `6.4.0` | @frontierjs/mesa (dev) `^6` |
+| `@rsbuild/core` | `2.2.9` | @frontierjs/mesa (dev) `2.2.9` |
 | `@types/node` | `18.19.130` | vscode-frontierjs (dev) `^18.19.0` |
 | `@types/vscode` | `1.125.0` | vscode-frontierjs (dev) `^1.85.0` |
 | `@vscode/vsce` | `2.32.0` | vscode-frontierjs (dev) `^2.24.0` |

@@ -85,7 +85,9 @@ describe('a backtick template — what it compiles to', () => {
   })
 
   test('an unterminated template is refused by name', () => {
-    expect(() => parse('model T { id Int @id  a String  v String? @generated(`{a} ) }')).toThrow(/Unterminated template/)
+    const r = parse('model T { id Int @id  a String  v String? @generated(`{a} ) }')
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toMatch(/Unterminated template/)
   })
 
   test('a brace that is not a field name is refused', () => {

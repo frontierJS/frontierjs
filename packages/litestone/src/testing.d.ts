@@ -250,10 +250,12 @@ export interface MutationResult {
   graded:   number
   killed:   number
   byParser: number
+  /** Survivors of the derived checks that the app's own `suite` failed on. 0 without one. */
+  suiteKilled: number
   /** The framework would not load these. A kill: such a schema cannot ship. */
   refused:  Array<SchemaMutant & { thrown: string }>
   /** Nothing in the derived suite could see these. The finding. */
-  survived: Array<SchemaMutant & { noise?: number }>
+  survived: Array<SchemaMutant & { noise?: number, suite?: 'killed' | 'survived' | 'inconclusive' }>
   /** The suite fell over — ungraded, and never counted as a kill. */
   errored:  Array<SchemaMutant & { thrown: string }>
   score:    number
@@ -274,6 +276,8 @@ export declare function mutationScore(opts: {
   schema:    string
   build:     (schemaText: string) => Promise<TestEnv>
   check?:    (env: TestEnv, original: ParseResult) => Promise<Array<{ got?: string }>>
+  /** Run the app's own tests with this schema text in place; asked only about a mutant the checks missed. */
+  suite?:    (schemaText: string) => Promise<'passed' | 'failed' | 'inconclusive'>
   kinds?:    string[]
   onMutant?: (m: SchemaMutant & { outcome: string }) => void
 }): Promise<MutationResult>

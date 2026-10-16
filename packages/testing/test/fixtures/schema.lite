@@ -18,7 +18,7 @@ model Lead {
   deletedAt DateTime?
 
   // R=READER(2), C=USER(4), U=USER(4), D=ADMINISTRATOR(5)
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   // A row policy, so a principal that arrives undefined filters to nothing
   // rather than raising — the failure this whole tier exists to make visible.
   @@allow('read', ownerId == auth().id || ownerId == null)

@@ -20,6 +20,19 @@
 //   than reimplementing it.
 //   Secret is per-registration, shown once on creation.
 //
+// Receiving — the same scheme read the other way (`FJS-D1087`):
+//   A SUBSCRIPTION is the row this app holds to receive from somebody it
+//   subscribed to: the secrets they sign under, at
+//   POST {apiPrefix}/webhooks/subscriptions/{id}. A subscriber is the far side
+//   of our registration; a subscription is our side of theirs. One route, one
+//   `receive` the app writes, and the order is verify → receipt → receive →
+//   mark applied. Dedupe is on the body's `id` — the SIGNED one, since the
+//   `X-Webhook-Id` header is outside the canonical string — and it means
+//   APPLIED, not seen: a `receive` that throws leaves the receipt unapplied
+//   and answers 500, so the sender's retry applies it.
+//   A subscription never mints a principal; `receive` runs as whoever the
+//   app says. A counterparty becoming a caller is `createApp({ credentials })`.
+//
 // Usage:
 //   app.configure(webhooks({
 //     events: ['orders:created', 'orders:patched', 'users:created'],
@@ -32,10 +45,16 @@
 //
 //   // Manually deliver an event outside the auto-fire path
 //   await app.webhooks.deliver('orders:created', { id: 'ord_1', total: 99 })
+//
+//   // Receive from an app this one subscribed to
+//   app.configure(webhooks({ events, store, receive: async (ev) => { …; return 'applied' } }))
+//   const sub = await app.webhooks.subscribe({ to: 'shop' })
+//   // hand `${origin}${sub.path}` and `sub.secrets[0]` to the far app's register()
 
 import type { App, Plugin }    from '../../core/app.ts'
 import type { Database } from 'bun:sqlite'
-import { signRequest }         from '@frontierjs/toolbelt/signature'
+import { normalizePrefix }     from '../../core/app.ts'
+import { signRequest, verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
 import { sessionGateLevel }    from '../../core/litestone.ts'
 import { assertPublicUrl }                   from '../../core/public-url.ts'
 import type { PublicUrlOptions } from '../../core/public-url.ts'
@@ -97,9 +116,64 @@ export interface WebhookDelivery {
   createdAt:   number          // unix ms
 }
 
+// ─── Receiving ─────────────────────────────────────────────────────────────
+
+/**
+ * Our side of somebody else's registration: the app subscribed to a far app's
+ * events, and this is what it holds to verify them. `secrets` is a list so a
+ * rotation is two valid keys for a while rather than an outage
+ * (`verifyRequest({ secrets })`); the first is the one to hand out.
+ */
+export interface WebhookSubscription {
+  id:        string
+  /** Who this app subscribed to — a label for the operator, never read by the route. */
+  to:        string
+  secrets:   string[]
+  active:    boolean
+  createdAt: number          // unix ms
+}
+
+/** One delivery of the scheme's envelope, verified. `id` is the sender's delivery id, stable across its retries. */
+export interface ReceivedWebhook {
+  id:        string
+  event:     string
+  timestamp: number          // unix seconds, the sender's
+  payload:   unknown
+}
+
+/**
+ * What the app did with it. `applied` and `ignored` mark the receipt, so a
+ * redelivery is a duplicate; `parked` leaves it unapplied for the sender's
+ * retry — the subject does not exist here yet. The words are conduit's
+ * `Outcome`, so a receiving app learns one vocabulary.
+ */
+export type ReceiveOutcome = 'applied' | 'ignored' | 'parked'
+
+export interface WebhookReceipt {
+  subscriptionId: string
+  eventId:        string
+  event:          string
+  receivedAt:     number          // unix ms
+  appliedAt:      number | null
+}
+
+export type ReceiveHandler = (
+  ev:  ReceivedWebhook,
+  ctx: { subscription: WebhookSubscription; receipt: WebhookReceipt },
+) => ReceiveOutcome | Promise<ReceiveOutcome>
+
 // ─── IWebhookStore ─────────────────────────────────────────────────────────
 
 export interface IWebhookStore {
+  // Receiving
+  subscribe(to: string, secrets: string[]): Promise<WebhookSubscription>
+  unsubscribe(id: string): Promise<void>
+  subscriptions(): Promise<WebhookSubscription[]>
+  getSubscription(id: string): Promise<WebhookSubscription | null>
+  receipt(subscriptionId: string, eventId: string): Promise<WebhookReceipt | null>
+  recordReceipt(receipt: WebhookReceipt): Promise<void>
+  markApplied(subscriptionId: string, eventId: string, at: number): Promise<void>
+
   // Registration
   register(url: string, events: string[], secret?: string,
            subscriber?: string | number | null): Promise<WebhookRegistration>
@@ -163,6 +237,43 @@ export function createSqliteWebhookStore(db: Database): IWebhookStore {
   db.run(`CREATE INDEX IF NOT EXISTS wh_del_status ON webhook_deliveries(status, next_retry_at)`)
   db.run(`CREATE INDEX IF NOT EXISTS wh_del_webhook ON webhook_deliveries(webhook_id)`)
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+      id         TEXT    PRIMARY KEY,
+      to_label   TEXT    NOT NULL,
+      secrets    TEXT    NOT NULL,
+      active     INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    )
+  `)
+
+  // Keyed per subscription: a sender's delivery id is its own and two senders
+  // may mint the same one.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS webhook_receipts (
+      subscription_id TEXT    NOT NULL REFERENCES webhook_subscriptions(id) ON DELETE CASCADE,
+      event_id        TEXT    NOT NULL,
+      event           TEXT    NOT NULL,
+      received_at     INTEGER NOT NULL,
+      applied_at      INTEGER,
+      PRIMARY KEY (subscription_id, event_id)
+    )
+  `)
+
+  const stmtInsertSub  = db.prepare(
+    `INSERT INTO webhook_subscriptions (id, to_label, secrets, active, created_at) VALUES (?, ?, ?, 1, ?)`
+  )
+  const stmtDeleteSub  = db.prepare(`DELETE FROM webhook_subscriptions WHERE id = ?`)
+  const stmtListSubs   = db.prepare(`SELECT * FROM webhook_subscriptions ORDER BY created_at DESC`)
+  const stmtGetSub     = db.prepare(`SELECT * FROM webhook_subscriptions WHERE id = ?`)
+  const stmtGetReceipt = db.prepare(`SELECT * FROM webhook_receipts WHERE subscription_id = ? AND event_id = ?`)
+  const stmtInsertReceipt = db.prepare(
+    `INSERT INTO webhook_receipts (subscription_id, event_id, event, received_at, applied_at) VALUES (?, ?, ?, ?, ?)`
+  )
+  const stmtMarkApplied = db.prepare(
+    `UPDATE webhook_receipts SET applied_at = ? WHERE subscription_id = ? AND event_id = ?`
+  )
+
   // Prepared statements
   const stmtInsertHook = db.prepare(
     `INSERT INTO webhooks (id, url, events, secret, active, created_at, subscriber_id)
@@ -175,7 +286,7 @@ export function createSqliteWebhookStore(db: Database): IWebhookStore {
   //
   // Uses json_each() for EXACT element equality. This was a LIKE built from
   // the event name — `events LIKE ('%"' || ? || '"%')` — which made the event
-  // name a SQL pattern, so its metacharacters matched other subscriptions:
+  // name a SQL pattern, so its metacharacters matched other registrations:
   //
   //   event 'user_created' → '_' matched any char → delivered to a hook
   //                          subscribed only to 'userXcreated'
@@ -260,7 +371,52 @@ export function createSqliteWebhookStore(db: Database): IWebhookStore {
     }
   }
 
+  type SubRow     = { id: string; to_label: string; secrets: string; active: number; created_at: number }
+  type ReceiptRow = { subscription_id: string; event_id: string; event: string; received_at: number; applied_at: number | null }
+
+  const rowToSubscription = (r: SubRow): WebhookSubscription => ({
+    id: r.id, to: r.to_label, secrets: JSON.parse(r.secrets) as string[],
+    active: r.active === 1, createdAt: r.created_at,
+  })
+  const rowToReceipt = (r: ReceiptRow): WebhookReceipt => ({
+    subscriptionId: r.subscription_id, eventId: r.event_id, event: r.event,
+    receivedAt: r.received_at, appliedAt: r.applied_at,
+  })
+
   return {
+
+    async subscribe(to, secrets): Promise<WebhookSubscription> {
+      const id  = crypto.randomUUID()
+      const now = Date.now()
+      stmtInsertSub.run(id, to, JSON.stringify(secrets), now)
+      return { id, to, secrets, active: true, createdAt: now }
+    },
+
+    async unsubscribe(id) {
+      stmtDeleteSub.run(id)
+    },
+
+    async subscriptions(): Promise<WebhookSubscription[]> {
+      return (stmtListSubs.all() as SubRow[]).map(rowToSubscription)
+    },
+
+    async getSubscription(id): Promise<WebhookSubscription | null> {
+      const r = stmtGetSub.get(id) as SubRow | null
+      return r ? rowToSubscription(r) : null
+    },
+
+    async receipt(subscriptionId, eventId): Promise<WebhookReceipt | null> {
+      const r = stmtGetReceipt.get(subscriptionId, eventId) as ReceiptRow | null
+      return r ? rowToReceipt(r) : null
+    },
+
+    async recordReceipt(receipt) {
+      stmtInsertReceipt.run(receipt.subscriptionId, receipt.eventId, receipt.event, receipt.receivedAt, receipt.appliedAt)
+    },
+
+    async markApplied(subscriptionId, eventId, at) {
+      stmtMarkApplied.run(at, subscriptionId, eventId)
+    },
 
     async register(url, events, secret?, subscriber?): Promise<WebhookRegistration> {
       const id  = crypto.randomUUID()
@@ -483,6 +639,17 @@ export interface WebhookManager {
   deliveries: (webhookId?: string, limit?: number) => Promise<WebhookDelivery[]>
   getDelivery: (id: string) => Promise<WebhookDelivery | null>
 
+  // Receiving
+  //
+  // `subscribe` mints the row this app verifies a far app's deliveries with.
+  // `path` is the route under this app's `apiPrefix`; the far app's
+  // `register(url, events, secret)` takes `${origin}${path}` and `secrets[0]`.
+  // The secret is minted HERE, so the row is complete before anything is
+  // registered anywhere; passing `secrets` instead means the far app chose.
+  subscribe:     (sub: { to: string; secrets?: string[] }) => Promise<WebhookSubscription & { path: string }>
+  unsubscribe:   (id: string) => Promise<void>
+  subscriptions: () => Promise<WebhookSubscription[]>
+
   // Internal — used by the retry scheduler job
   _store: IWebhookStore
   _attemptAndRecord: (registration: WebhookRegistration, delivery: WebhookDelivery) => Promise<void>
@@ -517,7 +684,21 @@ export interface WebhookOptions {
   // per EVENT, so a receiver that has gone away keeps costing seven attempts
   // per event for ever unless something says stop.
   deactivateAfterDead?: number
+
+  // What to do with a verified delivery from an app this one subscribed to.
+  // Absent, the receiving route is not mounted: a subscription with nothing to
+  // receive it would be a 500 on every delivery. Runs inside the request scope
+  // with no principal — call a service `{ auth: { user: SYSTEM } }` or as whom
+  // the app decides; the route itself never mints one.
+  receive?: ReceiveHandler
 }
+
+/** The route a subscription is delivered to, under `apiPrefix`. The id is in the PATH so the signature binds it. */
+export const SUBSCRIPTION_PATH = '/webhooks/subscriptions/{id}'
+
+// The sender's window is the receiver's: a tighter one refuses real deliveries
+// from a laptop that slept, a wider one is a longer replay window for nothing.
+const TOLERANCE_SECONDS = 300
 
 // A registration whose subscriber is `undefined` — a custom store that does not
 // record one — cannot be keyed by that value beside a real `null`, and Map
@@ -550,6 +731,11 @@ export function webhooks(opts: WebhookOptions): Plugin {
         )
       }
       const store: IWebhookStore = opts.store
+
+      // The same read `app.get` makes when it mounts the route, so the path a
+      // subscription hands out is the one the signature is checked against.
+      const subscriptionPath = (id: string): string =>
+        `${normalizePrefix((app.config as { apiPrefix?: string }).apiPrefix)}${SUBSCRIPTION_PATH.replace('{id}', id)}`
 
       // ── Delivery helper ────────────────────────────────────────────
 
@@ -785,6 +971,23 @@ export function webhooks(opts: WebhookOptions): Plugin {
           return store.getDelivery(id)
         },
 
+        async subscribe({ to, secrets }) {
+          if (typeof to !== 'string' || !to)
+            throw new TypeError('webhooks.subscribe: `to` names who this app subscribed to')
+          if (secrets !== undefined && (!Array.isArray(secrets) || !secrets.length || secrets.some(s => typeof s !== 'string' || !s)))
+            throw new TypeError('webhooks.subscribe: secrets is a non-empty list of strings')
+          const sub = await store.subscribe(to, secrets ?? [generateSecret()])
+          return { ...sub, path: subscriptionPath(sub.id) }
+        },
+
+        async unsubscribe(id) {
+          return store.unsubscribe(id)
+        },
+
+        async subscriptions() {
+          return store.subscriptions()
+        },
+
         _store:            store,
         _attemptAndRecord: attemptAndRecord,
       }
@@ -913,6 +1116,73 @@ export function webhooks(opts: WebhookOptions): Plugin {
         if (!result) return ctx.json({ error: 'Not found' }, 404)
         return ctx.json(result)
       })
+
+      // ── Receiving route ─────────────────────────────────────────────
+      // Mounted only with a `receive`, and outside `guard`: a delivery has no
+      // session, and the signature is its admission. Every refusal is one
+      // sentence — which check failed is the log's, since *your clock is out*
+      // and *wrong secret* are one 401 to a forger.
+      if (opts.receive) {
+        const receive = opts.receive
+        // Keyed per subscription, kept twice the window (`FJS-1833`), so one
+        // sender's nonce cannot refuse another's.
+        const seen = nonceMemory()
+        const refused = (ctx: RouteCtx, reason: string) => {
+          app.logger.warn(`[webhooks] ${ctx.path} refused — ${reason}`)
+          return ctx.json({ error: 'not verified' }, 401)
+        }
+
+        app.post(SUBSCRIPTION_PATH, async (ctx) => {
+          const now = Math.floor(Date.now() / 1000)
+          const sub = await store.getSubscription(ctx.route.id)
+          if (!sub || !sub.active) return refused(ctx, `no active subscription '${ctx.route.id}'`)
+
+          const verdict = await verifyRequest({
+            secrets:   sub.secrets,
+            method:    ctx.method,
+            // As the sender addressed it, prefix included, and the raw search:
+            // a signature covers the bytes on the wire (`FJS-678`).
+            path:      ctx.path,
+            query:     new URL(ctx.$raw.url).search,
+            body:      ctx.rawBody ?? '',
+            headers:   ctx.headers,
+            prefix:    'X-Webhook',
+            toleranceSeconds: TOLERANCE_SECONDS,
+            now,
+            seenNonce: (nonce: string) => seen(`${sub.id}\n${nonce}`, now, 2 * TOLERANCE_SECONDS),
+          })
+          if (!verdict.ok) return refused(ctx, verdict.reason)
+
+          // The envelope `attemptDelivery` sends. A signed body that is not one
+          // is answered 200 and ignored, because a 4xx retries for a day.
+          const b = ctx.body as Partial<{ id: string; event: string; timestamp: number; data: unknown }> | null
+          if (!b || typeof b.id !== 'string' || !b.id || typeof b.event !== 'string') {
+            app.logger.warn(`[webhooks] ${ctx.path} ignored — verified body is not a delivery envelope`)
+            return ctx.json({ received: true, outcome: 'ignored' })
+          }
+          const ev: ReceivedWebhook = { id: b.id, event: b.event, timestamp: Number(b.timestamp) || now, payload: b.data }
+
+          let receipt = await store.receipt(sub.id, ev.id)
+          if (receipt?.appliedAt) return ctx.json({ received: true, outcome: 'duplicate' })
+          if (!receipt) {
+            receipt = { subscriptionId: sub.id, eventId: ev.id, event: ev.event, receivedAt: Date.now(), appliedAt: null }
+            await store.recordReceipt(receipt)
+          }
+
+          let outcome: ReceiveOutcome
+          try {
+            outcome = await receive(ev, { subscription: sub, receipt })
+            if (outcome !== 'applied' && outcome !== 'ignored' && outcome !== 'parked')
+              throw new TypeError(`receive answered '${String(outcome)}', not applied, ignored or parked`)
+          } catch (err) {
+            // The receipt stays unapplied, so the sender's retry gets a clean run.
+            app.logger.error(`[webhooks] ${ctx.path} ${ev.event} ${ev.id} failed to apply, the sender will retry — ${(err as Error)?.message ?? String(err)}`)
+            return ctx.json({ error: 'not applied' }, 500)
+          }
+          if (outcome !== 'parked') await store.markApplied(sub.id, ev.id, Date.now())
+          return ctx.json({ received: true, outcome })
+        })
+      }
     },
   }
 }

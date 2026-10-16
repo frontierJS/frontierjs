@@ -47,15 +47,15 @@
 
 <Button id="open-modal" onclick={() => open = true}>Open</Button>
 <button type="button" id="toast-outside"
-        on:click={() => toasts.info('Outside', 0)}>Toast outside</button>
+        onclick={() => toasts.info('Outside', 0)}>Toast outside</button>
 
 <Modal bind:open={open} title="Card">
   <button type="button" id="toast" class="btn"
-          on:click={() => toasts.info('Card archived', 0, { label: 'Undo', run: () => undos++ })}>Archive</button>
+          onclick={() => toasts.info('Card archived', 0, { label: 'Undo', run: () => undos++ })}>Archive</button>
   <button type="button" id="alert" class="btn"
-          on:click={() => alert.error('Could not save', 0)}>Save</button>
+          onclick={() => alert.error('Could not save', 0)}>Save</button>
   <button type="button" id="palette" class="btn"
-          on:click={() => commandPalette.show()}>Commands</button>
+          onclick={() => commandPalette.show()}>Commands</button>
   <DropdownMenu>
     {#snippet trigger()}<button type="button" id="menu" class="btn">Menu</button>{/snippet}
     <DropdownItem onclick={() => picks++}>Pick</DropdownItem>

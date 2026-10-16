@@ -5,21 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Litestone Studio</title>
 <!--
-  The design system is @frontierjs/css, loaded from the registry. Studio is a
-  single embedded file with no build step and litestone has no runtime
-  dependencies, so there is nowhere to inline it from.
+  The design system is @frontierjs/css, served by Studio itself from
+  studio.css, a copy packages/css's build writes (FJS-D913). Litestone depends
+  on toolbelt alone, so it cannot resolve the package, and a host with no egress
+  cannot reach a CDN. Fonts are the system stack: Inter and JetBrains Mono lead
+  the list for a machine that has them, and nothing is fetched for one that does
+  not.
 
-  A Studio opened on a host with no egress gets no stylesheet. Nothing here may
-  therefore depend on CSS to WORK: views hide with the [hidden] attribute, every
-  control is a real button or field, and collapsibles are <details>. Unstyled is
-  ugly and still operable.
+  Nothing here may depend on CSS to WORK: views hide with the [hidden]
+  attribute, every control is a real button or field, and collapsibles are
+  <details>. Unstyled is ugly and still operable.
 -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@frontierjs/css@0.15.0/dist/frontier.min.css">
+<link rel="stylesheet" href="/studio.css">
 <!-- The mark, inline, so the tab icon is one more thing the file carries itself. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 26'%3E%3Cpath d='M10 .9c4.5 0 8.7 6.2 8.7 12.8 0 6.6-3.9 11.4-8.7 11.4s-8.7-4.8-8.7-11.4C1.3 7.1 5.5.9 10 .9Z' fill='%230A1219' stroke='%232A313C' stroke-width='.7'/%3E%3Cpath d='M10 3.2C7.4 6.6 5.6 10.1 5.6 13.3c0 2.5 1.7 4.4 4.4 5.5Z' fill='%234CCBFF'/%3E%3Cpath d='M10 3.2c2.6 3.4 4.4 6.9 4.4 10.1 0 2.5-1.7 4.4-4.4 5.5Z' fill='%2300A7FF'/%3E%3Cpath d='M10 3.2v19.2' stroke='%23D6F1FF' stroke-width='.85' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
 /*
  * Studio's own layer, on top of @frontierjs/css.
  *
@@ -1810,6 +1810,10 @@ function loadIfMoved(panel, load) {
 // database switch) takes that answer instead of asking again. One-shot and
 // short-lived: counts older than a few seconds are re-read.
 let _infoHandoff = null
+
+// Counts which switch of the open database a load began under. `reopenDatabase`
+// moves it; a load that finds it moved drops its answer.
+let _dbEpoch = 0
 const handOffInfo = info => { _infoHandoff = info && { info, at: Date.now() } }
 const takeInfo = () => {
   const h = _infoHandoff
@@ -2885,6 +2889,7 @@ addEventListener('keydown', e => {
 async function ovInit() {
   const body = document.getElementById('ovBody')
   body.innerHTML = '<div class="empty"><span class="spinner"></span></div>'
+  const epoch = _dbEpoch
   try {
     // Four independent reads, in parallel. A slow advisor must not hold up the
     // drift row, which is the one somebody came here for.
@@ -2900,6 +2905,12 @@ async function ovInit() {
     // re-points every data endpoint, so the snapshot taken at startup describes
     // a DIFFERENT database — and the front page would report the registry's row
     // counts under the tenant's name with nothing saying so.
+    //
+    // An answer to a question asked of the database that was open before a
+    // switch lands after it, and would put that database's counts, tenant and
+    // findings over the new one's. The switch re-runs this load when the panel
+    // is showing, so the stale one has nothing left to say.
+    if (epoch !== _dbEpoch) return
     if (info?.counts) {
       erCounts   = info.counts
       _erMaxRows = Math.max(0, ...Object.values(erCounts))
@@ -5224,10 +5235,12 @@ function exCard(row, count) {
   const chips = (label, list, level) => !list?.length ? '' : `
     <div class="cluster"><span class="text-muted">${esc(label)}</span>
       ${list.map(w => {
-        const target = _catalog.find(r => r.word === w && r.level === level) ?? _catalog.find(r => r.word === w)
+        // `<level>:<word>` names the level; a bare word is the row's own level first
+        const [want, name] = w.includes(':') ? w.split(':') : [level, w]
+        const target = _catalog.find(r => r.word === name && r.level === want) ?? _catalog.find(r => r.word === name)
         return target
           ? `<button class="btn ghost compact ex-word" onclick="exGo({kind:'${target.level === 'schema' ? 'top' : 'word'}',word:'${target.word}',level:'${target.level}'})">${esc(exTyped(target.level, target.word))}</button>`
-          : `<span class="badge muted">${esc(w)}</span>`
+          : `<span class="badge muted">${esc(name)}</span>`
       }).join('')}
     </div>`
 
@@ -7291,6 +7304,7 @@ function applyDatabaseFacts(info) {
  * showing them.
  */
 async function reopenDatabase(what) {
+  _dbEpoch++
   const info = await api('/info').catch(() => null)
   handOffInfo(info)
   applyDatabaseFacts(info)

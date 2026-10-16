@@ -204,7 +204,7 @@ Consequences worth stating:
   row before anyone belongs to it. `db.$setAuth(user).asSystem()` keeps that
   user's claim: it crosses the gate, `@guarded` and every hand-written policy,
   and it stays inside the tenant it was standing in. That is the client an
-  application wants inside a request — a `@@gate("8")` model can be read by
+  application wants inside a request — a `@@gate(8)` model can be read by
   nothing else, so before this the only client that could read a credential was
   the one that ignored tenancy (`FJS-519`).
 - **So reaching for the app-level client inside a request is the wrong reach.**

@@ -202,3 +202,41 @@ test('vocabulary: vocabulary.json is present and current', function () {
       ' — run `bun run build:vocabulary`'
   );
 });
+
+/* ── Every @media width is on the breakpoint scale ─────────────────── */
+
+test('vocabulary: every @media width is on the breakpoint scale', function () {
+  /*
+   * A width cannot be a custom property inside a media query, so each one in
+   * src/ is a literal and BREAKPOINTS is the only thing saying what it should
+   * be. A `max-width` sits one pixel under the step it stops before. Anything
+   * else — a value off the table, a rem — is a layout change no consumer can
+   * line up with, and renders fine. A sheet with no href is the harness's own.
+   */
+  var steps = Object.keys(BREAKPOINTS).map(function (k) { return BREAKPOINTS[k]; });
+  var feature = /\(\s*(?:(min|max)-width\s*:\s*([^)]+?)|width\s*(>=|<=|>|<)\s*([^)]+?))\s*\)/g;
+  var seen = 0;
+  var off = [];
+
+  allRules().forEach(function (rule) {
+    if (!(rule instanceof CSSMediaRule)) return;
+    var sheet = rule.parentStyleSheet;
+    if (!sheet || !sheet.href) return;
+    var text = rule.media.mediaText;
+    var m;
+    feature.lastIndex = 0;
+    while ((m = feature.exec(text))) {
+      seen++;
+      var op = m[1] || m[3];
+      var raw = (m[2] || m[4]).trim();
+      var px = /^(\d+)px$/.exec(raw);
+      /* min-width / >= / < name the step itself; max-width / <= / > the pixel under it. */
+      var under = op === 'max' || op === '<=' || op === '>';
+      var ok = px && steps.indexOf(Number(px[1]) + (under ? 1 : 0)) !== -1;
+      if (!ok) off.push(sheet.href.split('/src/').pop() + ': @media ' + text);
+    }
+  });
+
+  assert.ok(seen >= 4, 'found ' + seen + ' @media widths — the walk is not reaching src/');
+  assert.equal(off.length, 0, '@media width off BREAKPOINTS:\n        ' + off.join('\n        '));
+});

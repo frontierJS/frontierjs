@@ -163,7 +163,7 @@
       const which = grabbed ? grabbed.dataset.which : handleFor(posToValue(e.clientX))
       moved = false
       if (!grabbed) { set(which, posToValue(e.clientX)); emit(); moved = true }
-      sliderEl.querySelector('[data-which=' + which + ']')?.focus()
+      $.focus(sliderEl.querySelector('[data-which=' + which + ']'))
       dragging = which
       return which
     },
@@ -254,7 +254,7 @@
           aria-valuetext={fmt(value)}
           aria-label={handleName || 'Value'}
           aria-disabled={resolvedDisabled || null}
-          on:keydown={handleKeydown('single')}
+          onkeydown={handleKeydown('single')}
         ></div>
 
         {#if showPips}
@@ -276,7 +276,7 @@
           aria-valuetext={fmt(start)}
           aria-label={handleName ? handleName + ' minimum' : 'Minimum'}
           aria-disabled={resolvedDisabled || null}
-          on:keydown={handleKeydown('start')}
+          onkeydown={handleKeydown('start')}
         ></div>
 
         <!-- End handle -->
@@ -293,7 +293,7 @@
           aria-valuetext={fmt(end)}
           aria-label={handleName ? handleName + ' maximum' : 'Maximum'}
           aria-disabled={resolvedDisabled || null}
-          on:keydown={handleKeydown('end')}
+          onkeydown={handleKeydown('end')}
         ></div>
 
         {#if showPips}

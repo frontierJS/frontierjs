@@ -23,12 +23,12 @@ function execCompiled(js, userImports = {}) {
 const CHILD =
   `<script>\n  export let files = []\n  export let onchange = undefined\n` +
   `  function add(x) { files = [...files, x]; onchange?.(files) }\n</script>\n` +
-  `<button class="add" on:click={() => add(1)}>add</button><i>{files.length}</i>`
+  `<button class="add" onclick={() => add(1)}>add</button><i>{files.length}</i>`
 
 const PARENT =
   `<script>\n  import Child from './Child.mesa'\n  let picked = []\n` +
   `  const onchange = () => { picked = [] }\n</script>\n` +
-  `<button class="clear" on:click={() => (picked = [])}>clear</button>` +
+  `<button class="clear" onclick={() => (picked = [])}>clear</button>` +
   `<Child bind:files={picked} {onchange} /><b>{picked.length}</b>`
 
 describe('FJS-2509: a parent write inside the child callback survives the bind', () => {

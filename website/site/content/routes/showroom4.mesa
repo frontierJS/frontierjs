@@ -15,7 +15,7 @@ render: static
 
   // The page's own code samples. Mesa reads `{` in markup as an expression, so
   // a <pre> holding one is a block tag to the compiler.
-  const S1 = `<span class="o">model Lead {</span><span class="o">  email String @email</span><span class="o">  @@gate("0.4.4.5")</span><span class="o">}</span>`
+  const S1 = `<span class="o">model Lead {</span><span class="o">  email String @email</span><span class="o">  @@gate(0.4.4.5)</span><span class="o">}</span>`
 
   const S2 = `<span class="o">&lt;script&gt; … &lt;/script&gt;</span><span class="o">{#each leads.data as l}</span><span class="o">  &lt;tr&gt;{l.name}&lt;/tr&gt;</span><span class="o">{/each}</span>`
 

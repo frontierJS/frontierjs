@@ -524,7 +524,7 @@ t('preview.raisingAGateIsContractAndNarrows', await evaluate(`
 
   const b   = exFindBlock(src, 'model', model.name);
   const cur = (model.attributes.find(a => a.kind === 'gate').value + '').trim();
-  const body = src.slice(b.open, b.close).replace('@@gate("' + cur + '")', '@@gate("7")');
+  const body = src.slice(b.open, b.close).replace('@@gate(' + cur + ')', '@@gate(7)');
   const proposed = src.slice(0, b.open) + body + src.slice(b.close);
 
   const p = await api('/preview', { source: proposed, model: model.name });
@@ -588,10 +588,9 @@ t('preview.aRequiredColumnIsAContract', await evaluate(`
   };
 `), { deploy: 'contract', ddlChanged: true, jsonChanged: true })
 
-// parse() is more permissive than the layers above it. A gate string it accepts
-// and deriveAccess refuses used to come back as a bare 500 that said nothing
-// about the other three realms.
-t('preview.aRefusedPaneIsNamedRatherThan500', await evaluate(`
+// A gate out of order is refused by parse() (FJS-2948), so the preview answers
+// with the parse error naming the model rather than a bare 500.
+t('preview.aGateOutOfOrderIsNamedRatherThan500', await evaluate(`
   const row    = _catalog.find(r => r.word === 'fts' && r.level === 'model');
   // Every fixture model already declares a gate and a second one is a parse
   // error ("declared twice"), a different refusal from the one named here, so
@@ -603,7 +602,7 @@ t('preview.aRefusedPaneIsNamedRatherThan500', await evaluate(`
   const b      = exFindBlock(src, 'model', target);
   const cur    = (model.attributes.find(a => a.kind === 'gate').value + '').trim();
   const bad    = src.slice(0, b.open)
-    + src.slice(b.open, b.close).replace('@@gate("' + cur + '")', '@@gate("4.4.2.5")')
+    + src.slice(b.open, b.close).replace('@@gate(' + cur + ')', '@@gate(4.4.2.5)')
     + src.slice(b.close);
 
   const res = await fetch(API + '/preview', {
@@ -612,12 +611,11 @@ t('preview.aRefusedPaneIsNamedRatherThan500', await evaluate(`
   });
   const p = await res.json();
   return {
-    status:   res.status,
-    valid:    p.valid,
-    named:    (p.rejected || []).some(r => r.pane.startsWith('access')),
-    ddlStill: typeof p.ddl.after === 'string',
+    status: res.status,
+    valid:  p.valid,
+    named:  (p.errors || []).some(e => e.includes('@@gate on "' + target + '"')),
   };
-`), { status: 200, valid: true, named: true, ddlStill: true })
+`), { status: 200, valid: false, named: true })
 
 // A pane that could not be computed shows the reason. With `after` null a
 // removed value and a refused derivation render identically, and while a schema

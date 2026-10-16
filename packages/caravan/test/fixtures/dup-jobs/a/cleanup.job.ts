@@ -1,3 +1,3 @@
 import { defineJob } from '../../../../src/index.ts'
 
-export default defineJob('cleanup', () => {})
+export default defineJob({ handler: () => {} })

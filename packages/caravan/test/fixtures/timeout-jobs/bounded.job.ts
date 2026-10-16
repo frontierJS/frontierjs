@@ -3,4 +3,4 @@
 
 import { defineJob } from '../../../src/index.ts'
 
-export default defineJob('bounded', async () => {}, { timeout: 250 })
+export default defineJob({ timeout: 250, handler: async () => {} })

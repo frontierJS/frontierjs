@@ -5,7 +5,7 @@
  * `focus`, `focusin`, and that the two `in`/`out` events bubble to a
  * container where `focus` and `blur` do not. Leaving the container sends
  * `focusout` and nothing after it. Then the kit's click-away shape: a
- * `<mesa:window on:click|capture>` asks `box.contains(e.target)`, so a click
+ * `<mesa:window onclick|capture>` asks `box.contains(e.target)`, so a click
  * inside the box leaves it open and one elsewhere closes it, and the window
  * hears the click before the button's own handler runs.
  */

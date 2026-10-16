@@ -689,7 +689,7 @@ async function recordCall(
     await app.withDb(async (db: unknown) => {
       await (db as { $audit(e: Record<string, unknown>): Promise<unknown> }).$audit({
         operation: CALL_OPERATION,
-        ...(tool.model ? { model: tool.model } : {}),
+        model:     tool.model ?? tool.service,
         records:   id == null ? [] : [String(id)],
         ...(actor?.id != null ? { actorId: String(actor.id), actorType: 'user' } : {}),
         meta: {

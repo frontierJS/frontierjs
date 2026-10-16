@@ -52,7 +52,9 @@
 //
 // "Clear" hides the log and forgets nothing: the session goes on with what
 // it knew, and a cleared run's Undo is one "Show cleared" away. "New chat" is
-// the button that forgets.
+// the button that forgets. Ctrl+N, with focus in the panel, does both; Ctrl+M
+// shrinks it to the tab. A browser tab on Linux or Windows keeps Ctrl+N for a
+// new window and never delivers it; the desktop shell and macOS do.
 //
 // The panel shrinks to a tab in the bottom-right corner, where it stays out of
 // the page it is editing. The tab survives a reload like the panel
@@ -80,6 +82,7 @@
   const saved = keep('fli:ask:log')
   const foldKeep = keep('fli:ask:fold')
   const miniKeep = keep('fli:ask:mini')
+  const wideKeep = keep('fli:ask:wide')
   // How hard Claude thinks follows the Change chip unless one is pressed; a
   // pressed one is a preference rather than part of one ask, so it outlives
   // the tab where the rest of the panel's state does not, until the kind's own
@@ -92,12 +95,12 @@
   const pressedEffort = () => { try { const v = localStorage.getItem(EFFORT_KEY); return EFFORTS.includes(v) ? v : null } catch { return null } }
   const setEffort = v => { try { v === kindEffort() ? localStorage.removeItem(EFFORT_KEY) : localStorage.setItem(EFFORT_KEY, v) } catch {} }
 
-  let panel, tab, list, hint, chips, effortBox, tray, input, send, stop, submit, fresh, log, rail, folds, latch, planner
+  let panel, tab, list, hint, chips, effortBox, tray, input, send, stop, submit, fresh, log, rail, folds, latch, planner, stretch
   let picks = [], sent = false, busy = false, planning = false
   // The reply entry still streaming, and what the run said it is doing.
   let draft = null, doing = 'working'
   // Closed hides the panel and its tab; shrunk hides the panel behind the tab.
-  let closed = false, shrunk = !!miniKeep.get()
+  let closed = false, shrunk = !!miniKeep.get(), wide = !!wideKeep.get()
   // Pasted images waiting for the next send: `{ type, data, thumb }`.
   let shots = []
   // The chips' answers, keys of the server's EDIT_KINDS and EDIT_SCOPES.
@@ -140,6 +143,7 @@
     clear: ['m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21', 'M22 21H7', 'm5 11 9 9'],
     fresh: ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', 'M12 7v6', 'M9 10h6'],
     shrink: ['M5 12h14'],
+    wide:  ['m18 8 4 4-4 4', 'm6 8-4 4 4 4', 'M2 12h20'],
     close: ['M18 6 6 18', 'm6 6 12 12'],
     edit:  ['M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z', 'm15 5 4 4'],
     open:  ['M15 3h6v6', 'M10 14 21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
@@ -459,16 +463,18 @@
   function build() {
     panel = make('div', `position:fixed;right:12px;bottom:12px;z-index:2147483646;box-sizing:border-box;width:min(680px,calc(100vw - 24px));max-height:85vh;display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid rgba(148,163,184,.22);border-radius:10px;background:rgba(15,23,42,.5);-webkit-backdrop-filter:${GLASS};backdrop-filter:${GLASS};color:#e2e8f0;font:14px/1.5 ui-sans-serif,system-ui;box-shadow:0 8px 30px rgba(0,0,0,.35)`)
     const head = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px')
-    fresh = iconButton('fresh', 'New chat', 'New chat: forget the conversation; the next ask starts a new session')
+    fresh = iconButton('fresh', 'New chat', 'New chat: forget the conversation; the next ask starts a new session (Ctrl+N also clears)')
     // The log stays: its Undo buttons still undo, whichever conversation ran them.
-    fresh.onclick = () => { store.set(null); line('New conversation.', 'meta') }
+    const forget = () => { store.set(null); line('New conversation.', 'meta') }
+    fresh.onclick = forget
     const wipe = iconButton('clear', 'Clear', 'Clear: hide the messages so far; the conversation and its Undos are kept')
-    wipe.onclick = () => {
+    const hideAll = () => {
       for (const e of entries) e.hid = true
       unhide = false
       save()
       drawSoon()
     }
+    wipe.onclick = hideAll
     const term = iconButton('term', 'Continue in terminal', 'Continue in terminal: copy a command that resumes this conversation, or, before there is one, this ask for any agent')
     term.onclick = handoff
     latch = iconButton('pick', 'Pick mode', 'Pick mode: click elements to pick them, without holding shift+alt (Esc leaves)')
@@ -476,11 +482,14 @@
     drawLatch()
     planner = iconButton('plan', 'Make a plan', 'Make a plan: for a new feature, with nothing on the page to pick — Claude writes PLAN.md at the app root and builds nothing')
     planner.onclick = () => { planning = !planning; render(); input.focus() }
-    const shrink = iconButton('shrink', 'Shrink to a tab', 'Shrink to a tab in the corner (the conversation is kept)')
+    const shrink = iconButton('shrink', 'Shrink to a tab', 'Shrink to a tab in the corner (the conversation is kept) · Ctrl+M')
     shrink.onclick = () => fit(true)
     const close = iconButton('close', 'Close', 'Close (the conversation is kept)')
     close.onclick = () => { closed = true; shown.set(null); layout() }
-    head.append(latch, planner, term, wipe, fresh, make('span', 'flex:1'), shrink, close)
+    stretch = iconButton('wide', 'Full width', 'Full width: stretch the panel across the page')
+    stretch.onclick = () => { wide = !wide; wideKeep.set(wide ? '1' : null); drawWide() }
+    drawWide()
+    head.append(latch, planner, term, wipe, fresh, make('span', 'flex:1'), stretch, shrink, close)
 
     list = make('div', 'display:flex;flex-direction:column;gap:6px;max-height:24vh;overflow:auto')
     hint = make('div', 'margin-top:-6px;color:#94a3b8;font-size:12.5px')
@@ -526,6 +535,12 @@
     row.append(effortBox, submit, stop, send)
 
     panel.append(head, list, hint, folds, chat, tray, input, chips, row)
+    panel.addEventListener('keydown', (e) => {
+      if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+      const k = e.key.toLowerCase()
+      if (k === 'n') { e.preventDefault(); hideAll(); forget(); input.focus() }
+      else if (k === 'm') { e.preventDefault(); fit(true) }
+    })
 
     tab = make('button', `position:fixed;right:12px;bottom:12px;z-index:2147483646;display:none;align-items:center;gap:10px;box-sizing:border-box;width:min(680px,calc(100vw - 24px));padding:9px 14px;border:1px solid rgba(148,163,184,.22);border-radius:10px;background:rgba(15,23,42,.5);-webkit-backdrop-filter:${GLASS};backdrop-filter:${GLASS};color:#e2e8f0;font:14px/1.2 ui-sans-serif,system-ui;cursor:pointer;box-shadow:0 8px 30px rgba(0,0,0,.35)`)
     tab.type = 'button'
@@ -586,6 +601,14 @@
     hint.textContent = i && i.pickMode()
       ? `Pick mode: a click adds an element · ${pickKey}-click opens its source · Esc leaves`
       : `${pickKey}-click opens the source in your editor · shift+${pickKey}-click asks here, and adds another element before you send`
+  }
+
+  function drawWide() {
+    panel.style.width = wide ? 'calc(100vw - 24px)' : 'min(680px,calc(100vw - 24px))'
+    stretch.title = wide ? 'Narrow: back to the usual width' : 'Full width: stretch the panel across the page'
+    stretch.setAttribute('aria-label', wide ? 'Narrow' : 'Full width')
+    stretch.style.cssText = ICON + (wide ? ';background:#0369a1;border-color:#0369a1' : '')
+    stretch.setAttribute('aria-pressed', String(wide))
   }
 
   function show() {

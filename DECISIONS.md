@@ -27,6 +27,24 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1157"></a>2026-10-16 · `FJS-D1157` — How `.lite` says a column is client-sealed — A new field word, `@opaque`: the server stores these bytes and cannot interpret them. It is refused at parse in `@@index`, `@@unique`, `@@fts`, `@@label` and a declared order; a `where` over it takes only `null` and equality; `advise` reads it as protected; the trail writes its own token (`FJS-D1158`). Who may READ it stays the gate's and `@omit`'s (`FJS-D205`).
+
+Asked in [`fjs-prototypes/vaultwarden/PLAN.md`](../fjs-prototypes/vaultwarden/PLAN.md) § Q10 (`FJS-3064`), through the question tool after 2.2 measured nothing refusing an index, an `@@fts`, a `@@label`, a sort or a `contains` over ciphertext, and `advise` recommending two of them. **B** was picked over **A** (`@encrypted(client)`: every behavior `@encrypted` has inverts under the argument — no decrypt on read, no hiding from the owner, `$rotateKey` skips it, `FJS-715`'s refusal of a ciphertext-shaped input becomes a requirement — the one word meaning two opposite arrangements `FJS-D478` refused) and **C** (no word: `@regex` + `@personal` stays the spelling, leaving 30 columns mislabeled as personal data that the data map and `forget()` read). `@sealed` is taken (`FJS-D167`). `FJS-D657` is the sibling: a field word with one behavior in the trail and none at the gate. Lives, once built, in `buildFieldPolicyMap`, the owner `@personal` and `$protectedFields` already read.
+
+The nine, as Q10 wrote them before the build: origin — one word, nothing restated; concept — +1 noun, paid for by retiring a misuse of `@personal`; complexity — the problem's, E2EE is an old name; predictability — better than A; derived — the refusals derive from the word, none hand-written; owner — `buildFieldPolicyMap`; boundary — parse time, named; failure — refusal at parse, because an index over ciphertext is silent nonsense and cheap to refuse; silence — the parse refusal and the access snapshot's protected column. *Familiarity vs. precision*: precision. Tier: Register.
+
+### <a id="fjs-d1082"></a>2026-10-16 · `FJS-D1082` — Are policy operations bare identifiers like every sibling keyword argument — Bare: `@@allow(read, …)`, `@allow(write, …)`; comma-combo deleted; one op list, with field `write` = create+update stated in the reference.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **A** was picked over **B** (keep quoted; delete the comma-combo only).
+
+The paper's recommendation, taken as written: `@@sync(server)`, `@@tenant(none)`, `@values(X, open)` already set the rule; an op is a keyword, not data.
+
+### <a id="fjs-d1081"></a>2026-10-16 · `FJS-D1081` — Which one literal form does the gate ladder take — Bare on both: `@@gate(3.8.3.8)` as a dotted literal the lexer learns, `@gate(5)`; moves digits-only.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **B** was picked over **A** (quoted on both: `@@gate("3.8.3.8")`, `@gate("5")`; moves digits-only).
+
+Quotes in the language mean text: numbers are bare (@length(1, 200), @gte(0)) and keywords are bare (@@tenant(none), @@trail(audit)), and the model form was quoted only because the lexer read 3.8.3.8 as a float. A gate level is a number per operation, so it takes the bare form, and the quoted spelling is refused naming it. The smaller lexer A kept is the code's convenience and not a user's.
+
 ### <a id="fjs-d1044"></a>2026-10-15 · `FJS-D1044` — A Model is a data structure and the semantics that govern it; a Trait is a shared fragment of the structure, and the test Factory's `traits` is renamed `states`.
 
 Asked in chat, two picks through the question tool. **Model**: *"a data structure and the semantics that govern it — what it relates to, who may reach it, how it may change"* was picked over *meaning and place* and the owner's first draft, because *govern* keeps enforcement in the definition. *Semantics* is used in the sentence and is not a term. **Trait**: the factory rename was picked over keeping both senses qualified and over filing the collision for later.
@@ -1231,7 +1249,7 @@ The architecture question is still open: whether a server runs a resident proces
 at all, or Basecamp pushes over SSH, is argued in `IDEAS/deploy-plane.md` and
 ruled nowhere. **This decision reserves the name, not the design.**
 *Lives in:* `packages/basecamp/db/schema.lite` (`outpostVersion`, `outpostUrl`),
-`api/src/engine/fleet.engine.ts`, `api/src/engine/deployment.engine.ts`,
+`api/src/services/fleet/fleet.service.ts`, `api/src/services/deployments/deployments.service.ts`,
 `api/src/services/servers/servers.service.ts`, `docs/VISION.md`,
 `IDEAS/deploy-plane.md`.
 
@@ -1387,6 +1405,48 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1158"></a>2026-10-16 · `FJS-D1158` — What the trail writes for an `@opaque` value — `[opaque:<digest>]`, a truncated, domain-separated digest of the STORED bytes: equality without the value, so an edit's row says which sealed column moved, two rows holding the same ciphertext read alike, and a client key rotation shows every value moving.
+
+Asked in [`fjs-prototypes/vaultwarden/PLAN.md`](../fjs-prototypes/vaultwarden/PLAN.md) § Q11 (`FJS-3065`), after `FJS-D1157`. **B** was picked over **A** (a token alone, as now: measured in 2.4, an edit's row reads `[personal]` before and after, so nobody can tell whether an item field changed — the one thing a vault's trail is for) and **C** (the byte length, which reveals the plaintext's length class under CBC padding, and for a password that is a fact about the password). Ciphertext under a random IV says nothing about its plaintext through its digest. `FJS-D183` is the precedent for the shape: a truncated domain-separated HMAC that identifies a key without being one is safe in a column, a log line and an error. `FJS-D657` is the precedent for a new token beside `[redacted]` when a new word joins Invariant 7.
+
+Owed with the build, not before it: Invariant 7's text names `@opaque` and its token, and the audit-redaction test gains the row — `CLAUDE.md` states only what is live. The nine: origin — one token, in the trail's redaction; concept — none beyond `FJS-D1157`'s word; complexity — the problem's; predictability — a sibling of `[redacted]` and `[personal]`; derived — from the word; owner — the trail's redaction, Invariant 7's owner; boundary — a reader of the trail needs nothing new; failure — none is destructive; silence — the audit-redaction test row, owed with the build, and `none` until then. No adjudication is in tension. Tier: Register.
+
+### <a id="fjs-d1161"></a>2026-10-16 · `FJS-D1161` — A tenant's read whose filter names another tenant — Empty, with a 200, as shipped: a filter only narrows what the caller may already read. A request that NAMES a tenant (the principal's header) is still refused by name, and a create naming another tenant still answers *Outside your projectId*.
+
+Asked in [`fjs-prototypes/posthog/PLAN.md`](../fjs-prototypes/posthog/PLAN.md) § Q9, through the question tool after 2.4. **A** was picked over **B** (also refuse, by name, a `where` whose tenant column names a value other than the caller's claim — it must grade every `OR`/`NOT`/`in` combination of the column, an `OR` with another tenant measured as own rows only, and is a second owner beside the tenancy deny) and **C** (A for the ORM, B for a view — one rule split in two). `FJS-D576` rules that a hidden row and a missing one are one answer and that no refusal names a hidden id; an empty read is that answer.
+
+The nine: origin — the tenancy deny; concept — none; complexity — none added; predictability — a filter narrows on every read alike; derived — from `@@tenant`; owner — the tenancy deny, unchanged; boundary — a caller needs no knowledge of other tenants; failure — not destructive, so no refusal; silence — the tenancy tests already fail if a filter widens a read. No adjudication is in tension. Tier: Register.
+
+### <a id="fjs-d1126"></a>2026-10-16 · `FJS-D1126` — Q3 — Per-user credential: where does it live and what standing does it confer — A row on the `@@auth` user, `@encrypted`, holding the Provider token; standing is the app's own gate; the Provider's role is a mirrored column, read and never trusted.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) § Open questions. **A** was picked over **B** (the Provider's role maps to the app's standing (Provider admin → app admin)).
+
+The paper's recommendation, taken as written: Invariant 6 says access is declared in the schema; B lets a third party's role table grade the app.
+
+### <a id="fjs-d1008"></a>2026-10-16 · `FJS-D1008` — When an app requires a second factor and an account has none, what does the login path do — A session limited to enrollment: issue a real session whose row carries `enrollmentOnly`, and `callService` refuses everything but `account.totpStatus/setupTotp/confirmTotp` with a 403 `second_factor_required` until `confirmTotp` clears it. Reuses the existing `account` services and the password re-check, and one owner (junction's method-policy edge) grades it; the cost is a session that exists before the factor does, and a junction change for a package that sits below it (Invariant 1 allows auth to depend on junction, so the hook is auth's own plugin `before` rather than junction's).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (an enrollment ticket: `firstFactorProven` answers `{ enroll: ticket, expiresAt }` beside `{ challenge }`, no session issued. `setupTotp`/`confirmTotp` get a ticket-taking twin (a raw route like `/auth/login/challenge`, since it cannot be gated by a session), and `confirmTotp` on a ticket ends in the session. Nothing is signed in until the factor exists, and Sierra's `session` gains one more state beside `awaitingCode`; the cost is a second ticket kind and four more wire answers (password, magic link, OAuth, confirmOAuthLink)), **C** (refuse and leave enrollment to the operator: login answers 403 `second_factor_required` and an admin enrolls the account out of band (`resetTotp`'s mirror). Smallest build, no new ticket or session kind; an app that turns the switch on locks out every existing unenrolled account until someone acts).
+
+The paper's recommendation, taken as written: A needs a second ticket kind and a new route plus a client state across four entry doors, and C locks a live app out by flipping a setting. B keeps one session path and one service owner for enrollment, and the refusal lives in auth's plugin beside the `totp` credential it reads.
+
+### <a id="fjs-d1011"></a>2026-10-16 · `FJS-D1011` — How does `providerOnly()` tell an account a provider made from one the mailbox made and later linked a provider to — Record the origin on the credential: § 4 writes the linked `oauth:*` row with a marker (a nullable `Credential.linked` flag in `auth.lite`), and `providerOnly` and `confirmPasswordReset` count only an unmarked `oauth:*` credential, so the account § 3 made stays refused and the account the mailbox already vouched for keeps both doors. One schema column, one helper both callers share.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (infer it with no new state: a provider-made account's `oauth:*` credential is written in the registration transaction, so treat a credential created later than its `User` row as linked. No column, but it rests on two `now()` defaults agreeing, and a registration that retries or a backfill breaks the inference silently), **C** (leave the refusal and state it: an account that links a provider loses magic-link sign-in and password reset by design, and the person keeps the provider. The cost is the FJS-2545 lockout stays, for the one account (magic-link-made) that was never secured by anything but its mailbox).
+
+The paper's recommendation, taken as written: the distinction is a fact about how the credential arrived, so it is stored where the credential is, and B reads it off a coincidence of timestamps.
+
+### <a id="fjs-d1117"></a>2026-10-16 · `FJS-D1117` — Does auth's User fragment keep `accountId`, once the app's tenancy declaration is what scopes an operator — Drop it from the fragment. An app whose tenant is an account declares the column and its `tenancy { column accountId }` itself, and those three writes stamp the column the app's tenancy names, read through `resolveTenancy(schema)`. Moves maidtech, sstime, ela and `fli new`'s scaffold.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (keep it, stated as the column an account-tenanted app's tenancy block names. A Member-tenanted app leaves it null and nothing reads it. No moves, but the fragment still offers a second answer that a Member app has to know to ignore), **C** (keep it as it is).
+
+The paper's recommendation, taken as written: B leaves the two answers in place and only adds a sentence about them. A makes the tenancy block the one answer.
+
+### <a id="fjs-d1116"></a>2026-10-16 · `FJS-D1116` — Which people may auth's `people` service reach — by what rule does it decide a person is inside the operator's tenant — Derive it from the app's own resolver: `aim()` re-resolves the PERSON with `app.runAs(person, { tenant: app.tenant() }, () => app.withDb((_, user) => user))`, so the app's principal resolver answers in the operator's tenant. The person is reached only where the tenancy claim it returns equals `app.tenant()`, otherwise 404 as today. `standingLevel` grades that re-resolved principal. `remove`, which deletes the whole `User`, is refused below SYSADMIN when the person holds a membership outside this tenant. One rule for both shapes: an `accountId` tenancy and a membership tenancy each answer through their own claim. No tenancy declared means no scoping, which is today's null-`accountId` operator. Uses existing seams only and adds no option.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the app answers: a new `services: { reaches(operator, person) }` predicate, required when the app declares tenancy. Each app writes the rule again, beside a resolver that already knows it, and an app that forgets it gets FJS-3016's answer), **C** (`people` floors at SYSADMIN whenever a tenant is in scope, and workspace admins use the app's own member service. Smallest build, but it locks the account admins of maidtech, sstime and ela out of the surface `FJS-2643` scoped for them).
+
+The paper's recommendation, taken as written: the tenant a person is in has one origin, the app's principal resolver and tenancy block, and A reads it there. B restates it per app, and C trades a cross-tenant hole for a lockout in three live ports.
 
 ### <a id="fjs-d1006"></a>2026-10-15 · `FJS-D1006` — How does an Oracle answer limit a move or a write to a membership role — B for moves, A's `roles` for the other ops.
 
@@ -2022,7 +2082,7 @@ Two clauses beyond the option. The level form is REMOVED, not kept beside the li
 Asked in [`IDEAS/static-safety.md`](IDEAS/static-safety.md) § Open questions. **D** was picked over **A** (the build refuses: before a page is written, scan each island's serialized props (`packages/mesa/src/runtime.js:5481`) for any column `db.$protectedFields(accessor)` names, failing like a gate overrun; `publishes: N` does not lift it, since `@guarded` takes no level), **B** (refuse an `asSystem()` build client in the tap, so litestone's own read path strips `@guarded` and the marker can never see one), **C** (leave it, documented as the author's responsibility under `publishes:`).
 
 A scans island props by NAME, so a column renamed into a prop, or interpolated into plain markup with no island at all, reaches the page unseen, and props carry no model so a harmless key collides. The read is the one place that knows a protected value was returned: probed, asSystem() returns @guarded and @encrypted values and a bare or $setAuth read strips both, so the check fires only on event.system. It also covers every @encrypted, @hashed and @secret column, since $protectedFields names them all, and it is the per-column read set FJS-D496 will want. Its cost is that a system read of a model with a protected column must write select, which is the declaration the page owed anyway.
-*Lives in:* `packages/sierra/src/build/static-safety.js` (`collectExposed`) · `packages/litestone/src/core/hooks.js` (`emitQuery`, `QueryEvent.system`) · `packages/sierra/test/static-safety-real.mjs` § FJS-1411 · `packages/litestone/test/query-tap.test.ts`.
+*Lives in:* `packages/sierra/src/build/static-safety.js` (`collectColumns`) · `packages/litestone/src/core/hooks.js` (`emitQuery`, `QueryEvent.system`) · `packages/sierra/test/static-safety-real.mjs` § FJS-1411 · `packages/litestone/test/query-tap.test.ts`.
 
 ### <a id="fjs-d470"></a>2026-09-28 · `FJS-D470` — Where may a row under an enum `@@transitions` START: is `@default` the one entry a caller may name, or does the machine declare its entries — `@default` is the only entry, for every principal. A create that names any other state is refused with `TransitionViolationError`, and the message names the default. `asSystem()` is held too (`FJS-D502`): a row that genuinely starts elsewhere is created at the default and walked there by its declared moves, or is put there by `sys.sql`. Nothing new to spell: the entry is derived from a declaration that already exists, and `IDEAS/shipped/state-machines.md`'s *a create is not graded* is struck.
 
@@ -2172,7 +2232,7 @@ given. An app for which that difference matters is an app whose service is doing
 access control a policy should be doing, which `@@allow` and Invariant 6 already
 have an answer for.
 
-*Lives in:* `packages/sierra/src/junction/local-db.js`, `junction/index.js`
+*Lives in:* `packages/sierra/src/resource/local-db.js`, `packages/sierra/src/resource/index.js`
 § `_tokenChanged`.
 
 ### <a id="fjs-d310"></a>2026-09-16 · `FJS-D310` — Under `tenancy { strategy row }`, a `@unique` on a scoped model is SCOPED rather than reported: the tenant column is prepended to the constraint, and a field-level one is lifted to a table constraint. `@unique(global)` / `@@unique([…], global: true)` is the opt-out and coins nothing new. A model scoped through a PARENT keeps the warning.
@@ -2397,7 +2457,7 @@ two-hop refusal) · `packages/litestone/src/core/policy.js` (`check(rel, 'read')
 already compiles a target's policy as a correlated subquery) ·
 `packages/litestone/src/core/schema-maps.js` (`subquerySql`, which already
 correlates on every column of a composite key) ·
-`packages/sierra/src/junction/resource.js` (`buildGate` / `canAtLevel`) ·
+`packages/sierra/src/resource/resource.js` (`buildGate` / `canAtLevel`) ·
 Invariant 6 · [`FJS-499`](ISSUES_ARCHIVE.md#fjs-499) is the implementation
 
 
@@ -2573,10 +2633,10 @@ of two small domains and is the only shape that could have caught this.
 declaration why: it is the oracle an exhaustive test grades `levelPasses`
 against, and an oracle that calls the thing it grades cannot fail.
 
-*Lives in:* `packages/toolbelt/src/gate/gate.js` (`LEVELS`, `LEVEL_NAMES`,
+*Lives in:* `packages/toolbelt/src/gate/gate.js` (`LEVELS`, `levelName`,
 `levelPasses`, `gradeStanding`) · `packages/litestone/src/plugins/gate.js` and
 `src/core/parser.js` · `packages/junction/src/core/litestone.ts` ·
-`packages/sierra/src/junction/field-rules.js`. Closes [`FJS-520`](ISSUES_ARCHIVE.md#fjs-520).
+`packages/sierra/src/resource/field-rules.js`. Closes [`FJS-520`](ISSUES_ARCHIVE.md#fjs-520).
 
 ### <a id="fjs-d183"></a>2026-09-03 · `FJS-D183` — the envelope names the KEY. A rotation is resumable because every value says which key wrote it, and the old key stays readable rather than being dropped.
 
@@ -2828,7 +2888,7 @@ could not be satisfied. The set is gone; the from-state is asked of the schema.
 *Lives in:* `packages/litestone/src/core/parser.js` (`parseTransitionsArg`),
 `src/core/client.js` (`checkTransitions`, `transition`, `transitions`,
 `TransitionSystemError`), `src/jsonschema.js`;
-`packages/sierra/src/junction/field-rules.js` (`transitionsAt`); adopted in
+`packages/sierra/src/resource/field-rules.js` (`transitionsAt`); adopted in
 `packages/basecamp/db/schema.lite` (`Server`) and
 `api/src/services/servers/servers.service.ts`. Reference:
 `packages/litestone/docs/schema.md` § `@@transitions`.
@@ -3828,6 +3888,77 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d1162"></a>2026-10-16 · `FJS-D1162` — How a claimed mirror's forward grades the caller's write before it sends — `db.$checkWrite(accessor, op, row, changes?)` → `{ ok, message?, rule? }`, a litestone verdict beside `$readAs` over the one `policyVerdict`: the gate, the `@@capabilities` grid, then `create` on the payload at its literal defaults, `update` on the stored row and `post-update` on it with the changes over it, `delete` on the stored row. Junction's forward asks before each send and refuses with a 403. A claim on a model declaring `@@transitions` is refused at its bind.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) step 3.3a (`FJS-3147`), through the question tool, after two prior-art passes. Products over an external system of record mostly grade role and table locally and leave the row to the far side (Salesforce Connect, `postgres_fdw`, Hasura, Dataverse). Frameworks that grade first use either a verdict (Ash's policy-filter re-read, ZenStack v3's `VALUES` create check, Oso's `authorize`) or a rehearsal (Zero rolls back its replica, Kubernetes dry-run). Picked over **rehearsing update and delete as the caller's real write in a rolled-back `$transaction`**. That grades every rule the write grades, but a Post create cannot be rehearsed, because six columns only the Provider fills are `NOT NULL`, so it needs the verdict anyway. It would also hold an exclusive transaction for each forward. Field `@allow('write')` needed no refusal: on a mirror the parser already refuses it on every Provider column, and a `@local` one is written through the table. The second pick was **refuse at the bind** over **grade transitions in `$checkWrite` now**, which would build a grader that no mirror uses yet.
+
+The nine, answered before the build:
+1. Origin: no new one, because the verdict is computed from the schema's own rules.
+2. Concept: one name in the `$check*` family.
+3. Complexity: the problem's own, since Ash, ZenStack, Zero and Kubernetes all name it.
+4. Predictability: one shape for three verbs, the JS verdict `$readAs` already grades with.
+5. Derived: from the schema.
+6. Owner: `policyVerdict`, inside litestone; junction asks.
+7. Boundary: typed in `index.d.ts` and the junction client type.
+8. Failure: a 403 before the send, and an undecidable policy throws.
+9. Silence: conduit `junction-integration.test.ts` *grades the app's own write policies before it sends* and *a model declaring @@transitions*, each failing with its change undone.
+
+No adjudication in tension.
+
+### <a id="fjs-d1155"></a>2026-10-16 · `FJS-D1155` — A mirrored row the Provider drops: stamped or deleted — Deleted when its loss is a loss of ACCESS (`ChannelMember`, a per-person `Thread`); a content row (`Post`, `Channel`) keeps the Provider's own `deletedAt` tombstone and takes `missingSince` when a whole read stops listing it. `missingSince` is for content, never for a grant.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) step 3.3, through the question tool, after the owner asked for prior art before any more recommendations. Mattermost hard-deletes a channel membership and lists removals nowhere, so a backfill learns one by diffing a person's whole member list, as Mattermost's mobile client does; every precedent read (Linear's sync-group leave, PowerSync's REMOVE when no bucket holds a row, Paragon's *deleted or unshared*) drops the local copy. Picked over **stamp `missingSince` and add `missingSince == null` to every policy that reads `members.some(...)`** (rule 4 as written, and one forgotten clause over-grants a removed member) and **stamp, and have `@@mirror` derive that a read and a policy's relation check skip a stamped row** (the most uniform, a litestone change, and whether the filter reaches inside `members.some()` was unprobed). Rule 4 of the file gains the line above. A diff deletes only on a list read whole — a failed page aborts it — since a diff over a partial read deletes real rows (Nango's warning). Lives in `fjs-prototypes/chat/api/src/providers/chat/sync.ts` (`drop`); the scratch probe's negative control, deletes stubbed out, leaves a removed person reading the private room and the post said after their removal.
+
+The nine, answered after the build (late, named here; the pick itself was heard before it): origin, the Provider's own hard delete; concept, none new — a row the app may not keep; predictability, a grant disappears when the Provider's does; derived, from the Provider's list, never a guess; owner, the app's one landing module; boundary, policies stay as written; failure, a partial list deletes nothing; silence, the probe row *redialBackfillsTheGap* and *liveRemovalDropsTheGrant*. Adjudication: *doctrine vs. discovery* — rule 4 of the assessment said *never deleted*, the Provider's delivery said otherwise, and the rule is amended in writing.
+
+### <a id="fjs-d1154"></a>2026-10-16 · `FJS-D1154` — How an app learns a held socket has (re)connected — `BrokerReceiver.opened({ connection })`, called by conduit after each handshake it believes, the first dial and every redial, ahead of that connection's first frame. A Provider that redelivers nothing lost what it sent while the socket was down, and this is where the gap's backfill starts.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) step 3.3, through the question tool, with the precedent in the question: every product read keys on the same moment — Mattermost's webapp runs its missed-message resync when `hello` carries a new `connection_id`, Zulip re-registers on `BAD_EVENT_QUEUE_ID`, Linear bootstraps on connect with a stale `lastSyncId`. Picked over **the hook plus Mattermost's own resume** (`connection_id` + `sequence_number` on the redial replays up to 128 events for about five minutes; it needs the framing to shape the next dial's address, a second framework change, and is not built) and **detecting a new connection id on the next frame in `apply`** (no precedent; a quiet room's gap waits for someone to speak). A throw from `opened` is logged and the frames still flow. Also in this change: `deregister()` drops the target's frame receiver, so one person who disconnects and links again is received again. Lives in `packages/conduit/src/receive.ts`, `transports/broker.ts`, `conduit.ts`; `junction-integration.test.ts` § *a receiver that names a broker target* (both cases fail with the change undone).
+
+The nine, answered after the build (late, named here): origin, the broker's believed handshake, which already existed; concept, one optional field on a type that existed; predictability, every held socket gets it; derived, from the handshake's own answer; owner, conduit's broker transport (`FJS-D1127`); boundary, typed; failure, logged, never blocks frames; silence, the two cases and the connector drive's `socket.openedOnEveryConnection`. No adjudication in tension.
+
+### <a id="fjs-d1153"></a>2026-10-16 · `FJS-D1153` — Whose socket a mirror app listens on — Each linked person's own, on their own token, and their backfill spends the same token: rule 3 gains *a sync READS as the person whose view it is*. The Provider sends a channel's events to that channel's members only, and no admin or bot role widens it, so a private or direct channel reaches the app through a member or not at all.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) step 3.3. The owner stopped the first hearing to ask for prior art; three research passes read the Mattermost server (`ShouldSendEvent` in `web_conn.go`: channel events to channel members, no bypass), matterbridge, the Matrix bridges, Mattermost's own webapp and mobile clients, and the sync platforms (Merge, Paragon, Nango, Beeper, mautrix). Bridges hold one service socket joined to the channels they bridge and never see a DM; Mattermost's own clients, and the platforms that sync for an end user, hold one per person. A mirror app is a client its people read through, not a bridge of chosen channels, so the client shape fits. Picked over **one service socket, the bot joined to every mirrored channel** (rule 3 as written; DMs never mirror and the bot shows in every private member list) and **a hybrid of the two** (two code paths for one kind of row; nothing read does it). The same post arrives on every member's socket and lands once by its key. Lives in `fjs-prototypes/chat/api/src/providers/chat/` (`listen`, `unlisten`, the `chat-sync` plugin's `work`) and the connector's `mattermostSocketTarget({ id, ref })`; drive row `socket.perPersonSeesWhatOnlyTheyMay`.
+
+The nine, answered after the build (late, named here): origin, the Provider's delivery rule; concept, none — a broker target per person, the kind `FJS-D1127` named; predictability, what a person sees in the Provider is what their socket carries; derived, the person from the account's link; owner, the app's provider folder; boundary, a ref per person (`CHAT_SOCKET:<user id>`), since a dial runs outside any call; failure, **a person's refused token makes the whole app read not ready** — filed as `FJS-3150`; silence, the drive row and the probe. Adjudication: *paved road vs. the workaround* — the bridge shape is the ecosystem's road for a bridge, and a mirror app is not one; the road here is Mattermost's own client.
+
+### <a id="fjs-d1152"></a>2026-10-16 · `FJS-D1152` — What a connector's claim calls the Provider's person — `Profile`, never `User`: `User` is the `@@auth` model of every app `fli new --auth` scaffolds, so a claim keyed `User` collides with it out of the box. Mattermost's claim keys its user `Profile`, and a row naming one holds it as `profileExternalId`; an app's account links to its Profile through `User.profileExternalId @system`.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) step 3.1, through the question tool, where the owner asked which answer is right whatever it touches. Picked over **auth resolving its model through `@@auth`** so the app could rename its own account to free `User` (right on its own merits and filed as `FJS-3146`, but here it would let the Provider's noun choose the app's, which is rule 2 inverted), **the app re-keying the claim at bind** (a claim is plain data, but every auth app would have to, so the default would be broken), and **auth's models as files the app owns** (reverses `FJS-D16`, whose evidence is basecamp's copy storing OAuth tokens in plain text with its suite green, and it frees no name, since auth reads `sys.user` 48 times). Merging the two is refused by construction: auth creates its `User` with no Provider key, and a mirror key is required. Lives in `../conduit-connectors/packages/conduit-mattermost/src/mirror.ts`.
+
+The nine, answered after the build (late, named here): origin one, the claim's keys; concept none new, a model name is the app's; predictability, every scaffolded app binds the claim unchanged; derived, nothing to derive; owner, the connector; boundary, the app binds as-is; failure, a claim keyed onto a model that is not `@@mirror` is refused at boot by name (`FJS-D1125`), so the clash was loud, not silent; silence, the drive's `mirror.claimShape` row names `Profile`. *Familiarity vs. precision*: the vendor's habit says `User`, and the app's noun wins.
+
+### <a id="fjs-d1151"></a>2026-10-16 · `FJS-D1151` — Does a `@@mirror` relation carry a foreign key — No: a relation on a `@@mirror` model whose foreign key is a Provider column emits no FOREIGN KEY, derived as `@system` is. A dangling reference reads as no related row, and as a refusal under `check()`; `onDelete`/`onUpdate` on such a relation is refused by name, since with no constraint it would act on nothing. A `@local` key is the app's and keeps its constraint, as does an app-owned model's relation to a mirror (`User.profileExternalId`).
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) step 3.1, through the question tool with the three shapes as code. Found by running the chat app's schema: a mirrored `Post` whose author `Profile` had not synced was refused *names no Profile*, and a Provider sends rows in its own order: a socket `posted` before `new_user`, a reply whose root is past a history cap. Picked over **a per-relation `enforce: false`** (twelve hand-written copies of one fact in one schema, the copy `FJS-D843` refused) and **keep the constraint and order the sync** (every sync fetches each missing parent first, recursively, and a reply past a cap can never land without its root nulled, which changes the Provider's data). Prisma's `relationMode = "prisma"` is the field's precedent. Cost, owed to Phase 4: the exit adds the constraints back, and an orphan must be settled then. Lives in `expandMirror` (`packages/litestone/src/core/parser.js`) and the FK loop of `src/core/ddl.js`; `test/system-column.test.ts` § *a @@mirror model* (the child-before-parent case fails with the DDL skip removed).
+
+The nine, answered after the build (late, named here): origin one, `@@mirror`; concept none new, the tag is internal; complexity the problem's, two systems and the Provider's order; predictability, the same tier as the derived `@system` and `missingSince`; derived from `@@mirror`, which is why **B** lost; owner, the parser's expansion and the DDL emitter that already owned the constraint; boundary, the generated types already read an included relation as `T | null`; failure, a dangling reference is not destructive and reads as absent, while a declared `onDelete` that would do nothing is refused by name; silence, a mirror child lands before its parent and a dangling key under `check()` refuses, and the same test case fails when either stops. *Ergonomics vs. strictness*: the strictness is not dropped but held where the truth is, the Provider.
+
+### <a id="fjs-d1144"></a>2026-10-16 · `FJS-D1144` — The key of a `@@mirror` model: is its `@unique` derived or required — Derived, unless a `@@unique` already names the key: a key unique per account (ELA's `@@unique([accountId, externalId])`) stays as written, and `FJS-D843`'s derivation replaces 2.4's *mark it @unique* refusal. The key is also derived `@immutable` and `@system`; a key that is optional, an array, or not a `String`/`Int` is still refused.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) step 2.5, through the question tool before the build. Picked over **derive always** (a column-wide `@unique` on every key, and a key that a composite `@@unique` also names refused by name until a caller needs it, which blocks ELA from adopting `@@mirror` as written) and **keep 2.4's refusal** (only `@immutable @system` derived, which departs from `FJS-D843`). ELA's mirrored ledger keys by SA's id per account, and a column-wide unique would refuse two accounts' copies of one id. Lives in `expandMirror` (`packages/litestone/src/core/parser.js`); `test/system-column.test.ts` § *a @@mirror model*.
+
+### <a id="fjs-d1143"></a>2026-10-16 · `FJS-D1143` — Does `@@mirror` derive gate 8 — No gate is derived, which amends `FJS-D843`'s *gate 8 DERIVED*: the key is `@system` and required, so a caller's own create of a mirrored row is refused at the column already, and every Provider column refuses a caller's update. A `@@gate` a mirror declares is graded as on any model.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) step 2.5, through the question tool before the build. Picked over **derive create 8 where no `@@gate` is declared**. `FJS-D843` was written when only the sync created a mirror's rows; `FJS-D1125` later made a claimed model's generated `create` run the CALLER's gate before the forward, so a derived 8 would refuse every claimed create, and lifting it with `system: ['@@gate']` in the forward would grade no caller gate on a create at all. ELA's hand-written `@@gate("5.8.8.9")` stays its own statement. The nine: no origin, no noun; the refusal the gate would have carried is already the column's (§ V 5), and it fails loud by name (§ V 8).
+
+### <a id="fjs-d1142"></a>2026-10-16 · `FJS-D1142` — How a `@@mirror` model says which of its columns are the app's own — A field word, `@local`: every stored column of a `@@mirror` model but the `@id` and a `@local` one is derived `@system`, so a caller's write to the Provider's data is refused by name instead of overwritten by the next sync, and `missingSince DateTime? @system` is derived for the sync to stamp. `@local` is refused off a `@@mirror` model, on the key, on the `@id`, on a relation, and beside `@system`. A claimed model's forward writes the `@local` columns the caller named, as the caller, after the Provider's row lands.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) step 2.5, through the question tool before the build. **`@local`** was picked over **a `local:` argument** (`@@mirror(key:, local: [crewId, csrId])` — no new word, one list on the model) and **`@system` stays by hand** (only the key and `missingSince` derived, a departure from `FJS-D843`'s *the per-column attributes are DERIVED*). `FJS-D843` ruled the derivation and left its boundary unsaid: ELA's `Credit` mixes SA's columns with three the app decides (`crewId`, `crewPercentage`, `csrId`), and Mattermost's `Post` carries `starred`. The word reads at the column, where `@system` reads. It also replaces 2.4's heuristic in junction's forward — *a column the caller named that the Provider's answer did not fill* — with the declaration. The nine, after the owner's pick and partly after the parser code (late for that code, named here): origin one, the column; concept one word, ruled; complexity the problem's, two owners' columns on one model; predictability, the per-column opposite of `@system` in the same tier; derived, `@system` and the key's attributes from `@@mirror`; owner, the parser's expansion beside `@@extensible`'s; boundary, a refusal by name; failure, a refusal, since the sync's overwrite is destructive; silence, every non-`@local` stored column of a `@@mirror` model refuses a caller's write, and `test/system-column.test.ts` § *a @@mirror model* (5 cases fail with the expansion stubbed) and conduit's `junction-integration.test.ts` fail when it stops.
+
+### <a id="fjs-d1130"></a>2026-10-16 · `FJS-D1130` — Q7 — Derive the mirrored models from the Provider's OpenAPI — Hand-write them, as ELA did.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) § Open questions. **A** was picked over **B** (a `litestone import` reader for OpenAPI emitting `.lite` with `@@mirror` on each model, the way `reference-library.md`'s readers emit from a dump).
+
+The paper's recommendation, taken as written: now, B on the second Provider that ships a spec.
+
+### <a id="fjs-d1124"></a>2026-10-16 · `FJS-D1124` — Q1 — Mirror or proxy, per model: is rule 1 the rule — As written: listed is mirrored, one-shot is proxied.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) § Open questions. **A** was picked over **B** (mirror everything the Provider emits; the app is an event log of the Provider), **C** (mirror nothing; every service is a proxy and litestone holds only the app's own rows).
+
+The paper's recommendation, taken as written: B pays for rows no surface reads; C is the skin rule 1 refuses, and forfeits the exit.
+
 ### <a id="fjs-d989"></a>2026-10-15 · `FJS-D989` — How does `@@exclude` grade a member's range read through a to-one relation, and regrade the children's keys when the parent's range moves — Admit a to-one `@from(rel, column)` field (`FJS-D911`, built by `FJS-1305`, still open) as a range end: `startsAt DateTime @from(shift, startLocal)`, `range: [startsAt, endsAt]`. `gradeKey` reads the member's range through the relation's join, and the ledger gains a reverse edge: a write naming a column some member's range `@from`s notes every key the parent's children hold. `@from` stays the one owner of crossing a relation; waits on `FJS-1305`.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a one-hop dotted path inside `range:`: `range: [shift.startLocal, shift.endLocal]`, the path resolved as a policy's `relation.column` path is, with the same reverse edge. The spelling the author reaches for first, but it is the second way to cross a relation — the shape `FJS-D911` refused for `@derived` (its option C)), **C** (keep the copy and close the hole at the parent: a parse refusal naming the path rather than a token error, plus a documented hazard that a copied range goes stale on the parent's write. Smallest; the roster keeps a hand-kept copy that is silently wrong after a Shift moves).
@@ -3952,6 +4083,8 @@ The paper's recommendation, taken as written: transitions refuse a bulk write be
 Asked in [`IDEAS/conversion-ela.md`](IDEAS/conversion-ela.md) § Open questions. **B** was picked over **A** (no new word: the three attributes per column and gate 8 as today, the key and the drop-out rule stay in the connector, and `advise` learns nothing), **C** (a field attribute only, `@externalKey`: names the key the sync matches on and leaves the drop-out rule to the connector, as the smaller first half. - *Spelling:* `@@mirror`. `IDEAS/cascading-fields.md`'s cascade mode of that name is now `always`, because a cascade is one-way and pairs with `once`; the two were never one concept — a cascade follows a parent inside the database, a mirror follows a source outside it).
 
 One declaration the schema, the connector and advise all derive from, where today the key and the drop-out rule are restated in three places and drift in silence. Spelling is @@mirror: the cascade mode that held the word is renamed always, since a cascade is one-way, parent to child, and pairs with once. absent: waits for a second caller — ELA drops by window, Transit by cursor — so the key ships first and the drop-out rule when two sources agree on its shape.
+
+**Amended 2026-10-16.** *Gate 8 derived* is withdrawn by [`FJS-D1143`](#fjs-d1143): the key's own `@system` refuses a caller's create, and a claimed create runs the caller's gate (`FJS-D1125`). The boundary of *the per-column attributes* is [`FJS-D1142`](#fjs-d1142) (`@local`), and the key's `@unique` is [`FJS-D1144`](#fjs-d1144).
 
 ### <a id="fjs-d592"></a>2026-10-09 · `FJS-D592` — Q1 — does `@@extensible` take `FJS-D365`'s `scope:`, so a declaration is keyed per PARENT ROW as well as per tenant? (`FJS-D592`) — `@@extensible(column, declaredBy: Model, scope: field)`, `field` a foreign key on the extended model whose twin is on the declarer. The key is unique on `[scope, key]` (and the tenant, under row tenancy), and the pool is per scope row, the way FJS-1290 made it per tenant. Allocation, the mirror, the filter rewrite and `$declaredFields` read the scope off the row, the payload or the where; a where that pins no scope is refused. A write that changes the scope column re-mirrors the row against the new scope's declarations.
 
@@ -4091,7 +4224,7 @@ A bare `@money` meant *the app's default currency*, and nothing stated one. So `
 
 § V: origin (1) and derivation (5) decide it, because the currency is on the column where the scale is derived from it. No concept is added (2). Failure (8): a refusal at parse, naming both spellings that pass. Question 9: a bare `@money` must not parse, and `exact-numbers.test.ts` asserts the refusal and that both stated shapes still pass. No adjudication is in tension: nothing shipped depends on the old spelling, so there is nothing to preserve. Tier: Register.
 
-— `packages/litestone/src/core/parser.js` (validation), `jsonschema.js`, `packages/sierra/src/junction/resource.js` (`filters()`).
+— `packages/litestone/src/core/parser.js` (validation), `jsonschema.js`, `packages/sierra/src/resource/resource.js` (`filters()`).
 
 ### <a id="fjs-d513"></a>2026-09-29 · `FJS-D513` — Does the shared predicate language grow a value-assembling form, or do orion's assembling shapes stay documents — Grow `template` and `object` in the shared parser; litestone's policy compiler refuses both by name at parse of a `.lite` policy (a value-assembling form is not a predicate).
 
@@ -5082,7 +5215,7 @@ not ruled here.
 
 *Lives in:* `packages/litestone/src/core/parser.js` (`parseValueSet`'s `order`
 key, `orderColumnRefusal`), `src/jsonschema.js` (`x-values.order`),
-`packages/sierra/src/junction/resource.js` (`optionsOrder`, the one owner of a
+`packages/sierra/src/resource/resource.js` (`optionsOrder`, the one owner of a
 question three call sites answered separately). 11 tests in
 `test/valueset-order.test.ts` (23 with the head), 7 in `test/options-order.test.js`
 (3 red with the resolver stubbed), 10 in `test/options-recent.test.js` (5 red
@@ -7325,6 +7458,92 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1159"></a>2026-10-16 · `FJS-D1159` — Where a large upload belongs — Two primitives, one per owner, composed by the app. Junction: a route-level body contract, `app.put(path, handler, { body: 'stream' })`, that skips `parseBody` and hands the handler `req.body`, with `http.maxBodySize` setting Bun's `maxRequestBodySize`. Litestone: `FileStorage` gains a streaming entry — `fromStream(readable, { name, type })` over `provider.put(key, stream)` — that sniffs the head for `@accept`, hashes on the way, and writes the ref.
+
+Asked in [`fjs-prototypes/immich/PLAN.md`](../fjs-prototypes/immich/PLAN.md) § Q1, through the question tool after `measure/upload-memory.mjs` at 1 GiB. The framework's own path refuses at Bun's 128 MB with no log line (`FJS-3090`), drops a file part above 50 MB in silence (`FJS-3092`), costs ~3.5× the file in heap per upload and serializes concurrent ones on the loop (`FJS-3094`); the app's stopgap, a second `Bun.serve` because every matched route's body is buffered before its handler runs (`FJS-3093`), held 4 × 1 GB at 178 MB peak RSS. **A** was picked over **B** (`FileStorage` mounts an `/upload/*` resumable protocol the way `/auth/*` is mounted — larger, and it still needs A's transport primitive, since a plugin route is parsed like any other) and **C** (a presigned PUT straight to the provider — the local provider has no presign, so development and a self-hosted library have no path, and the server never holds the bytes it vouches for). B is immich's Phase 2 protocol, built in the app over A. `FJS-3090` and `FJS-3092` are defects whatever was ruled. Part of the Data half landed the same day as `FJS-3094`: a `File`, `Blob` or `fromPath` reaches `put` as a Blob, sniffed from its first 4096 bytes; what remains is `fromStream` over a request body and the hash taken on the way.
+
+The nine, before the build: origin — the body contract is the route's, stated once; concept — no noun, an option on a route and an entry on `FileStorage`, which a second server would cost more than; complexity — the problem's, a body bigger than the process; predictability — a route that declares nothing is parsed as now; derived — `maxRequestBodySize` derives from `maxBodySize`; owner — the bridge keeps the body (Invariant 4), the file column keeps `@accept` and the hash at the Data boundary (Invariant 6); boundary — only a handler that asks for a stream gets one; failure — a body over the ceiling is a 413 that logs; silence — immich's RSS ceiling script, an instrument and not yet a suite. *Paved road vs. workaround*: the second `Bun.serve` is the workaround this retires. Tier: Register.
+
+### <a id="fjs-d1160"></a>2026-10-16 · `FJS-D1160` — Can a tenant author a view — No: a view stays the seed's, fixed at deploy. A tenant's saved insight is a typed spec (`Insight.spec @type(InsightSpec)`) compiled to terms its reader's accessor already has — a `where`, `findMany`/`aggregate`/`groupBy`, and a named fold (funnel, retention) the app or a battery owns — and run only as its reader. Nothing new in litestone.
+
+Asked in [`fjs-prototypes/posthog/PLAN.md`](../fjs-prototypes/posthog/PLAN.md) § Q8, through the question tool after 2.2–2.3: the typed spec compiled to a member's `findMany` gives the view's answer to the cell, 2.1 s against the view's 122 s for a small tenant, and holds the step rows in memory for a large one (5.3 GB at 10M — `FJS-3134`'s and `FJS-3140`'s to answer, not this ruling's). **A** was picked over **B** (build scoped SQL, `IDEAS/scoped-sql.md`: a tenant's stored SQL over per-reader views — its statement allowlist has no authorizer under `bun:sqlite`, the false guarantee `FJS-D52` refused) and **C** (a runtime view row the system materializes per tenant on a schedule — `FJS-D71`'s *never as the system* broken by construction, paying `FJS-3140`'s whole-table cost per refresh). It is `FJS-D71` as amended by `FJS-D369`, measured equal on an analytics product.
+
+The nine: origin — the spec row; concept — none new, D71's stored query; complexity — the problem's; predictability — a stored query behaves as every other one does; derived — the reader's terms, compiled; owner — the reader's accessor, which already owns the read; boundary — the spec names nothing the reader could not; failure — a spec naming what its reader cannot reach answers as that reader; silence — none new beyond D71's. No adjudication is in tension. Tier: Register.
+
+### <a id="fjs-d1141"></a>2026-10-16 · `FJS-D1141` — Should a commitment hook be a file named for its move, as a job and a notification are — Both, feeding one registry, as caravan has `*.job.ts` beside `handle()`/`schedule()`. The paved road is any `*.commitments.ts` under the app root, so a hook lives in its domain folder (`domain/billing/renewal.commitments.ts`); it `export default`s a map `{ 'Model.move': defineCommitment({ … }) }`, because one domain file spans models (lago's renewal holds `Subscription.activate` and `SubscriptionPeriod.close`). `commitments({ hooks })` stays as the escape hatch, the path a drive with no app (`verify:billing` through `fireCommitment`) takes. A key claimed twice, by two files or by a file and the map, is refused by name, and `refuseUnknownHooks` checks both sources at boot. Jobs and notifications follow: `*.job.ts` and `*.notification.ts` are found anywhere under the root too, so one discovery rule covers every file kind. Cost: the key is a string again, caught at boot rather than derived; and the scan widens from `jobs/` to the root.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (`commitments/SubscriptionPeriod.close.commitment.ts` under the app root (`FJS-D1080`), `export default defineCommitment({ … })` per `FJS-D1077`; the loader stamps the key from the filename and boot refuses one naming no `@@commitment` (`refuseUnknownHooks` already does for the map). The `hooks:` option goes), **B** (keep the map; an app groups hooks as it likes).
+
+The owner's shape: a hook lives beside the domain code it calls, and a data map remains for a caller with no app tree. Caravan already has a file convention plus handle()/schedule() feeding one registry, so two sources is the sibling's shape (§ IV paved road vs. the workaround: the map is the escape hatch, and a repeated use of it measures the road). A's derived key was given up because one domain file spans models; a typo is still a refusal at boot. The nine: origin, one registry fed by files and the map; concept, no new noun; complexity, the problem's; predictability, the same discovery rule for jobs, notifications and commitments; derived, the file is found by its suffix, the key is stated and checked against @@commitment; owner, junction's commitments() registry, which exists; boundary, defineCommitment typed per FJS-D1077; failure, a duplicate key across sources and an unknown key are both boot refusals naming the file; silence, a hook file outside the root is never loaded and nothing says so, enforced by none until the loader lists what it found.
+
+### <a id="fjs-d1022"></a>2026-10-16 · `FJS-D1022` — `FJS-D812` runs a commitment hook before its move; example's renewal then opens the next period while the closing one still holds `@@unique([subscriptionId], where: status == 'open')` — amend the ruling, or the app's constraint — The service pipeline's three tiers, in its own order (`around enter → before → move → after → around exit`, `packages/junction/src/core/hooks.ts`): `before`, `after` and `around` (`(ctx, next)`, `next()` the move), all in the move's transaction. Spelled as one spec object per commitment, which is `FJS-D1077`'s `defineX(spec)`: `defineCommitment({ before, after })`. Lago's seal is `before`, example's renewal `after`. Added 2026-10-16.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **E** was picked over **A** (keep D812 (one hook, one order) and respell example's guard as `@@unique([subscriptionId, startsOn])`, the shape lago already uses against a second draft (`@@unique([subscriptionId, periodStart], …)`). A duplicate renewal is still refused. Cost: *at most one open period per subscription* is no longer enforced, only *one period per start*), **B** (D812's rejected B: two keyed tiers, `before` and `after`, both in the move's transaction. Renewal stays `after` and a sealing document's owed writes go `before`. Cost: two spellings of one hook, but there is now a current hook that needs each), **C** (the hook runs before the move, and the plugin hands it `move()`, so a hook that has to write after the move calls `await move()` first and the plugin makes the move itself if the hook did not. The from-state lock and the one-hook spelling both stay. Cost: the order lives in each hook's body rather than in the plugin).
+
+Junction's service hooks already carry these three tiers in this order, so knowing a service hook teaches a commitment hook (predictability), and FJS-D1077's defineX(spec) takes one object, which before/after/around are keys of. C's move() was the around tier under a second name. The cost B was rejected for under D812, two spellings of one hook, is the shape the framework already teaches.
+
+### <a id="fjs-d1138"></a>2026-10-16 · `FJS-D1138` — How is a configured plugin's `app.<slot>` typed, so no app writes `!` — Each slot is typed present; reading one whose plugin was never configured throws, naming the plugin to configure in `app.ts`. The augmenting package declares it non-optional.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **A** was picked over **B** (`configure(plugin)` returns `App & { slot }`, so the type narrows in `app.ts`).
+
+The paper's recommendation, taken as written: a service reads `ctx.app`, typed as the general `App`, so B's narrowing never reaches the files that write the `!`; A's throw says what is missing where B's `undefined` would say nothing (§ V *failure*).
+
+### <a id="fjs-d1125"></a>2026-10-16 · `FJS-D1125` — Q2 — A write to a Provider-owned field: refuse and go through a verb, or declare write-through — Refused at the column as `FJS-D843` rules, and the verbs DERIVED: the connector exports a claim naming the models it feeds (`Post`, `Channel`…) with `create`/`update`/`delete` to a `ConduitRequest` and `parse` from the Provider's response to a row; the app binds it in wiring, `app.conduit.mirror(mattermost.mirror)`, the way a Receiver names its `provider` in app code (`FJS-D899`); junction's default service on a claimed model forwards through it, applies the response row, and the socket's event dedupes by key. The schema stays `@@mirror(key: externalId)` with no Provider named, so rule 2's `rg` holds. Boot refuses by name a claim on a model the schema lacks, on a model not `@@mirror`, or a second claim on one model. An unclaimed mirror is A.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) § Open questions. **C** was picked over **A** (`FJS-D843` as ruled and nothing more: refused at the column; the app hand-writes a custom method per verb that sends, and the sync brings the row back), **B** (`@@mirror(key, writes: provider)`: a patch to a mirrored column is forwarded to the Provider by the connector).
+
+The paper's recommendation, taken as written: a verb has an owner either way; A restates one shape eight models times three verbs per app, which is the hand-kept copy `FJS-D843` itself refused; B makes a column write a network call, which no sibling column does (§ V 4). C keeps the vendor out of `db/schema.lite` — a `provider:` argument there was priced and refused for breaking rule 2's grep.
+
+A second site was priced after the pick and refused: the claim passed beside the db, `createApp({ db, mirrors })`, which would put one Provider's facts in two places where `FJS-D177` says one, and buys no order — `app.conduit` is configured after `createApp()`, so the forward looks conduit up at call time either way.
+
+The nine, answered before the build. Origin: one — the claim is the connector's export, the schema says only `@@mirror(key:)` as `FJS-D843` ruled, and junction's forward is derived from the two. Concept: no noun — a *claim* is `app.claim`'s word, and the export sits beside the Dialect as the send half of the same Provider. Complexity: the problem's — a write that must land on the far side first, then here. Predictability: a claimed model's `create` returns the row like every create; what differs is a hop, and `FJS-D843` already makes the column refuse a caller. Derived: the verbs, from the claim; the row, from the Provider's response through the same `parse` the socket uses, so a write and a sync cannot disagree on shape. Owner, and it exists: `app.conduit` is claimed by conduit's junction plugin, where `receive()` already mounts a route; the claim lands beside it. Boundary: typed — a claim names models, `create`/`update`/`delete` to a `ConduitRequest`, `parse` to a row. Failure: boot refuses by name a claim on a model the schema lacks, one not `@@mirror`, or a second claim on one model; an unclaimed mirror refuses the write as today. Silence: what must stay true is that no vendor name is outside the connector, and rule 2's `rg` in `IDEAS/mirror-apps.md` is what fails when it stops; the forward itself is `none` until Phase 2.4's test.
+
+### <a id="fjs-d1093"></a>2026-10-16 · `FJS-D1093` — Where is it proved, and what does `example` show — A now, B when the shape has a second asker.
+
+Asked in [`IDEAS/inbound-email.md`](IDEAS/inbound-email.md) § Open questions. **A** was picked as the recommendation qualifies it (*A now, B when the shape has a second asker*) over **B** (junction's suite, plus `example` receives a reply to an order confirmation over `conduit-postmark`'s dialect: the mail sink posts Postmark's inbound shape at the app's receiver, and the reply lands on the order as a row — a drive beside `verify:pay` and `verify:stripe`).
+
+A whole: junction's suite holds the kit and the shape, and the chatwoot stressor's mail.test.ts is the named round trip over two real dialects until conduit-postmark is promoted; example gets no inbound receiver, because Order has no row a reply lands on and B would invent one to demonstrate a kit. B is re-asked when a second app or the promoted connector gives example a reason.
+
+### <a id="fjs-d1092"></a>2026-10-16 · `FJS-D1092` — Does a token expire, and does a reply to an expired one go to the fallback handler or bounce — It expires, and an expired token's reply goes to the fallback handler, unattributed, as a message whose `From` is a claim.
+
+Asked in [`IDEAS/inbound-email.md`](IDEAS/inbound-email.md) § Open questions. **B** was picked over **A** (no expiry: a valid signature threads the reply onto its record for as long as the record exists), **C** (it expires, and an expired token's reply is answered with a mailed bounce).
+
+The paper's recommendation, taken as written: the expiry bounds how long a token forwarded or cc'd onward can speak as the person it names, and B takes away the attribution without losing the message, which on a support thread is usually still a real customer. C is not a bounce behind a webhook, where the message is already accepted; it is an outbound mail sent to whatever `From` claims, which is backscatter. Measured in the chatwoot stressor (`api/src/mail/mailbox.ts`, `test/mail.test.ts` § a token that does not verify still delivers the mail): an expired or forged tag opens a new conversation in the inbox the base address names, with `From` a claim. One refinement the stressor found: the token proves the holder RECEIVED our mail and nothing about who holds it now, so a valid token threads the reply but attributes it only when `From` is the address the mail went to; any other `From` lands on the same record as its own, unverified sender. The TTL is the app's to state, in seconds, read from the ULID's own time (`FJS-1941`) — no bits in the tag and no row to look up.
+
+### <a id="fjs-d1091"></a>2026-10-16 · `FJS-D1091` — What is the noun, and is it a file convention (Void's routing) or a declaration in conduit beside the provider it arrives from — C's first half is already built and its second half is code, not a file. The arrival is an ordinary conduit `Receiver` (`FJS-D899`): the mail vendor's connector exports the `Dialect` (`conduit-postmark` parses a JSON body, a raw-MIME vendor's connector brings the MIME parser, `FJS-D784`), each parsing to ONE shape, `ReceivedMail` — junction's `MailMessage` read the other way, plus the envelope `recipient` the plus-tag rides on — owned by `@frontierjs/junction/mail` beside `MailMessage`, structurally copied by a connector as `MailMessage` already is. What an address does is the app's `apply`, with the framework supplying the kit the stressor hand-rolled: `replyAddress(base, id, secret)` mints `base+<token>@domain` and refuses a base too long to carry one, `splitAddress(address)` gives `{ base, tag }`, `readReplyTag(tag, { secret, now, ttlSeconds })` reads the token back, all over `toolbelt/signature`'s `mintToken`/`readToken` under one purpose. No file convention and no `Mailbox` noun: a mailbox someone else owns, read by delta and written back (ELA's M365 inbox, `FJS-2574`), is a sync engine and not this feature.
+
+Asked in [`IDEAS/inbound-email.md`](IDEAS/inbound-email.md) § Open questions. **D** was picked over **A** (a file convention: `api/src/mailboxes/<address>.mailbox.ts`, routed on the `To` local part with `[tag]` captures, Void's order of specificity, and the noun `Mailbox`), **B** (a declaration in conduit: a `mail` receiver beside the provider's target, holding the route table from local part to handler), **C** (both, split by owner: conduit's receiver owns the arrival (verify, dedupe, parse), and a `<address>.mailbox.ts` file owns what one address does with what arrived).
+
+The paper's recommendation, taken as written: measured, not argued. The chatwoot stressor (#5) built C by hand before `FJS-D899` landed and found the file half does not fit a help desk: its addresses are ROWS (`Inbox.emailAddress`), so every route would be a capture and the file tree would hold one file that looks the inbox up (`api/src/mail/mailbox.ts`). Its `inbound.ts` is the receive order conduit now owns, line for line (record unapplied → apply → mark; `FJS-1805`), so the whole arrival half collapses onto `app.conduit.receive()`. What is left that every app would copy is the message shape and the address kit, and the shape is not new: an inbound mail has the fields `MailMessage` has, with Message-ID and In-Reply-To in `headers` where outbound already puts them. A and C coin a noun for a lookup the app owns; B puts the app's routing into conduit, which `FJS-D899` keeps vendor-only.
+
+The nine, answered before the build. Origin: one — `ReceivedMail` beside `MailMessage` in `junction/src/mail/received.ts`, structurally copied by a connector as `MailMessage` already is, and the MAC is toolbelt's `mintToken` under one purpose rather than a second HMAC. Concept: no noun coined — `ReceivedMail` is `MailMessage` read the other way, as *subscription* is to *subscriber* (`FJS-D1087`); `Mailbox` refused. Complexity: the problem's — a 64-octet local part (RFC 5321 § 4.5.3.1.1), a server folding case, a token that proves receipt and not holding. Predictability: a mail receiver is every Receiver, a mail dialect every dialect. Derived: expiry from the ULID's own time, Message-ID from `headers` where outbound already puts it. Owner, and it existed: the arrival is conduit's `accept()`, the mailbox grammar is `smtp.ts`, the MAC is toolbelt's. Boundary: `ReceivedMail` typed, `readReplyTag` answers `ok | malformed | forged | expired`, `replyAddress` throws for a mailbox past 21 characters at mint. Failure: a forged or expired tag still lands, unthreaded, because a 4xx behind a webhook retries for a day; a bad base fails before a send. Silence: `junction/test/mail-received.test.ts` and the stressor's `mail.test.ts`; unenforced (`none`) is an app attributing on the tag alone without the `from` check, which the junction `CLAUDE.md` rule and the `api-hazards` entry name.
+
+Adjudications: *paved road vs. the workaround* — the stressor hand-rolled the whole layer (`inbound.ts`, `mailbox.ts`, `token.ts`, two provider files), which is a measurement of the road, and the road now carries what every app would copy; *batteries vs. smallness* — it rides inside the mail battery as one file, no package. Tier: Register here; Map in junction's `README.md` § Mail, `CLAUDE.md`, `PROJECT_STATE.md` and `conduit-postmark`'s `README.md`. Closes `FJS-2574`.
+
+*Lives in:* `packages/junction/src/mail/received.ts` · `packages/junction/src/mail/index.ts` · `packages/junction/test/mail-received.test.ts` · `conduit-connectors/packages/conduit-postmark/src/index.ts` (`postmarkMailDialect`, `toReceivedMail`) and its drive § `dialect.conduitOrder` · `conduit-connectors/packages/conduit-mailgun/src/mime.ts` (`fromMime`, the raw-MIME parser `FJS-D784` named) and `src/index.ts` (`mailgunMailDialect`), its drive § `dialect.conduitOrder` · `packages/conduit/src/receive.ts` (`Dialect.parse` may be a promise, for that parser).
+
+**Amended 2026-10-16, through the question tool:** the mailbox quoting a dialect renders `from` with is not copied per connector. The two copies had already drifted (one quoted `( )`), and both stripped `"` and `< >` where the grammar escapes them. It is `@frontierjs/toolbelt/mailbox`'s `formatMailbox(address, name)`, imported by both connectors and by junction's SMTP header writer, which keeps only the encoded-words branch for a non-ASCII name. `ReceivedMail` itself stays a structural copy.
+
+### <a id="fjs-d1080"></a>2026-10-16 · `FJS-D1080` — Does `createApp` take one root from which the folders derive — `createApp({ root: import.meta.url })`; `services/`, `jobs/`, `notifications/`, `../config` derive from it; a battery reads `app.root`.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **A** was picked over **B** (keep per-battery keys, fix the defaults to probe from the caller's `import.meta.url`).
+
+The paper's recommendation, taken as written: Invariant 3 already says the layout is fixed, so there is one fact to state; four keys restate it (§ V *derived*).
+
+### <a id="fjs-d1079"></a>2026-10-16 · `FJS-D1079` — Which one verb defines a service, and what does it return — `createService(def)` returns a definition; the file `export default`s it; the registry builds. `createBaseService` and the factory-name rule go.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **A** was picked over **B** (keep both as two layers, document which to export).
+
+The paper's recommendation, taken as written: a service file states what the service is, and building it is the app's job (Invariant 4, one owner per translation). B is the status quo that produced `FJS-1868` and `FJS-2270`.
+
+**Amended 2026-10-16, at 3.1: a definition only.** The loader refuses a default-exported function of the app; there is no `(app) => createService(…)` shape. Asked when basecamp's 43 factories turned out to close over `app`. The closure's one real gain was a typed app, and that is Invariant 5's job — basecamp augments `App` rather than redeclaring slots on `BasecampApp`. A factory also runs code at import, and a definition cannot be read without booting one. What a closure held moves to call time (`ctx.app`, `$.app`), and per-app state a factory kept goes in a `WeakMap` keyed by the app. So that a definition can broadcast without an app, a `channel:` function may answer a channel's name (`ChannelTarget`).
+
+### <a id="fjs-d1077"></a>2026-10-16 · `FJS-D1077` — What is the one factory grammar — `createX(opts)` builds a thing you hold; `defineX(spec)` states a declaration the framework reads, one object argument, the name from the file or `spec.name`; a Plugin is a bare noun `x(opts)` because `app.configure(…)` already says *plugin*; a dependency goes in opts (`auth({ auth })`, `mail({ mailer })`), never positional. Renames: `manifestPlugin→manifest`, `metricsPlugin→metrics`, `exportPlugin→exporter`, `healthPlugin→health`, `notificationsPlugin→notifications`, `mcpPlugin→mcp`, `printerPlugin→printer`, `createAuthPlugin→auth`, `mailerPlugin→mail`, `createCaravan→caravan`, `backfills→backfill`.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **A** was picked over **B** (`xPlugin(opts)` for every Plugin, so the word is in the identifier wherever it is read; bare nouns renamed up).
+
+The paper's recommendation, taken as written: bare noun is already the majority (9 vs 7 vs 2), the subpath already carries the noun (`import { metrics } from '@frontierjs/junction/metrics'`), and `conduit()` / `orion()` / `outbox()` read well in a `configure` list where `metricsPlugin()` reads twice. § V *predictability*: knowing one teaches the next.
+
 ### <a id="fjs-d872"></a>2026-10-15 · `FJS-D872` — Where does a notification's delivery key come from, so a retried `notify()` writes no second in-app row — The definition declares it, beside `via`: `key(payload, recipient) => \`order:${order.id}\``, the shape caravan's `dispatch({ id })` already has. Optional; a definition without one keeps today's at-least-once rows.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a call option: `app.notify(recipient, n, { key })`. The caller (the job) knows what makes the send unique; a third argument on a two-argument public verb), **C** (derived, no key: the in-app driver skips when a row with the same `(userId, type, contextType, contextId)` exists. Matches the red test as written, and silently swallows every legitimate repeat (a weekly reminder about one invoice)), **D** (derived from the ambient call: inside a Caravan job, key = job id + recipient + type via `currentCall()`. No API surface, but protection exists only inside a job and the same send behaves differently outside one).
@@ -9530,7 +9749,7 @@ which is `FJS-268`'s class. `test/client-types.test.ts` caught it by compiling a
 fixture the way an app does.
 
 `packages/junction/src/core/build-id.ts` · `test/build-id.test.ts` ·
-`packages/sierra/src/junction/index.js` · `_steps-docker/03-build-web.md`
+`packages/sierra/src/resource/index.js` · `_steps-docker/03-build-web.md`
 
 ### <a id="fjs-d159"></a>2026-08-29 · `FJS-D159` — a service filename derives ONE canonical name, and the filename's own spelling stays mounted as an alias.
 
@@ -10277,7 +10496,7 @@ refusal, the filter/sort/aggregate reasons, the policy check),
 `src/jsonschema.js`, `src/tools/typegen.js`, `src/testing.js`;
 `packages/junction/src/core/context.ts` (`ctx.transients`),
 `src/core/litestone.ts` (`liftTransient`), `src/transport/bridge.ts`,
-`src/core/app.ts`; `packages/sierra/src/junction/field-rules.js` (`writeOnly`).
+`src/core/app.ts`; `packages/sierra/src/resource/field-rules.js` (`writeOnly`).
 Tests in `packages/litestone/test/transient-field.test.ts`,
 `packages/junction/test/{context-contract,real-litestone-client}.test.ts`,
 `packages/sierra/test/form-fields.test.js`. Proven in basecamp's `channels`,
@@ -10377,8 +10596,7 @@ flavor of client for the refusal above.
 *Still open beside this:* delivery is at-least-once, so a handler must be
 idempotent — the framework hands it the outbox row id and says nothing else.
 
-*Lives in:* `packages/junction/src/core/outbox.ts`,
-`packages/junction/db/outbox.lite`, `packages/junction/src/plugins/outbox/`;
+*Lives in:* `packages/junction/db/outbox.lite`, `packages/junction/src/plugins/outbox/`;
 the worked example is `example/api/src/services/orders.service.ts` (`pay`).
 
 ### <a id="fjs-d30"></a>2026-08-17 · `FJS-D30` — Login stays HTTP; cycling the socket IS the login event.
@@ -10942,7 +11160,7 @@ would take), so the schema declaration buys the type, the JSON Schema `$def` and
 one home, not a database-enforced one. Moving basecamp's list into the schema is
 a live option and a migration; the decision above stands until someone takes it.
 *Lives in:* `packages/basecamp/api/src/services/cleanup/targets.ts`,
-`api/src/services/recipes/recipes.service.ts`, `api/src/engine/fleet.engine.ts`,
+`api/src/services/recipes/recipes.service.ts`, `api/src/services/fleet/fleet.service.ts`,
 `db/schema.lite` § FLEET ACTIONS; tests in `db/test/schema.test.ts` § Recipe and
 CleanupRun.
 
@@ -11012,7 +11230,7 @@ by the system, not by a user"* — and the two want one answer, not two.
 That paragraph is what `@transient` was built from, and both halves now have
 their word: `@system` (2026-08-15) and `@transient` (2026-08-17).
 *Lives in:* `packages/basecamp/api/src/services/channels/channels.service.ts`
-(`captureCredential`), `packages/basecamp/CLAUDE.md` § What bites here,
+(where captureCredential was deleted), `packages/basecamp/CLAUDE.md` § What bites here,
 `CLAUDE.md` § Live hazards.
 
 
@@ -11125,7 +11343,7 @@ character, which junction's ambient `$` (the service call in progress) then
 contradicted by existing at all. The two are unrelated: one is a prefix on a
 parameter name that the bridge strips, the other is an identifier a service
 reads. No `$`-prefixed key survives the bridge; that is the whole of it.
-*Lives in:* `packages/junction/src/transport/bridge.ts` (`parseDirectives`),
+*Lives in:* `packages/toolbelt/src/directives/directives.js` (`parseDirectives`), `packages/junction/src/transport/bridge.ts`,
 `src/core/context.ts` (`QueryDirectives`, `RESERVED_PARAMS`),
 `src/core/litestone.ts` (`parseQuery`).
 
@@ -11204,7 +11422,7 @@ mean a screen that never updates, and now means a broadcast on somebody else's
 rule — the plugin names at boot which services fall through, and `channel: false`
 takes them off the list.
 
-*Lives in:* `packages/cli/commands/make/model.md`, `make/scaffold.md`;
+*Lives in:* `packages/cli/commands/make/model.md`, `packages/cli/commands/make/scaffold.md`;
 rationale in `announceToChannels()`, the fallback in
 `packages/junction/src/transport/channels.ts` (`announceDefault`).
 
@@ -11226,6 +11444,93 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d1078"></a>2026-10-16 · `FJS-D1078` — Which one event spelling does `.mesa` keep on an element — `onclick={fn}` everywhere, with `parseModifiers`' pipe grammar kept on the DOM name: `onsubmit|preventDefault={save}`, `oninput|debounce(300)={search}`. A guard modifier (`preventDefault`, `stopPropagation`, `self`, `trusted`, `debounce`, `throttle`) compiles into a wrapped handler VALUE, so it survives a spread and a kit component's forwarding — the reason Svelte 5 dropped modifier syntax. A listener option (`once`, `capture`, `passive`) cannot be a value, so it is honored on an element and refused on a component by name. `on:` and `@` refused with the new spelling.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **C** was picked over **A** (`onclick={fn}` everywhere, elements and components alike; modifiers as an options object (`onclick={[fn, { once: true }]}` or a `use:` action); `on:` and `@` refused by name), **B** (`on:click` on elements (Svelte 4 habit, modifiers as `|once`), `onclick` on components as rule 23 says).
+
+A drops modifiers, and the apps write about 234 of them, 202 of them preventDefault; C keeps the one spelling A wants and the grammar Mesa already has. The pipe stays over Vue's dot because a dot means a path everywhere else in the framework and arguments read cleanly after a pipe. Svelte 5's reason for dropping modifiers, a handler that travels as a value, is met by compiling the guard modifiers into the value and refusing the listener options on a component.
+
+### <a id="fjs-d1139"></a>2026-10-16 · `FJS-D1139` — On `target: 'native'` every element carries one class for its tag, `_p` for a `<p>`, and a type selector naming a tag the target builds is lowered to it, in a component's `<style>` and a whole sheet alike; this replaces `FJS-D1088`'s scope-and-tag class.
+
+Asked in chat while opening [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) § 12 step 4.5, through the question tool; the recommended answer was picked.
+
+- **One class per tag, not one per scope and tag.** The kit's 63 type members (`.alert-content > strong`, `.field-group > label`) are global, so `.mHASH_p` could never serve them and an unscoped tag class was owed anyway. With it, `p.mHASH` is `._p.mHASH`: one class per element, one rewrite (`lowerTypes` in `native/css.js`), and `tagClass` in `native/tags.js` is the one spelling the runtime and the rewrite both read. Two classes per element, `.mHASH_p` beside `_p`, was the other option.
+- **Specificity rises rather than falls.** A type is (0,0,1) and the class (0,1,0), so `p.mHASH` goes from (0,1,1) to (0,2,0) and still beats a single class, where `.mHASH_p` tied one. A global `strong` now ties a single-class rule it lost to, and the later rule wins.
+- **The underscore is the kit's mark for private**, as in `--_fill`, and no class in the workspace starts with one.
+- A tag the target has no element for (`dialog`, `summary`, `svg`, `html`, `body`) is still refused in a `<style>` and dropped from a sheet.
+
+The nine were answered before the code. Q1/Q5: the class is derived from the tag the runtime built, and which tags lower from `NATIVE_TAGS`, so a new tag needs no edit. Q6: the rewrite sits beside `cssOffense` and is run by `scopeCSS` (the target's `lowerSelector`) and by `lowerSheet`. Q9: a runtime class and a rewrite that disagree would paint nothing in silence; one function names both, and the artefact is `none`, since no new test files are wanted while experimenting. Adjudication: *doctrine vs. discovery*, since `FJS-D1088` was ruled before the kit's own type selectors were measured. Tier: Register.
+
+### <a id="fjs-d668"></a>2026-10-16 · `FJS-D668` — Should a named slot block (`slot="header"`) satisfy a component's snippet prop of the same name — The compiler owns it, and snippets are the one runtime system: `<h2 slot="header">…</h2>` lowers to `{#snippet header()}<h2>…</h2>{/snippet}`, and a component's `<slot name="header">fallback</slot>` lowers to `{@render header?.()}` with the fallback. `attachNamedSlotLegacy`, `makeSlots` and the slot runtime are deleted, along with Form's hand fallback; `slot=` carrying arguments is refused, naming the snippet form; a name that is neither slot nor prop keeps `FJS-926`'s warning. Markup with no arguments keeps the HTML spelling, and anything that takes data is a snippet. Added 2026-10-16 by lockdown 2.5, which widened this question to the whole of `FJS-2942`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **D** was picked over **A** (the `$slots` fallback Form has, copied into every component with a snippet prop. Each copy is a restatement of one rule, ~20 sites, and a new component forgets it), **B** (Mesa owns the translation: at construction, a block key that is not a declared slot but IS a declared prop of that name is delivered as the snippet prop (in `makeSlots`/`warnUnrenderableSlots`'s neighborhood; the compiler hands `makeSlots` the declared SLOT names today and would hand it the declared props too, the list `restProps` already receives). Then `Form`'s hand fallback is deleted and the warning keeps firing only for a name that is neither. Touches Mesa runtime semantics, so it wants a mesa test and the `ui` suite), **C** (warn only: keep `FJS-926` and sharpen its text to say "this component takes `header` as a snippet prop: `{#snippet header()}…{/snippet}`"; `slot=` stays a different protocol. No behavior change; Form's fallback stays the one exception).
+
+B keeps two projection systems live in the runtime, which lockdown 2.5 exists to remove; D keeps the HTML spelling for markup with no arguments as compile-time sugar, so the runtime has one system (snippets) and the translation has one owner, the compiler. Familiarity vs. precision: the proven shape kept, an argument-carrying slot= refused by name.
+
+### <a id="fjs-d1122"></a>2026-10-16 · `FJS-D1122` — The browser kit's page object is `tab` (`tab.online`, `tab.visible`, `tab.focused`), because sierra's router already exports `page`; `<mesa:window bind:online>` is removed, and the compiler refuses any `bind:` prop the runtime does not listen for.
+
+Asked while building [`IDEAS/browser-kit.md`](IDEAS/browser-kit.md) 1.2, through the question tool, as two questions; the recommended answer was picked for each, the second after the owner asked what `bind:online` reports.
+
+- **`tab`, not `page`.** `@frontierjs/sierra/router` exports `page` (`page.query`, `page.pathname`) and 294 files in this tree and the prototypes import it, so a route reading both would rename one with `as` — two nouns with one spelling in one app. `tab` names what the three facts are about. Its cost is stated: 27 files loop `as tab`, and inside such a loop the import is shadowed. `pageState` was refused because it reads as half of the router's object.
+- **`bind:online` is removed, not rewired.** The plan had `bindWindow('online')` read the kit, but `runtime.js` importing `src/browser/` is a cycle, since the kit imports the runtime, and no app binds it — only mesa's own docs, its REPL example and the vscode completions did. `tab.online` is the one spelling. It reports `navigator.onLine`, the interface being up and not the server answering, which is why sierra's `pending.js` and `offline.js` arm on the socket's `connect` and read neither. The plan named `offline.js` as a second consumer, and that was wrong.
+- **The compiler refuses a `bind:` prop outside `src/window-binds.js`**, which is the table the runtime listens by. Before this, an unknown prop compiled and was read once and never again, so a removed `bind:online` would have shown `undefined` and said nothing. The refusal is generic. It holds no special case for the old name (the evolution policy keeps nothing for an old spelling), and the REPL example was its first catch.
+
+Adjudications: *familiarity vs. precision* for the noun — `page` is the platform's word (the Page Visibility API), and precision inside this framework wins, because the word is already taken here. Then *doctrine vs. discovery* for the plan's second consumer, which was amended to match the tree. Q9: the kit drive's `tab` spec flips each fact for real (network down, another tab in front), and `compiler.test.js` pins the refusal. The two questions were asked before any edit. The nine were answered late, after the drive was green, and all nine pass. Tier: Register.
+
+### <a id="fjs-d1099"></a>2026-10-16 · `FJS-D1099` — css's breakpoint scale becomes a table in `vocabulary.js` that `breakpoint(name)` reads; the service worker is homestead's and the browser kit keeps only the push subscription; `fli check` warns on a hand-rolled `localStorage` or `document` keydown in an app that imports the kit.
+
+Asked in [`IDEAS/browser-kit.md`](IDEAS/browser-kit.md) § Open questions (Q3, Q4, Q5), through the question tool, as three questions; the recommended answer was picked for each. With `FJS-D1097` this closes the paper's seven.
+
+- **Q3 — a `breakpoints` table in `packages/css/vocabulary.js`, `{ sm: 640, md: 768, lg: 1024, xl: 1280, '2xl': 1536 }` in px.** The paper said css names no breakpoint; a probe found the scale already stated, but only in a `tokens.css` comment and as literals in `layout.css`, `facts.css` and `frame.css`. The comment becomes data: `breakpoint('md')` is `media('(min-width: 768px)')`, and the css spec that grades the vocabulary against the CSSOM grades every literal `@media` width in `src/` against the table. They stay literals in the CSS, for the reason `tokens.css` gives — a custom property cannot sit in a media query. A table in toolbelt was refused as a second home for a styling fact (Invariant 13); dropping `breakpoint()` leaves the apps' off-scale `47.99rem` ungraded.
+- **Q4 — `homestead.md` owns service-worker registration and the precached shell; Phase 5 here keeps `pushSubscription()` → the notifications channel list.** The worker is release state and homestead already names it. Moving all of #10 there would lose the subscription's place beside the other wrappers, and owning the worker here would put two owners on one registration.
+- **Q5 — a `warn` rule, scope `app`, that fires only when the app imports `@frontierjs/mesa/browser`.** The hand copy stays legal; the rule names the paved road once the road exists. The paper cited a `window.confirm` rule in `ui-hazards` as the precedent and none exists; the shape taken is `css-raw-literal`'s. An `error` was refused because storage that is not a preference and raw key handling in a canvas are legitimate.
+
+The nine are the paper's, answered before the ruling; Q3's were re-answered late, after the probe moved its premise. Adjudications: *paved road vs. the workaround* for Q5, as the paper states it; *doctrine vs. discovery* for Q3's premise and Q5's precedent, both amended in the paper to match the tree. Q9 for Q3: an `@media` width off the table passes in silence today, and the vocabulary spec is the artefact once 1.4 lands. Tier: Register.
+
+### <a id="fjs-d1097"></a>2026-10-16 · `FJS-D1097` — The browser kit is `@frontierjs/mesa/browser`, a subpath over one host-neutral primitive in `runtime.js`; a preference key carries sierra's `prefix`; a terminal call throws by name until a terminal app asks; an action returns `{ ok, via, reason }` and never throws for a missing API.
+
+Asked in [`IDEAS/browser-kit.md`](IDEAS/browser-kit.md) § Open questions (Q1, Q2, Q6, Q7), through the question tool, as four questions; the recommended answer was picked for each. Q3–Q5 were ruled the same day in `FJS-D1099`.
+
+- **Q1 — the home is a subpath, `src/browser/`, not a package.** Mesa is the leaf, so a package could not be consumed by `$$virtualEach` or `bindWindow`, which hold two of the private copies the kit removes; and the subpath is what mesa already does with a host or a tool (`/runtime/terminal`, `/runtime/native`, `/drive`, `/vite`). A `*-kit` package was priced: each of the three existing kits carries a dependency or a server half and this one has neither. **The trigger that moves it out is named** — a dependency, a server half, or a second host implementation `$$host` cannot carry. Folding into `/runtime` was refused because a terminal and a phone import that file.
+- **Q2 — `persisted()` prefixes the key with sierra config's `prefix`, defaulting to the app's `package.json` name.** `example` already types `shop_theme` and `shop_token` by hand, which is the prefix with no owner; two apps on one dev origin (`FJS-740`) otherwise read each other's preferences. Set once by the router at boot, `''` without sierra.
+- **Q6 — on a terminal or a phone a wrapper throws at its first call, by name.** A clock, a hotkey, a persisted value, focus and size each mean something in haven and `fli dev:tui`, and the names are chosen to port; but a storage or focus seam in `host/targets.js` with no consumer is a seam nothing tests. A silent default was refused by § V.9: a hotkey that never fires reports nothing. The rule is the one `{@attach}` already lives by there (`FJS-2242`).
+- **Q7 — an action returns a `Result`.** `share()` that cannot share still copies and says `via: 'copy'`, so the caller shows *copied*; a throw puts the fallback branch back in every caller, which is the copy the kit exists to own.
+
+The nine are answered in the paper, before any edit. Adjudications: *batteries vs. smallness* — zero dependencies, the core grows by one primitive; *coherence vs. convention* — the `*-kit` naming is the convention and the mesa subpath precedent is the nearer coherence; *familiarity vs. precision* — the field's names (`persisted`, `media`, `hotkey`) taken as is. Q9's artefact is one CDP spec per wrapper flipping the real condition, `none` until each lands. Tier: Register here; Map in `packages/mesa/CLAUDE.md` § Layout once Phase 0 lands.
+
+### <a id="fjs-d1088"></a>2026-10-16 · `FJS-D1088` — A `<style>` rule a phone cannot paint refuses its file on `target: 'native'`, by selector and line, as a tag it lacks does; type selectors are lowered later, to a scope-and-tag class, rather than refused for good.
+
+Asked in chat while closing [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) § 12 Phase 3, through the question tool, as two questions; the recommended answer was picked for each.
+
+- **Refuse, not warn and drop.** `native/css.js` judges every prelude: type and attribute selectors, `@media`, `@supports`, `@layer`, `@container`, and the pseudo-classes §§ 9 and 11 found dropped. Warning and dropping the rule would let the 58 files it refuses compile, and a layout rule missing on a phone would then be visible only as a build warning. Refusing at one per-kind line was the third option, rejected because it is a second line to keep.
+- **Type selectors are lowered in Phase 4 (4.5).** ~~Each element also carries a class naming its scope and tag, and `p.mHASH` is rewritten to `.mHASH_p`.~~ Amended 2026-10-16 by [`FJS-D1139`](#fjs-d1139): one class per tag, `p.mHASH` → `._p.mHASH`. Specificity falls from (0,1,1) to (0,1,0), which can reorder a tie against an unscoped single-class rule. Lowering them now, before Phase 3 closed, and refusing them for good were the other options.
+
+The nine were answered after the code was written, and they are recorded as late. Q8 was the open one. Adjudication: *ergonomics vs. strictness*, where a phone painting a component half-styled costs more than a refusal naming the line. Q9: an unmeasured selector that paints nothing passes in silence (`none`), and the refusal path has no fixture. Tier: Register.
+
+### <a id="fjs-d1074"></a>2026-10-15 · `FJS-D1074` — The Lynx backend is `target: 'native'`, read by the one emitter the terminal reads, and proved in mesa's `test` on Lynx for Web with the device run kept as a manual drive.
+
+Asked in chat when `FJS-D1069`'s A started, through the question tool, as three questions; the recommended answer was picked for each.
+
+- **The target is `'native'`, not `'lynx'`.** It names the medium, the way `'terminal'` does while OpenTUI stays inside `runtime-terminal.js`. Lynx is named only in `runtime-native.js`, so a second engine changes one file.
+- **One emitter with a profile per target.** `terminal/emit.js` moves to a host-neutral path and reads a per-target profile: the tag table, the event table, whether the target paints CSS, and the runtime specifier. The emitted `$$tui` becomes `$$host` in both targets. A native bundle calling `$$tui` from a file under `terminal/` was the rejected alternative.
+- **The drive is Lynx for Web in headless Chrome, in mesa's `test` script**, with the `@lynx-js/*` devDependencies pinned exact. The emulator sweep is a manual drive in `DRIVES.md`, because CI has no emulator. It is still owed per release, since web caught none of § 10's three device-only bugs.
+
+Adjudication: *batteries vs. smallness*, as in `FJS-D1069`. Tier: Register. Plan: `IDEAS/mesa-ir.md` § 12.
+
+### <a id="fjs-d1069"></a>2026-10-15 · `FJS-D1069` — FJS does not own Swift and Kotlin hosts. The spike's bundles run on a real Android device or emulator under Lynx Explorer first, and a Lynx backend is built in mesa only if native holds what Lynx for Web showed.
+
+Asked in [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) § Open questions (`FJS-D689` step 5), through the question tool. **C, then A** was picked over **A** (build the Lynx backend now, without a device run) and **B** (build FJS hosts in Swift and Kotlin).
+
+Research run before the ruling (`.cache/reports/Lynx versus own native hosts.md`, gitignored) found that every owned host with a published cost was carried by one large company for six to ten years, and that the hosts owned by a vendor, a consultancy or one person were retired or handed off. B buys nothing the spike measured, since the CSS layers, the missing controls and the async measure are FJS's on any host. The six ports to Lynx that are not React converged on the shape Mesa already emits: a background-thread tree, one batched op buffer per tick, and a fixed main-thread runtime replaying it through the Element PAPI. A device run comes first because § 9 ran on Lynx for Web, where a browser still does the cascade, inheritance and layout, and Lynx documents that its layout is not the web's. The Element PAPI carries no stability promise, so the backend talks to it through one runtime file, sits in mesa's own CI, and pins an exact engine version. A binding kept beside its host died with Svelte Native. **If native parity collapses, the answer is *not Lynx yet*, never *own hosts*.**
+The nine are the paper's, under the question; they were answered before the ruling, and checked again after it was written. Adjudication: *batteries vs. smallness*, because Lynx stays severable behind one runtime file. Tier: Register.
+— `IDEAS/mesa-ir.md` § 6 step 4.
+
+### <a id="fjs-d1068"></a>2026-10-15 · `FJS-D1068` — The Shell draws its frame for a guest when the nav table offers a guest any entry, and the narrow frameless page only when it offers none.
+
+Asked in chat while building [`IDEAS/app-shell.md`](IDEAS/app-shell.md) 3.1, through the question tool. **Derive it from the table** was picked over a boolean prop that opts a Shell into a signed-out frame, and over keeping example off the Shell.
+
+example is a shop: a guest reaches Basket at level 0, and its drives sign in from buttons in the signed-out bar. The table already says who sees each entry through `show`, so a second statement of the same fact as a prop is what `decision-rules` Q5 refuses. The cost falls on a members-only app: its groups say `show: ({ user }) => !!user`, or its sign-in page draws the members' nav, which is visible rather than silent. Sign out is drawn only with a user. In the same ask, example's ⌘K stopped listing Plans and Invoices on their own; Billing stands for all three, as it does in the nav. Where it lives: `packages/ui/components/layout/Shell.mesa`, `shell.spec.mjs` § a guest the table offers something, `packages/ui/AGENTS.md` § Layout.
 
 ### <a id="fjs-d1042"></a>2026-10-15 · `FJS-D1042` — How does a `sierra.config.js` say *the page's own origin* for `junction.url`, now that `FJS-D552` evaluates it in Node — The page decides: `virtual:sierra` emits `url: import.meta.env.VITE_API_URL || location.origin`, and `junction.url` in the config is the answer where there is no page (the terminal shell, a prerender) and what turns the client on. The four configs shrink to a plain URL. The price: a config `url` naming a remote API is ignored by the page unless the build sets `VITE_API_URL`.
 
@@ -11564,7 +11869,7 @@ Asked in [`FJS-1582`](ISSUES_ARCHIVE.md#fjs-1582). A built-in control was picked
 
 § V answered before the first edit. The adjudication is *batteries vs. smallness*: this is a battery. Tier: Register. Question 9: a money box must write minor units. `packages/ui/test/browser/specs/money.spec.mjs` fails when it does not (8.29 → 829, 12.345 refused, the per-row re-derivation), and so do `filter-bar.spec.mjs` and sierra's `field-control-scaled.test.js`.
 
-— `packages/sierra/src/junction/field-rules.js`, `packages/ui/components/forms/MoneyInput.mesa`, `FormField.mesa`, `display/FilterBar.mesa`.
+— `packages/sierra/src/resource/field-rules.js`, `packages/ui/components/forms/MoneyInput.mesa`, `FormField.mesa`, `display/FilterBar.mesa`.
 
 ### <a id="fjs-d510"></a>2026-09-29 · `FJS-D510` — Where does the flow canvas live: a graph component in `@frontierjs/ui`, or a canvas local to orion's web surface — An orion-local canvas under `packages/orion/web/`, reading `FlowLayout` directly; one consumer, no kit API to design up front.
 
@@ -11592,7 +11897,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. *Pa
 
 ### <a id="fjs-d456"></a>2026-09-26 · `FJS-D456` — a picker that could not ask for its options says so in a note beside the count, never as a field error.
 
-**`resource.options(field)` answers `{ options, total, truncated, error }`, and `error` separates *there are none* from *I could not ask*; `optionsNote` words it beside `truncationNote` through one `withNote`, so `Select`, `Combobox` and `MultiSelect` say it identically in the field's hint.** Where it lives: `packages/sierra/src/junction/resource.js`, `packages/ui/utils.js`. Refused alternative: a field error, which would refuse a submit on every optional relation whose rows did not arrive.
+**`resource.options(field)` answers `{ options, total, truncated, error }`, and `error` separates *there are none* from *I could not ask*; `optionsNote` words it beside `truncationNote` through one `withNote`, so `Select`, `Combobox` and `MultiSelect` say it identically in the field's hint.** Where it lives: `packages/sierra/src/resource/resource.js`, `packages/ui/utils.js`. Refused alternative: a field error, which would refuse a submit on every optional relation whose rows did not arrive.
 
 Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: strictness follows cost, and a failed fetch says nothing about whether the value is valid.  **§ V's ninth question**: *the failure is said in the hint, and an empty list says nothing* — `packages/ui/test/browser/specs/options-truncated.spec.mjs` › "a picker that could not ask says so, and says why" and "a list that is genuinely empty says nothing at all". ([`FJS-587`](ISSUES_ARCHIVE.md#fjs-587), [`FJS-570`](ISSUES_ARCHIVE.md#fjs-570)) Picked by the owner in session.
 
@@ -11604,7 +11909,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. No 
 
 ### <a id="fjs-d462"></a>2026-09-26 · `FJS-D462` — a resource's create or patch drops the server's own columns first, and keeps the version column.
 
-**`stripReadOnly` runs first in the resource's create/patch pipeline, ahead of coerce, blank and validate, removing every `readOnly` key (`@system`, `@generated`, `@computed`, `@from`, a tenancy stamp) except `@version`, which the server requires back.** Rules are taken for the method, since `@immutable` is read-only on a patch and writable on a create. A key with no field rule is left alone, because a `@transient` is legitimate there. Where it lives: `packages/sierra/src/junction/resource.js`, `src/junction/field-rules.js`. Refused alternative: sending the row back whole, which the Data boundary refuses by name with a 403 about a column not on the screen.
+**`stripReadOnly` runs first in the resource's create/patch pipeline, ahead of coerce, blank and validate, removing every `readOnly` key (`@system`, `@generated`, `@computed`, `@from`, a tenancy stamp) except `@version`, which the server requires back.** Rules are taken for the method, since `@immutable` is read-only on a patch and writable on a create. A key with no field rule is left alone, because a `@transient` is legitimate there. Where it lives: `packages/sierra/src/resource/resource.js`, `src/junction/field-rules.js`. Refused alternative: sending the row back whole, which the Data boundary refuses by name with a 403 about a column not on the screen.
 
 Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *an edit form never sends a server column, and always sends the version it read* — `packages/sierra/test/resource-readonly.test.js` › "a save does not send the server its own columns back" and "stripReadOnly" › "a key the rules do not know is left alone". ([`FJS-526`](ISSUES_ARCHIVE.md#fjs-526)) Picked by the owner in session.
 
@@ -11852,7 +12157,7 @@ there. `@frontierjs/ui`'s drive opens the component, which it had never done.
 
 *Lives in:* `packages/litestone/src/jsonschema.js` ·
 `packages/toolbelt/src/directives/directives.js` ·
-`packages/sierra/src/junction/resource.js` ·
+`packages/sierra/src/resource/resource.js` ·
 `packages/ui/components/display/FilterBar.mesa` ·
 `packages/cli/core/crud-templates.js`; pinned in
 `litestone/test/model-search.test.ts` (every row a PAIR over ONE schema, since an
@@ -11904,8 +12209,8 @@ refused in the boundary's own words. It runs under bun beside
 whatever the table says, which is the entire thing under test. Measured against
 stubs — `text` → `equals` reds 1, `json` → `contains` 1, `list` → `contains` 2.
 
-*Lives in:* `packages/sierra/src/junction/field-rules.js` ·
-`packages/sierra/src/junction/resource.js` · `packages/ui/controls.js` ·
+*Lives in:* `packages/sierra/src/resource/field-rules.js` ·
+`packages/sierra/src/resource/resource.js` · `packages/ui/controls.js` ·
 `packages/ui/components/display/FilterBar.mesa` ·
 `packages/cli/core/crud-templates.js`; the argument is
 `IDEAS/shipped/tables-from-the-seed.md` § Question 4.
@@ -11941,7 +12246,7 @@ The registry WALK is one function for both — `_askRegistry(entries, rule, ctx,
 { noun, key })` — because the decline rule, the throw guard and the `by` stamp
 are three rules whose whole value is being the same for both surfaces.
 
-*Lives in:* `packages/sierra/src/junction/field-rules.js` ·
+*Lives in:* `packages/sierra/src/resource/field-rules.js` ·
 `packages/ui/controls.js` · `packages/ui/components/display/Cell.mesa`; pinned in
 `packages/sierra/test/display-for.test.js`, whose sharpest row is a PAIR on one
 `@computed` column — no control, and a display — since either alone is satisfied
@@ -11977,7 +12282,7 @@ also naming the order you want them in — and `omitted` is what stops that bein
 a silent escape: every field not returned is named with a reason, so a column
 added to `.lite` that does not appear is answerable without reading the page.
 
-*Lives in:* `packages/sierra/src/junction/field-rules.js` (`columnList`,
+*Lives in:* `packages/sierra/src/resource/field-rules.js` (`columnList`,
 `columnLabel`) · `packages/cli/core/crud-templates.js`, whose five-line `cell()`
 and second column mode are deleted by this ruling; pinned in
 `packages/sierra/test/column-list.test.js`.
@@ -12019,7 +12324,7 @@ ONCE and every detail page imports it; a copy per page is the written-twice
 failure `crud-templates.js` exists to end, and a single-model regeneration would
 leave the rest stale.
 
-*Lives in:* `packages/sierra/src/junction/resource.js` (`summary`, `children`) ·
+*Lives in:* `packages/sierra/src/resource/resource.js` (`summary`, `children`) ·
 `packages/cli/core/crud-templates.js` · `packages/cli/commands/admin/generate.md`
 (`_routes.js`); pinned in `packages/sierra/test/resource-schema-modes.test.js`.
 Argued in `IDEAS/shipped/tables-from-the-seed.md`.
@@ -12073,7 +12378,7 @@ an enum is a migration, not a stale row. A bound ARRAY marks per element. In a
 combobox the entry is pinned and is never a search hit, because a value that is
 not offered cannot be searched for.
 
-*Lives in:* `packages/sierra/src/junction/resource.js` and
+*Lives in:* `packages/sierra/src/resource/resource.js` and
 `@frontierjs/ui`'s `<Form>` · built — `FJS-960`.
 
 ### <a id="fjs-d216"></a>2026-09-05 · `FJS-D216` — `<mesa:*>` keeps its closing slash, and the spec's own examples were wrong
@@ -12715,7 +13020,7 @@ name→component binding. Neither of the other two ships until its generator doe
 because a registry with no consumer is a name nobody can call and there is no
 generated table, detail view or filter bar to call it. `IDEAS/overview.md` 1.1.
 
-*Lives in:* `packages/sierra/src/junction/field-rules.js` (`registerControl`,
+*Lives in:* `packages/sierra/src/resource/field-rules.js` (`registerControl`,
 `defaultControlFor`), `packages/ui/controls.js`,
 `packages/ui/components/forms/FormField.mesa`; pinned in
 `packages/sierra/test/form-fields.test.js` and `packages/ui/test/form.mjs`
@@ -12839,7 +13144,7 @@ assertions) and nothing had ever asserted that the selector matches the markup.
 
 This is a **breaking change** for any component that styled a child's internals.
 *Lives in:* `packages/mesa/src/compiler.js` (`_appendScope`, `_scopeSelector`, the
-element writer), VISION **RULE 55**, `packages/mesa/CHANGES.md`;
+element writer), VISION **RULE 55**;
 computed-style proof in `packages/sierra/test/fixtures/island-site/verify.mjs`.
 
 ### <a id="fjs-d86"></a>2026-08-03 · `FJS-D86` — CSS scope ids are content-addressed, never generated.
@@ -12925,7 +13230,7 @@ Found on the way and fixed with it: the `FJS-D597` re-check asked `$readReach` f
 
 *The nine were answered after the code, not before* — named late per `decision-rules`. The owner question failed on the first draft (the second walker) and was fixed rather than overridden.
 
-*Lives in:* `packages/litestone/src/core/client.js` (`tenantPath`, `tenantsOf`, `announceFor`) · `packages/junction/src/core/litestone.ts` (`sendToChannel`, `regrade`, `dependentsOf`) · `packages/junction/src/transport/channels.ts` (`ChannelFn`, `sendGraded`) · `write-events.test.ts` § FJS-1741 · `data-write-announcement.test.ts` § FJS-1741 · serpgrid `api/test/live.test.ts` · notion `probes/q2/out.txt` run 7.
+*Lives in:* `packages/litestone/src/core/client.js` (`tenantPath`, `tenantsOf`, `announceFor`) · `packages/junction/src/core/litestone.ts` (`sendToChannel`, `regrade`, `dependentsOf`) · `packages/junction/src/transport/channels.ts` (`ChannelFn`, `sendGraded`) · `write-events.test.ts` § FJS-1741 · `data-write-announcement.test.ts` § FJS-1741 · serpgrid's api/test/live.test.ts · notion's probes/q2/out.txt run 7.
 
 ### <a id="fjs-d952"></a>2026-10-13 · `FJS-D952` — What does an app shell own, and is it the kit's — A paper first: `IDEAS/app-shell.md` surveys the six nav shapes and proposes a `nav.js` contract (groups, section tabs, bare prefixes, drawer copy), then a kit `Shell` over `frame.css` that reads it.
 
@@ -13562,6 +13867,117 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1156"></a>2026-10-16 · `FJS-D1156` — A renamed slug's redirect: one mechanism or two — One, the build: the `Slug` rows a rename writes become `_redirects` lines in the build the rename already owes, through Sierra's one writer of `_redirects` (`FJS-D961`, `FJS-D920`). No runtime lookup.
+
+Asked in [`fjs-prototypes/ghost/PLAN.md`](../fjs-prototypes/ghost/PLAN.md) § Q4, through the question tool after `measure/rename-redirect.mjs`. **A** was picked over **B** (build-time `_redirects` plus a runtime lookup, an API route or host function reading `Slug`, for renames since the last build) and **C** (runtime only). A prerendered rename is not finished until its build, because the new page does not exist before it: in the window B exists for, a runtime redirect sends a reader from a stale page to a 404. A lookup for any slug has no home in a host function (`FJS-D919`), which answers its own path only, and it puts a database read on the edge `FJS-D921` keeps out. Owed by the framework, not the app: `FJS-3122` (`serveSite` reloads the rules a rebuild writes) and `FJS-3034` (a rename rebuilds the 8 files it reaches, not 990).
+
+The nine, before the build: origin — the `Slug` row; concept — none new; complexity — the problem's, a static site changes when it is built; predictability — a redirect is one more output the row feeds, as the sitemap and the tag pages are; derived — from `Slug`, written by no hand; owner — Sierra's `_redirects` merge, already the one writer; boundary — the app writes rows and never a rule; failure — before the build the old address serves its old page, not a 404; silence — a served site holding stale rules says nothing today, which is `FJS-3122`. *Paved road vs. workaround*: B is the workaround. Tier: Register.
+
+### <a id="fjs-d1148"></a>2026-10-16 · `FJS-D1148` — Q5 — What load runs beside the test in `register:repro`'s third cell — `--load N` copies of junction's own `bun run typecheck`, each restarted until the cell's runs finish; N defaults to `ceil(nproc / 1.8)` (7 on 12 cores), and the row reads `k/N under 7 typechecks`. A typecheck that exits nonzero refuses the run: a load that died is no load.
+
+Asked in [`IDEAS/maintainability-signals.md`](IDEAS/maintainability-signals.md) § Open questions. **A** was picked over **B** (N busy loops, one core each), **C** (N other packages' suites, looped), **D** (`fix:loop --lanes N` beside it).
+
+The paper's recommendation, taken as written: hermetic (no port, db or tmp, so the load cannot file its own `env: port`), real repo work at ~1.8 cores and 500 MB, and the one load that reproduced a row (`FJS-1172`, failing beside orion's typecheck). B found nothing at 12 loops (`FJS-2854`); C and D vary per run. N fills the cores because a timeout under load is starvation, and nothing starves at half load. Not `--lanes` and not *lanes*: a lane is a `fix:loop` worktree, and one word for two loads is two meanings.
+
+### <a id="fjs-d1146"></a>2026-10-16 · `FJS-D1146` — Q4 — How does `register:repro` tell a test that fails by order from one that fails by load — A third cell, the package's own `bun run test` on a quiet machine, every run (same N), reading the named file's result from the per-file headers bun prints. Alone-pass and suite-fail is order: a file leaking state into another is test code, so the tool strips `env: timing` (`repro: 9/9 alone · 3/9 in suite`). A package whose runner is not `bun test` is refused by name, and so is a run whose output never prints the file's header: an unseen file is not a pass.
+
+Asked in [`IDEAS/maintainability-signals.md`](IDEAS/maintainability-signals.md) § Open questions. **A** was picked over **B** (a seventh cause, `env: order`, in `ENV_CAUSES`), **C** (the suite cell behind a `--suite` flag).
+
+The paper's recommendation, taken as written: half the timing rows say *fails under the full suite, passes alone*, which is order and load at once; only a quiet suite run separates them. `env:` names where the fix lives, and a leak's fix is the test, so B mislabels it. C defaults to the false *9/9 alone, so load*. The package script stays the one owner of file order and `tmp-run`.
+
+**Amended 2026-10-16 on measuring it: the file's result is read from bun's junit report, not its console header.** bun 1.4.2 prints a file's header only when that file printed something, so on the console a clean file and an unrun one read alike and the header reading refuses every passing run. `register:repro` passes `--reporter=junit` through the package script and reads the file's `<testsuite>`; a report not naming it is the unseen file, refused as ruled. A script running `bun test` twice reaches the flags only in its last group, so a file in the first is refused by name. The choice of A is unchanged.
+
+### <a id="fjs-d1023"></a>2026-10-16 · `FJS-D1023` — How does `fli deploy` know to install the report-only host Outpost, and what does it install from — A deploy config key the app states, `deploy.hostOutpost: true` in basecamp's `frontier.config.js`. `deploy:setup` installs the Outpost from the pushed checkout's `packages/outpost` (it is in the build context already) as `outpost-host.service`, sandboxed like the fleet unit, and writes the key it derives from the server's `.env.production`, the loopback API URL and the two paths fli itself laid out (the deploy root's env file and the `/db` volume's host directory).
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **A** was picked over **B** (No fli option: basecamp ships its own extra step file under `deploy/`, and `fli deploy` gains a generic *the app's own steps* hook that runs it. The knowledge stays in the app that needs it, at the cost of a second step mechanism in fli), **C** (The fleet install script (`providers/compute/enrollment.ts` `installScript()`) grows a report-only mode, and `fli deploy` pipes it to the box. One installer for every Outpost, but fli would fetch an install script from the app it is installing, before that app is up).
+
+The paper's recommendation, taken as written: fli already owns the layout both paths come from and holds the `.env.production` the key derives from, so it is the one place that can state all three without a copy; one boolean in the one app that wants it.
+
+### <a id="fjs-d1084"></a>2026-10-16 · `FJS-D1084` — Is `fli dev` the one front door — `fli dev`; the scaffold prints it; `utils/dev.md` becomes `dev/index.md` aliased `dev`; the README drops `bun run dev`.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **A** was picked over **B** (`bun run dev` with the preflights moved into a `predev` script).
+
+The paper's recommendation, taken as written: the preflights need the port broker, which is fli's.
+
+### <a id="fjs-d1083"></a>2026-10-16 · `FJS-D1083` — What is the one script table an app's `package.json` carries — `dev`, `api`, `web`, `build`, `test`, `db:seed`, `db:reset`, `check`; written by `app-config.js`; graded by `fli check`; the three apps moved.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **A** was picked over **B** (the scaffold's `dev:*` table, apps moved to it).
+
+The paper's recommendation, taken as written: three real apps already converged on it, and `bun run api` is what every drive's *Start first* says.
+
+### <a id="fjs-d1137"></a>2026-10-16 · `FJS-D1137` — Q3 — Is `contested` set by the loop (1.1) the same status as `contested` set by a person — One word; the note beside it says who doubted and why.
+
+Asked in [`IDEAS/maintainability-signals.md`](IDEAS/maintainability-signals.md) § Open questions. **A** was picked over **B** (a second word for the loop's doubt).
+
+The paper's recommendation, taken as written: both mean *re-diagnose before spending*, and a second status costs a `fli next` branch and a conventions row for a distinction the note already carries.
+
+### <a id="fjs-d1136"></a>2026-10-16 · `FJS-D1136` — Q2 — Where does a drive declare the resources it holds — An export from the `verify:*` script, read by `proofs.js` beside the DRIVES.md row.
+
+Asked in [`IDEAS/maintainability-signals.md`](IDEAS/maintainability-signals.md) § Open questions. **A** was picked over **B** (in `example/package.json` beside the script line), **C** (a fourth DRIVES.md column).
+
+The paper's recommendation, taken as written: the script is the one place that knows which port it binds, `proofs.js` already imports beside DRIVES.md, and a column in prose is what `env: port` rows are made of.
+
+### <a id="fjs-d1135"></a>2026-10-16 · `FJS-D1135` — Q1 — How does a register row name the Bridge index seam a bug crosses — `seam: <name>`, its own ` · ` segment beside `env:`, written by hand, name from the root `CLAUDE.md` § Bridge index key list.
+
+Asked in [`IDEAS/maintainability-signals.md`](IDEAS/maintainability-signals.md) § Open questions. **A** was picked over **B** (the row cites the owner in prose and `fli next` infers it by matching the key list against the title).
+
+The paper's recommendation, taken as written: `FJS-D1118` ruled the same question for `env:` the same way: the suspicion may derive, the diagnosis is written by hand, and a closed list is what makes the count mean something.
+
+### <a id="fjs-d1128"></a>2026-10-16 · `FJS-D1128` — Q5 — Is the exit a drive — `verify:mirror-exit` in `DRIVES.md`: connector removed, app boots, each surface lists.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) § Open questions. **A** was picked over **B** (a sentence in the connector's README).
+
+The paper's recommendation, taken as written: § V 9 permits `none` and this is the one claim the whole file rests on.
+
+### <a id="fjs-d1118"></a>2026-10-16 · `FJS-D1118` — A register row whose fix is the environment says `env: <cause>` as its own segment of its links cell, cause from a closed list; `fli next` marks it, `fix:loop` skips it, `register:check` refuses a cause outside the list and warns on a title that smells with no segment
+
+Asked in chat, through the question tool, after a reading of every session transcript: the five rows most often mentioned across sessions (`FJS-1382`, `FJS-1366`, `FJS-1701`, `FJS-1484`, `FJS-1371`, every one an `example` `verify:*` drive) had been EDITED in two sessions or none, while the rows actually fought (`FJS-740`, `FJS-351`, `FJS-009`) shared one shape — a port, a shared `db/`, a stale process, a real machine. The first set was not difficult; it was dodged, because a headless session cannot close a failure whose cause is the machine it runs on, and nothing in the register let it say so. Free text said *environment* twelve times and *flaky* four, which nothing could count or act on.
+
+- **The segment is `env: <cause>`**, written the way `by hand` is — its own ` · `-joined segment of the Detail cell — and read by the same parser (`envCause` beside `byHand` in `core/next.js`). It names where the FIX lives, not where the symptom shows: a hold TTL is code, and a drive failing because the previous drive left holds in a shared file is `env: shared db`.
+- **The cause is one of six**, `ENV_CAUSES` in `core/next.js`: `port` · `shared db` · `stale process` · `timing` · `real machine` · `network`. A closed list because the count per cause is the point — `rg 'env: shared db' ISSUES.md` is the number that decides whether isolating the drives pays — and a seventh is added to the list when a row needs it, not written free.
+- **Two rules in `register:check`.** `env-cause` is an error: a cause outside the list is a row no count sees, and the fix is one word. `env-smell` is a warning: a title saying *times out*, *hangs*, *within N minutes*, *passes in a fresh worktree* with no segment is a lead, and the row may be code — the answer is the segment or a title that says what is wrong with the code.
+- **Not `flaky`** — the ecosystem word names the symptom and says nothing about the cause (*familiarity vs. precision*). **Not `shares: <thing>`** — it reads the right way for a db or a port and has no word for timing or a machine.
+- **The after-the-fact detector stays with the transcripts' owner.** The dodge ratio — sessions that mention a row against sessions that edit for it — is `dodged.py` beside `token-audit`'s `audit.py`, because that skill already reads `~/.claude/projects/*/*.jsonl` and `fli` reading Claude's transcript layout would couple the workspace tool to one agent host.
+
+The nine were answered before the first edit. *Origin*: the list lives once in `next.js`; the conventions row restates the six words and `env-cause` reds a drift. *Concept*: one segment, sibling of `by hand`, plus six words. *Derived*: the suspicion derives (the smell rule); the diagnosis does not, and is written by hand. *Owner*: `next.js` already parses segments and `register-check.js` already grades rows; both were added to, nothing beside them. *Failure*: error on the misspelling, warning on the lead (*ergonomics vs. strictness*, per surface). *Silence*: a WRONG cause chosen is caught by nothing — recorded as `none`. Register tier.
+*Lives in:* `cli/core/next.js` (`ENV_CAUSES`, `envCause`), `cli/core/register-check.js` (`env-cause`, `env-smell`), `scripts/fix-loop.mjs`, `ISSUES.md` § Conventions.
+
+### <a id="fjs-d943"></a>2026-10-16 · `FJS-D943` — Where do the bytes of a volume restore come from, and what stops it overwriting a live database — B first, A as the add-on. `POST /volume/restore { app_id, path, overwrite? }` extracts an archive already on the machine (placed by `scp`/`rsync`, or a `FJS-D679` backup) into `fjs-<app>-data`, and `path` must sit under one fixed root so a signed caller cannot name `/etc`. The route refuses while a container holds the volume, and refuses a non-empty volume unless `overwrite: true`. A's machine fetch (`url` + `sha256`, https only, private addresses refused) comes later as a step in front of the same extract.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked as the recommendation qualifies it (*B first, A as the add-on*) over **A** (the machine fetches: body `{ app_id, url, sha256, overwrite? }`; Outpost streams the URL into `tar -x` inside a throwaway container mounting the volume, checks the digest, and returns file count and bytes. Nothing large crosses Basecamp or the signed command port (the prior art's shape, `paas-parity.md` item 4). Costs an outbound fetch of a URL a caller states, so the route must refuse non-https and private addresses, and `s3://` needs a credential on the machine (`fleet-ingress.md` D6 refused one for DNS)), **C** (stream the tar as the request body to `POST /volume/restore?app_id=…`: the one route here whose body is bytes, signed over a digest header. Works from anywhere with no URL or path, but the 4.6 GB passes through whatever holds the stream, and the signature scheme (`server.js` recomputes it from the raw URL and JSON body) needs a bytes variant. - **Either way** — the App must be stopped (a container holds the volume: refuse naming it) and a non-empty volume is refused unless `overwrite: true`, which `D679` need not settle).
+
+B is the smallest piece that unblocks ELA and serves the FJS-D679 restore with no new attack surface; A's URL fetch follows later as a step in front of the same extract, without changing the route's other parameters.
+
+### <a id="fjs-d942"></a>2026-10-16 · `FJS-D942` — Does FJS-2646 close by the load route (FJS-2645), with the git build's Dockerfile path left to FJS-2123, or does the git build learn to vendor — The image is built where the workspace is: `fli` vendors and builds (Kamal's model) and ships the image to the machine, and the release names its digest, which `pull` already returns without pulling when the machine holds it (FJS-2645, closed 2026-10-13). How the image reaches the machine (`docker save | ssh docker load`, or a load route) is the build's own step, owed. A git source's subdirectory is already its context (FJS-2123, closed); a `source.dockerfile` is added only for a repo with no out-of-repo dependency. FJS-2646 closes when the image path is built.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the git build runs a declared prebuild step on the machine before `docker build`. Needs the workspace on the machine, and no PaaS does it), **C** (`fli` uploads the vendored tree as an `inline` source and Outpost builds it with `-f`. Reuses the inline route but ships a source tarball per release, and builds on the machine what A builds where the workspace is).
+
+The paper's recommendation, taken as written: the prior art (`IDEAS/paas-parity.md`, item 2) has every platform expecting a context that holds all of the app, so a `link:` dependency can only be built where it lives.
+
+### <a id="fjs-d577"></a>2026-10-16 · `FJS-D577` — How does a container's port bind follow its hostnames between releases: the `domain:dns` job dispatches a release, or `/route` recreates the container from `docker inspect` — The job dispatches a release when `rebind` is set (`routeDomainApp` in `domain-dns.job.ts`, the `deploymentRun` path of `deployments.service.ts`). One deploy path, and the container is recreated from the app's own settings. Every hostname edit then mints a Deployment and its step list, and restarts the app, where `/route` today restarts nothing; a rollback target's settings are not the app's, so the release must be a plain redeploy of the live digest.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`/route` recreates the container with the new bind, rebuilding its argv from `docker inspect` (env, volume, limits, restart policy, logging). No Deployment row and no basecamp change, but it is a second deploy path on the machine: any `deploy` flag added later has to be read back from inspect too, or the recreate drops it), **C** (keep the bind as the last release set it, and surface `rebind` on the App screen instead of only in a job log warning. No restart and no second path; the exposure and the dead app both wait for an operator to read a banner and release).
+
+The paper's recommendation, taken as written: a restart is a release, and the Deployment row is the record that it happened. B's recreate reconstructs a run config from the daemon's view, which cannot hold what `deploy` was handed and never stored (`config.containerPort`, the log driver choice), so it drifts from the real path the first time `deploy` grows an argument. The dispatch is gated on `rebind`, so an edit that changes no bind restarts nothing.
+
+### <a id="fjs-d1076"></a>2026-10-16 · `FJS-D1076` — Where does the A/B timing runner live, and what lands first — `scripts/bench-ab.mjs`, a repo tool `scripts/ci.mjs` imports for a `perf` phase in the full tier. Each package declares `bench/cases.mjs`. Timing lands first and the counted half follows as `--count` once valgrind is on CI.
+
+Asked in [`IDEAS/performance-regression-watch.md`](IDEAS/performance-regression-watch.md) § Open questions. **A** was picked over **B** (`packages/cli/core/` beside `bench.js`, as `fli bench:ab`, so an app could A/B its own cases. That adds surface for a caller nobody has yet), **C** (A, with `--count` from day one and valgrind installed by the workflow).
+
+The paper's recommendation, taken as written: A/B against a base ref is a question about this repo, and the timing half is useful without valgrind. B waits for an app that asks.
+
+### <a id="fjs-d1073"></a>2026-10-15 · `FJS-D1073` — What shape is Basecamp's workbench stage — A grid of panes, rows × columns, every cell the same size; the owner arranges it in a Layout mode where the panes fold to cards and the grid is drawn one column wider and one row taller, each empty cell a box that takes a dropped tile or starts a new chat in a checkout it asks for. The two-pane split handle goes; zoom stays as one cell filling the stage.
+
+Asked in chat, for the workbench screen. **A** (replace the two-pane stage, split and zoom with the grid) was picked over **B** (the grid capped at 3 × 3) and **C** (keep two panes, Layout only reorders them). For what a box starts, **new chat in a checkout picked from the dock** was picked over **new chat in the freshest checkout** and **pin a new checkout**. For the grid's shape, **uniform rows × columns** was picked over **per-row columns**.
+
+One mechanism rather than two: a split is the one-row case of a grid, and a cap is a number nobody asked for. An empty trailing row or column is not kept, so docking a pane gives the stage back rather than leaving a hole, and the box a chat starts in asks which checkout because a cell holds a checkout and one checkout holds one cell. Proved by `packages/basecamp/web/test/verify-provision.mjs` § Layout, which replaced the split checks.
+
+### <a id="fjs-d1070"></a>2026-10-16 · `FJS-D1070` — How are Sierra's bytes per surface counted, and where — `packages/sierra/bench/`: one floor fixture per target (spa, static, widget), counted by cli's `measureSurface` reached by relative path, ratcheted in `bench/bench.baseline.json`, run at the end of sierra's `test` script.
+
+Asked in [`IDEAS/performance-regression-watch.md`](IDEAS/performance-regression-watch.md) § Open questions. **A** was picked over **B** (No sierra bench: the vanilla floor scaffolds with `--site --widgets` and `BUILT_SURFACES` gains `widgets`. One baseline, but it stays a by-hand run of a full scaffold until `--floor` is wired into CI), **C** (Mesa's runner copied: sierra counts its own bytes, in gzip. Three measurers in two units).
+
+The paper's recommendation, taken as written: one measurer and one unit for every built surface, and a rise is caught the day it lands, which `FJS-D532` already ruled for mesa.
+
 ### <a id="fjs-d1009"></a>2026-10-15 · `FJS-D1009` — When CI's structure phase grades a rule an app's `check-baseline.json` never adopted, is the debt adopted with a reasoned count or lowered to zero before CI goes green — Adopt the brand-new rules with `fli check --adopt` and a `//` reason each (css-raw-literal 33, css-class-collision 5, example app-layout 7), and fix the two +1 regressions, since a count that moved is a new site rather than old debt. CI goes green today; each adopted key is a ceiling that falls as rows move them.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Adopt nothing: fix all 45 sites (or `allow` the collisions that are deliberate, as example already does for its four) before the phase goes green. Leaves CI red for every session until done), **C** (Adopt everything as it stands, including the two +1s, with reasons).
@@ -13590,7 +14006,7 @@ Ruled by the owner over **B** (the tree compiles to placement data and `createSt
 
 **Why.** All three differ in who calls `stamp()`, a mounted tree or a loop over data. B's one gain is a stage the server builds without Mesa. For an owner's scene, 12.2's generated `world.json` already gives that. For a member's row, the API derives the same shape by mounting `<Placements>` headlessly when the row is saved, through the loader `web/test/stage.mjs` already uses, and never takes a world the caller sends. B would add a second way to build a stage for nothing. C undoes 5.5–5.8 a day after they were ruled. A row can name a piece only by key, so a piece a member may place lives in `pieces/index.js`; an owner's scene may still define one inline. A key the registry lacks, or two pieces on one cell, is refused by name when the row is saved, not when a screen draws it.
 
-*Lives in:* `packages/haven/web/src/components/Placements.mesa` (new, 12.1), `web/src/pieces/index.js`; the plan is `IDEAS/haven.md` 12.1.
+*Lives in:* `Placements.mesa` (new, 12.1, under `packages/haven/web/src/`), `web/src/pieces/index.js`; the plan is `IDEAS/haven.md` 12.1.
 
 ### <a id="fjs-d998"></a>2026-10-14 · `FJS-D998` — A Haven mod is a nick the server lists — `HAVEN_MODS`, read at every login both ways; the standing is `Member.role = 'mod'`, `@guarded`, and what a mod may do is two predicates in the schema, never a method or a hook.
 
@@ -16129,7 +16545,7 @@ file in a browser is what found `FJS-400`.
 Still open: §4.6's proposed check — *a route file may not be imported by a
 non-route file* — which this ruling unblocks.
 
-— `packages/sierra/src/junction/resource.js` (`save`, `detailQuery`),
+— `packages/sierra/src/resource/resource.js` (`save`, `detailQuery`),
 `packages/ui/components/forms/Form.mesa` (`_send`).
 
 ### <a id="fjs-d112"></a>2026-08-19 · `FJS-D112` — A resource file carries its model's default form. Invariant 18's "no markup" half is reversed.
@@ -16461,6 +16877,54 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d1129"></a>2026-10-16 · `FJS-D1129` — Q6 — A Provider's caps (Mattermost Cloud Free: 10k visible messages, 10k push a month, 250 users; Team Edition self-hosted: none, read off the System Console 2026-10-16): README, or a field the code reads — The connector's README, first paragraph, the way postmark's says *signs nothing*.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) § Open questions. **A** was picked over **B** (`TargetDescriptor.limits`, read by the sync to size its window).
+
+The paper's recommendation, taken as written: , and B when a second connector needs the code to read one.
+
+### <a id="fjs-d1127"></a>2026-10-16 · `FJS-D1127` — Q4 — The third ingress: a subscription the app dials and holds open (Mattermost's WebSocket). Whose is it — A Target of kind `broker` (`FJS-D235`). The paper first refused this as *where we publish*; `transports/broker.ts` says the opposite — *dial out, then receive; nothing is sent over it* — and already owns the dial, an unbounded reconnect, `health()` for readiness and a handler per frame. What it lacks is Mattermost's framing: it reads `{id, type: 'message', body}` and acks, where Mattermost sends `authentication_challenge` after open and then `{event, data, broadcast, seq}` with no ack. So the connector supplies the frame codec and the post-open handshake, and each frame reaches `conduit.accept()` → Dialect → Receiver `apply` → litestone as system.
+
+Asked in [`IDEAS/mirror-apps.md`](IDEAS/mirror-apps.md) § Open questions. **A** was picked over **B** (a Receiver with a transport other than HTTP: the app dials, the Dialect still verifies and parses each frame. The dial loop would have no owner, and would re-grow what `broker.ts` has), **C** (a long-running job (`app.jobs`) holds the socket and hands each frame to `conduit.receive()`. 0.4 proved caravan can — but it is a second place holding a socket open, beside the one conduit already keeps).
+
+The paper's recommendation, taken as written: one owner for every socket the app holds open, and caravan appears only where a one-shot belongs: the REST backfill after a reconnect gap, dispatched `unique`.
+
+The nine, answered before the build. Origin: one — `transports/broker.ts` is the dial, and the framing moves from a constant in it to a value the connector supplies. Concept: none — a Mattermost socket is a `broker` target, the kind `FJS-D235` already named; the paper's second noun for Q4 is not spent. Complexity: the problem's — a Provider that pushes over a socket it defines the frames of. Predictability: a held socket is every held socket; `health()` reads the same for a Kafka bridge and for Mattermost. Derived: the frame codec from the connector, the handshake from the credential, the dedupe key from the frame's `seq` through the Dialect. Owner, and it existed: conduit's broker transport, which the paper's first reading of `FJS-D235` missed — *where we publish* was the opposite of what the file says, found by reading the file. Boundary: typed — a codec answers a frame or `null`, a handshake runs after `open` and before the first frame is believed. Failure: an unbounded reconnect, as today, with `health().connected` the half an operator reads; a frame the codec refuses is dropped and counted, never buffered. Silence: `health()` under `app.registerReadiness`; what fails when the sync stops is `last_received_at` against what Mattermost says it sent, and until Phase 2.3's test it is `none`. Caravan's 0.4 probe stands for the one-shot backfill, dispatched `unique`, never for the socket.
+
+### <a id="fjs-d1089"></a>2026-10-16 · `FJS-D1089` — How does a row name a self-hosted counterparty — its address and its token, sometimes on a private network — without a stored credential going where a stranger says — Two halves, neither a new option. *The token is the row's own*: `address_from: 'request'` admits `bearer`, `api_key` and `signed` when `auth.per_caller: true`, and such a send states `grant`, refused by name (`invalid_request`, nothing sent) without it — the credential and the address are read off the same row, so the writer of the address holds the token, and `withCache` keyed on the grant keeps two rows in one tenant from sharing one cached token (`FJS-2232` per row). The register refusal stays for a process credential. *A private address is never a row's*: the public grade stays before every attempt, so a self-hosted instance behind a public name (the common case) is reached and one on a LAN or a tailnet is the operator's to declare as a fixed-address target per install, or waits for Outpost vantage, as `FJS-D1018` ruled. `allowPrivate` stays a test receiver's switch. Cost: a per-row LAN instance has no spelling until vantage; a `getFor` that ignores `grant` answers a tenant's token for every row's address, which conduit cannot see and the hazard names.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A's credential half, plus an operator allow-list of private origins on the target, `destinations.origins: ['http://plausible.lan:8000']`: a row address on a listed origin is admitted ungraded, every other private address refused. Cost: the address is written twice (row and config) and a new client instance is a redeploy; it is `FJS-D1018`'s rejected **B**/**C** with per-origin granularity, and an allowed name that re-resolves somewhere worse is not caught), **C** (grade a fixed address too: `put()` runs `assertPublicUrl` on every `http` address unless `destinations.allowPrivate`, so a target registered per row is caught. Cost: every localhost dev target, `unix` socket and LAN PBX needs the flag, the operator's declaration is graded like a stranger's, and conduit cannot tell a `put()` at boot from env from one at runtime from a row, so the hole closes only by closing the legitimate case with it), **D** (rule the status quo: a fixed-address target per row is the spelling, documented. Rejected by the row itself — it is the hole).
+
+The paper's recommendation, taken as written: the credential half is derived from `FJS-D848`'s seam rather than restated (the grant is already *which login*, and a row is a login), and the address half is `FJS-D1018`'s own answer applied to conduit, so the two rulings say one thing: a row names where, public only, and the credential that goes there is the row's own. Six months out it is one sentence; B is two places for one address, C grades the operator. Adjudications: *ergonomics vs. strictness* — the register refusal stays where the cost is a token leaving to a stranger's address and lifts exactly where the row owns the token; *paved road vs. the workaround* — the per-row fixed target was the workaround, and A is the road it measured. Artefact: the suite's case where two rows in one tenant each land their own token at their own address, and a send with no grant sends nothing; the `getFor`-ignores-`grant` hazard is `none`, written as such.
+
+Both picks through the question tool, the recommended ones: A, and *refuse a send with no grant* over *allow it and leave the keying to the resolver*. The nine, answered before the code. **Origin:** none new — whose credential is `who.grant` (`FJS-D848`), and which address is reachable is `assertPublicUrl` (`FJS-1578`). **Concept:** no noun and no option; `per_caller` and `grant` exist. **Complexity:** the problem's — a row holds an address and a token, and the two must have one writer. **Predictability:** a per-caller target spends the caller's credential whether its address is fixed or per send, and a request-addressed target grades every address the same way. **Derived:** the credential is derived from the send's grant rather than declared on the target. **Owner:** `assertRequestAddressed` admits, `secretFor` resolves, `assertPublicUrl` grades, and the grant refusal sits in `attempt()` beside the address grade — one place grades a request-addressed send. **Boundary:** `TargetAuth.per_caller` and `ConduitRequest.grant`, typed; two refusals by name. **Failure:** a process credential beside `address_from` is still a `put()` throw; a missing grant is `invalid_request`, non-retryable, nothing sent; a private address is refused as before. **Silence:** the suite holds two rows in one tenant landing their own tokens at their own addresses, and a send with no grant sending nothing (`conduit.test.ts` § FJS-1667); a `getFor` that ignores `grant` is `none`. Tier: Register here; Map in conduit's `README.md`, `CLAUDE.md` and `types.ts`. Closes `FJS-2923`.
+
+*Lives in:* `packages/conduit/src/conduit.ts` (`assertRequestAddressed`) · `packages/conduit/src/transports/http.ts` (`attempt`, the grant refusal) · `packages/conduit/src/types.ts` (`address_from`, `destinations`) · `packages/conduit/conduit.test.ts` § with the row's own credential.
+
+### <a id="fjs-d1087"></a>2026-10-15 · `FJS-D1087` — Junction receives its own webhook scheme through a SUBSCRIPTION: the row this app holds to verify a far app's deliveries, at `POST {apiPrefix}/webhooks/subscriptions/{id}`, with one `receive` the app writes; the record-unapplied → receive → mark order is restated in junction beside conduit's `accept()`.
+
+Asked in [`IDEAS/inbound-integrations.md`](IDEAS/inbound-integrations.md) § Order step 3 (*A, in junction*), through the question tool; both picks were the recommended ones. **The noun** — *subscription* over *no word* (`accept()` / `accepted()`, honoring the paper's *takes no noun* literally and reading oddly) and *inbound* (an adjective as a noun). A subscriber is the far side of our registration (`FJS-D193`); a subscription is our side of theirs, and the two sentences teach each other. Amends the paper's § The noun, which said junction's half takes none: it takes this one, and the register gains no row for it, because it is the webhooks plugin's own word the way *registration* is. **The order** — junction's own ~40 lines over one fixed dialect, over lifting conduit's `accept()` into junction and having conduit import it, which would end `receive.ts` being junction-free to save a restatement.
+
+The nine, answered after the build. It is one new origin, named: the applied-not-seen order (`FJS-1805`) is written in `conduit/src/receive.ts` and in `junction/src/plugins/webhooks/index.ts`, and what keeps them from drifting is that verify, rotation (`verifyRequest({ secrets })`) and the nonce memory are toolbelt's, the outcome words (`applied · ignored · parked · duplicate`) and the three wire answers (`200 { received, outcome }`, `401 { error: 'not verified' }`, `500 { error: 'not applied' }`) are the same on both, and each suite holds the throw-once-then-retry case. One word added. The complexity is the problem's — Graph calls the row a subscription, Svix an endpoint secret — and nothing is added past the row, one route and one handler. Predictable: the route answers what conduit's does, the row lives in the webhook store beside the registrations, the path is fixed like the other eight. Derived, not restated: `path` is read from `apiPrefix` the way `app.get` reads it, the secret is minted on this side so the row is whole before anything is registered anywhere, and the dedupe key is the body's `id` — the SIGNED one, since `X-Webhook-Id` is outside the canonical string. One owner, and it already existed: the plugin that signs the scheme reads it. The boundary is `ReceiveHandler` → `ReceiveOutcome`; a `receive` answering any other word is a 500 by name. Failure is proportional: a forgery, a stale clock, a replayed nonce and an unknown id are one 401 sentence with the reason in the log and never the body; a throw leaves the receipt unapplied and answers 500 so the sender's retry gets a clean run; a verified body that is not the envelope is 200 ignored, because a 4xx retries for a day; with no `receive` the route is not mounted, so a subscription with nothing behind it is a 404 and not a 500 per delivery. What says so: `junction/test/webhooks.test.ts` § receiving, eleven cases, one of them a second junction app delivering over a real socket. Unenforced: a custom `IWebhookStore` lacking the seven receiving methods compiles only through `as never`.
+
+Adjudications: batteries vs. smallness — the receiving end rides inside the webhooks battery, not a package; paved road vs. the workaround — the README's *verify by hand with `verifyRequest`* block was the workaround and is gone. Tier: Register here; Map in junction's `README.md` § Webhooks, `CLAUDE.md` and `docs/internals.md`. Not built: management routes and REPL commands for subscriptions, and a rotation verb — `secrets` is a list so a rotation is two valid keys, but nothing yet turns one. Resilience does not cross and the route mints no principal (`FJS-D177`); a counterparty becoming a caller stays `createApp({ credentials })` (`FJS-D475`). Closes `IDEAS/inbound-integrations.md` § Order.
+
+### <a id="fjs-d1075"></a>2026-10-15 · `FJS-D1075` — A resolver's answer says when it expires: `get()` and `getFor()` answer `string | { value, expires_at }`, and `withCache` holds an answer until its `expires_at` or the cache's `ttl_ms`, whichever is first.
+
+Asked in [`IDEAS/third-party-credentials.md`](IDEAS/third-party-credentials.md) § Open questions (*what does the resolver return once expiry matters*), through the question tool. Picked over the paper's **A** (the per-caller interface alone — 3CX and `conduit-oidc` are both client-credentials on `get()`, measured), **B** (a `refresh()` on the object — minting into conduit, where auth mints and conduit spends), and an object on every answer (fifteen resolvers and three built-ins change for one optional field an env var never has).
+
+The TTL was the restatement. `withCache(mint, { ttl_ms: FCM_TOKEN_TTL_MS })` is a hand copy of the provider's lifetime: 3CX ships `expires_in` as 3600 or 60 depending on build and the reference guessed the unit, and `conduit-oidc` measured a one-second token handed out at 1.2s. Five callers — maidtech's Jobber, serpgrid's Google, ELA's Microsoft Graph and 3CX, `conduit-oidc` — each hand-built an expiry check, a refused set and an in-flight map beside `withCache`, because the cache could not see the expiry; all three are the cache's once it can. A past `expires_at` is used for the send that asked and not kept; a non-finite one is `auth_failed` by name, never read as forever. `valueOf()` is the one place either shape becomes a string.
+
+What stays the app's: the cross-process refresh lock — a compare-and-set on the app's own row, as maidtech and ELA write it, since conduit has no row — and marking a grant lost. Deferred, each with its trigger: an `oauth` `TargetAuth` kind until the scope derivation (§ Sequencing step 4; `FJS-D891` refuses a variant per scheme), a `reconnect_required` error kind until a caller branches on it rather than reading the row (a resolver that throws already puts its words on `auth_failed`, `FJS-2723`), a skew before expiry until a vendor's quota counts the refused call (the 401 remints and replays once). Amends `FJS-D891`'s clause *the `withCache` TTL over a `get()` that mints is its expiry*: the answer carries the number, and `ttl_ms: Infinity` says the cache defers to it. Closes `FJS-2245`.
+
+*Lives in:* `packages/conduit/src/types.ts` (`Material`) · `packages/conduit/src/credentials.ts` (`valueOf`, `withCache`) · `packages/conduit/src/transports/base.ts` · `packages/conduit/src/receive.ts` · `packages/conduit/conduit.test.ts` § credential resolvers.
+
+### <a id="fjs-d899"></a>2026-10-15 · `FJS-D899` — What a conduit Receiver holds, and whose each field is — Split by owner: a connector exports the **Dialect** (`verify · parse · dedupeKey`, pure functions of a delivery and a credential, the clock passed in), the app declares the **Receiver** (`provider · path · dialect · credential · owner · apply`), and conduit owns the route, the order (credential → verify → parse → owner → receipt → apply → mark) and what a duplicate means: an APPLIED receipt, never a seen one. Receipts live in conduit's own store beside its targets. A handshake, a batched delivery and a subscription's lifecycle events stay out until a second app asks.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions, found fixing `FJS-1804`. **C** was picked over **A** (one record carrying all seven steps, written by the connector — which puts the app's tenancy and domain into a vendor package) and **B** (`FJS-D681`'s four fields, `path · verify · window · dedupe`, with the rest left to the app — which the measured dialects do not fit, Quo's key being a row the path names and Standard Webhooks' dedupe key a header, and which leaves the record-then-apply order `FJS-1805` found wrong to every app). A second pick, through the question tool: the receipt row lives in conduit's store (`conduit_receipts`, the memory store's map) rather than in a litestone model the app declares, so an app with no litestone receives too and no schema moves; the cost is that a receipt is not in the audit trail or Studio.
+
+The paper's recommendation, taken as written: each field lands with the party that knows it — a vendor knows its signature, only the app knows its tenants — and conduit owns the one thing nine hand-built receivers got wrong or copied. `credential` is a ref through the installed `CredentialResolver` for the ordinary one-key relationship, or a function choosing the key for one delivery before the body is believed. `owner` is optional and found AFTER verify. `apply` answers `applied`, `ignored` or `parked`; the first two mark the receipt and the third leaves it for a retry. A refusal is one sentence, 401, with the reason in the log and never the body. Resilience does not cross and a receiver never mints a principal (`FJS-D177`); a partner signing with FrontierJS's own scheme and becoming a caller stays junction's door (`FJS-D475`). Amends `FJS-D681`'s record text: *path, signature check, freshness window, dedupe key* is the dialect's half plus the path. Where it lives: `packages/conduit/src/receive.ts`, `receive.test.ts`, `example/api/src/app.ts`'s two receivers, `verify:pay` and `verify:stripe`.
+
 ### <a id="fjs-d949"></a>2026-10-13 · `FJS-D949` — What does 1.0 mean here — The numbers are wrong: litestone and auth move to the train's `0.x`, their `1.x` releases are deprecated on npm, and 1.0 is defined as the first release whose surface diff is graded.
 
 Asked in [`IDEAS/version-compatibility.md`](IDEAS/version-compatibility.md) § Open questions. **A** was picked over **B** (The description is wrong for those two: litestone and auth are stable and keep `1.x`, and the README says which packages are pre-alpha), **C** (1.0 means nothing beyond *published*, stated in each README).
@@ -16722,7 +17186,7 @@ It also answers the three questions `FJS-D153` left to a second connector:
   wrapping it is added once two apps write the same wrapper.
 
 The contract is graded by `fli check`'s `connector-contract`: each `packages/conduit-*` holds a sink, a drive and `@frontierjs/conduit` as a peer. The rest of the list is a judgement no rule makes.
-*Lives in:* this ruling · the first extraction, `@frontierjs/conduit-stripe`.
+*Lives in:* this ruling · the first extraction, conduit-stripe in the sibling conduit-connectors checkout.
 
 ### <a id="fjs-d889"></a>2026-10-10 · `FJS-D889` — A connector may own a PROTOCOL, and is then named for the protocol: `conduit-s3`, `conduit-oidc`, `conduit-openai`.
 
@@ -17340,7 +17804,7 @@ arrive. That is a fair exception and is baselined by name.
 
 Closes `FJS-533`. Extends `FJS-D138`.
 *Lives in:* `packages/junction/src/client/index.ts` (`RecordOptions.composed`)
-· `packages/sierra/src/junction/resource.js` (`record`) ·
+· `packages/sierra/src/resource/resource.js` (`record`) ·
 `packages/cli/core/checks.js` (`detail-read-dead`).
 
 ### <a id="fjs-d153"></a>2026-08-27 · `FJS-D153` — an official Conduit connector is its own package. Conduit owns the mechanism, never the vendor.
@@ -17437,7 +17901,7 @@ nobody made, which passes coercion and validation and is refused by SQLite as a
 refuses BY NAME so the form could not submit at all. Both are correct now
 because there is one implementation rather than because anyone noticed.
 *Lives in:* `packages/toolbelt/src/{hooks,jsonschema}/` ·
-`packages/sierra/src/junction/resource.js` · `packages/jetty/src/resources/`.
+`packages/sierra/src/resource/resource.js` · `packages/jetty/src/resources/`.
 
 ### <a id="fjs-d110"></a>2026-08-15 · `FJS-D110` — SQLite is the only database FrontierJS supports, and serverless follows from that rather than being refused separately.
 
@@ -17679,7 +18143,7 @@ target, which is Paraglide's bundle win out of a loop the build already runs.
 Closes `FJS-D12`, and retires the *1.5 precedes 1.1* dependency in
 `IDEAS/overview.md`.
 *Lives in:* `packages/litestone/src/core/parser.js` (`@label`) ·
-`packages/sierra/src/junction/field-rules.js` (`labelFieldFor`, `toFieldErrors`)
+`packages/sierra/src/resource/field-rules.js` (`labelFieldFor`, `toFieldErrors`)
 · `packages/toolbelt/src/inflect/inflect.js` · `IDEAS/ecosystem-gaps.md` 4.
 
 ### <a id="fjs-d31"></a>2026-08-14 · `FJS-D31` — FrontierJS wraps third-party binaries, it does not fork or republish them. It controls the VERSION, never the artifact.

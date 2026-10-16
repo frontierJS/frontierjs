@@ -11,6 +11,7 @@
 
 import { detectPolymorphic } from './polymorphic.js'
 import { BIGINT_EMITTED }   from './wide-int.js'
+import { modelName }        from '@frontierjs/toolbelt/inflect'
 
 const SCALARS = {
   String: 'String', Int: 'Int', Float: 'Float', Boolean: 'Boolean',
@@ -82,6 +83,13 @@ function emitModel(name, body, gap, wide) {
   let fields = []
   const attrs = [], optional = new Set(), deferred = []
   let compositeId = null
+
+  // The name is carried as written, but the accessor, the service and the
+  // resource are all derived from its singular PascalCase form (Invariant 2),
+  // so a Prisma join model like FathersOnVerses resolves to nothing.
+  if (modelName(name) !== name)
+    gap('model-name-not-singular', name, null, `model ${name} — PascalCase singular would be ${modelName(name)}`,
+        'emitted as written; rename it before the accessor, service and gate are derived from it')
 
   for (const raw of body) {
     const line = raw.replace(/\/\/.*$/, '').trim()

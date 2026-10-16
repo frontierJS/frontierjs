@@ -82,7 +82,22 @@ export async function quietly<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+// A throw out of the import or the boot is reported through `fatal`, last. Bun's
+// own uncaught-error dump prints the message ABOVE the stack and a version line,
+// and `fli app:atlas` keeps the last few lines of stderr -- so a named refusal
+// ("service 'people' is already registered") reached the reader as five frames
+// and `Bun v1.4.2` with no cause (`FJS-2816`). The frames stay, above the message.
 export async function loadApp(modulePath: string, exportName: string | null, servicesDir: string | null): Promise<App> {
+  try {
+    return await loadAppUnguarded(modulePath, exportName, servicesDir)
+  } catch (err) {
+    const frames = err instanceof Error ? (err.stack ?? '').split('\n').filter(l => /^\s+at /.test(l)) : []
+    if (frames.length) console.error(frames.join('\n'))
+    fatal(err instanceof Error ? err.message : String(err))
+  }
+}
+
+async function loadAppUnguarded(modulePath: string, exportName: string | null, servicesDir: string | null): Promise<App> {
   const abs = resolve(modulePath)
   if (!existsSync(abs)) fatal(`No such module: ${rel(abs)}`)
 
@@ -155,7 +170,7 @@ async function build(value: unknown, label: string, servicesDir: string | null, 
     fatal(`No services directory at ${rel(resolved.probed[0])}`)
 
   if (resolved.dir) {
-    await quietly(() => autoloadServices({ dir: resolved.dir!, app, registry: app.services }))
+    await quietly(() => autoloadServices({ dir: resolved.dir!, registry: app.services }))
   }
 
   // `load-config` is a `needsHost` phase too, and skipping it means every

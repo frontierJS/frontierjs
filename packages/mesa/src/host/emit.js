@@ -1,33 +1,31 @@
 /**
- * The terminal emitter — `target: 'terminal'` on compile(). Reads `ctx.ir`
- * and writes the component's template block as calls on `$$tui`
- * (`runtime-terminal.js`) into `ctx.module.body`, where the DOM builder
- * would have written its template and traversal.
+ * The host emitter: the stage compile() runs for every target in
+ * `targets.js` (`FJS-D699`, `FJS-D1074`). Reads `ctx.ir` and writes the
+ * component's template block as calls on `$$host`, the target's runtime,
+ * into `ctx.module.body`, where the DOM builder would have written its
+ * template and traversal. Every function here takes the target's profile
+ * as `t`; nothing names a target or an engine.
  *
- * It refuses rather than approximates: a tag or event missing from
- * `tags.js`, any directive and every `unlowered` node
- * throw `X at File.mesa:L:C has no terminal lowering`, the first offender in
- * document order. `terminalOffenses` is the one list of them — the emitter
+ * It refuses rather than approximates: a tag or event missing from the
+ * target's tables, any directive and every `unlowered` node throw
+ * `X at File.mesa:L:C has no <target> lowering`, the first offender in
+ * document order. `hostOffenses` is the one list of them — the emitter
  * throws its head and the portability report (`scripts/corpus.mjs
- * --portability terminal`) tallies all of it, so the report cannot count a
+ * --portability <target>`) tallies all of it, so the report cannot count a
  * node the emitter would paint or miss one it refuses. A file with a
  * `<script module>` is not refused at compile: the compiler keeps that half
- * and moves the throw into the default export (`terminalRefusal`, `FJS-2182`).
+ * and moves the throw into the default export (`targetRefusal`, `FJS-2182`).
  *
  * The lines are built EAGERLY and the xNode only writes them. The head
  * declarations (`$$props`, `$$emit`, …) are emitted only when
  * `ctx.inuse` says a template expression reached for them, and the head
  * resolves before the body — a `detectDependency` made at write time would
  * come too late, which is why the DOM builder makes its own at build time.
- *
- * Nothing here names the engine: `tags.js` is pure data and the runtime is
- * reached only through the `$$tui` import the compiler adds.
  */
 
-import { xNode, Q, PRESERVE_WHITESPACE } from '../compiler.js'
+import { xNode, Q, PRESERVE_WHITESPACE, contentFallback } from '../compiler.js'
 import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind, SURFACES, SEE_THROUGH } from './tags.js'
 
 const IDENT = /^[A-Za-z_$][\w$]*$/
 
@@ -38,7 +36,7 @@ function q1(s) {
     .replace(/\n/g, '\\n').replace(/\r/g, '\\r') + "'"
 }
 
-const refusal = (what, loc) => `${what}${loc ? ` at ${loc}` : ''} has no terminal lowering`
+const refusalText = (t, what, loc) => `${what}${loc ? ` at ${loc}` : ''} has no ${t.name} lowering`
 
 /** The source spelling of a node the IR did not lower, for the refusal. */
 function spelling(u) {
@@ -46,7 +44,6 @@ function spelling(u) {
   switch (u.what) {
     case 'component':    return `<${n.name}>`
     case 'mesa-element': return `<mesa:${n.elArg}>`
-    case 'slot':         return n.type === 'node' ? '<slot>' : '{#slot}'
     case 'await':        return '{#await}'
     case 'snippet':      return '{#snippet}'
     case 'fragment':     return '{#fragment}'
@@ -74,7 +71,8 @@ function directiveShape(name) {
 // ─── what does not lower ──────────────────────────────────────────────────────
 
 /**
- * Every node in `ir` the terminal cannot paint, in document order, as
+ * Every node in `ir` the target cannot paint, in document order, then every
+ * `<style>` rule its stylesheet cannot (`cssOffense`), as
  * `{ what, shape, loc }`: `what` is the refusal's subject (`<table>`,
  * `bind:value`), `shape` the group a report counts it under (`<table>`,
  * `bind:`, `{...spread} on a component`).
@@ -90,8 +88,8 @@ const blank = (n) => n.kind === 'comment' ||
   (n.kind === 'text' && n.parts.every((p) => p.kind === 'static' && !p.value.trim()))
 
 /** The attribute `tags.js` says an image cannot be painted without, if `n` lacks it. */
-const missing = (n) => [TERMINAL_TAGS[n.tag]?.text].filter((a) => a && !n.attrs.some((x) => x.name === a))
-const paints = (n) => !!TERMINAL_TAGS[n.tag] && !missing(n).length
+const missing = (t, n) => [t.tags[n.tag]?.text].filter((a) => a && !n.attrs.some((x) => x.name === a))
+const paints = (t, n) => !!t.tags[n.tag] && !missing(t, n).length
 
 const ariaHidden = (n) => n.attrs.some((a) => a.name === 'aria-hidden' && a.value === 'true')
 
@@ -102,15 +100,15 @@ const ariaHidden = (n) => n.attrs.some((a) => a.name === 'aria-hidden' && a.valu
  * `aria-hidden="true"`. The author has said a reader needs nothing there —
  * the icon in an alert, a sort arrow beside a header — so the terminal paints
  * what assistive technology reads. Lexical: a component called inside one is
- * its own file and answers for itself. One answer for `terminalOffenses` and
+ * its own file and answers for itself. One answer for `hostOffenses` and
  * the emitter both, so the report cannot count a node the emitter drops.
  */
-export function terminalDropped(ir) {
+export function hostDropped(ir, t) {
   const dropped = new Set()
   const walk = (children, hidden) => eachNode(children, (n) => {
     if (n.kind !== 'element' && n.kind !== 'dynamic-element') return
     const h = hidden || ariaHidden(n)
-    if (h && n.kind === 'element' && !paints(n)) { dropped.add(n); return false }
+    if (h && n.kind === 'element' && !paints(t, n)) { dropped.add(n); return false }
     if (h && !hidden) { walk(n.children, true); return false }
   })
   walk(ir.children, false)
@@ -126,11 +124,11 @@ export function terminalDropped(ir) {
  * into it only until someone types, and a terminal writing it would overwrite
  * what was typed.
  */
-const isField = (n) => ['input', 'textarea'].includes(TERMINAL_TAGS[n.tag]?.role)
+const isField = (t, n) => ['input', 'textarea'].includes(t.tags[n.tag]?.role)
 // A `<progress>`'s children are the fallback a browser shows only when it
 // cannot draw the bar, and an `<svg>`'s are drawing, which a terminal shows
 // as the image's text; nothing in either is built or refused.
-const childless = (n) => ['progress', 'image'].includes(TERMINAL_TAGS[n.tag]?.role)
+const childless = (t, n) => ['progress', 'image'].includes(t.tags[n.tag]?.role)
 // The roles a person changes the value of, so the only ones a `bind:value`
 // hears back from.
 const CONTROLS = ['input', 'textarea', 'select']
@@ -146,7 +144,7 @@ const fieldText = (n) => n.children
  * which opens no line. The engine paints both, so the text that starts the
  * block loses its first and the text that ends it loses its last.
  */
-const preserves = (n) => PRESERVE_WHITESPACE.has(n.tag) && !isField(n)
+const preserves = (t, n) => PRESERVE_WHITESPACE.has(n.tag) && !isField(t, n)
 function preEdges(n, starts, ends) {
   const first = n.children[0]
   if (first?.kind === 'text' && first.parts[0]?.kind === 'static') starts.add(first)
@@ -161,10 +159,10 @@ function preEdges(n, starts, ends) {
  * paints none. One beside a component, a block or a slot cannot be judged
  * here, and the runtime drops it where it starts a line (`flow`).
  */
-function spacesIn(children) {
+function spacesIn(t, children) {
   const out = new Set()
   const real = children.filter((c) => c.kind !== 'comment' && c.kind !== 'snippet' && c.kind !== 'const')
-  const block = (c) => c?.kind === 'element' && !isInline(c.tag)
+  const block = (c) => c?.kind === 'element' && !t.isInline(c.tag)
   real.forEach((c, i) => {
     if (i === 0 || i === real.length - 1 || !blank(c)) return
     if (!block(real[i - 1]) && !block(real[i + 1])) out.add(c)
@@ -181,10 +179,10 @@ const TRAILING_NEWLINE = /\r?\n$/
  * check's, `value` a field's, and a file input takes none. A live `type`
  * cannot be judged here, so the runtime refuses that pairing when it binds.
  */
-function inputOffenses(n, add) {
+function inputOffenses(t, n, add) {
   const type = n.attrs.find((a) => a.name === 'type')
   if (typeof type?.value === 'object') return
-  const kind = inputKind(type?.value)
+  const kind = t.inputKind(type?.value)
   if (!kind) {
     add(`type="${type.value}" on <input>`, `type="${type.value}" on <input>`, n.loc)
     return
@@ -195,9 +193,9 @@ function inputOffenses(n, add) {
   }
 }
 
-const elementOffenses = (n, add) => {
+const elementOffenses = (t, n, add) => {
   for (const d of n.directives) add(d.name, directiveShape(d.name), d.loc)
-  for (const h of n.handlers) if (!TERMINAL_EVENTS[h.event]) add(`on:${h.event}`, `on:${h.event}`, h.loc)
+  for (const h of n.handlers) if (!t.events[h.event]) add(`on${h.event}`, `on${h.event}`, h.loc)
 }
 
 // `passive` promises a browser the handler never prevents a scroll; a
@@ -207,10 +205,10 @@ const listenerOptions = (h) => {
   return opts.length ? `, { ${opts.join(', ')} }` : ''
 }
 
-export function terminalOffenses(ir) {
+export function hostOffenses(ir, t) {
   const out = []
   const add = (what, shape, loc) => out.push({ what, shape, loc })
-  const dropped = terminalDropped(ir)
+  const dropped = hostDropped(ir, t)
   // A cell alone in its row already fills the row, so its colspan moves no
   // value under another header: the empty-state row every table carries.
   const alone = new Set()
@@ -218,37 +216,37 @@ export function terminalOffenses(ir) {
     if (dropped.has(n)) return false
     switch (n.kind) {
       case 'element':
-        if (!TERMINAL_TAGS[n.tag]) add(`<${n.tag}>`, `<${n.tag}>`, n.loc)
-        for (const a of missing(n)) add(`<${n.tag}> without ${a}`, `<${n.tag}> without ${a}`, n.loc)
+        if (!t.tags[n.tag]) add(`<${n.tag}>`, `<${n.tag}>`, n.loc)
+        for (const a of missing(t, n)) add(`<${n.tag}> without ${a}`, `<${n.tag}> without ${a}`, n.loc)
         if (n.tag === 'tr') {
           const cells = n.children.filter((c) => !blank(c))
           if (cells.length === 1 && cells[0].kind === 'element') alone.add(cells[0])
         }
         for (const a of n.attrs) {
-          if (!TERMINAL_TAGS[n.tag]?.refuses?.includes(a.name)) continue
+          if (!t.tags[n.tag]?.refuses?.includes(a.name)) continue
           if (a.name === 'colspan' && alone.has(n)) continue
           // A live `multiple` is checked when it is written, since the kit's
           // `<Select>` passes `multiple={multiple}`, false unless asked.
           if (a.name === 'multiple' && typeof a.value === 'object') continue
           add(`${a.name} on <${n.tag}>`, `${a.name} on <${n.tag}>`, n.loc)
         }
-        if (!CONTROLS.includes(TERMINAL_TAGS[n.tag]?.role)) {
+        if (!CONTROLS.includes(t.tags[n.tag]?.role)) {
           for (const b of n.binds) add(`bind:${b.name} on <${n.tag}>`, 'bind: on a non-control', b.loc)
-        } else if (n.tag === 'input') inputOffenses(n, add)
-        if (isField(n) && !hasValue(n) && liveText(n)) {
+        } else if (n.tag === 'input') inputOffenses(t, n, add)
+        if (isField(t, n) && !hasValue(n) && liveText(n)) {
           add(`live text in <${n.tag}> without value=`, `live text in <${n.tag}>`, n.loc)
           return false
         }
-        elementOffenses(n, add)
-        return childless(n) ? false : undefined
+        elementOffenses(t, n, add)
+        return childless(t, n) ? false : undefined
       // A tag that is a read is checked against the same table when it is
       // built, naming the tag; only a literal one can be refused here.
       case 'dynamic-element': {
         if (!n.tag) add('<mesa:element> without this', '<mesa:element> without this', n.loc)
-        else if (/^"[^"]*"$/.test(n.tag.code) && !TERMINAL_TAGS[JSON.parse(n.tag.code)]) {
+        else if (/^"[^"]*"$/.test(n.tag.code) && !t.tags[JSON.parse(n.tag.code)]) {
           add(`<${JSON.parse(n.tag.code)}>`, `<${JSON.parse(n.tag.code)}>`, n.loc)
         }
-        elementOffenses(n, add)
+        elementOffenses(t, n, add)
         return
       }
       // The window is the end of every event's path; a document and a body
@@ -256,7 +254,7 @@ export function terminalOffenses(ir) {
       case 'global': {
         const tag = `<mesa:${n.target}>`
         if (n.target !== 'window') add(tag, tag, n.loc)
-        elementOffenses(n, add)
+        elementOffenses(t, n, add)
         if (n.ref) add(`bind:this on ${tag}`, `bind:this on ${tag}`, n.loc)
         for (const b of n.binds) add(`bind:${b.name} on ${tag}`, `bind: on ${tag}`, b.loc)
         for (const a of n.attachments) add(`{@attach} on ${tag}`, `{@attach} on ${tag}`, a.loc)
@@ -264,9 +262,6 @@ export function terminalOffenses(ir) {
       }
       case 'text':
         for (const p of n.parts) if (p.kind === 'unlowered') add(spelling(p), spelling(p), p.loc)
-        return
-      case 'slot':
-        for (const d of n.directives) add(`${d.name} on <slot>`, 'attribute on <slot>', d.loc)
         return
       case 'comment':
       case 'portal':
@@ -285,23 +280,28 @@ export function terminalOffenses(ir) {
         return add(`{${n.kind}}`, `{${n.kind}}`, n.loc)
     }
   })
+  for (const r of ir.styles?.rules ?? []) {
+    const o = t.cssOffense(r.prelude)
+    if (o) add(o.what, o.shape, r.loc)
+  }
   return out
 }
 
 /** The refusal for `ir`'s first offender in document order, or null when it lowers. */
-export function terminalRefusal(ir) {
-  const [first] = terminalOffenses(ir)
-  return first ? refusal(first.what, first.loc) : null
+export function hostRefusal(ir, t) {
+  const [first] = hostOffenses(ir, t)
+  return first ? refusalText(t, first.what, first.loc) : null
 }
 
 // ─── emit ─────────────────────────────────────────────────────────────────────
 
-export function buildTerminal(ctx) {
+export function buildHost(ctx, t) {
   const ir = ctx.ir
   for (const d of ir.diagnostics ?? []) ctx.analysis.errors.push(d)
-  const refused = terminalRefusal(ir)
+  const refused = hostRefusal(ir, t)
   if (refused) throw new Error(refused)
-  const dropped = terminalDropped(ir)
+  const dropped = hostDropped(ir, t)
+  const scope = t.paintsCss ? ir.styles?.scope : null
 
   const seq = { el: 0, t: 0, m: 0, s: 0 }
   const lines = []
@@ -309,7 +309,7 @@ export function buildTerminal(ctx) {
   const dep = (e) => ctx.detectDependency(e.raw)
 
   const emitFragment = (children, ind) => {
-    line(ind, 'const $$b = $$tui.fragment();')
+    line(ind, 'const $$b = $$host.fragment();')
     emitChildren(children, '$$b', ind)
     line(ind, 'return $$b;')
   }
@@ -324,19 +324,22 @@ export function buildTerminal(ctx) {
   // A body's snippets are declared before anything in it, since a
   // `{@render}` may come first in the source.
   const emitChildren = (children, parent, ind) => {
-    for (const c of spacesIn(children)) spaces.add(c)
+    for (const c of spacesIn(t, children)) spaces.add(c)
     for (const c of children) if (c.kind === 'snippet') emitSnippet(c, c.varName, ind)
     for (const c of children) if (c.kind !== 'snippet' && !dropped.has(c)) emitNode(c, parent, ind)
   }
 
   // The DOM path's shape: an anchor, then one getter per argument, and the
   // content placed before the anchor.
-  const emitSnippet = (n, name, ind) => {
-    line(ind, `const ${name} = (${['__anchor', ...n.params].join(', ')}) => {`)
-    line(ind + 1, 'const $$b = $$tui.fragment();')
+  // Content passed to a component is marked, as on the DOM path, so the
+  // child can report what it drops.
+  const emitSnippet = (n, name, ind, content = false) => {
+    const fn = `(${['__anchor', ...n.params].join(', ')}) => {`
+    line(ind, `const ${name} = ${content ? `$$runtime.content(${fn}` : fn}`)
+    line(ind + 1, 'const $$b = $$host.fragment();')
     emitChildren(n.children, '$$b', ind + 1)
-    line(ind + 1, '$$tui.append(__anchor, $$b);')
-    line(ind, '};')
+    line(ind + 1, '$$host.append(__anchor, $$b);')
+    line(ind, content ? '});' : '};')
   }
 
   const emitRender = (n, parent, ind) => {
@@ -352,8 +355,8 @@ export function buildTerminal(ctx) {
   const emitDynamicElement = (n, parent, ind) => {
     const m = marker(parent, ind)
     dep(n.tag)
-    line(ind, `$$tui.keyBlock(${m}, () => (${n.tag.code}), ($$tag) => {`)
-    line(ind + 1, 'const $$b = $$tui.fragment();')
+    line(ind, `$$host.keyBlock(${m}, () => (${n.tag.code}), ($$tag) => {`)
+    line(ind + 1, 'const $$b = $$host.fragment();')
     emitElement(n, '$$b', ind + 1, '$$tag')
     line(ind + 1, 'return $$b;')
     line(ind, '});')
@@ -365,49 +368,61 @@ export function buildTerminal(ctx) {
       const key = IDENT.test(a.name) ? a.name : q1(a.name)
       return `${key}: ${a.value === true ? 'true' : q1(htmlEntitiesToText(a.value))}`
     })
-    const field = isField(n)
+    const field = isField(t, n)
     if (field && fieldText(n)) attrs.push(`value: ${q1(htmlEntitiesToText(fieldText(n)))}`)
-    line(ind, `const ${el} = $$tui.element(${tag}${attrs.length ? `, { ${attrs.join(', ')} }` : ''});`)
-    line(ind, `$$tui.append(${parent}, ${el});`)
+    // The scoped rules match on the component's class, which every element
+    // it writes carries beside its own, as on the DOM path.
+    const args = [tag]
+    if (attrs.length || scope) args.push(attrs.length ? `{ ${attrs.join(', ')} }` : '{}')
+    if (scope) args.push(q1(scope))
+    line(ind, `const ${el} = $$host.element(${args.join(', ')});`)
+    line(ind, `$$host.append(${parent}, ${el});`)
     // A live attribute is a static one that moves: the same owner, written
     // from a render effect guarded the way a text binding is.
     for (const a of n.attrs) {
       if (typeof a.value !== 'object') continue
       dep(a.value.expr)
       if (a.value.kind === 'spread') {
-        line(ind, `$$tui.spread(${el}, () => (${a.value.expr.code}));`)
+        line(ind, `$$host.spread(${el}, () => (${a.value.expr.code}));`)
         continue
       }
       line(ind, '$$runtime.render((__prev) => {')
       line(ind + 1, `var __a; try { __a = (${a.value.expr.code}); } catch (e) { __a = $$runtime.contain(e, __prev.a); }`)
-      line(ind + 1, `if (__prev.a !== __a) $$tui.set_attribute(${el}, ${q1(a.name)}, __prev.a = __a);`)
+      line(ind + 1, `if (__prev.a !== __a) $$host.set_attribute(${el}, ${q1(a.name)}, __prev.a = __a);`)
       line(ind, '}, { a: undefined });')
     }
-    // `n.styles` and `n.classes` are CSS, and a terminal paints no CSS: they
-    // are inert here as a static `style` and the scoped rules are. A `class:`
-    // naming a surface or a see-through variant is the exception, as it is
-    // for the `class` attribute (`opaque`).
+    // A target that paints no CSS drops a `style:` as it does the `style`
+    // attribute and the scoped rules; its `class:` reaches it only for a name
+    // it paints, which for the terminal is a surface or a see-through variant,
+    // as for the `class` attribute (`opaque`).
+    if (t.paintsCss) for (const st of n.styles) {
+      dep(st.expr)
+      line(ind, '$$runtime.render((__prev) => {')
+      line(ind + 1, `var __s; try { __s = (${st.expr.code}); } catch (e) { __s = $$runtime.contain(e, __prev.s); }`)
+      line(ind + 1, `if (__prev.s !== __s) $$host.set_style(${el}, ${q1(st.prop)}, __prev.s = __s);`)
+      line(ind, '}, { s: undefined });')
+    }
     for (const c of n.classes) {
-      if (!SURFACES.includes(c.name) && !SEE_THROUGH.includes(c.name)) continue
+      if (!t.paintsClass(c.name)) continue
       dep(c.expr)
       line(ind, '$$runtime.render((__prev) => {')
       line(ind + 1, `var __c; try { __c = !!(${c.expr.code}); } catch (e) { __c = $$runtime.contain(e, __prev.c); }`)
-      line(ind + 1, `if (__prev.c !== __c) $$tui.toggle_class(${el}, ${q1(c.name)}, __prev.c = __c);`)
+      line(ind + 1, `if (__prev.c !== __c) $$host.toggle_class(${el}, ${q1(c.name)}, __prev.c = __c);`)
       line(ind, '}, { c: undefined });')
     }
-    if (preserves(n)) { preEdges(n, startsPre, endsPre); inPre++ }
-    if (!field && !childless(n)) emitChildren(n.children, el, ind)
-    if (preserves(n)) inPre--
+    if (preserves(t, n)) { preEdges(n, startsPre, endsPre); inPre++ }
+    if (!field && !childless(t, n)) emitChildren(n.children, el, ind)
+    if (preserves(t, n)) inPre--
     for (const h of n.handlers) {
       dep(h.expr)
-      line(ind, `$$tui.on(${el}, '${h.event}', ${h.expr.code}${listenerOptions(h)});`)
+      line(ind, `$$host.on(${el}, '${h.event}', ${h.expr.code}${listenerOptions(h)});`)
     }
     for (const b of n.binds) {
-      if (b.name !== 'group') { line(ind, `$$tui.bind(${el}, ${q1(b.name)}, ${b.getter}, ${b.setter});`); continue }
+      if (b.name !== 'group') { line(ind, `$$host.bind(${el}, ${q1(b.name)}, ${b.getter}, ${b.setter});`); continue }
       const v = b.value
       if (typeof v === 'object' && v) dep(v.expr)
       const value = typeof v === 'string' ? q1(htmlEntitiesToText(v)) : v && typeof v === 'object' ? `(${v.expr.code})` : `${el}.value`
-      line(ind, `$$tui.bind(${el}, 'group', ${b.getter}, ${b.setter}, () => ${value});`)
+      line(ind, `$$host.bind(${el}, 'group', ${b.getter}, ${b.setter}, () => ${value});`)
     }
     if (n.ref) line(ind, `${n.ref}(${el});`)
     // The DOM path's owner, handed the renderable: it waits for mount the
@@ -430,10 +445,10 @@ export function buildTerminal(ctx) {
     if (n.static) {
       const value = parts.map((p) => p.value).join('')
       if (!value.trim()) {
-        if (spaces.has(n)) line(ind, `$$tui.append(${parent}, $$tui.text(' '));`)
+        if (spaces.has(n)) line(ind, `$$host.append(${parent}, $$host.text(' '));`)
         return
       }
-      line(ind, `$$tui.append(${parent}, $$tui.text(${q1(htmlEntitiesToText(value))}));`)
+      line(ind, `$$host.append(${parent}, $$host.text(${q1(htmlEntitiesToText(value))}));`)
       return
     }
     // One template literal for the whole text, each hole guarded on its own —
@@ -447,13 +462,13 @@ export function buildTerminal(ctx) {
     liveText(parent, ind, tpl)
   }
 
-  const liveText = (parent, ind, value, node = "$$tui.text('')") => {
+  const liveText = (parent, ind, value, node = "$$host.text('')") => {
     const t = `$$t${seq.t++}`
     line(ind, `const ${t} = ${node};`)
-    line(ind, `$$tui.append(${parent}, ${t});`)
+    line(ind, `$$host.append(${parent}, ${t});`)
     line(ind, '$$runtime.render((__prev) => {')
     line(ind + 1, `var __a; try { __a = ${value}; } catch (e) { __a = $$runtime.contain(e, __prev.a); }`)
-    line(ind + 1, `if (__prev.a !== __a) $$tui.set_text(${t}, __prev.a = __a);`)
+    line(ind + 1, `if (__prev.a !== __a) $$host.set_text(${t}, __prev.a = __a);`)
     line(ind, "}, { a: '' });")
   }
 
@@ -461,15 +476,15 @@ export function buildTerminal(ctx) {
   // since a terminal has text and no markup.
   const emitHtml = (n, parent, ind) => {
     dep(n.value)
-    let value = `$$tui.markupText((${n.value.code}), ${inPre > 0})`
+    let value = `$$host.markupText((${n.value.code}), ${inPre > 0})`
     if (endsPre.has(n)) value += `.replace(${TRAILING_NEWLINE}, '')`
-    liveText(parent, ind, value, '$$tui.markup()')
+    liveText(parent, ind, value, '$$host.markup()')
   }
 
   const marker = (parent, ind) => {
     const m = `$$m${seq.m++}`
-    line(ind, `const ${m} = $$tui.marker();`)
-    line(ind, `$$tui.append(${parent}, ${m});`)
+    line(ind, `const ${m} = $$host.marker();`)
+    line(ind, `$$host.append(${parent}, ${m});`)
     return m
   }
 
@@ -484,7 +499,7 @@ export function buildTerminal(ctx) {
       if (n.else) tests.push(`return ${n.branches.length};`)
       select = `() => { ${tests.join(' ')} }`
     }
-    line(ind, `$$tui.ifBlock(${m}, ${select}, [`)
+    line(ind, `$$host.ifBlock(${m}, ${select}, [`)
     const blocks = n.branches.map((b) => b.children)
     if (n.else) blocks.push(n.else)
     blocks.forEach((children, i) => {
@@ -498,7 +513,7 @@ export function buildTerminal(ctx) {
   const emitKey = (n, parent, ind) => {
     const m = marker(parent, ind)
     dep(n.key)
-    line(ind, `$$tui.keyBlock(${m}, () => (${n.key.code}), () => {`)
+    line(ind, `$$host.keyBlock(${m}, () => (${n.key.code}), () => {`)
     emitFragment(n.children, ind + 1)
     line(ind, '});')
   }
@@ -516,7 +531,7 @@ export function buildTerminal(ctx) {
         : `(${params}) => (${n.key.code})`
     }
     for (const [outer, name] of n.lifts) line(ind, `const ${name} = $$runtime.createKeyedEquals(() => ${outer});`)
-    line(ind, `$$tui.eachBlock(${m}, () => (${n.items.code}), ${keyFn}, (${params}) => {`)
+    line(ind, `$$host.eachBlock(${m}, () => (${n.items.code}), ${keyFn}, (${params}) => {`)
     if (n.item.pattern) {
       line(ind + 1, `const ${n.item.fn} = () => { const ${n.item.pattern} = ${itemParam}(); return { ${n.item.names.join(', ')} }; };`)
     }
@@ -533,38 +548,33 @@ export function buildTerminal(ctx) {
   // registry is keyed by that marker, so each call gets one of its own.
   const emitComponent = (n, parent, ind) => {
     const m = marker(parent, ind)
-    const props = n.props.map((p) => {
-      const key = IDENT.test(p.name) ? p.name : q1(p.name)
-      if (p.value === true) return `${key}: true`
-      if (typeof p.value === 'string') return `${key}: ${q1(p.value)}`
+    const keyOf = (name) => (IDENT.test(name) ? name : q1(name))
+    const values = n.props.map((p) => {
+      if (p.value === true) return 'true'
+      if (typeof p.value === 'string') return q1(p.value)
       dep(p.value.expr)
-      return `${key}: ${p.value.expr.code}`
+      return p.value.expr.code
     })
+    const props = n.props.map((p, i) => `${keyOf(p.name)}: ${values[i]}`)
     // Spreads first and the written props last, so a written prop wins, as
     // on the DOM path.
     for (const e of n.spreads) dep(e)
     // A snippet passed to a component is declared in the calling scope, which
     // it closes over, under a name of its own: two calls may each take a `row`.
+    // A prop written under the same name is the override and the content its
+    // fallback, as on the DOM path.
     for (const s of n.snippets) {
       const name = `$$snip${seq.s++}_${s.name}`
-      emitSnippet(s, name, ind)
-      props.push(`${IDENT.test(s.name) ? s.name : q1(s.name)}: ${name}`)
+      emitSnippet(s, name, ind, true)
+      const written = n.props.findIndex((p) => p.name === s.name)
+      if (written === -1) props.push(`${keyOf(s.name)}: ${name}`)
+      else props[written] = `${keyOf(s.name)}: ${contentFallback(values[written], name)}`
     }
     const literal = `{${props.join(', ')}}`
     const obj = n.spreads.length
       ? `Object.assign({}, ${n.spreads.map((e) => `(${e.code})`).join(', ')}, ${literal})`
       : literal
-    const slots = Object.keys(n.slots)
-    if (!slots.length) line(ind, `${n.call}(${m}, ${obj}, null);`)
-    else {
-      line(ind, `${n.call}(${m}, ${obj}, {`)
-      slots.forEach((name, i) => {
-        line(ind + 1, `${IDENT.test(name) ? name : q1(name)}: () => {`)
-        emitFragment(n.slots[name], ind + 2)
-        line(ind + 1, i < slots.length - 1 ? '},' : '}')
-      })
-      line(ind, '});')
-    }
+    line(ind, `${n.call}(${m}, ${obj}, null);`)
     // The child's registry is found by its anchor, so every call below needs
     // it registered first; the order is the DOM path's.
     const live = n.spreads.length || n.props.some((p) => typeof p.value === 'object')
@@ -576,21 +586,11 @@ export function buildTerminal(ctx) {
     if (live) line(ind, `$$runtime.createEffect(() => { $$runtime.pushProps(${m}, ${obj}); });`)
   }
 
-  const emitSlot = (n, parent, ind) => {
-    ;(ctx.slotNames ??= new Set()).add(n.name)
-    const m = marker(parent, ind)
-    const block = `__block?.[${q1(n.name)}]`
-    if (!n.fallback.length) { line(ind, `$$tui.slot(${m}, ${block}, null);`); return }
-    line(ind, `$$tui.slot(${m}, ${block}, () => {`)
-    emitFragment(n.fallback, ind + 1)
-    line(ind, '});')
-  }
-
   // Wired where it is written, so it lives as long as the block around it.
   const emitGlobal = (n, ind) => {
     for (const h of n.handlers) {
       dep(h.expr)
-      line(ind, `$$tui.onWindow('${h.event}', ${h.expr.code}${listenerOptions(h)});`)
+      line(ind, `$$host.onWindow('${h.event}', ${h.expr.code}${listenerOptions(h)});`)
     }
   }
 
@@ -603,7 +603,6 @@ export function buildTerminal(ctx) {
       case 'each':      return emitEach(n, parent, ind)
       case 'key':       return emitKey(n, parent, ind)
       case 'component': return emitComponent(n, parent, ind)
-      case 'slot':      return emitSlot(n, parent, ind)
       case 'render':    return emitRender(n, parent, ind)
       case 'html':      return emitHtml(n, parent, ind)
       case 'dynamic-element': return emitDynamicElement(n, parent, ind)
@@ -613,16 +612,18 @@ export function buildTerminal(ctx) {
       // so the children paint where the portal is written, beside the
       // element it was opened from in every kit use.
       case 'portal':    return emitChildren(n.children, parent, ind)
-      default:          throw new Error(`terminal emitter reached a ${n.kind} node that terminalOffenses passed`)
+      default:          throw new Error(`${t.name} emitter reached a ${n.kind} node that hostOffenses passed`)
     }
   }
 
-  line(0, 'const $$parentElement = $$tui.fragment();')
+  line(0, 'const $$parentElement = $$host.fragment();')
   emitChildren(ir.children, '$$parentElement', 0)
-  line(0, '$$tui.append(__anchor, $$parentElement);')
+  line(0, '$$host.append(__anchor, $$parentElement);')
 
-  // The scoped rules are handed back rather than emitted: a terminal paints
-  // no CSS, and a caller that asked for them can still read them.
+  // The scoped rules are handed back rather than emitted, whatever `css`
+  // says: an engine that paints them reads its stylesheet from the bundle,
+  // which a build assembles (`scripts/host-tree.js`), and has no call that
+  // adds one at runtime.
   if (ctx.css?.active?.()) {
     const style = ctx.css.getContent()
     if (style) ctx.css.result = style
@@ -630,7 +631,7 @@ export function buildTerminal(ctx) {
 
   const runtime = xNode.block({ scope: true })
   ctx.module.body.push(runtime)
-  runtime.push(xNode('terminal', { lines }, (w, n) => {
+  runtime.push(xNode('host', { lines }, (w, n) => {
     for (const [ind, text] of n.lines) {
       w.indent = ind
       w.writeLine(text)

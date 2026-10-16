@@ -143,7 +143,7 @@ const TOP = [
     'A named database. `driver` is sqlite (default), jsonl or trail; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.',
     'database logs {\n  path   env("LOGS_PATH", "./logs.db")\n  driver jsonl\n}',
     {
-      seeAlso: ['db', 'trail'],
+      seeAlso: ['db', 'model:trail'],
       values: [
         vals(
           'driver',
@@ -184,7 +184,7 @@ const TOP = [
     'A claim the principal carries that is not a column of the `@@auth` model, so `auth().<name>` is graded rather than compiling to NULL. Bare, it is a name and the app resolves the value per request — a cart token, a device id. With `from`, the value is read per request off the one row whose `<subject>` points at the caller — the row\'s primary key, or `<column>` — so a role held on another model (an Employee, a Customer) needs no resolver. The subject must be a key to the `@@auth` model and unique; a caller with no row holds null.',
     'claim cartToken\nclaim employeeId from Employee(userId)\nclaim siteId     from Employee(userId).siteId',
     {
-      seeAlso: ['auth', 'allow'],
+      seeAlso: ['auth', 'model:allow'],
       context: 'model User { id Int @id  @@auth }\nmodel Employee {\n  id     Int  @id\n  userId Int  @unique\n  user   User @relation(fields: [userId], references: [id])\n  siteId Int\n}',
       note: 'Declared and never used in a policy is reported by `litestone advise`; used and never declared is a parse-time refusal.'
     }
@@ -204,8 +204,8 @@ const TOP = [
     'schema',
     'declare',
     '<name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] }',
-    'A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`. A column takes `@money`, `@scale` and `@unit` and no other field attribute, so a view summing a `@money` column can say its result is money.',
-    'view accountStats {\n  accountId Int\n  total     Int\n  @@sql("SELECT accountId, COUNT(*) AS total FROM Event GROUP BY accountId")\n  @@gate("5")\n}'
+    'A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate(0)` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`. A column takes `@money`, `@scale` and `@unit` and no other field attribute, so a view summing a `@money` column can say its result is money.',
+    'view accountStats {\n  accountId Int\n  total     Int\n  @@sql("SELECT accountId, COUNT(*) AS total FROM Event GROUP BY accountId")\n  @@gate(5)\n}'
   ),
 
   t(
@@ -215,7 +215,7 @@ const TOP = [
     '<Name> { values… }',
     'A closed value set. Reaches the client as a $def, so a generated form gets a select rather than a text box, and @@transitions can name its values. A member may carry `@label("…")` and nothing else — that is the caption a select shows.',
     'enum Plan { free pro @label("Professional") enterprise }',
-    { seeAlso: ['transitions', 'label'] }
+    { seeAlso: ['transitions', 'field:label'] }
   ),
 
   t(
@@ -227,7 +227,7 @@ const TOP = [
     'valueset TaskTag {\n  source Tag\n  value  label\n  order  recent(Todo.tagLabel, createdAt), sortOrder, label\n}',
     {
       context: 'model Tag {\n  id        Int    @id\n  label     String @unique\n  sortOrder Int    @default(0)\n}\n\nmodel Todo {\n  id        Int      @id\n  tagLabel  String?  @values(TaskTag)\n  createdAt DateTime @default(now())\n}',
-      seeAlso: ['values', 'scope']
+      seeAlso: ['values', 'model:scope']
     }
   ),
 
@@ -276,8 +276,8 @@ const TOP = [
     'extend model Session {\n  user User @relation(fields: [userId], references: [id], onDelete: Cascade)\n  @@index([userId])\n}',
     {
       context:
-        'model Session {\n  id     String @id @default(uuid())\n  userId String\n  @@gate("8")\n}\nmodel User {\n  id String @id @default(uuid())\n  @@gate("4")\n}',
-      seeAlso: ['trait'],
+        'model Session {\n  id     String @id @default(uuid())\n  userId String\n  @@gate(8)\n}\nmodel User {\n  id String @id @default(uuid())\n  @@gate(4)\n}',
+      seeAlso: ['schema:trait'],
       note: "The opposite direction of @@trait, and both exist: a trait is opted INTO by the model, which needs the model's author to have known about it. An extend does not. @@tenant(none) and @@trail(audit) are the other two an app usually adds here. Applied before traits, so an extend may carry a @@trait(T) of its own."
     }
   ),
@@ -432,7 +432,7 @@ const FIELD = [
     '',
     "The mirror of @computed: a value the caller WRITES that is never stored and never read back. Junction validates it with the model's own rules and lifts it onto ctx.transients, so nothing below the API boundary sees it. Takes no arguments.",
     'notifyOwner Boolean @transient',
-    { seeAlso: ['computed', 'system', 'guarded'] }
+    { seeAlso: ['computed', 'field:system', 'guarded'] }
   ),
   t(
     'derived',
@@ -487,7 +487,7 @@ const FIELD = [
     'Left out of results unless asked for. Bare: skipped in lists, present on findUnique. `(all)` means never, unless explicitly selected. A visibility default, not a boundary — it does not refuse a write.',
     'notes String @omit',
     {
-      seeAlso: ['guarded', 'system'],
+      seeAlso: ['guarded', 'field:system'],
       values: [vals('level', ['all'], 'notes String @omit(%s)')]
     }
   ),
@@ -498,7 +498,7 @@ const FIELD = [
     '',
     'A system-context lock, BOTH directions: absent from reads and refused on writes by name, unless the call names the column in system: [...] or runs asSystem(). Takes no argument — not a level (@guarded(5) does not parse) and not a scope (@guarded(all) was accepted for a while and did nothing). An explicit select does not unlock it; @omit(all) is the word for a column a caller may read by naming it, and the two stack. A required @guarded column makes the model uncreatable below level 8 unless the application fills it: naming the column in system: [...] on the create keeps the gate, the policies and the audit actor and writes that one column — the digest on a grant row is the shape. It is not exclusive with @encrypted — @secret expands into exactly that pair — but writing both by hand is @secret spelled out.',
     'internalScore Int @guarded',
-    { seeAlso: ['system', 'encrypted', 'secret', 'omit', 'allow'] }
+    { seeAlso: ['field:system', 'encrypted', 'secret', 'omit', 'field:allow'] }
   ),
   t(
     'system',
@@ -510,13 +510,25 @@ const FIELD = [
     { seeAlso: ['guarded', 'transient', 'immutable'] }
   ),
   t(
+    'local',
+    'field',
+    'protect',
+    '',
+    "The app's own column on a @@mirror model, which every other stored column there is not: the Provider's columns are @system by derivation, so a caller's write to one is refused rather than overwritten by the next sync. A caller writes this one under the usual rules, and a claimed model's forward writes it as the caller after the Provider's row lands. Refused off a @@mirror model, on its key, on the @id, on a relation, and beside @system.",
+    'starred Boolean @default(false) @local',
+    {
+      extraFields: 'externalId String\n  @@mirror(key: externalId)',
+      seeAlso: ['model:mirror', 'field:system']
+    }
+  ),
+  t(
     'immutable',
     'field',
     'protect',
     '[(after: <move>)]',
     "Written once, at create, and never again by anybody — an update payload naming the column is refused by NAME, whether or not the value differs. What a document is: an invoice's number, the instant it was issued and the total it was issued for. It is the constraint tier, so asSystem() does not drop it, where the gate, the row policies and @guarded all fall away there; a raw UPDATE still bypasses it, as it does a @check. Reaches the client as readOnly in the UPDATE schema alone, so a generated create form still offers the box. On a model with a @seals move the bare word freezes at the seal instead. (after: <move>) names a later instant: writable until that move's target, refused from there and from every state reachable from it — a signature written by the accept, after the terms sealed at approve.",
     'issuedAt DateTime @immutable',
-    { seeAlso: ['system', 'guarded', 'version'] }
+    { seeAlso: ['field:system', 'guarded', 'version', 'seals'] }
   ),
   t(
     'sealed',
@@ -542,7 +554,7 @@ const FIELD = [
     'hostname String @capability',
     // The probe needs the model's own switch: without it the column tier is a
     // declaration that means nothing, and the parser refuses it by name.
-    { seeAlso: ['capabilities', 'guarded', 'allow'], extraFields: '@@capabilities' }
+    { seeAlso: ['capabilities', 'guarded', 'field:allow'], extraFields: '@@capabilities' }
   ),
   t(
     'encrypted',
@@ -570,7 +582,7 @@ const FIELD = [
     'A column about a person. The audit trail logs it as [personal] in place of the value, and a redacted copy drops it. It does not hide the column from a reader — that is @omit and the gate. The category is one of a closed list and feeds the data map only; free text that fits none is a bare @personal.',
     'email String @personal(contact)',
     {
-      seeAlso: ['person', 'trail', 'omit'],
+      seeAlso: ['person', 'model:trail', 'omit'],
       values: [
         vals(
           'category',
@@ -588,7 +600,7 @@ const FIELD = [
     '[(rotate: …)]',
     'Expands at parse into @encrypted @guarded @trail(<trail db>). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.',
     'apiKey String @secret',
-    { seeAlso: ['encrypted', 'guarded', 'trail'] }
+    { seeAlso: ['encrypted', 'guarded', 'field:trail'] }
   ),
   t(
     'check',
@@ -605,7 +617,7 @@ const FIELD = [
     "('read'|'write'|'all', <expression>)",
     'Field-level access: the column is stripped from results, or dropped from write data, when the expression is false. Several @allow on one field OR together. asSystem() bypasses them.',
     "salary Int @allow('read', auth().isAdmin)",
-    { seeAlso: ['guarded', 'system', 'allow'] }
+    { seeAlso: ['guarded', 'field:system', 'model:allow'] }
   ),
 
   // stamp
@@ -624,7 +636,7 @@ const FIELD = [
     '[(<authField>)]',
     'Stamped with the calling principal on every update.',
     'updatedById Int? @updatedBy',
-    { seeAlso: ['createdBy', 'updatedBy'] }
+    { seeAlso: ['field:createdBy', 'model:updatedBy'] }
   ),
   t(
     'createdBy',
@@ -633,7 +645,7 @@ const FIELD = [
     '[(<authField>)]',
     'Stamped with the calling principal on create.',
     'createdById Int? @createdBy',
-    { seeAlso: ['updatedBy', 'createdBy'] }
+    { seeAlso: ['field:updatedBy', 'model:createdBy'] }
   ),
   t(
     'version',
@@ -676,7 +688,7 @@ const FIELD = [
     'field',
     'shape',
     '(<symbol>)',
-    "What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Five dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, ratio %. mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.",
+    "What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Five dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, ratio \"%\" (quoted, since % is not an identifier: @unit(\"%\")). mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.",
     'timeout Int @unit(s)',
     { seeAlso: ['scale', 'money'] }
   ),
@@ -687,7 +699,7 @@ const FIELD = [
     '(<latKey>, <lngKey>)',
     "The Json value on this field is a coordinate, and these two of its keys carry it. The whole declaration of one — an object, two numeric keys, ±90 / ±180, both or neither — because that floor is the same in every application, which is why the attribute carries it rather than a shape each schema declares (@money is the same move). The keys are NAMED because the value is the app's: @point(lat, lng) and @point(latitude, longitude) are both ordinary, and inferring them from the shape is silently wrong for the model whose `lat` is a lathe setting. Two VIRTUAL generated columns are emitted beside it, <field><Key>, and a composite index over the pair: they store nothing and the index holds the numbers, which is what lets a point live in one JSON value and still be pruned by a b-tree. A query names those COLUMNS — a WHERE that repeats json_extract() reads as a full SCAN even with the index present, because SQLite matches the column and not the expression. The shape and range CHECKs are emitted with coalesce(), since a CHECK fails only on FALSE and the natural spelling admits every object that has no coordinate at all. @type beside it grades the REST of the object and may only NARROW the range; not with @encrypted, whose bytes json_extract reads as no location.",
     'site Json @point(lat, lng)',
-    { seeAlso: ['type', 'generated'] }
+    { seeAlso: ['field:type', 'generated'] }
   ),
   t(
     'vector',
@@ -786,13 +798,13 @@ const FIELD = [
     'required',
     'field',
     'validate',
-    '[([where: <expr>][, message: "…"])]',
+    '[([where: <expr>][, "message"])]',
     'Which rows need a value in this column, and what to say when one does not. Bare it only carries the MESSAGE — the absence of `?` is the rule — and it is refused on an optional field, where that message could never fire. `where:` is the other half and wants the opposite type: it MAKES the column required, in the rows the predicate admits, so it needs the `?` the bare form forbids. The predicate reads this row\'s own columns and nothing else, because it becomes a CHECK on the table — which is the reach a boundary rule cannot have, holding against a migration, a seed, asSystem() and a raw statement. auth(), now(), check() and a relation hop are each refused by name: a CHECK sees no caller, no clock it can be trusted with, and no other table. The boundary refuses FIRST and names the FIELD, which is the half a table constraint cannot do — SQLite reports a violation by the constraint\'s source text and has no field to blame. Adding one to a populated table whose rows do not satisfy it fails the migration with nothing applied. Either way the message reaches the browser as x-messages and renders in <Form>, beside the control it is about.',
     'trackingCode String? @required(where: status == \'shipped\', "A shipped order needs a tracking code")',
     {
       context:     'enum OrderStatus { draft shipped cancelled }',
       extraFields: 'status OrderStatus @default(draft)',
-      seeAlso:     ['check', 'label'],
+      seeAlso:     ['field:check', 'field:label'],
     }
   ),
   t(
@@ -968,7 +980,7 @@ const MODEL = [
     '([field, …])',
     "The row's identity IS the tuple. Sugar over `@id` on each named field, which is a shape every reader already handles, so a composite key works through `findUnique`, a relation, `include` and the migrator with nothing taught to any of them. What it adds over marking the fields is the key's column ORDER: a primary key builds an implicit index and an implicit index is prefix-matched, so `(orgId, userId)` answers `WHERE orgId = ?` and the swap does not — and field DECLARATION order is a different fact, which is why `litestone introspect` read one key and wrote the other. It is also the spelling Prisma, Rails and SQL all use, so an import carries the key instead of inventing a surrogate. Refused beside a field-level `@id` (two answers to one question), declared twice, and over a nullable field, a relation, an array or a virtual column — a primary key is over columns, and SQLite permits a NULL in one on a rowid table where this does not.",
     '@@id([orgId, userId])',
-    { extraFields: 'orgId String\n  userId String', omitId: true, seeAlso: ['id', 'unique'] }
+    { extraFields: 'orgId String\n  userId String', omitId: true, seeAlso: ['field:id', 'model:unique'] }
   ),
   t(
     'unique',
@@ -1004,7 +1016,7 @@ const MODEL = [
     '([field, …][, optional: true])',
     'An exclusive arc — several optional foreign keys, of which exactly one is set. The answer to "this row points at an Order OR a Product" that keeps a real foreign key, a real `onDelete` and a real `include`, where a polymorphic (typeName, id) pair keeps none of the three and the database cannot refuse a dangling one. Emitted as a table CHECK counting the non-null members, so it holds against a migration, a seed, an atomic operator and `asSystem()`, which drops the gate and every row policy and cannot drop a CHECK. `optional: true` relaxes it to at most one, for a row that may point at nothing. Members must exist and be optional; a required member is always the answer and is refused at parse. Costs one column per member and does not scale far — needing many is the signal the target set is open, which no relation can serve.',
     '@@arc([orderId, productId])',
-    { extraFields: 'orderId Int?\n  productId Int?', seeAlso: ['check', 'relation'] }
+    { extraFields: 'orderId Int?\n  productId Int?', seeAlso: ['model:check', 'relation'] }
   ),
   t(
     'relator',
@@ -1018,7 +1030,7 @@ const MODEL = [
         'model Workspace { id Int @id\n  members Example[] }\nmodel User { id Int @id\n  members Example[] }',
       extraFields:
         'workspaceId Int\n  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)\n  userId Int\n  user User @relation(fields: [userId], references: [id], onDelete: Cascade)',
-      seeAlso: ['unique', 'index', 'arc', 'relation']
+      seeAlso: ['model:unique', 'index', 'arc', 'relation']
     }
   ),
   t(
@@ -1080,7 +1092,7 @@ const MODEL = [
     "This model's rows may be written with no server reachable: the client holds the write and replays it when one is. The argument is a COLLISION policy, or `read`, the one member that states the direction instead: the table is HELD on a device and never written there — a roster, a reference table, a published schedule. `read` holds no write, carries no revision and needs no @version, and a create form for the model offers no client-minted key; a device keeps the table and a screen can read it with no network. The four collision policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. `field` carries the revision AND the row the write was made against, and compares them a column at a time: two people who edited different columns both win, and only a column they both moved is a conflict — so it needs @version for the same reason `refuse` does. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.",
     '@@sync(server)',
     {
-      seeAlso: ['gate', 'version', 'transitions'],
+      seeAlso: ['model:gate', 'version', 'transitions'],
       // `refuse` names a revision and the parser refuses it without one, so the
       // probe model needs the column or the catalog would be declaring a value
       // its own binding test cannot make parse.
@@ -1100,7 +1112,7 @@ const MODEL = [
     'Grade this model by CAPABILITY as well as by @@gate — both, ANDed, the gate as floor. A capability is a REFERENCE to something this schema already declares (an operation, a named move, a @capability column), so there is no list to keep in step and no enum. Bare covers create, update, delete and every named move; `(all)` adds read, which is opt-in because its refusal is the silent one — a write refusal throws and names itself, a missing read capability filters into an empty list with a 200.',
     '@@capabilities(all)',
     {
-      seeAlso: ['capability', 'gate', 'allow', 'transitions'],
+      seeAlso: ['capability', 'model:gate', 'model:allow', 'transitions'],
       values: [vals('scope', ['all'], '@@capabilities(%s)')]
     }
   ),
@@ -1115,7 +1127,7 @@ const MODEL = [
       context:
         'enum FieldKind { text number }\n\nmodel CustomField {\n  id    Int    @id\n  model String\n  key   String\n  type  FieldKind\n  slot  String?\n\n  @@unique([model, key])\n  @@unique([model, slot], nullsDistinct: true)\n}',
       extraFields: 'fields Json @default("{}")',
-      seeAlso: ['type', 'generated', 'index', 'gate']
+      seeAlso: ['field:type', 'generated', 'index', 'model:gate']
     }
   ),
   t(
@@ -1130,7 +1142,7 @@ const MODEL = [
       // `@@softDelete` model with no `deletedAt` is refused at parse, because
       // without the column every read answers an empty list with no error.
       extraFields: 'deletedAt DateTime?',
-      seeAlso: ['unique', 'hardDelete', 'keep'],
+      seeAlso: ['field:unique', 'hardDelete', 'keep'],
       values: [vals('mode', ['cascade'], '@@softDelete(%s)')]
     }
   ),
@@ -1163,7 +1175,7 @@ const MODEL = [
     '@@effective(from: effectiveFrom, to: effectiveTo)',
     {
       extraFields: 'effectiveFrom DateTime\n  effectiveTo   DateTime?',
-      seeAlso: ['expires', 'unique', 'check']
+      seeAlso: ['expires', 'model:unique', 'model:check']
     }
   ),
   t(
@@ -1188,19 +1200,19 @@ const MODEL = [
     'access',
     '("<read>.<create>.<update>.<delete>" | "<n>")',
     'The standing a caller needs, per operation, on the 0–9 ladder — read first, then create, update, delete. A missing position cascades from the left, so "4" is 4 for all four. Levels must hold read ≤ update ≤ delete and create ≤ delete (8 and 9 are sentinels and may appear anywhere), because a model easier to delete than to read is a mistake every time. Create is free relative to read, so a drop box — many may write, few may read — is "6.4.9.9", and a caller below the read level is refused by name rather than filtered to an empty list. A gate REFUSES — it throws naming the model and the level, where a policy filters. A schema declaring any gate auto-installs GatePlugin, since a declared-but-unenforced gate is fail-open. It is per MODEL, so a gate on the table getLevel reads from lets any signed-in caller rewrite anyone else\'s standing.',
-    '@@gate("2.4.4.5")',
-    { seeAlso: ['allow', 'deny'] }
+    '@@gate(2.4.4.5)',
+    { seeAlso: ['model:allow', 'deny'] }
   ),
   t(
     'export',
     'model',
     'access',
     '(ndjson | csv [, since: <column>])',
-    'This dataset may leave in bulk. It adds NO way in: an export is a paginated scoped read, so the rows that leave are exactly the ones the named principal could read one at a time — the @@gate refuses below its level, the row policies narrow the file rather than failing it, a field policy or @guarded column is simply absent, and under tenancy the extract is one tenant\'s because the client is. A @@gate is REQUIRED beside it, even where the schema guards nothing else: a bulk read of every row is a different proposition from one row at a time, and @@gate("0") is how a schema says this dataset is public on purpose. `since:` names a sortable declared column and is what makes an incremental run expressible — the column decides what a resumed run CATCHES, so a createdAt cursor sees new rows and not edits to old ones. Protected columns (@encrypted, @secret, @guarded) are omitted from an extract even for a caller who may read them, because a screen and a file that leaves the machine are the same principal at a different blast radius; keeping them is explicit and is recorded in the manifest. Legal on a view too.',
+    'This dataset may leave in bulk. It adds NO way in: an export is a paginated scoped read, so the rows that leave are exactly the ones the named principal could read one at a time — the @@gate refuses below its level, the row policies narrow the file rather than failing it, a field policy or @guarded column is simply absent, and under tenancy the extract is one tenant\'s because the client is. A @@gate is REQUIRED beside it, even where the schema guards nothing else: a bulk read of every row is a different proposition from one row at a time, and @@gate(0) is how a schema says this dataset is public on purpose. `since:` names a sortable declared column and is what makes an incremental run expressible — the column decides what a resumed run CATCHES, so a createdAt cursor sees new rows and not edits to old ones. Protected columns (@encrypted, @secret, @guarded) are omitted from an extract even for a caller who may read them, because a screen and a file that leaves the machine are the same principal at a different blast radius; keeping them is explicit and is recorded in the manifest. Legal on a view too.',
     '@@export(ndjson, since: updatedAt)',
     {
-      extraFields: 'updatedAt DateTime @updatedAt\n  @@gate("4")',
-      seeAlso: ['gate', 'allow', 'view']
+      extraFields: 'updatedAt DateTime @updatedAt\n  @@gate(4)',
+      seeAlso: ['model:gate', 'model:allow', 'view']
     }
   ),
   t(
@@ -1210,7 +1222,7 @@ const MODEL = [
     "('read'|'create'|'update'|'post-update'|'delete'|'write'|'all', <expression>[, message])",
     "A row policy: compiled into the WHERE. Allows OR together within one operation, so a wrong policy is an empty screen with a 200 rather than an error. Membership spells as `auth().id in memberIds`, the list always the right operand. `update` grades the row as it IS, before the write, so a PATCH moving a foreign key into somebody else's parent passes a rule reading that parent; `post-update` grades the row as it WOULD BE and rolls the write back when refused. `all` includes it and `write` (create, update, delete) does not.",
     "@@allow('read', ownerId == auth().id)",
-    { extraFields: 'ownerId Int', seeAlso: ['deny', 'gate', 'scope'] }
+    { extraFields: 'ownerId Int', seeAlso: ['deny', 'model:gate', 'model:scope'] }
   ),
   t(
     'deny',
@@ -1219,7 +1231,7 @@ const MODEL = [
     "('read'|…, <expression>[, message])",
     'The other half, and it is not sugar for a negated allow: a deny cannot be widened by another rule. Row tenancy desugars into @@deny for exactly that reason.',
     "@@deny('read', archived == true)",
-    { extraFields: 'archived Boolean @default(false)', seeAlso: ['allow', 'tenant'] }
+    { extraFields: 'archived Boolean @default(false)', seeAlso: ['model:allow', 'tenant'] }
   ),
   t(
     'scope',
@@ -1247,13 +1259,13 @@ const MODEL = [
     'transitions',
     'model',
     'access',
-    '(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …)',
-    "A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.",
+    '(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) | (<field>, declaredBy: Model, scope: <column>)',
+    "A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. `declaredBy:` is the machine a tenant edits: the field is a state's key, the moves are rows of the declaring model — `fromId?` (null is an entry, where a row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin — each move is checked inside the UPDATE's own WHERE, a create names one of its scope's entries or takes the only one, and a move is named for its target. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.",
     '@@transitions(status,\n    pay:    draft        -> paid,\n    ship:   paid         -> shipped,\n    cancel: [draft, paid] -> cancelled @gate(5))',
     {
       context: 'enum OrderStatus { draft paid shipped cancelled }',
       extraFields: 'status OrderStatus @default(draft)',
-      seeAlso: ['gate']
+      seeAlso: ['model:gate']
     }
   ),
 
@@ -1292,6 +1304,18 @@ const MODEL = [
     }
   ),
   t(
+    'mirror',
+    'model',
+    'operate',
+    '(key: <field>)',
+    "The rows are a Provider's: a third party is the system of record, and the named column holds its id for each row. Every stored column but the @id and a @local one is derived @system, so a caller's write to the Provider's data is refused by name rather than overwritten by the next sync. The key is one required String or Int, derived @immutable, and @unique unless a @@unique already names it (a key unique per account). missingSince DateTime? @system is derived for the sync to stamp a row the Provider stopped answering, which it never deletes. A relation keyed by the Provider's ids emits no foreign key, since the Provider sends a child before its parent; a dangling one reads as no row, and onDelete there is refused. No gate is derived: the key's own refusal already stops a caller's create. A connector's claim, bound in app wiring, forwards a default service's writes to the Provider and applies the row it answers.",
+    '@@mirror(key: externalId)',
+    {
+      extraFields: 'externalId String',
+      seeAlso: ['field:local', 'model:external', 'field:system']
+    }
+  ),
+  t(
     'anonymous',
     'model',
     'operate',
@@ -1300,7 +1324,7 @@ const MODEL = [
     '@@anonymous',
     {
       extraFields: 'rating Int\n  answeredOn String @date',
-      seeAlso: ['trail', 'createdBy', 'date']
+      seeAlso: ['model:trail', 'model:createdBy', 'date']
     }
   ),
   t(
@@ -1367,7 +1391,7 @@ const MOVE = [
     '(<0-9>)',
     "The level a caller needs to MAKE this move, a floor on top of the model's update level. @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller reaches it and asSystem() bypasses. With @system it must stay below 8, because 8 says no caller and @system says the application makes the move through one. Not the model's @@gate, which grades the four operations on every row.",
     '@@transitions(state, void: [draft, issued] -> void @gate(5))',
-    { context: MOVE_CONTEXT, extraFields: MOVE_FIELDS, seeAlso: ['transitions', 'system'] }
+    { context: MOVE_CONTEXT, extraFields: MOVE_FIELDS, seeAlso: ['transitions', 'move:system'] }
   ),
   t(
     'system',
@@ -1376,7 +1400,7 @@ const MOVE = [
     '',
     "The move is the APPLICATION's: a caller may ask for it and never make one, and the app states { system: true } on the call. The move still runs on the caller's own client, so the gate, the row policies and the audit actor all survive, which is the whole difference from asSystem(). Takes no argument. Combine with @gate(N) below 8 to say who may ask. Not the column's @system, which is a value the application writes.",
     '@@transitions(state, issue: draft -> issued @system @gate(5))',
-    { context: MOVE_CONTEXT, extraFields: MOVE_FIELDS, seeAlso: ['transitions', 'gate', 'guarded'] }
+    { context: MOVE_CONTEXT, extraFields: MOVE_FIELDS, seeAlso: ['transitions', 'move:gate', 'guarded'] }
   ),
   t(
     'seals',
@@ -1447,6 +1471,26 @@ export function lookup(word, level) {
   const w = String(word).replace(/^@@?/, '')
   const lvl = level ?? (String(word).startsWith('@@') ? 'model' : String(word).startsWith('@') ? 'field' : undefined)
   return CATALOG.find(r => r.word === w && (lvl ? r.level === lvl : true)) ?? null
+}
+
+/**
+ * The row a `seeAlso` entry points at, from the row that carries it. A bare word
+ * matching more than one OTHER row is refused: it used to take the first, and
+ * eight words exist at two levels, so a pointer landed on the wrong one with
+ * nothing saying so. `<level>:<word>` says which; the row itself is never its own
+ * target, which is how `@unique` reaches `@@unique` by the bare word.
+ */
+export function seeAlsoRow(row, ref) {
+  const [level, word] = ref.includes(':') ? ref.split(':') : [null, ref]
+  const hits = CATALOG.filter(r => r.word === word && r !== row && (!level || r.level === level))
+  if (hits.length > 1)
+    throw new Error(`${typed(row)} lists see-also \`${ref}\`, which is ${hits.map(r => `\`${r.level}:${word}\``).join(' and ')} — name the level`)
+  return hits[0] ?? null
+}
+
+/** The word a `seeAlso` entry shows a reader — `@@unique`, not the `model:unique` that finds it. */
+export function seeAlsoWord(ref) {
+  return ref.includes(':') ? ref.split(':')[1] : ref
 }
 
 /** Rows of one level, grouped in GROUPS order — what a panel renders. */
@@ -1543,6 +1587,8 @@ export const DOCS = {
   'field:transient': 'modeling.md',
   'field:derived': 'modeling.md',
   'field:system': 'modeling.md',
+  'field:local': 'modeling.md',
+  'model:mirror': 'modeling.md',
   'field:immutable': 'modeling.md',
   'field:sealed': 'modeling.md',
   'field:generated': 'schema.md',
@@ -1759,6 +1805,8 @@ export const TIERS = {
     'move:seals'
   ],
   situational: [
+    'model:mirror',
+    'field:local',
     'field:zone',
     'field:zoned',
     // declarations
@@ -1871,7 +1919,7 @@ export const AXES = {
   ],
   life: [
     'field:keep', 'field:immutable', 'field:sealed', 'move:seals', 'field:updatedAt', 'field:updatedBy', 'field:createdBy',
-    'field:version', 'field:trail', 'model:sync', 'model:softDelete', 'model:expires',
+    'field:version', 'field:trail', 'model:sync', 'model:mirror', 'field:local', 'model:softDelete', 'model:expires',
     'model:effective', 'model:commitment', 'model:transitions', 'model:trail', 'model:createdBy',
     'model:updatedBy'
   ],
@@ -1952,6 +2000,7 @@ export const SYNONYMS = {
   'model:allow':       ['rls', 'row level security'],
   'model:tenant':      ['workspace', 'organization', 'organisation'],  // spelling-exempt — a searcher's word, not ours
   'model:external':    ['legacy table', 'existing table'],
+  'model:mirror':      ['external id', 'replica', 'vendor data'],
   'model:index':       ['performance', 'speed up'],
   'model:label':       ['display name', 'human name'],
   'model:trait':       ['mixin', 'shared fields'],

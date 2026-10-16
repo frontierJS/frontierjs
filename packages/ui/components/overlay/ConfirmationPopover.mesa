@@ -56,8 +56,8 @@
   style:display="inline-block"
   {class}
   {...$attributes}
-  on:focusin={(e) => control = e.target}
-  on:click|stopPropagation={() => open = true}
+  onfocusin={(e) => control = e.target}
+  onclick|stopPropagation={() => open = true}
 >
   {@render trigger?.()}
 </span>

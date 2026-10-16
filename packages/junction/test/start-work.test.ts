@@ -71,7 +71,7 @@ describe('work() is its own start phase', () => {
 
   it('a service route exists by the time work() runs', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'widgets', find: async () => ({ data: [], total: 0 }) })],
+      services: [createService({ name: 'widgets', find: async () => ({ data: [], total: 0 }) })],
     })
     let routed = false
     app.configure({

@@ -24,7 +24,7 @@ model Order {
   margin     Int?    @allow('read', auth().isStaff == true)
   internal   String? @guarded
   userId     String?
-  @@gate("1.4.4.5")
+  @@gate(1.4.4.5)
   @@allow('read', auth().isStaff == true)
   @@allow('read', userId == auth().id)
 }
@@ -39,7 +39,7 @@ model Product {
 model Ledger {
   id   Int @id @default(autoincrement())
   memo String
-  @@gate("5.8.9.9")
+  @@gate(5.8.9.9)
 }
 
 // A policy and nothing else. Order carries a gate AND a policy, so a check that
@@ -281,5 +281,37 @@ model Tag {
     expect(db.$readReach('tag')).toEqual(['Tag'])
     expect(db.$readReach('nope')).toEqual([])
     expect(db.asSystem().$readReach('block')).toEqual(db.$readReach('block'))
+  })
+})
+
+describe('$fromReach — which writes move a @from value (FJS-2632)', () => {
+  const FROM = `
+database main { path ":memory:" }
+
+model Shift {
+  id          Int          @id @default(autoincrement())
+  adults      Int          @from(Assignment, count: true)
+  assignments Assignment[]
+}
+
+model Assignment {
+  id      Int   @id @default(autoincrement())
+  shiftId Int
+  shift   Shift @relation(fields: [shiftId], references: [id])
+  start   Int    @from(shift, id)
+}
+
+model Tag {
+  id   Int    @id @default(autoincrement())
+  name String
+}
+`
+  test('an aggregate reaches its target, a to-one column its parent, a plain model nothing', async () => {
+    const db = await createClient({ schema: FROM, resolveFrom: import.meta.dir })
+    expect(db.$fromReach('shift')).toEqual(['Assignment'])
+    expect(db.$fromReach('assignment')).toEqual(['Shift'])
+    expect(db.$fromReach('tag')).toEqual([])
+    expect(db.$fromReach('nope')).toEqual([])
+    expect(db.asSystem().$fromReach('shift')).toEqual(['Assignment'])
   })
 })

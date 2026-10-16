@@ -11,7 +11,8 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { makeAuth, rejectsWith, signedIn, type Harness } from './harness.ts'
 import { appWith, json } from './audit-routes-http.ts'
 import { totp } from '../totp.ts'
-import { InvalidTokenError } from '../errors.ts'
+import { InvalidTokenError, NoPasswordCredentialError } from '../errors.ts'
+import { defineProvider } from '../oauth.ts'
 
 type Mail = { email: string; token: string; code: string }
 
@@ -23,6 +24,7 @@ const nextEmail = () => `magic-${Date.now()}-${seq++}@example.com`
 
 beforeAll(async () => {
   h = await makeAuth({
+    oauthProviders: { google: defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' }) },
     onMagicLinkRequested: async (m) => { inbox.push(m); arrived() },
   })
 })
@@ -234,6 +236,46 @@ describe('an account whose only way in is a provider', () => {
     await h.sys.credential.create({ data: { userId: u.userId, type: 'oauth:google', value: `sub-${email}` } })
     const mail = await mailed(email)
     expect(signedIn(await h.auth.verifyMagicLink!({ token: mail.token })).user.userId).toBe(u.userId)
+  })
+})
+
+describe('an account the mailbox made, then linked to a provider (FJS-2545)', () => {
+  const identity = (email: string) =>
+    ({ providerId: `sub-${email}`, email, emailVerified: true, name: 'Ada' }) as any
+
+  test('keeps magic-link sign-in at the request and at the click', async () => {
+    const email = nextEmail()
+    const first = await mailed(email)
+    const made  = signedIn(await h.auth.verifyMagicLink!({ token: first.token }))
+
+    const linked = await h.auth.oauthResolve('google', identity(email))
+    expect(linked.outcome).toBe('signed-in')
+
+    const again = await mailed(email)
+    expect(signedIn(await h.auth.verifyMagicLink!({ token: again.token })).user.userId).toBe(made.user.userId)
+  })
+
+  test('keeps password reset, which sets the first password', async () => {
+    const email = nextEmail()
+    const first = await mailed(email)
+    const made  = signedIn(await h.auth.verifyMagicLink!({ token: first.token }))
+    await h.auth.oauthResolve('google', identity(email))
+
+    await h.requestReset(email)
+    await h.auth.confirmPasswordReset!(h.resetToken(), 'pw-correct-1')
+    expect(signedIn(await h.auth.login(email, 'pw-correct-1')).user.userId).toBe(made.user.userId)
+  })
+
+  test('an account the provider made is still refused both', async () => {
+    const email = nextEmail()
+    await h.auth.oauthResolve('google', identity(email))
+    const before = inbox.length
+    await h.auth.requestMagicLink!(email)
+    await settle()
+    expect(inbox.length).toBe(before)
+
+    await h.requestReset(email)
+    await rejectsWith(() => h.auth.confirmPasswordReset!(h.resetToken(), 'pw-correct-1'), NoPasswordCredentialError)
   })
 })
 

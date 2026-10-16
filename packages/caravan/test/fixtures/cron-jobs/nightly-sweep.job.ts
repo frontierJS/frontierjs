@@ -5,6 +5,9 @@ import { defineJob } from '../../../src/index.ts'
 
 export const fired: unknown[] = []
 
-export default defineJob('nightly-sweep', (job) => {
-  fired.push(job.data)
-}, { queue: 'maintenance', cron: '0 3 * * *', timeZone: 'UTC' })
+export default defineJob({
+  queue: 'maintenance', cron: '0 3 * * *', timeZone: 'UTC',
+  handler: (job) => {
+    fired.push(job.data)
+  },
+})

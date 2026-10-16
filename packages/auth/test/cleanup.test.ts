@@ -1,9 +1,7 @@
 // test/cleanup.test.ts
 //
-// `createAuthCleanupJobs` shipped with no test of any kind — its own
-// PROJECT_STATE.md said so and asked whether it was wired anywhere. Neither
-// dogfooding app starts it (`example` never does, `basecamp` runs a cleanup of
-// its own), so nothing in this repo had ever executed the module.
+// The expired-row sweep: `auth.cleanup` on every createLitestoneAuth instance,
+// held by createAuthPlugin from work() to shutdown.
 //
 // The interval is an hour, so the timer is not what is under test here:
 // `sweepNow()` runs the SHIPPED predicate against a real Litestone database.
@@ -18,6 +16,7 @@
 
 import { describe, test, expect, afterAll } from 'bun:test'
 import { createAuthCleanupJobs } from '../cleanup.ts'
+import { createAuthPlugin }      from '../plugin.ts'
 import { makeAuth, type Harness } from './harness.ts'
 
 const harnesses: Harness[] = []
@@ -92,30 +91,59 @@ describe('auth cleanup — the handle', () => {
     return { db, seen }
   }
 
-  test('stop() stops, and a second start() does not orphan the first pair', async () => {
-    // Measured before the fix with the interval at 1 second: two starts, one
-    // stop, and the sweep ran six more times. Nothing held the first pair of
-    // handles, so `stop()` reported success and halted only the newest.
-    const { db, seen } = counter()
-    const warnings: string[] = []
-    const realWarn = console.warn
-    console.warn = (...a: unknown[]) => { warnings.push(String(a[0])) }
+  /** The intervals alive while fn runs: an hourly timer never fires in a
+   *  test, so what the handle leaves behind is read off setInterval itself. */
+  function liveIntervals(fn: (live: () => number) => void) {
+    const live = new Set<unknown>()
+    const realSet = globalThis.setInterval, realClear = globalThis.clearInterval
+    globalThis.setInterval = ((...a: Parameters<typeof setInterval>) => { const t = realSet(...a); live.add(t); return t }) as typeof setInterval
+    globalThis.clearInterval = ((t: any) => { live.delete(t); realClear(t) }) as typeof clearInterval
+    try { fn(() => live.size) } finally {
+      globalThis.setInterval = realSet
+      globalThis.clearInterval = realClear
+      live.forEach(t => realClear(t as any))
+    }
+  }
 
-    try {
+  test('two holders share one pair of timers, and the last stop() ends them', () => {
+    // Two apps over one auth instance each start it. A second pair would be
+    // orphaned — measured before FJS-1000 at six further sweeps after stop().
+    const { db } = counter()
+    liveIntervals(live => {
       const jobs = createAuthCleanupJobs(db as any)
       jobs.start()
       jobs.start()
+      expect(live()).toBe(2)
       jobs.stop()
-      seen.sweeps = 0
-      await new Promise(r => setTimeout(r, 150))
-      expect(seen.sweeps).toBe(0)
-    } finally {
-      console.warn = realWarn
-    }
+      expect(live()).toBe(2)
+      jobs.stop()
+      expect(live()).toBe(0)
+    })
+  })
 
-    // The double start is a caller's bug either way, so it is reported rather
-    // than absorbed in silence.
-    expect(warnings.some(w => w.includes('already running'))).toBe(true)
+  test('createAuthPlugin runs the sweep from work() to shutdown', async () => {
+    // What an app no longer writes (FJS-1893): mounting the plugin is the wiring.
+    const h = await env()
+    const plugin = createAuthPlugin(h.auth) as any
+    liveIntervals(live => {
+      expect(live()).toBe(0)
+      plugin.work()
+      expect(live()).toBe(2)
+      plugin.shutdown()
+      expect(live()).toBe(0)
+    })
+  })
+
+  test('an extra stop() does not leave a later start() owing one', () => {
+    const { db } = counter()
+    liveIntervals(live => {
+      const jobs = createAuthCleanupJobs(db as any)
+      jobs.stop()
+      jobs.start()
+      expect(live()).toBe(2)
+      jobs.stop()
+      expect(live()).toBe(0)
+    })
   })
 
   test('start() after stop() runs again — restart is not the same as refuse', async () => {
@@ -138,6 +166,6 @@ describe('auth cleanup — the handle', () => {
     // `this.stop()` inside the object literal reads correctly and throws here.
     const { db } = counter()
     const { start, stop } = createAuthCleanupJobs(db as any)
-    expect(() => { start(); start(); stop() }).not.toThrow()
+    expect(() => { start(); start(); stop(); stop() }).not.toThrow()
   })
 })

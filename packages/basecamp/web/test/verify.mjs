@@ -1104,7 +1104,7 @@ await apiCall(`/servers/${releaseServer.id}`, {
 })
 
 // Place the app on it, through the screen an operator would use. The row it
-// writes is `@@gate("2.8")` — the service checks the caller against the
+// writes is `@@gate(2.8)` — the service checks the caller against the
 // workspace and writes it through asSystem(), which is why there is no
 // placements service to POST to.
 await goto(appDetailPath)
@@ -2823,8 +2823,8 @@ check('…naming the level it needs', await patHub.text(), t => t.includes('requ
 // Pat is a real second human with no standing anywhere. What each refusal
 // below is coming FROM matters:
 //
-//   POST /servers   the role hook AND @@gate("2.4.4.5") both refuse a viewer
-//   GET  /secrets   ONLY @@gate("5") refuses — the secrets service has no role
+//   POST /servers   the role hook AND @@gate(2.4.4.5) both refuse a viewer
+//   GET  /secrets   ONLY @@gate(5) refuses — the secrets service has no role
 //                   hook on find, so before this landed a viewer could list
 //                   every secret in the workspace
 //
@@ -3012,7 +3012,7 @@ await goto('/admin/')
 check('the members list now has them', await waitFor(
   `document.getElementById('member-rows')?.textContent ?? ''`, t => t.includes('grace@example.test')),
   t => t.includes('grace@example.test'))
-// A developer may not read invitations (`@@gate("5")`), so the screen does not
+// A developer may not read invitations (`@@gate(5)`), so the screen does not
 // offer a form whose every use would be refused — the affordance is derived
 // from the read that was already made, not from a second copy of the rule.
 check('…and a developer is offered no way to invite anybody',

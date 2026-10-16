@@ -13,6 +13,7 @@ import { applyWal, applyBusyTimeout, applyIncrementalVacuum, applyPageSize, busy
 import { resolve, dirname, envVar, existsSync, mkdirSync, mkdtempSync, join, tmpdir, extname, isAbsolute } from '#host'
 import { noteMintedDirectory } from './db-path.js'
 import { ClientClosedError } from './errors.js'
+import { DERIVED_NOW_ARG } from './query.js'
 
 /** @import { LitestoneSchema, DatabaseBlock } from '../index.d.ts' */
 /**
@@ -73,6 +74,22 @@ import { ClientClosedError } from './errors.js'
 // query() and prepare() compile once and reuse — zero recompilation on hot paths.
 // run() stays uncached — used only for transactions/pragmas (called rarely).
 
+// Statements kept out of the cache. A SAVEPOINT, a RELEASE and a ROLLBACK TO
+// carry a name that counts up, so each is new text and would push the hot set
+// out; a PRAGMA can carry a value. BEGIN, COMMIT and ROLLBACK are fixed text
+// and are cached — every create in a transaction pays a prepare otherwise,
+// and a prepared one is reused across commits, rollbacks and a failed
+// statement without complaint (measured, `FJS-1106`). Exported for
+// `bench/statements.mjs`, which counts the cache from outside it.
+export const NO_CACHE = /^\s*(SAVEPOINT|RELEASE|ROLLBACK\s+TO|PRAGMA|VACUUM|ATTACH|DETACH)/i
+// bun leaves an EXPLAIN's VM active once it has run, by any of its four
+// calls, and while it is active the connection's next read transaction never
+// ends: every later read answers that one snapshot, and a cached EXPLAIN
+// holds it for the life of the process (`FJS-1753`). So an EXPLAIN is
+// prepared for one call and finalized after it. Leading comments are
+// skipped because `db.sql` passes them through.
+export const SINGLE_USE = /^(?:\s|--[^\n]*\n?|\/\*[\s\S]*?\*\/)*EXPLAIN\b/i
+
 /**
  * @param {RawDb} rawDb
  * @param {{ maxCacheSize?: number, label?: string }} [options]
@@ -85,20 +102,6 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
   // reasonably complex schema's full hot set without unbounded growth in
   // long-lived processes that build many distinct WHERE shapes.
   const cache = new Map()
-  // Statements kept out of the cache. A SAVEPOINT, a RELEASE and a ROLLBACK TO
-  // carry a name that counts up, so each is new text and would push the hot set
-  // out; a PRAGMA can carry a value. BEGIN, COMMIT and ROLLBACK are fixed text
-  // and are cached — every create in a transaction pays a prepare otherwise,
-  // and a prepared one is reused across commits, rollbacks and a failed
-  // statement without complaint (measured, `FJS-1106`).
-  const NO_CACHE = /^\s*(SAVEPOINT|RELEASE|ROLLBACK\s+TO|PRAGMA|VACUUM|ATTACH|DETACH)/i
-  // bun leaves an EXPLAIN's VM active once it has run, by any of its four
-  // calls, and while it is active the connection's next read transaction never
-  // ends: every later read answers that one snapshot, and a cached EXPLAIN
-  // holds it for the life of the process (`FJS-1753`). So an EXPLAIN is
-  // prepared for one call and finalized after it. Leading comments are
-  // skipped because `db.sql` passes them through.
-  const SINGLE_USE = /^(?:\s|--[^\n]*\n?|\/\*[\s\S]*?\*\/)*EXPLAIN\b/i
   let closed = false
   /** @param {string} sql */
   function singleUse(sql) {
@@ -161,6 +164,38 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
     },
     get closed()        { return closed },
     get cacheSize()     { return cache.size },
+  }
+}
+
+// ─── @derived on the client's clock ──────────────────────────────────────────
+//
+// `createClient({ now })` is the one owner of the clock (`FJS-D152`), and a
+// `@derived` is static SQL that reads SQLite's. The marker `compileDerived`
+// leaves is replaced here, at the statement, because the sites that splice a
+// derived expression are an enumeration nobody can keep in step; a missed one
+// is a filter that answers by today's date. Only a client given a clock gets
+// this wrapper, so one without pays nothing. The instant is litestone's own ISO
+// string from a `Date`, so nothing a caller wrote reaches the SQL pattern.
+/**
+ * @param {DbHandle} db
+ * @param {() => Date} nowDate
+ * @returns {DbHandle}
+ */
+export function clockedDb(db, nowDate) {
+  /** @param {string} sql */
+  const stamp = (sql) => sql.includes(DERIVED_NOW_ARG)
+    ? sql.replaceAll(DERIVED_NOW_ARG, `'${nowDate().toISOString()}'`)
+    : sql
+  return {
+    query:   (/** @type {string} */ sql) => db.query(stamp(sql)),
+    prepare: (/** @type {string} */ sql) => db.prepare(stamp(sql)),
+    run:     (/** @type {string} */ sql, /** @type {any[]} */ ...params) => db.run(stamp(sql), ...params),
+    close:   () => db.close?.(),
+    get $plain()     { return db.$plain },
+    get $raw()       { return db.$raw },
+    get closed()     { return db.closed },
+    get cacheSize()  { return db.cacheSize },
+    set cacheSize(v) { db.cacheSize = v },
   }
 }
 

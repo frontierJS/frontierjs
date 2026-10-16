@@ -19,10 +19,10 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
-import { createService } from '../src/core/service.ts'
+import { buildService } from '../src/core/service.ts'
 import { parseQuery } from '../src/core/litestone.ts'
 import { createJunctionClient } from '../src/client/index.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { RESERVED_PARAMS } from '@frontierjs/toolbelt/directives'
 
@@ -59,7 +59,7 @@ const svcCtx = (db: unknown, over: Record<string, unknown> = {}): ServiceContext
 describe('the server answers a window', () => {
   test('an ordinary page carries the edge, minted off the last row it already has', async () => {
     const db  = await shop()
-    const svc = createService({ model: 'Item' })
+    const svc = buildService({ model: 'Item' })
     const res: any = await svc.find(svcCtx(db, { directives: { limit: 10, orderBy: 'id' } }))
 
     expect(res.data.length).toBe(10)
@@ -70,14 +70,14 @@ describe('the server answers a window', () => {
 
   test('a page that is the whole list says there is no more', async () => {
     const db  = await shop()
-    const svc = createService({ model: 'Item' })
+    const svc = buildService({ model: 'Item' })
     const res: any = await svc.find(svcCtx(db, { directives: { limit: 100, orderBy: 'id' } }))
     expect(res.hasMore).toBe(false)
   })
 
   test('$after is the keyset path — no total, and it resumes from the edge', async () => {
     const db  = await shop()
-    const svc = createService({ model: 'Item' })
+    const svc = buildService({ model: 'Item' })
     const first: any = await svc.find(svcCtx(db, { directives: { limit: 10, orderBy: 'id' } }))
     const next:  any = await svc.find(svcCtx(db, {
       directives: { limit: 10, orderBy: 'id', after: first.endCursor },
@@ -92,7 +92,7 @@ describe('the server answers a window', () => {
 
   test('a window walks the whole list with nothing served twice — on a NON-unique order', async () => {
     const db  = await shop()
-    const svc = createService({ model: 'Item' })
+    const svc = buildService({ model: 'Item' })
     const seen: number[] = []
     let after: string | null = null
 
@@ -120,7 +120,7 @@ describe('the server answers a window', () => {
   // order agree by accident.
   test('...and with the tiebreaker running against the order rows come back in', async () => {
     const db  = await shop()
-    const svc = createService({ model: 'Item' })
+    const svc = buildService({ model: 'Item' })
     const seen: number[] = []
     let after: string | null = null
 
@@ -148,7 +148,7 @@ describe('the server answers a window', () => {
     const sys = db.asSystem()
     for (let i = 1; i <= 5; i++) await sys.tally.create({ data: { label: `t${i}`, n: 1 } })
 
-    const svc = createService({ model: 'Tally', idField: 'label' })
+    const svc = buildService({ model: 'Tally', idField: 'label' })
     const res: any = await svc.find(svcCtx(db, { directives: { limit: 2, orderBy: 'n' } }))
     expect(res.data.length).toBe(2)
     expect(res.total).toBe(5)
@@ -184,7 +184,7 @@ describe('a window over HTTP', () => {
         http: { ...defaultConfig.http, drainTimeout: 50 },
       },
     } as never)
-    app.services.register(createService({ name: 'items', model: 'Item' }))
+    app.services.register(buildService({ name: 'items', model: 'Item' }))
     await app.start()
     return app
   }
@@ -378,7 +378,7 @@ describe('resource().more()', () => {
 describe('an unrecognized $ directive', () => {
 
   const app = () => createTestApp({
-    services: [() => createService({
+    services: [buildService({
       name: 'things',
       // Enumerates the directives so the ones it was sent count as applied.
       find: async (ctx) => { void Object.keys(ctx.directives ?? {}); return { data: [], total: 0 } },
@@ -513,7 +513,7 @@ describe('a refetch keeps the grown window, against a real app (FJS-2612)', () =
         http: { ...defaultConfig.http, drainTimeout: 50 },
       },
     } as never)
-    app.services.register(createService({ name: 'items', model: 'Item', paginate: { default: 10, max: 10 } }))
+    app.services.register(buildService({ name: 'items', model: 'Item', paginate: { default: 10, max: 10 } }))
     await app.start()
     try {
       const c: any = createJunctionClient({ url: `http://localhost:${app.http.port}` })

@@ -36,23 +36,11 @@ const makeComponent = (name) => `<script>
   let count = 0
 ${SC}
 
-<button class="${name.charAt(0).toLowerCase() + name.slice(1)}" on:click={() => count = count + 1}>
+<!-- Style with a tone and a treatment from @frontierjs/css (\`btn danger outlined\`),
+     never a color. A <style> block here is scoped to this component. -->
+<button class="btn outlined" onclick={() => count = count + 1}>
   {label} {count > 0 ? '(' + count + ')' : ''}
 </button>
-
-<style>
-  /* Styles are scoped to this component — the compiler rewrites the selectors,
-     so a bare element name here cannot reach the rest of the page. Use
-     :global(...) deliberately when you mean to. */
-  button {
-    border: 1px solid #d1d5db;
-    background: #fff;
-    border-radius: 6px;
-    padding: 6px 12px;
-    font: inherit;
-    cursor: pointer;
-  }
-</style>
 `
 </script>
 
@@ -60,8 +48,8 @@ Creates a Mesa component under `src/components/`. Components are PascalCase —
 the route scanner uses that to tell a component from a page, so a lowercase name
 placed under `src/routes/` would be picked up as a route instead.
 
-Import it with a relative path (`import Button from '../components/Button.mesa'`)
-— Sierra resolves no `@/` alias.
+Import it with the surface's `@/` alias (`import Button from '@/components/Button.mesa'`),
+which Sierra points at the surface's `src/`.
 
 ```js
 const raw  = arg.name.replace(/\.mesa$/, '').replace(/^\/+/, '')

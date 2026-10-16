@@ -62,6 +62,14 @@ export { assertMessageAddresses, assertHeaderValue, assertHeaderName, assertCont
 // message (Graph's sendMail, SES's SendRawEmail) rather than an SMTP session.
 export { toMime } from './smtp.ts'
 
+// The receiving half: the shape a mail vendor's dialect parses to, and the
+// reply-tag kit an app's `apply` reads it with (`FJS-D1091`). `assertMailbox`
+// goes with it, so a `from` is split into name and address by the one owner
+// of the grammar rather than by a regex in every app.
+export { assertMailbox } from './smtp.ts'
+export { headerOf, replyAddress, splitAddress, readReplyTag, LOCAL_PART_MAX } from './received.ts'
+export type { ReceivedMail, ReplyReading } from './received.ts'
+
 export function createMessage(subject: string, html?: string): MailBuilder {
   return new MailBuilder(subject, html)
 }

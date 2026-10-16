@@ -125,7 +125,7 @@
             value={item.value}
             checked={isSelected}
             disabled={isDisabled}
-            on:change={handleChange}
+            onchange={handleChange}
           />
           {item.label}
         </label>
@@ -138,7 +138,7 @@
           checked={isSelected}
           disabled={isDisabled}
           aria-describedby={item.description ? descId : null}
-          on:change={handleChange}
+          onchange={handleChange}
         />
         <span class="stack" style:gap="0.125rem">
           <span>{item.label}</span>

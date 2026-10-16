@@ -8,7 +8,7 @@
 // ─── Why this needs a hatch at all ────────────────────────────────────────
 //
 // **The books are append-only at the Data boundary and that is deliberate.**
-// `JournalEntry` and `JournalLine` are `@@gate("5.8.9.9")`; `9` is LOCKED, so
+// `JournalEntry` and `JournalLine` are `@@gate(5.8.9.9)`; `9` is LOCKED, so
 // `asSystem()` — which grades 8 — is refused BY NAME on update and delete. It
 // is what makes the ledger a ledger rather than a table everyone agrees not to
 // edit, and `verify:money` asserts it.

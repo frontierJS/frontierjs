@@ -16,7 +16,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
-import { createService, createBaseService } from '../src/core/service.ts'
+import { buildService, buildBase } from '../src/core/service.ts'
 import { $ } from '../index.ts'
 
 const SCHEMA = `
@@ -32,6 +32,7 @@ model Todo {
   @@allow('read',   ownerId == auth().id || auth().isStaff)
   @@allow('create', auth() != null)
   @@allow('update', ownerId == auth().id)
+  @@allow('delete', ownerId == auth().id)
   @@transitions(status,
     complete: open -> done,
     reopen:   done -> open,
@@ -61,25 +62,25 @@ beforeAll(async () => {
   } as never)
 
   // The generated shape, exactly: a one-line base the loader names and wraps.
-  app.services.register(createService({
-    name: 'todos', ...(createBaseService({ channel: 'todos' }) as unknown as Record<string, unknown>),
+  app.services.register(buildService({
+    name: 'todos', ...(buildBase({ channel: 'todos' }) as unknown as Record<string, unknown>),
   } as never))
 
   // An author's own `complete` beside the moves. It wins.
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'tasks', model: 'Todo',
     async complete() { return { handwritten: true } },
   }))
 
   // The method that lifts an @system move, as example's invoices.settle does.
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'shelf', model: 'Todo',
     async archive() { return $.db.todo.transition($.id!, 'archive', { system: true }) },
   }))
 
   // An allow-list that names one move and not the others. A move listed with no
   // function written is not a finding — start() below would refuse if it were.
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'chores', model: 'Todo',
     methods: ['find', 'get', 'complete'],
     hooks: { before: { complete: [] } },
@@ -177,7 +178,7 @@ describe('the Data boundary grades the move', () => {
   })
 
   test('a methods: list that names it with no method written refuses start(), by name', async () => {
-    const svc = createService({ name: 'shelved', model: 'Todo', methods: ['get', 'archive'] })
+    const svc = buildService({ name: 'shelved', model: 'Todo', methods: ['get', 'archive'] })
     const a = (await import('../index.ts')).createApp({
       db, config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
     } as never)
@@ -242,7 +243,7 @@ describe('one table', () => {
   })
 
   test('a service over a model with no machine gains nothing', async () => {
-    const plain = createService({ name: 'notes' })
+    const plain = buildService({ name: 'notes' })
     app.services.register(plain)
     expect(plain.describe().customMethods).toEqual([])
   })
@@ -271,7 +272,7 @@ model Project {
       config: { port: 0, services: { dir: '/nonexistent' },
                 http: { ...defaultConfig.http, drainTimeout: 50 } },
     } as never)
-    const svc = createService({ name: 'projects', model: 'Project' })
+    const svc = buildService({ name: 'projects', model: 'Project' })
     a.services.register(svc)
     return { a, svc }
   }
@@ -290,5 +291,36 @@ model Project {
     expect(svc.describe().customMethods).toContain('unarchive')
     await a.start()
     await a.stop()
+  })
+})
+
+// A write by id that the row policy refuses answered 404 for a row the caller
+// had on screen (`FJS-1750`). A reader gets the refusal by name; a caller the
+// read policy hides still gets 404, so the answer confirms nothing they could
+// not already see. Each refusal is paired with the owner making the same write.
+describe('a write by id on a row the caller can read and not change', () => {
+
+  async function send(who: string, method: string, id: number, body?: unknown) {
+    const res = await app.http.fetch(new Request(`http://localhost/todos/${id}`, {
+      method,
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${who}` },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }))
+    return res.status
+  }
+
+  for (const [verb, body] of [['PATCH', { title: 'x' }], ['PUT', { title: 'x' }], ['DELETE', undefined]] as const) {
+    test(`${verb} is 403 for the reader, 404 for the stranger, and lands for the owner`, async () => {
+      const t = await seed()
+      expect(await send('staff', verb, t.id, body)).toBe(403)
+      expect(await send('stranger', verb, t.id, body)).toBe(404)
+      const row = await db.asSystem().todo.findFirst({ where: { id: t.id } })
+      expect(row.title).toBe('t')
+      expect(await send('owner', verb, t.id, body)).toBe(200)
+    })
+  }
+
+  test('a row that does not exist is 404 for the reader too', async () => {
+    expect(await send('staff', 'PATCH', 99999, { title: 'x' })).toBe(404)
   })
 })

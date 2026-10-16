@@ -9,12 +9,10 @@
 //
 // `effectiveTo` stays writable, and must: closing a window is how the next one
 // opens. See `db/schema.lite`'s model header.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createPayRatesService() {
-  return createBaseService({
-    model:   'PayRate',
-    channel: 'pay-rates',
-    methods: ['find', 'get', 'create', 'update', 'patch', 'remove'],
-  })
-}
+export default createService({
+  model:   'PayRate',
+  channel: 'pay-rates',
+  methods: ['find', 'get', 'create', 'update', 'patch', 'remove'],
+})

@@ -47,7 +47,7 @@ import { evaluateWindow, describeBreach, isSnoozed } from '../core/alerting.ts'
 import { fanOutToChannels } from '../core/delivery.ts'
 import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import type { Message }     from '../core/delivery.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 /** How far back a rule with no duration still looks. A `forMinutes: 0` rule is
  *  about the newest reading, but "newest" has to be bounded or a series whose
@@ -194,7 +194,7 @@ export default defineJob(
  * cost every rule after it in the same run.
  */
 async function fanOut(
-  app:   BasecampApp,
+  app:   App,
   db:    any,
   rule:  any,
   event: any,

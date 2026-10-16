@@ -14,7 +14,7 @@
 //
 // Both run through the client `db` in config/sierra.config.js names, so both
 // are tapped by the publish check. `Product`, `ProductVariant` and
-// `ProductImage` are all @@gate("0.4.4.5") — read at level 0 — which is why
+// `ProductImage` are all @@gate(0.4.4.5) — read at level 0 — which is why
 // this page is allowed to exist without a `publishes:` line.
 import { sys } from '../../../../api/src/core/db.ts'
 

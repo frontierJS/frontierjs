@@ -64,15 +64,14 @@
     placed = false
     open   = true
     // Position after mesa renders the panel into the portal
-    requestAnimationFrame(() => { position(); placed = true })
+    requestAnimationFrame(async () => { await position(); placed = true })
     document.addEventListener('click', onClickAway, { capture: true })
   }
 
-  function position() {
-    if (!triggerEl || !panelEl) return
-    const at = placeAgainst(triggerEl.getBoundingClientRect(), panelEl.getBoundingClientRect(), { placement, offset })
-    x = at.x
-    y = at.y
+  async function position() {
+    const [tr, pr, vp] = await Promise.all([$.measure(triggerEl), $.measure(panelEl), $.viewport()])
+    if (!tr || !pr) return
+    ;({ x, y } = placeAgainst(tr, pr, vp, { placement, offset }))
   }
 
   function closePopover(restoreFocus = true) {
@@ -80,7 +79,7 @@
     document.removeEventListener('click', onClickAway, { capture: true })
     // Return focus to the trigger — otherwise a keyboard user is dropped at
     // the top of the document when the panel unmounts.
-    if (restoreFocus) (control ?? triggerEl?.querySelector?.('button, a, [tabindex]'))?.focus?.()
+    if (restoreFocus) $.focus(control ?? triggerEl?.querySelector?.('button, a, [tabindex]'))
   }
 
   function onClickAway(e) {
@@ -94,7 +93,7 @@
   })
 </script>
 
-<mesa:window on:keydown={(e) => { if (e.key === 'Escape' && open) { e.preventDefault(); closePopover() } }} />
+<mesa:window onkeydown={(e) => { if (e.key === 'Escape' && open) { e.preventDefault(); closePopover() } }} />
 
 <!-- Trigger wrapper -->
 <span
@@ -102,8 +101,8 @@
   style:display="inline-block"
   {class}
   {...$attributes}
-  on:focusin={(e) => control = e.target}
-  on:click|stopPropagation={openPopover}
+  onfocusin={(e) => control = e.target}
+  onclick|stopPropagation={openPopover}
 >
   {@render trigger?.()}
 </span>

@@ -10,7 +10,7 @@
 // nothing. Picking something up (`give`) may lift a count to `cap`, above the
 // start, and a count above the start does not decay.
 
-// A fish (`fishing.ts`) starts at none and never comes back on its own: it is
+// A catch (`fishing.ts`) starts at none and never comes back on its own: it is
 // caught or it is not carried. `many` is what `/inv` calls more than one, since
 // most fish are their own plural.
 const fish = (many: string) => ({ start: 0, cap: 20, regenMs: 0, many })
@@ -24,6 +24,7 @@ export const ITEMS = {
   eel:      fish('eels'),
   pike:     fish('pike'),
   moonfish: fish('moonfish'),
+  penguin:  fish('penguins'),
 } as const satisfies Record<string, { start: number, cap: number, regenMs: number, many: string }>
 
 export type ItemName = keyof typeof ITEMS

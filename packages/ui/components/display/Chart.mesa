@@ -207,11 +207,11 @@
         tabindex={i === stopAt ? 0 : -1}
         aria-label={`${formatX(r[x])}: ${valueText(values[i])}`}
         data-index={i}
-        on:pointerenter={() => { active = i }}
-        on:pointerleave={() => { if (active === i) active = null }}
-        on:focus={() => { active = i; stop = i }}
-        on:keydown={(e) => step(e, i)}
-        on:blur={() => { if (active === i) active = null }}
+        onpointerenter={() => { active = i }}
+        onpointerleave={() => { if (active === i) active = null }}
+        onfocus={() => { active = i; stop = i }}
+        onkeydown={(e) => step(e, i)}
+        onblur={() => { if (active === i) active = null }}
       ><title>{formatX(r[x])}: {valueText(values[i])}</title></rect>
     {/each}
 

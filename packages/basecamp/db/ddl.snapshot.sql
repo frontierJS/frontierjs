@@ -378,6 +378,7 @@ CREATE TABLE IF NOT EXISTS "credential" (
   "tokenExpiresAt" TEXT,
   "scope" TEXT,
   "totpLastStep" INTEGER,
+  "linked" INTEGER,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;

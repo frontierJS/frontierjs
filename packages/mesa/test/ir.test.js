@@ -25,7 +25,7 @@ const COUNTER = `<script>
 <div class="box">
   <h1>Counter</h1>
   <p>Count: {count}</p>
-  <button on:click={inc}>Add</button>
+  <button onclick={inc}>Add</button>
   {#if count > 2}
     <p>Many</p>
   {:else}
@@ -117,7 +117,7 @@ describe('lower()', () => {
     const tree = await ir(`<script>
   let n = 0
 </script>
-<mesa:window on:keydown|preventDefault={() => n++} />
+<mesa:window onkeydown|preventDefault={() => n++} />
 `, 'W.mesa')
     const [global] = tree.children.filter((c) => c.kind !== 'text')
     expect(global).toMatchObject({ kind: 'global', target: 'window', loc: 'W.mesa:4:1', directives: [] })
@@ -152,12 +152,12 @@ describe('lower()', () => {
     expect(pre.children[0].value.code).not.toBe('markup')
   })
 
-  it('lowers a component call: props, binds, refusals, slots routed as the DOM path routes them', async () => {
+  it('lowers a component call: props, binds, refusals, slots as snippets', async () => {
     const tree = await ir(`<script>
   import Card from './Card.mesa'
   let n = 0
 </script>
-<Card title="A" count={n} flag class="x" label="n is {n}" onpick={() => n++} bind:open={n} on:close={() => {}} client:load>
+<Card title="A" count={n} flag class="x" label="n is {n}" onpick={() => n++} bind:open={n} onclose|once={() => {}} client:load>
   <!-- not content -->
   <p>{n}</p>
   <b slot="actions">go</b>
@@ -181,14 +181,19 @@ describe('lower()', () => {
     expect(card.binds).toEqual([{ name: 'open', setter: '$$set_n' }])
     expect(card.ref).toBe(null)
     // Refused for every target by componentAttributes: reported, never passed.
-    expect(tree.diagnostics).toEqual([expect.stringMatching(/^on:close is not valid on a component\..* — C\.mesa:5:1$/)])
-    expect(Object.keys(card.slots)).toEqual(['actions', 'aside', 'default'])
-    expect(card.slots.default.map((c) => c.kind === 'element' ? c.tag : c.kind)).toEqual(['comment', 'p'])
-    expect(card.slots.actions[0]).toMatchObject({ kind: 'element', tag: 'b', attrs: [] })
-    expect(card.slots.aside[0]).toMatchObject({ kind: 'if' })
-    expect(card.slots.aside[0].branches[0].children[0]).toMatchObject({ tag: 'i', attrs: [] })
-    expect(card.snippets).toEqual([expect.objectContaining({ kind: 'snippet', name: 'row', params: ['r'], varName: null })])
-    expect(slot).toMatchObject({ kind: 'slot', name: 'tail', directives: [], fallback: [expect.objectContaining({ tag: 'p' })] })
+    expect(tree.diagnostics).toEqual([expect.stringMatching(/^<Card onclose\|once> -- 'once' is an addEventListener option.* — C\.mesa:5:1$/)])
+    // Every slot is a snippet with no arguments by now, the default one
+    // `children` (`FJS-D668`): one projection for every target.
+    expect(card.snippets.map((s) => [s.name, s.params])).toEqual([['row', ['r']], ['actions', []], ['aside', []], ['children', []]])
+    const [, actions, aside, children] = card.snippets
+    expect(children.children.map((c) => c.kind === 'element' ? c.tag : c.kind)).toEqual(['comment', 'p'])
+    expect(actions.children[0]).toMatchObject({ kind: 'element', tag: 'b', attrs: [] })
+    expect(aside.children[0]).toMatchObject({ kind: 'if' })
+    expect(aside.children[0].branches[0].children[0]).toMatchObject({ tag: 'i', attrs: [] })
+    expect(card.snippets[0]).toMatchObject({ kind: 'snippet', name: 'row', varName: null })
+    // A <slot> with a fallback is the if a caller's snippet decides.
+    expect(slot).toMatchObject({ kind: 'if', else: [expect.objectContaining({ tag: 'p' })] })
+    expect(slot.branches[0].children[0]).toMatchObject({ kind: 'render' })
   })
 
   it('lowers a destructuring each with an index under the row frame', async () => {

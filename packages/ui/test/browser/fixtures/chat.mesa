@@ -21,8 +21,8 @@
   const ask   = (text) => { sent = [...sent, text]; add(); log.scrollToEnd() }
 </script>
 
-<button id="add" type="button" on:click={add}>add</button>
-<button id="token" type="button" on:click={token}>token</button>
+<button id="add" type="button" onclick={add}>add</button>
+<button id="token" type="button" onclick={token}>token</button>
 
 <Transcript id="log" bind:this={log} style="height: 12rem; inline-size: 20rem">
   {#each turns as turn (turn.id)}

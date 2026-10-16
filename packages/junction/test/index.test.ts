@@ -336,7 +336,7 @@ describe('extractIP', () => {
 // ─── Hooks pipeline tests ─────────────────────────────────────────────────
 
 import { runPipeline, resolvePipelines, mergeHookMaps } from '../src/core/hooks.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 import { withCallEffects }      from '../src/core/context.ts'
 import type { HookMap }        from '../src/core/hooks.ts'
 
@@ -664,7 +664,7 @@ describe('protect() dot-path support', () => {
 
   it('strips a top-level field (existing behavior)', async () => {
     const app = await _createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'users',
         find: async () => ({ total: 1, limit: 20, offset: 0, data: [{ id: '1', name: 'Alice', password: 'secret' }] }),
         hooks: { after: { find: [protect('password')] } },
@@ -678,7 +678,7 @@ describe('protect() dot-path support', () => {
 
   it('strips a nested field via dot-path', async () => {
     const app = await _createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'users',
         find: async () => ({ total: 1, limit: 20, offset: 0, data: [{ id: '1', name: 'Alice', meta: { internal: true, score: 99 } }] }),
         hooks: { after: { find: [protect('meta.internal')] } },
@@ -693,7 +693,7 @@ describe('protect() dot-path support', () => {
 
   it('handles missing intermediate keys gracefully', async () => {
     const app = await _createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'items',
         find: async () => ({ total: 1, limit: 20, offset: 0, data: [{ id: '1' }] }),  // no 'meta' key
         hooks: { after: { find: [protect('meta.internal')] } },
@@ -707,7 +707,7 @@ describe('protect() dot-path support', () => {
 
   it('strips multiple dot-paths in one call', async () => {
     const app = await _createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'users',
         find: async () => ({ total: 1, limit: 20, offset: 0, data: [{
           id: '1',
@@ -1550,14 +1550,14 @@ describe('EventBus', () => {
 
 // ─── Service custom methods tests ───────────────────────────────────────────
 
-import { createService, callService, DERIVED_HOOKS } from '../src/core/service.ts'
+import { buildService, callService, DERIVED_HOOKS } from '../src/core/service.ts'
 
 describe('Service custom methods', () => {
 
   it('registers and calls a custom method', async () => {
     let called = false
 
-    const svc = createService({
+    const svc = buildService({
       name: 'servers',
       async reboot(ctx) {
         called = true
@@ -1575,7 +1575,7 @@ describe('Service custom methods', () => {
   })
 
   it('throws NotFound for unknown action', async () => {
-    const svc = createService({ name: 'servers' })
+    const svc = buildService({ name: 'servers' })
     const ctx = bridge.internal('servers', 'create', null)
     ctx.method = 'nope'
 
@@ -1585,7 +1585,7 @@ describe('Service custom methods', () => {
   it('runs before hooks for custom methods', async () => {
     const order: string[] = []
 
-    const svc = createService({
+    const svc = buildService({
       name: 'servers',
       async drain() { order.push('method'); return { ok: true } },
       hooks: {
@@ -1609,7 +1609,7 @@ describe('Service custom methods', () => {
   it('custom method hooks do not bleed into CRUD methods', async () => {
     let drainHookCalled = false
 
-    const svc = createService({
+    const svc = buildService({
       name: 'test',
       find: async () => [],
       async drain() { return { drained: true } },
@@ -1817,7 +1817,7 @@ describe('createTestApp', () => {
 
   it('registers services', async () => {
     const app = await createTestApp({
-      services: [(_app) => createService({
+      services: [buildService({
         name:   'pings',
         find:   async () => [{ pong: true }],
       })]
@@ -1853,7 +1853,7 @@ describe('request()', () => {
 
   async function makeApp() {
     return createTestApp({
-      services: [(_app) => createService({
+      services: [buildService({
         name:   'items',
         find:   async () => ({ total: 2, limit: 20, offset: 0, data: [{ id: '1' }, { id: '2' }] }),
         get:    async (ctx) => ({ id: ctx.id, name: 'item' }),
@@ -1890,7 +1890,7 @@ describe('request()', () => {
     let receivedToken: string | undefined
 
     const app = await createTestApp({
-      services: [(_app) => createService({
+      services: [buildService({
         name: 'echo',
         find: async (ctx) => {
           receivedToken = ctx.caller.headers['authorization']
@@ -1918,7 +1918,7 @@ describe('generateOpenAPI', () => {
 
   async function makeApp() {
     const app = await createTestApp({
-      services: [(_app) => createService({
+      services: [buildService({
         name:    'posts',
         find:    async () => [],
         get:     async () => ({}),
@@ -2007,7 +2007,7 @@ describe('generateOpenAPI', () => {
   it('openapi plugin respects custom apiPrefix', async () => {
     const app = await createTestApp({
       config: { apiPrefix: '/v1' },
-      services: [(_app) => createService({ name: 'posts', find: async () => [] })]
+      services: [buildService({ name: 'posts', find: async () => [] })]
     })
     const plugin = openapi({ title: 'Test', version: '1.0.0' })
     await plugin.register!(app)
@@ -2023,7 +2023,7 @@ describe('ctx.statusCode', () => {
 
   it('create returns 201 by default', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'items',
         create: async () => ({ id: '1', name: 'widget' }),
       })]
@@ -2034,7 +2034,7 @@ describe('ctx.statusCode', () => {
 
   it('find/get/patch/remove return 200', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:  'items',
         find:  async () => [],
         get:   async () => ({ id: '1' }),
@@ -2048,7 +2048,7 @@ describe('ctx.statusCode', () => {
 
   it('service can override status to 202', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'jobs',
         create: async (ctx) => {
           ctx.statusCode = 202
@@ -2062,7 +2062,7 @@ describe('ctx.statusCode', () => {
 
   it('after hook can set statusCode', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'tasks',
         create: async () => ({ id: '1' }),
         hooks: {
@@ -2078,7 +2078,7 @@ describe('ctx.statusCode', () => {
 
   it('null result returns 204', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'pings',
         create: async () => null,
       })]
@@ -2100,7 +2100,7 @@ describe('ctx.dispatch', () => {
     manager.channel('all').join(conn)
 
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'posts',
         create: async () => ({ id: '1', title: 'Hello', secret: 'hidden' }),
         hooks: {
@@ -2127,7 +2127,7 @@ describe('ctx.dispatch', () => {
     manager.channel('all').join(conn)
 
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'users',
         create: async () => ({ id: '1', email: 'a@b.com', password_hash: '$2b$...' }),
         hooks: {
@@ -2159,7 +2159,7 @@ describe('ctx.dispatch', () => {
     manager.channel('all').join(conn)
 
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'internal',
         create: async (ctx) => {
           ctx.dispatch = false   // suppress broadcast
@@ -2191,7 +2191,7 @@ describe('app.service()', () => {
     // from any internal caller while HTTP callers got the full envelope —
     // the same call answering two different ways.
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'items',
         find: async () => [{ id: '1' }, { id: '2' }],
       })],
@@ -2204,7 +2204,7 @@ describe('app.service()', () => {
 
   it('get() still unwraps to the record — singles have no metadata to keep', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'items',
         get: async () => ({ id: '1', name: 'one' }),
       })],
@@ -2216,7 +2216,7 @@ describe('app.service()', () => {
 
   it('get() passes id to the service', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'users',
         get:  async (ctx) => ({ id: ctx.id, found: true }),
       })],
@@ -2228,7 +2228,7 @@ describe('app.service()', () => {
 
   it('create() passes data to the service', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'notes',
         create: async (ctx) => ({ id: 'new', ...ctx.data }),
       })],
@@ -2240,7 +2240,7 @@ describe('app.service()', () => {
 
   it('patch() passes id and data', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:  'notes',
         patch: async (ctx) => ({ id: ctx.id, ...ctx.data, patched: true }),
       })],
@@ -2252,7 +2252,7 @@ describe('app.service()', () => {
 
   it('remove() passes id', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'notes',
         remove: async (ctx) => ({ id: ctx.id, deleted: true }),
       })],
@@ -2264,7 +2264,7 @@ describe('app.service()', () => {
 
   it('locals flow through to ctx.locals when provided', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'items',
         // A probe, but still a list — find promises one, and wrapResult throws
         // rather than guess (FJS-140/FJS-144).
@@ -2277,7 +2277,7 @@ describe('app.service()', () => {
 
   it('passing params threads user into ctx.auth.user', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'items',
         find: async (ctx) => [{ callerUser: ctx.auth.user?.userId ?? null }],
         hooks: { before: { find: [authenticate] } },
@@ -2291,7 +2291,7 @@ describe('app.service()', () => {
 
   it('no params → anonymous call, auth hooks fire on null user', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'locked',
         find: async () => [{ secret: true }],
         hooks: { before: { find: [authenticate] } },
@@ -2303,7 +2303,7 @@ describe('app.service()', () => {
 
   it('call() invokes custom methods with id and params', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'servers',
         find: async () => [],
         async reboot(ctx) { return { serverId: ctx.id, rebooted: true } },
@@ -2321,7 +2321,7 @@ describe('app.service()', () => {
 
   it('transport is internal, not http', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'items',
         find: async (ctx) => [{ transport: ctx.transport }],
       })],
@@ -2337,7 +2337,7 @@ describe('Auto-events', () => {
 
   it('create fires service:created', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'notes',
         create: async () => ({ id: '1', title: 'Hello' }),
       })]
@@ -2353,7 +2353,7 @@ describe('Auto-events', () => {
 
   it('patch fires service:patched', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:  'notes',
         patch: async () => ({ id: '1', updated: true }),
       })]
@@ -2369,7 +2369,7 @@ describe('Auto-events', () => {
 
   it('remove fires service:removed', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'notes',
         remove: async () => ({ id: '1', deleted: true }),
       })]
@@ -2385,7 +2385,7 @@ describe('Auto-events', () => {
 
   it('find and get do NOT fire auto-events', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'notes',
         find: async () => [],
         get:  async () => ({ id: '1' }),
@@ -2404,7 +2404,7 @@ describe('Auto-events', () => {
 
   it('auto-events do not fire when service throws', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'notes',
         create: async () => { throw Object.assign(new Error('fail'), { code: 400, name: 'BadRequest' }) },
       })]
@@ -2433,7 +2433,7 @@ describe('Bidirectional WS service calls', () => {
 
     const app = await createTestApp({
       users: [{ id: 'u1', role: 'user' }],
-      services: [() => createService({
+      services: [buildService({
         name: 'pings',
         find: async () => [{ pong: true }],
       })]
@@ -2463,7 +2463,7 @@ describe('Bidirectional WS service calls', () => {
     const transports: string[] = []
 
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'echo',
         create: async (ctx) => { transports.push(String(ctx.transport)); return { ok: true } },
       })]
@@ -2482,7 +2482,7 @@ describe('Bidirectional WS service calls', () => {
 
   it('auto-events still fire for WS service calls', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'msgs',
         create: async () => ({ id: '1', text: 'hi' }),
       })]
@@ -2600,7 +2600,7 @@ describe('allowBulk guard', () => {
   }
 
   it('remove() without id throws BadRequest when allowBulk not set', async () => {
-    const svc = createService({ name: 'items', model: 'items', db: makeDb() })
+    const svc = buildService({ name: 'items', model: 'items', db: makeDb() })
     const ctx = testCtx('items', 'remove')
     ctx.id = null
 
@@ -2608,7 +2608,7 @@ describe('allowBulk guard', () => {
   })
 
   it('remove() without id and no filter throws BadRequest even with allowBulk', async () => {
-    const svc = createService({ name: 'items', model: 'items', db: makeDb(), allowBulk: true })
+    const svc = buildService({ name: 'items', model: 'items', db: makeDb(), allowBulk: true })
     const ctx = testCtx('items', 'remove')
     ctx.id = null
     ctx.query = {}
@@ -2617,7 +2617,7 @@ describe('allowBulk guard', () => {
   })
 
   it('remove() without id succeeds when allowBulk:true and filter present', async () => {
-    const svc = createService({ name: 'items', model: 'items', db: makeDb([{ id: '1', status: 'old' }]), allowBulk: true })
+    const svc = buildService({ name: 'items', model: 'items', db: makeDb([{ id: '1', status: 'old' }]), allowBulk: true })
     const ctx = testCtx('items', 'remove')
     ctx.id = null
     ctx.query = { status: 'old' } as unknown as Record<string, string>
@@ -2627,7 +2627,7 @@ describe('allowBulk guard', () => {
   })
 
   it('remove() with id always works regardless of allowBulk', async () => {
-    const svc = createService({ name: 'items', model: 'items', db: makeDb([{ id: '42' }]) })
+    const svc = buildService({ name: 'items', model: 'items', db: makeDb([{ id: '42' }]) })
     const ctx = testCtx('items', 'remove')
     ctx.id = '42'
 
@@ -2636,7 +2636,7 @@ describe('allowBulk guard', () => {
   })
 
   it('patch() without id throws BadRequest when allowBulk not set', async () => {
-    const svc = createService({ name: 'items', model: 'items', db: makeDb() })
+    const svc = buildService({ name: 'items', model: 'items', db: makeDb() })
     const ctx = testCtx('items', 'patch', { status: 'new' })
     ctx.id = null
 
@@ -2644,7 +2644,7 @@ describe('allowBulk guard', () => {
   })
 
   it('patch() without id succeeds when allowBulk:true', async () => {
-    const svc = createService({ name: 'items', model: 'items', db: makeDb([{ id: '1' }]), allowBulk: true })
+    const svc = buildService({ name: 'items', model: 'items', db: makeDb([{ id: '1' }]), allowBulk: true })
     const ctx = testCtx('items', 'patch', { status: 'updated' })
     ctx.id = null
     // A bulk patch also needs a filter — an empty one is every row, and that is
@@ -2671,7 +2671,7 @@ describe('allowBulk guard', () => {
 describe('pipelines — one owner', () => {
 
   it('memoizes on the app hooks it is given', async () => {
-    const svc = createService({ name: 'pings', find: async () => [] })
+    const svc = buildService({ name: 'pings', find: async () => [] })
     const h1  = { before: { all: [async function a() {}] } }
     const h2  = { before: { all: [async function b() {}] } }
 
@@ -2680,7 +2680,7 @@ describe('pipelines — one owner', () => {
   })
 
   it('a later hooks() call changes the answer — nothing has to invalidate', async () => {
-    const svc = createService({ name: 'pings', find: async () => [] })
+    const svc = buildService({ name: 'pings', find: async () => [] })
     const h   = { before: { all: [async function app() {}] } }
 
     const first = svc.pipelines(h)
@@ -2694,7 +2694,7 @@ describe('pipelines — one owner', () => {
   it('the app hook survives alongside the derived ones', async () => {
     const order: string[] = []
     const app = await createTestApp({
-      services: [() => createService({ name: 'pings', find: async () => [{ pong: true }] })]
+      services: [buildService({ name: 'pings', find: async () => [{ pong: true }] })]
     })
     app.hooks({ before: { all: [async function appBefore() { order.push('app:before') }] } })
 
@@ -2711,7 +2711,7 @@ describe('pipelines — one owner', () => {
     // caller could pass hooks and watch them not run — which is why staleness
     // was a correctness bug. Warm with one map, call with another.
     const ran: string[] = []
-    const svc = createService({ name: 'things', find: async () => [{ id: '1' }] })
+    const svc = buildService({ name: 'things', find: async () => [{ id: '1' }] })
 
     const warm = { before: { all: [async function warmHook() { ran.push('warm') }] } }
     const live = { before: { all: [async function liveHook() { ran.push('live') }] } }
@@ -2729,12 +2729,12 @@ describe('pipelines — one owner', () => {
     // cache; now it depends on nothing but the memo key.
     const ran: string[] = []
     const app = await createTestApp({
-      services: [() => createService({ name: 'first', find: async () => [] })]
+      services: [buildService({ name: 'first', find: async () => [] })]
     })
     app.hooks({ before: { all: [async function appBefore() { ran.push('app') }] } })
     await request(app).get('/first')          // forces start + setAppHooks
 
-    const late = createService({ name: 'late', find: async () => [{ id: '1' }] })
+    const late = buildService({ name: 'late', find: async () => [{ id: '1' }] })
     app.services.register(late)
 
     const res = await request(app).get('/late')
@@ -2749,7 +2749,7 @@ describe('circuitBreaker', () => {
 
   function makeService(failTimes = 0) {
     let calls = 0
-    const svc = createService({
+    const svc = buildService({
       name: 'ext',
       find: async () => {
         calls++
@@ -2830,7 +2830,7 @@ describe('circuitBreaker', () => {
 
   it('resets failure count on success', async () => {
     let fail = true
-    const svc = createService({
+    const svc = buildService({
       name: 'flaky',
       find: async () => {
         if (fail) throw new Error('fail')
@@ -2872,7 +2872,7 @@ import type { SessionContext } from '../src/auth/types.ts'
 describe('rateLimit hook', () => {
 
   function makeService(hookOpts: Parameters<typeof rateLimit>[0]) {
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [{ id: 1 }],
     })
@@ -3017,7 +3017,7 @@ describe('correlationId middleware', () => {
 
   async function makeApp(opts = {}) {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'pings',
         find: async () => [{ pong: true }],
       })],
@@ -3063,7 +3063,7 @@ describe('correlationId middleware', () => {
 
   it('includes the id on error responses too', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'boom',
         find: async () => { throw new Error('kaboom') },
       })]
@@ -3076,7 +3076,7 @@ describe('correlationId middleware', () => {
 
   it('respects a custom header name', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'pings', find: async () => [] })]
+      services: [buildService({ name: 'pings', find: async () => [] })]
     })
     app.configure(correlationId({ header: 'x-trace-id' }))
     const res = await request(app)
@@ -3088,7 +3088,7 @@ describe('correlationId middleware', () => {
 
   it('respects a custom generator function', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'pings', find: async () => [] })]
+      services: [buildService({ name: 'pings', find: async () => [] })]
     })
     app.configure(correlationId({ generator: () => 'fixed-id' }))
     const res = await request(app).get('/pings')
@@ -3104,7 +3104,7 @@ describe('csrf middleware', () => {
 
   async function makeApp(csrfOpts: Parameters<typeof csrf>[0]) {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'notes',
         find:   async () => [],
         create: async (ctx) => ({ created: true, data: ctx.data }),
@@ -3417,7 +3417,7 @@ describe('cors() + csrf() ordering', () => {
 
   async function makeApp() {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'items',
         find:   async () => [],
         create: async () => ({ created: true }),
@@ -3507,7 +3507,7 @@ describe('cors() + csrf() ordering', () => {
     // registered as a special handler. csrf() uses the default methods list
     // (POST/PUT/PATCH/DELETE) so OPTIONS would still pass through.
     const app = await createTestApp({
-      services: [() => createService({ name: 'items', find: async () => [] })],
+      services: [buildService({ name: 'items', find: async () => [] })],
     })
     app.configure(csrf({ origins: ['https://myapp.com'] }))
     // OPTIONS is not in csrf's protected methods — passes regardless
@@ -3533,7 +3533,7 @@ describe('paginate() hook', () => {
   async function pageFor(url: string, hook = paginate(20, 100)) {
     let directives: unknown, locals: unknown
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:  'things',
         hooks: { before: { find: [hook] } },
         find:  async (ctx) => {
@@ -3578,7 +3578,7 @@ describe('paginate() hook', () => {
     // No bridge involved, so no directives — `{ limit: 5 }` is on ctx.query.
     let locals: unknown
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:  'things',
         hooks: { before: { find: [paginate(20, 100)] } },
         find:  async (ctx) => { locals = ctx.locals.paginate; return [] },
@@ -3593,7 +3593,7 @@ describe('ctx.paginate()', () => {
 
   async function makeApp() {
     return createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'posts',
         find: async () => [],  // won't be called — we use custom routes
       })]
@@ -3627,7 +3627,7 @@ describe('ctx.paginate()', () => {
 
   it('generates a prev URL on subsequent pages', async () => {
     const app = await makeApp()
-    app.get('/paginated', (ctx) => ctx.paginate([{ id: '5' }], 10, { limit: 5, skip: 5 }))
+    app.get('/paginated', (ctx) => ctx.paginate([{ id: '5' }], 10, { limit: 5, offset: 5 }))
     const res = await request(app).get('/paginated')
     const body = res.body as Record<string, unknown>
     expect(body.prev).toContain('$offset=0')
@@ -3651,7 +3651,7 @@ describe('ctx.paginate()', () => {
 
   it('null for both next and prev on a single full page', async () => {
     const app = await makeApp()
-    app.get('/paginated', (ctx) => ctx.paginate([{ id: '1' }], 1, { limit: 10, skip: 0 }))
+    app.get('/paginated', (ctx) => ctx.paginate([{ id: '1' }], 1, { limit: 10, offset: 0 }))
     const res = await request(app).get('/paginated')
     const body = res.body as Record<string, unknown>
     expect(body.next).toBeNull()
@@ -3665,7 +3665,7 @@ describe('ctx.sse()', () => {
 
   it('returns 200 with correct content-type', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     app.get('/events', (ctx) => {
       const { response, close } = ctx.sse()
@@ -3679,7 +3679,7 @@ describe('ctx.sse()', () => {
 
   it('sends data: lines in SSE format', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     app.get('/events', (ctx) => {
       const { response, send, close } = ctx.sse()
@@ -3696,7 +3696,7 @@ describe('ctx.sse()', () => {
 
   it('sets x-accel-buffering: no to disable nginx buffering', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     app.get('/events', (ctx) => {
       const { response, close } = ctx.sse()
@@ -3728,7 +3728,7 @@ describe('ctx.sse()', () => {
 
   it('delivers each frame as it is sent to a caller that accepts gzip', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     app.get('/events', (ctx) => {
       const { response, send, close } = ctx.sse()
@@ -3744,7 +3744,7 @@ describe('ctx.sse()', () => {
 
   it('ctx.stream() is not read to its end before it is sent', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     app.get('/export', (ctx) => {
       const readable = new ReadableStream<Uint8Array>({
@@ -3765,7 +3765,7 @@ describe('ctx.sse()', () => {
   // what tells its author to reach for ctx.stream().
   it('warns, once, when a raw route stream is held for compression', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     app.get('/raw-export', () => {
       const readable = new ReadableStream<Uint8Array>({
@@ -3790,7 +3790,7 @@ describe('ctx.sse()', () => {
 
   it('does not warn for a compressible body that is read at once', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     app.get('/fast', (ctx) => ctx.text('x'.repeat(2000)))
     const warn = spyOn(console, 'warn').mockImplementation(() => {})
@@ -3809,7 +3809,7 @@ describe('apiPrefix config', () => {
 
   it('no prefix by default — routes mount at /{service}', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'items', find: async () => [{ id: '1' }] })]
+      services: [buildService({ name: 'items', find: async () => [{ id: '1' }] })]
     })
     const res = await request(app).get('/items')
     expect(res.status).toBe(200)
@@ -3818,7 +3818,7 @@ describe('apiPrefix config', () => {
   it('mounts routes at custom prefix', async () => {
     const app = await createTestApp({
       config: { apiPrefix: '/api/v1' },
-      services: [() => createService({ name: 'items', find: async () => [{ id: '1' }] })]
+      services: [buildService({ name: 'items', find: async () => [{ id: '1' }] })]
     })
     const res = await request(app).get('/api/v1/items')
     expect(res.status).toBe(200)
@@ -3827,7 +3827,7 @@ describe('apiPrefix config', () => {
   it('old prefix returns 404 when custom prefix is set', async () => {
     const app = await createTestApp({
       config: { apiPrefix: '/api/v2' },
-      services: [() => createService({ name: 'items', find: async () => [] })]
+      services: [buildService({ name: 'items', find: async () => [] })]
     })
     const res = await request(app).get('/items')
     expect(res.status).toBe(404)
@@ -3836,7 +3836,7 @@ describe('apiPrefix config', () => {
   it('handles prefix without leading slash gracefully', async () => {
     const app = await createTestApp({
       config: { apiPrefix: 'v3' },
-      services: [() => createService({ name: 'items', find: async () => [{ id: '1' }] })]
+      services: [buildService({ name: 'items', find: async () => [{ id: '1' }] })]
     })
     const res = await request(app).get('/v3/items')
     expect(res.status).toBe(200)
@@ -3850,7 +3850,7 @@ describe('apiPrefix config', () => {
     // for it under the prefix.
     const app = await createTestApp({
       config: { apiPrefix: '/api' },
-      services: [() => createService({ name: 'items', find: async () => [] })],
+      services: [buildService({ name: 'items', find: async () => [] })],
     })
     app.get('/thing', (ctx) => ctx.json({ ok: true }))    // what a plugin's register() does
     expect((await request(app).get('/api/thing')).status).toBe(200)
@@ -3860,7 +3860,7 @@ describe('apiPrefix config', () => {
   it('handles prefix with trailing slash gracefully', async () => {
     const app = await createTestApp({
       config: { apiPrefix: '/api/v4/' },
-      services: [() => createService({ name: 'items', find: async () => [{ id: '1' }] })]
+      services: [buildService({ name: 'items', find: async () => [{ id: '1' }] })]
     })
     const res = await request(app).get('/api/v4/items')
     expect(res.status).toBe(200)
@@ -3873,14 +3873,14 @@ describe('app.ws() routing', () => {
 
   it('is registered on the app object', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     expect(typeof app.ws).toBe('function')
   })
 
   it('ws() registration accepts {param} paths without throwing', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     expect(() => {
       app.ws('/chat/{roomId}', {
@@ -3892,7 +3892,7 @@ describe('app.ws() routing', () => {
 
   it('rejects registration after router is built', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     // Build the router
     app.http.router.build()
@@ -3963,7 +3963,7 @@ describe('healthPlugin', () => {
 
   async function makeApp(opts = {}) {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })],
+      services: [buildService({ name: 'noop', find: async () => [] })],
     })
     app.configure(healthPlugin(opts))
     return app
@@ -3989,7 +3989,7 @@ describe('healthPlugin', () => {
 
   it('GET /health returns 503 when a custom check fails', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     app.configure(healthPlugin({
       checks: {
@@ -4082,7 +4082,7 @@ describe('healthPlugin', () => {
 
   it('mounts at custom path prefix', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     app.configure(healthPlugin({ path: '/_internal' }))
     const res = await request(app).get('/_internal/health')
@@ -4094,7 +4094,7 @@ describe('healthPlugin', () => {
 
   it('accepts a custom authFn', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'noop', find: async () => [] })]
+      services: [buildService({ name: 'noop', find: async () => [] })]
     })
     app.configure(healthPlugin({
       authFn: (ctx) => ctx.headers['x-internal'] === 'yes'
@@ -4216,15 +4216,13 @@ describe('autoloadServices', () => {
     const servicePath = fileURLToPath(new URL('../src/core/service.ts', import.meta.url))
     await Bun.write(`${dir}/users.service.ts`, `
       import { createService } from '${servicePath}'
-      export function createUsersService() {
-        return createService({ name: 'users', find: async () => [] })
-      }
+      export default createService({ name: 'users', find: async () => [] })
     `)
 
     const { ServiceRegistry } = await import('../src/core/service.ts')
     const registry = new ServiceRegistry()
 
-    await autoloadServices({ dir, app: {}, registry })
+    await autoloadServices({ dir, registry })
 
     expect(registry.has('users')).toBe(true)
 
@@ -4237,7 +4235,7 @@ describe('autoloadServices', () => {
 
     // Should not throw
     await expect(
-      autoloadServices({ dir: '/tmp/does-not-exist-xyz', app: {}, registry })
+      autoloadServices({ dir: '/tmp/does-not-exist-xyz', registry })
     ).resolves.toBeUndefined()
 
     expect(registry.list().length).toBe(0)
@@ -4249,9 +4247,7 @@ describe('autoloadServices', () => {
     const servicePath = fileURLToPath(new URL('../src/core/service.ts', import.meta.url))
     await Bun.write(`${dir}/items.service.ts`, `
       import { createService } from '${servicePath}'
-      export function createItemsService() {
-        return createService({ name: 'items', find: async () => [] })
-      }
+      export default createService({ name: 'items', find: async () => [] })
     `)
 
     const { ServiceRegistry, createService } = await import('../src/core/service.ts')
@@ -4259,7 +4255,7 @@ describe('autoloadServices', () => {
 
     // Pre-register so loader finds a duplicate
     registry.register(createService({ name: 'items', find: async () => [] }))
-    await autoloadServices({ dir, app: {}, registry })
+    await autoloadServices({ dir, registry })
 
     // Still only one
     expect(registry.list().length).toBe(1)
@@ -4279,7 +4275,7 @@ describe('cors() preflight and header correctness', () => {
 
   async function makeApp(origins: string | string[]) {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'items',
         find:   async () => [],
         create: async () => ({ created: true }),
@@ -4357,7 +4353,7 @@ describe('cors() preflight and header correctness', () => {
 
   it('wildcard origin allows any origin without credentials', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'items', model: 'item',
         async find() { return [] },
       })],
@@ -4375,7 +4371,7 @@ describe('cors() preflight and header correctness', () => {
 
 // ─── Model-less service wiring ────────────────────────────────────────────
 // Regression test for the bug where the (now removed) createLitestoneService
-// returned a plain ServiceDefinition object instead of calling createService(),
+// returned a plain ServiceDefinition object instead of calling buildService(),
 // meaning the hook state was undefined and app.start() crashed while warming
 // every registered service.
 //
@@ -4386,7 +4382,7 @@ describe('cors() preflight and header correctness', () => {
 describe('createService — model-less (explicit CRUD methods)', () => {
 
   it('registers without throwing — _hookMap is defined', async () => {
-    const svc = createService({
+    const svc = buildService({
       name:  'widgets',
       find:  async () => [],
       get:   async () => null,
@@ -4394,14 +4390,14 @@ describe('createService — model-less (explicit CRUD methods)', () => {
       patch:  async (ctx) => ctx.data,
       remove: async () => null,
     })
-    // Must have the internal state createService() adds
+    // Must have the internal state buildService() adds
     expect(svc._hookMap).toBeDefined()
     expect(typeof svc.pipelines).toBe('function')
     expect(svc.pipelines()['find']).toBeDefined()
   })
 
   it('app.start() does not crash when a litestone service is registered', async () => {
-    const svc = createService({
+    const svc = buildService({
       name:   'widgets',
       find:   async () => [],
       get:    async () => null,
@@ -4411,12 +4407,12 @@ describe('createService — model-less (explicit CRUD methods)', () => {
     })
     // createTestApp calls _startForTest() which runs setAppHooks → mergeHookMaps
     // — this is where the crash happened
-    await expect(createTestApp({ services: [() => svc] })).resolves.toBeDefined()
+    await expect(createTestApp({ services: [svc] })).resolves.toBeDefined()
   })
 
   it('registered service responds to GET /api/widgets', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:  'widgets',
         find:  async () => [{ id: 1, name: 'Sprocket' }],
         get:   async () => null,
@@ -4434,7 +4430,7 @@ describe('createService — model-less (explicit CRUD methods)', () => {
   it('hooks declared on the service definition are applied', async () => {
     let hookRan = false
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'widgets',
         find: async () => [],
         get:  async () => null,
@@ -4461,7 +4457,7 @@ describe('Cache-Control headers', () => {
 
   it('authenticated GET returns private, no-cache', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'items',
         find: async () => [],
         hooks: { before: { find: [authenticate] } },
@@ -4478,7 +4474,7 @@ describe('Cache-Control headers', () => {
 
   it('authenticated GET includes Vary: Authorization', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'items',
         find: async () => [],
         hooks: { before: { find: [authenticate] } },
@@ -4493,7 +4489,7 @@ describe('Cache-Control headers', () => {
 
   it('public GET returns no-store', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'items', find: async () => [] })],
+      services: [buildService({ name: 'items', find: async () => [] })],
     })
     const res = await request(app).get('/items')
     expect(res.status).toBe(200)
@@ -4502,7 +4498,7 @@ describe('Cache-Control headers', () => {
 
   it('POST returns no-store', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'items',
         find:   async () => [],
         create: async (ctx) => ctx.data ?? {},
@@ -4515,7 +4511,7 @@ describe('Cache-Control headers', () => {
 
   it('PATCH returns no-store', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:  'items',
         find:  async () => [],
         get:   async () => ({ id: '1' }),
@@ -4552,7 +4548,7 @@ describe('authenticate hook usage', () => {
 
   async function makeApp() {
     return createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:   'items',
         find:   async () => [{ id: 1 }],
         create: async (ctx) => ctx.data ?? {},
@@ -4756,35 +4752,35 @@ describe('helmet — security headers applied by default', () => {
 
   it('x-frame-options: DENY on every response', async () => {
     const app = await createTestApp()
-    app.services.register(createService({ name: 'items', find: async () => [] }))
+    app.services.register(buildService({ name: 'items', find: async () => [] }))
     const res = await request(app).get('/items')
     expect(res.headers['x-frame-options']).toBe('DENY')
   })
 
   it('x-content-type-options: nosniff on every response', async () => {
     const app = await createTestApp()
-    app.services.register(createService({ name: 'items', find: async () => [] }))
+    app.services.register(buildService({ name: 'items', find: async () => [] }))
     const res = await request(app).get('/items')
     expect(res.headers['x-content-type-options']).toBe('nosniff')
   })
 
   it('x-xss-protection header set', async () => {
     const app = await createTestApp()
-    app.services.register(createService({ name: 'items', find: async () => [] }))
+    app.services.register(buildService({ name: 'items', find: async () => [] }))
     const res = await request(app).get('/items')
     expect(res.headers['x-xss-protection']).toBeDefined()
   })
 
   it('referrer-policy header set', async () => {
     const app = await createTestApp()
-    app.services.register(createService({ name: 'items', find: async () => [] }))
+    app.services.register(buildService({ name: 'items', find: async () => [] }))
     const res = await request(app).get('/items')
     expect(res.headers['referrer-policy']).toBe('no-referrer')
   })
 
   it('helmet disabled via config.http.helmet = false', async () => {
     const app = await createTestApp({ config: { http: { helmet: false } } })
-    app.services.register(createService({ name: 'items', find: async () => [] }))
+    app.services.register(buildService({ name: 'items', find: async () => [] }))
     const res = await request(app).get('/items')
     expect(res.headers['x-frame-options']).toBeUndefined()
   })
@@ -4800,7 +4796,7 @@ describe('app.setAuth()', () => {
     const stubAuth = createStubAuth({ users: [{ id: 'u1', role: 'user' }] })
     app.setAuth(stubAuth)
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'items',
       find: async () => [],
       hooks: { before: { find: [authenticate] } },
@@ -4815,7 +4811,7 @@ describe('app.setAuth()', () => {
     const app = await createTestApp()
     app.setAuth(createStubAuth())
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'items',
       find: async () => [],
       hooks: { before: { find: [authenticate] } },

@@ -1,12 +1,8 @@
 // src/basecamp.types.ts
-// Extends Junction's App interface with Basecamp-specific subsystems.
-// app.conduit is typed via @frontierjs/conduit's module augmentation.
-// app.jobs   is typed via @frontierjs/caravan's duck-typed CaravanInstance.
+// The provider interfaces, and the slots this app adds to junction's App.
 
-import type { App, ILogger } from '@frontierjs/junction'
 import type { BasecampDb } from './core/db.ts'
-import type { CaravanInstance } from '@frontierjs/caravan'
-import type { Workbench } from './core/workbench.ts'
+import type { Workbench }  from './core/workbench.ts'
 
 // ─── Provider interfaces ──────────────────────────────────────────────────────
 // Junction covers: cache, events, scheduler, workers, mail, ai
@@ -160,32 +156,26 @@ export interface BasecampProviders {
   cloudSpend:    ICloudSpend
 }
 
-// ─── BasecampApp ───────────────────────────────────────────────────────────────
-// Junction App + Basecamp extensions.
-// app.conduit is added by @frontierjs/conduit's module augmentation.
-// app.jobs    is added explicitly here (Caravan uses duck-typing).
-
-// THE Data boundary, typed the way Junction's other unknowable subsystems are:
-// by augmenting the empty interface it exports, never by redeclaring the field
-// (Invariant 5 — declaration merging requires identical types, so a
-// redeclaration silently loses). This used to be a SECOND claimed name for the
-// identical object, `app.db`, because `App.db` was `unknown` and an app could
-// not narrow it; the alias then won 29 reads to three (`FJS-532`).
+// ─── The app ──────────────────────────────────────────────────────────────────
+// Every slot is typed by augmenting junction's exported interfaces, never by a
+// second interface that redeclares a field (Invariant 5 — declaration merging
+// requires identical types, so a redeclaration silently loses). A service holds
+// no app of its own and reads `ctx.app` / `$.app`, which is junction's `App`,
+// so a slot typed anywhere else is a slot those reads cannot see.
+//
+// `app.conduit` and `app.jobs` are typed by @frontierjs/conduit's and
+// @frontierjs/caravan's own augmentations. `app.db` is the Litestone client
+// createApp was given; services use the caller-scoped copy (`$.db`), and
+// `app.db` is the unscoped root, for jobs and the outpost paths that have no
+// session to scope to. Junction types `db` and `jobs` optional because it runs
+// without either; this app never does, so a reader asserts them with `!`.
 declare module '@frontierjs/junction' {
   interface AppDb extends BasecampDb {}
-}
-
-export interface BasecampApp extends App {
-  // Junction's own `app.db` is the Litestone client this app passed to
-  // createApp, typed by the augmentation above. Services normally use the
-  // caller-scoped copy on ctx.locals.db (or `$.db`); `app.db` is the unscoped
-  // root, for jobs and for the outpost paths that have no session to scope to.
-  db:        BasecampDb
-  // The raw bun:sqlite handle, for the two callers that want a Database and
-  // not an ORM.
-  sqlite:    import('bun:sqlite').Database
-  providers: BasecampProviders
-  logger:    ILogger
-  jobs:      CaravanInstance   // durable job queue — replaces IQueue stub
-  workbench: Workbench
+  interface App {
+    // The raw bun:sqlite handle, for the two callers that want a Database and
+    // not an ORM.
+    sqlite:    import('bun:sqlite').Database
+    providers: BasecampProviders
+    workbench: Workbench
+  }
 }

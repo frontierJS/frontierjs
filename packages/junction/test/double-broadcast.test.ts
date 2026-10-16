@@ -17,7 +17,7 @@
 // stop broadcasting — the failure this exists to prevent, inverted.
 
 import { describe, it, expect } from 'bun:test'
-import { createService } from '../src/core/service.ts'
+import { buildService } from '../src/core/service.ts'
 import { announce } from '../src/transport/channels.ts'
 
 const chan = () => announce(() => null)
@@ -25,7 +25,7 @@ const chan = () => announce(() => null)
 describe('a service cannot broadcast twice', () => {
 
   it('refuses channel: plus a announce() hook on the service', () => {
-    const svc = createService({
+    const svc = buildService({
       name: 'posts', model: 'Post', channel: 'posts',
       hooks: { after: { create: [chan()] } },
     })
@@ -35,28 +35,28 @@ describe('a service cannot broadcast twice', () => {
   it('refuses it when the announce hook arrives from APP-level hooks', () => {
     // `after: { all: [announce(…)] }` applies to every service at once, so this
     // is the shape that doubles a whole app rather than one method.
-    const svc = createService({ name: 'posts', model: 'Post', channel: 'posts' })
+    const svc = buildService({ name: 'posts', model: 'Post', channel: 'posts' })
     expect(() => svc.pipelines({ after: { all: [chan()] } }))
       .toThrow(/declares channel: and also runs a announce\(\) hook/)
   })
 
   it('refuses it when the hook is added after construction', () => {
-    const svc = createService({ name: 'posts', model: 'Post', channel: 'posts' })
+    const svc = buildService({ name: 'posts', model: 'Post', channel: 'posts' })
     expect(() => svc.pipelines()).not.toThrow()
     svc.hooks({ after: { patch: [chan()] } })
     expect(() => svc.pipelines()).toThrow(/announce\(\) hook on 'patch'/)
   })
 
   it('either mechanism ALONE is fine', () => {
-    expect(() => createService({ name: 'a', model: 'A', channel: 'a' }).pipelines()).not.toThrow()
-    expect(() => createService({
+    expect(() => buildService({ name: 'a', model: 'A', channel: 'a' }).pipelines()).not.toThrow()
+    expect(() => buildService({
       name: 'b', model: 'B',
       hooks: { after: { create: [chan()] } },
     }).pipelines()).not.toThrow()
   })
 
   it('channel: false is a declared opt-out, so the hook is the only broadcaster', () => {
-    expect(() => createService({
+    expect(() => buildService({
       name: 'c', model: 'C', channel: false,
       hooks: { after: { create: [chan()] } },
     }).pipelines()).not.toThrow()
@@ -67,7 +67,7 @@ describe('a service cannot broadcast twice', () => {
     // service, and — worse in the other direction — would let a name-mangling
     // build step disable the real check.
     async function announce() { /* an app's own hook, same name */ }
-    expect(() => createService({
+    expect(() => buildService({
       name: 'd', model: 'D', channel: 'd',
       hooks: { after: { create: [announce] } },
     }).pipelines()).not.toThrow()

@@ -8,7 +8,7 @@ description: The four numbers, as they already are
 `model Note` carries one line of authorization:
 
 ```text
-@@gate("0.4.4.6")
+@@gate(0.4.4.6)
 ```
 
 **read · create · update · delete**, each the lowest standing that may do it.

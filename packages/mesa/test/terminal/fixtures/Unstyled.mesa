@@ -4,6 +4,6 @@
 </script>
 <div>
   <p>Shown</p>
-  <button on:click={flip}>Flip</button>
+  <button onclick={flip}>Flip</button>
   <p>hidden: {hidden}</p>
 </div>

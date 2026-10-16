@@ -60,8 +60,8 @@ const { createResource }  = await import('../src/resource/resource.js')
 const { listCache, listKey, _resetListCache } = await import('../src/resource/list-cache.js')
 
 const SOURCE = `
-model Sheet { id String @id @default(uuid())  name String  @@gate("0.0.0.0")  @@sync(server) }
-model Plain { id Int    @id                   name String  @@gate("0.0.0.0") }
+model Sheet { id String @id @default(uuid())  name String  @@gate(0.0.0.0)  @@sync(server) }
+model Plain { id Int    @id                   name String  @@gate(0.0.0.0) }
 `
 
 const offline = () => Promise.reject(new TypeError('Failed to fetch'))

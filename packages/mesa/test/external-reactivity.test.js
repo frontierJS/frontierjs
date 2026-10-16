@@ -106,11 +106,11 @@ describe('stays quiet where it should', () => {
   })
 
   test('event handlers — the value is meant to be a function', async () => {
-    // on:click={toggleTheme} reads an imported function as a value, which is
+    // onclick={toggleTheme} reads an imported function as a value, which is
     // correct and extremely common. Warning here made the diagnostic noisy
     // enough to be worth turning off.
     expect(await warnings(
-      `<script>import { toggle } from '${MOD}'</script><button on:click={toggle}>x</button>`
+      `<script>import { toggle } from '${MOD}'</script><button onclick={toggle}>x</button>`
     )).toEqual([])
     expect(await warnings(
       `<script>import { toggle } from '${MOD}'</script><button onclick={toggle}>x</button>`

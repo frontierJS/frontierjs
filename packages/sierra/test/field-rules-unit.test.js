@@ -31,7 +31,7 @@ model Job {
   size      Int   @unit(MB)
   retention Int   @unit(mo)
   plain     Int
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 `
 

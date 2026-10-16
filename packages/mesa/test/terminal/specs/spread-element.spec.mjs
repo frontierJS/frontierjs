@@ -1,6 +1,6 @@
 /*
  * spread-element — `fixtures/SpreadEl.mesa`: `{...expr}` on an element, the
- * `$$tui.spread` owner. An input takes `value` and `placeholder` from one
+ * `$$host.spread` owner. An input takes `value` and `placeholder` from one
  * object, a button its `onclick` and `disabled` from another, and both
  * objects are replaced while mounted.
  *

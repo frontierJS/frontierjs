@@ -54,7 +54,7 @@ cut, deferred or done the simpler way.
 
 | # | Feature | Best at | FJS today | V1 |
 | --- | --- | --- | --- | --- |
-| I1 | Connector spec: each source declares its auth and config | Airbyte spec, Singer tap | ◐ conduit, outbound only | **Simpler** — a small protocol (config schema, `streams()`, `read(cursor)` as an async iterator), not a catalog |
+| I1 | Connector spec: each source declares its auth and config | Airbyte spec, Singer tap | ◐ conduit, both ends built (`FJS-D177`, `FJS-D899`) | **Simpler** — a small protocol (config schema, `streams()`, `read(cursor)` as an async iterator), not a catalog |
 | I2 | Discovery: a source lists its streams and their schemas | Singer catalog, Airbyte discover | ✗ | **Simpler** — folded into I1's `streams()` |
 | I3 | Incremental sync with a saved cursor | Singer STATE, dlt incremental | ✗ (caravan's resumable batch is close) | **Keep** — one cursor column per stream |
 | I4 | Sync modes: full replace / incremental append / incremental dedupe | Airbyte | ✗ | **Simpler** — two modes: full replace, or incremental upsert on a key |

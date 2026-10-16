@@ -14,5 +14,5 @@ const TRAIT = readFileSync(new URL('../../litestone/references/AuditTrail.lite',
 export const auditDatabase = (dir) => `
 ${TRAIT}
 database audit { path "${dir}/audit.db" model AuditTrail }
-model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") }
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) }
 `

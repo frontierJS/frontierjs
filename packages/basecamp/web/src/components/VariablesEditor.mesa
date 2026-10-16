@@ -104,7 +104,7 @@
         <td><code>{v.key}</code></td>
         <td>
           {#if editId === v.id}
-            <form class="cluster" on:submit|preventDefault={() => save(v)}>
+            <form class="cluster" onsubmit|preventDefault={() => save(v)}>
               <Input label="" aria-label={`Value of ${v.key}`} id={`${idPrefix}-edit-${v.key}`} value={editValue}
                      type={v.secret ? 'password' : 'text'} autocomplete="off"
                      placeholder={v.secret ? 'New value' : ''}
@@ -134,7 +134,7 @@
   <p class="text-sm text-muted">No variables set.</p>
 {/if}
 
-<form class="card stack" novalidate on:submit|preventDefault={add}>
+<form class="card stack" novalidate onsubmit|preventDefault={add}>
   <div class="field-row">
     <Input label="Key" name={`${idPrefix}-key`} id={`${idPrefix}-key`} placeholder="DATABASE_URL"
            required bind:value={newKey} />

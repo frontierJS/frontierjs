@@ -36,6 +36,6 @@ title: Home
 
 <article class="alert info">
   <div class="alert-content">
-    Sign in from the header to get past <code>@@gate("0.4.4.5")</code> — reads are public, writes want level 4, delete wants 5.
+    Sign in from the header to get past <code>@@gate(0.4.4.5)</code> — reads are public, writes want level 4, delete wants 5.
   </div>
 </article>

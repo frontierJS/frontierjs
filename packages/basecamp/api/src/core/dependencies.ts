@@ -11,7 +11,7 @@
 // Version comparison is `Bun.semver`, never a parse of our own. The one thing
 // it does not answer is WHICH part moved, and that is the only parse here.
 
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 import { notifyPeople, workspaceMembers } from './notify.ts'
 
 // ─── Targets ─────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
  * fetch per distinct advisory, because the batch answers ids only.
  */
 export async function checkNames(
-  app: BasecampApp,
+  app: App,
   wanted: { name: string; installed: string[] }[],
 ): Promise<CheckResult[]> {
   const conduit = (app as any).conduit as { send: Send } | undefined
@@ -227,13 +227,13 @@ export async function checkNames(
  */
 let refreshing: Promise<unknown> = Promise.resolve()
 
-export function refreshDependencies(app: BasecampApp, db: any, opts: { workspaceId?: string } = {}) {
+export function refreshDependencies(app: App, db: any, opts: { workspaceId?: string } = {}) {
   const run = refreshing.then(() => refreshOnce(app, db, opts))
   refreshing = run.catch(() => {})
   return run
 }
 
-async function refreshOnce(app: BasecampApp, db: any, opts: { workspaceId?: string }) {
+async function refreshOnce(app: App, db: any, opts: { workspaceId?: string }) {
   const deps: any[] = await db.dependency.findMany({
     where:   opts.workspaceId ? { workspaceId: opts.workspaceId } : {},
     include: { uses: { select: { installed: true } } },

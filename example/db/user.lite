@@ -50,7 +50,7 @@ extend model User {
 
 // ─── Who may read the roster ──────────────────────────────────────────────
 //
-// auth ships `User` at `@@gate("4.4.4.5")` and NO read policy, which is the
+// auth ships `User` at `@@gate(4.4.4.5)` and NO read policy, which is the
 // right default for an app whose only people are its own staff: read at USER(4)
 // so an app's own screens can list them.
 //

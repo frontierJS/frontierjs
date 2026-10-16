@@ -11,7 +11,7 @@
 //   All state lives in memory; each test gets a fresh app.
 //
 // Usage:
-//   const app = await createTestApp({ services: [createUsersService] })
+//   const app = await createTestApp({ services: [createService({ name: 'users', model: 'User' })] })
 //
 //   // Direct service call
 //   const ctx = testCtx('users', 'create', { name: 'Alice', email: 'a@b.com' })
@@ -24,11 +24,12 @@
 //   expect((res.body as { name: string }).name).toBe('Alice')
 
 import { createApp, type App, type AppOptions } from '../core/app.ts'
-import { bridge, enterRequest, type ServiceContext }          from '../transport/bridge.ts'
+import { bridge }                                from '../transport/bridge.ts'
+import { enterRequest, type ServiceContext }    from '../core/context.ts'
 import { defaultConfig, deepMerge }               from '../config/index.ts'
 import { encodeQueryString }                     from '@frontierjs/toolbelt/query'
 import type { IAuth, SessionContext }            from '../auth/types.ts'
-import type { Service }                          from '../core/service.ts'
+import type { Service, ServiceDefinition }       from '../core/service.ts'
 import type { HookMap }                          from '../core/hooks.ts'
 
 // ─── Stub auth ────────────────────────────────────────────────────────────
@@ -150,8 +151,8 @@ export function createStubAuth(opts: { users?: StubUser[] } = {}): IAuth & {
 // ─── createTestApp ────────────────────────────────────────────────────────
 
 export interface TestAppOptions {
-  // Services to register (factories receive the app)
-  services?:   Array<(app: App) => Service>
+  // Service definitions to register, each named
+  services?:   Array<ServiceDefinition | Service>
 
   // App-level hooks to apply
   hooks?:      HookMap
@@ -199,9 +200,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
   const app = createApp({ config, auth, system: opts.system, autoload: opts.autoload }) as TestApp
 
   // ── Register services ──────────────────────────────────────────────
-  for (const factory of (opts.services ?? [])) {
-    app.services.register(factory(app))
-  }
+  for (const def of (opts.services ?? [])) app.services.register(def)
 
   // ── App-level hooks ────────────────────────────────────────────────
   if (opts.hooks) app.hooks(opts.hooks)
@@ -425,7 +424,7 @@ export { enterCall } from '../core/context.ts'
 // fields, so `user` and `caller` were silently dropped and propagation
 // behaved one way under test and another in production.
 export function withTestMeta<T>(
-  meta: Partial<import('../transport/bridge.ts').RequestMeta>,
+  meta: Partial<import('../core/context.ts').RequestMeta>,
   fn: () => T
 ): T {
   return enterRequest({

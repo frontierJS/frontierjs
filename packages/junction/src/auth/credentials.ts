@@ -9,7 +9,7 @@
 //
 //   createApp({ credentials: [signedRequest({ keyFor })] })
 
-import { verifyRequest } from '@frontierjs/toolbelt/signature'
+import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
 import type { IAuth, SessionContext } from './types.ts'
 
 /** What a verifier is shown: the request as the signer signed it. */
@@ -70,17 +70,11 @@ export function signedRequest(opts: SignedRequestOptions): CredentialVerifier {
   // Without a memory a captured request replays for the whole window, and a
   // WebSocket upgrade authenticates every frame after it, whatever method each
   // frame names. TWICE the window, because a timestamp accepted at the limit
-  // ahead of this clock stays fresh for another full window (FJS-1833). Insertion
-  // order is expiry order, so a sweep stops at the first live entry.
-  const seen = new Map<string, number>()
-  const remember = (caller: string) => (nonce: string): boolean => {
-    const t = now()
-    for (const [k, until] of seen) { if (until > t) break; seen.delete(k) }
-    const id = `${caller}\n${nonce}`
-    if (seen.has(id)) return true
-    seen.set(id, t + 2 * window)
-    return false
-  }
+  // ahead of this clock stays fresh for another full window (FJS-1833). Keyed
+  // by caller, so one machine's nonce cannot refuse another's.
+  const seen = nonceMemory()
+  const remember = (caller: string) => (nonce: string): boolean =>
+    seen(`${caller}\n${nonce}`, now(), 2 * window)
   return async function signedRequest(req) {
     // No signature header at all is not this credential; the bearer path may
     // still own the request. A signature header that fails is refused.

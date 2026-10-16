@@ -33,20 +33,20 @@ model Lead {
   internal  String? @guarded
   // Read by an administrator alone, so a row one writes is not the row a USER reads.
   score     Int?    @allow('read', auth().isAdmin == true)
-  @@gate("4.4.4.4")
+  @@gate(4.4.4.4)
 }
 
 // Read at ADMINISTRATOR, so a USER's flow cannot hear one written.
 model Memo {
   id    Int    @id
   body  String
-  @@gate("5.5.5.5")
+  @@gate(5.5.5.5)
 }
 
 model Invoice {
   id     Int  @id
   total  Int
-  @@gate("4.5.5.5")
+  @@gate(4.5.5.5)
 }
 
 model Note {
@@ -54,7 +54,7 @@ model Note {
   body      String
   version   Int       @version
   deletedAt DateTime?
-  @@gate("4.4.4.4")
+  @@gate(4.4.4.4)
   @@softDelete
 }
 `

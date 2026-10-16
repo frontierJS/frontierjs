@@ -67,7 +67,7 @@ beforeAll(async () => {
   }
   app = await createTestApp({
     users:    [{ id: 'ana' }, { id: 'bo' }],
-    services: [() => searchService({ models: ['issue', 'comment'] })],
+    services: [searchService({ models: ['issue', 'comment'] })],
     hooks:    { around: { all: [withLitestoneDb(db)] } } as never,
   })
 })
@@ -137,7 +137,7 @@ describe('searchService', () => {
   test('a mounted model without @@fts fails its first call with litestone\'s refusal', async () => {
     const bad = await createTestApp({
       users:    [{ id: 'ana' }],
-      services: [() => searchService({ models: ['issue', 'user'] })],
+      services: [searchService({ models: ['issue', 'user'] })],
       hooks:    { around: { all: [withLitestoneDb(db)] } } as never,
     })
     const res = await request(bad).get('/search').auth('test-token-ana').query({ q: 'quasar' })

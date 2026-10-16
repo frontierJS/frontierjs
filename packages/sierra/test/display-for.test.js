@@ -65,7 +65,7 @@ model Order {
   meta      Json?
   tags      String[]
   lines     Int      @computed
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 `
 

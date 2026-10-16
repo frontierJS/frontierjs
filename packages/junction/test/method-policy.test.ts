@@ -2,7 +2,7 @@
 //
 // FJS-004 / FJS-D07 — `methods:` narrows what a service answers.
 //
-// The defect this closes: `createService({ model })` answered every CRUD verb
+// The defect this closes: `buildService({ model })` answered every CRUD verb
 // through the base *with validation*, whether or not the file declared one. So
 // Basecamp's `/audit`, an append-only trail whose service defines only find(),
 // accepted `POST /audit` and wrote the row — an admin could forge an entry into
@@ -26,7 +26,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { createApp, createService, healthPlugin, defaultConfig } from '../index.ts'
 import { manifestPlugin } from '../src/plugins/manifest/index.ts'
-import { createBaseService, callService } from '../src/core/service.ts'
+import { buildBase, buildService, callService } from '../src/core/service.ts'
 
 const PORT = 3389
 let app: any
@@ -43,7 +43,7 @@ beforeAll(async () => {
   app.configure(manifestPlugin({ devOnly: false }))
 
   // The Basecamp case: an append-only trail.
-  app.services.register(createService({
+  app.services.register(buildService({
     name:    'audit',
     methods: ['find', 'get'],
     async find() { return [{ id: 'a1' }] },
@@ -51,14 +51,14 @@ beforeAll(async () => {
   }))
 
   // The same thing said with the shorthand.
-  app.services.register(createService({
+  app.services.register(buildService({
     name:    'trail',
     methods: 'readOnly',
     async find() { return [] },
   }))
 
   // A policy that is not "read only" — the case a boolean could not express.
-  app.services.register(createService({
+  app.services.register(buildService({
     name:    'tickets',
     methods: ['find', 'create', 'approve'],
     async find()    { return [] },
@@ -68,7 +68,7 @@ beforeAll(async () => {
   }))
 
   // No policy — the untouched majority.
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'open',
     async find()   { return [] },
     async create() { return { id: 'o1' } },
@@ -106,7 +106,7 @@ describe('methods: the allow-list', () => {
     // it was that the row landed. A 405 that still wrote would pass the
     // status assertion above and fail the only thing that matters.
     let created = false
-    app.services.register(createService({
+    app.services.register(buildService({
       name:    'ledger',
       methods: ['find'],
       async find() { return [] },
@@ -201,7 +201,7 @@ describe('methods: a bad declaration is reported by start()', () => {
   it('reports a name the service does not have', () => {
     // The failure this prevents: `['find', 'gett']` silently blocks `get` and
     // reads as "the allow-list is broken" only after a 405 in production.
-    const svc = createService({
+    const svc = buildService({
       name:    'typo',
       methods: ['find', 'gett'],
       async find() { return [] },
@@ -210,17 +210,17 @@ describe('methods: a bad declaration is reported by start()', () => {
   })
 
   it('names what was available, so the typo is obvious', () => {
-    const svc = createService({ name: 'typo2', methods: ['fnid'], async find() { return [] } })
+    const svc = buildService({ name: 'typo2', methods: ['fnid'], async find() { return [] } })
     expect(findingsOf(svc)).toContain('find')
   })
 
   it('…and a correct declaration reports nothing — the control', () => {
-    const svc = createService({ name: 'fine', methods: ['find'], async find() { return [] } })
+    const svc = buildService({ name: 'fine', methods: ['find'], async find() { return [] } })
     expect(findingsOf(svc)).toBe('')
   })
 
   it('accepts an action name in the list', () => {
-    expect(() => createService({
+    expect(() => buildService({
       name:    'ok',
       methods: ['find', 'approve'],
       async find()    { return [] },
@@ -229,7 +229,7 @@ describe('methods: a bad declaration is reported by start()', () => {
   })
 
   it('rejects a policy that is neither an array nor the preset', () => {
-    expect(() => createService({
+    expect(() => buildService({
       name:    'bad',
       methods: 'writeOnly' as never,
       async find() { return [] },
@@ -239,7 +239,7 @@ describe('methods: a bad declaration is reported by start()', () => {
   it('allows an explicitly empty list — a service that answers nothing', () => {
     // Distinct from "no policy". Saying so out loud is allowed; it is the
     // difference between a null policy and an empty set.
-    const svc = createService({ name: 'sealed', methods: [], async find() { return [] } })
+    const svc = buildService({ name: 'sealed', methods: [], async find() { return [] } })
     expect(svc._methods?.size).toBe(0)
   })
 })
@@ -280,24 +280,24 @@ describe('methods: what the app advertises matches what it answers', () => {
 
 // ─── The other factory ────────────────────────────────────────────────────
 //
-// `methods` was read by createService and NOT by createBaseService, which
+// `methods` was read by createService and NOT by buildBase, which
 // neither consumed nor forwarded it. So the same declaration that makes an
 // audit trail append-only through one factory did nothing at all through the
 // other, and the only symptom was a write that succeeded.
 //
-// createBaseService is the minimal service file the loader is built around —
-// `export function createPostsService() { return createBaseService({}) }` — so
+// buildBase is the minimal service file the loader is built around —
+// `export function createPostsService() { return buildBase({}) }` — so
 // this was the more likely of the two to be written. Found 2026-08-06 in
 // example/, declaring `methods: ['find','get','patch']` on a notifications
 // service and getting a create that reached the model's gate.
 
-describe('methods: declared on createBaseService', () => {
-  const make = createService
+describe('methods: declared on buildBase', () => {
+  const make = buildService
 
   const built = () => make({
     // Exactly what the loader does with a bare base object.
     name: 'notes',
-    ...(createBaseService({
+    ...(buildBase({
       model:   'note',
       methods: ['find', 'get', 'patch'],
       db:      () => ({ note: {} }),
@@ -323,7 +323,7 @@ describe('methods: declared on createBaseService', () => {
   it("'readOnly' works through this factory too", () => {
     const svc = make({
       name: 'audit',
-      ...(createBaseService({ model: 'auditEvent', methods: 'readOnly', db: () => ({}) }) as unknown as Record<string, unknown>),
+      ...(buildBase({ model: 'auditEvent', methods: 'readOnly', db: () => ({}) }) as unknown as Record<string, unknown>),
     } as never)
     expect([...(svc as { _methods: Set<string> })._methods].sort()).toEqual(['aggregate', 'find', 'get'])
   })
@@ -331,7 +331,7 @@ describe('methods: declared on createBaseService', () => {
   it('absent still means everything', () => {
     const svc = make({
       name: 'notes',
-      ...(createBaseService({ model: 'note', db: () => ({}) }) as unknown as Record<string, unknown>),
+      ...(buildBase({ model: 'note', db: () => ({}) }) as unknown as Record<string, unknown>),
     } as never)
     expect((svc as { _methods: Set<string> | null })._methods).toBe(null)
   })

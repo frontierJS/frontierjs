@@ -1,4 +1,4 @@
-import { createBaseService, validateFields, $ } from '@frontierjs/junction'
+import { createService, validateFields, $ } from '@frontierjs/junction'
 
 // The job DEFINITIONS, not their names. `dispatch(bookCourier, …)` states the
 // name nowhere, so it cannot drift from the file that answers to it, and the
@@ -230,52 +230,50 @@ const checkOrderRules = async () => {
   })
 }
 
-export function createOrdersService() {
-  return createBaseService({
-    channel: 'orders',
+export default createService({
+  channel: 'orders',
 
-    // BEFORE the derived gateAuth and autoValidate — an app's layer is merged
-    // first and there is no slot after them (`FJS-403`). That is why these
-    // rules read nothing but the payload.
-    hooks: { before: { create: [checkOrderRules], update: [checkOrderRules] } },
+  // BEFORE the derived gateAuth and autoValidate — an app's layer is merged
+  // first and there is no slot after them (`FJS-403`). That is why these
+  // rules read nothing but the payload.
+  hooks: { before: { create: [checkOrderRules], update: [checkOrderRules] } },
 
-    // `pay` writes an outbox row and $.enqueue refuses outside a transaction —
-    // an intent is only worth recording if it rolls back with the write it
-    // belongs to. `refund` is here for the other reason: it is the move plus
-    // one InventoryMovement per line plus the stock column each of them moves,
-    // and an order half back on the shelf is worse than one not back at all.
-    transactional: ['pay', 'refund'],
+  // `pay` writes an outbox row and $.enqueue refuses outside a transaction —
+  // an intent is only worth recording if it rolls back with the write it
+  // belongs to. `refund` is here for the other reason: it is the move plus
+  // one InventoryMovement per line plus the stock column each of them moves,
+  // and an order half back on the shelf is worse than one not back at all.
+  transactional: ['pay', 'refund'],
 
-    // The names match @@transitions in the schema. They are written twice —
-    // once there, once here — which is the seam worth watching: a method
-    // naming a move the schema does not declare answers 400
-    // TransitionNotFoundError rather than inventing one.
-    pay,                        // the move + a queued announcement
-    ship,                       // the move + a queued courier booking
-    // NOT `move('refund')`. A refund is the move AND the shelf, and this used
-    // to be the move alone — so refunding an order took the money question
-    // seriously and left every item sold, with the ledger correctly recording
-    // a sale that had been reversed everywhere else. `settle.ts` owns both,
-    // shared with the webhook path.
-    refund: () => refundOrder(Number($.id)),
-    cancel: move('cancel'),
+  // The names match @@transitions in the schema. They are written twice —
+  // once there, once here — which is the seam worth watching: a method
+  // naming a move the schema does not declare answers 400
+  // TransitionNotFoundError rather than inventing one.
+  pay,                        // the move + a queued announcement
+  ship,                       // the move + a queued courier booking
+  // NOT `move('refund')`. A refund is the move AND the shelf, and this used
+  // to be the move alone — so refunding an order took the money question
+  // seriously and left every item sold, with the ledger correctly recording
+  // a sale that had been reversed everywhere else. `settle.ts` owns both,
+  // shared with the webhook path.
+  refund: () => refundOrder(Number($.id)),
+  cancel: move('cancel'),
 
-    recordTracking,             // the courier job writing a @system column
-    paymentCode,                // the credential a checkout link carries
+  recordTracking,             // the courier job writing a @system column
+  paymentCode,                // the credential a checkout link carries
 
-    // The whole surface, stated — because declaring one method's input is also
-    // declaring the list, and a service that named only `recordTracking` would
-    // answer 405 to everything else. It is not a trap you fall into quietly:
-    // surface.snapshot.md carries this list and CI fails a stale one, so a verb
-    // that stopped being answered is a diff before it is a bug.
-    //
-    // `input:` names a `type` in db/schema.lite. Only recordTracking takes a
-    // body — the four moves take an id and nothing else, and a move's rules are
-    // in @@transitions where every other rule about this row lives.
-    methods: [
-      'find', 'get', 'create', 'update', 'patch', 'remove',
-      'pay', 'ship', 'refund', 'cancel', 'paymentCode',
-      { method: 'recordTracking', input: 'TrackingUpdate' },
-    ],
-  })
-}
+  // The whole surface, stated — because declaring one method's input is also
+  // declaring the list, and a service that named only `recordTracking` would
+  // answer 405 to everything else. It is not a trap you fall into quietly:
+  // surface.snapshot.md carries this list and CI fails a stale one, so a verb
+  // that stopped being answered is a diff before it is a bug.
+  //
+  // `input:` names a `type` in db/schema.lite. Only recordTracking takes a
+  // body — the four moves take an id and nothing else, and a move's rules are
+  // in @@transitions where every other rule about this row lives.
+  methods: [
+    'find', 'get', 'create', 'update', 'patch', 'remove',
+    'pay', 'ship', 'refund', 'cancel', 'paymentCode',
+    { method: 'recordTracking', input: 'TrackingUpdate' },
+  ],
+})

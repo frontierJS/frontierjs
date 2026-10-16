@@ -33,7 +33,7 @@ model Invoice {
   total     Int      @money(USD) @gte(0)
   status    Status   @default(draft)
 
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   @@transitions(status, issue: draft -> issued, void: issued -> voided @gate(5))
 }
 ```
@@ -127,7 +127,7 @@ Above the columns sit two model-level words that answer different questions:
 
 | word | refuses how | what a wrong one looks like |
 |---|---|---|
-| `@@gate("r.c.u.d")` | **throws** | a 401/403 naming the model |
+| `@@gate(r.c.u.d)` | **throws** | a 401/403 naming the model |
 | `@@allow(op, expr)` | **filters** | an empty screen with a 200 |
 
 A gate is *what kind of caller*; a policy is *which rows*. A refusal must never
@@ -144,7 +144,7 @@ bypass.
 
 ## The gate ladder
 
-`@@gate("R.C.U.D")` is the minimum level for read, create, update and delete. **A
+`@@gate(R.C.U.D)` is the minimum level for read, create, update and delete. **A
 position not written takes the one before it**: `"4"` is `"4.4.4.4"`, `"2.4"` is
 `"2.4.4.4"`. A named form (`read: USER`) does not parse.
 
@@ -161,7 +161,7 @@ position not written takes the one before it**: `"4"` is `"4.4.4.4"`, `"2.4"` is
 | 8 | `SYSTEM` | `asSystem()` only — no session ever grades here |
 | 9 | `LOCKED` | nothing, `asSystem()` included |
 
-**A role-less session is 3, so `@@gate("4")` refuses every signed-in caller of an
+**A role-less session is 3, so `@@gate(4)` refuses every signed-in caller of an
 app that never sets `role`.** An ABSENT `verifiedAt` or `activatedAt` is no
 objection; only `null` grades down. The standing flags win over the lifecycle, and
 a `GatePlugin({ getLevel })` replaces the whole column. A row policy reads the
@@ -332,6 +332,11 @@ Filters:
 { AND: [ … ] } · { OR: [ … ] } · { NOT: { … } }
 ```
 
+**A `Json` column written whole loses a key another writer set.** Change one key
+with `data: { settings: { $merge: { theme: 'dark' } } }` (`json_patch`, RFC 7396):
+the other keys stay, `null` deletes a key, an array replaces whole. It is the one
+operator a `Json` column takes, and `docs/querying.md` § `$merge` has the rest.
+
 **A client throws on an unknown property**, so a typo'd accessor is loud and
 feature-detection is itself a throwing expression — use `'$maybe' in db`, never
 `typeof db.$maybe === 'function'`.
@@ -363,7 +368,7 @@ const env = await createTestEnv({
   schema: `model Lead {
     id   Int    @id @default(autoincrement())
     name String
-    @@gate("1.3.3.5")
+    @@gate(1.3.3.5)
   }`,                                              // text or a path; a throwaway tmpdir, never the app's file
   // migrations: 'db/migrations',                  // replay committed SQL instead of generating DDL
   autoFactories: true,                             // env.factories.<accessor>; empty without it

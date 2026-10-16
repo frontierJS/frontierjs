@@ -20,7 +20,7 @@ alpha (`FJS-D267`).
 ```
     layer         asks                   declared with                    on refusal
   ● 1 principal   who is asking          $setAuth(user) → scoped client   —
-  ● 2 gate        what kind of caller    @@gate("2.4.4.5")                throws
+  ● 2 gate        what kind of caller    @@gate(2.4.4.5)                throws
   ● 3 capability  which action           @@capabilities, @capability      throws
   ● 4 row policy  whose row              @@allow · @@deny · tenancy       filters (create throws)
   ● 5 field       which columns          @guarded @encrypted @system …    throws · drops · strips

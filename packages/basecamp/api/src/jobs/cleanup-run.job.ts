@@ -15,9 +15,9 @@ import { outbound, outpostFor } from '../providers/outpost.ts'
 import type { DiskReport } from '../services/cleanup/disk-report.ts'
 import { recordServerEvent } from './outpost-run.ts'
 import { runsAsCaller } from './context.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
-async function runCleanup(app: BasecampApp, runId: string): Promise<void> {
+async function runCleanup(app: App, runId: string): Promise<void> {
   const log = app.logger.child('cleanup-run')
 
   // No client here (`FJS-384`). The sweep runs as whoever asked for it, so the

@@ -5,5 +5,5 @@
 </script>
 <div>
   <p>{label}: {value}</p>
-  <button on:click={() => value++}>{label}+</button>
+  <button onclick={() => value++}>{label}+</button>
 </div>

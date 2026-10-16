@@ -203,7 +203,7 @@ export async function calculatePayRun(client: Client, runId: number): Promise<{ 
  * Take a calculated run back to draft, removing what it produced.
  *
  * **This function is the rule the schema cannot state.** `Payslip` is
- * `@@gate("5.5.9.8")` — the system may delete one — because reverting has to
+ * `@@gate(5.5.9.8)` — the system may delete one — because reverting has to
  * take the payslips with it or the recalculation collides on
  * `@@unique([payRunId, employeeId])`. What a gate cannot say is that removal is
  * only ordinary while the run is a DRAFT: a payslip under a paid run is a

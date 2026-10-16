@@ -432,6 +432,14 @@ export class HttpTransport extends BaseTransport {
         catch (err) {
           return this.fail('invalid_request', `Refused to send: ${(err as Error).message}`, { retryable: false })
         }
+        // The credential such a target carries is the row's own (`FJS-D1089`),
+        // and the grant is what says which row: without it `withCache` keys on
+        // the tenant alone, and the first row's token goes to the second row's
+        // address (`FJS-2232` per row).
+        const auth = this.descriptor.auth
+        if (auth.type !== 'none' && auth.per_caller === true && !req.who?.grant) {
+          return this.fail('invalid_request', `Refused to send: target '${this.descriptor.id}' spends the row's own credential at the row's address, so the send names the row with grant`, { retryable: false })
+        }
       }
       // send() rejects an unknown verb before reaching here.
       const method = this.resolveMethod(req.method)!

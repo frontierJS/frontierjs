@@ -1,6 +1,6 @@
 # Conduit — Project State
 
-_Verified 2026-09-03 by running the code. Everything below marked **verified** was
+_Verified 2026-10-15 by running the code. Everything below marked **verified** was
 reproduced; anything else is labelled as unconfirmed._
 
 > Drop this file into a fresh session to pick up Conduit cold.
@@ -11,56 +11,72 @@ reproduced; anything else is labelled as unconfirmed._
 
 ## What it is
 
-`@frontierjs/conduit` v0.1.3 — the outbound half of an app's third-party
-integrations. A counterparty is declared once, with what credential and under
-what limits, and `app.conduit.send()` is how a call to it leaves the process.
+`@frontierjs/conduit` — an app's third-party integrations, both ends of the
+relationship (`FJS-D177`). A counterparty is declared once, with what credential
+and under what limits; `app.conduit.send()` is how a call to it leaves the
+process and `app.conduit.receive()` is how its deliveries arrive (`FJS-D899`).
 
 Realm: **D4**. Two jobs that share a package and not a mechanism — a generic
 `provider` over http or unix, and an FJS-to-FJS control-plane link over
-`websocket` that reaches an Outpost. Deliberately narrow; `README.md` § *What
-Conduit is not* is the boundary as shipped.
+`websocket` that reaches an Outpost; a `broker` target is subscribed to
+(`FJS-D235`). Deliberately narrow; `README.md` § *What Conduit is not* is the
+boundary as shipped.
 
 ## Verified state
 
 | | |
 |---|---|
-| Tests | **290 pass, 0 fail**, 595 expect() calls, 2 files, 13.2s (`bun run test`) — verified. Stack traces in the output are two observers throwing on purpose |
+| Tests | green (`bun run test`) — verified. Stack traces in the output are observers throwing on purpose |
 | Typecheck | **clean, no baseline** (`bun run typecheck`) — verified |
-| Test files | `conduit.test.ts` (261 cases) and `junction-integration.test.ts` (26) — the second is the one that boots a real Junction app, which is where this package's plugin bugs have always been |
-| Published | 0.1.2 on npm per the root `CLAUDE.md`; **not re-checked against the registry here** |
+| Test files | `conduit.test.ts`, `junction-integration.test.ts` (boots a real Junction app, which is where this package's plugin bugs have always been), `stream.test.ts`, `mint.test.ts`, `per-caller.test.ts`, `signers.test.ts`, `receive.test.ts` |
+| Published | per the root `CLAUDE.md`; **not re-checked against the registry here** |
 
 Reproduce: `cd packages/conduit && bun run test && bun run typecheck`.
 
-Three things landed in the three days before this file and each has its
-`docs/changes-archive/conduit.md` entry: per-target resilience (`FJS-728`), a refused replay no longer
-travelling outward as `retryable: true` (`FJS-733`), and an outbound call
-carrying the request that caused it (`FJS-742`).
-
 The suite proves the mechanism against stubs and a recorder. What proves it
-against a real vendor is `example`: `verify:stripe` and `verify:notify` — see
-`CLAUDE.md` § Proving a change. **Neither was run for this file.**
+against a real vendor is `example`: `verify:stripe`, `verify:pay` and
+`verify:notify` — see `CLAUDE.md` § Proving a change. **`verify:stripe` and
+`verify:pay` were run for this file and passed; `verify:notify` was not run.**
 
 ---
 
 ## What is NOT built
 
-- **No receiver.** Conduit dials and does not listen, though the relationship is
-  the noun and the receiving end is this package's to own. Verifying a webhook is
-  app code today. `IDEAS/inbound-integrations.md`.
-- **`FJS-710` is the standing audit register for this package**, open, and it is
-  where the honest gap list lives — fourteen numbered findings covering
-  credentials (no expiry, refresh or rotation, no tenant seam, no single-flight),
-  response decoding (text-only, binary destroyed, no charset), the WebSocket
-  transport ignoring every knob http honours, and the batteries conduit does not
-  yet have. Promote one to its own id when it is worked; do not open a second
-  register.
-- **`FJS-659`** — junction's `ai` and `mail` batteries hand-roll the ring this
-  package exists to own, and its webhooks plugin is a third. Open, and it is a
-  question about where the boundary goes rather than a defect here.
+Every open item is a row in `ISSUES.md`; this is the map of them.
 
-Both `FJS-660` (`duration_ms` under-reporting a retried call) and `FJS-739`
-(a transient provider fault answering `retryable: false`) are closed now — see
-`ISSUES.md` for the fix in each.
+- **The receiving end handles one delivery at a time.** A vendor's handshake
+  (Graph's `validationToken`, Slack's `url_verification`), a batched delivery
+  and a subscription's lifecycle events have no step in the order and wait for
+  a second app to ask (`FJS-D899`, `FJS-2573`). `orion`'s webhook door and the
+  stressor apps' hand-built receivers are not moved onto it yet.
+- **Half A — a partner posting back under FrontierJS's own scheme without
+  installing conduit** — is junction's and unbuilt (`IDEAS/inbound-integrations.md`
+  § Order step 3). `receive.test.ts`'s dialect is the shape it would take.
+- **The credential seam's OAuth kind** — `TargetAuth` has no `oauth` variant,
+  deferred with the scope derivation (`FJS-D1075`). The principal (`FJS-D848`)
+  and the expiry on an answer (`FJS-D1075`, `FJS-2245` closed) are built; the
+  cross-replica refresh lock is the app's row, and auth exports no resolver over
+  its own `Credential` rows yet because no app spends one.
+- **A self-hosted counterparty a row names is reached on a public name only**
+  (`FJS-D1089`): its token is `per_caller` and the send names the row with
+  `grant`. One on a LAN or a tailnet waits for Outpost vantage (`FJS-D1018`),
+  or is the operator's fixed-address target per install.
+- **A mirror claim forwards one row per write** (`FJS-D1125`): no bulk. A
+  patch is sent to the Provider whole, and the `@local` columns it names (an
+  app-local `starred`) are then written through the caller's client; every
+  other column of a `@@mirror` model is `@system` (`FJS-D1142`), so a column a
+  claim's `parse` omits waits for the sync. `Thread`'s `scope` is not supplied
+  by a forward, since no Mattermost verb writes a thread. `conduit-mattermost`'s
+  drive (`mirror.forward*`) and `junction-integration.test.ts` are the proof.
+- **A third-party socket is reached to be listened to, and only that.** A
+  `broker` target takes its framing from the connector's `FrameDialect`
+  (`FJS-D1127`) and a receiver that names the target runs each frame through
+  `accept()`'s order; `conduit-mattermost`'s drive is the proof. A socket API
+  you SEND over, a real broker (Kafka, NATS, AMQP) and `ssh` are not
+  reachable. `IDEAS/conduit-batteries.md`.
+- **Junction's own webhooks plugin delivers beside conduit** (`FJS-2924`), and
+  its `ai` and `mail` batteries dial out directly on purpose (`FJS-659`, closed
+  per `FJS-D219`).
 
 ## Picking it up next
 

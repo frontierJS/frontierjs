@@ -176,7 +176,9 @@ export function cloneInto(dir, schema, schemaText, migrations = null) {
   }
 
   for (const [dbName, file] of Object.entries(template.files)) {
-    const dest = declared.length ? dbOverrides[dbName].path : path
+    // A schema declaring only a trail or jsonl database has no `database main`
+    // for the template's main.db to land on, so it lands on the test file.
+    const dest = dbOverrides[dbName]?.path ?? path
     copyFileSync(join(template.dir, file), dest)
     // A checkpointed template leaves no -wal, but a source that was read while
     // another connection held one does. Copy it rather than assume.

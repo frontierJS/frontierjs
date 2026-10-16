@@ -254,7 +254,7 @@ title: Registers
   {#if r.refs?.length}
     <div class="cluster gap-2xs text-xs">
       <span class="text-muted">Cites</span>
-      {#each r.refs as id}<button type="button" class="pill registers-chip" on:click={() => show(id)}>{id}</button>{/each}
+      {#each r.refs as id}<button type="button" class="pill registers-chip" onclick={() => show(id)}>{id}</button>{/each}
     </div>
   {/if}
   {#if r.links?.length}
@@ -323,7 +323,7 @@ title: Registers
       <div class="registers-layout">
         <div class="stack gap-lg">
           <Card>
-            <form class="stack gap-sm" id="registers-compose" on:submit={send}>
+            <form class="stack gap-sm" id="registers-compose" onsubmit={send}>
               <div class="stack gap-3xs">
                 <h2 class="h5">Bring it to Claude</h2>
                 <p class="text-sm text-muted">
@@ -335,14 +335,14 @@ title: Registers
               <textarea class="field registers-text" rows="5" id="registers-text"
                         placeholder="FJS-1234 still bites on retry…   or describe something new (Ctrl+Enter sends)"
                         value={text}
-                        on:input={(e) => text = e.target.value}
-                        on:keydown={keydown}></textarea>
+                        oninput={(e) => text = e.target.value}
+                        onkeydown={keydown}></textarea>
 
               {#if known().length}
                 <div class="cluster gap-2xs" id="registers-known">
                   {#each known() as k (k.id)}
                     <button type="button" class="pill registers-chip {k.issue ? toneOf(k.issue.severity) : k.question ? 'info' : k.ruling ? 'success' : 'muted'}"
-                            on:click={() => show(k.id)}
+                            onclick={() => show(k.id)}
                             title={k.issue?.title ?? k.question?.question ?? k.ruling?.title ?? 'not in the registers'}>
                       {k.id}{k.issue ? '' : k.question ? ' · question' : k.ruling ? ' · ruling' : ' · unknown'}
                     </button>
@@ -354,7 +354,7 @@ title: Registers
                 {#each INTENTS as it (it.key)}
                   <label class="cluster gap-3xs registers-intent">
                     <input type="radio" name="intent" value={it.key} checked={intent === it.key}
-                           on:change={() => intent = it.key} />
+                           onchange={() => intent = it.key} />
                     <span>{it.label}</span>
                   </label>
                 {/each}
@@ -363,7 +363,7 @@ title: Registers
 
               <div class="bar">
                 <label class="text-sm registers-check">
-                  <input type="checkbox" id="registers-branch" checked={branch} on:change={(e) => branch = e.target.checked} />
+                  <input type="checkbox" id="registers-branch" checked={branch} onchange={(e) => branch = e.target.checked} />
                   <span>On its own branch <span class="text-muted">— a worktree named for the first id; Land it from the workbench</span></span>
                 </label>
                 <Button type="submit" id="registers-send" disabled={!text.trim() || sending}>
@@ -388,10 +388,10 @@ title: Registers
             <div class="stack gap-sm">
               <div class="bar">
                 <input class="field registers-search" type="search" id="registers-search" placeholder="Search ids, titles, packages…"
-                       value={search} on:input={(e) => search = e.target.value} />
+                       value={search} oninput={(e) => search = e.target.value} />
                 <div class="cluster gap-2xs">
-                  {#if severity}<button type="button" class="pill {toneOf(severity)}" on:click={() => severity = ''}>{severity} ×</button>{/if}
-                  {#if pkg}<button type="button" class="pill" on:click={() => pkg = ''}>{pkg} ×</button>{/if}
+                  {#if severity}<button type="button" class="pill {toneOf(severity)}" onclick={() => severity = ''}>{severity} ×</button>{/if}
+                  {#if pkg}<button type="button" class="pill" onclick={() => pkg = ''}>{pkg} ×</button>{/if}
                 </div>
               </div>
 
@@ -407,7 +407,7 @@ title: Registers
                   <ul class="rows divided registers-list" id="registers-issues">
                     {#each filteredIssues().slice(0, SHOWN) as i (i.id)}
                       <li class="list-row registers-row" data-id={i.id}>
-                        <button type="button" class="registers-open" on:click={() => show(i.id)}>
+                        <button type="button" class="registers-open" onclick={() => show(i.id)}>
                           <span class="cluster gap-xs">
                             {@render sevPill(i.severity)}
                             <code>{i.id}</code>
@@ -430,7 +430,7 @@ title: Registers
                   <ul class="rows divided registers-list" id="registers-questions">
                     {#each filteredQuestions() as q (q.id)}
                       <li class="list-row registers-row" data-id={q.id}>
-                        <button type="button" class="registers-open" on:click={() => show(q.id)}>
+                        <button type="button" class="registers-open" onclick={() => show(q.id)}>
                           <span class="cluster gap-xs">
                             <Pill tone={q.state === 'decidable' ? 'info' : 'muted'}>{q.state === 'decidable' ? `${q.options} options` : 'open'}</Pill>
                             <code>{q.id}</code>
@@ -447,7 +447,7 @@ title: Registers
                   <ul class="rows divided registers-list" id="registers-rulings">
                     {#each filteredRulings().slice(0, SHOWN) as r (`${r.id}|${r.date}|${r.title}`)}
                       <li class="list-row registers-row" data-id={r.id}>
-                        <button type="button" class="registers-open" disabled={!r.id} on:click={() => show(r.id)}>
+                        <button type="button" class="registers-open" disabled={!r.id} onclick={() => show(r.id)}>
                           <span class="cluster gap-xs">
                             <code>{r.id ?? 'no id'}</code>
                             <span class="text-xs text-muted">{r.date} · {r.section}</span>
@@ -464,7 +464,7 @@ title: Registers
                   <ul class="rows divided registers-list" id="registers-ideas">
                     {#each filteredIdeas() as i (i.id)}
                       <li class="list-row registers-row" data-id={i.id}>
-                        <button type="button" class="registers-open" on:click={() => show(i.id)}>
+                        <button type="button" class="registers-open" onclick={() => show(i.id)}>
                           <span class="cluster gap-xs">
                             <Pill tone={i.status === 'shipped' ? 'success' : i.status === 'withdrawn' ? 'muted' : 'info'}>{i.status}</Pill>
                             <code>{i.id}</code>
@@ -486,7 +486,7 @@ title: Registers
             <h2 class="h5">By package</h2>
             {#each byPackage() as b (b.name)}
               <button type="button" class="registers-pkg" aria-pressed={pkg === b.name}
-                      on:click={() => { pkg = pkg === b.name ? '' : b.name; tab = 'issues' }}>
+                      onclick={() => { pkg = pkg === b.name ? '' : b.name; tab = 'issues' }}>
                 <span class="text-sm">{b.name}</span>
                 <span class="registers-track"><span class="registers-fill" style:inline-size={`${(b.count / widest()) * 100}%`}></span></span>
                 <span class="text-xs text-muted">{b.count}</span>
@@ -532,12 +532,12 @@ title: Registers
           <h3 class="h5">{q.question}</h3>
 
           {#if q.state === 'decidable'}
-            <form class="stack gap-xs" id="registers-decide" on:submit={(e) => { e.preventDefault(); decide() }}>
+            <form class="stack gap-xs" id="registers-decide" onsubmit={(e) => { e.preventDefault(); decide() }}>
               <fieldset class="stack gap-2xs registers-options">
                 <legend class="text-sm">Your ruling</legend>
                 {#each q.options as o (o.letter)}
                   <label class="registers-option" data-letter={o.letter}>
-                    <input type="radio" name="pick" value={o.letter} checked={pick === o.letter} on:change={() => pick = o.letter} />
+                    <input type="radio" name="pick" value={o.letter} checked={pick === o.letter} onchange={() => pick = o.letter} />
                     <span class="stack gap-3xs">
                       <span><strong>{o.letter}</strong> — {o.text}</span>
                       {#if q.recommend?.letter === o.letter}
@@ -550,11 +550,11 @@ title: Registers
 
               <label class="stack gap-3xs text-sm">
                 <span>Why {needsWhy() ? '(required — this is not the recommendation)' : '(optional)'}</span>
-                <textarea class="field" rows="2" value={why} on:input={(e) => why = e.target.value}></textarea>
+                <textarea class="field" rows="2" value={why} oninput={(e) => why = e.target.value}></textarea>
               </label>
               <label class="stack gap-3xs text-sm">
                 <span>Under which DECISIONS.md section</span>
-                <select class="field" id="registers-section" value={section} on:change={(e) => section = e.target.value}>
+                <select class="field" id="registers-section" value={section} onchange={(e) => section = e.target.value}>
                   <option value="">Choose a section…</option>
                   {#each data?.sections ?? [] as s}<option value={s} selected={s === section}>{s}</option>{/each}
                 </select>

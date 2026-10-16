@@ -28,7 +28,7 @@ title: Members
   // developer either way — but a form that always answers 403 is worse than no
   // form. Derived from whether the invitations read was allowed rather than
   // from a role on the session: inviting and listing invitations are the same
-  // standing (`@@gate("5")` and admin-or-owner), so the answer is already in
+  // standing (`@@gate(5)` and admin-or-owner), so the answer is already in
   // hand and there is no second copy of the rule to fall out of step.
   let canInvite = false
 

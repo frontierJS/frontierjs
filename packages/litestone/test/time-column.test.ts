@@ -124,3 +124,20 @@ describe("the author's own message finds its keyword", () => {
     expect(msgs.pattern).toBe('we open on the hour or the half hour')
   })
 })
+
+describe('@startsWith / @endsWith / @contains name their literal (FJS-2695)', () => {
+  test('the pattern enforces and an x- key carries the text for a message', () => {
+    const r = parse(`model Link {
+  id   Int    @id
+  url  String @startsWith("https://")
+  file String @endsWith(".pdf")
+  note String @contains("a.b")
+}`)
+    expect(r.valid).toBe(true)
+    const p: any = (generateJsonSchema(r.schema, { mode: 'full' }) as any).$defs.Link.properties
+    expect(p.url['x-starts-with']).toBe('https://')
+    expect(p.file['x-ends-with']).toBe('.pdf')
+    expect(p.note['x-contains']).toBe('a.b')
+    expect(p.url.pattern).toBe('^https://')
+  })
+})

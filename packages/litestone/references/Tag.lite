@@ -135,7 +135,7 @@ model Tag {
   ///
   /// Anyone signed in reads and creates a tag; deleting one takes it off every
   /// row it is attached to, which is why delete is a level higher.
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
 }
 
 /// The attachment. One row per (tag, thing).
@@ -193,5 +193,5 @@ model TagAttachment {
   /// Update is LOCKED because there is nothing on this row to edit — moving an
   /// attachment is a delete and a create, and allowing an update means allowing
   /// a row to be re-pointed at a subject the caller may not be able to read.
-  @@gate("4.4.9.4")
+  @@gate(4.4.9.4)
 }

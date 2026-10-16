@@ -482,7 +482,7 @@ function client(D) {
     chips(g, FX + 14, 178, ['S1', 'S2', 'S3', 'S4'], 'issue')
     chips(g, FX + 14, 206, ['§ Needs a decision'], 'rule')
     chips(g, FX + 14, 234, ['§ Closed', '→ ISSUES_ARCHIVE.md'], 'honest')
-    ;[[`${P}-###`, ' one id, never reused'], ['stale?', ' not re-verified, probe first'], ['blocked by', ' set aside until it closes'], ['by hand', ' the loop skips it']].forEach(([k, v], i) => line(g, FX + 14, 294 + i * 20, k, v))
+    ;[[`${P}-###`, ' one id, never reused'], ['stale?', ' not re-verified, probe first'], ['blocked by', ' set aside until it closes'], ['by hand', ' the loop skips it'], ['env: <cause>', ' the fix is the machine; the loop skips it']].forEach(([k, v], i) => line(g, FX + 14, 294 + i * 20, k, v))
   }
   {
     const S = D.papers.byStatus

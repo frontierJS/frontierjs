@@ -619,7 +619,7 @@ try {
       changed:  before !== '' && after !== '' && before !== after,
       // It survives a reload, which is the <head> script's job and the reason
       // the key is in sierra.config.js rather than in this app's prefs bundle.
-      stored:   localStorage.getItem('shop_theme'),
+      stored:   localStorage.getItem('@frontierjs/example:theme'),
     };
   `))
 

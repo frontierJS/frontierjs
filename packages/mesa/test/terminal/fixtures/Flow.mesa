@@ -6,13 +6,13 @@
   const greet = () => { clicks += 1 }
 </script>
 <div>
-  <p>Press <kbd>Enter</kbd> on <button on:click={greet}>Add</button> to go.</p>
+  <p>Press <kbd>Enter</kbd> on <button onclick={greet}>Add</button> to go.</p>
   <p>Every cell came out of <code>db/schema.lite</code>, so the <strong>status</strong> filters by membership and nothing on this page restates it.</p>
   <p>Hello <em>{name}</em>{#if shown}, <mark>welcome back</mark>{/if}!</p>
   <p>Read <a href="/docs/">the docs</a> first.</p>
   <span>An inline span whose words are wider than the screen it sits in.</span>
-  <label>Name <input value={name} on:input={(e) => { name = e.target.value }} /></label>
-  <div><button on:click={() => { shown = !shown }}>Toggle</button> <button on:click={greet}>Count {clicks}</button></div>
+  <label>Name <input value={name} oninput={(e) => { name = e.target.value }} /></label>
+  <div><button onclick={() => { shown = !shown }}>Toggle</button> <button onclick={greet}>Count {clicks}</button></div>
   <p>Ctrl <kbd>K</kbd> <kbd>J</kbd> opens <b> it</b></p>
   <p><i>solo</i>{#if shown}<mark> pair</mark>{/if}</p>
   <label>Code <input size="6" value="xy" /> end</label>
@@ -26,5 +26,5 @@
   <p><button>x</button><span> label <button>{' '}Spaced{' '}</button></span></p>
   <div><p>Block</p><button>One</button> <button>Two</button></div>
   <p>You can open any order on <a href="/orders/">the orders list</a> — the totals across all of them.</p>
-  <p>Or tap <span on:click={() => { taps += 1 }}>here</span> for taps {taps}.</p>
+  <p>Or tap <span onclick={() => { taps += 1 }}>here</span> for taps {taps}.</p>
 </div>

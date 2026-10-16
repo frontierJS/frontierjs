@@ -30,6 +30,7 @@ import { generateLlms } from './llms.js'
 import { injectSpeculationRules } from './speculation.js'
 import { deferJsLoading } from './defer-js.js'
 import { injectThemeScript } from './inject-theme.js'
+import { storagePrefix } from '../virtual/virtual-sierra.js'
 import { injectAnalyticsTag } from './inject-analytics.js'
 import { generateMarkdownPages } from './markdown-pages.js'
 import { gradeManifest } from './manifest.js'
@@ -144,7 +145,7 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
 
   // 9. Theme flash prevention script (conditional)
   if (config.theme) {
-    const rTheme = await injectThemeScript(config.theme, outDir)
+    const rTheme = await injectThemeScript(config.theme, outDir, storagePrefix(config, root))
     if (rTheme) results.push(rTheme)
   }
 

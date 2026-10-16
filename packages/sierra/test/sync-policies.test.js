@@ -66,13 +66,13 @@ const { attachmentQueue, _resetAttachmentQueue } = await import('../src/resource
 // `Ledger` has no `@version` on purpose: `append` needs none, and the parser
 // refuses `refuse` without one (asserted in litestone's own suite).
 const SOURCE = `
-model Served { id String @id @default(uuid())  name String  v Int @version  @@gate("0.0.0.0")  @@sync(server) }
-model Guard  { id String @id @default(uuid())  name String  v Int @version  @@gate("0.0.0.0")  @@sync(refuse) }
-model Ledger { id String @id @default(uuid())  name String                  @@gate("0.0.0.0")  @@sync(append) }
-model Plain  { id String @id @default(uuid())  name String  v Int @version  @@gate("0.0.0.0") }
-model Photo  { id String @id @default(uuid())  name String  damage File?    @@gate("0.0.0.0")  @@sync(append) }
-model Merge  { id String @id @default(uuid())  name String  v Int @version  @@gate("0.0.0.0")  @@sync(field) }
-model Roster { id String @id @default(uuid())  name String                  @@gate("0.0.0.0")  @@sync(read) }
+model Served { id String @id @default(uuid())  name String  v Int @version  @@gate(0.0.0.0)  @@sync(server) }
+model Guard  { id String @id @default(uuid())  name String  v Int @version  @@gate(0.0.0.0)  @@sync(refuse) }
+model Ledger { id String @id @default(uuid())  name String                  @@gate(0.0.0.0)  @@sync(append) }
+model Plain  { id String @id @default(uuid())  name String  v Int @version  @@gate(0.0.0.0) }
+model Photo  { id String @id @default(uuid())  name String  damage File?    @@gate(0.0.0.0)  @@sync(append) }
+model Merge  { id String @id @default(uuid())  name String  v Int @version  @@gate(0.0.0.0)  @@sync(field) }
+model Roster { id String @id @default(uuid())  name String                  @@gate(0.0.0.0)  @@sync(read) }
 `
 
 /** A failure the client attaches no code to — a request that never got a reply. */

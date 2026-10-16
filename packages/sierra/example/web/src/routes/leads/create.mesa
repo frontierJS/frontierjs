@@ -92,7 +92,7 @@ title: New lead
   the control itself, `field-hint` for the type note, and the same `danger`
   tone on a hint that a button or a card would take. No sizes, no colors.
 -->
-<form class="card stack" style="max-width: 32rem" on:submit|preventDefault={save}>
+<form class="card stack" style="max-width: 32rem" onsubmit|preventDefault={save}>
   {#each plain as [name, rule]}
     <div class="field-group">
       <!-- The name is wrapped in a <span> deliberately. A bare interpolation

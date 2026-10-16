@@ -200,6 +200,7 @@ if (!machine || machine.api !== API || machine.workspaceId !== workspace.id || m
 const entry = fileURLToPath(import.meta.resolve('@frontierjs/outpost'))
 mkdirSync(join(HOME, 'static'), { recursive: true })
 mkdirSync(join(HOME, 'work'),   { recursive: true })
+mkdirSync(join(HOME, 'restore'), { recursive: true })
 
 const child = spawn(process.execPath, [entry], {
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -216,6 +217,9 @@ const child = spawn(process.execPath, [entry], {
     OUTPOST_STATIC_URL:  `http://localhost:${STATIC_PORT}`,
     OUTPOST_STATIC_DIR:  join(HOME, 'static'),
     OUTPOST_WORK_DIR:    join(HOME, 'work'),
+    // Where an archive for `apps.restoreVolume` is copied. Under the app root,
+    // because a snap-packaged docker cannot bind-mount the host's /tmp.
+    OUTPOST_RESTORE_DIR: join(HOME, 'restore'),
   },
 })
 

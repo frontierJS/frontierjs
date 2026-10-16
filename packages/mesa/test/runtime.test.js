@@ -20,7 +20,7 @@
  *   13. ifBlock  (+ [FIX 3] multi-node fragment leak)
  *   14. $$eachBlock  (+ [FIX 4] multi-node reorder, reverse stress)
  *   15. awaitBlock
- *   16. Slots — attachSlot
+ *   16. Content — a snippet passed inside a component tag
  *   17. spreadAttributes
  *   18. watchProxy / watchPath  (+ [FIX 1] root sentinel, [FIX 2] cross-component isolation)
  *   19. makeAsyncState / asyncDerived  (+ edge cases)
@@ -90,9 +90,7 @@ import {
   mountedBlock,
   onMounted,
   // Slots
-  attachSlot,
-  attachNamedSlot,
-  makeSlots,
+  content,
   // Events
   bindGroup,
   debounce,
@@ -2564,48 +2562,14 @@ describe('awaitBlock', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §16  Slots — attachSlot
+// §16  Content — a snippet passed inside a component tag
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('attachSlot', () => {
-  it('replaces slot anchor with block factory content', () => {
-    const container = div()
-    const anchor = document.createComment('slot:test')
-    container.appendChild(anchor)
-
-    // attachSlot now receives makeBlock factories, not raw DOM nodes
-    const contentEl = span()
-    contentEl.textContent = 'slotted'
-    const slotFactory = () => ({ $dom: contentEl })
-
-    attachSlot(anchor, slotFactory, null)
-
-    expect(container.textContent).toBe('slotted')
-  })
-
-  it('uses fallback factory when no content provided', () => {
-    const container = div()
-    const anchor = document.createComment('slot:test')
-    container.appendChild(anchor)
-
-    const fallbackEl = span()
-    fallbackEl.textContent = 'fallback'
-    const fallbackFactory = () => ({ $dom: fallbackEl })
-
-    attachSlot(anchor, null, fallbackFactory)
-
-    expect(container.textContent).toBe('fallback')
-  })
-
-  it('renders nothing when both slot and fallback are null', () => {
-    const container = div()
-    const anchor = document.createComment('slot:test')
-    container.appendChild(anchor)
-
-    attachSlot(anchor, null, null)
-
-    // anchor removed, nothing inserted
-    expect(container.textContent).toBe('')
+describe('content', () => {
+  it('is never forwarded as an attribute, declared or not', () => {
+    const header = content(() => {})
+    const rest = restProps({ header, title: 't', onpick: () => {} }, [])
+    expect(Object.keys(rest)).toEqual(['title', 'onpick'])
   })
 })
 
@@ -2766,7 +2730,7 @@ describe('track() stores values, trackDerived() derives', () => {
     const cb = () => { fired++; return 'RET' }
     // Exactly what the compiler emits for `export let ondone`. Arity used to
     // decide this, so `<Child ondone={() => n++} />` was memoized and called
-    // during setup, and on:click bound the return value instead of the callback.
+    // during setup, and onclick bound the return value instead of the callback.
     const sig = track(cb, undefined, undefined, null)
     expect(fired).toBe(0)
     expect(trackedGet(sig)).toBe(cb)
@@ -5260,52 +5224,6 @@ describe('bindGroup', () => {
   })
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// §  makeSlots / attachNamedSlot
-// ─────────────────────────────────────────────────────────────────────────────
-describe('makeSlots', () => {
-  it('returns empty object when __block is null', () => {
-    expect(makeSlots(null)).toEqual({})
-  })
-
-  it('returns true for each slot key present in __block', () => {
-    const s = makeSlots({ default: () => {}, sidebar: () => {} })
-    expect(s.default).toBe(true)
-    expect(s.sidebar).toBe(true)
-  })
-
-  it('does not include absent slot keys', () => {
-    const s = makeSlots({ default: () => {} })
-    expect('sidebar' in s).toBe(false)
-  })
-})
-
-describe('attachNamedSlot', () => {
-  const mkFrag = (text) => () => {
-    const s = document.createElement('span')
-    s.textContent = text
-    return s
-  }
-
-  it('renders named slot content from __block', () => {
-    const result = attachNamedSlot({ sidebar: mkFrag('sidebar content') }, 'sidebar', null)
-    expect(result?.textContent).toBe('sidebar content')
-  })
-
-  it('uses fallback factory when slot absent from __block', () => {
-    const result = attachNamedSlot({}, 'sidebar', mkFrag('fallback'))
-    expect(result?.textContent).toBe('fallback')
-  })
-
-  it('returns null when no slot and no fallback', () => {
-    expect(attachNamedSlot({}, 'sidebar', null)).toBeNull()
-  })
-
-  it('returns null for null __block with no fallback', () => {
-    expect(attachNamedSlot(null, 'default', null)).toBeNull()
-  })
-})
-
 // ── Event delegation — per-mount-container roots ──────────────────────────────
 
 describe('event delegation — per-mount-container roots', () => {
@@ -5446,7 +5364,7 @@ describe('event delegation — per-mount-container roots', () => {
 
   it('a delegated handler reads currentTarget as its OWN element', () => {
     // `e.target === e.currentTarget` is the standard "was this element itself
-    // clicked" test, and it is what `on:click|self` compiles to. Delegation
+    // clicked" test, and it is what `onclick|self` compiles to. Delegation
     // puts one listener on the root, so currentTarget was the root and the
     // comparison was false for every event that DID hit the element it was
     // written on — a backdrop that cannot be clicked away, silently.

@@ -6,8 +6,8 @@
   const x = 'outer'
 </script>
 
-<button on:click={() => active = (active + 1) % items.length}>next</button>
-<button on:click={() => n++}>more</button>
+<button onclick={() => active = (active + 1) % items.length}>next</button>
+<button onclick={() => n++}>more</button>
 {#each items as item, i (item.id)}
   {@const isActive = i === active}
   {@const [w, h] = item.size}

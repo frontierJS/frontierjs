@@ -607,3 +607,19 @@ test("the square's hedge is a wall and its flowers are floor", () => {
   expect(hedge).toEqual([false, false, false, false, false, false])
   expect(stage.walkable(6, 24)).toBe(true)
 })
+
+// A season turns a piece's look, never what a figure can walk: a tree's crown
+// is overhead and may thin, but a hedge, a flower or a trunk stays on its cells
+// and a wall stays a wall, or `world.json` would need a season for each.
+test('a piece with seasons stands on the same footing in every one of them', async () => {
+  const footing = (p) => JSON.stringify({ floor: p.floor, cells: p.cells.filter((c) => !c.overhead && !c.seat).map((c) => [c.dx, c.dy]) })
+  const seasonal = []
+  for (const file of readdirSync(join(WEB, 'src/pieces')).filter((f) => f.endsWith('.js'))) {
+    const mod = await import(join(WEB, 'src/pieces', file))
+    for (const p of Object.values(mod)) if (p?.seasons) seasonal.push(p)
+  }
+  expect(seasonal.map((p) => p.name)).toEqual(expect.arrayContaining(['tree', 'hedge', 'flower']))
+  for (const p of seasonal) {
+    for (const [season, look] of Object.entries(p.seasons)) expect({ piece: p.name, season, footing: footing(look) }).toEqual({ piece: p.name, season, footing: footing(p) })
+  }
+})

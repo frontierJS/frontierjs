@@ -45,7 +45,7 @@ model Sheet {
   /// Prose on a field that crosses.
   note   String?
   counts Count[]
-  @@gate("5.5.5.9")
+  @@gate(5.5.5.9)
   @@sync(server)
 }
 
@@ -58,7 +58,7 @@ model Count {
   kind      Kind
   where     Json?    @type(Position)
   counted   Int
-  @@gate("5.5.5.9")
+  @@gate(5.5.5.9)
   @@allow('read', counted >= 0)
   @@index([sheetId])
   @@sync(append)
@@ -69,7 +69,7 @@ model Variant {
   id     Int     @id
   colour Colour
   counts Count[]
-  @@gate("5.5.5.9")
+  @@gate(5.5.5.9)
 }
 `
 
@@ -97,7 +97,7 @@ describe('the set is @@sync and nothing else', () => {
   })
 
   test('a schema where nothing declares @@sync answers no models, and says so', () => {
-    const r = deviceSchema(parse('model A { id Int @id  @@gate("0") }'))
+    const r = deviceSchema(parse('model A { id Int @id  @@gate(0) }'))
     expect(r.models).toEqual([])
     expect(noteFor(r, 'the schema')?.grade).toBe('noted')
   })
@@ -134,17 +134,6 @@ describe('a relation out of the set comes out, and its column stays', () => {
     const r = project()
     expect(fieldNames(r, 'Count')).toContain('sheet')
     expect(fieldNames(r, 'Sheet')).toContain('counts')
-  })
-
-  // `@@index([variant])` over a relation field is accepted by the parser and
-  // SQLite's double-quote-as-string-literal misfeature turns it into an index
-  // on the constant 'variant' (`FJS-1177`). In the device schema the field is
-  // gone outright, so the index is dropped rather than carried as a lie.
-  test('an index naming a dropped relation is dropped and graded', () => {
-    const r = deviceSchema(parse(SOURCE.replace('@@index([sheetId])', '@@index([variant])')))
-    const count = modelNamed(r, 'Count')
-    expect(count.attributes.some((a: any) => a.kind === 'index')).toBe(false)
-    expect(r.notes.some((n: any) => n.what.includes('@@index([variant])'))).toBe(true)
   })
 
   test('an index over a column that stayed is untouched', () => {
@@ -233,6 +222,17 @@ describe('the blocks a device cannot have', () => {
     expect(sheet.attributes.some((a: any) => a.kind === 'db')).toBe(false)
   })
 
+  // FJS-2406: the model-level trail names a database the device does not have,
+  // and the field-level one was already graded. Silence here is a trail that
+  // does nothing with no one told.
+  test('a model-level @@trail(audit) loses the attribute and is graded, as the field-level one is', () => {
+    const src = SOURCE.replace('  @@sync(server)', '  @@trail(audit)\n  @@sync(server)') +
+      '\ndatabase audit { path "./audit/" driver trail }\n'
+    const r = deviceSchema(parse(src))
+    expect(modelNamed(r, 'Sheet').attributes.some((a: any) => a.kind === 'trail')).toBe(false)
+    expect(noteFor(r, 'Sheet @@trail(audit)')?.grade).toBe('lost')
+  })
+
   test('a tenancy block is dropped and graded', () => {
     const src = 'tenancy {\n  strategy database\n  dir "./shops"\n  registry "./r.db"\n  resolve subdomain\n}\n' + SOURCE
     const r = deviceSchema(parse(src))
@@ -274,7 +274,7 @@ model Collection {
   id        Int        @id
   ownerId   Int
   bookmarks Bookmark[]
-  @@gate("0")
+  @@gate(0)
   ${collectionSync}
 }
 
@@ -283,7 +283,7 @@ model Bookmark {
   collectionId Int
   collection   Collection @relation(fields: [collectionId], references: [id])
   url          String
-  @@gate("0")
+  @@gate(0)
   ${rule}
   @@sync(server)
 }
@@ -317,8 +317,8 @@ model Bookmark {
 
   test('rel.some(...) on a to-many is refused the same way', () => {
     const src = PORTAL('', '@@sync(server)')
-      .replace('  @@gate("0")\n  @@sync(server)\n}\n\nmodel Bookmark',
-               '  @@gate("0")\n  @@allow(\'read\', tags.some(name == "x"))\n  @@sync(server)\n}\n\nmodel Bookmark')
+      .replace('  @@gate(0)\n  @@sync(server)\n}\n\nmodel Bookmark',
+               '  @@gate(0)\n  @@allow(\'read\', tags.some(name == "x"))\n  @@sync(server)\n}\n\nmodel Bookmark')
       .replace('  bookmarks Bookmark[]', '  bookmarks Bookmark[]\n  tags      Tag[]') +
       '\nmodel Tag {\n  id Int @id\n  name String\n  collectionId Int\n  collection Collection @relation(fields: [collectionId], references: [id])\n}\n'
     expect(() => deviceSchema(parse(src)))

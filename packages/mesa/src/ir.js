@@ -24,8 +24,8 @@
  */
 
 import {
-  rewriteExpr, rewriteTextResult, extractKeywords, parseModifiers, applyEventModifiers,
-  unwrapExp, parseEachHeader, eachFrame, templateSource, routeSlots, componentAttributes, styleSource, classSource,
+  rewriteExpr, rewriteTextResult, extractKeywords, eventAttribute, applyEventModifiers,
+  unwrapExp, parseEachHeader, eachFrame, templateSource, componentAttributes, styleSource, classSource,
   bindSetter, elementBindTarget, snippetParam, parseRenderTag, constScope, constDeclaration,
 } from './compiler.js'
 
@@ -86,7 +86,7 @@ function lowerAttributes(ctx, n) {
   const attrs = [], handlers = [], directives = [], styles = [], classes = [], attachments = [], binds = []
   let ref = null
   for (const p of n.attributes) {
-    let name = p.name
+    const name = p.name
     const loc = ctx.posOf(p.start ?? n.start)
     const raw = p.content ?? p.raw ?? name
     if (p.type === 'attach' || name === '@attach') { attachments.push({ expr: write(ctx, p.value), loc }); continue }
@@ -98,11 +98,9 @@ function lowerAttributes(ctx, n) {
       continue
     }
     if (name[0] === '{' || name.startsWith('*{')) { directives.push({ name, raw, loc }); continue }
-    // The bare HTML spelling is the same handler, normalized the way bindProp does.
-    if (/^on[a-z]/.test(name) && !name.startsWith('on:')) name = 'on:' + name.slice(2)
-    if (name[0] === '@' || name.startsWith('on:')) {
-      const { directive, modifiers } = parseModifiers(name)
-      const event = directive.startsWith('on:') ? directive.slice(3) : directive.slice(1)
+    const on = eventAttribute(name)
+    if (on) {
+      const { event, modifiers } = on
       const rawHand = p.value ? unwrapExp(p.value) : '() => {}'
       const code = applyEventModifiers(ctx, modifiers, event, write(ctx, rawHand).code).handler
       handlers.push({ event, modifiers, expr: expr(ctx, rawHand, code), loc })
@@ -156,7 +154,7 @@ function lowerAttributes(ctx, n) {
   return { attrs, handlers, directives, styles, classes, ref, attachments, binds }
 }
 
-// ─── components and slots ─────────────────────────────────────────────────────
+// ─── components ───────────────────────────────────────────────────────────────
 
 /**
  * `<Child …>`: the call `makeComponent` emits on the DOM path, as data, read
@@ -171,11 +169,9 @@ function lowerAttributes(ctx, n) {
  * passes nothing on either target. `client:` is a hint to a
  * server render and is dropped, as the DOM path drops it without `islands`.
  *
- * `slots` maps a slot name to its lowered children, routed by `routeSlots`,
- * the one routing the DOM path builds from too. A `{#snippet}` child is a
- * prop on the DOM path, so it is kept apart rather than lowered into the
- * default slot: a `snippet` node, which the target names and passes under
- * its own name.
+ * `snippets` are its children: every child of a call is a snippet by now,
+ * `slot=` and unslotted content included (`lowerSlots`, `FJS-D668`), which
+ * the target names and passes as the prop of its name.
  */
 function lowerComponent(ctx, n) {
   const props = [], spreads = [], binds = []
@@ -202,7 +198,11 @@ function lowerComponent(ctx, n) {
         break
       case 'prop': {
         let value
-        if (p.value === undefined) value = true
+        if (a.modifiers) {
+          const rawHand = unwrapExp(p.raw ?? p.value)
+          const code = applyEventModifiers(ctx, a.modifiers, a.event, write(ctx, rawHand).code).handler
+          value = { kind: 'binding', expr: expr(ctx, rawHand, code), to: 'prop' }
+        } else if (p.value === undefined) value = true
         else if (p.type === 'exp') value = { kind: 'binding', expr: write(ctx, unwrapExp(p.raw)), to: 'prop' }
         else if (p.value.includes('{')) value = { kind: 'binding', expr: interpolated(ctx, p.value), to: 'prop' }
         else value = p.value
@@ -212,10 +212,7 @@ function lowerComponent(ctx, n) {
     }
   }
 
-  const routing = routeSlots(n, ctx.config?.preserveComments)
-  const slots = {}
-  for (const [name, nodes] of routing.slots) slots[name] = lowerChildren(ctx, nodes)
-  const snippets = routing.snippets.map((s) => lowerSnippet(ctx, s))
+  const snippets = (n.body ?? []).filter((c) => c.type === 'snippet').map((s) => lowerSnippet(ctx, s))
 
   const accessor = ctx.accessors?.[n.name]
   return {
@@ -227,25 +224,7 @@ function lowerComponent(ctx, n) {
     spreads,
     binds,
     ref,
-    slots,
     snippets,
-  }
-}
-
-/** `<slot>` / `<slot:name>` / `<slot name="x">` with its fallback content.
- *  An attribute other than `name` is a directive: the DOM path reports it,
- *  and a slot carries nothing outward. */
-function lowerSlot(ctx, n) {
-  const nameAttr = n.attributes?.find((a) => a.name === 'name')
-  const directives = (n.attributes ?? [])
-    .filter((a) => a !== nameAttr)
-    .map((a) => ({ name: a.name, loc: ctx.posOf(a.start ?? n.start) }))
-  return {
-    kind: 'slot',
-    name: n.elArg || nameAttr?.value?.replace(/^['"]|['"]$/g, '') || 'default',
-    loc: ctx.posOf(n.start),
-    directives,
-    fallback: lowerChildren(ctx, n.body ?? []),
   }
 }
 
@@ -462,7 +441,6 @@ function lowerNode(ctx, n) {
       if (n.name === 'mesa') return unlowered(ctx, 'mesa-element', n)
       if (n.name === 'component') return unlowered(ctx, 'component', n)
       if (/^[A-Z]/.test(n.name)) return lowerComponent(ctx, n)
-      if (n.name === 'slot') return lowerSlot(ctx, n)
       return {
         kind: 'element',
         tag: n.name,
@@ -484,7 +462,6 @@ function lowerNode(ctx, n) {
     case 'key':
       return lowerKey(ctx, n)
     case 'await':
-    case 'slot':
     case 'fragment':
     case 'virtual-each':
     case 'block':
@@ -539,7 +516,7 @@ function lowerChildren(ctx, body, block = true) {
 
 /** Every node under `children`, each before its own contents, in document
  *  order: through an element's children, every arm of a block, a
- *  component's slots and snippets, a snippet's body and a slot's fallback.
+ *  component's snippets and a snippet's body.
  *  A visit answering `false` skips that node's contents. */
 export function eachNode(children, visit) {
   for (const n of children) {
@@ -563,11 +540,7 @@ export function eachNode(children, visit) {
         eachNode(n.children, visit)
         break
       case 'component':
-        for (const name in n.slots) eachNode(n.slots[name], visit)
         eachNode(n.snippets, visit)
-        break
-      case 'slot':
-        eachNode(n.fallback, visit)
         break
     }
   }
@@ -589,5 +562,50 @@ export function lower(ctx) {
     delete ctx._irSnippets
   }
   const diagnostics = errors ? errors.splice(errorsBefore) : []
-  return { kind: 'root', children, diagnostics }
+  const root = { kind: 'root', children, diagnostics }
+  if (ctx.styleNodes?.length) root.styles = lowerStyles(ctx)
+  return root
+}
+
+// ─── styles ───────────────────────────────────────────────────────────────────
+
+// Whose blocks hold no selectors: `from` and `50%` in a `@keyframes` are not
+// rules a target could refuse.
+const OPAQUE_AT = /^@(?:-\w+-)?(?:keyframes|font-face|property|counter-style|font-palette-values|page)\b/i
+
+/**
+ * The `<style>` blocks as the preludes they open, `{ prelude, loc }` in
+ * source order, with `scope`, the class every element of the component
+ * carries. A target that paints CSS judges each prelude as written —
+ * `:global(...)` included, since a global rule paints on the same engine —
+ * and the scoped text itself is `ctx.css.result`.
+ */
+function lowerStyles(ctx) {
+  const rules = []
+  for (const n of ctx.styleNodes) {
+    const src = n.content
+    const base = n.start + n.openTag.length
+    let from = 0
+    let opaque = 0
+    let depth = 0
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i]
+      if (c === '/' && src[i + 1] === '*') { const end = src.indexOf('*/', i + 2); i = end < 0 ? src.length : end + 1; continue }
+      if (c === '"' || c === "'") { while (++i < src.length && src[i] !== c) if (src[i] === '\\') i++; continue }
+      if (c === ';' || c === '}') {
+        if (c === '}' && --depth < opaque) opaque = 0
+        from = i + 1
+        continue
+      }
+      if (c !== '{') continue
+      depth++
+      const raw = src.slice(from, i)
+      const prelude = raw.replace(/\/\*[\s\S]*?\*\//g, '').trim()
+      const lead = raw.match(/^(?:\s|\/\*[\s\S]*?\*\/)*/)[0].length
+      if (!opaque && prelude) rules.push({ prelude, loc: ctx.posOf(base + from + lead) })
+      if (!opaque && OPAQUE_AT.test(prelude)) opaque = depth
+      from = i + 1
+    }
+  }
+  return { scope: ctx.css.id, rules }
 }

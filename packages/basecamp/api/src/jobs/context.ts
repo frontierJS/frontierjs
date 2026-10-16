@@ -43,20 +43,20 @@
 // make.
 
 import type { JobContext }  from '@frontierjs/caravan'
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
-export function appFrom(ctx: JobContext<unknown>, job: string): BasecampApp {
+export function appFrom(ctx: JobContext<unknown>, job: string): App {
   if (!ctx.app) throw new Error(
     `[${job}] no Junction app on the job context — this handler reads rows and ` +
     `sends to an outpost, and caravan is running standalone.`
   )
-  return ctx.app as unknown as BasecampApp
+  return ctx.app
 }
 
 /** A handler's own answer to *whose work is this*. */
 export interface CallerJob {
   mode:   'caller'
-  app:    BasecampApp
+  app:    App
   /** The workspace the work was queued for — junction re-bound it, so it is
    *  the tenant every service call below resolves against. */
   tenant: string
@@ -66,7 +66,7 @@ export interface CallerJob {
 
 export interface AppJob {
   mode: 'app'
-  app:  BasecampApp
+  app:  App
   /** The system client, and the only mode entitled to one. */
   db:   any
 }
@@ -115,7 +115,7 @@ export function runsAsApp(ctx: JobContext<unknown>, job: string): AppJob {
     `the dispatch to say the app owns it even though a request started it.`
   )
 
-  return { mode: 'app', app, db: app.db.asSystem() }
+  return { mode: 'app', app, db: app.db!.asSystem() }
 }
 
 /**

@@ -201,11 +201,11 @@ const expected = {
   'majorUnits.refusedBeforeSending': { threw: true, intents: 1 },
   'refund.partialThenOverdrawn':     { first: 250, refused: true, saysHowMuch: true },
   'webhook.realEventIsAccepted':     { confirmed: 200, answered: 200 },
-  'webhook.forgedIsRefused':         { status: 401, body: { error: 'invalid signature' } },
-  'webhook.swappedBodyIsRefused':    { status: 401, body: { error: 'invalid signature' } },
-  'webhook.staleIsRefused':          { status: 401, body: { error: 'invalid signature' } },
-  'webhook.unsignedIsRefused':       { status: 401, body: { error: 'invalid signature' } },
-  'webhook.rotationIsAccepted':      { status: 200, body: { received: true, id: 'evt_x', type: 'payment_intent.succeeded' } },
+  'webhook.forgedIsRefused':         { status: 401, body: { error: 'not verified' } },
+  'webhook.swappedBodyIsRefused':    { status: 401, body: { error: 'not verified' } },
+  'webhook.staleIsRefused':          { status: 401, body: { error: 'not verified' } },
+  'webhook.unsignedIsRefused':       { status: 401, body: { error: 'not verified' } },
+  'webhook.rotationIsAccepted':      { status: 200, body: { received: true, outcome: 'ignored' } },
 }
 
 process.exit(report(got, expected))

@@ -4,7 +4,7 @@
   // Every handler here goes through the delegation root `mount()` registers
   // (Invariant 11), and each one is a question a dispatched event cannot ask:
   //
-  //   `on:click|self` compares `target` to `currentTarget`, and in a delegated
+  //   `onclick|self` compares `target` to `currentTarget`, and in a delegated
   //   handler `currentTarget` was the delegation ROOT rather than the element
   //   the handler was written on — so `|self` admitted nothing and a backdrop
   //   could not be clicked away (`FJS-321`).
@@ -38,22 +38,22 @@
   }
 </script>
 
-<div id="backdrop" on:click|self={onBackdrop}>
-  <button type="button" id="inner" on:click={() => innerHits++}>inner</button>
+<div id="backdrop" onclick|self={onBackdrop}>
+  <button type="button" id="inner" onclick={() => innerHits++}>inner</button>
 </div>
 
-<dialog bind:this={dialogEl} on:close={() => closes++} on:cancel={() => cancels++}>closable</dialog>
+<dialog bind:this={dialogEl} onclose={() => closes++} oncancel={() => cancels++}>closable</dialog>
 
-<details bind:this={detailsEl} on:toggle={() => toggles++}>
+<details bind:this={detailsEl} ontoggle={() => toggles++}>
   <summary>more</summary>
   body
 </details>
 
 <form>
-  <input bind:this={inputEl} required on:invalid={() => invalids++} />
+  <input bind:this={inputEl} required oninvalid={() => invalids++} />
 </form>
 
-<button type="button" id="drive" on:click={drive}>drive</button>
+<button type="button" id="drive" onclick={drive}>drive</button>
 
 <output id="backdrop-hits">{backdropHits}</output>
 <output id="inner-hits">{innerHits}</output>

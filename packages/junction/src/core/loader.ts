@@ -1,15 +1,14 @@
 // core/loader.ts
 // Auto-discovers *.service.ts files recursively under the services/ directory.
-// Factory function must be named create*Service.
+// Each file export-defaults a definition — `export default createService({…})` —
+// and the registry builds it (`FJS-D1079`).
 // Name derived from filename: accounts.service.ts → 'accounts'.
 // Manual registration always takes precedence.
 //
 // Also loads routes/ (`FJS-D626`): a file's path there is the URL it answers.
 
 import { join } from 'node:path'
-import { createService, isBuiltService } from './service.ts'
-import type { Service }     from './service.ts'
-import type { ServiceRegistry } from './service.ts'
+import type { ServiceDefinition, ServiceRegistry } from './service.ts'
 import { diagnostic }       from './diagnostics.ts'
 
 // ─── Loader ───────────────────────────────────────────────────────────────
@@ -18,11 +17,10 @@ import { diagnostic }       from './diagnostics.ts'
 
 export interface LoaderOptions {
   dir:      string               // path to services/ directory
-  app:      unknown              // passed to every factory
   registry: ServiceRegistry
   exclude?: string[]             // filenames to skip
   /**
-   * Where an authoring mistake goes. The same keyed sink `createService` writes
+   * Where an authoring mistake goes. The same keyed sink `buildService` writes
    * to, read by `start()`'s `check-authoring` phase, which refuses with every
    * finding at once (`FJS-D199`).
    *
@@ -36,7 +34,7 @@ export interface LoaderOptions {
 
 export async function autoloadServices(opts: LoaderOptions): Promise<void> {
 
-  const { dir, app, registry, exclude = [], report } = opts
+  const { dir, registry, exclude = [], report } = opts
 
   const files = await findServiceFiles(dir)
   // Which file registered a name, so a duplicate can name BOTH of them. Load
@@ -50,61 +48,32 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
     if (exclude.some(e => filename.includes(e))) continue
 
     try {
-      const mod     = await import(file)
-      const factory = findFactory(mod, file, report)
+      const mod = await import(file)
+      const def = definitionOf(mod)
 
-      if (!factory) {
-        const msg = `no create*Service factory found in ${file} — a *.service.ts file ` +
-                    `exporting none registers nothing, and the name it would have had ` +
-                    `answers 404.`
-        if (report) report(`loader:${file}:no-factory`, msg)
-        else console.warn(`[Loader] No create*Service factory found in: ${file}`)
+      if (!def) {
+        const msg = `${file} export-defaults no service definition, so it registers nothing ` +
+                    `and the name it would have had answers 404. A service file is ` +
+                    `export default createService({ … }); a method reaches the app through ctx.app.`
+        if (report) report(`loader:${file}:no-definition`, msg)
+        else console.warn(`[Loader] ${msg}`)
         continue
       }
 
-      let service = factory(app) as Service
-
-      // Bare method object (e.g. a factory returning createBaseService(...)
-      // directly, without createService) — wrap it into a full service with
-      // the filename-derived name. This makes the minimal service file:
-      //
-      //   export function createPostsService() {
-      //     return createBaseService({ model: 'posts' })
-      //   }
-      //
-      // fully registrable: name from the filename, db from app.db.
-      //
-      // The test is a MARKER createService stamps, not the shape of one field.
-      // It used to ask `typeof service.hooks !== 'function'` — answering "was
-      // this built?" by inspecting a single key's type, which is the same
-      // by-exclusion reasoning the method table exists to replace, and which
-      // wrapped anything that happened to carry a `hooks` map.
-      if (service && typeof service === 'object' && !isBuiltService(service)) {
-        service = createService({
-          name: deriveName(filename),
-          ...(service as unknown as Record<string, unknown>),
-        })
-      }
-
-      if (!service?.name) {
-        // Derive name from filename if not set on the service
-        const derived = deriveName(filename)
-        ;(service as { name: string }).name = derived
-      }
-
-      if (!registry.has(service.name)) {
+      const name = def.name ?? deriveName(filename)
+      if (!registry.has(name)) {
         // The filename's own spelling stays reachable — a URL and an
         // `app.service(…)` written against it are not the app's mistake. Only
         // when it is a spelling of the declared name: `metrics.service.ts`
         // declaring 'metrics-store' is a different word, and aliasing it claims
         // 'metrics' for a service that never answered to it.
         const raw = rawStem(filename)
-        registry.register(service, raw !== service.name && deriveName(filename) === service.name ? [raw] : [])
-        registeredBy.set(service.name, file)
+        registry.register({ ...def, name }, raw !== name && deriveName(filename) === name ? [raw] : [])
+        registeredBy.set(name, file)
         // An inventory line, not news — `GET /manifest` answers the same
         // question on demand, and an app with 21 services printed 21 of these
         // before it had done anything. DEBUG=1 brings them back.
-        diagnostic(`[Loader] Registered service: ${service.name} (${file})`)
+        diagnostic(`[Loader] Registered service: ${name} (${file})`)
       } else {
         // Two FILES claiming one name. Reported rather than skipped: one of them
         // is serving and the other is gone, decided by alphabetical order — so
@@ -117,18 +86,18 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
         // which is the documented shape and how `basecamp` registers every
         // service it also keeps on disk. Reading that as a duplicate refuses a
         // correct app at boot, which is worse than the silence being fixed here.
-        const held = registeredBy.get(service.name)
+        const held = registeredBy.get(name)
         if (!held) {
           // An app doing this for eighteen services must not print eighteen
           // warnings on every boot.
-          diagnostic(`[Loader] Skipping ${service.name} — registered by hand, which wins`)
+          diagnostic(`[Loader] Skipping ${name} — registered by hand, which wins`)
         } else if (report) {
-          report(`loader:name:${service.name}`,
-            `two service files claim the name '${service.name}': ${file} and ${held}, ` +
+          report(`loader:name:${name}`,
+            `two service files claim the name '${name}': ${file} and ${held}, ` +
             `of which ${held} is the one serving because it sorts first. ` +
             `Rename one, or give one an explicit name.`)
         } else {
-          console.warn(`[Loader] Skipping duplicate service: ${service.name}`)
+          console.warn(`[Loader] Skipping duplicate service: ${name}`)
         }
       }
 
@@ -164,48 +133,13 @@ async function findServiceFiles(dir: string): Promise<string[]> {
   return results.sort()  // consistent load order across platforms
 }
 
-// ─── Find factory function in module exports ──────────────────────────────
-// Looks for: createXxxService, createXxx, or 'default' if it's a factory
+// ─── The definition a file export-defaults ───────────────────────────────
+// A function is refused rather than called: a factory runs code at import and
+// closes over an app the definition cannot be read without.
 
-function findFactory(
-  mod:     Record<string, unknown>,
-  file?:   string,
-  report?: (key: string, finding: string) => void,
-): ((app: unknown) => Service) | null {
-
-  // Named export: createAccountsService, createUsersService, etc.
-  const named = Object.keys(mod).filter(
-    k => /^create\w+Service$/.test(k) && typeof mod[k] === 'function')
-
-  // One file, one service. A second factory was dropped on the floor with
-  // nothing said at all — the quietest of the loader's silences, because the
-  // duplicate-name and threw cases at least printed a line.
-  if (named.length > 1 && report && file) {
-    report(`loader:${file}:factories`,
-      `${file} exports ${named.length} service factories (${named.join(', ')}) and a file ` +
-      `registers one — ${named[0]} is taken and the rest are dropped. Split them into ` +
-      `one file each.`)
-  }
-
-  if (named.length) return mod[named[0]] as (app: unknown) => Service
-
-  // Default export that is a function
-  if (typeof mod.default === 'function') {
-    return mod.default as (app: unknown) => Service
-  }
-
-  // Default export that is already a service object
-  if (
-    mod.default &&
-    typeof mod.default === 'object' &&
-    'name' in mod.default &&
-    'find' in mod.default
-  ) {
-    const service = mod.default as Service
-    return () => service
-  }
-
-  return null
+function definitionOf(mod: Record<string, unknown>): ServiceDefinition | null {
+  const def = mod.default
+  return def && typeof def === 'object' && !Array.isArray(def) ? def as ServiceDefinition : null
 }
 
 // ─── Derive service name from filename ───────────────────────────────────
@@ -244,16 +178,11 @@ function rawStem(filename: string): string {
 
 export async function loadServiceFile(
   path:     string,
-  app:      unknown,
   registry: ServiceRegistry
 ): Promise<void> {
-  const mod     = await import(path)
-  const factory = findFactory(mod)
-
-  if (!factory) throw new Error(`No factory found in: ${path}`)
-
-  const service = factory(app) as Service
-  registry.register(service)
+  const def = definitionOf(await import(path))
+  if (!def) throw new Error(`${path} export-defaults no service definition — export default createService({ … })`)
+  registry.register({ ...def, name: def.name ?? deriveName(path.split('/').pop() ?? '') })
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────

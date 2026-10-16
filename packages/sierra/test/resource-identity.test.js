@@ -71,7 +71,7 @@ const SOURCE = `
 model Customer {
   id      Int    @id @default(autoincrement())
   name    String
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 model Note {
   id         Int    @id @default(autoincrement())
@@ -79,7 +79,7 @@ model Note {
   customerId Int?
   customer   Customer? @relation(fields: [customerId], references: [id])
   version    Int    @version
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 `
 

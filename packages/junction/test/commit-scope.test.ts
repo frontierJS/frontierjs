@@ -26,9 +26,9 @@
 // with.
 import { describe, test, expect } from 'bun:test'
 import { createClient }              from '../../litestone/src/index.js'
-import { createService, callService } from '../src/core/service.ts'
+import { buildService, callService } from '../src/core/service.ts'
 import { announceDataWrites }        from '../src/core/litestone.ts'
-import type { ServiceContext }       from '../src/transport/bridge.ts'
+import type { ServiceContext }       from '../src/core/context.ts'
 
 const SCHEMA = `model Post { id Int @id @default(autoincrement())  title String }`
 const mkDb = () => createClient({ db: ':memory:', schema: SCHEMA }) as unknown as Promise<any>
@@ -68,12 +68,12 @@ describe('a nested call hands its effects and its announcement to the commit', (
   async function nest(opts: { boom?: boolean; transactional?: boolean } = {}) {
     const db  = await mkDb()
     const ran: string[] = []
-    const inner = createService(writes({
+    const inner = buildService(writes({
       hooks: { after: { create: [(c: ServiceContext) => { c.afterCommit(() => { ran.push('inner effect') }) }] } },
     }) as never)
     const app = busApp({ posts: inner })
 
-    const outer = createService({
+    const outer = buildService({
       name: 'outer',
       transactional: opts.transactional !== false,
       async create(c: ServiceContext) {
@@ -110,14 +110,14 @@ describe('a nested call hands its effects and its announcement to the commit', (
   test('the announcement precedes the effect at the drain, as it does without one', async () => {
     const db  = await mkDb()
     const order: string[] = []
-    const inner = createService(writes({
+    const inner = buildService(writes({
       hooks: { after: { create: [(c: ServiceContext) => { c.afterCommit(() => { order.push('effect') }) }] } },
     }) as never)
     const app = {
       events:   { emit: (e: string) => { if (e === 'posts:created') order.push('announced') }, onAny: () => {} },
       services: { list: () => ['posts'], get: () => inner },
     }
-    const outer = createService({
+    const outer = buildService({
       name: 'outer', transactional: true,
       async create(c: ServiceContext) {
         await callService(inner, mkCtx(c.locals.db, { app, data: { title: 'i' } }), undefined, app.events as never)
@@ -143,7 +143,7 @@ describe('a nested call hands its effects and its announcement to the commit', (
     const seen: string[] = []
     const app = busApp()
 
-    const middle = createService({
+    const middle = buildService({
       name: 'middle', transactional: true,
       async create(c: ServiceContext) {
         c.afterCommit(() => { seen.push('middle effect') })
@@ -153,7 +153,7 @@ describe('a nested call hands its effects and its announcement to the commit', (
       async find() { return [] },
     } as never)
 
-    const outer = createService({
+    const outer = buildService({
       name: 'outer', transactional: true,
       async create(c: ServiceContext) {
         await callService(middle, mkCtx(c.locals.db, { app, service: 'middle' }), undefined, app.events as never)
@@ -178,10 +178,10 @@ describe('the write tap does not double-announce under a transaction', () => {
 
   async function withTap(transactional: boolean) {
     const db    = await mkDb()
-    const inner = createService(writes() as never)
+    const inner = buildService(writes() as never)
     const app   = busApp({ posts: inner })
     announceDataWrites(app as never, db as never)
-    const outer = createService({
+    const outer = buildService({
       name: 'outer', transactional,
       async create(c: ServiceContext) {
         await callService(inner, mkCtx(c.locals.db, { app, data: { title: 'i' } }), undefined, app.events as never)
@@ -211,7 +211,7 @@ describe('the write tap does not double-announce under a transaction', () => {
     // everything would satisfy both of them, and this is the case the tap
     // exists for.
     const db    = await mkDb()
-    const inner = createService(writes() as never)
+    const inner = buildService(writes() as never)
     const app   = busApp({ posts: inner })
     announceDataWrites(app as never, db as never)
     await db.asSystem().post.create({ data: { title: 'direct' } })
@@ -227,7 +227,7 @@ describe('a write that is committed is announced, whatever the pipeline does nex
   async function afterHookThrows(hooks: Record<string, unknown>) {
     const db  = await mkDb()
     const app = busApp()
-    const svc = createService(writes({ hooks }) as never)
+    const svc = buildService(writes({ hooks }) as never)
     let err: any = null
     try { await callService(svc, mkCtx(db, { app }), undefined, app.events as never) }
     catch (e) { err = e }
@@ -263,7 +263,7 @@ describe('a write that is committed is announced, whatever the pipeline does nex
   test('under a transaction the same throw rolls back, so nothing is announced or claimed', async () => {
     const db  = await mkDb()
     const app = busApp()
-    const svc = createService(writes({
+    const svc = buildService(writes({
       transactional: true,
       hooks: { after: { create: [() => { throw new Error('after hook blew up') }] } },
     }) as never)
@@ -282,7 +282,7 @@ describe('a write that is committed is announced, whatever the pipeline does nex
     const db  = await mkDb()
     const app = busApp()
     let sent  = 0
-    const svc = createService(writes({
+    const svc = buildService(writes({
       hooks: { after: { create: [
         (c: ServiceContext) => { c.afterCommit(() => { sent++ }) },
         function boom() { throw new Error('a later after hook fails') },

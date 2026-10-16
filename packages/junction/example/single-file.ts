@@ -86,7 +86,7 @@ import {
 import type { LitestoneClient, TableClient } from '@frontierjs/litestone'
 
 import type { App }            from '../src/core/app.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 // ─── Schema ───────────────────────────────────────────────────────────────
 // Litestone schema as a string. See gate digits comment on the model.
@@ -113,7 +113,7 @@ model Lead {
 
   // RCUD = read, create, update, delete
   // 0 = stranger (public), 4 = user, 5 = administrator
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }
 `
 

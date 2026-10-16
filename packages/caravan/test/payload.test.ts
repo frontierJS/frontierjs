@@ -72,21 +72,21 @@ describe('defineJob refuses a payload type JSON cannot carry', () => {
   interface Receipt { orderId: string; total: number; lines: Array<{ sku: string; qty: number | null }>; note?: string }
 
   it('accepts plain data, an interface among it', () => {
-    defineJob('ok-interface', (ctx: JobContext<Receipt>) => { void ctx.data.orderId })
-    defineJob<{ id: string; tags: string[]; meta: { n: number } | null }>('ok-literal', () => {})
-    defineJob('ok-default', () => {})
+    defineJob({ handler: (ctx: JobContext<Receipt>) => { void ctx.data.orderId } })
+    defineJob<{ id: string; tags: string[]; meta: { n: number } | null }>({ handler: () => {} })
+    defineJob({ handler: () => {} })
   })
 
   it('refuses a Date, a Map, a Set, a function and a bigint, however deep', () => {
     // @ts-expect-error a Date is a string by the time the handler runs
-    defineJob('bad-date', (ctx: JobContext<{ order: { when: Date } }>) => { void ctx })
+    defineJob({ handler: (ctx: JobContext<{ order: { when: Date } }>) => { void ctx } })
     // @ts-expect-error a Map is {}
-    defineJob<{ m: Map<string, number> }>('bad-map', () => {})
+    defineJob<{ m: Map<string, number> }>({ handler: () => {} })
     // @ts-expect-error a Set inside an array
-    defineJob<{ tags: Set<string>[] }>('bad-set', () => {})
+    defineJob<{ tags: Set<string>[] }>({ handler: () => {} })
     // @ts-expect-error a function is dropped
-    defineJob<{ cb: () => void }>('bad-fn', () => {})
+    defineJob<{ cb: () => void }>({ handler: () => {} })
     // @ts-expect-error a bigint throws
-    defineJob<{ id: bigint }>('bad-bigint', () => {})
+    defineJob<{ id: bigint }>({ handler: () => {} })
   })
 })

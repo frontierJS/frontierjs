@@ -45,7 +45,7 @@ const LITE = `
     status OrderStatus @default(pending)
     note   String?
 
-    @@gate("2.4.4.6")
+    @@gate(2.4.4.6)
     @@transitions(status,
       pay:    pending         -> paid,
       ship:   paid            -> shipped,

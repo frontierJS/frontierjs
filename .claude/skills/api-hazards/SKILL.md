@@ -17,6 +17,7 @@ Detail: `references/ctx-and-the-call.md`
 - **A payload key that is not a column is declared `@transient`, and it arrives at `ctx.transients` — never at `ctx.data`.**
 - **A payload key that names no field of the model is a 400; one that names a field the caller may not WRITE is dropped in silence** (`FJS-889`)
 - **`PUT` to an id that does not exist is 404 and does not create the row** (`FJS-D207`)
+- **A write by id the row policy refuses is 403 for a row the caller can read, 404 for one they cannot** (`FJS-1750`)
 - **`update` is `patch` with an id REQUIRED, and it MERGES** (`FJS-D179`)
 - **The METHOD decides list vs single.**
 
@@ -32,6 +33,7 @@ Detail: `references/the-hook-pipeline.md`
 - **An irreversible effect belongs in `ctx.afterCommit(fn)`, not in an `after` hook.**
 - **Under `transactional:`, a result carrying a non-empty `errors` is a 422 and a rollback** (`FJS-2149`)
 - **A `mailer.send()` that answers `sent` sends everything the message declared — including `cc`, `bcc`, `attachments` and `headers`** (`FJS-895`)
+- **A reply tag proves the holder RECEIVED our mail, not who is holding it; attribution also needs `from` to be the address the mail went to** (`FJS-D1091`, `FJS-D1092`)
 - **A recurring `app.scheduler` job does not overlap itself, and the tick it dropped is COUNTED** (`FJS-896`)
 - **The log level is a CELL shared down the whole tree, and `setLevel` moves all of it** (`FJS-897`)
 - **A job records the request that queued it** (`FJS-897`)

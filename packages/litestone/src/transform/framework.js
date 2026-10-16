@@ -846,9 +846,15 @@ export function parseLimit(n) {
   return { type: 'bytes', value: bytes }
 }
 
-// Returns estimated size info for a table based on actual file size
+function countRows(db, tableName) {
+  return db.query(`SELECT COUNT(*) as n FROM "${tableName}"`).get().n
+}
+
+// Returns estimated size info for a table based on actual file size. Pricing a
+// row counts every table, so a caller that needs only `rows` uses countRows:
+// one stats call per table made a limit across T tables run T² counts.
 function getTableStats(db, tableName) {
-  const rows = db.query(`SELECT COUNT(*) as n FROM "${tableName}"`).get().n
+  const rows = countRows(db, tableName)
   if (rows === 0) return { rows: 0, bytes: 0, avgRowBytes: 0 }
 
   // Use freelist-adjusted file bytes / total rows — accounts for SQLite page overhead
@@ -881,13 +887,14 @@ function fmtBytes(bytes) {
 
 // Resolve a parsed limit to a concrete row count for a specific table
 export function resolveRowCount(db, tableName, parsed) {
-  const { rows, avgRowBytes } = getTableStats(db, tableName)
-  if (parsed.type === 'rows')    return Math.min(parsed.value, rows)
-  if (parsed.type === 'percent') return Math.max(1, Math.floor(rows * parsed.value))
   if (parsed.type === 'bytes') {
+    const { rows, avgRowBytes } = getTableStats(db, tableName)
     if (avgRowBytes === 0) return rows
     return Math.max(1, Math.min(rows, Math.floor(parsed.value / avgRowBytes)))
   }
+  const rows = countRows(db, tableName)
+  if (parsed.type === 'rows')    return Math.min(parsed.value, rows)
+  if (parsed.type === 'percent') return Math.max(1, Math.floor(rows * parsed.value))
   return rows
 }
 
@@ -898,7 +905,7 @@ export function resolveAllRowCounts(db, tableNames, parsed) {
   }
   if (parsed.type === 'percent') {
     return Object.fromEntries(tableNames.map(t => {
-      const { rows } = getTableStats(db, t)
+      const rows = countRows(db, t)
       return [t, Math.max(1, Math.floor(rows * parsed.value))]
     }))
   }
@@ -907,7 +914,7 @@ export function resolveAllRowCounts(db, tableNames, parsed) {
     if (totalBytes === 0) return Object.fromEntries(tableNames.map(t => [t, Infinity]))
     const ratio = parsed.value / totalBytes
     return Object.fromEntries(tableNames.map(t => {
-      const { rows } = getTableStats(db, t)
+      const rows = countRows(db, t)
       return [t, Math.max(1, Math.floor(rows * ratio))]
     }))
   }

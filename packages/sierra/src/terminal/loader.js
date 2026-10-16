@@ -95,7 +95,13 @@ export async function installTerminalLoader({ root, autoImportMap = null }) {
         locLines:  content == null ? null : locLines(source, content),
         warning:   () => {},
       })
-      entry = { code: ctx.result.replace(ROUTER_IMPORT, `$1${ROUTER}$2`), refusal: ctx.terminalRefusal ?? null }
+      // The compiler reports an error and still returns code, with the
+      // offending statement left out, as mesa-plugin.js says. A browser build
+      // refuses the file; served here, the screen ran without it and the one
+      // line saying so was painted over by the renderer.
+      const errors = ctx.analysis?.errors ?? []
+      if (errors.length) throw new Error(`${errors.length} compile error(s) in ${relative(root, path)}: ${errors.join(' · ')}`)
+      entry = { code: ctx.result.replace(ROUTER_IMPORT, `$1${ROUTER}$2`), refusal: ctx.targetRefusal ?? null }
     } catch (e) {
       entry = { error: e.message }
     }

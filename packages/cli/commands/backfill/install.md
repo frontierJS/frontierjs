@@ -26,7 +26,7 @@ import { pathToFileURL }                            from 'node:url'
 
 // `@frontierjs/junction` ships `db/backfill.lite` and this imports it BY NAME.
 // Nothing is copied, for the reason `fli outbox:install` gives: BackfillRun is
-// @@gate("8") machinery an app reads and never writes, so it changes when the
+// @@gate(8) machinery an app reads and never writes, so it changes when the
 // package does and an upgrade reaches an installed app.
 
 const PKG = '@frontierjs/junction'
@@ -47,7 +47,7 @@ const schemaBlock = (db) => `
 // expand → backfill → contract: filling a column for every existing row is not
 // a migration, and this is the checkpoint that makes it resumable.
 //
-// Imported rather than pasted: BackfillRun is @@gate("8") framework machinery.
+// Imported rather than pasted: BackfillRun is @@gate(8) framework machinery.
 // The specifier resolves through node, so the package must be installed for
 // this schema to parse.${db === 'main' ? '' : `\n// \`into ${db}\` is what lands it in your ${db} database.`}
 

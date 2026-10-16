@@ -21,7 +21,7 @@
  * grader that would answer differently. A local client auto-installs
  * `FrontierGateGetLevel`, and the app's own resolver is a DIFFERENT function:
  * measured on `example`, the two grade one account 3 and 4, and `Order` is
- * `@@gate("0.4.4.5")`. Re-grading here would make an offline list differ from
+ * `@@gate(0.4.4.5)`. Re-grading here would make an offline list differ from
  * the online one with nothing raised. Invariant 6 is untouched — the server
  * enforces regardless and the client was never the authority — and the rows are
  * dropped whenever the identity changes, like every other per-principal thing
@@ -192,7 +192,7 @@ export async function writeRows(model, rows, whole = null) {
 // An update gate of 9 refuses the system client too, and upsertMany grades its
 // conflict half as an update (`FJS-1700`). Such a row never changes on the
 // server, so replaying it insert-only loses nothing — and without this an
-// append-only ledger like `@@gate("5.5.9.9")` kept nothing on the device.
+// append-only ledger like `@@gate(5.5.9.9)` kept nothing on the device.
 //
 // A `@@softDelete` column is written by remove() and restore() and by no
 // update-family verb (`FJS-D923`), and a row's keys are the conflict half

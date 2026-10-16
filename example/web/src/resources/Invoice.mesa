@@ -6,7 +6,7 @@
   // ─── Why this file has no markup half ─────────────────────────────────────
   //
   // A resource file carries its model's default form and this model has none to
-  // carry: `Invoice` is `@@gate("1.8.8.8")` and every money column on it is
+  // carry: `Invoice` is `@@gate(1.8.8.8)` and every money column on it is
   // `@system @immutable`, so the writable set a generated form would render is
   // empty. That is the point of the model rather than a gap in it — an invoice
   // is a DOCUMENT (`FJS-D162`), and the way to correct one is a `CreditNote`

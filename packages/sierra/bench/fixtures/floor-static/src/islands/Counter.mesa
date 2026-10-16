@@ -1,0 +1,5 @@
+<script>
+  let n = 0
+</script>
+
+<button onclick={() => n++}>count: {n}</button>

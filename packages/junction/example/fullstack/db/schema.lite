@@ -3,7 +3,7 @@
 /// Everything downstream derives from this file:
 ///
 ///   the table            ← autoMigrate(db)
-///   CRUD + pagination    ← createBaseService({}) reads the model
+///   CRUD + pagination    ← createService({}) reads the model
 ///   401s                 ← @@gate, via the derived gateAuth hook
 ///   400s                 ← the field rules below, via the derived autoValidate hook
 ///   make() defaults      ← generateJsonSchema, shipped to the browser
@@ -21,5 +21,5 @@ model Post {
 
   /// read is public, writes need a user: "0.4.4.5" is
   /// read 0 (STRANGER) . create 4 (USER) . update 4 . delete 5 (ADMINISTRATOR)
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }

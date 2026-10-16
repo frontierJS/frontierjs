@@ -94,7 +94,7 @@ title: Audit trail
   </article>
 {/if}
 
-<form class="cluster" on:submit|preventDefault={load}>
+<form class="cluster" onsubmit|preventDefault={load}>
   <label class="visually-hidden" for="audit-filter">Subject type</label>
   <Input id="audit-filter" style="--field-inline-size: 14rem"
          placeholder="subject type, e.g. servers" bind:value={filter} />

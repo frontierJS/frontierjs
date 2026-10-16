@@ -200,7 +200,7 @@ describe('an unbounded stall is visible even though it is not stopped', () => {
 describe('a timeout declared in a job file survives the round trip', () => {
   it('reaches the registry through defineJob', async () => {
     const { defineJob } = await import('../src/index.ts')
-    const def = defineJob('shipping', async () => {}, { timeout: 30_000, queue: 'fulfillment' })
+    const def = defineJob({ name: 'shipping', handler: async () => {}, timeout: 30_000, queue: 'fulfillment' })
     expect(def.timeout).toBe(30_000)
 
     const q = makeQueue()

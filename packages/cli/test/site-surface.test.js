@@ -24,7 +24,7 @@ import { port, PROJECTS } from '../core/ports.js'
 let ROOT
 
 const SCHEMA = `
-model Product { id Int @id  name String  @@gate("0.4.4.5") }
+model Product { id Int @id  name String  @@gate(0.4.4.5) }
 `
 
 /** An app root with a schema, ready for a surface to be written into it. */

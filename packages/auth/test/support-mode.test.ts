@@ -13,7 +13,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { makeAuth, rejectsWith, type Harness, signedIn } from './harness.ts'
-import { AuthConfigError, UserNotFoundError, InvalidTokenError } from '../errors.ts'
+import { AuthConfigError, SupportEpisodeError, UserNotFoundError, InvalidTokenError } from '../errors.ts'
 
 let h: Harness
 beforeAll(async () => { h = await makeAuth() })
@@ -129,7 +129,7 @@ describe('what the provider refuses whatever the app allows', () => {
 
   test('yourself', async () => {
     const operator = await person('op')
-    await rejectsWith(() => h.auth.startSupport!(operator.token, operator.userId, 'ticket-7'), AuthConfigError)
+    await rejectsWith(() => h.auth.startSupport!(operator.token, operator.userId, 'ticket-7'), SupportEpisodeError)
   })
 
   test('an episode that has LAPSED does not block the next one', async () => {
@@ -160,7 +160,7 @@ describe('what the provider refuses whatever the app allows', () => {
     const a = await person('sub-a')
     const b = await person('sub-b')
     await h.auth.startSupport!(operator.token, a.userId, 'ticket-8')
-    await rejectsWith(() => h.auth.startSupport!(operator.token, b.userId, 'ticket-9'), AuthConfigError)
+    await rejectsWith(() => h.auth.startSupport!(operator.token, b.userId, 'ticket-9'), SupportEpisodeError)
   })
 
   test('a subject who does not exist', async () => {

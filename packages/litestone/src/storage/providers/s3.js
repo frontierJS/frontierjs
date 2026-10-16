@@ -52,7 +52,13 @@ export class S3Provider {
     const headers = { 'content-type': contentType }
     if (size != null) headers['content-length'] = String(size)
 
-    const signed = await signRequest('PUT', url, headers, body, this._opts())
+    // A signed payload is a hash of every byte, so a Blob would cost its size in
+    // heap to send. Over https it goes unsigned and fetch streams it; over plain
+    // http the body stays in the signature, because there TLS is not covering it.
+    const unsignedPayload = body instanceof Blob && url.startsWith('https:')
+    if (body instanceof Blob && !unsignedPayload) body = new Uint8Array(await body.arrayBuffer())
+
+    const signed = await signRequest('PUT', url, headers, body, { ...this._opts(), unsignedPayload })
 
     const res = await fetch(url, {
       method:  'PUT',

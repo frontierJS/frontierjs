@@ -3,9 +3,9 @@
  * on the headless renderer and driven by keys.
  *
  * A green run pins the whole slice end to end: the emitter's module shape
- * (its `$$tui` calls, in the order the contract lists them) against the
+ * (its `$$host` calls, in the order the contract lists them) against the
  * runtime that executes it, one signal graph shared between a text binding,
- * an `{#if}` and a keyed `{#each}`, and Tab/Enter reaching a `on:click`
+ * an `{#if}` and a keyed `{#each}`, and Tab/Enter reaching a `onclick`
  * through the engine's own key pipeline. The static frame alone would pass
  * with a runtime that never updates; the three presses are the part that
  * proves the flush paints.

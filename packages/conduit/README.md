@@ -14,7 +14,7 @@ A counterparty is named once — its address, which credential authorises it, ho
      (http · generic)       (http · hmac-signed)
 ```
 
-**What ships is the outbound end.** *Integrating with* is a relationship rather than a direction — a vendor holds two of your secrets and dials you about as often as you dial it — so the receiving end belongs here too and is **not built yet**; see `IDEAS/inbound-integrations.md` for the shape and for the two things that are deliberately *not* conduit's (a counterparty signing with FrontierJS's own scheme, and a machine caller becoming a principal — both junction's).
+**Both ends.** *Integrating with* is a relationship rather than a direction — a vendor holds two of your secrets and dials you about as often as you dial it — so a Provider has a **Target**, where you send, and a **Receiver**, the route it calls you on (see [Receiving](#receiving)). The one thing that is deliberately *not* conduit's is a counterparty signing with FrontierJS's own scheme and becoming a caller — that is junction's door, `createApp({ credentials })`.
 
 **Conduit is optional and is not a wall.** Nothing stops a raw `fetch`, and junction's own `IMail` and `IAIModel` ship working defaults that dial out directly so an app that never installs this package still sends mail. What conduit gives a call is the ring around it: a resolved credential, retry with a deadline, a circuit breaker, observers, and a line in `/metrics`. An app that has conduit can back those same contracts with it — `packages/basecamp/api/src/core/mailer.ts` is `IMail` over `app.conduit`, and junction's email campaign tier requires conduit by name.
 
@@ -82,7 +82,7 @@ A **target** is a named remote endpoint. Every call goes through a target — yo
 ```ts
 interface TargetDescriptor {
   id:            string      // "provider:stripe" | "outpost:srv-abc"
-  kind:          'provider' | 'outpost' | 'local'
+  kind:          'provider' | 'outpost' | 'local' | 'broker'   // broker: subscribed to, never sent to
   protocol:      'http' | 'websocket' | 'unix'
   address:       string      // base URL or socket path
   auth:          TargetAuth
@@ -112,10 +112,100 @@ await app.conduit.send({ target: 'hook:slack', address: row.url, method: 'POST',
 
 Each attempt checks the URL as one a stranger chose (junction's
 `assertPublicUrl`): public https only, unless `destinations: { allowHttp,
-allowPrivate }` says otherwise for a local receiver. The breaker is kept per
-origin, and observers see the origin, never the path. Such a target takes
-`none` or `hmac` auth and follows no redirect. A stored key would go
-wherever the row says.
+allowPrivate }` says otherwise for a test receiver on localhost. `allowPrivate`
+opens the whole target to every row, so a counterparty on a LAN is never a
+row's to name: it is a fixed-address target the operator declares, or an
+Outpost vantage (`FJS-D1018`). The breaker is kept per origin, and observers
+see the origin, never the path. Such a target takes `none` or `hmac` auth and
+follows no redirect, because a stored key would go wherever the row says.
+
+A self-hosted instance a row names — Plausible CE at the client's own domain,
+with the client's own key — takes that row's credential, `per_caller`
+(`FJS-D1089`): the send names the row with `grant`, the resolver's `getFor`
+answers that row's token, and a send with no `grant` is refused by name, since
+keyed on the tenant alone two rows would share one cached token.
+
+```ts
+{ id: 'provider:plausible', kind: 'provider', protocol: 'http', address: '',
+  address_from: 'request', auth: { type: 'bearer', ref: 'PLAUSIBLE', per_caller: true }, registered_at: 0, last_seen_at: null }
+
+await app.conduit.send({ target: 'provider:plausible', address: `${row.address}/api/v2/query`, grant: row.id, method: 'POST', body: q })
+```
+
+### Receiving
+
+A Provider that dials you — Stripe posting an event, a carrier posting a receipt — is declared as a **Receiver**. Three parties write it and conduit runs it (`FJS-D899`):
+
+- the **connector** exports the Provider's `Dialect` — how it signs, what its envelope is, what names one delivery. Pure: the clock is passed in.
+- the **app** declares the `Receiver` — the path, which credential verifies a delivery, whose tenant an event is about, and what to do with it.
+- **conduit** mounts the route and runs the order: credential → verify → parse → owner → receipt → apply → mark.
+
+```ts
+// the connector's half
+export const stripeDialect: Dialect<string, StripeEvent> = {
+  verify:    (d, secret, { now }) => verifyStripeSignature({ rawBody: d.rawBody, header: d.headers['stripe-signature'], secret, now }),
+  parse:     (d)                  => isEvent(d.body) ? { id: d.body.id, type: d.body.type, payload: d.body } : null,
+  dedupeKey: (_d, ev)             => ev.id,
+}
+
+// the app's half
+app.conduit.receive({
+  provider:   'stripe',
+  path:       '/webhooks/stripe',          // under apiPrefix, like app.post
+  dialect:    stripeDialect,
+  credential: 'STRIPE_WEBHOOK_SECRET',     // a ref → the installed CredentialResolver
+  owner:      async ev => shopFor(ev.payload.account),
+  apply:      async (ev, { owner }) => { await settle(owner, ev); return 'applied' },
+})
+```
+
+`credential` is a ref for the ordinary one-key relationship, or a function choosing the key for ONE delivery before the body is believed — a per-subscription secret the path names: `credential: d => keyFor(d.route.hookId)`. `null` refuses.
+
+**What the route answers.** A refusal — forged, stale, a replayed nonce, a key that did not resolve — is a 401 with one sentence, `not verified`; the reason goes to the log (`observers.onReceived`), never to the sender. A body that is not an event is 200 and `ignored`, because a 4xx retries forever. An `apply` that throws is a 500 and the sender retries.
+
+**Dedupe means applied, not seen.** Conduit keeps a receipt per delivery in its store (`conduit_receipts` beside `conduit_targets`), written before `apply` and marked after it. Only an applied receipt makes a redelivery a `duplicate`; a receipt left unapplied by a throw is applied again by the retry. So applying twice must be safe, and the subject's own unique key inside your `apply` is what makes it so — one fact can also arrive as two deliveries with two ids, which no receipt can see. `apply` answers `applied`, `ignored` (recorded and done, marked too) or `parked` (left unapplied on purpose: a receipt that arrived before the send that minted its id).
+
+A dialect whose signed timestamp bounds freshness needs nothing more; one whose scheme carries a nonce (FrontierJS's own) is handed `seenNonce(nonce, keepSeconds)` in `verify`'s context — one memory per receiver, kept for twice the tolerance.
+
+Resilience does not cross: the retry is the sender's, and there is no breaker on the inbound side. A receiver never mints a principal; `apply` runs as whoever you say.
+
+**A Provider that pushes over a socket you dial** — Mattermost's WebSocket — is a receiver that names a `broker` target in place of a path (`FJS-D1127`). Conduit dials it with the target's credential, reconnects without bound, reports `health()` under `conduit:<target>`, and runs each frame through the same order from parse on. No route is mounted, so nobody can post a frame to you; a receiver on a target carrying `path`, `credential` or a dialect `verify` is refused by name. The connector's `FrameDialect` adds `framing`: a `handshake` run after open and before the first frame is believed (handed the secret the dial spent, so the two cannot differ), a `decode` from text to `{ id, body }` or `null`, and an `ack` for a Provider that redelivers. Frames are handed over one at a time in arrival order, because an edit applied before its create is a wrong row and two copies of one frame applied side by side both pass the receipt.
+
+**`opened({ connection })` runs after every handshake conduit believes** — the first dial and each redial — ahead of that connection's first frame, handed what the handshake answered (`FJS-D1154`). A Provider that redelivers nothing lost what it sent while the socket was down, and this is where the gap's backfill starts; a throw is logged and the frames still flow. `deregister(target)` drops the receiver with the target, so the same id can be registered and received again.
+
+```ts
+await app.conduit.register(mattermostSocketTarget({ address: 'https://chat.example', id: `broker:chat:${userId}`, ref: `CHAT_SOCKET:${userId}` }))
+await app.conduit.receive({
+  provider: 'mattermost',
+  target:   `broker:chat:${userId}`,    // resolves once the first dial is tried
+  dialect:  mattermostSocketDialect,    // { framing, parse, dedupeKey }
+  opened:   ({ connection }) => queueBackfill(userId, connection),
+  apply:    async ev => { await land(ev); return 'applied' },
+})
+```
+
+Every broker target registers readiness, so one that cannot connect makes the app's `/health` 503 — wrong for a target that is one person's view (`FJS-3150`).
+
+`stats().subscriptions[target].dropped` counts frames over `max_response_bytes` and frames the framing could not read; `stats().received[target]` counts outcomes as a route's do.
+
+### Mirroring
+
+A **mirror app** keeps rows whose system of record is a Provider (`IDEAS/mirror-apps.md`). The schema declares the model `@@mirror(key: externalId)` and names no vendor; the connector exports a **claim** naming the models it feeds, and the app binds it in wiring (`FJS-D1125`):
+
+```ts
+import { mirror } from '@frontierjs/conduit-mattermost'
+
+app.configure(conduit({ credentials, targets }))
+app.conduit.mirror(mirror)          // Post, Channel, ChannelMember, …
+```
+
+A claim is `{ provider, models }`, keyed by the schema's PascalCase model name. Each model states `key` (the row field holding the Provider's id), `target` (what its verbs spend), `parse(remote, scope?)` from a Provider object to a row, and any of `create(input)`, `update(key, patch)`, `delete(key)` building a request with no `target`.
+
+Junction's generated `create`, `update`, `patch` and `remove` on a claimed model forward through it. The caller's gate and hooks run first; the row validator steps aside, because the payload is the claim's input and not a row (a `pendingPostId` is no column). The request is sent as the caller — a `per_caller` target spends their own credential — the answer is parsed by the same `parse` the socket uses, upserted by the key as the system (the key left out of the update half, since it is `@immutable`), and re-read as the caller. A `@local` column the caller named — the app's own, like a `starred` — is written through the caller's client, under their policies; every other column of a `@@mirror` model is `@system`, so the caller cannot write it around the Provider (`FJS-D1142`). A delete answering no row removes the local one. A verb the claim does not export runs as it would on any model, and a write naming no single row is refused, since each is a call to the Provider.
+
+A Provider's refusal reaches the caller as a status: a 4xx it gave is 422 (404, 409 and 410 pass through), a credential it refused is 403, its rate limit 429, a timeout 504, an outage 502 or 503. A verb that throws building its request is a 400 and nothing is sent.
+
+Refused by name: a malformed claim and a second claim on one model, when `mirror()` is called; and at boot (or at `mirror()` after start), a claim on a model the schema lacks, on one that is not `@@mirror`, or with a `key` that `@@mirror(key:)` does not name.
 
 ### Resilience
 
@@ -238,11 +328,12 @@ auth headers still win over a caller's. A name is refused at `register()` when
 no such signer is installed, and so is `follow_redirects` or `address_from`
 beside it, for `hmac`'s reason.
 
-**A minted credential's lifetime is the resolver's.** A JWT or an OAuth access
-token is what the resolver's `get(ref)` returns — mint it there, and
-`withCache(resolver, { ttl_ms })` is its expiry. A 401 forgets it through
-`invalidate` and the send replays once on a fresh one, as for any credential.
-The signer sees only the string.
+**A minted credential's lifetime is the resolver's, and the answer says it.** A JWT
+or an OAuth access token is what the resolver's `get(ref)` returns — mint it there,
+answer `{ value, expires_at }` with the provider's own number, and
+`withCache(resolver, { ttl_ms: Infinity })` holds it exactly that long. A 401
+forgets it through `invalidate` and the send replays once on a fresh one, as for
+any credential. The signer sees only the string.
 
 **A mint that calls a third party sends through conduit too.** An OAuth token
 exchange is a request to someone else's endpoint, so it gets its own `auth:
@@ -292,9 +383,13 @@ auth: { type: 'bearer', ref: 'HETZNER_TOKEN' }
 The reference is resolved at send time by a `CredentialResolver`, so secret material never enters the registry, `resolve()`, `list()`, the observers, or the management routes.
 
 ```ts
+type Material = string | { value: string; expires_at?: number }   // epoch ms; a string never expires on its own
+
 interface CredentialResolver {
-  get(ref: string): Promise<string | null>
+  get(ref: string): Promise<Material | null>
   invalidate?(ref: string, value: string): void   // the target refused `value` — a 401, or a declared `auth.refusal`
+  getFor?(ref: string, who: CredentialCaller): Promise<Material | null>   // a `per_caller` target's (FJS-D848)
+  invalidateFor?(ref: string, value: string, who: CredentialCaller): void
 }
 ```
 
@@ -305,7 +400,7 @@ import {
   createEnvResolver,     // reads process.env[ref] — the default
   createStaticResolver,  // fixed { ref: secret } map, for the composition root and tests
   createNullResolver,    // resolves nothing; every ref fails closed
-  withCache,             // TTL cache around any resolver
+  withCache,             // cache around any resolver — until ttl_ms or the answer's expires_at
   byRef,                 // one resolver per ref — credentials with different lifetimes
 } from '@frontierjs/conduit'
 
@@ -320,6 +415,8 @@ app.configure(conduit({
 
 Transports resolve once per attempt, so a retried request calls the resolver up to `retry_limit + 1` times. Wrap anything networked in `withCache`.
 
+**An answer may say when it expires.** `get()` and `getFor()` answer `string | { value, expires_at } | null`, `expires_at` in epoch milliseconds. `withCache` keeps an answer until its `expires_at` or the cache's `ttl_ms`, whichever comes first, so a token minted for `expires_in` seconds is answered as `{ value, expires_at: Date.now() + expires_in * 1000 }` under `ttl_ms: Infinity` — the provider's number, never a TTL copied from its documentation. Five callers finding one token expired share one refresh. An answer already expired is used for the send that asked and not kept; an `expires_at` that is not a finite number fails the send `auth_failed` by name.
+
 **A refused credential is answered once by a fresh one.** When the resolver has `invalidate`, the transport hands it the value the target refused and replays the send once — any method, since a 401 means the request was not acted on — on whatever `get()` returns next. A second refusal is `auth_failed`. The replay is not an attempt: it does not count against `retry_limit`. A 403 is never replayed. `withCache` implements `invalidate` as a compare-and-set: it forgets the value only if it is still the cached one, so twenty sends refused on one stale credential fetch one fresh one, not twenty.
 
 **A target that never says 401 declares what it says instead.** Many systems that only have a login page answer a dead session with that page — a 200 carrying HTML, or a 302 to it. `auth.refusal` names those shapes, and each is then `auth_failed` and replayed exactly as a 401 is:
@@ -333,7 +430,7 @@ Undeclared, neither shape is a refusal: a captive portal answers 200 HTML too, a
 
 #### A credential a login mints
 
-A system with no API key — a username and password that mint a cookie session — is `withCache` with no expiry around a `get()` that logs in. The login is its own target, so it is observed and policed like any other call:
+A system with no API key — a username and password that mint a cookie session — is `withCache` with no expiry around a `get()` that logs in (a session that states its lifetime answers `{ value, expires_at }` instead). The login is its own target, so it is observed and policed like any other call:
 
 ```ts
 const c = createConduit({
@@ -591,6 +688,18 @@ Look up a target by ID. Returns `TargetDescriptor | null`.
 ### `app.conduit.list()`
 
 Returns all registered targets, ordered by `registered_at`.
+
+### `app.conduit.receive(receiver)`
+
+Declare the receiving end of a Provider and mount its route — see [Receiving](#receiving). Refused by name for an unknown field, a path without a leading `/`, a dialect missing a function, or a path already declared. A receiver that names a `target` instead subscribes to that broker and mounts nothing; it returns a promise that settles once the first dial has been tried, and one target takes one receiver.
+
+### `app.conduit.mirror(claim)`
+
+Bind a connector's mirror claim — see [Mirroring](#mirroring). `app.conduit.mirrored(accessor)` answers the forward a claimed model's generated verbs use, or `undefined`; `app.conduit.claimed()` lists what is held.
+
+### `app.conduit.accept(path, delivery, now)`
+
+Run one delivery through the receiver declared at `path`; `now` is seconds. The plugin's route calls it; a test calls it directly with a hand-built `Delivery`. Answers `{ status, body, result, reason? }`.
 
 ### `app.conduit.destroy()`
 
@@ -912,9 +1021,7 @@ const { conduit } = await createTestConduit(
 
 **Not a service mesh.** It does not proxy application traffic between services.
 
-**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it; `@frontierjs/outpost` is not reached this way — it is an `http` target with `hmac` auth. A third-party socket API is not reachable through this package; a third-party event stream is, over `http`.
-
-**Not a receiver — yet.** Conduit dials; it does not listen. Verifying a webhook is app code today (`example/api/src/providers/stripe/index.ts` is the reference), and `IDEAS/inbound-integrations.md` is where that is going.
+**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it; `@frontierjs/outpost` is not reached this way — it is an `http` target with `hmac` auth. A third-party socket is reachable only to be LISTENED to: a `broker` target whose connector supplies the framing. Nothing is sent over it but the handshake and the acks.
 
 **Not a boundary anything enforces.** Declaring a target is how you get the ring around a call, not a rule the framework applies to every outbound byte.
 
@@ -933,6 +1040,8 @@ const { conduit } = await createTestConduit(
 │   ├── index.ts               public exports (no test doubles, no bun:sqlite)
 │   ├── types.ts               all types and interfaces
 │   ├── conduit.ts             createConduit() core factory + counters
+│   ├── receive.ts             the receiving end — Dialect, Receiver, the one order
+│   ├── mirror.ts              the mirror claim and the Provider half of a forward
 │   ├── plugin.ts              Junction plugin (app.configure)
 │   ├── router.ts              target ID → transport resolution + pool
 │   ├── credentials.ts         CredentialResolver implementations

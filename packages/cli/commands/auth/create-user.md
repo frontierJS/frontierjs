@@ -5,7 +5,7 @@ alias: create-user
 examples:
   - fli auth:create-user alice@acme.com
   - fli auth:create-user alice@acme.com --name "Alice Chen" --role admin
-  - fli auth:create-user alice@acme.com --account acme --role admin
+  - fli auth:create-user alice@acme.com --tenant acme --role admin
   - fli auth:create-user alice@acme.com --password secret --dry
 args:
   -
@@ -23,10 +23,9 @@ flags:
     type: string
     description: "User role: user, admin"
     defaultValue: user
-  account:
-    char: a
+  tenant:
     type: string
-    description: Account (tenant) id to put the user in — for an app tenanted by row
+    description: Tenant to put the user in — written to the User column the app's row tenancy names
     defaultValue: ''
   password:
     char: p
@@ -43,14 +42,16 @@ flags:
 import { existsSync, writeFileSync, unlinkSync } from 'fs'
 import { resolve }                                from 'path'
 
-// Inline Bun script that creates the user via the Litestone client.
-// Written to a temp file, executed, then removed.
-// This avoids needing a running server — auth operates directly on the db.
+// Inline Bun script that creates the user through the app's own
+// @frontierjs/auth, so the password policy, the hash and which column a tenant
+// is written to are auth's answers rather than a copy of them (FJS-D1117).
+// Written to a temp file, executed, then removed — no running server needed.
 // The input arrives as JSON in FLI_CREATE_USER — interpolating it into the
 // source let a quote in a password or name end the string literal.
 
 const SCRIPT = `
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
+import { createLitestoneAuth }               from '@frontierjs/auth'
 
 const input = JSON.parse(process.env.FLI_CREATE_USER)
 
@@ -61,35 +62,26 @@ const db = await createClient({
   plugins:       [new GatePlugin({ getLevel: () => LEVELS.SYSTEM })]
 })
 
-const sys = db.asSystem()
+const auth = createLitestoneAuth(db, { encryptionKey: process.env.ENCRYPTION_KEY })
 
-const existing = await sys.user.findFirst({ where: { email: input.email } })
-if (existing) {
-  console.error('ERROR: Email already registered: ' + input.email)
+let made
+try {
+  made = await auth.createUser({
+    email:    input.email,
+    password: input.password,
+    role:     input.role,
+    ...(input.name   ? { name:   input.name }   : {}),
+    ...(input.tenant ? { tenant: input.tenant } : {}),
+  })
+} catch (err) {
+  console.error('ERROR: ' + err?.message + (err?.status === 409 ? ': ' + input.email : ''))
   process.exit(1)
 }
 
-const user = await sys.user.create({
-  data: {
-    email:         input.email,
-    name:          input.name || null,
-    role:          input.role,
-    emailVerified: true,
-    ...(input.accountId ? { accountId: input.accountId } : {}),
-  }
-})
+// An operator made this person, so there is no address to prove.
+await db.asSystem().user.update({ where: { id: made.userId }, data: { emailVerified: true } })
 
-const hash = await Bun.password.hash(input.password, { algorithm: 'bcrypt', cost: 12 })
-
-await sys.credential.create({
-  data: {
-    userId: user.id,
-    type:   'password',
-    value:  hash,
-  }
-})
-
-console.log(JSON.stringify({ id: user.id, email: user.email, role: user.role }))
+console.log(JSON.stringify({ id: made.userId, email: made.email, role: made.role }))
 await db.$close()
 `
 </script>
@@ -141,7 +133,7 @@ if (flag.dry) {
   log.dry(`Would create user: ${arg.email}`)
   log.dry(`  name: ${flag.name || '(none)'}`)
   log.dry(`  role: ${flag.role}`)
-  if (flag.account) log.dry(`  account: ${flag.account}`)
+  if (flag.tenant) log.dry(`  tenant: ${flag.tenant}`)
   return
 }
 
@@ -164,7 +156,7 @@ try {
         password,
         name:      flag.name,
         role:      flag.role,
-        accountId: flag.account,
+        tenant:    flag.tenant,
       }),
     },
   })

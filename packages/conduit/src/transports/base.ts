@@ -4,6 +4,7 @@
 // ============================================================
 
 import { signRequest } from '@frontierjs/toolbelt/signature'
+import { valueOf } from '../credentials.ts'
 import { CredentialError, MintError } from '../types.ts'
 import type {
   ConduitRequest,
@@ -255,12 +256,11 @@ export abstract class BaseTransport {
     }
   }
 
-  // Resolve a credential ref to material, or fail closed.
-  // Empty string counts as unresolved — an unset env var read through a
-  // shell default is the common way to end up with one.
+  // Resolve a credential ref to material, or fail closed. `valueOf` runs
+  // inside beforeDispatch so a malformed answer is a CredentialError too.
   private async secret(ref: string): Promise<string> {
-    const value = await this.beforeDispatch(ref, undefined, () => this.credentials.get(ref))
-    if (value === null || value === undefined || value === '') {
+    const value = await this.beforeDispatch(ref, undefined, async () => valueOf(await this.credentials.get(ref)))
+    if (value === null) {
       throw new CredentialError(this.descriptor.id, ref)
     }
     return value
@@ -273,8 +273,8 @@ export abstract class BaseTransport {
   // after registration, and it fails closed the same way.
   private async secretFor(ref: string, who: CredentialCaller | undefined): Promise<string> {
     const getFor = this.credentials.getFor
-    const value  = who && getFor ? await this.beforeDispatch(ref, undefined, () => getFor.call(this.credentials, ref, who)) : null
-    if (value === null || value === undefined || value === '') {
+    const value  = who && getFor ? await this.beforeDispatch(ref, undefined, async () => valueOf(await getFor.call(this.credentials, ref, who))) : null
+    if (value === null) {
       throw new CredentialError(this.descriptor.id, ref, who ? undefined : 'the send names no caller')
     }
     return value

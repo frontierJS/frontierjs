@@ -137,7 +137,7 @@ model Ledger {
   ownerId Int    @immutable
   code    String @immutable
   note    String
-  @@gate("0")
+  @@gate(0)
   @@allow('update', ownerId == auth().id)
   @@allow('read', true)
   @@allow('create', true)

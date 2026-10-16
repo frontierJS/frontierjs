@@ -63,7 +63,7 @@ if (flag.json) {
 const { surface, principal, jobs, notifications } = model
 
 // There is deliberately NO per-service *what graded it* column. `gateAuth` is a
-// DERIVED around hook that `createBaseService` installs unconditionally, so the
+// DERIVED around hook that every registered service gets unconditionally, so the
 // column could only ever say the same word — a check that can only pass is not a
 // check. Where the question has an answer that varies is the raw routes, which
 // run below the pipeline entirely, and that is the section it is asked in.

@@ -32,7 +32,7 @@ model Invoice {
   number   String
   token    String  @guarded @default("minted")
   lines    Line[]
-  @@gate("1.8.8.9")
+  @@gate(1.8.8.9)
   @@allow('read',   true)
   @@allow('create', ownerId == auth().id)
   @@allow('update', ownerId == auth().id)
@@ -43,13 +43,13 @@ model Line {
   invoice   Invoice @relation(fields: [invoiceId], references: [id])
   invoiceId Int
   amount    Int
-  @@gate("1.8.8.9")
+  @@gate(1.8.8.9)
 }
 
 model Ledger {
   id     Int    @id
   note   String
-  @@gate("6.8.8.9")
+  @@gate(6.8.8.9)
 }
 
 model Shipment {
@@ -57,7 +57,7 @@ model Shipment {
   reference    String  @unique
   trackingCode String? @system
   note         String?
-  @@gate("1.4.4.5")
+  @@gate(1.4.4.5)
 }
 
 model Plain {
@@ -159,7 +159,7 @@ describe('the trail names the person, and says the gate was lifted', () => {
       number  String
       @@db(main)
       @@trail(audit)
-      @@gate("1.8.8.9")
+      @@gate(1.8.8.9)
     }
   `
 
@@ -233,12 +233,12 @@ describe('an entry that lifts nothing is refused by name', () => {
 
 describe('upsertMany grades its conflict half as an update (FJS-1700)', () => {
 
-  // `@@gate("1.4.8.9")`: a member may add a row and may not change one. The
+  // `@@gate(1.4.8.9)`: a member may add a row and may not change one. The
   // bulk upsert graded the create gate alone, so naming an existing row's key
   // overwrote it at a level update() refused.
   const SETTINGS = `
     model User    { id Int @id  role String?  @@auth }
-    model Setting { id Int @id  key String @unique  value String  @@gate("1.4.8.9") }
+    model Setting { id Int @id  key String @unique  value String  @@gate(1.4.8.9) }
   `
   const settings = async () => {
     const db = await createClient({ schema: SETTINGS, db: ':memory:' })

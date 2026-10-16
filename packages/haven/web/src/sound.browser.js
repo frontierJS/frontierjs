@@ -3,11 +3,12 @@
 // clicked something, so the context waits suspended until then. Chunks are
 // laid end to end on the context's own clock, anchored once to the wall
 // clock; placing each by `Date.now()` would leave a click at every seam.
+// `gain()`, 0 to 1, is asked once a chunk, as the terminal's is.
 
 const CHUNK_MS = 100
 const AHEAD_MS = 300
 
-export function stream(fill, { rate }) {
+export function stream(fill, { rate, gain = () => 1 }) {
   const Ctx = globalThis.AudioContext ?? globalThis.webkitAudioContext
   if (!Ctx) return null
   const ctx    = new Ctx()
@@ -27,7 +28,8 @@ export function stream(fill, { rate }) {
     }
     while (cursor < now() + (AHEAD_MS / 1000) * rate) {
       const buf = ctx.createBuffer(1, n, rate)
-      buf.copyToChannel(fill(cursor, n), 0)
+      const g = gain()
+      buf.copyToChannel(fill(cursor, n).map((v) => v * g), 0)
       const src = ctx.createBufferSource()
       src.buffer = buf
       src.connect(ctx.destination)

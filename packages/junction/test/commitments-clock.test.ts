@@ -20,7 +20,7 @@ import { join } from 'node:path'
 import { createClient, createTenantRegistry } from '../../litestone/src/index.js'
 import { createApp } from '../index.ts'
 import type { App, Plugin } from '../index.ts'
-import { fireDue } from '../src/plugins/commitments/index.ts'
+import { defineCommitment, fireDue } from '../src/plugins/commitments/index.ts'
 import type { CommitmentHookContext } from '../src/plugins/commitments/index.ts'
 
 const SCHEMA = `
@@ -39,7 +39,7 @@ model Order {
   @@db(main)
 }
 `
-const GATED = SCHEMA.replace('model Order {', 'model Order {\n  @@gate("0.0.4.4")')  // the app's system principal clears 4
+const GATED = SCHEMA.replace('model Order {', 'model Order {\n  @@gate(0.0.4.4)')  // the app's system principal clears 4
 
 const DAY    = 86_400_000
 const T0     = Date.parse('2026-01-01T00:00:00.000Z')
@@ -159,9 +159,9 @@ describe('fireDue(app) fires what is owed on the client\'s clock, with no queue'
     const seen: Array<Pick<CommitmentHookContext, 'model' | 'commitment'> & { status: string }> = []
 
     advance(14 * DAY)
-    await fireDue(app, { hooks: { 'Order.abandon': ({ model, commitment, record }) => {
+    await fireDue(app, { hooks: { 'Order.abandon': defineCommitment({ after: ({ model, commitment, record }) => {
       seen.push({ model, commitment, status: record.status })
-    } } })
+    } }) } })
     expect(seen).toEqual([{ model: 'Order', commitment: 'abandon', status: 'cancelled' }])
     expect((await db.asSystem().order.findUnique({ where: { id: order.id } })).status).toBe('cancelled')
   })
@@ -172,7 +172,7 @@ describe('fireDue(app) fires what is owed on the client\'s clock, with no queue'
     const order = await db.order.create({ data: {} })
 
     advance(14 * DAY)
-    await expect(fireDue(app, { hooks: { 'Order.abandon': () => { throw new Error('no renewal') } } }))
+    await expect(fireDue(app, { hooks: { 'Order.abandon': defineCommitment({ after: () => { throw new Error('no renewal') } }) } }))
       .rejects.toThrow(/no renewal/)
     expect(await status(order.id)).toBe('pending')
   })
@@ -180,7 +180,7 @@ describe('fireDue(app) fires what is owed on the client\'s clock, with no queue'
   it('a hook key naming no declared commitment is refused, as commitments() refuses it', async () => {
     const { app } = await build()
     await app._startForTest()
-    await expect(fireDue(app, { hooks: { 'Order.lapse': () => {} } }))
+    await expect(fireDue(app, { hooks: { 'Order.lapse': defineCommitment({ after: () => {} }) } }))
       .rejects.toThrow(/'Order\.lapse', which no @@commitment declares/)
   })
 

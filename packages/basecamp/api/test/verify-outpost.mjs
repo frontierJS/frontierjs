@@ -31,12 +31,13 @@
  *     container published (FJS-1610).
  *   - The container release runs on the developer's REAL daemon. It removes
  *     only the container it started and the image only if it pulled it, and
- *     never calls a prune or volume route: on a workstation those delete
- *     somebody else's images.
+ *     never calls a prune route: on a workstation those delete somebody
+ *     else's images. The one volume it touches is the restore's, named for an
+ *     app this run made, and removed by that name.
  */
 
 import { spawn, spawnSync }                                   from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }                                             from 'node:os'
 import { dirname, join }                                      from 'node:path'
 import { fileURLToPath }                                      from 'node:url'
@@ -59,6 +60,8 @@ const IMAGE    = 'traefik/whoami:v1.10.3'
 const sh       = (...argv) => spawnSync(argv[0], argv.slice(1), { encoding: 'utf8' })
 const hadImage = sh('docker', 'image', 'inspect', IMAGE).status === 0
 let container  = null
+let volume     = null
+let built      = []
 
 const ENV = {
   ...process.env,
@@ -169,6 +172,8 @@ async function cleanup() {
   await sleep(3000)
   for (const c of children) { try { process.kill(-c.pid, 'SIGKILL') } catch {} }
   if (container) sh('docker', 'rm', '-f', container)
+  if (volume)    sh('docker', 'volume', 'rm', '-f', volume)
+  for (const [name, tag] of built) { sh('docker', 'rm', '-f', name); sh('docker', 'rmi', tag) }
   if (!hadImage) sh('docker', 'rmi', IMAGE)
   rmSync(OWN, { recursive: true, force: true })
   if (existsSync(ASIDE)) renameSync(ASIDE, OWN)
@@ -335,18 +340,29 @@ try {
   // ── A hostname added with no release reaches the machine's Caddy ──
   // The domain:dns job pushes it; nothing here presses deploy. Its zone is
   // skipped (no edge account), and the route is pushed anyway.
-  const runningId = sh('docker', 'inspect', '--format', '{{.Id}}', container).stdout.trim()
+  let runningId  = sh('docker', 'inspect', '--format', '{{.Id}}', container).stdout.trim()
   const releases  = (await call(`/deployments?appId=${box.id}`, auth))?.data?.length
   const hostname  = `${name}.example.test`
   const domain    = await call('/domains', { ...auth, body: { appId: box.id, hostname } })
   const routeOf   = () => caddyRoutes().find(r => r['@id'] === container)
   const routed    = await until(() => routeOf()?.match?.[0]?.host?.includes(hostname), 30_000)
-  check('a Domain added after the release is routed on the machine with no release', routed)
+  check('a Domain added after the release is routed on the machine with nobody pressing release', routed)
   check('…dialing the port the container published',
     routeOf()?.handle?.[0]?.upstreams?.[0]?.dial === `127.0.0.1:${APP_PORT}`)
-  check('…without restarting the container or making a release',
-    sh('docker', 'inspect', '--format', '{{.Id}}', container).stdout.trim() === runningId
-      && (await call(`/deployments?appId=${box.id}`, auth))?.data?.length === releases)
+  // The container was released with no hostname, so its port answers on every
+  // interface, around Caddy. The route moved and the bind did not, and that
+  // is a release of the live bytes (`FJS-D577`).
+  let rebound = null
+  await until(async () => {
+    rebound = ((await call(`/deployments?appId=${box.id}`, auth))?.data ?? []).find(d => d.trigger === 'rebind')
+    return ['success', 'failed'].includes(rebound?.status)
+  }, 60_000)
+  check('…and the stale bind is moved by a release of its own', rebound?.status === 'success'
+    && (await call(`/deployments?appId=${box.id}`, auth))?.data?.length === releases + 1)
+  check('…of the bytes that were live, built nothing', rebound?.builtImage === imageId && rebound?.toImage === IMAGE)
+  check('…which binds the port to loopback',
+    sh('docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', container).stdout.includes('"HostIp":"127.0.0.1"'))
+  runningId = sh('docker', 'inspect', '--format', '{{.Id}}', container).stdout.trim()
 
   // ── A release the machine refuses leaves the live one serving ──
   // With Caddy gone, /deploy refuses an app that has a hostname. A release
@@ -367,6 +383,76 @@ try {
   await call(`/domains/${domain?.id}`, { ...auth, method: 'DELETE' })
   // Gone only counts after it was there.
   check('…and deleted, its route goes with it', routed && await until(() => !routeOf(), 30_000))
+  // Loopback with no route in front of it reaches nothing, so the last
+  // hostname gone is a release too.
+  let unbound = null
+  await until(async () => {
+    unbound = ((await call(`/deployments?appId=${box.id}`, auth))?.data ?? []).filter(d => d.trigger === 'rebind')
+    return unbound.length === 2 && ['success', 'failed'].includes(unbound.find(d => d.id !== rebound?.id)?.status)
+  }, 60_000)
+  check('…and the release that follows puts the port back on every interface',
+    unbound?.find(d => d.id !== rebound?.id)?.status === 'success'
+      && !sh('docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', container).stdout.includes('127.0.0.1'))
+
+  // ── Adopting an app's data: an archive on the machine, into its volume ──
+  // Placed and never released, the order an adoption takes: the files land
+  // before a container holds the volume (`FJS-D943`).
+  const adopt = await call('/apps', { ...auth, body: {
+    environmentId: environment?.id, name: `adopt-${process.pid}`, slug: `adopt-${process.pid}`, type: 'container',
+    source: { kind: 'image', image: IMAGE }, volumePath: '/data',
+  } })
+  volume = `fjs-${adopt?.id}-data`
+  await call(`/apps/${adopt?.id}`, { ...auth, serviceMethod: 'place', body: { serverId: first.serverId, replicaIndex: 0 } })
+  const tree = join(OWN, 'restore', 'tree')
+  mkdirSync(tree, { recursive: true })
+  writeFileSync(join(tree, 'app.db'), 'the adopted database')
+  sh('tar', '-czf', join(OWN, 'restore', 'adopt.tar.gz'), '-C', tree, 'app.db')
+  const restore = (body) => call(`/apps/${adopt?.id}`, { ...auth, serviceMethod: 'restoreVolume', body: { serverId: first.serverId, ...body } })
+  const restored = await restore({ path: 'adopt.tar.gz' })
+  check('an archive on the machine restores into the app\'s volume', restored?.volume === volume && restored?.files === 1)
+  check('…holding the bytes the archive did',
+    sh('docker', 'run', '--rm', '-v', `${volume}:/data`, 'busybox:1.36', 'cat', '/data/app.db').stdout === 'the adopted database')
+  const again2 = await restore({ path: 'adopt.tar.gz' })
+  check('a second restore into a volume with files is refused in the machine\'s words', /overwrite: true/.test(again2?.message ?? ''))
+  const off = await restore({ path: '/etc/passwd' })
+  check('…and a path off the restore directory is refused', /under/.test(off?.message ?? ''))
+
+  // ── An image built where the workspace is, released by digest (`FJS-D942`) ──
+  // `fli deploy:basecamp` from an app root: build here, load onto the machine
+  // (this laptop's daemon, so nothing is shipped), release the image id. The
+  // App's source is a git repository that does not exist, so a release that
+  // built anything would fail on the clone.
+  const me     = await call('/account/me', auth).catch(() => null)
+  const minted = await call('/api-keys', { ...auth, body: {
+    userId: me?.id ?? me?.user?.id, name: `deploy-${process.pid}`, scopes: ['apps:read', 'deployments:read', 'deployments:write'],
+  } })
+  const fliApp = await call('/apps', { ...auth, body: {
+    environmentId: environment?.id, name: `fli-${process.pid}`, slug: `fli-${process.pid}`, type: 'container',
+    source: { kind: 'git', repo: 'https://git.invalid/nothing.git' },
+  } })
+  await call(`/apps/${fliApp?.id}`, { ...auth, serviceMethod: 'place', body: { serverId: first.serverId, replicaIndex: 0 } })
+  const appDir = join(OWN, 'fli-app')
+  // `db/schema.lite` is what fli reads as an app root; without one it walks up to basecamp's own.
+  mkdirSync(join(appDir, 'deploy'), { recursive: true })
+  mkdirSync(join(appDir, 'db'), { recursive: true })
+  writeFileSync(join(appDir, 'db', 'schema.lite'), 'model Note {\n  id Integer @id\n}\n')
+  writeFileSync(join(appDir, 'package.json'), JSON.stringify({ name: 'fli-app', private: true }))
+  writeFileSync(join(appDir, 'deploy', 'Dockerfile'), `FROM ${IMAGE}\nLABEL fjs.verify=${process.pid}\n`)
+  const fli = spawnSync(process.execPath, [join(ROOT, '..', 'cli', 'bin', 'fli.js'), 'deploy:basecamp', '--app', String(fliApp?.id), '--url', API, '--server', 'localhost'], {
+    cwd: appDir, encoding: 'utf8', env: { ...ENV, BASECAMP_API_KEY: minted?.token ?? '' }, timeout: 300_000,
+  })
+  const tag  = `fjs-${fliApp?.id}:`
+  const made = sh('docker', 'image', 'ls', '--format', '{{.Repository}}:{{.Tag}} {{.ID}}').stdout.split('\n').find(l => l.startsWith(tag))
+  if (made) built.push([`fjs-${fliApp?.id}`, made.split(' ')[0]])
+  if (fli.status !== 0) console.log(`\n${fli.stdout}\n${fli.stderr}\n`)
+  check('fli deploy:basecamp builds here and releases what it built', fli.status === 0 && !!made)
+  const fliRelease = ((await call(`/deployments?appId=${fliApp?.id}`, auth))?.data ?? [])[0]
+  const steps2  = (await call(`/deployments/${fliRelease?.id}`, auth))?.steps ?? []
+  const madeId  = made ? sh('docker', 'image', 'inspect', '--format', '{{.Id}}', made.split(' ')[0]).stdout.trim() : null
+  check('…naming the image id as the release\'s bytes', !!madeId && fliRelease?.builtImage === madeId && fliRelease?.status === 'success')
+  check('…and building nothing from the app\'s git source', steps2.length > 0 && !steps2.some(s => /build/i.test(s.name)))
+  check('…the container runs those bytes',
+    !!madeId && sh('docker', 'inspect', '--format', '{{.Image}}', `fjs-${fliApp?.id}`).stdout.trim() === madeId)
 } catch (err) {
   console.log(`\n  ✗ ${err.message}`)
   failed++

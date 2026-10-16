@@ -20,7 +20,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { createClient } from '../../litestone/src/index.js'
 import { toDataPrincipal, withLitestoneDb } from '../src/core/litestone.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 import { auditDatabase } from './audit-trail-model.ts'
 
 describe('toDataPrincipal', () => {
@@ -119,7 +119,7 @@ describe('toDataPrincipal carries the kind of caller to the audit trail', () => 
         schema: `
           database main  { path ":memory:" }
           ${auditDatabase(dir)}
-          model Thing { id String @id @default(uuid())  name String  @@gate("0")  @@trail(audit) }
+          model Thing { id String @id @default(uuid())  name String  @@gate(0)  @@trail(audit) }
         `,
         resolveFrom: dir,
       })

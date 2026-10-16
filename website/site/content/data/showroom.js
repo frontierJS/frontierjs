@@ -22,7 +22,7 @@ export const SCHEMA = [
   /* 6*/ "  ownerId   Int",
   /* 7*/ "  createdAt DateTime   @default(now())",
   /* 8*/ "",
-  /* 9*/ "  @@gate(\"0.4.4.5\")",
+  /* 9*/ "  @@gate(0.4.4.5)",
   /*10*/ "  @@allow('read', ownerId == auth().id)",
   /*11*/ "  @@index([status, createdAt])",
   /*12*/ "  @@trail(audit)",
@@ -80,10 +80,10 @@ SELECT * FROM leads
 await client.asSystem().lead.findMany()   // no policy applied` },
 
   { id:'gates', lang:'lite', realm:'Data', label:'Gates', lines:[9],
-    from:'@@gate("0.4.4.5")',
+    from:'@@gate(0.4.4.5)',
     blurb:'One ordinal level per operation, read from the Trust Hierarchy. Read is open, writes need a user, deletes need an admin.',
     code:
-`@@gate("0.4.4.5")
+`@@gate(0.4.4.5)
 //       │ │ │ └── delete : 5  ADMINISTRATOR
 //       │ │ └──── update : 4  USER
 //       │ └────── create : 4  USER

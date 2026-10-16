@@ -5,12 +5,13 @@
 import {
   flushSync, watchPath, createEffect, setRenderEnvironment,
 } from '@frontierjs/mesa/runtime.js'
-import { describe, test, expect, beforeEach, afterAll, vi } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { mkdir, writeFile, rm, readFile } from 'fs/promises'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 
+import { setPrefix } from '@frontierjs/mesa/browser'
 import { buildThemeScript, initTheme, setTheme, toggleTheme, setScheme, themes, theme } from '../src/theme/index.js'
 import { injectThemeScript } from '../src/postbuild/inject-theme.js'
 import { prefetchHref } from '../src/router/prefetch.js'
@@ -165,39 +166,111 @@ describe('injectThemeScript (post-build)', () => {
   })
 })
 
-// ─── a stated scheme ─────────────────────────────────────────────────────────
+// ─── in a tab ────────────────────────────────────────────────────────────────
 
-describe('setScheme', () => {
-  // The OS query, faked: a window with matchMedia and nothing else, which is
-  // also what a terminal process looks like (`FJS-2565`) — so `initTheme`
-  // installs its listener and the test can fire it.
-  let fire = null
-  let matches = false
-  beforeEach(() => {
-    fire = null
-    globalThis.window = {
-      matchMedia: () => ({ get matches() { return matches }, addEventListener: (_, fn) => { fire = fn } }),
-    }
-  })
-  afterAll(() => { delete globalThis.window })
+// A tab, faked: localStorage, the OS query and the `storage` event, with the
+// runtime told it is a browser. `os` is module-level because the kit keeps one
+// MediaQueryList per query for the tab, so the first fake's list is the one
+// every later test reads.
+const os = { matches: false, fns: new Set() }
+function fakeTab() {
+  const store = new Map()
+  const storageFns = new Set()
+  const localStorage = {
+    getItem:    (k) => (store.has(k) ? store.get(k) : null),
+    setItem:    (k, v) => { store.set(k, String(v)) },
+    removeItem: (k) => { store.delete(k) },
+  }
+  globalThis.window = {
+    localStorage,
+    matchMedia: () => ({
+      get matches() { return os.matches },
+      addEventListener:    (_, fn) => os.fns.add(fn),
+      removeEventListener: (_, fn) => os.fns.delete(fn),
+    }),
+    addEventListener:    (type, fn) => { if (type === 'storage') storageFns.add(fn) },
+    removeEventListener: (type, fn) => { storageFns.delete(fn) },
+  }
+  setRenderEnvironment(true)
+  return {
+    store, localStorage,
+    flip(dark) { os.matches = dark; for (const fn of os.fns) fn(); flushSync() },
+    // What another tab's write looks like from this one: the value is already
+    // in storage and the event says which key.
+    otherTab(key, value) {
+      store.set(key, value)
+      for (const fn of storageFns) fn({ key, storageArea: localStorage })
+      flushSync()
+    },
+  }
+}
+// The kit stops a listener a microtask after its last reader, and that stop
+// reaches for `window` — so the fake outlives it.
+async function leaveTab() {
+  initTheme({ persist: false })
+  await new Promise((r) => setTimeout(r))
+  setRenderEnvironment(false)
+  setPrefix('')
+  delete globalThis.window
+  os.matches = false
+}
+
+describe('in a tab', () => {
+  let tab
+  beforeEach(() => { os.matches = false; tab = fakeTab() })
+  afterEach(leaveTab)
 
   const pair = { themes: ['theme-default', 'theme-dark', 'theme-forest'], system: { light: 'theme-forest', dark: 'theme-dark' } }
 
-  test('maps onto the pair theme.system declares, not onto a name', () => {
+  // The <head> script and persisted() are two readers of one key, and a
+  // mismatch is a pick that reverts on every reload with nothing said.
+  test('a pick is stored under the app prefix, and the <head> script applies it', () => {
+    setPrefix('app')
+    initTheme(pair)
+    setTheme('theme-dark')
+    expect(tab.store.get('app:theme')).toBe('theme-dark')
+
+    const classes = new Set()
+    const document = { documentElement: { classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c) } } }
+    new Function('localStorage', 'document', 'window', buildThemeScript(pair, { prefix: 'app' }))(tab.localStorage, document, globalThis.window)
+    expect([...classes]).toEqual(['theme-dark'])
+  })
+
+  test('a stored pick is what the next boot opens on', () => {
+    tab.store.set('theme', 'theme-forest')
+    initTheme({ ...pair, default: 'theme-default' })
+    expect(theme.value).toBe('theme-forest')
+  })
+
+  test("another tab's pick lands here", () => {
+    initTheme({ ...pair, default: 'theme-default' })
+    tab.otherTab('theme', 'theme-dark')
+    expect(theme.value).toBe('theme-dark')
+  })
+
+  test("'system' follows the OS until a pick is stored", () => {
+    initTheme({ ...pair, default: 'system' })
+    expect(theme.value).toBe('theme-forest')
+    tab.flip(true)
+    expect(theme.value).toBe('theme-dark')
+    setTheme('theme-default')
+    tab.flip(false)
+    expect(theme.value).toBe('theme-default')
+  })
+
+  test('maps a stated scheme onto the pair theme.system declares, not onto a name', () => {
     initTheme({ ...pair, default: 'theme-default' })
     setScheme('dark');  expect(theme.value).toBe('theme-dark')
     setScheme('light'); expect(theme.value).toBe('theme-forest')
   })
 
   test('a stated scheme holds against a later OS change', () => {
-    matches = false
     initTheme({ ...pair, default: 'system', persist: false })
     expect(theme.value).toBe('theme-forest')
-    expect(typeof fire).toBe('function')
     setScheme('dark')
-    matches = true; fire()
+    tab.flip(true)
     expect(theme.value).toBe('theme-dark')
-    matches = false; fire()
+    tab.flip(false)
     // The OS flipped back; the host did not.
     expect(theme.value).toBe('theme-dark')
   })
@@ -206,9 +279,9 @@ describe('setScheme', () => {
     initTheme({ ...pair, default: 'system', persist: false })
     setScheme('dark')
     initTheme({ ...pair, default: 'system', persist: false })
-    matches = true; fire()
+    tab.flip(true)
     expect(theme.value).toBe('theme-dark')
-    matches = false; fire()
+    tab.flip(false)
     expect(theme.value).toBe('theme-forest')
   })
 
@@ -265,23 +338,27 @@ describe('theme state', () => {
     expect(theme.value).toBe('a')
   })
 
-  test('setTheme fires a theme.value path watch', () => {
+  test('setTheme fires a theme.value path watch', async () => {
     // `theme` is a plain object — there is no .subscribe(). A consumer declares
     // `$: theme.value`, which the compiler turns into watchPath plus a proxy
     // read. This is that, by hand. Path watching is a no-op with no DOM
     // (RULE 19), so the environment has to say browser first.
-    setRenderEnvironment(true)
-    const [watch] = watchPath(theme, 'value')
-    let runs = 0
-    const dispose = createEffect(() => { watch(); runs++ })
-    flushSync()
-    const before = runs
+    fakeTab()
+    try {
+      const [watch] = watchPath(theme, 'value')
+      let runs = 0
+      const dispose = createEffect(() => { watch(); runs++ })
+      flushSync()
+      const before = runs
 
-    setTheme(theme.value === 'theme-dark' ? 'theme-default' : 'theme-dark')
-    flushSync()
+      setTheme(theme.value === 'theme-dark' ? 'theme-default' : 'theme-dark')
+      flushSync()
 
-    expect(runs).toBeGreaterThan(before)
-    dispose()
+      expect(runs).toBeGreaterThan(before)
+      dispose()
+    } finally {
+      await leaveTab()
+    }
   })
 
   // A name nobody declared has to be refused BY NAME. Returning quietly is the
@@ -315,12 +392,17 @@ describe('theme state', () => {
   })
 
   // The terminal's shape: OpenTUI plants a `window` holding requestAnimationFrame
-  // and nothing else, so a `typeof window` guard passes and matchMedia throws.
-  // Skipping resolution there left the value blank (`FJS-2565`).
-  describe('with a window that has no matchMedia', () => {
+  // and nothing else, so a `typeof window` guard passes and matchMedia throws;
+  // and the kit's persisted() and colorScheme() throw there by name. Skipping
+  // resolution left the value blank (`FJS-2565`).
+  describe('on a terminal', () => {
     const had = 'window' in globalThis
     const prior = globalThis.window
-    beforeEach(() => { globalThis.window = { requestAnimationFrame: () => 0 } })
+    beforeEach(() => {
+      globalThis.window = { requestAnimationFrame: () => 0 }
+      setRenderEnvironment(false, true)
+    })
+    afterEach(() => setRenderEnvironment(false))
     afterAll(() => { if (had) globalThis.window = prior; else delete globalThis.window })
 
     test("'system' resolves to the app's light theme", () => {

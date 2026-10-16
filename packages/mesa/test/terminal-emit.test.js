@@ -2,14 +2,15 @@
  * `target: 'terminal'` — the emitted module, graded on its text. Imports
  * nothing from `runtime-terminal.js` or OpenTUI: node 22 cannot load the
  * engine, so what the module DOES is `test/terminal/` under bun; what it SAYS
- * is here. Pins the `$$tui` import and calls, that no DOM machinery leaks in
+ * is here. Pins the `$$host` import and calls, that no DOM machinery leaks in
  * (Invariant 15 — the output parses), and that every refusal names the
  * construct and its line in the one shape a portability report collects.
  */
 import { describe, it, expect } from 'vitest'
 import * as acorn from 'acorn'
 import { compile } from '../src/compiler.js'
-import { terminalOffenses } from '../src/terminal/emit.js'
+import { hostOffenses } from '../src/host/emit.js'
+import { TARGETS } from '../src/host/targets.js'
 
 const terminal = (source, filename = 'Counter.mesa') =>
   compile(source, { target: 'terminal', filename, dev: false, warning: () => {} })
@@ -22,7 +23,7 @@ const COUNTER = `<script>
 <div class="box">
   <h1>Counter</h1>
   <p>Count: {count}</p>
-  <button on:click={inc}>Add</button>
+  <button onclick={inc}>Add</button>
   {#if count > 2}
     <p>Many</p>
   {:else}
@@ -37,18 +38,18 @@ const COUNTER = `<script>
 `
 
 describe('terminal target', () => {
-  it('emits a $$tui module that parses and carries no DOM machinery', async () => {
+  it('emits a $$host module that parses and carries no DOM machinery', async () => {
     const { result } = await terminal(COUNTER)
     expect(() => acorn.parse(result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
 
-    expect(result).toContain("import * as $$runtime from '@frontierjs/mesa/runtime.js';\nimport * as $$tui from '@frontierjs/mesa/runtime/terminal.js';")
-    expect(result).toContain("const $$el0 = $$tui.element('div', { class: 'box' });")
-    expect(result).toContain("$$tui.append($$el1, $$tui.text('Counter'));")
-    expect(result).toContain('$$tui.ifBlock($$m0, () => ($$runtime.get($$sig_count) > 2) ? 0 : 1, [')
-    expect(result).toContain('$$tui.eachBlock($$m1, () => ($$runtime.get($$sig_items)), (it, i) => (it), (it, i) => {')
-    expect(result).toContain("$$tui.on($$el3, 'click', $$runtime.get(inc));")
-    expect(result).toContain("if (__prev.a !== __a) $$tui.set_text($$t0, __prev.a = __a);")
-    expect(result).toContain('$$tui.append(__anchor, $$parentElement);')
+    expect(result).toContain("import * as $$runtime from '@frontierjs/mesa/runtime.js';\nimport * as $$host from '@frontierjs/mesa/runtime/terminal.js';")
+    expect(result).toContain("const $$el0 = $$host.element('div', { class: 'box' });")
+    expect(result).toContain("$$host.append($$el1, $$host.text('Counter'));")
+    expect(result).toContain('$$host.ifBlock($$m0, () => ($$runtime.get($$sig_count) > 2) ? 0 : 1, [')
+    expect(result).toContain('$$host.eachBlock($$m1, () => ($$runtime.get($$sig_items)), (it, i) => (it), (it, i) => {')
+    expect(result).toContain("$$host.on($$el3, 'click', $$runtime.get(inc));")
+    expect(result).toContain("if (__prev.a !== __a) $$host.set_text($$t0, __prev.a = __a);")
+    expect(result).toContain('$$host.append(__anchor, $$parentElement);')
 
     for (const dom of ['$$runtime.template(', '$$delegate', 'addStyles', 'document', '$$runtime.child(', '$$runtime.append(']) {
       expect(result).not.toContain(dom)
@@ -63,10 +64,10 @@ describe('terminal target', () => {
 {#each rows as r}<p>{r}</p>{:else}<p>none</p>{/each}
 {#if on}<p>on</p>{/if}
 `)
-    expect(result).toContain('$$tui.eachBlock($$m0, () => ($$runtime.get($$sig_rows)), null, (r) => {')
+    expect(result).toContain('$$host.eachBlock($$m0, () => ($$runtime.get($$sig_rows)), null, (r) => {')
     expect(result).toContain('}, () => {')
-    expect(result).toContain("$$tui.append($$el1, $$tui.text('none'));")
-    expect(result).toContain('$$tui.ifBlock($$m1, () => ($$runtime.get($$sig_on)) ? 0 : null, [')
+    expect(result).toContain("$$host.append($$el1, $$host.text('none'));")
+    expect(result).toContain('$$host.ifBlock($$m1, () => ($$runtime.get($$sig_on)) ? 0 : null, [')
   })
 
   it('destructures a row from the $$item getter', async () => {
@@ -86,11 +87,11 @@ describe('terminal target', () => {
 </script>
 <input placeholder="name" value={n} class="c {n}" />
 `)
-    expect(result).toContain("const $$el0 = $$tui.element('input', { placeholder: 'name' });")
+    expect(result).toContain("const $$el0 = $$host.element('input', { placeholder: 'name' });")
     expect(result).toContain('var __a; try { __a = ($$runtime.get($$sig_n)); } catch (e) { __a = $$runtime.contain(e, __prev.a); }')
-    expect(result).toContain("if (__prev.a !== __a) $$tui.set_attribute($$el0, 'value', __prev.a = __a);")
+    expect(result).toContain("if (__prev.a !== __a) $$host.set_attribute($$el0, 'value', __prev.a = __a);")
     expect(result).toContain('__a = (`c ${$$runtime.get($$sig_n)}`)')
-    expect(result).toContain("$$tui.set_attribute($$el0, 'class', __prev.a = __a);")
+    expect(result).toContain("$$host.set_attribute($$el0, 'class', __prev.a = __a);")
   })
 
   it('paints no style:, as it paints no static style or scoped CSS', async () => {
@@ -99,7 +100,7 @@ describe('terminal target', () => {
 </script>
 <p style:gap="1rem" style:display={w ? 'none' : null}>t</p>
 `)
-    expect(result).toContain("const $$el0 = $$tui.element('p');")
+    expect(result).toContain("const $$el0 = $$host.element('p');")
     expect(result).not.toMatch(/gap|display|none/)
   })
 
@@ -187,7 +188,7 @@ describe('terminal target', () => {
     // TERMINAL_EVENTS and the route that uses one stays refused.
     it('a pointer or wheel gesture', async () => {
       for (const event of ['pointerdown', 'pointermove', 'pointerup', 'wheel']) {
-        await refusal(`<div on:${event}={() => {}}></div>\n`, 'P.mesa', `on:${event} at P.mesa:1:6 has no terminal lowering`)
+        await refusal(`<div on${event}={() => {}}></div>\n`, 'P.mesa', `on${event} at P.mesa:1:6 has no terminal lowering`)
       }
     })
 
@@ -198,28 +199,28 @@ describe('terminal target', () => {
       await expect(terminal(`<script>let m = false</script>\n<select multiple={m}><option>a</option></select>\n`, 'L.mesa')).resolves.toBeTruthy()
     })
 
-    it('on:dblclick', async () => {
-      await refusal(`<div on:dblclick={() => {}}></div>\n`, 'D.mesa',
-        'on:dblclick at D.mesa:1:6 has no terminal lowering')
+    it('ondblclick', async () => {
+      await refusal(`<div ondblclick={() => {}}></div>\n`, 'D.mesa',
+        'ondblclick at D.mesa:1:6 has no terminal lowering')
     })
 
     // The window is the end of every event's path; nothing in the corpus
     // listens at a document or a body, and a window property has no terminal.
     it('<mesa:document>, <mesa:body>, and a bind: or an unknown event on <mesa:window>', async () => {
-      await refusal(`<mesa:document on:keydown={() => {}} />\n`, 'D.mesa',
+      await refusal(`<mesa:document onkeydown={() => {}} />\n`, 'D.mesa',
         '<mesa:document> at D.mesa:1:1 has no terminal lowering')
-      await refusal(`<mesa:body on:click={() => {}} />\n`, 'B.mesa',
+      await refusal(`<mesa:body onclick={() => {}} />\n`, 'B.mesa',
         '<mesa:body> at B.mesa:1:1 has no terminal lowering')
       await refusal(`<script>let y = 0</script>\n<mesa:window bind:scrollY={y} />\n`, 'Y.mesa',
         'bind:scrollY at Y.mesa:2:14 has no terminal lowering')
-      await refusal(`<mesa:window on:resize={() => {}} />\n`, 'R.mesa',
-        'on:resize at R.mesa:1:14 has no terminal lowering')
+      await refusal(`<mesa:window onresize={() => {}} />\n`, 'R.mesa',
+        'onresize at R.mesa:1:14 has no terminal lowering')
     })
 
     // A portal's children are checked where they paint, which is in place.
     it('an offender inside a <mesa:portal>', async () => {
-      await refusal(`<mesa:portal to={document.body}>\n  <div on:dblclick={() => {}}></div>\n</mesa:portal>\n`, 'P.mesa',
-        'on:dblclick at P.mesa:2:8 has no terminal lowering')
+      await refusal(`<mesa:portal to={document.body}>\n  <div ondblclick={() => {}}></div>\n</mesa:portal>\n`, 'P.mesa',
+        'ondblclick at P.mesa:2:8 has no terminal lowering')
     })
 
     // A browser moves live text into a field only until someone types.
@@ -255,7 +256,7 @@ describe('terminal target', () => {
     it('exports the module half, and a default that throws the refusal when mounted', async () => {
       const ctx = await terminal(RESOURCE, 'Thing.mesa')
       const message = '<iframe> at Thing.mesa:9:1 has no terminal lowering'
-      expect(ctx.terminalRefusal).toBe(message)
+      expect(ctx.targetRefusal).toBe(message)
       acorn.parse(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })
       // The instance script's imports go with it: Form.mesa is never loaded.
       expect(ctx.result).not.toMatch(/Form\.mesa|\$\$tui|\$\$runtime/)
@@ -266,8 +267,8 @@ describe('terminal target', () => {
 
     it('a lowering file sets no refusal', async () => {
       const ctx = await terminal(`<script module>\n  export const x = 1\n</script>\n<p>{x}</p>\n`, 'X.mesa')
-      expect(ctx.terminalRefusal).toBeUndefined()
-      expect(ctx.result).toContain('$$tui')
+      expect(ctx.targetRefusal).toBeUndefined()
+      expect(ctx.result).toContain('$$host')
     })
 
     it('without a <script module> there is nothing to keep, and the compile throws', async () => {
@@ -276,7 +277,7 @@ describe('terminal target', () => {
     })
   })
 
-  it('calls a component at a marker, with its props, slots and a push for the live ones', async () => {
+  it('calls a component at a marker, with its props, its content as snippets and a push for the live ones', async () => {
     const { result } = await terminal(`<script>
   import Card from './Card.mesa'
   let n = 0
@@ -288,17 +289,17 @@ describe('terminal target', () => {
 <Card />
 `, 'P.mesa')
     expect(() => acorn.parse(result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
-    const props = "{title: 'A', count: $$runtime.get($$sig_n), flag: true, 'aria-label': 'x', onpick: () => $$runtime.postUpdate($$sig_n, $$set_n, +1)}"
-    expect(result).toContain('const $$m0 = $$tui.marker();\n    $$tui.append($$parentElement, $$m0);')
-    expect(result).toContain(`Card($$m0, ${props}, {\n      actions: () => {`)
-    expect(result).toContain("      actions: () => {\n        const $$b = $$tui.fragment();\n        const $$el0 = $$tui.element('b');")
-    expect(result).toContain("      default: () => {\n        const $$b = $$tui.fragment();\n        const $$el1 = $$tui.element('p');")
+    const props = "{title: 'A', count: $$runtime.get($$sig_n), flag: true, 'aria-label': 'x', onpick: () => $$runtime.postUpdate($$sig_n, $$set_n, +1), actions: $$snip0_actions, children: $$snip1_children}"
+    expect(result).toContain('const $$m0 = $$host.marker();\n    $$host.append($$parentElement, $$m0);')
+    expect(result).toContain(`Card($$m0, ${props}, null);`)
+    expect(result).toContain("const $$snip0_actions = $$runtime.content((__anchor) => {\n      const $$b = $$host.fragment();\n      const $$el0 = $$host.element('b');")
+    expect(result).toContain("const $$snip1_children = $$runtime.content((__anchor) => {\n      const $$b = $$host.fragment();\n      const $$el1 = $$host.element('p');")
     expect(result).toContain(`$$runtime.registerComponentAnchor($$m0);\n    $$runtime.createEffect(() => { $$runtime.pushProps($$m0, ${props}); });`)
     // All-static props: nothing to push, so no registration either.
-    expect(result).toContain('Card($$m1, {}, null);\n    $$tui.append(__anchor, $$parentElement);')
+    expect(result).toContain('Card($$m1, {}, null);\n    $$host.append(__anchor, $$parentElement);')
   })
 
-  it('hands an element spread to $$tui.spread in attribute order, after the static attributes', async () => {
+  it('hands an element spread to $$host.spread in attribute order, after the static attributes', async () => {
     const { result } = await terminal(`<script>
   let a = { title: 'x' }
   let v = 'y'
@@ -306,10 +307,10 @@ describe('terminal target', () => {
 <input placeholder="p" {...a} value={v} />
 `, 'S.mesa')
     expect(() => acorn.parse(result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
-    expect(result).toContain("const $$el0 = $$tui.element('input', { placeholder: 'p' });")
+    expect(result).toContain("const $$el0 = $$host.element('input', { placeholder: 'p' });")
     const at = (s) => result.indexOf(s)
-    expect(at('$$tui.spread($$el0, () => ($$runtime.get($$sig_a)));')).toBeGreaterThan(at("$$tui.element('input'"))
-    expect(at("$$tui.set_attribute($$el0, 'value'")).toBeGreaterThan(at('$$tui.spread($$el0'))
+    expect(at('$$host.spread($$el0, () => ($$runtime.get($$sig_a)));')).toBeGreaterThan(at("$$host.element('input'"))
+    expect(at("$$host.set_attribute($$el0, 'value'")).toBeGreaterThan(at('$$host.spread($$el0'))
   })
 
   it('merges a spread under the written props and pushes the whole object', async () => {
@@ -327,7 +328,7 @@ describe('terminal target', () => {
 
   it('reports an attribute no component takes, as the DOM path does, and passes nothing', async () => {
     const source = `<script>import Card from './Card.mesa'; const f = () => {}</script>
-<Card on:pick={() => {}} class:on={true} #ref {*f} {@attach f} title="A" />
+<Card onpick|capture={() => {}} class:on={true} #ref {*f} {@attach f} title="A" />
 `
     const said = (target) => {
       const out = []
@@ -337,7 +338,7 @@ describe('terminal target', () => {
     const dom = await said(undefined)
     const tui = await said('terminal')
     expect(tui.out).toEqual(dom.out)
-    expect(tui.out.map((m) => m.split(' ')[0])).toEqual(['on:pick', '<Card', '<Card', '<Card', '{@attach}'])
+    expect(tui.out.map((m) => m.split(' ')[0])).toEqual(['<Card', '<Card', '<Card', '<Card', '{@attach}'])
     expect(tui.out.every((m) => m.endsWith('P.mesa:2:1'))).toBe(true)
     expect(tui.result).toContain("Card($$m0, {title: 'A'}, null);")
     expect(dom.result).toContain("Card($$el0, {title: `A`}, null);")
@@ -384,28 +385,28 @@ describe('terminal target', () => {
   // options are the DOM's: `capture` and `once`, never `passive`.
   it('hands an element to bind:this and passes capture and once as listener options', async () => {
     const { result } = await terminal(`<script>let el = null\nconst f = () => {}</script>
-<form bind:this={el} on:submit|preventDefault={f} on:blur|capture={f} on:input|once|passive={f}></form>
+<form bind:this={el} onsubmit|preventDefault={f} onblur|capture={f} oninput|once|passive={f}></form>
 `, 'E.mesa')
     expect(result).toContain([
-      "const $$el0 = $$tui.element('form');",
-      '$$tui.append($$parentElement, $$el0);',
-      "$$tui.on($$el0, 'submit', ($$e) => { $$e.preventDefault(); (f)($$e); });",
-      "$$tui.on($$el0, 'blur', f, { capture: true });",
-      "$$tui.on($$el0, 'input', f, { once: true });",
+      "const $$el0 = $$host.element('form');",
+      '$$host.append($$parentElement, $$el0);',
+      "$$host.on($$el0, 'submit', ($$e) => { $$e.preventDefault(); (f)($$e); });",
+      "$$host.on($$el0, 'blur', f, { capture: true });",
+      "$$host.on($$el0, 'input', f, { once: true });",
       '$$set_el($$el0);',
     ].join('\n    '))
   })
 
   it('binds an element value after its handlers, through the getter and setter the DOM path writes', async () => {
     const { result } = await terminal(`<script>let v = ''\nlet d = {}\nconst f = () => {}</script>
-<select bind:value={v} on:change={f}><option>a</option></select>
+<select bind:value={v} onchange={f}><option>a</option></select>
 <input bind:value={d.name} />
 `, 'V.mesa')
     expect(result).toContain([
-      "$$tui.on($$el0, 'change', f);",
-      "$$tui.bind($$el0, 'value', () => $$runtime.get($$sig_v), $$set_v);",
+      "$$host.on($$el0, 'change', f);",
+      "$$host.bind($$el0, 'value', () => $$runtime.get($$sig_v), $$set_v);",
     ].join('\n    '))
-    expect(result).toContain("$$tui.bind($$el2, 'value', () => ($$runtime.get($$sig_d).name), ($$v) => { $$runtime.get($$sig_d).name = $$v; });")
+    expect(result).toContain("$$host.bind($$el2, 'value', () => ($$runtime.get($$sig_d).name), ($$v) => { $$runtime.get($$sig_d).name = $$v; });")
   })
 
   it('reports an element bind:value it cannot write in the same words on both targets, and wires nothing', async () => {
@@ -446,15 +447,15 @@ describe('terminal target', () => {
     expect(out).toEqual([expect.stringMatching(/^bind:this=\{r\} — 'r' must be a top-level let variable — P\.mesa:2:1$/)])
   })
 
-  it('renders a <slot> from __block, its fallback when the caller passed none, and declares it', async () => {
+  it('renders a <slot> from the prop of its name, its fallback when the caller passed none, and declares the prop', async () => {
     const { result } = await terminal(`<section>
   <slot><p>empty</p></slot>
   <slot name="actions" />
 </section>
 `, 'Card.mesa')
-    expect(result).toContain(`const $$slots = $$runtime.makeSlots(__block, ["default","actions"], 'Card');`)
-    expect(result).toContain("$$tui.slot($$m0, __block?.['default'], () => {")
-    expect(result).toContain("$$tui.slot($$m1, __block?.['actions'], null);")
+    expect(result).toContain(`$$runtime.unclaimedContent(__props, ["children","actions"], 'Card', ["children","actions"]);`)
+    expect(result).toContain('$$host.ifBlock($$m0, () => ($$runtime.get($$sig_children)) ? 0 : 1, [')
+    expect(result).toContain('{ const $$sf = $$runtime.get($$sig_actions); if ($$sf) $$sf($$m2); }')
   })
 
   // The author marked it as carrying nothing a reader needs, so the terminal
@@ -465,8 +466,8 @@ describe('terminal target', () => {
 <p>t</p>
 `)
     expect(result).not.toMatch(/svg|path/)
-    expect(result).toContain("$$tui.element('b')")
-    expect(result).toContain("$$tui.element('p')")
+    expect(result).toContain("$$host.element('b')")
+    expect(result).toContain("$$host.element('p')")
     await expect(terminal(`<div aria-hidden="false"><iframe></iframe></div>\n`, 'N.mesa')).rejects.toThrow('<iframe> at N.mesa:1:26')
   })
 
@@ -491,27 +492,25 @@ describe('terminal target', () => {
 `)
     expect(result).toContain('T($$m0, {row: $$snip0_row}, null);')
     expect(result).toContain('T($$m1, {row: $$snip1_row}, null);')
-    expect(result).toContain("$$tui.keyBlock($$m2, () => ('h' + $$runtime.get($$sig_l)), ($$tag) => {")
-    expect(result).toContain('$$tui.element($$tag);')
+    expect(result).toContain("$$host.keyBlock($$m2, () => ('h' + $$runtime.get($$sig_l)), ($$tag) => {")
+    expect(result).toContain('$$host.element($$tag);')
   })
 
-  it('terminalOffenses lists every offender in document order, grouped by shape', async () => {
+  it('hostOffenses lists every offender in document order, grouped by shape', async () => {
     const { ir } = await compile(`<script>import Foo from './Foo.mesa'
   let v = ''
   let x = 'a'
 </script>
 <table><tr><td class={x} colspan={x}>{v}</td><td>z</td></tr></table>
 <input bind:value={v} bind:checked={v} />
-{#if v}<button on:click|once={() => {}} on:pointerenter={() => {}}>b</button>{/if}
-{#each [1] as n}<Foo {...v} bind:x={v} on:pick={() => {}}><iframe>{#snippet s()}x{/snippet}</iframe></Foo>{/each}
-<slot name="a" title="t" />
+{#if v}<button onclick|once={() => {}} onpointerenter={() => {}}>b</button>{/if}
+{#each [1] as n}<Foo {...v} bind:x={v} onpick={() => {}}><iframe>{#snippet s()}x{/snippet}</iframe></Foo>{/each}
 `, { filename: 'H.mesa', dev: false, warning: () => {} })
-    expect(terminalOffenses(ir).map((o) => [o.what, o.shape, o.loc])).toEqual([
+    expect(hostOffenses(ir, TARGETS.terminal).map((o) => [o.what, o.shape, o.loc])).toEqual([
       ['colspan on <td>', 'colspan on <td>', 'H.mesa:5:12'],
       ['bind:checked on <input type="text">', 'bind:checked on <input type="text">', 'H.mesa:6:23'],
-      ['on:pointerenter', 'on:pointerenter', 'H.mesa:7:41'],
-      ['<iframe>',     '<iframe>',          'H.mesa:8:59'],
-      ['title on <slot>', 'attribute on <slot>', 'H.mesa:9:16'],
+      ['onpointerenter', 'onpointerenter', 'H.mesa:7:40'],
+      ['<iframe>',     '<iframe>',          'H.mesa:8:58'],
     ])
   })
 })

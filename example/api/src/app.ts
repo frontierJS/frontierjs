@@ -39,8 +39,8 @@ import { commitmentHooks }                      from './core/commitments.ts'
 import { cartClaim, CART_HEADER }              from './domain/shop'
 import { IDP_URL }                              from './providers/idp/sink.ts'
 import { createConduitMailer, MAIL_TARGET }     from './providers/mail/mailer.ts'
-import { PSP_TARGET, PSP_URL, WEBHOOK_PATH, verifyWebhook } from './providers/psp/index.ts'
-import { stripeTarget, verifyStripeSignature, STRIPE_WEBHOOK_PATH } from './providers/stripe/index.ts'
+import { PSP_TARGET, PSP_URL, WEBHOOK_PATH, pspDialect }   from './providers/psp/index.ts'
+import { stripeTarget, stripeDialect, STRIPE_WEBHOOK_PATH } from './providers/stripe/index.ts'
 
 // 8110 is dev/be/project-1 — derived, never chosen (packages/cli/core/ports.js).
 // The env override is what lets a drive start an app of its own on the TEST row
@@ -661,96 +661,57 @@ app.configure(channels((a: App) => {
 
 // ─── The provider talking back ────────────────────────────────────────────
 //
-// POST /api/webhooks/payments — the one route in this app that is not a
-// service, and the reasons are the whole of what a webhook is.
+// POST /api/webhooks/payments — the receiving end of the payment provider, and
+// the one caller in this app that is not a person. Conduit owns the route and
+// its order (`FJS-D899`): the credential is chosen first, the signature is
+// verified over the BYTES that arrived, the event is parsed, a receipt is
+// written, and only an applied receipt makes a redelivery a duplicate
+// (`FJS-1805`). What this declares is the app's half:
 //
 //   no principal   a provider has no session and must not be able to name one.
-//                  Everything else here is authenticated by the caller; this
-//                  is authenticated by the BYTES, and the identity it
-//                  establishes is "the provider", not "a user"
-//   raw bytes      the signature covers a hash of what was sent. A service
-//                  method is handed `ctx.data` after autoValidate has coerced
-//                  it, and re-serializing that to check a hash means both ends
-//                  have to agree about key order forever
-//   its own status a service answers 4xx from the gate and the validator; a
-//                  provider reads 2xx as "stop retrying" and everything else
-//                  as "send it again", so what this answers is a decision and
-//                  not a side effect of a pipeline
+//                  `apply` runs as the shop — SYSTEM — which buys the audit
+//                  actor and the order's own gate, both of which `asSystem()`
+//                  alone would drop
+//   its own status conduit answers 200 for applied, ignored and duplicate, 401
+//                  for a refusal with the reason in the log and not the body,
+//                  and 500 when `apply` throws, so the provider retries
 //
-// What it does NOT do is any of the work. Verify, then hand the event to
-// `payments.record`, which is an ordinary service method with a transaction, a
-// ledger and the state machine behind it — so the effect is testable without a
-// signature and the signature is testable without the effect.
-//
-// `app.post` puts this under `apiPrefix`, like every route the app registers.
-// A path that must not move goes on `app.http.router` directly; this one is
-// happy to move, because the provider is TOLD the URL and `verifyWebhook`
-// verifies whatever path the request arrived at.
-app.post(WEBHOOK_PATH, async (ctx) => {
-  const check = await verifyWebhook({
-    method:  ctx.method,
-    path:    ctx.path,
-    // The raw search string off the request URL, not `ctx.query` — that one is
-    // parsed, and a signature is over what was sent (`FJS-678`).
-    query:   new URL(ctx.$raw.url).search,
-    headers: ctx.headers,
-    rawBody: ctx.rawBody,
-  })
-
-  if (!check.ok) {
-    // Logged with the reason, answered without it. A forger learns that it
-    // failed; whoever is on call learns that the provider's clock is 40
-    // seconds out, which is the same 401 and a completely different morning.
-    console.warn(`[psp] refused a webhook — ${check.reason}`)
-    return ctx.json({ error: 'invalid signature' }, 401)
-  }
-
-  // As the shop, on its own behalf. Both payment tables are SYSTEM-write by
-  // declaration, and `record` reaches them through `asSystem()`; what this
-  // principal buys is the audit actor and the order's own gate, which the
-  // bypass would drop.
-  const result = await app.service('payments')
-    .call('record', null, (ctx.body ?? {}) as Record<string, unknown>, { auth: { user: SYSTEM } })
-
-  return ctx.json(result as Record<string, unknown>, 200)
+// What it does NOT do is any of the work. `payments.record` is an ordinary
+// service method with a transaction, a ledger and the state machine behind it —
+// so the effect is testable without a signature and the signature without the
+// effect. An event about a payment this shop has no row for is recorded by the
+// ledger and answered `ignored`: 200, because a 4xx retries a stranger's event
+// forever.
+app.conduit!.receive({
+  provider:   'payments',
+  path:       WEBHOOK_PATH,
+  dialect:    pspDialect,
+  credential: 'SHOP_PSP_WEBHOOK_SECRET',
+  apply:      async (ev) => {
+    const result = await app.service('payments')
+      .call('record', null, ev.payload, { auth: { user: SYSTEM } }) as { status?: string }
+    return result.status === 'unknown-payment' ? 'ignored' : 'applied'
+  },
 })
 
 // ─── Stripe's events ──────────────────────────────────────────────────────
 //
-// The same shape as the route above and a different dialect. Stripe signs
-// `"<timestamp>.<raw body>"` under `Stripe-Signature`; this project signs a
-// canonical string over method, path, timestamp, nonce and a body hash. Neither
-// is wrong and neither generalizes, which is why a connector owns its vendor's
-// (`FJS-D153`).
-//
-// `ctx.rawBody` and not `ctx.body`: the signature is over BYTES, and
-// re-serializing the parsed object produces different ones for the same
-// document — key order, whitespace, number formatting — so every legitimate
-// event would be refused.
+// The same receiver shape and a different dialect. Stripe signs
+// `"<timestamp>.<raw body>"` under `Stripe-Signature`; this project's provider
+// signs a canonical string over method, path, timestamp, nonce and a body hash.
+// Neither is wrong and neither generalizes, which is why a connector owns its
+// vendor's (`FJS-D153`) and conduit owns only the order.
 //
 // What this deliberately does NOT do is drive the order state machine. The shop
 // already has a provider doing that, and pointing two at one machine is a
 // decision about which one is authoritative rather than a detail of wiring. The
-// line where that would go is the `payments.record` call in the route above.
-app.post(STRIPE_WEBHOOK_PATH, async (ctx) => {
-  const check = verifyStripeSignature({
-    rawBody: ctx.rawBody ?? '',
-    header:  ctx.headers['stripe-signature'],
-    secret:  process.env.STRIPE_WEBHOOK_SECRET ?? 'whsec_dev',
-    now:     Math.floor(Date.now() / 1000),
-  })
-
-  if (!check.ok) {
-    // Logged with the reason, answered without it — a forger learns that it
-    // failed, whoever is on call learns that Stripe's clock is 40s out.
-    console.warn(`[stripe] refused a webhook — ${check.reason}`)
-    return ctx.json({ error: 'invalid signature' }, 401)
-  }
-
-  const event = (ctx.body ?? {}) as { id?: string; type?: string }
-  // Stripe retries until it gets a 2xx, so anything that is not a signature
-  // failure answers 200 — including an event type this app does not handle.
-  return ctx.json({ received: true, id: event.id, type: event.type }, 200)
+// line where that would go is the `payments.record` call in the receiver above.
+app.conduit!.receive({
+  provider:   'stripe',
+  path:       STRIPE_WEBHOOK_PATH,
+  dialect:    stripeDialect,
+  credential: 'STRIPE_WEBHOOK_SECRET',
+  apply:      () => 'ignored',
 })
 
 // GET /api/session was here — a hand-written route that resolved the Bearer

@@ -5,6 +5,7 @@
   // water cell the float sits on and how long, so this screen draws a float
   // bobbing there and says the catch when it comes up. Drawn on this screen
   // only and never sent; a cast away from the water is refused by the server.
+  // A penguin out of the ice-fishing hole stands over it for a moment.
   // `/feed` hands a fish to the animal beside this figure. What an animal does
   // -- the gull off with a missed cast's bait, a fed cat -- is the room's
   // `animal` event: every screen runs the gull off, and every screen but the
@@ -22,14 +23,20 @@
 
   var verbs = $context.commands
   var timer = null
-  $.onDestroy(() => clearTimeout(timer))
+  var showing = null
+  $.onDestroy(() => { clearTimeout(timer); clearTimeout(showing) })
 
   const BOB_MS = 400
   const FLOAT  = ['o', '°']
   const INK    = '#f87171'
 
-  let float = null
-  let beat  = 0
+  const PENGUIN    = [' _ ', '(o>', '/v\\']
+  const PENGUIN_MS = 3000
+  const PENGUIN_INK = '#f8fafc'
+
+  let float   = null
+  let penguin = null
+  let beat    = 0
   $.onDestroy(stage.task('fishing', () => { if (float) beat = (beat + 1) % 2 }, { every: BOB_MS }))
 
   async function fish() {
@@ -37,7 +44,14 @@
       const cast = await getClient().service('fishing').invoke('cast', null, { roomId: room.id })
       clearTimeout(timer)
       float = cast.at
-      timer = setTimeout(() => { float = null; tell(cast.line) }, cast.biteMs)
+      timer = setTimeout(() => {
+        float = null
+        tell(cast.line)
+        if (cast.caught !== 'penguin') return
+        penguin = { x: cast.at.x - 1, y: cast.at.y - PENGUIN.length }
+        clearTimeout(showing)
+        showing = setTimeout(() => { penguin = null }, PENGUIN_MS)
+      }, cast.biteMs)
       return 'you cast your line...'
     } catch (e) { return e.message }
   }
@@ -66,8 +80,17 @@
 
   /** The float at its cell of the view, or nothing out of view or in the dark. */
   const drawn = (f, v) => (f && inView(f, v) && stage.light(f.x, f.y) !== 'dark' ? [{ x: f.x - v.x, y: f.y - v.y }] : [])
+
+  /** The penguin's glyphs at their cells of the view, only where they are in view and lit. */
+  const sprite = (p, v) => (p ? PENGUIN.flatMap((row, dy) => [...row].flatMap((ch, dx) => {
+    const c = { x: p.x + dx, y: p.y + dy }
+    return ch !== ' ' && inView(c, v) && stage.light(c.x, c.y) !== 'dark' ? [{ x: c.x - v.x, y: c.y - v.y, ch }] : []
+  })) : [])
 </script>
 
+{#each sprite(penguin, view) as c (`${c.x},${c.y}`)}
+  <p {@attach at(c.x, c.y, 9)} {@attach tint(PENGUIN_INK)}>{c.ch}</p>
+{/each}
 {#each drawn(float, view) as c (`${c.x},${c.y}`)}
   <p {@attach at(c.x, c.y, 9)} {@attach tint(INK)}>{FLOAT[beat]}</p>
 {/each}

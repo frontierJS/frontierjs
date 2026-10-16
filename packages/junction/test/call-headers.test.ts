@@ -17,7 +17,7 @@ import { describe, test, expect, mock, afterEach, afterAll } from 'bun:test'
 import { createApp, channels, defaultConfig } from '../index.ts'
 import { createJunctionClient }               from '../src/client/index.ts'
 import { createService }                      from '../src/core/service.ts'
-import type { ServiceContext }                from '../src/transport/bridge.ts'
+import type { ServiceContext }                from '../src/core/context.ts'
 
 const originalFetch = globalThis.fetch
 afterEach(() => { globalThis.fetch = originalFetch })

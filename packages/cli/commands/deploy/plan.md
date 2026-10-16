@@ -41,7 +41,7 @@ const deployConf     = await deployConfFor($, flag, log)
 
 if (!deployConf?.server) {
   log.error('No deploy block in frontier.config.js — there is nothing to plan against')
-  log.info('Run `fli make:deploy` to write one')
+  log.info('Run `fli make:deploy --server <host>` to write one')
   $.config.abort = true
   return
 }

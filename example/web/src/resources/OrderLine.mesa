@@ -8,7 +8,7 @@
   // ─── Why this file has no markup half ─────────────────────────────────────
   //
   // A resource file carries its model's default form, and this model has none
-  // to carry. `OrderLine` is `@@gate("0.8.8.8")` — anyone who may read the
+  // to carry. `OrderLine` is `@@gate(0.8.8.8)` — anyone who may read the
   // order may read its lines, and only `asSystem()` writes one — and the
   // `order-lines` service declares `methods: ['find', 'get']`. A generated form
   // here would offer to edit what a customer was charged, on a table whose

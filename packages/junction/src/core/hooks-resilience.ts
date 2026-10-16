@@ -132,6 +132,16 @@ export function circuitBreaker(opts: CircuitBreakerOptions = {}): AroundHook {
  */
 export type BridgeHook = (ctx: ServiceContext | TransportContext) => void
 
+const appKeys = new WeakMap<object, number>()
+let nextAppKey = 0
+// A TransportContext carries no app; its callers share one bucket space.
+function appKey(app: object | undefined): number | string {
+  if (!app) return '-'
+  let k = appKeys.get(app)
+  if (k === undefined) appKeys.set(app, k = nextAppKey++)
+  return k
+}
+
 export function rateLimit(opts: RateLimitHookOptions): BridgeHook {
   refuseLegacyRateLimitOptions(opts as unknown as Record<string, unknown>)
 
@@ -143,9 +153,15 @@ export function rateLimit(opts: RateLimitHookOptions): BridgeHook {
   // handlers holding a TransportContext — no principal, by definition, since
   // signing in is what produces one. Reaching through `ctx.auth.user` directly
   // would throw there, which is the difference auth forked over (FJS-017).
+  // The app joins every key. A hook written in a service definition is built
+  // once at import and shared by every app that registers it, so without this a
+  // second app in the process — every test builds its own — finds its user 1's
+  // budget already spent by another app's user 1 (FJS-D1079).
+  const keyOf = (opts.key as ((ctx: ServiceContext) => string) | undefined)
+    ?? ((ctx: ServiceContext) => (ctx.auth?.user?.userId as string) ?? clientIp(ctx))
   const limiter = createRateLimiter<ServiceContext>(
-    opts as RateLimitOptions<ServiceContext>,
-    (ctx) => (ctx.auth?.user?.userId as string) ?? clientIp(ctx),
+    { ...opts, key: (ctx) => `${appKey((ctx as { app?: object }).app)}:${keyOf(ctx)}` } as RateLimitOptions<ServiceContext>,
+    keyOf,
   )
 
   const hook: BridgeHook = (ctx) => { limiter.check(ctx as ServiceContext) }

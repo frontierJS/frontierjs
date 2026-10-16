@@ -129,8 +129,19 @@ true on purpose:
 - **`dead-link`** — a linked path is in neither the file's own directory nor the
   project root. Closed records are exempt: their links describe the code as it
   was, and a file renamed by the fix is the fix working.
+- **`lives-in`** — a ruling's `*Lives in:*` code span names a path no package
+  holds, a symbol (in the parenthesis after a path) its file no longer mentions,
+  or an `@scope/name` no `package.json` declares. A path is written from the
+  root or from its package, so it is dead only when neither finds it; a bare
+  `src/index.ts` matches in every package and so grades no symbol. A ruling with
+  a `**Status:**` is exempt, as a closed row is. Prose after the marker is not
+  read: only code spans are claims.
 - **`unknown-status`**, **`unknown-severity`**, **`malformed-date`** — a value
   outside the vocabulary the register declares in its own conventions table.
+- **`env-cause`** — an `env:` segment naming a cause outside the table
+  (`port`, `shared db`, `stale process`, `timing`, `real machine`, `network`).
+  The count per cause is what the segment is for, and a misspelled one is a
+  row no count sees.
 - **`id-section`** — a row filed under a section its ID PREFIX does not belong
   to. `ISSUES.md` holds two registers in one file and the reader tells them
   apart by section, while the conventions table tells them apart by prefix:
@@ -147,12 +158,22 @@ be in on the way somewhere:
 - **`missing-anchor`** — an open row with no `<a id>`, so nothing can deep-link
   it.
 - **`stale-verified`** — an open row nobody has re-checked inside `--stale-days`.
+- **`env-smell`** — an open row whose TITLE reads like an environment failure
+  (a timeout, a hang, a port, a run that passes in a fresh worktree) and names
+  no `env:` cause. A lead: the row may be code, and the answer is either the
+  segment or a title that says what is wrong with the code.
+- **`timing-unmeasured`** — an open row naming `env: timing` with no `repro:`
+  segment. The message says how to measure it: `fli repro <id>`, or why that
+  refuses (a drive holds a port or a browser; the row links no test).
 
-## The one rule that reads the clock
+## Noted, never graded
 
 `stale-verified` is the only finding whose answer changes overnight, which means
 this command's output is **not reproducible** and must never feed a committed
 snapshot. `--stale-days 0` turns it off for a caller that needs a stable answer.
+`timing-unmeasured` is a backlog no edit can clear until `register:repro`
+measures a drive. Both are `noted` in the rule table: the repo's CI prints their
+counts and does not fail on them.
 
 ## In CI
 

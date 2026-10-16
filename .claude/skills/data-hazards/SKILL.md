@@ -58,6 +58,7 @@ Detail: `references/transitions.md`
 - **`asSystem()` holds the machine, and a row starts at its `@default`** (`FJS-D502`, `FJS-D470`)
 - **A `@@commitment`'s fire is graded as `createApp({ system })`, so the model's read policy must admit that principal by name** (`FJS-2231`)
 - **`@zoned` is read by `due()` alone — a window over the same day is still read in the call's zone** (`FJS-2170`)
+- **What a `@seals` commitment's move owes is written in `before`; a write its from-state contends with, in `after`** (`FJS-2163`)
 
 ## `@immutable` and encryption
 Detail: `references/immutable-and-encryption.md`

@@ -257,6 +257,23 @@ export function virtualSierraPlugin(config, sierraContext) {
 }
 
 /**
+ * The namespace every `persisted()` key is stored under (`FJS-D1097` Q2) — two
+ * apps on one dev origin otherwise read each other's preferences. `config.prefix`
+ * when set, `''` turning it off; else the name in the nearest package.json above
+ * the Vite root, which for an app whose surfaces carry no manifest is the app's.
+ */
+export function storagePrefix(config, root) {
+  if (config.prefix !== undefined) return config.prefix ?? ''
+  for (let dir = resolve(root); ; dir = dirname(dir)) {
+    const manifest = resolve(dir, 'package.json')
+    if (existsSync(manifest)) {
+      try { return JSON.parse(readFileSync(manifest, 'utf8')).name ?? '' } catch { return '' }
+    }
+    if (dirname(dir) === dir) return ''
+  }
+}
+
+/**
  * Generate the virtual:sierra module source code.
  *
  * @param {import('./index.js').SierraConfig} config
@@ -289,6 +306,7 @@ function generateVirtualSierra(config, tableOutput, root, sierraContext) {
   lines.push(`initRouter(tree, components, loaders, {`)
   lines.push(`  trailingSlash: ${JSON.stringify(config.trailingSlash ?? 'always')},`)
   lines.push(`  scrollRestoration: 'manual',`)
+  lines.push(`  prefix: ${JSON.stringify(storagePrefix(config, root))},`)
   if (config.base) {
     lines.push(`  base: ${JSON.stringify(config.base)},`)
   }

@@ -1,0 +1,15 @@
+<script>
+  let on = false
+  let tint = 'rgb(0, 0, 200)'
+  const flip = () => { on = !on; tint = on ? 'rgb(0, 200, 0)' : 'rgb(0, 0, 200)' }
+</script>
+<div class="card" class:on={on}>
+  <p class="label">Scoped</p>
+  <div class="swatch" style="width: 40px; height: 10px" style:background-color={tint}></div>
+  <button onclick={flip}>Flip</button>
+</div>
+<style>
+  .card { background-color: rgb(10, 20, 30); padding: 4px }
+  .card.on { background-color: rgb(40, 50, 60) }
+  .card > .label { color: rgb(200, 100, 0) }
+</style>

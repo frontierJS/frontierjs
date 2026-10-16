@@ -136,6 +136,42 @@ describe('the boundary', () => {
   })
 })
 
+// FJS-2172: every row is capped at 2^53 by the CHECK, and the sum of three is
+// not. SQLite adds in int64 and the read rounds the answer to a double.
+describe('a sum past 2^53 is refused by name, never rounded', () => {
+  const CAP = Number.MAX_SAFE_INTEGER
+  const open = async () => {
+    const db = await createClient({
+      schema: `model Line {
+        id    Int @id @default(autoincrement())
+        total Int @money(USD)
+        kind  String
+        rate  Float @default(0)
+      }`,
+      db: ':memory:',
+    })
+    for (const kind of ['a', 'a', 'a']) await db.line.create({ data: { total: CAP, kind } })
+    return db
+  }
+
+  test('aggregate names the field and the cap', async () => {
+    const db = await open()
+    await expect(db.line.aggregate({ _sum: { total: true } })).rejects.toThrow(/_sum of 'total' .*2\^53/)
+    await expect(db.line.aggregate({ where: { id: 1 }, _sum: { total: true } })).resolves.toEqual({ _sum: { total: CAP } })
+  })
+
+  test('groupBy refuses the same sum, per group', async () => {
+    const db = await open()
+    await expect(db.line.groupBy({ by: ['kind'], _sum: { total: true } })).rejects.toThrow(/_sum of 'total' .*2\^53/)
+  })
+
+  test('a REAL sum that large is a float and is returned', async () => {
+    const db = await open()
+    await db.line.update({ where: { id: 1 }, data: { rate: 1e20 } })
+    expect((await db.line.aggregate({ _sum: { rate: true } }))._sum.rate).toBe(1e20)
+  })
+})
+
 // FJS-2171: $49, €45 and ¥7,000 summed to one bare 16,400.
 describe('a per-row currency is aggregated one currency at a time', () => {
   const SCHEMA = `model Invoice {

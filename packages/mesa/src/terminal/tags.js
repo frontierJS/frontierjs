@@ -57,14 +57,14 @@
  * names attributes the compiler refuses on that tag: a spanning cell would
  * sit its row's later values under the wrong header, with nothing to say so.
  * A `colspan` on the only cell in its row is let through, since that cell
- * fills the row already (`terminalOffenses`). `hidden` builds a box that is
+ * fills the row already (`hostOffenses`). `hidden` builds a box that is
  * never laid out, as a browser never paints it: a `<datalist>`, whose
  * suggestions a terminal does not offer, and an `<option>`, which its
  * `<select>` reads rather than shows. The compiler refuses an `image` tag
  * WITHOUT its `text` attribute: an `<img>` with no `alt` or an `<svg>` with
  * no `aria-label` has nothing a terminal can show, and nothing a screen
  * reader can say either. One inside a static `aria-hidden="true"` is left
- * out instead (`terminalDropped`).
+ * out instead (`hostDropped`).
  */
 
 export const TERMINAL_TAGS = {
@@ -222,7 +222,7 @@ export const isInline = (tag) => {
 /**
  * DOM event names with a terminal meaning, and whether each bubbles as it
  * does in a browser. A listener on an ancestor hears a descendant's event by
- * that rule: `<form on:input>` sees every field under it, and `focus`/`blur`
+ * that rule: `<form oninput>` sees every field under it, and `focus`/`blur`
  * reach an ancestor only through a `|capture` listener, where `focusin` and
  * `focusout` are their bubbling twins, sent after each.
  *

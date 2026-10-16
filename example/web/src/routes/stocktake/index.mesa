@@ -24,7 +24,7 @@ title: Stocktake
   //
   // ─── There is no authorization code here ─────────────────────────────────
   //
-  // Both models are `@@gate("5.5.5.9")`. The level check decides what to
+  // Both models are `@@gate(5.5.5.9)`. The level check decides what to
   // RENDER; the Data boundary refuses the request regardless (Invariant 6).
   import { sheets }          from '../../resources/StocktakeSheet.mesa'
   import { counts }          from '../../resources/StocktakeCount.mesa'

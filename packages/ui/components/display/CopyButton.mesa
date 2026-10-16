@@ -106,7 +106,7 @@
   {class}
   {...$attributes}
   aria-label={label || trigger ? null : (copied ? 'Copied' : 'Copy to clipboard')}
-  on:click={copy}
+  onclick={copy}
 >
   {#if trigger}
     {@render trigger?.(copied)}

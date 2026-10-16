@@ -282,7 +282,7 @@ title: Servers
      States `label=""` on all three rather than only the Input: the rule is
      "this bar has no visible labels", and stating it once per control is what
      keeps the next one from arriving taller than its neighbors. -->
-<form class="cluster" on:submit|preventDefault={(e) => apply({ query: { search: e.target.search.value } })}>
+<form class="cluster" onsubmit|preventDefault={(e) => apply({ query: { search: e.target.search.value } })}>
   <label class="visually-hidden" for="filter-status">Status</label>
   <Select id="filter-status" label="" style="--field-inline-size: auto"
           placeholder="All statuses" options={statuses} value={status}

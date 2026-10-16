@@ -76,7 +76,7 @@ model Organization {
   /// every instance that let a role do it cascaded into something it
   /// regretted. Lower the delete gate with a policy on `role == owner` where
   /// the product means that.
-  @@gate("4.8.5.8")
+  @@gate(4.8.5.8)
 
   /// Members read their own organization. `members` is the back-relation the
   /// host wires once `Member.userId` points at its identity model.
@@ -121,7 +121,7 @@ model Member {
 
   /// Read 4 · create 5 · update 5 · delete 5. Members see who else is in;
   /// an administrator adds, changes and removes.
-  @@gate("4.5.5.5")
+  @@gate(4.5.5.5)
 
   @@allow('read',   userId == auth().id || orgId == auth().orgId)
   @@allow('create', orgId == auth().orgId)

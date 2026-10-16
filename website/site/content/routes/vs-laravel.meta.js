@@ -74,7 +74,7 @@ public function store(StoreLeadRequest $request) {
   createdAt DateTime @default(now())
 
   // read · create · update · delete
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
   @@allow('read', ownerId == auth().id)
 }`,
   S7: `// name  ← this filename   ('leads.service.ts' → /api/leads)
@@ -82,9 +82,7 @@ public function store(StoreLeadRequest $request) {
 // db    ← app.db, scoped per request to the calling user
 // CRUD · 401s · 400s ← the Model
 
-export function createLeadsService() {
-  return createBaseService({})
-}`,
+export default createService({})`,
   S8: `<script>
   const leads = createResource('leads')
   await leads.find({ $limit: 20 })

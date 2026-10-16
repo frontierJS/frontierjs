@@ -117,8 +117,8 @@ describe('model-outside-the-gate-ladder', () => {
 
   test('fires on the one model nobody graded', () => {
     const f = found(`
-      model A { id Int @id  @@gate("4") }
-      model B { id Int @id  @@gate("4") }
+      model A { id Int @id  @@gate(4) }
+      model B { id Int @id  @@gate(4) }
       model C { id Int @id }`, ID)
     expect(f.map(x => x.model)).toEqual(['C'])
   })
@@ -130,7 +130,7 @@ describe('model-outside-the-gate-ladder', () => {
   })
 
   test('silent when every model is graded', () => {
-    expect(found(`model A { id Int @id  @@gate("4") }\nmodel B { id Int @id  @@gate("2") }`, ID))
+    expect(found(`model A { id Int @id  @@gate(4) }\nmodel B { id Int @id  @@gate(2) }`, ID))
       .toEqual([])
   })
 })
@@ -145,7 +145,7 @@ describe('gate-with-nothing-saying-whose-row', () => {
         id       Int  @id
         authorId Int
         author   User @relation(fields: [authorId], references: [id])
-        @@gate("2.4.4.5")
+        @@gate(2.4.4.5)
       }`, ID)
     expect(f.map(x => [x.model, x.confidence])).toEqual([['Post', 'likely']])
   })
@@ -154,7 +154,7 @@ describe('gate-with-nothing-saying-whose-row', () => {
     // `Product` in a shop schema: every caller reading every product is what a
     // catalog IS, and the first cut called all five of example's models a
     // finding. Nothing in a schema distinguishes a catalog from a possession.
-    const f = found(`model Product { id Int @id  name String  @@gate("0.4.4.5") }`, ID)
+    const f = found(`model Product { id Int @id  name String  @@gate(0.4.4.5) }`, ID)
     expect(f.map(x => x.confidence)).toEqual(['possible'])
     expect(f[0].message).toContain('catalog')
   })
@@ -172,23 +172,95 @@ describe('gate-with-nothing-saying-whose-row', () => {
       }
     `
     expect(found(TENANCY + `
-      model Doc { id Int @id  workspaceId String  @@gate("2.4.4.5") }`, ID)).toEqual([])
+      model Doc { id Int @id  workspaceId String  @@gate(2.4.4.5) }`, ID)).toEqual([])
 
     const f = found(TENANCY + `
       model Membership {
         id          Int    @id
         workspaceId String
         @@tenant(none)
-        @@gate("2.4.4.5")
+        @@gate(2.4.4.5)
       }`, ID)
     expect(f.map(x => x.confidence)).toEqual(['likely'])
   })
 
   test('silent with a policy, and on a model only asSystem() reaches', () => {
     expect(found(AUTH + `
-      model Post { id Int @id  ownerId Int  @@gate("2.4.4.5")
-        @@allow('read', ownerId == auth().id) }`, ID)).toEqual([])
-    expect(found(`model Secret { id Int @id  @@gate("8") }`, ID)).toEqual([])
+      model Post { id Int @id  ownerId Int  @@gate(2.4.4.5)
+        @@allow('read,update,delete', ownerId == auth().id) }`, ID)).toEqual([])
+    expect(found(`model Secret { id Int @id  @@gate(8) }`, ID)).toEqual([])
+  })
+
+  // FJS-1780: policied was "any @@allow", so a model that restricted its
+  // writes was never asked about its read, and one with no delete allow let any
+  // caller past the gate delete another's row.
+  test('judges the policy per operation, not per model', () => {
+    const f = found(AUTH + `
+      model Issue {
+        id       Int  @id
+        authorId Int
+        author   User @relation(fields: [authorId], references: [id])
+        @@gate(2.4.4.5)
+        @@allow('update,delete', authorId == auth().id)
+      }`, ID)
+    expect(f.map(x => [x.model, x.confidence])).toEqual([['Issue', 'likely']])
+    expect(f[0].message).toContain('read')
+    expect(f[0].message).not.toContain('delete')
+  })
+
+  test('names a delete nobody answered when read, create and update are', () => {
+    const f = found(AUTH + `
+      model Subscription {
+        id    Int  @id
+        orgId Int
+        @@gate(4)
+        @@allow('read,create,update', orgId == auth().id)
+      }`, ID)
+    expect(f.map(x => x.model)).toEqual(['Subscription'])
+    expect(f[0].message).toContain('delete')
+    expect(f[0].message).not.toContain('read')
+  })
+
+  test('an operation gated to system is not asked about', () => {
+    expect(found(AUTH + `
+      model Subscription {
+        id Int @id  orgId Int
+        @@gate(4.4.4.8)
+        @@allow('read,update', orgId == auth().id)
+      }`, ID)).toEqual([])
+  })
+
+  test('ownership is read through a required relation to an owned model', () => {
+    const SRC = AUTH + `
+      model Team {
+        id      Int  @id
+        ownerId Int
+        owner   User @relation(fields: [ownerId], references: [id])
+        @@gate(4)
+        @@allow('all', ownerId == auth().id)
+      }
+      model Issue {
+        id     Int  @id
+        teamId Int
+        team   Team @relation(fields: [teamId], references: [id])
+        @@gate(4)
+      }`
+    const f = found(SRC, ID)
+    expect(f.map(x => [x.model, x.confidence])).toEqual([['Issue', 'likely']])
+
+    // optional means some rows have no parent, so the parent proves nothing
+    const g = found(SRC.replace('teamId Int', 'teamId Int?').replace('team   Team ', 'team   Team? '), ID)
+    expect(g.map(x => [x.model, x.confidence])).toEqual([['Issue', 'possible']])
+  })
+
+  test('ownership through a chain of parents, and a cycle terminates', () => {
+    const f = found(AUTH + `
+      model A { id Int @id  ownerId Int  owner User @relation(fields: [ownerId], references: [id])
+        bId Int  b B @relation(fields: [bId], references: [id])
+        @@allow('all', ownerId == auth().id)  @@gate(4) }
+      model B { id Int @id  aId Int  a A @relation(fields: [aId], references: [id])  @@gate(4) }
+      model C { id Int @id  bId Int  b B @relation(fields: [bId], references: [id])  @@gate(4) }`, ID)
+    expect(f.map(x => [x.model, x.confidence]).sort()).toEqual([['B', 'likely'], ['C', 'likely']])
   })
 })
 
@@ -267,6 +339,25 @@ describe('json-column-with-no-shape', () => {
     expect(found(`type M { note String }\nmodel A { id Int @id  meta Json @type(M) }`, ID))
       .toEqual([])
   })
+
+  // FJS-1292: @type on an @@extensible column is a parse error, and the
+  // `<column>Slots` mirror is generated, so the advice pointed at both.
+  test('silent on an @@extensible column and the mirror the framework generated', () => {
+    const src = `
+      enum FieldKind { text number }
+      model CustomField {
+        id Int @id  model String  key String  type FieldKind  slot String?
+        @@unique([model, key])
+        @@unique([model, slot], nullsDistinct: true)
+      }
+      model Issue {
+        id Int @id
+        fields Json @default("{}")
+        @@extensible(fields, declaredBy: CustomField, max: { text: 2, number: 1 })
+      }
+      model Plain { id Int @id  meta Json }`
+    expect(found(src, ID).map(x => `${x.model}.${x.field}`)).toEqual(['Plain.meta'])
+  })
 })
 
 describe('field-group-repeated-across-models', () => {
@@ -303,6 +394,15 @@ describe('field-group-repeated-across-models', () => {
       model A { id Int @id  @@trait(T) }
       model B { id Int @id  @@trait(T) }
       model C { id Int @id  @@trait(T) }`, ID)).toEqual([])
+  })
+
+  test('a derived column is not one a trait could declare', () => {
+    // @@mirror adds missingSince and refuses a declared one, so the key beside
+    // it is one shared column, not a group.
+    expect(found(`
+      model A { id Int @id  externalId String  @@mirror(key: externalId) }
+      model B { id Int @id  externalId String  @@mirror(key: externalId) }
+      model C { id Int @id  externalId String  @@mirror(key: externalId) }`, ID)).toEqual([])
   })
 })
 
@@ -475,8 +575,8 @@ describe('a schema that took every suggestion', () => {
         email    String  @email
         password String  @hashed
         @@auth
-        @@gate("2.4.4.5")
-        @@allow('update', id == auth().id)
+        @@gate(2.4.4.5)
+        @@allow('read,update,delete', id == auth().id)
       }
       model Order {
         id        Int      @id
@@ -487,8 +587,8 @@ describe('a schema that took every suggestion', () => {
         deletedAt DateTime?
         @@softDelete
         @@transitions(status, draft -> paid)
-        @@gate("2.4.4.5")
-        @@allow('read', ownerId == auth().id)
+        @@gate(2.4.4.5)
+        @@allow('read,update,delete', ownerId == auth().id)
       }`)).toEqual([])
   })
 })

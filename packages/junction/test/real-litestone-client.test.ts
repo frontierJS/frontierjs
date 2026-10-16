@@ -13,12 +13,17 @@
 // are exercised together.
 
 import { describe, test, expect } from 'bun:test'
-import { createClient } from '../../litestone/src/index.js'
-import { createService, createBaseService } from '../src/core/service.ts'
+import { Database } from 'bun:sqlite'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createClient, parse, generateDDL, splitStatements } from '../../litestone/src/index.js'
+import { createLogger } from '../src/core/logger.ts'
+import { buildBase, buildService } from '../src/core/service.ts'
 import { gateAuth, autoValidate, liftReservedQuery, resetReservedQueryChecks, withLitestoneDb } from '../src/core/litestone.ts'
 import { toFrameworkError } from '../src/core/errors.ts'
 import { splitParams } from '@frontierjs/toolbelt/directives'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 import { createApp, createStubAuth } from '../index.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
 
@@ -36,7 +41,7 @@ async function mkDb(): Promise<AnyClient> {
         body      String?
         createdAt DateTime @default(now())
 
-        @@gate("0.4.4.5")
+        @@gate(0.4.4.5)
       }
     `,
   }) as unknown as AnyClient
@@ -60,23 +65,23 @@ describe('accessor resolution against a real Litestone client', () => {
     const db = await mkDb()
     await db.asSystem().post!.create({ data: { id: 1, title: 'Hi' } })
 
-    const out = await createService(def).find(ctx(db)) as { data: unknown[] }
+    const out = await buildService(def).find(ctx(db)) as { data: unknown[] }
     expect(out.data).toHaveLength(1)
   })
 
-  test('model omitted — the whole service file is createBaseService({})', async () => {
+  test('model omitted — the whole service file is buildBase({})', async () => {
     const db = await mkDb()
     await db.asSystem().post!.create({ data: { id: 1, title: 'Hi' } })
 
     // Exactly what the autoloader builds from services/posts.service.ts.
-    const svc = createService({ name: 'posts', ...(createBaseService({}) as object) } as never)
+    const svc = buildService({ name: 'posts', ...(buildBase({}) as object) } as never)
     const out = await svc.find(ctx(db)) as { data: unknown[] }
     expect(out.data).toHaveLength(1)
   })
 
   test('an unresolvable name reports Junction\'s diagnostic, not a proxy TypeError', async () => {
     const db  = await mkDb()
-    const svc = createService({ name: 'widgets', model: 'widget' })
+    const svc = buildService({ name: 'widgets', model: 'widget' })
     const err = await svc.find(ctx(db, { service: 'widgets' })).catch((e: Error) => e) as Error
 
     expect(err.message).toContain("not found on db client")
@@ -89,7 +94,7 @@ describe('accessor resolution against a real Litestone client', () => {
 
 describe('derived hooks against a real Litestone client', () => {
 
-  test('@@gate("0.4.4.5") — anonymous read allowed, anonymous write rejected', async () => {
+  test('@@gate(0.4.4.5) — anonymous read allowed, anonymous write rejected', async () => {
     const db = await mkDb()
     expect(() => gateAuth(undefined, 'read')(ctx(db))).not.toThrow()
     expect(() => gateAuth(undefined, 'create')(ctx(db))).toThrow('Authentication required')
@@ -139,7 +144,7 @@ describe('the template and soft-delete directives reach a real client', () => {
     return db
   }
 
-  const quotes = () => createService({ name: 'quotes', model: 'Quote' })
+  const quotes = () => buildService({ name: 'quotes', model: 'Quote' })
 
   test('the default read still hides templates', async () => {
     const out = await quotes().find(ctx(await tmplDb(), { service: 'quotes' })) as { data: { id: number }[] }
@@ -195,7 +200,7 @@ describe('the template and soft-delete directives reach a real client', () => {
     // FJS-293: this answered the live rows — the opposite of the question —
     // with nothing anywhere saying the flag had not applied.
     const db  = await mkDb()
-    const err = await createService({ name: 'posts', model: 'Post' })
+    const err = await buildService({ name: 'posts', model: 'Post' })
       .find(ctx(db, { directives: { onlyDeleted: true } })).catch((e: Error) => e) as Error & { status?: number }
 
     expect(err.name).toBe('CapabilityNotDeclaredError')
@@ -245,7 +250,7 @@ describe('$search answers the list envelope', () => {
     // It answered `{"limit":20,"offset":0}` — the branch destructured
     // `{ rows, total }` off the array `search()` returns, so a search that
     // matched came back empty with a 200.
-    const out = await createService({ name: 'docs', model: 'Doc' })
+    const out = await buildService({ name: 'docs', model: 'Doc' })
       .find(ctx(await ftsDb(), { service: 'docs', directives: { search: 'widget' } })) as
       { data: { id: number }[]; total: number }
 
@@ -264,7 +269,7 @@ describe('$search answers the list envelope', () => {
     // Asserted as a PAIR. Rank is still the default and is a different list, so
     // a boundary that ignored the directive fails the first and one that always
     // sorted fails the second.
-    const svc = createService({ name: 'docs', model: 'Doc' })
+    const svc = buildService({ name: 'docs', model: 'Doc' })
 
     const ordered = await svc.find(ctx(await rankedDb(), {
       service: 'docs', directives: { search: 'widget', orderBy: { body: 'asc' } },
@@ -289,7 +294,7 @@ describe('$search answers the list envelope', () => {
     // is the bridge (Invariant 4) — `toFrameworkError` maps by `err.name`. The
     // `@@fts` row below asserts a status because litestone stamps that one
     // itself, which is the difference rather than an inconsistency here.
-    const err = await createService({ name: 'docs', model: 'Doc' })
+    const err = await buildService({ name: 'docs', model: 'Doc' })
       .find(ctx(await rankedDb(), {
         service: 'docs', directives: { search: 'widget', orderBy: { nope: 'asc' } },
       })).catch((e: Error) => e) as Error
@@ -299,7 +304,7 @@ describe('$search answers the list envelope', () => {
     expect(err.message).toContain('nope')
 
     // The control one character away: the same call on a real column answers.
-    const ok = await createService({ name: 'docs', model: 'Doc' })
+    const ok = await buildService({ name: 'docs', model: 'Doc' })
       .find(ctx(await rankedDb(), {
         service: 'docs', directives: { search: 'widget', orderBy: { body: 'asc' } },
       })) as { data: { id: number }[] }
@@ -323,7 +328,7 @@ describe('$search answers the list envelope', () => {
     const names = ['mini-redis', 'c++ guide', 'someone@gmail.com', 'rust: the book', '(512) 555-1234', "o'brien"]
     await db.box!.createMany({ data: names.map((name, id) => ({ id, name })) })
     const app = await createTestApp({
-      services: [() => createService({ name: 'boxes', model: 'Box' })],
+      services: [buildService({ name: 'boxes', model: 'Box' })],
       hooks:    { around: { all: [withLitestoneDb(db as never)] } } as never,
     })
     for (const [typed, want] of [
@@ -339,7 +344,7 @@ describe('$search answers the list envelope', () => {
   test('a model with no @@fts refuses with a 400, not a 500', async () => {
     // FJS-292. The message always named the fix; the STATUS said the server
     // had broken about a request it understood.
-    const err = await createService({ name: 'posts', model: 'Post' })
+    const err = await buildService({ name: 'posts', model: 'Post' })
       .find(ctx(await mkDb(), { directives: { search: 'x' } })).catch((e: Error) => e) as Error & { status?: number }
 
     expect(err.name).toBe('CapabilityNotDeclaredError')
@@ -460,7 +465,7 @@ describe('@version survives autoValidate — the patch schema is the UPDATE sche
     const db  = await mkDocDb()
     await db.asSystem().doc!.create({ data: { id: 1, title: 'a' } })
 
-    const svc = createService({ name: 'docs', model: 'Doc' }) as never as
+    const svc = buildService({ name: 'docs', model: 'Doc' }) as never as
       { patch(c: ServiceContext): Promise<Record<string, unknown>> }
 
     const first = ctx(db, { service: 'docs', method: 'patch', id: 1, data: { title: 'b', ver: 1 }, transients: {} })
@@ -489,7 +494,7 @@ describe('@version survives autoValidate — the patch schema is the UPDATE sche
     expect((c.data as Record<string, unknown>).id).toBeUndefined()
     expect((c.data as Record<string, unknown>).ver).toBe(1)
 
-    const svc = createService({ name: 'docs', model: 'Doc' }) as never as
+    const svc = buildService({ name: 'docs', model: 'Doc' }) as never as
       { patch(c: ServiceContext): Promise<Record<string, unknown>> }
     expect((await svc.patch(c)).id).toBe(1)
   })
@@ -504,7 +509,7 @@ describe('@version survives autoValidate — the patch schema is the UPDATE sche
     const db  = await mkDocDb()
     await db.asSystem().doc!.create({ data: { id: 1, title: 'a' } })
 
-    const svc = createService({ name: 'docs', model: 'Doc' }) as never as
+    const svc = buildService({ name: 'docs', model: 'Doc' }) as never as
       { patch(c: ServiceContext): Promise<Record<string, unknown>> }
 
     const first = ctx(db, { service: 'docs', method: 'patch', id: 1, data: { title: 'b', ver: 1 }, transients: {} })
@@ -619,7 +624,7 @@ async function mkSoftDb(): Promise<AnyClient> {
 }
 
 describe('$withDeleted on a write', () => {
-  const svc = () => createService({ name: 'docs', model: 'doc' })
+  const svc = () => buildService({ name: 'docs', model: 'doc' })
 
   const seedDeleted = async () => {
     const db = await mkSoftDb()
@@ -689,7 +694,7 @@ describe('$withDeleted on a write', () => {
   // or the directive works on one kind of service and not the other, so the
   // override is exercised here rather than left to the default path above.
   test('the override path lifts too, and still refuses the column itself', async () => {
-    const over = createService({ name: 'docs', model: 'doc', softDelete: 'deletedAt' } as never)
+    const over = buildService({ name: 'docs', model: 'doc', softDelete: 'deletedAt' } as never)
 
     const db  = await seedDeleted()
     const err = await over.patch(ctx(db, {
@@ -742,7 +747,7 @@ describe('$withDeleted on a write', () => {
   })
 
   test('a bulk remove refuses it too — same reason, same sentence', async () => {
-    const bulk = createService({ name: 'docs', model: 'doc', allowBulk: true } as never)
+    const bulk = buildService({ name: 'docs', model: 'doc', allowBulk: true } as never)
     const db   = await seedDeleted()
     const err  = await bulk.remove(ctx(db, {
       service: 'docs', method: 'remove', query: { code: 'X' }, directives: { withDeleted: true },
@@ -764,7 +769,7 @@ describe('$withDeleted on a write', () => {
       db: ':memory:',
       schema: 'model Note { id Int @id  body String }',
     }) as unknown as AnyClient
-    const notes = createService({ name: 'notes', model: 'note' })
+    const notes = buildService({ name: 'notes', model: 'note' })
     await (plain as unknown as { asSystem(): Record<string, { create(a: unknown): Promise<unknown> }> })
       .asSystem().note!.create({ data: { id: 1, body: 'b' } })
     await notes.remove(ctx(plain, {
@@ -777,7 +782,7 @@ describe('$withDeleted on a write', () => {
 // FJS-1584 — a by-id restore is the Undo a screen offers, so it answers what
 // remove answers: the row, or a 404. It answered litestone's array.
 describe('restore by id', () => {
-  const svc = () => createService({ name: 'docs', model: 'doc' })
+  const svc = () => buildService({ name: 'docs', model: 'doc' })
 
   test('answers the row it brought back, and a read sees it again', async () => {
     const db = await mkSoftDb()
@@ -832,7 +837,7 @@ describe('a dot-path write key crosses autoValidate and is refused by the Data b
           id       Int    @id
           name     String
           settings Json   @type(Settings)
-          @@gate("0.0.0.0")
+          @@gate(0.0.0.0)
         }
       `,
     }) as unknown as AnyClient
@@ -921,7 +926,7 @@ describe('a $merge payload reaches the Data boundary and is graded there', () =>
           id  Int  @id
           doc Json @default("{}")
           typ Json @type(Settings)
-          @@gate("0.0.0.0")
+          @@gate(0.0.0.0)
         }
       `,
     }) as unknown as AnyClient
@@ -972,7 +977,7 @@ describe('a hook that hands a derived verb the system client', () => {
     await db.asSystem().note.create({ data: { ownerId: 'u2' } })
     const app = createApp({ db, auth: createStubAuth({ users: [{ id: 'u1', role: 'member' }] }) })
     let lift = false
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'notes', model: 'Note',
       hooks: { before: { find: [(ctx: ServiceContext) => { if (lift) ctx.locals.db = (ctx.locals.db as any).asSystem() }] } },
     }))
@@ -983,5 +988,45 @@ describe('a hook that hands a derived verb the system client', () => {
     expect(rows(await asU1())).toHaveLength(0)
     lift = true
     expect(rows(await asU1())).toHaveLength(1)
+  })
+})
+
+// FJS-1796: an app over a file that is not its schema's starts and answers
+// health, so the start says so. Warned rather than refused: a fresh deploy
+// starts before its first `db push`.
+describe('start over a database that is not the schema\'s', () => {
+  const schema = `
+    model Workspace { id Int @id; name String; plan String }
+    model Page { id Int @id; title String }
+  `
+
+  async function started(db: unknown) {
+    const entries: Array<{ level: string; message: string }> = []
+    const app = createApp({
+      db,
+      config: { port: 0, services: { dir: '/nonexistent' } },
+      logger: createLogger({ level: 'debug', writers: [(e) => entries.push(e as never)] }),
+    } as never)
+    await app.start()
+    await app.stop()
+    return entries.filter(e => e.level === 'warn' && /does not hold this app's schema/.test(e.message))
+  }
+
+  test('warns by model for a missing table and a missing column', async () => {
+    const file = `${mkdtempSync(join(tmpdir(), 'jn-gaps-'))}/other.db`
+    const other = new Database(file)
+    other.run('CREATE TABLE workspace (id INTEGER PRIMARY KEY, name TEXT NOT NULL)')
+    other.close()
+
+    const warned = await started(await createClient({ schema, db: file }))
+    expect(warned).toHaveLength(1)
+    expect(warned[0].message).toContain(`Workspace: table 'workspace' lacks plan`)
+    expect(warned[0].message).toContain(`Page: no table 'page'`)
+  })
+
+  test('says nothing over a database built from the schema', async () => {
+    const db: any = await createClient({ schema, db: ':memory:' })
+    for (const stmt of splitStatements((generateDDL as (s: unknown, o: unknown) => string)(parse(schema).schema, { foreignKeys: true }))) db.$rawDbs.main.run(stmt)
+    expect(await started(db)).toHaveLength(0)
   })
 })

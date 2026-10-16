@@ -15,7 +15,8 @@
  */
 
 import { stripVTControlCharacters } from 'node:util'
-import { validRelativePath } from './static.js'
+import { realpath, stat }          from 'node:fs/promises'
+import { validRelativePath }       from './static.js'
 
 /** A digest is `sha256:` and 64 hex characters. Anything else is not an
  *  identity and Basecamp refuses to record it, so this refuses to report it. */
@@ -93,8 +94,29 @@ const HEALTH = { attempts: 10, intervalMs: 3_000 }
 const EXPOSED_LABEL = 'fjs.exposed-port'
 const EXPOSED_SET   = 'inet basecamp exposed'
 
+// ─── restore ─────────────────────────────────────────────────────────────────
+// The extract runs in a throwaway container holding only the volume and the
+// archive, read-only, with no network: a tar entry naming `../etc` or an
+// absolute path writes into that container's own filesystem, which goes with
+// it. busybox's tar detects gzip on its own.
+const RESTORE_IMAGE = 'busybox:1.36'
+// Exit 3 is the refusal. Overwrite empties the volume first rather than
+// extracting over it: a `-wal` left from the old database beside a new one is
+// replayed into it on the next open.
+const RESTORE_SCRIPT = `set -e
+if [ -n "$(ls -A /data)" ]; then
+  [ "$FJS_OVERWRITE" = 1 ] || { echo "the volume already holds files" >&2; exit 3; }
+  find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+fi
+tar -xf /restore -C /data
+find /data -type f -exec stat -c %s {} + | awk '{ n++; b += $1 } END { printf "%.0f %.0f\\n", n, b }'`
+// A multi-GB archive is minutes of disk, and the runner's default would kill
+// it partway with the volume half written.
+const RESTORE_TIMEOUT_MS = 3_600_000
+
 export function createDocker({
   run = spawnRun, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/apps', health = HEALTH,
+  restoreDir = '/var/lib/outpost/restore',
 } = {}) {
 
   /** Run a docker command, or throw with what the machine actually said. A
@@ -460,6 +482,58 @@ export function createDocker({
 
     published,
     healthCheck,
+
+    /**
+     * An archive already on this machine, extracted into the app's data volume
+     * (`FJS-D943`) — adopting a running app's SQLite files, or a backup run
+     * backwards. `path` is under `restoreDir` and nowhere else: a signed caller
+     * naming `/etc/shadow` would otherwise read any file on the box into a
+     * volume it can then download. The archive is put there by `scp` or
+     * `rsync`, and stays, so a failed restore is run again.
+     */
+    async restore({ appId, path, overwrite = false }) {
+      if (typeof appId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(appId))
+        throw new Error(`app_id '${appId}' is not a plain name`)
+      const relative = typeof path === 'string' && path.startsWith(`${restoreDir}/`) ? path.slice(restoreDir.length + 1) : path
+      const bad = validRelativePath(relative)
+      if (bad) throw new Error(`${bad} — name a file under ${restoreDir}`)
+
+      // The prefix check above is over the name a caller wrote; realpath is the
+      // file docker would mount, and a symlink inside the root points anywhere.
+      const root = await realpath(restoreDir).catch(() => null)
+      if (!root) throw new Error(`${restoreDir} does not exist on this machine — copy the archive there first`)
+      const archive = await realpath(`${root}/${relative}`).catch(() => null)
+      if (!archive) throw new Error(`no file '${relative}' under ${restoreDir}`)
+      if (!archive.startsWith(`${root}/`)) throw new Error(`'${relative}' resolves outside ${restoreDir}`)
+      if (!(await stat(archive)).isFile()) throw new Error(`'${relative}' is not a file`)
+      if (/[,:]/.test(archive)) throw new Error(`'${archive}' has a ':' or ',' that a mount cannot carry`)
+
+      // A container holding the volume is a SQLite writer with the file open,
+      // and a stopped one starts again onto whatever this left. `/stop` removes
+      // both the app and its `_replaced`.
+      const volume  = `fjs-${appId}-data`
+      const holders = await run(['docker', 'ps', '-a', '--filter', `volume=${volume}`, '--format', '{{.Names}}'])
+      if (holders.exitCode !== 0) throw new Error(`docker ps failed (exit ${holders.exitCode}): ${(holders.stderr ?? '').trim()}`)
+      const held = holders.stdout.trim().split('\n').filter(Boolean)
+      if (held.length) throw new Error(`${volume} is held by ${held.join(', ')} — stop the app before restoring into it`)
+
+      // `--mount`, not `-v`: `-v` given a source the daemon cannot see mounts an
+      // empty directory, and the restore extracts nothing and reports success.
+      const result = await run([
+        'docker', 'run', '--rm', '--network', 'none',
+        '-e', `FJS_OVERWRITE=${overwrite === true ? 1 : 0}`,
+        '-v', `${volume}:/data`,
+        '--mount', `type=bind,src=${archive},dst=/restore,readonly`,
+        RESTORE_IMAGE, 'sh', '-c', RESTORE_SCRIPT,
+      ], { timeoutMs: RESTORE_TIMEOUT_MS })
+      if (result.exitCode === 3) throw new Error(`${volume} already holds files — send overwrite: true to replace them`)
+      if (result.exitCode !== 0) {
+        const said = (result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
+        throw new Error(`restore into ${volume} failed (exit ${result.exitCode}): ${said}`)
+      }
+      const [files, bytes] = result.stdout.trim().split('\n').at(-1).split(/\s+/).map(Number)
+      return { volume, archive, files, bytes, overwrite: overwrite === true }
+    },
 
     /** An operator's script, as root over the box. The unit is sandboxed and the
      *  script is not: it runs in a transient unit the manager starts, so it

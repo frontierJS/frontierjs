@@ -89,7 +89,7 @@ model Notification {
   // Create is 8 and NOT 9. `9` is LOCKED — a wall asSystem() does not pass
   // either — so a 9 in the create slot would stop this package from ever
   // writing a row.
-  @@gate("0.8.4.8")
+  @@gate(0.8.4.8)
   @@unique([userId, type, deliveryKey], nullsDistinct: true)
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)

@@ -22,7 +22,7 @@
   //   import { commandPalette } from '../stores/commandPaletteStore.js'
   //   $: commandPalette.open
   //
-  //   <mesa:window on:keydown={(e) => {
+  //   <mesa:window onkeydown={(e) => {
   //     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
   //       e.preventDefault()
   //       commandPalette.toggle()
@@ -88,7 +88,7 @@
   // Focus search input immediately on mount
   var _opener = typeof document === 'undefined' ? null : document.activeElement
   $.onMount(() => {
-    inputEl?.focus()
+    $.focus(inputEl)
     return () => {
       clearTimeout(_timer); _asking?.abort()
       // Focus is still in the palette (or nowhere) when it goes; send it back
@@ -215,7 +215,7 @@
         e.preventDefault()
         const stops = [inputEl, ...e.currentTarget.querySelectorAll('.fjs-cp-clear')].filter(Boolean)
         const at    = stops.indexOf(document.activeElement)
-        stops[(at + (e.shiftKey ? -1 : 1) + stops.length) % stops.length]?.focus()
+        $.focus(stops[(at + (e.shiftKey ? -1 : 1) + stops.length) % stops.length])
         break
       }
     }
@@ -262,8 +262,8 @@
   <div
     class="fjs-cp-backdrop"
     {@attach backdropAnim}
-    on:click|self={close}
-    on:keydown={handleKeydown}
+    onclick|self={close}
+    onkeydown={handleKeydown}
   >
     <!-- Panel -->
     <div
@@ -306,7 +306,7 @@
             type="button"
             class="fjs-cp-clear"
             aria-label="Clear search"
-            on:click={() => { query = ''; inputEl?.focus() }}
+            onclick={() => { query = ''; $.focus(inputEl) }}
           >✕</button>
         {/if}
         <kbd>Esc</kbd>
@@ -375,8 +375,8 @@
                 data-active={isActive}
                 role="option"
                 aria-selected={isActive}
-                on:mousemove={() => { if (idx !== gi) idx = gi }}
-                on:click={() => run(item)}
+                onmousemove={() => { if (idx !== gi) idx = gi }}
+                onclick={() => run(item)}
               >
                 <!-- Icon -->
                 {#if item.icon !== undefined}

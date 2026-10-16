@@ -17,11 +17,13 @@
 // ============================================================
 
 import { describe, it, expect } from 'bun:test'
-import { createTestApp, request, Forbidden, createService, callService } from '@frontierjs/junction'
+import { createTestApp, createApp, createStubAuth, request, Forbidden, createService, callService } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import { conduit as conduitPlugin } from './src/plugin.ts'
 import { createStaticResolver } from './src/credentials.ts'
 import type { TargetDescriptor } from './src/types.ts'
+import type { MirrorClaim } from './src/mirror.ts'
+import { createClient } from '../litestone/src/index.js'
 
 // `app.conduit` is fully typed here: Conduit augments Junction's AppConduit
 // interface, so IConduit's members resolve without a cast. If that
@@ -545,18 +547,96 @@ describe('broker subscription health', () => {
   })
 })
 
+// FJS-D1127: a receiver on a broker target is fed by the socket conduit
+// dialed, which was its verification. A route for it would take a frame from
+// anyone, verified by nothing.
+describe('a receiver that names a broker target', () => {
+  it('subscribes and mounts no route', async () => {
+    const broker = Bun.serve({ port: 0, fetch(req, s) { return s.upgrade(req) ? undefined : new Response('no', { status: 400 }) }, websocket: { message() {} } })
+    const app = await bootApp()
+    const c = conduitOf(app)
+    await c.register({ id: 'broker:x', kind: 'broker', protocol: 'websocket', address: `ws://127.0.0.1:${broker.port}/`, auth: { type: 'none' }, registered_at: 1_000, last_seen_at: null })
+    const landed: unknown[] = []
+    await c.receive({
+      provider: 'x', target: 'broker:x',
+      dialect: { parse: m => ({ id: m.id, type: 't', payload: m.body }), dedupeKey: m => m.id },
+      apply(ev) { landed.push(ev); return 'applied' },
+    })
+    expect(c.stats().subscriptions['broker:x']!.connected).toBe(true)
+    expect((await request(app).post('/broker:x').send({ id: 'f', type: 'message', body: 1 })).status).toBe(404)
+    expect((await request(app).post('/x').send({})).status).toBe(404)
+    expect(landed).toEqual([])
+    await c.destroy()
+    broker.stop(true)
+  })
+
+  // A Provider that redelivers nothing lost what it sent while the socket was
+  // down; the backfill starts at opened(), so it must fire on the redial and
+  // ahead of the new connection's first frame.
+  it('calls opened on every believed connection, ahead of that connection\'s first frame', async () => {
+    let dials = 0
+    const broker = Bun.serve({
+      port: 0,
+      fetch(req, s) { return s.upgrade(req) ? undefined : new Response('no', { status: 400 }) },
+      websocket: {
+        open(ws) {
+          const n = ++dials
+          ws.send(JSON.stringify({ id: `f${n}`, type: 'message', body: n }))
+          if (n === 1) setTimeout(() => ws.close(), 20)
+        },
+        message() {},
+      },
+    })
+    const app = await bootApp()
+    const c = conduitOf(app)
+    await c.register({ id: 'broker:x', kind: 'broker', protocol: 'websocket', address: `ws://127.0.0.1:${broker.port}/`, auth: { type: 'none' }, registered_at: 1_000, last_seen_at: null })
+    const order: string[] = []
+    await c.receive({
+      provider: 'x', target: 'broker:x',
+      dialect: { parse: m => ({ id: m.id, type: 't', payload: m.body }), dedupeKey: m => m.id },
+      opened() { order.push('opened') },
+      apply(ev) { order.push(String(ev.id)); return 'applied' },
+    })
+    const until = Date.now() + 3_000
+    while (order.length < 4 && Date.now() < until) await new Promise(r => setTimeout(r, 25))
+    expect(order).toEqual(['opened', 'f1', 'opened', 'f2'])
+    await c.destroy()
+    broker.stop(true)
+  })
+
+  it('frees the target on deregister, so the same id can be registered and received again', async () => {
+    const broker = Bun.serve({ port: 0, fetch(req, s) { return s.upgrade(req) ? undefined : new Response('no', { status: 400 }) }, websocket: { message() {} } })
+    const app = await bootApp()
+    const c = conduitOf(app)
+    const target = { id: 'broker:x', kind: 'broker', protocol: 'websocket', address: `ws://127.0.0.1:${broker.port}/`, auth: { type: 'none' }, registered_at: 1_000, last_seen_at: null } as TargetDescriptor
+    const receiver = {
+      provider: 'x', target: 'broker:x',
+      dialect: { parse: (m: { id: string; body: unknown }) => ({ id: m.id, type: 't', payload: m.body }), dedupeKey: (m: { id: string }) => m.id },
+      apply: () => 'applied' as const,
+    }
+    await c.register(target)
+    await c.receive(receiver)
+    await c.deregister('broker:x')
+    await c.register(target)
+    await c.receive(receiver)
+    expect(c.stats().subscriptions['broker:x']!.connected).toBe(true)
+    await c.destroy()
+    broker.stop(true)
+  })
+})
+
 // FJS-2070: an afterCommit effect is at-most-once, so a send from one warns in
 // development and names ctx.enqueue, the durable spelling.
 describe('app.conduit.send() inside an afterCommit drain', () => {
   it('warns once per call site, and not outside the drain', async () => {
     const app = await bootApp({ targets: [] })
-    const svc = createService({
+    const svc = app.services.register(createService({
       name: 'pings',
       async create() { return { ok: true } },
       hooks: { after: { create: [(c: any) => {
         c.afterCommit(() => conduitOf(app).send({ target: 'nowhere', method: 'GET', path: '/' } as never))
       }] } },
-    } as never)
+    } as never))
     const logged: string[] = []
     const real = console.warn
     console.warn = (...a: unknown[]) => { logged.push(a.map(String).join(' ')) }
@@ -571,5 +651,229 @@ describe('app.conduit.send() inside an afterCommit drain', () => {
     expect(logged).toHaveLength(1)
     expect(logged[0]).toContain('app.conduit.send()')
     expect(logged[0]).toContain('ctx.enqueue')
+  })
+})
+
+// ─── A mirror claim (`FJS-D1125`) ────────────────────────────
+
+// A Provider holding posts, which answers only a caller's own token: the
+// forward must spend the per-caller target as the user making the request.
+function acmeProvider() {
+  const posts = new Map<string, { id: string; channel: string; text: string }>()
+  const seen: Array<{ method: string; path: string; auth: string | null }> = []
+  const bodies: unknown[] = []
+  let n = 0
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const url = new URL(req.url)
+      const auth = req.headers.get('authorization')
+      seen.push({ method: req.method, path: url.pathname, auth })
+      if (!auth?.startsWith('Bearer tok-')) return Response.json({ message: 'no token' }, { status: 401 })
+      const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json() as { channel?: string; text?: string }
+      if (body) bodies.push(body)
+      if (req.method === 'POST' && url.pathname === '/posts') {
+        if (body!.text === 'refuse me') return Response.json({ message: 'text is not allowed' }, { status: 400 })
+        const post = { id: `p${++n}`, channel: body!.channel!, text: body!.text! }
+        posts.set(post.id, post)
+        return Response.json(post, { status: 201 })
+      }
+      const id = url.pathname.match(/^\/posts\/(\w+)$/)?.[1]
+      const post = id ? posts.get(id) : undefined
+      if (!post) return Response.json({ message: 'not found' }, { status: 404 })
+      if (req.method === 'PATCH') { post.text = body!.text!; return Response.json(post) }
+      if (req.method === 'DELETE') { posts.delete(post.id); return Response.json({ status: 'OK' }) }
+      return Response.json(post)
+    },
+  })
+  return { server, posts, seen, bodies }
+}
+
+const acmeClaim = (): MirrorClaim => ({
+  provider: 'acme',
+  models: {
+    Post: {
+      key: 'externalId', target: 'provider:acme:user',
+      parse: (p: { id?: string; channel: string; text: string }) =>
+        p?.id ? { externalId: p.id, channelExternalId: p.channel, message: p.text } : null,
+      // `pendingId` is the claim's input and no column of Post's: the payload
+      // is the claim's, so a row validator in front of it would strip it.
+      create: (i: { channelExternalId: string; message: string; pendingId?: string }) => {
+        if (!i.message) throw new TypeError('message is required')
+        return { method: 'POST', path: '/posts', body: { channel: i.channelExternalId, text: i.message, ...(i.pendingId ? { pending: i.pendingId } : {}) } }
+      },
+      update: (id: string, p: { message: string }) => ({ method: 'PATCH', path: `/posts/${id}`, body: { text: p.message } }),
+      delete: (id: string) => ({ method: 'DELETE', path: `/posts/${id}` }),
+    },
+  },
+})
+
+const MIRROR_SCHEMA = `
+model Post {
+  id                Int     @id
+  externalId        String
+  channelExternalId String
+  message           String
+  starred           Boolean @default(false) @local
+  @@mirror(key: externalId)
+}
+model Note {
+  id         Int    @id
+  externalId String @unique
+  body       String
+}`
+
+const TRANSITIONS_SCHEMA = 'enum Stage { draft live }\n' + MIRROR_SCHEMA
+  .replace('  message           String\n', '  message           String\n  stage             Stage   @default(draft)\n')
+  .replace('  @@mirror(key: externalId)\n}', '  @@mirror(key: externalId)\n  @@transitions(stage, publish: draft -> live)\n}')
+
+async function mirrorApp(opts: { claim?: MirrorClaim | null; schema?: string } = {}) {
+  const acme = acmeProvider()
+  const db = await createClient({ db: ':memory:', schema: opts.schema ?? MIRROR_SCHEMA })
+  const app = createApp({ db, auth: createStubAuth({ users: [{ id: 'u1', role: 'member' }, { id: 'u2', role: 'member' }] }) } as never)
+  app.configure(conduitPlugin({
+    credentials: { get: async () => null, getFor: async (_ref: string, who: { principal: string | null }) => who.principal ? `tok-${who.principal}` : null } as never,
+    targets: [{
+      id: 'provider:acme:user', kind: 'provider', protocol: 'http', address: `http://127.0.0.1:${acme.server.port}`,
+      auth: { type: 'bearer', ref: 'ACME', per_caller: true },
+      registered_at: 1_000, last_seen_at: null,
+    } as TargetDescriptor],
+  }))
+  app.services.register(createService({ name: 'posts', model: 'Post' }))
+  app.services.register(createService({ name: 'notes', model: 'Note' }))
+  if (opts.claim !== null) conduitOf(app).mirror(opts.claim ?? acmeClaim())
+  return { app, db, acme }
+}
+
+describe('a claimed mirror model forwards its generated writes', () => {
+  it('creates at the Provider as the caller, then lands the answered row by its key', async () => {
+    const { app, db, acme } = await mirrorApp()
+    try {
+      await app._startForTest()
+      const res = await request(app).post('/posts').auth('test-token-u1').send({ channelExternalId: 'c1', message: 'hello', pendingId: 'k1' })
+      expect(res.status).toBe(201)
+      expect(res.body).toMatchObject({ externalId: 'p1', channelExternalId: 'c1', message: 'hello' })
+      expect(acme.seen).toEqual([{ method: 'POST', path: '/posts', auth: 'Bearer tok-u1' }])
+      expect(acme.bodies).toEqual([{ channel: 'c1', text: 'hello', pending: 'k1' }])
+      expect(await (db as any).asSystem().post.findMany()).toEqual([{ id: 1, externalId: 'p1', channelExternalId: 'c1', message: 'hello', starred: false, missingSince: null }])
+    } finally { acme.server.stop(true) }
+  })
+
+  it('patches and removes through the row the caller names, keyed by the Provider id', async () => {
+    const { app, db, acme } = await mirrorApp()
+    try {
+      await app._startForTest()
+      const made = await request(app).post('/posts').auth('test-token-u2').send({ channelExternalId: 'c1', message: 'first' })
+      const id = (made.body as { id: number }).id
+      // `starred` is the app's own column: the Provider never sees it, and it
+      // is written here beside the row the Provider answered.
+      const edited = await request(app).patch(`/posts/${id}`).auth('test-token-u2').send({ message: 'edited', starred: true })
+      expect(edited.status).toBe(200)
+      expect(edited.body).toMatchObject({ id, externalId: 'p1', message: 'edited', starred: true })
+      expect(acme.posts.get('p1')!.text).toBe('edited')
+      expect(acme.bodies.at(-1)).toEqual({ text: 'edited' })
+      const gone = await request(app).delete(`/posts/${id}`).auth('test-token-u2')
+      expect(gone.status).toBe(200)
+      expect(acme.posts.has('p1')).toBe(false)
+      expect(await (db as any).asSystem().post.findMany()).toEqual([])
+      expect(acme.seen.map(s => `${s.method} ${s.path} ${s.auth}`)).toEqual([
+        'POST /posts Bearer tok-u2', 'PATCH /posts/p1 Bearer tok-u2', 'DELETE /posts/p1 Bearer tok-u2'])
+    } finally { acme.server.stop(true) }
+  })
+
+  it('answers the Provider\'s refusal and lands nothing', async () => {
+    const { app, db, acme } = await mirrorApp()
+    try {
+      await app._startForTest()
+      const refused = await request(app).post('/posts').auth('test-token-u1').send({ channelExternalId: 'c1', message: 'refuse me' })
+      expect(refused.status).toBe(422)
+      const unbuilt = await request(app).post('/posts').auth('test-token-u1').send({ channelExternalId: 'c1', message: '' })
+      expect(unbuilt.status).toBe(400)
+      expect((unbuilt.body as { message: string }).message).toContain('message is required')
+      expect(acme.seen).toHaveLength(1)
+      expect(await (db as any).asSystem().post.findMany()).toEqual([])
+    } finally { acme.server.stop(true) }
+  })
+
+  it('refuses a bulk write by name, before anything is sent', async () => {
+    const { app, acme } = await mirrorApp()
+    try {
+      await app._startForTest()
+      const bulk = await request(app).post('/posts').auth('test-token-u1').send([{ channelExternalId: 'c1', message: 'a' }])
+      expect(bulk.status).toBe(400)
+      expect((bulk.body as { message: string }).message).toContain('mirrored from acme')
+      expect(acme.seen).toEqual([])
+    } finally { acme.server.stop(true) }
+  })
+
+  it("grades the app's own write policies before it sends (FJS-3147)", async () => {
+    const schema = MIRROR_SCHEMA.replace('  @@mirror(key: externalId)\n}', `  @@mirror(key: externalId)
+  @@allow('read', true)
+  @@allow('create', channelExternalId != 'closed')
+  @@allow('update', message != 'frozen')
+  @@allow('delete', false)
+}`)
+    const { app, acme } = await mirrorApp({ schema })
+    try {
+      await app._startForTest()
+      const closed = await request(app).post('/posts').auth('test-token-u1').send({ channelExternalId: 'closed', message: 'hi' })
+      expect(closed.status).toBe(403)
+      expect(acme.seen).toEqual([])
+      const made = await request(app).post('/posts').auth('test-token-u1').send({ channelExternalId: 'c1', message: 'frozen' })
+      expect(made.status).toBe(201)
+      const id = (made.body as { id: number }).id
+      expect((await request(app).patch(`/posts/${id}`).auth('test-token-u1').send({ message: 'thawed' })).status).toBe(403)
+      expect((await request(app).delete(`/posts/${id}`).auth('test-token-u1')).status).toBe(403)
+      expect(acme.seen.map(r => r.method)).toEqual(['POST'])
+    } finally { acme.server.stop(true) }
+  })
+
+  it('leaves an unclaimed mirror to the generated verb, which refuses the Provider\'s columns', async () => {
+    const { app, db, acme } = await mirrorApp({ claim: null })
+    try {
+      await app._startForTest()
+      const res = await request(app).post('/posts').auth('test-token-u1').send({ channelExternalId: 'c1', message: 'hello' })
+      expect(res.status).toBe(403)
+      expect((res.body as { message: string }).message).toContain('"channelExternalId", "message" are @system')
+      expect(acme.seen).toEqual([])
+      expect(await (db as any).asSystem().post.findMany()).toEqual([])
+    } finally { acme.server.stop(true) }
+  })
+})
+
+describe('boot refuses a claim the schema does not back', () => {
+  const claimOn = (model: string, key = 'externalId'): MirrorClaim => {
+    const c = acmeClaim()
+    return { provider: 'acme', models: { [model]: { ...c.models.Post!, key } } }
+  }
+
+  for (const [why, claim, says] of [
+    ['a model the schema lacks', claimOn('Thread'), 'the schema has no model Thread'],
+    ['a model that is not @@mirror', claimOn('Note'), 'Note is not @@mirror'],
+    ['a key the schema does not name', claimOn('Post', 'providerId'), "keyed by 'providerId', and Post declares @@mirror(key: externalId)"],
+    ['a model declaring @@transitions', claimOn('Post'), 'Post declares @@transitions'],
+  ] as const) {
+    it(why, async () => {
+      const { app, acme } = await mirrorApp({ claim, ...(why.includes('@@transitions') ? { schema: TRANSITIONS_SCHEMA } : {}) })
+      try {
+        await expect(app._startForTest()).rejects.toThrow(says)
+      } finally { acme.server.stop(true) }
+    })
+  }
+
+  it('a second claim on one model, as it is made', async () => {
+    const { app, acme } = await mirrorApp()
+    try {
+      expect(() => conduitOf(app).mirror({ ...acmeClaim(), provider: 'other' })).toThrow("Post is already claimed by 'acme'")
+    } finally { acme.server.stop(true) }
+  })
+
+  it('a claim made after start, before it is held', async () => {
+    const { app, acme } = await mirrorApp({ claim: null })
+    try {
+      await app._startForTest()
+      expect(() => conduitOf(app).mirror(claimOn('Note'))).toThrow('Note is not @@mirror')
+      expect(conduitOf(app).claimed()).toEqual([])
+    } finally { acme.server.stop(true) }
   })
 })

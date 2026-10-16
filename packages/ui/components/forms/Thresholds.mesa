@@ -239,7 +239,7 @@
             disabled={resolvedDisabled}
             aria-valuetext={fmt(cut)}
             aria-invalid={!!displayError || null}
-            on:input={(e) => commit(i, fromSlider(e.target.value))}
+            oninput={(e) => commit(i, fromSlider(e.target.value))}
           />
           <output class="fjs-th-value">{fmt(cut)}</output>
         </label>

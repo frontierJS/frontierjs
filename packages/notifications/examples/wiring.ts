@@ -27,7 +27,7 @@ model Notification {              // PascalCase singular → accessor db.notific
   readAt      DateTime?           // null = unread
   createdAt   DateTime  @default(now())
 
-  @@gate("0.8.4.8")
+  @@gate(0.8.4.8)
   @@unique([userId, type, deliveryKey], nullsDistinct: true)
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)

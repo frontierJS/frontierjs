@@ -18,9 +18,9 @@ bun add @frontierjs/auth
 
 ```typescript
 // api/src/auth.ts
-import { createLitestoneAuth, createAuthCleanupJobs } from '@frontierjs/auth'
-import { createClient, GatePlugin, LEVELS }           from '@frontierjs/litestone'
-import { defineEnv }                                  from '@frontierjs/junction'
+import { createLitestoneAuth }               from '@frontierjs/auth'
+import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
+import { defineEnv }                        from '@frontierjs/junction'
 
 export const env = defineEnv({
   ENCRYPTION_KEY: { required: true, minLength: 64 },
@@ -71,15 +71,13 @@ export const auth = createLitestoneAuth(db, {
     })
   },
 })
-
-export const authCleanup = createAuthCleanupJobs(db)
 ```
 
 ```typescript
 // api/src/server.ts
-import { auth, db, authCleanup } from './auth.ts'
-import { createAuthPlugin }      from '@frontierjs/auth'
-import { createApp }             from '@frontierjs/junction'
+import { auth, db }         from './auth.ts'
+import { createAuthPlugin } from '@frontierjs/auth'
+import { createApp }        from '@frontierjs/junction'
 
 // `db` on createApp installs withLitestoneDb for you — it is an around hook,
 // not a plugin, and it is what puts a per-request scoped client on
@@ -87,14 +85,10 @@ import { createApp }             from '@frontierjs/junction'
 // not a thing.
 const app = createApp({ auth, db })
 
-// Mounts /auth/* and registers the account / sessions / api-keys services.
+// Mounts /auth/* and registers the account / sessions / api-keys services. Its
+// work() phase starts the hourly sweep of expired sessions, verifications,
+// OAuth flows and login challenges; `auth.cleanup.sweepNow()` runs it on demand.
 app.configure(createAuthPlugin(auth))
-
-app.configure({
-  name: 'auth-cleanup',
-  register() {},
-  async work() { authCleanup.start() },
-})
 
 await app.start()
 ```
@@ -187,17 +181,17 @@ the other depending on which registered last.
 and imports the rest with `import "@frontierjs/auth/schema.lite"`, so an upgrade
 reaches them:
 
-- `User` — identity. `@@gate("4.4.4.5")` — read, create and update USER(4),
+- `User` — identity. `@@gate(4.4.4.5)` — read, create and update USER(4),
   delete ADMINISTRATOR(5) — bounded by `@@allow('update', id == auth().id ||
   auth().isAdmin)` and `@allow('write', auth().isAdmin)` on `role` and
   `emailVerified`. A level says what kind of caller, a policy says whose row, a
   field policy says which columns; identity needs all three, and the columns a
   gate is graded from are exactly the ones a caller must not write. `@@trail(audit)`
-- `Credential` — passwords + API keys (`@@gate("8")` — SYSTEM)
-- `Session` — active sessions (`@@gate("8")`, `@@trail(audit)`)
-- `Verification` — reset, verify, OAuth-link and magic-link tokens (`@@gate("8")`)
-- `LoginChallenge` — a password accepted, a second factor owed (`@@gate("8")`)
-- `OauthFlow` — one in-flight OAuth redirect (`@@gate("8")`)
+- `Credential` — passwords + API keys (`@@gate(8)` — SYSTEM)
+- `Session` — active sessions (`@@gate(8)`, `@@trail(audit)`)
+- `Verification` — reset, verify, OAuth-link and magic-link tokens (`@@gate(8)`)
+- `LoginChallenge` — a password accepted, a second factor owed (`@@gate(8)`)
+- `OauthFlow` — one in-flight OAuth redirect (`@@gate(8)`)
 
 `8` is for a model nothing outside `asSystem()` has anything to say to. That is
 true of credential material and false of the table an app's own screens list —

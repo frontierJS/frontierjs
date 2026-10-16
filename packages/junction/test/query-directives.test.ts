@@ -34,7 +34,7 @@ function echoService() {
 }
 
 const seen = async (qs: string) => {
-  const app = await createTestApp({ services: [() => echoService()] })
+  const app = await createTestApp({ services: [echoService()] })
   const res = await request(app).get(`/things${qs}`)
   return (res.body as { data: Array<{ query: unknown; directives: unknown }> }).data[0]!
 }
@@ -73,7 +73,7 @@ describe('the bridge splits the query string in two', () => {
   })
 
   test('a garbage $limit is refused by name rather than producing NaN or the default', async () => {
-    const app = await createTestApp({ services: [() => echoService()] })
+    const app = await createTestApp({ services: [echoService()] })
     const res = await request(app).get('/things?$limit=banana')
     expect(res.status).toBe(400)
     expect(String((res.body as { message?: string }).message)).toContain('$limit')
@@ -87,7 +87,7 @@ describe('the bridge splits the query string in two', () => {
   })
 
   test('request().query() sends a numeric search as the browser client does', async () => {
-    const app = await createTestApp({ services: [() => echoService()] })
+    const app = await createTestApp({ services: [echoService()] })
     const res = await request(app).get('/things').query({ $search: '603' })
     const got = (res.body as { data: Array<{ directives: { search?: string } }> }).data[0]
     expect(got.directives.search).toBe('603')
@@ -121,7 +121,7 @@ describe('parseQuery consumes directives', () => {
 describe('internal callers can finally paginate', () => {
 
   test('CallOptions.directives reaches ctx.directives', async () => {
-    const app = await createTestApp({ services: [() => echoService()] })
+    const app = await createTestApp({ services: [echoService()] })
     const res = await app.service('things').find({ status: 'open' }, {
       directives: { limit: 7, offset: 2 },
     }) as { data: Array<{ query: unknown; directives: unknown }> }
@@ -143,14 +143,14 @@ describe('an in-process caller is refused an unknown `$` key too (FJS-D609)', ()
   // wire's query through app.service(), which asked the directive table
   // nothing -- so `$raw` reached Litestone as SQL (FJS-1816).
   test('app.service().find refuses `$raw` by name, as the bridge does', async () => {
-    const app = await createTestApp({ services: [() => echoService()] })
+    const app = await createTestApp({ services: [echoService()] })
     const call = app.service('things').find({ $raw: '1=1', status: 'open' })
     await expect(call).rejects.toMatchObject({ code: 400 })
     await expect(call).rejects.toThrow(/\$raw is not a directive/)
   })
 
   test('the control: a filter with no `$` is answered', async () => {
-    const app = await createTestApp({ services: [() => echoService()] })
+    const app = await createTestApp({ services: [echoService()] })
     const res = await app.service('things').find({ status: 'open' }) as { data: Array<{ query: unknown }> }
     expect(res.data[0]!.query).toEqual({ status: 'open' })
   })
@@ -165,13 +165,13 @@ describe('$wrap is tri-state', () => {
   })
 
   test('default — list envelopes, single unwraps', async () => {
-    const app = await createTestApp({ services: [() => listService()] })
+    const app = await createTestApp({ services: [listService()] })
     expect((await request(app).get('/things')).body).toMatchObject({ kind: 'list' })
     expect((await request(app).get('/things/1')).body).toEqual({ id: 1 })
   })
 
   test('$wrap=true envelopes a single too', async () => {
-    const app = await createTestApp({ services: [() => listService()] })
+    const app = await createTestApp({ services: [listService()] })
     expect((await request(app).get('/things/1?$wrap=true')).body).toMatchObject({ kind: 'single' })
   })
 
@@ -179,7 +179,7 @@ describe('$wrap is tri-state', () => {
     // Feathers' paginate:false. Previously $wrap was read as `=== 'true'`, so
     // asking for false was indistinguishable from not asking, and there was no
     // way to get a bare array out of find().
-    const app = await createTestApp({ services: [() => listService()] })
+    const app = await createTestApp({ services: [listService()] })
     const body = (await request(app).get('/things?$wrap=false')).body
     expect(Array.isArray(body)).toBe(true)
     expect(body).toHaveLength(2)
@@ -191,14 +191,14 @@ describe('$wrap is tri-state', () => {
 // (FJS-2194). The transport refuses by name instead.
 describe('a query past a limit is refused, not truncated', () => {
   test('1001 parameters answer 400', async () => {
-    const app = await createTestApp({ services: [() => echoService()] })
+    const app = await createTestApp({ services: [echoService()] })
     const qs  = '?' + Array.from({ length: 1001 }, (_, i) => `k${i}=1`).join('&')
     const res = await request(app).get(`/things${qs}`)
     expect(res.status).toBe(400)
   })
 
   test('an array of 1001 answers 400', async () => {
-    const app = await createTestApp({ services: [() => echoService()] })
+    const app = await createTestApp({ services: [echoService()] })
     const qs  = '?' + Array.from({ length: 1001 }, (_, i) => `id[notIn][]=${i}`).join('&')
     const res = await request(app).get(`/things${qs}`)
     expect(res.status).toBe(400)

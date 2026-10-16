@@ -19,12 +19,11 @@
 
 import { createService, BadRequest, Unauthorized, $ } from '@frontierjs/junction'
 import { db, shapedByCaller }                         from '../../core/resource.ts'
-import type { BasecampApp }                           from '../../basecamp.types.ts'
 import { NOTIFICATION_KINDS, NOTIFICATION_KIND_NAMES, notificationKind } from './kinds.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** The caller, or a refusal. The Data boundary would refuse a stranger anyway —
- *  `@@gate("1")` is VISITOR — but it refuses with a level, and somebody who is
+ *  `@@gate(1)` is VISITOR — but it refuses with a level, and somebody who is
  *  simply signed out needs the sentence. */
 function me(): string {
   const id = ($.me as { userId?: string } | null | undefined)?.userId
@@ -32,94 +31,92 @@ function me(): string {
   return id
 }
 
-export function createNotificationPreferencesService(_app: BasecampApp) {
-  return createService({
-    name:  'notification-preferences',
-    scope: keyScope('notification-preferences'),
-    model: 'NotificationPreference',
+export default createService({
+  name:  'notification-preferences',
+  scope: keyScope('notification-preferences'),
+  model: 'NotificationPreference',
 
-    // No `channel:`. `workspaceChannel` is the only channel this app has and
-    // these rows belong to no workspace — broadcasting one would hand a
-    // person's own settings to everybody they share a workspace with.
-    // A kind is NotificationKind's, so one outside it is refused naming `kind`.
-    methods: [
-      'find',
-      { method: 'save',  input: 'NotificationPreferenceSave' },
-      { method: 'reset', input: 'NotificationPreferenceReset' },
-    ],
+  // No `channel:`. `workspaceChannel` is the only channel this app has and
+  // these rows belong to no workspace — broadcasting one would hand a
+  // person's own settings to everybody they share a workspace with.
+  // A kind is NotificationKind's, so one outside it is refused naming `kind`.
+  methods: [
+    'find',
+    { method: 'save',  input: 'NotificationPreferenceSave' },
+    { method: 'reset', input: 'NotificationPreferenceReset' },
+  ],
 
-    /** The seven kinds, stored answers over defaults. */
-    async find() {
-      const userId = me()
-      const stored = new Map<string, any>(
-        (await db().notificationPreference.findMany({ where: { userId } }))
-          .map((r: any) => [r.kind, r]))
+  /** The seven kinds, stored answers over defaults. */
+  async find() {
+    const userId = me()
+    const stored = new Map<string, any>(
+      (await db().notificationPreference.findMany({ where: { userId } }))
+        .map((r: any) => [r.kind, r]))
 
-      return {
-        total: NOTIFICATION_KINDS.length,
-        data:  shapedByCaller(NOTIFICATION_KINDS.map(def => {
-          const row = stored.get(def.kind)
-          return {
-            kind:        def.kind,
-            label:       def.label,
-            description: def.description,
-            email:       row ? row.email : def.email,
-            inApp:       row ? row.inApp : def.inApp,
-            // `default` means nobody has chosen — which is not the same as
-            // having chosen the same values, and only this can tell them apart.
-            source:      row ? 'chosen' : 'default',
-            updatedAt:   row?.updatedAt ?? null,
-          }
-        })),
-      }
-    },
+    return {
+      total: NOTIFICATION_KINDS.length,
+      data:  shapedByCaller(NOTIFICATION_KINDS.map(def => {
+        const row = stored.get(def.kind)
+        return {
+          kind:        def.kind,
+          label:       def.label,
+          description: def.description,
+          email:       row ? row.email : def.email,
+          inApp:       row ? row.inApp : def.inApp,
+          // `default` means nobody has chosen — which is not the same as
+          // having chosen the same values, and only this can tell them apart.
+          source:      row ? 'chosen' : 'default',
+          updatedAt:   row?.updatedAt ?? null,
+        }
+      })),
+    }
+  },
 
-    /**
-     * Set one kind.
-     *
-     * Collection-level and not `patch`: the natural key is (person, kind) and
-     * the row's uuid is something no screen has ever seen. A caller states the
-     * kind; who they are is not theirs to state.
-     */
-    async save() {
-      const userId = me()
-      const data   = $.data as { kind: string, email?: boolean | null, inApp?: boolean | null }
-      const kind   = data.kind
+  /**
+   * Set one kind.
+   *
+   * Collection-level and not `patch`: the natural key is (person, kind) and
+   * the row's uuid is something no screen has ever seen. A caller states the
+   * kind; who they are is not theirs to state.
+   */
+  async save() {
+    const userId = me()
+    const data   = $.data as { kind: string, email?: boolean | null, inApp?: boolean | null }
+    const kind   = data.kind
 
-      const patch: Record<string, unknown> = {}
-      if (data.email != null) patch.email = data.email
-      if (data.inApp != null) patch.inApp = data.inApp
-      if (!Object.keys(patch).length) throw new BadRequest(
-        'Send `email` and/or `inApp` as booleans — there is nothing else to set')
+    const patch: Record<string, unknown> = {}
+    if (data.email != null) patch.email = data.email
+    if (data.inApp != null) patch.inApp = data.inApp
+    if (!Object.keys(patch).length) throw new BadRequest(
+      'Send `email` and/or `inApp` as booleans — there is nothing else to set')
 
-      const existing = await db().notificationPreference.findFirst({ where: { userId, kind } })
-      if (existing) {
-        await db().notificationPreference.update({ where: { id: existing.id }, data: patch })
-      } else {
-        // A first choice about one transport still writes a whole row, so the
-        // other transport is stamped from the kind's default rather than from
-        // the column's — otherwise turning email ON for `deploy_success` would
-        // silently turn its in-app notice off, the column defaulting to true
-        // and the kind's default being the thing the person was looking at.
-        const def = notificationKind(kind)!
-        await db().notificationPreference.create({
-          data: { userId, kind, email: def.email, inApp: def.inApp, ...patch },
-        })
-      }
+    const existing = await db().notificationPreference.findFirst({ where: { userId, kind } })
+    if (existing) {
+      await db().notificationPreference.update({ where: { id: existing.id }, data: patch })
+    } else {
+      // A first choice about one transport still writes a whole row, so the
+      // other transport is stamped from the kind's default rather than from
+      // the column's — otherwise turning email ON for `deploy_success` would
+      // silently turn its in-app notice off, the column defaulting to true
+      // and the kind's default being the thing the person was looking at.
+      const def = notificationKind(kind)!
+      await db().notificationPreference.create({
+        data: { userId, kind, email: def.email, inApp: def.inApp, ...patch },
+      })
+    }
 
-      return { kind, ...patch }
-    },
+    return { kind, ...patch }
+  },
 
-    /** Forget a choice, so the kind goes back to its default. */
-    async reset() {
-      const userId = me()
-      const kind   = ($.data as { kind?: string | null } | null)?.kind
+  /** Forget a choice, so the kind goes back to its default. */
+  async reset() {
+    const userId = me()
+    const kind   = ($.data as { kind?: string | null } | null)?.kind
 
-      // No kind means all of them — which is the *reset to defaults* button and
-      // is why this is a method rather than a delete by id.
-      const where = kind ? { userId, kind } : { userId }
-      const { count } = await db().notificationPreference.deleteMany({ where })
-      return { reset: kind ? [kind] : NOTIFICATION_KIND_NAMES, rows: count ?? 0 }
-    },
-  })
-}
+    // No kind means all of them — which is the *reset to defaults* button and
+    // is why this is a method rather than a delete by id.
+    const where = kind ? { userId, kind } : { userId }
+    const { count } = await db().notificationPreference.deleteMany({ where })
+    return { reset: kind ? [kind] : NOTIFICATION_KIND_NAMES, rows: count ?? 0 }
+  },
+})

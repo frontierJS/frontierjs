@@ -40,7 +40,7 @@ const LEAD = `
 model Lead {
   id    Int    @id
   name  String
-  @@gate("4.4.4.4")
+  @@gate(4.4.4.4)
 }
 `
 
@@ -204,7 +204,7 @@ model Lead {
   id          Int    @id
   name        String
   workspaceId String
-  @@gate("4.4.4.4")
+  @@gate(4.4.4.4)
 }
 `
 

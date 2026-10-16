@@ -133,21 +133,44 @@ export type PluginInput = PluginFn | Plugin
 /**
  * The shape of `app.conduit`.
  *
- * Empty here on purpose: Junction must not depend on @frontierjs/conduit.
- * That package augments this interface with its full `IConduit`, so a project
- * that installs conduit gets real types on `app.conduit` everywhere, and a
- * project that doesn't sees an empty object rather than a lie.
+ * Junction must not depend on @frontierjs/conduit. That package augments this
+ * interface with its full `IConduit`, so a project that installs conduit gets
+ * real types on `app.conduit` everywhere, and a project that doesn't sees only
+ * the one member junction's own code reads.
  *
  * Augment it, don't redeclare `App.conduit` — see the note on the field.
  */
-export interface AppConduit {}
+export interface AppConduit {
+  /**
+   * The forward for a model a connector's mirror claim holds (`FJS-D1125`),
+   * by accessor (`post`), or undefined. The generated create/update/patch/remove
+   * ask it at call time; conduit's `IConduit` must stay assignable to it, which
+   * the augmentation's compile checks.
+   */
+  mirrored(accessor: string): MirrorForward | undefined
+}
+
+/**
+ * The Provider half of a claimed model's write. Each verb answers the row
+ * parsed from the Provider's response, or null where it carries none; a verb
+ * the claim does not export is absent and the generated verb runs as it would
+ * on any model. Landing the row is the generated verb's.
+ */
+export interface MirrorForward {
+  provider: string
+  model:    string
+  key:      string
+  create?(input: unknown): Promise<Record<string, unknown> | null>
+  update?(key: string, patch: unknown): Promise<Record<string, unknown> | null>
+  remove?(key: string): Promise<Record<string, unknown> | null>
+}
 
 /**
  * The shape of `app.db`.
  *
  * Empty here for the same reason as `AppConduit` above and with the opposite
  * problem: Junction genuinely does not know what the client is — a Litestone
- * client and a plain table-shaped object are both valid, and `createBaseService`
+ * client and a plain table-shaped object are both valid, and the service base
  * adapts the latter. It was `unknown`, which is honest and unusable: an app
  * cannot narrow it, because Invariant 5 rules that a property is typed by
  * AUGMENTING an exported interface and never by redeclaring it (declaration
@@ -263,7 +286,7 @@ export interface App {
    *
    * Whatever was passed as `createApp({ db })`. Typed loosely because both a
    * Litestone client and a plain table-shaped object are valid —
-   * `createBaseService` adapts the latter.
+   * the service base adapts the latter.
    *
    * Augment `AppDb`, don't redeclare this field.
    */
@@ -276,7 +299,7 @@ export interface App {
   logger:    ILogger
   services:  ServiceRegistry
   events:    IEventBus
-  telemetry: IEventBus   // low-level instrumentation bus — subscribe to 'junction.call'
+  telemetry: IEventBus   // low-level instrumentation bus — subscribe to 'junction.call.end'
   cache:     AppCache
   scheduler: AppScheduler
   http:      HttpTransport
@@ -723,7 +746,7 @@ export interface AppOptions {
    * The application's database client, exposed as `app.db`.
    *
    * Accepts a Litestone client or any plain table-shaped object —
-   * `createBaseService` adapts the latter. When the client exposes `$setAuth`,
+   * the service base adapts the latter. When the client exposes `$setAuth`,
    * per-request scoping is installed automatically as an app-level around hook,
    * so `ctx.locals.db` is always the caller-scoped client and row policies see
    * who is asking.
@@ -1047,7 +1070,7 @@ export function createApp(opts: AppOptions = {}): App {
 
   // ── Database (optional) ──────────────────────────────────────────────
   // One way in (`FJS-D641`): a client you built — Litestone, or anything
-  // table-shaped that createBaseService can adapt. It lands on app.db, so
+  // table-shaped that the service base can adapt. It lands on app.db, so
   // services and hooks have one place to look. If the client supports
   // $setAuth, per-request scoping is installed further down — see
   // "Litestone scoping".
@@ -1118,7 +1141,7 @@ export function createApp(opts: AppOptions = {}): App {
     // The OPTION stays `unknown` and the field is `AppDb`, which is the one
     // place those two meet. Narrowing the option too would mean an app that
     // augments `AppDb` could no longer pass the plain table-shaped object
-    // `createBaseService` adapts — permissive in, typed out.
+    // the service base adapts — permissive in, typed out.
     db: db as AppDb,
     tenants: opts.tenants,
     logger,
@@ -1264,7 +1287,7 @@ export function createApp(opts: AppOptions = {}): App {
         },
         call(methodName: string, id?: string | number | null, data?: Record<string, unknown> | null, opts?: CallOptions) {
           return call(() => {
-            const ctx = makeCtx(methodName as import('../transport/bridge.ts').ServiceMethod, id ?? null, data ?? null, {}, opts)
+            const ctx = makeCtx(methodName as import('../core/context.ts').ServiceMethod, id ?? null, data ?? null, {}, opts)
             ctx.method = methodName
             return ctx
           })
@@ -2022,9 +2045,9 @@ export function createApp(opts: AppOptions = {}): App {
 
         if (_servicesDir.dir) {
           await autoloadServices({
-            dir: _servicesDir.dir, app, registry: services,
-            // Keyed like every other authoring finding, so one file that
-            // exports two factories AND throws is two sentences and not four.
+            dir: _servicesDir.dir, registry: services,
+            // Keyed like every other authoring finding, so a file that is both a
+            // duplicate name AND throws is two sentences and not four.
             report: (_key, finding) => _authoringFindings.push(finding),
           })
         }
@@ -2104,6 +2127,25 @@ export function createApp(opts: AppOptions = {}): App {
             throw new Error(`Plugin "${plugin.name}" boot failed: ${(err as Error).message}`)
           }
         }
+      }},
+
+      // A database that is not the schema's still answers health: no migration
+      // runs at start (`FJS-D123`), so an app pointed at the wrong file, or two
+      // apps in one process sharing one, hears about a missing table at the
+      // first read of it (`FJS-1796`). A warning, not a refusal -- a fresh
+      // deploy legitimately starts before `db push`. After boot-plugins, which
+      // may create tables of their own; needsHost, because a test env builds
+      // its tables after the app is mounted.
+      { name: 'check-schema-gaps', needsHost: true, run: async () => {
+        if (!db || typeof db !== 'object' || !('$schemaGaps' in db)) return
+        const gaps = await (db as { $schemaGaps(): Promise<Array<{ db: string; model: string; table: string; missing: 'table' | string[] }>> }).$schemaGaps()
+        if (!gaps.length) return
+        logger.warn(
+          `[Junction] the database does not hold this app's schema -- ` +
+          gaps.map(g => g.missing === 'table'
+            ? `${g.model}: no table '${g.table}'`
+            : `${g.model}: table '${g.table}' lacks ${g.missing.join(', ')}`).join('; ') +
+          `. Wrong file, or a migration not applied: \`litestone migrate apply\`.`)
       }},
 
       // Service routes are registered AFTER plugins so plugin middleware wraps

@@ -32,14 +32,14 @@ database other { path "./other.db" }
 model A {
   id  Int    @id @default(autoincrement())
   tag String @unique
-  @@gate("0")
+  @@gate(0)
 }
 
 model B {
   id  Int    @id @default(autoincrement())
   tag String @unique
   @@db(other)
-  @@gate("0")
+  @@gate(0)
 }
 `
 

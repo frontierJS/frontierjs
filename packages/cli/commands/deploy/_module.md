@@ -1059,6 +1059,8 @@ fli deploy:logs         ← stream or show API container logs
 fli deploy:run <cmd>    ← run a one-off command inside the running container
 fli deploy:rollback     ← roll back to the previous release
 fli deploy:setup        ← first-time server setup walkthrough
+
+fli deploy:basecamp --app <id> ← build here, load onto the App's Basecamp machines, release that digest
 ```
 
 ## Getting started

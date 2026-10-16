@@ -10,6 +10,10 @@ import { Resilience, countsAsTargetFault } from './resilience.ts'
 import { Router }             from './router.ts'
 import { createObserverGuard } from './observe.ts'
 import { observedRequest, originOf } from './address.ts'
+import { accept, acceptFrame, assertReceiver, assertBrokerReceiver, RECEIVE_RESULTS } from './receive.ts'
+import type { Receiver, BrokerReceiver, ReceivedEvent, Delivery, Received, ReceiveResult } from './receive.ts'
+import { createMirrors } from './mirror.ts'
+import { nonceMemory } from '@frontierjs/toolbelt/signature'
 import type {
   IConduit,
   ConduitOptions,
@@ -20,6 +24,7 @@ import type {
   ConduitStats,
   TargetDescriptor,
   BrokerHandler,
+  BrokerFraming,
 } from './types.ts'
 import { ConduitStreamError, CREDENTIAL_REFUSALS } from './types.ts'
 import type { BaseTransport } from './transports/base.ts'
@@ -193,7 +198,9 @@ function assertBroker(descriptor: TargetDescriptor): void {
 }
 
 // A target whose address comes per send reaches wherever a row says, so it
-// may carry nothing that would go there with it (`FJS-1667`).
+// may carry nothing of the PROCESS's that would go there with it (`FJS-1667`).
+// A per-caller credential is the row's own (`FJS-D1089`): the send that names
+// the address names the grant, and the transport refuses one without it.
 function assertRequestAddressed(descriptor: TargetDescriptor): void {
   if (descriptor.address_from === undefined) {
     if (descriptor.destinations !== undefined)
@@ -207,8 +214,8 @@ function assertRequestAddressed(descriptor: TargetDescriptor): void {
     throw new TypeError(`${where}: only an 'http' target can take its address per send`)
   if (descriptor.address !== '')
     throw new TypeError(`${where}: address must be '' — each send names its own`)
-  if (descriptor.auth.type !== 'none' && descriptor.auth.type !== 'hmac')
-    throw new TypeError(`${where}: auth '${descriptor.auth.type}' would send a stored credential to whatever address a send names; use 'none', or 'hmac' to sign the body`)
+  if (descriptor.auth.type !== 'none' && descriptor.auth.type !== 'hmac' && descriptor.auth.per_caller !== true)
+    throw new TypeError(`${where}: auth '${descriptor.auth.type}' would send a stored credential to whatever address a send names; use 'none', 'hmac' to sign the body, or per_caller: true when the credential is the row's own`)
   if ((descriptor.follow_redirects ?? 'never') !== 'never')
     throw new TypeError(`${where}: a followed redirect is a second address nobody graded`)
   if (descriptor.pinned_cert !== undefined)
@@ -357,6 +364,21 @@ export function createConduit(
   // check each one registers, so a deregistered target stops being reported
   // rather than reporting a connection nobody holds.
   const subscriptions = new Map<string, BrokerTransport>()
+
+  // Declared receivers by path, each with its own nonce memory — a nonce is
+  // one sender's, and one memory across receivers would let a Stripe nonce
+  // refuse a partner's.
+  const receivers = new Map<string, {
+    receiver:  Receiver<unknown, ReceivedEvent, unknown>
+    seenNonce: ReturnType<typeof nonceMemory>
+    counts:    Record<ReceiveResult, number>
+  }>()
+
+  // Receivers on a broker target, by target id: one subscription per target.
+  const frameReceivers = new Map<string, {
+    receiver:  BrokerReceiver<ReceivedEvent, unknown>
+    counts:    Record<ReceiveResult, number>
+  }>()
 
   // Set by destroy(). The router evicts its pool, but without this flag a
   // late in-flight request simply rebuilds the transport and opens a fresh
@@ -730,6 +752,9 @@ export function createConduit(
 
   async function deregister(target: string): Promise<void> {
     subscriptions.delete(target)
+    // The receiver goes with its target, so one registered again under the
+    // same id (a person who disconnects and connects again) can be received.
+    frameReceivers.delete(target)
     const previous = await store.get(target)
     await store.delete(target)
     if (previous) countTarget(previous, -1)
@@ -754,7 +779,7 @@ export function createConduit(
     return store.list()
   }
 
-  async function subscribe(target: string, handler: BrokerHandler): Promise<void> {
+  async function subscribe(target: string, handler: BrokerHandler, framing?: BrokerFraming<any>, opened?: (state: unknown) => void | Promise<void>): Promise<void> {
     if (destroyed) throw new Error('[conduit] subscribe() on a destroyed conduit')
     const transport = await router.resolve(target)
     if (!(transport instanceof BrokerTransport))
@@ -765,11 +790,65 @@ export function createConduit(
     subscriptions.set(target, transport)
     opts.registerReadiness?.(`conduit:${target}`, () => subscriptions.get(target)?.health().connected ?? true)
     try {
-      await transport.subscribe(handler, () => withTrace({ target, method: 'CONNECT' }, transport).headers)
+      await transport.subscribe(handler, () => withTrace({ target, method: 'CONNECT' }, transport).headers, framing, opened)
     } catch (err) {
       subscriptions.delete(target)
       throw err
     }
+  }
+
+  function receive<Cred, Ev extends ReceivedEvent, Owner>(receiver: Receiver<Cred, Ev, Owner>): void
+  function receive<Ev extends ReceivedEvent, Owner>(receiver: BrokerReceiver<Ev, Owner>): Promise<void>
+  function receive(receiver: Receiver<any, any, any> | BrokerReceiver<any, any>): void | Promise<void> {
+    if (receiver && typeof receiver === 'object' && 'target' in receiver) return receiveFrames(receiver)
+    // Erased once at the door: the map holds every dialect's shape, and the
+    // order in receive.ts reads none of the generics.
+    const erased = receiver as unknown as Receiver<unknown, ReceivedEvent, unknown>
+    assertReceiver(erased)
+    // Two receivers on one path is two dialects for one route, and the second
+    // would silently take every delivery the first was declared for.
+    if (receivers.has(receiver.path))
+      throw new TypeError(`Receiver '${receiver.path}' is already declared (provider '${receivers.get(receiver.path)!.receiver.provider}')`)
+    receivers.set(receiver.path, {
+      receiver:  erased,
+      seenNonce: nonceMemory(),
+      counts:    Object.fromEntries(RECEIVE_RESULTS.map(k => [k, 0])) as Record<ReceiveResult, number>,
+    })
+  }
+
+  async function receiveFrames(receiver: BrokerReceiver<ReceivedEvent, unknown>): Promise<void> {
+    assertBrokerReceiver(receiver)
+    const { target } = receiver
+    if (frameReceivers.has(target))
+      throw new TypeError(`Receiver for target '${target}' is already declared (provider '${frameReceivers.get(target)!.receiver.provider}')`)
+    const entry = {
+      receiver,
+      counts: Object.fromEntries(RECEIVE_RESULTS.map(k => [k, 0])) as Record<ReceiveResult, number>,
+    }
+    frameReceivers.set(target, entry)
+    try {
+      await subscribe(target, async (message) => {
+        const received = await acceptFrame(receiver, message, Date.now() / 1000, { store })
+        entry.counts[received.result]++
+        safe('onReceived', () => observers.onReceived?.(target, received))
+        // Thrown so the transport withholds the ack: the one signal a broker
+        // that redelivers can act on.
+        if (received.result === 'failed') throw new Error(received.reason)
+      }, receiver.dialect.framing, receiver.opened && (connection => receiver.opened!({ connection })))
+    } catch (err) {
+      frameReceivers.delete(target)
+      throw err
+    }
+  }
+
+  async function acceptDelivery(path: string, delivery: Delivery, now: number): Promise<Received> {
+    const entry = receivers.get(path)
+    if (!entry) throw new TypeError(`No receiver declared at '${path}'`)
+    if (destroyed) return { status: 503, body: { error: 'not accepting' }, result: 'failed', reason: 'conduit has been destroyed' }
+    const received = await accept(entry.receiver, delivery, now, { store, credentials, seenNonce: entry.seenNonce })
+    entry.counts[received.result]++
+    safe('onReceived', () => observers.onReceived?.(path, received))
+    return received
   }
 
   function stats(): ConduitStats {
@@ -796,6 +875,7 @@ export function createConduit(
         },
       },
       streams:  { ...streams },
+      received: Object.fromEntries([...receivers, ...frameReceivers].map(([key, r]) => [key, { ...r.counts }])),
       errors:   Object.fromEntries(counters.errors),
       breakers: resilience.snapshot(),
     }
@@ -811,5 +891,15 @@ export function createConduit(
     resilience.clear()
   }
 
-  return { init, send, stream, register, deregister, touch, resolve, list, subscribe, stats, destroy }
+  // A forward spends `self.send`, read at call time: the junction plugin wraps
+  // `send` after this returns to write `who`, and a per-caller target's verb
+  // sent through the unwrapped one carries no caller and fails as auth_failed.
+  const mirrors = createMirrors((req) => self.send(req))
+
+  const self: IConduit = {
+    init, send, stream, register, deregister, touch, resolve, list, subscribe, receive, accept: acceptDelivery,
+    mirror: mirrors.claim, mirrored: mirrors.mirrored, claimed: mirrors.claimed,
+    stats, destroy,
+  }
+  return self
 }

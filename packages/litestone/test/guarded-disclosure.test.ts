@@ -31,7 +31,7 @@ model Customer {
   notes  String?
   ssn    String? @guarded
 
-  @@gate("1.1.5.9")
+  @@gate(1.1.5.9)
 }
 `
 

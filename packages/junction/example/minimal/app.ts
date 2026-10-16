@@ -26,7 +26,7 @@ const app = createApp({
   // autoload: false to disable.)
 })
 
-// db-less services (createBaseService({ model }) with no db option)
+// db-less services (createService({ model }) with no db option)
 // inherit this client. Swap createDb() for your Litestone client.
 app.db = createDb() as never
 

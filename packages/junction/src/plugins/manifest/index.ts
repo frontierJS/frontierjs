@@ -143,7 +143,7 @@ async function buildMigrations(opts: ManifestPluginOptions): Promise<unknown> {
       client.$config as { schemaPath: string; migrationsDir: string }
     const rawDb = (client.$rawDbs as Record<string, unknown>).main
 
-    const { status } = await import('@frontierjs/litestone')
+    const { status } = await import('@frontierjs/litestone/migrations')
     return status(rawDb, migrationsDir)
   } catch {
     return []

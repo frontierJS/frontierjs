@@ -562,7 +562,7 @@ A field `@allow('write', …)` the synthetic principal fails DROPS its column, s
 
 ## 2026-10-02 — `@@gate` may put create below read, so a drop box states itself and refuses by name (`FJS-1244`, `FJS-D491`)
 
-*Many may write, few may read* — a staff survey, a suggestion box, a job application — was unspellable: `@@gate("6.4.9.9")` was refused for non-decreasing levels, and only `8.4.9.9` booted because the sentinels do not advance the ladder. The workaround was a `@@allow('read', auth().isAdmin)` policy, which turns the refusal into an empty 200 that reads the same as *nobody has answered yet*.
+*Many may write, few may read* — a staff survey, a suggestion box, a job application — was unspellable: `@@gate(6.4.9.9)` was refused for non-decreasing levels, and only `8.4.9.9` booted because the sentinels do not advance the ladder. The workaround was a `@@allow('read', auth().isAdmin)` policy, which turns the refusal into an empty 200 that reads the same as *nobody has answered yet*.
 
 `validateGate` now holds two chains instead of one: `read ≤ update ≤ delete`, and `create ≤ delete`. Create is free relative to read and update; removing a row is still never easier than adding one, and a model easier to delete than to read is still refused. 8 and 9 stay sentinels. A caller below the read level of `6.4.9.9` gets an `AccessDeniedError` naming the model, where the policy form filtered to `[]`. The catalog text and the two generated snapshots say the new rule, and the `gate-lower` mutation test now uses a gate whose `update` sits level with `read`, since lowering a position on `2.4.4.5` no longer produces a refused schema.
 
@@ -619,7 +619,7 @@ grader stubbed. `bun run test` 5485 pass, 0 fail.
 
 A model gated at SYSTEM refuses the SYSADMIN(7) read, and the check used to
 move on without looking at a column. Every model in auth's fragment is
-`@@gate("8")`, so all eight guarded-drop mutants of basecamp's credential,
+`@@gate(8)`, so all eight guarded-drop mutants of basecamp's credential,
 session, verification, login-challenge and OAuth-flow secrets survived. The
 check now asks `$protectedFields` there. That is the list the audit trail
 redacts by, and it is still what `@guarded` does when no reader is left. A
@@ -2277,7 +2277,7 @@ rows are named. Both are listed either way: a count with no row to open is not a
 act on. No threshold under the rollup; a model of one bad row is a model of one bad row, and a floor
 here would be a judgment the walk cannot make.
 
-**The walk reads through `asSystem()`**, deliberately — a caller-scoped read of a `@@gate("8")` model
+**The walk reads through `asSystem()`**, deliberately — a caller-scoped read of a `@@gate(8)` model
 answers `[]`, which is the shape of a model with nothing wrong, so it would pass most confidently on
 the rows most worth protecting. Soft-deleted and template rows are in, since a restore is a write.
 `jsonl` and `logger` models are skipped by name.
@@ -2778,7 +2778,7 @@ row, a tier and either a documentation page or a written reason it has none. `@@
 before an app can make one would document a promise.
 
 **Found on the way, and fixed** ([`FJS-1174`](../../ISSUES_ARCHIVE.md#fjs-1174)): an attribute declared
-twice was not refused and every consumer takes the first, so `@@gate("2")` above `@@gate("9")`
+twice was not refused and every consumer takes the first, so `@@gate(2)` above `@@gate(9)`
 silently enforced the looser one — the shape somebody writing the stricter gate underneath the old
 one produces. The refusal names both answers, not just the duplication, because *declared twice*
 does not tell a reader which has been running. Field attributes had it too.
@@ -3333,7 +3333,7 @@ then refuses with the digit string it means, so a schema written last month gets
 place rather than a grammar error pointing at a colon:
 
     @@gate: the named form is not the gate syntax — write the levels.
-    @@gate(read: READER, write: USER, delete: OWNER) is @@gate("2.4.4.6"),
+    @@gate(read: READER, write: USER, delete: OWNER) is @@gate(2.4.4.6),
     read.create.update.delete on the level ladder.
 
 **The conversion sweep was scoped to `.lite` and that was the wrong scope.** Nine more named gates
@@ -3554,7 +3554,7 @@ that bundle one definition rather than two.
 
 **The three writes are emitted LOCKED and the declaration gets no say.** A view
 refuses every write at the Data boundary for every caller and for `asSystem()`
-alike, which is what 9 means on the scale; passing the declared `@@gate("5")`
+alike, which is what 9 means on the scale; passing the declared `@@gate(5)`
 through all four would have told a screen an ADMINISTRATOR may create one, which
 is false at every level. Read stays the declaration's, and stays ABSENT where
 there is none, because an unknown affordance is permissive and inventing a level
@@ -3843,7 +3843,7 @@ orders, 1 order, 5 orders.
 
 **A `@@gate` is required beside `@@export`**, even where the schema guards
 nothing else — a bulk read of every row is a different proposition from one row
-at a time. `@@gate("0")` says public on purpose.
+at a time. `@@gate(0)` says public on purpose.
 
 **Protected columns do not leave, even for a caller who may read them.**
 `@encrypted`, `@secret` and `@guarded` are omitted; an interactive read is a
@@ -3949,7 +3949,7 @@ this decidable without reading `@@sql`: naming a tenant column the projection
 does not select is a parse error, not a predicate compiled against nothing.
 
 **Fail-closed, at parse.** A schema declaring any access rule makes an ungated
-view an error naming `@@gate("0")` as the way to say *public on purpose*, and
+view an error naming `@@gate(0)` as the way to say *public on purpose*, and
 under `strategy row` a view must state `@@tenant` or `@@tenant(none)`.
 `@@tenant(via:)` is refused — a view declares no relation to hop.
 
@@ -4774,7 +4774,7 @@ there is no property to carry a key.
 
 `FJS-D205` keeps `@guarded`/`@secret` out of the client's JSON Schema, so the
 static bundle never carries the name. The validation refusals did. Measured:
-`$setAuth(null)`, on a model gated `@@gate("1.1.5.9")`, read
+`$setAuth(null)`, on a model gated `@@gate(1.1.5.9)`, read
 `Sortable: createdAt, email, id, notes, ssn` — and was refused a legitimate read
 one line later with `requires level 1, user has level 0`. Two owners, opposite
 answers.
@@ -6403,7 +6403,7 @@ have meant.
 compiles to `'1'` — correct where the parent is genuinely open, a hole where the
 parent is held by a `@@gate` or a capability grid, both of which live a tier
 above any compiled predicate. Measured: an anonymous caller reads a `Doc` whose
-`@@gate("7")` vault it delegates to. A warning and not a refusal, because it is
+`@@gate(7)` vault it delegates to. A warning and not a refusal, because it is
 a hole rather than an impossibility and the policy tier may be open there on
 purpose; the test asserts that read alongside the sentence, so the two cannot
 drift. Silent on an unprotected target — an open parent is not the subject — and
@@ -9252,7 +9252,7 @@ injected, or always) · `test/test-clock.test.ts`
 `asSystem()` dropped the gate, every row policy, `@guarded`, `@system` and every
 field `@allow` in one move. Right for a migration; wrong for the shipped feature
 underneath it. **Row tenancy desugars to `@@deny`, which is a policy**, so a
-system context read every tenant's rows — and since a `@@gate("8")` model can be
+system context read every tenant's rows — and since a `@@gate(8)` model can be
 read by nothing else, the only client that could read a credential was the one
 that ignored tenancy. A per-tenant credential could not be enforced declaratively
 at all, and doing it in a resolver's own where-clause is what Invariant 6 refuses.
@@ -10368,7 +10368,7 @@ row to everybody, and it would have passed every test that uses one principal.
 or nobody uses the strength that keeps the list traveling — and a check that
 queried and then ignored the answer would pass every other test in the file, so
 the assertion is that a `suggested` binding still works when its source is
-`@@gate("8")` and unreadable.
+`@@gate(8)` and unreadable.
 
 **Six write paths carry a payload and all six call it.** The grid derives that
 list from `client.js` itself rather than restating it: a seventh added later
@@ -10595,7 +10595,7 @@ literals inside the arms that checked them and are now module-level exports.
 Four defects found by building it:
 
 - **`parse()` is more permissive than the layers above it.** The catalog shipped
-  `@@gate("4.2.4.5")`, which parses and which `deriveAccess` refuses: the order
+  `@@gate(4.2.4.5)`, which parses and which `deriveAccess` refuses: the order
   is read.create.update.delete and the levels must be non-decreasing. The
   completeness test now runs the access layer over every example.
 - **Per-model DDL had no owner.** Callers assembled `generateTableDDL` +
@@ -11513,7 +11513,7 @@ grades with `FrontierGateGetLevel`, which is the default and not necessarily wha
 the app installed — and *refuses exactly what that person is refused* is false
 the moment the two disagree. Measured on `example`: the default grades
 `ops@acme.test` at 3 (CREATOR), the app's own `shopGateLevel` grades the same row
-at 4 (USER), and `Order` is `@@gate("0.4.4.5")` — so a create is refused in the
+at 4 (USER), and `Order` is `@@gate(0.4.4.5)` — so a create is refused in the
 console and permitted in the app. The banner names which resolver answered.
 
 **`--as` and `--level` stay separate**, the split `createTestEnv` keeps between
@@ -12106,7 +12106,7 @@ missing something every other read has (`FJS-173`, `FJS-178`, `FJS-185`,
 `FJS-216`).
 
 **`aggregate`, `groupBy` and `search` never called `plugins.beforeRead`**, which
-is where a `@@gate` refuses. A model at `@@gate("7")` answered a level-4
+is where a `@@gate` refuses. A model at `@@gate(7)` answered a level-4
 caller's COUNT, its GROUP BY and its full-text search. The row policy compiles
 into the WHERE and did apply to the first two, which is exactly what hid this:
 the numbers looked scoped, and the gate — the layer that refuses outright — had
@@ -13476,7 +13476,7 @@ as successes is the oracle problem wearing a percentage.
   identical to the original and survives everything, so every documented attribute
   name was quietly costing a point. Mutation is now quote-aware and code-only.
 - *A schema the framework will not LOAD is a kill, not an error.* `parse()`
-  accepts a non-monotonic `@@gate("4.3.4.5")` and the gate plugin refuses it at
+  accepts a non-monotonic `@@gate(4.3.4.5)` and the gate plugin refuses it at
   construction, so the two halves of "is this schema legal" do not agree and only
   the second is reached.
 

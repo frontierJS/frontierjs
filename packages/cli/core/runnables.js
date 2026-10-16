@@ -134,6 +134,9 @@ function surfaces(root) {
         start:  s.script ? `bun run ${s.script}` : null,
         argv:   s.script ? ['bun', 'run', s.script] : null,
         port:   s.port,
+        // The variable the surface's config reads its port from, so whoever
+        // starts the row can hand it the port it will be polled on.
+        portEnv: s.env,
         open:   `http://localhost:${s.port}`,
         // The same port under a name. Derived from the ports table, which
         // already knows this app's id — and additive: `open` stays the number,

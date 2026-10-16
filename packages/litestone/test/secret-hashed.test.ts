@@ -113,3 +113,49 @@ describe('@secret @hashed', () => {
     db.$close()
   })
 })
+
+// FJS-3067 — a column nobody can read still has a "who may replace it", and
+// that is the field @allow('write') question. The read half stays refused.
+describe('@hashed beside @allow(\'write\')', () => {
+  const SCHEMA = `
+    claim isGrantee
+
+    model Vault {
+      id                 Int     @id
+      name               String
+      masterPasswordHash String? @hashed @allow('write', auth().isGrantee)
+      @@allow('read', true)
+      @@allow('update', auth().id > 0)
+    }
+  `
+  const open = async () => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA, encryptionKey: KEY })
+    await db.asSystem().vault.create({ data: { id: 1, name: 'v', masterPasswordHash: 'old' } })
+    return db
+  }
+  const matches = async (db: any, hash: string) =>
+    (await db.asSystem().vault.findMany({ where: { masterPasswordHash: hash } })).length
+
+  test('a write predicate composes, and the read half is still refused', () => {
+    expect(parse(SCHEMA).valid).toBe(true)
+    const r = parse(`model D { id Int @id\n  t String @hashed @allow('read', true) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/conflicts with @allow\('read'/)
+    const both = parse(`model D { id Int @id\n  t String @hashed @allow('read,write', true) }`)
+    expect(both.valid).toBe(false)
+  })
+
+  test('the grantee replaces the digest and a bystander with the model update right does not', async () => {
+    const db = await open()
+    await db.$setAuth({ id: 2, isGrantee: false }).vault.update({ where: { id: 1 }, data: { name: 'w', masterPasswordHash: 'x' } })
+    expect(await matches(db, 'x')).toBe(0)
+    expect(await matches(db, 'old')).toBe(1)
+
+    await db.$setAuth({ id: 3, isGrantee: true }).vault.update({ where: { id: 1 }, data: { masterPasswordHash: 'new' } })
+    expect(await matches(db, 'new')).toBe(1)
+    expect(await matches(db, 'old')).toBe(0)
+    // The grantee's write is a write to ONE column.
+    expect((await db.asSystem().vault.findUnique({ where: { id: 1 } })).name).toBe('w')
+    db.$close()
+  })
+})

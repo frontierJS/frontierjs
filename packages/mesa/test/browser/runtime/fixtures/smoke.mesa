@@ -10,6 +10,6 @@
   let clicks = 0
 </script>
 
-<button type="button" id="hit" on:click={() => clicks++}>hit</button>
+<button type="button" id="hit" onclick={() => clicks++}>hit</button>
 <output id="clicks">{clicks}</output>
 <Child label="composed" />

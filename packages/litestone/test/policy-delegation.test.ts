@@ -202,7 +202,7 @@ describe('a check() at protection the compiler cannot see is warned about', () =
       }
       model Vault {
         id Int @id
-        @@gate("7")
+        @@gate(7)
       }
     `)
 
@@ -248,7 +248,7 @@ describe('a check() at protection the compiler cannot see is warned about', () =
       model Vault {
         id      Int @id
         ownerId Int
-        @@gate("4")
+        @@gate(4)
         @@allow('read', ownerId == auth().id)
       }
     `)
@@ -281,7 +281,7 @@ describe('a check() at protection the compiler cannot see is warned about', () =
       model Vault {
         id      Int @id
         ownerId Int
-        @@gate("4")
+        @@gate(4)
         @@allow('read', ownerId == auth().id)
       }
     `)

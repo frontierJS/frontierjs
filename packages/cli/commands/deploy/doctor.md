@@ -5,6 +5,7 @@ examples:
   - fli deploy:doctor
   - fli deploy:doctor --remote
   - fli deploy:doctor --remote --production
+  - fli deploy:doctor --json
 flags:
   remote:
     type: boolean
@@ -17,6 +18,10 @@ flags:
   stage:
     type: boolean
     description: Target staging server when running remote probes
+    defaultValue: false
+  json:
+    type: boolean
+    description: Print the checks as JSON — section, name, status and hint per row — instead of the checklist
     defaultValue: false
 ---
 
@@ -69,8 +74,13 @@ long-lived WebSocket connections.
 // scope sees nothing run() destructures, and echo is one of those.
 // One row of the checklist. `name` is the human-readable label, `status` is
 // 'pass' | 'fail' | 'warn' | 'info', `hint` is a one-line "fix:" message
-// shown in dim text below the row when present.
+// shown in dim text below the row when present. Every row is also kept, so
+// `--json` prints exactly the rows the checklist drew.
+const rows = []
+let section = ''
 const renderCheck = (name, status, hint) => {
+  rows.push({ section, name, status, hint: hint ?? null })
+  if (flag.json) return
   const sigil = status === 'pass' ? PASS
               : status === 'fail' ? FAIL
               : status === 'warn' ? WARN
@@ -80,6 +90,8 @@ const renderCheck = (name, status, hint) => {
 }
 
 const renderHeader = (text) => {
+  section = text
+  if (flag.json) return
   echo('')
   echo(`\x1b[1m${text}\x1b[0m`)
 }
@@ -88,13 +100,20 @@ const target = resolveTarget(flag, $.git)
 
 // ─── Header ───────────────────────────────────────────────────────────────
 const projectName = basename($.paths.root)
-echo(`\n\x1b[1m${projectName}\x1b[0m  ·  target: \x1b[1m${target}\x1b[0m\n`)
+if (!flag.json) echo(`\n\x1b[1m${projectName}\x1b[0m  ·  target: \x1b[1m${target}\x1b[0m\n`)
 
 // Track failures + warnings for the final summary
 let failed = 0
 let warned = 0
 const fail = () => failed++
 const warn = () => warned++
+
+// A failed check fails the command: a script or a go-live screen reads the
+// exit code, and the checklist's colour is not an interface.
+const finishJson = () => {
+  if (failed > 0) $.config.abort = true
+  echo(JSON.stringify({ ok: failed === 0, target, failed, warned, checks: rows }, null, 2))
+}
 
 // ─── Load frontier.config.js — everything else depends on this ────────────
 const frontierConfig = await loadFrontierConfig($.paths.root)
@@ -103,23 +122,25 @@ const deployConf     = await deployConfFor($, flag, log)
 renderHeader('Config')
 
 if (!frontierConfig) {
-  renderCheck('frontier.config.js', 'fail', 'fix: fli make:deploy')
+  renderCheck('frontier.config.js', 'fail', 'fix: fli make:deploy --server <host>')
   fail()
+  $.config.abort = true
+  if (flag.json) return finishJson()
   echo('')
   log.error(`No frontier.config.js found in ${$.paths.root}`)
-  log.info(`Run \x1b[1mfli make:deploy\x1b[0m to scaffold one.`)
-  $.config.abort = true
+  log.info(`Run \x1b[1mfli make:deploy --server <host>\x1b[0m to scaffold one.`)
   return
 }
 renderCheck('frontier.config.js exists', 'pass')
 
 if (!deployConf) {
-  renderCheck('deploy block in frontier.config.js', 'fail', 'fix: fli make:deploy')
+  renderCheck('deploy block in frontier.config.js', 'fail', 'fix: fli make:deploy --server <host>')
   fail()
+  $.config.abort = true
+  if (flag.json) return finishJson()
   echo('')
   log.error('frontier.config.js has no deploy block')
-  log.info(`Run \x1b[1mfli make:deploy\x1b[0m to add one.`)
-  $.config.abort = true
+  log.info(`Run \x1b[1mfli make:deploy --server <host>\x1b[0m to add one.`)
   return
 }
 renderCheck('deploy block defined', 'pass')
@@ -464,8 +485,10 @@ if (branch) {
 // ─── Remote checks ────────────────────────────────────────────────────────
 if (flag.remote) {
   if (!resolved) {
-    echo('')
-    log.warn('Skipping remote checks — server config not resolved')
+    if (!flag.json) {
+      echo('')
+      log.warn('Skipping remote checks — server config not resolved')
+    }
   } else {
     renderHeader(`Server (${resolved.host})`)
 
@@ -618,6 +641,8 @@ if (flag.remote) {
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────
+if (flag.json) return finishJson()
+if (failed > 0) $.config.abort = true
 echo('')
 if (failed === 0 && warned === 0) {
   log.success(`All checks passed${flag.remote ? '' : ' (run with --remote for server-side checks)'}`)
@@ -633,8 +658,6 @@ if (failed === 0 && warned === 0) {
 }
 echo('')
 
-// Nothing here short-circuits a step folder: doctor declares no `steps:` and is
-// not `index.md`, so none is ever discovered for it. This used to set
-// `$.config.abort` against a pipeline it cannot reach, which would now
-// fail the command for having run (`FJS-589`).
+// `$.config.abort` is a refusal and fails the command (`FJS-589`), so it is set
+// only when a check failed -- never for having run.
 ```

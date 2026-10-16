@@ -10,7 +10,7 @@
   //
   // The same answer `InventoryMovement.mesa` gives, for the same reason. A
   // resource file carries its model's default form, and this model has none to
-  // carry: `Payment` is `@@gate("5.8.8.9")` — an administrator reads, only
+  // carry: `Payment` is `@@gate(5.8.8.9)` — an administrator reads, only
   // `asSystem()` writes, and delete is LOCKED at 9. The `payments` service
   // declares `methods: ['find', 'get', 'start', 'refund', 'record']` and no
   // `create` or `patch` at all, so a generated form would offer to file a

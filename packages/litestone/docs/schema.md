@@ -1151,7 +1151,7 @@ columns (`@createdBy`, `@default(auth().field)`) are held out of the
 
 ### Access control
 ```
-@@gate("R.C.U.D")                level-based access (read.create.update.delete)
+@@gate(R.C.U.D)                level-based access (read.create.update.delete)
 @@auth                           marks model as auth subject for auth() expressions
 @@allow('read'|'create'|'update'|'delete'|'all', expr)
 @@allow('op', expr, "custom error message")
@@ -1307,7 +1307,7 @@ model Order {
 - **The name is optional on an enum** — `pending -> paid` names itself after the target state. Name it when you want to call it: `db.order.transition(id, 'pay')`.
 - **A `Boolean` column is a state machine too**, and it is the one every schema has. `@@transitions(isPrimary, promote: false -> true, demote: true -> false @gate(5))` — the two directions are routinely different authorities (suspend and unsuspend, publish and unpublish), which a single field `@allow('write', …)` answers with one predicate and this answers with two. A boolean move **must be named**: `-> true` says which value is written, not what a person did.
 - **`from` takes a list** — `[pending, paid] -> cancelled`.
-- **`@gate(N)`** is the minimum level allowed to make that particular move, on Litestone's 0–9 scale (a number or a name: `@gate(ADMINISTRATOR)`). It is a floor *on top of* `@@gate`'s update level, which had to pass to reach the write at all — shipping an order and refunding one are not the same authority.
+- **`@gate(N)`** is the minimum level allowed to make that particular move, on Litestone's 0–9 scale, written as a digit — `@gate(ADMINISTRATOR)` is refused with the `@gate(5)` it means (`FJS-D239`). It is a floor *on top of* `@@gate`'s update level, which had to pass to reach the write at all — shipping an order and refunding one are not the same authority.
 - **`@gate(8)` on a move means the engine makes it through `asSystem()` and nothing else.** `getLevel` is clamped to 7, so SYSADMIN is refused by name — `TransitionGateError: 'build' … requires level 8, user has 7` — and a system context passes it, as it passes every gate on a move. `transitions(row)` reports `allowed: false` for one, so a screen offers the right buttons with nothing written. `@gate(9)` refuses everything, `asSystem()` included, which is a move declared for its from-state and never made.
 - **`@system` on a move is the other way of saying *the engine decides this*, and it is usually the one you want.** It means what `@system` means on a column: the application makes the move, its caller does not, and the application says so on the call — `transition(id, name, { system: true })`, which becomes `system: [field]` on the update underneath, so writing the column directly is refused and permitted by exactly the same rule. The difference from `@gate(8)` is the whole point: the move runs on the CALLER's own client, so the model gate, the row policies and the audit actor all still apply, where `asSystem()` drops all three to make one move. Refused with `TransitionSystemError` (403), which is a separate class from the gate's 403 because no caller at any level can answer it. `transitions(row)` reports `refusedBy: 'system'`, and `x-transitions` carries the flag, so a browser renders no button rather than a disabled one — the one verdict on that side that is not permissive-when-unknown.
 - **The two compose, and they answer different questions.** `@gate(N)` is *how senior must a caller be*; `@system` is *whose decision is this*. `@system @gate(5)` is the person-REQUESTED engine move — somebody presses *sync*, a provider's answer picks the move — which is the shape `@gate(8)` cannot express at all. Declaring `@system` with `@gate(8)` or `@gate(9)` is refused at parse: those admit no caller, which contradicts it. So the filter that separates the two halves of a machine is **every move carrying neither `@gate(8)` nor `@system`** (`FJS-D150`, `IDEAS/shipped/permission-sets.md`).
@@ -1366,6 +1366,29 @@ enum OrderStatus {
 This is shorthand: it desugars into a `@@transitions` on each model using the enum, so everything above applies unchanged. A model that declares its own `@@transitions` for that field overrides the enum's outright rather than merging.
 
 **The two spellings differ in exactly one thing: a gate needs the model form**, because the same enum on two models would otherwise force them to share one authority level. Writing `@gate` inside the enum block is refused at parse and the message names the model form to write instead. Everything else — a from-list, an optional name, the compare-and-swap — is the same feature.
+
+#### Moves a tenant declares
+
+When every team edits its own workflow, the states and the moves are rows, and `declaredBy:` names the model holding the moves (`FJS-D365`). The declarer's shape is fixed: `fromId?` (null is an **entry**, where a new row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin.
+
+```lite
+model WorkflowTransition {
+  id     Int     @id @default(autoincrement())
+  teamId String
+  fromId String?
+  toId   String
+  gate   Int?
+}
+
+model Issue {
+  id      Int    @id @default(autoincrement())
+  teamId  String
+  stateId String
+  @@transitions(stateId, declaredBy: WorkflowTransition, scope: teamId)
+}
+```
+
+A write moving `stateId` must match a row of the issue's own team, checked inside the UPDATE's `WHERE`, so a move a team deletes mid-flight is not made and `asSystem()` is bound by it as by an enum machine. A create names one of the team's entries, or names none and takes the team's only one; with two entries it must name one. A move has no name in the file, so `transition(id, 'done')` and `transitions(row)` name it for its target. The field takes no `@default` — the entries are where a row starts — and it is not in the create schema's `required`. `x-transitions` does not describe a declared machine yet.
 
 ## Schema functions
 

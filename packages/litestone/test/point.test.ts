@@ -520,3 +520,31 @@ describe('a distance order paginates', () => {
     expect(p2.items.map((r: any) => r.name)).toEqual(['Reading', 'Croydon'])
   })
 })
+
+describe('a point the database refuses names its column', () => {
+  // FJS-2041: the CHECK is the only judge of a point's shape and range, and its
+  // refusal fell through to the model-level sentence with an empty path.
+  const CREW = `model Crew {
+  id       Int    @id @default(autoincrement())
+  location Json?  @point(latitude, longitude)
+}`
+  const refusal = async (data: any) => {
+    const db = await createClient({ schema: CREW, db: join(tmpRoot, `p${dbSeq++}.db`) })
+    await autoMigrate(db)
+    try { await db.crew.create({ data }) } catch (e: any) { return e }
+    throw new Error('expected a refusal')
+  }
+
+  for (const [label, value] of [
+    ['out of range',     { latitude: 200, longitude: 0 }],
+    ['the wrong keys',   { lat: 10, lng: 0 }],
+    ['an array',         [0, 10]],
+  ] as const) {
+    it(`blames the field and says the rule for ${label}`, async () => {
+      const err = await refusal({ location: value })
+      expect(err.errors[0].path).toEqual(['location'])
+      expect(err.errors[0].message).toMatch(/latitude/)
+      expect(err.errors[0].message).toMatch(/longitude/)
+    })
+  }
+})

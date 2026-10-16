@@ -35,15 +35,15 @@ flags:
 <script>
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
-import { pascal, kebab } from '@frontierjs/toolbelt/inflect'
+import { kebab } from '@frontierjs/toolbelt/inflect'
 
 // The service's name is `make:resource`'s (`servicePlural`), so the two
 // generators cannot disagree about which service a model is served by.
 const { servicePlural } =
   await import(resolve(global.fliRoot, 'core/resource-template.js'))
 
-// The shape junction's autoloader documents: `<plural>.service.ts` exporting a
-// `create…Service` factory (kebab file for a multi-word name), over a model
+// The shape junction's autoloader documents: `<plural>.service.ts` default-
+// exporting a `createService` definition (kebab file for a multi-word name), over a model
 // stated by its PascalCase singular. Stating `model` keeps an irregular plural
 // from being singularized back to a different word.
 const serviceOf = (model, servicesDir) => {
@@ -52,11 +52,9 @@ const serviceOf = (model, servicesDir) => {
   return { serviceName, file, servicePath: resolve(servicesDir, file) }
 }
 
-const makeServiceFile = (model, serviceName) => `import { createBaseService } from '@frontierjs/junction'
+const makeServiceFile = (model, serviceName) => `import { createService } from '@frontierjs/junction'
 
-export function create${pascal(serviceName)}Service() {
-  return createBaseService({ model: '${model}', channel: '${serviceName}' })
-}
+export default createService({ model: '${model}', channel: '${serviceName}' })
 `
 </script>
 

@@ -648,7 +648,7 @@ hands the result to `runChecks`, asserting `resource-file-name` and
 `resource-script` RAN and nothing fired. The page generators run after
 `make:resource` and `admin:generate` beside a service, since over an empty app
 each writes nothing and every rule about its output skips. Its first run found
-`make:model`'s default `@@gate("0.4.4.6")` tripping `gate-unreachable`; that is
+`make:model`'s default `@@gate(0.4.4.6)` tripping `gate-unreachable`; that is
 filed as `FJS-1385` and the case tolerates that one rule until it closes.
 
 ## 2026-09-26 — `deploy:setup` installs a pinned, checksum-verified litestream (`FJS-243`)
@@ -738,7 +738,7 @@ unchanged.
 
 ## 2026-09-26 — `tutor:access` runs past its policy step on a scaffolded app (`FJS-1367`)
 
-Step 06 put `@@auth` above User's `@@gate("4.4.4.5")` every time, and
+Step 06 put `@@auth` above User's `@@gate(4.4.4.5)` every time, and
 `fli new --auth` has written `@@auth` there since FJS-737, so the push that
 followed was refused as a duplicate (FJS-1174) and the lesson stopped. The
 step now adds it only when no line in the schema already declares `@@auth`,
@@ -3342,7 +3342,7 @@ from that one block and the finding goes 1 → 0 with the schema otherwise
 untouched.
 
 **Two siblings had it and one was worse.** `declaredGates` read a trailing
-`// was @@gate("7") once` as a declaration, so `gate-unreachable` reports a rung
+`// was @@gate(7) once` as a declaration, so `gate-unreachable` reports a rung
 nobody can reach that nobody wrote. `declaredColumns` counts braces to decide
 where a model ENDS and counted them in comment text — an unbalanced `}` in a
 note closes the model early and every field after it goes invisible to
@@ -4314,7 +4314,7 @@ place.
 
 **`editSchema`'s *already done* test was a substring search over the whole
 file.** It asked whether the TARGET text appeared anywhere before deciding there
-was nothing to do — so the moment another model carried `@@gate("0.4.4.6")`,
+was nothing to do — so the moment another model carried `@@gate(0.4.4.6)`,
 which `tutor:adopt` gives the models it adopts, it returned `already` and edited
 nothing. Two lessons steer on that call, and both then read their verdicts
 backwards. *Already done* is a question about `from`, not about `to`: absent
@@ -6821,7 +6821,7 @@ moved onto capabilities with its old gate left in place: a billing clerk holding
 `Invoice.create` refused because creates want ADMINISTRATOR(5), which reads as *not
 senior enough* about somebody deliberately granted the capability.
 
-**It reads both gate spellings.** Matching only `@@gate("2.5.5.6")` would have made
+**It reads both gate spellings.** Matching only `@@gate(2.5.5.6)` would have made
 the rule silent on every schema that writes its levels by name — which is the form
 `example` and `basecamp` both use, so it would have been dead exactly where it
 matters. `write:` widens to create/update/delete and `all:` to every position, the
@@ -6829,7 +6829,7 @@ same way the parser treats them.
 
 A warning rather than an error — two authorities in front of one operation is
 legitimate where the ladder guards something the grid does not model, and a text scan
-cannot tell that from a leftover. `@@gate("2")` flat at the read floor is the usual
+cannot tell that from a leftover. `@@gate(2)` flat at the read floor is the usual
 answer. The clean fixture now declares the grid with a flat gate so the rule RUNS there
 rather than skipping.
 
@@ -8319,7 +8319,7 @@ with `createRequire` off the app's `package.json`, rather than guessing at a pat
 inside the package.
 
 **It writes two files, split by who owns the model.** `db/auth.lite` gets
-`Credential`, `Session` and `Verification`, all `@@gate("8")`; `schema.lite` gets
+`Credential`, `Session` and `Verification`, all `@@gate(8)`; `schema.lite` gets
 `import "./auth.lite"` and `model User`, appended. An APPEND, not an insertion —
 `import` is legal anywhere at the top level and `parseFile` merges imported
 models ahead of local ones regardless, so nothing here has to parse the app's own

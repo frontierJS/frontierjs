@@ -3,7 +3,7 @@
  *
  * Nothing had ever compiled one. `VISION.md` is the language spec and the file
  * a new user copies from, and eight of its fences did not compile — six of them
- * the same `<mesa:window on:keydown={h}>`, unclosed, which is the only spelling
+ * the same `<mesa:window onkeydown={h}>`, unclosed, which is the only spelling
  * §12.1 showed and the one §23's flagship complete component used. The error
  * was `Unexpected EOF` with no file and no line, so nobody hit it and looked
  * (FJS-868).

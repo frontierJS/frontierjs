@@ -3,7 +3,7 @@
  *
  * A green run pins an image painted as its `alt`, as a browser shows one it
  * cannot load: a static alt is the text, an empty one takes no row, a live
- * one follows its value and takes no row while empty, and `on:error` is
+ * one follows its value and takes no row while empty, and `onerror` is
  * heard but never sent, since nothing fails to load. An image with no alt
  * inside `aria-hidden` is left out, and one outside it is refused at compile
  * by name. An `<svg>` is the same rule over `aria-label`, what a screen
@@ -26,7 +26,7 @@ export async function run(t) {
   t.ok(/next\s*\n\s*a chart\s*\n\s*mid/.test(frame), 'an svg is one row of its aria-label, its drawing unbuilt')
   t.ok(/low\s*\n\s*a hit here/.test(frame), 'an svg inside aria-hidden takes no row')
   t.ok(/before\s*\n\s*after/.test(frame), 'an empty alt leaves no blank row')
-  t.ok(!frame.includes('failed'), 'on:error is never sent')
+  t.ok(!frame.includes('failed'), 'onerror is never sent')
   t.is((await t.attributesAt('hit')) & TextAttributes.INVERSE, TextAttributes.INVERSE, '<mark> is inverse')
   t.is((await t.attributesAt('here')) & TextAttributes.INVERSE, 0, 'and only the marked text')
 

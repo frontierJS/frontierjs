@@ -29,13 +29,13 @@ model Visit {
   id      Int    @id @default(autoincrement())
   site    Json?  @point(lat, lng)
   meta    Json?
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 
 model Survey {
   id     Int    @id @default(autoincrement())
   origin Json   @point(latitude, longitude)
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 `
 

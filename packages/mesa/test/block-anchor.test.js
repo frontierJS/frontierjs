@@ -122,7 +122,7 @@ describe('one block tearing down leaves its siblings alone', () => {
     {#if b}<i id="b">B</i>{/if}
   </div>
 {/if}
-<button id="off" on:click={() => a = false}>off</button>`)
+<button id="off" onclick={() => a = false}>off</button>`)
 
     expect(wrap.querySelector('#a')).toBeTruthy()
     expect(wrap.querySelector('#b')).toBeTruthy()
@@ -164,7 +164,7 @@ describe('one block tearing down leaves its siblings alone', () => {
     {#if moves.has('undrain')}<Action busy={busy === 'undrain'}><i id="undrain">U</i></Action>{/if}
   </div>
 {/if}
-<button id="go" on:click={() => go('drain')}>go</button>`, {
+<button id="go" onclick={() => go('drain')}>go</button>`, {
       Action: `<script>\n  export let busy = false\n</script>\n<span data-busy={busy}><slot /></span>`
     })
 

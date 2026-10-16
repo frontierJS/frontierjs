@@ -16,6 +16,8 @@ oauth.ts     the OAuth flow engine — the URL, the code-for-token trade, the
 plugin.ts    createAuthPlugin() — mounts /auth/*, declares the cookie mode,
              and registers the three services at boot()
 services.ts  account / sessions / api-keys — the half that is NOT a route
+tenancy.ts   what the app's tenancy block says about a person — the claim,
+             and the column on User a tenant is written to
 db/user.lite      model User — the app's. Appended into its schema.lite
 db/auth.lite      Credential / Session / Verification / LoginChallenge /
                   OauthFlow — imported, and adjusted at the app end with
@@ -25,7 +27,8 @@ schema.ts    reads those two: authUserModel / authMachineryModels /
 crypto.ts    hashing / token generation
 totp.ts      RFC 6238 codes, base32, recovery codes — clockless, `at` is a
              parameter (`FJS-D261`)
-cleanup.ts   expired-session pruning
+cleanup.ts   expired-row pruning — `auth.cleanup` on the instance, started in
+             the plugin's work() and stopped at shutdown
 errors.ts    the auth error classes (each carries its own `status`)
 types.ts     the public types
 index.ts     public API
@@ -130,7 +133,7 @@ index.ts     public API
   package is not beside it, and `fli` runs on **node** while this file is
   TypeScript, so even resolved it could not be imported. Bytes get past both
   (`FJS-038`). The split is by owner, and the gate already states it — `User` is
-  `@@gate("4.4.4.5")` with policies an app changes, so it is APPENDED into the
+  `@@gate(4.4.4.5)` with policies an app changes, so it is APPENDED into the
   app's own `schema.lite`; the other four are `8`, so they are a file the app
   imports and an upgrade reaches without a re-inject.
 - **A shipped `.lite` spells `@@db(main)` although an absent `@@db` already means
@@ -143,14 +146,14 @@ index.ts     public API
   out of `install.md` and runs it against the shipped bytes.
 - **`cookieAuth: true` works end to end** — the plugin declares the mode via
   `app.http.setAuthCookie('session')` and Junction reads it (FJS-002).
-- **`User` is `@@gate("4.4.4.5")` and the level is not what makes it safe.** A
+- **`User` is `@@gate(4.4.4.5)` and the level is not what makes it safe.** A
   gate is per MODEL, so that alone says *any signed-in caller may write any user
   row*. The fragment ships the two declarations that bound it:
   `@@allow('update', id == auth().id || auth().isAdmin)` for whose row, and
   `@allow('write', auth().isAdmin)` on `role` and `emailVerified`, the columns
-  a resolver grades on, and on `email` and `accountId`, which a password reset
-  and a tenant are keyed by — a column the caller can write is not a column a
-  level can be graded from. Nothing in this package writes the row as a caller,
+  a resolver grades on, and on `email`, which a password reset is keyed by — a
+  column the caller can write is not a column a level can be graded from. An
+  app's tenant column is the app's, and polices itself the same way. Nothing in this package writes the row as a caller,
   so a missing one shows first in an app's profile form
   (`test/user-policy.test.ts`, `FJS-1591`). `8` stays on `Credential` / `Session` / `Verification` /
   `OauthFlow` / `LoginChallenge`, which is what 8 is for: a model nothing
@@ -189,6 +192,24 @@ index.ts     public API
   delete is the worst thing it can do. **`/auth/support/start` asks the same
   grader**, after the app's `canStartSupport`: a subject above the operator is
   refused, a peer is not (`FJS-D574`).
+- **This package declares no tenant column; the app's `tenancy` block names
+  it** (`FJS-D1117`). `tenancy.ts`'s `userTenancy(db)` is the one reading:
+  where row tenancy's column is on the app's `User`, `createUser({ tenant })`,
+  an invitation and `fli auth:create-user --tenant` write it, and `toContext()`
+  puts it on every session as the tenancy's claim. A tenant with no such column
+  — no row tenancy, or a membership app — is REFUSED (`AuthConfigError`), since
+  a person placed nowhere signs in to nothing. A column that is not the tenant
+  (basecamp's fleet `accountId`) reaches the session through `sessionFields`.
+- **`people` reaches a person only in the operator's tenant, and asks the app
+  which tenant that is** (`FJS-D1116`). `sessionFor` reads with no tenant in
+  play, so `aim()` re-resolves the person with `app.runAs(id, { tenant:
+  app.tenant() })` + `app.withDb`, and compares the claim `db.$tenancy` names —
+  an `accountId` column and a membership row answer through the same line, and
+  the person comes back graded at their role HERE. A miss and another tenant's
+  person are the same 404. `remove` deletes the whole `User`, so a person with a
+  membership in another tenant (read off the resolver's `describe()`, through
+  the app's ROOT client, since a scoped client's `asSystem()` keeps the tenant)
+  is refused below SYSADMIN. No tenant in scope is no scoping.
 - **Four awaited callbacks, and A THROW REFUSES** — `onLogin`, `onLoginFailed`,
   `onLogout`, `onRegister` (`FJS-042`). **`onPasswordResetRequested` is NOT one
   of them**: it runs after `requestPasswordReset` has answered and a throw is
@@ -212,12 +233,13 @@ index.ts     public API
   the ADDRESS names and is never used to find one, and `Verification.attempts`
   counts misses up to `loginChallengeAttempts`. An unknown address gets its
   account at the click, through `onRegister`, never at the request.
+- **`Credential.linked` is how "a provider made this account" is told from "the mailbox made it and a provider joined later"** (`FJS-D1011`). `oauthResolve` § 4 and `confirmOAuthLink` write the `oauth:*` row onto an EXISTING account with `linked: true`; § 3 and the proof path's new-user branch write it unmarked. `securedByProvider(creds)` counts only an unmarked `oauth:*` row, and `providerOnly` (magic link) and `confirmPasswordReset` both call it. A new place that attaches a provider to an existing account sets the flag, or that account loses magic-link sign-in and reset (`FJS-2545`).
 - **`onRegistered({ user, db })` is the fifth and the one that runs INSIDE the
   registration** (`FJS-D520`, `FJS-1458`): after the row and its credential,
   before the commit, for a password and an identity provider alike, through
   `registerUser()`. It is where a row-tenanted app creates the Account and
   writes the tenant column; `createUser` passes no column but `email`, `name`,
-  `role` and a stated `accountId` (`fli auth:create-user --account`). `db` is the transaction's client — an app write through its own
+  `role` and a stated `tenant`. `db` is the transaction's client — an app write through its own
   client falls outside it and survives a rollback.
 - **One ordering rule: a hook runs BEFORE the thing it can refuse.** So none is
   handed what its refusal would have prevented — `onLogin` has no session id,

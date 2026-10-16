@@ -378,6 +378,10 @@ function readIssues({ root, dir, ids }) {
     // truncated — the excess is dropped, silently, which for § Closed took the
     // citations off 137 rows.
     let headWidth  = null
+    // § Closed writes area and claim in one `Title` cell, `litestone · cli —
+    // **claim**`, where an open table gives each its own. Read as an area
+    // column, every closed row's package was its whole title.
+    let areaInTitle = false
 
     for (const line of src.split('\n')) {
       lineNo++
@@ -386,7 +390,7 @@ function readIssues({ root, dir, ids }) {
       if (fence) continue
 
       const heading = line.match(/^##\s+(.+?)\s*$/)
-      if (heading) { section = heading[1]; dateColumn = null; headWidth = null; continue }
+      if (heading) { section = heading[1]; dateColumn = null; headWidth = null; areaInTitle = false; continue }
 
       // A table header. Every issue table names its date column, and which one
       // it is IS the table's shape: `Verified` while a row is open, `Closed`
@@ -396,6 +400,7 @@ function readIssues({ root, dir, ids }) {
         const at   = head.findIndex(c => c === 'verified' || c === 'closed')
         dateColumn = at === -1 ? null : at
         headWidth  = head.length
+        areaInTitle = head[1] === 'title'
         continue
       }
 
@@ -411,7 +416,16 @@ function readIssues({ root, dir, ids }) {
       const live  = cells[2].replace(/~~[\s\S]*?~~/g, ' ')
       const ruled = live !== cells[2] || /\*\*Ruled\b/i.test(cells[2])
       const wide  = cells.length >= 6
-      const body  = cells.slice(2).join(' ')
+      // A cell boundary is a segment boundary: joined on a space, a Detail whose
+      // first segment is `env: timing` follows the date, and no segment parser sees it.
+      const body  = cells.slice(2).join(' · ')
+      // A closed row with no ` — ` ahead of its bold claim names no area, and
+      // its cell is all claim — the claim may hold a dash of its own.
+      const bold  = cells[1].indexOf('**')
+      const found = areaInTitle ? cells[1].indexOf(' — ') : -1
+      const dash  = bold !== -1 && found > bold ? -1 : found
+      const area  = areaInTitle ? (dash === -1 ? '' : cells[1].slice(0, dash)) : cells[1]
+      const claim = areaInTitle ? cells[1].slice(dash === -1 ? 0 : dash + 3) : live.trim() ? live : cells[2]
 
       // An id cell may hold more than one — `FJS-029 · FJS-137` is one row that
       // two defects were merged into, and the row says so: *one defect, not
@@ -424,8 +438,8 @@ function readIssues({ root, dir, ids }) {
         kind:     'issue',
         id:       rowIds[0] ?? '',
         aliases:  rowIds.slice(1),
-        pkg:      splitPkg(plain(cells[1])),
-        title:    firstClaim(live.trim() ? live : cells[2]),
+        pkg:      splitPkg(plain(area)),
+        title:    firstClaim(claim),
         status:   closed ? 'closed' : wide ? plain(cells[3]) : ruled ? 'ruled' : 'needs a ruling',
         severity: severityOf(section ?? ""),
         verified: wide ? plain(cells[4]) : '',
@@ -493,6 +507,7 @@ function readDecisions({ root, dir, ids }) {
     open.record.body  = plain(body).trim()
     open.record.refs  = refsIn(body, ids)
     open.record.files = linkedFiles(body)
+    open.record.livesIn = livesIn(body)
     Object.assign(open.record, declaredStatus(bodyLines, ids))
     out.push(open.record)
     open = null
@@ -754,6 +769,28 @@ function linkedFiles(text = '') {
   }
 
   return [...out].sort()
+}
+
+/**
+ * What a ruling's `*Lives in:*` paragraph names in code spans — `{ token,
+ * symbols }`, the symbols being the spans in a parenthesis straight after it.
+ * Only code spans: a bare `VOCABULARY.md (Page, Layout)` names terms, and
+ * reading prose for a path is the checker for arbitrary prose this is not.
+ */
+function livesIn(body = '') {
+  const lines = body.split('\n')
+  const out   = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/\*Lives in:?\*:?/i)
+    if (!m) continue
+    const para = [lines[i].slice(m.index + m[0].length)]
+    for (let j = i + 1; j < lines.length && lines[j].trim(); j++) para.push(lines[j])
+    for (const [, token, group] of para.join(' ').matchAll(/`([^`]+)`(?:\s*\(([^)]*)\))?/g)) {
+      const symbols = [...(group ?? '').matchAll(/`([^`]+)`/g)].map(s => s[1])
+      out.push({ token, symbols })
+    }
+  }
+  return out
 }
 
 /** The `<a id="…">` a row leads with, where it has one. */

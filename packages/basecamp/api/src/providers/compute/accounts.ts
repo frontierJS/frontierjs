@@ -24,7 +24,7 @@ import { env }                       from '../../core/env.ts'
 import { connectorFor, targetFor }   from './index.ts'
 import { edgeConnectorFor }          from '../edge/index.ts'
 import type { AccountSend, ComputeConnector } from './index.ts'
-import type { BasecampApp }          from '../../basecamp.types.ts'
+import type { App }                  from '@frontierjs/junction'
 import type { ProviderKind }         from '../../../../db/schema.d.ts'
 
 /** The key a provider token is stored under inside `Secret.data`. One name,
@@ -77,7 +77,7 @@ export function accountConnectorFor(kind: ProviderKind | null | undefined): Acco
  * some other file imported first, which is an ordering nothing declares.
  */
 export async function registerAccount(
-  app: BasecampApp, secret: SecretRow, opts: { address?: string } = {},
+  app: App, secret: SecretRow, opts: { address?: string } = {},
 ): Promise<string | null> {
   if (!app.conduit) return null
   if (secret.kind && secret.kind !== 'provider_key') return null
@@ -94,7 +94,7 @@ export async function registerAccount(
 
 /** Drop an account's target. Called when the secret is removed, so a revoked
  *  key stops being a registered address rather than an address that fails. */
-export async function unregisterAccount(app: BasecampApp, secret: SecretRow): Promise<void> {
+export async function unregisterAccount(app: App, secret: SecretRow): Promise<void> {
   if (!app.conduit) return
   const connector = accountConnectorFor(secret.providerKind)
   if (!connector) return
@@ -109,7 +109,7 @@ export async function unregisterAccount(app: BasecampApp, secret: SecretRow): Pr
  * whose sync needs a target belongs to whoever owns it. The confinement is that
  * nothing here returns a row to a caller; it reads ids and registers addresses.
  */
-export async function registerAllAccounts(app: BasecampApp, db: any): Promise<number> {
+export async function registerAllAccounts(app: App, db: any): Promise<number> {
   if (!app.conduit) return 0
 
   const accounts = await db.asSystem().secret.findMany({
@@ -195,7 +195,7 @@ function vendorSaid(raw: unknown): unknown {
   try { return JSON.parse(raw) } catch { return raw }
 }
 
-export function sendVia(app: BasecampApp, target: string): AccountSend {
+export function sendVia(app: App, target: string): AccountSend {
   return async (req) => {
     if (!app.conduit) throw new Error('compute: app.conduit is not configured')
 

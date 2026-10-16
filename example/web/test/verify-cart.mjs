@@ -9,7 +9,7 @@
  * What is actually under test is not the screens. It is that a caller with NO
  * SESSION can own rows:
  *
- *   · `Cart` and `CartLine` are `@@gate("0.0.0.5")` — readable at level 0 —
+ *   · `Cart` and `CartLine` are `@@gate(0.0.0.5)` — readable at level 0 —
  *     and their rows are reached by `@@allow('read', id == auth().cartId)`.
  *   · The claim comes from `createApp({ principal })`, which junction runs for
  *     a caller with no session and whose claims never become one. A guest
@@ -164,7 +164,7 @@ const api = (path, opts = {}) => fetch(`${API}/api${path}`, opts)
 // checking the shop's books, which is a member of staff's question.
 //
 // It used to ask anonymously and be answered, which is the leak these gates
-// closed — the catalog's `@@gate("0.4.4.5")` had been pasted onto the ledger.
+// closed — the catalog's `@@gate(0.4.4.5)` had been pasted onto the ledger.
 let staffToken = null
 async function asStaff(path) {
   staffToken ??= (await (await fetch(`${API}/api/auth/login`, {
@@ -380,7 +380,7 @@ check('…and the lines add up to the subtotal',
       billed.reduce((n, l) => n + l.lineTotal, 0), placed?.subtotal)
 
 // A line is written by the shop recording its own sale — `OrderLine` is
-// @@gate("0.8.8.8") and `order-lines` declares find and get — so there is no
+// @@gate(0.8.8.8) and `order-lines` declares find and get — so there is no
 // door for a caller to add one through. 405 at the service, before the Data
 // boundary is ever asked.
 const forged = await api('/order-lines', {

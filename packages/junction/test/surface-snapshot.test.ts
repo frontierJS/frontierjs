@@ -11,7 +11,8 @@
 // so the assertions below are about provenance and ordering, not formatting.
 
 import { describe, expect, it } from 'bun:test'
-import { createApp, createService, healthPlugin, defaultConfig } from '../index.ts'
+import { createApp, healthPlugin, defaultConfig } from '../index.ts'
+import { buildService } from '../src/core/service.ts'
 import { renderSurfaceSnapshot } from '../tools/surface.ts'
 import { describeSurface }      from '../src/core/app-model.ts'
 
@@ -36,7 +37,7 @@ async function buildApp() {
   function stampOwner() {}
   function audit() {}
 
-  const orders = createService({
+  const orders = buildService({
     name:    'orders',
     model:   'Order',
     channel: 'orders',

@@ -22,7 +22,7 @@
 // core count the way `cpu` can, and it is the same convention the flattener
 // already produces for `process.memoryMb`.
 
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 /** One reading: the key the Outpost sends, the series it is kept as, what it is
  *  measured in, and what a person reading a card calls it. Four spellings of one
@@ -90,7 +90,7 @@ export function readingOf(
  * queued one reports something older still.
  */
 export async function recordHealth(
-  app:      BasecampApp,
+  app:      App,
   serverId: string,
   health:   Record<string, unknown> | null | undefined,
   at:       string,
@@ -200,7 +200,7 @@ export const DISK_SERIES = DISK_READINGS.map(r => r.name)
  * would draw the wrong hour.
  */
 export async function recordDiskUsage(
-  app:      BasecampApp,
+  app:      App,
   serverId: string,
   figures:  DiskFigures,
   at:       string,

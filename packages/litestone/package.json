@@ -60,7 +60,8 @@
       "import": "./src/core/migrate.js"
     },
     "./migrations": {
-      "import": "./src/core/migrations.js"
+      "import": "./src/core/migrations.js",
+      "types": "./src/core/migrations.d.ts"
     },
     "./parser": {
       "import": "./src/core/parser.js"
@@ -121,13 +122,14 @@
   },
   "scripts": {
     "dev": "bun src/tools/cli.js",
-    "test": "node ../../scripts/tmp-run.mjs 'bun test test/'",
+    "test": "node ../../scripts/tmp-run.mjs 'bun test test/ && bun bench/statements.mjs'",
     "test:watch": "bun test --watch test/",
     "test:smoke": "bun test test/cli-smoke.test.ts",
     "test:browser": "node test/browser/verify-browser-client.mjs",
     "bench": "bun bench/audit-bench.mjs",
     "bench:core": "bun bench/audit-bench.mjs baseline",
     "bench:ablation": "bun bench/ablation.mjs",
+    "bench:statements": "bun bench/statements.mjs",
     "build:binary": "bun scripts/build-binary.js",
     "build:binary:all": "bun scripts/build-binary.js --all --clean",
     "build:lib": "bun scripts/build-lib.js",

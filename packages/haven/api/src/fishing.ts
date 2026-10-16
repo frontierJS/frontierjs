@@ -19,8 +19,12 @@ import { STEP, isFacing } from './facing.ts'
 import type { Facing } from './facing.ts'
 import type { ItemName } from './inventory.ts'
 
-/** The pieces a line may be cast into: the docks' water, the glade's and the lane's ponds, and the ravine's river. */
-export const WATER = new Set(['water', 'pond', 'river'])
+/** The pieces a line may be cast into: the docks' water, the glade's and the lane's ponds, the hole in the glade's ice, and the ravine's river. */
+export const WATER = new Set(['water', 'pond', 'river', 'hole'])
+
+/** The piece that is an ice-fishing hole (`Glade.mesa`), and how often a line cast into it in winter brings up a penguin: one in `PENGUIN_ODDS`. */
+export const HOLE = 'hole'
+export const PENGUIN_ODDS = 5
 
 /** One cast per member per this long, a bite included. */
 export const CAST_MS = 5000
@@ -92,8 +96,15 @@ export const FEED_REACH = 2
 export const canFeed = (at: { x: number, y: number, text: string }, x: number, y: number): boolean =>
   Math.abs(y - at.y) <= FEED_REACH && x >= at.x - FEED_REACH && x < at.x + at.text.length + FEED_REACH
 
-/** The throw, from the OS's random source as the dice's is. */
-export const castLine = (sky: Sky): Landed => catchOf(sky, randomInt(0, weightOf(sky)))
+/**
+ * The throw, from the OS's random source as the dice's is. Into the hole in
+ * winter's ice it is a penguin one time in `PENGUIN_ODDS`, the odds stated
+ * rather than weighed, so no sky moves them; every other throw is `CATCH`'s.
+ */
+export const castLine = (sky: Sky, into?: string | null): Landed =>
+  into === HOLE && sky.season === 'winter' && randomInt(0, PENGUIN_ODDS) === 0
+    ? 'penguin'
+    : catchOf(sky, randomInt(0, weightOf(sky)))
 
 /** How long this cast's float sits before the line comes up. */
 export const biteMs = (): number => randomInt(BITE_MS.min, BITE_MS.max + 1)
@@ -119,6 +130,7 @@ export function landedLine (what: Landed, held?: number): string {
   if (what === 'nothing') return 'nothing bites -- you reel in an empty hook'
   if (what === 'boot') return 'you reel in an old boot and throw it back'
   const a = /^[aeiou]/.test(what) ? 'an' : 'a'
+  if (what === 'penguin') return `a penguin shoots out of the hole -- you catch a penguin${held === undefined ? '' : ` (${held} in your pack)`}`
   return `you catch ${a} ${what}${held === undefined ? '' : ` (${held} in your pack)`}`
 }
 

@@ -518,7 +518,7 @@ describe('SSR output agrees with the client runtime', () => {
 // These cases pin both protocols and the two mismatches, in both renderers.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('component children — protocols, and the cost of mixing them', () => {
+describe('component children — one protocol, two spellings (FJS-D668)', () => {
   const SLOT_LAYOUT = `<div class="a"><slot /></div>`
   const PROP_LAYOUT = `<script>\n  export let children = null\n</script>\n<div class="b">{@render children?.()}</div>`
   const PAGE        = `<h1>page</h1>`
@@ -574,16 +574,16 @@ describe('component children — protocols, and the cost of mixing them', () => 
     expect(server).toBe(client)
   })
 
-  it('element children into a prop-reading layout render nothing — on BOTH renderers', async () => {
+  it('element children reach a prop-reading layout — server and client alike', async () => {
     const { server, client } = await bothRenderers('E3', entry('PropLayout', `<L><Page /></L>`))
-    expect(server).toBe('<div class="b"></div>')
-    expect(server).toBe(client)   // a protocol mismatch, not an SSR bug
+    expect(server).toBe('<div class="b"><h1>page</h1></div>')
+    expect(server).toBe(client)
   })
 
-  it('a children prop into a <slot /> layout renders nothing — on BOTH renderers', async () => {
+  it('a children prop reaches a <slot /> layout — server and client alike', async () => {
     const { server, client } = await bothRenderers('E4',
       entry('SlotLayout', `{#snippet s()}<Page />{/snippet}\n<L children={s} />`))
-    expect(server).toBe('<div class="a"></div>')
+    expect(server).toBe('<div class="a"><h1>page</h1></div>')
     expect(server).toBe(client)
   })
 

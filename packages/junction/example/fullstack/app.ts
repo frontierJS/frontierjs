@@ -12,7 +12,7 @@
 // BECAUSE of the one before it:
 //
 //   db/schema.lite                the seed: table, gate, field rules
-//   services/posts.service.ts     the service: createBaseService({})
+//   services/posts.service.ts     the service: createService({})
 //   public/index.html             the Resource: client.resource('posts')
 //
 // This file is the only place with any wiring in it, and most of that wiring
@@ -80,7 +80,7 @@ if (await db.asSystem().post.count() === 0) {
 }
 
 // ─── 2. Auth ──────────────────────────────────────────────────────────────
-// Deliberately the dumbest thing that can work: the point is that @@gate("0.4.4.5")
+// Deliberately the dumbest thing that can work: the point is that @@gate(0.4.4.5)
 // makes reads public and writes authenticated with no service-level declaration.
 // Real apps use @frontierjs/auth.
 
@@ -96,7 +96,7 @@ const auth = {
 
       // The only standing this demo declares. sessionGateLevel() grades an
       // authenticated session as USER (4) on its own, which covers read and
-      // create; @@gate("0.4.4.5") wants 5 to DELETE, and this is what lifts
+      // create; @@gate(0.4.4.5) wants 5 to DELETE, and this is what lifts
       // the session to ADMINISTRATOR so the page's delete button works.
       //
       // Nothing else is needed. This used to also carry verifiedAt and

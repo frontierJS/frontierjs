@@ -50,7 +50,7 @@ $: plenty = n >= 5
 and its markup half:
 
 ```mesa
-<button class="btn" on:click={() => n++}>{label}: {n}</button>
+<button class="btn" onclick={() => n++}>{label}: {n}</button>
 {#if plenty}<em>that is plenty</em>{/if}
 ```
 
@@ -91,7 +91,7 @@ writeFileSync(comp, [
   '  $: plenty = n >= 5',
   '</' + 'script>',
   '',
-  '<button class="btn" on:click={() => n++}>{label}: {n}</button>',
+  '<button class="btn" onclick={() => n++}>{label}: {n}</button>',
   '{#if plenty}<em>that is plenty</em>{/if}',
   '',
 ].join('\n'), 'utf8')

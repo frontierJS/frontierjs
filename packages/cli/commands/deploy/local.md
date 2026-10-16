@@ -32,7 +32,7 @@ const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf) {
-  log.info('Run fli make:deploy to scaffold a deploy config')
+  log.info('Run fli make:deploy --server <host> to scaffold a deploy config')
   throw new Error('No deploy block found in frontier.config.js')
 }
 

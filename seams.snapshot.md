@@ -14,7 +14,7 @@ owned, so the gap is written down rather than left to be rediscovered.
 would let junction and orion share litestone's types, so each declares the shape it
 holds. The count is here because it is the only place that cost is visible.
 
-Seams: **94**. With a stated owner: **94**. Stated and missing: **0**.
+Seams: **98**. With a stated owner: **98**. Stated and missing: **0**.
 
 **Every seam names an owner.** A callable is graded by where it is DECLARED; a key — a `$` on a
 wire, a schema keyword, a header — has no declaration anywhere, so its owner is where it is
@@ -29,15 +29,17 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Other declaring files |
 | --- | --- | --- |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 16 |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 11 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 17 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 13 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 10 |
+| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 9 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 9 |
-| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 8 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | 8 |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 8 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 6 |
+| `app.conduit.receive(receiver)` | `packages/conduit/src/conduit.ts` | 4 |
+| `app.conduit.mirror(claim)` | `packages/conduit/src/mirror.ts` | 4 |
 | `ctx.enqueue(job, payload)` | `packages/junction/src/plugins/outbox/engine.ts` | 4 |
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
@@ -64,8 +66,10 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | yes | 3 |
 | `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | yes | 3 |
 | `db.$readAs(accessor, row, principal)` | `packages/litestone/src/core/client.js` | yes | 1 |
+| `db.$checkWrite(accessor, op, row, changes?)` | `packages/litestone/src/core/client.js` | yes | 1 |
 | `db.$levelOf(accessor?, principal?)` | `packages/litestone/src/core/client.js` | yes | 1 |
 | `db.$primaryKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 1 |
+| `db.$mirrorKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 1 |
 | `db.$claimsFor(principal)` | `packages/litestone/src/core/client.js` | yes | 1 |
 | `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | yes | 2 |
 ## Schema → API/UI
@@ -81,7 +85,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `controlFor(rule, {field, model})` / `formFieldList(fields, {only, except, model})` | `packages/sierra/src/resource/field-rules.js` | yes | — |
 | `labelFieldInfo(fields, fallback, declared)` | `packages/sierra/src/resource/field-rules.js` | yes | — |
 | `x-values` | `packages/litestone/src/jsonschema.js` | mentioned | — |
-| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | yes | 8 |
+| `resource.options(field)` | `packages/sierra/src/resource/resource.js` | yes | 9 |
 | `toFieldErrors(err)` | `packages/sierra/src/resource/field-rules.js` | yes | — |
 | `$context.form` | `packages/ui/components/forms/Form.mesa` | mentions `form` — weak | — |
 | `buildRelations()` / `buildGate()` / `canAtLevel()` | `packages/sierra/src/resource/field-rules.js` | yes | — |
@@ -98,6 +102,8 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
+| `app.conduit.receive(receiver)` / `Dialect` | `packages/conduit/src/conduit.ts` | yes | 4 |
+| `app.conduit.mirror(claim)` / `mirrored(accessor)` | `packages/conduit/src/mirror.ts` | yes | 4 |
 | `signRequest()` / `verifyRequest()` | `packages/toolbelt/src/signature/signature.js` | yes | 3 |
 | `requestMeta().traceparent` / `.tracestate` | `packages/junction/src/core/context.ts` | yes | 1 |
 | `ctx.$raw.rawBody` | `packages/junction/src/transport/http.ts` | mentioned | — |
@@ -141,7 +147,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | — |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 8 |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 16 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 17 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |
@@ -157,7 +163,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `*.mount.js` | `packages/sierra/src/scanner/walk.js` | mentions `mount` — weak | — |
 | `page.query` / `page.directives` | `packages/sierra/src/router/page-fields.js` | mentions `query` — weak | — |
 | `watchProxy()` / `createSignal()` / `createRoot(fn)` | `packages/mesa/src/runtime.js` | yes | — |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 11 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 13 |
 | `renderComponent(src, opts)` | `packages/mesa/src/render-component.js` | yes | — |
 | `appSrcDir(root)` / `appAliasPlugin()` | `packages/sierra/src/build/app-alias-plugin.js` | yes | — |
 | `swapInstances(entries, newFn, newSetMark, label)` | `packages/mesa/mesa-vite/swap.js` | yes | 1 |

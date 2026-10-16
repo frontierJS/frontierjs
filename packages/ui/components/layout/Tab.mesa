@@ -51,7 +51,7 @@
   class="tab"
   {class}
   {...$attributes}
-  on:click={handleClick}
+  onclick={handleClick}
 >
   <slot />
 </button>

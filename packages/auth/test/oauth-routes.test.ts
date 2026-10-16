@@ -233,6 +233,10 @@ describe('GET /auth/oauth/{provider}/callback', () => {
       .set('cookie', `${OAUTH_STATE_COOKIE}=${theirs}`)
 
     expect(String(res.headers['location'])).toBe('/sign-in?oauth_error=state')
+    // The CSRF evidence: audit() only warns when the trail refuses, so a row the
+    // trail cannot take is lost without failing the request (FJS-2996).
+    const refused = await h.sys.auditTrail.findMany({ where: { operation: 'oauth.refused' } })
+    expect(refused.some((r: any) => r.model === 'OauthFlow' && r.meta?.reason === 'state-mismatch')).toBe(true)
   })
 
   test('missing code or state is refused without reaching the provider', async () => {

@@ -130,7 +130,7 @@ the console says out loud, because the two are indistinguishable from the result
 Without it the console grades with `FrontierGateGetLevel`, the default. Measured
 on `example`: the default grades `ops@acme.test` at **3 (CREATOR)** and the app's
 own `shopGateLevel` grades the same row at **4 (USER)** — and `Order` is
-`@@gate("0.4.4.5")`, so a create is refused in the console and permitted in the
+`@@gate(0.4.4.5)`, so a create is refused in the console and permitted in the
 app. A console that is *approximately* their session is worse than no console,
 because you act on what it shows you.
 

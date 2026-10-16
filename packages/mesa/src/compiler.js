@@ -18,7 +18,9 @@
 import * as acorn from 'acorn'
 import { lower } from './ir.js'
 import { htmlEntitiesToText } from './entities.js'
-import { buildTerminal, terminalRefusal } from './terminal/emit.js'
+import { buildHost, hostRefusal } from './host/emit.js'
+import { TARGETS } from './host/targets.js'
+import { WINDOW_BINDS } from './window-binds.js'
 
 /**
  * Names a component function may not take. Reserved words are a parse error;
@@ -147,7 +149,7 @@ function makeLocator(source) {
 //
 // A miss here is silent in the worst way: the handler is registered on a root
 // the event never reaches, so the element renders, the browser does its half,
-// and the component's half never runs. `<dialog on:close>` is the case that was
+// and the component's half never runs. `<dialog onclose>` is the case that was
 // missing — Escape closed the dialog natively and `bind:open` was never written
 // back, so the caller's state said "open" forever and the drawer could not be
 // reopened. Every name below is measured, not assumed
@@ -220,7 +222,6 @@ function describeNode(node) {
     case 'virtual-each':
     case 'key':
     case 'await':
-    case 'slot':
     case 'fragment':
     case 'block':         return `{${node.value}}`
     case 'snippet':       return `{#snippet ${node.name}(…)}`
@@ -252,8 +253,8 @@ export function toCamelCase(name) {
 
 /**
  * Parse modifier chain from an attribute name.
- * `on:click|preventDefault|debounce(300)` →
- *   { directive: 'on:click', modifiers: [{ name: 'preventDefault' }, { name: 'debounce', arg: '300' }] }
+ * `onclick|preventDefault|debounce(300)` →
+ *   { directive: 'onclick', modifiers: [{ name: 'preventDefault' }, { name: 'debounce', arg: '300' }] }
  *
  * Modifier args can be reactive expressions: `debounce({delay})` → arg: '{delay}'.
  * The `|` split respects nested parentheses so `debounce(fn(x))` parses correctly.
@@ -278,6 +279,30 @@ export function parseModifiers(fullName) {
   })
   return { directive, modifiers }
 }
+
+/**
+ * The one reading of an event attribute: the DOM's own name, with modifiers
+ * piped onto it — `onclick={fn}`, `onsubmit|preventDefault={save}` (`FJS-D1078`).
+ * Null for any other attribute. Every target and every reader of the parse
+ * tree asks here, so a second spelling cannot compile on one path and not another.
+ */
+export function eventAttribute(name) {
+  if (name.startsWith('on:') || (name[0] === '@' && name !== '@attach')) {
+    const written = name.slice(name[0] === '@' ? 1 : 3)
+    throw new Error(
+      `'${name}' is not an event spelling Mesa compiles. Write 'on${written}={handler}' — ` +
+      `the DOM's own name, with any modifier piped on (FJS-D1078).`
+    )
+  }
+  if (!/^on[a-z]/.test(name)) return null
+  const { directive, modifiers } = parseModifiers(name)
+  return { event: directive.slice(2), modifiers }
+}
+
+/** The modifiers that are `addEventListener` options rather than a wrap of the
+ *  handler. A component has no listener of its own, so these are refused on
+ *  one while the rest compile into the value it is handed. */
+export const LISTENER_OPTIONS = new Set(['once', 'passive', 'capture'])
 
 /**
  * Turn an event's modifier chain into what the emitted listener needs: the
@@ -2203,17 +2228,6 @@ export function parseHTML(source) {
           if (v === '/await') {
             assertAt(parent.type === 'await',
               `{/await} closes nothing — the open construct is ${describeNode(parent)}.`, bindStart)
-            return
-          }
-          if (v.match(/^#slot(:| |$)/)) {
-            const tag = { type: 'slot', value: v, body: [], start: bindStart }
-            push(tag)
-            go(tag)
-            continue
-          }
-          if (v === '/slot') {
-            assertAt(parent.type === 'slot',
-              `{/slot} closes nothing — the open construct is ${describeNode(parent)}.`, bindStart)
             return
           }
           if (v.startsWith('#fragment:')) {
@@ -4555,15 +4569,17 @@ function _scopeSelector(sel, cssId) {
  * Scope a full selector list string (may contain commas).
  * Returns the scoped selector list.
  * Returns null if this is a :global { } block opener (caller handles).
+ * `lower` is the target's rewrite of a selector its engine cannot match,
+ * applied before scoping so `p` becomes `._p.mHASH` on native.
  */
-function _scopeSelectorList(raw, cssId) {
+function _scopeSelectorList(raw, cssId, lower) {
   const trimmed = raw.trim()
 
   // :global { } block — entire block is unscoped, signal with null
   if (trimmed === ':global') return null
 
   const parts = _splitSelectors(trimmed)
-  return parts.map(s => _scopeSelector(s, cssId)).join(', ')
+  return parts.map(s => _scopeSelector(lower ? lower(s) : s, cssId)).join(', ')
 }
 
 /**
@@ -4572,7 +4588,7 @@ function _scopeSelectorList(raw, cssId) {
  * advances `i` up to but NOT including the terminator char. The main loop
  * always consumes the terminator itself with `i++` after branching on it.
  */
-export function scopeCSS(css, cssId) {
+export function scopeCSS(css, cssId, lower) {
   let i = 0
   const len = css.length
   let out = ''
@@ -4707,7 +4723,7 @@ export function scopeCSS(css, cssId) {
     const parentFrame = stack.findLast ? stack.findLast(f => f.type === 'rule') : [...stack].reverse().find(f => f.type === 'rule')
     const parentScoped = parentFrame?.scoped ?? null
 
-    const scoped = _scopeSelectorList(cleanPrelude, cssId)
+    const scoped = _scopeSelectorList(cleanPrelude, cssId, lower)
 
     if (scoped === null) {
       const inner = readGlobalBlock()
@@ -4773,7 +4789,7 @@ export function processCSS(ctx) {
     process() {
       if (!styleNodes.length) return
       const raw = styleNodes.map((n) => n.content).join('\n')
-      this._rules.push(scopeCSS(raw, cssId))
+      this._rules.push(scopeCSS(raw, cssId, TARGETS[ctx.config.target]?.lowerSelector))
     }
   }
 }
@@ -4821,6 +4837,9 @@ export function buildHead() {
       w.writeLine('  fade: $$runtime.fade, slide: $$runtime.slide, fly: $$runtime.fly,')
       w.writeLine('  onMount: $$runtime.onMount, onDestroy: $$runtime.onDestroy,')
       w.writeLine('  onCleanup: $$runtime.onCleanup, tick: $$runtime.tick,')
+      // Measuring and focusing are the target's own, so they come from its runtime.
+      const own = TARGETS[ctx.config.target] ? '$$host' : '$$runtime'
+      w.writeLine(`  measure: ${own}.measure, viewport: ${own}.viewport, focus: ${own}.focus,`)
       w.writeLine('};')
     })
   )
@@ -4882,7 +4901,7 @@ export function buildHead() {
     xNode('$dollar-decl', (w) => {
       if (!ctx.inuse.$mesa) return
       w.writeLine('const $ = Object.create($$shared);')
-      w.writeLine('$.slots = $$slots;')
+      if (ctx.inuse.$slots)      w.writeLine('$.slots = $$slots;')
       if (ctx.inuse.$props)      w.writeLine('$.props = $$props;')
       if (ctx.inuse.$attributes) w.writeLine('$.attributes = $$attributes;')
       if (ctx.inuse.$emit)       w.writeLine('$.emit = $$emit;')
@@ -5131,7 +5150,7 @@ export function buildBlock(data, option = {}) {
 
   const go = (data, isRoot, tpl) => {
     let body = data.body.filter((n) => {
-      if (['script', 'style', 'slot'].includes(n.type)) return false
+      if (['script', 'style'].includes(n.type)) return false
       if (n.type === 'comment' && !ctx.config.preserveComments) return false
       if (n.type === 'fragment') {
         const f = ctx.makeFragment?.(n)
@@ -5342,7 +5361,7 @@ export function buildBlock(data, option = {}) {
             ))
           } else if (n.elArg === 'window' || n.elArg === 'document' || n.elArg === 'body') {
             // <mesa:window> / <mesa:document> / <mesa:body>
-            // on:event — add listener to the global target, cleaned up on destroy.
+            // onevent — add listener to the global target, cleaned up on destroy.
             // bind:prop — window-only property bindings (scrollY, innerWidth etc.)
             // These are self-closing — children are silently ignored otherwise.
             const target = n.elArg   // 'window' | 'document' | 'body'
@@ -5354,16 +5373,16 @@ export function buildBlock(data, option = {}) {
             if (realChildren.length) {
               ctx.analysis.errors.push(
                 `<mesa:${target}> is self-closing and cannot have children. ` +
-                `Use <mesa:${target} on:event={handler} /> (self-closing syntax).`
+                `Use <mesa:${target} onevent={handler} /> (self-closing syntax).`
               )
             }
             n.attributes.forEach((p) => {
               if (p._skip) return
               const pname = p.name
 
-              if (pname[0] === '@' || pname.startsWith('on:')) {
-                const { directive, modifiers } = parseModifiers(pname)
-                const event = directive.startsWith('on:') ? directive.slice(3) : directive.slice(1)
+              const on = eventAttribute(pname)
+              if (on) {
+                const { event, modifiers } = on
                 const rawHand = p.value ? unwrapExp(p.value) : '() => {}'
                 let handler = ctx.accessors ? rewriteExpr(rawHand, ctx.accessors, ctx.setters, ctx.proxyFireFns) : rawHand
 
@@ -5385,6 +5404,13 @@ export function buildBlock(data, option = {}) {
                   return
                 }
                 const prop = pname.slice(5)
+                if (!Object.hasOwn(WINDOW_BINDS, prop)) {
+                  ctx.analysis.errors.push(
+                    `mesa:window bind:${prop} — not a bindable window property; ` +
+                    `bind: takes ${Object.keys(WINDOW_BINDS).join(', ')}`
+                  )
+                  return
+                }
                 const varName = p.value ? unwrapExp(p.value) : prop
                 const setter = ctx.setters?.[varName]
                 if (!setter) {
@@ -5568,48 +5594,6 @@ export function buildBlock(data, option = {}) {
           const label = ownAnchor(n.name)
           const component = ctx.makeComponent(n)
           binds.push(insertComponent(component, label))
-          return
-        }
-
-        if (n.name === 'slot') {
-          if (isRoot) requireFragment = true
-          // Slot name comes from: <slot:name> (elArg) or <slot name="x"> (attribute)
-          const nameAttr = n.attributes?.find(a => a.name === 'name')
-          const slotName = n.elArg || nameAttr?.value?.replace(/^['"]|['"]$/g, '') || 'default'
-          // Remove the name attribute so it doesn't appear in DOM output
-          if (nameAttr) n.attributes = n.attributes.filter(a => a.name !== 'name')
-
-          // A slot is a HOLE, and a hole carries nothing outward. `name` is the
-          // only thing it takes; every other attribute compiled, rendered the
-          // caller's content and delivered nothing — and there is no `let:` to
-          // read one with either, so the spelling was a feature that did not
-          // exist wearing the face of one that did (`FJS-304`). Refusing by
-          // name is the same call as an unknown `mesa:*` element: a typo and a
-          // missing feature must not be the same event.
-          const passed = n.attributes?.filter(a => a.name !== 'slot') ?? []
-          if (passed.length) {
-            const tag = n.elArg ? `<slot:${n.elArg}>` : '<slot>'
-            ctx.analysis.errors.push(
-              `${tag} takes no attributes, and "${passed[0].name}" would reach nobody — ` +
-              `a slot passes the caller's content through, never a value back out. ` +
-              `To hand something to the caller, declare a snippet prop: ` +
-              `\`export let ${slotName === 'default' ? 'children' : slotName} = null\` ` +
-              `and render it with \`{@render ${slotName === 'default' ? 'children' : slotName}?.(value)}\`.`
-            )
-          }
-          const slot = ctx.attachSlot(slotName, n)
-          binds.push(
-            xNode('attach-slot', { label: requireLabel(), slot }, (w, nd) => {
-              w.write(
-                true,
-                nd.label.node
-                  ? `$$runtime.insertBlock(${nd.label.name}, `
-                  : `$$runtime.addBlock(${nd.label.name}, `
-              )
-              w.add(nd.slot)
-              w.write(');', true)
-            })
-          )
           return
         }
 
@@ -6125,18 +6109,20 @@ export function makeSnippet(data) {
     }
   }
 
-  return xNode('snippet-def', { name, varName, argNames, block }, (w, n) => {
+  return xNode('snippet-def', { name, varName, argNames, block, content: !!data.content }, (w, n) => {
     const argList = ['__anchor', ...n.argNames].join(', ')
     // The block is a makeBlock(...) expression — we wrap it in a function.
     // Args are passed as plain values; reactive outer vars close over their signal getters.
-    w.writeLine(`const ${n.varName} = (${argList}) => {`)
+    w.writeLine(n.content
+      ? `const ${n.varName} = $$runtime.content((${argList}) => {`
+      : `const ${n.varName} = (${argList}) => {`)
     w.indent++
     w.write(true, 'const $$frag = (')
     w.add(n.block.block)
     w.writeLine(')();')    // call makeBlock factory to get a fresh clone
     w.writeLine('__anchor.before($$frag.$dom ?? $$frag);')
     w.indent--
-    w.writeLine('};')
+    w.writeLine(n.content ? '});' : '};')
   })
 }
 
@@ -6686,25 +6672,161 @@ export function makeAwaitBlock(data, label) {
   )
 }
 
-export function attachSlot(name, node) {
-  const defaultBlock = node.body?.length
-    ? this.buildBlock({ body: node.body }, { inline: true })
-    : null
-  // What this component can render, collected where it is emitted rather than
-  // by a second walk. Read below by the `makeSlots` call, which runs at
-  // serialization — after every slot in the body has been built.
-  ;(this.slotNames ??= new Set()).add(name)
-  return xNode('slot', { name, defaultBlock }, (w, n) => {
-    // __block is the 3rd arg to the component fn — the slots object from caller.
-    // { default: makeBlock(...), sidebar: makeBlock(...) }
-    w.write(`$$runtime.attachNamedSlot(__block, '${n.name}', `)
-    if (n.defaultBlock) {
-      w.write('$$runtime.makeBlock(')
-      w.add(n.defaultBlock.template)
-      w.write(')')
-    } else w.write('null')
-    w.write(')')
-  })
+// ─── slots are snippets (FJS-D668) ────────────────────────────────────────────
+
+/** A prop written on a component tag, with the content of its name as the
+ *  fallback when the written value is nullish. Every target reads it. */
+export const contentFallback = (value, snippet) => `(${value}) ?? ${snippet}`
+
+/** The prop a slot name reaches. The default slot is `children`. */
+export const slotProp = (name) => (!name || name === 'default' ? 'children' : name)
+
+const SNIPPET_NAME = /^[A-Za-z_$][\w$]*$/
+
+/**
+ * `slot=` and `<slot>` are the HTML spelling of a snippet with no arguments,
+ * rewritten to one here, before any target reads the tree, so every runtime
+ * has one way content reaches a component (`FJS-D668`). A component that took
+ * `header` as a snippet prop dropped `<h2 slot="header">` in silence, and one
+ * built around `<slot name="header">` dropped `{#snippet header()}` the same
+ * way: a page lost both its headings and both its forms (`FJS-1230`).
+ *
+ * At a call, each slot's content becomes `{#snippet name()}…{/snippet}` and
+ * the unslotted content `{#snippet children()}`, routed by `routeSlots`. In a
+ * component, `<slot name="x">fallback</slot>` becomes
+ * `{#if x}{@render x()}{:else}fallback{/if}` and `<slot />` becomes
+ * `{@render children?.()}`.
+ *
+ * Mutates `body`. Errors join the parse errors, by position.
+ *
+ * @returns {{ reads: Set<string>, renders: Set<string> }} the props this
+ *   component's own `<slot>`s read, for `declareSlotProps` to declare where
+ *   the script does not, and every name it renders content from
+ */
+export function lowerSlots(ctx, body) {
+  const reads = new Set(), renders = new Set()
+  const errors = (ctx.DOM._parseErrors ??= [])
+  const refuse = (message, n) => errors.push({ message, pos: n?.start ?? null })
+  const legal = (name, n, spelling) => {
+    if (SNIPPET_NAME.test(name)) return true
+    const camel = name.replace(/[^\w$]+(.)?/g, (_, c) => (c ? c.toUpperCase() : ''))
+    refuse(`${spelling} names "${name}", which no snippet can be called. A slot is a ` +
+      `snippet, so its name is a bare identifier — write '${camel}'.`, n)
+    return false
+  }
+
+  const lowerList = (list) => {
+    if (!Array.isArray(list)) return
+    for (let i = 0; i < list.length; i++) list[i] = lowerNode(list[i])
+  }
+  const lowerInside = (n) => {
+    for (const k of ['body', 'mainBlock', 'elseBlock', 'elsePart']) lowerList(n[k])
+    if (Array.isArray(n.parts)) for (const p of n.parts) lowerList(p?.body)
+    else if (n.parts && typeof n.parts === 'object') for (const v of Object.values(n.parts)) lowerList(v)
+  }
+
+  const lowerSlot = (n) => {
+    const nameAttr = n.attributes?.find((a) => a.name === 'name')
+    const prop = slotProp(n.elArg || nameAttr?.value?.replace(/^['"]|['"]$/g, ''))
+    const tag = n.elArg ? `<slot:${n.elArg}>` : '<slot>'
+    // A slot is a HOLE, and a hole carries nothing outward: there is no `let:`
+    // to read a value with, so an attribute here would reach nobody (`FJS-304`).
+    const passed = n.attributes?.filter((a) => a !== nameAttr) ?? []
+    if (passed.length) {
+      refuse(
+        `${tag} takes no attributes, and "${passed[0].name}" would reach nobody — ` +
+        `a slot passes the caller's content through, never a value back out. ` +
+        `To hand something to the caller, render a snippet with an argument: ` +
+        `\`export let ${prop} = null\` and \`{@render ${prop}?.(value)}\`.`, n)
+    }
+    if (!legal(prop, n, tag)) return { type: 'text', value: '' }
+    reads.add(prop)
+    const fallback = trimEmptyNodes(n.body ?? [])
+      .filter((c) => c.type !== 'comment' || ctx.config?.preserveComments)
+    lowerList(fallback)
+    if (!fallback.length) return { type: 'systag', value: `@render ${prop}?.()`, start: n.start }
+    return {
+      type: 'if',
+      parts: [{ value: `#if ${prop}`, body: [{ type: 'systag', value: `@render ${prop}()`, start: n.start }] }],
+      elsePart: fallback,
+      start: n.start,
+    }
+  }
+
+  const lowerCall = (n) => {
+    const routing = routeSlots(n, ctx.config?.preserveComments)
+    for (const { child, target } of routing.mixed) {
+      const where = `a {#${child.type}} inside <${n.name}>`
+      ctx.warning?.({
+        message: target.mixed === 'names'
+          ? `Warning: ${where} names more than one slot (${target.names.join(', ')}), so the ` +
+            `whole block goes to the default slot and every 'slot=' inside it is ignored. ` +
+            `A block belongs to one slot — split it, one per slot.`
+          : `Warning: ${where} mixes slotted and unslotted content, so the whole block goes ` +
+            `to the default slot and every 'slot=' inside it is ignored. Move the slotted ` +
+            `elements out of the block, or slot the block's own wrapper instead.`,
+      })
+    }
+    const given = new Map()
+    for (const s of routing.snippets) {
+      lowerList(s.body)
+      given.set(s.name, s)
+    }
+    for (const [name, nodes] of routing.slots) {
+      const prop = slotProp(name)
+      const first = nodes[0] ?? n
+      if (!legal(prop, first, `slot="${name}"`)) continue
+      if (given.has(prop)) {
+        refuse(
+          `<${n.name}> is given "${prop}" twice — as {#snippet ${prop}()} and as ` +
+          `${prop === 'children' ? 'its unslotted content' : `slot="${name}"`}, and one ` +
+          `of them would be dropped. Keep one.`, first)
+        continue
+      }
+      lowerList(nodes)
+      given.set(prop, { type: 'snippet', name: prop, rawArgs: '', body: nodes, start: first.start ?? n.start })
+    }
+    if (n.body || given.size) n.body = [...given.values()]
+  }
+
+  const lowerNode = (n) => {
+    if (!n || typeof n !== 'object') return n
+    if (n.type === 'systag' && n.value?.startsWith('@render ')) renders.add(parseRenderTag(n.value).name)
+    if (n.type === 'node' && n.name === 'slot') return lowerSlot(n)
+    if (n.type === 'node' && (n.name === 'component' || /^[A-Z]/.test(n.name ?? ''))) {
+      lowerCall(n)
+      return n
+    }
+    lowerInside(n)
+    return n
+  }
+
+  lowerList(body)
+  return { reads, renders: new Set([...reads, ...renders]) }
+}
+
+/**
+ * What a `<slot>` reads is a prop, so a component with `<slot name="header">`
+ * and no `export let header` gets one, appended to the script where no offset
+ * before it moves. A name the script already declares is left to the script.
+ */
+export function declareSlotProps(script, reads) {
+  if (!reads.size) return script
+  const declared = new Set()
+  try {
+    const ast = acorn.parse(script, { sourceType: 'module', ecmaVersion: 'latest' })
+    for (const n of ast.body) {
+      const d = n.type === 'ExportNamedDeclaration' ? n.declaration : n
+      if (d?.type === 'VariableDeclaration') {
+        for (const x of d.declarations) for (const name of patternBindingNames([x.id])) declared.add(name)
+      } else if (d?.id?.name) declared.add(d.id.name)
+      if (n.type === 'ImportDeclaration') for (const s of n.specifiers) declared.add(s.local.name)
+    }
+  } catch {
+    return script        // reported by the script's own parse
+  }
+  const missing = [...reads].filter((name) => !declared.has(name))
+  return missing.length ? `${script}\n${missing.map((name) => `export let ${name} = null`).join('\n')}\n` : script
 }
 
 
@@ -6883,7 +7005,9 @@ export const classSource = (attr, name) => attr.value ? unwrapExp(attr.value) : 
  * In attribute order, one entry per attribute that does anything:
  *
  * - `prop` — `name`, with `class` renamed `$class` (a reserved word), and the
- *   parsed `attr`, whose value each target lowers itself
+ *   parsed `attr`, whose value each target lowers itself. An event prop
+ *   written with modifiers (`onclick|preventDefault`) is named `onclick` and
+ *   carries `event` and `modifiers`, which the target wraps the value in
  * - `spread` — `{...expr}`; `expr` is the source after the dots
  * - `bind` — `bind:name={target}`; `target` defaults to the prop's own name
  * - `bind-this` — `bind:this={target}`, the child's exported interface
@@ -6912,18 +7036,20 @@ export function componentAttributes(node) {
       continue
     } else if (name.startsWith('client:')) {
       out.push({ kind: 'island', name, attr })
-    } else if (name[0] === '@' || name.startsWith('on:')) {
-      const spelled = name.startsWith('on:') ? name.slice(3) : name.slice(1)
-      // The prop this becomes is named after THIS event: a message naming
-      // `onclick` made the fix for `on:paid` a second wrong guess.
-      const event = spelled.split('|')[0]
-      const modifiers = spelled.slice(event.length)
-      refuse(
-        `on:${spelled} is not valid on a component. Use on${event}={fn} (a plain callback prop) instead.` +
-        // A modifier is a thing the compiler does to a DOM event before calling
-        // the handler; a component decides for itself what it passes.
-        (modifiers ? ` A modifier (${modifiers}) has no meaning on a component — the child decides what it passes, so handle it in the callback.` : '')
-      )
+    } else if (eventAttribute(name)?.modifiers.length) {
+      // A guard or a timer compiles into the value, so it survives the child
+      // forwarding it to an element; a listener option has no listener here.
+      const { event, modifiers } = eventAttribute(name)
+      const options = modifiers.filter((m) => LISTENER_OPTIONS.has(m.name)).map((m) => m.name)
+      if (options.length) {
+        refuse(
+          `<${node.name} ${name}> -- ${options.map((o) => `'${o}'`).join(', ')} is an addEventListener ` +
+          `option, and a component has no listener of its own to set it on. Put it on the element ` +
+          `inside the component, or handle it in the callback.`
+        )
+      } else {
+        out.push({ kind: 'prop', name: `on${event}`, attr, event, modifiers })
+      }
     } else if (name.startsWith('{...') && name.endsWith('}')) {
       out.push({ kind: 'spread', name, attr, expr: name.slice(4, -1) })
     } else if (name[0] === '{' || name.startsWith('*{') || name[0] === '#') {
@@ -6995,7 +7121,7 @@ export function elementBindTarget(ctx, attr, varName) {
       // road rather than only the rule: telling someone to declare it `let`
       // answers a question they did not ask, since re-rendering is the thing
       // the `var` was chosen to avoid.
-      ? `\`var ${varName}\` is outside the reactive graph (RULE 13), so the DOM would be written once at mount and never again. For two-way, declare it \`let\`. To capture input WITHOUT re-rendering, keep the \`var\` and write it from a handler: \`on:input={e => { ${varName} = e.target.value }}\`.`
+      ? `\`var ${varName}\` is outside the reactive graph (RULE 13), so the DOM would be written once at mount and never again. For two-way, declare it \`let\`. To capture input WITHOUT re-rendering, keep the \`var\` and write it from a handler: \`oninput={e => { ${varName} = e.target.value }}\`.`
       : varEntry?.kind === 'const'
       ? (varEntry.isDerived
           // A derived const is the documented case for the writable derived
@@ -7123,8 +7249,7 @@ export function makeComponent(node, option = {}) {
   const allProps = [],
     reactiveProps = [],
     twoWayProps = []          // bind:prop — child→parent, wired via bindProp
-  const slotBlocks = [],
-    spreadProps = []          // {...expr} — merged via Object.assign
+  const spreadProps = []    // {...expr} — merged via Object.assign
   let bindThisSetter = null
 
   const at = node.start != null ? ` — ${ctx.posOf(node.start)}` : ''
@@ -7156,6 +7281,10 @@ export function makeComponent(node, option = {}) {
       }
       case 'prop': {
         const ip = ctx.inspectProp(a.attr)
+        if (a.modifiers) {
+          ip.value = applyEventModifiers(ctx, a.modifiers, a.event, ip.value).handler
+          ip.static = false
+        }
         allProps.push({ name: a.name, value: ip.value, isStatic: ip.static })
         // Non-static props need a $push effect to stay live when deps change.
         if (!ip.static) reactiveProps.push({ name: a.name, value: ip.value })
@@ -7166,62 +7295,36 @@ export function makeComponent(node, option = {}) {
 
   // ── Snippet children → same-name props ────────────────────────────────────
   //
-  // VISION §9.5: "named snippets defined directly inside a component tag are
-  // automatically passed as same-name props". They were not — a snippet child
-  // fell through to the default slot, where buildBlock hoisted it as a local
-  // function inside the SLOT's scope and nothing ever called it. So
-  //
-  //   <Table {columns} {rows}>{#snippet row(r)}<tr>…</tr>{/snippet}</Table>
-  //
-  // rendered a table with a head and an empty body, silently: no compile error,
-  // no runtime error, `row` simply arrived as undefined and `{@render row?.()}`
-  // optional-chained away. This is the only parameterized composition Mesa has
-  // — a named slot cannot take `r` — so a component kit that draws rows, cells
-  // or trailing icons cannot be written without it.
+  // Everything inside a component tag is a snippet by now — `slot=` content and
+  // unslotted content were rewritten to one by `lowerSlots` — and each is passed
+  // as the prop of its name (VISION §9.5). A snippet child that fell through to
+  // a slot instead was hoisted inside the SLOT's scope and never called, so
+  // `<Table>{#snippet row(r)}…{/snippet}</Table>` drew a head and no body.
   //
   // The definition is emitted in the calling scope (it closes over the parent's
   // reactive variables) under a unique name, so two components in one block can
-  // each take a snippet called `row`.
-  const routing = routeSlots(node, ctx.config?.preserveComments)
+  // each take a snippet called `row`. It is marked as content, which is how the
+  // child tells content it does not render from a function prop it ignores.
+  //
+  // A prop written on the tag under the same name is the caller's override and
+  // the content its fallback: a resource file passes its caller's `{actions}`
+  // to `<Form>` beside its own `<Button slot="actions">`, and the caller's
+  // replaces the row (`contentFallback`).
   const snippetDefs = []
-  for (const s of routing.snippets) {
+  for (const s of (node.body ?? []).filter((c) => c.type === 'snippet')) {
     const varName = `$$snip${ctx.uniqIndex++}_${s.name}`
-    snippetDefs.push(ctx.makeSnippet({ ...s, varName }))
+    snippetDefs.push(ctx.makeSnippet({ ...s, varName, content: true }))
+    const written = allProps.find((p) => p.name === s.name)
+    if (written) {
+      written.value = contentFallback(written.value, varName)
+      const live = reactiveProps.find((p) => p.name === s.name)
+      if (live) live.value = written.value
+      continue
+    }
     // Static: a snippet definition is a stable function for the life of the
     // block, so it needs no push effect. What it renders stays reactive because
     // the block it builds reads the parent's signals.
     allProps.push({ name: s.name, value: varName, isStatic: true })
-  }
-
-  // ── Slots ─────────────────────────────────────────────────────────────────
-  for (const { child, target } of routing.mixed) {
-    const where = `a {#${child.type}} inside <${node.name}>`
-    ctx.warning({
-      message: target.mixed === 'names'
-        ? `Warning: ${where} names more than one slot (${target.names.join(', ')}), so the ` +
-          `whole block goes to the default slot and every 'slot=' inside it is ignored. ` +
-          `A block belongs to one slot — split it, one per slot.`
-        : `Warning: ${where} mixes slotted and unslotted content, so the whole block goes ` +
-          `to the default slot and every 'slot=' inside it is ignored. Move the slotted ` +
-          `elements out of the block, or slot the block's own wrapper instead.`,
-    })
-  }
-  for (const [name, nodes] of routing.slots) {
-    const block = ctx.buildBlock({ body: nodes }, { inline: true })
-    slotBlocks.push(
-      xNode('slot-block', { block, name }, (w, n) => {
-        w.write(true, n.name === 'default' ? 'default: $$runtime.makeBlock(' : `'${n.name}': $$runtime.makeBlock(`)
-        w.add(n.block.template)
-        if (n.block.source) {
-          w.write(', ($$parentElement) => {')
-          w.indent++
-          w.add(n.block.source)
-          w.indent--
-          w.write(true, '}')
-        }
-        w.write(')')
-      })
-    )
   }
 
   // Build props object expression (static init)
@@ -7241,7 +7344,6 @@ export function makeComponent(node, option = {}) {
     return `{${props.map(p => `${key(p.name)}: ${p.value}`).join(', ')}}`
   }
 
-  const hasSlots    = slotBlocks.length > 0
   const hasReactive = reactiveProps.length > 0
   const hasSpreads  = spreadProps.length > 0
   const hasBindThis = !!bindThisSetter
@@ -7269,7 +7371,7 @@ export function makeComponent(node, option = {}) {
   const makeBind = (anchorName) => xNode(
     'component',
     { anchorName, componentName, allProps, reactiveProps, spreadProps, twoWayProps,
-      slots: slotBlocks, snippetDefs, bindThisSetter, hasSlots, hasReactive, hasSpreads,
+      snippetDefs, bindThisSetter, hasReactive, hasSpreads,
       hasBindThis, island },
     (w, n) => {
       // Snippet props are defined first: the call that receives them is on the
@@ -7278,19 +7380,11 @@ export function makeComponent(node, option = {}) {
 
       const propsObj = buildPropsObj(n.allProps, n.hasSpreads ? n.spreadProps : [])
 
-      // Call: ComponentFn(anchor, props, slotsObj | null)
-      // As an island: $$runtime.island(anchor, ComponentFn, props, slots, meta)
+      // Call: ComponentFn(anchor, props, null)
+      // As an island: $$runtime.island(anchor, ComponentFn, props, null, meta)
       const open  = n.island ? `$$runtime.island(${n.anchorName}, ${n.componentName}, ` : `${n.componentName}(${n.anchorName}, `
       const close = n.island ? `, ${JSON.stringify(n.island)});` : ');'
-      if (!n.hasSlots) {
-        w.writeLine(`${open}${propsObj}, null${close}`)
-      } else {
-        w.write(true, `${open}${propsObj}, {`)
-        w.indent++
-        n.slots.forEach((s, i) => { if (i) w.write(','); w.add(s) })
-        w.indent--
-        w.writeLine(`}${close}`)
-      }
+      w.writeLine(`${open}${propsObj}, null${close}`)
 
       // Register anchor so pushProps, bindProp and bind:this can find the
       // child's registry. bind:this needs it too — the exported interface is
@@ -7332,13 +7426,6 @@ export function makeComponent(node, option = {}) {
 
 export function bindProp(prop, node, element) {
   const ctx = this
-  // Normalize bare HTML event attributes (onclick, onmouseenter, oninput…)
-  // to Mesa's on: form so they go through the event delegation system.
-  // Only applies to DOM elements — components use onclick= as a prop.
-  const _rawName = prop.name
-  if (/^on[a-z]/.test(_rawName) && !_rawName.startsWith('on:')) {
-    prop = { ...prop, name: 'on:' + _rawName.slice(2) }
-  }
   const name = prop.name
 
   // {@attach expr} — element-level lifecycle function
@@ -7470,10 +7557,10 @@ export function bindProp(prop, node, element) {
     }
   }
 
-  // on:event|mod1|mod2(arg)  or  @event  (modifiers optional)
-  if (name[0] === '@' || name.startsWith('on:')) {
-    const { directive, modifiers } = parseModifiers(name)
-    const event = directive.startsWith('on:') ? directive.slice(3) : directive.slice(1)
+  // onevent|mod1|mod2(arg)  (modifiers optional)
+  const on = eventAttribute(name)
+  if (on) {
+    const { event, modifiers } = on
     const rawHand = prop.value ? unwrapExp(prop.value) : '() => {}'
     // Scan raw handler for $$emit / $$props / $$attributes / $context / $.transition usage.
     ctx.detectDependency(rawHand)
@@ -7489,7 +7576,7 @@ export function bindProp(prop, node, element) {
     if (canDelegate) {
       ctx.delegatedEvents.add(event)
       // A delegated handler is a PROPERTY on the element, so a second
-      // `on:click` on one element overwrote the first and it fired never —
+      // `onclick` on one element overwrote the first and it fired never —
       // silently, and only on this path: the non-delegated branch below calls
       // `addEvent`, which appends, so the same markup behaved differently
       // depending on whether the event had a modifier on it. The merge is only
@@ -7633,7 +7720,7 @@ export function inspectProp(prop) {
     // rewritten as a READ: `() => $$runtime.get($$sig_open) = false`, which does
     // not parse. Nothing reported it: the compiler was happy, the module
     // loaded, and the click threw `Invalid left-hand side in assignment`, so a
-    // dialog's Cancel button did nothing. `on:click` on an ELEMENT has always
+    // dialog's Cancel button did nothing. `onclick` on an ELEMENT has always
     // passed setters here — this is the same call, on the component path.
     const exp = ctx.accessors ? rewriteExpr(rawExp, ctx.accessors, ctx.setters, ctx.proxyFireFns) : rawExp
     return { name, value: exp, static: false, mod: {} }
@@ -7733,11 +7820,11 @@ function _collectTemplateExpressions(body, out = []) {
       if (!attr || attr.type !== 'exp' || typeof attr.value !== 'string') continue
 
       // Skip attributes whose value is expected to BE a function rather than a
-      // value to render: event handlers and directives. `on:click={toggleTheme}`
+      // value to render: event handlers and directives. `onclick={toggleTheme}`
       // reads an imported function as a value, which is correct and common —
       // warning on it would make the diagnostic noisy enough to turn off.
       const an = attr.name ?? ''
-      if (/^on[:A-Za-z]/.test(an) || /^(use|attach|transition|in|out|animate|bind):/.test(an)) continue
+      if (/^on[A-Za-z]/.test(an) || /^(use|attach|transition|in|out|animate|bind):/.test(an)) continue
 
       const inner = attr.value.replace(/^\{|\}$/g, '').trim()
       if (inner) out.push(inner)
@@ -9800,7 +9887,7 @@ export const version = '2.0.0'
  *  - Has no `$:` watch handlers, path watches, or auto-tracked effects
  *  - Has no `$context` provides or consumes
  *  - Has no async derived `const` (would need runtime re-fetching)
- *  - Has no DOM event handlers (on:, @event)
+ *  - Has no DOM event handlers (onclick)
  *  - Has no `{@attach}` lifecycle directives
  *  - Has no `bind:value` / `bind:group` (these require let, caught above)
  *
@@ -9844,7 +9931,7 @@ export function detectStatic(analysis, dom) {
 
 /**
  * Walk the DOM AST and return true if any node has an event handler
- * (on:event, @event) or an {@attach} directive — both require JS at runtime.
+ * (onclick) or an {@attach} directive — both require JS at runtime.
  */
 function _domHasInteractivity(node) {
   if (!node || typeof node !== 'object') return false
@@ -9854,8 +9941,7 @@ function _domHasInteractivity(node) {
   if (Array.isArray(node.attributes)) {
     for (const attr of node.attributes) {
       const name = attr.name ?? ''
-      if (name.startsWith('on:'))    return true   // on:click etc.
-      if (name.startsWith('@'))      return true   // @click shorthand
+      if (eventAttribute(name))      return true   // onclick etc.
       if (name === '{@attach}')      return true   // lifecycle attachment
       if (attr.raw?.startsWith('{@attach')) return true
     }
@@ -10237,10 +10323,12 @@ export async function compile(source, config = {}) {
   await hook('dom:after')
 
   if (config.compact) compactDOM(ctx.DOM, config.compact === 'full')
+  const { reads: slotReads, renders: slotRenders } = lowerSlots(ctx, ctx.DOM.body)
+  ctx.slotRenders = slotRenders
 
   // ── Parse + analyze script ────────────────────────────────────────────────
   await hook('js:before')
-  let rawScript = ctx.scriptNodes[0]?.content || ''
+  let rawScript = declareSlotProps(ctx.scriptNodes[0]?.content || '', slotReads)
   // Where the script body begins in the `.mesa`, so acorn's offsets can be put
   // back onto the file. `readTag` leaves `end` at the character after `>`.
   const _scriptStart = ctx.scriptNodes[0]?.end ?? null
@@ -10317,7 +10405,7 @@ export async function compile(source, config = {}) {
   } catch (e) {
     // An empty program is not a degraded compile, it is a different component:
     // the template is compiled against a script that declares nothing, so
-    // `{n}` and `on:click={bump}` are emitted for a `let n` and a `function
+    // `{n}` and `onclick={bump}` are emitted for a `let n` and a `function
     // bump` that have silently stopped existing and the browser throws
     // ReferenceError at mount. This was a warning, and `analysis.errors` is
     // the only channel that fails a build.
@@ -10427,7 +10515,7 @@ export async function compile(source, config = {}) {
     return rx.test(rawScript) || rx.test(templateExpressions(source))
   }
 
-  if ([...DOOR_MEMBERS, 'transition', 'entrance', 'fade', 'slide', 'fly'].some(reaches)) {
+  if ([...DOOR_MEMBERS, 'transition', 'entrance', 'fade', 'slide', 'fly', 'measure', 'viewport', 'focus'].some(reaches)) {
     ctx.require('$mesa')
   }
 
@@ -10441,13 +10529,14 @@ export async function compile(source, config = {}) {
   if (reaches('emit'))       ctx.require('$emit')
   if (reaches('props'))      ctx.require('$props')
   if (reaches('attributes')) ctx.require('$attributes')
+  if (reaches('slots'))      ctx.require('$slots')
 
   // The bare aliases are emitted only where the bare spelling is the one used,
   // so a component written entirely against the door carries no extra line.
   for (const m of SUGAR_MEMBERS) {
     if (bareRx(m).test(rawScript) || bareRx(m).test(templateExpressions(source))) {
       ctx.require('$sugar_' + m)
-      if (m === 'props' || m === 'attributes') ctx.require('$' + m)
+      if (m === 'props' || m === 'attributes' || m === 'slots') ctx.require('$' + m)
     }
   }
   if (reaches('inspect') && ctx.config.debug !== false) ctx.require('$inspect')
@@ -10560,8 +10649,8 @@ export async function compile(source, config = {}) {
           // Collect static string/number/boolean prop values (non-expression attrs)
           const props = {}
           for (const a of (n.attributes || [])) {
-            if (a.name.startsWith('client:') || a.name.startsWith('on:') ||
-                a.name.startsWith('bind:') || a.name.startsWith('@')) continue
+            if (a.name.startsWith('client:') || eventAttribute(a.name) ||
+                a.name.startsWith('bind:')) continue
             if (a.type !== 'exp' && a.value != null) props[a.name] = a.value
           }
           if (Object.keys(props).length) entry.props = props
@@ -10596,15 +10685,16 @@ export async function compile(source, config = {}) {
   // A refused file with a <script module> keeps its data half: a route that
   // imports `orders` from Order.mesa needs none of that file's form, and the
   // DOM path pays nothing for an unmounted default export either (`FJS-2182`).
-  // The default throws the refusal when mounted; `ctx.terminalRefusal` lets an
+  // The default throws the refusal when mounted; `ctx.targetRefusal` lets an
   // importer graph refuse anything that takes the default without running it.
   use_context(ctx, () => {
-    if (config.target !== 'terminal') return buildRuntime.call(ctx)
-    const refused = terminalRefusal(ctx.ir)
+    const target = TARGETS[config.target]
+    if (!target) return buildRuntime.call(ctx)
+    const refused = hostRefusal(ctx.ir, target)
     if (refused && !ctx.scriptModuleNodes[0]) throw new Error(refused)
-    if (refused) return void (ctx.terminalRefusal = refused)
+    if (refused) return void (ctx.targetRefusal = refused)
     buildHead.call(ctx)
-    buildTerminal(ctx)
+    buildHost(ctx, target)
   })
   await hook('runtime')
 
@@ -10629,16 +10719,16 @@ export async function compile(source, config = {}) {
     // only at `vite build`, having run fine in dev.
     const _compName = safeComponentIdent(_displayName, ctx)
 
-    const root = ctx.terminalRefusal ? xNode('root', (w) => {
+    const root = ctx.targetRefusal ? xNode('root', (w) => {
       ctx.scriptModuleNodes[0].content.trim().split('\n').forEach(line => w.write(true, line))
       w.write(true, '')
       w.write(true, `export default function ${_compName}() {`)
-      w.write(true, `  throw new Error(${JSON.stringify(ctx.terminalRefusal)});`)
+      w.write(true, `  throw new Error(${JSON.stringify(ctx.targetRefusal)});`)
       w.write(true, '}')
     }) : xNode('root', (w) => {
       w.write(true, `import * as $$runtime from '@frontierjs/mesa/runtime.js';`)
-      if (config.target === 'terminal')
-        w.write(true, `import * as $$tui from '@frontierjs/mesa/runtime/terminal.js';`)
+      if (TARGETS[config.target])
+        w.write(true, `import * as $$host from '${TARGETS[config.target].runtime}';`)
       w.add(ctx.module.top)
       // <script module> content — emitted at module scope, before component fn
       const moduleScript = ctx.scriptModuleNodes[0]?.content?.trim()
@@ -10671,14 +10761,19 @@ export async function compile(source, config = {}) {
       // stacks from the flush loop and from mount().
       // $$option compat shim: props still passed as __props
       w.write(true, 'const $$option = { props: __props };')
-      // $$slots — reactive object indicating which named slots have content.
-      // Used as: {#if $$slots.sidebar} to conditionally render slot areas.
-      // The declared set travels with the call. A component cannot see the
-      // slots its CALLER passed until runtime, and the caller cannot see which
-      // ones this component renders without resolving the import — so the one
-      // place both facts meet is here, in the child, at construction.
-      const _slotNames = JSON.stringify([...(ctx.slotNames ?? [])])
-      w.write(true, `const $$slots = $$runtime.makeSlots(__block, ${_slotNames}, '${_displayName}');`)
+      // Content handed to a component that neither declares the prop nor has a
+      // `<slot>` for it is dropped, and was dropped in silence (`FJS-926`). The
+      // declared names travel with the call: the caller cannot see which props
+      // this component takes without resolving the import, so the one place
+      // both facts meet is here, at construction.
+      const _declared = Object.values(ctx.analysis?.vars ?? {}).filter((v) => v.isProp).map((v) => v.name)
+      const _renders = ctx.slotRenders?.size ? `, ${JSON.stringify([...ctx.slotRenders])}` : ''
+      w.write(true, `$$runtime.unclaimedContent(__props, ${JSON.stringify(_declared)}, '${_displayName}'${_renders});`)
+      // `$slots.x` is whether the caller passed content for `x`, read off the
+      // props the content arrived as. Fixed by the caller's markup, so not live.
+      if (ctx.inuse.$slots) {
+        w.write(true, "const $$slots = new Proxy({}, { get: (_, k) => __props?.[k === 'default' ? 'children' : k] != null });")
+      }
       w.add(ctx.module.head)
       w.add(ctx.module.code)
       w.add(ctx.module.body)

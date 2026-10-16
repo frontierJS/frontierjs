@@ -46,6 +46,7 @@ litestone access --from=<ref|path> [--strict] [--json]   # the permission diff
 litestone ddl [--check] [--stdout] [--pluralize] [--out=<path>]
 litestone release [--from=<ref|path>] [--strict] [--check] [--json] [--out=<path>]
 litestone mutate                                         # mutate the schema, report what the checks miss
+litestone mutate --suite "bun test api/test"           # ...and run the app's own tests on each survivor
 litestone replicate [config.js] [--url=<url>] [--interval=<s>] [--retention=<d>] [--db=<name>]
 litestone restore [config.js] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]]
 litestone rsync <dest>                                   # every SQLite db to a destination via sqlite3_rsync
@@ -224,8 +225,9 @@ said once, in the report and at the top of the generated schema.
 Given no path it uses the database the SCHEMA declares — which is what
 `fli db:pull` passes, and for its whole life it fell back to `./development.db`
 instead and named a file the app never mentioned. A schema declaring several is
-asked which with `--db=<name>`: the output carries no `@@db`, so one database in
-is one schema out.
+asked which with `--db=<name>`: one database in is one schema out, and each of
+its models carries `@@db(<name>)` so it lands in the right file when pasted into
+the multi-database schema.
 
 **The output parses, and reading it back is a fixed point** —
 `test/introspect-roundtrip.test.ts` asserts it over the corpus. That is the

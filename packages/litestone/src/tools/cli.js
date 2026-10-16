@@ -246,6 +246,7 @@ const HELP = `
     ${dim('  --strict')}                               exit 1 unless the verdict is expand
     ${cyan('litestone mutate')}                       mutate the schema, report what the checks miss
     ${dim('  --kinds=a,b')}                            only these kinds of mutant
+    ${dim('  --suite="bun test api/test"')}            also run the app's own tests on each survivor
 
   ${bold('Options')}
     ${dim('--schema=<path>')}     path to schema.lite         ${dim('(auto-detected if omitted)')}
@@ -2075,7 +2076,7 @@ async function cmdAdvise(cfg) {
 
 
 async function cmdExplain(word) {
-  const { CATALOG, POSITIONS, positionsOf, typed, grouped, docFor, bySynonym } =
+  const { CATALOG, POSITIONS, positionsOf, typed, grouped, docFor, bySynonym, seeAlsoWord } =
     await import('../core/catalog.js')
   const { VISIBILITY, PER_CALLER } = await import('../core/advise.js')
 
@@ -2178,7 +2179,7 @@ async function cmdExplain(word) {
       console.log(`  ${dim(v.arg.padEnd(10))} ${v.of.map(e => typeof e === 'string' ? e : e.value).join(' · ')}`)
 
     if (row.excludes?.length) console.log(`  ${dim('not with')}   ${row.excludes.map(w => cyan('@' + w)).join(' ')}`)
-    if (row.seeAlso?.length)  console.log(`  ${dim('see also')}   ${row.seeAlso.map(cyan).join(' ')}`)
+    if (row.seeAlso?.length)  console.log(`  ${dim('see also')}   ${row.seeAlso.map(w => cyan(seeAlsoWord(w))).join(' ')}`)
     // `see also` leads to another word; this is the only line that leads out of
     // the catalog, which is the difference between finding a word and using it.
     if (docFor(row))          console.log(`  ${dim('read more')}  ${cyan(docFor(row))}`)
@@ -2834,7 +2835,13 @@ async function cmdMutate(cfg) {
   //
   // A fragment that could not be read is named rather than skipped: its models
   // are absent, so every rule they declare is silently outside the run.
-  const { text: schemaText, missing } = inlineImportsFromDisk(schemaPath)
+  const { text: schemaText, origins, missing } = inlineImportsFromDisk(schemaPath)
+  // A mutant's line is a line of the SPLICED text, which no file has; the
+  // report names the file and line the rule is written on.
+  const whereIs = (lineNo) => {
+    const o = origins[lineNo - 1]
+    return o ? { file: rel(o.file), line: o.line } : { file: basename(schemaPath), line: lineNo }
+  }
   if (missing.length) log(
     `  ${yellow('⚠')}  ${missing.length === 1 ? 'an import' : `${missing.length} imports`} could not be read ` +
     `(${missing.join(', ')}) — the models they declare are outside this run`)
@@ -2848,6 +2855,33 @@ async function cmdMutate(cfg) {
   log(`  ${dim(`${all.length} mutants · ${basename(schemaPath)}`)}`)
   log()
 
+  // The app's own tests, run with the mutant's text written over the schema
+  // file: that is the only seam every app shares, since each one loads its
+  // schema from a path its own harness chose. The file's bytes go back in a
+  // finally AND on exit, because a killed run that left a mutant in db/ would
+  // ship it.
+  const suiteCmd = getFlag('suite')
+  let suite = null
+  if (suiteCmd) {
+    const { spawnSync } = await import('child_process')
+    const original = readFileSync(schemaPath)
+    const restore  = () => writeFileSync(schemaPath, original)
+    process.on('exit', restore)
+    process.on('SIGINT',  () => { restore(); process.exit(130) })
+    process.on('SIGTERM', () => { restore(); process.exit(143) })
+    suite = async (text) => {
+      try {
+        writeFileSync(schemaPath, text)
+        const r = spawnSync('sh', ['-c', suiteCmd], { cwd: process.cwd(), stdio: 'ignore', timeout: 600_000 })
+        // A timeout or a missing shell is `error`/`signal`, not a failing test.
+        if (r.error || r.signal) return 'inconclusive'
+        return r.status === 0 ? 'passed' : 'failed'
+      } finally {
+        restore()
+      }
+    }
+  }
+
   // Progress as it goes: a 232-mutant run is minutes, and a silent one is
   // indistinguishable from a hung one.
   let done = 0
@@ -2855,17 +2889,26 @@ async function cmdMutate(cfg) {
   const result  = await mutationScore({
     schema: schemaText,
     kinds,
+    suite,
     // `getEncKey()` is where every other command in this file reads the key —
     // env, because a key is not config. This alone read `cfg.encryptionKey`,
     // which loadConfig does not populate, so a schema declaring `@secret` could
     // not be BUILT and every mutant came back refused by the loader.
     build:  (text) => createTestEnv({ schema: text, encryptionKey: getEncKey() }),
-    // Only on a terminal: `\r` does not erase in a pipe or a log, so a
-    // redirected run collected one progress line per tick on a single row.
-    onMutant: () => {
+    // `\r` does not erase in a pipe or a log, so a redirected run gets one
+    // line per ten mutants instead, naming the one just graded: a run that is
+    // slow and a run that is hung otherwise print the same nothing. `--json`
+    // keeps stdout for the result and reports on stderr.
+    onMutant: (m) => {
       done++
-      if (asJson || !process.stdout.isTTY) return
-      if (done % 5 === 0 || done === all.length) process.stdout.write(`\r  ${dim(`${done}/${all.length}`)}   `)
+      if (!asJson && process.stdout.isTTY) {
+        if (done % 5 === 0 || done === all.length) process.stdout.write(`\r  ${dim(`${done}/${all.length}`)}   `)
+        return
+      }
+      if (done % 10 !== 0 && done !== all.length) return
+      const line = `  ${done}/${all.length} · ${((Date.now() - started) / 1000).toFixed(0)}s · ${m.kind} ${m.outcome}: ${m.describe}`
+      if (asJson) process.stderr.write(`${line}\n`)
+      else console.log(dim(line))
     },
   })
   if (!asJson && process.stdout.isTTY) process.stdout.write('\r                    \r')
@@ -2876,8 +2919,9 @@ async function cmdMutate(cfg) {
     console.log(JSON.stringify({
       mutants: all.length, graded: result.graded, killed: result.killed, score: pct,
       refused: result.refused.length, missing,
-      errored:  result.errored.map(e => ({ kind: e.kind, lineNo: e.lineNo, describe: e.describe, thrown: String(e.thrown) })),
-      survived: result.survived.map(s => ({ kind: s.kind, lineNo: s.lineNo, describe: s.describe })),
+      errored:  result.errored.map(e => ({ kind: e.kind, ...whereIs(e.lineNo), describe: e.describe, thrown: String(e.thrown) })),
+      ...(suite && { suiteKilled: result.suiteKilled }),
+      survived: result.survived.map(s => ({ kind: s.kind, ...whereIs(s.lineNo), describe: s.describe, ...(s.suite && { suite: s.suite }) })),
     }, null, 2))
     return
   }
@@ -2894,25 +2938,40 @@ async function cmdMutate(cfg) {
     console.log()
   }
 
-  if (!result.survived.length) {
+  // What the app's own tests caught is reported beside the derived checks'
+  // kills, and what is left is what NOTHING saw.
+  const left = suite ? result.survived.filter(s => s.suite !== 'killed') : result.survived
+  if (suite) {
+    console.log(`  ${dim(`${result.suiteKilled} of ${result.survived.length} survivors failed \`${suiteCmd}\` — killed by the app's own tests`)}`)
+    const unknown = result.survived.filter(s => s.suite === 'inconclusive').length
+    if (unknown) console.log(`  ${dim(`${unknown} could not be asked (timeout or no shell) — counted as survivors`)}`)
+    console.log()
+  }
+
+  if (!left.length) {
     console.log(`  ${dim('Every mutant was noticed. Nothing to do.')}`)
   } else {
-    console.log(`  ${yellow(`${result.survived.length} SURVIVED`)} ${dim('— nothing in the checks can see these changes')}`)
+    console.log(`  ${yellow(`${left.length} SURVIVED`)} ${dim(suite ? '— neither the checks nor the app\'s own tests can see these changes' : '— nothing in the checks can see these changes')}`)
     console.log()
     const byKind = {}
-    for (const s of result.survived) (byKind[s.kind] ??= []).push(s)
+    for (const s of left) (byKind[s.kind] ??= []).push(s)
     for (const [kind, rows] of Object.entries(byKind)) {
       console.log(`    ${kind}  ${dim(`(${rows.length})`)}`)
-      for (const r of rows) console.log(`      ${dim(`${basename(schemaPath)}:${r.lineNo}`)}  ${r.describe}`)
+      for (const r of rows) {
+        const at = whereIs(r.lineNo)
+        console.log(`      ${dim(`${at.file}:${at.line}`)}  ${r.describe}`)
+      }
     }
     console.log()
     console.log(`  ${dim('A survivor is a fact about the CHECKS, not the schema. Two are expected:')}`)
     console.log(`  ${dim('a nullable @unique (SQLite takes any number of NULLs) and a create-only')}`)
-    console.log(`  ${dim('@@allow (a create has no WHERE, so only its @@deny rules are graded).')}`)
+    console.log(`  ${dim('@@allow (a create has no WHERE, so only its @@deny rules are graded)')}`)
+    if (!suite) console.log(`  ${dim('unless --suite names the app\'s own tests, which can grade a create.')}`)
   }
 
   hints([
     `  ${dim('--kinds=<a,b>')}  ${dim(`narrow: ${[...new Set(all.map(m => m.kind))].join(', ')}`)}`,
+    `  ${dim('--suite=<cmd>')}  ${dim('run the app\'s own tests on each survivor, the mutant written over the schema file')}`,
     `  ${dim('--json')}         ${dim('the score and every survivor as data')}`,
   ])
 }
@@ -3363,9 +3422,11 @@ async function cmdIntrospect(dbArg, cfg) {
   // run this command could not run it. Same class as FJS-449: the declaration is
   // the answer, and `openSqliteDbs` has always known it.
   //
-  // One database in, one schema out — this emits no `@@db` — so a schema
-  // declaring several is asked which, by name, rather than served the first.
+  // One database in, one schema out, so a schema declaring several is asked
+  // which, by name, rather than served the first; its models then carry
+  // `@@db(name)`.
   let dbPath = dbArg
+  let dbName = null
   if (!dbPath && cfg.schema && existsSync(resolve(cfg.schema))) {
     const parsed = loadSchema(cfg.schema)
     if (parsed?.schema && declaresDatabases(parsed)) {
@@ -3378,7 +3439,10 @@ async function cmdIntrospect(dbArg, cfg) {
       if (pick.length > 1)
         fatal(`${rel(resolve(cfg.schema))} declares ${pick.length} databases — name one.\n` +
               `     litestone introspect --db=${pick[0].name}   (of ${pick.map(d => d.name).join(', ')})`)
-      if (pick.length === 1) dbPath = resolveDbPath(pick[0].path, null, schemaAnchor(cfg.schema))
+      if (pick.length === 1) {
+        dbPath = resolveDbPath(pick[0].path, null, schemaAnchor(cfg.schema))
+        if (sqlite.length > 1) dbName = pick[0].name
+      }
     }
   }
   dbPath ??= cfg.db
@@ -3399,7 +3463,7 @@ async function cmdIntrospect(dbArg, cfg) {
   const { tierOf }            = await import('../import/tiers.js')
 
   const db = openDatabase(abs, { readonly: true })
-  const { lite: liteSchema, gaps, summary } = introspectToLite(db, { camelCase: !noCamel })
+  const { lite: liteSchema, gaps, summary } = introspectToLite(db, { camelCase: !noCamel, database: dbName })
   db.close()
 
   if (out) {

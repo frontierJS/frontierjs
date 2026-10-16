@@ -24,7 +24,7 @@ model Order {
 model Secret {
   id    Int    @id
   value String
-  @@gate("8.8.8.8")
+  @@gate(8.8.8.8)
 }
 `
 

@@ -146,7 +146,7 @@ Four things follow, and each of them is the reason it is spelled this way:
   `@immutable` says nothing about DELETE: whether an issued invoice may be
   removed is a question about who may remove it, which is `@@gate`'s. `@sealed`
   governs the children a document is MADE of, and the sealing row's own
-  existence is the gate's — `@@gate("1.8.8.8")` on the model is what says *and
+  existence is the gate's — `@@gate(1.8.8.8)` on the model is what says *and
   nobody deletes one*.
 
 A column that is written AT a later move and frozen from then — a signature,
@@ -290,6 +290,55 @@ nobody outside the app sets this value, the default is the wrong attribute.
 **Nothing in this table is a substitute for `@@allow`.** `@guarded` and
 `@system` decide *which columns* a context may touch; who may see a *row* is a
 policy, and a field attribute cannot express it.
+
+## Is this row the app's, or a Provider's?
+
+A Provider's row is one a third party holds the truth for — a chat post, an
+invoice in the accounting system — and the app keeps a copy to list, search and
+gate on its own terms. `@@mirror(key: <field>)` says so once, and the model's
+attributes are derived from it (`FJS-D843`):
+
+| derived | on | why |
+| --- | --- | --- |
+| `@system` | every stored column but the `@id` and a `@local` one | a caller's write to the Provider's data is what the next sync overwrites in silence, so it is refused by name instead |
+| `@immutable` | the key | a row re-keyed here no longer matches the Provider's object |
+| `@unique` | the key, unless a `@@unique` already names it | two Provider objects must not land on one row; a key unique per account stays a `@@unique([accountId, externalId])` |
+| `missingSince DateTime? @system` | the model | the sync stamps a row the Provider stopped answering and never deletes it, since a history cap and a deletion look the same from here |
+| no foreign key | a relation keyed by the Provider's ids | the Provider sends a post before its author and a reply whose root is past a history cap; a dangling reference reads as no row, and as a refusal under `check()`. A `@local` key is the app's and keeps its constraint, and `onDelete` on a Provider's relation is refused |
+
+A column the app owns beside the Provider's says `@local`:
+
+```lite
+model Post {
+  id         Int     @id
+  externalId String
+  message    String
+  starred    Boolean @default(false) @local
+  @@mirror(key: externalId)
+}
+```
+
+```js
+const post = await db.asSystem().post.create({ data: { externalId: 'p1', message: 'hello' } })
+await db.post.update({ where: { id: post.id }, data: { starred: true } })
+```
+
+```js throws
+const post = await db.asSystem().post.create({ data: { externalId: 'p2', message: 'hello' } })
+await db.post.update({ where: { id: post.id }, data: { message: 'edited' } })
+// AccessDeniedError: Post: "message" is @system — written by the application rather than by its caller.
+```
+
+**No gate is derived.** The key is `@system` and required, so a caller's own
+create is refused at the column already. A connector's claim, bound with
+`app.conduit.mirror(claim)`, is what lets a caller post a message: junction's
+generated `create` runs the caller's gate, sends the write to the Provider as
+that caller, and lands the answered row as the system (`FJS-D1125`). A
+`@@gate` a mirror declares is graded the way it is on any model.
+
+**The sync writes as the system and leaves the key out of an update.** It is
+`@immutable`, which `asSystem()` does not lift, so an upsert matching by the key
+puts it in `create` and not in `update`.
 
 ## Should this id be a uuid or an `Int`?
 

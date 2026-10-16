@@ -9,11 +9,12 @@ import { currentEngine } from './engine.js'
 import { validateBusyTimeout } from './pragmas.js'
 import { resolve, join, dirname, mkdirSync, AsyncLocalStorage, processId } from '#host'
 import { resolveAnchor } from './db-path.js'
-import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns,
+import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns, fieldToColumnName,
          SEARCH_TABLE, searchModels, searchRankExpr } from './ddl.js'
 import { buildSealMap, frozenAfterMove, machineWithMove } from './seal.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
-import { buildEdgeMap, arcCheckExpr, arcDefaultMessage, columnMapFor, mapExprCols } from './ddl.js'
+import { buildEdgeMap, arcCheckExpr, arcDefaultMessage, columnMapFor, mapExprCols,
+         pointDefaultMessage } from './ddl.js'
 import {
   buildWhere, buildOrderBy, buildRelationOrderBy, buildWindowCols, windowColumnNames, rawClause, isNamedAgg,
   buildNamedAggExpr, extractNamedAggs, parseSelectArg, trimAllToSelect, vectorOrderPlan,
@@ -34,9 +35,9 @@ import { isNestedWrite } from '../plugins/reach.js'
 import { capabilityDeclarations, capabilityNames } from './capabilities.js'
 import {
   buildPolicyMap, buildScopeMap, compileScope, compileStatic, policyExprToString,
-  buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, evalJs,
+  buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, withLiteralDefaults, evalJs,
   compileFieldPredicate, delegationProblems, buildClaimSet, checkFieldPolicies,
-  authClaimsUsed, readReach,
+  authClaimsUsed, readReach, fromReach,
 } from './policy.js'
 import {
   encryptField, decryptField, encryptDeterministic, hashField, normalizeKey,
@@ -72,7 +73,7 @@ import {
   buildSoftDeleteMap, buildHasTemplatesMap, buildEffectiveMap, buildCoFkMap, buildFtsMap, nowISO,
 } from './schema-maps.js'
 import {
-  wideDb, mappedDb, rawHandle, resolveAccessConfig, buildDbRegistry, buildModelDbMap,
+  wideDb, mappedDb, clockedDb, rawHandle, resolveAccessConfig, buildDbRegistry, buildModelDbMap,
   jsonlFilePath,
 } from './databases.js'
 import {
@@ -507,11 +508,26 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Every write path that can hit the constraint routes through here, because
   // they gave four different answers to one question — two of them silently
   // (FJS-276).
-  function asUniqueConflict(err, data) {
+  //
+  // An UPDATE names only the columns it changes, and a unique index (a partial
+  // one most of all) can span columns it leaves alone. `reached(cols)` reads
+  // those from the row the statement was aimed at, so the values are the row's
+  // own after the write rather than `undefined` (FJS-2691).
+  function asUniqueConflict(err, data, reached) {
     if (!isUniqueConflict(err) || err instanceof UniqueConflictError) return err
     const cols = uniqueConflictColumns(err)?.map(_fieldOf)
     if (!cols?.length) return err
-    const rows = Array.isArray(data) ? data : [data]
+    let rows = Array.isArray(data) ? data : [data]
+    if (reached && rows.length === 1 && rows[0] && typeof rows[0] === 'object'
+        && cols.some(c => !(c in rows[0]) || rows[0][c] === undefined)) {
+      let held = null
+      try { held = reached(cols) } catch { /* the plain answer below stands */ }
+      if (held) {
+        const merged = { ...held }
+        for (const [k, v] of Object.entries(rows[0])) if (v !== undefined) merged[k] = v
+        rows = [merged]
+      }
+    }
     if (softDelete) {
       for (const row of rows) {
         if (!row || typeof row !== 'object') continue
@@ -532,7 +548,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const named = rows.find(r => r && typeof r === 'object' && cols.some(c => r[c] !== undefined))
     return new UniqueConflictError(
       modelName, cols,
-      cols.map(c => (named?.[c] === undefined ? undefined : redactValue(c, named[c]))))
+      cols.map(c => (named?.[c] === undefined ? undefined : redactValue(c, named[c]))),
+      { keys: _parentKeys.flatMap(p => p.fields) })
   }
 
   // A CHECK the row did not satisfy.
@@ -620,6 +637,19 @@ function makeTable(readDb, writeDb, shape, ctx) {
       return out
     }
 
+    // SQLite reports a CHECK that opens with a column by that column's name
+    // alone, not by its text, so a point's refusal arrives as `location` and
+    // is found by the field. Without this the refusal is the model-level
+    // sentence below -- no column, no rule.
+    for (const f of model?.fields ?? []) {
+      const pt = f.attributes?.find(a => a.kind === 'point')
+      if (!pt || want !== fieldToColumnName(f)) continue
+      const out = new ValidationError([{ path: [f.name], message: pointDefaultMessage(pt) }])
+      out.model      = modelName
+      out.constraint = expr
+      return out
+    }
+
     // A model-level one spans columns by definition, so there is no single box
     // to mark and the empty path is the form-level answer — the shape
     // `VersionConflictError` already takes for a refusal about a whole record.
@@ -650,11 +680,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // One owner for "SQLite refused this write". Every constraint routes through
   // here, because eight call sites each choosing which translator to try is how
   // one of them ends up trying neither.
-  function asConstraintError(err, data) {
+  function asConstraintError(err, data, reached) {
     if (isCheckViolation(err)) return asCheckViolation(err)
     if (isDatatypeMismatch(err)) return asDatatypeMismatch(err)
     if (isForeignKeyFailure(err)) return asMissingParent(err, data)
-    return asUniqueConflict(err, data)
+    return asUniqueConflict(err, data, reached)
   }
 
   // ── a foreign key naming a row that is not there (FJS-1454) ────────────────
@@ -696,13 +726,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   // The one spelling of *that parent is not there*, for a missing parent and a
   // hidden one alike: a difference between the two answers is the oracle.
-  function parentRefusal(relation, fields, values, target) {
+  function parentRefusal(relation, fields, values, target, archived = false) {
     const one = fields.length === 1
     const out = new ForeignKeyError(modelName, {
       relation,
       field:  one ? fields[0] : fields,
       value:  one ? redactValue(fields[0], values[0]) : fields.map((f, i) => redactValue(f, values[i])),
       target,
+      archived,
     })
     Object.defineProperty(out, 'key', { value: { fields, values }, enumerable: false })
     return out
@@ -764,9 +795,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // A template is a live row the caller may read, not a hidden one: the
   // template filter shapes which rows a statement is ABOUT, and grading a
   // parent by it refused every child added under a template (FJS-2630).
-  async function canRead(tbl, where, templates = false) {
-    try { return await tbl.exists({ where, ...(templates ? { withTemplates: true } : {}) }) }
+  async function canRead(tbl, where, templates = false, deleted = false) {
+    try { return await tbl.exists({ where, ...(templates ? { withTemplates: true } : {}), ...(deleted ? { withDeleted: true } : {}) }) }
     catch (e) { if (e instanceof AccessDeniedError) return false; throw e }
+  }
+
+  // A parent unreadable now and readable with `withDeleted` is archived. Any
+  // caller may pass that flag, so saying so tells her nothing she could not
+  // ask; a parent she could not read either way stays indistinguishable from
+  // a missing one.
+  async function isArchivedParent(tbl, target, where) {
+    return !!ctx.shapes?.[target]?.softDelete &&
+      await canRead(tbl, where, ctx.shapes?.[target]?.hasTemplates != null, true)
   }
 
   // A parent no read rule narrows hides a row from the caller only by the
@@ -827,7 +867,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
           continue
         }
         if (out[i]) { out[i].hidden.add(p.relation); continue }
-        out[i] = parentRefusal(p.relation, p.fields, values, p.target)
+        const archived = await isArchivedParent(tbl, p.target, Object.fromEntries(p.references.map((r, j) => [r, values[j]])))
+        out[i] = parentRefusal(p.relation, p.fields, values, p.target, archived)
         Object.defineProperty(out[i], 'hidden', { value: new Set([p.relation]), enumerable: false })
       }
     }
@@ -1036,6 +1077,20 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
   }
 
+  // `_count` is `true` or `{ distinct: 'col' }`. Prisma's `{ _all: true }` and
+  // any other object answered a bare number where the caller reads `_count._all`,
+  // so the shape is refused by name rather than counted as COUNT(*).
+  function refuseCountShape(op, _count) {
+    if (!_count || _count === true) return
+    const isDistinct = typeof _count === 'object' && !Array.isArray(_count)
+      && Object.keys(_count).length === 1 && typeof _count.distinct === 'string'
+    if (!isDistinct) throw new ValidationError([{ path: [op, '_count'], message:
+      `${op}() _count takes true or { distinct: '<column>' }, got ${JSON.stringify(_count)}. ` +
+      `The count is a bare number (_count: true), not an object keyed by column — ` +
+      `Prisma's { _all: true } is spelled _count: true here.` }])
+    refuseAggregateKeys(op, [_count.distinct], false)
+  }
+
   // The names a `window` spec adds to a row, after the spec is held to the
   // aggregate key check. One owner, since `findMany` and `findManyAndCount`
   // both build the window column and a verb that skipped this would hand a
@@ -1112,6 +1167,20 @@ function makeTable(readDb, writeDb, shape, ctx) {
         `Cannot ${op} '${name}' on ${modelName} across currencies — it is @money(field: ${cur}), so each row's ` +
         `amount is in that row's ${cur}. Group by: ['${cur}'], or pin where: { ${cur}: '<code>' }` }])
     }
+  }
+
+  // SQLite adds integers in int64 and the read hands back a double, so a sum
+  // of rows each under 2^53 can land past it and arrive one unit short with
+  // nothing raised (`FJS-2172`). A REAL column's sum is a float and is not
+  // this: only an integer column is held to the cap.
+  const _integerFields = new Set((shape.model?.fields ?? [])
+    .filter(f => ['Int', 'BigInt'].includes(f.type?.name ?? f.type)).map(f => f.name))
+
+  function exactSum(op, field, value) {
+    if (typeof value !== 'number' || Number.isSafeInteger(value) || !_integerFields.has(field)) return value
+    throw new ValidationError([{ path: [op, '_sum', field], message:
+      `${op} _sum of '${field}' on ${modelName} is past 2^53 (${Number.MAX_SAFE_INTEGER}), which a JS number cannot ` +
+      `hold exactly. Narrow it with a where, or group by something so each sum is smaller` }])
   }
 
   // @@hasTemplates marker column name, or null if this model doesn't opt in.
@@ -1555,9 +1624,15 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // USER(4) created a LeaveRequest `approved`, and nothing on the row said how
   // (`FJS-1257`). A row that belongs further along is created at the entry and
   // walked there by its declared moves.
+  //
+  // A declared machine's entries are rows (`fromId` null), so the row starts at
+  // one of its scope's entries, and naming none takes the one there is. The
+  // rows come back with that default filled, before the create policy grades
+  // them, so a filled state cannot escape it (`FJS-1307`).
   function refuseOffEntry(rows) {
-    if (!_tableTransitions) return
+    if (!_tableTransitions) return rows
     for (const [field, spec] of Object.entries(_tableTransitions)) {
+      if (spec.declaredBy) { rows = enterDeclared(field, spec, rows); continue }
       const norm = spec.isBoolean ? (v) => (v == null ? v : !!v) : (v) => v
       // A value the enum does not name is writeData's refusal, which lists the
       // members; answering it here would say where the row starts instead.
@@ -1569,6 +1644,60 @@ function makeTable(readDb, writeDb, shape, ctx) {
           throw new TransitionViolationError(modelName, field, null, row[field], [spec.entry])
       }
     }
+    return rows
+  }
+
+  function enterDeclared(field, spec, rows) {
+    return rows.map(row => {
+      if (row == null) return row
+      const entries = declaredMoves(field, row[spec.scope]).filter(m => m.from == null).map(m => m.to)
+      if (row[field] != null) {
+        if (!entries.includes(row[field]))
+          throw new TransitionViolationError(modelName, field, null, row[field], entries)
+        return row
+      }
+      if (entries.length === 1) return { ...row, [field]: entries[0] }
+      const whose = `${spec.scope} '${row[spec.scope]}'`
+      throw new ValidationError([{ path: [field], message: entries.length
+        ? `${modelName}.${field}: ${whose} has ${entries.length} entries in ${spec.declaredBy}, so a new row names one — ${entries.map(e => `'${e}'`).join(', ')}`
+        : `${modelName}.${field}: ${whose} has no entry in ${spec.declaredBy}, so no ${modelName} can start there` }])
+    })
+  }
+
+  // A declared machine, resolved once per table: the declarer's table and
+  // column names, so a move is SQL with no lookup.
+  const _declaredMachines = (() => {
+    if (!_tableTransitions) return null
+    const out = {}
+    for (const [field, spec] of Object.entries(_tableTransitions)) {
+      if (!spec.declaredBy) continue
+      const decl = ctx.models[spec.declaredBy]
+      const c = n => ident(fieldToColumnName(decl.fields.find(f => f.name === n))).sql
+      out[field] = {
+        table:      ident(modelToTableName(decl, ctx.pluralize ?? false)).sql,
+        from:       c('fromId'),
+        to:         c('toId'),
+        gate:       decl.fields.some(f => f.name === 'gate') ? c('gate') : null,
+        scope:      c(spec.scope),
+        // The row's own scope column, as the move's correlated subquery names it.
+        outer:      `${ident(tableName).sql}.${ident(col(spec.scope)).sql}`,
+        // A move soft-deleted out of the table is a move the team removed.
+        live:       decl.attributes.some(a => a.kind === 'softDelete') ? ' AND "deletedAt" IS NULL' : '',
+      }
+    }
+    return Object.keys(out).length ? out : null
+  })()
+
+  // Every move a scope declares. A raw read, as @@extensible reads its
+  // declarations: the machine binds every caller alike, so the declarer's own
+  // gate and policy do not decide whether a move exists.
+  function declaredMoves(field, scopeValue) {
+    if (scopeValue == null) return []
+    const d = _declaredMachines[field]
+    return readDb.query(
+      `SELECT ${d.from} AS "from", ${d.to} AS "to", ${d.gate ?? 'NULL'} AS "gate" ` +
+      `FROM ${d.table} WHERE ${d.scope} = ?${d.live}`,
+    ).all(scopeValue).map(r => ({ from: r.from, to: r.to, gate: r.gate ?? null }))
   }
 
   // Resolve the caller's gate level for this model. GatePlugin owns the scale and
@@ -1655,6 +1784,35 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (!(fieldName in data)) continue
       let newValue = data[fieldName]
       if (newValue == null) continue
+
+      // ── A machine whose moves are rows ───────────────────────────────────
+      // The same ladder as below, with the moves read from the row's scope.
+      // A move has no name in the file, so it is named for its target, as an
+      // unnamed move onto an enum member is.
+      if (spec.declaredBy) {
+        const scope = callerReadScope()
+        const current = readDb.query(
+          `SELECT ${ident(col(fieldName)).sql} AS "v", ${ident(col(spec.scope)).sql} AS "s" FROM ${ident(tableName).sql} WHERE (${whereSql})${scope ? ` AND (${scope.sql})` : ''}`,
+        ).get(...whereParams, ...(scope?.params ?? []))
+        if (!current) return NOT_VISIBLE
+        const from = current.v
+        if (from == null) return null
+        const moves   = declaredMoves(fieldName, current.s)
+        const targets = () => moves.filter(m => m.from === from).map(m => m.to)
+        const move    = moves.find(m => m.from === from && m.to === newValue)
+        if (requestedMove != null) {
+          // Graded before the row's state, for the reason the named path below is.
+          const into = move ?? moves.find(m => m.from != null && m.to === newValue)
+          if (into) await gradeMove(fieldName, newValue, { gate: into.gate, system: false })
+          if (from === newValue)
+            throw new TransitionConflictError(tableName, fieldName,
+              moves.filter(m => m.from != null && m.to === newValue).map(m => m.from), newValue,
+              { actual: from, move: requestedMove })
+        } else if (from === newValue) return null
+        if (!move) throw new TransitionViolationError(tableName, fieldName, from, newValue, targets())
+        if (requestedMove == null) await gradeMove(fieldName, newValue, { gate: move.gate, system: false })
+        return { transitionName: newValue, field: fieldName, from, to: newValue, declared: true }
+      }
 
       // Fetch current value — needed to validate from-state — through the
       // caller's READ scope. Every refusal below names the move, its gate or the
@@ -1895,6 +2053,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   function applyTransitionWhereClause(transitionResult, finalWhereSql, finalWhereParams) {
     if (!transitionResult) return { sql: finalWhereSql, params: finalWhereParams }
+    // A declared move is checked in the same statement, so a move a team
+    // removes between the read and the write is not made (`FJS-D365`).
+    const d = transitionResult.declared ? _declaredMachines[transitionResult.field] : null
+    if (d) return {
+      sql:    `(${finalWhereSql}) AND ${ident(col(transitionResult.field)).sql} = ? AND EXISTS (SELECT 1 FROM ${d.table} ` +
+              `WHERE ${d.from} = ? AND ${d.to} = ? AND ${d.scope} = ${d.outer}${d.live})`,
+      params: [...finalWhereParams, transitionResult.from, transitionResult.from, transitionResult.to],
+    }
     // Add WHERE field = currentValue for optimistic concurrency
     return {
       sql:    `(${finalWhereSql}) AND "${col(transitionResult.field)}" = ?`,
@@ -2459,7 +2625,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // exclusive unit as its DELETE, then hands each child table its own.
   ctx.registerCascadeSink?.(modelName, {
     idField,
-    hears: !!(plugins?.hearsDeletes || plugins?.hearsWrites) || tableHasLogWork,
+    // A tap or an `onEvent` listener is an audience too: an open tab holds the
+    // child rows the cascade removed, and a tap arrives after the table is
+    // built, so this is asked each time and not stored (`FJS-2255`).
+    get hears() { return !!(plugins?.hearsDeletes || plugins?.hearsWrites) || tableHasLogWork || hasAudience() },
     // `fks` are this table's key columns and `keys` arrays aligned with them.
     rowsWhere(fks, keys) {
       const out = []
@@ -2474,6 +2643,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     async removed(rows) {
       if (plugins?.hasPlugins) await plugins.afterDelete(modelName, rows, ctx)
       if (tableHasLogWork) emitLogs('delete', rows)
+      for (const row of rows) fireRowEvent('remove', 'remove', row)
     },
     // A retention sweep deletes this table's rows raw, so it asks what the
     // cascade takes under them before its DELETE does (FJS-2097).
@@ -2488,15 +2658,20 @@ function makeTable(readDb, writeDb, shape, ctx) {
         const after = { ...before, ...Object.fromEntries(fks.map(f => [f, null])) }
         if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', after, ctx)
         if (tableHasLogWork) emitLogs('update', [after], { before, after })
+        fireRowEvent('update', 'update', after)
       }
     },
   })
 
   // null when no model the cascade can reach has a plugin or a log to tell,
-  // which is every app without one, so the walk costs those nothing.
+  // which is every app without one, so the walk costs those nothing. Kept per
+  // audience: a tap installed later is a reason to walk that the stored false
+  // would hide.
   let _cascadeHeard = null
+  let _cascadeAudience = false
   function cascadeHeard(from = modelName) {
     const own = from === modelName
+    if (own && _cascadeAudience !== hasAudience()) { _cascadeHeard = null; _cascadeAudience = !_cascadeAudience }
     if (own && _cascadeHeard !== null) return _cascadeHeard
     if (own) _cascadeHeard = false
     if (!ctx.cascadeSinkFor) return false
@@ -2597,10 +2772,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const ext = shape.model.attributes?.find(a => a.kind === 'extensible')
     return ext?.max ? `${ext.column}Slots` : null
   })()
+  // Every stage below shapes the row `read`/`readAll` cloned at the top, so a
+  // row a caller keeps is never written through.
   const _dropMirror = (r) => {
-    if (!_extMirror || !r || !(_extMirror in r)) return r
-    const { [_extMirror]: _m, ...rest } = r
-    return rest
+    if (_extMirror && r && _extMirror in r) delete r[_extMirror]
+    return r
   }
   const _hasJson     = jsonFields.size > 0
   const _hasBool     = boolFields.size > 0
@@ -2610,8 +2786,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // last/first return JSON strings from json_object() → parse to object
   // exists returns 0/1 integer → coerce to boolean
   // `hidden` is gatedFromFields' answer for this read: each is read as null.
-  function deserializeFromFields(row, hidden = null) {
-    const out = { ...row }
+  function deserializeFromFields(out, hidden = null) {
     for (const [name] of _fromEntries) {
       if (!(name in out)) continue
       if (hidden?.has(name)) {
@@ -2640,12 +2815,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // whenever a key happened to be missing would fire a query per row for a
   // `select` that legitimately excluded them.
   function hydrateFromFields(row) {
-    if (!_hasFrom || !row || row[idField] == null) return row
+    if (!_hasFrom || row[idField] == null) return row
     const cols = _fromEntries.map(([n, { subquerySql }]) => `${subquerySql} AS "${n}"`).join(', ')
     const vals = readDb
       .query(`SELECT ${cols} FROM "${tableName}" WHERE "${idField}" = ?`)
       .get(row[idField])
-    return vals ? { ...row, ...vals } : row
+    return vals ? Object.assign(row, vals) : row
   }
 
   // A hasMany child lands AFTER the parent's INSERT/UPDATE, so the row the unit
@@ -2669,97 +2844,66 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return opts.computedFields ?? opts.selectedFields ?? null
   }
 
-  // The JSON-parse and boolean-coerce pass, shared by read/readAll.
+  // The JSON-parse and boolean-coerce pass, shared by read/readAll. It writes
+  // into `r`, which the caller has already cloned.
   function shapeScalars(r) {
-    if (!_hasJson && !_hasBool) return r
-    const out = { ...r }
     if (_hasJson) {
       for (const field of jsonFields) {
-        if (field in out && typeof out[field] === 'string') {
-          try { out[field] = JSON.parse(out[field]) } catch {}
+        if (field in r && typeof r[field] === 'string') {
+          try { r[field] = JSON.parse(r[field]) } catch {}
         }
       }
     }
     if (_hasBool) {
       for (const field of boolFields) {
-        if (field in out && out[field] !== null) out[field] = out[field] === 1 || out[field] === true
+        if (field in r && r[field] !== null) r[field] = r[field] === 1 || r[field] === true
       }
     }
-    return out
+    return r
   }
 
+  // A row is cloned once, here, and every stage after writes into the clone.
+  // A stage that spread its own copy made a plain read 0.17 µs a row and a
+  // Json + Boolean + @computed + @omit one 0.40 (`FJS-3001`).
   function read(row, opts = {}) {
     if (!row) return null
-    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return _dropMirror(row)
-    let r = opts.hydrateFrom ? hydrateFromFields(row) : row
+    const r = { ...row }
+    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return _dropMirror(r)
+    if (opts.hydrateFrom) hydrateFromFields(r)
     // Row references resolve before applyComputed below, so a @computed field
     // over `row.lastOrder.amount` still sees a row rather than its id.
-    if (_hasJson || _hasBool) {
-      const out = { ...r }
-      if (_hasJson) {
-        for (const field of jsonFields) {
-          if (field in out && typeof out[field] === 'string') {
-            try { out[field] = JSON.parse(out[field]) } catch {}
-          }
-        }
-      }
-      if (_hasBool) {
-        for (const field of boolFields) {
-          if (field in out && out[field] !== null) {
-            out[field] = out[field] === 1 || out[field] === true
-          }
-        }
-      }
-      r = out
-    }
+    if (_hasJson || _hasBool) shapeScalars(r)
     if (_hasFrom) {
-      r = deserializeFromFields(r, gatedFromFields(_tableFrom, ctx))
+      deserializeFromFields(r, gatedFromFields(_tableFrom, ctx))
       if (_hasRowRef) resolveFromRowRefs(readDb, [r], _tableFrom, ctx)
     }
-    if (_hasComputed) r = applyComputed(r, modelName, computedFns, ctx, computedWanted(opts))
-    if (hasFieldPolicy) r = applyFieldPolicy(r, opts)
+    if (_hasComputed) applyComputed(r, modelName, computedFns, ctx, computedWanted(opts))
+    if (hasFieldPolicy) applyFieldPolicy(r, opts)
     return _dropMirror(r)
   }
   function readAll(rows, opts = {}) {
     // Fast path — no transforms needed, return rows as-is
-    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return _extMirror ? rows.map(_dropMirror) : rows
+    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return _extMirror ? rows.map(r => _dropMirror({ ...r })) : rows
     const wanted = computedWanted(opts)
     const hidden = _hasFrom ? gatedFromFields(_tableFrom, ctx) : null
+    const shapeRow = (r) => {
+      if (_hasComputed) applyComputed(r, modelName, computedFns, ctx, wanted)
+      if (hasFieldPolicy) applyFieldPolicy(r, opts)
+      return _dropMirror(r)
+    }
     // Two passes when a row reference is in play: every row's id is resolved in
     // one query, then the per-row transforms run. One pass would be a query per
     // row, and applyComputed would run before the row it reads exists.
     if (_hasRowRef) {
-      const staged = rows.map(r => deserializeFromFields(shapeScalars(r), hidden))
+      const staged = rows.map(r => deserializeFromFields(shapeScalars({ ...r }), hidden))
       resolveFromRowRefs(readDb, staged, _tableFrom, ctx)
-      return staged.map(r => {
-        let out = _hasComputed ? applyComputed(r, modelName, computedFns, ctx, wanted) : r
-        if (hasFieldPolicy) out = applyFieldPolicy(out, opts)
-        return _dropMirror(out)
-      })
+      return staged.map(shapeRow)
     }
-    return rows.map(r => {
-      if (_hasJson || _hasBool) {
-        const out = { ...r }
-        if (_hasJson) {
-          for (const field of jsonFields) {
-            if (field in out && typeof out[field] === 'string') {
-              try { out[field] = JSON.parse(out[field]) } catch {}
-            }
-          }
-        }
-        if (_hasBool) {
-          for (const field of boolFields) {
-            if (field in out && out[field] !== null) {
-              out[field] = out[field] === 1 || out[field] === true
-            }
-          }
-        }
-        r = out
-      }
-      if (_hasFrom)      r = deserializeFromFields(r, hidden)
-      if (_hasComputed)  r = applyComputed(r, modelName, computedFns, ctx, wanted)
-      if (hasFieldPolicy) r = applyFieldPolicy(r, opts)
-      return _dropMirror(r)
+    return rows.map(row => {
+      const r = { ...row }
+      if (_hasJson || _hasBool) shapeScalars(r)
+      if (_hasFrom) deserializeFromFields(r, hidden)
+      return shapeRow(r)
     })
   }
 
@@ -3245,14 +3389,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // on the old key's values (`FJS-1752`). The mirror is derived, so the
       // rebuild is raw and announces nothing — the same footing as the read
       // above.
+      // The predicate names the slot's generated column, which is the same
+      // json_extract: spelled over the mirror it plans on the tenant prefix
+      // alone and reads every row the tenant holds, inside the one writer
+      // (`FJS-3134`). The column reaches the slot index only where the slot
+      // LEADS it after the tenant and scope columns.
       if (slot) {
-        const path = `$.${slot}`
         const sql  = `UPDATE "${pool.table}" SET "${pool.mirror}" = json_remove("${pool.mirror}", ?) ` +
-          `WHERE json_extract("${pool.mirror}", ?) IS NOT NULL`
+          `WHERE ${quoteIdent(slot)} IS NOT NULL`
         const only = [], vals = []
         if (_extTenantCol) { only.push(` AND ${quoteIdent(_extTenantCol)} = ?`); vals.push(extTenant(data)) }
         if (pool.scope)    { only.push(` AND ${quoteIdent(pool.scope)} = ?`);    vals.push(data[pool.scope]) }
-        writeDb.run(sql + only.join(''), path, path, ...vals)
+        writeDb.run(sql + only.join(''), `$.${slot}`, ...vals)
       }
     }
     data    = { ...data, slot }
@@ -3518,7 +3666,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         })
         continue
       }
-      if (isServerFilled(f)) continue
+      if (isServerFilled(f, model)) continue
       // A required @transient field is required OF THE CALLER, on the wire,
       // where the API validates it. It is lifted off the payload before the
       // write, so demanding it here would refuse every write that obeyed it.
@@ -3646,14 +3794,26 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   function dropFieldWriteDenied(transformed) {
+    const refused = []
     for (const [fieldName, policy] of Object.entries(fieldPolicy)) {
       if (!policy.allow?.write?.length) continue
       if (!(fieldName in transformed)) continue
       const permitted = policy.allow.write.some(expr =>
         evalJs(expr, ctx, transformed, modelName, 'create')
       )
-      if (!permitted) delete transformed[fieldName]
+      if (permitted) continue
+      delete transformed[fieldName]
+      // A dropped column nothing else fills leaves the INSERT without a value
+      // for a NOT NULL column, and SQLite's answer is a 500 that reads as a
+      // crash. The caller was refused that column, so the write is refused.
+      const f = shape.model.fields.find(x => x.name === fieldName)
+      if (f && !f.type.optional && !isServerFilled(f, shape.model) && !isServerAssignedId(f, shape.model)
+          && !f.attributes?.some(a => a.kind === 'transient')) refused.push(fieldName)
     }
+    if (refused.length) throw new AccessDeniedError(
+      `${modelName}: ${refused.map(f => JSON.stringify(f)).join(', ')} ${refused.length > 1 ? 'are' : 'is'} required, ` +
+      `and this caller may not write ${refused.length > 1 ? 'them' : 'it'}.`,
+      { model: modelName, operation: 'create' })
   }
 
   // A `File` column is a storage reference, and turning the bytes a caller
@@ -3672,7 +3832,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (fieldPolicy[f]?.encrypted || fieldPolicy[f]?.hashed) return false
     return !(t?.name === 'File' && !t.array)
   }))
-  const _needsStorage = (v) => v !== null && typeof v === 'object' && !(v instanceof Date)
+  // A string is storage's too: a data URL is bytes and anything else but ref
+  // text (`{` first, the one thing FileStorage passes through) is refused there,
+  // so with none installed the column would keep a caller's URL as-is and a
+  // reader trusting it would render a stranger's address (`FJS-2699`).
+  const _needsStorage = (v) => typeof v === 'string'
+    ? !v.trimStart().startsWith('{')
+    : v !== null && typeof v === 'object' && !(v instanceof Date)
   function refuseFileWithoutStorage(data) {
     if (!_fileFields.length || plugins?.handles('File')) return
     for (const k of _fileFields) {
@@ -3929,7 +4095,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // Required-field pre-flight. The schema knows requiredness; without this
     // a missing NOT NULL field surfaced as SQLite's raw "NOT NULL constraint
     // failed" instead of a ValidationError shaped like every other field rule.
-    if (model && requireAll) refuseMissingRequired(model, data)
+    // A server fill (`@default`, an array's `[]`) is for an ABSENT key, so the
+    // pre-flight exempts those columns and an explicit `null` on one reached
+    // SQLite's NOT NULL (`FJS-2042`).
+    if (model && requireAll) {
+      refuseMissingRequired(model, data)
+      refuseClearingRequired(data)
+    }
 
     // The OTHER thing a payload can say, and the one shape that is
     // unambiguously wrong.
@@ -4895,8 +5067,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // when both are present and emits the one alone otherwise.
     const whereAll    = and(whereFrag, policyFrag)
     const whereClause = whereAll ? sqlFragment(` WHERE ${whereAll.sql}`, whereAll.params) : null
-    const pageText    = pageSql(limit, offset)
-    const pageFrag    = pageText ? sqlFragment(pageText) : null
+    const pageFrag    = pageSql(limit, offset)
 
     // ── Window functions ──────────────────────────────────────────────────
     // The window columns lead the SELECT list, so their binds lead the
@@ -5307,7 +5478,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
           const named = Object.keys(ops.connect)
           const byKey = named.length === refs.length && refs.every(r => r in ops.connect)
           throw byKey
-            ? parentRefusal(fieldName, fks, refs.map(r => ops.connect[r]), rel.targetModel)
+            ? parentRefusal(fieldName, fks, refs.map(r => ops.connect[r]), rel.targetModel,
+                await isArchivedParent(tbl, rel.targetModel, ops.connect))
             : parentRefusal(fieldName, fks.length === 1 ? fks : [fieldName], [ops.connect], rel.targetModel)
         }
         grantsOf(target)
@@ -5583,7 +5755,24 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function writeRefusal(plan, err, st) {
     return plan.op === 'delete'
       ? refusedDelete(err, plan.where?.sql ?? null, plan.where?.params ?? [])
-      : asConstraintError(err, st.data)
+      : asConstraintError(err, st.data, plan.op === 'update' && plan.where ? reachedRow(plan.where) : null)
+  }
+
+  // The first row an UPDATE's WHERE reaches, as the named columns by field name.
+  // The statement failed and rolled back, so unwritten columns are still the
+  // row's own.
+  function reachedRow(where) {
+    return (cols) => {
+      const q = sqlJoin([
+        sqlFragment('SELECT '), sqlJoin(cols.map(c => ident(col(c))), ', '),
+        sqlFragment(' FROM '), T, KW.where, where, sqlFragment(' LIMIT 1'),
+      ], '')
+      const got = readDb.query(q.sql).get(...q.params)
+      if (!got) return null
+      const out = {}
+      for (const c of cols) out[c] = got[col(c)]
+      return out
+    }
   }
 
   function selectWhere(where) {
@@ -6094,7 +6283,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     refuseSystemEntries(system, ['create'])
     if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
     await enforceValueSets(modelName, data, ctx)
-    refuseOffEntry(data)
+    data = refuseOffEntry(data)
     // The rows as the caller wrote them: every stamp lands later, inside the unit.
     const hidden = await hiddenParents(data, [], system)
     const parent = ctx.hasPolicies ? data.map((row, i) => checkCreate(authStamped(row, modelName, ctx), hidden[i])) : []
@@ -6198,7 +6387,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // row lands with, and grading before it would pass it ungraded (FJS-1307).
     if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select, system }, ctx)
     await enforceValueSets(modelName, [data], ctx)
-    refuseOffEntry([data])
+    data = refuseOffEntry([data])[0]
     // Auto-generate @id if field uses @default(uuid/ulid/cuid) and not provided
     // What the ENGINE puts in this payload, so the @guarded/@system refusals
     // in writeData can grade the caller's keys alone (FJS-565).
@@ -6638,7 +6827,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       await enforceValueSets(modelName, [createData], ctx)
       await enforceValueSets(modelName, [updateData], ctx, { where })
     }
-    refuseOffEntry([createData])
+    createData = refuseOffEntry([createData])[0]
     // Threaded through to both halves: the lookup has to SEE the row the
     // update would write, or an upsert against an excluded row reads as
     // absent and tries to INSERT one that is already there.
@@ -7289,8 +7478,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         ...(_stringAgg && typeof _stringAgg === 'object' ? [_stringAgg.field, _stringAgg.orderBy] : []),
         ...namedAggFields(extractNamedAggs(args).map(([, spec]) => spec)),
       ])
-      if (_count && typeof _count === 'object' && _count.distinct)
-        refuseAggregateKeys('aggregate', [_count.distinct], false)
+      refuseCountShape('aggregate', _count)
       refuseMixedCurrency('aggregate', args)
       const params = []
       // A SELECT-list value (a _stringAgg separator, a named aggregate's
@@ -7372,6 +7560,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         for (const [field, wanted] of Object.entries(spec)) {
           if (!wanted) continue
           result[agg][field] = raw[`${agg}__${field}`] ?? null
+          if (agg === '_sum') exactSum('aggregate', field, result[agg][field])
         }
         if (agg === '_min' || agg === '_max') result[agg] = hydrateCols(result[agg])
       }
@@ -7391,7 +7580,22 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
     async groupBy(args = {}) {
       refuseRecursive('groupBy', args)
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
-      const { by, where, having, orderBy, limit, offset, _count, _sum, _avg, _min, _max, _stringAgg, fillGaps, timeZone, weekStart = 'monday' } = args
+      const { by, where, having, limit, offset, _count, _sum, _avg, _min, _max, _stringAgg, fillGaps, timeZone, weekStart = 'monday' } = args
+      // findMany takes an array of terms, and a total order over two group keys
+      // needs one. Flattened to [key, dir] pairs because two `_sum` terms would
+      // collapse into one key in an object.
+      const orderTerms = []
+      if (Array.isArray(args.orderBy)) {
+        args.orderBy.forEach((item, i) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item))
+            throw new ValidationError([{ path: ['orderBy', i], message:
+              `orderBy[${i}] on ${modelName}.groupBy must be an object such as { ${by?.[0] ?? 'field'}: 'asc' }` }])
+          orderTerms.push(...Object.entries(item))
+        })
+      } else if (args.orderBy && typeof args.orderBy === 'object') {
+        orderTerms.push(...Object.entries(args.orderBy))
+      }
+      const orderBy = orderTerms.length ? orderTerms : null
       const interval = args.interval   // { fieldName: 'unit' }
       // A week is named by its first day, and which day that is belongs to the
       // business: a Sunday-start tenant read Monday-cut buckets as wrong weeks.
@@ -7422,9 +7626,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         ...(_stringAgg && typeof _stringAgg === 'object' ? [_stringAgg.field, _stringAgg.orderBy] : []),
         ...namedAggFields(extractNamedAggs(args).map(([, spec]) => spec)),
       ])
-      if (_count && typeof _count === 'object' && _count.distinct)
-        refuseAggregateKeys('groupBy', [_count.distinct], false)
-      refuseMixedCurrency('groupBy', args, by, [having, orderBy])
+      refuseCountShape('groupBy', _count)
+      refuseMixedCurrency('groupBy', args, by, [having, ...orderTerms.map(([k, v]) => ({ [k]: v }))])
 
       // ── Interval / date truncation ───────────────────────────────────────
       // interval: { createdAt: 'month' }
@@ -7481,11 +7684,11 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         }
         refuseAggregateKeys('having', names)
       }
-      if (orderBy && typeof orderBy === 'object') {
+      if (orderBy) {
         const groupKeys = new Set(by)
         if (intervalField) groupKeys.add(intervalField)
         const names = []
-        for (const [key, val] of Object.entries(orderBy)) {
+        for (const [key, val] of orderBy) {
           if (key === '$raw')
             // A fragment written for findMany names columns this statement does
             // not have. Refused rather than emitted as `"$raw" ASC`, which
@@ -7860,7 +8063,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // ORDER BY
       if (orderBy) {
         const orderParts = []
-        for (const [key, val] of Object.entries(orderBy)) {
+        for (const [key, val] of orderBy) {
           if (key === '_count') {
             orderParts.push(`COUNT(*) ${val === 'desc' ? 'DESC' : 'ASC'}`)
           } else if (key === '_stringAgg') {
@@ -7889,7 +8092,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         sql += ` ORDER BY ${quoteIdent(intervalField)} ASC`
       }
 
-      sql += pageSql(limit, offset)
+      const page = pageSql(limit, offset)
+      if (page) { sql += page.sql; params.push(...page.params) }
 
       const _nt = needsTiming()
       const _t0 = _nt ? performance.now() : 0
@@ -7909,6 +8113,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           for (const [field, wanted] of Object.entries(spec)) {
             if (!wanted) continue
             out[agg][field] = r[`${agg}__${field}`] ?? null
+            if (agg === '_sum') exactSum('groupBy', field, out[agg][field])
           }
           if (agg === '_min' || agg === '_max') out[agg] = hydrateCols(out[agg])
         }
@@ -8190,7 +8395,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         await plugins.beforeUpdate(modelName, { data: Object.fromEntries(_usKeys.map(k => [k, undefined])), system }, ctx)
       }
       await enforceValueSets(modelName, data, ctx)
-      refuseOffEntry(data)
+      data = refuseOffEntry(data)
       const _usHidden = await hiddenParents(data, [], system)
 
       const autoId       = shape.autoId
@@ -8967,7 +9172,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       ftsSql += words.match != null ? ` ORDER BY rank` : ` ORDER BY rowid`
 
       if (!ordered) {
-        ftsSql += pageSql(limit, offset || null)
+        const page = pageSql(limit, offset)
+        if (page) { ftsSql += page.sql; ftsParams.push(...page.params) }
       }
 
       const _nt = needsTiming()
@@ -9026,7 +9232,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (ordered) {
         const orderSql = buildOrderBy(withRankTiebreak(orderBy), baseParams, columnMap, _pointMap, _vectorMap, _vectorFn(readDb))
         if (orderSql) baseSql += ` ORDER BY ${orderSql}`
-        baseSql += pageSql(limit, offset || null)
+        const page = pageSql(limit, offset)
+        if (page) { baseSql += page.sql; baseParams.push(...page.params) }
       }
 
       const baseRows = readAll(readDb.query(baseSql).all(...baseParams), { computedFields: ps?.requestedFields })
@@ -9161,6 +9368,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const t = spec.transitions[transitionName]
         if (t) { targetField = fieldName; targetValue = t.to; break }
       }
+      // A declared machine's move is named for its target, so the name IS the
+      // value; whether the row's scope declares it is update()'s to answer.
+      const declared = targetField ? null : Object.entries(_tableTransitions).find(([, s]) => s.declaredBy)
+      if (declared) { targetField = declared[0]; targetValue = transitionName }
       if (!targetField) {
         const available = Object.values(_tableTransitions).flatMap(s => Object.keys(s.transitions))
         throw new TransitionNotFoundError(tableName, transitionName, [...new Set(available)])
@@ -9377,7 +9588,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       for (const [fieldName, spec] of Object.entries(_tableTransitions)) {
         const currentValue = row[fieldName]
         if (currentValue == null) continue
-        for (const [name, { from, to, gate, system }] of Object.entries(spec.transitions)) {
+        let moves = Object.entries(spec.transitions)
+        if (spec.declaredBy) {
+          const scopeValue = spec.scope in row ? row[spec.scope]
+            : (await this.findUnique({ where: { [idField]: row[idField] }, select: { [spec.scope]: true } }))?.[spec.scope]
+          moves = declaredMoves(fieldName, scopeValue).filter(m => m.from != null)
+            .map(m => [m.to, { from: [m.from], to: m.to, gate: m.gate, system: false }])
+        }
+        for (const [name, { from, to, gate, system }] of moves) {
           if (!from.includes(currentValue)) continue
 
           // `@system` is asked FIRST and it is the cheapest: no level to
@@ -9726,6 +9944,12 @@ export async function createClient({
     // stub, and they can never open a transaction to route into it.
     if (conn.driver === 'jsonl' || conn.driver === 'trail') continue
     if (!conn.readDb || !conn.rawWriteDb) continue
+    // Under the router, so the write handle a transaction reads through is
+    // stamped too. `nowDate` is a later const and is called only at a statement.
+    if (now) {
+      conn.readDb  = clockedDb(conn.readDb,  () => nowDate())
+      conn.writeDb = clockedDb(conn.writeDb, () => nowDate())
+    }
     conn.readDb = makeReadRouter(conn.readDb, conn.writeDb, txState)
   }
 
@@ -11533,6 +11757,9 @@ function makeLockPrimitive(rawWriteDb) {
   function $checkWhere(accessor, where) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return []
+    // An empty filter names no key to grade, and junction asks on every read;
+    // the key sets below are built fresh per call (`FJS-2992`).
+    if (where && typeof where === 'object' && !Array.isArray(where) && Object.keys(where).length === 0) return []
     const keys = filterableKeysFor(model)
     for (const d of Object.values(shapes[model.name].edges)) keys.filterable.add(d.as)
     return collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted, [],
@@ -11702,6 +11929,19 @@ function makeLockPrimitive(rawWriteDb) {
     return single ? [single.name] : []
   }
 
+  // ─── $mirrorKey ─────────────────────────────────────────────────────────
+  //
+  // $mirrorKey(accessor) → the column `@@mirror(key:)` names, or null for a
+  // model that is not a mirror and for an unknown accessor. A sibling of
+  // $primaryKey on the same contract: every flavor answers identically.
+  //
+  // The layer above lands a Provider's object on the row this column matches,
+  // so it must never guess the column from a name like `externalId`: a model
+  // with that column and no `@@mirror` is an app's own row (`FJS-D1125`).
+  function $mirrorKey(accessor) {
+    return modelForAccessor(accessor)?.attributes?.find(a => a.kind === 'mirror')?.key ?? null
+  }
+
   // ─── $readAs ────────────────────────────────────────────────────────────
   //
   // $readAs(accessor, row, principal) → the row as that principal would have
@@ -11781,7 +12021,7 @@ function makeLockPrimitive(rawWriteDb) {
     // 3. The shape.
     const fp = shapes[modelName].fieldPolicy
     return fp && shapesRead(fp)
-      ? applyFieldPolicyTo(row, modelName, fp, readCtx, { mode: 'single' })
+      ? applyFieldPolicyTo({ ...row }, modelName, fp, readCtx, { mode: 'single' })
       : row
   }
 
@@ -11891,6 +12131,14 @@ function makeLockPrimitive(rawWriteDb) {
     return model?.name ? readReach(model.name, ctx) : []
   }
 
+  // $fromReach(accessor) → the model names an `@from` on this one is computed
+  // off. A write to one moves a value on a row the write never touched, so a
+  // holder of that row asks again. An unknown accessor reaches nothing.
+  function $fromReach(accessor) {
+    const model = modelForAccessor(accessor)
+    return model?.name ? fromReach(model.name, ctx) : []
+  }
+
   // ─── $levelOf ───────────────────────────────────────────────────────────
   //
   // $levelOf(accessor?, principal?) → 0–8, or null where this client cannot
@@ -11932,6 +12180,51 @@ function makeLockPrimitive(rawWriteDb) {
       const forCtx    = principal.length ? ctxForPrincipal(principal[0]) : ownCtx
       if (typeof forCtx.levelFor !== 'function') return null
       return forCtx.levelFor(modelName, forCtx)
+    }
+  }
+
+  // ─── $checkWrite ────────────────────────────────────────────────────────
+  //
+  // $checkWrite(accessor, op, row, changes?) → { ok, message?, rule? }
+  //
+  // Would this client's caller be let make this write — asked by a write that
+  // does not reach this table first. A claimed mirror's forward sends to the
+  // Provider and lands the answer as the system, so without this the app's own
+  // `@@allow` for create, update and delete graded nobody, and a write the
+  // schema refuses landed whenever the Provider was laxer (`FJS-3147`).
+  //
+  // `create` grades `row` as the payload, read at its literal defaults as the
+  // insert would land it. `update` grades `row` as stored, then the stored row
+  // with `changes` over it under `post-update`. `delete` grades `row` as stored.
+  // The gate and the `@@capabilities` grid first, as the write's own plugins do.
+  //
+  // Field `@allow('write')` and `@@transitions` are not graded here. On a mirror
+  // the first is refused by the parser on every Provider column, and a `@local`
+  // one is written through the table; a claim on a model declaring the second
+  // is refused at its bind (`FJS-D1162`).
+  //
+  // **It fails closed.** `policyVerdict` throws on an undecidable policy and so
+  // does this; a refusal is a verdict, never a throw, so an affordance can ask.
+  // Off this flavor's own ctx, as `$levelOf` is, because `ctx.auth` refuses
+  // outside a table method.
+  function $checkWriteAs(ownCtx) {
+    return async function $checkWrite(accessor, op, row, changes = null) {
+      const modelName = modelForAccessor(accessor)?.name
+      if (!modelName) throw new Error(`$checkWrite: '${accessor}' is not a model accessor`)
+      if (op !== 'create' && op !== 'update' && op !== 'delete')
+        throw new Error(`$checkWrite: op is 'create', 'update' or 'delete', not '${op}'`)
+      try {
+        await ownCtx.gateCheck?.(modelName, op, ownCtx)
+        if (shapes[modelName].capabilities?.[op]) requireCapability(modelName, op, ownCtx)
+      } catch (e) {
+        if (!(e instanceof AccessDeniedError)) throw e
+        return { ok: false, message: e.message, rule: e.capability ? 'capability' : 'gate' }
+      }
+      if (op === 'create')
+        return policyVerdict(modelName, withLiteralDefaults(row, shapes[modelName].literalDefaults), ownCtx, 'create')
+      const before = policyVerdict(modelName, row, ownCtx, op)
+      if (!before.ok || op === 'delete') return before
+      return policyVerdict(modelName, { ...row, ...(changes ?? {}) }, ownCtx, 'post-update')
     }
   }
 
@@ -12083,6 +12376,11 @@ function makeLockPrimitive(rawWriteDb) {
   async function auditWith(principal, entry, opts = {}) {
     if (typeof entry?.operation !== 'string' || !entry.operation)
       throw new Error(`$audit: 'operation' is required — the name of what happened, e.g. 'login.failed'.`)
+    // The trail's `model` column is NOT NULL. Left to the row write, the refusal
+    // reads as a validation failure on a column, and a caller that reports its
+    // own audit failures as warnings (auth, mcp) loses a security event to noise.
+    if (typeof entry.model !== 'string' || !entry.model)
+      throw new Error(`$audit: 'model' is required — what '${entry.operation}' is about, e.g. 'User'. With no row, pass records: [].`)
 
     // Refused by name rather than dropped: a misspelled key is a caller that
     // meant to record something, and a silently thinner row is worse than none.
@@ -12497,6 +12795,15 @@ function makeLockPrimitive(rawWriteDb) {
     return true
   }
 
+  // The declared tables and columns the opened database does not hold -- a
+  // model with no table, a table missing the model's columns. A client over the
+  // wrong file starts and answers, and the first read of the model is the first
+  // anyone hears (`FJS-1796`). Presence only; `migrate check` owns the rest.
+  async function $schemaGaps() {
+    const { schemaGaps } = await import('./schema-gaps.js')
+    return schemaGaps({ schema }, dbRegistry, { pluralize: pluralizeTableNames })
+  }
+
   function $walStatus() {
     // PRAGMA wal_checkpoint=NOOP (SQLite 3.51.0+) reports WAL frame counts
     // without triggering a checkpoint. Safe to call at any time, even under load.
@@ -12679,8 +12986,8 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
-    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -12699,14 +13006,17 @@ function makeLockPrimitive(rawWriteDb) {
         if (prop === '$checkWhere') return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$primaryKey') return $primaryKey
+        if (prop === '$mirrorKey')  return $mirrorKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(sysCtx)
+      if (prop === '$checkWrite')      return $checkWriteAs(sysCtx)
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
       if (prop === '$readReach')       return $readReach
+      if (prop === '$fromReach')       return $fromReach
         if (prop === '$softDelete') return softDeleteInfo()
         if (prop === '$commitments') return commitmentsInfo()
         if (prop === '$scopes') return $scopes
@@ -12814,8 +13124,8 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
-    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
+    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -12831,14 +13141,17 @@ function makeLockPrimitive(rawWriteDb) {
         if (prop === '$checkWhere')     return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$primaryKey') return $primaryKey
+        if (prop === '$mirrorKey')  return $mirrorKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(authCtx)
+      if (prop === '$checkWrite')      return $checkWriteAs(authCtx)
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
       if (prop === '$readReach')       return $readReach
+      if (prop === '$fromReach')       return $fromReach
         if (prop === '$softDelete')     return softDeleteInfo()
         if (prop === '$commitments')    return commitmentsInfo()
         if (prop === '$scopes')         return $scopes
@@ -12936,19 +13249,20 @@ function makeLockPrimitive(rawWriteDb) {
     const match    = [narrow, terms].filter(Boolean).join(' AND ') || null
     const matchSql = match ? ` ${quoteIdent(SEARCH_TABLE)} MATCH ?` : null
 
+    const page = pageSql(limit, offset)
     let sql, binds
     if (terms != null) {
       sql = `SELECT model, rid, title, ${searchRankExpr()} AS rank, snippet(${quoteIdent(SEARCH_TABLE)}, 3, '<mark>', '</mark>', '…', 15) AS _snippet` +
             ` FROM ${quoteIdent(SEARCH_TABLE)} WHERE${matchSql}` +
             globs.map(g => ` AND ${g}`).join('') +
-            ` AND (${branches.join(' OR ')}) ORDER BY rank, model, rid` + pageSql(limit, offset || null)
-      binds = [match, ...globParams, ...params]
+            ` AND (${branches.join(' OR ')}) ORDER BY rank, model, rid` + (page?.sql ?? '')
+      binds = [match, ...globParams, ...params, ...(page?.params ?? [])]
     } else {
       // No words to rank, so no bm25: every rank is null and the hits come in
       // index order, after any ranked list a caller merges them with.
       sql = `SELECT model, rid, title, NULL AS rank, NULL AS _snippet FROM ${quoteIdent(SEARCH_TABLE)}` +
-            ` WHERE${matchSql ? matchSql + ' AND' : ''} ${globs.join(' AND ')} AND (${branches.join(' OR ')}) ORDER BY model, rid` + pageSql(limit, offset || null)
-      binds = [...(match ? [match] : []), ...globParams, ...params]
+            ` WHERE${matchSql ? matchSql + ' AND' : ''} ${globs.join(' AND ')} AND (${branches.join(' OR ')}) ORDER BY model, rid` + (page?.sql ?? '')
+      binds = [...(match ? [match] : []), ...globParams, ...params, ...(page?.params ?? [])]
     }
 
     const _nt = !!(ctx.onQuery || ctx._queryListeners.size)
@@ -12987,7 +13301,7 @@ function makeLockPrimitive(rawWriteDb) {
     scopedFlavor.tables = rawTables
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -12995,7 +13309,7 @@ function makeLockPrimitive(rawWriteDb) {
       // it are what the body was asking for. See $transaction.
       $transaction: (fn) => $transaction(fn, scopedProxy),
       $search: (q, opts) => $searchWith(tables, q, opts),
-      asSystem, $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb,
+      asSystem, $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb,
       $lock: lockPrimitive, $locks: lockPrimitive.$locks,
     }
     const scopedProxy = new Proxy(target, {
@@ -13013,14 +13327,17 @@ function makeLockPrimitive(rawWriteDb) {
         if (prop === '$checkWhere') return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$primaryKey') return $primaryKey
+        if (prop === '$mirrorKey')  return $mirrorKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(sCtx)
+      if (prop === '$checkWrite')      return $checkWriteAs(sCtx)
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
       if (prop === '$readReach')       return $readReach
+      if (prop === '$fromReach')       return $fromReach
         if (prop === '$softDelete') return softDeleteInfo()
         if (prop === '$commitments') return commitmentsInfo()
         if (prop === '$scopes') return $scopes
@@ -13216,8 +13533,8 @@ function makeLockPrimitive(rawWriteDb) {
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
-  clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
+  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
       if (prop === 'then')            return undefined
@@ -13249,14 +13566,17 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$checkWhere')     return $checkWhere
       if (prop === '$protectedFields') return $protectedFields
       if (prop === '$primaryKey')      return $primaryKey
+      if (prop === '$mirrorKey')      return $mirrorKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(ctx)
+      if (prop === '$checkWrite')      return $checkWriteAs(ctx)
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
       if (prop === '$readReach')       return $readReach
+      if (prop === '$fromReach')       return $fromReach
       if (prop === '$scopes')         return $scopes
       if (prop === '$checkOrderBy')   return $checkOrderBy
       if (prop === '$audit')          return (entry, opts) => auditWith(ctx.auth ?? null, entry, opts)

@@ -106,7 +106,10 @@ export function startRow(row, { root, fliRoot, spawnFn = spawn } = {}) {
   const child = spawnFn(cmd, args, {
     cwd:      row.dir === '.' ? root : join(root, row.dir),
     shell:    false,
-    env:      { ...process.env, FORCE_COLOR: '1' },
+    // A surface started without its port variable binds its own default, which
+    // in a worktree lane is not the branch-shifted port the row reports and
+    // is the main tree's port.
+    env:      { ...process.env, FORCE_COLOR: '1', ...(row.portEnv && row.port ? { [row.portEnv]: String(row.port) } : {}) },
     stdio:    ['ignore', 'pipe', 'pipe'],
     // Its own process group, so stopping it reaches what it started. Not
     // `unref`ed: it still dies with this process.

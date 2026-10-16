@@ -41,6 +41,6 @@
   {/each}
 </div>
 
-<button type="button" id="next" on:click={() => month = 1}>next</button>
-<button type="button" id="prev" on:click={() => month = 0}>prev</button>
+<button type="button" id="next" onclick={() => month = 1}>next</button>
+<button type="button" id="prev" onclick={() => month = 0}>prev</button>
 <output id="month">{month}</output>

@@ -142,7 +142,7 @@ describe('buildRoutes', () => {
 
   async function mkApp() {
     const app = await createTestApp({
-      services: [() => createService({ name: 'notes', find: async () => [] })],
+      services: [createService({ name: 'notes', find: async () => [] })],
     })
     app.configure(healthPlugin())
     app.get('/custom/thing', (ctx) => ctx.json({ ok: true }))
@@ -185,7 +185,7 @@ describe('buildRoutes', () => {
 
   it('rides the manifest, so a running app can be asked over HTTP', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'notes', find: async () => [] })],
+      services: [createService({ name: 'notes', find: async () => [] })],
     })
     app.configure(manifestPlugin())
     app.get('/custom/thing', (ctx) => ctx.json({ ok: true }))

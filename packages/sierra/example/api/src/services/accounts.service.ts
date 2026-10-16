@@ -1,5 +1,3 @@
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createAccountsService() {
-  return createBaseService({})
-}
+export default createService({})

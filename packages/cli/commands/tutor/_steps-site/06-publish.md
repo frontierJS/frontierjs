@@ -8,7 +8,7 @@ description: Raise the gate, and watch the build refuse to publish
 Nothing about the page changes in this step. One line in `db/schema.lite` does:
 
 ```text
-@@gate("0.4.4.6")   →   @@gate("4.4.4.6")
+@@gate(0.4.4.6)   →   @@gate(4.4.4.6)
 ```
 
 Notes now need a signed-in caller to read. The page's `load()` still runs — it
@@ -47,7 +47,7 @@ const app  = $.config.appDir
 const site = $.config.siteDir
 const page = join(site, 'src', 'routes', 'notes', 'index.mesa')
 
-const edit = editSchema($, '@@gate("0.4.4.6")', '@@gate("4.4.4.6")')
+const edit = editSchema($, '@@gate(0.4.4.6)', '@@gate(4.4.4.6)')
 if (!await must($, {
   ok:    edit.ok,
   name:  'reads on Note now need a signed-in caller',

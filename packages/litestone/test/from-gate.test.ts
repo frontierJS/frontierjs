@@ -26,7 +26,7 @@ model Source {
   anyFailed Boolean @from(Run, exists: true, where: "status = 'failed'")
   notes     Note[]
   noteCount Int    @from(Note, count: true)
-  @@gate("3.5.5.5")
+  @@gate(3.5.5.5)
 }
 model Run {
   id       Int    @id
@@ -34,19 +34,19 @@ model Run {
   source   Source @relation(fields: [sourceId], references: [id])
   status   String
   secret   String
-  @@gate("4.8.8.8")
+  @@gate(4.8.8.8)
 }
 model Note {
   id       Int    @id
   sourceId Int
   source   Source @relation(fields: [sourceId], references: [id])
-  @@gate("3.5.5.5")
+  @@gate(3.5.5.5)
 }
 model Owner {
   id       Int    @id
   sourceId Int
   source   Source @relation(fields: [sourceId], references: [id])
-  @@gate("3.5.5.5")
+  @@gate(3.5.5.5)
 }
 `
 
@@ -134,13 +134,13 @@ model Boss {
   id    Int    @id
   name  String
   heads Int    @from(Head, count: true)
-  @@gate("3.5.5.5")
+  @@gate(3.5.5.5)
 }
 model Head {
   id     Int  @id
   bossId Int
   boss   Boss @relation(fields: [bossId], references: [id])
-  @@gate("5.5.5.5")
+  @@gate(5.5.5.5)
 }
 model Vault {
   id     Int    @id
@@ -148,7 +148,7 @@ model Vault {
   boss   Boss   @relation(fields: [bossId], references: [id])
   bossName  String @from(boss, name)
   bossHeads Int    @from(boss, heads)
-  @@gate("1.5.5.5")
+  @@gate(1.5.5.5)
 }
 `
   it('reads null below the parent\'s gate (or the aggregate\'s), the value at or above both', async () => {

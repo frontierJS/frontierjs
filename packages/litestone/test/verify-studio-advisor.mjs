@@ -59,7 +59,7 @@ model Author {
   id    Int    @id @default(autoincrement())
   name  String
   books Book[]
-  @@gate("0")
+  @@gate(0)
 }
 
 model Book {
@@ -67,7 +67,7 @@ model Book {
   title    String
   authorId Int
   author   Author @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  @@gate("0")
+  @@gate(0)
 }
 `
 

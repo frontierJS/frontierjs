@@ -119,7 +119,7 @@ title: Local repositories
     <p class="text-sm text-muted">{error}</p>
   </Callout>
 {:else}
-  <form class="cluster" id="local-repos-form" on:submit={scan}>
+  <form class="cluster" id="local-repos-form" onsubmit={scan}>
     <Input label="Folder" name="root" id="root" placeholder="~/code"
            value={root} oninput={(e) => root = e.target.value}
            hint="An absolute path, or one starting ~/. Looks four folders down; node_modules and hidden folders are skipped." />

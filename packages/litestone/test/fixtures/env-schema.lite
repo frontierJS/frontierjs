@@ -6,5 +6,5 @@ model Account { id Int @id; name String }
 model Doc {
   id    Int    @id
   title String
-  @@gate("2.4.4.6")
+  @@gate(2.4.4.6)
 }

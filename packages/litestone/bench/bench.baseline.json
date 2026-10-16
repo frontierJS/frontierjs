@@ -1,0 +1,17 @@
+{
+  "//": "Ratchets DOWN only. `fli test:bench --update` writes an improvement back and cannot raise a number; `--adopt` is the verb that can, so a raise is a visible line in a diff.",
+  "metrics": {
+    "churn": 30,
+    "evictions": 0,
+    "failed": 283,
+    "shapes.count": 75,
+    "shapes.create": 71,
+    "shapes.get": 52,
+    "shapes.include": 157,
+    "shapes.list": 77,
+    "shapes.patch": 99,
+    "shapes.total": 521,
+    "unasked": 160,
+    "unseeded": 21
+  }
+}

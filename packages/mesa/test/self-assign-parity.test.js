@@ -55,7 +55,7 @@ async function clickThrough(src) {
 }
 
 const component = ({ script = '', handler, row = false }) => {
-  const button = `<button on:click={${handler}}>go</button>`
+  const button = `<button onclick={${handler}}>go</button>`
   return `<script>
   let o = { n: 1 }
   let t = 0
@@ -67,7 +67,7 @@ ${row ? `{#each [1] as i}${button}{/each}` : button}
 
 describe('o = o notifies from every position (FJS-1111)', () => {
   it('control: the harness sees an ordinary write', async () => {
-    const src = `<script>\n  let c = 0\n</script>\n<button on:click={() => c++}>go</button>\n<p>{c}</p>`
+    const src = `<script>\n  let c = 0\n</script>\n<button onclick={() => c++}>go</button>\n<p>{c}</p>`
     expect(await clickThrough(src)).toEqual(['0', '1'])
   })
 
@@ -105,7 +105,7 @@ describe('what the rewrite leaves alone', () => {
   import { themeNew } from './store.js'
   $: themeNew
 </script>
-<button on:click={() => { themeNew = themeNew }}>go</button>
+<button onclick={() => { themeNew = themeNew }}>go</button>
 <p>{themeNew.style}</p>`)
     expect(out).toContain('$$fire_themeNew()')
     expect(out).not.toContain('themeNew = themeNew')

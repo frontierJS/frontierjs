@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-51 services · 40 routes · 17 plugins · prefix (none)
+51 services · 40 routes · 18 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -56,7 +56,7 @@ and what it does.
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (88)
+### A service hook runs in front of the body (89)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -94,6 +94,7 @@ name, and is as unread as the body.
 | `dashboards.reorder` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `deployments.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `deployments.stepStatus` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `deployments.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
@@ -267,10 +268,11 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`
-- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`
+- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`
 - **input** — `fromBlueprint` takes `AppFromBlueprint`
 - **input** — `place` takes `AppPlace`
+- **input** — `restoreVolume` takes `AppVolumeRestore`
 - **input** — `unplace` takes `AppUnplace`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -278,6 +280,7 @@ name when it declares none.
   - `fromBlueprint` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `place` — standing 4 or above — declared `gate: 4`; body writes as the app
   - `unplace` — standing 4 or above — declared `gate: 4`; body writes as the app
+  - `restoreVolume` — standing 5 or above — declared `gate: 5`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -293,6 +296,7 @@ name when it declares none.
 | before | `fromBlueprint` | `validateInput` |
 | before | `place` | `validateInput` |
 | before | `unplace` | `validateInput` |
+| before | `restoreVolume` | `validateInput` |
 
 ### `audit` · model `AuditEvent`
 
@@ -474,12 +478,13 @@ name when it declares none.
 
 ### `deployments` · model `Deployment`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `cancel`, `rollback`, `startRun`, `stepStatus`, `finishRun`
-- **custom methods** — `cancel`, `rollback`, `startRun`, `stepStatus`, `finishRun`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `cancel`, `rollback`, `rebind`, `startRun`, `stepStatus`, `finishRun`
+- **custom methods** — `cancel`, `rollback`, `rebind`, `startRun`, `stepStatus`, `finishRun`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; no body, a derived move
   - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `rebind` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `stepStatus` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
@@ -492,6 +497,7 @@ name when it declares none.
 | before | `startRun` | `internalOnly` |
 | before | `stepStatus` | `internalOnly` |
 | before | `finishRun` | `internalOnly` |
+| before | `rebind` | `internalOnly` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -1384,8 +1390,9 @@ In configure order, which is what `requires:` is checked against.
 10. `setupRoutes`
 11. `enrollmentRoutes`
 12. `installRoute`
-13. `staticRoutes`
-14. `basecamp-cloud-accounts`
-15. `basecamp-dns-follows-fleet`
-16. `basecamp-cleanup`
-17. `corsPlugin`
+13. `terminalRoute`
+14. `staticRoutes`
+15. `basecamp-cloud-accounts`
+16. `basecamp-dns-follows-fleet`
+17. `basecamp-cleanup`
+18. `corsPlugin`

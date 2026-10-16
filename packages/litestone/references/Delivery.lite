@@ -104,7 +104,7 @@ model Delivery {
   /// operator's; a host that shows people their own deliveries lowers it
   /// with a policy through the subject (`subscription.ownerId == auth().id`),
   /// never the gate.
-  @@gate("5.8.9.9")
+  @@gate(5.8.9.9)
 
   /// "What happened on this run" and "the recent history of this address".
   @@index([runKey])

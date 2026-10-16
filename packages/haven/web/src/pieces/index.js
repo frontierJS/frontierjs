@@ -20,9 +20,12 @@
 // piece may `crumbles` into the cell `{ ch, key }`: each of its cells that a
 // figure steps onto and off again wobbles, falls and is that cell from then
 // on, which is a wall (`stage.js`, the pier). A piece may name its
-// `seasons`, a piece per season it looks otherwise in, each standing on the
-// same wall cells: the stage draws the one for its season (`stage.toSeason`),
-// and the piece itself in a season it leaves out. A floor piece may be a
+// `seasons`, a piece per season it looks otherwise in: the stage draws the one
+// for its season (`stage.toSeason`), and the piece itself in a season it
+// leaves out. A season may stand on other cells, or be floor where the rest of
+// the year is a wall (the glade's ice); `world.json` then carries that
+// season's walls (`world.js`) and the server walks the one its almanac is in.
+// A floor piece may be a
 // `pickup`, `{ item, n }`: stepping onto it hands the member `n` of an item
 // (`api/src/inventory.ts`), and it is gone from the cell for a while after
 // (`IDEAS/haven.md` 9.9). The server resolves it from `world.json`.
@@ -64,13 +67,9 @@ export const lines = (s) => unescaped(s).replace(/^\n/, '').replace(/\n$/, '').s
 // the next piece. Node keeps the character; this puts it back under Bun.
 const unescaped = (s) => s.replace(/\\u\{([0-9a-f]+)\}|\\u([0-9a-f]{4})/gi, (_, cp, u) => String.fromCodePoint(parseInt(cp ?? u, 16)))
 
-// A season that claimed another wall would let a figure through a trunk in
-// one season and not the next, and the server's `world.json` knows one.
 function checkSeasons(shape) {
-  const walls = (p) => p.cells.filter((c) => !c.overhead).map((c) => `${c.dx},${c.dy}`).sort().join(' ')
-  for (const [season, other] of Object.entries(shape.seasons ?? {})) {
+  for (const season of Object.keys(shape.seasons ?? {})) {
     if (!SEASONS.includes(season)) throw new Error(`${shape.name} has a season ${season}; the seasons are ${SEASONS.join(', ')}`)
-    if (walls(other) !== walls(shape)) throw new Error(`${shape.name} in ${season} stands on other walls than it does the rest of the year`)
   }
 }
 
@@ -119,4 +118,21 @@ export const seats = (xs, dy, up) => Object.fromEntries(xs.map((dx, i) => [`seat
 /** A piece's spots, in the order it names them: `{ name, dx, dy, … }`, only those of `kind` when one is given. */
 export function spotsOf(piece, kind) {
   return Object.entries(piece.spots ?? {}).filter(([, s]) => kind === undefined || s.kind === kind).map(([name, s]) => ({ name, ...s }))
+}
+
+/**
+ * `base` with a look per season, on the same cells: each look swaps glyphs
+ * (`art`) and paint letters (`paint`) of the base by a map from one to the
+ * other, and brings the palette its new letters need. A season a look leaves
+ * out is the base. The footing cannot change, since the cells are the base's.
+ * @param {ReturnType<typeof piece>} base
+ * @param {Record<string, { art?: Record<string, string>, paint?: Record<string, string>, palette?: Record<string, object> }>} looks
+ */
+export function withSeasons(base, looks) {
+  const swap = (s, map = {}) => [...s].map((c) => map[c] ?? c).join('')
+  const overhead = base.cells.reduce((n, c) => (c.overhead ? Math.max(n, c.dy + 1) : n), 0)
+  const { floor, spots, crumbles, pickup } = base
+  const seasons = Object.fromEntries(Object.entries(looks).map(([season, look]) => [season,
+    piece(base.name, swap(base.art, look.art), swap(base.paint, look.paint), { floor, overhead, spots, crumbles, pickup, palette: { ...base.palette, ...look.palette } })]))
+  return piece(base.name, base.art, base.paint, { floor, overhead, spots, crumbles, pickup, palette: base.palette, seasons })
 }

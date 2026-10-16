@@ -324,7 +324,7 @@ export interface CreateClientOptions {
    */
   previousEncryptionKeys?: string[]
   /** Plugins — GatePlugin, FileStorage, custom */
-  plugins?:       Plugin[]
+  plugins?:       LitestonePlugin[]
   /**
    * Computed field functions, or path to a file exporting them.
    *
@@ -551,7 +551,7 @@ export interface TableClient<
   optimizeFts(): void
   findManyAndCount(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; select?: Record<string, boolean> }): Promise<{ rows: TRow[]; total: number }>
   aggregate(args: { _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean>; where?: TWhere }): Promise<Record<string, unknown>>
-  groupBy(args: { by: (string | { field: string; interval: 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour' })[]; interval?: Record<string, string>; fillGaps?: boolean | { start: string | number | Date; end: string | number | Date }; /** IANA zone the interval is cut in; UTC when absent. */ timeZone?: string; /** First day of a `week` bucket, which is also its label; Monday when absent. */ weekStart?: 'monday' | 'sunday'; where?: TWhere; having?: Record<string, unknown>; orderBy?: Record<string, unknown>; limit?: number; offset?: number; _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean> }): Promise<Record<string, unknown>[]>
+  groupBy(args: { by: (string | { field: string; interval: 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour' })[]; interval?: Record<string, string>; fillGaps?: boolean | { start: string | number | Date; end: string | number | Date }; /** IANA zone the interval is cut in; UTC when absent. */ timeZone?: string; /** First day of a `week` bucket, which is also its label; Monday when absent. */ weekStart?: 'monday' | 'sunday'; where?: TWhere; having?: Record<string, unknown>; orderBy?: Record<string, unknown> | Record<string, unknown>[]; limit?: number; offset?: number; _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean> }): Promise<Record<string, unknown>[]>
   query(args?: Record<string, unknown>): Promise<TRow[] | Record<string, unknown>[] | Record<string, unknown>>
 }
 
@@ -699,6 +699,12 @@ export interface LitestoneClient {
    */
   $readGrading(accessor: string): 'open' | 'graded'
   /**
+   * The column `@@mirror(key:)` names, or `null` for a model that is not a
+   * mirror and for an unknown accessor (`FJS-D843`). Every flavor answers
+   * identically.
+   */
+  $mirrorKey(accessor: string): string | null
+  /**
    * The model names whose writes can change who may read a row of this model —
    * the model itself, every model a policy path or `.some()` crosses into, and
    * every model a `check()` delegates to, with its own reach. Where a reader
@@ -706,6 +712,12 @@ export interface LitestoneClient {
    * writes no page. Read off the schema; an unknown accessor answers `[]`.
    */
   $readReach(accessor: string): string[]
+  /**
+   * The model names an `@from` on this model is computed off — a write to one
+   * moves a value on a row the write never touched, so a holder of that row
+   * must ask again. Read off the schema; an unknown accessor answers `[]`.
+   */
+  $fromReach(accessor: string): string[]
   /**
    * What level the app grades a caller at for one model — `getLevel(auth, model)`,
    * asked rather than re-derived.
@@ -725,6 +737,20 @@ export interface LitestoneClient {
    * installs no plugin — and never a level.
    */
   $levelOf(accessor?: string, principal?: unknown): number | null
+  /**
+   * Would this client's caller be let make this write — for a write that does
+   * not reach this table first, as a claimed mirror's forward does not.
+   *
+   * `create` grades `row` as the payload; `update` grades `row` as stored, then
+   * with `changes` over it under `post-update`; `delete` grades `row` as stored.
+   * The gate and the `@@capabilities` grid first. Field `@allow('write')` and
+   * `@@transitions` are not graded. A refusal is a verdict; an undecidable
+   * policy throws.
+   */
+  $checkWrite(
+    accessor: string, op: 'create' | 'update' | 'delete',
+    row: Record<string, unknown>, changes?: Record<string, unknown> | null,
+  ): Promise<{ ok: boolean, message?: string, rule?: 'gate' | 'capability' | 'allow' | 'deny' }>
   /**
    * The `@@scope` names declared on a model → the predicate as source text.
    *
@@ -752,8 +778,8 @@ export interface LitestoneClient {
    */
   $audit(entry: {
     operation: string
-    /** The model name (`User`); its accessor or table name is written as the model's. */
-    model?: string
+    /** The model name (`User`); its accessor or table name is written as the model's. A name that is no model (a dataset, a service) is kept as given. */
+    model: string
     field?: string | null
     records?: unknown[]
     before?: unknown
@@ -790,6 +816,8 @@ export interface LitestoneClient {
   $clearBackupStamp(): void
   /** True while every SQLite connection answers; throws when one does not, a closed client included. */
   $ping(): true
+  /** Declared tables and columns the opened database does not hold: a model with no table, or a table missing the model's columns. Empty when it holds them all. */
+  $schemaGaps(): Promise<{ db: string; model: string; table: string; missing: 'table' | string[] }[]>
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>
   /**
    * One ranked list across every `@@fts` model, graded per model before the
@@ -992,10 +1020,6 @@ export interface VerifyResult {
   diff?:    string
 }
 
-export declare function create(db: unknown, parseResult: ParseResult, label?: string, dir?: string, opts?: { pluralize?: boolean }): CreateMigrationResult
-export declare function apply(db: unknown, dir?: string): Promise<ApplyResult>
-export declare function status(db: unknown, dir?: string): MigrationRow[]
-export declare function verify(db: unknown, parseResult: ParseResult, dir?: string, opts?: { pluralize?: boolean; dbName?: string }): VerifyResult
 /** An object the live database and the schema disagree about in a way the differ cannot name. */
 export interface SchemaResidue {
   type:     'table' | 'index' | 'trigger'
@@ -1020,6 +1044,11 @@ export declare function generateIndexDDL(model: ModelDef): string
 export declare function detectM2MPairs(schema: LitestoneSchema): [string, string][]
 export declare function generateJoinTableDDL(a: string, b: string): string
 
+// ─── The principal ────────────────────────────────────────────────────────────
+
+/** The @@auth model, or the one called User. Every caller that needs the person reads this. */
+export declare function authModelOf<M extends { name: string; attributes?: { kind: string }[] }>(schema: { models: M[] }): M | null
+
 // ─── Schema diffing ───────────────────────────────────────────────────────────
 
 export declare function introspect(db: unknown): unknown
@@ -1033,7 +1062,7 @@ export declare function checksum(str: string): string
 
 // ─── Plugin system ────────────────────────────────────────────────────────────
 
-export declare class Plugin {
+export declare class LitestonePlugin {
   onInit(schema: LitestoneSchema, ctx: LitestoneCtx): void
   onBeforeRead(model: string, args: unknown, ctx: LitestoneCtx): Promise<void>
   onBeforeCreate(model: string, args: unknown, ctx: LitestoneCtx): Promise<void>
@@ -1046,7 +1075,7 @@ export declare class Plugin {
 }
 
 export declare class PluginRunner {
-  constructor(plugins: Plugin[])
+  constructor(plugins: LitestonePlugin[])
   hasPlugins: boolean
   /** Whether an installed plugin answers onAfterDelete — the inherited empty one does not count. */
   hearsDeletes: boolean
@@ -1068,7 +1097,7 @@ export declare class AccessDeniedError extends Error {
 
 // ─── ExternalRefPlugin ────────────────────────────────────────────────────────
 
-export declare class ExternalRefPlugin extends Plugin {
+export declare class ExternalRefPlugin extends LitestonePlugin {
   fieldType: string
   constructor(config?: { autoResolve?: boolean; [key: string]: unknown })
   serialize(value: unknown, opts: { field: string; model: string; id: unknown; ctx: LitestoneCtx }): Promise<Record<string, unknown>>
@@ -1101,7 +1130,7 @@ export interface GateConfig {
   delete: number
 }
 
-export declare class GatePlugin extends Plugin {
+export declare class GatePlugin extends LitestonePlugin {
   constructor(opts?: { getLevel?: (user: LitestoneAuth | null, model: string) => number })
 }
 
@@ -1270,7 +1299,7 @@ export declare class SealedDocumentError extends Error {
 export declare class UniqueConflictError extends Error {
   model:     string
   fields:    string[]
-  /** Redacted where the column is `@encrypted`/`@guarded`. */
+  /** Redacted where the column is `@encrypted`/`@guarded`. A relation key's id is here and not in `message`. */
   values:    unknown[]
   errors:    Array<{ path: string[], message: string }>
   status:    409
@@ -1473,15 +1502,16 @@ export interface LoadResult {
 }
 
 /**
- * Data somebody else wrote — CSV text or an array of records — read against the
- * schema row by row. A text cell is parsed as its column's type; a bad one is a
- * reject and the load goes on. A header naming no column, or a required column
- * the file lacks, throws before any row is read.
+ * Data somebody else wrote — CSV text or records, as an array or a (async)
+ * iterable such as an API's pages — read against the schema row by row. A text
+ * cell is parsed as its column's type; a bad one is a reject and the load goes
+ * on. A header naming no column, or a required column the file lacks, throws
+ * before any row is read. Rows are read as they are written, a `batch` at a time.
  */
 export declare function loadRows(
   db:        LitestoneClient,
   modelName: string,
-  source:    string | Record<string, unknown>[],
+  source:    string | Iterable<Record<string, unknown>> | AsyncIterable<Record<string, unknown>>,
   opts?:     LoadRowsOptions,
 ): Promise<LoadResult>
 
@@ -1612,7 +1642,7 @@ export declare function createTenantRegistry(options: TenantRegistryOptions): Pr
 
 // ─── Introspect ───────────────────────────────────────────────────────────────
 
-export declare function generateLiteSchema(db: unknown, opts?: { camelCase?: boolean }): string
+export declare function generateLiteSchema(db: unknown, opts?: { camelCase?: boolean; database?: string | null }): string
 
 // ─── Retention ────────────────────────────────────────────────────────────────
 

@@ -3,6 +3,6 @@
   let id = 1
   let note = 'n'
 </script>
-<button on:click={() => id = 2}>next</button>
-<button on:click={() => note = note + 'x'}>touch</button>
+<button onclick={() => id = 2}>next</button>
+<button onclick={() => note = note + 'x'}>touch</button>
 {#key id + (note ? '' : '-')}<Draft label={'item ' + id + note} />{/key}

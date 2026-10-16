@@ -41,7 +41,7 @@ import { PROTOCOL_CALL_HEADERS, acceptedRequestId } from '../core/context.ts'
 import { serviceAccessor }      from '../core/service.ts'
 import { wsSend }               from './send-queue.ts'
 import { logSocketCall }        from './middleware.ts'
-import type { ServiceContext } from './bridge.ts'
+import type { ServiceContext } from '../core/context.ts'
 import type { App, Plugin }    from '../core/app.ts'
 import { SESSION_SOCKET }       from './types.ts'
 import type { WsContext }      from './types.ts'
@@ -77,10 +77,17 @@ type BunWS = {
   readyState: number
 }
 
+/**
+ * Where a frame goes: a channel, or a channel's NAME. A name lets a service
+ * definition — which holds no app — answer for a write with `ctx` null; a name
+ * nobody has joined reaches nobody and is skipped.
+ */
+export type ChannelTarget = Channel | string
+
 export type AnnounceFn<T = unknown> = (
   data: T,
   ctx:  ServiceContext
-) => Channel | Channel[] | null | false
+) => ChannelTarget | ChannelTarget[] | null | false
 
 /**
  * A service's `channel:` function, or the app's `announceDefault`. Also called
@@ -90,7 +97,7 @@ export type AnnounceFn<T = unknown> = (
 export type ChannelFn<T = unknown> = (
   data: T,
   ctx:  ServiceContext | null
-) => Channel | Channel[] | null | false
+) => ChannelTarget | ChannelTarget[] | null | false
 
 export interface WSMessage {
   type:     string
@@ -1177,7 +1184,12 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
     ): Promise<void> {
       const result = fn(data, ctx)
       if (!result) return
-      const targets = Array.isArray(result) ? result : [result]
+      const targets: Channel[] = []
+      for (const t of (Array.isArray(result) ? result : [result]) as ChannelTarget[]) {
+        const ch = typeof t === 'string' ? channels.get(t) : t
+        if (ch && !targets.includes(ch)) targets.push(ch)
+      }
+      if (!targets.length) return
       // Same rule as every other boundary — and now literally the same
       // function. The comment here used to say "mirror HTTP bridge" above a
       // hand-copy of the bridge's logic, which is exactly how two copies drift.

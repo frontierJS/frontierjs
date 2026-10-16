@@ -26,7 +26,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createCliRenderer } from '@opentui/core'
-import { compileTree } from './terminal-tree.js'
+import { compileTree } from './host-tree.js'
 import * as tui from '../src/runtime-terminal.js'
 
 const argv  = process.argv.slice(2)
@@ -43,7 +43,7 @@ const clean = () => rmSync(tmp, { recursive: true, force: true })
 
 let Component
 try {
-  Component = (await import(await compileTree(resolve(file), tmp))).default
+  Component = (await import(await compileTree(resolve(file), tmp, { target: 'terminal' }))).default
 } catch (e) {
   clean()
   console.error(`does not lower: ${e.message}`)

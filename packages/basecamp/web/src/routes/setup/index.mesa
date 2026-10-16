@@ -46,7 +46,7 @@ title: First run
      1280px screen is a wall, not a form. The width is a vocabulary term,
      not a number chosen here. -->
 <div class="container narrow">
-  <form class="card stack" on:submit={submit}>
+  <form class="card stack" onsubmit={submit}>
   {#if error}
     <article class="alert danger">
       <div class="alert-content">{error}</div>

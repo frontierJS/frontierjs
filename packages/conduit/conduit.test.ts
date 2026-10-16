@@ -269,6 +269,82 @@ describe('credential resolvers', () => {
     await cached.get('A')
     expect(calls).toBe(2)
   })
+
+  // FJS-D1075: the answer says when it expires, and the cache holds it that
+  // long whatever its ttl — the provider's number, never a copy of it.
+  it('withCache holds a minted answer exactly as long as the answer says, under ttl_ms: Infinity', async () => {
+    let mints = 0
+    const cached = withCache({
+      async get() { mints++; return { value: `tok-${mints}`, expires_at: Date.now() + 40 } }
+    }, { ttl_ms: Infinity })
+
+    expect(await cached.get('A')).toBe('tok-1')
+    expect(await cached.get('A')).toBe('tok-1')
+    await Bun.sleep(60)
+    expect(await cached.get('A')).toBe('tok-2')
+    expect(mints).toBe(2)
+  })
+
+  it('withCache: five callers finding one token expired refresh it once', async () => {
+    let mints = 0
+    const cached = withCache({
+      async get() { mints++; await Bun.sleep(10); return { value: `tok-${mints}`, expires_at: Date.now() + 30 } }
+    }, { ttl_ms: Infinity })
+
+    await cached.get('A')
+    await Bun.sleep(50)
+    const got = await Promise.all(Array.from({ length: 5 }, () => cached.get('A')))
+    expect(got.every(v => v === 'tok-2')).toBe(true)
+    expect(mints).toBe(2)
+  })
+
+  it('withCache: the answer\'s expiry never extends the ttl', async () => {
+    let calls = 0
+    const cached = withCache({
+      async get() { calls++; return { value: 'v', expires_at: Date.now() + 60_000 } }
+    }, { ttl_ms: 20 })
+
+    await cached.get('A')
+    await Bun.sleep(40)
+    await cached.get('A')
+    expect(calls).toBe(2)
+  })
+
+  it('withCache: an answer already expired is used for the send that asked and not kept', async () => {
+    let calls = 0
+    const cached = withCache({
+      async get() { calls++; return { value: `v${calls}`, expires_at: Date.now() - 1 } }
+    }, { ttl_ms: Infinity })
+
+    expect(await cached.get('A')).toBe('v1')
+    expect(await cached.get('A')).toBe('v2')
+  })
+
+  it('withCache keys a per-caller answer\'s expiry on who, so one tenant\'s refresh is not another\'s', async () => {
+    const mints = new Map<string, number>()
+    const cached = withCache({
+      async get() { return null },
+      async getFor(_ref, who) {
+        const n = (mints.get(who.tenant!) ?? 0) + 1
+        mints.set(who.tenant!, n)
+        return { value: `${who.tenant}-${n}`, expires_at: Date.now() + (who.tenant === 'A' ? 30 : 60_000) }
+      },
+    }, { ttl_ms: Infinity })
+    const w = (tenant: string) => ({ tenant, principal: null, grant: null })
+
+    expect(await cached.getFor!('R', w('A'))).toBe('A-1')
+    expect(await cached.getFor!('R', w('B'))).toBe('B-1')
+    await Bun.sleep(50)
+    expect(await cached.getFor!('R', w('A'))).toBe('A-2')
+    expect(await cached.getFor!('R', w('B'))).toBe('B-1')
+  })
+
+  it('an expires_at that is not a number is refused by name, never read as forever', async () => {
+    const cached = withCache({
+      async get() { return { value: 'v', expires_at: Number('3600s') } }
+    })
+    await expect(cached.get('A')).rejects.toThrow(/expires_at is epoch milliseconds/)
+  })
 })
 
 // ─── Credentials reach the wire, and fail closed ─────────────
@@ -291,6 +367,33 @@ describe('credential resolution through the HTTP transport', () => {
 
       expect(result.error).toBeNull()
       expect(seen[0]).toBe('Bearer htz-token-abc')
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  // An unwrapped resolver may answer { value, expires_at } too: the transport
+  // sends the value, and a malformed expiry is auth_failed, nothing sent.
+  it('an answer with an expiry reaches the wire as its value', async () => {
+    const seen: (string | null)[] = []
+    let reached = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) { reached++; seen.push(req.headers.get('authorization')); return Response.json({ ok: true }) }
+    })
+
+    try {
+      const target = providerTarget({ address: `http://localhost:${server.port}` })
+      const minted = new HttpTransport(target, { async get() { return { value: 'minted-abc', expires_at: Date.now() + 60_000 } } }, { retry_limit: 0 })
+      const ok = await minted.send({ target: target.id, method: 'GET', path: '/servers' })
+      expect(ok.error).toBeNull()
+      expect(seen[0]).toBe('Bearer minted-abc')
+
+      const broken = new HttpTransport(target, { async get() { return { value: 'minted-abc', expires_at: NaN } } }, { retry_limit: 0 })
+      const bad = await broken.send({ target: target.id, method: 'GET', path: '/servers' })
+      expect(bad.error!.kind).toBe('auth_failed')
+      expect(bad.error!.message).toContain('expires_at')
+      expect(reached).toBe(1)
     } finally {
       server.stop(true)
     }
@@ -5358,6 +5461,81 @@ describe('a target whose address comes per send (FJS-1667)', () => {
     expect(seen).toHaveLength(1)
     expect(JSON.stringify(seen[0])).not.toContain('secret')
     expect(JSON.stringify(seen[0])).not.toContain('hunter2')
+  })
+
+  // FJS-D1089 · a self-hosted instance a row names takes that row's own token.
+  // The credential is per caller and the grant is the row, so the writer of
+  // the address holds the token that goes there; a send that names no grant
+  // sends nothing, because keyed on the tenant alone the first row's token
+  // would go to the second row's address.
+  describe('with the row\'s own credential (FJS-D1089)', () => {
+    const rowTokens: CredentialResolver = {
+      async get()           { return 'the-machine-token' },
+      async getFor(_ref, w) { return w.grant ? `token-of-${w.grant}` : null },
+    }
+    const selfHosted = (auth: TargetDescriptor['auth']) =>
+      hookTarget({ ...local, id: 'provider:plausible', auth })
+
+    function vendor() {
+      const seen: Array<{ path: string; authorization: string | null }> = []
+      const server = Bun.serve({
+        port: 0,
+        fetch(req) {
+          seen.push({ path: new URL(req.url).pathname, authorization: req.headers.get('authorization') })
+          return Response.json({ ok: true })
+        },
+      })
+      return { seen, url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) }
+    }
+
+    it('is admitted at register() only as per_caller, by name', async () => {
+      const c = createConduit({ credentials: rowTokens })
+      await c.init()
+      await expect(c.register(selfHosted({ type: 'bearer', ref: 'PLAUSIBLE' }))).rejects.toThrow(/per_caller: true when the credential is the row's own/)
+      await expect(c.register(selfHosted({ type: 'signed', ref: 'PLAUSIBLE', signer: 'basic' }))).rejects.toThrow(/stored credential/)
+      await c.register(selfHosted({ type: 'bearer', ref: 'PLAUSIBLE', per_caller: true }))
+      await c.register(hookTarget({ ...local, id: 'provider:plausible-key', auth: { type: 'api_key', ref: 'PLAUSIBLE', header: 'X-Key', per_caller: true } }))
+    })
+
+    it('lands each row\'s token at that row\'s address, one tenant, two rows', async () => {
+      const a = vendor()
+      const b = vendor()
+      try {
+        const c = createConduit({ targets: [selfHosted({ type: 'bearer', ref: 'PLAUSIBLE', per_caller: true })], credentials: rowTokens })
+        await c.init()
+        const who = { tenant: 'agency', principal: 'u1' }
+        expect((await c.send({ target: 'provider:plausible', address: `${a.url}/api/v2/query`, method: 'POST', body: {}, who: { ...who, grant: 'row-a' } })).error).toBeNull()
+        expect((await c.send({ target: 'provider:plausible', address: `${b.url}/api/v2/query`, method: 'POST', body: {}, who: { ...who, grant: 'row-b' } })).error).toBeNull()
+        expect(a.seen).toEqual([{ path: '/api/v2/query', authorization: 'Bearer token-of-row-a' }])
+        expect(b.seen).toEqual([{ path: '/api/v2/query', authorization: 'Bearer token-of-row-b' }])
+      } finally { a.stop(); b.stop() }
+    })
+
+    it('refuses a send that names no grant, by name, and sends nothing', async () => {
+      const r = vendor()
+      try {
+        const c = createConduit({ targets: [selfHosted({ type: 'bearer', ref: 'PLAUSIBLE', per_caller: true })], credentials: rowTokens })
+        await c.init()
+        for (const who of [{ tenant: 'agency', principal: 'u1', grant: null }, undefined]) {
+          const result = await c.send({ target: 'provider:plausible', address: `${r.url}/x`, method: 'POST', body: {}, who })
+          expect(result.error?.kind).toBe('invalid_request')
+          expect(result.error?.retryable).toBe(false)
+          expect(result.error?.message).toMatch(/names the row with grant/)
+        }
+        expect(r.seen).toHaveLength(0)
+      } finally { r.stop() }
+    })
+
+    it('still grades the address: the row\'s own token does not reach a private address', async () => {
+      const r = vendor()
+      try {
+        const strict = createConduit({ targets: [{ ...selfHosted({ type: 'bearer', ref: 'PLAUSIBLE', per_caller: true }), destinations: undefined }], credentials: rowTokens })
+        await strict.init()
+        const result = await strict.send({ target: 'provider:plausible', address: `${r.url}/x`, method: 'POST', body: {}, who: { tenant: 'agency', principal: null, grant: 'row-a' } })
+        expect(result.error?.kind).toBe('invalid_request')
+        expect(r.seen).toHaveLength(0)
+      } finally { r.stop() }
+    })
   })
 })
 

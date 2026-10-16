@@ -14,7 +14,7 @@
 //
 // The app is the REAL one — `buildBasecampApp({ db, dbPath })` over the
 // environment's own client, so the autoloader, the global hooks and every
-// service factory are the ones production runs.
+// service definition are the ones production runs.
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join }        from 'node:path'
@@ -1109,6 +1109,63 @@ describe('a workspace role is not a thing you may hand yourself', () => {
 // read their parent through the caller's own client, so a row in another
 // workspace answers nothing where an id off a payload used to be written
 // wherever it pointed.
+// FJS-3016. auth's `people` reads a person with no workspace in play, so two
+// workspaces of one Account looked like one tenant and the person was graded
+// VISITOR, which every workspace admin outranks. It re-resolves them through
+// this app's membershipClaim in the operator's workspace now (FJS-D1116).
+describe('auth\'s people service reaches only the operator\'s workspace', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+
+  async function twoWorkspaces() {
+    const sys = env.system as any
+    const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
+    const other = await sys.workspace.create({
+      data: { accountId: wsRow.accountId, name: 'B', slug: `b-${uniq()}`, ownerId: wsRow.ownerId },
+    })
+    const mk = async (memberships: Array<[any, string]>) => {
+      const u = await sys.user.create({ data: { email: `ppl-${uniq()}@x.co`, accountId: wsRow.accountId } })
+      for (const [w, role] of memberships) await sys.workspaceMember.create({
+        data: { workspaceId: w.id, userId: u.id, role, capabilities: grantsFor(role as any),
+                acceptedAt: new Date().toISOString() } })
+      return u
+    }
+    const admin = await mk([[ws, 'admin']])
+    return {
+      people:  env.as(session({ userId: admin.id, workspaceId: ws.id })).service('people'),
+      onlyB:   await mk([[other, 'developer']]),
+      both:    await mk([[ws, 'developer'], [other, 'developer']]),
+      onlyA:   await mk([[ws, 'developer']]),
+      peer:    await mk([[ws, 'admin']]),
+    }
+  }
+  const stillThere = async (u: any) =>
+    (await (env.system as any).user.findFirst({ where: { id: u.id } })) != null
+
+  test('a person only in another workspace of the same account is a miss, and is not deleted', async () => {
+    const { people, onlyB, onlyA } = await twoWorkspaces()
+    await expect(people.get(onlyB.id)).rejects.toThrow(/No user/)
+    await expect(people.call('signOut', onlyB.id, {})).rejects.toThrow(/No user/)
+    await expect(people.remove(onlyB.id)).rejects.toThrow(/No user/)
+    expect(await stillThere(onlyB)).toBe(true)
+
+    expect((await people.get(onlyA.id)).userId).toBe(onlyA.id)
+  })
+
+  test('the person is graded at their role here, so a peer admin is refused', async () => {
+    const { people, peer } = await twoWorkspaces()
+    await expect(people.call('signOut', peer.id, {})).rejects.toThrow(/stands at or above/)
+  })
+
+  test('a person also in another workspace keeps their account; one only here can be removed', async () => {
+    const { people, both, onlyA } = await twoWorkspaces()
+    await expect(people.remove(both.id)).rejects.toThrow(/another tenant/)
+    expect(await stillThere(both)).toBe(true)
+
+    await people.remove(onlyA.id)
+    expect(await stillThere(onlyA)).toBe(false)
+  })
+})
+
 describe('a job runs as whoever asked for it', () => {
   const uniq = () => Math.random().toString(36).slice(2, 8)
 
@@ -1277,7 +1334,7 @@ describe('the proxy path list is what the app mounts', () => {
 describe('the catalog takes no workspace', () => {
   test('a caller with no membership anywhere can read it', async () => {
     // `outsider` is authenticated and belongs to nothing — VISITOR(1), which is
-    // exactly what `@@gate("1.7")` admits. Through a workspace-scoped service
+    // exactly what `@@gate(1.7)` admits. Through a workspace-scoped service
     // the same principal is refused by name ("not a member of this workspace"),
     // so this is the tenancy exemption and not a weak gate.
     const list = await env.as(outsider).service('blueprints').find()
@@ -1993,7 +2050,7 @@ describe('an alert rule says whether anything writes the metric it watches', () 
 
   test('…and one letter out answers null, which is the whole point', async () => {
     // One character apart from the row above. The series models are
-    // `@@gate("8")` and `@@tenant(none)`, so the lookup is `asSystem()` and the
+    // `@@gate(8)` and `@@tenant(none)`, so the lookup is `asSystem()` and the
     // only thing that reaches the response is the name, the type and the
     // freshness — never a reading.
     const r = await env.as(owner).service('alerts').get(typo.id) as any
@@ -2382,7 +2439,7 @@ describe('accepting an invitation puts somebody in the workspace', () => {
 // widget kinds said so on their own cards (`FJS-956`).
 //
 // The heartbeat records into the metric store now. What makes that worth its own
-// block is the READ: `MetricSeries` is `@@gate("8")` and `@@tenant(none)`,
+// block is the READ: `MetricSeries` is `@@gate(8)` and `@@tenant(none)`,
 // because a reading is about a PROCESS — which is right for `process.memoryMb`
 // and is exactly what a per-server series is not. Opening the package's read
 // slot and asking every app to declare a policy was refused: an app that writes

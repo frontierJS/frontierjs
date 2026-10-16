@@ -28,7 +28,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { parse } from '../src/core/parser.js'
 import { deriveAccess } from '../src/access.js'
-import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, MOVE_WORDS, lookup, typed, grouped, GROUPS,
+import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, MOVE_WORDS, lookup, seeAlsoRow, typed, grouped, GROUPS,
          POSITIONS, POSITION_RULES, positionsOf, probeFor, DOCS, UNDOCUMENTED, docFor,
          SYNONYMS, synonymsFor, bySynonym, TIERS, tierFor, AXES, axisFor } from '../src/core/catalog.js'
 import { TRAIT_FORBIDDEN_FIELD_ATTRS, TRAIT_FORBIDDEN_MODEL_ATTRS,
@@ -422,6 +422,25 @@ describe('catalog shape', () => {
     for (const row of CATALOG)
       for (const ref of [...(row.seeAlso ?? []), ...(row.excludes ?? [])])
         expect({ row: typed(row), ref, known: known(ref) }).toEqual({ row: typed(row), ref, known: true })
+  })
+
+  // FJS-1185: a bare word matched the first row carrying it, so a model attribute's
+  // pointer at `allow` linked the FIELD one with nothing saying so.
+  test('a seeAlso that could mean two rows says which', () => {
+    const bare: string[] = []
+    for (const row of CATALOG)
+      for (const ref of row.seeAlso ?? [])
+        if (!ref.includes(':') && CATALOG.filter(r => r.word === ref && r !== row).length > 1)
+          bare.push(`${typed(row)} -> ${ref}`)
+    expect(bare).toEqual([])
+  })
+
+  test('seeAlsoRow resolves a level, and refuses a bare name that matches two rows', () => {
+    const gate = lookup('@@gate')!
+    expect(seeAlsoRow(gate, 'model:allow')!.level).toBe('model')
+    expect(seeAlsoRow(lookup('@@unique')!, 'unique')!.level).toBe('field')
+    expect(() => seeAlsoRow(gate, 'allow')).toThrow(/field:allow.*model:allow/)
+    expect(seeAlsoRow(gate, 'nosuchword')).toBeNull()
   })
 
   test('excludes is symmetric — a pair that cannot coexist says so on both sides', () => {

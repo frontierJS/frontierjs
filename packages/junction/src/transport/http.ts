@@ -8,7 +8,7 @@ import { Router }                         from './router.ts'
 import { BUILD_HEADER } from '../core/build-id.ts'
 import { WS_PROTOCOL, bearerFromProtocols, withoutBearer, CREDENTIAL_HEADER, CREDENTIAL_CHANGED } from '../core/ws-auth.ts'
 import { parsePathSegments, matchPathDirect } from './router.ts'
-import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError } from './body.ts'
+import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError, UnsafeIntegerError } from './body.ts'
 import { serveStatic }                    from './static.ts'
 import { REFUSE, resolvePrincipal, type CredentialVerifier } from '../auth/credentials.ts'
 // `type` matters: StaticOptions is an interface, and importing it as a value
@@ -766,6 +766,11 @@ export class HttpTransport {
           headers: { 'content-type': 'text/plain', connection: 'close' },
         })
       }
+      // The one malformed body that says why: the sender wrote digits this
+      // transport cannot keep, and "Bad Request" would send them hunting.
+      if (err instanceof UnsafeIntegerError) {
+        return new Response(err.message, { status: 400, headers: { 'content-type': 'text/plain' } })
+      }
       return new Response('Bad Request', { status: 400 })
     }
 
@@ -1092,11 +1097,8 @@ export class HttpTransport {
       paginate: (data, total, opts) => {
         this.stats.response.json++
 
-        // Accept both `skip` (legacy) and `offset` (canonical) as the same thing.
-        const { limit } = opts as { limit: number }
-        const skip = (opts as { skip?: number; offset?: number }).skip
-          ?? (opts as { offset?: number }).offset
-          ?? 0
+        const { limit } = opts
+        const offset = opts.offset ?? 0
 
         const base   = `${url.protocol}//${url.host}${url.pathname}`
 
@@ -1110,11 +1112,11 @@ export class HttpTransport {
           return base + encodeQueryString({ ...params, ...directiveParams({ offset: newOffset, limit: newLimit }) })
         }
 
-        const next = skip + limit < total ? buildUrl(skip + limit, limit)         : null
-        const prev = skip > 0             ? buildUrl(Math.max(0, skip - limit), limit) : null
+        const next = offset + limit < total ? buildUrl(offset + limit, limit)         : null
+        const prev = offset > 0             ? buildUrl(Math.max(0, offset - limit), limit) : null
 
         return new Response(
-          JSON.stringify({ data, total, limit, offset: skip, next, prev }),
+          JSON.stringify({ data, total, limit, offset, next, prev }),
           { status: 200, headers: { 'content-type': 'application/json' } }
         )
       },

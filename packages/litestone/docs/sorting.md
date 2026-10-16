@@ -251,6 +251,10 @@ await db.order.groupBy({
   // orderBy: { _sum: { amount: 'asc' } } // by aggregate field
   // orderBy: { status: 'asc' }           // by group field
 })
+
+// An array is terms in written order, as in findMany — a total order over two keys
+await db.order.groupBy({ by: ['accountId', 'status'], _count: true,
+  orderBy: [{ accountId: 'desc' }, { status: 'asc' }] })
 ```
 
 ## `orderBy: { $raw }` — the escape hatch

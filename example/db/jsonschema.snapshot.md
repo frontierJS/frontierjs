@@ -170,6 +170,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `tokenExpiresAt` | `string`? | — | — | `format: "date-time"` | — |
 | `scope` | `string`? | — | — | — | — |
 | `totpLastStep` | `integer`? | — | — | — | — |
+| `linked` | `boolean`? | — | — | — | — |
 
 **On create**: required — `userId`, `type` · not accepted — `id`
 
@@ -1178,7 +1179,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string`? | — | — | `x-transforms` | — |
 | `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `role` | `string` = `"user"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
-| `accountId` | `string`? | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `isStaff` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `isSystemAdmin` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 

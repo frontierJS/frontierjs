@@ -159,7 +159,7 @@ describe('a model every row of which is refused', () => {
 
 describe('the walk itself', () => {
   it('reads as SYSTEM, or a gated model reports zero rows and passes', async () => {
-    const schema = `model Vault { id Int @id  code String  @@gate("8") }`
+    const schema = `model Vault { id Int @id  code String  @@gate(8) }`
     const db  = tmp()
     const one = await createClient({ schema, db })
     await one.asSystem().vault.create({ data: { id: 1, code: 'x' } })

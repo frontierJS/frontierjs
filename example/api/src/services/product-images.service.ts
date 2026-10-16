@@ -3,8 +3,6 @@
 // picture, not a whole product — and because `file` is a File column, whose
 // write is a multipart upload and the one request the browser client does not
 // put down the socket.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createProductImagesService() {
-  return createBaseService({ model: 'ProductImage', channel: 'product-images' })
-}
+export default createService({ model: 'ProductImage', channel: 'product-images' })

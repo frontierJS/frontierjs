@@ -118,7 +118,7 @@ throws is logged and the rest still run.
   by hand, and check `junction/src/mail` when either moves.
 - **`userId String`, not `Int`.** `@frontierjs/auth` issues uuid ids, and an
   `Int` column dies with `cannot store TEXT value in INTEGER column`.
-- **`@@gate("0.8.4.8")` — create is 8, not 9.** 9 is LOCKED, which `asSystem()`
+- **`@@gate(0.8.4.8)` — create is 8, not 9.** 9 is LOCKED, which `asSystem()`
   does not pass either, so a 9 would stop the driver from ever writing a row.
 - **"You see only your own" needs two accounts to demonstrate.** One signed-in
   user cannot show it; `example`'s drive signs in twice for that reason.

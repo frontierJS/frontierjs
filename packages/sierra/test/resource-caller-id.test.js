@@ -48,9 +48,9 @@ const { registerSchemas } = await import('../src/resource/schema-registry.js')
 const { createResource } = await import('../src/resource/resource.js')
 
 const SOURCE = `
-model Sku  { code String @id   name String  @@gate("0.0.0.0") }
-model Doc  { id   String @id   name String  @@gate("0.0.0.0") }
-model Auto { id   Int    @id @default(autoincrement())  name String  @@gate("0.0.0.0") }
+model Sku  { code String @id   name String  @@gate(0.0.0.0) }
+model Doc  { id   String @id   name String  @@gate(0.0.0.0) }
+model Auto { id   Int    @id @default(autoincrement())  name String  @@gate(0.0.0.0) }
 `
 
 let ROWS = []

@@ -1,11 +1,11 @@
-import { createBaseService } from '/home/claude/review/junction/src/core/service.ts'
+import { buildBase } from '/home/claude/review/junction/src/core/service.ts'
 import { parse } from '/home/claude/review/litestone/src/core/parser.js'
 import { readFileSync } from 'fs'
 
 const chk = (l, ok, d='') => console.log(`  ${ok ? '✓' : '✗'} ${l}${d ? '  — ' + d : ''}`)
 const parsed = parse(readFileSync('/home/claude/review/smoke-test-fullstack/db/schema.lite','utf8')).schema
 
-const svc = createBaseService({
+const svc = buildBase({
   name: 'leads', model: 'lead',
   idField: 'id', softDelete: 'deletedAt', cache: { ttl: '30s' },
 })
@@ -19,7 +19,7 @@ chk('CRUD still present',        ['find','get','create','patch','remove','restor
 chk('derived hooks still there', !!svc.hooks?.before?.create?.length)
 
 // defaults when omitted
-const bare = createBaseService({ name: 'x', model: 'lead' })
+const bare = buildBase({ name: 'x', model: 'lead' })
 chk('defaults: idField id',      bare._meta?.idField === 'id')
 chk('defaults: softDelete null', bare._meta?.softDelete === null)
 chk('defaults: cache false',     bare._meta?.cache === false)

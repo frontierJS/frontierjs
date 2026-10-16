@@ -286,7 +286,7 @@
     const stops = stopsIn(rowEl)
     if (!stops.length) return false
     const i = Math.max(0, Math.min(index, stops.length - 1))
-    stops[i].focus()
+    $.focus(stops[i])
     cursor = { row: rowEl.dataset.path, stop: i }
     return true
   }
@@ -415,7 +415,7 @@
 
   $.onDestroy(() => clearTimeout(_copyTimer))
 
-  const focusMe = (el) => { el.focus(); el.select?.() }
+  const focusMe = (el) => { $.focus(el).then(() => el.select?.()) }
   const noop    = () => {}
 
   function fail(key, message) { rowError = { ...rowError, [key]: message } }
@@ -613,8 +613,8 @@
     {class}
     {...$attributes}
     {@attach bindGrid}
-    on:keydown={onGridKey}
-    on:focusin={onGridFocus}
+    onkeydown={onGridKey}
+    onfocusin={onGridFocus}
   >
     {#if copy || (canEdit && history)}
       <div class="fjs-json-actions">
@@ -625,7 +625,7 @@
             aria-label="Undo"
             title="Undo (Ctrl+Z)"
             disabled={!canUndo()}
-            on:click={() => undo()}
+            onclick={() => undo()}
           >↶</button>
           <button
             type="button"
@@ -633,7 +633,7 @@
             aria-label="Redo"
             title="Redo (Ctrl+Shift+Z)"
             disabled={!canRedo()}
-            on:click={() => redo()}
+            onclick={() => redo()}
           >↷</button>
         {/if}
         {#if copy}<CopyButton text={text} />{/if}
@@ -651,8 +651,8 @@
           placeholder="Find a key or a value"
           aria-label="Find in this document"
           value={query}
-          on:input={(e) => { query = e.target.value }}
-          on:keydown={(e) => { if (e.key === 'Escape') { e.preventDefault(); query = '' } }}
+          oninput={(e) => { query = e.target.value }}
+          onkeydown={(e) => { if (e.key === 'Escape') { e.preventDefault(); query = '' } }}
         />
         {#if found?.active}
           <!-- A count, because a filter that matched nothing and a document
@@ -696,7 +696,7 @@
               class="fjs-json-toggle"
               aria-expanded={row.open}
               aria-label={`${row.open ? 'Collapse' : 'Expand'} ${row.name}`}
-              on:click={() => toggle(row)}
+              onclick={() => toggle(row)}
             >{row.open ? '▾' : '▸'}</button>
           {:else}
             <span class="fjs-json-toggle" aria-hidden="true"></span>
@@ -711,12 +711,12 @@
               value={row.name}
               aria-label={`Rename ${row.name}`}
               {@attach focusMe}
-              on:keydown={(e) => onEditKey(e, (v) => commitRename(row, v), () => { renaming = '' })}
-              on:blur={(e) => { if (renaming === row.key) commitRename(row, e.target.value) }}
+              onkeydown={(e) => onEditKey(e, (v) => commitRename(row, v), () => { renaming = '' })}
+              onblur={(e) => { if (renaming === row.key) commitRename(row, e.target.value) }}
             />
           {:else if canEdit && typeof row.name === 'string'}
             <code language="json" class="fjs-json-key">
-              <button type="button" class="fjs-json-name" on:click={() => { renaming = row.key; editing = '' }}>
+              <button type="button" class="fjs-json-name" onclick={() => { renaming = row.key; editing = '' }}>
                 <b>{@render marked(String(row.name))}</b>
               </button><i>:</i>
             </code>
@@ -740,8 +740,8 @@
             value={row.kind === 'string' ? row.value : (row.kind === 'null' ? 'null' : row.value)}
             aria-label={`Edit ${row.name}`}
             {@attach focusMe}
-            on:keydown={(e) => onEditKey(e, (v) => commitValue(row, v), () => { editing = '' })}
-            on:blur={(e) => { if (editing === row.key) commitValue(row, e.target.value) }}
+            onkeydown={(e) => onEditKey(e, (v) => commitValue(row, v), () => { editing = '' })}
+            onblur={(e) => { if (editing === row.key) commitValue(row, e.target.value) }}
           />
         {:else}
         <!-- The cell truncates rather than widening, so the tools column stays
@@ -777,18 +777,18 @@
           {:else if canEdit && row.kind === 'boolean'}
             <!-- A boolean has two values, so in edit mode it is a toggle rather
                  than a box to type in. -->
-            <button type="button" class="fjs-json-edit" on:click={() => flip(row)}>
+            <button type="button" class="fjs-json-edit" onclick={() => flip(row)}>
               {@render tokens(row.value, row.open)}
             </button>
           {:else if canEdit && (row.kind === 'string' || row.kind === 'number' || row.kind === 'null')}
-            <button type="button" class="fjs-json-edit" on:click={() => { editing = row.key; renaming = '' }}>
+            <button type="button" class="fjs-json-edit" onclick={() => { editing = row.key; renaming = '' }}>
               {@render tokens(row.value, row.open)}
             </button>
           {:else if row.container && !row.open}
             <!-- A closed container's whole summary opens it. The triangle is
                  a 1rem target at the far left of a row that can be very wide,
                  so the thing a person actually aims at is the summary. -->
-            <button type="button" class="fjs-json-summary" on:click={() => toggle(row)}>
+            <button type="button" class="fjs-json-summary" onclick={() => toggle(row)}>
               {@render tokens(row.value, false)}
             </button>
           {:else}
@@ -814,7 +814,7 @@
               tabindex="-1"
               aria-label={`Copy the value of ${row.name}`}
               title="Copy value"
-              on:click={() => copyRow(row, 'value')}
+              onclick={() => copyRow(row, 'value')}
             >{copied === `${row.key}:value` ? '✓' : '⧉'}</button>
             <!-- And where it IS. An id in a payload is worth nothing without
                  the route to it, and a route read off the screen by eye is
@@ -826,7 +826,7 @@
               tabindex="-1"
               aria-label={`Copy the path to ${row.name}`}
               title={pathStyle === 'pointer' ? 'Copy JSON Pointer' : 'Copy path'}
-              on:click={() => copyRow(row, 'path')}
+              onclick={() => copyRow(row, 'path')}
             >{copied === `${row.key}:path` ? '✓' : '/'}</button>
           {/if}
           {#if canEdit}
@@ -846,7 +846,7 @@
               data-stop
               tabindex="-1"
                 aria-label={`Type of ${row.name}`}
-                on:change={(e) => changeKind(row, e.target.value)}
+                onchange={(e) => changeKind(row, e.target.value)}
               >
                 {#each kinds as k (k)}
                   <option value={k} selected={k === row.kind}>{KIND_LABEL[k]}</option>
@@ -860,7 +860,7 @@
               data-stop
               tabindex="-1"
                 aria-label={`Add to ${row.name}`}
-                on:click={() => openAdd(row.key)}
+                onclick={() => openAdd(row.key)}
               >+</button>
             {/if}
             <button
@@ -869,7 +869,7 @@
               data-stop
               tabindex="-1"
               aria-label={`Remove ${row.name}`}
-              on:click={() => removeRow(row)}
+              onclick={() => removeRow(row)}
             >×</button>
           {/if}
         </span>
@@ -897,8 +897,8 @@
                 aria-label="New key"
                 value={addKey}
                 {@attach focusMe}
-                on:input={(e) => { addKey = e.target.value }}
-                on:keydown={(e) => onEditKey(e, () => commitAdd(row.path), () => { addTarget = '' })}
+                oninput={(e) => { addKey = e.target.value }}
+                onkeydown={(e) => onEditKey(e, () => commitAdd(row.path), () => { addTarget = '' })}
               />
             {/if}
           </span>
@@ -912,12 +912,12 @@
             aria-label="New value"
             value={addValue}
             {@attach row.kind === 'array' ? focusMe : noop}
-            on:input={(e) => { addValue = e.target.value }}
-            on:keydown={(e) => onEditKey(e, () => commitAdd(row.path), () => { addTarget = '' })}
+            oninput={(e) => { addValue = e.target.value }}
+            onkeydown={(e) => onEditKey(e, () => commitAdd(row.path), () => { addTarget = '' })}
           />
           <span class="fjs-json-tools">
-            <button type="button" class="fjs-json-confirm" aria-label="Add" on:click={() => commitAdd(row.path)}>✓</button>
-            <button type="button" class="fjs-json-cancel" aria-label="Cancel" on:click={() => { addTarget = '' }}>×</button>
+            <button type="button" class="fjs-json-confirm" aria-label="Add" onclick={() => commitAdd(row.path)}>✓</button>
+            <button type="button" class="fjs-json-cancel" aria-label="Cancel" onclick={() => { addTarget = '' }}>×</button>
           </span>
         </div>
       {/if}
@@ -955,8 +955,8 @@
               placeholder="key"
               aria-label="New key"
               value={addKey}
-              on:input={(e) => { addKey = e.target.value }}
-              on:keydown={(e) => onEditKey(e, () => commitAdd([]), () => { addKey = ''; addValue = '' })}
+              oninput={(e) => { addKey = e.target.value }}
+              onkeydown={(e) => onEditKey(e, () => commitAdd([]), () => { addKey = ''; addValue = '' })}
             />
           {/if}
         </span>
@@ -966,11 +966,11 @@
           placeholder={rootIsArray ? 'item' : 'value'}
           aria-label="New value"
           value={addValue}
-          on:input={(e) => { addValue = e.target.value }}
-          on:keydown={(e) => onEditKey(e, () => commitAdd([]), () => { addKey = ''; addValue = '' })}
+          oninput={(e) => { addValue = e.target.value }}
+          onkeydown={(e) => onEditKey(e, () => commitAdd([]), () => { addKey = ''; addValue = '' })}
         />
         <span class="fjs-json-tools">
-          <button type="button" class="fjs-json-confirm" aria-label="Add" on:click={() => commitAdd([])}>+</button>
+          <button type="button" class="fjs-json-confirm" aria-label="Add" onclick={() => commitAdd([])}>+</button>
         </span>
       </div>
       {#if rowError[rootKey]}

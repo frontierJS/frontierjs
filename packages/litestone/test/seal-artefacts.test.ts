@@ -27,7 +27,7 @@ model Invoice {
   state  DocState @default(draft)
   number String   @immutable
   lines  InvoiceLine[] ${relAttrs}
-  @@gate("1.8.8.8")
+  @@gate(1.8.8.8)
   @@transitions(state,
     issue:  draft  -> issued ${moveAttrs} @gate(5),
     settle: issued -> paid @system,
@@ -39,7 +39,7 @@ model InvoiceLine {
   invoice   Invoice @relation(fields: [invoiceId], references: [id])
   invoiceId Int
   amount    Int
-  @@gate("1.8.8.8")
+  @@gate(1.8.8.8)
 }
 `).schema
 

@@ -59,7 +59,7 @@ if (await sys.account.count() === 0) {
 }
 
 // ─── 2. Auth ──────────────────────────────────────────────────────────────
-// The dumbest thing that works. @@gate("0.4.4.5") is what makes reads public
+// The dumbest thing that works. @@gate(0.4.4.5) is what makes reads public
 // and writes authenticated — no service declares any of it. Real apps use
 // @frontierjs/auth.
 

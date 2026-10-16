@@ -374,8 +374,8 @@ check('…and one of them is free over a threshold', STANDARD?.freeOver, cents(7
 // ─── The gate that separates the two tables ───────────────────────────────
 //
 // Both are read by the same basket screen, one of them by a caller with no
-// session at all. `ShippingMethod` is `@@gate("0.5.5.5")` and `Discount` is
-// `@@gate("5.5.5.5")`, and the difference is not decoration: `GET /api/discounts`
+// session at all. `ShippingMethod` is `@@gate(0.5.5.5)` and `Discount` is
+// `@@gate(5.5.5.5)`, and the difference is not decoration: `GET /api/discounts`
 // answering the table hands every unreleased code to whoever asks for it.
 
 console.log('\n  who may read what')
@@ -609,7 +609,7 @@ await asStaff(`/tax-rates/${VAT.id}`, { method: 'PATCH', body: JSON.stringify({ 
 // records of one sale agree — which needs both of them in scope.
 //
 // Every count below is scoped to this run's own order. `JournalEntry` is
-// append-only by declaration (`@@gate("5.8.9.9")` — update and delete are
+// append-only by declaration (`@@gate(5.8.9.9)` — update and delete are
 // LOCKED, so not even `asSystem()` can tidy up), so a drive that counted rows
 // globally would pass once and then drift upward forever.
 
@@ -661,7 +661,7 @@ check('…and it still balances', plainL.reduce((n, l) => n + l.amount, 0), 0)
 // There are TWO refusals here and this is the first: `journalEntries` declares
 // `methods: ['find', 'get']`, so a service that never mounts PATCH or DELETE
 // answers *method not allowed* and the gate is never consulted. The second is
-// `@@gate("5.8.9.9")` — `9` is LOCKED, so even `asSystem()` (which grades 8) is
+// `@@gate(5.8.9.9)` — `9` is LOCKED, so even `asSystem()` (which grades 8) is
 // refused BY NAME — and it is the one that would still hold if somebody added
 // `'update'` to that list tomorrow.
 //
@@ -839,7 +839,7 @@ const placed = (await (await asStaff(`/orders?reference=${placedRef}`)).json()).
 
 console.log('\n  the order screen')
 
-// Signed in as staff in the browser, because `Order` is `@@gate("1.4.4.5")`
+// Signed in as staff in the browser, because `Order` is `@@gate(1.4.4.5)`
 // with two allows — a stranger reading the ledger is exactly what `FJS-498`
 // closed, and this screen is staff's.
 await cmd('Page.navigate', { url: `${UI}/` })

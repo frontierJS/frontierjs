@@ -105,7 +105,7 @@ title: Notifications
       <tr data-unread={isUnread(n) ? 'true' : null}>
         <td>
           {#if actionOf(n)?.url}
-            <a href={actionOf(n).url} on:click={(e) => { e.preventDefault(); open(n) }}>
+            <a href={actionOf(n).url} onclick={(e) => { e.preventDefault(); open(n) }}>
               {#if isUnread(n)}<strong>{titleOf(n)}</strong>{:else}{titleOf(n)}{/if}
             </a>
           {:else if isUnread(n)}

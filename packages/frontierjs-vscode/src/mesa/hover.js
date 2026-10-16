@@ -89,7 +89,7 @@ const HOVER_ENTRIES = [
   },
   {
     match: (word) => word === '$emit',
-    hover: "**`$emit(eventName, data?)`** — dispatch component event\n\nCalls the parent's `on{EventName}` prop directly. Both `onclick` and `onClick` naming are checked.\n\n```js\n// MyButton.mesa\nfunction handleClick(e) {\n  $emit('click', e)   // calls parent's onclick / onClick prop\n}\n```\n\n```html\n<!-- Parent -->\n<MyButton onclick={handleClick} />\n```\n\n> `on:event` on a **component** is a compiler error. Use `onclick={fn}` prop instead."
+    hover: "**`$emit(eventName, data?)`** — dispatch component event\n\nCalls the parent's `on{EventName}` prop directly. Both `onclick` and `onClick` naming are checked.\n\n```js\n// MyButton.mesa\nfunction handleClick(e) {\n  $emit('click', e)   // calls parent's onclick / onClick prop\n}\n```\n\n```html\n<!-- Parent -->\n<MyButton onclick={handleClick} />\n```\n\nOn a **component** `onclick` is a prop: a guard or timer modifier wraps the value it is handed, and `once`, `passive` and `capture` are refused, since a component has no listener of its own."
   },
   {
     match: (word) => word === '$props',
@@ -127,8 +127,8 @@ const HOVER_ENTRIES = [
     hover: "**`style:prop={expr}`** — reactive inline style\n\nSets a CSS property reactively. Supports mixed template-literal values for unit composition.\n\n```html\n<div style:color={textColor}>\n<div style:font-size=\"{size}px\">    <!-- mixed value -->\n<div style:display>                 <!-- shorthand: sets display from variable named 'display' -->\n```"
   },
   {
-    match: (word, line) => word === 'on' && line.includes('on:'),
-    hover: "**`on:event|modifier={handler}`** — DOM event listener\n\n```html\n<button on:click={handler}>\n<form on:submit|preventDefault={onSubmit}>\n<input on:input|debounce(300)={search}>\n<div on:click|once|stopPropagation={handler}>\n```\n\n**Modifiers:**\n\n| Modifier | Effect |\n|---|---|\n| `once` | Remove handler after first call |\n| `passive` | addEventListener `passive: true` |\n| `capture` | Capture phase |\n| `preventDefault` | `e.preventDefault()` |\n| `stopPropagation` | `e.stopPropagation()` |\n| `self` | Only when `target === currentTarget` |\n| `trusted` | Only real user events |\n| `debounce(ms)` | Debounce — arg can be reactive `{delay}` |\n| `throttle(ms)` | Throttle |\n\n> `on:event` on a **component** is a compiler error. Use `onclick={fn}` prop instead."
+    match: (word) => /^on[a-z]+$/.test(word),
+    hover: "**`onevent|modifier={handler}`** — DOM event listener\n\n```html\n<button onclick={handler}>\n<form onsubmit|preventDefault={onSubmit}>\n<input oninput|debounce(300)={search}>\n<div onclick|once|stopPropagation={handler}>\n```\n\n**Modifiers:**\n\n| Modifier | Effect |\n|---|---|\n| `once` | Remove handler after first call |\n| `passive` | addEventListener `passive: true` |\n| `capture` | Capture phase |\n| `preventDefault` | `e.preventDefault()` |\n| `stopPropagation` | `e.stopPropagation()` |\n| `self` | Only when `target === currentTarget` |\n| `trusted` | Only real user events |\n| `debounce(ms)` | Debounce — arg can be reactive `{delay}` |\n| `throttle(ms)` | Throttle |\n\nOn a **component** `onclick` is a prop: a guard or timer modifier wraps the value it is handed, and `once`, `passive` and `capture` are refused, since a component has no listener of its own."
   },
 
   // ── {@attach} ────────────────────────────────────────────────────────────────
@@ -163,15 +163,15 @@ const HOVER_ENTRIES = [
 
   {
     match: (word, line) => line.includes('mesa:window'),
-    hover: "**`<mesa:window>`** — window event and property bindings\n\n```html\n<mesa:window\n  on:resize={handleResize}\n  on:keydown|preventDefault={handleKey}\n  bind:innerWidth={width}\n  bind:scrollY={scrollPos}\n  bind:online={isOnline}\n>\n```\n\n**Bindable properties:** `innerWidth`, `innerHeight`, `outerWidth`, `outerHeight`, `devicePixelRatio`, `scrollX`, `scrollY`, `online`\n\nAll `on:` modifiers work on window events."
+    hover: "**`<mesa:window>`** — window event and property bindings\n\n```html\n<mesa:window\n  onresize={handleResize}\n  onkeydown|preventDefault={handleKey}\n  bind:innerWidth={width}\n  bind:scrollY={scrollPos}\n>\n```\n\n**Bindable properties:** `innerWidth`, `innerHeight`, `outerWidth`, `outerHeight`, `devicePixelRatio`, `scrollX`, `scrollY`\n\nAll `on:` modifiers work on window events."
   },
   {
     match: (word, line) => line.includes('mesa:document'),
-    hover: "**`<mesa:document>`** — document event listeners\n\nBind event listeners to `document`. Useful for events that don't fire on `window`.\n\n```html\n<mesa:document\n  on:visibilitychange={handleVisibility}\n  on:keydown|preventDefault={handleKey}\n  on:click={handleGlobalClick}\n>\n```"
+    hover: "**`<mesa:document>`** — document event listeners\n\nBind event listeners to `document`. Useful for events that don't fire on `window`.\n\n```html\n<mesa:document\n  onvisibilitychange={handleVisibility}\n  onkeydown|preventDefault={handleKey}\n  onclick={handleGlobalClick}\n>\n```"
   },
   {
     match: (word, line) => line.includes('mesa:body'),
-    hover: "**`<mesa:body>`** — body event listeners\n\nBind event listeners to `document.body`. Useful for `mouseenter`/`mouseleave` tracking.\n\n```html\n<mesa:body\n  on:mouseenter={startTracking}\n  on:mouseleave={stopTracking}\n>\n```"
+    hover: "**`<mesa:body>`** — body event listeners\n\nBind event listeners to `document.body`. Useful for `mouseenter`/`mouseleave` tracking.\n\n```html\n<mesa:body\n  onmouseenter={startTracking}\n  onmouseleave={stopTracking}\n>\n```"
   },
   {
     match: (word, line) => line.includes('mesa:head'),

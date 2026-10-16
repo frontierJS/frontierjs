@@ -12,7 +12,7 @@ the browser's forms, and the database itself.
 The line worth finding is on `model User`, at the bottom of its block:
 
 ```text
-@@gate("4.4.4.5")
+@@gate(4.4.4.5)
 ```
 
 Four numbers, in the order **read · create · update · delete**, each one the

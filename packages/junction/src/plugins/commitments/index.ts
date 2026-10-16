@@ -38,11 +38,17 @@
 // Litestone tap, under the transition's name.
 //
 // What a move OWES beyond itself — a closed period issues its invoice and opens
-// the next one — is a hook the app names by commitment (`hooks:`). It runs in
-// the move's own transaction, so the move and its effect commit together or
-// neither does; an announcement is too late for it, being held until the
-// commit. The plugin still makes the move, so an app cannot forget the
-// from-state lock the fire's once-ness rests on.
+// the next one — is a `defineCommitment({ before, after, around })` the app
+// names by commitment (`hooks:`), the service pipeline's tiers in its order
+// (`FJS-D1022`). All three run in the move's own transaction, so the move and
+// its effect commit together or neither does; an announcement is too late for
+// it, being held until the commit. `before` is where a SEALING move's owed
+// writes go — after the seal the row refuses them, and a look-up of the draft
+// finds none and writes a second one (`FJS-2163`). `after` is where a write
+// the move's own from-state contends with goes: a renewal opening the next
+// period while the closing one still holds an open-period guard. The plugin
+// still makes the move, so an app cannot forget the from-state lock the fire's
+// once-ness rests on.
 //
 // An effect outside the database — a reminder's email — is `enqueue`, an
 // outbox row on the same transaction, and not `afterCommit`: a crash between
@@ -90,22 +96,27 @@ export interface CommitmentsPluginOptions {
   timeZone?:    string | ((tenant: string | null) => string | null | undefined | Promise<string | null | undefined>)
   /**
    * What a move owes beyond itself, keyed `<Model>.<commitment>` —
-   * `'SubscriptionPeriod.close'`, `'Invoice.subscription.lapse'`.
+   * `'SubscriptionPeriod.close'`, `'Invoice.subscription.lapse'` — each a
+   * `defineCommitment({ before, after, around })`.
    *
-   * **Hook tier** (`FJS-D06`): it runs after the move inside the move's own
-   * transaction, and a throw rolls both back and fails the fire, which
-   * Caravan retries. Only the FIRE runs it — a `transition()` made anywhere
-   * else is that caller's to follow up. A key naming no declared commitment is
-   * refused at boot, because a renamed commitment would otherwise leave its
-   * effect unrun with nothing saying so.
+   * **Hook tier** (`FJS-D06`): every tier runs inside the move's own
+   * transaction, and a throw rolls the move back and fails the fire, which
+   * Caravan retries. Only the FIRE runs them — a `transition()` made anywhere
+   * else is that caller's to follow up. A key naming no declared commitment, or
+   * a value that is not a spec, is refused at boot: a renamed commitment or a
+   * bare function would otherwise leave its effect unrun with nothing saying so.
    */
-  hooks?:       Record<string, CommitmentHook>
+  hooks?:       Record<string, CommitmentSpec>
 }
 
 /** What a hook is handed. `db` is the fire's client inside the transaction. */
 export interface CommitmentHookContext {
   db:          Record<string, any>
-  /** The row the move was made on, as the transition answered it. */
+  /**
+   * The row the move is made on — at its from-state in `before` and in
+   * `around` before `next()`, as the transition answered it in `after` and
+   * in `around` after `next()`.
+   */
   record:      Record<string, any>
   /** The declaring model and the commitment's name, as the key spells them. */
   model:       string
@@ -133,7 +144,28 @@ export interface CommitmentHookContext {
   enqueue(job: EnqueueRef, payload: unknown, opts?: EnqueueOptions): Promise<string>
 }
 
-export type CommitmentHook = (ctx: CommitmentHookContext) => unknown | Promise<unknown>
+export type CommitmentHook   = (ctx: CommitmentHookContext) => unknown | Promise<unknown>
+/** `next()` runs `before`, the move and `after`; an `around` that never calls it fails the fire. */
+export type CommitmentAround = (ctx: CommitmentHookContext, next: () => Promise<void>) => unknown | Promise<unknown>
+
+/**
+ * What one commitment's move owes, in the service pipeline's order:
+ * `around` enter → `before` → the move → `after` → `around` exit.
+ */
+export interface CommitmentSpec {
+  /** Before the move, on the row at its from-state — what a `@seals` move owes. */
+  before?: CommitmentHook
+  /** After the move, on the moved row — a write the from-state would contend with. */
+  after?:  CommitmentHook
+  around?: CommitmentAround
+}
+
+const SPEC_TIERS = ['before', 'after', 'around'] as const
+
+/** One commitment's hooks, typed. The spec is returned as given. */
+export function defineCommitment(spec: CommitmentSpec): CommitmentSpec {
+  return spec
+}
 
 export interface CommitmentsApi {
   /**
@@ -363,7 +395,7 @@ async function zoneIn(opt: CommitmentsPluginOptions['timeZone'], tenant: string 
  * below is the rest.
  */
 async function fireAsApp(
-  app: App, job: FirePayload, tenant: string | null, hooks: Record<string, CommitmentHook> | undefined,
+  app: App, job: FirePayload, tenant: string | null, hooks: Record<string, CommitmentSpec> | undefined,
 ): Promise<FireOutcome> {
   return app.withDb(async (raw) => {
     try {
@@ -379,7 +411,7 @@ async function fireAsApp(
 
 export interface FireDueOptions {
   /** What a move owes beyond itself — the `hooks` the app hands `commitments()`, run by each fire. */
-  hooks?:    Record<string, CommitmentHook>
+  hooks?:    Record<string, CommitmentSpec>
   /** Whose calendar a day-kind `on:` is read in — `commitments({ timeZone })`'s option. */
   timeZone?: CommitmentsPluginOptions['timeZone']
 }
@@ -430,11 +462,21 @@ export async function fireDue(app: App, opts: FireDueOptions = {}): Promise<Fire
 
 /**
  * A hook keyed by a commitment nothing declares is refused, because a renamed
- * commitment would otherwise leave its effect unrun with nothing saying so.
+ * commitment would otherwise leave its effect unrun with nothing saying so. A
+ * value that is not a spec is refused for the same reason: a bare function, or
+ * a tier spelled `afer`, would be read as no tier at all.
  */
-function refuseUnknownHooks(app: App, hooks: Record<string, CommitmentHook> | undefined, who: string): void {
+function refuseUnknownHooks(app: App, hooks: Record<string, CommitmentSpec> | undefined, who: string): void {
   const keys = Object.keys(hooks ?? {})
   if (!keys.length) return
+  for (const k of keys) {
+    const spec = hooks![k] as unknown
+    const ok = !!spec && typeof spec === 'object' && !Array.isArray(spec) &&
+      Object.entries(spec).every(([tier, fn]) => (SPEC_TIERS as readonly string[]).includes(tier) && (fn === undefined || typeof fn === 'function'))
+    if (!ok) throw new Error(
+      `[Junction] ${who}: hooks '${k}' is not a defineCommitment({ before, after, around }) — ` +
+      `each tier a function, and no other key.`)
+  }
   const declared = declaredKeys(app)
   const unknown  = keys.filter(k => !declared.has(k))
   if (unknown.length) throw new Error(
@@ -475,8 +517,8 @@ async function refuseUnprincipled(app: App): Promise<void> {
 }
 
 /**
- * One fire against one client: re-derive, then move, then the hook — the
- * plugin's own path, exported so a drive with no app can run it rather than a
+ * One fire against one client: re-derive, then the spec's tiers around the move
+ * — the plugin's own path, exported so a drive with no app can run it rather than a
  * copy of it.
  *
  * The READ is as system and the MOVE is not. `asSystem()` bypasses
@@ -492,7 +534,7 @@ export async function fireCommitment(
   raw: unknown,
   job: FirePayload,
   { hooks, outbox, tenant = null }: {
-    hooks?:  Record<string, CommitmentHook>
+    hooks?:  Record<string, CommitmentSpec>
     /** The relay `enqueue` writes for and kicks after the commit — `app.outbox`. */
     outbox?: OutboxApi
     /** The tenant `raw` belongs to, which the kicked delivery dispatches under. */
@@ -513,7 +555,7 @@ export async function fireCommitment(
   if (!row) return 'lapsed'
 
   const model = db.$commitments.find(d => d.accessor === job.accessor)?.model ?? job.accessor
-  const hook  = hooks?.[`${model}.${job.transition}`]
+  const spec  = hooks?.[`${model}.${job.transition}`]
   const later: Array<() => unknown> = []
   const rows:  string[] = []
 
@@ -528,14 +570,22 @@ export async function fireCommitment(
     `that admits it.`)
 
   try {
-    if (!hook) {
+    if (!spec || !(spec.before || spec.after || spec.around)) {
       if (!await db[row.target.accessor].transition(row.target.id, row.target.transition, { system: true })) throw unseen()
     }
     else await db.$transaction(async (tx) => {
-      const record = await tx[row.target.accessor].transition(row.target.id, row.target.transition, { system: true })
-      if (!record) throw unseen()
-      await hook({
-        db: tx, record, model, commitment: job.transition, dueAt: row.dueAt,
+      // The from-state row is read through the fire's own client, so `before`
+      // sees what the move will be graded on; the move's WHERE is still the lock.
+      const pk   = sys.$primaryKey(row.target.accessor)[0] ?? 'id'
+      const from = await tx[row.target.accessor].findUnique({ where: { [pk]: row.target.id } })
+      // A row policy hides the row from the read as quietly as from the move, but
+      // the gate refuses only the move, and its refusal names the level it wanted.
+      if (!from) {
+        await tx[row.target.accessor].transition(row.target.id, row.target.transition, { system: true })
+        throw unseen()
+      }
+      const ctx: CommitmentHookContext = {
+        db: tx, record: from, model, commitment: job.transition, dueAt: row.dueAt,
         timeZone: job.timeZone ?? 'UTC', now: db.$now?.() ?? new Date(),
         afterCommit: (fn) => { later.push(fn) },
         // enqueueOutbox reads four things off a call context; a fire is not a
@@ -547,7 +597,23 @@ export async function fireCommitment(
           locals: { db: tx, tenantId: tenant }, service: 'commitments', method: `${model}.${job.transition}`,
           app: { outbox }, auth: undefined, _outbox: rows,
         } as unknown as ServiceContext, name, payload, { actor: null, ...o }),
-      })
+      }
+      let moved = false
+      const next = async (): Promise<void> => {
+        if (moved) throw new Error(`[Junction] commitments(): ${model}.${job.transition}'s around called next() twice.`)
+        moved = true
+        await spec.before?.(ctx)
+        const record = await tx[row.target.accessor].transition(row.target.id, row.target.transition, { system: true })
+        if (!record) throw unseen()
+        ctx.record = record
+        await spec.after?.(ctx)
+      }
+      if (!spec.around) return next()
+      await spec.around(ctx, next)
+      // A fire that answered without the move would count as made with the row
+      // still owed, and the next sweep would run every tier again.
+      if (!moved) throw new Error(
+        `[Junction] commitments(): ${model}.${job.transition}'s around returned without calling next() — the move was not made.`)
     })
   } catch (err) {
     // A concurrent write moved the row between the re-derivation and the

@@ -7,7 +7,7 @@
 //   2. Scheduler + AI moved out of plugins/ — old import paths still work
 //      via shims.
 //   4. HTTP PUT now dispatches update (full replace), PATCH stays patch.
-//   5. createBaseService delegates to the litestone base: query operators
+//   5. buildBase delegates to the litestone base: query operators
 //      ($gt/$in) are translated for plain clients, and remove() falls back
 //      to a plain client's delete().
 //   6. configure() fails loudly on a plugin whose register() throws.
@@ -17,9 +17,10 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { describe, it, expect } from 'bun:test'
-import { createTestApp, request, createService, createBaseService } from '../index.ts'
+import { createTestApp, request, createService } from '../index.ts'
+import { buildBase } from '../src/core/service.ts'
 import { requestMeta as coreRequestMeta, freezeUser as coreFreezeUser } from '../src/core/context.ts'
-import { requestMeta as bridgeRequestMeta, freezeUser as bridgeFreezeUser } from '../src/transport/bridge.ts'
+import { requestMeta as bridgeRequestMeta, freezeUser as bridgeFreezeUser } from '../src/core/context.ts'
 import { matchRouteSegments, matchPathDirect, parsePathSegments } from '../src/transport/router.ts'
 import { loadConfig } from '../src/config/index.ts'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
@@ -52,7 +53,7 @@ describe('P3: HTTP PUT dispatches update', () => {
 
   it('PUT → update, PATCH → patch', async () => {
     const calls: string[] = []
-    const app = await createTestApp({ services: [() => makeSvc(calls)] })
+    const app = await createTestApp({ services: [makeSvc(calls)] })
 
     const put = await request(app).put('/docs/1').send({ name: 'replaced' })
     expect(put.status).toBe(200)
@@ -65,7 +66,7 @@ describe('P3: HTTP PUT dispatches update', () => {
 
 // ─── 5. Merged base service ───────────────────────────────────────────────
 
-describe('P3: createBaseService delegates to the litestone base', () => {
+describe('P3: buildBase delegates to the litestone base', () => {
 
   function capturingClient() {
     const captured: Record<string, unknown>[] = []
@@ -90,9 +91,9 @@ describe('P3: createBaseService delegates to the litestone base', () => {
 
   it('translates $gt/$in operators for plain clients', async () => {
     const { captured, client } = capturingClient()
-    const base = createBaseService({ model: 'things', db: () => client })
+    const base = buildBase({ model: 'things', db: () => client })
     const svc  = createService({ name: 'things', ...base })
-    const app  = await createTestApp({ services: [() => svc] })
+    const app  = await createTestApp({ services: [svc] })
 
     const res = await app.service('things').find({ age: { $gt: 18 } })
     expect(res).toBeDefined()
@@ -105,9 +106,9 @@ describe('P3: createBaseService delegates to the litestone base', () => {
 
   it("remove() falls back to a plain client's delete()", async () => {
     const { client } = capturingClient()
-    const base = createBaseService({ model: 'things', db: () => client })
+    const base = buildBase({ model: 'things', db: () => client })
     const svc  = createService({ name: 'things', ...base })
-    const app  = await createTestApp({ services: [() => svc] })
+    const app  = await createTestApp({ services: [svc] })
 
     const res = await request(app).delete('/things/1')
     expect(res.status).toBe(200)
@@ -166,9 +167,9 @@ describe('P3: route matchers agree', () => {
   })
 })
 
-// ─── 9. Minimal service file: createBaseService({ model }) only ──────────
+// ─── 9. Minimal service file: buildBase({ model }) only ──────────
 
-describe('P3.1: db-less createBaseService + loader wrapping', () => {
+describe('P3.1: db-less buildBase + loader wrapping', () => {
 
   function plainPostsClient() {
     const rows: Record<string, unknown>[] = [{ id: '1', title: 'hello' }]
@@ -191,7 +192,7 @@ describe('P3.1: db-less createBaseService + loader wrapping', () => {
 
   it('createService({ name, model }) with no db falls back to app.db', async () => {
     const app = await createTestApp({
-      services: [() => createService({ name: 'posts', model: 'posts' })],
+      services: [createService({ name: 'posts', model: 'posts' })],
     })
     ;(app as { db: unknown }).db = plainPostsClient()
 
@@ -204,7 +205,7 @@ describe('P3.1: db-less createBaseService + loader wrapping', () => {
     expect((one.body as { title: string }).title).toBe('hello')
   })
 
-  it("the loader wraps a bare createBaseService({ model }) return — the user's minimal file", async () => {
+  it("the loader wraps a bare buildBase({ model }) return — the user's minimal file", async () => {
     const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
     const { tmpdir } = await import('node:os')
     const { join } = await import('node:path')
@@ -213,19 +214,15 @@ describe('P3.1: db-less createBaseService + loader wrapping', () => {
     try {
       // The exact minimal file shape (import path absolute for the test env)
       writeFileSync(join(dir, 'posts.service.ts'), `
-import { createBaseService } from '${process.cwd()}/index.ts'
+import { createService } from '${process.cwd()}/index.ts'
 
-export function createPostsService() {
-  return createBaseService({
-    model: 'posts',
-  })
-}
+export default createService({ model: 'posts' })
 `)
       const app = await createTestApp({})
       ;(app as { db: unknown }).db = plainPostsClient()
 
       const { autoloadServices } = await import('../src/core/loader.ts')
-      await autoloadServices({ dir, app, registry: app.services })
+      await autoloadServices({ dir, registry: app.services })
 
       expect(app.services.has('posts')).toBe(true)     // name from filename
 

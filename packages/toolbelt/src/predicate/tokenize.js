@@ -15,6 +15,7 @@ export const TK = {
   STRING:   'STRING',
   TEMPLATE: 'TEMPLATE', // `…` — a template, never raw SQL
   NUMBER:   'NUMBER',
+  DOTTED:   'DOTTED',   // 3.8.3.8 — a gate's levels, one per operation
   BOOL:     'BOOL',
   AT:       'AT',       // @
   ATAT:     'ATAT',     // @@
@@ -109,6 +110,7 @@ export function tokenize(src) {
     if (src.slice(i, i + 2) === '/*') {
       advance(2)
       while (i < src.length && src.slice(i, i + 2) !== '*/') advance()
+      if (i >= src.length) throw new ParseError('Unterminated block comment — no closing */', pos)
       advance(2)
       continue
     }
@@ -179,9 +181,14 @@ export function tokenize(src) {
       advance()
       let str = ''
       while (i < src.length && src[i] !== quote) {
-        if (src[i] === '\\') { advance(); str += STRING_ESCAPES[src[i]] ?? src[i] } else { str += src[i] }
+        if (src[i] === '\\') {
+          advance()
+          if (i >= src.length) break
+          str += STRING_ESCAPES[src[i]] ?? src[i]
+        } else { str += src[i] }
         advance()
       }
+      if (i >= src.length) throw new ParseError(`Unterminated string — no closing ${quote}`, pos)
       advance() // closing quote
       tokens.push({ type: TK.STRING, value: str, ...pos })
       continue
@@ -192,11 +199,18 @@ export function tokenize(src) {
       let num = ''
       if (src[i] === '-') { num += '-'; advance() }
       while (i < src.length && /[0-9.]/.test(src[i])) { num += src[i]; advance() }
+      // `3.8.3.8` is a gate's level per operation (`FJS-D1081`), never a number.
+      if (/^\d+(\.\d+){2,}$/.test(num)) {
+        tokens.push({ type: TK.DOTTED, value: num, ...pos })
+        continue
+      }
       // `1.000.000` is NaN, and a NaN literal in a policy compared equal to
       // every number on the JS side while SQL hid the row (FJS-2185).
       const value = Number(num)
       if (Number.isNaN(value)) throw new ParseError(`Malformed number '${num}'`, pos)
-      tokens.push({ type: TK.NUMBER, value, ...pos })
+      // `text` is the literal as written: `@@gate(2.0)` is two positions and
+      // its value, 2, is one.
+      tokens.push({ type: TK.NUMBER, value, text: num, ...pos })
       continue
     }
 

@@ -44,7 +44,7 @@ describe('an unclosed <mesa:*> names itself (FJS-844)', () => {
   })
 
   it('names the argument in an unterminated tag too', async () => {
-    const msg = await refusal('<mesa:window on:resize={f}\n<p>x</p>')
+    const msg = await refusal('<mesa:window onresize={f}\n<p>x</p>')
     expect(msg).toContain('<mesa:window>')
   })
 

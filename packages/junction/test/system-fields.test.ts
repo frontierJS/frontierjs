@@ -254,7 +254,7 @@ describe("ctx.system — a hook naming '@@gate'", () => {
     model Receipt {
       id     Int    @id
       amount Int
-      @@gate("0.8.8.9")
+      @@gate(0.8.8.9)
     }
   `
 

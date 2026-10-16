@@ -163,6 +163,65 @@ describe('parser', () => {
     expect(r.errors.some((e: string) => e.includes("'@missingFn' is neither a field attribute nor a function"))).toBe(true)
   })
 
+  // A typo'd validator with a literal argument is not a function call, and the
+  // grammar error 'Expected IDENT' hid which attribute was the problem (FJS-2949).
+  test('a misspelled attribute with literal arguments names the attribute', () => {
+    for (const args of ['1, 10', '"x"']) {
+      const r = parse(`
+        model T { id Int @id
+          name String @lenght(${args}) }
+      `)
+      expect(r.valid).toBe(false)
+      expect(r.errors[0]).toContain("Unknown field attribute '@lenght'")
+      expect(r.errors[0]).not.toContain('Expected IDENT')
+    }
+  })
+
+  // The block words disagree on number (`@@transitions`, `@@capabilities` plural;
+  // `@@commitment`, `@@index` singular), so the wrong number is the likeliest
+  // typo and the refusal has to name its neighbor (FJS-2977).
+  test('a misspelled model attribute names its neighbor', () => {
+    const cases: Array<[string, string]> = [
+      ['@@commitments', '@@commitment'],
+      ['@@transition', '@@transitions'],
+      ['@@capability', '@@capabilities'],
+      ['@@indexes', '@@index'],
+    ]
+    for (const [typed, near] of cases) {
+      const r = parse(`
+        model T { id Int @id
+          ${typed}([id]) }
+      `)
+      expect(r.valid).toBe(false)
+      expect(r.errors[0]).toContain(`Unknown model attribute '${typed}'`)
+      expect(r.errors[0]).toContain(`Did you mean '${near}'?`)
+    }
+  })
+
+  // The gate-order rule and Invariant 2's model case were enforced in the
+  // plugin and `fli check`, so a developer holding litestone alone got a valid
+  // parse and a failure at boot (FJS-2948).
+  test('a @@gate out of order is refused by parse, naming the model', () => {
+    for (const g of ['6.4.2.1', '2.4.1', '1.5.3']) {
+      const r = parse(`model T { id Int @id\n @@gate(${g}) }`)
+      expect(r.valid).toBe(false)
+      expect(r.errors[0]).toContain('@@gate on "T"')
+    }
+    expect(parse(`model T { id Int @id\n @@gate(2.1.) }`).valid).toBe(false)
+    expect(parse(`model T { id Int @id\n @@gate(2.4.4.5) }`).valid).toBe(true)
+    expect(parse(`model T { id Int @id\n @@gate(5.8.8.9) }`).valid).toBe(true)
+  })
+
+  test('a model name that is not PascalCase is refused unless @@external', () => {
+    for (const name of ['user', 'lead_item', 'Lead_Item']) {
+      const r = parse(`model ${name} { id Int @id }`)
+      expect(r.valid).toBe(false)
+      expect(r.errors[0]).toContain(`Model '${name}'`)
+    }
+    expect(parse(`model Lead { id Int @id }`).valid).toBe(true)
+    expect(parse(`model legacy_user { id Int @id\n @@external }`).valid).toBe(true)
+  })
+
   test('validates @funcCall arg count', () => {
     const r = parse(`
       function dbl(x: Int): Int { @@expr("{x} * 2") }
@@ -227,6 +286,31 @@ describe('parser', () => {
     expect(() => { r = parseFile(join(dir, 'schema.lite')) }).not.toThrow()
     expect(r.valid).toBe(false)
     expect(r.errors.join(' ')).toContain("unknown type 'Nope'")
+  })
+
+  // The lexer's refusal is a ParseError too, and it fires before the parser's
+  // try — a caller reading `errors` crashed on the one kind of bad schema it
+  // never saw coming (FJS-1777).
+  test('a lexer error is a result in parse() and parseFile(), the file named', () => {
+    const bad = 'model A {\n id Int @id\n rate Int @unit(%)\n}'
+    const dir = tmpDir('lex-error')
+    writeFileSync(join(dir, 'schema.lite'), bad)
+    writeFileSync(join(dir, 'child.lite'), bad)
+    writeFileSync(join(dir, 'root.lite'), 'import "./child.lite"\nmodel B { id Int @id }')
+
+    let a: any, b: any, c: any
+    expect(() => { a = parse(bad) }).not.toThrow()
+    expect(a.valid).toBe(false)
+    expect(a.errors.join(' ')).toContain("Unexpected character '%'")
+
+    expect(() => { b = parseFile(join(dir, 'schema.lite')) }).not.toThrow()
+    expect(b.valid).toBe(false)
+    expect(b.errors.join(' ')).toContain('schema.lite')
+    expect(b.errors.join(' ')).toContain("Unexpected character '%'")
+
+    expect(() => { c = parseFile(join(dir, 'root.lite')) }).not.toThrow()
+    expect(c.valid).toBe(false)
+    expect(c.errors.join(' ')).toContain('child.lite')
   })
 
   // ─── import "..." into <db> ───────────────────────────────────────────────
@@ -371,7 +455,7 @@ database other { path "./other.db" }
 
   test('treats non-breaking space as whitespace', () => {
     // U+00A0 between tokens — used to trip tokenizer on first occurrence
-    const src = `model\u00A0users\u00A0{\u00A0id\u00A0Int\u00A0@id\u00A0}`
+    const src = `model\u00A0Users\u00A0{\u00A0id\u00A0Int\u00A0@id\u00A0}`
     const r = parse(src)
     expect(r.valid).toBe(true)
     expect(r.schema.models[0].fields).toHaveLength(1)
@@ -386,23 +470,21 @@ database other { path "./other.db" }
 
   test('smart quote produces actionable error with codepoint + hint', () => {
     // U+201C is the left smart double-quote — common when pasting from docs
-    let err: any = null
-    try { parse(`model User { id String @default(\u201Chi\u201D) }`) }
-    catch (e) { err = e }
-    expect(err).not.toBeNull()
-    expect(err.message).toContain('U+201C')
-    expect(err.message.toLowerCase()).toContain('smart')
+    const r = parse(`model User { id String @default(\u201Chi\u201D) }`)
+    expect(r.valid).toBe(false)
+    const msg = r.errors.join('\n')
+    expect(msg).toContain('U+201C')
+    expect(msg.toLowerCase()).toContain('smart')
   })
 
   test('NBSP error path retains location info if not skipped (sanity)', () => {
     // Direct check that pickCharHint surfaces a useful message when something
     // genuinely unparseable shows up — uses an em-dash, which we don't accept.
-    let err: any = null
-    try { parse(`model User { id \u2014 Int @id }`) }
-    catch (e) { err = e }
-    expect(err).not.toBeNull()
-    expect(err.message).toContain('U+2014')
-    expect(err.message.toLowerCase()).toMatch(/dash|did you mean/)
+    const r = parse(`model User { id \u2014 Int @id }`)
+    expect(r.valid).toBe(false)
+    const msg = r.errors.join('\n')
+    expect(msg).toContain('U+2014')
+    expect(msg.toLowerCase()).toMatch(/dash|did you mean/)
   })
 
   test('parseFile: SQLite database file is rejected with a clear error', () => {
@@ -437,11 +519,10 @@ database other { path "./other.db" }
     const dir = tmpDir('parse-error-path')
     const path = join(dir, 'broken.lite')
     writeFileSync(path, `model User { id String @default(\u201Cx\u201D) }`)
-    let err: any = null
-    try { parseFile(path) } catch (e) { err = e }
-    expect(err).not.toBeNull()
-    expect(err.message).toContain(path)
-    expect(err.message).toContain('U+201C')
+    const r = parseFile(path)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain(path)
+    expect(r.errors.join('\n')).toContain('U+201C')
   })
 })
 
@@ -989,6 +1070,22 @@ describe('@date field attribute', () => {
     await expect(
       db.event.create({ data: { id: 1, name: 'Bad', startsOn: '06/04/2026' } })
     ).rejects.toThrow('YYYY-MM-DD')
+    db.$close()
+  })
+
+  // FJS-2036 — the pattern passed a day the calendar does not have.
+  test('@date rejects a day the calendar does not have', async () => {
+    const db = await makeDb(schema, 'date-impossible')
+    for (const bad of ['2025-02-30', '2025-13-01', '2025-00-10', '2025-04-31', '2023-02-29', '2025-01-00']) {
+      await expect(
+        db.event.create({ data: { id: 1, name: 'Bad', startsOn: bad } })
+      ).rejects.toThrow('YYYY-MM-DD')
+    }
+    for (const good of ['2024-02-29', '2000-02-29', '2025-12-31']) {
+      const e = await db.event.create({ data: { id: 10, name: 'Ok', startsOn: good } })
+      expect(e.startsOn).toBe(good)
+      await db.event.delete({ where: { id: 10 } })
+    }
     db.$close()
   })
 
@@ -1555,7 +1652,7 @@ const JEXT_SCHEMA = `
     name  String
     plan  Plan    @default(starter)
     users User[]
-    @@gate("2.5.5.6")
+    @@gate(2.5.5.6)
   }
 
   model User {
@@ -1564,7 +1661,7 @@ const JEXT_SCHEMA = `
     accountId Int
     email     String     @email
     posts     Post[]
-    @@gate("2.4.4.6")
+    @@gate(2.4.4.6)
   }
 
   model Post {
@@ -5096,9 +5193,9 @@ describe('upsertMany', () => {
   })
 
   test('plugin beforeCreate fires', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let fired = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeCreate() { fired = true }
     }
     const db = await makeDb(schema, 'upsertmany-plugin', { plugins: [new Spy()] })
@@ -5249,6 +5346,41 @@ describe('$ping()', () => {
     await expect(Promise.resolve().then(() => db.$ping())).rejects.toThrow(/closed/i)
   })
 
+})
+
+// FJS-1796: a client over a file that is not its schema's starts and answers
+describe('$schemaGaps()', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ls-gaps-'))
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+  const NOTION = `
+    database main { path "./x.db" }
+    model Workspace { id Int @id; name String; plan String }
+    model Page { id Int @id; title String }
+  `
+
+  test('names a model with no table and a table missing the model\'s columns', async () => {
+    const file = join(dir, 'other.db')
+    const other = new Database(file)
+    other.run('CREATE TABLE workspace (id INTEGER PRIMARY KEY, name TEXT NOT NULL)')
+    other.close()
+
+    const db = await createClient({ schema: NOTION, db: file })
+    expect(await db.$schemaGaps()).toEqual([
+      { db: 'main', model: 'Workspace', table: 'workspace', missing: ['plan'] },
+      { db: 'main', model: 'Page',      table: 'page',      missing: 'table' },
+    ])
+    db.$close()
+  })
+
+  test('is empty over a database built from the schema', async () => {
+    const file = join(dir, 'own.db')
+    const db = await createClient({ schema: NOTION, db: file })
+    const raw = db.$rawDbs.main
+    for (const stmt of splitStatements(generateDDL(parse(NOTION).schema, { foreignKeys: true }))) raw.run(stmt)
+    expect(await db.$schemaGaps()).toEqual([])
+    db.$close()
+  })
 })
 
 // ─── computed: inline object ──────────────────────────────────────────────────
@@ -5851,7 +5983,7 @@ describe('a stamped column is not a caller write (FJS-565)', () => {
       owner  Int    @guarded @createdBy
       slot   String @system  @default(cuid())
       title  String
-      @@gate("4")
+      @@gate(4)
     }
   `
   const AS = { id: 7, role: 'user', activatedAt: new Date(), verifiedAt: new Date() }
@@ -6441,7 +6573,7 @@ describe('raw SQL and the access rules it cannot enforce', () => {
   })
 
   test('@@gate alone is enough to trigger it', async () => {
-    const g = await makeDb(`model Q { id Int @id  x String  @@gate("4") }`, 'raw-sql-gate')
+    const g = await makeDb(`model Q { id Int @id  x String  @@gate(4) }`, 'raw-sql-gate')
     let err: any = null
     try { await g.sql`SELECT x FROM q` } catch (e) { err = e }
     expect(err).not.toBeNull()
@@ -7042,18 +7174,20 @@ describe('onLog callback', () => {
   test('$audit throws rather than dropping the row', async () => {
     const db = await makeLogDb()
     await expect((db as any).$audit({ model: 'User' })).rejects.toThrow(/'operation' is required/)
+    // A jsonl trail would take a null model where a SQLite one refuses the row.
+    await expect((db as any).$audit({ operation: 'x' })).rejects.toThrow(/'model' is required/)
     // Refused BY NAME rather than dropped — a misspelled key is a caller that
     // meant to record something, and a silently thinner row is worse than none.
-    await expect((db as any).$audit({ operation: 'x', reason: 'oops' }))
+    await expect((db as any).$audit({ operation: 'x', model: 'User', reason: 'oops' }))
       .rejects.toThrow(/unknown key 'reason'/)
-    await expect((db as any).$audit({ operation: 'x' }, { database: 'nope' }))
+    await expect((db as any).$audit({ operation: 'x', model: 'User' }, { database: 'nope' }))
       .rejects.toThrow(/not a trail database/)
     db.$close()
   })
 
   test('the actor comes from the client when it is not stated', async () => {
     const db = await makeLogDb()
-    await (db as any).$setAuth({ id: 7, type: 'user' }).$audit({ operation: 'logout' })
+    await (db as any).$setAuth({ id: 7, type: 'user' }).$audit({ operation: 'logout', model: 'User' })
     await flush()
     const rows = await (db as any).asSystem().auditTrail.findMany({})
     const row  = rows.find((r: any) => r.operation === 'logout')
@@ -7066,8 +7200,8 @@ describe('onLog callback', () => {
   // has to be STATED — and stating it has to work.
   test('asSystem names no principal, so a stated actor is the only one', async () => {
     const db = await makeLogDb()
-    await (db as any).asSystem().$audit({ operation: 'a' })
-    await (db as any).asSystem().$audit({ operation: 'b', actorId: 'u9' })
+    await (db as any).asSystem().$audit({ operation: 'a', model: 'User' })
+    await (db as any).asSystem().$audit({ operation: 'b', model: 'User', actorId: 'u9' })
     await flush()
     const rows = await (db as any).asSystem().auditTrail.findMany({})
     expect(rows.find((r: any) => r.operation === 'a').actorId).toBe(null)
@@ -7079,8 +7213,8 @@ describe('onLog callback', () => {
   // a $audit caller is naming one event and knows more about it than it does.
   test('a stated actorId wins over onLog', async () => {
     const db = await makeLogDb(() => ({ actorId: 'from-onlog' }))
-    await (db as any).$audit({ operation: 'x', actorId: 'stated' })
-    await (db as any).$audit({ operation: 'y' })
+    await (db as any).$audit({ operation: 'x', model: 'User', actorId: 'stated' })
+    await (db as any).$audit({ operation: 'y', model: 'User' })
     await flush()
     const rows = await (db as any).asSystem().auditTrail.findMany({})
     expect(rows.find((r: any) => r.operation === 'x').actorId).toBe('stated')
@@ -8689,9 +8823,9 @@ describe('GatePlugin', () => {
         model Drop {
           id   Int    @id
           body String
-          @@gate("${g}")
+          @@gate(${g})
         }
-      `, `gate-empty-${g.length}`, () => 0)).rejects.toThrow(/@@gate: empty/)
+      `, `gate-empty-${g.length}`, () => 0)).rejects.toThrow(/@@gate: empty|Malformed number '4\.\.6'/)
     }
   })
 
@@ -8723,7 +8857,7 @@ describe('GatePlugin', () => {
       model SurveyResponse {
         id   Int    @id
         body String
-        @@gate("6.4.9.9")
+        @@gate(6.4.9.9)
       }
     `, 'gate-dropbox', (user: any) => user?.level ?? 0)
     const employee = db.$setAuth({ id: 1, level: 4 })
@@ -8754,7 +8888,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model Post {
         id Int @id
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
     `, 'gate-read-ok', () => 3)   // level 3 >= read(2)
     await db.$db.run('INSERT INTO post VALUES (1)')
@@ -8768,7 +8902,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model Post {
         id Int @id
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
     `, 'gate-read-deny', () => 1)   // level 1 < read(2)
     await expect(db.post.findMany()).rejects.toThrow(AccessDeniedError)
@@ -8780,7 +8914,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model Post {
         id Int @id
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
     `, 'gate-create-deny', () => 3)   // level 3 < create(4)
     await expect(db.post.create({ data: { id: 1 } })).rejects.toThrow(AccessDeniedError)
@@ -8793,7 +8927,7 @@ describe('GatePlugin', () => {
       model Post {
         id Int @id
         val String
-        @@gate("2.4.5.6")
+        @@gate(2.4.5.6)
       }
     `, 'gate-update-deny', (_, model) => model === 'Post' ? 4 : 0)  // level 4 < update(5)
     await db.$db.run("INSERT INTO post VALUES (1, 'x')")
@@ -8806,7 +8940,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model Post {
         id Int @id
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
     `, 'gate-delete-deny', () => 5)   // level 5 < delete(6)
     await db.$db.run('INSERT INTO post VALUES (1)')
@@ -8820,7 +8954,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model AuditLog {
         id Int @id
-        @@gate("5.8.8.9")
+        @@gate(5.8.8.9)
       }
     `, 'gate-locked', () => 6)   // level 6 (OWNER) can't beat LOCKED (now 9)
     await db.$db.run('INSERT INTO audit_log VALUES (1)')
@@ -8832,7 +8966,7 @@ describe('GatePlugin', () => {
     const db = await makeGateDb(`
       model AuditLog {
         id Int @id
-        @@gate("5.8.8.9")
+        @@gate(5.8.8.9)
       }
     `, 'gate-system', () => 6)   // level 6 can't create (SYSTEM=8)
     await expect(db.auditLog.create({ data: { id: 1 } })).rejects.toThrow('SYSTEM')
@@ -8849,7 +8983,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("4")
+        @@gate(4)
       }
     `, 'gate-setauth', {
       plugins: [new GatePlugin({
@@ -8873,7 +9007,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("4")
+        @@gate(4)
       }
     `, 'gate-setauth-pass', {
       plugins: [new GatePlugin({ getLevel: (user: any) => user?.level ?? 0 })]
@@ -8891,7 +9025,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("4")
+        @@gate(4)
       }
     `, 'gate-setauth-deny', {
       plugins: [new GatePlugin({ getLevel: (user: any) => user?.level ?? 0 })]
@@ -8907,7 +9041,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("2")
+        @@gate(2)
       }
     `, 'gate-setauth-null', {
       plugins: [new GatePlugin({ getLevel: (user: any) => user?.level ?? 0 })]
@@ -8922,7 +9056,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("5.8.8.8")
+        @@gate(5.8.8.8)
       }
     `, 'gate-clamp', {
       plugins: [new GatePlugin({ getLevel: () => 99 })]  // tries to return 99
@@ -8941,14 +9075,14 @@ describe('GatePlugin', () => {
       model Account {
         id   Int @id
         name String
-        @@gate("2.6.6.6")
+        @@gate(2.6.6.6)
       }
       model User {
         id        Int  @id
         account   Account @relation(fields: [accountId], references: [id])
         accountId Int
         email     String
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
     `, 'gate-nested-preflight', {
       plugins: [new GatePlugin({ getLevel: (_u: any, model: string) =>
@@ -8972,7 +9106,7 @@ describe('GatePlugin', () => {
       model User {
         id    Int    @id
         tasks Task[]
-        @@gate("2.6.6.6")
+        @@gate(2.6.6.6)
       }
       model Task {
         id      Int    @id
@@ -8998,7 +9132,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Secret {
         id Int @id
-        @@gate("7")
+        @@gate(7)
       }
     `, 'gate-sysadmin', {
       plugins: [new GatePlugin({
@@ -9031,7 +9165,7 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Restricted {
         id Int @id
-        @@gate("8")
+        @@gate(8)
       }
     `, 'gate-sysadmin-clamp', {
       plugins: [new GatePlugin({
@@ -9054,7 +9188,7 @@ describe('GatePlugin', () => {
       model OpenTable { id Int @id }
       model GatedTable {
         id Int @id
-        @@gate("5")
+        @@gate(5)
       }
     `, 'gate-open-model', {
       plugins: [new GatePlugin({ getLevel: () => 0 })]  // stranger
@@ -9080,11 +9214,11 @@ describe('GatePlugin', () => {
     const db = await makeDb(`
       model Post {
         id Int @id
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
       }
       model Billing {
         id Int @id
-        @@gate("2.5.5.6")
+        @@gate(2.5.5.6)
       }
     `, 'gate-role-based', {
       plugins: [new GatePlugin({
@@ -9116,7 +9250,7 @@ describe('GatePlugin', () => {
 
   test('asSystem().$transaction hands the callback a SYSTEM client', async () => {
     const db = await makeGateDb(`
-      model Thing { id Int @id  name String  @@gate("4.8.8.8") }
+      model Thing { id Int @id  name String  @@gate(4.8.8.8) }
     `, 'gate-tx-system', () => 0)
 
     const row = await db.asSystem().$transaction(async (tx: any) =>
@@ -9127,7 +9261,7 @@ describe('GatePlugin', () => {
 
   test('$setAuth(u).$transaction hands the callback the SAME user', async () => {
     const db = await makeGateDb(`
-      model Thing { id Int @id  name String  @@gate("4") }
+      model Thing { id Int @id  name String  @@gate(4) }
     `, 'gate-tx-auth', (user: any) => user ? 4 : 0)
 
     const row = await db.$setAuth({ id: 'u1' }).$transaction(async (tx: any) =>
@@ -9147,7 +9281,7 @@ describe('GatePlugin', () => {
     // schema` — a message about tables, about a method every other flavor of
     // the client has. basecamp's seeder is written exactly that way.
     const db = await makeGateDb(`
-      model Thing { id Int @id  name String  @@gate("4.8.8.8") }
+      model Thing { id Int @id  name String  @@gate(4.8.8.8) }
     `, 'gate-assystem-idempotent', () => 0)
 
     const sys = db.asSystem()
@@ -9201,7 +9335,7 @@ describe('GatePlugin', () => {
         teamId Int
         team   Team @relation(fields: [teamId], references: [id])
         label  String
-        @@gate("7")
+        @@gate(7)
       }
     `, name, () => 4)
   }
@@ -9251,7 +9385,7 @@ describe('GatePlugin', () => {
         teamId Int
         team   Team @relation(fields: [teamId], references: [id])
         label  String
-        @@gate("7")
+        @@gate(7)
       }
     `, 'gate-include-nested', () => 4)
     await db.asSystem().org.create({ data: { id: 1 } })
@@ -9374,8 +9508,8 @@ describe('FrontierGateGetLevel', () => {
 
 describe('plugin system', () => {
   test('Plugin base class has all lifecycle methods', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    const p = new Plugin()
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    const p = new LitestonePlugin()
     // All hooks exist and are no-ops by default
     expect(typeof p.onInit).toBe('function')
     expect(typeof p.onBeforeRead).toBe('function')
@@ -9390,12 +9524,12 @@ describe('plugin system', () => {
   })
 
   test('PluginRunner calls hooks in order', async () => {
-    const { Plugin, PluginRunner } = await import('../src/core/plugin.js')
+    const { LitestonePlugin, PluginRunner } = await import('../src/core/plugin.js')
     const order: string[] = []
-    class A extends Plugin {
+    class A extends LitestonePlugin {
       async onBeforeRead() { order.push('A') }
     }
-    class B extends Plugin {
+    class B extends LitestonePlugin {
       async onBeforeRead() { order.push('B') }
     }
     const runner = new PluginRunner([new A(), new B()])
@@ -9410,8 +9544,8 @@ describe('plugin system', () => {
   })
 
   test('PluginRunner.getReadFilters collects non-null filters', async () => {
-    const { Plugin, PluginRunner } = await import('../src/core/plugin.js')
-    class F extends Plugin {
+    const { LitestonePlugin, PluginRunner } = await import('../src/core/plugin.js')
+    class F extends LitestonePlugin {
       buildReadFilter(model: string) {
         return model === 'Post' ? { published: true } : null
       }
@@ -9433,10 +9567,10 @@ describe('plugin system', () => {
   })
 
   test('plugin onInit called with schema and ctx', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let receivedSchema: any = null
     let receivedCtx:   any = null
-    class InitPlugin extends Plugin {
+    class InitPlugin extends LitestonePlugin {
       onInit(schema: any, ctx: any) {
         receivedSchema = schema
         receivedCtx    = ctx
@@ -9452,8 +9586,8 @@ describe('plugin system', () => {
   })
 
   test('plugin onBeforeRead can block a read', async () => {
-    const { Plugin, AccessDeniedError } = await import('../src/core/plugin.js')
-    class BlockAll extends Plugin {
+    const { LitestonePlugin, AccessDeniedError } = await import('../src/core/plugin.js')
+    class BlockAll extends LitestonePlugin {
       async onBeforeRead(model: string) {
         throw new AccessDeniedError(`blocked`, { model, operation: 'read' })
       }
@@ -9467,8 +9601,8 @@ describe('plugin system', () => {
   })
 
   test('plugin onBeforeCreate can block a write', async () => {
-    const { Plugin, AccessDeniedError } = await import('../src/core/plugin.js')
-    class BlockCreate extends Plugin {
+    const { LitestonePlugin, AccessDeniedError } = await import('../src/core/plugin.js')
+    class BlockCreate extends LitestonePlugin {
       async onBeforeCreate(model: string) {
         throw new AccessDeniedError(`no creates`, { model, operation: 'create' })
       }
@@ -9481,8 +9615,8 @@ describe('plugin system', () => {
   })
 
   test('FJS-1307: a value onBeforeCreate writes is graded by the create policy', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class FillVal extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class FillVal extends LitestonePlugin {
       async onBeforeCreate(_model: string, args: any) {
         for (const row of [args.data].flat()) if (row.val === 'fill') row.val = 'bad'
       }
@@ -9507,9 +9641,9 @@ describe('plugin system', () => {
   // `ctx.tables`, and it must be the CALLER's flavor — a client captured at
   // install reads as nobody, or as everybody, whoever is calling.
   test('FJS-1358: ctx.tables in a hook is the calling flavor, policy-scoped', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const seen: Record<string, number[]> = {}
-    class ReadBack extends Plugin {
+    class ReadBack extends LitestonePlugin {
       async onBeforeCreate(model: string, args: any, ctx: any) {
         if (model !== 'Note') return
         const who = ctx.isSystem ? 'system' : String(ctx.auth?.id ?? 'anon')
@@ -9544,8 +9678,8 @@ describe('plugin system', () => {
   })
 
   test('plugin onBeforeUpdate can block an update', async () => {
-    const { Plugin, AccessDeniedError } = await import('../src/core/plugin.js')
-    class BlockUpdate extends Plugin {
+    const { LitestonePlugin, AccessDeniedError } = await import('../src/core/plugin.js')
+    class BlockUpdate extends LitestonePlugin {
       async onBeforeUpdate() {
         throw new AccessDeniedError('no updates', { operation: 'update' })
       }
@@ -9560,8 +9694,8 @@ describe('plugin system', () => {
   })
 
   test('plugin onBeforeDelete can block a delete', async () => {
-    const { Plugin, AccessDeniedError } = await import('../src/core/plugin.js')
-    class BlockDelete extends Plugin {
+    const { LitestonePlugin, AccessDeniedError } = await import('../src/core/plugin.js')
+    class BlockDelete extends LitestonePlugin {
       async onBeforeDelete() {
         throw new AccessDeniedError('no deletes', { operation: 'delete' })
       }
@@ -9575,11 +9709,11 @@ describe('plugin system', () => {
   })
 
   test('multiple plugins all run before request completes', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const log: string[] = []
-    class A extends Plugin { async onBeforeRead() { log.push('A') } }
-    class B extends Plugin { async onBeforeRead() { log.push('B') } }
-    class C extends Plugin { async onBeforeRead() { log.push('C') } }
+    class A extends LitestonePlugin { async onBeforeRead() { log.push('A') } }
+    class B extends LitestonePlugin { async onBeforeRead() { log.push('B') } }
+    class C extends LitestonePlugin { async onBeforeRead() { log.push('C') } }
     const db = await makeDb(`
       model T { id Int @id }
     `, 'plugin-multi', { plugins: [new A(), new B(), new C()] })
@@ -9594,26 +9728,26 @@ describe('plugin system', () => {
 
 describe('plugin system — onAfterDelete', () => {
   test('Plugin base class has onAfterDelete', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    const p = new Plugin()
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    const p = new LitestonePlugin()
     expect(typeof p.onAfterDelete).toBe('function')
     await expect(p.onAfterDelete('User', [], {})).resolves.toBeUndefined()
   })
 
   test('PluginRunner.afterDelete calls all plugins in order', async () => {
-    const { Plugin, PluginRunner } = await import('../src/core/plugin.js')
+    const { LitestonePlugin, PluginRunner } = await import('../src/core/plugin.js')
     const calls: string[] = []
-    class A extends Plugin { async onAfterDelete() { calls.push('A') } }
-    class B extends Plugin { async onAfterDelete() { calls.push('B') } }
+    class A extends LitestonePlugin { async onAfterDelete() { calls.push('A') } }
+    class B extends LitestonePlugin { async onAfterDelete() { calls.push('B') } }
     const runner = new PluginRunner([new A(), new B()])
     await runner.afterDelete('User', [{ id: 1 }], {})
     expect(calls).toEqual(['A', 'B'])
   })
 
   test('afterDelete receives the deleted rows', async () => {
-    const { Plugin, PluginRunner } = await import('../src/core/plugin.js')
+    const { LitestonePlugin, PluginRunner } = await import('../src/core/plugin.js')
     let received: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { received = rows }
     }
     const runner = new PluginRunner([new Spy()])
@@ -9623,9 +9757,9 @@ describe('plugin system — onAfterDelete', () => {
   })
 
   test('afterDelete fires after hard delete', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const deleted: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
@@ -9643,9 +9777,9 @@ describe('plugin system — onAfterDelete', () => {
   })
 
   test('afterDelete fires after soft delete with the softResult row', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const deleted: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
@@ -9664,9 +9798,9 @@ describe('plugin system — onAfterDelete', () => {
   })
 
   test('afterDelete fires after deleteMany with all rows', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const deleted: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
@@ -9685,9 +9819,9 @@ describe('plugin system — onAfterDelete', () => {
   })
 
   test('afterDelete not called when no rows match', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let called = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(`
@@ -9927,7 +10061,7 @@ describe('FileStorage plugin', () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
     const deleted: string[] = []
 
-    class SpyPlugin extends (await import('../src/core/plugin.js')).Plugin {
+    class SpyPlugin extends (await import('../src/core/plugin.js')).LitestonePlugin {
       async onAfterDelete(_model: string, rows: any[]) {
         for (const row of rows) {
           if (row.avatar) deleted.push(row.avatar.key)
@@ -10052,8 +10186,8 @@ describe('buildReadFilter wired into buildSQL', () => {
   `
 
   test('plugin read filter scopes findMany results', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class TenantFilter extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class TenantFilter extends LitestonePlugin {
       buildReadFilter(_model: string, ctx: any) {
         // Simulate scoping to the current user's authorId
         return ctx.auth?.userId ? { authorId: ctx.auth.userId } : null
@@ -10076,8 +10210,8 @@ describe('buildReadFilter wired into buildSQL', () => {
   })
 
   test('plugin read filter scopes findFirst', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class OwnerFilter extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class OwnerFilter extends LitestonePlugin {
       buildReadFilter(_model: string, ctx: any) {
         return ctx.auth?.userId ? { authorId: ctx.auth.userId } : null
       }
@@ -10098,11 +10232,11 @@ describe('buildReadFilter wired into buildSQL', () => {
   })
 
   test('multiple plugin filters are AND-merged', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class FilterA extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class FilterA extends LitestonePlugin {
       buildReadFilter() { return { authorId: 1 } }
     }
-    class FilterB extends Plugin {
+    class FilterB extends LitestonePlugin {
       buildReadFilter() { return { id: 3 } }
     }
     const db = await makeDb(schema, 'readfilter-multi', { plugins: [new FilterA(), new FilterB()] })
@@ -10121,8 +10255,8 @@ describe('buildReadFilter wired into buildSQL', () => {
   })
 
   test('null filter from plugin is ignored', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class NoFilter extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class NoFilter extends LitestonePlugin {
       buildReadFilter() { return null }
     }
     const db = await makeDb(schema, 'readfilter-null', { plugins: [new NoFilter()] })
@@ -10136,8 +10270,8 @@ describe('buildReadFilter wired into buildSQL', () => {
   })
 
   test('count() respects plugin read filter', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class CountFilter extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class CountFilter extends LitestonePlugin {
       buildReadFilter(_model: string, ctx: any) {
         return ctx.auth?.userId ? { authorId: ctx.auth.userId } : null
       }
@@ -10168,9 +10302,9 @@ describe('onAfterRead wired into reads', () => {
   `
 
   test('onAfterRead fires after findMany with all rows', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let capturedRows: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterRead(_model: string, rows: unknown[]) { capturedRows = rows }
     }
     const db = await makeDb(schema, 'afterread-findmany', { plugins: [new Spy()] })
@@ -10184,9 +10318,9 @@ describe('onAfterRead wired into reads', () => {
   })
 
   test('onAfterRead fires after findFirst with single-element array', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let capturedRows: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterRead(_model: string, rows: unknown[]) { capturedRows = rows }
     }
     const db = await makeDb(schema, 'afterread-findfirst', { plugins: [new Spy()] })
@@ -10198,8 +10332,8 @@ describe('onAfterRead wired into reads', () => {
   })
 
   test('onAfterRead can mutate rows before return', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class Redactor extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class Redactor extends LitestonePlugin {
       async onAfterRead(_model: string, rows: any[]) {
         for (const row of rows) row.content = '[redacted]'
       }
@@ -10215,9 +10349,9 @@ describe('onAfterRead wired into reads', () => {
   })
 
   test('onAfterRead not called when findMany returns empty', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let called = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterRead(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(schema, 'afterread-empty', { plugins: [new Spy()] })
@@ -10227,9 +10361,9 @@ describe('onAfterRead wired into reads', () => {
   })
 
   test('onAfterRead not called when findFirst returns null', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let called = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterRead(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(schema, 'afterread-null', { plugins: [new Spy()] })
@@ -10252,9 +10386,9 @@ describe('upsert plugin hooks', () => {
   `
 
   test('beforeCreate fires on create path', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const ops: string[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeCreate() { ops.push('create') }
       async onBeforeUpdate() { ops.push('update') }
     }
@@ -10269,9 +10403,9 @@ describe('upsert plugin hooks', () => {
   })
 
   test('beforeUpdate fires on update path', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const ops: string[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeCreate() { ops.push('create') }
       async onBeforeUpdate() { ops.push('update') }
     }
@@ -10289,9 +10423,9 @@ describe('upsert plugin hooks', () => {
   })
 
   test('beforeUpdate receives correct where and data', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let capturedArgs: any = null
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeUpdate(_model: string, args: any) { capturedArgs = args }
     }
     const db = await makeDb(schema, 'upsert-hook-args', { plugins: [new Spy()] })
@@ -10322,9 +10456,9 @@ describe('removeMany plugin hooks', () => {
   `
 
   test('beforeDelete fires on removeMany (soft delete)', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let fired = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeDelete() { fired = true }
     }
     const db = await makeDb(schema, 'removemany-before-soft', { plugins: [new Spy()] })
@@ -10335,9 +10469,9 @@ describe('removeMany plugin hooks', () => {
   })
 
   test('beforeDelete receives the where clause', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let capturedWhere: any = null
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onBeforeDelete(_model: string, args: any) { capturedWhere = args.where }
     }
     const db = await makeDb(schema, 'removemany-before-where', { plugins: [new Spy()] })
@@ -10348,8 +10482,8 @@ describe('removeMany plugin hooks', () => {
   })
 
   test('throwing in beforeDelete prevents the removal', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class Guard extends Plugin {
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class Guard extends LitestonePlugin {
       async onBeforeDelete() { throw new Error('removal blocked') }
     }
     const db = await makeDb(schema, 'removemany-before-throws', { plugins: [new Guard()] })
@@ -10802,12 +10936,11 @@ model Order { id Int @id  status S @default(pending)  @@transitions(status, pend
     expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false })
   })
 
-  test('@gate accepts a level name as well as a number', () => {
+  test('@gate refuses a level name and names the digit it means (FJS-D239)', () => {
     const r = parse(`enum S { a b }
 model M { id Int @id  s S @default(a)  @@transitions(s, go: a -> b @gate(ADMINISTRATOR)) }`)
-    expect(r.valid).toBe(true)
-    expect(r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
-      .transitions.go.gate).toBe(5)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain('@gate(ADMINISTRATOR) is @gate(5)')
   })
 
   test.each([
@@ -10818,7 +10951,7 @@ model M { id Int @id  s S @default(a)  @@transitions(s, go: a -> b @gate(ADMINIS
     ['self-transition',    `@@transitions(s, a -> a)`,           'self-transition'],
     ['duplicate name',     `@@transitions(s, go: a -> b, go: b -> a)`, 'duplicate transition name'],
     ['gate out of range',  `@@transitions(s, a -> b @gate(12))`, 'integer 0–9'],
-    ['unknown level name', `@@transitions(s, a -> b @gate(NOPE))`, 'unknown level'],
+    ['unknown level name', `@@transitions(s, a -> b @gate(NOPE))`, 'expects a level 0–9'],
     ['no clauses',         `@@transitions(s)`,                   'at least one transition'],
     ['unknown attribute',  `@@transitions(s, a -> b @wat(1))`,   'only @gate, @system and @seals are supported'],
   ])('rejects: %s', (_label, attr, fragment) => {
@@ -11157,7 +11290,7 @@ describe('@@transitions — @system, the move the application makes', () => {
       name   String
       ownerId Int      @default(0)
 
-      @@gate("2.4.4.5")
+      @@gate(2.4.4.5)
       @@transitions(status,
         drain:  online              -> draining @gate(5),
         report: [pending, online]   -> stopped  @system,
@@ -13189,9 +13322,9 @@ describe('Factory — relations (has / attach / withParents)', () => {
     // A schema with any @@gate auto-installs GatePlugin — an unauthenticated
     // factory grades STRANGER and cannot create the parent, let alone the child.
     const r = await makeTestClient(`
-      model Shop  { id Int @id @default(autoincrement()); name String; items Item[]; @@gate("4") }
+      model Shop  { id Int @id @default(autoincrement()); name String; items Item[]; @@gate(4) }
       model Item  { id Int @id @default(autoincrement()); label String; shopId Int
-                    shop Shop @relation(fields: [shopId], references: [id]); @@gate("4") }
+                    shop Shop @relation(fields: [shopId], references: [id]); @@gate(4) }
     `, { autoFactories: true })
     await expect(r.factories.item.withParents().createOne()).rejects.toThrow(/requires level/)
     const item = await r.factories.item.asSystem().withParents().createOne()
@@ -13610,7 +13743,7 @@ import { generateFactory, generateGateMatrix, generateValidationCases, factoryFr
          expectedVerdict, REACHABLE_LEVELS, createTestEnv, readOnly, sampleWrites }
   from '../src/testing.js'
 import { levelPasses } from '../src/plugins/gate.js'
-import { Plugin } from '../src/core/plugin.js'
+import { LitestonePlugin } from '../src/core/plugin.js'
 import { _resetTemplates }       from '../src/testdb.js'
 import { DEFAULT_MESSAGES }      from '../src/core/validate.js'
 
@@ -13650,20 +13783,20 @@ const UTIL_SCHEMA = `
     createdAt DateTime?
     updatedAt DateTime?
     deletedAt DateTime?
-    @@gate("1.3.4.6")
+    @@gate(1.3.4.6)
     @@softDelete
   }
 
   model Locked {
     id    Int @id
     name  String
-    @@gate("9")
+    @@gate(9)
   }
 
   model Open {
     id   Int @id
     data String?
-    @@gate("0")
+    @@gate(0)
   }
 `
 
@@ -13991,7 +14124,7 @@ describe('generateGateMatrix', () => {
   })
 
   test('full is the default — every op against every reachable level', () => {
-    const matrix = generateGateMatrix(schema, 'Post')  // @@gate("1.3.4.6")
+    const matrix = generateGateMatrix(schema, 'Post')  // @@gate(1.3.4.6)
     expect(matrix.length).toBe(36)                      // 4 ops × levels 0–8
     expect(matrix).toEqual(generateGateMatrix(schema, 'Post', { levels: 'full' }))
   })
@@ -14028,7 +14161,7 @@ describe('generateGateMatrix', () => {
   })
 
   test('LOCKED gate (9): every level denied, SYSTEM included', () => {
-    const matrix = generateGateMatrix(schema, 'Locked')  // @@gate("9")
+    const matrix = generateGateMatrix(schema, 'Locked')  // @@gate(9)
     expect(matrix.length).toBe(36)
     expect(matrix.every(c => c.expect === 'deny')).toBe(true)
     expect(matrix.some(c => c.level === 8)).toBe(true)
@@ -14039,7 +14172,7 @@ describe('generateGateMatrix', () => {
   })
 
   test('STRANGER gate (0): every level allowed', () => {
-    const matrix = generateGateMatrix(schema, 'Open')    // @@gate("0")
+    const matrix = generateGateMatrix(schema, 'Open')    // @@gate(0)
     expect(matrix.length).toBe(36)
     expect(matrix.every(c => c.expect === 'allow')).toBe(true)
 
@@ -14050,7 +14183,7 @@ describe('generateGateMatrix', () => {
 
   test('SYSTEM gate (8): SYSADMIN is denied, only asSystem() passes', () => {
     const { schema: s } = parse(`
-      model Vault { id Int @id; name String; @@gate("8") }
+      model Vault { id Int @id; name String; @@gate(8) }
     `)
     const ladder = generateGateMatrix(s, 'Vault').filter(c => c.op === 'read')
     expect(ladder.find(c => c.level === 7)?.expect).toBe('deny')
@@ -14134,7 +14267,7 @@ const ACCESS_SCHEMA = `
     salary    Float?    @allow('read', auth().role == 'admin')
     deletedAt DateTime?
 
-    @@gate("2.4.4.6")
+    @@gate(2.4.4.6)
     @@softDelete
     @@allow('read', ownerId == auth().id || stage == 'published')
     @@deny('update', stage == 'published', "A published doc is frozen")
@@ -14151,13 +14284,13 @@ const ACCESS_SCHEMA = `
     token  String  @guarded
     pin    String  @encrypted
     apiKey String  @secret
-    @@gate("8")
+    @@gate(8)
   }
 
   model Ledger {
     id   Int @id
     note String
-    @@gate("9")
+    @@gate(9)
   }
 `
 
@@ -14878,9 +15011,9 @@ const ENV_SCHEMA = `
   model Doc {
     id      Int    @id
     title   String
-    @@gate("2.4.4.6")
+    @@gate(2.4.4.6)
   }
-  model Vault { id Int @id; secret String; @@gate("8") }
+  model Vault { id Int @id; secret String; @@gate(8) }
 `
 
 // For verifyConstraints: rules of several shapes, a @unique to collide on, and a
@@ -14910,7 +15043,7 @@ const LADDER_SCHEMA = `
     handle String @length(3, 12)
     teamId Int
     team   Team   @relation(fields: [teamId], references: [id])
-    @@gate("2.4.4.5")
+    @@gate(2.4.4.5)
   }
 `
 
@@ -14922,7 +15055,7 @@ const POLICY_LADDER_SCHEMA = `
     id      Int    @id
     ownerId String
     title   String
-    @@gate("2.4.4.5")
+    @@gate(2.4.4.5)
     @@allow('create', ownerId == auth().id)
   }
 `
@@ -15074,7 +15207,7 @@ describe('createTestEnv', () => {
       model Ghost {
         id   Int    @id
         name String
-        @@gate("2.4.4.6")
+        @@gate(2.4.4.6)
         @@external
       }
     ` })
@@ -15288,7 +15421,7 @@ describe('createTestEnv', () => {
       model Workspace {
         id    Int    @id @default(autoincrement())
         name  String
-        @@gate("8")
+        @@gate(8)
         @@tenant(none)
       }
 
@@ -15297,7 +15430,7 @@ describe('createTestEnv', () => {
         workspaceId Int?
         workspace   Workspace? @relation(fields: [workspaceId], references: [id])
         action      String
-        @@gate("5.8.9.9")
+        @@gate(5.8.9.9)
       }
     ` })
 
@@ -15317,9 +15450,9 @@ describe('createTestEnv', () => {
     // (`FJS-376`). All three key shapes here, so a fix for one cannot break
     // the two that were already working.
     const env = await createTestEnv({ schema: `
-      model Nonce { nonce String @id  seenAt DateTime @default(now())  @@gate("8") }
-      model Uuid  { id    String @id @default(uuid())  code String     @@gate("8") }
-      model Auto  { id    Int    @id @default(autoincrement())  code String  @@gate("8") }
+      model Nonce { nonce String @id  seenAt DateTime @default(now())  @@gate(8) }
+      model Uuid  { id    String @id @default(uuid())  code String     @@gate(8) }
+      model Auto  { id    Int    @id @default(autoincrement())  code String  @@gate(8) }
     ` })
 
     expect(await env.verifyGateLadder()).toEqual([])
@@ -15334,20 +15467,20 @@ describe('createTestEnv', () => {
       model Person {
         id    Int    @id @default(autoincrement())
         email String @allow('write', auth().isAdmin)
-        @@gate("2.4.4.5")
+        @@gate(2.4.4.5)
       }
     `
     const env = await createTestEnv({ schema })
     expect(await env.verifyGateLadder()).toEqual([])
 
     // Still a grade and not a pass: a stricter create is caught.
-    const stricter = parse(schema.replace('@@gate("2.4.4.5")', '@@gate("2.5.5.5")')).schema
+    const stricter = parse(schema.replace('@@gate(2.4.4.5)', '@@gate(2.5.5.5)')).schema
     const caught = await env.verifyGateLadder({ against: stricter, ops: ['create'] })
     expect(caught.map((m: any) => [m.level, m.got])).toEqual([[4, 'allow']])
 
     // And the policy still holds everywhere else this env opens a client.
     const user = await env.atLevel(4)
-    await expect(user.person.create({ data: { email: 'a@b.c' } })).rejects.toThrow(/NOT NULL/)
+    await expect(user.person.create({ data: { email: 'a@b.c' } })).rejects.toThrow(/"email" is required, and this caller may not write it/)
     env.close()
   })
 
@@ -15356,7 +15489,7 @@ describe('createTestEnv', () => {
     // from another. Here the client is built with delete at ADMINISTRATOR(5)
     // and asked against a schema that declares OWNER(6).
     const env = await createTestEnv({ schema: LADDER_SCHEMA })
-    const stricter = parse(LADDER_SCHEMA.replace('@@gate("2.4.4.5")', '@@gate("2.4.4.6")')).schema
+    const stricter = parse(LADDER_SCHEMA.replace('@@gate(2.4.4.5)', '@@gate(2.4.4.6)')).schema
     const bad = await env.verifyGateLadder({ against: stricter })
 
     expect(bad.length).toBeGreaterThan(0)
@@ -15377,7 +15510,7 @@ describe('createTestEnv', () => {
 
     // The other direction still grades: the client's gate is lower than the
     // schema under test, so it allows where the schema says deny.
-    const stricter = parse(POLICY_LADDER_SCHEMA.replace('@@gate("2.4.4.5")', '@@gate("3.4.4.5")')).schema
+    const stricter = parse(POLICY_LADDER_SCHEMA.replace('@@gate(2.4.4.5)', '@@gate(3.4.4.5)')).schema
     const caught = await env.verifyGateLadder({ against: stricter, ops: ['read'] })
     expect(caught.some((m: any) => m.got === 'allow' && m.expect === 'deny')).toBe(true)
     env.close()
@@ -15563,7 +15696,7 @@ describe('createTestEnv', () => {
   })
 
   test('verifyFieldProtection grades a @guarded column on a model no reader reaches', async () => {
-    // Every model in auth's fragment is @@gate("8"), so the SYSADMIN read is
+    // Every model in auth's fragment is @@gate(8), so the SYSADMIN read is
     // refused before a column is looked at, and all eight guarded-drop mutants
     // of basecamp's session and credential tokens survived (FJS-1594). What
     // the attribute still does there is keep the value out of the audit trail.
@@ -15571,7 +15704,7 @@ describe('createTestEnv', () => {
       model Session {
         id    Int    @id
         token String @guarded
-        @@gate("8")
+        @@gate(8)
       }
     `
     const original = parse(LOCKED).schema
@@ -15595,7 +15728,7 @@ describe('createTestEnv', () => {
         id    Int     @id
         label String
         token String? @hashed
-        @@gate("4.8.8.8")
+        @@gate(4.8.8.8)
       }
     `
     const original = parse(HASHED).schema
@@ -15645,7 +15778,7 @@ describe('createTestEnv', () => {
         id     String @id @default(uuid())
         userId String
         token  String @unique @guarded
-        @@gate("8")
+        @@gate(8)
       }
     `
     const env = await createTestEnv({ schema: SHAPE })
@@ -15682,7 +15815,7 @@ describe('createTestEnv', () => {
     // ignored rule cannot be simulated from inside a schema — that branch is
     // proven by mutation instead (disable @gte, @length or @email in
     // validate.js and this reports 2/10, 8/46 and 1/1 on example and basecamp).
-    const refuseTwelve = new (class extends Plugin {
+    const refuseTwelve = new (class extends LitestonePlugin {
       async onBeforeCreate(_m: string, args: any) {
         if (args?.data?.handle?.length === 12) throw Object.assign(
           new Error('handle: too long, really'), { name: 'ValidationError' })
@@ -15796,7 +15929,7 @@ describe('createTestEnv', () => {
     // named rule survived, which is the one thing `litestone mutate` exists to
     // catch. Simulated with a plugin, because a case that fails for the wrong
     // reason can no longer be generated.
-    const refuseAll = new (class extends Plugin {
+    const refuseAll = new (class extends LitestonePlugin {
       async onBeforeCreate(_m: string, args: any) {
         if (typeof args?.data?.plain === 'string') throw Object.assign(
           new Error('plain: something else entirely'), { name: 'ValidationError' })
@@ -15815,7 +15948,7 @@ describe('createTestEnv', () => {
     // calling it a refusal is the whole trap: it would make a broken validator
     // look enforced. It is reported as `error` rather than swallowed, because a
     // case that cannot run is a hole in the coverage the count implies.
-    const boom = new (class extends Plugin {
+    const boom = new (class extends LitestonePlugin {
       async onBeforeCreate() { throw new Error('unrelated boom') }
     })()
     const env = await createTestEnv({ schema: RULES_ENV_SCHEMA, plugins: [boom] })
@@ -17031,9 +17164,9 @@ describe('implicit many-to-many', () => {
 
 describe('onAfterDelete — soft-delete boundary', () => {
   test('remove() on @@softDelete model does NOT fire onAfterDelete', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let called = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(`
@@ -17051,9 +17184,9 @@ describe('onAfterDelete — soft-delete boundary', () => {
   })
 
   test('delete() on @@softDelete model fires onAfterDelete (hard delete)', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const deleted: unknown[] = []
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
@@ -17072,9 +17205,9 @@ describe('onAfterDelete — soft-delete boundary', () => {
   })
 
   test('removeMany() on @@softDelete model does NOT fire onAfterDelete', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     let called = false
-    class Spy extends Plugin {
+    class Spy extends LitestonePlugin {
       async onAfterDelete(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(`
@@ -18927,6 +19060,20 @@ describe('query() dispatcher', () => {
     expect(rows.map((r: any) => r.id)).toEqual(all.slice(1).map((r: any) => r.id))
     const grouped = await db.order.groupBy({ by: ['id'], _count: true, orderBy: { id: 'asc' }, offset: 1 })
     expect(grouped.map((r: any) => r.id)).toEqual(all.slice(1).map((r: any) => r.id))
+  })
+
+  // FJS-2174: findMany takes an array orderBy, so a groupBy over two keys needs one.
+  test('groupBy takes an array orderBy: group keys and aggregates in written order', async () => {
+    const by = ['accountId', 'status']
+    const keyed = await db.order.groupBy({ by, _count: true, orderBy: [{ accountId: 'desc' }, { status: 'asc' }] })
+    expect(keyed.map((r: any) => `${r.accountId}${r.status}`)).toEqual(['2pending', '2refund', '1paid'])
+    const mixed = await db.order.groupBy({ by: ['accountId'], _sum: { amount: true },
+      orderBy: [{ _sum: { amount: 'desc' } }, { accountId: 'asc' }] })
+    expect(mixed.map((r: any) => r.accountId)).toEqual([2, 1])
+    await expect(db.order.groupBy({ by: ['accountId'], _count: true, orderBy: [{ nope: 'asc' }] }))
+      .rejects.toThrow(/'nope'/)
+    await expect(db.order.groupBy({ by: ['accountId'], _count: true, orderBy: ['accountId'] as any }))
+      .rejects.toThrow(/orderBy\[0\]|orderBy\.0/)
   })
 
   test('named aggregates route to aggregate', async () => {
@@ -21071,6 +21218,20 @@ describe('aggregate()', () => {
     db.$close()
   })
 
+  // FJS-2173: Prisma's `_count: { _all: true }` answered a bare number where
+  // Prisma answers { _all: n }, and `{ bogus: true }` answered the same.
+  test('_count takes true or { distinct } and refuses any other object by name', async () => {
+    const db = await makeDb(AGG_SCHEMA, 'agg-count-shape')
+    await db.order.create({ data: { id: 1, amount: 10, status: 'paid', accountId: 1 } })
+    for (const bad of [{ _all: true }, { bogus: true }, {}, { distinct: 'accountId', _all: true }, ['accountId']]) {
+      await expect(db.order.aggregate({ _count: bad as any })).rejects.toThrow(/_count: true/)
+      await expect(db.order.groupBy({ by: ['status'], _count: bad as any })).rejects.toThrow(/_count: true/)
+    }
+    expect((await db.order.aggregate({ _count: true }))._count).toBe(1)
+    expect((await db.order.aggregate({ _count: { distinct: 'accountId' } }))._count).toBe(1)
+    db.$close()
+  })
+
   test('_stringAgg', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-strAgg')
     await db.order.createMany({ data: [
@@ -22307,6 +22468,27 @@ describe('@updatedBy', () => {
     db.$close()
   })
 
+  // FJS-2261: the app's own principal (`createApp({ system })`) is a service,
+  // not a row; stamping its id into a User-typed column failed the foreign key.
+  test('@updatedBy leaves a User-typed column alone for a service principal', async () => {
+    const db = await makeDb(`
+      model User { id String @id }
+      model Post {
+        id          Int     @id
+        title       String
+        updatedById String? @updatedBy
+        updatedBy   User?   @relation(fields: [updatedById], references: [id])
+      }
+    `, 'updby-service')
+    await db.asSystem().user.create({ data: { id: 'u1' } })
+    await db.post.create({ data: { id: 1, title: 'Hello' } })
+    await db.$setAuth({ id: 'system', type: 'service' }).post.update({ where: { id: 1 }, data: { title: 'Moved' } })
+    expect((await db.post.findFirst({ where: { id: 1 } }))?.updatedById).toBeNull()
+    await db.$setAuth({ id: 'u1' }).post.update({ where: { id: 1 }, data: { title: 'Edited' } })
+    expect((await db.post.findFirst({ where: { id: 1 } }))?.updatedById).toBe('u1')
+    db.$close()
+  })
+
   test('@updatedBy does not fire on create', async () => {
     const db = await makeDb(SCHEMA, 'updby-nocreate')
     const row = await db.$setAuth({ id: 5 }).post.create({ data: { id: 1, title: 'New' } })
@@ -22606,7 +22788,7 @@ describe('findMany — recursive is a read, not a bypass', () => {
   `
 
   test('@@gate refuses a recursive read, not only a plain one', async () => {
-    const db = await makeDb(TREE('', '@@gate("5.5.5.5")'), 'rec-gate')
+    const db = await makeDb(TREE('', '@@gate(5.5.5.5)'), 'rec-gate')
     await db.asSystem().task.createMany({ data: [
       { id: 1, title: 'root' }, { id: 2, title: 'SECRET', parentId: 1 },
     ]})
@@ -22617,7 +22799,7 @@ describe('findMany — recursive is a read, not a bypass', () => {
 
   test('a refused read never runs the tree query', async () => {
     const seen: string[] = []
-    const db = await makeDb(TREE('', '@@gate("5.5.5.5")'), 'rec-gate-order', {
+    const db = await makeDb(TREE('', '@@gate(5.5.5.5)'), 'rec-gate-order', {
       onQuery: (e: any) => seen.push(String(e.sql)),
     })
     await db.asSystem().task.createMany({ data: [{ id: 1, title: 'root' }, { id: 2, title: 'x', parentId: 1 }] })
@@ -26006,7 +26188,7 @@ model Person {
   token  String @guarded
   teamId Int
   team   Team   @relation(fields: [teamId], references: [id])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 `
 
@@ -26083,6 +26265,38 @@ model Site { id Int @id  url String @default("http://x.test") @length(1, 200) }
     expect(all.every((m: any) => m.parses)).toBe(true)
   })
 
+  // FJS-2053: a FIELD named `model` is not a model declaration.
+  test('a field named model does not rename the model it sits in', async () => {
+    const { schemaMutants } = await import('../src/mutate.js')
+    const all = schemaMutants(`
+enum ChargeModel { standard graduated }
+model Charge {
+  id    Int @id
+  model ChargeModel @default(standard)
+  code  String @unique
+  @@gate(read: 1, create: 3)
+}
+`)
+    expect(all.length).toBeGreaterThan(0)
+    for (const m of all) expect(m.model).toBe('Charge')
+  })
+
+  // FJS-2053: a mutant of an imported fragment is reported where the fragment's
+  // own file has it, not at its offset in the inlined text.
+  test('inlineImportsFromDisk maps each line to the file and line it came from', async () => {
+    const { inlineImportsFromDisk } = await import('../src/core/parser.js')
+    const dir = tmpSub('ls-origins-')
+    writeFileSync(join(dir, 'frag.lite'), '// fragment\nmodel Frag {\n  id Int @id\n}\n')
+    writeFileSync(join(dir, 'schema.lite'), 'import "./frag.lite"\n\nmodel App {\n  id Int @id\n}\n')
+    const { text, origins } = inlineImportsFromDisk(join(dir, 'schema.lite'))
+    const lines = text.split('\n')
+    expect(origins.length).toBe(lines.length)
+    const at = (needle: string) => origins[lines.findIndex(l => l.includes(needle))]
+    expect(at('model Frag')).toEqual({ file: join(dir, 'frag.lite'),   line: 2 })
+    expect(at('model App')).toEqual({ file: join(dir, 'schema.lite'), line: 3 })
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   // ── the control ────────────────────────────────────────────────────────────
   //
   // A mutant that will not BUILD is counted as killed, which is right — a schema
@@ -26154,6 +26368,55 @@ model Site { id Int @id  url String @default("http://x.test") @length(1, 200) }
     expect(res.survived).toHaveLength(0)
     expect(res.refused.length).toBeGreaterThan(0)
   })
+
+  // FJS-1942. A create-only @@allow has no WHERE for the derived checks to
+  // grade, so it survives them whatever the app does; the app's own tests are
+  // the only thing that can fail on it.
+  test('suite is asked about the derived survivors only, and its failure is a kill of its own', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    const asked: string[] = []
+    const base = { schema: S, kinds: ['guarded-drop'], build: () => ({ close() {} }) as any, check: async () => [] }
+
+    const res = await mutationScore({
+      ...base,
+      suite: async (text: string) => { asked.push(text); return text === S ? 'passed' : 'failed' },
+    })
+    expect(res.survived.length).toBeGreaterThan(0)
+    expect(res.suiteKilled).toBe(res.survived.length)
+    expect(res.survived.every(s => s.suite === 'killed')).toBe(true)
+    // The score is the derived checks' alone: it is what a CI floor reads.
+    expect(res.killed).toBe(0)
+    // One control on the original, then one per survivor.
+    expect(asked[0]).toBe(S)
+    expect(asked).toHaveLength(1 + res.survived.length)
+
+    const without = await mutationScore(base)
+    expect(without.suiteKilled).toBe(0)
+    expect(without.survived[0].suite).toBeUndefined()
+  })
+
+  test('a suite already failing on the ORIGINAL refuses the run', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    let threw: string | null = null
+    try {
+      await mutationScore({
+        schema: S, kinds: ['guarded-drop'], build: () => ({ close() {} }) as any, check: async () => [],
+        suite: async () => 'failed',
+      })
+    } catch (e: any) { threw = e.message }
+    expect(threw).toContain('already fails')
+  })
+
+  test('a suite that could not run is not a kill', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    let first = true
+    const res = await mutationScore({
+      schema: S, kinds: ['guarded-drop'], build: () => ({ close() {} }) as any, check: async () => [],
+      suite: async () => { if (first) { first = false; return 'passed' } return 'inconclusive' },
+    })
+    expect(res.suiteKilled).toBe(0)
+    expect(res.survived.every(s => s.suite === 'inconclusive')).toBe(true)
+  })
 })
 
 describe('mutationScore', () => {
@@ -26171,7 +26434,7 @@ model Person {
   token  String? @guarded
   teamId Int
   team   Team   @relation(fields: [teamId], references: [id])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   @@allow('read', handle != null)
 }
 `
@@ -26191,6 +26454,24 @@ model Person {
     // than passing it.
     expect(r.survived.map((m: any) => m.kind)).toEqual(['allow-drop'])
   }, 120_000)
+
+  test('a dropped @@gate is killed on a model whose read position is 0 and which carries a @point', async () => {
+    // FJS-2921. Read at 0 grades nothing, so the writes are the only verdicts;
+    // the auto-factory built `{}` for a @point, every create failed validation,
+    // and the ladder returned error rows only.
+    const { mutationScore } = await import('../src/mutate.js')
+    const P = `
+model Scan {
+  id     Int  @id
+  center Json @point(lat, lng) @immutable
+  @@gate(0.4.4.5)
+}
+`
+    const r = await mutationScore({ schema: P, kinds: ['gate-drop'], build: (t: string) => createTestEnv({ schema: t }) })
+    expect(r.total).toBe(1)
+    expect(r.survived).toHaveLength(0)
+    expect(r.killed).toBe(1)
+  }, 60_000)
 
   test('an error row never counts as a kill', async () => {
     // The trap this whole thing can fall into. Every mutant came back with the
@@ -26219,14 +26500,13 @@ model Person {
     const r = await mutationScore({
       // update sits level with read, so lowering it leaves read ≤ update ≤
       // delete broken; create is free and a lowered create stays legal.
-      schema: S.replace('@@gate("2.4.4.5")', '@@gate("2.4.2.4")'),
+      schema: S.replace('@@gate(2.4.4.5)', '@@gate(2.4.2.4)'),
       kinds:  ['gate-lower'],
       build:  (t: string) => createTestEnv({ schema: t }),
     })
-    // A non-monotonic @@gate parses and the gate plugin refuses it at
-    // construction — the two halves of "is this schema legal" do not agree, and
-    // only the second is reached here.
-    expect(r.refused.length).toBeGreaterThan(0)
+    // A non-monotonic @@gate is refused by parse() (FJS-2948), so the mutant is
+    // killed before any client is built.
+    expect(r.byParser).toBeGreaterThan(0)
     expect(r.errored).toHaveLength(0)
   }, 120_000)
 })
@@ -26719,7 +26999,7 @@ describe('every read applies the filter, the policy and the gate', () => {
 
   test('a @@gate refuses every read, including the three that never asked', async () => {
     const gated = await makeDb(
-      `model Vault { id Int @id @default(autoincrement())  name String  @@fts([name])  @@label(name)  @@gate("7") }`,
+      `model Vault { id Int @id @default(autoincrement())  name String  @@fts([name])  @@label(name)  @@gate(7) }`,
       'read-surface-gate',
       { plugins: [new GatePlugin({ getLevel: () => 4 })] },
     )
@@ -27321,25 +27601,25 @@ describe('a plugin has a name, and every client flavor will say it', () => {
   const schema = `model Post {
     id    Int    @id
     title String
-    @@gate("0.4.4.5")
+    @@gate(0.4.4.5)
   }`
 
   test('defaults to the class name — right for every plugin written as a class', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class TenantScope extends Plugin {}
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class TenantScope extends LitestonePlugin {}
     expect(new TenantScope().name).toBe('TenantScope')
   })
 
   test('a stated name wins, because a minifier rewrites the class name', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class Whatever extends Plugin { name = 'tenant-scope' }
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class Whatever extends LitestonePlugin { name = 'tenant-scope' }
     expect(new Whatever().name).toBe('tenant-scope')
   })
 
   test('$plugins lists what is installed, in run order', async () => {
-    const { Plugin } = await import('../src/core/plugin.js')
-    class TenantScope extends Plugin {}
-    class Auditor    extends Plugin { name = 'auditor' }
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
+    class TenantScope extends LitestonePlugin {}
+    class Auditor    extends LitestonePlugin { name = 'auditor' }
 
     // The auto-installed GatePlugin is in it and comes LAST, which is the
     // answer this accessor exists to give: what you passed is not what is
@@ -27688,5 +27968,16 @@ describe('@check and @@check', () => {
 
     expect(err?.name).toBe('UniqueConflictError')
     expect(err.status).toBe(409)
+  })
+})
+
+// FJS-2965 — junction exports `Plugin` too, a plain-object protocol; an app
+// importing both barrels would meet two unrelated things under one name.
+describe('plugin base class export', () => {
+  test('the barrel names the class for its host, never the bare noun junction owns', async () => {
+    const barrel = await import('../src/index.js') as Record<string, unknown>
+    const { LitestonePlugin } = await import('../src/core/plugin.js') as any
+    expect(barrel.LitestonePlugin).toBe(LitestonePlugin)
+    expect('Plugin' in barrel).toBe(false)
   })
 })

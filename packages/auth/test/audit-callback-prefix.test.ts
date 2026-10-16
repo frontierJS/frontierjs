@@ -2,16 +2,13 @@
 //
 // Fable audit run 2.1. Junction's `normalizePrefix()` is the one owner of
 // `apiPrefix`: it strips a slash from BOTH ends and prepends one, so `'api'`,
-// `'/api'`, `'api/'` and `'/api/'` all mount routes under `/api`. `callbackPath`
-// in `plugin.ts` re-normalizes the raw `app.config.apiPrefix` itself and strips
-// the trailing slash only, so under `apiPrefix: 'api'` the redirect URI this app
-// hands a provider — and the state cookie's `Path` — read `api/auth/oauth/…`
+// `'/api'`, `'api/'` and `'/api/'` all mount routes under `/api`. A `callbackPath`
+// that re-normalizes the raw `app.config.apiPrefix` itself, stripping the
+// trailing slash only, hands a provider `api/auth/oauth/…` under
+// `apiPrefix: 'api'` — in the redirect URI and the state cookie's `Path` —
 // while the callback is mounted at `/api/auth/oauth/…`. The boot check catches
 // the mismatch and refuses to start, so the symptom is an app that will not boot
-// on a spelling every other route accepts.
-//
-// The `test.failing` asserts the fixed behavior — the plugin agrees with the
-// owner — and so fails today; drop `.failing` when the fix lands.
+// on a spelling every other route accepts (FJS-2445).
 
 import { describe, test, expect, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'

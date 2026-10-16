@@ -12,7 +12,7 @@
 //   DELETE /api/leads/:id     (owner)
 //
 // EVERY lead route needs a token, reads included — the model is
-// @@gate("4.4.4.6"), so R/C/U are USER and D is OWNER. Log in first and send
+// @@gate(4.4.4.6), so R/C/U are USER and D is OWNER. Log in first and send
 // `authorization: Bearer <token>`; without one, reads are a 401, not a 200.
 //
 // WebSocket:
@@ -64,7 +64,7 @@ model Lead {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @default(now()) @updatedAt
 
-  @@gate("4.4.4.6")   // R/C/U=USER  D=OWNER
+  @@gate(4.4.4.6)   // R/C/U=USER  D=OWNER
 }
 `
 
@@ -100,7 +100,7 @@ const db = await createClient<Db>({ db: './smoke.db', schema: SCHEMA, plugins: [
 // Tables: createClient() already ran the DDL — it does that for :memory: and
 // for a file that doesn't exist yet. apply() is the FILE-migrations function
 // and takes a directory, not an options object; it is a no-op with no files.
-const { apply } = await import('@frontierjs/litestone')
+const { apply } = await import('@frontierjs/litestone/migrations')
 await apply(db, './smoke-migrations')
 
 // Seed some leads if the table is empty

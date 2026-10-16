@@ -326,9 +326,7 @@ describe('pointAtLocalServer', () => {
   const CONF = `export default {
   deploy: {
     server: 'localhost',
-    // user: 'deploy',           // absent: the bare server, so an alias in
-    //                           // ~/.ssh/config supplies User, Port and key
-    path: '/apps/my-app',      // deploy root on the server
+    path: '/apps/my-app',
     app_id: 'my-app',
 
     api: {
@@ -336,8 +334,7 @@ describe('pointAtLocalServer', () => {
       health:     '/api/health',
       dockerfile: 'deploy/Dockerfile',
       env:        '/apps/my-app/.env.production',
-
-      envCheck: true,
+      envCheck:   true,
     },
 
     web: {
@@ -358,7 +355,7 @@ describe('pointAtLocalServer', () => {
     const { text, ok } = pointAtLocalServer(CONF, { serverDir: '/tmp/srv', port: 7102 })
 
     expect(ok).toBe(true)
-    expect(text).toContain("path: '/tmp/srv',      // deploy root on the server")
+    expect(text).toContain("path: '/tmp/srv',")
     expect(text).toContain("env:        '/tmp/srv/.env.production'")
     expect(text).toContain('port:       7102,')
     expect(text).toContain("path:         '/tmp/srv/db',")
@@ -367,7 +364,7 @@ describe('pointAtLocalServer', () => {
     expect(text).not.toContain('keep_releases')
     // the db block survives — a greedy web match would have eaten it
     expect(text).toContain("file:         'production.db',")
-    expect(text).toContain('envCheck: true,')
+    expect(text).toContain('envCheck:   true,')
   })
 
   test('a config it cannot rewrite answers ok:false rather than passing silently', () => {

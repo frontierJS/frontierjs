@@ -9,7 +9,7 @@
 // targets): by the time work reaches a handler the decision has been made and
 // the row exists.
 
-import type { BasecampApp } from '../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 import type { ServerEventKind } from '../../../db/schema.d.ts'
 
 /** Output kept per run, per stream. An outpost that cats a log file can answer
@@ -35,7 +35,7 @@ export function tail(text: unknown): string | null {
  * already written.
  */
 export async function recordServerEvent(
-  app: BasecampApp,
+  app: App,
   serverId: string,
   kind: ServerEventKind,
   message: string,

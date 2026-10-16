@@ -101,7 +101,7 @@ const RULES: Record<string, Rule> = {
   // A gate above the caller's level. Every verb must refuse — a gate throws
   // where a policy filters, so `on` here means AccessDeniedError.
   gate: {
-    schema: M(`@@gate("5")`),
+    schema: M(`@@gate(5)`),
     rows:   [{ id: 1, title: 'aaa' }, { id: 2, title: 'bbb' }],
     caller: (db) => db.$setAuth({ id: 'u1', role: 'member' }),
     refuses: true,

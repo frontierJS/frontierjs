@@ -54,7 +54,7 @@
 <div id="empty">
   <EmptyState title="No invoices yet">
     They arrive after the first payment.
-    {#snippet action()}<button type="button" id="empty-cta" on:click={() => actions++}>Add one</button>{/snippet}
+    {#snippet action()}<button type="button" id="empty-cta" onclick={() => actions++}>Add one</button>{/snippet}
   </EmptyState>
 </div>
 
@@ -90,7 +90,7 @@
   <Skeleton variant="card" />
 </div>
 
-<button type="button" id="advance" on:click={() => pct = 75}>advance</button>
+<button type="button" id="advance" onclick={() => pct = 75}>advance</button>
 
 <output id="actions">{actions}</output>
 <output id="pct">{pct}</output>

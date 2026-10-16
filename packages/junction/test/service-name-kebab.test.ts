@@ -21,7 +21,7 @@
 import { describe, test, expect } from 'bun:test'
 import { deriveName }             from '../src/core/loader.ts'
 import { deriveModelName }        from '../src/core/litestone.ts'
-import { createService, ServiceRegistry } from '../src/core/service.ts'
+import { ServiceRegistry, buildService } from '../src/core/service.ts'
 
 describe('deriveName', () => {
   test('a single-word filename is unchanged — every app that worked still does', () => {
@@ -46,7 +46,7 @@ describe('deriveName', () => {
 
 describe('the registry answers to the older spelling', () => {
   const registry = new ServiceRegistry()
-  const svc = createService({ name: 'productVariants', model: 'ProductVariant',
+  const svc = buildService({ name: 'productVariants', model: 'ProductVariant',
     find: async () => [] })
   registry.register(svc, ['product-variants'])
 
@@ -68,8 +68,8 @@ describe('the registry answers to the older spelling', () => {
 
   test('an alias never shadows a real service', () => {
     const r = new ServiceRegistry()
-    const real  = createService({ name: 'product-variants', find: async () => [] })
-    const other = createService({ name: 'productVariants',  find: async () => [] })
+    const real  = buildService({ name: 'product-variants', find: async () => [] })
+    const other = buildService({ name: 'productVariants',  find: async () => [] })
     r.register(real)
     r.register(other, ['product-variants'])   // would collide — refused
     expect(r.get('product-variants')).toBe(real)
@@ -89,9 +89,9 @@ describe('the loader aliases a spelling of the name, not a different word', () =
     const { autoloadServices }           = await import('../src/core/loader.ts')
     const dir = mkdtempSync(join(tmpdir(), 'fjs-2899-'))
     writeFileSync(join(dir, file),
-      `export function createXService() { return { name: '${name}', find: async () => [] } }\n`)
+      `export default { name: '${name}', find: async () => [] }\n`)
     const registry = new ServiceRegistry()
-    await autoloadServices({ dir, app: {}, registry })
+    await autoloadServices({ dir, registry })
     return registry
   }
 

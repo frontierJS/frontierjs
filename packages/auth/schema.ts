@@ -6,23 +6,24 @@
 // rather than importing this file, because `fli` runs on node and this is
 // TypeScript — a hand copy lived in `commands/auth/install.md` for exactly that
 // reason and drifted twice (pre-rename scalars that no longer parse, a missing
-// `role`, and `@@gate("9")`, which is LOCKED and walled the auth tables off
+// `role`, and `@@gate(9)`, which is LOCKED and walled the auth tables off
 // from this package itself).
 //
 // The split is by who owns the model, and the gate already states it:
 //
-//   db/user.lite  — User, @@gate("4.4.4.5") + row and field policies. The app's.
+//   db/user.lite  — User, @@gate(4.4.4.5) + row and field policies. The app's.
 //                   It grows columns, relations point at it, sessionFields reads
 //                   it. Appended into the app's own schema.lite.
 //   db/auth.lite  — Credential / Session / Verification / LoginChallenge /
-//                   OauthFlow, all @@gate("8"), which
+//                   OauthFlow, all @@gate(8), which
 //                   means nothing outside asSystem() speaks to them and this
 //                   package is the only caller that does. Imported, so an
 //                   upgrade to this package arrives without a re-inject.
 //
 // Model names are PascalCase singular (Invariant 2), so the accessors auth.ts
-// uses are db.user / db.credential / db.session / db.verification /
-// db.loginChallenge / db.oauthFlow.
+// uses are db.credential / db.session / db.verification / db.loginChallenge /
+// db.oauthFlow, and for the person whatever model `@@auth` names — `User`
+// as shipped, which an app may rename.
 
 import { readFileSync } from 'node:fs'
 
@@ -54,7 +55,7 @@ export function authUserModel(db = 'main'): string {
 
 /**
  * `model Credential` / `Session` / `Verification` / `LoginChallenge` /
- * `OauthFlow` — the credential machinery, all @@gate("8"). Belongs in a file of
+ * `OauthFlow` — the credential machinery, all @@gate(8). Belongs in a file of
  * its own that schema.lite imports.
  */
 export function authMachineryModels(db = 'main'): string {

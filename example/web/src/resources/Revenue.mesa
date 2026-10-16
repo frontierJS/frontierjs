@@ -15,7 +15,7 @@
   // verb on a view refuses by name at the Data boundary, and the service
   // declares `methods: 'readOnly'` so the router answers 405 before that.
   //
-  // Its gate is the thing to know before using it anywhere: `@@gate("5")` over
+  // Its gate is the thing to know before using it anywhere: `@@gate(5)` over
   // an `Order` that reads at 1, so a caller who legitimately lists every order
   // may not read the sum of them. `can('read', …)` off this resource is the
   // affordance; the API grades it again.

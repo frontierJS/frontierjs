@@ -49,9 +49,9 @@ than started.
 | 6 | **Portal** (codename) — a Kagi-shaped search shell over rented indexes, terminal first | a hedged fan-out (first N of M providers inside a deadline, cancel the rest); a result page that paints while a slow provider is still out; a query that must never be logged; a friend's topic-scoped lens applied to *your* read | `conduit` (per-target policy) · `compliance-from-the-seed.md` · `permission-sets.md` · `FJS-D38` |
 | 7 | **Lago / Stripe Billing** — metered invoicing | double-entry, per-row currency, and a rendered document | `declared-semantics.md` § money · `billing.md` |
 | 8 | **Vercel / a CI runner** | a cancellation that must interrupt work already in flight; log streaming; secrets at rest | `operational-edge.md` · `chat-surface.md` § Part 1 |
-| 9 | **PostHog** — product analytics | write rate, and a query a tenant wrote | `analytics-and-warehouse.md` · `tenant-declared-fields.md` |
-| 10 | **Moodle** — course platform | i18n as a declaration; media; a long-lived attempt | `lexicon.md` · `accessibility.md` |
-| 11 | **Etsy with payouts** — marketplace | split money and a phone; geo is no longer one of its unknowns | `declared-semantics.md` · `FJS-D38` |
+| 9 | **PostHog** — product analytics | a write rate set by strangers' browsers under a key that is public by design; properties a tenant declares, at millions of rows; a query a tenant wrote; two ids that become one person | `analytics-and-warehouse.md` ([`FJS-D248`](../DECISIONS.md#fjs-d248)) · `shipped/tenant-declared-fields.md` · `tenant-authored-queries.md` · `bearer-access.md` · #21 |
+| 10 | **Moodle** — course platform | a column with one value per locale, which nothing declares; a stranger's zip served as pages; a quiz attempt alive for two hours across a restart | `lexicon.md` ([`FJS-D12`](../DECISIONS.md#fjs-d12)) · `accessibility.md` · `declared-semantics.md` § 4 · `shipped/untrusted-bytes.md` ([`FJS-D314`](../DECISIONS.md#fjs-d314)) |
+| 11 | **Etsy with payouts** — marketplace | one checkout across three tenants; money split, held and clawed back in the seller's currency; an order that must reach a locked phone; geo built for the first time | `declared-semantics.md` § 2 · `ledger.md` · `geo.md` ([`FJS-D315`](../DECISIONS.md#fjs-d315)–`FJS-D327`) · `conduit-connectors.md` row 4 · [`FJS-D38`](../DECISIONS.md#fjs-d38) · #7 |
 | 12 | **A status page** — the cheap one | cron precision against a public prerendered surface | — |
 | 13 | **JazzHR** — applicant tracking | a record the law says to forget, beside a report that must outlive it; a stranger who owns an application; and a hire that crosses into another app | `compliance-from-the-seed.md` · `bearer-access.md` · `state-machines.md` |
 | 14 | **remnant** — a maid.tech fork with a scripture study corpus beside it | read-only reference data that belongs to no tenant and ships with the app; relations keyed on natural keys; search over Greek and Hebrew | `conversion-maid-tech.md` (the CRM half) · `lexicon.md` |
@@ -62,13 +62,14 @@ than started.
 | 19 | **Vaultwarden** — a Bitwarden-compatible password vault server | a server that must never read what it stores; an API whose shape a client someone else wrote already fixed; a grant that takes effect after a wait unless refused | `bearer-access.md` · `state-machines.md` · `untrusted-bytes.md` · `third-party-credentials.md` |
 | 20 | **Dragonfly** — a JSON grid editor, jsongrid.com taken further, ported from a Svelte 4 app | one document with two writable views, where a cell edit re-serializes the whole text; a chain of derived stores over every row, re-run on every keystroke; identity for rows that have none; three condition languages beside the one `.lite` has | `@frontierjs/ui` `Json.mesa` · `Table.mesa` · `CommandPalette.mesa` · mesa `{#virtual each}` · `toolbelt/json` · `toolbelt/predicate` · #18 |
 | 21 | **Transit** — the data layer as a product: intake, normalize, report to screen, PDF and email | foreign data typed by a `.lite` held in a row and built on the fly; a sync cursor across a conduit target; one template to three outputs; a scheduled query run at each recipient's standing | `data-layer-v1.md` · `analytics-and-warehouse.md` · `stored-templates.md` · #9 |
-| 22 | **Base44** — a prompt-to-app builder: chat in, a running app out, every later message an edit | a schema change on every turn against live rows, approved by the person and never the agent; a model writing `.lite` and `.mesa`, which no training set holds; generated server code one call from `asSystem()`; hundreds of apps on one host | `prompt-to-app.md` · `packages/oracle` · `intent-recognizer.md` · `sandboxes.md` · `agent-surface.md` · `on-page-editing.md` |
+| 22 | **Base44** (built as **Charter**, `fjs-prototypes/charter`) — a prompt-to-app builder: chat in, a running app out, every later message an edit | a schema change on every turn against live rows, approved by the person and never the agent; a model writing `.lite` and `.mesa`, which no training set holds; generated server code one call from `asSystem()`; hundreds of apps on one host | `prompt-to-app.md` · `packages/oracle` · `intent-recognizer.md` · `sandboxes.md` · `agent-surface.md` · `on-page-editing.md` |
 | 23 | **Quo** (formerly OpenPhone) — a team phone: one number many people answer, texts and calls in one inbox, on Telnyx | a counterparty's webhook whose signature has no secret; a status moved by somebody else, out of order; a live call whose state the vendor holds; a WebSocket a VENDOR dials | `inbound-integrations.md` ([`FJS-D177`](../DECISIONS.md#fjs-d177)) · `conduit-connectors.md` row 5 · `compliance-from-the-seed.md` · #5 |
 | 24 | **ELA** — a live legacy-FJS lawn-care operations app, maid.tech's sibling, being ported | a system of record the app does not own, mirrored and polled; money mirrored rather than originated; a wall-clock day as a key, in a composite foreign key | `conversion-ela.md` · `conversion-maid-tech.md` · #2 · #7 · #21 · #23 |
 | 25 | **SSTime** — a live Laravel + Ember time clock, ELA's, being ported | a punch accepted and classified by device and position rather than refused; a PIN on a wall kiosk as the attestation; the employee held by two apps kept in step | `conversion-sstime.md` · #2 · #13 · #23 · #24 |
 | 26 | **serpgrid** — local SEO for agencies: a rank grid scanned on a schedule, beside the client's CRM and Google profile | an outbound call that costs money; one agency's Google grant spent by many client tenants; one scan fanned into N vendor tasks that finish out of order; a webhook signed by a JWT checked against published keys | `third-party-credentials.md` · `conduit-batteries.md` · `geo.md` · `bearer-access.md` · #21 · #23 · #24 |
 | 27 | **maid.tech** — the live legacy-FJS cleaning-business CRM the trunk came from, 148 accounts, being ported | a role a tenant wrote, read by the gate; a report that is a stored query, stored SQL and stored code on one row; a client who signs in but is not a user; a page a tenant authored, served on a domain the app does not own | `conversion-maid-tech.md` · `tenant-authored-queries.md` · `tenant-declared-fields.md` · `tables-from-the-seed.md` · #14 · #24 |
 | 28 | **Darkroom** — a browser photo editor: adjustments, curves, selective color, layers, crop, draw, export, batch, a social-card composer, ported from a React mockup | a bitmap as the record, with undo as thirty PNG snapshots of every layer; a slider at drag rate driving full-resolution pixel work on the main thread; a pointer drag owned twenty-eight times and never on touch; a color that IS the data under Invariant 13; one outbound call from an app with no `api/` | `@frontierjs/ui` `Slider.mesa` · `FileUpload.mesa` · `CommandPalette.mesa` · `static-safety.md` · `third-party-credentials.md` · #20 · #16 |
+| 42 | **page-performer** — a WebPageTest-shaped page-load tester: a URL in, headless Chromium, a waterfall, Core Web Vitals and a HAR out; a live Kobami tool, ported | one service call holding a browser for up to a minute, cancelled only by the caller hanging up; a stranger's URL whose subresources and redirects are the browser's requests, past any grader; a multi-MB document as one row; a second headless-Chromium owner beside print-kit, which the deploy image does not see ([`FJS-3113`](../ISSUES.md#fjs-3113)) | `print-kit` · `@frontierjs/junction/public-url` (`FJS-681`) · #8 |
 
 **#29–#40 are Phase 2** — a gap scan, none started, in § Phase 2 below the
 entries.
@@ -290,6 +291,244 @@ not what a build cancel button means. So this exercise names a real question —
 Caravan's problem or the app's? Pair it with log streaming, which is
 `chat-surface.md` § Part 1 paying for itself a second time, and with secrets at
 rest, already named as unowned.
+
+*Re-measured 2026-10-16 (ci-runner, `PLAN.md` 0.3): the first claim is stale.
+`cancel()` now aborts a running handler's `ctx.signal` — 1 ms in-process, 288–511 ms
+from another instance against `pollInterval` 1000 — but the signal stops at the
+handler. A job that spawned `sh -c` keeps its shell and both grandchildren alive
+with the row saying `cancelled`; killing the shell alone reparents the grandchildren
+to init. Spawned into its own process group and killed as one, a 10-process tree with
+a SIGTERM trapper is empty in 2.1 s (`FJS-3081`, the ruling this names; `FJS-3082`,
+the `db.ts` comment the paragraph above quotes).*
+
+### 9. PostHog — the write that never stops, and the query the tenant wrote
+
+*Added 2026-10-16. Nothing is built, nothing measured; the rank is the one the
+table gave it.* ([PostHog/posthog](https://github.com/PostHog/posthog))
+
+PostHog is product analytics: a snippet on a customer's pages posts events, a
+person is stitched from the ids those events carry, and the customer asks
+questions of the pile — trends, funnels, retention — and reads a feature flag
+back out of it. Every entry above assumes a row is the unit and a person wrote
+it. This one assumes neither:
+
+- **A write rate set by strangers' browsers.** Ingest is `POST /e/` from every
+  page view on somebody else's site. Lago (#7) measured this tree at about 690
+  inserts a second one at a time and about 11,000 a second in batches of 100
+  (`fjs-prototypes/lago/PLAN.md` Q7); PostHog's shape is a burst at page-load,
+  from thousands of browsers, into one SQLite writer. `FJS-D248` ruled that
+  analytical data lives in SQLite; this is the first product to ask it for a
+  write rate rather than a query. The question is whether the boundary stays
+  the boundary at that rate — the gate, the `@@extensible` rewrite, the audit
+  trail — or whether ingest has to go around it, and if so where the bypass is
+  declared. A buffered path (a caravan job per batch) against the direct path:
+  both are measurable, one thing varying per run.
+- **A principal that is a project, and may only append.** The key identifies the
+  tenant's project, not a person; it sits in page source by design, so it is
+  public; it may write events and read flags and nothing else. `bearer-access.md`
+  has a stranger with a link — this is a stranger with a key printed on every
+  page. Is that a gate level, a bearer claim with a write-only standing, or a raw
+  route? A stolen key floods one tenant with garbage, so a rate per key is the
+  app's problem until the framework says otherwise.
+- **The properties a tenant declares.** `event.properties` is a JSON blob whose
+  keys the customer invents (`$browser`, `plan`, `cart_total`), and the next
+  question is always `WHERE properties.plan = 'pro'`. `@@extensible` shipped for
+  exactly this (`shipped/tenant-declared-fields.md`): a pool of promoted
+  columns, bound at runtime, measured on a `Customer` table. Never on a table
+  that grows by millions. Hard version: a property promoted after ten million
+  events exist — what the backfill costs, and whether the pool runs out at a
+  real project's property count, which is hundreds.
+- **A query the tenant wrote.** HogQL is SQL in the tenant's vocabulary, and an
+  insight is a saved query re-run on a schedule. `tenant-authored-queries.md` is
+  an IDEA whose honest line is that FJS has nothing and neither does anyone
+  else. Transform is built and nobody has ever used it
+  (`analytics-and-warehouse.md`): `view … @@sql @@materialized
+  @@refreshOn([Event])`. A funnel is a window function over one person's
+  ordered events (`litestone/docs/window-functions.md`); retention is a
+  self-join by cohort week. Can a saved insight be a `view` the TENANT declares
+  at runtime, under policy, or is a view the seed's alone? That is #27's
+  stored-report question with the SQL half taken seriously.
+- **Two people who turn out to be one.** `identify()` says anonymous
+  `distinct_id` A is user B, and every event A wrote now belongs to B. Rewrite
+  millions of foreign keys, or keep an alias table every query joins through —
+  and what the audit trail says about a row whose owner changed after the fact.
+  #5's channel-identity question, asked at volume.
+- **A flag read before the page paints.** `/decide` answers which flags are on
+  for this `distinct_id`, by a consistent hash against a rollout percentage,
+  from a page the app does not own, under the public key, at page-load rate. A
+  read with no principal and a latency budget. The snippet itself is the
+  `widgets/` surface — one IIFE per widget (`sierra/src/widget/`) — and this is
+  the first stressor to put a product's SDK on it.
+- **Rows that thin with age.** Raw events older than a year are summed into
+  daily rollups and dropped, and the rollup must agree with the chart that was
+  published before the drop. `forgetting.md` is about a person; this is about
+  volume. Shared with #12 Q5 and #39.
+
+**Leave out** session recording (bytes, which are Immich's, #17), the ClickHouse
+half (SQLite is the ruling), surveys, and the warehouse connectors (Transit's,
+#21). Autocapture is the snippet's problem and not the server's.
+
+**Gradable** with no UI. A driver posts a million events from ten thousand
+distinct ids with fifty properties across twenty fake projects, as fast as the
+API accepts them, and the result is the rate at which the gate still ran.
+Promote one property afterwards and time it. Define a three-step funnel as a
+saved view and compare its answer to hand-written SQL over the same rows. Merge
+a thousand anonymous ids into a thousand users; every event answers for its new
+owner. `/decide` p99 under the ingest load. Then thin the first month into
+rollups and assert the trend did not move.
+
+### 10. Moodle — the course that must be read in two languages
+
+*Added 2026-10-16. Nothing is built, nothing measured; the rank is the one the
+table gave it.* ([moodle/moodle](https://github.com/moodle/moodle))
+
+Moodle is a course platform: a teacher authors a course of sections, resources
+and activities; students enroll, read, submit and sit quizzes; grades aggregate
+into a gradebook. It is also the one product on this list the LAW addresses in
+two places at once — it must be accessible, and in most of the world it must
+speak the student's language. Three breaks, in order:
+
+- **Content a tenant authors in two languages.** `FJS-D12` ships English and
+  holds the i18n seam open with eight constraints; `lexicon.md` splits what is
+  left across four owners. Both are about the INTERFACE tier — strings the
+  schema derives and strings a `.mesa` file holds. Neither reaches a course
+  title a teacher typed in Portuguese and again in English, read by a student
+  whose locale picks one. That is Drupal's content tier (constraint 3), and
+  `.lite` has no way to say *this column holds one value per locale*. Moodle's
+  own answer is `{mlang pt}…{mlang}` markup inside one string, the shape that
+  made translation impossible everywhere it was tried. Hard version: a required
+  field with the translation missing falls back to the default locale and SAYS
+  it fell back; `@@fts` over a localized column finds the Portuguese word; a
+  list sorted by title sorts in the reader's collation; and `lang` on `<html>`
+  follows the CONTENT, per page, which `accessibility.md` names as sierra's and
+  today as *nothing*.
+- **A stranger's zip, served as pages.** A SCORM or H5P package is a zip a
+  teacher uploads; the server unpacks it and serves its `index.html` with its
+  own scripts, and the student's browser runs them. `shipped/untrusted-bytes.md`
+  has the type table and `nosniff`; `FJS-D314` makes a stranger's static mount
+  answer `attachment`, which is exactly what a SCORM player cannot be.
+  `FJS-D345` is the shape of the answer — a pasted page is a stranger's script
+  and a port is an origin — so the question is whether a tenant's package gets
+  an origin of its own, and who hands it one. Video is the easy half:
+  `junction/src/transport/static.ts` already answers range requests, and the
+  whole-file read in `file-storage.js` is Immich's finding (#17), cited rather
+  than found again.
+- **An attempt that lives for two hours.** A quiz attempt is opened, autosaved
+  every thirty seconds, submitted once and graded at submit, with a deadline
+  that is *23:59 in the course's zone* (`FJS-D143`'s kind) and a time limit
+  that runs from open. `declared-semantics.md` § 4 names this *the noun FJS does
+  not have* — a resumable process — with `@@transitions` and caravan as the two
+  halves it would be built from. Hard version: the browser is offline for five
+  minutes mid-attempt and comes back; the API restarts mid-attempt; two tabs
+  hold one attempt; the deadline passes while the student is typing, so the
+  last autosave lands, the submit after it is refused, and the grade is of what
+  landed. `@version` is the optimistic half.
+
+Then the ordinary stress, cheaper and worth having:
+
+- **A role per course, not per tenant.** A teacher in one course is a student in
+  another. `shipped/permission-sets.md` grants `@@capabilities` per membership
+  row; this is the first product where one person holds a different set in each
+  of fifty workspaces and the dashboard reads across all of them.
+- **A gradebook is a tree of weighted means.** Categories nest; a category's
+  grade is a weighted aggregate of its children with drop-lowest and
+  extra-credit rules; a late submission re-aggregates up the tree. A
+  `@derived`, a `view` or a rollup job — #12 Q5's question with recursion in it.
+- **A grade released at an instant.** *Hidden until Friday 09:00* is Ghost (#15)
+  Q2. Cite it.
+- **Accessibility as a legal floor, with no declaration site.** A quiz is a form
+  a screen reader must drive end to end, and `accessibility.md` says every rule
+  is held by discipline. The hour of ordinary use runs once with a screen
+  reader on.
+
+**Leave out** plugins (the ecosystem is Moodle's own problem), forums (#5), the
+mobile app (#11, #36), video conferencing, competency frameworks and the
+plagiarism hooks.
+
+**Gradable.** A course authored in two locales; a student in each reads it, and
+a crawl asserts `lang` on every page matches its body. ADL's public SCORM 1.2
+sample uploaded and completed, its runtime calls recorded. Fifty students sit a
+twenty-question quiz inside one two-hour window with the API killed once and
+the clock aged to the deadline; fifty grades, none from an autosave that
+arrived late. One person, teacher in course A and student in course B, opens
+both course pages and the dashboard across them.
+
+### 11. Etsy with payouts — one checkout, three shops, three payouts, one phone
+
+*Added 2026-10-16. Nothing is built, nothing measured; the rank is the one the
+table gave it.*
+
+`example/` is a shop — products, variants, carts, orders, payments, pickup
+points, shipping, tax, a journal — and the `shop` MCP surface drives it. Etsy
+is ten thousand shops under one roof with buyers who walk between them, and
+that difference is the whole stressor:
+
+- **The shop as a tenant, and a cart across three of them.** `tenancy { strategy
+  database }` is a file per tenant and `strategy row` a column
+  (`litestone/docs/multi-tenancy.md`). A buyer puts items from three shops in
+  one cart and pays once. Under `database` that is one write across three
+  files and the marketplace's own; under `row` it is one database where a
+  seller's whole standing is per shop — `@@capabilities` per membership
+  (`shipped/permission-sets.md`) — and the buyer holds none anywhere. Which
+  strategy the seed picks decides whether checkout is a transaction or a saga,
+  and nothing has asked that of `tenancy` since it shipped. Hard version: one
+  payment, three orders, and one of the three shops suspended between cart and
+  pay.
+- **Split money.** Fifty dollars paid: the platform's fee, the processor's fee,
+  the seller's share, held until the order ships and then paid out — in the
+  seller's currency, which is not the buyer's — with a refund a week later
+  clawing back a share already paid. `allocate()` is `FJS-D154`'s pure function
+  and `billing.md` Phase 3 its first caller; `@money(field: currency)` is open
+  in `declared-semantics.md` § 2 and this is the per-row-currency app that
+  cannot defer it; `ledger.md` is an IDEA and the held balance is a ledger
+  account by any name. Lago (#7) found that a sum over mixed currencies adds
+  cents to yen and nothing refuses it (its Q4); here the sum is a seller's
+  payout and the refusal has to be the framework's. A payout batch is a conduit
+  send to a Connect-shaped processor, reconciled by webhook — `stripe` is a
+  connector row, and a payout with a clawback is what no row describes.
+- **An order that has to reach a phone.** A seller's reason to open the app is
+  *you made a sale*, on a locked phone, within a minute. `conduit-push` (APNs
+  and FCM) is row 4 of `conduit-connectors.md` and unbuilt, and a push needs an
+  app on the phone to land in: the `mobile/` surface, which `FJS-D38` rules is
+  a compiler backend and `mesa-ir.md` § 12 plans as the Lynx native backend
+  (`fjs-prototypes/lynx-spike`, phases 1–3 landed). So the phone is two unbuilt
+  things in a line. The honest first instrument is the order-paid event
+  arriving on a natively rendered seller screen; the push is the second
+  measurement. #36 claims the surface for a time tracker; this claims it for a
+  notification.
+- **Geo, no longer an unknown.** `geo.md` is ruled end to end
+  (`FJS-D315`–`FJS-D327`) and none of it is built. *Shops near you*, *local
+  pickup within 25 km*, shipping zones by destination: this is the first
+  consumer, so the run builds what is ruled and files where a ruling did not
+  survive contact — the `@point` declaration, the composite `(lat, lng)` index,
+  a distance stated on the request and returned with the row, no map control in
+  the kit. The antimeridian is the field's bug class; test on it.
+- **A review from a buyer who received the thing.** The gate is a relation path:
+  this buyer, this order, status `delivered`, within a hundred days, one review
+  per line. `FJS-499`'s one-hop policy paths say how far a gate reaches.
+- **A listing is a public page.** Ten thousand shops' listings are SEO pages on
+  `site/` with live stock behind them — Ghost (#15) Q1 and statuspage (#12) Q2
+  at a row count neither reaches. Cite them; re-measure only if the count
+  changes the answer.
+- **Search with facets across shops.** `shipped/cross-model-search.md` landed
+  2026-10-14; a marketplace is its first run with price range, ships-to and
+  category as facets over a million listings. Under `strategy database` that is
+  a fan-out through `tenants.query(fn)`, and the question is whether search
+  survives it.
+
+**Leave out** marketplace-facilitator sales tax (a jurisdiction table nobody
+here can keep right; `TaxRate` is enough for the exercise), Etsy Ads, shop stats
+(#9), buyer-to-seller messaging (#5) and the buyer's own phone app.
+
+**Gradable.** Fifty shops seeded in three currencies, ten thousand listings with
+a point each. One cart across three shops paid once: three orders, one
+suspended shop refused, two payouts due on ship, one refund after payout, every
+seller balance to the cent and the journal balanced per currency with a
+mixed-currency sum refused by name. A pickup query within 25 km of a point on
+the antimeridian. The order-paid event rendered on a native seller screen with
+its timestamp against the payment's, and, once `conduit-push` exists, a push
+the same. A faceted search over the ten thousand, with the number of shops that
+answered.
 
 ### 12. Status page — the one that fits in a week
 
@@ -1137,6 +1376,34 @@ with an alpha hole, each generated:
 
 Port in `fjs-prototypes/darkroom`, with questions in its `PLAN.md`, as below.
 
+### 42. page-performer — a browser as the API's worker
+
+*Added 2026-10-16, ported from `KOBAMI/WEBSITE-TOOLS/page-performer`: a Bun
+server, a Playwright runner and a 4,100-line React page with no build step. The
+number continues past #41 so `#N` stays unique; the row sits here because it is
+started.*
+
+**Where it stands.** `fjs-prototypes/page-performer`, scaffolded `--no-auth`.
+The original is `mockup/` whole. Its runner is `api/src/perf/` unchanged, behind
+a `tests` service whose before-create hook runs the test and writes the result
+as `@system` columns on a `Test` row, so history survives a restart. The URL is
+graded by `assertPublicUrl`, which closes the original's SSRF item for the
+typed address only. The UI is Mesa: `/` runs a test, `/tests/` is history and
+`/tests/[id]` the stored report in eight tabs; the React `ui.html` survives only
+in `mockup/`.
+
+**Measured on the port:** cancellation reaches the hook only through
+`ctx.$raw.$raw.$req.signal`, so only over HTTP and with no `ctx` field of its
+own ([`FJS-3117`](../ISSUES.md#fjs-3117)); a run therefore posts through
+`client.fetch`, because a `tests.service.create` over the socket carries no
+signal and gives up at the client's 30s timeout while a five-run test is still
+loading. A fresh `--no-auth` scaffold has the [`FJS-3073`](../ISSUES.md#fjs-3073)
+prefix bug; `deploy-image-needs` passes an app that needs Chromium
+([`FJS-3113`](../ISSUES.md#fjs-3113)). A pixel-exact chart design met
+`css-raw-literal` 43 times, and only in `<style>` blocks: the same literals
+written as `style:` directives pass unchecked. They are tokens now, as
+`calc()` over a `--space-*` step so the default-density look is unchanged.
+
 ## Phase 2 — the gap scan
 
 *Added 2026-10-09. Twelve products whose first break has no mention in Phase 1,
@@ -1159,6 +1426,7 @@ breaks, as above; the numbering continues so `#N` stays unique.*
 | 38 | **Kahoot** — live quiz | three hundred principals that live twenty minutes; one server-owned clock; a cohort broadcast driven in a two-second burst | `bridge-index` (cohort broadcast) · #12 |
 | 39 | **ThingsBoard / Home Assistant** — device telemetry | a device as a principal with a key that rotates and revokes; a command to an offline device delivered once with acknowledgement; readings thinned with age | `overview.md` · `analytics-and-warehouse.md` · #9 |
 | 40 | **Listmonk** — newsletter | a forgotten subscriber who must stay unsendable; a hundred thousand sends at a provider's rate limit; bounce and complaint webhooks | `forgetting.md` · `inbound-integrations.md` · #15 |
+| 41 | **Mattermost** — a chat whose phone is the Provider's app and whose desktop and terminal are FJS | a system of record the app does not own, reached three ways at once: a call out, a webhook in, and a socket the app dials and holds open; a human's write that must spend that human's credential, with no SSO to bridge it; a history cap that is the Provider's window, not the app's; and the exit, graded | `mirror-apps.md` · `conduit-connectors.md` · `FJS-D843` · #24 · #21 |
 
 **Folded into Phase 1 rows rather than numbered**: task dependencies that may
 never form a cycle belong with #3 — nothing in the tree mentions acyclicity —
@@ -1305,6 +1573,25 @@ declaration. Sending overlaps #15.
 **Gradable**: forget a subscriber, re-import the list, and the address is not
 mailed.
 
+### 41. Mattermost — the mirror app, with a phone it does not own
+
+*Added 2026-10-16. The proposal is `mirror-apps.md`; this row is its test case.*
+
+**Why it is a stressor and not only a connector.** #24 is the same shape with
+one ingress, a poll, and a sync that is a machine. Mattermost adds the two
+ELA never needed: a WebSocket the app dials and must hold open, which neither
+Target nor Receiver names (`mirror-apps.md` Q4), and a human's message that
+must be posted as that human, so the app keeps a credential per user with no
+SSO to lean on (Team Edition dropped it in v11). Its history cap is the
+Provider's window rather than the app's, which is the second caller
+`FJS-D843`'s `absent:` waits for. And it is the first mirror app built to be
+left: the phone is Mattermost's until the mobile surface exists, so the exit
+is part of the design rather than a wish.
+
+**Gradable**: a message typed in `fli dev:tui` arrives on the phone as its
+author and one typed on the phone lands in the terminal; the connector
+removed, the app boots and every surface still lists.
+
 ## Not on this list, with reasons
 
 - **Figma proper.** Canvas rendering is not a question about this framework; Mesa
@@ -1358,6 +1645,13 @@ whole exercise worthless:
 ```bash
 cd ~/work/calendly && claude --add-dir /path/to/frontierjs
 ```
+
+**Keep the original out of `bun run check`.** When the product being imitated
+arrives as a `mockup/` (or `fixtures/`) beside `db/`, the scaffolded
+`biome.json` lints it, and a prototype is never clean. Add the exclusion to the
+scaffold's `biome.json` by hand, once: `"files": { "includes": ["!mockup",
+"!fixtures"] }`. `mockup/` is a stressor convention, not an app one, so
+neither `fli new` nor `@frontierjs/config/biome` carries it (`FJS-2764`).
 
 **Start from a schema, and get it from the conversation rather than the
 keyboard.** The `discovery` skill is for exactly this shape — a brief, a

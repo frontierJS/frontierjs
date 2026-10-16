@@ -286,7 +286,7 @@ function emitModel(m, backs, access, currency, declares) {
   // declarations hang under the tenant's container.
   if (declares.has(m.name)) attrs.push(`@@unique([${declares.get(m.name).scope ?? 'model'}, key])`)
 
-  attrs.push(`@@gate("${access.gate.join('.')}")`)
+  attrs.push(`@@gate(${access.gate.join('.')})`)
   if (m.lifecycle) attrs.push(transitions(m.lifecycle))
   const opWidth = Math.max(0, ...access.policies.map(([op]) => op.length + 3))
   for (const [op, expr] of access.policies) attrs.push(`@@allow(${`'${op}',`.padEnd(opWidth)} ${expr})`)

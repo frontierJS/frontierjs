@@ -4,7 +4,7 @@
 /// the example does with it is derived, at build time or at runtime:
 ///
 ///   the tables               ← autoMigrate(db)
-///   CRUD + pagination        ← createBaseService({}) reads the model
+///   CRUD + pagination        ← createService({}) reads the model
 ///   401 / 403                ← @@gate, via junction's derived gateAuth hook
 ///   400 on bad input         ← the field rules, via junction's autoValidate hook
 ///   make() defaults          ← generateJsonSchema → registerSchemas → the browser
@@ -21,7 +21,7 @@ model Account {
   leads Lead[]
 
   /// read is public, writes need a user
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }
 
 /// A required enum with NO @default. make() leaves it null on purpose: no blank
@@ -60,7 +60,7 @@ model Lead {
 
   createdAt DateTime @default(now())
 
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
 }
 
 model Tag {

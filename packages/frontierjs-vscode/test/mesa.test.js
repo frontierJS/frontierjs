@@ -68,7 +68,7 @@ const VALID = [
   '  function bump() { count++ }',
   '</script>',
   '',
-  '<button on:click={bump}>{label} {count} {doubled}</button>',
+  '<button onclick={bump}>{label} {count} {doubled}</button>',
   ''
 ].join('\n')
 

@@ -8,7 +8,7 @@
 // Three shapes here do not exist in `example` and are the reason this file does:
 //
 //   Ledger    a LOCKED position (9) on a model whose service still OFFERS the
-//             verb. Every @@gate("…9") in that app sits behind a method selection
+//             verb. Every @@gate(…9) in that app sits behind a method selection
 //             that removed the verb first, so the gate is never consulted and
 //             `levelPasses` against a bare `>=` cannot be told apart.
 //   Invoice   a @gate(5) move on a model written at 8 — the FLOOR case, which
@@ -32,7 +32,7 @@ model Order {
   customerId Int?
   customer   Customer?   @relation(fields: [customerId], references: [id])
 
-  @@gate("1.4.4.5")
+  @@gate(1.4.4.5)
   @@transitions(status,
     pay:    pending         -> paid,
     ship:   paid            -> shipped,
@@ -51,7 +51,7 @@ model Invoice {
   status InvoiceStatus @default(draft)
   amount Int           @money(USD)
 
-  @@gate("1.8.8.8")
+  @@gate(1.8.8.8)
   @@transitions(status,
     issue: draft  -> issued @system,
     void:  issued -> void   @gate(5)
@@ -64,7 +64,7 @@ model Ledger {
   memo   String
   amount Int    @money(USD)
 
-  @@gate("5.8.9.9")
+  @@gate(5.8.9.9)
 }
 
 /// No gate at all. 33 of `example`'s 76 models are this shape, and a guest
@@ -80,7 +80,7 @@ model Customer {
   name   String
   orders Order[]
 
-  @@gate("4.5.5.5")
+  @@gate(4.5.5.5)
 }
 
 /// The audience case. Neither column may reach a tool description.

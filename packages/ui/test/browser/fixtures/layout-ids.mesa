@@ -65,4 +65,4 @@
 <div id="avatar">
   <Avatar {src} name="Dana Ortiz" />
 </div>
-<button id="new-src" on:click={() => { src = good }}>new</button>
+<button id="new-src" onclick={() => { src = good }}>new</button>

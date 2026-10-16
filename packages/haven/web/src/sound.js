@@ -6,6 +6,8 @@
 //
 // `stream(fill, { rate })` pulls `fill(fromSample, n)` (samples counted from
 // the epoch) and answers a stop, or null where no player is installed.
+// `gain()`, 0 to 1, is asked once a chunk, so a level changed is heard within
+// `AHEAD_MS`.
 
 const CHUNK_MS = 100
 const AHEAD_MS = 300
@@ -16,7 +18,7 @@ const PLAYERS = (rate) => [
   ['play', '-q', '-t', 'raw', '-r', `${rate}`, '-e', 'signed', '-b', '16', '-c', '1', '-'],
 ]
 
-export function stream(fill, { rate }) {
+export function stream(fill, { rate, gain = () => 1 }) {
   const argv = PLAYERS(rate).find(([cmd]) => Bun.which(cmd))
   if (!argv) return null
   const proc = Bun.spawn(argv, { stdin: 'pipe', stdout: 'ignore', stderr: 'ignore' })
@@ -34,7 +36,8 @@ export function stream(fill, { rate }) {
     if (cursor >= until) return
     const f   = fill(cursor, until - cursor)
     const pcm = new Int16Array(f.length)
-    for (let i = 0; i < f.length; i++) pcm[i] = Math.max(-1, Math.min(1, f[i])) * 32767
+    const g   = gain()
+    for (let i = 0; i < f.length; i++) pcm[i] = Math.max(-1, Math.min(1, f[i] * g)) * 32767
     cursor = until
     try {
       proc.stdin.write(new Uint8Array(pcm.buffer))

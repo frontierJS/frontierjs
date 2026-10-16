@@ -2,14 +2,14 @@
 // Tests for the app.telemetry instrumentation layer:
 //   1. junction.call.start / junction.call.end lifecycle
 //   2. telemetryId correlation between start and end
-//   3. junction.call alias (back-compat)
+//   3. One name per event — no bare junction.call beside .end
 //   4. junction.hook — per-hook events (before / after / around / error)
 //   5. Bypass methods — lightweight junction.call.end, no telemetryId
 //   6. ctx._cleanups — drained after pipeline (success and error)
 //   7. No telemetry when emitter not passed
 //   8. Dev-mode anonymous hook warning
 
-import { DERIVED_HOOKS } from '../src/core/service.ts'
+import { DERIVED_HOOKS, buildService } from '../src/core/service.ts'
 import { describe, it, expect, spyOn } from 'bun:test'
 import { createService, callService }               from '../src/core/service.ts'
 import { bridge }                                   from '../src/transport/bridge.ts'
@@ -34,7 +34,7 @@ function mockTelemetry() {
 }
 
 function callEvents(captured: CapturedEvent[]) {
-  return captured.filter(e => e.name === 'junction.call.start' || e.name === 'junction.call.end' || e.name === 'junction.call')
+  return captured.filter(e => e.name === 'junction.call.start' || e.name === 'junction.call.end')
 }
 
 function hookEvents(captured: CapturedEvent[]) {
@@ -48,7 +48,7 @@ describe('junction.call.start + junction.call.end lifecycle', () => {
   it('emits start before end', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
     })
@@ -64,7 +64,7 @@ describe('junction.call.start + junction.call.end lifecycle', () => {
   it('start event has correct shape', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'orders',
       find: async () => [],
     })
@@ -86,7 +86,7 @@ describe('junction.call.start + junction.call.end lifecycle', () => {
   it('end event has correct shape on success', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [{ id: 1 }],
     })
@@ -105,7 +105,7 @@ describe('junction.call.start + junction.call.end lifecycle', () => {
   it('end event has status=error and error details on failure', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => { throw Object.assign(new Error('Boom'), { code: 500, name: 'InternalError' }) },
     })
@@ -128,7 +128,7 @@ describe('junction.call.start + junction.call.end lifecycle', () => {
   it('an around hook that refuses is status=error, and the call it allows is not', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find:   async () => [],
       create: async () => ({ id: 1 }),
@@ -162,7 +162,7 @@ describe('junction.call.start + junction.call.end lifecycle', () => {
   it('end event includes authenticated userId', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
     })
@@ -185,7 +185,7 @@ describe('telemetryId correlation', () => {
   it('start and end share the same telemetryId', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({ name: 'items', find: async () => [] })
+    const svc = buildService({ name: 'items', find: async () => [] })
     const ctx = bridge.internal('items', 'find', null)
     await callService(svc, ctx, undefined, undefined, emitter)
 
@@ -200,7 +200,7 @@ describe('telemetryId correlation', () => {
     const { emitter } = mockTelemetry()
     let capturedId: string | undefined
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: {
@@ -222,7 +222,7 @@ describe('telemetryId correlation', () => {
 
   it('each call gets a unique telemetryId', async () => {
     const { emitter, captured } = mockTelemetry()
-    const svc = createService({ name: 'items', find: async () => [] })
+    const svc = buildService({ name: 'items', find: async () => [] })
 
     for (let i = 0; i < 3; i++) {
       const ctx = bridge.internal('items', 'find', null)
@@ -238,22 +238,18 @@ describe('telemetryId correlation', () => {
 
 })
 
-// ─── 3. junction.call alias ───────────────────────────────────────────────────
+// ─── 3. One name per event ────────────────────────────────────────────────────
 
-describe('junction.call back-compat alias', () => {
+describe('junction.call.end is the one end event', () => {
 
-  it('junction.call fires alongside junction.call.end', async () => {
+  it('emits no bare junction.call beside it', async () => {
     const { emitter, captured } = mockTelemetry()
-    const svc = createService({ name: 'items', find: async () => [] })
+    const svc = buildService({ name: 'items', find: async () => [] })
     const ctx = bridge.internal('items', 'find', null)
     await callService(svc, ctx, undefined, undefined, emitter)
 
-    const endEvent   = captured.find(e => e.name === 'junction.call.end')!.data as TelemetryEvent
-    const aliasEvent = captured.find(e => e.name === 'junction.call')!.data   as TelemetryEvent
-
-    expect(aliasEvent).toBeDefined()
-    expect(aliasEvent.telemetryId).toBe(endEvent.telemetryId)
-    expect(aliasEvent.status).toBe(endEvent.status)
+    expect(captured.some(e => e.name === 'junction.call.end')).toBe(true)
+    expect(captured.some(e => e.name === 'junction.call')).toBe(false)
   })
 
 })
@@ -265,7 +261,7 @@ describe('junction.hook events', () => {
   it('emits one hook event per before hook', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: {
@@ -284,7 +280,7 @@ describe('junction.hook events', () => {
     // Every service carries the derived gateAuth for its method — a model-less
     // one included, where it resolves no levels and returns. It used to be
     // absent here only because createService skipped the whole base when
-    // `model` was omitted; createBaseService({}) always installed it. Assert on
+    // `model` was omitted; the base always installs it. Assert on
     // the user's hooks by name rather than on the total, which is a framework
     // detail this test does not own.
     const hooks = hookEvents(captured).filter(e => e.data.phase === 'before')
@@ -297,7 +293,7 @@ describe('junction.hook events', () => {
   it('emits one hook event per after hook', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: {
@@ -322,7 +318,7 @@ describe('junction.hook events', () => {
   it('hook event includes correct shape', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'orders',
       find: async () => [],
       hooks: {
@@ -346,7 +342,7 @@ describe('junction.hook events', () => {
   it('hook event has telemetryId matching the call', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: { before: { find: [async function myHook() {}] } }
@@ -363,7 +359,7 @@ describe('junction.hook events', () => {
   it('around hook emits once at exit with full duration', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: {
@@ -390,7 +386,7 @@ describe('junction.hook events', () => {
   it('error hook appears inline with phase=error', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => { throw new Error('fail') },
       hooks: {
@@ -416,7 +412,7 @@ describe('junction.hook events', () => {
     const { emitter, captured } = mockTelemetry()
     const { Unauthorized } = await import('../src/core/errors.ts')
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: {
@@ -439,7 +435,7 @@ describe('junction.hook events', () => {
   it('anonymous hook shows hookName as "anonymous"', async () => {
     const { emitter, captured } = mockTelemetry()
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: {
@@ -464,7 +460,7 @@ describe('bypass method telemetry (_find, _create etc.)', () => {
     const events: CapturedEvent[] = []
     const telemetry = { emit: (n: string, d: unknown) => events.push({ name: n, data: d }) }
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [{ id: 1 }],
     })
@@ -486,7 +482,7 @@ describe('bypass method telemetry (_find, _create etc.)', () => {
     const events: CapturedEvent[] = []
     const telemetry = { emit: (n: string, d: unknown) => events.push({ name: n, data: d }) }
 
-    const svc = createService({ name: 'items', find: async () => [] })
+    const svc = buildService({ name: 'items', find: async () => [] })
     const ctx = bridge.internal('items', 'find', null)
     ;asRecord(ctx.app).telemetry = telemetry
 
@@ -496,7 +492,7 @@ describe('bypass method telemetry (_find, _create etc.)', () => {
   })
 
   it('bypass emits nothing when no telemetry on ctx.app', async () => {
-    const svc = createService({ name: 'items', find: async () => [] })
+    const svc = buildService({ name: 'items', find: async () => [] })
     const ctx = bridge.internal('items', 'find', null)
     // ctx.app is empty object — no telemetry
 
@@ -513,7 +509,7 @@ describe('ctx._cleanups lifecycle', () => {
   it('cleanup functions are called after successful pipeline', async () => {
     let cleaned = false
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: {
@@ -535,7 +531,7 @@ describe('ctx._cleanups lifecycle', () => {
   it('cleanup functions are called even when pipeline throws', async () => {
     let cleaned = false
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => { throw new Error('boom') },
       hooks: {
@@ -557,7 +553,7 @@ describe('ctx._cleanups lifecycle', () => {
   it('multiple cleanups all run', async () => {
     const ran: number[] = []
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: {
@@ -581,7 +577,7 @@ describe('ctx._cleanups lifecycle', () => {
   it('a throwing cleanup does not prevent other cleanups from running', async () => {
     let secondRan = false
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: {
@@ -602,7 +598,7 @@ describe('ctx._cleanups lifecycle', () => {
   })
 
   it('_cleanups array is emptied after draining', async () => {
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: {
@@ -628,7 +624,7 @@ describe('ctx._cleanups lifecycle', () => {
 describe('no telemetry when emitter not configured', () => {
 
   it('callService without telemetry param does not throw', async () => {
-    const svc = createService({ name: 'items', find: async () => [] })
+    const svc = buildService({ name: 'items', find: async () => [] })
     const ctx = bridge.internal('items', 'find', null)
 
     await callService(svc, ctx)
@@ -636,7 +632,7 @@ describe('no telemetry when emitter not configured', () => {
   })
 
   it('telemetryId is not stamped when no telemetry emitter', async () => {
-    const svc = createService({ name: 'items', find: async () => [] })
+    const svc = buildService({ name: 'items', find: async () => [] })
     const ctx = bridge.internal('items', 'find', null)
 
     await callService(svc, ctx)
@@ -661,7 +657,7 @@ describe('anonymous hook diagnostic', () => {
     const logSpy = spyOn(console, 'log').mockImplementation(() => {})
 
     try {
-      createService({
+      buildService({
         name: 'items',
         find:  async () => [],
         patch: async () => ({}),
@@ -693,7 +689,7 @@ describe('anonymous hook diagnostic', () => {
     const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
 
     try {
-      createService({
+      buildService({
         name:  'items',
         find:  async () => [],
         hooks: { before: { find: [async () => {}] } },
@@ -718,7 +714,7 @@ describe('anonymous hook diagnostic', () => {
     const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
 
     try {
-      createService({
+      buildService({
         name: 'items',
         find: async () => [],
         hooks: {
@@ -740,7 +736,7 @@ describe('anonymous hook diagnostic', () => {
     const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
 
     try {
-      createService({
+      buildService({
         name: 'items',
         find: async () => [],
         hooks: {

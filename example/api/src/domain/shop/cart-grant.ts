@@ -50,7 +50,7 @@ export const cartKey = () => process.env.ENCRYPTION_KEY ?? 'dev-encryption-key-c
  * is how it says a basket's grant lives as long as the basket.
  *
  * `cartClaim.mint(system, { cartId })` takes the SYSTEM client because
- * `CartGrant` is `@@gate("8")`: a shopper never reads their own grant — they
+ * `CartGrant` is `@@gate(8)`: a shopper never reads their own grant — they
  * hold the only half that matters — and the row is written before any
  * principal exists to be graded.
  *

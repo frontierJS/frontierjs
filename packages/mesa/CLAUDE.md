@@ -6,13 +6,13 @@ it may import is `@frontierjs/toolbelt`, which is substrate below the graph rath
 than a member of it (`FJS-D26`). Sierra, jetty, ui and email-kit all sit on top
 of it.
 
-Run tests with **`bun run test`** — vitest, then the three gating **browser
+Run tests with **`bun run test`** — vitest, then the four gating **browser
 drives**, which need Chrome on PATH or `$FJS_CHROME`, then the **terminal drive**
 (`test:terminal`), which needs no Chrome and no TTY. `bun test` reports ~35 failures
 that are runner artifacts, not defects.
 
-`test:browser` is the three, `test:browser:runtime`, `test:browser:vite` and
-`test:browser:repl` one each; `serve:runtime` / `serve:vite` start one and stay
+`test:browser` is the four, `test:browser:runtime`, `test:browser:vite`,
+`test:browser:repl` and `test:browser:kit` one each; `serve:runtime` / `serve:vite` start one and stay
 up, for looking at a fixture in a real browser.
 
 **The REPL drive is `repl/`, in `test` and offline.** Its third-party code is
@@ -22,10 +22,17 @@ is the page tested. `bun example/build-vendor.mjs` rewrites the directory when a
 devDependency moves; one `Bun.build` with splitting, because a second copy of
 `@codemirror/state` fails on an `instanceof` that no message explains.
 
-**`bun run bench` is in neither `test` nor CI.** Run it when a change touches
-`{#each}`, the flush or anything that writes the DOM: a rise in bytes or in DOM
-mutations for an operation fails it, and a time never does — a time is printed as
-a ratio to the hand-written floor measured in the same browser.
+**`test` ends with `bench/run.mjs --gate`** — bytes and DOM mutations, and a
+rise in either fails it (`FJS-D532`). The timed `bun run bench` is by hand: run
+it when a change touches `{#each}`, the flush or anything that writes the DOM. A
+time never fails it; it is printed as a ratio to the hand-written floor measured
+in the same browser.
+
+**`bench/cases.mjs` is the timed tier that needs no browser** — a compile, a
+server render and a signal fan-out, each beside hand-written code, and each
+checking its work happened so a broken case cannot read as fast. CI's `perf`
+phase runs it against the base ref (`node scripts/bench-ab.mjs --only mesa` from
+the root) and never fails on a time; a case that throws fails it.
 
 ---
 
@@ -40,14 +47,47 @@ src/
   terminal/tags.js     — the terminal target's table: which tags and DOM event
                          names it paints (FJS-D700, FJS-D692). Pure data; the
                          compiler refuses what is not in it, by file and line
-  terminal/emit.js     — the terminal emitter, the stage compile() runs for
-                         target: 'terminal' (FJS-D699): ctx.ir → calls on $$tui
-                         written into ctx.module.body. Refuses, never approximates
+  host/emit.js         — the host emitter, the stage compile() runs for every
+                         target in host/targets.js (FJS-D699, FJS-D1074):
+                         ctx.ir → calls on $$host written into ctx.module.body.
+                         Takes the target's profile; refuses, never approximates
                          — except a tag it cannot paint on or inside a static
-                         aria-hidden="true", which it leaves out (`terminalDropped`)
+                         aria-hidden="true", which it leaves out (`hostDropped`)
+  host/targets.js      — one profile per non-DOM target: its tables, which
+                         `class:` names it paints, whether it paints CSS, the
+                         runtime it imports
+  native/tags.js       — the native target's table (FJS-D1074): what a phone
+                         builds. What it has no element for is absent, so refused.
+                         tagClass(): the `_p` every element carries (FJS-D1139).
+                         userAgentSheet: the browser's own sheet, which a phone
+                         lacks, for whatever builds a bundle to put first. Its
+                         `._html` rule is the 16px root, on the page the runtime
+                         classes; the engine's own root is 14px, read by rem and em
+  native/css.js        — cssOffense(): the selectors and at-rules a phone's
+                         stylesheet drops in silence, so a `<style>` rule using
+                         one is refused by line. lowerTypes(): a type selector
+                         as its tag class, since every element is the engine's
+                         view or text; scopeCSS and lowerSheet both run it
+  native/sheet.js      — lowerSheet(): a whole stylesheet, the kit's bundle
+                         first, flattened out of its layers and split one rule
+                         per list member, `:where()`/`:is()` lists included,
+                         since the encoder drops a layer or a list whole, then
+                         its tokens evaluated and agreeing members rejoined. Returns what
+                         it dropped by line, an app knob it lost included
+  native/tokens.js     — lowerTokens(): the token graph evaluated per (theme ×
+                         axis × tone), so no var() on a phone is more than one
+                         hop from a literal. The contexts are read off the
+                         sheet: `.theme-*`, and each @property's setters
+  native/values.js     — lowerValues(): oklch(), oklab(), color() and color-mix() over
+                         literals computed to rgb()/rgba(), clipped as Chrome
+                         paints, logical properties written physical for
+                         left-to-right, and `display` by its inner display
+                         (flow → the engine's `linear`, since it lays `block`
+                         out as a row). A color or display it cannot lower
+                         comes back by line
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
   runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal.js:
-                         `$$tui`, a cell tree over @opentui/core (optional peer,
+                         `$$host`, a cell tree over @opentui/core (optional peer,
                          pinned exact while 0.x — FJS-D698). Bun only. Events
                          dispatch as a browser's (capture, target, bubble) and
                          it is a CLIENT: `$.onMount` and `{@attach}` run, so a DOM API
@@ -56,6 +96,11 @@ src/
                          (`createRenderer`, `createHeadlessRenderer`) — its own
                          engine import would be a second copy — and a strip
                          under the page that does not scroll (`footerOf`)
+  runtime-native.js    — the native runtime, @frontierjs/mesa/runtime/native.js:
+                         `$$host` over Lynx's Element PAPI, the main-thread
+                         globals, so no engine import and no peer. The one file
+                         that names Lynx. `$.measure`/`$.viewport`/`$.focus` answer a Promise
+                         here, in runtime.js and in runtime-terminal.js alike
   entities.js          — htmlEntitiesToText(): character references as text,
                          read by the compiler and the terminal runtime's {@html}
   render-component.js  — renderComponent(): a component → HTML, at build time
@@ -67,6 +112,25 @@ src/
                          findChrome, createNetwork. Published: an app's drive
                          and every in-repo drive import it (`FJS-D554`). No
                          framework import, no dependency
+  window-binds.js      — what <mesa:window bind:prop> binds and the event
+                         that moves each; the compiler refuses any other prop
+  browser/             — @frontierjs/mesa/browser, the browser kit (`FJS-D1097`;
+                         plan IDEAS/browser-kit.md). Every wrapper answers by
+                         host.js — live in a tab, its default under a server
+                         render, a throw on a terminal (isClient() without
+                         isBrowserClient()). persisted.js is #1, on runtime.js's
+                         subscribe(); prefix.js is the app's key namespace, its
+                         own module because sierra's router sets it in every app
+                         and persisted.js carries /redact. tab.js is #8, an
+                         object watched like session (`$: tab.online`), armed at
+                         its first read and held for the tab. clock.js is #2,
+                         one timer per `every`, parked by a watch on
+                         tab.visible. media.js is #3, one MediaQueryList
+                         per query; every signal wrapper is a CALL held in a
+                         const, since a template read of an imported name is
+                         static (`FJS-060`, `FJS-3096`). result.js is the
+                         one { ok, via, reason } an action returns;
+                         browser.d.ts states each server answer
 
 mesa-vite/
   index.js             — the Vite plugin, exported as @frontierjs/mesa/vite
@@ -97,6 +161,8 @@ test/browser/
   runtime/             — the language in a real browser (server · page · fixtures · specs)
   vite/                — the plugin in a real dev server (app · specs)
   repl/                — example/index.html itself, offline off example/vendor/
+  kit/                 — @frontierjs/mesa/browser, one spec per wrapper; runtime/'s
+                         server and page, its own fixtures
 
 bench/
   run.mjs              — bun run bench: bytes, DOM mutations, time, heap
@@ -112,9 +178,11 @@ scripts/
   portability.js       — the report's counting, pure: a file lowers only when
                          every component it imports lowers. A tally change is
                          graded by test/portability.test.js, not by eye
-  terminal-tree.js     — compileTree(): a .mesa file and its imports compiled
-                         for the terminal against this tree's src/. The drive
-                         and `tui` share it
+  host-tree.js         — compileTree(): a .mesa file and its imports compiled
+                         for a host target against this tree's src/. The two
+                         drives and `tui` share it. Each file's scoped rules
+                         come back on `styles`, since a Lynx bundle takes its
+                         stylesheet at build time and has no addStyles
   tui.mjs              — bun run tui <file.mesa>: one file live in a real
                          terminal (--frame prints one and exits, --props=JSON).
                          Paths are relative to packages/mesa; from elsewhere
@@ -146,8 +214,9 @@ Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
 ## What bites here
 
 **`$` is the door, and it is emitted in two halves.** The instance-independent
-members — the five animation helpers and the four lifecycle functions — are a
-module-scope `$$shared`; the per-instance `$` is `Object.create($$shared)` with
+members — the five animation helpers, the four lifecycle functions, `measure`,
+`viewport` and `focus` — are a module-scope `$$shared`, the last three read off the target's
+runtime (`$$host` on a host target); the per-instance `$` is `Object.create($$shared)` with
 only `option`, `slots`, `props`, `attributes`, `emit`, `context`, `mounted`,
 `inspect` and `async` assigned on top, and each of those only when the sniff
 found it in use. So a component that reaches for nothing emits neither.
@@ -264,11 +333,20 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   is invisible to the panel and nothing says so. The one fact not on an edge —
   what DID wake a node — is `_cause`, stamped by `_notify` only while `_devOn`.
   `runtime/specs/devtools-cause` reads a chain back (`FJS-1324`).
+- **A slot is a snippet with no arguments, and nothing past the parser knows
+  slots exist** (`FJS-D668`). `lowerSlots` in `compiler.js` rewrites `slot=`
+  and unslotted content to `{#snippet name()}` / `{#snippet children()}` and
+  `<slot>` to `{@render}`, before `lower()` or the DOM builder reads the tree,
+  so every target and both runtimes see snippets only — a new target needs no
+  slot code. Content snippets are wrapped in `$$runtime.content()`, which is how
+  `unclaimedContent` tells dropped content from a function prop and how
+  `restProps` keeps it off `$attributes`. A prop written beside content of its
+  name is the override (`contentFallback`). The component's third parameter,
+  `__block`, is now always `null`.
 - **`<slot>` takes no attribute but `name`.** A slot carries content IN and
   never a value out; there is no `let:` to read one with. Refused at compile
   time (VISION RULE 35b, `FJS-304`). A hole the child must PARAMETERIZE is a
-  snippet prop — `export let children` + `{@render children?.(value)}` — which
-  §9.6 no longer calls legacy, because for that job it is the only form.
+  snippet prop — `export let children` + `{@render children?.(value)}`.
 - **Scoped styles do not reach into child components** — use `:global(...)`. The
   selector *subject* carries the hash (`button` → `button.mHASH`).
 - **A dynamic `class` merges, it never replaces** — everything routes through
@@ -391,12 +469,12 @@ their own label, constraints and server error from it.
 
 ## The browser drives
 
-**`test/browser/` is where this package is run rather than described** — three
+**`test/browser/` is where this package is run rather than described** — four
 drives over one harness, shared with `@frontierjs/ui` (`drive.mjs`,
 `probes.js`) and read by relative path because mesa is the leaf. The browser
 under the runner is `src/drive.js`, which is published: a change to it reaches
 every app's drive, so `test/drive.test.js` pins what an app asks of it and
-the runner never did — a kept `profile` read back after a relaunch. All three
+the runner never did — a kept `profile` read back after a relaunch. All four
 gate. What bites:
 
 - **A spec exports `run(t)`, not a suite.** vitest excludes `test/browser/**`

@@ -17,16 +17,16 @@ import { createCaravan } from '@frontierjs/caravan'
 import type { CaravanInstance } from '@frontierjs/caravan'
 
 import { syncSchedule, unscheduleJob, scheduleName, nextRunAt } from '../src/services/jobs/job-schedule.ts'
-import type { BasecampApp } from '../src/basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 
 const queues: CaravanInstance[] = []
 afterEach(async () => { for (const q of queues.splice(0)) await q.stop() })
 
 /** An app that is nothing but a real queue — all these functions touch. */
-function makeApp(): { app: BasecampApp; jobs: CaravanInstance } {
+function makeApp(): { app: App; jobs: CaravanInstance } {
   const jobs = createCaravan({ db: ':memory:', pollInterval: 20 })
   queues.push(jobs)
-  return { app: { jobs } as unknown as BasecampApp, jobs }
+  return { app: { jobs } as unknown as App, jobs }
 }
 
 const row = (over: Record<string, unknown> = {}) => ({

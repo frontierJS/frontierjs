@@ -416,6 +416,12 @@ const NOW_TOKEN     = /\bnow\s*\(\s*\)/gi
 const NOW_TOKEN_ARG = /\bnow\s*\(/gi
 export const NOW_SQL = `strftime('%Y-%m-%dT%H:%M:%fZ','now')`
 
+// A `@derived` is static SQL compiled before any client exists, so it cannot
+// carry `createClient({ now })` as a bind. The marker is valid SQL that reads
+// SQLite's clock; a client given a clock swaps it for that instant as the
+// statement is prepared (`clockedDb`), and one given none runs it as written.
+export const DERIVED_NOW_ARG = `'now'/*clock*/`
+
 /** @param {string} sqlText */
 export function expandNowTokens(sqlText) {
   if (!sqlText || !/\bnow\s*\(/i.test(sqlText)) return sqlText
@@ -1461,12 +1467,21 @@ function vectorOrderSql(field, col, val, vectorInfo, sqlDistanceFn, outParams) {
  * The LIMIT/OFFSET tail of a statement. SQLite's grammar has OFFSET only after
  * LIMIT, so a caller paging by offset alone gets `LIMIT -1` (no cap) rather
  * than a syntax error at prepare.
+ *
+ * Both are BINDS, so page 40 of a list is the statement page 1 already
+ * prepared; written into the text each page was a new entry in the statement
+ * cache and pushed the hot set out. The binds close the list, which positional
+ * binding allows only where nothing is pushed after the page — every caller
+ * puts it last. `null` means no page.
  * @param {any} limit
  * @param {any} offset
+ * @returns {SqlFragment | null}
  */
 export function pageSql(limit, offset) {
-  if (limit == null && offset == null) return ''
-  return ` LIMIT ${limit == null ? -1 : Number(limit)}` + (offset == null ? '' : ` OFFSET ${Number(offset)}`)
+  if (limit == null && !offset) return null
+  return offset == null
+    ? sqlFragment(' LIMIT ?', [Number(limit)])
+    : sqlFragment(' LIMIT ? OFFSET ?', [limit == null ? -1 : Number(limit), Number(offset)])
 }
 
 /**
@@ -2107,17 +2122,17 @@ export function trimAllToSelect(rows, requestedFields, injectedFKs) {
  * @template {Record<string, any> | null | undefined} T
  * @param {T} row
  * @param {any} jsonFields  the model's Json field names, as `client.js` keeps them
- * @returns {T}
+ * @returns {T}  the row handed in, parsed in place; the caller owns it
  */
 export function deserializeRow(row, jsonFields) {
   if (!row || !jsonFields.size) return row
-  const out = { ...row }
+  const out = /** @type {Record<string, any>} */ (row)
   for (const field of jsonFields) {
     if (field in out && typeof out[field] === 'string') {
       try { out[field] = JSON.parse(out[field]) } catch {}
     }
   }
-  return out
+  return row
 }
 
 /** @param {Record<string, any> | null | undefined} data @param {any} jsonFields */
@@ -2325,7 +2340,7 @@ export function normalizeOrderBy(orderBy) {
  * `DESC` puts them last. A cursor that guessed the other way would resume from
  * the wrong side of the nulls and lose every row on one side of them.
  */
-/** @param {string} dir @param {any} resolved */
+/** @param {string | { dir?: string, nulls?: string }} dir @param {any} resolved */
 export function nullsPosition(dir, resolved) {
   if (dir !== null && typeof dir === 'object' && dir.nulls) {
     const n = dir.nulls.toUpperCase()
@@ -2543,17 +2558,17 @@ export function extractCursorValues(row, fields) {
  * @template {Record<string, any> | null | undefined} T
  * @param {T} row
  * @param {any} boolFields  the model's Boolean field names, as `client.js` keeps them
- * @returns {T}
+ * @returns {T}  the row handed in, coerced in place; the caller owns it
  */
 export function coerceBooleans(row, boolFields) {
   if (!row || !boolFields.size) return row
-  const out = { ...row }
+  const out = /** @type {Record<string, any>} */ (row)
   for (const field of boolFields) {
     if (field in out && out[field] !== null) {
       out[field] = out[field] === 1 || out[field] === true
     }
   }
-  return out
+  return row
 }
 
 // A Boolean value as the 1/0 it is stored as, or undefined when it is not one.
@@ -2949,13 +2964,13 @@ export function identifyingKeysFor(model, schema) {
   for (const f of model.fields) {
     if (f.type?.array || !modelNames.has(f.type?.name)) continue
     const rel = f.attributes?.find(a => a.kind === 'relation' && a.fields)
-    if (rel) for (const col of rel.fields) fks.add(col)
+    if (rel) for (const col of /** @type {string[]} */ (rel.fields)) fks.add(col)
   }
 
   const tenantColumn = schema?.tenancy?.strategy === 'row' ? schema.tenancy.column : null
   const byName       = new Map(model.fields.map(f => [f.name, f]))
 
-  const identifies = (name) => {
+  const identifies = (/** @type {string} */ name) => {
     if (name === tenantColumn || fks.has(name)) return false
     const f = byName.get(name)
     if (!f) return false
@@ -2968,7 +2983,7 @@ export function identifyingKeysFor(model, schema) {
 
   for (const a of model.attributes) {
     if (a.kind !== 'uniqueIndex' || a.nullsDistinct) continue
-    for (const name of a.fields) if (identifies(name)) keys.push(name)
+    for (const name of /** @type {string[]} */ (a.fields)) if (identifies(name)) keys.push(name)
   }
 
   return [...new Set(keys)]

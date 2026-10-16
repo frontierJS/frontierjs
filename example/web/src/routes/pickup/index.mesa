@@ -103,7 +103,7 @@ title: Pickup points
   (`FJS-D327`): a map is a rendering library plus a tile VENDOR, and this repo
   makes no vendor choice.
 -->
-<form class="cluster" id="p-search" on:submit={(e) => { e.preventDefault(); search() }}>
+<form class="cluster" id="p-search" onsubmit={(e) => { e.preventDefault(); search() }}>
   <NumberInput label="Latitude"  name="lat" bind:value={lat} step={0.0001} min={-90}  max={90} />
   <NumberInput label="Longitude" name="lng" bind:value={lng} step={0.0001} min={-180} max={180} />
   <Select label="Within" name="within" bind:value={within} options={RADII} />

@@ -9,7 +9,7 @@
 
 <p>value {value} heard {heard}</p>
 <button type="button">Before</button>
-<div role="slider" tabindex="0" aria-valuenow={value} aria-valuetext={`${value} px`} aria-label="Minimum" on:keydown={keydown}></div>
+<div role="slider" tabindex="0" aria-valuenow={value} aria-valuetext={`${value} px`} aria-label="Minimum" onkeydown={keydown}></div>
 <div role="slider" tabindex="-1" aria-valuenow="3" aria-label="Skipped"></div>
-<div role="tab" tabindex="0" aria-label="Ignored name" on:keydown={(e) => heard = e.key}>Tab text</div>
+<div role="tab" tabindex="0" aria-label="Ignored name" onkeydown={(e) => heard = e.key}>Tab text</div>
 <div role="presentation" aria-label="Quiet">Not a widget</div>

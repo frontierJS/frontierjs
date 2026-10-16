@@ -161,7 +161,7 @@ title: Provision a machine
       </p>
     </Callout>
   {:else}
-    <form class="card stack" novalidate on:submit={save}>
+    <form class="card stack" novalidate onsubmit={save}>
       {#if failed}
         <!-- id'd because the shell's fleet-notice bar is also `.alert.danger`:
              a check looking for "the form reported a refusal" would otherwise

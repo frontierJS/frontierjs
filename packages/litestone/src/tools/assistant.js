@@ -20,7 +20,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, relative, dirname } from 'node:path'
 
-import { CATALOG, GROUPS, POSITIONS, positionsOf, synonymsFor, tierFor, typed } from '../core/catalog.js'
+import { CATALOG, GROUPS, POSITIONS, positionsOf, synonymsFor, tierFor, typed, seeAlsoWord } from '../core/catalog.js'
 import { VISIBILITY, PER_CALLER, RULES } from '../core/advise.js'
 import { OPPORTUNITIES } from '../core/opportunities.js'
 import { resolveImportSpecifier } from '../core/parser.js'
@@ -222,7 +222,7 @@ function wordEntry(r) {
   if (syn.length)        facts.push(`also called: ${syn.join(', ')}`)
   // A seeAlso may carry the level that disambiguates it. The reader wants the
   // WORD — `@@unique` — not the lookup key that found it.
-  if (r.seeAlso?.length) facts.push(`see also: ${r.seeAlso.map(w => `\`${w.includes(':') ? w.split(':')[1] : w}\``).join(', ')}`)
+  if (r.seeAlso?.length) facts.push(`see also: ${r.seeAlso.map(w => `\`${seeAlsoWord(w)}\``).join(', ')}`)
   const lines = [head, '', facts.join(' · '), '', r.blurb ?? '']
   if (r.example) lines.push('', '```lite', r.example.trim(), '```')
   return lines.join('\n')

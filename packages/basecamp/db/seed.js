@@ -25,7 +25,8 @@
 // if a field is not in the schema it is not here, and a wrong enum value fails
 // the CHECK constraint at insert rather than sliding through.
 
-import { Factory, Seeder, runSeeder, apply } from '@frontierjs/litestone'
+import { Factory, Seeder, runSeeder } from '@frontierjs/litestone'
+import { apply } from '@frontierjs/litestone/migrations'
 import { createLitestoneAuth } from '@frontierjs/auth'
 
 import { createBasecampDb } from '../api/src/core/db.ts'
@@ -1149,7 +1150,7 @@ if (import.meta.main) {
     ]) await sys[model].deleteMany({})
 
     // auditEvent is NOT in that list and must not be: AuditEvent is
-    // @@gate("5.8.9.9"), and 9 is LOCKED — a level asSystem() does not pass
+    // @@gate(5.8.9.9), and 9 is LOCKED — a level asSystem() does not pass
     // either, which is the one gate that protects the trail from the
     // application itself. Almost nothing is left behind: the column is
     // `onDelete: Cascade`, so SQLite takes every row belonging to a workspace

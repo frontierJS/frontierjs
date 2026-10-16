@@ -51,6 +51,13 @@ describe('litestone explain', () => {
     expect(out).toContain('the prefix picks which')
   })
 
+  test('@immutable states both meanings: at create, and at the seal of a sealing model', () => {
+    const { out } = run('@immutable')
+    expect(out).toContain('Written once, at create')
+    expect(out).toContain('freezes at the seal')
+    expect(out).toContain('seals')
+  })
+
   test('the prefix disambiguates, so a caller who typed one gets one', () => {
     expect(run('@@unique').out).toContain('composite')
     expect(run('@unique').out).not.toContain('composite')

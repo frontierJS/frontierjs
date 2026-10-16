@@ -90,11 +90,11 @@
   <Table columns={headerColumns} {rows} orderBy="ref">
     {#snippet header(col)}
       {#if col.name === 'pick'}
-        <input type="checkbox" id="pick-all" aria-label="Select all" on:change={() => { acted = 'all' }} />
+        <input type="checkbox" id="pick-all" aria-label="Select all" onchange={() => { acted = 'all' }} />
       {:else if col.name === 'ref'}
-        <button type="button" id="freeze-ref" on:click={() => { acted = 'freeze ' + col.name }}>Freeze</button>
+        <button type="button" id="freeze-ref" onclick={() => { acted = 'freeze ' + col.name }}>Freeze</button>
       {:else if col.name === 'who'}
-        <button type="button" id="remove-who" on:click={() => { acted = 'remove ' + col.name }}>Remove</button>
+        <button type="button" id="remove-who" onclick={() => { acted = 'remove ' + col.name }}>Remove</button>
       {/if}
     {/snippet}
     {#snippet row(r)}
@@ -146,7 +146,7 @@
   </Table>
 </div>
 
-<button type="button" id="sort-amount" on:click={() => { orderBy = '-amount' }}>sort by amount</button>
+<button type="button" id="sort-amount" onclick={() => { orderBy = '-amount' }}>sort by amount</button>
 
 <!--
   The shapes a URL can genuinely carry. `$orderBy` admits a string, an object
@@ -155,9 +155,9 @@
   (FJS-1077); that one is a column named `0` to the boundary (FJS-2465). Pushed through the prop, because that is the path a restored URL
   takes.
 -->
-<button type="button" id="push-object" on:click={() => { pushedOrder = { amount: 'desc' } }}>push object</button>
-<button type="button" id="push-array" on:click={() => { pushedOrder = [{ ref: 'asc' }] }}>push array</button>
-<button type="button" id="push-indexed" on:click={() => { pushedOrder = { 0: { ref: 'asc' } } }}>push indexed</button>
+<button type="button" id="push-object" onclick={() => { pushedOrder = { amount: 'desc' } }}>push object</button>
+<button type="button" id="push-array" onclick={() => { pushedOrder = [{ ref: 'asc' }] }}>push array</button>
+<button type="button" id="push-indexed" onclick={() => { pushedOrder = { 0: { ref: 'asc' } } }}>push indexed</button>
 
 <output id="sort">{orderBy}</output>
 
@@ -166,7 +166,7 @@
   where it sits after a removal is the key's doing alone. `byField` keys on a
   field name, `byFn` on a function of the row, `byIndex` states nothing.
 -->
-<button type="button" id="drop-first" on:click={dropFirst}>drop first</button>
+<button type="button" id="drop-first" onclick={dropFirst}>drop first</button>
 
 <div id="byField">
   <Table columns={keyColumns} rows={people} rowKey="id">

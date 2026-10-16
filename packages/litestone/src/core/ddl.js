@@ -462,6 +462,7 @@ function tableConstraints(model, schema, pluralize = false) {
   for (const field of model.fields) {
     const rel = field.attributes.find(a => a.kind === 'relation')
     if (!rel?.fields) continue  // skip back-reference fields (no fields: [...])
+    if (rel.unenforced) continue  // a Provider's reference under @@mirror
 
     // Resolve the TARGET's actual table name — @@map / pluralize aware.
     // Referencing the raw model name broke every FK on @@map'd schemas.
@@ -566,6 +567,11 @@ function pointDefs(model, cmap) {
       ` AND ${lngPath} BETWEEN -180 AND 180))`)
   }
   return { cols, checks }
+}
+
+// What a refused point says to a person: the rule, in the model's own key names.
+export function pointDefaultMessage(pt) {
+  return `must be an object with a numeric ${pt.lat} (-90 to 90) and ${pt.lng} (-180 to 180)`
 }
 
 /**
@@ -1364,19 +1370,22 @@ export function generateDDL(schema, { foreignKeys = true, pluralize = false } = 
  * @param {object} options
  */
 export function generateDDLForDatabase(schema, dbName, { foreignKeys = true, pluralize = false } = {}) {
-  // Filter models that belong to this database
+  return generateDDL(schemaForDatabase(schema, dbName), { foreignKeys, pluralize })
+}
+
+/**
+ * The slice of a schema one database holds. Anything derived per database —
+ * DDL, a migration's implicit m2m join tables — starts here: a join table
+ * emitted from the whole schema lands beside models whose tables exist only in
+ * another file (`FJS-2076`).
+ */
+export function schemaForDatabase(schema, dbName) {
   const models = schema.models.filter(m => {
     const dbAttr = m.attributes.find(a => a.kind === 'db')
     return (dbAttr?.name ?? 'main') === dbName
   })
-
-  // Filter views that belong to this database
   const views = (schema.views ?? []).filter(v => (v.db ?? 'main') === dbName)
-
-  // Build a filtered schema for topoSort and DDL generation
-  const filteredSchema = { ...schema, models, views }
-
-  return generateDDL(filteredSchema, { foreignKeys, pluralize })
+  return { ...schema, models, views }
 }
 
 /**

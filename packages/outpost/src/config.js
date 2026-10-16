@@ -67,6 +67,9 @@ export function readConfig(env = process.env) {
     publicUrl:   env.OUTPOST_PUBLIC_URL ?? `https://localhost:${env.OUTPOST_PORT ?? DEFAULT_PORT}`,
     /** Where a git build is checked out. One directory per app. */
     workDir:     env.OUTPOST_WORK_DIR ?? '/var/lib/outpost/apps',
+    /** The one directory `/volume/restore` reads an archive from. Inside the
+     *  unit's StateDirectory, so it exists on a box the install built. */
+    restoreDir:  (env.OUTPOST_RESTORE_DIR ?? '/var/lib/outpost/restore').replace(/\/$/, ''),
     /** Where published static releases live. One directory per app, one
      *  subdirectory per digest, plus the `hosts/` links the server resolves. */
     staticDir:   env.OUTPOST_STATIC_DIR ?? '/var/lib/outpost/static',

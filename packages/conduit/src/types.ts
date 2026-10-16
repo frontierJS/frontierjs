@@ -17,6 +17,8 @@ export type TargetKind =
 
 import type { BodyEncoding } from './transports/encode.ts'
 export type { BodyEncoding }
+import type { Receiver, BrokerReceiver, ReceivedEvent, Delivery, Received, ReceiveResult } from './receive.ts'
+import type { MirrorClaim, MirrorForward, ClaimedModel } from './mirror.ts'
 
 // ─── Target ─────────────────────────────────────────────────
 
@@ -228,16 +230,24 @@ export interface TargetDescriptor {
   // A URL somebody else chose is graded by junction's `assertPublicUrl` before
   // EVERY attempt, a retry included, since what a name resolves to is not
   // fixed: no private or loopback address and no http unless `destinations`
-  // says so. Refused at register() with `bearer` or `api_key` auth (a stored
-  // credential would go wherever the row says), with a followed redirect, a
-  // pinned certificate or `trace`. `hmac` is allowed: it signs the body, as a
-  // webhook delivery does, and names nothing secret. The breaker and the
-  // concurrency cap are kept per origin, so one dead subscriber URL does not
-  // close the target for the rest, and observers see the origin only.
+  // says so. Refused at register() with a stored `bearer`, `api_key` or
+  // `signed` credential (the process's would go wherever the row says), with a
+  // followed redirect, a pinned certificate or `trace`. `hmac` is allowed: it
+  // signs the body, as a webhook delivery does, and names nothing secret. So
+  // is any credential that is `per_caller` (`FJS-D1089`): a self-hosted
+  // instance a row names takes that row's own token, and the send states
+  // `grant` or is refused, because the grant is what ties the token to the
+  // address — keyed on the tenant alone, two rows share one cached token. The
+  // breaker and the concurrency cap are kept per origin, so one dead
+  // subscriber URL does not close the target for the rest, and observers see
+  // the origin only.
   address_from?:   'request'
 
   // What a request-addressed target may reach beyond public https. A test or
-  // a dev receiver on localhost turns both on and says so.
+  // a dev receiver on localhost turns both on and says so. `allowPrivate`
+  // opens the target to every row, so a counterparty on a LAN is never a
+  // row's to name: it is a fixed-address target the operator declares, or an
+  // Outpost vantage (`FJS-D1018`, `FJS-D1089`).
   destinations?:   { allowHttp?: boolean; allowPrivate?: boolean }
 
   // Further origins this counterparty answers on, each a bare origin
@@ -304,8 +314,17 @@ export interface TargetDescriptor {
 // Returning null (or an empty string) is a hard failure — the transport
 // returns auth_failed rather than sending unauthenticated traffic.
 
+// What a resolver answers. A string is material with no lifetime of its own —
+// an env var, a static key. Material a provider minted for a while says when,
+// `expires_at` in epoch ms, and `withCache` holds it exactly that long
+// whatever its `ttl_ms`: a fixed TTL beside a minted token is a hand copy of
+// the provider's number, and one PBX ships `expires_in` as 3600 on one build
+// and 60 on another (`FJS-D1075`, `FJS-2245`). `valueOf()` in credentials.ts
+// is the one place either shape becomes the string a transport sends.
+export type Material = string | { value: string; expires_at?: number }
+
 export interface CredentialResolver {
-  get(ref: string): Promise<string | null>
+  get(ref: string): Promise<Material | null>
 
   // The target refused `value` — a 401, or a shape the target's
   // `auth.refusal` declares: forget it, so the next get() mints
@@ -324,7 +343,7 @@ export interface CredentialResolver {
   // would hand every caller the machine's credential with nothing saying so,
   // and a target that needs this is refused at put() when it is missing.
   // Null fails the send closed, as get() does.
-  getFor?(ref: string, who: CredentialCaller): Promise<string | null>
+  getFor?(ref: string, who: CredentialCaller): Promise<Material | null>
 
   // invalidate(), for the value getFor(ref, who) answered. Forgets that
   // caller's and nobody else's: one tenant's revoked login is not another's.
@@ -400,6 +419,27 @@ export interface ConduitStore {
   delete(id: string): Promise<void>
   list(): Promise<TargetDescriptor[]>
   touch(id: string): Promise<void>   // update last_seen_at — heartbeats
+
+  // ─── Receipts — one per inbound delivery a Receiver accepted ───
+  //
+  // Dedupe means APPLIED, not SEEN (`FJS-1805`): `record` writes the receipt
+  // unapplied, `markApplied` is the only thing that makes a later delivery of
+  // the same key a duplicate, and a receipt left unapplied by a throw is
+  // applied again by the sender's retry. `record` of a key that already exists
+  // is a no-op, since two deliveries of one key may race the lookup.
+  receipt(provider: string, key: string): Promise<Receipt | null>
+  record(receipt: Receipt): Promise<void>
+  markApplied(provider: string, key: string, at: number): Promise<void>
+}
+
+/** What a Receiver remembers of one delivery. Times are unix ms. */
+export interface Receipt {
+  provider:    string
+  key:         string
+  event_type:  string
+  owner:       string | null
+  received_at: number
+  applied_at:  number | null
 }
 
 // ─── Request / Response ─────────────────────────────────────
@@ -719,6 +759,11 @@ export interface ConduitObservers {
   onReconnect?:    (target: string) => ObserverResult
   onRegistered?:   (descriptor: TargetDescriptor) => ObserverResult
   onDeregistered?: (target: string) => ObserverResult
+
+  // One per inbound delivery a receiver answered, refusals included. An
+  // observer: it receives and cannot act. `reason` is the sentence the body
+  // never carries — why a 401 was a 401 — and the junction plugin logs it.
+  onReceived?:     (path: string, received: Received) => ObserverResult
 }
 
 // ─── Options ────────────────────────────────────────────────
@@ -859,6 +904,36 @@ export interface IConduit {
    */
   subscribe(target: string, handler: BrokerHandler): Promise<void>
 
+  /**
+   * Declare the receiving end of a Provider (`FJS-D899`). Refused by name
+   * when a field is unknown or a path is already taken. Under junction the
+   * plugin also mounts the route; here it only registers, and `accept()` is
+   * what a transport hands a delivery to.
+   */
+  receive<Cred, Ev extends ReceivedEvent, Owner>(receiver: Receiver<Cred, Ev, Owner>): void
+  /**
+   * Declare a Provider's socket (`FJS-D1127`): a receiver that names a
+   * `broker` target in place of a path. Conduit subscribes it and every frame
+   * runs `accept()`'s order from parse on; no route is mounted. Resolves once
+   * the first dial has been tried, as `subscribe()` does.
+   */
+  receive<Ev extends ReceivedEvent, Owner>(receiver: BrokerReceiver<Ev, Owner>): Promise<void>
+
+  /** Run one delivery through the receiver declared at `path`. `now` is seconds. */
+  accept(path: string, delivery: Delivery, now: number): Promise<Received>
+
+  /**
+   * Bind a connector's mirror claim (`FJS-D1125`): the models it names forward
+   * their generated writes to the Provider. Refused by name for a malformed
+   * claim or a model another claim holds; under junction, boot also refuses a
+   * model the schema lacks, one not `@@mirror`, or a key that disagrees.
+   */
+  mirror(claim: MirrorClaim): void
+  /** The forward for a claimed model's accessor (`post`), or undefined. */
+  mirrored(accessor: string): MirrorForward | undefined
+  /** Every claimed model, for the boot check. */
+  claimed(): ClaimedModel[]
+
   /** Synchronous snapshot for metrics — reads maintained counters, never the store. */
   stats(): ConduitStats
 
@@ -875,10 +950,42 @@ export interface BrokerMessage {
 
 export type BrokerHandler = (message: BrokerMessage) => void | Promise<void>
 
+/**
+ * The socket during a handshake (`FJS-D1127`). `next(match)` answers the
+ * first frame `match` accepts, from the frames that arrived since `open` —
+ * a Provider that greets before it is asked has already sent the greeting —
+ * and every frame before it is dropped. It rejects when the socket closes.
+ */
+export interface BrokerLink {
+  send(frame: string): void
+  next(match: (frame: string) => boolean): Promise<string>
+}
+
+/**
+ * How a broker's frames read, supplied by the connector of whoever runs it
+ * (`FJS-D1127`). The default is conduit's own: `{ id, type: 'message', body }`
+ * in, `{ id, type: 'ack' }` out, no handshake.
+ *
+ * `handshake` runs after `open` and before the first frame is believed, with
+ * the secret the target's `auth` resolved for the dial (`null` under
+ * `none`); what it answers is handed to every `decode` on that connection —
+ * the connection's own id, for a Provider whose sequence restarts per
+ * connection. A throw closes the socket and the reconnect dials again.
+ * `decode` answers a message or `null`, and a `null` is dropped and counted,
+ * never buffered. `ack` absent is a Provider that redelivers nothing.
+ */
+export interface BrokerFraming<State = unknown> {
+  handshake?(link: BrokerLink, secret: string | null): Promise<State>
+  decode(frame: string, state: State): BrokerMessage | null
+  ack?(message: BrokerMessage): string
+}
+
 export interface BrokerHealth {
   connected:        boolean
   last_received_at: number | null   // unix ms
   received:         number
+  // Frames over `max_response_bytes` and frames the framing could not read.
+  dropped:          number
 }
 
 export interface ConduitStats {
@@ -906,6 +1013,10 @@ export interface ConduitStats {
     opened: number
     failed: number   // failed to establish
   }
+
+  // Inbound, per result. A receiver declared and never delivered to is a
+  // zero row here, which is how a vendor pointed at the wrong URL shows up.
+  received: Record<string, Record<ReceiveResult, number>>   // keyed by receiver path, or by target for a socket
 
   errors: Record<string, number>   // keyed by ConduitErrorKind
 

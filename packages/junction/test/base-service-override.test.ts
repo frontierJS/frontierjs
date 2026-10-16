@@ -1,6 +1,6 @@
 // base-service-override.test.ts — a CRUD method the author WROTE.
 //
-// `createBaseService` generates find/get/create/patch/remove from the model.
+// `buildBase` generates find/get/create/patch/remove from the model.
 // A definition that also writes one of those names used to have it silently
 // dropped: `collectCustomMethods` collects the non-CRUD names by construction,
 // so `async get(ctx)` beside `model:` was never called and the generated
@@ -9,10 +9,10 @@
 // assembled — which is how it survives a smoke test.
 
 import { describe, test, expect } from 'bun:test'
-import { createBaseService } from '../src/core/service.ts'
+import { buildBase } from '../src/core/service.ts'
 import { createApp }         from '../src/core/app.ts'
 import { createService }     from '../src/core/service.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 /** A plain client, which is the documented `db:` contract for this factory. */
 function client() {
@@ -41,7 +41,7 @@ async function appWith(def: object) {
 describe('a written CRUD method wins over the generated one', () => {
 
   test('get', async () => {
-    const app = await appWith(createBaseService({
+    const app = await appWith(buildBase({
       model: 'widget', name: 'widgets', db: () => client(),
       async get(ctx: ServiceContext) {
         return { id: Number(ctx.id), assembled: true }
@@ -52,7 +52,7 @@ describe('a written CRUD method wins over the generated one', () => {
   })
 
   test('and the generated one still answers where nothing was written', async () => {
-    const app = await appWith(createBaseService({
+    const app = await appWith(buildBase({
       model: 'widget', name: 'widgets', db: () => client(),
       async get() { return { assembled: true } },
     } as never))
@@ -66,7 +66,7 @@ describe('a written CRUD method wins over the generated one', () => {
   test('the override is not mistaken for a custom method', async () => {
     // A CRUD name in `_customMethods` would be dispatched as one — reachable
     // by X-Service-Method and listed as a custom verb in the manifest.
-    const def = createBaseService({
+    const def = buildBase({
       model: 'widget', name: 'widgets', db: () => client(),
       async get() { return {} },
       async reprice() { return {} },

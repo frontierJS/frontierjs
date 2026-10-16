@@ -467,7 +467,7 @@ describe('the grid and the ladder are ANDed', () => {
       model Ledger {
         id   Int    @id @default(autoincrement())
         note String
-        @@gate("4")
+        @@gate(4)
         @@capabilities
       }` })
 
@@ -793,7 +793,7 @@ model Invoice {
   id   Int     @id @default(autoincrement())
   memo String? @capability
   st   St      @default(a)
-  @@gate("2")
+  @@gate(2)
   @@capabilities(all)
   @@transitions(st, issue: a -> b, seal: b -> c @gate(8))
 }
@@ -1185,5 +1185,16 @@ describe('a @capability column is charged when a write CHANGES it, not when it i
     await expect(as(db, 'Offer.update').offer.update({ where: { id }, data: { signedName: null } }))
       .rejects.toThrow(/Offer\.signedName/)
     await db.$close()
+  })
+})
+
+// FJS-2694: the refusal's message is read by the person it refuses.
+describe('the refusal reads as a sentence to the person refused', () => {
+  it('names the capability once and leads with the caller', async () => {
+    const db = await client()
+    const holder = db.$setAuth({ id: 1, capabilities: ['Invoice.create'] })
+    const e = await denied(() => holder.invoice.update({ where: { ref: 'A' }, data: { ref: 'B' } }), 'Invoice.update')
+    expect(e.message).toBe('You do not hold the "Invoice.update" capability')
+    expect(e.message.split('Invoice.update').length - 1).toBe(1)
   })
 })

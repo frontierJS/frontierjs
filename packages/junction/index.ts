@@ -36,12 +36,12 @@ export { fieldErrors, validateFields, fieldError } from './src/core/field-errors
 export type { FieldError, FieldErrorBuilder }      from './src/core/field-errors.ts'
 
 // ─── Services ─────────────────────────────────────────────────────────────
-export { createService, createBaseService, ServiceRegistry, callService,
+export { createService, ServiceRegistry, callService,
          SERVICE_OPTION_KEYS, SERVICE_RUNTIME_KEYS, isCustomMethod, customMethodNames,
          READ_ONLY_METHODS, resolveMethodSelection, serviceMethodNames,
          methodEntryName, collectMethodInputs, collectMethodOutputs, serviceAccessor,
          isMethodAllowed, allowedMethodNames, scopeRefusal, requiredScope } from './src/core/service.ts'
-export type { Service, ServiceDefinition, ServiceDefinitionValue, BaseServiceOptions, BaseServiceDefinition, CacheDeclaration, MethodSelection, MethodEntry, MethodDeclaration, ServiceScope, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
+export type { Service, ServiceDefinition, ServiceDefinitionValue, CacheDeclaration, MethodSelection, MethodEntry, MethodDeclaration, ServiceScope, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
 
 // ─── Hooks ────────────────────────────────────────────────────────────────
 export {
@@ -61,9 +61,9 @@ export type { Hook, AroundHook, BridgeHook, HookMap, ResolvedPipeline, CircuitBr
 
 // ─── Bridge ───────────────────────────────────────────────────────────────
 export { bridge, jsonResponse, errorResponse, errorBody, redirectResponse, withholdProtected } from './src/transport/bridge.ts'
-export type { ServiceContext, ServiceMethod, AnyMethod, ServiceContextLocals, CallOptions, RequestMeta } from './src/transport/bridge.ts'
+export type { ServiceContext, ServiceMethod, AnyMethod, ServiceContextLocals, CallOptions, RequestMeta } from './src/core/context.ts'
 export type { QueryDirectives } from './src/core/context.ts'
-export { requestMeta } from './src/transport/bridge.ts'
+export { requestMeta } from './src/core/context.ts'
 // `enterCall` is the escape hatch for calling a service method DIRECTLY —
 // a unit test holding a hand-built context, or an app invoking a method
 // outside the pipeline. `callService` opens the scope for every ordinary

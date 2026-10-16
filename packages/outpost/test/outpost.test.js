@@ -22,7 +22,7 @@ import { createStatic }           from '../src/static.js'
 import { createStaticServer }     from '../src/serve.js'
 import { readConfig }             from '../src/config.js'
 import { ensureCert }             from '../src/cert.js'
-import { mkdtempSync, statSync }  from 'node:fs'
+import { mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
 
@@ -542,6 +542,74 @@ describe('what the machine is asked to do', () => {
     const body = await res.json()
     expect(res.status).toBe(409)
     expect(body.error).toContain('pg-1')
+  })
+
+  describe('/volume/restore — an archive on the machine, into a stopped app (FJS-D943)', () => {
+    const restoreDir = mkdtempSync(join(tmpdir(), 'outpost-restore-'))
+    writeFileSync(join(restoreDir, 'ela.tar.gz'), 'not really a tar')
+    mkdirSync(join(restoreDir, 'adopt'))
+    const outside = mkdtempSync(join(tmpdir(), 'outpost-elsewhere-'))
+    writeFileSync(join(outside, 'secret'), 'root:x:0:0')
+    symlinkSync(join(outside, 'secret'), join(restoreDir, 'escape.tar'))
+
+    const restoring = (answers = {}) => {
+      const runner = fakeRunner(answers)
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run: runner.run, restoreDir }), inspector: createInspector({ run: runner.run }),
+        log: { warn() {}, error() {} },
+      })
+      return { server, calls: runner.calls }
+    }
+    const restore = async (server, body) => {
+      const res = await send(server, 'POST', '/volume/restore', body)
+      return { status: res.status, body: await res.json() }
+    }
+
+    test('extracts in a throwaway container, the archive bound read-only by --mount', async () => {
+      const { server, calls } = restoring({ 'docker run --rm': { stdout: '3 4600000000\n' } })
+      const { status, body } = await restore(server, { app_id: 'ela', path: 'ela.tar.gz' })
+      expect(status).toBe(200)
+      expect(body).toMatchObject({ volume: 'fjs-ela-data', files: 3, bytes: 4_600_000_000, overwrite: false })
+      const argv = calls.find(a => a[1] === 'run')
+      expect(argv).toEqual(expect.arrayContaining(['--network', 'none', '-v', 'fjs-ela-data:/data', 'FJS_OVERWRITE=0']))
+      // -v given a path the daemon cannot see mounts an empty directory and
+      // extracts nothing; --mount refuses the missing source.
+      expect(argv).toContain(`type=bind,src=${realpathSync(restoreDir)}/ela.tar.gz,dst=/restore,readonly`)
+    })
+
+    test('an absolute path under the root is the same file', async () => {
+      const { server } = restoring()
+      expect((await restore(server, { app_id: 'ela', path: `${restoreDir}/ela.tar.gz` })).status).toBe(200)
+    })
+
+    test('a path off the root is refused before anything runs', async () => {
+      for (const path of ['/etc/shadow', '../secret', 'adopt/../../secret', 'adopt', 'missing.tar', 'escape.tar']) {
+        const { server, calls } = restoring()
+        const { status, body } = await restore(server, { app_id: 'ela', path })
+        expect({ path, status }).toEqual({ path, status: 500 })
+        expect(body.error).toBeTruthy()
+        expect(calls).toEqual([])
+      }
+    })
+
+    test('a container holding the volume refuses it by name, and nothing is extracted', async () => {
+      const { server, calls } = restoring({ 'docker ps -a': { stdout: 'fjs-ela\n' } })
+      const { status, body } = await restore(server, { app_id: 'ela', path: 'ela.tar.gz' })
+      expect(status).toBe(500)
+      expect(body.error).toContain('held by fjs-ela')
+      expect(calls.some(a => a[1] === 'run')).toBe(false)
+    })
+
+    test('a volume with files in it is refused unless overwrite is stated', async () => {
+      const { server } = restoring({ 'docker run --rm': { exitCode: 3, stderr: 'the volume already holds files' } })
+      const { status, body } = await restore(server, { app_id: 'ela', path: 'ela.tar.gz' })
+      expect(status).toBe(500)
+      expect(body.error).toContain('overwrite: true')
+
+      const again = restoring({ 'docker run --rm': { stdout: '1 6\n' } })
+      await restore(again.server, { app_id: 'ela', path: 'ela.tar.gz', overwrite: true })
+      expect(again.calls.find(a => a[1] === 'run')).toContain('FJS_OVERWRITE=1')
+    })
   })
 })
 

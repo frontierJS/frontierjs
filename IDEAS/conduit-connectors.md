@@ -8,8 +8,8 @@ reranked: 2026-10-10
 # Idea — which Conduit connectors FrontierJS should maintain, and in which order
 
 **Status: PROPOSAL, prototyped.** All twenty are built as prototypes in the
-sibling workspace `../conduit-connectors/`, none promoted into `packages/` —
-§ *Prototyped 2026-10-11* is the state of each (20 built, all 10 conduit rows closed). Dated 2026-08-29. `FJS-D153` settled
+sibling workspace `../conduit-connectors/`; postmark and mailgun are shaped as `packages/` members (2026-10-16) but held in the sibling workspace until the owner commits them, the rest not —
+§ *Prototyped 2026-10-11* is the state of each (21 built, all 10 conduit rows closed). Dated 2026-08-29. `FJS-D153` settled
 *where* an official connector lives — its own package, `@frontierjs/conduit-<vendor>`,
 promoted out of `example/` once a second one exists to argue with the first. It did
 not settle **which ones**, and it did not settle what a connector package actually
@@ -42,7 +42,7 @@ package is overhead.
 
 **Three — the vendor's cadence is not ours.** `FJS-D153`'s first cost. A thing that
 versions on somebody else's schedule cannot sit inside a package whose version means
-*what the outbound boundary guarantees*.
+*what the integration mechanism guarantees*.
 
 There is a fourth, and it applies to exactly one slot. **Does it argue with Stripe?**
 The ruling parks promotion until a second connector exists, because one implementation
@@ -252,10 +252,12 @@ that names a fixture names one wired to `FIXTURE_URL` and never run.
 | oidc | B | new; `origins` on the target (`FJS-D939`), two targets for two credentials (`FJS-D933`) | 38 | **panva oidc-provider proved in-process**; Dex unproved | Apple `client_secret_basic` unverified |
 | push | B | new (APNs + FCM); APNs 403 is a refusal predicate (`FJS-D941`); the FCM exchange is a send through its own target | 23 | — | APNs h2 unmeasured |
 | gmail | B | new; per-user OAuth over `per_caller` | 41 | — | after oidc; batch endpoint waits on `FJS-2700` |
+| mattermost | C | new; the mirror app's connector (`mirror-apps.md` 2.1–2.3): two bearer targets, service and `per_caller` user, the `mirror` claim (`FJS-D1125`), the backfill reads, the outgoing-webhook and slash-command Dialects (`FJS-D899`) with `respond()`, the socket as a `broker` target with a `FrameDialect` (`FJS-D1127`); `pending_post_id` the one key, in the body | 40 | — | `MirrorClaim` type moves into conduit at 2.4; webhook `Authorization: Token` and the socket's header-vs-challenge auth unverified on a real server; socket resume not built |
 | anthropic | C | new | 22 | — | nothing; streams through `conduit.stream()` (`FJS-D934`) |
 | openai | C | new, protocol connector; streams | 23 | Ollama, llama.cpp **unproved** | a local model server |
 | twilio | C | new; the built-in Basic signer (`FJS-D933`) | 12 | — | nothing |
-| postmark | C | new; inbound over a URL credential | 10 | — | nothing |
+| postmark | C | new; inbound over a URL credential — **shaped for `packages/conduit-postmark` 2026-10-16, held in this workspace until committed** | 11 | — | nothing |
+| mailgun | C | **shaped for `packages/conduit-mailgun` 2026-10-16, held in this workspace until committed**; new; the raw-MIME inbound (`fromMime` over postal-mime, `FJS-D784`), signature over `timestamp + token` with the token as nonce; `Dialect.parse` async for it | 13 | — | nothing; event webhooks, attachments on a send not built |
 | turnstile | C | new; secret-in-body signer | 12 | — | nothing |
 | slack | C | new; bot token + incoming webhook | 26 | — | nothing; `files.uploadV2`, `conversations.history` not built |
 | plausible | C | new; the replayable read | 8 | Plausible CE **unproved** | a docker run |
@@ -272,6 +274,13 @@ Nine connectors were moved onto those seams. The last two closed 2026-10-13:
 `FJS-2722` (a mint through a second target throws `MintError`, so its failure
 keeps its own `retryable`) and `FJS-2724` (`byRef()` beside `withCache`). The
 contract clauses they bent are `CONTRACT.md` § Amendments there.
+
+**Promotion wraps each verifier in a `Dialect`** (`FJS-D899`, 2026-10-15): conduit's
+receiving end takes `verify(delivery, cred, { now, seenNonce }) · parse · dedupeKey`
+over one `Delivery` shape (lowercased headers, `rawBody`, the parsed body), where
+the prototypes' `verify<Name>Signature` take a header string (stripe), a `HeaderBag`
+(slack) or a typed object (telnyx). The pure verifier stays; the dialect is the
+adapter the connector exports beside it, as `example`'s `stripeDialect` does.
 
 **Promotion order** (the reasoning is `REPORT.md` there): stripe · resend ·
 turnstile · twilio · cloudflare · digitalocean + hetzner · postmark · slack,
@@ -380,11 +389,11 @@ project appears, and reconciles hooks deleted on Basecamp's side.
 
 ### What is still unbuilt
 
-Mechanism is done. What an app would still need: **the credential leg** —
-`CredentialResolver.get(ref)` takes no principal and returns no expiry, and
-`TargetAuth` has no OAuth variant (`third-party-credentials.md` legs one and three,
-refresh under a lock so two sends do not both spend the refresh token); **the
-connector** in `example/api/src/providers/basecamp/`, following the Stripe shape,
+Mechanism is done. What an app would still need: **the credential leg's OAuth
+kind** — `getFor(ref, who)` carries the principal (`FJS-D848`) and an answer its
+expiry (`FJS-D1075`, one refresh per key inside `withCache`), but `TargetAuth` has
+no OAuth variant until the scope derivation (`third-party-credentials.md` § Sequencing
+step 4); **the connector** in `example/api/src/providers/basecamp/`, following the Stripe shape,
 whose `translate()` treats 404 as *you may not see this* because visibility is per
 project; and **a sink and a drive** that can move the clock rather than wait a
 fortnight — a 304 served from cache, a `Link` walk to page two, a 429 that does not

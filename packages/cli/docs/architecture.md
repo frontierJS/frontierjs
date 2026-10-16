@@ -27,7 +27,7 @@ All three are scanned at startup, in that order. A title in a later root overrid
 | `core/runtime.js` | Builds context, validates args/flags via `getConfig`, runs command or `_steps/` sequence, manages temp files |
 | `core/server.js` | HTTP: `GET /api/commands`, `GET /api/commands/:name`, `POST /api/run/:name` (SSE), 2-second registry cache |
 | `core/config.js` | Loads `.fli.json` from `projectRoot` into `global.fliConfig` |
-| `core/utils.js` | `logger`, `findFilesPlugin`, `loadEnv`, `loadFrontierConfig`, `findProjectRoot` |
+| `core/utils.js` | `logger`, `findFilesPlugin`, `loadEnv`, `loadFliEnv`, `loadFrontierConfig`, `findProjectRoot` |
 | `core/prose.js` | Prose-driven dry-run — interpolates `$.vars` into prose section |
 | `core/ports.js` | Port broker — `[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit scheme, lock file at `~/.fli/sessions.lock` |
 | `web/index.html` | Single-file Web GUI — sidebar, form/source view, SSE output. Written in `@frontierjs/css` |

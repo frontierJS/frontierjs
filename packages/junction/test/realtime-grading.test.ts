@@ -33,7 +33,7 @@ const SCHEMA = `
     id         Int    @id @default(autoincrement())
     customerId Int?
     status     String @default("pending")
-    @@gate("1.4.4.5")
+    @@gate(1.4.4.5)
     @@allow('read', customerId == auth().id || auth().isAdmin)
   }
 `
@@ -70,7 +70,7 @@ const LITESTONE = resolve(import.meta.dir, '../../litestone/src/index.js')
 const running: Array<{ stop: () => Promise<void> }> = []
 afterEach(async () => { for (const a of running.splice(0)) await a.stop().catch(() => {}) })
 
-async function mkApp(opts: { telemetry?: boolean; second?: boolean; schema?: string; file?: string; getLevel?: (u: unknown) => number } = {}) {
+async function mkApp(opts: { telemetry?: boolean; second?: boolean; named?: boolean; schema?: string; file?: string; getLevel?: (u: unknown) => number } = {}) {
   const db: any = await createClient({
     ...(opts.file ? {} : { db: ':memory:' }), schema: opts.schema ?? SCHEMA,
     ...(opts.getLevel ? { plugins: [new GatePlugin({ getLevel: opts.getLevel })] } : {}),
@@ -88,7 +88,9 @@ async function mkApp(opts: { telemetry?: boolean; second?: boolean; schema?: str
       },
     },
   })
-  app.services.register(createService({ name: 'orders', model: 'Order', channel: 'orders' }))
+  // `named`: a channel FUNCTION answering a name — a definition holds no app to
+  // build a channel with (FJS-D1079).
+  app.services.register(createService({ name: 'orders', model: 'Order', channel: opts.named ? () => 'orders' : 'orders' }))
   // A service whose NAME maps to no model. `model:` is the declaration and the
   // name is only a fallback — grading off the name alone refused everybody here.
   if (opts.second)
@@ -228,7 +230,7 @@ describe('a background write is graded like a published one (FJS-672)', () => {
     // the shipped grader puts them at CREATOR(3) and this model reads at 4;
     // an app whose standing comes from somewhere else entirely — a membership
     // row, which is how every tenanted app here grades — says 5.
-    const schema = SCHEMA.replace('@@gate("1.4.4.5")', '@@gate("4.4.4.5")')
+    const schema = SCHEMA.replace('@@gate(1.4.4.5)', '@@gate(4.4.4.5)')
     const membership: Record<string, number> = { '5': 5 }
     const { db, port } = await mkApp({
       schema,
@@ -262,6 +264,24 @@ describe('a background write is graded like a published one (FJS-672)', () => {
     await app.service('orders').create({ customerId: '5' }, { auth: { user: sessionFor('admin') } })
     await settle()
     expect(owner.events.filter(e => e.event === 'orders created')).toHaveLength(1)
+  })
+})
+
+describe('a channel function may answer a channel name (FJS-D1079)', () => {
+
+  test('graded on the service path and the background path alike', async () => {
+    const { app, db, port } = await mkApp({ named: true })
+    const owner    = open(port, 'u5')
+    const stranger = open(port, 'u6')
+    expect(await ready(owner)).toBe(true)
+    expect(await ready(stranger)).toBe(true)
+
+    await app.service('orders').create({ customerId: '5' }, { auth: { user: sessionFor('admin') } })
+    await (db as any).asSystem().order.create({ data: { customerId: '5' } })
+    await settle()
+
+    expect(owner.events.filter(e => e.event === 'orders created')).toHaveLength(2)
+    expect(stranger.events).toEqual([])
   })
 })
 
@@ -375,7 +395,7 @@ describe('a write from a second process is graded like a local one (FJS-2159)', 
         customerId Int?
         status     String @default("pending")
         @@db(main)
-        @@gate("1.4.4.5")
+        @@gate(1.4.4.5)
         @@allow('read', customerId == auth().id || auth().isAdmin)
       }`
     try {
@@ -410,7 +430,7 @@ const REACH_SCHEMA = `
     title  String
     shares Share[]
     blocks Block[]
-    @@gate("1.4.4.5")
+    @@gate(1.4.4.5)
     @@allow('read', shares.some(userId == auth().id))
   }
   model Share {
@@ -418,7 +438,7 @@ const REACH_SCHEMA = `
     pageId Int
     page   Page @relation(fields: [pageId], references: [id])
     userId Int
-    @@gate("1.4.4.5")
+    @@gate(1.4.4.5)
     @@allow('read', userId == auth().id)
   }
   model Block {
@@ -426,13 +446,13 @@ const REACH_SCHEMA = `
     pageId Int
     page   Page   @relation(fields: [pageId], references: [id])
     body   String
-    @@gate("1.4.4.5")
+    @@gate(1.4.4.5)
     @@allow('read', check(page))
   }
   model Tag {
     id   Int    @id @default(autoincrement())
     name String
-    @@gate("1.4.4.5")
+    @@gate(1.4.4.5)
   }
 `
 

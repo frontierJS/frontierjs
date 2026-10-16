@@ -15,14 +15,14 @@
   let multiSubmits = 0
 </script>
 
-<form id="f" on:submit|preventDefault={() => submits += 1}>
+<form id="f" onsubmit|preventDefault={() => submits += 1}>
   <Combobox name="pick" options={OPTIONS} bind:value />
   <button type="submit">save</button>
 </form>
 <output id="value">{String(value)}</output>
 <output id="submits">{submits}</output>
 
-<form id="m" on:submit|preventDefault={() => multiSubmits += 1}>
+<form id="m" onsubmit|preventDefault={() => multiSubmits += 1}>
   <MultiSelect name="picks" options={OPTIONS} multiple bind:value={values} />
   <button type="submit">save</button>
 </form>

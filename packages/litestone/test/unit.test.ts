@@ -13,6 +13,7 @@ import { parse } from '../src/core/parser.js'
 import { generateJsonSchema } from '../src/jsonschema.js'
 import { generateDDL } from '../src/core/ddl.js'
 import { checkRules } from '../src/core/advise.js'
+import { lookup } from '../src/core/catalog.js'
 import { MEASURE_UNITS, unitInfo, convertUnit, LENGTH_UNITS, BYTE_UNITS } from '@frontierjs/toolbelt/units'
 
 const field = (decl: string) => parse(`model M {\n  id Int @id @default(autoincrement())\n  ${decl}\n}`)
@@ -154,6 +155,27 @@ describe('the advice that makes the declaration takeable', () => {
       .filter(r => r.id === 'unit-in-the-column-name')
     expect(found.field).toBe('timeoutSeconds')
     expect(found.message).toContain('timeout Int @unit(s)')
+  })
+
+  // FJS-2143: `%` is not an identifier, so the spelling the advice recommends
+  // for it has to be the quoted one or the advice is a lexer error.
+  test('every spelling the advice recommends parses, % quoted', () => {
+    for (const name of ['taxPercent', 'taxPct', 'timeoutSeconds', 'sizeKb']) {
+      const [found] = checkRules(parse(`model M { id Int @id\n ${name} Int }`).schema)
+        .filter(r => r.id === 'unit-in-the-column-name')
+      const declared = found.message.match(/Declare it: (.+?) — /)![1]
+      const r = parse(`model M {\n id Int @id\n ${declared}\n}`)
+      expect({ name, declared, errors: r.errors }).toEqual({ name, declared, errors: [] })
+    }
+    const [pct] = checkRules(parse('model M { id Int @id\n taxPercent Int }').schema)
+      .filter(r => r.id === 'unit-in-the-column-name')
+    expect(pct.message).toContain('tax Int @unit("%")')
+  })
+
+  test('the catalog entry for @unit lists % quoted', () => {
+    const blurb = lookup('@unit')!.blurb
+    expect(blurb).toContain('ratio "%"')
+    expect(blurb).not.toContain('ratio %')
   })
 
   test('a column that already answers is not asked again', () => {

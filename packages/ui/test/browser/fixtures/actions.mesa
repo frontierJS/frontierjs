@@ -64,8 +64,8 @@
   {#snippet footer()}<span id="card-foot">Retry?</span>{/snippet}
 </Card>
 
-<button type="button" id="toggle-loading" on:click={() => loading = !loading}>loading</button>
-<button type="button" id="release" on:click={() => release?.()}>release</button>
+<button type="button" id="toggle-loading" onclick={() => loading = !loading}>loading</button>
+<button type="button" id="release" onclick={() => release?.()}>release</button>
 
 <output id="runs">{runs}</output>
 <output id="submits">{submits}</output>

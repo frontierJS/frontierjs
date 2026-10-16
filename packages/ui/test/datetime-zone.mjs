@@ -39,7 +39,7 @@ for (const iso of ['2026-01-15T00:00:00.000Z', '2026-03-08T07:59:00.000Z', '2026
 assert.equal(localZoneLabel(new Date('2026-03-04T09:30:00Z'), timeZone), 'CST')
 assert.equal(localZoneLabel(new Date('2026-07-04T09:30:00Z'), timeZone), 'CDT')
 
-// FJS-2923: the label names the zone AT THE VALUE, so a summer value in a winter
+// FJS-3155: the label names the zone AT THE VALUE, so a summer value in a winter
 // month still reads CDT, and an absent or unparseable value falls back to now.
 assert.equal(localZoneLabel('2026-07-04T09:30:00.000Z', timeZone), 'CDT', 'a value as a string')
 assert.equal(localZoneLabel('2026-01-04T09:30:00.000Z', timeZone), 'CST')

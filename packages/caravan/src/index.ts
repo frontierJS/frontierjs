@@ -25,19 +25,19 @@ import { openDb, buildStatements, aggregateStats, reclaimFreePages, isPrimaryKey
 import type { Statements, PauseRow }                from './db.ts'
 import { EVERY_QUEUE, DEFAULT_DB_PATH, DEFAULT_LEASE_MS } from './db.ts'
 import { QueueWorker, WorkerPool }                  from './worker.ts'
-import { autoloadJobs }                             from './autoload.ts'
+import { autoloadJobs, JOB_STAMP }                 from './autoload.ts'
 import { CronScheduler }                            from './cron.ts'
 import type {
   CaravanOptions, CaravanInstance, CaravanApp, CaravanTelemetry,
   CaravanStats, DispatchOptions, BulkDispatchOptions, HandlerOptions,
-  JobDefinition, JobHandler, JobRecord, JobRef, JobStatus, PayloadGuard,
+  JobDefinition, JobHandler, JobRecord, JobRef, JobSpec, JobStatus, PayloadGuard,
   QueueConfig, RegisteredHandler,
   QueueHandle, QueuePause, QueueEvent, OperatorOptions,
 } from './types.ts'
 
 export type {
   CaravanOptions, CaravanInstance, CaravanStats,
-  Job, JobContext, JobDefinition, JobHandler, JobRef, JobRegistrar, NotJson, PayloadGuard,
+  Job, JobContext, JobDefinition, JobHandler, JobRef, JobRegistrar, JobSpec, NotJson, PayloadGuard,
   HandlerOptions, DispatchOptions, BulkDispatchOptions,
   JobRecord, JobStatus, QueueConfig, QueueStats,
   QueueHandle, QueuePause, QueueEvent, OperatorOptions,
@@ -1242,34 +1242,54 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 // ─── defineJob ────────────────────────────────────────────────────────────────
 //
 // Used in *.job.ts files for autoloading. The __caravanJob marker lets
-// autoload.ts identify valid exports, and the NAME must match the file it is
-// in — autoload refuses a mismatch rather than registering one name while every
-// dispatch says another.
+// autoload.ts identify valid exports. A job in `jobsDir` is named by its file:
+// the loader stamps the name, so the declaration states none. `name:` is for a
+// name no filename can hold (`deployment:run`), and autoload refuses one that
+// disagrees with the file rather than registering one name while every dispatch
+// says another.
 //
 // The result is also the dispatch handle. `dispatch(sendEmail, { to })` states
 // the name nowhere and types the payload from this handler, where a bare string
 // is stated again at every call site and carries `unknown` on both sides.
 //
-//   export default defineJob('nightly-sweep', sweep, { cron: '0 3 * * *' })
+//   export default defineJob({ handler: sweep, cron: '0 3 * * *' })
 //
 // A job that declares `cron` needs nothing in app.ts: WHEN it runs is part of
 // the declaration, next to WHAT it does.
 
 export function defineJob<T = unknown>(
-  name:    string,
-  handler: JobHandler<T> & PayloadGuard<T>,
-  opts:    HandlerOptions = {}
+  spec: JobSpec<T> & { handler: JobHandler<T> & PayloadGuard<T> }
 ): JobDefinition<T> {
-  return {
+  let stamped: string | undefined
+
+  const def = {
     __caravanJob: true as const,
-    name,
-    handler,
-    queue:       opts.queue       ?? 'default',
-    maxAttempts: opts.maxAttempts ?? 3,
-    retryDelay:  opts.retryDelay  ?? [],
-    onMissingActor: opts.onMissingActor ?? 'fail',
-    timeout:     opts.timeout,
-    cron:        opts.cron,
-    timeZone:    opts.timeZone,
-  }
+    handler:     spec.handler,
+    queue:       spec.queue       ?? 'default',
+    maxAttempts: spec.maxAttempts ?? 3,
+    retryDelay:  spec.retryDelay  ?? [],
+    onMissingActor: spec.onMissingActor ?? 'fail',
+    timeout:     spec.timeout,
+    cron:        spec.cron,
+    timeZone:    spec.timeZone,
+  } as JobDefinition<T>
+
+  // A getter, so a job that is neither stamped nor named fails where its name
+  // is first read instead of registering under `undefined`.
+  Object.defineProperty(def, 'name', {
+    enumerable: true,
+    get(): string {
+      const n = spec.name ?? stamped
+      if (!n) {
+        throw new Error(
+          '[Caravan] this job has no name. Put it in jobsDir as `<name>.job.ts` — ' +
+          'the file names it — or state `name:` on the definition.'
+        )
+      }
+      return n
+    },
+  })
+  Object.defineProperty(def, JOB_STAMP, { value: (n: string) => { stamped ??= n } })
+
+  return def
 }

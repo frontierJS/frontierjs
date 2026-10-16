@@ -19,10 +19,10 @@
 // service.
 
 import { describe, test, expect } from 'bun:test'
-import { createBaseService, createService } from '../src/core/service.ts'
+import { buildBase, buildService } from '../src/core/service.ts'
 import { createApp, defaultConfig } from '../index.ts'
 import { gateAuth, autoValidate, accessorCandidates, resolveDefsKey } from '../src/core/litestone.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 // A Litestone-shaped client for `model Post`: accessor is SINGULAR, and the
 // model is gated at level 4 (every operation needs a user). The $schema shape
@@ -85,7 +85,7 @@ describe('the query resolves under every spelling', () => {
 
   for (const model of ['post', 'posts']) {
     test(`model: '${model}' reaches db.post`, async () => {
-      const svc = createService({ name: 'posts', model })
+      const svc = buildService({ name: 'posts', model })
       const c = ctx('posts')
       const out = await svc.find(c) as { data: unknown[] }
       expect(out.data).toHaveLength(1)
@@ -94,14 +94,14 @@ describe('the query resolves under every spelling', () => {
 
   test('model omitted entirely — resolved from the service name', async () => {
     // The DX target: services/posts.service.ts containing only the factory.
-    const base = createBaseService({})
-    const svc  = createService({ name: 'posts', ...(base as object) } as never)
+    const base = buildBase({})
+    const svc  = buildService({ name: 'posts', ...(base as object) } as never)
     const out  = await svc.find(ctx('posts')) as { data: unknown[] }
     expect(out.data).toHaveLength(1)
   })
 
   test('an unresolvable name names what it tried and what exists', async () => {
-    const svc = createService({ name: 'widgets', model: 'widget' })
+    const svc = buildService({ name: 'widgets', model: 'widget' })
     const err = await svc.find(ctx('widgets')).catch((e: Error) => e)
     expect((err as Error).message).toContain('widget')
     expect((err as Error).message).toContain('Available: post')
@@ -112,7 +112,7 @@ describe('@@gate must not fail open on a naming slip', () => {
 
   for (const accessor of ['post', 'posts', undefined]) {
     test(`gateAuth(${JSON.stringify(accessor)}) still rejects anonymous`, () => {
-      // @@gate("4") — every operation needs a user. Before the fix, the plural
+      // @@gate(4) — every operation needs a user. Before the fix, the plural
       // and omitted forms found no model, read that as "no gate declared",
       // and let the request through.
       expect(() => gateAuth(accessor, 'read')(ctx('posts'))).toThrow('Authentication required')
@@ -246,7 +246,7 @@ describe('the not-found message against a real Litestone client', () => {
 
   test('a real client enumerates, so the list is actually there', async () => {
     const db: any = await realClient()
-    const svc = createService({ name: 'widgets', model: 'widget' })
+    const svc = buildService({ name: 'widgets', model: 'widget' })
     const err = await svc.find(ctx('widgets', 'find', { locals: { db } }))
       .catch((e: Error) => e) as Error
     expect(err.message).toContain('widget')
@@ -262,7 +262,7 @@ describe('the not-found message against a real Litestone client', () => {
       get: (_t, p) => p === '$setAuth' ? () => hostile : undefined,
       ownKeys() { throw new Error('no enumeration for you') },
     })
-    const svc = createService({ name: 'widgets', model: 'widget' })
+    const svc = buildService({ name: 'widgets', model: 'widget' })
     const err = await svc.find(ctx('widgets', 'find', { locals: { db: hostile } }))
       .catch((e: Error) => e) as Error
     expect(err.message).toContain('widget')
@@ -294,7 +294,7 @@ describe('autoFilter — unknown filter keys', () => {
         http: { ...defaultConfig.http, drainTimeout: 50 },
       },
     })
-    app.services.register(createService({ name: service, model }))
+    app.services.register(buildService({ name: service, model }))
     await app.start()
     return app
   }
@@ -377,7 +377,7 @@ describe('autoFilter — unknown filter keys', () => {
   // A stand-in client cannot answer, and "I cannot judge this" is not "this is
   // wrong" — rejecting what it failed to understand would be worse than the bug.
   test('a client without $checkWhere no-ops', async () => {
-    // mkClient's Post is @@gate("4"), and gateAuth runs first — a 401 would
+    // mkClient's Post is @@gate(4), and gateAuth runs first — a 401 would
     // prove nothing about this hook. An ungated stand-in isolates it.
     const stub = {
       $setAuth() { return this },
@@ -554,7 +554,7 @@ describe('a service that declares no model: — the accessor is plural', () => {
       },
     })
     // No `model:` — the accessor falls back to ctx.service, which is 'products'.
-    app.services.register(createService({ name: 'products' }))
+    app.services.register(buildService({ name: 'products' }))
     await app.start()
     return { app, db }
   }

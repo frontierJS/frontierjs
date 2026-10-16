@@ -169,3 +169,28 @@ export class InvalidSecondFactorError extends AuthError {
   constructor(message = 'Invalid code', readonly retryable = true) { super(message) }
   readonly status = 401
 }
+
+/**
+ * A support episode cannot begin from where this session stands: it is already
+ * inside one, or the subject is the session's own user. Both are the session's
+ * STATE refusing the start, not the operator's standing, so this is the 409 of
+ * `TotpAlreadyEnabledError` and not a 403 — and it was a 500, which read as the
+ * server's fault for a thing the caller can act on (end the episode first).
+ * → 409
+ */
+export class SupportEpisodeError extends AuthError {
+  constructor(message = 'Already in a support session') { super(message) }
+  readonly status = 409
+}
+
+/**
+ * An expiry a caller asked for that is not an instant ahead of the clock: not a
+ * date at all, or one already behind `$now()`. Refused rather than stored, because
+ * a credential born lapsed, or one whose expiry nothing can read, is a row the
+ * list reports and the verifier never honors.
+ * → 400
+ */
+export class InvalidExpiryError extends AuthError {
+  constructor(message = 'expiresAt must be a date in the future') { super(message) }
+  readonly status = 400
+}

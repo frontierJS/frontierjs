@@ -63,7 +63,7 @@ export interface PaginateResponse {
   data:   unknown[]
   total:  number
   limit:  number
-  skip:   number
+  offset: number
   next:   string | null    // full URL for the next page, null if at the end
   prev:   string | null    // full URL for the previous page, null if at the start
 }
@@ -130,12 +130,11 @@ export interface TransportContext {
   stream:   (readable: ReadableStream, type: string, status?: number) => Response
   empty:    (status?: number) => Response
 
-  // Pagination envelope — wraps an array with total/limit/skip and
+  // Pagination envelope — wraps an array with total/limit/offset and
   // pre-built next/prev URLs based on the current request URL.
   //   ctx.paginate(rows, total, { limit: 20, offset: 0 })
-  //   // `skip` accepted as a legacy alias for `offset`
   //   → { data, total, limit, offset, next, prev }
-  paginate: (data: unknown[], total: number, opts: { limit: number; offset?: number; skip?: number }) => Response
+  paginate: (data: unknown[], total: number, opts: { limit: number; offset?: number }) => Response
 
   // Server-Sent Events — returns an open stream response.
   // The returned sender lets you push events and close the stream.

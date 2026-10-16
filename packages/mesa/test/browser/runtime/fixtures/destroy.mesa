@@ -23,7 +23,7 @@
   function ping() { window.__pings = (window.__pings ?? 0) + 1 }
 </script>
 
-<mesa:window on:mesa-ping={ping} />
+<mesa:window onmesa-ping={ping} />
 
 <p id="plain">plain</p>
 

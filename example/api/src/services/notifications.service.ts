@@ -1,4 +1,4 @@
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 import type { ServiceContext } from '@frontierjs/junction'
 
 // The in-app half of a notification. Nothing here says "only your own" — that
@@ -19,30 +19,28 @@ import type { ServiceContext } from '@frontierjs/junction'
 // answer 405 with a sentence naming what IS offered, rather than existing as
 // four hand-written stubs or, worse, as writable endpoints nobody looked at.
 
-export function createNotificationsService() {
-  return createBaseService({
-    methods: ['find', 'get', 'patch'],
-    channel: 'notifications',
+export default createService({
+  methods: ['find', 'get', 'patch'],
+  channel: 'notifications',
 
-    hooks: {
-      before: {
-        // Newest first by default. A notification list read oldest-first is
-        // technically correct and useless — and `$orderBy` still overrides it,
-        // because this only fills in a directive the caller did not state.
-        find: [(ctx: ServiceContext) => {
-          ctx.directives ??= {}
-          ctx.directives.orderBy ??= '-createdAt'
-        }],
+  hooks: {
+    before: {
+      // Newest first by default. A notification list read oldest-first is
+      // technically correct and useless — and `$orderBy` still overrides it,
+      // because this only fills in a directive the caller did not state.
+      find: [(ctx: ServiceContext) => {
+        ctx.directives ??= {}
+        ctx.directives.orderBy ??= '-createdAt'
+      }],
 
-        // Marking one read is the only update there is. Anything else in the
-        // body is dropped rather than refused: the row belongs to the system,
-        // and a client that tries to rewrite `type` or `data` should not get a
-        // 400 that teaches it those fields are patchable at all.
-        patch: [(ctx: ServiceContext) => {
-          const wanted = (ctx.data ?? {}) as { readAt?: unknown }
-          ctx.data = { readAt: 'readAt' in wanted ? wanted.readAt : new Date().toISOString() }
-        }],
-      },
+      // Marking one read is the only update there is. Anything else in the
+      // body is dropped rather than refused: the row belongs to the system,
+      // and a client that tries to rewrite `type` or `data` should not get a
+      // 400 that teaches it those fields are patchable at all.
+      patch: [(ctx: ServiceContext) => {
+        const wanted = (ctx.data ?? {}) as { readAt?: unknown }
+        ctx.data = { readAt: 'readAt' in wanted ? wanted.readAt : new Date().toISOString() }
+      }],
     },
-  })
-}
+  },
+})

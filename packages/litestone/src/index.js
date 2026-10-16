@@ -9,7 +9,7 @@ export { createClient, ValidationError,
          UniqueConflictError, ForeignKeyError, OverlapConflictError, SealedDocumentError,
          CapabilityNotDeclaredError }             from './core/client.js'
 export { sql, now, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'
-export { Plugin, PluginRunner, AccessDeniedError } from './core/plugin.js'
+export { LitestonePlugin, PluginRunner, AccessDeniedError } from './core/plugin.js'
 export { isNestedWrite }                         from './plugins/reach.js'
 export { GatePlugin, LEVELS, parseGateString,
          FrontierGateGetLevel }                        from './plugins/gate.js'
@@ -21,8 +21,8 @@ export { generateDDL, generateDDLForDatabase,
 export { introspect, buildPristine, buildPristineForDatabase, diffSchemas,
          generateMigrationSQL, summarizeDiff,
          splitStatements, checksum }             from './core/migrate.js'
-export { create, apply, status, verify,
-         listMigrationFiles, unmatchedMigrationFiles,
+// create / apply / status / verify are bare words: '@frontierjs/litestone/migrations'
+export { listMigrationFiles, unmatchedMigrationFiles,
          describeSkipped,
          autoMigrate }                           from './core/migrations.js'
 

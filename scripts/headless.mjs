@@ -212,6 +212,15 @@ export function lastEntry(file, id) {
   return readLog(file).filter(e => e.id === id).at(-1)
 }
 
+// Busy is a collision and an interrupted run no verdict, so neither counts;
+// blocked, failed and corrected each mean a session looked and handed the row
+// back. Two is the bar: fix-loop stops picking such a row, and loop-review
+// counts it against its package.
+export function sentBack(id, log) {
+  const verdicts = log.filter(e => e.id === id && e.cost !== undefined && e.outcome && !['closed', 'busy'].includes(e.outcome)).map(e => e.outcome)
+  return verdicts.length >= 2 ? verdicts : null
+}
+
 // ─── lookups a pre-brief is built from ──────────────────────
 
 // This checkout's own fli, under the runtime running this script. A bare `fli`

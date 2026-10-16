@@ -50,7 +50,7 @@
   const resolvedMaxlength = stated(maxlength, rule?.maxLength)
 
   let el
-  export function focus() { el?.focus() }
+  export function focus() { return $.focus(el) }
 
   function handleInput(e) {
     value = e.target.value
@@ -88,10 +88,10 @@
     readonly={readonly}
     aria-invalid={hasError || null}
     style:resize={resize ? null : 'none'}
-    on:input={handleInput}
-    on:change={onchange}
-    on:blur={onblur}
-    on:focus={onfocus}
+    oninput={handleInput}
+    onchange={onchange}
+    onblur={onblur}
+    onfocus={onfocus}
     {...$attributes}
     value={value}
   >{value}</textarea>

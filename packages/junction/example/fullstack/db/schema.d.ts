@@ -34,7 +34,7 @@ export interface WhereBase {
  * Everything downstream derives from this file:
  * 
  * the table            ← autoMigrate(db)
- * CRUD + pagination    ← createBaseService({}) reads the model
+ * CRUD + pagination    ← createService({}) reads the model
  * 401s                 ← @@gate, via the derived gateAuth hook
  * 400s                 ← the field rules below, via the derived autoValidate hook
  * make() defaults      ← generateJsonSchema, shipped to the browser

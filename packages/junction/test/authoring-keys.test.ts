@@ -210,11 +210,9 @@ describe('a service the loader could not load is refused, not stepped over', () 
     return dir
   }
 
-  const SERVICE = (name: string, factory = 'createThingService') =>
+  const SERVICE = (name: string) =>
     `import { createService } from '${join(import.meta.dir, '..', 'index.ts')}'\n` +
-    `export function ${factory}() {\n` +
-    `  return createService({ name: '${name}', methods: ['find'], async find() { return [] } })\n` +
-    `}\n`
+    `export default createService({ name: '${name}', methods: ['find'], async find() { return [] } })\n`
 
   async function startWithDir(files: Record<string, string>): Promise<string | null> {
     const dir = servicesDir(files)
@@ -233,8 +231,8 @@ describe('a service the loader could not load is refused, not stepped over', () 
     // the app answered a service nobody chose and the loser's methods were
     // simply absent.
     const msg = await startWithDir({
-      'alpha.service.ts': SERVICE('shared', 'createAlphaService'),
-      'beta.service.ts':  SERVICE('shared', 'createBetaService'),
+      'alpha.service.ts': SERVICE('shared'),
+      'beta.service.ts':  SERVICE('shared'),
     })
     expect(msg).toContain("claim the name 'shared'")
     expect(msg).toContain('alpha.service.ts')
@@ -243,8 +241,8 @@ describe('a service the loader could not load is refused, not stepped over', () 
 
   it('…and the same two files under different names boot', async () => {
     expect(await startWithDir({
-      'alpha.service.ts': SERVICE('alpha', 'createAlphaService'),
-      'beta.service.ts':  SERVICE('beta',  'createBetaService'),
+      'alpha.service.ts': SERVICE('alpha'),
+      'beta.service.ts':  SERVICE('beta'),
     })).toBeNull()
   })
 
@@ -275,34 +273,26 @@ describe('a service the loader could not load is refused, not stepped over', () 
   it('a service file that threw is refused, naming the file and saying what it costs', async () => {
     const msg = await startWithDir({
       'broken.service.ts': `throw new Error('this service file did not load')\n`,
-      'fine.service.ts':   SERVICE('fine', 'createFineService'),
+      'fine.service.ts':   SERVICE('fine'),
     })
     expect(msg).toContain('broken.service.ts')
     expect(msg).toContain('answers 404')
     expect(msg).toContain('this service file did not load')
   })
 
-  it('a file exporting two factories is refused, and one factory is fine', async () => {
-    // The quietest of the three: the second factory was dropped with nothing
-    // printed at all, where the other two at least logged a line.
-    const two =
-      `import { createService } from '${join(import.meta.dir, '..', 'index.ts')}'\n` +
-      `export function createFirstService() {\n` +
-      `  return createService({ name: 'first', methods: ['find'], async find() { return [] } })\n` +
-      `}\n` +
-      `export function createSecondService() {\n` +
-      `  return createService({ name: 'second', methods: ['find'], async find() { return [] } })\n` +
-      `}\n`
-    const msg = await startWithDir({ 'two.service.ts': two })
-    expect(msg).toContain('exports 2 service factories')
-    expect(msg).toContain('createSecondService')
-
-    expect(await startWithDir({ 'one.service.ts': SERVICE('one', 'createOneService') })).toBeNull()
+  it('a *.service.ts that export-defaults a function is refused, naming the shape', async () => {
+    const msg = await startWithDir({
+      'factory.service.ts':
+        `import { createService } from '${join(import.meta.dir, '..', 'index.ts')}'\n` +
+        `export default (app) => createService({ name: 'factory', async find() { return [] } })\n`,
+    })
+    expect(msg).toContain('factory.service.ts')
+    expect(msg).toContain('export default createService')
   })
 
-  it('a *.service.ts exporting no factory is refused', async () => {
-    const msg = await startWithDir({ 'empty.service.ts': `export const notAFactory = 1\n` })
-    expect(msg).toContain('no create*Service factory')
+  it('a *.service.ts with no default export is refused', async () => {
+    const msg = await startWithDir({ 'empty.service.ts': `export const notADefinition = 1\n` })
+    expect(msg).toContain('export-defaults no service definition')
     expect(msg).toContain('empty.service.ts')
   })
 

@@ -23,7 +23,6 @@
 import { createService, Unauthorized, $ } from '@frontierjs/junction'
 import type { ServiceContext }            from '@frontierjs/junction'
 import { db }                             from '../../core/resource.ts'
-import type { BasecampApp }               from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** The Data boundary would answer a stranger with an empty list — read is
@@ -35,44 +34,42 @@ function signedIn(_ctx?: ServiceContext): void {
   }
 }
 
-export function createNotificationsService(_app: BasecampApp) {
-  return createService({
-    name:    'notifications',
-    scope:   keyScope('notifications'),
-    model:   'Notification',
-    methods: ['find', 'get', 'patch', 'readAll'],
+export default createService({
+  name:    'notifications',
+  scope:   keyScope('notifications'),
+  model:   'Notification',
+  methods: ['find', 'get', 'patch', 'readAll'],
 
-    /** Mark every unread notification read. Answers how many it marked, so
-     *  the bell can say so without a second read. */
-    async readAll() {
-      const { count } = await db().notification.updateMany({
-        where: { readAt: null },
-        data:  { readAt: new Date().toISOString() },
-      })
-      return { count }
+  /** Mark every unread notification read. Answers how many it marked, so
+   *  the bell can say so without a second read. */
+  async readAll() {
+    const { count } = await db().notification.updateMany({
+      where: { readAt: null },
+      data:  { readAt: new Date().toISOString() },
+    })
+    return { count }
+  },
+
+  hooks: {
+    before: {
+      all: [signedIn],
+
+      // A notification list read oldest-first is correct and useless.
+      // `$orderBy` still overrides it: this fills a directive, never replaces one.
+      find: [function newestFirst(ctx: ServiceContext) {
+        ctx.directives ??= {}
+        ctx.directives.orderBy ??= '-createdAt'
+      }],
+
+      // `readAt` is the one column a recipient writes. An empty body marks
+      // the row read now, by the server's clock; an explicit null marks it
+      // unread (Invariant 9). Anything else is dropped rather than refused,
+      // as `example` does for the same model: the row is the system's, and a
+      // 400 naming `data` would teach a client that `data` is patchable.
+      patch: [function readAtOnly(ctx: ServiceContext) {
+        const wanted = (ctx.data ?? {}) as { readAt?: unknown }
+        ctx.data = { readAt: 'readAt' in wanted ? wanted.readAt : new Date().toISOString() }
+      }],
     },
-
-    hooks: {
-      before: {
-        all: [signedIn],
-
-        // A notification list read oldest-first is correct and useless.
-        // `$orderBy` still overrides it: this fills a directive, never replaces one.
-        find: [function newestFirst(ctx: ServiceContext) {
-          ctx.directives ??= {}
-          ctx.directives.orderBy ??= '-createdAt'
-        }],
-
-        // `readAt` is the one column a recipient writes. An empty body marks
-        // the row read now, by the server's clock; an explicit null marks it
-        // unread (Invariant 9). Anything else is dropped rather than refused,
-        // as `example` does for the same model: the row is the system's, and a
-        // 400 naming `data` would teach a client that `data` is patchable.
-        patch: [function readAtOnly(ctx: ServiceContext) {
-          const wanted = (ctx.data ?? {}) as { readAt?: unknown }
-          ctx.data = { readAt: 'readAt' in wanted ? wanted.readAt : new Date().toISOString() }
-        }],
-      },
-    },
-  })
-}
+  },
+})

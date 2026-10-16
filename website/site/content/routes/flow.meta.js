@@ -27,7 +27,7 @@ model Lead {
   createdAt DateTime   @default(now())
 
   // Gate — the ordinal level check, per operation
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 
   // Policy — a row predicate, compiled into the SQL
   @@allow('read', ownerId == auth().id)
@@ -36,19 +36,15 @@ model Lead {
 // model ← the service name  ('leads' → db.lead)
 // db    ← app.db, scoped per call to the caller
 
-export function createLeadsService() {
-  return createBaseService({})
-}`,
-  S2: `export function createLeadsService() {
-  return createBaseService({
-    hooks: {
-      around: { all:    [timing] },        // wraps the whole call
-      before: { create: [stampOwner] },    // may mutate ctx.data or halt
-      after:  { create: [queueWelcome] },  // sees ctx.result
-      error:  { all:    [report] },        // sees ctx.error
-    },
-  })
-}
+export default createService({})`,
+  S2: `export default createService({
+  hooks: {
+    around: { all:    [timing] },        // wraps the whole call
+    before: { create: [stampOwner] },    // may mutate ctx.data or halt
+    after:  { create: [queueWelcome] },  // sees ctx.result
+    error:  { all:    [report] },        // sees ctx.error
+  },
+})
 
 function stampOwner(ctx) {
   ctx.data.ownerId = ctx.auth.user.userId   // who, from the Context
@@ -62,7 +58,7 @@ app.configure(conduit({ … }))                        // → app.conduit
 async function queueWelcome(ctx) {
   await ctx.app.jobs.dispatch('send-welcome', { •email•: ctx.result.data.email })
 }`,
-  S4: `return createBaseService({
+  S4: `export default createService({
   channel: 'leads',   // the declared broadcast target
 })
 
@@ -108,7 +104,7 @@ leads.gate           // the four levels, as declared on the Model`,
 <Select label="Status" name="status" options={leads.fields.status.enum}
         bind:value={draft.status} {errors} />
 
-<Button on:click={() => leads.service.create(draft)}>Save</Button>`,
+<Button onclick={() => leads.service.create(draft)}>Save</Button>`,
   S8: `# the Model
 db/schema.lite            16 lines
 

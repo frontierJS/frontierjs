@@ -168,9 +168,7 @@ function scaffold(servicesAt: string): string {
   const root = layout([servicesAt, 'api'])
   writeFileSync(join(root, servicesAt, 'widgets.service.ts'), `
     import { createService } from '${JUNCTION}/src/core/service.ts'
-    export function createWidgetsService() {
-      return createService({ name: 'widgets', methods: ['find'], async find() { return [] } })
-    }
+    export default createService({ name: 'widgets', methods: ['find'], async find() { return [] } })
   `)
   writeFileSync(join(root, 'api/index.ts'), `
     import { createApp } from '${JUNCTION}/src/core/app.ts'

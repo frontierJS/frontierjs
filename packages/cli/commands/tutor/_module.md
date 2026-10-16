@@ -597,7 +597,7 @@ const editSchema = ($, from, to) => {
   // *Already done* means there is nothing LEFT to change, and that is a question
   // about `from` rather than about `to`. Asking whether the target text appears
   // anywhere in the file is a substring search over every model: once another
-  // model carried `@@gate("0.4.4.6")` — which `tutor:adopt` gives the models it
+  // model carried `@@gate(0.4.4.6)` — which `tutor:adopt` gives the models it
   // adopts — this returned `already` and edited nothing, so the gate two
   // lessons depend on stayed where it was and their verdicts came back
   // backwards. Found by running the lessons as a course.

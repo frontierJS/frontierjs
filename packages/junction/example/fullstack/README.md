@@ -22,12 +22,10 @@ before it.
 The service is the whole point:
 
 ```ts
-export function createPostsService() {
-  return createBaseService({
-    channel:   'posts',
-    allowBulk: true,
-  })
-}
+export default createService({
+  channel:   'posts',
+  allowBulk: true,
+})
 ```
 
 Nothing in it restates the schema — it declares where writes are announced and
@@ -117,7 +115,7 @@ getLevel: (u) => u?.role === 'staff' ? LEVELS.ADMINISTRATOR : sessionGateLevel(u
 
 This example now declares exactly one piece of standing — `isAdmin: true`, which
 is what lifts the demo session to level 5 so the page's delete button works
-against `@@gate("0.4.4.5")`. Everything else follows from having authenticated.
+against `@@gate(0.4.4.5)`. Everything else follows from having authenticated.
 
 ## Notes
 

@@ -66,8 +66,8 @@
     aria-label={placeholder}
     placeholder={placeholder}
     disabled={disabled}
-    on:input={handleInput}
-    on:keydown={handleKey}
+    oninput={handleInput}
+    onkeydown={handleKey}
     value={value}
   >{value}</textarea>
   <Button type="button" disabled={disabled || !(value ?? '').trim()} onclick={send}>{label}</Button>

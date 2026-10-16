@@ -32,7 +32,7 @@ import { resolve }                                             from 'path'
 // `@frontierjs/auth` ships `db/user.lite` and `db/auth.lite`, and this reads
 // those bytes out of the APP's node_modules. It used to carry a hand copy of
 // them, which drifted three times — pre-rename scalars that no longer parse, a
-// missing `role`, and `@@gate("9")`, which is LOCKED and walled the auth tables
+// missing `role`, and `@@gate(9)`, which is LOCKED and walled the auth tables
 // off from the auth package itself (SYSTEM is 8).
 //
 // The copy existed because of two walls, not one. `fli` is global, so the
@@ -77,7 +77,7 @@ const schemaBlock = (userModel, db) => `
 // ─── Auth — installed by fli auth:install ────────────────────────────────────
 //
 // The credential machinery — Credential, Session, Verification — is imported
-// from the package BY NAME, not copied here. All three are @@gate("8"): nothing
+// from the package BY NAME, not copied here. All three are @@gate(8): nothing
 // outside asSystem() has anything to say to them, and @frontierjs/auth is the
 // only thing that calls asSystem() on them, so they change when that package
 // changes and not when this app does — and an upgrade to it reaches this schema
@@ -95,9 +95,9 @@ ${userModel.trimStart()}`
 
 // ─── auth.ts scaffold ─────────────────────────────────────────────────────────
 
-const authScaffold = (db) => `import { createLitestoneAuth, createAuthCleanupJobs } from '@frontierjs/auth'
-import { createClient, GatePlugin, LEVELS }       from '@frontierjs/litestone'
-import { defineEnv }                               from '@frontierjs/junction'
+const authScaffold = (db) => `import { createLitestoneAuth }               from '@frontierjs/auth'
+import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
+import { defineEnv }                        from '@frontierjs/junction'
 
 // ─── Env ──────────────────────────────────────────────────────────────────────
 
@@ -175,10 +175,6 @@ export const auth = createLitestoneAuth(db, {
   //   })
   // },
 })
-
-// ─── Cleanup jobs (expired sessions + verifications) ──────────────────────────
-
-export const authCleanup = createAuthCleanupJobs(db)
 `
 
 // ─── app.ts wiring hint ────────────────────────────────────────────────────
@@ -186,9 +182,9 @@ export const authCleanup = createAuthCleanupJobs(db)
 const serverHint = `
 // ─── Add to api/src/app.ts ──────────────────────────────────────────────────
 
-import { auth, db, authCleanup }           from './auth.ts'
-import { createAuthPlugin }             from '@frontierjs/auth'
-import { withLitestoneDb }                 from '@frontierjs/junction'
+import { auth, db }         from './auth.ts'
+import { createAuthPlugin } from '@frontierjs/auth'
+import { withLitestoneDb }  from '@frontierjs/junction'
 
 const app = createApp({ auth })
 
@@ -198,13 +194,6 @@ app.configure(createAuthPlugin(auth, {
 }))
 
 app.configure(withLitestoneDb(db))
-
-// Timers start in work(), which a one-shot boot (junction call) skips
-app.configure({
-  name: 'auth-cleanup',
-  register() {},
-  async work() { authCleanup.start() },
-})
 `
 
 // ─── .env.example entries ─────────────────────────────────────────────────────
@@ -221,14 +210,14 @@ Installs FJS native authentication into the current project.
 What it does:
 - Installs `@frontierjs/auth` if the project does not already have it
 - Appends `import "@frontierjs/auth/schema.lite"` plus `model User` to
-  `db/schema.lite` — the three `@@gate("8")` models stay in the package
+  `db/schema.lite` — the three `@@gate(8)` models stay in the package
 - Pushes the schema changes to the database
 - Generates `ENCRYPTION_KEY` in `.env`
 - Scaffolds `api/src/auth.ts` with `createLitestoneAuth` wired up
 - Prints the two lines to add to `api/src/app.ts`
 
 The split is by owner. `User` lands in your own `schema.lite`, where you can add
-columns to it and point relations at it. The other three are `@@gate("8")` —
+columns to it and point relations at it. The other three are `@@gate(8)` —
 nothing outside `asSystem()` speaks to them — so they are imported from the
 package by name and a `bun update` reaches them. `--db` becomes `into <db>` on
 that import line.
@@ -349,7 +338,7 @@ if (!flag.dry && !(userLite && machineryLite)) {
 
 // ─── 3. Append the import and model User to schema.lite ──────────────────────
 //
-// Only User is written out. The three @@gate("8") models stay in the package and
+// Only User is written out. The three @@gate(8) models stay in the package and
 // are imported by name, so `bun update` reaches them — which is the whole reason
 // the specifier is a package rather than a path.
 

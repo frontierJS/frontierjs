@@ -73,6 +73,9 @@ export function noteStamp(stamped, data, field) {
   if (stamped && !(data != null && field in data)) stamped.add(field)
 }
 
+// A `service` principal is the app speaking for itself (`createApp({ system })`)
+// and names no row, so stamping its id into a User-typed column fails the
+// foreign key; the column stays null, as it does under `asSystem()`.
 /**
  * @param {Row | null | undefined} data
  * @param {{ field: string, authField: string }[] | null | undefined} list
@@ -80,7 +83,7 @@ export function noteStamp(stamped, data, field) {
  * @param {Set<string> | null} [stamped]
  */
 export function stampFromAuth(data, list, auth, stamped = null) {
-  if (!list?.length || !auth) return data
+  if (!list?.length || !auth || auth.type === 'service') return data
   /** @type {Row} */
   const stamps = {}
   for (const { field, authField } of list)

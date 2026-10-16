@@ -20,11 +20,14 @@ import { createApp } from '../src/core/app.ts'
 const running: Array<{ stop: () => Promise<void> }> = []
 const dirs:    string[] = []
 const envPort = process.env.PORT
+const envBroker = process.env.FLI_PORT_BE
 afterEach(async () => {
   while (running.length) await running.pop()!.stop().catch(() => {})
   while (dirs.length)    rmSync(dirs.pop()!, { recursive: true, force: true })
   if (envPort === undefined) delete process.env.PORT
   else process.env.PORT = envPort
+  if (envBroker === undefined) delete process.env.FLI_PORT_BE
+  else process.env.FLI_PORT_BE = envBroker
 })
 
 function freePort (): number {
@@ -57,6 +60,24 @@ describe('the bind is read after the config file', () => {
     const app = await boot({})
     expect(app.http.port).toBe(port)
     expect((await fetch(`http://127.0.0.1:${port}/nowhere`)).status).toBe(404)
+  })
+
+  // The port `fli dev` hands this process. Junction reads it once so no app
+  // writes `process.env.FLI_PORT_BE ?? 8100` itself (`FJS-2975`).
+  test('FLI_PORT_BE is the port listened on when PORT is unset', async () => {
+    const port = freePort()
+    delete process.env.PORT
+    process.env.FLI_PORT_BE = String(port)
+    const app = await boot({})
+    expect(app.http.port).toBe(port)
+  })
+
+  test('PORT beats FLI_PORT_BE', async () => {
+    const port = freePort()
+    process.env.PORT = String(port)
+    process.env.FLI_PORT_BE = String(freePort())
+    const app = await boot({})
+    expect(app.http.port).toBe(port)
   })
 
   test("junction.config.js's app.port is the port listened on", async () => {

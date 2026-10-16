@@ -26,6 +26,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createClient, sql } from '../src/index.js'
 import { parse }        from '../src/core/parser.js'
+import { setEngine, currentEngine } from '../src/core/engine.js'
 
 const DECL = `
   enum FieldKind { text number }
@@ -656,6 +657,35 @@ describe('under tenancy { strategy row }', () => {
     const sb = await b.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
     const cb = await b.customField.create({ data: { model: 'Issue', key: 'customer', type: 'text' } })
     expect([sa.slot, sb.slot, cb.slot]).toEqual(['t1', 't1', 't2'])
+  })
+
+  // A declaration runs inside the one writer, and the clear of the slot it
+  // takes is a statement over the tenant's whole table. Predicated on the
+  // mirror's JSON it read every row the workspace holds — 109 s on ten million
+  // events with nothing to clear (`FJS-3134`). The generated column is the same
+  // value and the composite index leads with it.
+  test('the clear of a slot it allocates seeks the slot index', async () => {
+    const original = currentEngine()
+    const seen: string[] = []
+    setEngine({ ...original, open: (path: string, opts: any) => {
+      const handle = original.open(path, opts)
+      const prepare = handle.prepare.bind(handle)
+      handle.prepare = (q: string, ...rest: unknown[]) => {
+        if (/json_remove/.test(q)) seen.push(q)
+        return prepare(q, ...rest)
+      }
+      return handle
+    } })
+    try {
+      const { db, a } = await tenants()
+      await a.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
+      expect(seen.length).toBe(1)
+      const params = seen[0].match(/\?/g)!.map(() => null)
+      const plan = (await db.asSystem().sql.read(`EXPLAIN QUERY PLAN ${seen[0]}`, params)).map((r: any) => r.detail).join(' | ')
+      expect(plan).toMatch(/workspaceId=\? AND t1>\?/)
+    } finally {
+      setEngine(original)
+    }
   })
 
   test('one workspace filling its pool leaves the other its whole pool', async () => {

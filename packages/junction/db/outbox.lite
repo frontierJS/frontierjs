@@ -11,7 +11,7 @@
 // survives the rollback that was supposed to take it (measured, `FJS-D35`).
 // Caravan's queue is a different file for the same reason.
 //
-// @@gate("8"): nothing outside asSystem() has anything to say to this model,
+// @@gate(8): nothing outside asSystem() has anything to say to this model,
 // and this package is the only thing that writes it. Same line auth.lite draws
 // around the credential machinery, and the same reason it is IMPORTED rather
 // than pasted into the app's schema.lite — it changes when this package does.
@@ -72,7 +72,7 @@ model OutboxMessage {
   nextAttemptAt DateTime?
 
   @@db(main)
-  @@gate("8")
+  @@gate(8)
   @@index([deliveredAt, createdAt])
   @@index([claimedAt])
 }

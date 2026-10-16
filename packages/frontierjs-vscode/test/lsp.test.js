@@ -63,7 +63,7 @@ const NEW_WORDS = [
   '  id      Int      @id',
   '  code    String   @system',
   '  overdue Boolean  @derived(id > 0)',
-  '  @@gate("2.4.4.5")',
+  '  @@gate(2.4.4.5)',
   '  @@tenant(none)',
   '}',
 ].join('\n')
@@ -99,7 +99,7 @@ const VALID = [
   '  status  Plan   @default(free)',                                  // 22
   '  ownerId Int',
   '  owner   Owner  @relation(fields: [ownerId], references: [id])',  // 24
-  '  @@gate("4.4.4.4")',                                              // 25
+  '  @@gate(4.4.4.4)',                                              // 25
   '  @@trail(audit)',                                                   // 26
   '}',
   '',

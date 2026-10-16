@@ -62,7 +62,7 @@ if (!await must($, probe.fileContains({
 // line, so an app arriving here already changed is ordinary — normalized rather
 // than assumed, since the alternative is a lesson whose last step depends on
 // which lessons you ran before it.
-editSchema($, '@@gate("4.4.4.6")', '@@gate("0.4.4.6")')
+editSchema($, '@@gate(4.4.4.6)', '@@gate(0.4.4.6)')
 
 // The same normalization for the column this lesson adds. Running it twice in
 // one workspace would otherwise capture a baseline that ALREADY has `priority`,

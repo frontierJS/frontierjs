@@ -78,3 +78,43 @@ describe('a row policy takes it at startup', () => {
     db.$close()
   })
 })
+
+// FJS-2629: @derived read SQLite's own clock, so `createClient({ now })` never
+// reached it and a suite frozen at 2020 read a 2021 due date as overdue.
+describe('@derived reads the client clock', () => {
+  const FROZEN = '2020-01-01T00:00:00.000Z'
+  const rows = async (now: any) => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA, now })
+    const sys = db.asSystem()
+    await sys.task.create({ data: { id: 1, dueAt: '2019-12-31T00:00:00.000Z' } })  // a day before FROZEN
+    await sys.task.create({ data: { id: 2, dueAt: '2020-01-02T00:00:00.000Z' } })  // a day after
+    await sys.task.create({ data: { id: 3, dueAt: '2021-06-01T00:00:00.000Z' } })  // far after
+    return db
+  }
+
+  test('read, filter and sort see the injected instant', async () => {
+    const db = await rows(() => new Date(FROZEN))
+    const all = await db.task.findMany({ orderBy: { id: 'asc' } })
+    expect(all.map((r: any) => r.urgency)).toEqual([3, 2, 0])
+    expect(all.map((r: any) => r.stale)).toEqual([false, false, false])
+    expect(ids(await db.task.findMany({ where: { soon: true } }))).toEqual([2])
+    expect(ids(await db.task.findMany({ orderBy: [{ urgency: 'desc' }, { id: 'asc' }] }))).toEqual([1, 2, 3])
+    expect((await db.task.findUnique({ where: { id: 3 } })).urgency).toBe(0)
+    db.$close()
+  })
+
+  test('a clock that moves is read again by the next statement', async () => {
+    let at = FROZEN
+    const db = await rows(() => at)
+    expect(ids(await db.task.findMany({ where: { urgency: 3 } }))).toEqual([1])
+    at = '2020-01-03T00:00:00.000Z'
+    expect(ids(await db.task.findMany({ where: { urgency: 3 }, orderBy: { id: 'asc' } }))).toEqual([1, 2])
+    db.$close()
+  })
+
+  test('no clock injected means the wall clock', async () => {
+    const db = await rows(undefined)
+    expect((await db.task.findUnique({ where: { id: 3 } })).urgency).toBe(3)
+    db.$close()
+  })
+})

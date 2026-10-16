@@ -9,12 +9,10 @@
 // `create` at level 5 and that is deliberate: a correction to a window somebody
 // entered wrong is a legitimate act, and `@immutable` on `rate`, `basis`,
 // `employeeId` and `effectiveFrom` is what stops it being a quiet restatement.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createPayWindowsService() {
-  return createBaseService({
-    model:   'PayWindow',
-    channel: 'pay-windows',
-    methods: ['find', 'get', 'create', 'update', 'patch'],
-  })
-}
+export default createService({
+  model:   'PayWindow',
+  channel: 'pay-windows',
+  methods: ['find', 'get', 'create', 'update', 'patch'],
+})

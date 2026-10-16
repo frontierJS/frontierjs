@@ -25,19 +25,19 @@
 {#if second}<ConfirmProvider />{/if}
 
 <button id="guarded" class="btn danger" data-confirm="Delete this order?"
-        on:click={() => did('delete')}>Delete</button>
+        onclick={() => did('delete')}>Delete</button>
 
-<button id="plain" class="btn" on:click={() => did('plain')}>No confirmation</button>
+<button id="plain" class="btn" onclick={() => did('plain')}>No confirmation</button>
 
 <button id="worded" class="btn" data-confirm
         data-confirm-title="Leave the workspace?"
         data-confirm-label="Leave"
-        on:click={() => did('leave')}>Leave</button>
+        onclick={() => did('leave')}>Leave</button>
 
 <button id="busy-delete" class="btn danger" data-confirm="Delete while busy?"
-        on:click={() => did('busy-delete')}>Delete</button>
+        onclick={() => did('busy-delete')}>Delete</button>
 
-<form id="form" on:submit|preventDefault={() => { submits++; did('submit') }}>
+<form id="form" onsubmit|preventDefault={() => { submits++; did('submit') }}>
   <button id="submit" type="submit" data-confirm="Send it?">Send</button>
 </form>
 

@@ -6,6 +6,9 @@
 // Never sends email — that is the caller's job via the onX callbacks in opts.
 
 import type { IAuth, LoginResult, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from '@frontierjs/junction'
+import { parseTtl } from '@frontierjs/junction'
+import { authModelOf } from '@frontierjs/litestone'
+import { modelToAccessor } from '@frontierjs/litestone/ddl'
 import {
   hashPassword,
   verifyPassword,
@@ -25,6 +28,9 @@ import {
   beginFlow, exchangeCode, fetchIdentity, stateMatches, isAllowedReturnTo, OAuthError,
 } from './oauth.ts'
 import type { OAuthIdentity, TokenSet, AuthOAuth, OAuthResolution } from './oauth.ts'
+import { createAuthCleanupJobs } from './cleanup.ts'
+import { userTenancy }          from './tenancy.ts'
+import type { AuthCleanupHandle } from './cleanup.ts'
 import {
   generateTotpSecret, otpauthUri, verifyTotp as verifyTotpCode,
   generateRecoveryCodes, normalizeRecoveryCode,
@@ -35,6 +41,7 @@ import {
   LastCredentialError,
   NoPasswordCredentialError, NotFoundError,
   TotpAlreadyEnabledError, InvalidSecondFactorError, WeakPasswordError,
+  SupportEpisodeError, InvalidExpiryError,
 } from './errors.ts'
 
 // Minimal interface — avoids a hard import of @frontierjs/litestone types
@@ -46,6 +53,7 @@ import {
 interface LitestoneClient {
   asSystem(): any
   $databases?: Record<string, { driver?: string } | undefined>
+  $schema:  { models: Array<{ name: string; attributes?: Array<{ kind: string }> }> }
 }
 
 // Four models here declare `@@expires(expiresAt)`, so the window filters
@@ -58,7 +66,7 @@ const PURGE = { withExpired: true } as const
 export function createLitestoneAuth(
   db:   LitestoneClient,
   opts: LitestoneAuthOptions = {}
-): IAuth & AuthOAuth & { _sessionTtl: string } {
+): IAuth & AuthOAuth & { _sessionTtl: string, cleanup: AuthCleanupHandle } {
 
   const {
     encryptionKey,
@@ -94,6 +102,16 @@ export function createLitestoneAuth(
   } = opts
 
   const sys = db.asSystem()
+
+  // The person is the model `@@auth` names, picked the way Studio and `--as`
+  // pick it. A literal `user` accessor made the schema's word a second owner of
+  // the same fact, and an app that called its person Account answered
+  // `"user" is not a table` at its first sign-up (FJS-3146).
+  const authModel = authModelOf(db.$schema)
+  if (!authModel) throw new AuthConfigError(
+    'No model declares @@auth, and none is called User. Mark the model a person signs in as with @@auth')
+  const personModel: string = authModel.name
+  const person:      string = modelToAccessor(personModel)
 
   // ─── The audit trail ──────────────────────────────────────────────────────
   //
@@ -163,7 +181,7 @@ export function createLitestoneAuth(
     await audit(event, entry)
     if (!onCredentialChanged) return
     try {
-      const user = await sys.user.findUnique({ where: { id: userId } })
+      const user = await sys[person].findUnique({ where: { id: userId } })
       if (!user) return
       await onCredentialChanged({
         event,
@@ -190,11 +208,9 @@ export function createLitestoneAuth(
       role:      user.role ?? undefined,
       email:     user.email,
       name:      user.name ?? undefined,
-      // The column is a String now, so this coerces nothing an app has not
-      // already made a string. Kept because the column belongs to the APP: it is
-      // a hook this package declares and does not write, so what is in it is
-      // whatever that app put there.
-      accountId: user.accountId != null ? String(user.accountId) : undefined,
+      // The claim row tenancy reads off the principal, from the column it
+      // stamps — so a session is in the tenant the person's row is in.
+      ...tenantClaimOf(user),
 
       // Verification standing, in the vocabulary sessionGateLevel() grades on.
       // The User model carries a boolean, not a timestamp, so this is
@@ -211,6 +227,27 @@ export function createLitestoneAuth(
       // which is a breaking change nobody would see.
       ...appSessionFields(user),
     }
+  }
+
+  // ─── The person's tenant ────────────────────────────────────────────────
+
+  let placedBy: { column: string, claim: string } | null | undefined
+  const tenantOfUser = () => placedBy === undefined ? (placedBy = userTenancy(db)) : placedBy
+
+  function tenantClaimOf(user: Record<string, any>): Record<string, string> {
+    const t = tenantOfUser()
+    return t && user[t.column] != null ? { [t.claim]: String(user[t.column]) } : {}
+  }
+
+  // A tenant this app has no column for is refused, not dropped: a seed that
+  // placed a person nowhere and said nothing signs them in to nothing.
+  function tenantColumnFor(tenant: string | undefined): Record<string, string> {
+    if (tenant == null) return {}
+    const t = tenantOfUser()
+    if (!t) throw new AuthConfigError(
+      `A tenant was given ('${tenant}'), and this schema's row tenancy names no column on ${personModel} to write it to. ` +
+      'Declare the column and tenancy { strategy row  column <name> }, or place the person through the app\'s membership row')
+    return { [t.column]: tenant }
   }
 
   // A promise has no own enumerable keys, so an async sessionFields spread to
@@ -248,7 +285,7 @@ export function createLitestoneAuth(
       } catch (err) {
         // A veto that leaves no trace is the class of defect FJS-277 was.
         await audit('login.failed', {
-          model: 'User', records: [user.id], actorId: user.id,
+          model: personModel, records: [user.id], actorId: user.id,
           meta:  { ...meta, reason: 'refused-by-app', email: user.email, message: (err as Error)?.message },
         })
         throw err
@@ -294,7 +331,7 @@ export function createLitestoneAuth(
       const row = await make(tx)
       if (!onRegistered) return row
       await onRegistered({ user: row, db: tx })
-      return (await tx.user.findFirst({ where: { id: row.id } })) ?? row
+      return (await tx[person].findFirst({ where: { id: row.id } })) ?? row
     })
   }
 
@@ -427,24 +464,39 @@ export function createLitestoneAuth(
    * own account, and one that can remove theirs has taken the protection off
    * without ever knowing the password. Both are reachable from a stolen tab, so
    * both ask. Pays the comparison cost on a user with no password credential for
-   * the same reason `login()` does.
+   * the same reason `login()` does. `via` is the method that asked, for the trail.
    */
-  async function requireCurrentPassword(userId: string, password: string): Promise<any> {
-    const user = await sys.user.findFirst({ where: { id: userId } })
+  async function requireCurrentPassword(userId: string, password: string, via: string): Promise<any> {
+    const user = await sys[person].findFirst({ where: { id: userId } })
     if (!user) throw new UserNotFoundError()
 
     const cred = await sys.credential.findFirst({ where: { userId, type: 'password' } })
     if (!cred) {
       await payPasswordCost(password)
+      await reauthenticationFailed(userId, via, 'no-password')
       throw new NoPasswordCredentialError('This account has no password to confirm with')
     }
-    if (!await verifyPassword(password, cred.value)) throw new ReauthenticationFailedError()
+    if (!await verifyPassword(password, cred.value)) {
+      await reauthenticationFailed(userId, via, 'wrong-password')
+      throw new ReauthenticationFailedError()
+    }
     return user
+  }
+
+  // The in-session sibling of `login.failed`. A wrong current password through
+  // a live session is the same guess as one at the front door, made by whoever
+  // holds the tab, and the trail is where a lockout policy reads it from.
+  async function reauthenticationFailed(userId: string, method: string, reason: string): Promise<void> {
+    await audit('reauthentication.failed', {
+      model: personModel, records: [userId],
+      actorId: userId, actorType: 'user',
+      meta: { method, reason },
+    })
   }
 
   /** The click on an `emailChange` link — `verifyEmail` finds the row and this spends it. */
   async function confirmEmailChange(row: any): Promise<SessionContext> {
-    const user = await sys.user.findUnique({ where: { id: row.userId } })
+    const user = await sys[person].findUnique({ where: { id: row.userId } })
     if (!user) {
       await sys.verification.delete({ where: { id: row.id } })
       throw new UserNotFoundError()
@@ -453,14 +505,14 @@ export function createLitestoneAuth(
     // Asked again at the click: the address was free when the link was
     // mailed, and somebody may have registered it since.
     const to     = String(row.identifier)
-    const holder = await sys.user.findFirst({ where: { email: to } })
+    const holder = await sys[person].findFirst({ where: { email: to } })
     if (holder && String(holder.id) !== String(user.id)) {
       await sys.verification.delete({ where: { id: row.id } })
       throw new EmailTakenError()
     }
 
     const from    = String(user.email)
-    const changed = await sys.user.update({ where: { id: user.id }, data: { email: to, emailVerified: true } })
+    const changed = await sys[person].update({ where: { id: user.id }, data: { email: to, emailVerified: true } })
     await sys.verification.delete({ where: { id: row.id } })
 
     // Every token still in flight for the old address. A magic link to it
@@ -471,7 +523,7 @@ export function createLitestoneAuth(
     // The OLD mailbox is told. Whoever changed the address held the session and
     // the password; if that was not the owner, this mail is how they find out.
     await credentialChanged('email.changed', String(user.id), {
-      model: 'User', records: [String(user.id)], actorId: String(user.id), actorType: 'user',
+      model: personModel, records: [String(user.id)], actorId: String(user.id), actorType: 'user',
     }, from)
 
     return toContext(changed, 'verified')
@@ -511,7 +563,7 @@ export function createLitestoneAuth(
     // Check credential-level expiry if set
     if (cred.tokenExpiresAt && new Date(cred.tokenExpiresAt) < sys.$now()) return null
 
-    const user = await sys.user.findUnique({ where: { id: cred.userId } })
+    const user = await sys[person].findUnique({ where: { id: cred.userId } })
     if (!user) return null
 
     return {
@@ -557,15 +609,20 @@ export function createLitestoneAuth(
 
   // `confirmPasswordReset`'s test, and for its reason: a password account is
   // already one reset away from its mailbox, a provider-only one is not.
+  //
+  // A provider attached to an account that already existed is marked `linked`
+  // and does not count: the mailbox vouched for that account first.
+  const securedByProvider = (creds: any[]): boolean =>
+    !creds.some(c => c.type === 'password')
+    && creds.some(c => String(c.type).startsWith('oauth:') && c.linked !== true)
+
   async function providerOnly(userId: string): Promise<boolean> {
-    const creds = await sys.credential.findMany({ where: { userId } })
-    return !creds.some((c: any) => c.type === 'password')
-      && creds.some((c: any) => String(c.type).startsWith('oauth:'))
+    return securedByProvider(await sys.credential.findMany({ where: { userId } }))
   }
 
   async function refuseMagicLink(reason: string, userId: string | null, email: string | null, retryable = false): Promise<never> {
     await audit('login.failed', {
-      model:   'User',
+      model:   personModel,
       records: userId ? [userId] : [],
       actorId: userId,
       meta:    { ...MAGIC_META, reason, email },
@@ -583,10 +640,10 @@ export function createLitestoneAuth(
         // `@lower` reaches a `User` where-clause and not `identifier`, so the
         // row is minted under the address the click will create the user with.
         const address = email.toLowerCase()
-        const user    = await sys.user.findFirst({ where: { email: address } })
+        const user    = await sys[person].findFirst({ where: { email: address } })
         if (user && await providerOnly(user.id)) {
           await audit('login.failed', {
-            model: 'User', records: [user.id], actorId: user.id,
+            model: personModel, records: [user.id], actorId: user.id,
             meta:  { ...MAGIC_META, reason: 'no-password-credential', email: address, stage: 'request' },
           })
           return
@@ -647,14 +704,14 @@ export function createLitestoneAuth(
     if (!spent.count) return refuseMagicLink('no-such-link', null, String(row.identifier))
 
     const email = String(row.identifier)
-    const user  = await sys.user.findFirst({ where: { email } })
+    const user  = await sys[person].findFirst({ where: { email } })
 
     if (!user) {
       // The app's gate, before the row, per the ordering rule.
       if (onRegister) await onRegister({ email, name: null })
-      const made = await registerUser(tx => tx.user.create({ data: { email, emailVerified: true } }))
+      const made = await registerUser(tx => tx[person].create({ data: { email, emailVerified: true } }))
       await audit('magiclink.registered', {
-        model: 'User', records: [String(made.id)], actorId: String(made.id), actorType: 'user',
+        model: personModel, records: [String(made.id)], actorId: String(made.id), actorType: 'user',
         meta:  MAGIC_META,
       })
       return issueSession(made, 'session', MAGIC_META)
@@ -666,7 +723,7 @@ export function createLitestoneAuth(
 
     // The click is the same proof `verifyEmail` takes.
     if (user.emailVerified !== true) {
-      await sys.user.update({ where: { id: user.id }, data: { emailVerified: true } })
+      await sys[person].update({ where: { id: user.id }, data: { emailVerified: true } })
     }
 
     return firstFactorProven({ ...user, emailVerified: true }, MAGIC_META)
@@ -682,6 +739,11 @@ export function createLitestoneAuth(
     // Exposed so createAuthPlugin can read it without requiring the caller
     // to pass sessionTtl to both createLitestoneAuth and createAuthPlugin.
     _sessionTtl: sessionTtl,
+
+    // The expired-row sweep. createAuthPlugin starts it in work() and stops it at
+    // shutdown, so an app that mounts the plugin prunes without a plugin of its
+    // own, and a one-shot boot (junction call, the snapshot tools) sweeps nothing.
+    cleanup: createAuthCleanupJobs(db),
 
     // ── verifySession ────────────────────────────────────────────────────
     // Hot path — called on every authenticated request.
@@ -716,7 +778,7 @@ export function createLitestoneAuth(
         // null instead would sign an operator out of their own account because
         // somebody else was deleted.
         if (liveEpisode(session)) {
-          const subject = await sys.user.findUnique({ where: { id: session.impersonatingUserId } })
+          const subject = await sys[person].findUnique({ where: { id: session.impersonatingUserId } })
           if (subject) return {
             // `toContext` and not `sessionFor`, though they build the same
             // thing: `sessionFor` is documented as never being wired to
@@ -736,7 +798,7 @@ export function createLitestoneAuth(
           }
         }
 
-        const user = await sys.user.findUnique({ where: { id: session.userId } })
+        const user = await sys[person].findUnique({ where: { id: session.userId } })
         // The session id travels on the context so a service can tell which of
         // the caller's sessions is the one asking — without ever being handed
         // the token that would let it answer by comparison.
@@ -768,7 +830,7 @@ export function createLitestoneAuth(
     // standing they hold now, and a deleted one answers null.
 
     async sessionFor(userId: string): Promise<SessionContext | null> {
-      const user = await sys.user.findUnique({ where: { id: userId } })
+      const user = await sys[person].findUnique({ where: { id: userId } })
       return user ? toContext(user, 'created') : null
     },
 
@@ -810,21 +872,25 @@ export function createLitestoneAuth(
       // start after that is refused for an episode nobody is in. There is no way
       // out of that state a person could find (`example`: `verify:support`).
       if (session.impersonatingUserId && liveEpisode(session))
-        throw new AuthConfigError('Already in a support session — end it before starting another')
+        throw new SupportEpisodeError('Already in a support session — end it before starting another')
 
       if (String(session.userId) === String(subjectId))
-        throw new AuthConfigError('Cannot start a support session against yourself')
+        throw new SupportEpisodeError('Cannot start a support session against yourself')
 
       if (!reason?.trim()) throw new AuthConfigError('A support session needs a reason')
 
-      const subject = await sys.user.findUnique({ where: { id: subjectId } })
+      const subject = await sys[person].findUnique({ where: { id: subjectId } })
       if (!subject) throw new UserNotFoundError(`No user '${subjectId}'`)
 
       // The app may ask for less than the ceiling and never for more. A
-      // requested ttl is a preference; the cap is the rule.
-      const cap  = new Date(expiresAt(supportTtl, sys.$now()))
-      const want = ttl ? new Date(expiresAt(ttl, sys.$now())) : cap
-      const endsAt = (want < cap ? want : cap).toISOString()
+      // requested ttl is a preference; the cap is the rule, and a ttl that is
+      // not a finite positive duration is the cap too — `parseTtl` of twenty
+      // digits is a number a Date cannot hold, and its toISOString is a 500.
+      const now  = sys.$now()
+      const cap  = new Date(expiresAt(supportTtl, now))
+      const ms   = ttl ? parseTtl(ttl) : NaN
+      const want = Number.isFinite(ms) && ms > 0 ? new Date(now.getTime() + ms) : cap
+      const endsAt = (Number.isNaN(want.getTime()) || want > cap ? cap : want).toISOString()
 
       await sys.session.update({
         where: { id: session.id },
@@ -889,7 +955,7 @@ export function createLitestoneAuth(
       // what happened, the hook only decides what the caller is told.
       const refuse = async (reason: string, userId: string | null) => {
         await audit('login.failed', {
-          model:   'User',
+          model:   personModel,
           records: userId ? [userId] : [],
           actorId: userId,
           // The attempted address, on purpose: a spray across many addresses is
@@ -908,7 +974,7 @@ export function createLitestoneAuth(
       // anyway. Same error, same trail shape, and now the same clock — an early
       // return here answers in a millisecond where a wrong password takes ~220ms,
       // which enumerates users through a message that says nothing.
-      const user = await sys.user.findFirst({ where: { email } })
+      const user = await sys[person].findFirst({ where: { email } })
       if (!user) {
         await payPasswordCost(password)
         throw await refuse('no-such-user', null)
@@ -987,7 +1053,7 @@ export function createLitestoneAuth(
         throw await spend('challenge-expired', row, false)
       }
 
-      const user = await sys.user.findFirst({ where: { id: row.userId } })
+      const user = await sys[person].findFirst({ where: { id: row.userId } })
       const cred = user ? await liveTotp(row.userId) : null
       // The account was deleted, or the factor was turned off, between the two
       // requests. The ticket dies with it rather than becoming a password-free
@@ -1045,7 +1111,7 @@ export function createLitestoneAuth(
     // the three that change what the account requires.
 
     async setupTotp(userId: string, currentPassword: string): Promise<{ secret: string; qr: string }> {
-      const user = await requireCurrentPassword(userId, currentPassword)
+      const user = await requireCurrentPassword(userId, currentPassword, 'setupTotp')
 
       // Refused rather than replaced. Overwriting would invalidate the secret the
       // person's authenticator holds while their next login still demands a code
@@ -1119,7 +1185,7 @@ export function createLitestoneAuth(
     },
 
     async disableTotp(userId: string, currentPassword: string): Promise<void> {
-      await requireCurrentPassword(userId, currentPassword)
+      await requireCurrentPassword(userId, currentPassword, 'disableTotp')
 
       const cred = await liveTotp(userId)
       if (!cred) throw new NotFoundError('Two-factor authentication is not enabled')
@@ -1138,7 +1204,7 @@ export function createLitestoneAuth(
     },
 
     async regenerateRecoveryCodes(userId: string, currentPassword: string): Promise<{ recoveryCodes: string[] }> {
-      await requireCurrentPassword(userId, currentPassword)
+      await requireCurrentPassword(userId, currentPassword, 'regenerateRecoveryCodes')
 
       if (!await liveTotp(userId)) throw new NotFoundError('Two-factor authentication is not enabled')
 
@@ -1168,7 +1234,7 @@ export function createLitestoneAuth(
         throw new ReauthenticationFailedError('Resetting your own second factor is disableTotp, which asks for your password')
       }
 
-      const user = await sys.user.findUnique({ where: { id: userId } })
+      const user = await sys[person].findUnique({ where: { id: userId } })
       if (!user) throw new UserNotFoundError(`No user '${userId}'`)
 
       const cred = await liveTotp(userId)
@@ -1304,13 +1370,13 @@ export function createLitestoneAuth(
       // never started this flow, and there is nothing to look up on their behalf
       // — doing the lookup anyway would make the row's existence probeable.
       if (!stateMatches(args.cookieState, args.state)) {
-        await audit('oauth.refused', { meta: { provider: providerName, reason: 'state-mismatch' } })
+        await audit('oauth.refused', { model: 'OauthFlow', records: [], meta: { provider: providerName, reason: 'state-mismatch' } })
         throw new OAuthError('OAuth state did not match')
       }
 
       const flow = await sys.oauthFlow.findFirst({ where: { state: args.state } })
       if (!flow) {
-        await audit('oauth.refused', { meta: { provider: providerName, reason: 'no-flow' } })
+        await audit('oauth.refused', { model: 'OauthFlow', records: [], meta: { provider: providerName, reason: 'no-flow' } })
         throw new OAuthError('OAuth flow has expired or was already used')
       }
 
@@ -1325,7 +1391,7 @@ export function createLitestoneAuth(
       // code — the state matched and the cookie matched, and the only thing
       // left saying which provider this is, is the URL the browser came back on.
       if (flow.provider !== providerName) {
-        await audit('oauth.refused', { meta: { provider: providerName, reason: 'provider-mismatch' } })
+        await audit('oauth.refused', { model: 'OauthFlow', records: [flow.id], meta: { provider: providerName, reason: 'provider-mismatch' } })
         throw new OAuthError('OAuth state did not match')
       }
 
@@ -1375,10 +1441,10 @@ export function createLitestoneAuth(
       const seen = async (): Promise<OAuthResolution | null> => {
         const cred = await sys.credential.findFirst({ where: { type, value: identity.providerId } })
         if (!cred) return null
-        const known = await sys.user.findUnique({ where: { id: cred.userId } })
+        const known = await sys[person].findUnique({ where: { id: cred.userId } })
         if (!known) throw new UserNotFoundError()
         await audit('oauth.signin', {
-          model: 'User', records: [known.id], actorId: known.id,
+          model: personModel, records: [known.id], actorId: known.id,
           meta:  { provider: providerName },
         })
         return oauthFirstFactor(known, { provider: providerName })
@@ -1413,7 +1479,7 @@ export function createLitestoneAuth(
       // nothing — which would read as *nobody holds this address* and create a
       // second account for a person who already has one.
       const email    = identity.email.toLowerCase()
-      const existing = await sys.user.findFirst({ where: { email } })
+      const existing = await sys[person].findFirst({ where: { email } })
       const proven   = provider.trustEmail && identity.emailVerified
 
       // The one answer to an address nobody proved, whether or not a row
@@ -1457,7 +1523,7 @@ export function createLitestoneAuth(
         let made: any
         try {
           made = await registerUser(async tx => {
-            const row = await tx.user.create({
+            const row = await tx[person].create({
               data: { email, name: identity.name ?? null, emailVerified: true },
             })
             await tx.credential.create({ data: { userId: row.id, type, value: identity.providerId } })
@@ -1467,7 +1533,7 @@ export function createLitestoneAuth(
           return lostRace(err)
         }
         await audit('oauth.registered', {
-          model: 'User', records: [made.id], actorId: made.id,
+          model: personModel, records: [made.id], actorId: made.id,
           meta:  { provider: providerName, emailVerified: true },
         })
         return oauthFirstFactor(made, { provider: providerName })
@@ -1485,7 +1551,7 @@ export function createLitestoneAuth(
 
       if (!linkable) {
         await audit('oauth.link.refused', {
-          model: 'User', records: [existing.id], actorId: existing.id,
+          model: personModel, records: [existing.id], actorId: existing.id,
           meta: {
             provider:         providerName,
             trustedProvider:  provider.trustEmail,
@@ -1497,12 +1563,12 @@ export function createLitestoneAuth(
       }
 
       try {
-        await sys.credential.create({ data: { userId: existing.id, type, value: identity.providerId } })
+        await sys.credential.create({ data: { userId: existing.id, type, value: identity.providerId, linked: true } })
       } catch (err) {
         return lostRace(err)
       }
       await credentialChanged('oauth.linked', existing.id, {
-        model: 'User', records: [existing.id], actorId: existing.id,
+        model: personModel, records: [existing.id], actorId: existing.id,
         meta:  { provider: providerName },
       })
       return oauthFirstFactor(existing, { provider: providerName })
@@ -1552,12 +1618,13 @@ export function createLitestoneAuth(
 
       if (pending.provider !== providerName || pending.subject !== identity?.providerId) {
         await audit('oauth.link.refused', {
-          meta: { provider: providerName, reason: 'subject-mismatch' },
+          model: personModel, records: [],
+          meta:  { provider: providerName, reason: 'subject-mismatch', email: pending.identifier },
         })
         throw new OAuthError('The identity returned is not the one this link was sent for')
       }
 
-      const user = await sys.user.findFirst({ where: { email: pending.identifier } })
+      const user = await sys[person].findFirst({ where: { email: pending.identifier } })
 
       // The subject may have signed in on its own since the invitation was
       // sent. Attaching it again would put one (provider, subject) on two
@@ -1566,7 +1633,8 @@ export function createLitestoneAuth(
       const taken = await sys.credential.findFirst({ where: { type, value: pending.subject } })
       if (taken && taken.userId !== user?.id) {
         await audit('oauth.link.refused', {
-          meta: { provider: providerName, reason: 'subject-taken' },
+          model: personModel, records: user ? [user.id] : [], actorId: user?.id,
+          meta:  { provider: providerName, reason: 'subject-taken' },
         })
         throw new OAuthError('That identity is already connected to another account')
       }
@@ -1577,14 +1645,14 @@ export function createLitestoneAuth(
         if (onRegister) await onRegister({ email: pending.identifier, name: identity.name })
 
         const made = await registerUser(async tx => {
-          const row = await tx.user.create({
+          const row = await tx[person].create({
             data: { email: pending.identifier, name: identity.name ?? null, emailVerified: true },
           })
           await tx.credential.create({ data: { userId: row.id, type: `oauth:${pending.provider}`, value: pending.subject } })
           return row
         })
         await audit('oauth.registered', {
-          model: 'User', records: [made.id], actorId: made.id,
+          model: personModel, records: [made.id], actorId: made.id,
           meta:  { provider: pending.provider, emailVerified: true, viaProof: true },
         })
         return firstFactorProven(made, { provider: pending.provider })
@@ -1599,19 +1667,19 @@ export function createLitestoneAuth(
 
       // Already on this account and not evicted above: nothing to attach.
       if (!taken || wasUnverified) {
-        await sys.credential.create({ data: { userId: user.id, type, value: pending.subject } })
+        await sys.credential.create({ data: { userId: user.id, type, value: pending.subject, linked: true } })
       }
 
       // The proof IS the verification — this is exactly what the address was
       // asked to demonstrate, and leaving the row unverified would send the
       // next identity round the same loop.
-      const verified = await sys.user.update({
+      const verified = await sys[person].update({
         where: { id: user.id },
         data:  { emailVerified: true },
       })
 
       await credentialChanged('oauth.linked', user.id, {
-        model: 'User', records: [user.id], actorId: user.id,
+        model: personModel, records: [user.id], actorId: user.id,
         meta:  { provider: pending.provider, viaProof: true, evictedPriorCredentials: wasUnverified },
       })
 
@@ -1673,7 +1741,7 @@ export function createLitestoneAuth(
 
       await sys.credential.delete({ where: { id: row.id } })
       await credentialChanged('oauth.unlinked', userId, {
-        model: 'User', records: [userId], actorId: userId,
+        model: personModel, records: [userId], actorId: userId,
         meta:  { provider: String(row.type).slice('oauth:'.length) },
       })
       return { id: String(credentialId) }
@@ -1710,8 +1778,9 @@ export function createLitestoneAuth(
 
     async createUser(data: CreateUserInput): Promise<SessionContext> {
       if (data.password != null) requireStrongPassword(data.password)
+      const placed = tenantColumnFor(data.tenant)
 
-      const existing = await sys.user.findFirst({ where: { email: data.email } })
+      const existing = await sys[person].findFirst({ where: { email: data.email } })
       if (existing) throw new EmailTakenError()
 
       // Before anything is written, so a refusal — a blocked domain, a closed
@@ -1722,13 +1791,12 @@ export function createLitestoneAuth(
       const hashed = data.password ? await hashPassword(data.password) : null
 
       const user = await registerUser(async tx => {
-        const row = await tx.user.create({
+        const row = await tx[person].create({
           data: {
             email: data.email,
             name:  data.name  ?? null,
             role:  data.role  ?? 'user',
-            // The app's tenant column (db/user.lite), as `createInvitation` writes it.
-            ...(data.accountId != null ? { accountId: data.accountId } : {}),
+            ...placed,
           }
         })
         if (hashed) await tx.credential.create({ data: { userId: row.id, type: 'password', value: hashed } })
@@ -1747,17 +1815,16 @@ export function createLitestoneAuth(
     // is the User row's to change afterwards, by someone allowed to.
 
     async createInvitation(
-      email: string, opts: { name?: string, accountId?: string, actorId: string },
+      email: string, opts: { name?: string, tenant?: string, actorId: string },
     ): Promise<{ userId: string, token: string, expiresAt: string }> {
-      const existing = await sys.user.findFirst({ where: { email } })
+      const placed = tenantColumnFor(opts.tenant)
+      const existing = await sys[person].findFirst({ where: { email } })
       if (existing) throw new EmailTakenError()
       if (onRegister) await onRegister({ email, name: opts.name ?? null })
 
-      // The operator's account when they have one: the column is the app's
-      // tenant hook (db/user.lite), and an invitation is into the account of
-      // whoever sent it (`FJS-2643`).
-      const user = await registerUser(tx => tx.user.create({
-        data: { email, name: opts.name ?? null, ...(opts.accountId != null ? { accountId: opts.accountId } : {}) },
+      // An invitation is into the tenant of whoever sent it (`FJS-2643`).
+      const user = await registerUser(tx => tx[person].create({
+        data: { email, name: opts.name ?? null, ...placed },
       }))
 
       const token = generateToken()
@@ -1767,7 +1834,7 @@ export function createLitestoneAuth(
       })
 
       await audit('invitation.created', {
-        model: 'User', records: [String(user.id)], actorId: opts.actorId, actorType: 'user',
+        model: personModel, records: [String(user.id)], actorId: opts.actorId, actorType: 'user',
       })
       return { userId: String(user.id), token, expiresAt: new Date(until).toISOString() }
     },
@@ -1776,7 +1843,7 @@ export function createLitestoneAuth(
 
     async deleteUser(userId: string, opts?: { actorId?: string }): Promise<void> {
       // Fetch the user first so we can clean up email-scoped verification tokens
-      const user = await sys.user.findUnique({ where: { id: userId } })
+      const user = await sys[person].findUnique({ where: { id: userId } })
 
       await sys.credential.deleteMany({ where: { userId } })
       await sys.session.deleteMany({ where: { userId }, ...PURGE })
@@ -1791,12 +1858,12 @@ export function createLitestoneAuth(
         })
       }
 
-      await sys.user.delete({ where: { id: userId } })
+      await sys[person].delete({ where: { id: userId } })
 
       // Only when somebody else did it: the model's own log files a delete as
       // the system's, which says nothing about who asked.
       if (opts?.actorId) await audit('user.removed', {
-        model: 'User', records: [String(userId)], actorId: opts.actorId, actorType: 'user',
+        model: personModel, records: [String(userId)], actorId: opts.actorId, actorType: 'user',
       })
     },
 
@@ -1814,7 +1881,7 @@ export function createLitestoneAuth(
     async requestPasswordReset(email: string): Promise<void> {
       setTimeout(async () => {
         try {
-          const user = await sys.user.findFirst({ where: { email } })
+          const user = await sys[person].findFirst({ where: { email } })
           if (!user) return
 
           await sys.verification.deleteMany({
@@ -1857,7 +1924,7 @@ export function createLitestoneAuth(
       if (!verification) throw new InvalidTokenError('Invalid or expired reset token')
 
       const email = verification.identifier
-      const user  = await sys.user.findFirst({ where: { email } })
+      const user  = await sys[person].findFirst({ where: { email } })
       if (!user) throw new UserNotFoundError()
 
       // BEFORE the hash and before anything destructive, so a refusal burns no
@@ -1876,11 +1943,10 @@ export function createLitestoneAuth(
       //     take it over (`FJS-987`).
       const creds    = await sys.credential.findMany({ where: { userId: user.id } })
       const existing = creds.find((c: any) => c.type === 'password')
-      const viaOAuth = creds.some((c: any) => String(c.type).startsWith('oauth:'))
 
-      if (!existing && viaOAuth) {
+      if (securedByProvider(creds)) {
         await audit('password.reset.refused', {
-          model: 'User', records: [user.id], actorId: user.id,
+          model: personModel, records: [user.id], actorId: user.id,
           meta:  { reason: 'no-password-credential' },
         })
         throw new NoPasswordCredentialError(
@@ -1912,7 +1978,7 @@ export function createLitestoneAuth(
     // ── requestEmailVerification ─────────────────────────────────────────
 
     async requestEmailVerification(userId: string): Promise<void> {
-      const user = await sys.user.findUnique({ where: { id: userId } })
+      const user = await sys[person].findUnique({ where: { id: userId } })
       if (!user) throw new UserNotFoundError()
       if (user.emailVerified) return   // already verified — no-op
 
@@ -1946,12 +2012,12 @@ export function createLitestoneAuth(
       if (!onEmailVerificationRequested) {
         throw new AuthConfigError('requestEmailChange needs onEmailVerificationRequested — the link it mails is the proof')
       }
-      await requireCurrentPassword(userId, currentPassword)
+      await requireCurrentPassword(userId, currentPassword, 'requestEmailChange')
 
       const address = newEmail.trim().toLowerCase()
       // Answered now rather than at the click, by the same 409 registering
       // with the address answers anyone, so it discloses nothing new.
-      if (await sys.user.findFirst({ where: { email: address } })) throw new EmailTakenError()
+      if (await sys[person].findFirst({ where: { email: address } })) throw new EmailTakenError()
 
       // One change in flight per account: an earlier link naming a different
       // address must not land after the person has moved on from it.
@@ -1988,10 +2054,10 @@ export function createLitestoneAuth(
       if (verification.purpose === 'emailChange') return confirmEmailChange(verification)
 
       const email = verification.identifier
-      const user  = await sys.user.findFirst({ where: { email } })
+      const user  = await sys[person].findFirst({ where: { email } })
       if (!user) throw new UserNotFoundError()
 
-      await sys.user.update({
+      await sys[person].update({
         where: { id: user.id },
         data:  { emailVerified: true },
       })
@@ -2007,6 +2073,14 @@ export function createLitestoneAuth(
 
     async createApiKey(userId: string, opts?: ApiKeyOptions): Promise<{ key: string; id: string }> {
       const secret = requireEncryptionKey('createApiKey')
+      // Absent means the key never expires. Stated, it is graded against the
+      // clock the verifier reads: an Invalid Date is a 500 at the insert, and a
+      // past one mints a key `verifyApiKey` refuses from its first use.
+      if (opts?.expiresAt != null) {
+        const at = opts.expiresAt instanceof Date ? opts.expiresAt : new Date(opts.expiresAt as any)
+        if (Number.isNaN(at.getTime())) throw new InvalidExpiryError('expiresAt is not a date')
+        if (at <= sys.$now())           throw new InvalidExpiryError('expiresAt is already in the past')
+      }
       const rawKey = generateApiKey()
       const hash   = hashApiKey(rawKey, secret)
 
@@ -2104,8 +2178,14 @@ export function createLitestoneAuth(
       // Same refusal for "no password set" as for "wrong password". An account
       // with only an OAuth credential is a fact about that account, and this is
       // reachable by anyone holding a session for it.
-      if (!cred) throw new ReauthenticationFailedError()
-      if (!await verifyPassword(currentPassword, cred.value)) throw new ReauthenticationFailedError()
+      if (!cred) {
+        await reauthenticationFailed(userId, 'changePassword', 'no-password')
+        throw new ReauthenticationFailedError()
+      }
+      if (!await verifyPassword(currentPassword, cred.value)) {
+        await reauthenticationFailed(userId, 'changePassword', 'wrong-password')
+        throw new ReauthenticationFailedError()
+      }
 
       await sys.credential.update({
         where: { id: cred.id },

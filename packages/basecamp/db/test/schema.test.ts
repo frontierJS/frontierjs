@@ -749,7 +749,7 @@ describe('the gate ladder', () => {
       model Thing {
         id   String @id @default(uuid())
         name String
-        @@gate("5.5.5.5")
+        @@gate(5.5.5.5)
       }
     `
     // Not the app's schema, so not the client the generated file registers.
@@ -772,7 +772,7 @@ describe('the gate ladder', () => {
 
 // ─── FJS-410 — a level cannot be graded from a column its holder writes ──────
 //
-// `@@gate("1.5")` on WorkspaceMember says *an admin may update a membership*.
+// `@@gate(1.5)` on WorkspaceMember says *an admin may update a membership*.
 // It is per MODEL, so it has no way to say *not their own* — and the standing
 // every gate in this app grades on is read off exactly this column. The service
 // hook is one door; a job, a hub screen and a `fli db:repl` session at level 5
@@ -2159,7 +2159,7 @@ describe('Deployment and Job declare their own state machines', () => {
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
     const job = await sys.job.create({ data: { workspaceId: ws.id, name: 'Nightly', kind: 'scheduled' } })
-    // Job's update gate is ADMINISTRATOR(5), not USER(4) — `@@gate("2.4.4.5")`.
+    // Job's update gate is ADMINISTRATOR(5), not USER(4) — `@@gate(2.4.4.5)`.
     const admin = as(db, ws, 'admin')
 
     // The run's moves are the engine's. A person with every level the gate

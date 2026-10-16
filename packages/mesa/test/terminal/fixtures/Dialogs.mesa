@@ -15,30 +15,30 @@
 <p>closes {closes} cancels {cancels} rv {rv} extra {extra}</p>
 <p>keys {keys}</p>
 <div>
-  <button type="button" on:click={() => dlg.showModal()}>Open</button>
-  <button type="button" on:click={() => side.show()}>Side</button>
-  <button type="button" on:click={() => doomed.showModal()}>Doom</button>
-  <button type="button" on:click={() => listening = false}>Mute</button>
+  <button type="button" onclick={() => dlg.showModal()}>Open</button>
+  <button type="button" onclick={() => side.show()}>Side</button>
+  <button type="button" onclick={() => doomed.showModal()}>Doom</button>
+  <button type="button" onclick={() => listening = false}>Mute</button>
 </div>
 <dialog
   bind:this={dlg}
-  on:close={() => { closes++; rv = dlg.returnValue }}
-  on:cancel={(e) => { cancels++; if (locked) e.preventDefault() }}
-  on:click={(e) => { if (e.target === dlg) dlg.close('backdrop') }}
+  onclose={() => { closes++; rv = dlg.returnValue }}
+  oncancel={(e) => { cancels++; if (locked) e.preventDefault() }}
+  onclick={(e) => { if (e.target === dlg) dlg.close('backdrop') }}
 >
   <p>Modal body</p>
-  <button type="button" on:click={() => locked = !locked}>Lock</button>
-  <button type="button" on:click={() => dlg.close('done')}>Done</button>
+  <button type="button" onclick={() => locked = !locked}>Lock</button>
+  <button type="button" onclick={() => dlg.close('done')}>Done</button>
 </dialog>
 <dialog bind:this={side}>
   <p>Side body</p>
-  <button type="button" on:click={() => side.close()}>Hide</button>
+  <button type="button" onclick={() => side.close()}>Hide</button>
 </dialog>
 {#if alive}
   <section>
     <dialog bind:this={doomed}>
       <p>Doomed body</p>
-      <button type="button" on:click={() => alive = false}>Kill</button>
+      <button type="button" onclick={() => alive = false}>Kill</button>
     </dialog>
   </section>
 {/if}
@@ -46,7 +46,7 @@
 {#each [1, 2, 3, 4, 5, 6] as n}
   <p>{'.'.repeat(48)}</p>
 {/each}
-<mesa:window on:keydown={(e) => keys += e.key === 'Escape' ? 'E' : e.key.length === 1 ? e.key : ''} />
+<mesa:window onkeydown={(e) => keys += e.key === 'Escape' ? 'E' : e.key.length === 1 ? e.key : ''} />
 {#if listening}
-  <mesa:window on:keydown={() => extra++} />
+  <mesa:window onkeydown={() => extra++} />
 {/if}

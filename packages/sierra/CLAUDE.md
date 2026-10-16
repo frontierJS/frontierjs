@@ -305,6 +305,14 @@ src/
   devtools/              — the dev toolbar; plugin.js is what `devtools:` installs
   presence/  theme/  analytics/  fetch/  virtual/
   components/            — RouterView.mesa, ChainRenderer.mesa
+
+bench/                   — `bun run bench`: brotli bytes per target, the last step
+  run.mjs                of `test`. Counted by `../cli/core/bench.js`, the one byte
+  bench.baseline.json    measurer for a built surface (`FJS-D1070`). Ratchets down:
+  fixtures/              --update, --adopt. floor-spa · floor-static (its index.html
+                         is a page with no island, so `static.firstLoadJsBrotli`
+                         is 0) · floor-widget. Built in `bench/dist/`, since the
+                         scanner writes into the Vite root
 ```
 
 ---
@@ -482,6 +490,10 @@ src/
   **A composed key (a relation, or an object under an undeclared name) never
   travels, baseline or not** — identity would send a child list whenever the
   last recorded read was not the one the form opened on (`FJS-1576`).
+  **A column that is an object on the read and in the record goes as
+  `{ $merge: patch }`** (`FJS-1759`, `_jsonPatch`) — a Json document written whole
+  loses a key a second session set. `null` and a removed key are merge-patch's
+  delete; the optimistic overlay shows the document, not the operator.
   `service.patch(id, data)` is the escape and sends what it is handed: this verb
   takes a record, that one takes a payload.
 - **Neither the baseline nor the `@version` moves on a push.** Both are recorded
@@ -645,7 +657,11 @@ src/
   somebody else** — an MCP host handing a view its `hostContext.theme` — and
   maps onto `theme.system`; from then on the OS listener yields to it, because
   a host in dark mode over a light OS said dark and the OS flipping underneath
-  must not take it back. Never persisted: the answer is the host's. A view's
+  must not take it back. Never persisted: the answer is the host's. **The stored
+  pick is a `persisted()` key and the OS answer `colorScheme()`**, under one
+  effect, so another tab's pick lands here — and the key is `prefix:key`, which
+  the `<head>` script restates (`theme/script.js` may import nothing) and the
+  island entry sets with `setPrefix`, since a static page has no router. A view's
   boot runs `initTheme` with `persist: false` whatever the app said, since a
   sandbox without `allow-same-origin` THROWS on a `localStorage` read and a
   `typeof` guard does not catch a throwing getter.

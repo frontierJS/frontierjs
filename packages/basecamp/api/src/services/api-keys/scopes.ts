@@ -9,8 +9,7 @@
 // refuses by.
 
 import { Forbidden, $ } from '@frontierjs/junction'
-import type { Hook, ServiceContext } from '@frontierjs/junction'
-import type { BasecampApp } from '../../basecamp.types.ts'
+import type { App, Hook, ServiceContext } from '@frontierjs/junction'
 import { resolveWorkspaceId } from '../../core/hooks.ts'
 
 // ─── The vocabulary ──────────────────────────────────────────────────────
@@ -56,11 +55,11 @@ export const WHOLE_KEY = 'admin'
 
 /** Typed once. asSystem() answers `unknown`, so every accessor off it would
  *  otherwise be its own diagnostic — the class Invariant 14 is counting. */
-const sysOf = (app: BasecampApp): any => app.db.asSystem()
+const sysOf = (app: App): any => app.db!.asSystem()
 
 export interface Scope { id: string; group: string; label: string }
 
-export function scopeVocabulary(app: BasecampApp): Scope[] {
+export function scopeVocabulary(app: App): Scope[] {
   const declared = new Map<string, string>()
   for (const name of app.services.list()) {
     if (OFF_LIMITS.has(name)) continue
@@ -116,7 +115,7 @@ export function agentGuard(): Hook {
 // App-level before hook. A session passes straight through; a key is held to
 // what it was issued with.
 
-export function apiKeyGuard(app: BasecampApp): Hook {
+export function apiKeyGuard(): Hook {
   return async function apiKeyGuard(ctx: ServiceContext): Promise<void> {
     const user = $.auth?.user as KeyPrincipal | undefined
 
@@ -127,7 +126,7 @@ export function apiKeyGuard(app: BasecampApp): Hook {
 
     // asSystem(): whether this key may act is what DECIDES the caller's
     // access, so it cannot be read through a client already scoped by it.
-    const sys = sysOf(app)
+    const sys = sysOf(ctx.app)
     const key = user.credentialId
       ? await sys.apiKey.findFirst({ where: { credentialId: user.credentialId } })
       : null
@@ -161,7 +160,7 @@ export function apiKeyGuard(app: BasecampApp): Hook {
 // is being rejected all day shows up as a key that stopped being used, which
 // is the same signal read from the other end.
 
-export function apiKeyUsage(app: BasecampApp): Hook {
+export function apiKeyUsage(): Hook {
   return async function apiKeyUsage(): Promise<void> {
     const id = $.locals.apiKeyId as string | undefined
     if (!id) return
@@ -169,7 +168,7 @@ export function apiKeyUsage(app: BasecampApp): Hook {
     const today = new Date().toISOString().slice(0, 10)
 
     try {
-      const sys = sysOf(app)
+      const sys = sysOf($.app)
       const key = await sys.apiKey.findUnique({ where: { id } })
       if (!key) return
 

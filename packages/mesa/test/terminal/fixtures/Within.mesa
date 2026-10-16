@@ -6,16 +6,16 @@
   const away = (e) => { if (box && !box.contains(e.target)) open = false }
 </script>
 
-<mesa:window on:click|capture={away} />
+<mesa:window onclick|capture={away} />
 <p>log {log.join(' ')}</p>
 <p>open {open}</p>
-<div on:focusin={(e) => note('in:' + e.target.name)} on:focusout={(e) => note('out:' + e.target.name)}>
-  <input name="a" on:focus={() => note('focus:a')} on:blur={() => note('blur:a')} />
+<div onfocusin={(e) => note('in:' + e.target.name)} onfocusout={(e) => note('out:' + e.target.name)}>
+  <input name="a" onfocus={() => note('focus:a')} onblur={() => note('blur:a')} />
   <input name="b" />
 </div>
 <input name="c" />
 <div bind:this={box}>
-  <button on:click={() => open = true}>show</button>
-  {#if open}<button on:click={() => note('inner')}>inner</button>{/if}
+  <button onclick={() => open = true}>show</button>
+  {#if open}<button onclick={() => note('inner')}>inner</button>{/if}
 </div>
-<button on:click={() => note('elsewhere')}>outside</button>
+<button onclick={() => note('elsewhere')}>outside</button>

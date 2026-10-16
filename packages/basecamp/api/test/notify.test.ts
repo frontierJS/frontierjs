@@ -31,7 +31,7 @@ import { notificationsPlugin } from '@frontierjs/notifications'
 import { basecampGateLevel }   from '../src/core/gate.ts'
 import { NOTIFICATION_KINDS }  from '../src/services/notification-preferences/kinds.ts'
 import { transportsFor, notifyPeople, workspaceMembers } from '../src/core/notify.ts'
-import type { BasecampApp }    from '../src/basecamp.types.ts'
+import type { App }            from '@frontierjs/junction'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -129,7 +129,7 @@ async function makeApp(opts: { mail?: boolean } = {}) {
   plugin.register(app)
   await plugin.boot?.(app)
 
-  return { app: app as BasecampApp, db: env.db.asSystem() as any, sent }
+  return { app: app as App, db: env.db.asSystem() as any, sent }
 }
 
 /** A workspace with one accepted member. */

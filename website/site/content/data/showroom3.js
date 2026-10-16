@@ -17,7 +17,7 @@ export const BASE = [
   "  ownerId   Int",
   "  createdAt DateTime @default(now())",
   "",
-  "  @@gate(\"0.4.4.5\")",
+  "  @@gate(0.4.4.5)",
   "}",
 ]
 
@@ -60,8 +60,8 @@ export const CHANGES = [
     diff: [
       ['ctx',"  createdAt DateTime @default(now())"],
       ['ctx',""],
-      ['del',"  @@gate(\"0.4.4.5\")"],
-      ['add',"  @@gate(\"4.4.4.5\")"],
+      ['del',"  @@gate(0.4.4.5)"],
+      ['add',"  @@gate(4.4.4.5)"],
     ],
     hits: [
       { realm:'API',  what:'HTTP',         moved:1, note:'<code>GET /api/leads</code> flips from <code>200</code> to <code>401</code>. No handler edited.' },
@@ -75,7 +75,7 @@ export const CHANGES = [
   {
     id: 'policy', label: 'Add a row policy',
     diff: [
-      ['ctx',"  @@gate(\"0.4.4.5\")"],
+      ['ctx',"  @@gate(0.4.4.5)"],
       ['add',"  @@allow('read',   ownerId == auth().id)"],
       ['add',"  @@allow('update', ownerId == auth().id)"],
     ],

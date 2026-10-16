@@ -2,7 +2,7 @@
 // Run: bun bench/audit-bench.mjs [filter]
 import { createClient } from '../src/index.js'
 import { GatePlugin } from '../src/plugins/gate.js'
-import { Plugin } from '../src/core/plugin.js'
+import { LitestonePlugin } from '../src/core/plugin.js'
 import { autoMigrate } from '../src/core/migrations.js'
 import { flushPendingLogs } from '../src/core/audit-log.js'
 import { mkdirSync, rmSync, appendFileSync } from 'node:fs'
@@ -57,7 +57,7 @@ await run('setAuth-rebuild', async () => {
 // ── 2. GatePlugin getLevel call amplification ───────────────────────────────
 await run('gate-getlevel', async () => {
   let calls = 0
-  const schema = `model Post { id Int @id; title String \n @@gate("2.4.4.6") }`
+  const schema = `model Post { id Int @id; title String \n @@gate(2.4.4.6) }`
   const db = await createClient({
     schema, db: ':memory:',
     plugins: [new GatePlugin({ getLevel: () => { calls++; return 5 } })],
@@ -86,7 +86,7 @@ await run('plugin-noop', async () => {
     const t = ms(t0); db.$close(); return t
   }
   const none = await bench(await mk(undefined))
-  class P extends Plugin {}
+  class P extends LitestonePlugin {}
   const three = await bench(await mk([new P(), new P(), new P()]))
   report('3. findFirst, 0 plugins', 'us/op', (none / N * 1000).toFixed(2))
   report('3. findFirst, 3 no-op plugins', 'us/op', (three / N * 1000).toFixed(2), 'delta = base-class no-op hook dispatch')

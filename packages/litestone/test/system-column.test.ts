@@ -30,7 +30,7 @@ model Order {
   reference    String   @unique
   trackingCode String?  @system
   note         String?
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 
 model Key {
@@ -238,7 +238,7 @@ model Booking {
   id     Int    @id
   hostId Int    @system
   note   String
-  @@gate("0")
+  @@gate(0)
 }
 ` })
     expect(await env.verifyGateLadder()).toEqual([])
@@ -257,31 +257,134 @@ model Page {
   id      Int    @id
   ownerId String @createdBy
   title   String
-  @@gate("0")
+  @@gate(0)
 }
 model Block {
   id      Int      @id
   type    String   @default("paragraph")
   checked Boolean? @check("type = 'todo' OR checked IS NULL")
-  @@gate("0")
+  @@gate(0)
 }
 model Application {
   id          Int    @id
   candidateId Int    @immutable
   candidate   Candidate @relation(fields: [candidateId], references: [id])
-  @@gate("0")
+  @@gate(0)
 }
 model Candidate {
   id   Int    @id
   name String
-  @@gate("0")
+  @@gate(0)
 }
 model Document {
   id   Int  @id
   file File @accept("application/pdf")
-  @@gate("0")
+  @@gate(0)
 }
 ` })
     expect(await env.verifyGateLadder()).toEqual([])
   })
+})
+
+// `@@mirror(key:)` writes `@system` into every stored column but `@local`, the
+// key's `@immutable` and `@unique`, and `missingSince` (`FJS-D843`). A Provider's
+// column a caller could write is one the next sync overwrites in silence, so the
+// refusal is the derivation's whole job and is graded through a real client.
+describe('a @@mirror model', () => {
+  const MIRROR = `
+model Post {
+  id         Int      @id
+  externalId String
+  message    String
+  status     PostStatus @default(open)
+  starred    Boolean  @default(false) @local
+  @@mirror(key: externalId)
+}
+enum PostStatus { open closed }
+model Credit {
+  id         Int    @id
+  accountId  String
+  externalId String
+  crewId     Int?   @local
+  @@unique([accountId, externalId])
+  @@mirror(key: externalId)
+}`
+  const kinds = (model: string, field: string) =>
+    parse(MIRROR).schema.models.find((m: any) => m.name === model).fields.find((f: any) => f.name === field)?.attributes.map((a: any) => a.kind)
+
+  it('derives @system on every stored column but @local, and the key @immutable and @unique', () => {
+    expect(kinds('Post', 'message')).toEqual(['system'])
+    expect(kinds('Post', 'externalId')).toEqual(['system', 'immutable', 'unique'])
+    expect(kinds('Post', 'starred')).toEqual(['default', 'local'])
+    expect(kinds('Post', 'missingSince')).toEqual(['system'])
+  })
+
+  it('leaves the key to a @@unique that already names it, so two accounts may hold one Provider id', () => {
+    expect(kinds('Credit', 'externalId')).toEqual(['system', 'immutable'])
+  })
+
+  it('refuses a caller writing a Provider column by name, and takes a @local one', async () => {
+    const db = await createClient({ schema: MIRROR, db: ':memory:' })
+    await expect(db.post.create({ data: { externalId: 'p1', message: 'hi' } })).rejects.toThrow('"externalId", "message" are @system')
+    const row = await db.asSystem().post.create({ data: { externalId: 'p1', message: 'hi' } })
+    expect(row.missingSince).toBe(null)
+    await expect(db.post.update({ where: { id: row.id }, data: { message: 'x' } })).rejects.toThrow('"message" is @system')
+    expect((await db.post.update({ where: { id: row.id }, data: { starred: true } })).starred).toBe(true)
+    await expect(db.asSystem().post.update({ where: { id: row.id }, data: { externalId: 'p2' } })).rejects.toThrow('@immutable')
+  })
+
+  // The Provider sends a child before its parent, so its reference is the
+  // Provider's to keep; a @local key is the app's and keeps the constraint.
+  it('lands a child before its parent, and keeps the foreign key a @local column holds', async () => {
+    const REL = `
+model Channel { id Int @id  externalId String  posts Post[]  @@mirror(key: externalId)  @@allow('read', true) }
+model Crew    { id Int @id  posts Post[] }
+model Post {
+  id                Int     @id
+  externalId        String
+  channelExternalId String
+  channel           Channel @relation(fields: [channelExternalId], references: [externalId])
+  crewId            Int?    @local
+  crew              Crew?   @relation(fields: [crewId], references: [id])
+  @@mirror(key: externalId)
+  @@allow('read', check(channel))
+}`
+    const db = await createClient({ schema: REL, db: ':memory:' })
+    const sys = db.asSystem()
+    await sys.post.create({ data: { externalId: 'p1', channelExternalId: 'c1' } })
+    expect((await sys.post.findFirst({ where: { externalId: 'p1' }, include: { channel: true } })).channel).toBe(null)
+    // A dangling key is not a null one (FJS-3130): no parent row, so check() refuses.
+    expect(await db.$setAuth({ id: 'u' }).post.findMany()).toEqual([])
+    await sys.channel.create({ data: { externalId: 'c1' } })
+    expect((await db.$setAuth({ id: 'u' }).post.findMany()).length).toBe(1)
+    expect((await sys.post.findFirst({ where: { externalId: 'p1' }, include: { channel: true } })).channel.externalId).toBe('c1')
+    await expect(sys.post.create({ data: { externalId: 'p2', channelExternalId: 'c1', crewId: 9 } })).rejects.toThrow('names no Crew')
+  })
+
+  it('reaches the client as readOnly where the Provider owns the column', () => {
+    const props = generateJsonSchema(parse(MIRROR).schema, { mode: 'update' }).$defs.Post.properties
+    expect(props.message.readOnly).toBe(true)
+    expect(props.starred.readOnly).toBeUndefined()
+  })
+
+  it('asks a mirror for no state machine, since its status moves where the Provider moves it', async () => {
+    const { checkOpportunities } = await import('../src/core/opportunities.js')
+    expect(checkOpportunities(parse(MIRROR).schema).filter(o => o.id === 'enum-column-with-no-state-machine')).toEqual([])
+  })
+
+  for (const [why, src, says] of [
+    ['@local off a mirror', `model T { id Int @id  c String @local }`, 'T is not @@mirror'],
+    ['@local on the key', `model T { id Int @id  k String @local  @@mirror(key: k) }`, '@local is on the key'],
+    ['@local beside @system', `model T { id Int @id  k String  c String @local @system  @@mirror(key: k) }`, '@local and @system disagree'],
+    ['a declared missingSince', `model T { id Int @id  k String  missingSince DateTime?  @@mirror(key: k) }`, "derives the column 'missingSince'"],
+    ['an optional key', `model T { id Int @id  k String?  @@mirror(key: k) }`, "'k' is optional"],
+    ['onDelete on a Provider-keyed relation', `model P { id Int @id  k String  cs C[]  @@mirror(key: k) }
+model C { id Int @id  k String  pk String  p P @relation(fields: [pk], references: [k], onDelete: Cascade)  @@mirror(key: k) }`, "relation 'p' is keyed by the Provider's ids"],
+  ] as const) {
+    it(`refuses ${why}`, () => {
+      const r = parse(src)
+      expect(r.valid).toBe(false)
+      expect(r.errors.join('\n')).toContain(says)
+    })
+  }
 })

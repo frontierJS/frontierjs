@@ -7,7 +7,8 @@
   // The table holds one of each case the Shell has to draw: an exact `/`, two
   // entries sharing a path that only `match` tells apart, a group `show`
   // hides until a level, one whose `show` throws (shown), and one left with
-  // no entries (dropped).
+  // no entries (dropped). Every group is for members unless `guests` opens
+  // the first one, which is what turns the signed-out frame on.
   //
   // The controls sit OUTSIDE the Shell so they exist in every branch, signed
   // out and still restoring included. Collapse flips a sidebar to a rail and
@@ -19,6 +20,10 @@
   export let level   = 1
   export let path    = '/leads/'
   export let layout  = 'sidebar'
+  export let guests  = false
+  export let collapsible = false
+
+  let collapsed = false
 
   let query    = {}
   let unread   = 2
@@ -43,7 +48,7 @@
   }
 
   const groups = [
-    { label: null, entries: [
+    { label: null, show: (s) => guests || !!s.user, entries: [
       { href: '/',        label: 'Today',    icon: 'today', exact: true },
       { href: '/leads/',  label: 'Leads',    icon: 'users' },
       { href: '/contacts/?kind=customer', label: 'Clients', icon: 'users',
@@ -54,7 +59,7 @@
     { label: 'Admin', show: (s) => s.level >= 5, entries: [
       { href: '/settings/', label: 'Settings', icon: 'cog' },
     ] },
-    { label: 'Help', show: () => { throw new Error('the predicate broke') }, entries: [
+    { label: 'Help', show: (s) => { if (!s.user) return false; throw new Error('the predicate broke') }, entries: [
       { href: '/help/', label: 'Docs' },
     ] },
     { label: 'Hidden', entries: [
@@ -73,21 +78,22 @@
     signouts++
     await new Promise((r) => setTimeout(r, 60))
     user = null
+    level = 0
   }
 </script>
 
 <div id="controls">
-  <button type="button" id="restore" on:click={() => checked = true}>Restore</button>
-  <button type="button" id="sign-in" on:click={() => user = { email: 'a@b.c' }}>Sign in</button>
-  <button type="button" id="promote" on:click={() => level = 5}>Promote</button>
-  <button type="button" id="more" on:click={() => unread++}>More</button>
-  <button type="button" id="collapse" on:click={() => layout = layout === 'rail' ? 'sidebar' : 'rail'}>Collapse</button>
+  <button type="button" id="restore" onclick={() => checked = true}>Restore</button>
+  <button type="button" id="sign-in" onclick={() => user = { email: 'a@b.c' }}>Sign in</button>
+  <button type="button" id="promote" onclick={() => level = 5}>Promote</button>
+  <button type="button" id="more" onclick={() => unread++}>More</button>
+  <button type="button" id="collapse" onclick={() => layout = layout === 'rail' ? 'sidebar' : 'rail'}>Collapse</button>
   <output id="signouts">{signouts}</output>
 </div>
 
-<div id="app" on:click={go}>
+<div id="app" onclick={go}>
   <Shell {groups} {sections} {path} {query} title="Leads"
-         {user} {level} {checked} {isActive} {layout} onsignout={out}>
+         {user} {level} {checked} {isActive} {layout} {collapsible} bind:collapsed onsignout={out}>
     {#snippet brand()}<a href="/" data-brand>Acme</a>{/snippet}
     {#snippet icon(name)}<svg class="icon" data-icon={name} viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6" /></svg>{/snippet}
     {#snippet badge(entry)}{#if entry.href === '/leads/'}<span class="badge" data-unread>{unread}</span>{/if}{/snippet}

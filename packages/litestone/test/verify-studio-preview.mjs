@@ -67,7 +67,7 @@ model Account {
   email   String  @unique
   isAdmin Boolean @default(false)
   @@auth
-  @@gate("0")
+  @@gate(0)
 }
 
 /// Both protections at once, beside two ordinary columns. The ordinary ones are
@@ -78,7 +78,7 @@ model Basket {
   label      String
   token      String @unique @guarded @default(cuid())
   secretNote String @secret
-  @@gate("0")
+  @@gate(0)
 }
 
 /// No protected column anywhere. The negative control for the withheld header:
@@ -86,7 +86,7 @@ model Basket {
 model Product {
   id   Int    @id @default(autoincrement())
   name String
-  @@gate("0")
+  @@gate(0)
 }
 `, 'utf8')
 

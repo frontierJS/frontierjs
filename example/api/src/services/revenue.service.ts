@@ -16,12 +16,10 @@
 // EVERY order may not either. The projection is gated ABOVE the rows it
 // aggregates, which is `FJS-970`'s point and is the whole reason a report is not
 // just a screen over a query someone could have run themselves.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function createRevenueService() {
-  return createBaseService({
-    model:   'revenueByStatus',
-    channel: 'revenue',
-    methods: 'readOnly',
-  })
-}
+export default createService({
+  model:   'revenueByStatus',
+  channel: 'revenue',
+  methods: 'readOnly',
+})

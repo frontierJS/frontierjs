@@ -1,6 +1,6 @@
 /*
  * attributes — `fixtures/Attrs.mesa`: a live attribute on the terminal, the
- * `$$tui.set_attribute` owner reached from a render effect.
+ * `$$host.set_attribute` owner reached from a render effect.
  *
  * A green run pins three things the static frame cannot: a program write to
  * an input's `value` repaints it and fires no `input` handler (the engine

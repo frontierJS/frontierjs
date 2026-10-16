@@ -27,7 +27,7 @@ model Account {
   email   String  @unique
   isAdmin Boolean @default(false)
   @@auth
-  @@gate("0")
+  @@gate(0)
 }
 
 /// Reads at 1 behind a row policy, so a shopper sees their own and staff see
@@ -40,7 +40,7 @@ model Order {
   cardTok String?  @secret
   memo    String?  @guarded
   placed  DateTime @default(now())
-  @@gate("1")
+  @@gate(1)
   @@allow('read', auth().isAdmin)
   @@allow('read', ownerId == auth().id)
   @@export(ndjson, since: placed)
@@ -52,7 +52,7 @@ model Order {
 model Ledger {
   id     Int    @id @default(autoincrement())
   entry  String
-  @@gate("5")
+  @@gate(5)
   @@export(csv)
   @@db(main)
 }
@@ -65,7 +65,7 @@ model Report {
   id     Int    @id @default(autoincrement())
   title  String
   deptId String
-  @@gate("1")
+  @@gate(1)
   @@allow('read', deptId == auth().deptId)
   @@export(ndjson)
   @@db(main)
@@ -75,7 +75,7 @@ model Report {
 model Secret {
   id    Int    @id @default(autoincrement())
   value String
-  @@gate("0")
+  @@gate(0)
   @@db(main)
 }
 `

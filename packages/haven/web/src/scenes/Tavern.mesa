@@ -11,7 +11,7 @@
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import Pacer from '@/components/Pacer.mesa'
-  import { piece }  from '@/pieces/index.js'
+  import { piece, inked, withSeasons } from '@/pieces/index.js'
   import { frame }  from '@/pieces/frame.js'
   import { table }  from '@/pieces/table.js'
   import { barrel } from '@/pieces/barrel.js'
@@ -19,12 +19,16 @@
   import { stairs } from '@/pieces/stairs.js'
   import { shelves } from '@/pieces/storage.js'
   import { rug } from '@/pieces/furniture.js'
+  import { bunting } from '@/pieces/bunting.js'
 
   // The hearth and its rug are the tavern's own; the bar is a piece of its
   // own (`pieces/bar.js`), since `components/Bar.mesa` finds it by import; the
   // shelves behind it, the tables and barrels are pieces any scene may use.
 
-  const hearth = piece('hearth', String.raw`
+  // The year turns the hearth, never a wall: the fire is embers in summer and
+  // a roar in winter (its `light` is how far the room is warmed). Summer is
+  // the scene's own `h`; the other seasons bring a letter no scene names.
+  const bare = piece('hearth', String.raw`
   _______________________
  |###########⚜###########|
  |##.-----------------.##|
@@ -42,7 +46,33 @@
 sssssssssssssssssssssssssss
 `)
 
+  const flames = (fg, chars, light, ms) => ({ H: { fg, chars, ms, flicker: true, light } })
+  const hearth = withSeasons(bare, {
+    spring: { paint: { h: 'H' }, palette: flames(['#ef4444', '#f97316', '#facc15', '#fb923c'], '^*^"', 5, 110) },
+    fall:   { paint: { h: 'H' }, palette: flames(['#f97316', '#ef4444', '#facc15', '#fb923c'], '^*^"', 7, 100) },
+    winter: { paint: { h: 'H' }, palette: flames(['#fef08a', '#facc15', '#f97316', '#fde047'], '^*"^', 9, 90) },
+  })
+
+  // The rug stays one look all year: the cellar's hidden door sits on it and
+  // keeps the colors under it, and a rug that turned would leave the door's
+  // cell the color of the season before.
   const hearthRug = rug(23, 4, [{ at: [3, 1], ch: '❦' }, { at: [19, 2], ch: '❦' }])
+
+  // What the weather brings in on boots, inside the front door: leaves in
+  // fall, slush in winter, wet prints in spring. Floor, so it is walked on, and
+  // nothing in summer.
+  const tracked = (art, letter, fg) => piece('mat', art, inked(art, letter), { floor: true, palette: { [letter]: { fg } } })
+  const mat = piece('mat', ' ', ' ', {
+    floor: true,
+    seasons: {
+      spring: tracked('.: :. .: :.', 'T', '#60a5fa'),
+      fall:   tracked('❧  ❧   ❧ ❧', 'X', '#c2410c'),
+      winter: tracked('*.*:*.:*.*', 'V', '#e0f2fe'),
+    },
+  })
+
+  // A strand along the top of the bar, hung from the shelves.
+  const strand = bunting(92)
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -59,7 +89,7 @@ sssssssssssssssssssssssssss
     y: { fg: ['#fde047', '#fbbf24', '#fef08a'], chars: 'i!i', ms: 300, flicker: true },
     m: { fg: '#7f1d1d' },
     M: { fg: '#b91c1c' },
-    h: { fg: ['#ef4444', '#f97316', '#facc15', '#fb923c'], chars: '^*^"', ms: 110, flicker: true, light: 6 },
+    h: { fg: ['#b91c1c', '#c2410c', '#ea580c', '#9a3412'], chars: '^*^"', ms: 140, flicker: true, light: 4 },
   }
 </script>
 
@@ -67,9 +97,11 @@ sssssssssssssssssssssssssss
   <Piece of={frame} />
   <Door  x={48} y={25} to="/" />
   <Piece of={shelves} x={3}  y={1} />
+  <Piece of={strand}  x={3}  y={8} />
   <Piece of={bar}     x={3}  y={9} />
   <Piece of={hearth}  x={63} y={18} />
   <Piece of={hearthRug} x={65} y={14} />
+  <Piece of={mat}     x={43} y={24} />
   <Door  x={75} y={15} to="/cellar/" hidden />
   <Piece of={table}   x={9}  y={14} />
   <Piece of={table}   x={29} y={14} />

@@ -29,7 +29,8 @@ import { createSchema } from './schema.ts'
 import type { Schema, FieldDef } from './schema.ts'
 import { serviceAccessor } from './service.ts'
 import type { HookMap } from './hooks.ts'
-import { NotFound, BadRequest, Unauthorized, Forbidden, FrameworkError } from './errors.ts'
+import { NotFound, BadRequest, BadGateway, Unauthorized, Forbidden, FrameworkError } from './errors.ts'
+import type { MirrorForward } from './app.ts'
 import { fieldError } from './field-errors.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPage } from './directives.ts'
@@ -117,6 +118,8 @@ interface LitestoneClientApi {
   $transaction: <T>(fn: (tx: LitestoneClient) => Promise<T>) => Promise<T>
   $schema?: unknown
   $claimsFor?: (principal: unknown) => Promise<Record<string, unknown>>
+  $checkWrite?: (accessor: string, op: 'create' | 'update' | 'delete', row: Record<string, unknown>, changes?: Record<string, unknown> | null) =>
+    Promise<{ ok: boolean, message?: string, rule?: string }>
   $search?: (q: string, opts?: { models?: string[]; limit?: number; offset?: number; prefix?: boolean }) => Promise<Array<Record<string, unknown>>>
   $rawDbs?: Record<string, unknown>
   $close?: () => void
@@ -495,7 +498,7 @@ export function deriveModelName(name: string): string {
  *
  * That is worse than a lookup miss. getTable throws, but the other two FAIL
  * OPEN: a service declaring `model: 'posts'` against `model Post` found no gate
- * and no schema, so `@@gate("4")` silently permitted anonymous requests and
+ * and no schema, so `@@gate(4)` silently permitted anonymous requests and
  * validation silently did nothing. Normalizing in one place is what keeps the
  * three consistent.
  *
@@ -503,9 +506,20 @@ export function deriveModelName(name: string): string {
  * genuinely-plural foreign table keep resolving to themselves.
  */
 export function accessorCandidates(accessor: string): string[] {
+  let candidates = candidateCache.get(accessor)
+  if (candidates) return candidates
   const derived = deriveModelName(accessor)
-  return derived === accessor ? [accessor] : [accessor, derived]
+  candidates = Object.freeze(derived === accessor ? [accessor] : [accessor, derived]) as string[]
+  // Every service call asks this several times and the inflector runs its rule
+  // table each time (`FJS-2992`). A name can reach here from a caller, so the
+  // cache is bounded rather than grown forever.
+  if (candidateCache.size >= CANDIDATE_CACHE_MAX) candidateCache.clear()
+  candidateCache.set(accessor, candidates)
+  return candidates
 }
+
+const CANDIDATE_CACHE_MAX = 1024
+const candidateCache = new Map<string, string[]>()
 
 /**
  * The one spelling of an accessor a Litestone client will actually judge.
@@ -550,11 +564,23 @@ export function accessorIfModel(client: unknown, accessor: string): string | nul
   } catch { return null }
   if (!Array.isArray(models)) return null
 
+  // A client's model list is fixed once built, so the answer is per list; the
+  // scan ran on every filtered read (`FJS-2992`).
+  let answers = modelAccessorCache.get(models)
+  if (!answers) modelAccessorCache.set(models, answers = new Map())
+  const known = answers.get(accessor)
+  if (known !== undefined) return known
+
   const candidates = accessorCandidates(accessor)
   const camel = (n: string) => n.charAt(0).toLowerCase() + n.slice(1)
   const model = models.find(m => candidates.includes(camel(m.name)))
-  return model ? camel(model.name) : null
+  const answer = model ? camel(model.name) : null
+  if (answers.size >= CANDIDATE_CACHE_MAX) answers.clear()
+  answers.set(accessor, answer)
+  return answer
 }
+
+const modelAccessorCache = new WeakMap<object, Map<string, string | null>>()
 
 type ParsedModel = { name: string; attributes?: Array<{ kind: string; transitions?: Record<string, unknown> }> }
 
@@ -655,9 +681,7 @@ export interface LitestoneServiceOptions {
    * the minimal service file literally just the model:
    *
    *   // services/posts.service.ts
-   *   export function createPostsService() {
-   *     return createBaseService({})       // → db.post, via 'posts'
-   *   }
+   *   export default createService({})   // → db.post, via 'posts'
    *
    * A plural spelling resolves too (see accessorCandidates), so `'posts'`,
    * `'post'` and an omitted value all reach `model Post`.
@@ -757,6 +781,62 @@ export async function findWindow(
   }
 }
 
+// ─── A claimed mirror (`FJS-D1125`) ──────────────────────────────────────────
+
+interface ClaimedMirror {
+  forward:  MirrorForward
+  accessor: string
+  key:      string
+}
+
+/**
+ * The forward for this call's model when a connector's claim holds it, else
+ * null. Asked at call time because `app.conduit` is configured after
+ * `createApp()`, and keyed by the column `@@mirror(key:)` names — never by a
+ * column NAMED like a Provider id, since a model with `externalId` and no
+ * `@@mirror` is an app's own row.
+ */
+export function mirrorClaimFor(ctx: ServiceContext, accessorOpt?: string): ClaimedMirror | null {
+  const conduit = (ctx.app as { conduit?: Partial<{ mirrored: unknown }> } | undefined)?.conduit
+  if (!conduit || typeof conduit.mirrored !== 'function') return null
+  const db = ctx.locals?.db as Record<string, unknown> | undefined
+  if (!db) return null
+  const accessor = accessorIfModel(db, accessorOpt ?? ctx.service)
+  if (!accessor) return null
+  const forward = (conduit.mirrored as (a: string) => MirrorForward | undefined)(accessor)
+  if (!forward) return null
+  let key: string | null = null
+  try { key = '$mirrorKey' in db ? (db.$mirrorKey as (a: string) => string | null)(accessor) : null } catch { key = null }
+  // Boot refuses a claim on a model that is not `@@mirror`, so this is a
+  // client that cannot say; forwarding without the key would land nothing.
+  if (!key) return null
+  return { forward, accessor, key }
+}
+
+// The columns a Provider's row may fill: stored, scalar, and not derived here.
+const UNWRITTEN_KINDS = new Set(['relation', 'implicitM2M', 'backRefOne'])
+const UNWRITTEN_ATTRS = new Set(['computed', 'from', 'transient', 'generated', 'derived'])
+
+function writableColumns(db: unknown, accessor: string): Set<string> | null {
+  let models: Array<{ name: string; fields: Array<{ name: string; type: { kind?: string }; attributes: Array<{ kind: string }> }> }> | undefined
+  try { models = (db as { $schema?: { models?: typeof models } }).$schema?.models } catch { return null }
+  const model = models?.find(m => m.name.charAt(0).toLowerCase() + m.name.slice(1) === accessor)
+  if (!model) return null
+  return new Set(model.fields
+    .filter(f => !UNWRITTEN_KINDS.has(f.type.kind ?? '') && !f.attributes.some(a => UNWRITTEN_ATTRS.has(a.kind)))
+    .map(f => f.name))
+}
+
+// The columns a `@@mirror` model keeps as the app's own (`@local`): every other
+// column there is the Provider's and `@system`, so a forward writes these as
+// the caller after the Provider's row lands, and nothing else.
+function localColumns(db: unknown, accessor: string): Set<string> {
+  let models: Array<{ name: string; fields: Array<{ name: string; attributes: Array<{ kind: string }> }> }> | undefined
+  try { models = (db as { $schema?: { models?: typeof models } }).$schema?.models } catch { return new Set() }
+  const model = models?.find(m => m.name.charAt(0).toLowerCase() + m.name.slice(1) === accessor)
+  return new Set(model?.fields.filter(f => f.attributes.some(a => a.kind === 'local')).map(f => f.name) ?? [])
+}
+
 export function createLitestoneBase(opts: LitestoneServiceOptions) {
   const {
     model,
@@ -846,7 +926,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       // seeds ctx.locals.db itself still gets scoping.
       //
       // $setAuth is guarded so plain (non-litestone) clients — adapted by
-      // createBaseService — pass through without per-user scoping.
+      // the service base — pass through without per-user scoping.
       // `in` before `typeof`: a system client has no `$setAuth`, and a Litestone
       // client THROWS on a property it lacks, so a hook that put `asSystem()`
       // on `ctx.locals.db` — having graded the caller itself — made every
@@ -873,6 +953,18 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     // `model` omitted → fall back to the service name, which the autoloader
     // derived from the filename ('posts.service.ts' → 'posts' → db.post).
     const candidates = accessorCandidates(model ?? ctx.service)
+    // `in` first: a Litestone client's `has` trap answers a miss without the
+    // Error its `get` trap builds, and the literal spelling misses on every
+    // call to a service that names its model `Item` (`FJS-2992`). A client
+    // whose `in` says no for everything still reaches the probe below.
+    for (const candidate of candidates) {
+      let present = false
+      try { present = candidate in scopedDb } catch { break }
+      if (!present) continue
+      let table: LitestoneTable | undefined
+      try { table = scopedDb[candidate] as LitestoneTable | undefined } catch { continue }
+      if (table) return table
+    }
     for (const candidate of candidates) {
       // Probing must not assume a miss is quiet. A real Litestone client is a
       // Proxy that THROWS on an unknown accessor ('"posts" is not a table in
@@ -1004,6 +1096,28 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
   }
 
   /**
+   * What a write by id that matched no row answers.
+   *
+   * Litestone answers null for a row the row policy hides and for one it lets
+   * the caller read and not change, so a no-existence-oracle null is all the
+   * write has. A 404 for the second is a lie to a screen that is drawing the
+   * row (`FJS-1750`). The caller's own read says which: a row they cannot read
+   * is 404, and one they can is refused by name, which tells them nothing they
+   * were not already looking at.
+   */
+  async function missOrRefused(
+    ctx: ServiceContext, table: LitestoneTable, where: Record<string, unknown>,
+    q: { withDeleted?: boolean, withTemplates?: boolean, onlyTemplates?: boolean },
+    verb: string,
+  ): Promise<never> {
+    const readable = await table.findFirst({
+      where, ...(q.withDeleted ? { withDeleted: true } : {}), ...templateArgs(q),
+    })
+    if (readable == null) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
+    throw new Forbidden(`${modelLabel(ctx)} with ${idField}=${ctx.id} is not one you may ${verb}`)
+  }
+
+  /**
    * The `@system` columns a hook on this call said the APPLICATION is supplying.
    *
    * `ctx.system.add('slots')` in a hook; `system: [...]` on the litestone call,
@@ -1016,6 +1130,109 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
    */
   function systemFields(ctx: ServiceContext): string[] | undefined {
     return ctx.system?.size ? [...ctx.system] : undefined
+  }
+
+  // ── A claimed mirror's writes ──────────────────────────────────────────
+  //
+  // The Provider is the system of record, so a write lands there first and
+  // here second: the caller's gate and hooks have run, the forward sends as
+  // the caller (a per-caller target spends their own credential), and the row
+  // the Provider answers is upserted by the mirror key as the system — the
+  // socket's echo of the same write then matches that row and changes nothing.
+  // The answer is re-read through the caller's client, so they get the row as
+  // they may read it.
+  //
+  // A write names one row: each is a call to the Provider, and a bulk patch of
+  // a thousand rows is a thousand of them under one request.
+
+  const providerOf = (m: ClaimedMirror) => `${m.forward.provider} ${m.forward.model}`
+
+  function refuseBulkMirror(ctx: ServiceContext, m: ClaimedMirror, verb: string): void {
+    if (Array.isArray(ctx.data) || (verb !== 'create' && !ctx.id))
+      throw new BadRequest(
+        `${modelLabel(ctx)} is mirrored from ${m.forward.provider}, so a ${verb} names one row — ` +
+        `each is a call to ${m.forward.provider}. Send one request per row.`)
+  }
+
+  // A `@local` column the caller named (a `starred` beside mirrored ones) is
+  // the app's own and the Provider never saw it, so it is written here through
+  // the caller's client, under their policies, rather than dropped with a 2xx.
+  // The key leaves the update half: it is `@immutable`, and a row it already
+  // matched has it.
+  async function landMirrored(ctx: ServiceContext, m: ClaimedMirror, row: Record<string, unknown>): Promise<unknown> {
+    const value = row[m.key]
+    if (value === undefined || value === null)
+      throw new BadGateway(`${providerOf(m)}: the Provider's answer parsed to a row with no ${m.key}`)
+    const db = ctx.locals.db as Record<string, unknown>
+    const sys = ('asSystem' in db ? (db.asSystem as () => Record<string, LitestoneTable>)() : db)[m.accessor] as LitestoneTable
+    const columns = writableColumns(db, m.accessor)
+    const data = columns ? Object.fromEntries(Object.entries(row).filter(([k]) => columns.has(k))) : row
+    const { [m.key]: _key, ...changed } = data
+    await sys.upsert({ where: { [m.key]: value }, create: data, update: changed })
+    const input = ctx.data && typeof ctx.data === 'object' ? ctx.data as Record<string, unknown> : {}
+    const locals = localColumns(db, m.accessor)
+    const local = Object.fromEntries(Object.entries(input).filter(([k]) => locals.has(k)))
+    if (Object.keys(local).length) {
+      const sysLocal = systemFields(ctx)
+      await getTable(ctx).update({ where: { [m.key]: value }, data: local, ...(sysLocal ? { system: sysLocal } : {}) })
+    }
+    return getTable(ctx).findUnique({ where: { [m.key]: value } })
+  }
+
+  // The app's own write policies, asked before the send: the row lands as the
+  // system, which grades none, so a Provider laxer than the schema would land
+  // a write the schema refuses (`FJS-3147`). A refusal names the verb the way
+  // `missOrRefused` does; the caller has already been shown the row.
+  async function refuseUnwritable(
+    ctx: ServiceContext, m: ClaimedMirror, op: 'create' | 'update' | 'delete',
+    row: Record<string, unknown>, changes?: Record<string, unknown>,
+  ): Promise<void> {
+    // No guard: a client that answered `$mirrorKey` answers this.
+    const v = await (ctx.locals.db as LitestoneClientApi).$checkWrite!(m.accessor, op, row, changes)
+    if (v.ok) return
+    throw new Forbidden(v.message ?? (op === 'create'
+      ? `${modelLabel(ctx)}: this is not one you may create`
+      : `${modelLabel(ctx)} with ${idField}=${ctx.id} is not one you may ${op === 'delete' ? 'remove' : 'update'}`))
+  }
+
+  async function currentMirrored(ctx: ServiceContext): Promise<Record<string, unknown>> {
+    assertNameable(ctx)
+    const row = await getTable(ctx).findUnique({ where: { [idField]: ctx.id } }) as Record<string, unknown> | null
+    if (!row) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
+    return row
+  }
+
+  async function forwardCreate(ctx: ServiceContext, m: ClaimedMirror): Promise<unknown> {
+    refuseBulkMirror(ctx, m, 'create')
+    await refuseUnwritable(ctx, m, 'create', ctx.data as Record<string, unknown>)
+    const row = await m.forward.create!(ctx.data)
+    if (!row) throw new BadGateway(`${providerOf(m)}: the Provider answered a create with nothing the claim reads as a row`)
+    return landMirrored(ctx, m, row)
+  }
+
+  async function forwardUpdate(ctx: ServiceContext, m: ClaimedMirror, verb: 'update' | 'patch'): Promise<unknown> {
+    refuseBulkMirror(ctx, m, verb)
+    const current = await currentMirrored(ctx)
+    await refuseUnwritable(ctx, m, 'update', current, ctx.data as Record<string, unknown>)
+    const row = await m.forward.update!(String(current[m.key]), ctx.data)
+    // No row in the answer: the Provider took the write and the sync brings it.
+    return row ? landMirrored(ctx, m, row) : current
+  }
+
+  async function forwardRemove(ctx: ServiceContext, m: ClaimedMirror): Promise<unknown> {
+    refuseBulkMirror(ctx, m, 'remove')
+    const current = await currentMirrored(ctx)
+    await refuseUnwritable(ctx, m, 'delete', current)
+    const row = await m.forward.remove!(String(current[m.key]))
+    // A Provider that soft-deletes answers the row with its deletion stamped;
+    // one answering a bare OK is gone there, so it goes here.
+    if (row) await landMirrored(ctx, m, row)
+    else {
+      const db = ctx.locals.db as Record<string, unknown>
+      const sys = ('asSystem' in db ? (db.asSystem as () => Record<string, LitestoneTable>)() : db)[m.accessor] as LitestoneTable
+      await sys.remove({ where: { [m.key]: current[m.key] } })
+    }
+    return current
   }
 
   /**
@@ -1328,6 +1545,9 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     async create(ctx: ServiceContext): Promise<unknown> {
       if (!ctx.data) throw new BadRequest('Request body is required')
 
+      const mirrored = mirrorClaimFor(ctx, model)
+      if (mirrored?.forward.create) return forwardCreate(ctx, mirrored)
+
       // Policy first, database second. This guard used to run after
       // getTable(), so a misconfigured db turned "bulk writes are disabled on
       // this service" — a 400 the caller can act on — into a 500 about a
@@ -1395,6 +1615,9 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       if (!ctx.data) throw new BadRequest('Request body is required')
       if (!ctx.id)   throw new BadRequest('update() requires an id — use patch() for query-based writes')
 
+      const mirrored = mirrorClaimFor(ctx, model)
+      if (mirrored?.forward.update) return forwardUpdate(ctx, mirrored, 'update')
+
       assertNameable(ctx)
       const table = getTable(ctx)
       const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
@@ -1416,12 +1639,15 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       const sys = systemFields(ctx)
       if (sys) args.system = sys
       const updated = await table.update(args)
-      if (!updated) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
+      if (!updated) return missOrRefused(ctx, table, where, q, 'change')
       return updated
     },
 
     async patch(ctx: ServiceContext): Promise<unknown> {
       if (!ctx.data) throw new BadRequest('Request body is required')
+
+      const mirrored = mirrorClaimFor(ctx, model)
+      if (mirrored?.forward.update) return forwardUpdate(ctx, mirrored, 'patch')
 
       const table = getTable(ctx)
       const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
@@ -1448,7 +1674,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         const sys = systemFields(ctx)
         if (sys) args.system = sys
         const updated = await table.update(args)
-        if (!updated) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
+        if (!updated) return missOrRefused(ctx, table, where, q, 'change')
         return updated
       }
 
@@ -1491,6 +1717,9 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     },
 
     async remove(ctx: ServiceContext): Promise<unknown> {
+      const mirrored = mirrorClaimFor(ctx, model)
+      if (mirrored?.forward.remove) return forwardRemove(ctx, mirrored)
+
       const table = getTable(ctx)
       const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
 
@@ -1508,12 +1737,12 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
             data: { [softDelete]: new Date().toISOString() },
             ...templateArgs(q),
           })
-          if (!stamped) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
+          if (!stamped) return missOrRefused(ctx, table, where, q, 'remove')
           return stamped
         }
 
         const removed = await table.remove({ where, ...templateArgs(q) })
-        if (!removed) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
+        if (!removed) return missOrRefused(ctx, table, where, q, 'remove')
         return removed
       }
 
@@ -1556,8 +1785,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
 // backed by one already knows its field rules — @length, @email, @gte and the
 // rest. Making every service restate that by passing
 // `schema: generateJsonSchema(db.$schema)` is boilerplate that silently loses
-// validation when forgotten, and it was forgotten by default:
-// createBaseService had no schema option at all.
+// validation when forgotten.
 //
 // This derives it instead. @frontierjs/litestone is a peer dependency, so the
 // import is dynamic and its absence is tolerated — the same approach
@@ -1618,7 +1846,7 @@ function _warnNoValidation(reason: string): void {
     `[Junction] Schema validation is OFF. The database client carries a $schema, ` +
     `so field rules were expected to be derived from it — but @frontierjs/litestone ` +
     `could not be loaded: ${reason}. Services will accept unvalidated input. ` +
-    `Install the peer dependency, or pass an explicit schema to createBaseService.`
+    `Install the peer dependency, or pass an explicit schema: to createService.`
   )
 }
 
@@ -1825,9 +2053,14 @@ export function checkUnknownKeys(
     // The strip is for a column a client echoes back from a read. A @guarded
     // column is never read, so naming one is never an echo: dropping it would
     // answer 2xx for a value that was not stored (`FJS-1970`, `FJS-D427`).
+    // A hook that named the column in `ctx.system` meant to write it, and
+    // "leave it out" sends it to drop a value it was right to supply. The
+    // client's schema has no such key until validation is over.
     ...locked.map(field => ({
       field,
-      message: `is @guarded on ${what}, a system-context column no caller writes. Leave it out of the payload.`,
+      message: ctx.system?.has(field)
+        ? `is @guarded on ${what}, a system-context column the client schema omits, so a before hook cannot add it. Add it in a \`validated:\` hook, which runs after this check.`
+        : `is @guarded on ${what}, a system-context column no caller writes. Leave it out of the payload.`,
     })),
   ])
 }
@@ -1968,6 +2201,13 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
     const accessor = accessorOpt ?? ctx.service
     const client = ctx.locals.db as { $schema?: unknown } | undefined
     if (!client) return
+
+    // A claimed mirror's payload is the claim's input, not a row: the row is
+    // what the Provider answers, and its columns are the Provider's to fill.
+    // The connector's verb refuses an input it cannot send (a 400), and the
+    // answer still meets the Data boundary's own rules when it lands.
+    const mirrored = mirrorClaimFor(ctx, accessor)
+    if (mirrored && (mode === 'create' ? mirrored.forward.create : mirrored.forward.update)) return
 
     // Two documents, because litestone's PROPERTY SET differs by mode and not
     // only its `required[]`. `@version` is emitted for update and omitted for
@@ -2823,9 +3063,9 @@ export function autoSort(accessorOpt: string | undefined) {
 //
 // A model's @@gate already states the minimum level per operation:
 //
-//   @@gate("4")        read/create/update/delete all require USER
-//   @@gate("0.4")      read is public; writes require USER
-//   @@gate("2.4.4.5")  read 2, create 4, update 4, delete 5
+//   @@gate(4)        read/create/update/delete all require USER
+//   @@gate(0.4)      read is public; writes require USER
+//   @@gate(2.4.4.5)  read 2, create 4, update 4, delete 5
 //
 // Restating that as `before: { find: [authenticate], get: [authenticate], … }`
 // on every service is five lines saying what one line already said — and the
@@ -2918,7 +3158,7 @@ export function gateAuth(accessor: string | undefined, op: GateOp) {
   // entries reading 'anonymous' in the telemetry waterfall.
   return function gateAuth(ctx: ServiceContext): void {
     // accessor omitted → same fallback as getTable, so a model-less
-    // createBaseService({}) is still gated by the model's @@gate.
+    // createService({}) is still gated by the model's @@gate.
     const levels = _gateLevels(ctx.locals.db, accessor ?? ctx.service)
     if (!levels) return
     if (levels[op] > 0 && !ctx.auth?.user) {
@@ -2934,7 +3174,7 @@ export function gateAuth(accessor: string | undefined, op: GateOp) {
  * is not the same as being unguarded — a body that writes is still refused at
  * the Data boundary by the model's own `@@gate`. What it cost is that the
  * refusal arrived AFTER the body had run: measured, an anonymous `POST` with
- * `X-Service-Method: refund` against a `@@gate("5.5.5.5")` model executed the
+ * `X-Service-Method: refund` against a `@@gate(5.5.5.5)` model executed the
  * handler, charged the card, and only then took a 403 from the first write —
  * where every CRUD verb on the same service answered 401 having run nothing
  * (`FJS-826`).
@@ -3236,7 +3476,7 @@ export { LEVELS } from '@frontierjs/toolbelt/gate'
  *
  * They drifted. 8 of the 216 combinations of the fields a session carries
  * graded CREATOR(3) in Litestone and USER(4) here, all of them a signed-in
- * caller with no `role`, so one `@@gate("4")` read was a 403 or a 200 depending
+ * caller with no `role`, so one `@@gate(4)` read was a 403 or a 200 depending
  * on which resolver the app had installed — and which one that was is not
  * obvious, since a schema declaring any `@@gate` auto-installs Litestone's
  * rather than this (`FJS-520`, ruled `FJS-D197`). The kit is substrate, below
@@ -3619,8 +3859,7 @@ export function withLitestoneDb(
     // Scope to the caller here, not in the service.
     //
     // This used to seed the ROOT client and leave $setAuth to
-    // one of two service factories. createBaseService never scoped at all, so a
-    // service written with it ran unscoped — and a schema declaring
+    // the service factory. A factory that never scoped ran unscoped — and a schema declaring
     // `@@allow('read', ownerId == auth().id)` then compared against a null
     // auth() and matched nothing. The service looked broken; the policy was
     // fine. Which factory you picked silently decided whether your row policies
@@ -3996,7 +4235,8 @@ export function cookie(name: string): BearerSource {
 export interface BearerClaimOptions {
   /** Where the token is on the request — `header('x-cart-token')`, `cookie('portal')`. */
   from:    BearerSource
-  /** The model holding the grants. Its accessor is the name with a lower first letter. */
+  /** The ACCESSOR of the model holding the grants — its name with a lower first
+   *  letter, so `model PortalLink` is `'portalLink'`. A PascalCase name is refused. */
   model:   string
   /** The column holding the token's DIGEST. Never the token: what is stored is
    *  `fingerprint(token, { key, purpose })` and the token itself is in the email
@@ -4107,6 +4347,14 @@ export interface BearerResolver extends SelfDescribedResolver {
 }
 
 export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
+  // Every request carrying the header would otherwise answer 500 *not a table
+  // in this schema*; a model's name reads as the right value for this option.
+  if (/^[A-Z]/.test(opts.model)) {
+    const accessor = opts.model[0].toLowerCase() + opts.model.slice(1)
+    throw new Error(
+      `bearerClaim: \`model\` is the client's accessor, not the model's name — ` +
+      `\`model ${opts.model}\` is \`'${accessor}'\`.`)
+  }
   const purpose = opts.purpose ?? `${opts.model}.${opts.column}`
   // A link and the cookie it is redeemed for digest under different purposes,
   // so an unredeemed link presented as the cookie matches nothing and a
@@ -4796,9 +5044,9 @@ export function announceDataWrites(
       // NOTHING, in every app, since FJS-010 (FJS-464).
       //
       // Two things defeat one key. `svc.model` is an ACCESSOR and may
-      // legitimately be the plural — `createBaseService({ model: 'posts' })`
+      // legitimately be the plural — `createService({ model: 'posts' })`
       // is documented and supported — while Litestone announces `Post`. And
-      // `singularize(name)` was unreachable, because `createService` fills
+      // `singularize(name)` was unreachable, because `buildService` fills
       // `model` with the service NAME when a file declares none, so the `??`
       // never took its right-hand side.
       //
@@ -4984,17 +5232,23 @@ export function announceDataWrites(
         // Every spelling, as `servicesFor` does: Litestone's accessor index is
         // exact, and a service named `pages` with no `model:` asked `pages` and
         // reached nothing, so no Share or PageAccess write ever regraded it.
-        let reach: string[] = []
-        try {
-          const fn = (db as { $readReach?: (a: string) => string[] }).$readReach
-          if (typeof fn === 'function')
-            for (const candidate of accessorCandidates(accessor)) {
-              reach = fn(candidate)
-              if (reach.length) break
-            }
-        } catch { /* a client predating $readReach, or a name it does not know */ }
+        const reachBy = (probe: '$readReach' | '$fromReach'): string[] => {
+          try {
+            const fn = (db as Record<string, ((a: string) => string[]) | undefined>)[probe]
+            if (typeof fn === 'function')
+              for (const candidate of accessorCandidates(accessor)) {
+                const reach = fn(candidate)
+                if (reach.length) return reach
+              }
+          } catch { /* a client predating the probe, or a name it does not know */ }
+          return []
+        }
         const spellings = new Set(accessorCandidates(accessor).map(c => c.toLowerCase()))
-        for (const reached of reach) {
+        // `$fromReach` joins `$readReach` as a reason to re-read: an `@from`
+        // count moves when a CHILD is written and the parent row never does, so
+        // no frame names it (`FJS-2632`). A model reading its own table through
+        // an `@from` is announced by its own write already, so only the others.
+        for (const reached of [...reachBy('$readReach'), ...reachBy('$fromReach')]) {
           const key = reached.toLowerCase()
           if (spellings.has(key)) { modelOf.set(name, reached); continue }
           let set = dependents.get(key)

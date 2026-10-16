@@ -275,6 +275,9 @@ export function evaluate(node, env = {}) {
           const v = n.type === 'auth'  ? (n.field ? claimOf(n.field) : auth?.id)
                   : n.type === 'field' ? read(n.name)
                   : ev(n)
+          // A claim is a list only when it IS an array. A scalar there is a
+          // principal built wrong, and SQL refuses it the same way.
+          if (n.type === 'auth') return Array.isArray(v) ? v : []
           // A create may carry the array as written; a row read back has been
           // deserialized. A column absent from the payload is not an empty
           // list — it is a column that was not set, and nothing is in it.

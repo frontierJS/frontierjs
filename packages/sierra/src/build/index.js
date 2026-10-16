@@ -20,7 +20,7 @@ import { devtoolsPlugin } from '../devtools/plugin.js'
 import { scannerPlugin, scanRoutes } from './scanner-plugin.js'
 import { schemaPlugin }  from './schema-plugin.js'
 import { localDbPlugin, localDbWorkerPlugins } from './local-db-plugin.js'
-import { virtualSierraPlugin } from '../virtual/virtual-sierra.js'
+import { virtualSierraPlugin, storagePrefix } from '../virtual/virtual-sierra.js'
 import { runPostBuild } from '../postbuild/index.js'
 import { prerenderRoutes } from './prerender.js'
 import { buildIslandBundle, injectIntoPages } from './island-bundle.js'
@@ -45,6 +45,9 @@ import { beginBuildImports, importAppModule } from './app-import.js'
  * @property {'spa'|'static'|'widget'} target
  * @property {string} [routesDir='src/routes']
  * @property {string} [base='/']
+ * @property {string} [prefix] — the namespace `persisted()` stores every key
+ *   under, as `prefix:key`. Default: the name in the nearest package.json above
+ *   the Vite root; `''` stores keys bare.
  * @property {'always'|'never'|'preserve'} [trailingSlash='always']
  * @property {'spa'|'static'} [render='spa']
  * @property {string} [outDir='dist/client']
@@ -604,6 +607,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
               // theme block says (`FJS-501`).
               theme: config.theme ?? null,
               analytics: config.analytics ?? null,
+              prefix: storagePrefix(config, root),
             })
             if (bundle) {
               const touched = await injectIntoPages(outDir, pre.islandPages, bundle.src)

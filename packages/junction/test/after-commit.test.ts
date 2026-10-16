@@ -17,8 +17,8 @@
 import { describe, test, expect } from 'bun:test'
 
 import { createClient }  from '../../litestone/src/index.js'
-import { createService, callService } from '../src/core/service.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import { buildService, callService } from '../src/core/service.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const SCHEMA = `model Post { id Int @id @default(autoincrement())  title String }`
 
@@ -56,7 +56,7 @@ describe('ctx.afterCommit — the success path', () => {
   test('runs after the call succeeds, in the order queued', async () => {
     const db  = await mkDb()
     const ran: string[] = []
-    const svc = createService(writes({
+    const svc = buildService(writes({
       hooks: { before: { create: [(c: ServiceContext) => { c.afterCommit(() => { ran.push('from before') }) }] },
                after:  { create: [(c: ServiceContext) => { c.afterCommit(() => { ran.push('from after') }) }] } },
     }) as never)
@@ -71,7 +71,7 @@ describe('ctx.afterCommit — the success path', () => {
   test('an async callback is awaited before the call returns', async () => {
     const db  = await mkDb()
     let done  = false
-    const svc = createService(writes({
+    const svc = buildService(writes({
       hooks: { after: { create: [(c: ServiceContext) => {
         c.afterCommit(async () => { await new Promise(r => setTimeout(r, 5)); done = true })
       }] } },
@@ -92,7 +92,7 @@ describe('ctx.afterCommit — the success path', () => {
     // EventEmitter answers a boolean, which this interface does not.
     const events = { emit: (name: string) => { if (name === 'posts:created') order.push('announced') } }
 
-    const svc = createService(writes({
+    const svc = buildService(writes({
       hooks: { after: { create: [(c: ServiceContext) => { c.afterCommit(() => { order.push('effect') }) }] } },
     }) as never)
 
@@ -108,7 +108,7 @@ describe('ctx.afterCommit — the failure path', () => {
     // after hook and a later one fails the call; nothing goes out.
     const db   = await mkDb()
     let sent   = 0
-    const svc  = createService(writes({
+    const svc  = buildService(writes({
       hooks: { after: { create: [
         (c: ServiceContext) => { c.afterCommit(() => { sent++ }) },
         function boom() { throw new Error('a later after hook fails') },
@@ -127,7 +127,7 @@ describe('ctx.afterCommit — the failure path', () => {
   test('with transactional: the row rolls back and the effect still does not run', async () => {
     const db  = await mkDb()
     let sent  = 0
-    const svc = createService(writes({
+    const svc = buildService(writes({
       transactional: true,
       hooks: { after: { create: [
         (c: ServiceContext) => { c.afterCommit(() => { sent++ }) },
@@ -146,7 +146,7 @@ describe('ctx.afterCommit — the failure path', () => {
     // fatal — and the callbacks after it still run.
     const db  = await mkDb()
     let later = 0
-    const svc = createService(writes({
+    const svc = buildService(writes({
       hooks: { after: { create: [(c: ServiceContext) => {
         c.afterCommit(() => { throw new Error('smtp is down') })
         c.afterCommit(() => { later++ })
@@ -181,7 +181,7 @@ describe('ctx.afterCommit — under a transaction', () => {
       return out
     }
 
-    const svc = createService(writes({
+    const svc = buildService(writes({
       transactional: true,
       hooks: { after: { create: [(c: ServiceContext) => { c.afterCommit(() => { order.push('effect') }) }] } },
     }) as never)
@@ -196,7 +196,7 @@ describe('ctx.afterCommit — under a transaction', () => {
     // callback queued before the swap and one queued after it both run.
     const db  = await mkDb()
     const ran: string[] = []
-    const svc = createService(writes({
+    const svc = buildService(writes({
       transactional: true,
       hooks: {
         around: { create: [async (c: ServiceContext, next: () => Promise<void>) => {
@@ -221,7 +221,7 @@ describe('ctx.afterCommit — every context has one', () => {
     // thing that throws.
     const db  = await mkDb()
     let ran   = false
-    const svc = createService(writes({
+    const svc = buildService(writes({
       hooks: { after: { create: [(c: ServiceContext) => { c.afterCommit(() => { ran = true }) }] } },
     }) as never)
 
@@ -235,7 +235,7 @@ describe('ctx.afterCommit — every context has one', () => {
   test('a read queues nothing and drains nothing', async () => {
     const db  = await mkDb()
     let ran   = 0
-    const svc = createService(writes({
+    const svc = buildService(writes({
       hooks: { after: { find: [(c: ServiceContext) => { c.afterCommit(() => { ran++ }) }] } },
     }) as never)
 

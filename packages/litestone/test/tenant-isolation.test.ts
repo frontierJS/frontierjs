@@ -129,7 +129,7 @@ describe('verifyTenantIsolation', () => {
 
   test('a gate above 7 is uncheckable, not a pass', async () => {
     const env = await createTestEnv({ schema: CLEAN.replace(
-      'model Board {', 'model Board {\n    @@gate("8.8.8.8")') })
+      'model Board {', 'model Board {\n    @@gate(8.8.8.8)') })
     const rows = await env.verifyTenantIsolation()
     const board = of(rows, 'Board')
     expect(board.some(r => r.got === 'uncheckable')).toBe(true)
@@ -520,7 +520,7 @@ const VALUESET_FK = `
     account   Account @relation(fields: [accountId], references: [id])
     tagId     Int     @values(ContactTags)
     tag       Tag     @relation(fields: [tagId], references: [id])
-    @@gate("4")
+    @@gate(4)
   }
 `
 
@@ -544,7 +544,7 @@ describe('a foreign key carrying @values (FJS-2556)', () => {
       model Paint {
         id    Int    @id @default(autoincrement())
         color String @values(Colors)
-        @@gate("4")
+        @@gate(4)
       }
     ` })
     const rows = (await env.verifyGateLadder({ ops: ['create'] })).filter(r => r.model === 'Paint')

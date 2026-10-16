@@ -204,7 +204,7 @@ describe('tenancy { strategy row } — desugaring', () => {
   })
 
   it('refuses @@gate and @@allow on a jsonl model, and a client will not open it', async () => {
-    for (const rule of ['@@gate("8")', `@@allow('read', auth() != null)`]) {
+    for (const rule of ['@@gate(8)', `@@allow('read', auth() != null)`]) {
       const text = `
         database rawj { path "./rawj/" driver jsonl }
         model Note { id String @id @default(uuid())  text String  @@db(rawj)  ${rule} }
@@ -594,7 +594,7 @@ describe('a row cannot be moved out of its tenant', () => {
 //
 // `asSystem()` means NO PERMISSION RULES. It did not mean *no scope*, and the
 // gap was a hole in a shipped feature: row tenancy desugars to `@@deny`, which
-// is a policy, so a system context read every tenant's rows — and a `@@gate("8")`
+// is a policy, so a system context read every tenant's rows — and a `@@gate(8)`
 // model can be read by nothing else, so the only client that could read a
 // credential was the one that ignored tenancy.
 //
@@ -614,14 +614,14 @@ model Secret {
   id          Int    @id @default(autoincrement())
   workspaceId Int
   label       String
-  @@gate("8")
+  @@gate(8)
 }
 
 model Note {
   id          Int    @id @default(autoincrement())
   workspaceId Int
   body        String
-  @@gate("0")
+  @@gate(0)
 }
 `
 
@@ -650,7 +650,7 @@ describe('asSystem() and row tenancy', () => {
     const { db } = await seed()
     const sys = db.$setAuth({ id: 1, workspaceId: 1 }).asSystem()
 
-    // @@gate("8") is unreachable for the scoped caller and reachable here...
+    // @@gate(8) is unreachable for the scoped caller and reachable here...
     await expect(db.$setAuth({ id: 1, workspaceId: 1 }).secret.findMany()).rejects.toThrow()
     // ...but only for its own tenant, which is the whole point.
     expect((await sys.secret.findMany()).map((r: any) => r.label)).toEqual(['ws1 key'])

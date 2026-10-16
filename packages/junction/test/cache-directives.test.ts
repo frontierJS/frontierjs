@@ -4,14 +4,15 @@
 // `$select` read with the columns of the last full read (FJS-1399).
 
 import { describe, it, expect } from 'bun:test'
-import { createService, testCtx, callService } from '../index.ts'
+import { testCtx, callService } from '../index.ts'
+import { buildService } from '../src/core/service.ts'
 import type { ServiceContext } from '../index.ts'
 
 const ROWS = [{ id: 1, name: 'a' }, { id: 2, name: 'b' }, { id: 3, name: 'c' }]
 
 function pagedService(name: string) {
   let calls = 0
-  const svc = createService({
+  const svc = buildService({
     name,
     cache: true,
     async find(ctx: ServiceContext) {
@@ -29,7 +30,7 @@ function pagedService(name: string) {
   return { svc, calls: () => calls }
 }
 
-async function run(svc: ReturnType<typeof createService>, ctx: ServiceContext) {
+async function run(svc: ReturnType<typeof buildService>, ctx: ServiceContext) {
   await callService(svc, ctx)
   return (ctx.result as { data: unknown }).data
 }

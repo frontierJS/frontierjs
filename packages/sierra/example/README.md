@@ -15,7 +15,7 @@ bun run api     # terminal 1 — Junction + Litestone on :8130
 bun run dev     # terminal 2 — Sierra + Vite on :8030
 ```
 
-Open <http://localhost:8030>, then sign in from the header — `@@gate("0.4.4.5")`
+Open <http://localhost:8030>, then sign in from the header — `@@gate(0.4.4.5)`
 makes reads public and writes authenticated.
 
 ## Layout
@@ -114,7 +114,7 @@ resource it fetches options from is derived from
 a column. It used to be emitted as a required array-of-string, which meant the
 seed in `api/src/app.ts` could not have created a lead without inventing one.
 
-**The delete button is disabled until you sign in as admin.** `@@gate("0.4.4.5")`
+**The delete button is disabled until you sign in as admin.** `@@gate(0.4.4.5)`
 wants level 5 to delete; `leads.can('delete', session.level)` asks before
 rendering. This is an affordance, not a boundary — the server refuses either
 way, and you can watch it: signed in as *user*, `DELETE /api/leads/1` is a 403.

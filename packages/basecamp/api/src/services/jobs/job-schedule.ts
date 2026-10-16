@@ -11,7 +11,7 @@
 // knows a job changed and the APP is what restores them at boot; a shared
 // module is what keeps the caravan name from being spelled in two places.
 
-import type { BasecampApp } from '../../basecamp.types.ts'
+import type { App }         from '@frontierjs/junction'
 import type { Job }         from '../../../../db/schema.d.ts'
 
 /**
@@ -25,16 +25,16 @@ export const scheduleName = (jobId: string): string => `job:cron:${jobId}`
 
 /** Register — or replace — a scheduled job's cron. A job with none is a no-op. */
 export function scheduleJob(
-  app: BasecampApp,
+  app: App,
   job: Pick<Job, 'id' | 'cronExpression' | 'workspaceId'>,
 ): void {
   if (!job.cronExpression) return
 
-  app.jobs.schedule(
+  app.jobs!.schedule(
     scheduleName(job.id),
     job.cronExpression,
     async () => {
-      await app.jobs.dispatch('job:run',
+      await app.jobs!.dispatch('job:run',
         { id: job.id, workspace_id: job.workspaceId, trigger: 'scheduled' },
         {
           queue: 'jobs',
@@ -60,8 +60,8 @@ export function scheduleJob(
  * The `job:run` handler stays registered — a run already queued under it still
  * has to find something to execute. This unbinds the clock and nothing else.
  */
-export function unscheduleJob(app: BasecampApp, jobId: string): void {
-  app.jobs.unschedule(scheduleName(jobId))
+export function unscheduleJob(app: App, jobId: string): void {
+  app.jobs!.unschedule(scheduleName(jobId))
 }
 
 /**
@@ -73,9 +73,9 @@ export function unscheduleJob(app: BasecampApp, jobId: string): void {
  * (`FJS-1241`). `null` is a job the clock does not hold, which is every job
  * `syncSchedule` took off it.
  */
-export function nextRunAt(app: BasecampApp, jobId: string): string | null {
+export function nextRunAt(app: App, jobId: string): string | null {
   const name = scheduleName(jobId)
-  const next = app.jobs.nextRuns().find(r => r.name === name)?.nextRun
+  const next = app.jobs!.nextRuns().find(r => r.name === name)?.nextRun
   return next ? next.toISOString() : null
 }
 
@@ -91,7 +91,7 @@ export function nextRunAt(app: BasecampApp, jobId: string): string | null {
  * firing.
  */
 export function syncSchedule(
-  app: BasecampApp,
+  app: App,
   job: Pick<Job, 'id' | 'kind' | 'status' | 'cronExpression' | 'workspaceId'>,
 ): void {
   const onTheClock = job.kind === 'scheduled'
@@ -116,8 +116,8 @@ export function syncSchedule(
 // It reads rows, so it belongs to the app's boot rather than to a job file: the
 // handler that RUNS a job has no reason to know how many were scheduled.
 
-export async function restoreSchedules(app: BasecampApp): Promise<number> {
-  const db  = app.db.asSystem()
+export async function restoreSchedules(app: App): Promise<number> {
+  const db  = app.db!.asSystem()
   const log = app.logger.child('job-schedule')
 
   const jobs = await db.job.findMany({

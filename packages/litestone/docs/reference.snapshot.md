@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**121 words** — 13 declarations · 70 field attributes · 35 model attributes · 3 move words.
+**123 words** — 13 declarations · 71 field attributes · 36 model attributes · 3 move words.
 
 ## Index
 
@@ -30,7 +30,7 @@ and shows you the diff first.
 - *Identify a row* — [`@id`](#id-field) · [`@unique`](#unique-field) · [`@map`](#map-field) · [`@default`](#default-field) · [`@sequence`](#sequence-field) · [`@rank`](#rank-field)
 - *Reach another row* — [`@relation`](#relation-field) · [`@from`](#from-field) · [`@edge`](#edge-field) · [`@scoped`](#scoped-field)
 - *Compute a value* — [`@computed`](#computed-field) · [`@transient`](#transient-field) · [`@derived`](#derived-field) · [`@generated`](#generated-field) · [`@hardDelete`](#harddelete-field) · [`@keep`](#keep-field)
-- *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@personal`](#personal-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
+- *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@local`](#local-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@personal`](#personal-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@trail`](#trail-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
 - *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@zone`](#zone-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
@@ -42,7 +42,7 @@ and shows you the diff first.
 - *Identify a row* — [`@@id`](#id-model)
 - *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
-- *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
+- *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@@mirror`](#mirror-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
 **Move words**
 
@@ -78,7 +78,7 @@ database logs {
 
 - **`driver`** — `sqlite` · `jsonl` · `trail`
 - **Deeper** — [multi-database.md](multi-database.md)
-- **See also** — [`@@db`](#db-model) · [`@trail`](#trail-field)
+- **See also** — [`@@db`](#db-model) · [`@@trail`](#trail-model)
 
 ### `tenancy` `{ strategy database | row, … }` <a id="tenancy-declaration"></a>
 
@@ -118,7 +118,7 @@ claim siteId     from Employee(userId).siteId
 - **Note** — Declared and never used in a policy is reported by `litestone advise`; used and never declared is a parse-time refusal.
 - **Also typed** — `token claim`
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@@auth`](#auth-model) · [`@allow`](#allow-field)
+- **See also** — [`@@auth`](#auth-model) · [`@@allow`](#allow-model)
 
 ### `model` `<PascalCaseSingular> { … }` <a id="model-declaration"></a>
 
@@ -135,14 +135,14 @@ model Product {
 
 ### `view` `<name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] }` <a id="view-declaration"></a>
 
-A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`. A column takes `@money`, `@scale` and `@unit` and no other field attribute, so a view summing a `@money` column can say its result is money.
+A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate(0)` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`. A column takes `@money`, `@scale` and `@unit` and no other field attribute, so a view summing a `@money` column can say its result is money.
 
 ```lite
 view accountStats {
   accountId Int
   total     Int
   @@sql("SELECT accountId, COUNT(*) AS total FROM Event GROUP BY accountId")
-  @@gate("5")
+  @@gate(5)
 }
 ```
 
@@ -184,7 +184,7 @@ valueset TaskTag {
 ```
 
 - **Also typed** — `lookup table` · `shared enum`
-- **See also** — [`@values`](#values-field) · [`scope`](#scope-declaration)
+- **See also** — [`@values`](#values-field) · [`@@scope`](#scope-model)
 
 ### `scope` `<name>(<field>[, <field>…])` <a id="scope-declaration"></a>
 
@@ -241,11 +241,11 @@ Add to a model this schema did not declare — typically one an `import` brought
 model Session {
   id     String @id @default(uuid())
   userId String
-  @@gate("8")
+  @@gate(8)
 }
 model User {
   id String @id @default(uuid())
-  @@gate("4")
+  @@gate(4)
 }
 
 extend model Session {
@@ -596,6 +596,22 @@ model Example {
 - **Deeper** — [modeling.md](modeling.md)
 - **See also** — [`@guarded`](#guarded-field) · [`@transient`](#transient-field) · [`@immutable`](#immutable-field)
 
+#### `@local` <a id="local-field"></a>
+
+The app's own column on a @@mirror model, which every other stored column there is not: the Provider's columns are @system by derivation, so a caller's write to one is refused rather than overwritten by the next sync. A caller writes this one under the usual rules, and a claimed model's forward writes it as the caller after the Provider's row lands. Refused off a @@mirror model, on its key, on the @id, on a relation, and beside @system.
+
+```lite
+model Example {
+  id Int @id
+  externalId String
+  @@mirror(key: externalId)
+  starred Boolean @default(false) @local
+}
+```
+
+- **Deeper** — [modeling.md](modeling.md)
+- **See also** — [`@@mirror`](#mirror-model) · [`@system`](#system-field)
+
 #### `@immutable` `[(after: <move>)]` <a id="immutable-field"></a>
 
 Written once, at create, and never again by anybody — an update payload naming the column is refused by NAME, whether or not the value differs. What a document is: an invoice's number, the instant it was issued and the total it was issued for. It is the constraint tier, so asSystem() does not drop it, where the gate, the row policies and @guarded all fall away there; a raw UPDATE still bypasses it, as it does a @check. Reaches the client as readOnly in the UPDATE schema alone, so a generated create form still offers the box. On a model with a @seals move the bare word freezes at the seal instead. (after: &lt;move&gt;) names a later instant: writable until that move's target, refused from there and from every state reachable from it — a signature written by the accept, after the terms sealed at approve.
@@ -609,7 +625,7 @@ model Example {
 
 - **Also typed** — `write-once` · `append-only`
 - **Deeper** — [modeling.md](modeling.md)
-- **See also** — [`@system`](#system-field) · [`@guarded`](#guarded-field) · [`@version`](#version-field)
+- **See also** — [`@system`](#system-field) · [`@guarded`](#guarded-field) · [`@version`](#version-field) · [`@seals`](#seals-move)
 
 #### `@sealed` <a id="sealed-field"></a>
 
@@ -699,7 +715,7 @@ model Example {
 - **`category`** — `contact` · `device` · `location` · `government` · `financial` · `employment` · `communication` · `demographic` · `health` · `genetic` · `biometric` · `characteristic` · `criminal`
 - **Also typed** — `pii` · `gdpr` · `personal data`
 - **Deeper** — [audit-logging.md](audit-logging.md)
-- **See also** — [`@@person`](#person-model) · [`@trail`](#trail-field) · [`@omit`](#omit-field)
+- **See also** — [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@omit`](#omit-field)
 
 #### `@secret` `[(rotate: …)]` <a id="secret-field"></a>
 
@@ -925,7 +941,7 @@ model Example {
 - **Deeper** — [jsonschema.md](jsonschema.md)
 - **See also** — [`enum`](#enum-declaration) · [`@@label`](#label-model)
 
-#### `@required` `[([where: <expr>][, message: "…"])]` <a id="required-field"></a>
+#### `@required` `[([where: <expr>][, "message"])]` <a id="required-field"></a>
 
 Which rows need a value in this column, and what to say when one does not. Bare it only carries the MESSAGE — the absence of `?` is the rule — and it is refused on an optional field, where that message could never fire. `where:` is the other half and wants the opposite type: it MAKES the column required, in the rows the predicate admits, so it needs the `?` the bare form forbids. The predicate reads this row's own columns and nothing else, because it becomes a CHECK on the table — which is the reach a boundary rule cannot have, holding against a migration, a seed, asSystem() and a raw statement. auth(), now(), check() and a relation hop are each refused by name: a CHECK sees no caller, no clock it can be trusted with, and no other table. The boundary refuses FIRST and names the FIELD, which is the half a table constraint cannot do — SQLite reports a violation by the constraint's source text and has no field to blame. Adding one to a populated table whose rows do not satisfy it fails the migration with nothing applied. Either way the message reaches the browser as x-messages and renders in &lt;Form&gt;, beside the control it is about.
 
@@ -1289,7 +1305,7 @@ model Example {
 
 #### `@unit` `(<symbol>)` <a id="unit-field"></a>
 
-What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Five dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, ratio %. mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.
+What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Five dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, ratio "%" (quoted, since % is not an identifier: @unit("%")). mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.
 
 ```lite
 model Example {
@@ -1314,7 +1330,7 @@ model Example {
 ```
 
 - **Deeper** — [geo.md](geo.md)
-- **See also** — [`type`](#type-declaration) · [`@generated`](#generated-field)
+- **See also** — [`@type`](#type-field) · [`@generated`](#generated-field)
 
 #### `@vector` `(<dimensions>)` <a id="vector-field"></a>
 
@@ -1382,7 +1398,7 @@ model Example {
 
 - **Legal** — in a model
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@id`](#id-field) · [`@unique`](#unique-field)
+- **See also** — [`@id`](#id-field) · [`@@unique`](#unique-model)
 
 ### Shape the table
 
@@ -1470,7 +1486,7 @@ model Example {
 ```
 
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@check`](#check-field) · [`@relation`](#relation-field)
+- **See also** — [`@@check`](#check-model) · [`@relation`](#relation-field)
 
 #### `@@relator` `([field, …], once | many | many: <column>)` <a id="relator-model"></a>
 
@@ -1493,7 +1509,7 @@ model Example {
 ```
 
 - **Deeper** — [relations.md](relations.md)
-- **See also** — [`@unique`](#unique-field) · [`@@index`](#index-model) · [`@@arc`](#arc-model) · [`@relation`](#relation-field)
+- **See also** — [`@@unique`](#unique-model) · [`@@index`](#index-model) · [`@@arc`](#arc-model) · [`@relation`](#relation-field)
 
 #### `@@map` `("table_name")` <a id="map-model"></a>
 
@@ -1597,7 +1613,7 @@ model Example {
 ```
 
 - **Deeper** — [extensible-columns.md](extensible-columns.md)
-- **See also** — [`type`](#type-declaration) · [`@generated`](#generated-field) · [`@@index`](#index-model) · [`@@gate`](#gate-model)
+- **See also** — [`@type`](#type-field) · [`@generated`](#generated-field) · [`@@index`](#index-model) · [`@@gate`](#gate-model)
 
 #### `@@softDelete` `[(cascade)]` <a id="softdelete-model"></a>
 
@@ -1660,7 +1676,7 @@ model Example {
 
 - **Also typed** — `valid time` · `validity` · `as of` · `effectivity`
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@@expires`](#expires-model) · [`@unique`](#unique-field) · [`@check`](#check-field)
+- **See also** — [`@@expires`](#expires-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model)
 
 #### `@@commitment` `([<relation>.]<transition>, on: <field> [+|- <n><unit> | <field>] [, while: <expr>])` <a id="commitment-model"></a>
 
@@ -1697,7 +1713,7 @@ model Example {
 
 - **`scope`** — `all`
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@capability`](#capability-field) · [`@@gate`](#gate-model) · [`@allow`](#allow-field) · [`@@transitions`](#transitions-model)
+- **See also** — [`@capability`](#capability-field) · [`@@gate`](#gate-model) · [`@@allow`](#allow-model) · [`@@transitions`](#transitions-model)
 
 #### `@@gate` `("<read>.<create>.<update>.<delete>" | "<n>")` <a id="gate-model"></a>
 
@@ -1706,29 +1722,29 @@ The standing a caller needs, per operation, on the 0–9 ladder — read first, 
 ```lite
 model Example {
   id Int @id
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 ```
 
 - **Also typed** — `permission` · `rbac` · `role` · `authorization`
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@allow`](#allow-field) · [`@@deny`](#deny-model)
+- **See also** — [`@@allow`](#allow-model) · [`@@deny`](#deny-model)
 
 #### `@@export` `(ndjson | csv [, since: <column>])` <a id="export-model"></a>
 
-This dataset may leave in bulk. It adds NO way in: an export is a paginated scoped read, so the rows that leave are exactly the ones the named principal could read one at a time — the @@gate refuses below its level, the row policies narrow the file rather than failing it, a field policy or @guarded column is simply absent, and under tenancy the extract is one tenant's because the client is. A @@gate is REQUIRED beside it, even where the schema guards nothing else: a bulk read of every row is a different proposition from one row at a time, and @@gate("0") is how a schema says this dataset is public on purpose. `since:` names a sortable declared column and is what makes an incremental run expressible — the column decides what a resumed run CATCHES, so a createdAt cursor sees new rows and not edits to old ones. Protected columns (@encrypted, @secret, @guarded) are omitted from an extract even for a caller who may read them, because a screen and a file that leaves the machine are the same principal at a different blast radius; keeping them is explicit and is recorded in the manifest. Legal on a view too.
+This dataset may leave in bulk. It adds NO way in: an export is a paginated scoped read, so the rows that leave are exactly the ones the named principal could read one at a time — the @@gate refuses below its level, the row policies narrow the file rather than failing it, a field policy or @guarded column is simply absent, and under tenancy the extract is one tenant's because the client is. A @@gate is REQUIRED beside it, even where the schema guards nothing else: a bulk read of every row is a different proposition from one row at a time, and @@gate(0) is how a schema says this dataset is public on purpose. `since:` names a sortable declared column and is what makes an incremental run expressible — the column decides what a resumed run CATCHES, so a createdAt cursor sees new rows and not edits to old ones. Protected columns (@encrypted, @secret, @guarded) are omitted from an extract even for a caller who may read them, because a screen and a file that leaves the machine are the same principal at a different blast radius; keeping them is explicit and is recorded in the manifest. Legal on a view too.
 
 ```lite
 model Example {
   id Int @id
   updatedAt DateTime @updatedAt
-  @@gate("4")
+  @@gate(4)
   @@export(ndjson, since: updatedAt)
 }
 ```
 
 - **Deeper** — [export.md](export.md)
-- **See also** — [`@@gate`](#gate-model) · [`@allow`](#allow-field) · [`view`](#view-declaration)
+- **See also** — [`@@gate`](#gate-model) · [`@@allow`](#allow-model) · [`view`](#view-declaration)
 
 #### `@@allow` `('read'|'create'|'update'|'post-update'|'delete'|'write'|'all', <expression>[, message])` <a id="allow-model"></a>
 
@@ -1744,7 +1760,7 @@ model Example {
 
 - **Also typed** — `rls` · `row level security`
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@@deny`](#deny-model) · [`@@gate`](#gate-model) · [`scope`](#scope-declaration)
+- **See also** — [`@@deny`](#deny-model) · [`@@gate`](#gate-model) · [`@@scope`](#scope-model)
 
 #### `@@deny` `('read'|…, <expression>[, message])` <a id="deny-model"></a>
 
@@ -1759,7 +1775,7 @@ model Example {
 ```
 
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@allow`](#allow-field) · [`@@tenant`](#tenant-model)
+- **See also** — [`@@allow`](#allow-model) · [`@@tenant`](#tenant-model)
 
 #### `@@scope` `(<name>, <expression>)` <a id="scope-model"></a>
 
@@ -1796,9 +1812,9 @@ model Example {
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`tenancy`](#tenancy-declaration) · [`@@deny`](#deny-model)
 
-#### `@@transitions` `(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …)` <a id="transitions-model"></a>
+#### `@@transitions` `(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) | (<field>, declaredBy: Model, scope: <column>)` <a id="transitions-model"></a>
 
-A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.
+A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. `declaredBy:` is the machine a tenant edits: the field is a state's key, the moves are rows of the declaring model — `fromId?` (null is an entry, where a row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin — each move is checked inside the UPDATE's own WHERE, a create names one of its scope's entries or takes the only one, and a move is named for its target. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.
 
 ```lite
 enum OrderStatus { draft paid shipped cancelled }
@@ -1883,6 +1899,22 @@ model Example {
 - **Deeper** — [audit-logging.md](audit-logging.md)
 - **See also** — [`@trail`](#trail-field) · [`database`](#database-declaration) · [`@@anonymous`](#anonymous-model)
 
+#### `@@mirror` `(key: <field>)` <a id="mirror-model"></a>
+
+The rows are a Provider's: a third party is the system of record, and the named column holds its id for each row. Every stored column but the @id and a @local one is derived @system, so a caller's write to the Provider's data is refused by name rather than overwritten by the next sync. The key is one required String or Int, derived @immutable, and @unique unless a @@unique already names it (a key unique per account). missingSince DateTime? @system is derived for the sync to stamp a row the Provider stopped answering, which it never deletes. A relation keyed by the Provider's ids emits no foreign key, since the Provider sends a child before its parent; a dangling one reads as no row, and onDelete there is refused. No gate is derived: the key's own refusal already stops a caller's create. A connector's claim, bound in app wiring, forwards a default service's writes to the Provider and applies the row it answers.
+
+```lite
+model Example {
+  id Int @id
+  externalId String
+  @@mirror(key: externalId)
+}
+```
+
+- **Also typed** — `external id` · `replica` · `vendor data`
+- **Deeper** — [modeling.md](modeling.md)
+- **See also** — [`@local`](#local-field) · [`@@external`](#external-model) · [`@system`](#system-field)
+
 #### `@@anonymous` <a id="anonymous-model"></a>
 
 No row of this model may be attributed. Refused on the model: @@trail, @trail, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail's clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.
@@ -1898,7 +1930,7 @@ model Example {
 
 - **Also typed** — `unattributed` · `ballot` · `survey` · `confidential`
 - **Deeper** — [audit-logging.md](audit-logging.md)
-- **See also** — [`@trail`](#trail-field) · [`@createdBy`](#createdby-field) · [`@date`](#date-field)
+- **See also** — [`@@trail`](#trail-model) · [`@@createdBy`](#createdby-model) · [`@date`](#date-field)
 
 #### `@@db` `(<database>)` <a id="db-model"></a>
 
@@ -2020,7 +2052,7 @@ model Example {
 ```
 
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@@transitions`](#transitions-model) · [`@system`](#system-field)
+- **See also** — [`@@transitions`](#transitions-model) · [`@system`](#system-move)
 
 #### `@system` <a id="system-move"></a>
 
@@ -2041,7 +2073,7 @@ model Example {
 ```
 
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@@transitions`](#transitions-model) · [`@@gate`](#gate-model) · [`@guarded`](#guarded-field)
+- **See also** — [`@@transitions`](#transitions-model) · [`@gate`](#gate-move) · [`@guarded`](#guarded-field)
 
 ## Where a word is legal
 
@@ -2111,6 +2143,10 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `value-rule-on-a-relation` — a value validator on a relation grades nothing
 
 *error*. A relation field is a collection of ROWS, not a value, so a rule written to grade a value has nothing to read. @minItems and @maxItems are the two that do count there — they mean the same thing on a relation as they already mean on a Json array.
+
+### `validator-on-the-wrong-type` — a validator written for a type the column is not
+
+*error*. A rule grades a value of one kind: @gte a number, @length a string, @minItems a list. Written on any other column it parses, then either never runs or compares the wrong thing -- Number("abc") is NaN and fails every bound, String(5).length counts digits -- and a generated form is handed a numeric minimum on a checkbox.
 
 ### `foreign-key-without-index` — a foreign key column with no index
 
@@ -2187,3 +2223,11 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `create-reaches-unpickable-relation` — a create policy reaches through a relation the picker cannot be narrowed by
 
 *warn*. A create @@allow that reads a related row (schedule.hostId == auth().id) accepts only some of that model, and a generated picker offers every row the caller can READ. Litestone derives the narrowing for a top-level rel.col == auth().claim conjunct (x-pick-where); any other shape — an ||, an in, a computed value — it cannot state, so the picker offers rows the write refuses unless the related model's own read policy already narrows them.
+
+### `read-allow-hides-tenant-members` — a read @@allow written for a claim the tenant's members do not carry hides the model from them
+
+*warn*. Under row tenancy a read @@allow is the WHOLE of who reads, not an addition to the tenant's scope: the generated @@deny still narrows to the tenant, and the allow then admits only the rows it names. One that compares a row to a claim only some principals carry (a share-link or widget bearer claim) reads as "and the link's holder may read this one", and is "only the link's holder" — every member reads an empty screen.
+
+### `allow-needs-bearer-claim-under-gate` — an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass
+
+*warn*. A bare `claim` (one no row supplies) is carried by a principal the app mints for a link or widget holder, and that principal grades at STRANGER(0). When every @@allow for an operation reads only such claims and the gate for that operation is above 0, the gate refuses the one caller who could satisfy the rule, and whoever passes the gate carries no claim and fails it. The rule never holds and nothing else says so. Lower the gate to 0 and let the rule decide, or add a branch the gated callers can satisfy.

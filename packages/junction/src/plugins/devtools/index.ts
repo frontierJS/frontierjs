@@ -233,13 +233,10 @@ export function devtools(opts: DevtoolsOptions = {}) {
       _appRef = app
 
       // ── Instrument all service calls via app.telemetry ──────────────
-      // No longer uses an around hook — subscribes to the telemetry bus instead.
-      // This means devtools captures calls regardless of hook pipeline state,
-      // and does not add latency to the call path.
-      // Every subscription's unsubscribe fn is collected in _unsubs so
-      // shutdown() can fully detach — previously all of these (and a
-      // bus.emit monkey-patch) survived shutdown.
-      _unsubs.push(app.telemetry.on('junction.call', (event: unknown) => {
+      // The telemetry bus, not an around hook, so devtools sees every call
+      // whatever the pipeline does and adds no latency to it. Every
+      // unsubscribe goes in _unsubs, or shutdown() leaves them attached.
+      _unsubs.push(app.telemetry.on('junction.call.end', (event: unknown) => {
         const e = event as import('../../core/service.ts').TelemetryEvent
         const entry: RequestEntry = {
           id:            crypto.randomUUID(),
@@ -262,7 +259,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
       }))
 
       // ── Forward fine-grained telemetry for Sierra toolbar waterfall ─
-      // junction.call (end) is already forwarded above as 'request'.
+      // junction.call.end is already forwarded above as 'request'.
       // These additional events let the Sierra toolbar render per-hook
       // timing bars and Litestone query rows grouped by telemetryId.
       _unsubs.push(app.telemetry.on('junction.call.start', (event: unknown) => {

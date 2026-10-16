@@ -28,7 +28,6 @@ import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/ju
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
-import type { BasecampApp }    from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /**
@@ -212,238 +211,235 @@ function assertVariants(type: string, variants: unknown): void {
     throw new BadRequest(`Variant weights must add to 100 — they add to ${total}`)
 }
 
-export function createFlagsService(app: BasecampApp) {
-
-  /** An environment inside the caller's workspace, or 404. Scoped to the
-   *  WORKSPACE, not merely to existence: an id from another workspace would
-   *  otherwise let a caller flip a flag in somebody else's environment. */
-  async function environmentInWorkspace(environmentId: string) {
-    const env = await db().environment.findFirst({
-      where: { id: environmentId, workspaceId: ws() },
-    })
-    if (!env) throw new NotFound(`Environment '${environmentId}' not found in this workspace`)
-    return env
-  }
-
-  /** A flag with its overrides, each resolved. The shape `get` answers, so
-   *  setOverride/clearOverride can return the same record rather than a
-   *  projection of it — a custom method's return shape is load-bearing
-   *  (junction FJS-020). A plain function, not `this.get(ctx)`: a service's
-   *  methods are collected into a definition object and calling one through
-   *  `this` binds to whatever the pipeline happened to invoke it with. */
-  async function flagWithOverrides(flag: Record<string, unknown>) {
-    const overrides = await db().flagOverride.findMany({
-      where:   { flagId: flag.id },
-      include: { environment: true },
-      orderBy: { createdAt: 'asc' },
-    })
-    return {
-      ...flag,
-      overrides: overrides.map((o: Record<string, unknown>) => ({ ...o, ...resolveIn(flag, o) })),
-    }
-  }
-
-  return createService({
-    name:  'flags',
-    scope: keyScope('flags'),
-    model: 'FeatureFlag',
-    // Announced by the service DEFINITION, not by an after hook: `callService`
-    // is junction's one announcement point and it excludes `find`/`get` by name,
-    // where an `after: { all: [...] }` hook broadcast every read to every browser
-    // in the workspace (FJS-031). Declaring both is refused at construction.
-    channel: workspaceChannel(app),
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
-
-    // The override verbs write a FlagOverride row by hand, so autoValidate never
-    // sees their payload: each names a `type` in db/schema.lite instead.
-    methods: ['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
-              { method: 'setOverride',   input: 'FlagOverrideSet' },
-              { method: 'clearOverride', input: 'FlagOverrideClear' },
-              'resolve'],
-
-    async find() {
-      const { limit, offset } = getPagination()
-      const type = $.query.type as string | undefined
-      const tag  = $.query.tag  as string | undefined
-
-      const page = await findScoped('featureFlag', {
-        where:   { ...(type ? { type } : {}) },
-        orderBy: { key: 'asc' },
-        limit, offset,
-      })
-
-      // `tags` is a Json array, which SQLite cannot filter on through the
-      // accessor — so the tag filter is applied here rather than pretending
-      // the where-clause can do it. Honest and bounded: the page is already
-      // in memory and a workspace has tens of flags, not millions.
-      const rows = tag
-        ? (page.data as Record<string, unknown>[]).filter(f => (f.tags as string[] ?? []).includes(tag))
-        : page.data as Record<string, unknown>[]
-
-      // The override COUNT, not the rows: a flag overridden nowhere and one
-      // overridden in production look identical without it, and `get` is the
-      // read that pays for the join.
-      const data = await Promise.all(rows.map(async f => ({
-        ...f,
-        override_count: await db().flagOverride.count({ where: { flagId: f.id } }),
-      })))
-      return { ...page, data, total: tag ? data.length : page.total }
-    },
-
-    async get() {
-      return flagWithOverrides(await getScoped('featureFlag', 'Flag'))
-    },
-
-    async create() {
-      const data = $.data as Record<string, unknown>
-      assertVariants((data.type as string) ?? 'boolean', data.variants)
-
-      // The unique is [workspaceId, key]; a raw constraint violation reaches an
-      // HTTP caller as a SQLite message rather than a sentence.
-      if (await db().featureFlag.exists({ where: { workspaceId: ws(), key: data.key } }))
-        throw new Conflict(`A flag with key '${data.key}' already exists in this workspace`)
-
-      return flagWithOverrides(await db().featureFlag.create({ data }))
-    },
-
-    async patch() {
-      const flag = await getScoped('featureFlag', 'Flag')
-      const data = $.data as Record<string, unknown>
-
-      if ('variants' in data || 'type' in data)
-        assertVariants((data.type as string) ?? (flag.type as string), data.variants ?? flag.variants)
-
-      // `key` is immutable: it is the name in somebody else's source code, and
-      // half of a @@unique. Renaming it silently turns every SDK call into a
-      // miss, which resolves to the default and looks like the flag being off.
-      const patch = narrowPatch(data, ['key', 'createdBy'])
-      if (changesNothing(patch)) return flagWithOverrides(flag)
-
-      return flagWithOverrides(await db().featureFlag.update({
-        where: { id: flag.id }, data: patch,
-      }))
-    },
-
-    async remove() {
-      // No refusal on attached overrides, unlike networks and channels. An
-      // override is not an independent thing an operator arranged — it is part
-      // of this flag's configuration, and the schema cascades it. What the two
-      // refusals protect is a row somebody ELSE depends on; nothing depends on
-      // an override but its flag.
-      return removeScoped('featureFlag', 'Flag')
-    },
-
-    // ── setOverride ───────────────────────────────────────────────────
-    // Upsert, deliberately: a screen toggling a flag in an environment should
-    // not have to know whether an override already exists there, and the
-    // @@unique means a blind create is a 409 half the time.
-    async setOverride() {
-      const flag = await getScoped('featureFlag', 'Flag')
-      const { environmentId, isEnabled, rollout, variantKey } =
-        ($.data ?? {}) as Record<string, unknown>
-
-      await environmentInWorkspace(environmentId as string)
-
-      if (variantKey != null) {
-        if (flag.type !== 'variant')
-          throw new BadRequest('Only a variant flag can pin a variant')
-        const known = (flag.variants as Record<string, unknown>[] ?? []).some(v => v.key === variantKey)
-        if (!known) throw new BadRequest(`This flag declares no variant '${variantKey}'`)
-      }
-
-      const values = {
-        isEnabled:  isEnabled === true || isEnabled === 'true',
-        rollout:    Math.max(0, Math.min(100, Number(rollout ?? 100))),
-        variantKey: (variantKey as string | null) ?? null,
-      }
-
-      const existing = await db().flagOverride.findFirst({
-        where: { flagId: flag.id, environmentId },
-      })
-      if (existing) await db().flagOverride.update({ where: { id: existing.id }, data: values })
-      else          await db().flagOverride.create({ data: { flagId: flag.id, environmentId, ...values } })
-
-      return flagWithOverrides(flag)
-    },
-
-    // ── clearOverride ─────────────────────────────────────────────────
-    // The environment falls back to the flag's default. NOT the same as
-    // setting the override to off — that is a decision this environment made,
-    // and clearing it means "follow whatever the flag says", including later
-    // changes to the flag.
-    async clearOverride() {
-      const flag = await getScoped('featureFlag', 'Flag')
-      const { environmentId } = ($.data ?? {}) as Record<string, string>
-
-      const existing = await db().flagOverride.findFirst({
-        where: { flagId: flag.id, environmentId },
-      })
-      if (!existing) throw new NotFound('This flag has no override in that environment')
-
-      await db().flagOverride.remove({ where: { id: existing.id } })
-      return flagWithOverrides(flag)
-    },
-
-    // ── resolve ───────────────────────────────────────────────────────
-    // The read an SDK makes: what is every flag set to in ONE environment?
-    //
-    // Collection-level — there is no subject row, so it is `POST /flags` with
-    // the header rather than `POST /flags/{id}`. Read-shaped, so it opts out
-    // of the announcement the after-hook makes for every other method.
-    async resolve() {
-      $.dispatch = false
-      const environmentId = ($.query.environmentId ?? ($.data as Record<string, string>)?.environmentId) as string
-      if (!environmentId) throw new BadRequest('environmentId is required')
-      await environmentInWorkspace(environmentId)
-
-      // Who the answer is FOR. Optional, and absent means the caller wants the
-      // configuration rather than a decision — which is every screen in this
-      // app. Stated, never invented: bucketing the calling operator would
-      // answer a question about the wrong person entirely.
-      const unitId = ($.query.unitId ?? ($.data as Record<string, string>)?.unitId) as string | undefined
-
-      const flags = await db().featureFlag.findMany({
-        where: { workspaceId: ws() }, orderBy: { key: 'asc' }, limit: 500,
-      })
-      if (!flags.length) return { total: 0, environmentId, ...(unitId ? { unitId } : {}), data: [] }
-
-      const overrides = await db().flagOverride.findMany({
-        where: { environmentId, flagId: { in: flags.map((f: { id: string }) => f.id) } },
-      })
-      const byFlag = new Map(overrides.map((o: Record<string, unknown>) => [o.flagId, o]))
-
-      return {
-        total: flags.length,
-        environmentId,
-        ...(unitId ? { unitId } : {}),
-        data: flags.map((f: Record<string, unknown>) => {
-          const resolved = resolveIn(f, byFlag.get(f.id) as Record<string, unknown> | undefined)
-          return {
-            key:      f.key,
-            type:     f.type,
-            variants: f.type === 'variant' ? f.variants : undefined,
-            ...(unitId
-              ? decideFor(resolved, f.key as string, unitId,
-                          f.type as string, f.variants as Record<string, unknown>[])
-              : resolved),
-          }
-        }),
-      }
-    },
-
-    hooks: {
-      before: {
-        all:    [sessionScope(app)],
-        // Authoring a flag is a developer act — it is part of shipping the code
-        // that reads it, and holding it at admin would put the person who wrote
-        // the feature behind a ticket.
-        create: [stampFlag],
-        // Overriding is the same bar as authoring, and `FlagOverride`'s gate
-        // says so for the caller's client.
-      },
-    },
+/** An environment inside the caller's workspace, or 404. Scoped to the
+ *  WORKSPACE, not merely to existence: an id from another workspace would
+ *  otherwise let a caller flip a flag in somebody else's environment. */
+async function environmentInWorkspace(environmentId: string) {
+  const env = await db().environment.findFirst({
+    where: { id: environmentId, workspaceId: ws() },
   })
+  if (!env) throw new NotFound(`Environment '${environmentId}' not found in this workspace`)
+  return env
 }
+
+/** A flag with its overrides, each resolved. The shape `get` answers, so
+ *  setOverride/clearOverride can return the same record rather than a
+ *  projection of it — a custom method's return shape is load-bearing
+ *  (junction FJS-020). A plain function, not `this.get(ctx)`: a service's
+ *  methods are collected into a definition object and calling one through
+ *  `this` binds to whatever the pipeline happened to invoke it with. */
+async function flagWithOverrides(flag: Record<string, unknown>) {
+  const overrides = await db().flagOverride.findMany({
+    where:   { flagId: flag.id },
+    include: { environment: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  return {
+    ...flag,
+    overrides: overrides.map((o: Record<string, unknown>) => ({ ...o, ...resolveIn(flag, o) })),
+  }
+}
+
+export default createService({
+  name:  'flags',
+  scope: keyScope('flags'),
+  model: 'FeatureFlag',
+  // Announced by the service DEFINITION, not by an after hook: `callService`
+  // is junction's one announcement point and it excludes `find`/`get` by name,
+  // where an `after: { all: [...] }` hook broadcast every read to every browser
+  // in the workspace (FJS-031). Declaring both is refused at construction.
+  channel: workspaceChannel,
+  reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+
+  // The override verbs write a FlagOverride row by hand, so autoValidate never
+  // sees their payload: each names a `type` in db/schema.lite instead.
+  methods: ['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+            { method: 'setOverride',   input: 'FlagOverrideSet' },
+            { method: 'clearOverride', input: 'FlagOverrideClear' },
+            'resolve'],
+
+  async find() {
+    const { limit, offset } = getPagination()
+    const type = $.query.type as string | undefined
+    const tag  = $.query.tag  as string | undefined
+
+    const page = await findScoped('featureFlag', {
+      where:   { ...(type ? { type } : {}) },
+      orderBy: { key: 'asc' },
+      limit, offset,
+    })
+
+    // `tags` is a Json array, which SQLite cannot filter on through the
+    // accessor — so the tag filter is applied here rather than pretending
+    // the where-clause can do it. Honest and bounded: the page is already
+    // in memory and a workspace has tens of flags, not millions.
+    const rows = tag
+      ? (page.data as Record<string, unknown>[]).filter(f => (f.tags as string[] ?? []).includes(tag))
+      : page.data as Record<string, unknown>[]
+
+    // The override COUNT, not the rows: a flag overridden nowhere and one
+    // overridden in production look identical without it, and `get` is the
+    // read that pays for the join.
+    const data = await Promise.all(rows.map(async f => ({
+      ...f,
+      override_count: await db().flagOverride.count({ where: { flagId: f.id } }),
+    })))
+    return { ...page, data, total: tag ? data.length : page.total }
+  },
+
+  async get() {
+    return flagWithOverrides(await getScoped('featureFlag', 'Flag'))
+  },
+
+  async create() {
+    const data = $.data as Record<string, unknown>
+    assertVariants((data.type as string) ?? 'boolean', data.variants)
+
+    // The unique is [workspaceId, key]; a raw constraint violation reaches an
+    // HTTP caller as a SQLite message rather than a sentence.
+    if (await db().featureFlag.exists({ where: { workspaceId: ws(), key: data.key } }))
+      throw new Conflict(`A flag with key '${data.key}' already exists in this workspace`)
+
+    return flagWithOverrides(await db().featureFlag.create({ data }))
+  },
+
+  async patch() {
+    const flag = await getScoped('featureFlag', 'Flag')
+    const data = $.data as Record<string, unknown>
+
+    if ('variants' in data || 'type' in data)
+      assertVariants((data.type as string) ?? (flag.type as string), data.variants ?? flag.variants)
+
+    // `key` is immutable: it is the name in somebody else's source code, and
+    // half of a @@unique. Renaming it silently turns every SDK call into a
+    // miss, which resolves to the default and looks like the flag being off.
+    const patch = narrowPatch(data, ['key', 'createdBy'])
+    if (changesNothing(patch)) return flagWithOverrides(flag)
+
+    return flagWithOverrides(await db().featureFlag.update({
+      where: { id: flag.id }, data: patch,
+    }))
+  },
+
+  async remove() {
+    // No refusal on attached overrides, unlike networks and channels. An
+    // override is not an independent thing an operator arranged — it is part
+    // of this flag's configuration, and the schema cascades it. What the two
+    // refusals protect is a row somebody ELSE depends on; nothing depends on
+    // an override but its flag.
+    return removeScoped('featureFlag', 'Flag')
+  },
+
+  // ── setOverride ───────────────────────────────────────────────────
+  // Upsert, deliberately: a screen toggling a flag in an environment should
+  // not have to know whether an override already exists there, and the
+  // @@unique means a blind create is a 409 half the time.
+  async setOverride() {
+    const flag = await getScoped('featureFlag', 'Flag')
+    const { environmentId, isEnabled, rollout, variantKey } =
+      ($.data ?? {}) as Record<string, unknown>
+
+    await environmentInWorkspace(environmentId as string)
+
+    if (variantKey != null) {
+      if (flag.type !== 'variant')
+        throw new BadRequest('Only a variant flag can pin a variant')
+      const known = (flag.variants as Record<string, unknown>[] ?? []).some(v => v.key === variantKey)
+      if (!known) throw new BadRequest(`This flag declares no variant '${variantKey}'`)
+    }
+
+    const values = {
+      isEnabled:  isEnabled === true || isEnabled === 'true',
+      rollout:    Math.max(0, Math.min(100, Number(rollout ?? 100))),
+      variantKey: (variantKey as string | null) ?? null,
+    }
+
+    const existing = await db().flagOverride.findFirst({
+      where: { flagId: flag.id, environmentId },
+    })
+    if (existing) await db().flagOverride.update({ where: { id: existing.id }, data: values })
+    else          await db().flagOverride.create({ data: { flagId: flag.id, environmentId, ...values } })
+
+    return flagWithOverrides(flag)
+  },
+
+  // ── clearOverride ─────────────────────────────────────────────────
+  // The environment falls back to the flag's default. NOT the same as
+  // setting the override to off — that is a decision this environment made,
+  // and clearing it means "follow whatever the flag says", including later
+  // changes to the flag.
+  async clearOverride() {
+    const flag = await getScoped('featureFlag', 'Flag')
+    const { environmentId } = ($.data ?? {}) as Record<string, string>
+
+    const existing = await db().flagOverride.findFirst({
+      where: { flagId: flag.id, environmentId },
+    })
+    if (!existing) throw new NotFound('This flag has no override in that environment')
+
+    await db().flagOverride.remove({ where: { id: existing.id } })
+    return flagWithOverrides(flag)
+  },
+
+  // ── resolve ───────────────────────────────────────────────────────
+  // The read an SDK makes: what is every flag set to in ONE environment?
+  //
+  // Collection-level — there is no subject row, so it is `POST /flags` with
+  // the header rather than `POST /flags/{id}`. Read-shaped, so it opts out
+  // of the announcement the after-hook makes for every other method.
+  async resolve() {
+    $.dispatch = false
+    const environmentId = ($.query.environmentId ?? ($.data as Record<string, string>)?.environmentId) as string
+    if (!environmentId) throw new BadRequest('environmentId is required')
+    await environmentInWorkspace(environmentId)
+
+    // Who the answer is FOR. Optional, and absent means the caller wants the
+    // configuration rather than a decision — which is every screen in this
+    // app. Stated, never invented: bucketing the calling operator would
+    // answer a question about the wrong person entirely.
+    const unitId = ($.query.unitId ?? ($.data as Record<string, string>)?.unitId) as string | undefined
+
+    const flags = await db().featureFlag.findMany({
+      where: { workspaceId: ws() }, orderBy: { key: 'asc' }, limit: 500,
+    })
+    if (!flags.length) return { total: 0, environmentId, ...(unitId ? { unitId } : {}), data: [] }
+
+    const overrides = await db().flagOverride.findMany({
+      where: { environmentId, flagId: { in: flags.map((f: { id: string }) => f.id) } },
+    })
+    const byFlag = new Map(overrides.map((o: Record<string, unknown>) => [o.flagId, o]))
+
+    return {
+      total: flags.length,
+      environmentId,
+      ...(unitId ? { unitId } : {}),
+      data: flags.map((f: Record<string, unknown>) => {
+        const resolved = resolveIn(f, byFlag.get(f.id) as Record<string, unknown> | undefined)
+        return {
+          key:      f.key,
+          type:     f.type,
+          variants: f.type === 'variant' ? f.variants : undefined,
+          ...(unitId
+            ? decideFor(resolved, f.key as string, unitId,
+                        f.type as string, f.variants as Record<string, unknown>[])
+            : resolved),
+        }
+      }),
+    }
+  },
+
+  hooks: {
+    before: {
+      all:    [sessionScope()],
+      // Authoring a flag is a developer act — it is part of shipping the code
+      // that reads it, and holding it at admin would put the person who wrote
+      // the feature behind a ticket.
+      create: [stampFlag],
+      // Overriding is the same bar as authoring, and `FlagOverride`'s gate
+      // says so for the caller's client.
+    },
+  },
+})
 
 /** FeatureFlag has no `slug` column, so the shared deriveSlug — which
  *  derives one from `name` — would add a key autoValidate then strips. This

@@ -17,10 +17,11 @@ import { describe, test, expect } from 'bun:test'
 
 import { createClient } from '../../litestone/src/index.js'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
-import { createApp, createService, mergeHookMaps, bearerClaim, BEARER, header, authorization, cookie, sessionGateLevel } from '../index.ts'
+import { createApp, mergeHookMaps, bearerClaim, BEARER, header, authorization, cookie, sessionGateLevel } from '../index.ts'
+import { buildService } from '../src/core/service.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { declaredCallHeaders } from '../src/core/litestone.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 const KEY = 'test-app-secret'
 
@@ -35,14 +36,14 @@ const SCHEMA = `
     tokenHash String    @unique @guarded
     expiresAt DateTime?
     revokedAt DateTime?
-    @@gate("8")
+    @@gate(8)
   }
 
   model FormResponse {
     id       Int    @id @default(autoincrement())
     clientId Int
     answer   String
-    @@gate("0")
+    @@gate(0)
     @@allow('read',   clientId == auth().portalClientId)
     @@allow('create', clientId == auth().portalClientId)
   }
@@ -80,7 +81,7 @@ async function seeded() {
 async function appWith(db: unknown) {
   const seen: { user?: unknown; grant?: unknown; level?: number } = {}
   const app = createApp({ db, principal: resolver })
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'answers',
     async find(ctx: ServiceContext) {
       seen.user  = ctx.auth.user
@@ -238,7 +239,7 @@ describe('a claim column may name a relation path', () => {
       workspaceId Int
       title       String
       links       ShareLink[]
-      @@gate("0")
+      @@gate(0)
     }
 
     model ShareLink {
@@ -246,7 +247,7 @@ describe('a claim column may name a relation path', () => {
       pageId    Int
       page      Page   @relation(fields: [pageId], references: [id])
       tokenHash String @unique @guarded
-      @@gate("8")
+      @@gate(8)
     }
   `
   const nested = bearerClaim({
@@ -292,7 +293,7 @@ describe('a grant is found whoever else the holder is', () => {
       accountId Int
       surveyId  Int
       tokenHash String @unique(global) @guarded
-      @@gate("8")
+      @@gate(8)
     }
   `
   const grant = bearerClaim({
@@ -350,7 +351,7 @@ describe('a grant presented as Authorization: Bearer', () => {
         },
       },
     })
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'answers',
       async find(ctx: ServiceContext) {
         const rows = await (ctx.locals.db as any).formResponse.findMany({})
@@ -418,7 +419,7 @@ describe('a grant presented as a cookie', () => {
         },
       },
     })
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'answers',
       async find(ctx: ServiceContext) {
         const rows = await (ctx.locals.db as any).formResponse.findMany({})
@@ -460,7 +461,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
     model Customer {
       id   Int    @id @default(autoincrement())
       name String
-      @@gate("0")
+      @@gate(0)
       @@allow('read', id == auth().portalCustomerId)
     }
     model PortalLink {
@@ -470,7 +471,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
       expiresAt  DateTime?
       revokedAt  DateTime?
       lastUsedAt DateTime? @system
-      @@gate("4")
+      @@gate(4)
       @@allow('create', customerId == auth().customerId)
     }
   `
@@ -521,7 +522,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
     const db = await grants()
     const { token, row } = await link.mint(db.$setAuth(SELLER), { customerId: 1 })
     const app = createApp({ db, principal: link })
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'customers',
       async find(ctx: ServiceContext) { return (ctx.locals.db as any).customer.findMany({}) },
     }))
@@ -560,7 +561,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
   test('mintOnCreate(): the create is the mint, the answer carries the token once and the broadcast does not', async () => {
     const db = await grants()
     const app = createApp({ db, principal: link })
-    const svc = createService({
+    const svc = buildService({
       name:  'portalLinks',
       model: 'PortalLink',
       async create(ctx: ServiceContext) {
@@ -589,7 +590,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
     const db = await grants()
     const app = createApp({ db, principal: link })
     let ownRan = false
-    app.services.register(createService({
+    app.services.register(buildService({
       name:  'portalLinks',
       model: 'PortalLink',
       hooks: mergeHookMaps(link.mintOnCreate(), { before: { create: [async () => { ownRan = true }] } }),
@@ -602,6 +603,20 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
     expect(typeof made.token).toBe('string')
     expect('tokenHash' in made).toBe(false)
     expect(ownRan).toBe(true)
+  })
+})
+
+// The option is the ACCESSOR, and a model's name reads as one until the first
+// request carrying the header answers 500 (`FJS-1449`).
+describe('bearerClaim refuses a model name where the accessor is wanted', () => {
+  const opts = { from: header('x-link'), column: 'tokenHash', key: KEY, claims: { id: 'id' } }
+
+  test('`PortalLink` is refused at construction, naming `portalLink`', () => {
+    expect(() => bearerClaim({ ...opts, model: 'PortalLink' })).toThrow(/portalLink/)
+  })
+
+  test('the accessor is accepted', () => {
+    expect(() => bearerClaim({ ...opts, model: 'portalLink' })).not.toThrow()
   })
 })
 
@@ -640,7 +655,7 @@ describe('a session beside a grant', () => {
     })
     const seen: { user?: any; grant?: unknown } = {}
     const app = createApp({ db, principal: merging })
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'answers',
       async find(ctx: ServiceContext) {
         seen.user  = ctx.auth.user

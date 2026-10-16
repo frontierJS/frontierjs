@@ -81,6 +81,13 @@ describe('filing a row', () => {
     expect(runRegisterCheck({ root }).errors).toEqual([])
   })
 
+  test('a title that smells of the environment is flagged unless the detail names a cause', () => {
+    const root = project()
+    expect(fileIssue({ root, ...input, title: 'verify:live times out under load' }).smell).toBe(true)
+    expect(fileIssue({ root, ...input, title: 'verify:live times out under load', detail: 'Seen in a lane · env: timing' }).smell).toBe(false)
+    expect(fileIssue({ root, ...input }).smell).toBe(false)
+  })
+
   test('refuses an unknown severity, a missing cell, and a severity with no table', () => {
     const root = project()
     expect(fileIssue({ root, ...input, severity: 'S9' }).reason).toContain('S1, S2, S3, S4')
@@ -143,5 +150,21 @@ describe('filing from several processes at once', () => {
     const rows = readRegisters(root).issues.filter(r => /^Row \d$/.test(r.title))
     expect(rows.map(r => r.title).sort()).toEqual(['Row 1', 'Row 2', 'Row 3', 'Row 4'])
     expect(new Set(rows.map(r => r.id)).size).toBe(4)
+  })
+})
+
+// FJS-2976: `--dry` is on every command, and a dry run that files is the row it was asked not to write.
+describe('filing a row dry', () => {
+  test('answers the id and the line it would take, and the file is not touched', () => {
+    const root   = project()
+    const before = file(root)
+    const out    = fileIssue({ root, ...input, dry: true })
+    expect(out).toMatchObject({ ok: true, dry: true, id: 'ELA-008' })
+    expect(file(root)).toBe(before)
+  })
+
+  test('refuses what the real run would refuse', () => {
+    const root = project()
+    expect(fileIssue({ root, ...input, detail: '', dry: true })).toMatchObject({ ok: false })
   })
 })

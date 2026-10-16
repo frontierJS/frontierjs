@@ -713,12 +713,14 @@ export function readsPortVar(appRoot, row, { limit = 2000 } = {}) {
  * @param {string} appRoot
  * @param {{name?: string, scripts?: object, env?: 'test'|'dev'|'prod', entry?: string,
  *          dry?: boolean, lockFile?: string, exists?: (p: string) => boolean,
- *          movable?: (row: object) => boolean, busy?: (rows: object[]) => Promise<object[]>}} [opts]
+ *          movable?: (row: object) => boolean, busy?: (rows: object[]) => Promise<object[]>,
+ *          worktreeExists?: (top: string) => boolean}} [opts]
  */
 export async function claimSession(appRoot, opts = {}) {
   const { name, env = 'dev', dry = false, lockFile = LOCK_FILE } = opts
   const busy      = opts.busy ?? busyPorts
   const movable   = opts.movable ?? ((row) => readsPortVar(appRoot, row))
+  const worktreeExists = opts.worktreeExists ?? existsSync
   const projectId = projectIdFor(name, basename(appRoot))
   const tree      = opts.worktree !== undefined ? opts.worktree : worktreeOf(appRoot)
   const rowsAt    = (slot, branch = 0) => devPorts(appRoot, { ...opts, env, slot, branch })
@@ -734,7 +736,7 @@ export async function claimSession(appRoot, opts = {}) {
       // Every digit keeps its parent's meaning, the slot included.
       const parent = sessions[join(tree.main, relative(tree.top, appRoot))]
       if (projectId === PROJECTS.scaffold && parent?.env === env && Number.isInteger(parent.slot)) slot = parent.slot
-      branch = Number.isInteger(mine?.branch) && mine.branch > 0 ? mine.branch : freeBranch(sessions, appRoot, tree)
+      branch = Number.isInteger(mine?.branch) && mine.branch > 0 ? mine.branch : freeBranch(sessions, appRoot, tree, worktreeExists)
     } else if (projectId === PROJECTS.scaffold && moves) {
       slot = mine?.env === env && Number.isInteger(mine.slot)
         ? mine.slot
@@ -837,11 +839,16 @@ export function branchFor(appRoot, { lockFile = LOCK_FILE } = {}) {
   return Number.isInteger(s?.branch) && s.branch > 0 ? s.branch : null
 }
 
-function freeBranch(sessions, appRoot, tree) {
+// A throwaway checkout (/tmp, an agent's scratchpad) is removed without
+// `releaseSession`, and its entry would hold the number for good; five of them
+// locked every fix-loop lane out of `portFor`. The directory being gone is the
+// one fact that cannot be a worktree between runs, so its entry is dropped.
+function freeBranch(sessions, appRoot, tree, worktreeExists) {
   const held = new Set()
   for (const [root, s] of Object.entries(sessions)) {
     if (root === appRoot || !s.branch || s.repo !== tree.repo) continue
     if (s.worktree === tree.top) return s.branch
+    if (s.worktree && !worktreeExists(s.worktree)) { delete sessions[root]; continue }
     held.add(s.branch)
   }
   for (let n = 1; n <= MAX_BRANCH; n++) if (!held.has(n)) return n

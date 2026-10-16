@@ -6,7 +6,7 @@
  * held, and bubbles to the form. Preventing it keeps the character out of the
  * field, and preventing it on Enter keeps the form from submitting, as both
  * are a keypress's default in a browser. Then the kit's shape: `<Input>`
- * forwards `on:keydown={onkeydown}` and four more whose props its caller
+ * forwards `onkeydown={onkeydown}` and four more whose props its caller
  * mostly leaves unset, and an unset handler is skipped, as `addEvent` skips
  * it on the DOM path, rather than stored and called.
  */

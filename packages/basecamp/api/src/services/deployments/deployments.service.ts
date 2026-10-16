@@ -15,7 +15,6 @@ import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
-import type { BasecampApp }    from '../../basecamp.types.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { announce } from '../../channels.ts'
 import { isInline, isGit, imageOf, inlineFilesFor } from '../../core/app-source.ts'
@@ -81,478 +80,522 @@ function buildInitialSteps(target: { type: string; source?: unknown }, built = f
  */
 const SWAP_STEPS = new Set(['Start container', 'Activate'])
 
-export function createDeploymentsService(app: BasecampApp) {
-
-  function steps(deploymentId: string) {
-    return db().deploymentStep.findMany({
-      where:   { deploymentId },
-      orderBy: { position: 'asc' },
-    })
-  }
-
-
-  /**
-   * The release this call is about, read through the CALLER's client.
-   *
-   * The confinement (`FJS-384`): `Deployment` carries its own `workspaceId`, so
-   * a release in another workspace answers nothing here — and every write below
-   * is addressed by an id that came out of this read rather than off a payload.
-   */
-  async function deployInScope(id: string) {
-    const row = await db().deployment.findUnique({ where: { id } })
-    if (!row) throw new NotFound(`Deployment '${id}' not found`)
-    return row as Record<string, any>
-  }
-
-  /** `DeploymentStep` is update-at-SYSTEM — a step's outcome is what the
-   *  machine reported, and no standing a workspace grants writes one. */
-  const sys = () => $.db.asSystem() as any
-
-  /** The whole row, announced. A client assigning an event payload over the
-   *  record it renders loses every field a projection omits. */
-  async function pushRow(id: string) {
-    const row = await sys().deployment.findUnique({ where: { id } })
-    if (row) await announce(app, ws(), 'Deployment', 'deployments patched', row)
-    return row
-  }
-
-  return createService({
-    name:  'deployments',
-    scope: keyScope('deployments'),
-    model: 'Deployment',
-    // Announced by the service DEFINITION, not by an after hook: `callService`
-    // is junction's one announcement point and it excludes `find`/`get` by name,
-    // where an `after: { all: [...] }` hook broadcast every read to every browser
-    // in the workspace (FJS-031). Declaring both is refused at construction.
-    channel: workspaceChannel(app),
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
-
-    async find() {
-      const { limit, offset } = getPagination()
-      // Every filter the caller sent, not a chosen few. autoFilter has already
-      // refused a key that is not a column, so a key it admitted and this body
-      // skipped answered every row as a match — the /deployments/ filter bar
-      // offers a dozen columns and filtered on two.
-      const { rows, total } = await db().deployment.findManyAndCount({
-        where:   { ...parseWhere($.query), workspaceId: ws() },
-        include: WITH_APP,
-        orderBy: callerOrder({ queuedAt: 'desc' }),
-        limit, offset,
-      })
-      return { total, limit, offset, data: rows }
-    },
-
-    async get() {
-      const row = await db().deployment.findFirst({
-        where:   { id: $.id as string, workspaceId: ws() },
-        include: WITH_APP,
-      })
-      if (!row) throw new NotFound(`Deployment '${$.id}' not found`)
-      return { ...row, steps: await steps(row.id) }
-    },
-
-    async create() {
-      const data  = $.data as Record<string, unknown>
-      const appId = data.appId as string
-
-      const target = await db().app.findFirst({ where: { id: appId, workspaceId: ws() } })
-      if (!target) throw new NotFound(`App '${appId}' not found in this workspace`)
-
-      // Refused here, where the person who pressed the button is still looking.
-      // The job asks the same question again when it runs — this is not
-      // the enforcement, it is the message: a release created and failed a
-      // second later tells an operator their app is broken, where a 400 naming
-      // the missing placement tells them what to do (FJS-257).
-      const executor = await resolveExecutor(app, appId)
-      if (!isExecutor(executor)) throw new BadRequest(executor.reason)
-
-      // A source that is neither an image nor something that builds one leaves
-      // the start step asking docker to pull the app's NAME from a public
-      // registry. Only a git container is built, here on the machine; a
-      // database is an image or nothing.
-      const builds = isGit(target.source) && target.type !== 'database'
-      if ((target.type === 'container' || target.type === 'function' || target.type === 'database')
-          && !isInline(target.source) && !builds && !imageOf(target.source) && !data.toImage)
-        throw new BadRequest(
-          `App '${target.name}' names no image — ` +
-          `set its source to an image (e.g. nginx:alpine), a git repository or inline files`)
-
-      // What the app looked like at release time: how its container starts
-      // (`core/runtime.ts`) and its variables — plain values copied, secrets by
-      // id (`core/variables.ts`).
-      //
-      // An inline app's release that states a digest is of bytes already on
-      // the machine (a preview's Freeze), so its snapshot holds no files: the
-      // app's own would be uploaded over the digest, and a rollback to it
-      // would put back the app's files rather than the bytes that served.
-      const held = isInline(target.source) && data.builtImage != null
-      if (held && !/^sha256:[0-9a-f]{64}$/.test(String(data.builtImage)))
-        throw new BadRequest(`'${data.builtImage}' is not a digest — a release of bytes the machine holds names them as sha256:<64 hex>`)
-      data.configSnapshot = {
-        source: held ? { kind: 'inline', files: [] } : target.source ?? {}, runtime: runtimeOf(target),
-        ...await snapshotVariables(db(), target),
-      }
-      data.toImage      ??= imageOf(target.source)
-      data.environmentId  = target.environmentId
-      data.triggeredBy    = actor() === 'system' ? null : actor()
-
-      // Chain to the last successful release so a rollback knows where to go.
-      const prev = await db().deployment.findFirst({
-        where:   { appId, status: 'success' },
-        orderBy: { finishedAt: 'desc' },
-      })
-      if (prev) data.previousDeploymentId = prev.id
-
-      const deployment = await db().deployment.create({ data })
-
-      await db().deploymentStep.createMany({
-        data: buildInitialSteps({ type: target.type, source: (data.configSnapshot as any).source }).map((name, position) => ({
-          deploymentId: deployment.id, position, name, status: 'pending',
-        })),
-      })
-
-      // Durable hand-off — survives a restart mid-release.
-      // The actor and the tenant are carried by the dispatch: caravan reads
-      // both off the request in scope, and the handler declares
-      // `runsAsCaller` — so this work runs as the person who asked for it,
-      // in the workspace they asked in (`FJS-384`).
-      await app.jobs.dispatch(deploymentRun, {
-        deployment_id: deployment.id,
-        app_id:        appId,
-        workspace_id:  ws(),
-      }, { queue: 'deployments', priority: 5 })
-
-      return deployment
-    },
-
-    async patch() {
-      const deployment = await getScoped('deployment', 'Deployment')
-
-      // No terminal-state guard here. `@@transitions(status, …)` on Deployment
-      // is the one statement of what a release may do next, and it is enforced
-      // at the Data boundary — so a status this row cannot reach is refused
-      // with a 409 that NAMES the moves it can make, which the list here never
-      // did. What is left is the field allow-list, which is a different rule:
-      // which columns a caller may write at all.
-      const data  = $.data as Record<string, unknown>
-      const ALLOWED = ['status', 'builtImage', 'startedAt', 'finishedAt', 'durationMs']
-      const patch: Record<string, unknown> = {}
-      for (const key of ALLOWED) if (key in data) patch[key] = data[key]
-
-      if (changesNothing(patch)) return deployment
-
-      const updated = await db().deployment.update({ where: { id: deployment.id }, data: patch })
-      if (patch.status)
-        app.events.emit(`deployment:${patch.status}`,
-          { id: deployment.id, workspace_id: ws(), status: patch.status })
-
-      return updated
-    },
-
-    // `remove` cancels an in-flight release. It does NOT delete the row: the
-    // deployment record is how you answer "what shipped, when, by whom", and a
-    // cancelled release is part of that answer.
-    async remove() {
-      const deployment = await getScoped('deployment', 'Deployment')
-
-      // `cancel: [pending, building] -> cancelled` is the
-      // guard, declared on the model. Writing the status IS the enforced path;
-      // `transition()` is sugar for the move alone and this one stamps
-      // `finishedAt` with it.
-      const updated = await db().deployment.update({
-        where: { id: deployment.id },
-        data:  { status: 'cancelled', finishedAt: new Date().toISOString() },
-      })
-      app.events.emit('deployment:cancelled', { id: deployment.id, workspace_id: ws() })
-      return updated
-    },
-
-
-    // ── rollback — POST /deployments/:id  X-Service-Method: rollback ──
-    //
-    // Put back what this release replaced.
-    //
-    // Every part of this was already being written and none of it was read:
-    // `previousDeploymentId` is chained on every create under a comment saying
-    // a rollback would want it, `configSnapshot` records what the app looked
-    // like at release time, and `rollback: success -> rolled_back @gate(5)` is
-    // declared on the model — while four screens carried a tone for a state no
-    // write could produce (`FJS-517`).
-    //
-    // ─── What a rollback IS here ─────────────────────────────────────
-    //
-    // A NEW release of the OLD bytes, not a rerun of the old row. A Deployment
-    // records what shipped and when; re-running one would rewrite that, and the
-    // fact that somebody rolled back at 11pm on a Friday is the thing an
-    // operator most wants to find afterwards.
-    //
-    // **The settings come from the TARGET and never from the app.** That is the
-    // whole of what separates this from a redeploy: the app's columns are the
-    // desired state somebody has since edited, and rolling back to the old image
-    // with the new settings puts back neither release.
-    //
-    // ─── Why the retire happens HERE and not when the replacement lands ──
-    //
-    // `rolled_back` is a DECISION, not an outcome — an operator with standing 5
-    // withdrew this release — so it is written at the moment the decision is
-    // made, and `@gate(5)` on the move is what grades them, at the Data
-    // boundary, before anything is created (Invariant 6). Deferring it to the
-    // replacement's success would put the authority check on a system write in
-    // a job, where no standing is left to grade.
-    //
-    // A replacement that then fails is three accurate rows rather than one
-    // wrong one: this release withdrawn, the replacement `failed`, and
-    // `App.status` still saying what is actually running.
-    async rollback() {
-      const being = await deployInScope(String($.id))
-
-      // ─── The order, which is the whole of what this method has to get right ──
-      //
-      // Grade, then validate, then MOVE, then create. Nothing before the move
-      // writes anything, so every refusal below leaves the release exactly as it
-      // was — a first deploy answered *there is nothing to roll back to* with
-      // the row already retired would be the worst outcome available here.
-      //
-      // The grade is the SCHEMA's own answer, asked rather than restated: it is
-      // the same list the screen reads to decide whether to draw the button. It
-      // is not the enforcement — `transition()` below is, at the Data boundary
-      // (Invariant 6) — it is what puts the refusal in front of the writes.
-      const move = (await db().deployment.transitions(being))
-        .find((t: any) => t.name === 'rollback')
-      if (!move?.allowed) throw new BadRequest(
-        being.status === 'success'
-          ? `Rolling back a release takes a higher standing than shipping one.`
-          : `A ${being.status} release cannot be rolled back — only one that shipped.`)
-
-      const target = being.previousDeploymentId
-        ? await db().deployment.findUnique({ where: { id: being.previousDeploymentId } })
-        : null
-
-      // Nothing to go back to. Named rather than answered with an empty
-      // release: the first deploy of an app has no predecessor, and that is a
-      // different sentence from a predecessor that has gone.
-      if (!target) throw new BadRequest(
-        being.previousDeploymentId
-          ? `The release this one replaced is no longer here, so there is nothing to put back.`
-          : `This was the first release of this app — there is nothing to roll back to.`)
-
-      // The bytes, as that release recorded them. `builtImage` is a digest and
-      // `toImage` is the name a registry pulls by, so the digest is preferred
-      // and the name travels with it.
-      const image = (target.toImage ?? target.builtImage) as string | null
-      if (!image) throw new BadRequest(
-        `The release this one replaced recorded no image, so there is nothing to put back.`)
-
-      const into = await db().app.findFirst({ where: { id: being.appId, workspaceId: ws() } })
-      if (!into) throw new NotFound(`App '${being.appId}' not found in this workspace`)
-
-      // Asked here for `create`'s reason: the person who pressed the button is
-      // still looking, and a release that fails a second later tells them their
-      // app is broken where this tells them what to do.
-      const executor = await resolveExecutor(app, being.appId)
-      if (!isExecutor(executor)) throw new BadRequest(executor.reason)
-
-      // The move, and the enforcement: `success -> rolled_back @gate(5)` is the
-      // model's and so is the level. Everything above this line was a read.
-      await db().deployment.transition(being.id, 'rollback')
-
-      const replacement = await db().deployment.create({ data: {
-        appId:         being.appId,
-        environmentId: being.environmentId,
-        workspaceId:   ws(),
-        trigger:       'rollback',
-        // What was running, and what is going back on.
-        fromImage:     being.toImage ?? being.builtImage ?? null,
-        toImage:       image,
-        builtImage:    target.builtImage ?? null,
-        // The target's, never the app's — see above.
-        configSnapshot: target.configSnapshot ?? {},
-        commitSha:      target.commitSha ?? null,
-        commitMessage:  target.commitMessage ?? null,
-        branch:         target.branch ?? null,
-        author:         target.author ?? null,
-        // The release this one replaces, which is `create`'s own meaning for
-        // the column: the one that was current before it.
-        previousDeploymentId: being.id,
-        triggeredBy:    actor() === 'system' ? null : actor(),
-      } })
-
-      await db().deploymentStep.createMany({
-        // The step list the TARGET's source needs, not the app's current one.
-        // An app switched from inline to a container since that release would
-        // otherwise be rolled back through a pipeline its old bytes cannot run.
-        data: buildInitialSteps({ type: into.type, source: (target.configSnapshot as any)?.source ?? into.source }, true).map((name, position) => ({
-          deploymentId: replacement.id, position, name, status: 'pending',
-        })),
-      })
-
-      await app.jobs.dispatch(deploymentRun, {
-        deployment_id: replacement.id,
-        app_id:        being.appId,
-        workspace_id:  ws(),
-      }, { queue: 'deployments', priority: 5 })
-
-      app.events.emit('deployment:rolled_back', {
-        id: being.id, replacement: replacement.id, workspace_id: ws(),
-      })
-      await pushRow(being.id)
-
-      // The REPLACEMENT is the answer: it is the row the screen navigates to
-      // and the one with a status worth watching. The retired release is on the
-      // page the caller is already looking at, and the push above updates it.
-      return replacement
-    },
-
-    // ── The engine's writes ───────────────────────────────────────────
-    //
-    // `deployment:run` used to open `asSystem()` and advance the release
-    // itself. It runs as whoever asked for the deploy now (`FJS-384`), and the
-    // confinement is `deployInScope` — a release in another workspace answers
-    // nothing, where an id off the payload used to be written wherever it
-    // pointed. The step writes stay system: `DeploymentStep` is
-    // update-at-SYSTEM, which is the schema saying a step's outcome is what the
-    // machine reported.
-    //
-    // All four are `internalOnly`: a person moving a release through its own
-    // steps by hand is a fabricated history, and the screen reads these rows.
-
-    async startRun() {
-      const deploy = await deployInScope(String($.id))
-
-      // Not runnable is not an error: a release already terminal has been
-      // retried, cancelled or finished by another attempt.
-      if (!['pending', 'building'].includes(deploy.status))
-        return { runnable: false, status: deploy.status }
-
-      const startedAt = new Date().toISOString()
-      await sys().deployment.update({
-        where: { id: deploy.id },
-        data:  { status: 'building', startedAt },
-      })
-
-      const steps = await sys().deploymentStep.findMany({
-        where:   { deploymentId: deploy.id },
-        orderBy: { position: 'asc' },
-      })
-      const target = await sys().app.findUnique({ where: { id: deploy.appId } })
-
-      await pushRow(deploy.id)
-
-      return { runnable: true, deploy, steps, app: target, startedAt }
-    },
-
-    async stepStatus() {
-      const deploy = await deployInScope(String($.id))
-      const { stepId, status, output, digest } = ($.data ?? {}) as {
-        stepId: string; status: string; output?: string; digest?: string
-      }
-
-      // Addressed by the deployment as well as the step, so a step id from
-      // another release cannot be moved through this method.
-      await sys().deploymentStep.updateMany({
-        where: { id: stepId, deploymentId: deploy.id },
-        data:  {
-          status,
-          ...(output !== undefined ? { output } : {}),
-          ...(status === 'running'
-            ? { startedAt: new Date().toISOString(), finishedAt: null }
-            : { finishedAt: new Date().toISOString() }),
-        },
-      })
-
-      // A later step's digest wins: /deploy names the bytes that were started
-      // where /pull names the bytes that were fetched, and a release records
-      // what RAN.
-      if (digest && digest !== deploy.builtImage)
-        await sys().deployment.update({ where: { id: deploy.id }, data: { builtImage: digest } })
-
-      await pushRow(deploy.id)
-      return { stepId, status }
-    },
-
-    async finishRun() {
-      const deploy = await deployInScope(String($.id))
-      const { status, error, startedAt, stepId } = ($.data ?? {}) as {
-        status: 'success' | 'failed'; error?: string; startedAt?: string; stepId?: string
-      }
-
-      // A release cancelled while its build was in flight stays cancelled: no
-      // move leaves `cancelled`, for the system client either (`FJS-D502`), and
-      // a late answer from the runner must not put the app back to running.
-      const now = await sys().deployment.findFirst({ where: { id: deploy.id }, select: { status: true } })
-      if (now?.status === 'cancelled') {
-        await pushRow(deploy.id)
-        return { id: deploy.id, status: 'cancelled' }
-      }
-
-      const finishedAt = Date.now()
-      const startedMs  = startedAt ? Date.parse(startedAt)
-                       : deploy.startedAt ? Date.parse(String(deploy.startedAt))
-                       : finishedAt
-
-      await sys().deployment.update({
-        where: { id: deploy.id },
-        data:  {
-          status,
-          finishedAt: new Date(finishedAt).toISOString(),
-          durationMs: finishedAt - startedMs,
-        },
-      })
-
-      // The reason goes on the step the release stopped at — the release row
-      // has no column for it, and the step's output is what the screen shows.
-      if (status === 'failed' && stepId && error)
-        await sys().deploymentStep.updateMany({
-          where: { id: stepId, deploymentId: deploy.id },
-          data:  { status: 'failed', output: error, finishedAt: new Date(finishedAt).toISOString() },
-        })
-
-      // A step still running died with the release. One still pending never ran,
-      // and marking it `failed` read as though the health check had failed
-      // when the release stopped two steps earlier (`FJS-1683`).
-      if (status === 'failed') {
-        await sys().deploymentStep.updateMany({
-          where: { deploymentId: deploy.id, status: 'running' },
-          data:  { status: 'failed' },
-        })
-        await sys().deploymentStep.updateMany({
-          where: { deploymentId: deploy.id, status: 'pending' },
-          data:  { status: 'skipped' },
-        })
-      }
-
-      // Read after the step writes above, so a swap step the release died on
-      // reads `failed` rather than `running`.
-      const swap = status === 'failed'
-        ? (await sys().deploymentStep.findMany({ where: { deploymentId: deploy.id } }))
-            .find((s: { name: string }) => SWAP_STEPS.has(s.name))
-        : undefined
-      const replaced = !swap || swap.status === 'success'
-
-      if (deploy.appId && replaced)
-        await sys().app.update({
-          where: { id: deploy.appId },
-          data:  { status: status === 'success' ? 'running' : 'error' },
-        })
-
-      app.events.emit(status === 'success' ? 'deployment:success' : 'deployment:failed',
-        { id: deploy.id, workspace_id: deploy.workspaceId, ...(error ? { error } : {}) })
-
-      await pushRow(deploy.id)
-      return { id: deploy.id, status }
-    },
-
-    hooks: {
-      before: {
-        all:    [sessionScope(app)],
-        // No deriveSlug: `Deployment` has neither `name` nor `slug`, so it was a
-        // hook that could never fire.
-        // The engine's three. The standing was graded when `create` queued the
-        // release; the queue runs as that same actor.
-        startRun:   [internalOnly()],
-        stepStatus: [internalOnly()],
-        finishRun:  [internalOnly()],
-      },
-    },
+function steps(deploymentId: string) {
+  return db().deploymentStep.findMany({
+    where:   { deploymentId },
+    orderBy: { position: 'asc' },
   })
 }
+
+
+/**
+ * The release this call is about, read through the CALLER's client.
+ *
+ * The confinement (`FJS-384`): `Deployment` carries its own `workspaceId`, so
+ * a release in another workspace answers nothing here — and every write below
+ * is addressed by an id that came out of this read rather than off a payload.
+ */
+async function deployInScope(id: string) {
+  const row = await db().deployment.findUnique({ where: { id } })
+  if (!row) throw new NotFound(`Deployment '${id}' not found`)
+  return row as Record<string, any>
+}
+
+/**
+ * A release of `target` with the app's own settings, its steps, and the job
+ * that runs it — `create` and `rebind` both. `built` names bytes an earlier
+ * release already made, so a git app is started and not rebuilt; `held` is an
+ * inline release of bytes the machine holds, whose snapshot uploads no files.
+ */
+async function queueRelease(target: { id: string; environmentId: string; type: string; source?: unknown }, data: Record<string, unknown>, { held = false, built = false } = {}) {
+  // What the app looked like at release time: how its container starts
+  // (`core/runtime.ts`) and its variables — plain values copied, secrets by
+  // id (`core/variables.ts`).
+  data.configSnapshot = {
+    source: held ? { kind: 'inline', files: [] } : target.source ?? {}, runtime: runtimeOf(target),
+    ...await snapshotVariables(db(), target),
+  }
+  data.toImage      ??= imageOf(target.source)
+  data.environmentId  = target.environmentId
+  data.triggeredBy    = actor() === 'system' ? null : actor()
+
+  // Chain to the last successful release so a rollback knows where to go.
+  const prev = await db().deployment.findFirst({
+    where:   { appId: target.id, status: 'success' },
+    orderBy: { finishedAt: 'desc' },
+  })
+  if (prev) data.previousDeploymentId = prev.id
+
+  const deployment = await db().deployment.create({ data })
+
+  await db().deploymentStep.createMany({
+    data: buildInitialSteps({ type: target.type, source: (data.configSnapshot as any).source }, built).map((name, position) => ({
+      deploymentId: deployment.id, position, name, status: 'pending',
+    })),
+  })
+
+  // Durable hand-off — survives a restart mid-release.
+  // The actor and the tenant are carried by the dispatch: caravan reads
+  // both off the request in scope, and the handler declares
+  // `runsAsCaller` — so this work runs as the person who asked for it,
+  // in the workspace they asked in (`FJS-384`).
+  await $.app.jobs!.dispatch(deploymentRun, {
+    deployment_id: deployment.id,
+    app_id:        target.id,
+    workspace_id:  ws(),
+  }, { queue: 'deployments', priority: 5 })
+
+  return deployment
+}
+
+/** `DeploymentStep` is update-at-SYSTEM — a step's outcome is what the
+ *  machine reported, and no standing a workspace grants writes one. */
+const sys = () => $.db.asSystem() as any
+
+/** The whole row, announced. A client assigning an event payload over the
+ *  record it renders loses every field a projection omits. */
+async function pushRow(id: string) {
+  const row = await sys().deployment.findUnique({ where: { id } })
+  if (row) await announce($.app, ws(), 'Deployment', 'deployments patched', row)
+  return row
+}
+
+export default createService({
+  name:  'deployments',
+  scope: keyScope('deployments'),
+  model: 'Deployment',
+  // Announced by the service DEFINITION, not by an after hook: `callService`
+  // is junction's one announcement point and it excludes `find`/`get` by name,
+  // where an `after: { all: [...] }` hook broadcast every read to every browser
+  // in the workspace (FJS-031). Declaring both is refused at construction.
+  channel: workspaceChannel,
+  reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+
+  async find() {
+    const { limit, offset } = getPagination()
+    // Every filter the caller sent, not a chosen few. autoFilter has already
+    // refused a key that is not a column, so a key it admitted and this body
+    // skipped answered every row as a match — the /deployments/ filter bar
+    // offers a dozen columns and filtered on two.
+    const { rows, total } = await db().deployment.findManyAndCount({
+      where:   { ...parseWhere($.query), workspaceId: ws() },
+      include: WITH_APP,
+      orderBy: callerOrder({ queuedAt: 'desc' }),
+      limit, offset,
+    })
+    return { total, limit, offset, data: rows }
+  },
+
+  async get() {
+    const row = await db().deployment.findFirst({
+      where:   { id: $.id as string, workspaceId: ws() },
+      include: WITH_APP,
+    })
+    if (!row) throw new NotFound(`Deployment '${$.id}' not found`)
+    return { ...row, steps: await steps(row.id) }
+  },
+
+  async create() {
+    const data  = $.data as Record<string, unknown>
+    const appId = data.appId as string
+
+    const target = await db().app.findFirst({ where: { id: appId, workspaceId: ws() } })
+    if (!target) throw new NotFound(`App '${appId}' not found in this workspace`)
+
+    // Refused here, where the person who pressed the button is still looking.
+    // The job asks the same question again when it runs — this is not
+    // the enforcement, it is the message: a release created and failed a
+    // second later tells an operator their app is broken, where a 400 naming
+    // the missing placement tells them what to do (FJS-257).
+    const executor = await resolveExecutor($.app, appId)
+    if (!isExecutor(executor)) throw new BadRequest(executor.reason)
+
+    // A source that is neither an image nor something that builds one leaves
+    // the start step asking docker to pull the app's NAME from a public
+    // registry. Only a git container is built, here on the machine; a
+    // database is an image or nothing.
+    const builds = isGit(target.source) && target.type !== 'database'
+    if ((target.type === 'container' || target.type === 'function' || target.type === 'database')
+        && !isInline(target.source) && !builds && !imageOf(target.source) && !data.toImage)
+      throw new BadRequest(
+        `App '${target.name}' names no image — ` +
+        `set its source to an image (e.g. nginx:alpine), a git repository or inline files`)
+
+    // A release that states a digest is of bytes already on the machine, and
+    // builds nothing. An inline one is a preview's Freeze, so its snapshot
+    // holds no files: the app's own would be uploaded over the digest, and a
+    // rollback to it would put back the app's files rather than the bytes that
+    // served. A container one is an image `fli deploy:basecamp` built where
+    // the workspace is and loaded onto the machine (`FJS-D942`): building the
+    // app's git source instead would ship the branch, not those bytes.
+    const named = data.builtImage != null
+    if (named && !/^sha256:[0-9a-f]{64}$/.test(String(data.builtImage)))
+      throw new BadRequest(`'${data.builtImage}' is not a digest — a release of bytes the machine holds names them as sha256:<64 hex>`)
+    const held = named && isInline(target.source)
+    return queueRelease(target, data, { held, built: named && !held })
+  },
+
+  // ── rebind — the `domain:dns` job's release (FJS-D577) ────────────
+  //
+  // A hostname added or removed between releases moves the app's route and
+  // not its BIND: `/route` answers `rebind`, and the container's port stays
+  // on every interface (around Caddy) or on loopback (behind nothing) until a
+  // release recreates it. This is that release — the app's own settings and
+  // the LIVE bytes, so a git app is not rebuilt from a branch that has moved.
+  // A rollback is not: its settings are the target's.
+  //
+  // Internal, and run as whoever wrote the Domain: the restart is theirs, and
+  // `Deployment`'s create gate grades them as it grades a release pressed by
+  // hand. A release already queued or building binds from the live hostnames
+  // when it starts, so a second is not minted beside it — two Domains added
+  // together each see `rebind`.
+  async rebind() {
+    const appId  = String($.id)
+    const target = await db().app.findFirst({ where: { id: appId, workspaceId: ws() } })
+    if (!target) throw new NotFound(`App '${appId}' not found in this workspace`)
+
+    const inFlight = await db().deployment.findFirst({ where: { appId, status: { in: ['pending', 'building'] } } })
+    if (inFlight) return { skipped: `release ${inFlight.id} is already ${inFlight.status}, and binds from the live hostnames when it starts` }
+
+    const live = await db().deployment.findFirst({ where: { appId, status: 'success' }, orderBy: { finishedAt: 'desc' } })
+    if (!live?.builtImage) return { skipped: 'no release of this app recorded the bytes it ran, so there is nothing to start again' }
+
+    return queueRelease(target, {
+      appId, trigger: 'rebind',
+      toImage: live.toImage ?? null, builtImage: live.builtImage,
+      commitSha: live.commitSha ?? null, commitMessage: live.commitMessage ?? null,
+      branch: live.branch ?? null, author: live.author ?? null,
+    }, { built: true })
+  },
+
+  async patch() {
+    const deployment = await getScoped('deployment', 'Deployment')
+
+    // No terminal-state guard here. `@@transitions(status, …)` on Deployment
+    // is the one statement of what a release may do next, and it is enforced
+    // at the Data boundary — so a status this row cannot reach is refused
+    // with a 409 that NAMES the moves it can make, which the list here never
+    // did. What is left is the field allow-list, which is a different rule:
+    // which columns a caller may write at all.
+    const data  = $.data as Record<string, unknown>
+    const ALLOWED = ['status', 'builtImage', 'startedAt', 'finishedAt', 'durationMs']
+    const patch: Record<string, unknown> = {}
+    for (const key of ALLOWED) if (key in data) patch[key] = data[key]
+
+    if (changesNothing(patch)) return deployment
+
+    const updated = await db().deployment.update({ where: { id: deployment.id }, data: patch })
+    if (patch.status)
+      $.app.events.emit(`deployment:${patch.status}`,
+        { id: deployment.id, workspace_id: ws(), status: patch.status })
+
+    return updated
+  },
+
+  // `remove` cancels an in-flight release. It does NOT delete the row: the
+  // deployment record is how you answer "what shipped, when, by whom", and a
+  // cancelled release is part of that answer.
+  async remove() {
+    const deployment = await getScoped('deployment', 'Deployment')
+
+    // `cancel: [pending, building] -> cancelled` is the
+    // guard, declared on the model. Writing the status IS the enforced path;
+    // `transition()` is sugar for the move alone and this one stamps
+    // `finishedAt` with it.
+    const updated = await db().deployment.update({
+      where: { id: deployment.id },
+      data:  { status: 'cancelled', finishedAt: new Date().toISOString() },
+    })
+    $.app.events.emit('deployment:cancelled', { id: deployment.id, workspace_id: ws() })
+    return updated
+  },
+
+
+  // ── rollback — POST /deployments/:id  X-Service-Method: rollback ──
+  //
+  // Put back what this release replaced.
+  //
+  // Every part of this was already being written and none of it was read:
+  // `previousDeploymentId` is chained on every create under a comment saying
+  // a rollback would want it, `configSnapshot` records what the app looked
+  // like at release time, and `rollback: success -> rolled_back @gate(5)` is
+  // declared on the model — while four screens carried a tone for a state no
+  // write could produce (`FJS-517`).
+  //
+  // ─── What a rollback IS here ─────────────────────────────────────
+  //
+  // A NEW release of the OLD bytes, not a rerun of the old row. A Deployment
+  // records what shipped and when; re-running one would rewrite that, and the
+  // fact that somebody rolled back at 11pm on a Friday is the thing an
+  // operator most wants to find afterwards.
+  //
+  // **The settings come from the TARGET and never from the app.** That is the
+  // whole of what separates this from a redeploy: the app's columns are the
+  // desired state somebody has since edited, and rolling back to the old image
+  // with the new settings puts back neither release.
+  //
+  // ─── Why the retire happens HERE and not when the replacement lands ──
+  //
+  // `rolled_back` is a DECISION, not an outcome — an operator with standing 5
+  // withdrew this release — so it is written at the moment the decision is
+  // made, and `@gate(5)` on the move is what grades them, at the Data
+  // boundary, before anything is created (Invariant 6). Deferring it to the
+  // replacement's success would put the authority check on a system write in
+  // a job, where no standing is left to grade.
+  //
+  // A replacement that then fails is three accurate rows rather than one
+  // wrong one: this release withdrawn, the replacement `failed`, and
+  // `App.status` still saying what is actually running.
+  async rollback() {
+    const being = await deployInScope(String($.id))
+
+    // ─── The order, which is the whole of what this method has to get right ──
+    //
+    // Grade, then validate, then MOVE, then create. Nothing before the move
+    // writes anything, so every refusal below leaves the release exactly as it
+    // was — a first deploy answered *there is nothing to roll back to* with
+    // the row already retired would be the worst outcome available here.
+    //
+    // The grade is the SCHEMA's own answer, asked rather than restated: it is
+    // the same list the screen reads to decide whether to draw the button. It
+    // is not the enforcement — `transition()` below is, at the Data boundary
+    // (Invariant 6) — it is what puts the refusal in front of the writes.
+    const move = (await db().deployment.transitions(being))
+      .find((t: any) => t.name === 'rollback')
+    if (!move?.allowed) throw new BadRequest(
+      being.status === 'success'
+        ? `Rolling back a release takes a higher standing than shipping one.`
+        : `A ${being.status} release cannot be rolled back — only one that shipped.`)
+
+    const target = being.previousDeploymentId
+      ? await db().deployment.findUnique({ where: { id: being.previousDeploymentId } })
+      : null
+
+    // Nothing to go back to. Named rather than answered with an empty
+    // release: the first deploy of an app has no predecessor, and that is a
+    // different sentence from a predecessor that has gone.
+    if (!target) throw new BadRequest(
+      being.previousDeploymentId
+        ? `The release this one replaced is no longer here, so there is nothing to put back.`
+        : `This was the first release of this app — there is nothing to roll back to.`)
+
+    // The bytes, as that release recorded them. `builtImage` is a digest and
+    // `toImage` is the name a registry pulls by, so the digest is preferred
+    // and the name travels with it.
+    const image = (target.toImage ?? target.builtImage) as string | null
+    if (!image) throw new BadRequest(
+      `The release this one replaced recorded no image, so there is nothing to put back.`)
+
+    const into = await db().app.findFirst({ where: { id: being.appId, workspaceId: ws() } })
+    if (!into) throw new NotFound(`App '${being.appId}' not found in this workspace`)
+
+    // Asked here for `create`'s reason: the person who pressed the button is
+    // still looking, and a release that fails a second later tells them their
+    // app is broken where this tells them what to do.
+    const executor = await resolveExecutor($.app, being.appId)
+    if (!isExecutor(executor)) throw new BadRequest(executor.reason)
+
+    // The move, and the enforcement: `success -> rolled_back @gate(5)` is the
+    // model's and so is the level. Everything above this line was a read.
+    await db().deployment.transition(being.id, 'rollback')
+
+    const replacement = await db().deployment.create({ data: {
+      appId:         being.appId,
+      environmentId: being.environmentId,
+      workspaceId:   ws(),
+      trigger:       'rollback',
+      // What was running, and what is going back on.
+      fromImage:     being.toImage ?? being.builtImage ?? null,
+      toImage:       image,
+      builtImage:    target.builtImage ?? null,
+      // The target's, never the app's — see above.
+      configSnapshot: target.configSnapshot ?? {},
+      commitSha:      target.commitSha ?? null,
+      commitMessage:  target.commitMessage ?? null,
+      branch:         target.branch ?? null,
+      author:         target.author ?? null,
+      // The release this one replaces, which is `create`'s own meaning for
+      // the column: the one that was current before it.
+      previousDeploymentId: being.id,
+      triggeredBy:    actor() === 'system' ? null : actor(),
+    } })
+
+    await db().deploymentStep.createMany({
+      // The step list the TARGET's source needs, not the app's current one.
+      // An app switched from inline to a container since that release would
+      // otherwise be rolled back through a pipeline its old bytes cannot run.
+      data: buildInitialSteps({ type: into.type, source: (target.configSnapshot as any)?.source ?? into.source }, true).map((name, position) => ({
+        deploymentId: replacement.id, position, name, status: 'pending',
+      })),
+    })
+
+    await $.app.jobs!.dispatch(deploymentRun, {
+      deployment_id: replacement.id,
+      app_id:        being.appId,
+      workspace_id:  ws(),
+    }, { queue: 'deployments', priority: 5 })
+
+    $.app.events.emit('deployment:rolled_back', {
+      id: being.id, replacement: replacement.id, workspace_id: ws(),
+    })
+    await pushRow(being.id)
+
+    // The REPLACEMENT is the answer: it is the row the screen navigates to
+    // and the one with a status worth watching. The retired release is on the
+    // page the caller is already looking at, and the push above updates it.
+    return replacement
+  },
+
+  // ── The engine's writes ───────────────────────────────────────────
+  //
+  // `deployment:run` used to open `asSystem()` and advance the release
+  // itself. It runs as whoever asked for the deploy now (`FJS-384`), and the
+  // confinement is `deployInScope` — a release in another workspace answers
+  // nothing, where an id off the payload used to be written wherever it
+  // pointed. The step writes stay system: `DeploymentStep` is
+  // update-at-SYSTEM, which is the schema saying a step's outcome is what the
+  // machine reported.
+  //
+  // All four are `internalOnly`: a person moving a release through its own
+  // steps by hand is a fabricated history, and the screen reads these rows.
+
+  async startRun() {
+    const deploy = await deployInScope(String($.id))
+
+    // Not runnable is not an error: a release already terminal has been
+    // retried, cancelled or finished by another attempt.
+    if (!['pending', 'building'].includes(deploy.status))
+      return { runnable: false, status: deploy.status }
+
+    const startedAt = new Date().toISOString()
+    await sys().deployment.update({
+      where: { id: deploy.id },
+      data:  { status: 'building', startedAt },
+    })
+
+    const steps = await sys().deploymentStep.findMany({
+      where:   { deploymentId: deploy.id },
+      orderBy: { position: 'asc' },
+    })
+    const target = await sys().app.findUnique({ where: { id: deploy.appId } })
+
+    await pushRow(deploy.id)
+
+    return { runnable: true, deploy, steps, app: target, startedAt }
+  },
+
+  async stepStatus() {
+    const deploy = await deployInScope(String($.id))
+    const { stepId, status, output, digest } = ($.data ?? {}) as {
+      stepId: string; status: string; output?: string; digest?: string
+    }
+
+    // Addressed by the deployment as well as the step, so a step id from
+    // another release cannot be moved through this method.
+    await sys().deploymentStep.updateMany({
+      where: { id: stepId, deploymentId: deploy.id },
+      data:  {
+        status,
+        ...(output !== undefined ? { output } : {}),
+        ...(status === 'running'
+          ? { startedAt: new Date().toISOString(), finishedAt: null }
+          : { finishedAt: new Date().toISOString() }),
+      },
+    })
+
+    // A later step's digest wins: /deploy names the bytes that were started
+    // where /pull names the bytes that were fetched, and a release records
+    // what RAN.
+    if (digest && digest !== deploy.builtImage)
+      await sys().deployment.update({ where: { id: deploy.id }, data: { builtImage: digest } })
+
+    await pushRow(deploy.id)
+    return { stepId, status }
+  },
+
+  async finishRun() {
+    const deploy = await deployInScope(String($.id))
+    const { status, error, startedAt, stepId } = ($.data ?? {}) as {
+      status: 'success' | 'failed'; error?: string; startedAt?: string; stepId?: string
+    }
+
+    // A release cancelled while its build was in flight stays cancelled: no
+    // move leaves `cancelled`, for the system client either (`FJS-D502`), and
+    // a late answer from the runner must not put the app back to running.
+    const now = await sys().deployment.findFirst({ where: { id: deploy.id }, select: { status: true } })
+    if (now?.status === 'cancelled') {
+      await pushRow(deploy.id)
+      return { id: deploy.id, status: 'cancelled' }
+    }
+
+    const finishedAt = Date.now()
+    const startedMs  = startedAt ? Date.parse(startedAt)
+                     : deploy.startedAt ? Date.parse(String(deploy.startedAt))
+                     : finishedAt
+
+    await sys().deployment.update({
+      where: { id: deploy.id },
+      data:  {
+        status,
+        finishedAt: new Date(finishedAt).toISOString(),
+        durationMs: finishedAt - startedMs,
+      },
+    })
+
+    // The reason goes on the step the release stopped at — the release row
+    // has no column for it, and the step's output is what the screen shows.
+    if (status === 'failed' && stepId && error)
+      await sys().deploymentStep.updateMany({
+        where: { id: stepId, deploymentId: deploy.id },
+        data:  { status: 'failed', output: error, finishedAt: new Date(finishedAt).toISOString() },
+      })
+
+    // A step still running died with the release. One still pending never ran,
+    // and marking it `failed` read as though the health check had failed
+    // when the release stopped two steps earlier (`FJS-1683`).
+    if (status === 'failed') {
+      await sys().deploymentStep.updateMany({
+        where: { deploymentId: deploy.id, status: 'running' },
+        data:  { status: 'failed' },
+      })
+      await sys().deploymentStep.updateMany({
+        where: { deploymentId: deploy.id, status: 'pending' },
+        data:  { status: 'skipped' },
+      })
+    }
+
+    // Read after the step writes above, so a swap step the release died on
+    // reads `failed` rather than `running`.
+    const swap = status === 'failed'
+      ? (await sys().deploymentStep.findMany({ where: { deploymentId: deploy.id } }))
+          .find((s: { name: string }) => SWAP_STEPS.has(s.name))
+      : undefined
+    const replaced = !swap || swap.status === 'success'
+
+    if (deploy.appId && replaced)
+      await sys().app.update({
+        where: { id: deploy.appId },
+        data:  { status: status === 'success' ? 'running' : 'error' },
+      })
+
+    $.app.events.emit(status === 'success' ? 'deployment:success' : 'deployment:failed',
+      { id: deploy.id, workspace_id: deploy.workspaceId, ...(error ? { error } : {}) })
+
+    await pushRow(deploy.id)
+    return { id: deploy.id, status }
+  },
+
+  hooks: {
+    before: {
+      all:    [sessionScope()],
+      // No deriveSlug: `Deployment` has neither `name` nor `slug`, so it was a
+      // hook that could never fire.
+      // The engine's three. The standing was graded when `create` queued the
+      // release; the queue runs as that same actor.
+      startRun:   [internalOnly()],
+      stepStatus: [internalOnly()],
+      finishRun:  [internalOnly()],
+      rebind:     [internalOnly()],
+    },
+  },
+})

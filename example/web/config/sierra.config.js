@@ -10,8 +10,8 @@ export default {
   // resource is seeded before the first route module evaluates. The build prints
   // which file it found.
 
-  // The themes this app offers, and the key they persist under. Sierra puts the
-  // class on <html> and emits a <head> script that applies the stored one
+  // The themes this app offers. Sierra stores the pick under the app's prefix,
+  // puts the class on <html> and emits a <head> script that applies it
   // BEFORE first paint — the one part an app cannot write for itself, since
   // anything it runs happens after its own bundle has loaded and every reader
   // on a non-default theme would see the default first.
@@ -21,7 +21,6 @@ export default {
       'theme-midnight', 'theme-sunset', 'theme-elite',
     ],
     default: 'theme-default',
-    key:     'shop_theme',
   },
 
   // The app opens with no network: sierra writes `sw.js` from what this build

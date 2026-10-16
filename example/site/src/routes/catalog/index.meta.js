@@ -28,7 +28,7 @@ export async function load() {
   })
 
   // A price is on the VARIANT, so a catalog page that shows one has to read
-  // both. Both are @@gate("0.4.4.5") — read at 0 — so the publish check passes
+  // both. Both are @@gate(0.4.4.5) — read at 0 — so the publish check passes
   // for the same reason `product` alone did; adding a model to this function is
   // exactly the moment that check earns its place.
   const variants = await sys.productVariant.findMany({

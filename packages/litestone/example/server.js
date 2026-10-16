@@ -32,7 +32,7 @@ const SCHEMA = `
     plan      Plan     @default(starter)
     createdAt DateTime @default(now())
 
-    @@gate("1.5.5.6")
+    @@gate(1.5.5.6)
   }
 
   model User {
@@ -44,7 +44,7 @@ const SCHEMA = `
     createdAt DateTime @default(now())
     deletedAt DateTime?
 
-    @@gate("2.4.4.5")
+    @@gate(2.4.4.5)
   }
 
   model Post {
@@ -57,7 +57,7 @@ const SCHEMA = `
     createdAt DateTime @default(now())
     deletedAt DateTime?
 
-    @@gate("0.4.4.5")
+    @@gate(0.4.4.5)
   }
 `
 

@@ -109,6 +109,14 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   `exposed` set, and `syncExposed` refills that set from the `fjs.exposed-port`
   labels after every `/deploy` and `/stop` and at start. An `exposes_port` that
   never reaches `/deploy` is an app that starts healthy and answers nobody.
+- **`/volume/restore` reads from ONE directory and extracts in a throwaway
+  container** (`FJS-D943`). `path` is an allow-listed name under
+  `OUTPOST_RESTORE_DIR`, then `realpath`'d, because a symlink in there points
+  anywhere and a signed caller would read `/etc/shadow` into a volume. The
+  archive is bound with `--mount`, never `-v`: `-v` given a source the daemon
+  cannot see (a snap docker and the host's `/tmp`) mounts an empty directory,
+  and the restore extracts nothing and answers success. Overwrite EMPTIES the
+  volume first — a `-wal` left beside a new database is replayed into it.
 - **A path with no extension is served `index.html`.** An app using the History
   API 404s on every refresh otherwise. A request that names a file gets the
   truth — a fallback there hides a typo forever.

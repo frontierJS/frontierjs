@@ -56,8 +56,12 @@
 // a busy row is skipped, never retried at high effort, and a later run skips
 // it too while the files that made it busy are unchanged. What counts as an
 // earlier attempt is the log — an entry for the id whose outcome is not closed
-// and which edited something. Without --lanes, rows run serially; a second loop
-// in the same tree picks the same top row.
+// and which edited something. A row the log shows sent back twice without
+// closing — blocked, failed or rewritten — is skipped and listed at the end:
+// the loop cannot finish it and a person can, and the third attempt is the
+// expensive one (FJS-2714, blocked three times, the last for $6). Naming the
+// row with --ids runs it anyway. Without --lanes, rows run serially; a second
+// loop in the same tree picks the same top row.
 //
 // --lanes N runs N rows at once, each in its own worktree (`lanes.mjs`), and
 // never two rows sharing a package: two lanes in one package would both edit
@@ -82,7 +86,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join }            from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
-import { ROOT, LOG_DIR, runSession, printAttempt, appendLog, lastEntry, readLog, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
+import { ROOT, LOG_DIR, runSession, printAttempt, appendLog, lastEntry, readLog, sentBack, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
 import { LANES_DIR, LINKED, openLane, syncLane, applyPatch, lanePatch, harvest } from './lanes.mjs'
 
 // Not `LADDER`: frame-loop shares that one and stays on Opus.
@@ -118,6 +122,7 @@ if (!Number.isInteger(lanes) || lanes < 0 || lanes > 5) { console.error('[fix-lo
 // ─── the loop ───────────────────────────────────────────────
 
 const skipped  = new Set()
+const dodged   = []                       // { id, verdicts } the loop refused to pay for again
 const inFlight = new Map()                // id → { pkg, done }
 const WAIT     = Symbol('wait')
 let started   = 0
@@ -133,6 +138,7 @@ if (lanes && !dryRun) await Promise.all(Array.from({ length: lanes }, (_, i) => 
 else await worker(null)
 
 console.log(`\n[fix-loop] ${closed} closed · ${blocked} waiting on a ruling · $${spent.toFixed(2)} spent · log ${LOG}`)
+for (const d of dodged) console.log(`[fix-loop] ${d.id} needs a person: ${d.verdicts.length} attempts ended ${d.verdicts.join(', ')} and it is still open — \`--ids ${d.id}\` runs it anyway`)
 if (usageAtStart) printPlanUsage('fix-loop', 'end', await planUsage(), usageAtStart)
 
 async function worker(lane) {
@@ -241,12 +247,20 @@ function laneNote() {
   if (trial) return ['', '', '## Lane',
     '',
     `This session runs in a lane: a worktree of the main tree, holding everything that tree holds, uncommitted work included. ${LINKED.join(', ')} are this lane's own copies, so \`fli close\`, \`fli file\` and \`fli amend\` write here. Nothing is merged into the main tree: your edits are kept as a patch and reviewed. Work only inside this worktree.`,
+    loadNote(),
   ].join('\n')
   return ['', '', '## Lane',
     '',
     `This session runs in a lane: a worktree of the main tree at ${ROOT}, holding everything that tree holds, uncommitted work included. Your edits are merged into the main tree when the session ends.`,
     `${LINKED.join(', ')} are links to the main tree's files: \`fli close\`, \`fli file\` and \`fli amend\` write through them as usual, and Edit names the target path to write instead, which is allowed. \`fli\` on PATH is this worktree's own.`,
+    loadNote(),
   ].join('\n')
+}
+
+// The lanes are the load: N suites and drives at once on one machine, and a 5 s
+// bun timeout or a browser wait that passes alone is this run's doing, not the fix's.
+function loadNote() {
+  return `${lanes} lanes run suites and drives on this machine at once. A test or drive outside your diff that times out, hangs, or fails under the suite and passes alone is that load: file it with \`env: timing\` (fix-next § 5) and go on, rather than rerunning it or changing timeouts.`
 }
 
 // ─── steps ──────────────────────────────────────────────────
@@ -261,9 +275,11 @@ function nextRow() {
   const running = [...inFlight.values()].flatMap(f => f.pkg)
   let wait = false
   for (const r of JSON.parse(fli(argv)).ready) {
-    if (skipped.has(r.id) || inFlight.has(r.id) || r.byHand || (ids && !ids.includes(r.id))) continue
+    if (skipped.has(r.id) || inFlight.has(r.id) || r.byHand || r.env || (ids && !ids.includes(r.id))) continue
     if (r.pkg.some(p => running.includes(p))) { wait = true; continue }
     if (stillBusy(r, log)) { console.log(`[fix-loop] ${r.id} skipped — busy last time, and the files that made it so are still dirty`); skipped.add(r.id); continue }
+    const verdicts = ids ? null : sentBack(r.id, log)
+    if (verdicts) { console.log(`[fix-loop] ${r.id} skipped — ${verdicts.length} attempts ended ${verdicts.join(', ')} and it is still open`); skipped.add(r.id); dodged.push({ id: r.id, verdicts }); continue }
     return r
   }
   return wait ? WAIT : undefined

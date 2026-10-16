@@ -16,9 +16,10 @@
  * "Cannot find package '@frontierjs/mesa'".
  *
  * Keep this module free of imports — which is also why the defaults below are
- * restated rather than imported from index.js. They are checked against it by
- * `test/prefetch-theme.test.js`, because two copies of a default is exactly
- * the shape that drifts.
+ * restated rather than imported from index.js, and why the stored key's
+ * `prefix:key` shape is restated from mesa's `storageKey` (`browser/prefix.js`).
+ * Both are checked against their source by `test/prefetch-theme.test.js`: a
+ * key that differs here reads nothing, and every reload reverts in silence.
  */
 
 const DEFAULT_THEMES = ['theme-default', 'theme-dark']
@@ -31,16 +32,18 @@ const DEFAULT_THEMES = ['theme-default', 'theme-dark']
  * been parsed when a <head> script runs, so the element is not a choice.
  *
  * @param {object} config — theme config
+ * @param {{ prefix?: string }} [opts] — the app's storage prefix, as the router sets it
  * @returns {string}      — minified JS string (no <script> wrapper)
  */
-export function buildThemeScript(config = {}) {
+export function buildThemeScript(config = {}, { prefix = '' } = {}) {
   const themes = Array.isArray(config.themes) && config.themes.length
     ? config.themes
     : DEFAULT_THEMES
 
   const defaultTheme = config.default   ?? 'system'
   const persist      = config.persist   ?? true
-  const key          = config.key       ?? 'theme'
+  const name         = config.key       ?? 'theme'
+  const key          = prefix ? `${prefix}:${name}` : name
   const apply        = config.apply     ?? 'class'
   const attribute    = config.attribute ?? 'data-theme'
 

@@ -76,7 +76,7 @@ title: Product
   // `stock` on a variant is ON HAND — what the warehouse could pick. What this
   // page has to offer is AVAILABLE: on hand less every unexpired hold somebody
   // else's basket is carrying. That is a sum over a table a shopper may not
-  // read (`StockReservation` is `@@gate("5.8.8.8")`), so it arrives as a NUMBER
+  // read (`StockReservation` is `@@gate(5.8.8.8)`), so it arrives as a NUMBER
   // from a method that computes it as the shop — `product-variants.availability`.
   //
   // Keyed by variant id, reloaded after anything this shopper does that could
@@ -258,7 +258,7 @@ title: Product
       {/if}
 
       <!-- ── Add one ────────────────────────────────────────────────────
-           `@@gate("0.4.4.5")` — anyone reads a photograph and staff write one,
+           `@@gate(0.4.4.5)` — anyone reads a photograph and staff write one,
            so the form is behind the same level the boundary will ask for. An
            affordance, not the guard: `x-gate` is permissive when it does not
            know and the server refuses regardless.
@@ -316,7 +316,7 @@ title: Product
            and is the wrong number to put next to a button.
 
            There is no sign-in here and there is not supposed to be: `Cart` is
-           `@@gate("0.0.0.5")` and its rows are reached by a token, so a
+           `@@gate(0.0.0.5)` and its rows are reached by a token, so a
            stranger at level 0 can fill a basket and buy. -->
       <div class="card buy">
         <div class="buy-row">

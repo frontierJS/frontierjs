@@ -7,7 +7,7 @@
 //   5. Client: find() returns T[], get(query) routing, restore()
 
 import { describe, it, expect, afterAll } from 'bun:test'
-import { createService, callService }        from '../src/core/service.ts'
+import { callService, buildService }        from '../src/core/service.ts'
 import { createTestApp, request }            from '../src/testing/index.ts'
 import { bridge }                            from '../src/transport/bridge.ts'
 import { createJunctionClient }              from '../src/client/index.ts'
@@ -30,7 +30,7 @@ describe('Custom methods (top-level, no wrapper key)', () => {
   it('registers and calls a custom method', async () => {
     let called = false
 
-    const svc = createService({
+    const svc = buildService({
       name: 'servers',
       async reboot(ctx) {
         called = true
@@ -48,7 +48,7 @@ describe('Custom methods (top-level, no wrapper key)', () => {
   })
 
   it('throws NotFound for unknown method', async () => {
-    const svc = createService({ name: 'servers' })
+    const svc = buildService({ name: 'servers' })
     const ctx = bridge.internal('servers', 'find', null)
     ctx.method = 'nope'
 
@@ -58,7 +58,7 @@ describe('Custom methods (top-level, no wrapper key)', () => {
   it('custom method runs through the full hook pipeline', async () => {
     const order: string[] = []
 
-    const svc = createService({
+    const svc = buildService({
       name: 'servers',
       async drain() { order.push('method'); return { ok: true } },
       hooks: {
@@ -82,7 +82,7 @@ describe('Custom methods (top-level, no wrapper key)', () => {
   it('custom method hooks do not bleed into CRUD', async () => {
     let drainHookCalled = false
 
-    const svc = createService({
+    const svc = buildService({
       name: 'test',
       find: async () => [],
       async drain() { return { drained: true } },
@@ -101,7 +101,7 @@ describe('Custom methods (top-level, no wrapper key)', () => {
   it('CRUD hooks do not bleed into custom methods', async () => {
     let createHookCalled = false
 
-    const svc = createService({
+    const svc = buildService({
       name: 'test',
       async drain() { return { ok: true } },
       hooks: {
@@ -120,7 +120,7 @@ describe('Custom methods (top-level, no wrapper key)', () => {
   it('multiple custom methods coexist on one service', async () => {
     const results: string[] = []
 
-    const svc = createService({
+    const svc = buildService({
       name: 'servers',
       async reboot()    { results.push('reboot');    return { method: 'reboot' } },
       async drain()     { results.push('drain');     return { method: 'drain' } },
@@ -140,7 +140,7 @@ describe('Custom methods (top-level, no wrapper key)', () => {
     const app = await createTestApp()
     let rebooted = false
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'servers',
       find: async () => [],
       async reboot(ctx) { rebooted = true; return { id: ctx.id, rebooted: true } },
@@ -161,7 +161,7 @@ describe('Custom methods (top-level, no wrapper key)', () => {
     const app = await createTestApp()
     let rebooted = false
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'servers',
       find: async () => [],
       async reboot(ctx) { rebooted = true; return { id: ctx.id, rebooted: true } },
@@ -183,7 +183,7 @@ describe('get(query) → findFirst', () => {
       ['2', { id: '2', name: 'Bob' }],
     ])
 
-    const svc = createService({
+    const svc = buildService({
       name: 'users',
       async get(ctx) {
         if (ctx.id) {
@@ -212,7 +212,7 @@ describe('get(query) → findFirst', () => {
       ['2', { id: '2', name: 'Bob' }],
     ])
 
-    const svc = createService({
+    const svc = buildService({
       name: 'users',
       async get(ctx) {
         if (ctx.id) {
@@ -239,7 +239,7 @@ describe('get(query) → findFirst', () => {
     const app = await createTestApp()
     const calls: string[] = []
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'users',
       find: async () => [],
       async get(ctx) {
@@ -261,7 +261,7 @@ describe('get(query) → findFirst', () => {
     // the method ran, which is the other half of what this asserts.
     const gotIds: string[] = []
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'users',
       find: async () => [],
       async get(ctx) { gotIds.push(String(ctx.id)); return { id: ctx.id } },
@@ -296,7 +296,7 @@ describe('restore as a CRUD method', () => {
   it('restore is callable via callService', async () => {
     let restored = false
 
-    const svc = createService({
+    const svc = buildService({
       name: 'posts',
       find: async () => [],
       async restore(ctx) { restored = true; return { id: ctx.id, deletedAt: null } },
@@ -312,7 +312,7 @@ describe('restore as a CRUD method', () => {
   it('before/after hooks run for restore', async () => {
     const order: string[] = []
 
-    const svc = createService({
+    const svc = buildService({
       name: 'posts',
       async restore() { order.push('restore'); return { restored: true } },
       hooks: {
@@ -331,7 +331,7 @@ describe('restore as a CRUD method', () => {
     const app = await createTestApp()
     const restoredIds: string[] = []
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'posts',
       find: async () => [],
       async get(ctx)     { return { id: ctx.id } },
@@ -353,7 +353,7 @@ describe('restore as a CRUD method', () => {
 
     app.events.on('posts:restored', () => events.push('restored'))
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'posts',
       find:   async () => [],
       async restore(ctx) { return { id: ctx.id, deletedAt: null } },
@@ -375,7 +375,7 @@ describe('restore as a CRUD method', () => {
     app.events.on('posts:patched',   () => events.push('patched'))
     app.events.on('posts:restored',  () => events.push('restored'))
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'posts',
       find:   async () => [],
       async restore(ctx) { return { id: ctx.id, deletedAt: null } },
@@ -422,13 +422,13 @@ describe('ctx.app.service() — internal calls from hooks', () => {
     const app = await createTestApp()
     let auditCalled = false
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'audit',
       find: async () => [],
       async create() { auditCalled = true; return { logged: true } },
     }))
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'leads',
       find: async () => [],
       async create() { return { id: '1', name: 'test' } },
@@ -449,7 +449,7 @@ describe('ctx.app.service() — internal calls from hooks', () => {
     const app = await createTestApp({ users: [{ id: 'u1', role: 'user' }] })
     const seenUserIds: (string | null)[] = []
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'logs',
       find: async () => [],
       async create(ctx) {
@@ -458,7 +458,7 @@ describe('ctx.app.service() — internal calls from hooks', () => {
       },
     }))
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'leads',
       find: async () => [],
       async create() { return { id: '1' } },
@@ -483,13 +483,13 @@ describe('ctx.app.service() — internal calls from hooks', () => {
     const app = await createTestApp({ users: [{ id: 'u1', role: 'user' }] })
     let seenUser: unknown = 'not-set'
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'logs',
       find: async () => [],
       async create(ctx) { seenUser = ctx.auth.user; return { logged: true } },
     }))
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'leads',
       find: async () => [],
       async create() { return { id: '1' } },
@@ -522,13 +522,13 @@ describe('ctx.app.service() — internal calls from hooks', () => {
     const app = await createTestApp({ users: [{ id: 'u1', role: 'user' }] })
     let seenUser: unknown = 'not-set'
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'logs',
       find: async () => [],
       async create(ctx) { seenUser = ctx.auth.user; return { logged: true } },
     }))
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'leads',
       find: async () => [],
       async create() { return { id: '1' } },
@@ -704,7 +704,7 @@ describe('createService — custom methods (no wrapper key)', () => {
   it('custom method defined inline on the definition is callable', async () => {
     let called = false
 
-    const svc = createService({
+    const svc = buildService({
       name: 'widgets',
       async activate(ctx) {
         called = true
@@ -724,7 +724,7 @@ describe('createService — custom methods (no wrapper key)', () => {
   it('custom method hooks by method name', async () => {
     const order: string[] = []
 
-    const svc = createService({
+    const svc = buildService({
       name: 'widgets',
       async activate() { order.push('method'); return { ok: true } },
       hooks: {
@@ -746,7 +746,7 @@ describe('createService — custom methods (no wrapper key)', () => {
 
   it('config keys are not treated as custom methods', async () => {
     // None of the config keys should end up as service methods
-    const svc = createService({
+    const svc = buildService({
       name:      'widgets',
       model:     'widget',
       idField:   'id',
@@ -772,7 +772,7 @@ describe('Hook-bypass _ methods', () => {
   it('_find calls the raw method without hooks', async () => {
     const hookCalled = { value: false }
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       find: async () => [{ id: 1 }, { id: 2 }],
       hooks: {
@@ -791,7 +791,7 @@ describe('Hook-bypass _ methods', () => {
   it('_create skips after hooks (announce, audit, cache-bust)', async () => {
     const afterCalled = { value: false }
 
-    const svc = createService({
+    const svc = buildService({
       name: 'items',
       create: async (ctx) => ({ id: 1, ...ctx.data }),
       hooks: {
@@ -809,7 +809,7 @@ describe('Hook-bypass _ methods', () => {
     const app = await createTestApp()
     const hookCalled = { value: false }
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'items',
       find: async () => [{ id: 1 }],
       hooks: {
@@ -828,7 +828,7 @@ describe('Hook-bypass _ methods', () => {
     const app = await createTestApp()
     let hookCalled = false
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'items',
       find:   async () => [],
       create: async (ctx) => ({ id: 1, ...ctx.data }),
@@ -848,7 +848,7 @@ describe('Hook-bypass _ methods', () => {
     const app = await createTestApp()
     let hookCalled = false
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'items',
       find: async () => [],
       get:  async (ctx) => ({ id: ctx.id }),
@@ -867,7 +867,7 @@ describe('Hook-bypass _ methods', () => {
     const app = await createTestApp()
     let hookCalled = false
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'items',
       find: async () => [],
       create: async (ctx) => ({ id: 1, ...ctx.data }),
@@ -885,7 +885,7 @@ describe('Hook-bypass _ methods', () => {
     const app = await createTestApp()
     let hookCalled = false
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'items',
       find:  async () => [],
       patch: async (ctx) => ({ id: ctx.id, patched: true }),
@@ -904,7 +904,7 @@ describe('Hook-bypass _ methods', () => {
     const app = await createTestApp()
     let hookCalled = false
 
-    app.services.register(createService({
+    app.services.register(buildService({
       name: 'items',
       find:   async () => [],
       remove: async (ctx) => ({ id: ctx.id }),

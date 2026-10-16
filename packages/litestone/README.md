@@ -70,18 +70,18 @@ The comparison is organized around what you can **declare** in the schema and wh
 | **Schema as a file (not code)** | ✓ | ✗ | ✓ | ✓ |
 | **Multi-file schema imports** | ✓ | ✗ ¹ | ✓ | ✓ |
 | **Relations + nested writes + includes** | ✓ | ✓ | ✓ | ✓ |
-| **Field validators in schema** (`@email`, `@regex`, `@length`, etc.) | ✓ | ✗ | ✗ | partial ⁶ |
+| **Field validators in schema** (`@email`, `@regex`, `@length`, etc.) | ✓ | ✗ | ✗ | ✓ ¹⁴ |
 | **Reusable model traits** (cross-cutting concerns spliced as fields) | ✓ | ✗ | ✗ | ✓ ⁶ |
-| **Typed JSON columns** (write-time validation + path filter pushdown) | ✓ | partial ⁷ | partial ⁷ | partial ⁶ |
+| **Typed JSON columns** (write-time validation + path filter pushdown) | ✓ | partial ⁷ | partial ⁷ | partial ⁷ |
 | **Derived relation fields** (`@from(Model, sum: amount)`) | ✓ | ✗ | ✗ | ✗ |
 | **Computed fields** (`@computed`) | ✓ | ✗ | ✗ | ✗ |
-| **Generated columns** (`@generated("expr")`) | ✓ | ✗ | ✗ | ✗ |
+| **Generated columns** (`@generated("expr")`) | ✓ | ✓ | ✗ | ✗ |
 | **State machines** (`@@transitions`, enforced at the data boundary) | ✓ | ✗ | ✗ | ✗ |
 | **Authorized transitions** (`@gate(5)` per move, and it reaches the client) | ✓ | ✗ | ✗ | ✗ |
 | **Full-text search** (FTS5 declared with `@@fts`) | ✓ | ✗ | ✗ | ✗ |
 | **`@@external`** (declare a table you don't own) | ✓ | ✗ | partial ⁴ | ✗ |
 | **Composite primary keys** (`@@id([a, b])`, key order preserved) | ✓ | ✓ | ✓ | ✓ |
-| **Partial indexes and partial uniques** (`where:` on `@@index` / `@@unique`) | ✓ | ✓ | ✗ | ✗ |
+| **Partial indexes and partial uniques** (`where:` on `@@index` / `@@unique`) | ✓ | ✓ | partial ¹³ | ✗ |
 | **Cross-column constraints** (`@@check`, enforced by the table) | ✓ | ✓ | ✗ | partial ⁸ |
 | **Wide integers** (`Int @big` — exact past 2⁵³, end to end) | ✓ | ✓ | ✓ | ✓ |
 | **Declared value sets** (`valueset` / `@values`, with a stated order) | ✓ | ✗ | ✗ | ✗ |
@@ -95,14 +95,14 @@ The comparison is organized around what you can **declare** in the schema and wh
 
 |  | Litestone | Drizzle | Prisma | ZenStack |
 |---|:---:|:---:|:---:|:---:|
-| **Row-level policies** (compiled to SQL WHERE) | ✓ | ✗ | ✗ | ✓ |
-| **Field-level policies** | ✓ | ✗ | ✗ | ✓ |
+| **Row-level policies** (compiled to SQL WHERE) | ✓ | partial ¹² | ✗ | ✓ |
+| **Field-level policies** | ✓ | ✗ | ✗ | ✓ ¹⁶ |
 | **`auth()` in policy expressions** | ✓ | ✗ | ✗ | ✓ |
 | **Relation-based policy checks** | ✓ | ✗ | ✗ | ✓ |
 | **Level-based access control** (GatePlugin) | ✓ | ✗ | ✗ | ✗ |
 | **Field-level encryption at rest** (`@encrypted` / `@secret`) | ✓ | ✗ | ✗ | ✗ |
 | **Guarded fields** (`@guarded`) | ✓ | ✗ | ✗ | ✗ |
-| **System-mode bypass** (`asSystem()`) | ✓ | ✗ | ✗ | partial ⁶ |
+| **System-mode bypass** (`asSystem()`) | ✓ | ✗ | ✗ | ✓ ¹⁵ |
 
 ### Lifecycle — what happens automatically over a row's life
 
@@ -174,30 +174,44 @@ The comparison is organized around what you can **declare** in the schema and wh
 
 |  | Litestone | Drizzle | Prisma | ZenStack |
 |---|:---:|:---:|:---:|:---:|
-| **Database support** | SQLite | PostgreSQL, MySQL, SQLite, D1, etc. | PostgreSQL, MySQL, SQLite, MongoDB, etc. | (inherits Prisma's) |
+| **Database support** | SQLite | PostgreSQL, MySQL, SQLite, D1, etc. | PostgreSQL, MySQL, SQLite, MongoDB, etc. | PostgreSQL, MySQL, SQLite ⁶ |
 | **Runtime support** | Bun | Node, Bun, Deno, Cloudflare Workers, edge | Node, Bun, edge ⁵ | Node, Bun |
+
+<sub>Competitor columns last read against their live docs on **2026-10-16**, and only for the rows named in the next paragraph. Every other competitor cell predates that and is from memory of the 2026-04 to 2026-08 releases — treat a ✗ in those columns as "last checked then", not "checked now". The Litestone column is graded against this tree, so it needs no date.</sub>
+
+<sub>Re-read 2026-10-16: Drizzle — generated columns (SQLite), RLS policies, views and materialized views, Prisma — partial indexes, views, materialized views, multi-file schema, edge runtimes, check constraints / generated columns / RLS (none documented). ZenStack v3 — runtime base, supported databases, field validators, multi-file import, soft delete, views, and the row-level, field-level and `auth()` policy cells plus the bypass. Second pass, same day — Drizzle: `$type<T>()` typing and the absence of runtime checks, `check()` on SQLite tables, Zod validators derived from a table, STRICT (not documented on the SQLite column-types page). Prisma: typed JSON (third-party generators only), validators (none in the schema language), STRICT (not documented on the SQLite page). ZenStack v3: typed JSON, `@@index` (no `where`), `@@check` (none in the attribute reference), runtimes (no v3 statement beyond a Bun SQLite dialect), STRICT (not documented). Not re-read: `@@arc`/polymorphism beyond `@@delegate`, JSON sub-key filtering in ZenStack, and any STRICT cell beyond the pages named. A new dated entry here is the unit of re-verification; do not bump the date for a row that was not re-read.</sub>
 
 ¹ Drizzle schema is TypeScript code — you can split it across files using normal JS imports, but there is no dedicated schema import declaration like `import "./models/users.lite"`. Multi-file is a code organization choice, not a language feature.
 
-² ZenStack implements soft delete via access control policy (`@@deny('read', deleted)`) rather than a dedicated `@@softDelete` attribute. There is no built-in cascade.
+² ZenStack v3 ships soft delete as a plugin (`@zenstackhq/plugin-soft-delete`, since v3.8.0, preview): a nullable `DateTime? @deletedAt` field, deletes rewritten to updates and reads filtered. It does not cascade, and a plain `@unique` still collides with a soft-deleted row until you add a partial unique index by hand in a manual migration (2026-10-16). Older ZenStack material shows a `@@deny('read', deleted)` policy instead; that pattern predates the plugin.
 
 ³ Via Prisma Accelerate / ZenStack Cloud — managed external services, not part of the local ORM.
 
 ⁴ Prisma supports `@@ignore` to exclude a model from the client, and `prisma db pull` can introspect external tables — but there is no first-class way to query an externally-managed table through the Prisma client with full type safety.
 
-⁵ Prisma supports edge runtimes (Cloudflare Workers, Vercel Edge) only via Prisma Accelerate or specific drivers; the native Prisma engine targets Node and Bun.
+⁵ Prisma's edge story moves every release. As of 2026-10-16 its docs list Cloudflare Workers and Vercel Edge through driver adapters as **Preview, compatible drivers only**, and Deno Deploy as "not yet". The earlier "Accelerate or specific drivers" wording was not re-confirmed.
 
-⁶ ZenStack v3 introduced `type X / model M with X` for column splicing — equivalent to Litestone's `trait` / `@@trait(T)`. Field validators, attribution defaults, and system-mode bypass exist via Zod plugins or auth helpers — supported but not first-class to the schema language.
+⁶ ZenStack v3 is a different implementation from v2: it is built on Kysely with no runtime dependency on Prisma (2026-10-16), so "inherits Prisma's" no longer describes its databases or runtimes. Its docs list PostgreSQL, MySQL and SQLite, through a Kysely dialect you pass in; they name no runtime (Bun appears only as a package manager and, in a docs pull request, via the community `kysely-bun-sqlite` dialect), so the runtime cell is still from memory. ZenStack v3 introduced `type X / model M with X` for column splicing — equivalent to Litestone's `trait` / `@@trait(T)`. Multi-file schemas use an explicit `import "./user"` (the `.zmodel` extension is appended), merged into one AST before generation (2026-10-16).
 
-⁷ Drizzle's `$type<T>()` and Prisma's typed-JSON plugins provide TypeScript types only — the type is asserted at compile time but not enforced at runtime, and filter operations on JSON sub-keys require dropping into raw SQL. Litestone validates the shape on every write and lets you filter inside typed JSON columns using the same query shape you'd use on real columns (`where: { address: { city: 'NYC' } }` compiles to `json_extract(...)`).
+⁷ Drizzle's `$type<T>()` and Prisma's third-party typed-JSON generators (`prisma-json-types-generator`) provide TypeScript types only — Drizzle's docs say it "won't check runtime values" and the generator's own README claims no runtime enforcement (2026-10-16). Filter operations on JSON sub-keys require dropping into raw SQL. ZenStack v3 declares the shape in ZModel (`type` + `@json`) and validates a write against it, but loosely by default: unknown keys pass unless the type carries `@@strict` (since v3.9.2), and its docs say nothing of filtering by sub-key (2026-10-16). Litestone validates the shape on every write and lets you filter inside typed JSON columns using the same query shape you'd use on real columns (`where: { address: { city: 'NYC' } }` compiles to `json_extract(...)`).
 
-⁸ ZenStack's `@@validate` refuses a bad row at the application layer. `@@check` is a table constraint in the emitted DDL, so a write that never goes through the client is refused too.
+⁸ ZenStack's `@@validate` refuses a bad row at the application layer. `@@check` is a table constraint in the emitted DDL, so a write that never goes through the client is refused too. ZenStack's attribute reference lists no check-constraint attribute, and its `@@index` takes no `where` (2026-10-16).
 
 ⁹ ZenStack models polymorphism as delegated inheritance — one child type per parent. `@@arc` is the other direction: one child row whose parent may be any of several models, resolved by a discriminator column.
 
-¹⁰ Drizzle and Prisma can both declare a view, and ZenStack inherits Prisma's. What none of them carries is access on the projection: a Litestone `view` takes `@@gate` and `@@allow` of its own, so a projection can be gated ABOVE the rows it aggregates.
+¹⁰ Drizzle and Prisma can both declare a view (Prisma's is the `views` preview feature), and ZenStack v3 has a `view` block too, in preview: no `@id` or index, and the migration engine does not create it. Its docs do not say whether a policy applies to a view (2026-10-16). What none of them carries is access on the projection: a Litestone `view` takes `@@gate` and `@@allow` of its own, so a projection can be gated ABOVE the rows it aggregates.
 
-¹¹ Drizzle exposes Postgres materialized views; the refresh is a command you issue. `@@refreshOn` declares which writes rebuild it.
+¹¹ Drizzle exposes Postgres materialized views; the refresh is a command you issue (`db.refreshMaterializedView`). Prisma documents no materialized-view support; you create one by hand and refresh it with raw SQL. `@@refreshOn` declares which writes rebuild it.
+
+¹² Drizzle declares Row-Level Security with `pgPolicy`, but only for Postgres tables (with Neon and Supabase helpers), and it is the database that enforces it. There is no SQLite equivalent, no per-field policy, and no `auth()` in the schema.
+
+¹³ Prisma accepts `where` on `@@index` / `@@unique` behind the `partialIndexes` preview feature, on PostgreSQL, SQLite, SQL Server and CockroachDB, not MySQL.
+
+¹⁴ ZenStack v3 has `@length`, `@email`, `@url`, `@regex`, `@startsWith`, `@gt` and the like, plus a multi-field `@@validate`, run through Zod on the ORM's mutation APIs. They are not enforced through its query builder (2026-10-16).
+
+¹⁵ ZenStack's policy engine is a plugin: `db.$use(new PolicyPlugin())` returns a new, enforced client, and the raw `db` you installed it on stays unrestricted. That unrestricted client is its system-mode bypass.
+
+¹⁶ ZenStack field-level policies are a preview feature (since v3.2.0): `@allow` / `@deny` on a field for `read` and `update` only, not on relation or computed fields. A failed read returns `null` for that field; a failed update rejects the whole write.
 
 **When to choose the others instead:**
 
@@ -273,7 +287,7 @@ model Account {
   createdAt DateTime @default(now())
 
   @@index([slug])
-  @@gate("2.5.5.6")
+  @@gate(2.5.5.6)
 }
 
 model User {
@@ -393,7 +407,7 @@ model User {
 @@fts([field1, field2])          FTS5 full-text search virtual table
 @@index([col1, col2])            composite index
 @@unique([col1, col2])           composite unique constraint
-@@gate("R.C.U.D")                level-based access control — read.create.update.delete
+@@gate(R.C.U.D)                level-based access control — read.create.update.delete
 @@allow('read'|'create'|'update'|'delete'|'write'|'all', expr)  row-level policy
 @@allow('read'|..., expr, "custom error message")
 @@deny('read'|..., expr)         row-level deny (always wins over allow)
@@ -754,7 +768,7 @@ Level-based access control. Assign levels 0–9, declare required levels per ope
 ```lite
 model Post {
   id Int @id
-  @@gate("1.3.4.6")   // read=VISITOR, create=CREATOR, update=USER, delete=OWNER
+  @@gate(1.3.4.6)   // read=VISITOR, create=CREATOR, update=USER, delete=OWNER
 }
 ```
 
@@ -776,10 +790,10 @@ Levels: `STRANGER=0  VISITOR=1  READER=2  CREATOR=3  USER=4  ADMINISTRATOR=5  OW
 Reserved: `SYSTEM=8` (asSystem() only)  `LOCKED=9` (impassable — not even asSystem)
 
 ```
-@@gate("0")          anyone can do everything
-@@gate("4.4.4.6")    USER to read/create/update, OWNER to delete
-@@gate("9")          nobody can do anything (model is locked)
-@@gate("9.9.9.9")    same as above
+@@gate(0)          anyone can do everything
+@@gate(4.4.4.6)    USER to read/create/update, OWNER to delete
+@@gate(9)          nobody can do anything (model is locked)
+@@gate(9.9.9.9)    same as above
 ```
 
 **A schema declaring any `@@gate` auto-installs `GatePlugin`.** You cannot run
@@ -812,7 +826,7 @@ model Order {
   id           Int     @id
   reference    String  @unique
   trackingCode String? @system     // readable by anyone, written by the app
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 ```
 
@@ -856,7 +870,7 @@ model Order {
   @@transitions(status,
     pay:    pending         -> paid,
     ship:   paid            -> shipped,
-    refund: paid            -> refunded @gate(ADMINISTRATOR),
+    refund: paid            -> refunded @gate(5),
     cancel: [pending, paid] -> cancelled)
 }
 ```
@@ -868,8 +882,8 @@ await db.order.transitions(order)             // → what this row may do NOW, w
 ```
 
 A name is optional — an unnamed clause names itself after its target state, so
-`pending -> paid` is the `paid` transition. `@gate(N)` takes a level or a level
-name and is **per move**, which is the thing a gate on the model cannot say: any
+`pending -> paid` is the `paid` transition. `@gate(N)` takes a level 0–9 and is
+**per move**, which is the thing a gate on the model cannot say: any
 USER may ship, only an ADMINISTRATOR may refund. An illegal move throws
 `TransitionViolationError`; one the caller is not graded for throws
 `TransitionGateError`.
@@ -1434,7 +1448,8 @@ rows in the wrong order, and neither is visible in the result.
 ## Migrations
 
 ```js
-import { create, apply, status, verify, autoMigrate, parseFile } from '@frontierjs/litestone'
+import { autoMigrate, parseFile } from '@frontierjs/litestone'
+import { create, apply, status, verify } from '@frontierjs/litestone/migrations'
 import { openDatabase } from '@frontierjs/litestone/engine'
 
 const parseResult = parseFile('./schema.lite')
@@ -1992,7 +2007,7 @@ model Lead    { id Int @id  email String @email  score Int @gte(0) @lte(100)  lo
 model User    { id Int @id  email String @email  role String @default("member")
                 accountId Int  account Account @relation(fields: [accountId], references: [id])  posts Post[] }
 model Post    { id Int @id  title String @length(3, 80)  authorId Int  author User @relation(fields: [authorId], references: [id])
-                tags Tag[]  @@gate("1.3.4.6") }
+                tags Tag[]  @@gate(1.3.4.6) }
 model Tag     { id Int @id  name String  posts Post[] }
 ```
 
@@ -2228,6 +2243,9 @@ const { loaded, rejects } = await loadRows(db.asSystem(), 'Lead', csvText, {
 - A header naming no column, or a required column with no default that the file
   lacks, **throws** before any row: every row would be rejected for it.
 - A non-string value (a record from an API) goes to the ORM as it is.
+- The source is read as the load writes, a `batch` at a time: memory is a batch
+  and the keys seen, not the file. Records may be an array or any (async)
+  iterable, so a REST source's pages load as they arrive.
 - `dryRun: true` runs the whole load and rolls it back.
 - `1,234.50` is a reject, not a number: in `de-DE` that text is 1.2345.
 - `overflow: '_extra'` names an optional `Json?` column that keeps, per row,
@@ -2536,7 +2554,7 @@ wrong one.** `--as <who>` grades with the built-in `FrontierGateGetLevel` unless
 `--gate <path[#export]>` points at the application's own — and the two disagree
 by exactly the amount an app's role mapping adds. Measured on this repo's
 `example`, the gap is one level on a real row, which straddles the `4` in
-`@@gate("0.4.4.5")`: the same create is refused in the console and permitted in
+`@@gate(0.4.4.5)`: the same create is refused in the console and permitted in
 the app. A console that is *approximately* somebody's session is worse than none,
 because you act on what it shows you — so the banner names which resolver
 answered.

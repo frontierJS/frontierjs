@@ -72,6 +72,25 @@ describe('a constraint or an index over a field with no column', () => {
   })
 })
 
+// A relation field has no column; SQLite reads the quoted name as a string
+// literal, so the index builds over a constant (`FJS-1177`).
+describe('a constraint or an index over a relation field', () => {
+  const PARENT = `model P { id Int @id\n  cs C[] }\n`
+  const child = (attr: string) =>
+    `${PARENT}model C { id Int @id\n  pId Int\n  other P @relation(fields: [pId], references: [id])\n  ${attr} }`
+
+  it('refuses @@index and names the foreign key', () => {
+    refuses(child('@@index([other])'), /@@index\(\[other\]\) cannot be built — 'other' is a relation.*foreign key instead: pId/)
+  })
+  it('refuses @@unique and names the foreign key', () => {
+    refuses(child('@@unique([other])'), /@@unique\(\[other\]\) cannot be built — 'other' is a relation.*foreign key instead: pId/)
+  })
+  it('accepts the same index over the foreign key', () => {
+    accepts(child('@@index([pId])'))
+    accepts(child('@@unique([pId])'))
+  })
+})
+
 describe('a default the column cannot hold', () => {
   // The column is an INTEGER of minor units, so the default is written into the
   // DDL as `12.99` and STRICT refuses the first row that takes it — at runtime,
@@ -128,8 +147,10 @@ model B {
     accepts(two('main', 'main'))
   })
 
-  it('says nothing about an @@external model, which litestone does not own', () => {
-    accepts(`
+  // @@external says litestone does not create the table, not which file it is
+  // in, so the foreign key still names a table SQLite resolves nowhere (`FJS-1460`).
+  it('refuses it when the target is @@external', () => {
+    refuses(`
 database main  { path "a.db" }
 database other { path "b.db" }
 model A {
@@ -142,6 +163,41 @@ model B {
   id Int @id
   as A[]
   @@db(other)
+  @@external
+}
+`, /a relation cannot cross databases/)
+  })
+
+  it('refuses it when the owning side is @@external', () => {
+    refuses(`
+database main  { path "a.db" }
+database other { path "b.db" }
+model A {
+  id  Int  @id
+  bId Int?
+  b   B?   @relation(fields: [bId], references: [id])
+  @@db(main)
+  @@external
+}
+model B {
+  id Int @id
+  as A[]
+  @@db(other)
+}
+`, /a relation cannot cross databases/)
+  })
+
+  it('accepts an @@external target in the same database', () => {
+    accepts(`
+database main  { path "a.db" }
+model A {
+  id  Int  @id
+  bId Int?
+  b   B?   @relation(fields: [bId], references: [id])
+}
+model B {
+  id Int @id
+  as A[]
   @@external
 }
 `)
@@ -173,7 +229,7 @@ describe('the corpus', () => {
 // SQLite refuses with `near ")": syntax error` naming nothing the author wrote.
 describe('a model with no stored column', () => {
   it('refuses a model holding only a model attribute', () => {
-    refuses(`model Post {\n  @@gate("1.3.4.6")\n}`, /Model 'Post'.*no stored (field|column)/)
+    refuses(`model Post {\n  @@gate(1.3.4.6)\n}`, /Model 'Post'.*no stored (field|column)/)
   })
   it('refuses a model whose only fields are @computed', () => {
     refuses(`model Post {\n  title String @computed\n}`, /Model 'Post'.*no stored (field|column)/)
@@ -182,7 +238,7 @@ describe('a model with no stored column', () => {
     refuses(`model Comment {\n  id Int @id\n}\nmodel Post {\n  comments Comment[]\n}`, /Model 'Post'.*no stored (field|column)/)
   })
   it('accepts the same model with one stored field', () => {
-    accepts(`model Post {\n  id Int @id\n  title String @computed\n  @@gate("1.3.4.6")\n}`)
+    accepts(`model Post {\n  id Int @id\n  title String @computed\n  @@gate(1.3.4.6)\n}`)
   })
   it('accepts a model whose only stored field arrives by @@trait', () => {
     accepts(`trait Stamped {\n  title String\n}\nmodel Post {\n  @@trait(Stamped)\n}`)

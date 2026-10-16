@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**121 words** — 13 declarations · 70 field attributes · 35 model attributes · 3 move words.
+**123 words** — 13 declarations · 71 field attributes · 36 model attributes · 3 move words.
 
 ## Declarations
 
@@ -53,6 +53,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@omit` | Hide or lock a value | [(all)] |  | level: all |  |
 | `@guarded` | Hide or lock a value |  | on a model's field · on a trait's field |  |  |
 | `@system` | Hide or lock a value |  |  |  |  |
+| `@local` | Hide or lock a value |  |  |  |  |
 | `@immutable` | Hide or lock a value | [(after: <move>)] |  |  |  |
 | `@sealed` | Hide or lock a value |  |  |  |  |
 | `@capability` | Hide or lock a value |  |  |  |  |
@@ -80,7 +81,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@slug` | Clean a value on write | [(<field>…)] |  |  |  |
 | `@values` | Refuse a bad value | (<ValueSetName>[, required\|open\|suggested][, dependsOn: <column>[ on <sourceColumn>]]) | on a model's field · on a trait's field | strength: required · open · suggested |  |
 | `@label` | Refuse a bad value | ("Human name") | on a model's field · on a type's field · on a trait's field · on an enum member |  |  |
-| `@required` | Refuse a bad value | [([where: <expr>][, message: "…"])] |  |  |  |
+| `@required` | Refuse a bad value | [([where: <expr>][, "message"])] |  |  |  |
 | `@email` | Refuse a bad value | [(message)] |  |  |  |
 | `@url` | Refuse a bad value | [(message)] |  |  |  |
 | `@phone` | Refuse a bad value | [(message)] |  |  |  |
@@ -135,10 +136,11 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@deny` | Decide who may | ('read'\|…, <expression>[, message]) |  |  |  |
 | `@@scope` | Decide who may | (<name>, <expression>) |  |  |  |
 | `@@tenant` | Decide who may | (<column> \| none \| via: parent) |  | mode: none |  |
-| `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) |  |  |  |
+| `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |
 | `@@auth` | Wire it to the app |  |  |  |  |
 | `@@person` | Wire it to the app | [(child)] |  | kind: child |  |
 | `@@trail` | Wire it to the app | (<database>[, reads: false][, writes: false]) |  |  |  |
+| `@@mirror` | Wire it to the app | (key: <field>) |  |  |  |
 | `@@anonymous` | Wire it to the app |  |  |  |  |
 | `@@db` | Wire it to the app | (<database>) | in a model |  |  |
 | `@@trait` | Wire it to the app | (<TraitName>) |  |  |  |
@@ -195,6 +197,7 @@ Shapes the parser accepts and something later refuses.
 | `fts-over-a-column-search-cannot-read` | error | a @@fts index names a column whose stored text is not the value |
 | `validator-on-a-column-no-caller-writes` | error | a validator on a column no caller can write never runs |
 | `value-rule-on-a-relation` | error | a value validator on a relation grades nothing |
+| `validator-on-the-wrong-type` | error | a validator written for a type the column is not |
 | `foreign-key-without-index` | warn | a foreign key column with no index |
 | `transition-to-a-state-nothing-reaches` | warn | an enum value no transition can reach |
 | `label-column-that-may-be-null` | warn | @@label names a column that may be null |
@@ -214,3 +217,5 @@ Shapes the parser accepts and something later refuses.
 | `write-policy-reads-a-parent-without-post-update` | warn | a create or update policy reads a parent through a key the caller can move, with no post-update beside it |
 | `anonymous-create-auth-default` | warn | a public create on a model whose required column defaults to auth() |
 | `create-reaches-unpickable-relation` | warn | a create policy reaches through a relation the picker cannot be narrowed by |
+| `read-allow-hides-tenant-members` | warn | a read @@allow written for a claim the tenant's members do not carry hides the model from them |
+| `allow-needs-bearer-claim-under-gate` | warn | an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass |

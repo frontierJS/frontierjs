@@ -28,9 +28,11 @@ siteName: Basecamp
   import { notifications, loadInbox, isUnread, titleOf, bodyOf, actionOf, markRead, markAllRead }
     from '../resources/Notification.mesa'
   import { computeNotices } from '../notices.js'
+  import { primary, groups, elsewhere } from '../lib/nav.js'
+  import { paletteItems, visible } from '@frontierjs/ui/nav'
 
   $: (page.siteName, page.route, page.pathname, page.title)
-  $: (status.connected, session.user, session.workspaceId, session.workspaces)
+  $: (status.connected, session.user, session.level, session.workspaceId, session.workspaces)
   $: commandPalette.open
 
   // ── The attention system's data ──────────────────────────────────────────
@@ -125,54 +127,13 @@ siteName: Basecamp
   // way — never a second set of actions. `$:` and not a plain const because
   // the Servers and Workspace groups are built from live rows.
   $: COMMANDS = [
-    { id: 'go-home',        group: 'Navigate', label: 'Overview',    action: () => goto('/') },
-    { id: 'go-dashboards',  group: 'Navigate', label: 'Dashboards',  sub: 'saved views',        action: () => goto('/dashboards/') },
-    { id: 'go-projects',    group: 'Navigate', label: 'Projects',    action: () => goto('/projects/') },
-    { id: 'go-servers',     group: 'Navigate', label: 'Servers',     action: () => goto('/servers/') },
-    { id: 'go-apps',        group: 'Navigate', label: 'Apps',        sub: 'every app in the workspace', action: () => goto('/apps/') },
-    { id: 'go-deployments', group: 'Navigate', label: 'Deployments', action: () => goto('/deployments/') },
-    { id: 'go-jobs',        group: 'Navigate', label: 'Jobs',        action: () => goto('/jobs/') },
-    { id: 'go-notifications', group: 'Navigate', label: 'Notifications', sub: 'what you have been told', action: () => goto('/notifications/') },
-    { id: 'go-networks',    group: 'Navigate', label: 'Networking',  sub: 'private networks',   action: () => goto('/networks/') },
-    { id: 'go-volumes',     group: 'Navigate', label: 'Volumes',     sub: 'disks the fleet has', action: () => goto('/volumes/') },
-    { id: 'go-cleanup',     group: 'Navigate', label: 'Disk cleanup', sub: 'what can be reclaimed', action: () => goto('/cleanup/') },
-    { id: 'go-recipes',     group: 'Navigate', label: 'Recipes',     sub: 'scripts to run on a server', action: () => goto('/recipes/') },
-    { id: 'go-alerts',      group: 'Navigate', label: 'Alerts',      sub: 'rules and firings',  action: () => goto('/alerts/') },
-    { id: 'go-channels',    group: 'Navigate', label: 'Channels',    sub: 'where alerts land',  action: () => goto('/channels/') },
-    { id: 'go-flags',       group: 'Navigate', label: 'Flags',       sub: 'feature flags',      action: () => goto('/flags/') },
-    { id: 'go-secrets',     group: 'Navigate', label: 'Secrets',     sub: 'machine credentials', action: () => goto('/secrets/') },
-    { id: 'go-api-keys',    group: 'Navigate', label: 'API keys',    sub: 'tokens we issue',    action: () => goto('/api-keys/') },
-    { id: 'go-activity',    group: 'Navigate', label: 'Activity',    sub: 'what happened here', action: () => goto('/activity/') },
-    { id: 'go-trash',       group: 'Navigate', label: 'Trash',       sub: 'deleted, and restorable', action: () => goto('/trash/') },
-    { id: 'go-graph',       group: 'Navigate', label: 'Graph',       sub: 'the fleet as nodes and edges', action: () => goto('/infra-graph/') },
-    { id: 'go-onboarding',  group: 'Navigate', label: 'Getting started', sub: 'the six setup checks', action: () => goto('/onboarding/') },
-    { id: 'go-dns',         group: 'Navigate', label: 'DNS & edge',  sub: 'hostnames and certificates', action: () => goto('/dns/') },
-    { id: 'go-spend',       group: 'Navigate', label: 'Cloud spend', sub: 'what a bill would cover', action: () => goto('/cloud-spend/') },
-    { id: 'go-git',         group: 'Navigate', label: 'Git activity', sub: 'the git host', action: () => goto('/git-activity/') },
-    { id: 'go-local-repos', group: 'Navigate', label: 'Local repos', sub: 'git checkouts on this machine', action: () => goto('/git-activity/local/') },
-    { id: 'go-workbench',   group: 'Navigate', label: 'Workbench',   sub: 'a Claude Code chat per pinned checkout', action: () => goto('/workbench/') },
-    { id: 'go-pages',       group: 'Navigate', label: 'Pages',       sub: 'the pages fli writes about this workspace, and its tools', action: () => goto('/pages/') },
-    { id: 'go-registers',   group: 'Navigate', label: 'Registers',   sub: 'issues, open questions and rulings — and Claude to talk one through', action: () => goto('/registers/') },
-    { id: 'go-decide',      group: 'Navigate', label: 'Decide',      sub: 'the open questions one card at a time — swipe to rule, Claude to explain', action: () => goto('/registers/decide/') },
-    { id: 'go-observability', group: 'Navigate', label: 'Observability', sub: 'metrics and logs', action: () => goto('/observability/') },
-    { id: 'go-portal',      group: 'Navigate', label: 'Portal',      sub: 'shared appliances',  action: () => goto('/portal/') },
-    { id: 'go-registry',    group: 'Navigate', label: 'Registry',    sub: 'images this workspace pushed', action: () => goto('/registry/') },
-    { id: 'go-dependencies', group: 'Navigate', label: 'Dependencies', sub: 'packages each project depends on, and which need an update', action: () => goto('/dependencies/') },
-    { id: 'go-blueprints',  group: 'Navigate', label: 'Blueprints',  sub: 'the deployment catalog', action: () => goto('/blueprints/') },
-    { id: 'go-settings',    group: 'Navigate', label: 'Your settings', sub: 'password, notifications, sessions', action: () => goto('/settings/') },
-    { id: 'go-admin',       group: 'Navigate', label: 'Admin',       action: () => goto('/admin/') },
-    { id: 'go-audit',       group: 'Navigate', label: 'Audit trail', sub: 'Admin', action: () => goto('/admin/audit/') },
-    { id: 'go-adapters',    group: 'Navigate', label: 'Adapters',    sub: 'Admin', action: () => goto('/admin/adapters/') },
+    // Navigate is derived from src/lib/nav.js through the same `show`, so it
+    // cannot offer a screen the nav hides or miss one the nav lists.
+    ...paletteItems([primary, ...groups, ...elsewhere], navSession(), goto),
 
     // Spread, not a conditional entry: a falsy item in the list renders as a
     // blank row in the palette rather than as nothing.
     ...(session.user?.isSystemAdmin ? [
-      { id: 'go-hub',        group: 'Navigate', label: 'Platform hub',   sub: 'every workspace', action: () => goto('/hub/') },
-      { id: 'go-hub-ws',     group: 'Navigate', label: 'Hub workspaces', sub: 'Hub', action: () => goto('/hub/workspaces/') },
-      { id: 'go-hub-users',  group: 'Navigate', label: 'Hub users & bots', sub: 'Hub', action: () => goto('/hub/users/') },
-      { id: 'go-hub-flags',  group: 'Navigate', label: 'Hub flags',      sub: 'Hub', action: () => goto('/hub/flags/') },
-      { id: 'go-hub-backups', group: 'Navigate', label: 'Hub backups',   sub: 'Hub', action: () => goto('/hub/backups/') },
-      { id: 'go-hub-settings', group: 'Navigate', label: 'Hub settings', sub: 'Hub', action: () => goto('/hub/settings/') },
       { id: 'new-bot',       group: 'Create',   label: 'New bot account', action: () => goto('/hub/users/') },
     ] : []),
 
@@ -224,86 +185,21 @@ siteName: Basecamp
   }
 
   // Select's `onchange` is the NATIVE callback — it hands over the event, not
-  // the value, exactly as `on:change` on a bare <select> would.
+  // the value, exactly as `onchange` on a bare <select> does.
   function pick(e) {
     switchWorkspace(e.target.value)
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────
-  // PRIMARY is the handful opened many times a day, and it sits in the topbar.
-  // Everything else is the sidebar, where only the group holding the current
-  // screen starts open — twenty-odd links at once read as a wall, and ⌘K
-  // reaches every one of them without a group to open.
-  //
-  // A table rather than hand-written anchors: the list is rendered TWICE — the
-  // sidebar at full width, a drawer below 767px — and two copies of it is how
-  // one of them silently loses a screen.
-  const PRIMARY = [
-    { href: '/',                    label: 'Overview',        icon: 'home', exact: true },
-    { href: '/apps/',               label: 'Apps',            icon: 'apps' },
-    { href: '/deployments/',        label: 'Deployments',     icon: 'deployments' },
-    { href: '/servers/',            label: 'Servers',         icon: 'servers' },
-    { href: '/alerts/',             label: 'Alerts',          icon: 'alerts' },
-  ]
+  // The table is src/lib/nav.js. `primary` sits in the topbar; the groups are
+  // the sidebar. Both are rendered TWICE — the sidebar at full width, a drawer
+  // below 767px — from one snippet, since two copies is how one of them
+  // silently loses a screen.
+  const current = (entry) => isActive(entry.href, entry.exact ? { exact: true } : undefined)
 
-  const NAV = [
-    { label: 'Work', icon: 'work', open: true, links: [
-      { href: '/dashboards/',         label: 'Dashboards',      icon: 'dashboards' },
-      { href: '/projects/',           label: 'Projects',        icon: 'projects' },
-      { href: '/jobs/',               label: 'Jobs',            icon: 'jobs' },
-      { href: '/flags/',              label: 'Flags',           icon: 'flags' },
-      { href: '/activity/',           label: 'Activity',        icon: 'activity' },
-      { href: '/trash/',              label: 'Trash',           icon: 'trash' },
-    ] },
-    { label: 'Infrastructure', icon: 'servers', links: [
-      { href: '/networks/',           label: 'Networking',      icon: 'networks' },
-      { href: '/volumes/',            label: 'Volumes',         icon: 'volumes' },
-      { href: '/registry/',           label: 'Registry',        icon: 'registry' },
-      { href: '/dns/',                label: 'DNS & edge',      icon: 'dns' },
-      { href: '/security/',           label: 'Security',        icon: 'security' },
-      { href: '/cleanup/',            label: 'Cleanup',         icon: 'cleanup' },
-      { href: '/infra-graph/',        label: 'Graph',           icon: 'graph' },
-    ] },
-    { label: 'Build', icon: 'build', links: [
-      { href: '/blueprints/',         label: 'Blueprints',      icon: 'blueprints' },
-      { href: '/recipes/',            label: 'Recipes',         icon: 'recipes' },
-      { href: '/portal/',             label: 'Portal',          icon: 'portal' },
-      { href: '/git-activity/',       label: 'Git activity',    icon: 'git' },
-      { href: '/git-activity/local/', label: 'Local repos',     icon: 'local-repos' },
-      { href: '/workbench/',          label: 'Workbench',       icon: 'workbench' },
-      { href: '/pages/',              label: 'Pages',           icon: 'pages' },
-      { href: '/registers/',          label: 'Registers',       icon: 'registers', exact: true },
-      { href: '/registers/decide/',   label: 'Decide',          icon: 'registers' },
-      { href: '/dependencies/',       label: 'Dependencies',    icon: 'dependencies' },
-      { href: '/observability/',      label: 'Observability',   icon: 'observability' },
-      { href: '/channels/',           label: 'Channels',        icon: 'channels' },
-    ] },
-    { label: 'Settings', icon: 'settings', links: [
-      { href: '/secrets/',            label: 'Secrets',         icon: 'secrets' },
-      { href: '/api-keys/',           label: 'API keys',        icon: 'api-keys' },
-      { href: '/cloud-spend/',        label: 'Cloud spend',     icon: 'spend' },
-      { href: '/admin/',              label: 'Admin',           icon: 'admin' },
-      // Not hidden once it is finished, and that is a choice: the six checks
-      // go back to undone when the thing they recorded is deleted, so a link
-      // that disappeared would be the one thing on it that could go stale.
-      { href: '/onboarding/',         label: 'Getting started', icon: 'onboarding' },
-    ] },
-  ]
-
-  const current = (link) => isActive(link.href, link.exact ? { exact: true } : undefined)
-
-  // Not in NAV, and deliberately: this is the caller's OWN account rather than
-  // anything in the workspace, so it hangs off the account menu in the topbar
-  // where a person looks for it — beside their email and sign-out.
-
-  // The hub tier is not a workspace role, so it is not in the switcher and it
-  // is not offered to people who do not hold it. `isSystemAdmin` rides on the
-  // session; the service answers 404 to anyone else regardless, which is where
-  // the refusal actually is.
-  $: session.user
-  const navGroups = () => session.user?.isSystemAdmin
-    ? [...NAV, { label: 'System', icon: 'system', links: [{ href: '/hub/', icon: 'hub', label: 'Hub' }] }]
-    : NAV
+  // `show` reads two scalars, the shape the kit's Shell hands it.
+  const navSession = () => ({ user: session.user, level: session.level })
+  const navGroups  = () => visible(groups, navSession())
 
   // Below 767px the design system hides `.shell > .sidebar` and says its
   // contents belong in a <dialog class="drawer"> — a behavior, so the app owns
@@ -369,9 +265,9 @@ siteName: Basecamp
 
      The label stays in the DOM when the rail hides it, so it is still the
      link's name; `title` is the only way a sighted person reads it then. -->
-{#snippet navlinks(links)}
+{#snippet navlinks(entries)}
   <ul class="navlist">
-    {#each links as link}
+    {#each entries as link}
       <li>
         <a class="navlink" href={link.href}
            aria-current={(page.route, current(link)) ? 'page' : null}
@@ -388,17 +284,29 @@ siteName: Basecamp
      cannot re-close what the person opened. -->
 {#snippet navlists()}
   {#each navGroups() as group}
-    <details class="nav-group" open={group.open || group.links.some(current) ? true : null}>
+    <details class="nav-group" open={group.open || group.entries.some(current) ? true : null}>
       <summary class="navlist-label" title={rail ? group.label : null}>
         <NavIcon name={group.icon} /><span class="navlink-text">{group.label}</span>
         <span class="nav-chevron"><NavIcon name="chevron" /></span>
       </summary>
-      {@render navlinks(group.links)}
+      {@render navlinks(group.entries)}
     </details>
   {/each}
 {/snippet}
 
 <div class="shell">
+  <!-- Focus mode takes the header out of the DOM, so the screen gets its row
+       back. A strip at the top edge brings back the one control that leaves it. -->
+  {#if session.user && focus}
+    <div class="focus-peek">
+      <span class="focus-peek-tab">
+        <Button variant="outlined" size="sm" id="focus-leave" aria-pressed="true"
+                title="Show the header and side panels (Ctrl+.)"
+                onclick={toggleFocus}>Toggle focus</Button>
+      </span>
+    </div>
+  {/if}
+  {#if !focus}
   <header class="topbar">
     <span class="cluster">
       <!-- `.sidebar-toggle` decides WHEN this control exists — the package
@@ -407,7 +315,7 @@ siteName: Basecamp
            drawer is the app's job and is the `navOpen` flag below. -->
       {#if session.user}
         <button class="btn ghost square sidebar-toggle" aria-label="Open navigation"
-                aria-expanded={navOpen ? 'true' : 'false'} on:click={() => navOpen = true}>☰</button>
+                aria-expanded={navOpen ? 'true' : 'false'} onclick={() => navOpen = true}>☰</button>
       {/if}
       <a class="cluster" href="/" aria-label="{page.siteName} home" style:text-decoration="none" style:color="inherit">
         <img src="/favicon.svg" alt="" width="20" height="20" />
@@ -416,8 +324,8 @@ siteName: Basecamp
       <span class="hide-sm"><Badge tone="muted">alpha</Badge></span>
       {#if session.user}
         <span class="hide-sm">
-          <Button variant={focus ? 'outlined' : 'ghost'} size="sm" id="focus-toggle"
-                  aria-pressed={focus ? 'true' : 'false'} title="Hide the side panels (Ctrl+.)"
+          <Button variant="ghost" size="sm" id="focus-toggle"
+                  aria-pressed="false" title="Hide the header and side panels (Ctrl+.)"
                   onclick={toggleFocus}>Focus</Button>
         </span>
       {/if}
@@ -427,7 +335,7 @@ siteName: Basecamp
          and this row is hidden (`.hide-sm`, the style block below). -->
     {#if session.user}
       <nav class="cluster hide-sm" aria-label="Primary">
-        {#each PRIMARY as link}
+        {#each primary.entries as link}
           <a class="navlink" href={link.href}
              aria-current={(page.route, current(link)) ? 'page' : null}
           >{link.label}</a>
@@ -508,8 +416,6 @@ siteName: Basecamp
              fewer items is the app's half of the same answer. -->
         <DropdownMenu placement="bottom-end">
           {#snippet trigger()}
-            <!-- A kit component takes its handler as a PROP (`onclick`), not
-                 as `on:click` — that directive belongs to elements. -->
             <Button variant="ghost" id="account-menu">Account</Button>
           {/snippet}
           <DropdownGroup heading={session.user.email}>
@@ -520,18 +426,19 @@ siteName: Basecamp
       {/if}
     </span>
   </header>
+  {/if}
 
   <!-- The long tail lives here rather than in the topbar: every `.navlink` in
        a 56px row wrapped to two lines and spilled out of it at every width
-       down from 1920px, so the topbar holds PRIMARY only.
+       down from 1920px, so the topbar holds the primary handful only.
        Hidden below 767px by the package; the drawer below covers that. -->
   {#if session.user && !focus}
-    <nav class="sidebar" class:rail={rail} class:peek={rail} aria-label="Main">
+    <nav class="sidebar" class:rail={rail} aria-label="Main">
       <button class="btn ghost square rail-toggle" id="rail-toggle"
               aria-label={rail ? 'Expand the sidebar' : 'Collapse the sidebar'}
               aria-expanded={rail ? 'false' : 'true'}
               title={rail ? 'Expand the sidebar' : 'Collapse the sidebar'}
-              on:click={toggleRail}>
+              onclick={toggleRail}>
         {#if rail}<NavIcon name="panel-open" />{:else}<NavIcon name="panel-close" />{/if}
       </button>
       {@render navlists()}
@@ -562,7 +469,7 @@ siteName: Basecamp
   ⌘K anywhere. `mesa:window` is the one place a global key listener belongs —
   a document listener added by hand in a component outlives the component.
 -->
-<mesa:window on:keydown={(e) => {
+<mesa:window onkeydown={(e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); commandPalette.toggle() }
   if ((e.metaKey || e.ctrlKey) && e.key === '.' && session.user) { e.preventDefault(); toggleFocus() }
 }} />
@@ -598,7 +505,7 @@ siteName: Basecamp
           />
         </div>
       {/if}
-      {@render navlinks(PRIMARY)}
+      {@render navlinks(primary.entries)}
       {@render navlists()}
     </nav>
   </Drawer>
@@ -641,6 +548,32 @@ siteName: Basecamp
     .topbar .cluster { flex-wrap: nowrap; gap: var(--space-xs); }
   }
   .drawer-switch { margin-block-end: var(--space-lg); }
+
+  /* Focus mode has no header. A thin strip along the top edge is the hover
+     target; the toggle waits above the viewport and slides down when the
+     cursor reaches the strip, or when the keyboard tabs into it. */
+  .focus-peek {
+    position:        fixed;
+    inset-block-start: 0;
+    inset-inline:    0;
+    block-size:      var(--space-sm);
+    display:         flex;
+    justify-content: center;
+    z-index:         var(--z-topbar);
+  }
+  .focus-peek-tab {
+    align-self:  flex-start;
+    padding:     var(--space-xs);
+    background:  var(--topbar-bg, var(--surface));
+    border:      var(--border-width) solid var(--rule);
+    border-block-start: 0;
+    border-end-start-radius: var(--radius-md, 0.5rem);
+    border-end-end-radius:   var(--radius-md, 0.5rem);
+    transform:   translateY(-100%);
+    transition:  transform var(--motion-fast);
+  }
+  .focus-peek:hover .focus-peek-tab,
+  .focus-peek:focus-within .focus-peek-tab { transform: none; }
 
   .rail-toggle {
     display:             flex;

@@ -19,9 +19,9 @@
 // must be answerable about a schema that has never been migrated.
 
 import { parseGateString } from '../plugins/gate.js'
-import { authClaimsUsed, pickWhere } from './policy.js'
+import { authClaimsUsed, buildClaimSet, pickWhere } from './policy.js'
 import { ID_GENERATORS }   from './ids.js'
-import { VALIDATOR_KINDS } from './validate.js'
+import { VALIDATOR_KINDS, ITEM_COUNT_RULES } from './validate.js'
 
 // ─── The visibility table ─────────────────────────────────────────────────────
 //
@@ -244,6 +244,8 @@ export const RULES = [
       for (const model of schema.models ?? []) {
         for (const f of model.fields ?? []) {
           if (!has(f, 'system') || isOptional(f) || hasDefault(f)) continue
+          // A mirror's columns are the sync's to fill, and no form creates one.
+          if (f.attributes.some(a => a.kind === 'system' && a.generated === 'mirror')) continue
           out.push({
             model: model.name, field: f.name,
             message: `${model.name}.${f.name} is @system and required. It is out of create-mode required, so a generated form will not ask for it — the application must name it on the write (system: ['${f.name}']) or the create fails.`,
@@ -435,6 +437,48 @@ export const RULES = [
               `or optional by its own '?'.`} A rule about the rows themselves belongs on ` +
               `${f.type.name}'s own columns.`,
           })
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'validator-on-the-wrong-type',
+    severity: 'error',
+    title:    'a validator written for a type the column is not',
+    blurb:    'A rule grades a value of one kind: @gte a number, @length a string, @minItems a list. ' +
+              'Written on any other column it parses, then either never runs or compares the wrong ' +
+              'thing -- Number("abc") is NaN and fails every bound, String(5).length counts digits -- ' +
+              'and a generated form is handed a numeric minimum on a checkbox.',
+    run(schema) {
+      const out = []
+      // Json holds any kind, so no rule is wrong for it. A relation is its own
+      // rule above.
+      const NUMBER = { kinds: ['lt', 'lte', 'gt', 'gte'],  holds: ['Int', 'Float'],      says: 'a number' }
+      const TEXT   = { kinds: ['length', 'startsWith', 'endsWith', 'contains', 'regex', 'email', 'url',
+                               'phone', 'date', 'datetime', 'time', 'zone'],
+                       holds: ['String', 'DateTime', 'File'],                         says: 'text' }
+      for (const model of schema.models ?? []) {
+        for (const f of model.fields ?? []) {
+          const kind = f.type?.kind
+          if (kind === 'relation' || kind === 'implicitM2M' || f.type?.name === 'Json') continue
+          for (const a of f.attributes ?? []) {
+            const group = [NUMBER, TEXT].find(g => g.kinds.includes(a.kind))
+            const wrong = group
+              ? kind === 'enum' || !group.holds.includes(f.type.name)
+              : ITEM_COUNT_RULES.has(a.kind) && !f.type.array
+            if (!wrong) continue
+            out.push({
+              model: model.name, field: f.name,
+              message: group
+                ? `${model.name}.${f.name} is ${f.type.name}, and @${a.kind} grades ${group.says} -- on this ` +
+                  `column it ${group === NUMBER ? 'compares NaN or nothing' : 'counts the wrong thing'}. ` +
+                  `Put the rule on a ${group.holds[0]} column, or take it off.`
+                : `${model.name}.${f.name} is not a list, and @${a.kind} counts a list's elements -- it never ` +
+                  `runs here. Declare the column as ${f.type.name}[], or use @length for the size of a string.`,
+            })
+          }
         }
       }
       return out
@@ -981,7 +1025,8 @@ export const RULES = [
           // duration and `holidays` is not a count of days.
           if (!/[a-z0-9]$/.test(f.name.slice(0, -suffix.length))) continue
 
-          const symbol = SUFFIXES[suffix]
+          // A symbol that is not an identifier (`%`) parses only quoted.
+          const symbol = /^[A-Za-z_]\w*$/.test(SUFFIXES[suffix]) ? SUFFIXES[suffix] : JSON.stringify(SUFFIXES[suffix])
           const bare   = f.name.slice(0, -suffix.length)
           out.push({
             model: model.name, field: f.name,
@@ -1158,6 +1203,116 @@ export const RULES = [
                 `stating the same rows.`,
             })
           }
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'read-allow-hides-tenant-members',
+    severity: 'warn',
+    title:    'a read @@allow written for a claim the tenant\'s members do not carry hides the model from them',
+    blurb:    'Under row tenancy a read @@allow is the WHOLE of who reads, not an addition to the ' +
+              'tenant\'s scope: the generated @@deny still narrows to the tenant, and the allow then ' +
+              'admits only the rows it names. One that compares a row to a claim only some principals ' +
+              'carry (a share-link or widget bearer claim) reads as "and the link\'s holder may read ' +
+              'this one", and is "only the link\'s holder" — every member reads an empty screen.',
+    run(schema) {
+      let names
+      try { names = buildClaimSet(schema).names } catch { return [] }
+      const tenantClaim = schema.tenancy?.claim ?? null
+      // A claim a signed-in member's principal carries: the framework's, the @@auth
+      // model's and the tenant's own. Only a declared `claim` is anyone's guess.
+      const bearer = n => n !== tenantClaim && ['claim', 'declared'].includes(names.get(n))
+
+      const reach = (node, acc = { claims: [], row: false }) => {
+        if (!node || typeof node !== 'object') return acc
+        if (node.type === 'auth') acc.claims.push(node.field ?? 'id')
+        if (node.type === 'field' || node.type === 'path') acc.row = true
+        for (const v of Object.values(node)) reach(v, acc)
+        return acc
+      }
+      const branches = (node) => node?.type === 'or' ? [...branches(node.left), ...branches(node.right)] : [node]
+
+      const out = []
+      for (const model of schema.models ?? []) {
+        const scoped = (model.attributes ?? []).some(a => a.kind === 'deny' && a.generated === 'tenancy')
+        if (!scoped) continue
+        const reads = (model.attributes ?? []).filter(a =>
+          a.kind === 'allow' && a.operations?.some(op => op === 'read' || op === 'all'))
+        if (!reads.length) continue
+        const claims = new Set()
+        // A branch a member can satisfy: it reads no claim a bearer carries, or it
+        // never asks a ROW (`auth().memberRole != null` admits the whole tenant).
+        const admitsMembers = reads.some(a => branches(a.expr).some(b => {
+          const r = reach(b)
+          if (!r.row || !r.claims.some(bearer)) return true
+          r.claims.filter(bearer).forEach(c => claims.add(c))
+          return r.claims.some(c => !bearer(c))
+        }))
+        if (admitsMembers || !claims.size) continue
+        const list = [...claims].map(c => `auth().${c}`).join(', ')
+        out.push({
+          model: model.name,
+          message: `${model.name} is scoped by the tenant, and every read @@allow on it compares a row to ${list}, ` +
+            `which a member of the tenant does not carry. An allow is the whole of who reads, so members read nothing. ` +
+            `Add a branch for them: ${tenantClaim ? `${tenantClaim} == auth().${tenantClaim}` : 'auth().memberRole != null'} || …`,
+        })
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'allow-needs-bearer-claim-under-gate',
+    severity: 'warn',
+    title:    'an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass',
+    blurb:    'A bare `claim` (one no row supplies) is carried by a principal the app mints for a ' +
+              'link or widget holder, and that principal grades at STRANGER(0). When every @@allow for ' +
+              'an operation reads only such claims and the gate for that operation is above 0, the gate ' +
+              'refuses the one caller who could satisfy the rule, and whoever passes the gate carries no ' +
+              'claim and fails it. The rule never holds and nothing else says so. Lower the gate to 0 ' +
+              'and let the rule decide, or add a branch the gated callers can satisfy.',
+    run(schema) {
+      let names
+      try { names = buildClaimSet(schema).names } catch { return [] }
+      const bare = n => names.get(n) === 'claim' && !(n in (schema.claimSources ?? {}))
+
+      const authRefs = (node, acc = []) => {
+        if (!node || typeof node !== 'object') return acc
+        if (node.type === 'auth') acc.push(node.field ?? 'id')
+        for (const v of Object.values(node)) authRefs(v, acc)
+        return acc
+      }
+      const branches = node => node?.type === 'or' ? [...branches(node.left), ...branches(node.right)] : [node]
+
+      const out = []
+      for (const model of schema.models ?? []) {
+        const gate = gateOf(model)
+        if (!gate) continue
+        for (const op of ['read', 'create', 'update', 'delete']) {
+          if (!(gate[op] > 0)) continue
+          const allows = (model.attributes ?? []).filter(a =>
+            a.kind === 'allow' && a.operations?.some(o => o === op || o === 'all'))
+          if (!allows.length) continue
+          const claims = new Set()
+          // A branch that names no claim, or a claim a signed-in caller carries, is one the gated can pass.
+          const live = allows.some(a => branches(a.expr).some(b => {
+            const refs = authRefs(b)
+            if (!refs.length || !refs.every(bare)) return true
+            refs.forEach(c => claims.add(c))
+            return false
+          }))
+          if (live) continue
+          const list = [...claims].map(c => `auth().${c}`).join(', ')
+          out.push({
+            model: model.name,
+            message: `${model.name}: every @@allow for ${op} reads only ${list}, which no row supplies, and @@gate ` +
+              `requires level ${gate[op]} for ${op}. A bearer grades at 0 and is refused at the gate; a caller ` +
+              `who passes the gate carries no ${list}, so the rule admits nobody. Lower the ${op} gate to 0 ` +
+              `or add a branch the gated callers can satisfy.`,
+          })
         }
       }
       return out

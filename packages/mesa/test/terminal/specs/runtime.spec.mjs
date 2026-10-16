@@ -1,5 +1,5 @@
 /*
- * runtime — `$$tui` driven directly, with no compiler in the loop.
+ * runtime — `$$host` driven directly, with no compiler in the loop.
  *
  * The component below is written by hand in the shape the terminal emitter
  * produces, so a green run pins the runtime on its own: element/text and
@@ -13,7 +13,7 @@ export const name = 'runtime'
 
 export async function run(t) {
   const { createSignal } = t.runtime
-  const $$tui = t.tui
+  const $$host = t.tui
 
   const [count, setCount]   = createSignal(0)
   const [items, setItems]   = createSignal(['a', 'b'])
@@ -23,79 +23,79 @@ export async function run(t) {
   let branchRuns = 0, branchDisposed = 0
 
   function Component(__anchor) {
-    const $$parentElement = $$tui.fragment()
-    const $$el0 = $$tui.element('div', { class: 'box' })
-    $$tui.append($$parentElement, $$el0)
-    const $$el1 = $$tui.element('h1')
-    $$tui.append($$el0, $$el1)
-    $$tui.append($$el1, $$tui.text('Title'))
-    const $$el2 = $$tui.element('p')
-    $$tui.append($$el0, $$el2)
-    const $$t0 = $$tui.text('')
-    $$tui.append($$el2, $$t0)
+    const $$parentElement = $$host.fragment()
+    const $$el0 = $$host.element('div', { class: 'box' })
+    $$host.append($$parentElement, $$el0)
+    const $$el1 = $$host.element('h1')
+    $$host.append($$el0, $$el1)
+    $$host.append($$el1, $$host.text('Title'))
+    const $$el2 = $$host.element('p')
+    $$host.append($$el0, $$el2)
+    const $$t0 = $$host.text('')
+    $$host.append($$el2, $$t0)
     t.runtime.render((__prev) => {
       const __a = `Label: ${label()}`
-      if (__prev.a !== __a) $$tui.set_text($$t0, __prev.a = __a)
+      if (__prev.a !== __a) $$host.set_text($$t0, __prev.a = __a)
     }, { a: '' })
-    const $$el3 = $$tui.element('button')
-    $$tui.append($$el0, $$el3)
-    $$tui.append($$el3, $$tui.text('Go'))
-    $$tui.on($$el3, 'click', (e) => { clicks.push(e.type); setCount(count() + 1) })
+    const $$el3 = $$host.element('button')
+    $$host.append($$el0, $$el3)
+    $$host.append($$el3, $$host.text('Go'))
+    $$host.on($$el3, 'click', (e) => { clicks.push(e.type); setCount(count() + 1) })
     // A marker at the root level, before the fragment is attached: the block
     // must land in the array and ride into the parent with it.
-    const $$m0 = $$tui.marker()
-    $$tui.append($$el0, $$m0)
-    $$tui.ifBlock($$m0, () => shown() ? 0 : 1, [
+    const $$m0 = $$host.marker()
+    $$host.append($$el0, $$m0)
+    $$host.ifBlock($$m0, () => shown() ? 0 : 1, [
       () => {
         branchRuns++
         t.runtime.onCleanup(() => { branchDisposed++ })
-        const $$b = $$tui.fragment()
-        const $$el4 = $$tui.element('p')
-        $$tui.append($$b, $$el4)
-        const $$t1 = $$tui.text('')
-        $$tui.append($$el4, $$t1)
+        const $$b = $$host.fragment()
+        const $$el4 = $$host.element('p')
+        $$host.append($$b, $$el4)
+        const $$t1 = $$host.text('')
+        $$host.append($$el4, $$t1)
         t.runtime.render((__prev) => {
           const __a = `Shown ${count()}`
-          if (__prev.a !== __a) $$tui.set_text($$t1, __prev.a = __a)
+          if (__prev.a !== __a) $$host.set_text($$t1, __prev.a = __a)
         }, { a: '' })
         return $$b
       },
       () => {
-        const $$b = $$tui.fragment()
-        const $$el5 = $$tui.element('p')
-        $$tui.append($$b, $$el5)
-        $$tui.append($$el5, $$tui.text('Hidden'))
+        const $$b = $$host.fragment()
+        const $$el5 = $$host.element('p')
+        $$host.append($$b, $$el5)
+        $$host.append($$el5, $$host.text('Hidden'))
         return $$b
       },
     ])
-    const $$el6 = $$tui.element('ul', { id: 'list' })
-    $$tui.append($$el0, $$el6)
-    const $$m1 = $$tui.marker()
-    $$tui.append($$el6, $$m1)
-    $$tui.eachBlock($$m1, () => items(), (it, i) => it, (it, i) => {
-      const $$b = $$tui.fragment()
-      const $$el7 = $$tui.element('li')
-      $$tui.append($$b, $$el7)
-      const $$t2 = $$tui.text('')
-      $$tui.append($$el7, $$t2)
+    const $$el6 = $$host.element('ul', { id: 'list' })
+    $$host.append($$el0, $$el6)
+    const $$m1 = $$host.marker()
+    $$host.append($$el6, $$m1)
+    $$host.eachBlock($$m1, () => items(), (it, i) => it, (it, i) => {
+      const $$b = $$host.fragment()
+      const $$el7 = $$host.element('li')
+      $$host.append($$b, $$el7)
+      const $$t2 = $$host.text('')
+      $$host.append($$el7, $$t2)
       t.runtime.render((__prev) => {
         const __a = `${i()}: ${it()}`
-        if (__prev.a !== __a) $$tui.set_text($$t2, __prev.a = __a)
+        if (__prev.a !== __a) $$host.set_text($$t2, __prev.a = __a)
       }, { a: '' })
       return $$b
     }, () => {
-      const $$b = $$tui.fragment()
-      const $$el8 = $$tui.element('p')
-      $$tui.append($$b, $$el8)
-      $$tui.append($$el8, $$tui.text('(empty)'))
+      const $$b = $$host.fragment()
+      const $$el8 = $$host.element('p')
+      $$host.append($$b, $$el8)
+      $$host.append($$el8, $$host.text('(empty)'))
       return $$b
     })
-    const $$m2 = $$tui.marker()
-    $$tui.append($$el0, $$m2)
-    const $$el9 = $$tui.element('p')
-    $$tui.append($$el0, $$el9)
-    $$tui.append($$el9, $$tui.text('End'))
-    $$tui.append(__anchor, $$parentElement)
+    const $$m2 = $$host.marker()
+    $$host.append($$el0, $$m2)
+    const $$el9 = $$host.element('p')
+    $$host.append($$el0, $$el9)
+    $$host.append($$el9, $$host.text('End'))
+    $$host.append(__anchor, $$parentElement)
   }
 
   const handle = await t.mount(Component)
@@ -189,37 +189,37 @@ export async function run(t) {
   const [list, setList] = createSignal(['p', 'q'])
   let headingText = null
   function RootBlocks(__anchor) {
-    const $$parentElement = $$tui.fragment()
-    const $$m0 = $$tui.marker()
-    $$tui.append($$parentElement, $$m0)
-    $$tui.ifBlock($$m0, () => flag() ? 0 : null, [
+    const $$parentElement = $$host.fragment()
+    const $$m0 = $$host.marker()
+    $$host.append($$parentElement, $$m0)
+    $$host.ifBlock($$m0, () => flag() ? 0 : null, [
       () => {
-        const $$b = $$tui.fragment()
-        const $$el0 = $$tui.element('h1')
-        $$tui.append($$b, $$el0)
-        headingText = $$tui.text('Flag on')
-        $$tui.append($$el0, headingText)
+        const $$b = $$host.fragment()
+        const $$el0 = $$host.element('h1')
+        $$host.append($$b, $$el0)
+        headingText = $$host.text('Flag on')
+        $$host.append($$el0, headingText)
         return $$b
       },
     ])
-    const $$m1 = $$tui.marker()
-    $$tui.append($$parentElement, $$m1)
-    $$tui.eachBlock($$m1, () => list(), null, (it, i) => {
-      const $$b = $$tui.fragment()
-      const $$el1 = $$tui.element('li')
-      $$tui.append($$b, $$el1)
-      const $$t0 = $$tui.text('')
-      $$tui.append($$el1, $$t0)
+    const $$m1 = $$host.marker()
+    $$host.append($$parentElement, $$m1)
+    $$host.eachBlock($$m1, () => list(), null, (it, i) => {
+      const $$b = $$host.fragment()
+      const $$el1 = $$host.element('li')
+      $$host.append($$b, $$el1)
+      const $$t0 = $$host.text('')
+      $$host.append($$el1, $$t0)
       t.runtime.render((__prev) => {
         const __a = `${i()}-${it()}`
-        if (__prev.a !== __a) $$tui.set_text($$t0, __prev.a = __a)
+        if (__prev.a !== __a) $$host.set_text($$t0, __prev.a = __a)
       }, { a: '' })
       return $$b
     }, null)
-    const $$el2 = $$tui.element('p')
-    $$tui.append($$parentElement, $$el2)
-    $$tui.append($$el2, $$tui.text('Tail'))
-    $$tui.append(__anchor, $$parentElement)
+    const $$el2 = $$host.element('p')
+    $$host.append($$parentElement, $$el2)
+    $$host.append($$el2, $$host.text('Tail'))
+    $$host.append(__anchor, $$parentElement)
   }
   const root = await t.mount(RootBlocks)
   frame = await t.frame()

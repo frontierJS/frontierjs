@@ -25,6 +25,7 @@
  */
 
 import { watchProxy } from '@frontierjs/mesa/runtime'
+import { setPrefix } from '@frontierjs/mesa/browser'
 import {
   matchRoute, normalizePath, buildUrl, parseQueryParams, caseInsensitiveNearMiss,
 } from './match.js'
@@ -333,6 +334,7 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
   _loaders = loaders
   _options = options
   nodes = tree
+  setPrefix(options.prefix)
 
   // Build the layout hierarchy map for RouterView's chain resolution
   buildLayoutMap(tree, components)

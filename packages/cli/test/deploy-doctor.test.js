@@ -1,0 +1,68 @@
+// deploy-doctor.test.js — `fli deploy:doctor` answers a program, not only a person.
+//
+// FJS-2553: the summary counted failures and the command ended 0 anyway, and
+// the only way to learn whether an app was ready was to scrape the coloured
+// ✓/✗ lines. Each case runs the real command over a real app directory.
+
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
+import { spawnSync } from 'child_process'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import { join, resolve, dirname } from 'path'
+import { tmpdir } from 'os'
+import { fileURLToPath } from 'url'
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+const doctor = (cwd, ...args) =>
+  spawnSync(process.execPath, [resolve(ROOT, 'bin/fli.js'), 'deploy:doctor', ...args], {
+    encoding: 'utf8', cwd, env: { ...process.env, NO_COLOR: '1' },
+  })
+
+let withConfig, noConfig
+
+beforeAll(() => {
+  // A deploy block that resolves and no Dockerfile: a failing check that needs no network.
+  withConfig = mkdtempSync(join(tmpdir(), 'fli-doctor-app-'))
+  writeFileSync(join(withConfig, 'package.json'), '{"name":"t","scripts":{}}')
+  writeFileSync(join(withConfig, 'frontier.config.js'),
+    "export default { deploy: { server: 'example.test', path: '/srv/t', app_id: 't' } }\n")
+  noConfig = mkdtempSync(join(tmpdir(), 'fli-doctor-bare-'))
+  writeFileSync(join(noConfig, 'package.json'), '{"name":"t"}')
+  mkdirSync(join(noConfig, 'db'))
+})
+
+afterAll(() => {
+  rmSync(withConfig, { recursive: true, force: true })
+  rmSync(noConfig, { recursive: true, force: true })
+})
+
+describe('deploy:doctor as a program reads it', () => {
+
+  test('a failed check exits non-zero', () => {
+    const r = doctor(withConfig)
+    expect(r.stdout + r.stderr).toContain('failure(s)')
+    expect(r.status).not.toBe(0)
+  })
+
+  test('--json prints the rows renderCheck draws and nothing else', () => {
+    const r = doctor(withConfig, '--json')
+    const out = JSON.parse(r.stdout)
+    expect(out.ok).toBe(false)
+    expect(out.failed).toBeGreaterThan(0)
+    const dockerfile = out.checks.find(c => c.name.startsWith('Dockerfile at'))
+    expect(dockerfile.status).toBe('fail')
+    expect(dockerfile.hint).toContain('fli make:deploy')
+    expect(dockerfile.section).toBe('API container')
+    expect(out.checks.find(c => c.name === 'deploy block defined').status).toBe('pass')
+    expect(r.status).not.toBe(0)
+  })
+
+  test('--json with no config still prints the one failed row', () => {
+    const r = doctor(noConfig, '--json')
+    const out = JSON.parse(r.stdout)
+    expect(out.ok).toBe(false)
+    expect(out.checks[0]).toMatchObject({ name: 'frontier.config.js', status: 'fail' })
+    expect(r.status).not.toBe(0)
+  })
+
+})

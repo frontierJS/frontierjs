@@ -3,11 +3,11 @@
 // Framework hooks (authenticate, requireRole, etc.) imported from '@frontierjs/junction'.
 
 import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, applyClaims, MEMBERSHIP, signedRequest, serviceAccessor, accessorCandidates, resultData, $} from '@frontierjs/junction'
-import type { Hook, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
+import type { App, Hook, ILogger, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
 import { createHmac }                     from 'node:crypto'
 import { REDACTED }                       from '@frontierjs/toolbelt/redact'
-import { channelManager, workspaceChannelName } from '../channels.ts'
-import type { BasecampApp }                from '../basecamp.types.ts'
+import { workspaceChannelName }       from '../channels.ts'
+import type { BasecampDb }                 from './db.ts'
 import { grantsFor, grantsWithin }         from './capabilities.ts'
 
 // ─── The session ─────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ interface Session {
   memberRole?: string
 }
 
-interface MemberRow { role?: string; workspace?: { status?: string } }
+interface MemberRow { role?: string; capabilities?: string[] | null; workspace?: { status?: string } }
 
 function userOf(ctx: ServiceContext): Session | undefined {
   return ctx.auth?.user as Session | undefined
@@ -169,14 +169,14 @@ export function refuseProtectedForDeveloper(env: { isProtected?: boolean }, ctx:
  * workspace you do not belong to on the way in.
  */
 export async function restandingFor(
-  app:         BasecampApp,
   ctx:         ServiceContext,
   workspaceId: string,
 ): Promise<MemberRow | null> {
   const user = userOf(ctx)
   if (!user?.userId) return null
 
-  const sys: any = app.db.asSystem()
+  const db       = ctx.app.db!
+  const sys: any = db.asSystem()
   const member: MemberRow | null = await sys.workspaceMember.findFirst({
     where:   { workspaceId, userId: user.userId },
     include: { workspace: true },
@@ -185,8 +185,8 @@ export async function restandingFor(
   ctx.locals[MEMBERSHIP]   = member
   ctx.locals.workspaceId   = workspaceId
 
-  applyClaims(ctx, app.db, member
-    ? { workspaceId, memberRole: member.role }
+  applyClaims(ctx, db, member
+    ? { workspaceId, memberRole: member.role, capabilities: member.capabilities ?? [] }
     : {})
 
   return member
@@ -201,7 +201,7 @@ export async function restandingFor(
 // screen says why. The membership row is already in hand — `membershipClaim()`
 // resolved it once for this request and parked it.
 
-export function scopeToWorkspace(app: BasecampApp): Hook {
+export function scopeToWorkspace(): Hook {
   return async function scopeToWorkspace(ctx: ServiceContext): Promise<void> {
     const userId      = userOf(ctx)?.userId
     const workspaceId = ctx.locals.workspaceId as string | undefined
@@ -244,7 +244,7 @@ const ROLE_LEVEL: Record<string, number> = {
   viewer: 1, billing: 1, developer: 2, admin: 3, owner: 4,
 }
 
-export function requireWorkspaceRole(app: BasecampApp, ...roles: string[]): Hook {
+export function requireWorkspaceRole(...roles: string[]): Hook {
   const minLevel = Math.min(...roles.map(r => ROLE_LEVEL[r] ?? 99))
 
   return async function requireWorkspaceRole(ctx: ServiceContext): Promise<void> {
@@ -272,7 +272,7 @@ export function requireWorkspaceRole(app: BasecampApp, ...roles: string[]): Hook
 // `WorkspaceMember.role` is the column every gate in this app is graded from
 // (core/gate.ts) and `WorkspaceMember.capabilities` is the grid beside it
 // (core/capabilities.ts), so a method that writes either is a method that
-// writes standing. `requireWorkspaceRole(app, 'admin', 'owner')` answers *may
+// writes standing. `requireWorkspaceRole('admin', 'owner')` answers *may
 // you manage the team* and has nothing to say about WHAT is being handed out,
 // so an administrator could name `role: 'owner'` — on somebody else's
 // membership, or on an invitation to an address they own and can then sign in
@@ -377,7 +377,7 @@ export function refuseGrantAboveOwn(): Hook {
 //
 // A job handler has to reach the rows its run is about, and the four models it
 // writes — `DeploymentStep`, `JobRun`, `RecipeRun`, `CleanupRun` — are gated at
-// SYSTEM for update (`@@gate("2.4.8.8")`, `2.8`). That is the schema saying a
+// SYSTEM for update (`@@gate(2.4.8.8)`, `2.8`). That is the schema saying a
 // run's OUTCOME is written by the machine and not by the person who asked for
 // it, so no standing a workspace can grant reaches them: `owner` is 6.
 //
@@ -429,10 +429,10 @@ export function requireSystemAdmin(): Hook {
 // while sitting behind that `all`, so the outpost could never check in: every
 // heartbeat 401'd. A comment is not an exemption.
 
-export function sessionScope(app: BasecampApp, opts: { except?: string[] } = {}): Hook {
+export function sessionScope(opts: { except?: string[] } = {}): Hook {
   const except = new Set(opts.except ?? [])
   const workspace = requireWorkspace()
-  const scope     = scopeToWorkspace(app)
+  const scope     = scopeToWorkspace()
 
   return async function sessionScope(ctx: ServiceContext): Promise<void> {
     if (except.has(ctx.method)) return
@@ -443,37 +443,25 @@ export function sessionScope(app: BasecampApp, opts: { except?: string[] } = {})
 }
 
 // ─── workspaceChannel ────────────────────────────────────────────────────
-// Returns the channel announce target for the current workspace — the value a
-// service DECLARES, never a hook it runs:
+// The channel announce target for the current workspace — the value a service
+// DECLARES, never a hook it runs:
 //
-//   createService({ name: 'apps', model: 'App', channel: workspaceChannel(app) })
+//   createService({ name: 'apps', model: 'App', channel: workspaceChannel })
 //
-// It was `after: { all: [announce(workspaceChannel(app))] }` on all
-// seventeen services, and `all` means all: a `find` broadcast every row it had
-// just read to every browser in the workspace (FJS-031). Junction decides what
-// to announce in one place — `callService` — and that place excludes reads by
-// name, which no per-service hook list can do for itself. Declaring both is
+// As `after: { all: [announce(...)] }` it broadcast every `find` to every
+// browser in the workspace, because `all` means all (FJS-031). Junction decides
+// what to announce in one place — `callService` — and that place excludes reads
+// by name, which no per-service hook list can do for itself. Declaring both is
 // refused at construction rather than broadcasting twice.
-
 //
 // The ROW's workspace first: a write outside any service call -- a job, an
 // outpost report, `asSystem()` -- calls this with ctx null, and reading only
 // the request's workspace sent it nowhere (`FJS-1741`).
-export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction').ChannelFn {
-  return (data, ctx) => {
-    const row     = (Array.isArray(data) ? data[0] : data) as { workspaceId?: unknown } | null | undefined
-    const wsId    = (typeof row?.workspaceId === 'string' ? row.workspaceId : undefined)
-      ?? ctx?.locals.workspaceId as string | undefined
-    if (!wsId) return null
-    // Typed as what a ChannelFn may answer, rather than `unknown`: the manager
-    // is reached through a cast because `app.channels` is the plugin's, and a
-    // cast that lands on `unknown` makes the return type unassignable to the
-    // very signature this function declares.
-    type Channel  = ReturnType<import('@frontierjs/junction').ChannelFn> & object
-    const manager = channelManager(app) as { channel: (name: string) => Channel } | undefined
-    if (!manager?.channel) return null
-    return manager.channel(workspaceChannelName(wsId))
-  }
+export const workspaceChannel: import('@frontierjs/junction').ChannelFn = (data, ctx) => {
+  const row  = (Array.isArray(data) ? data[0] : data) as { workspaceId?: unknown } | null | undefined
+  const wsId = (typeof row?.workspaceId === 'string' ? row.workspaceId : undefined)
+    ?? ctx?.locals.workspaceId as string | undefined
+  return wsId ? workspaceChannelName(wsId) : null
 }
 
 // ─── outpostCredential · outpostScope ─────────────────────────────────────────────────
@@ -532,7 +520,7 @@ export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction
  * transport takes its verifiers at construction — so it holds the pieces
  * rather than the app.
  */
-type OutpostDeps = Pick<BasecampApp, 'db' | 'logger'>
+type OutpostDeps = { db: BasecampDb, logger: ILogger }
 
 /**
  * Has this nonce been spent inside the freshness window — and claim it if not.
@@ -844,11 +832,11 @@ function recordable(ctx: ServiceContext, skip: Set<string>): boolean {
  *  audit row was written with no diff and nothing saying why. The service-to-
  *  accessor step is junction's `serviceAccessor`; the spelling on the client is
  *  the first candidate the client has. */
-function accessorFor(app: BasecampApp, service: string): string | null {
+function accessorFor(app: App, service: string): string | null {
   const registry = (app as unknown as { services?: { get?: (n: string) => { model?: string | null } | undefined } }).services
   const accessor = serviceAccessor({ name: service, model: registry?.get?.(service)?.model })
   if (!accessor) return null
-  const db = app.db.asSystem() as object
+  const db = app.db!.asSystem() as object
   // `in`, not a read: a Litestone client throws on an unknown property.
   return accessorCandidates(accessor).find(candidate => candidate in db) ?? null
 }
@@ -909,7 +897,7 @@ function diffRows(
  * read for themselves, and a scoped read would silently answer nothing for a
  * row a policy hides — which reads as "nothing changed", the one wrong answer.
  */
-export function basecampAuditPreImage(app: BasecampApp, { except = [] }: { except?: string[] } = {}): Hook {
+export function basecampAuditPreImage({ except = [] }: { except?: string[] } = {}): Hook {
   const skip = new Set(except)
 
   return async function basecampAuditPreImage(ctx: ServiceContext): Promise<void> {
@@ -918,9 +906,9 @@ export function basecampAuditPreImage(app: BasecampApp, { except = [] }: { excep
     if (ctx.id === undefined || ctx.id === null) return
 
     try {
-      const accessor = accessorFor(app, ctx.service as string)
+      const accessor = accessorFor(ctx.app, ctx.service as string)
       if (!accessor) return
-      const db  = app.db.asSystem() as any
+      const db  = ctx.app.db!.asSystem() as any
       const row = await db[accessor]?.findUnique?.({ where: { id: ctx.id } })
       if (row) (ctx.locals as Record<string, unknown>).auditBefore = row
     } catch {
@@ -931,7 +919,7 @@ export function basecampAuditPreImage(app: BasecampApp, { except = [] }: { excep
   }
 }
 
-export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: string[] } = {}): Hook {
+export function basecampAuditLog({ except = [] }: { except?: string[] } = {}): Hook {
   const skip = new Set(except)
 
   return async function basecampAuditLog(ctx: ServiceContext): Promise<void> {
@@ -947,7 +935,7 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
     const before  = (ctx.locals as Record<string, unknown>).auditBefore as Record<string, unknown> | null ?? null
 
     try {
-      const sys = app.db.asSystem() as any
+      const sys = ctx.app.db!.asSystem() as any
 
       // What changed. `AuditEvent.diff` was `Json?` and nothing wrote it, so
       // the trail could say a server was drained and not what state it was in
@@ -956,7 +944,7 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
       let subject:  Record<string, unknown> | null = null
       let accessor: string | null = null
       try {
-        accessor = accessorFor(app, ctx.service as string)
+        accessor = accessorFor(ctx.app, ctx.service as string)
         if (accessor) {
           // Both sides are read the same way, through the system client, and
           // the after side is RE-READ rather than taken from `ctx.result`. Two

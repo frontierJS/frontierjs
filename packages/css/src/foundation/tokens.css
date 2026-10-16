@@ -7,17 +7,12 @@
 /*
  * ── Breakpoints ─────────────────────────────────────────────────────
  *
- * sm 640px · md 768px · lg 1024px · xl 1280px · 2xl 1536px
- *
- * These are deliberately NOT custom properties. A custom property cannot
- * be used in a media query — `@media (min-width: var(--bp-md))` does not
- * work, and never has — so shipping --bp-* tokens would look themable
- * and silently do nothing. The numbers are written literally wherever
- * the package needs them, and documented here so consumers match.
- *
- * The scale is Tailwind's, which is also UnoCSS's default, so apps that
- * still run Uno alongside this package get one set of breakpoints
- * rather than two that nearly agree.
+ * The scale is BREAKPOINTS in vocabulary.js — sm 640 · md 768 · lg 1024 ·
+ * xl 1280 · 2xl 1536, in px. It is not a custom property, because
+ * `@media (min-width: var(--bp-md))` never matches and a --bp-* token would
+ * look themable and do nothing. Every width in src/ is a literal, and
+ * `vocabulary: every @media width is on the breakpoint scale` grades each
+ * one against the table.
  */
 
 /*

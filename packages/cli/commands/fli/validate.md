@@ -39,7 +39,7 @@ function parseJsonSchema(src) {
 // Extracts the model name from a Junction service file.
 // Matches:  model: 'leads'  or  model: "leads"
 //
-// A minimal service names no model at all — createBaseService() resolves it from
+// A minimal service names no model at all — the registry resolves it from
 // the service name, which the autoloader takes from the FILENAME. So an absent
 // `model:` is not "nothing to check", it is "check the filename instead".
 
@@ -84,11 +84,11 @@ function parseResourceRefs(src) {
 }
 
 // ─── Route parser ─────────────────────────────────────────────────────────────
-// Finds resource imports in route files. Sierra resolves no `@/` alias, so the
-// import is relative — what matters is the resources/ segment and the basename:
+// Finds resource imports in route files. The import is relative or through the
+// `@/` alias -- what matters is the resources/ segment and the basename:
 //
 //   import { leads } from '../../resources/Lead.mesa'
-//   import { leads } from '@/resources/Lead'           (legacy alias, still read)
+//   import { leads } from '@/resources/Lead.mesa'
 //
 // The basename is the MODEL and the binding is the SERVICE (invariant 19), so
 // this reads the left side and never infers one from the other.

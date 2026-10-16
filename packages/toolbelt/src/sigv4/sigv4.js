@@ -111,7 +111,8 @@ function canonicalHeaderValue(v) {
 /**
  * The headers a request must carry to be accepted: `Authorization`, `x-amz-date`
  * and, for S3, `x-amz-content-sha256`. `opts`: `accessKeyId`, `secretAccessKey`,
- * `now`, and optionally `region` ('auto'), `service` ('s3') and `signingKey`.
+ * `now`, and optionally `region` ('auto'), `service` ('s3'), `signingKey` and
+ * `unsignedPayload` (S3: sign `UNSIGNED-PAYLOAD` rather than the body's hash).
  */
 export async function signRequest(method, url, headers, body, opts) {
   const { accessKeyId, secretAccessKey, region = 'auto', service = 's3' } = opts
@@ -120,8 +121,10 @@ export async function signRequest(method, url, headers, body, opts) {
   const urlObj    = new URL(url)
   const host      = urlObj.host
 
-  const bodyHash = body
-    ? await sha256hex(typeof body === 'string' ? enc.encode(body) : body)
+  // `opts.unsignedPayload` (S3 only) leaves the body out of the signature, so a
+  // body too large to hold -- a Blob streamed from disk -- is never read to hash it.
+  const bodyHash = opts.unsignedPayload && service === 's3' ? 'UNSIGNED-PAYLOAD'
+    : body ? await sha256hex(typeof body === 'string' ? enc.encode(body) : body)
     : EMPTY_HASH
 
   // The payload hash as a signed header is S3's rule rather than SigV4's, and

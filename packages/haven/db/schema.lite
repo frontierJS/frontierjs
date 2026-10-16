@@ -38,7 +38,7 @@ database main  { path env("DATABASE_URL", "./db/haven.db") }
 
 database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
 
-model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") }
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) }
 
 model Member {
   id        Int       @id
@@ -72,7 +72,7 @@ model Member {
   /// Created by the login after the signature verifies; a member edits their
   /// own nick and nothing else. A mod reaches every row, the banned included —
   /// a ban is lifted by naming the member, who is otherwise nobody's row.
-  @@gate("3.8.3.8")
+  @@gate(3.8.3.8)
   @@allow('read', auth().bannedAt == null && (bannedAt == null || auth().role == 'mod'))
   @@allow('update', id == auth().id || auth().role == 'mod')
 
@@ -105,7 +105,7 @@ model Room {
   /// policy is the join: a banned member is refused the room and evicted from
   /// one they stand in on the next write. A booth is joined by its pair alone
   /// — to anyone else it is no row, and the socket joins it to nothing.
-  @@gate("3.8")
+  @@gate(3.8)
   @@allow('read', auth().bannedAt == null && (pairLoId == null || pairLoId == auth().id || pairHiId == auth().id))
 }
 
@@ -135,7 +135,7 @@ model Message {
   /// Said by a member, rewritten by nothing, removed only by retention — a
   /// room's newest lines kept by count, `api/src/retention.ts`, and never a
   /// `retention` on `main`, which would sweep members and rooms with them.
-  @@gate("3.3.9.8")
+  @@gate(3.3.9.8)
   ///
   /// A line in a booth is read and said by its pair alone: the room's own
   /// columns are the policy, so `messages.find` by a stranger who learned the
@@ -178,7 +178,7 @@ model Game {
 
   createdAt DateTime @default(now())
 
-  @@gate("3.8.8.8")
+  @@gate(3.8.8.8)
   @@allow('read', auth().bannedAt == null && (room.pairLoId == auth().id || room.pairHiId == auth().id))
 }
 
@@ -205,7 +205,7 @@ model Vote {
   /// A banned member reads none and is counted in none: their votes are
   /// filtered out by the member they belong to, so a ban takes them off the
   /// hall at once and lifting it puts them back.
-  @@gate("3.3.3.3")
+  @@gate(3.3.3.3)
   @@allow('read', auth().bannedAt == null && member.bannedAt == null)
   @@allow('create', auth().bannedAt == null)
   @@allow('update', auth().bannedAt == null && memberId == auth().id)
@@ -224,7 +224,7 @@ model Miss {
   question  String   @trim @length(1, 280)
   createdAt DateTime @default(now())
 
-  @@gate("8")
+  @@gate(8)
 }
 
 /// What a login mints once the signature verifies (`api/src/login.ts`), and
@@ -244,5 +244,5 @@ model Session {
   /// hole for a token that leaked.
   expiresAt DateTime
 
-  @@gate("8")
+  @@gate(8)
 }

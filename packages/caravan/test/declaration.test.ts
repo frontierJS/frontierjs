@@ -167,7 +167,7 @@ describe('dispatch by definition', () => {
 
   it('takes the name from the definition, so no call site restates it', async () => {
     const q = makeQueue()
-    const sendEmail = defineJob('send-email', () => {}, { queue: 'email' })
+    const sendEmail = defineJob({ name: 'send-email', queue: 'email', handler: () => {} })
     q.handle(sendEmail)
 
     const id = await q.dispatch(sendEmail, { to: 'alice@example.com' })
@@ -179,7 +179,8 @@ describe('dispatch by definition', () => {
 
   it('handle(definition) registers the options the definition carries', async () => {
     const q = makeQueue()
-    const nightly = defineJob('nightly', () => {}, {
+    const nightly = defineJob({
+      name: 'nightly', handler: () => {},
       queue: 'maintenance', maxAttempts: 7, cron: '0 1 * * *',
     })
     q.handle(nightly)
@@ -193,8 +194,11 @@ describe('dispatch by definition', () => {
   it('runs the handler the definition holds', async () => {
     const seen: Array<{ to: string }> = []
     const q = makeQueue()
-    const sendEmail = defineJob<{ to: string }>('send-email', (job: JobContext<{ to: string }>) => {
-      seen.push(job.data)
+    const sendEmail = defineJob<{ to: string }>({
+      name: 'send-email',
+      handler: (job: JobContext<{ to: string }>) => {
+        seen.push(job.data)
+      },
     })
 
     q.handle(sendEmail)

@@ -1,5 +1,5 @@
 /**
- * Two `on:click` on one element (`FJS-885`).
+ * Two `onclick` on one element (`FJS-885`).
  *
  * A delegated handler is a PROPERTY on the element — `el.__click = fn` — so a
  * second one overwrote the first and it fired never. Silently, and only on that
@@ -44,7 +44,7 @@ describe('more than one handler for one event', () => {
   const first  = () => globalThis.__hits.push('first')
   const second = () => globalThis.__hits.push('second')
 </script>
-<button on:click={first} on:click={second}>go</button>`)
+<button onclick={first} onclick={second}>go</button>`)
     click(wrap)
     expect(globalThis.__hits).toEqual(['first', 'second'])
   })
@@ -55,7 +55,7 @@ describe('more than one handler for one event', () => {
   const b = () => globalThis.__hits.push('b')
   const c = () => globalThis.__hits.push('c')
 </script>
-<button on:click={a} on:click={b} on:click={c}>go</button>`)
+<button onclick={a} onclick={b} onclick={c}>go</button>`)
     click(wrap)
     expect(globalThis.__hits).toEqual(['a', 'b', 'c'])
   })
@@ -65,7 +65,7 @@ describe('more than one handler for one event', () => {
   const a = (e) => globalThis.__hits.push('a:' + e.type)
   const b = (e) => globalThis.__hits.push('b:' + e.type)
 </script>
-<button on:click={a} on:click={b}>go</button>`)
+<button onclick={a} onclick={b}>go</button>`)
     click(wrap)
     expect(globalThis.__hits).toEqual(['a:click', 'b:click'])
   })
@@ -76,7 +76,7 @@ describe('what must not change', () => {
     const wrap = await render(`<script>
   const only = () => globalThis.__hits.push('only')
 </script>
-<button on:click={only}>go</button>`)
+<button onclick={only}>go</button>`)
     click(wrap)
     expect(globalThis.__hits).toEqual(['only'])
   })
@@ -86,7 +86,7 @@ describe('what must not change', () => {
   const onClick = () => globalThis.__hits.push('click')
   const onInput = () => globalThis.__hits.push('input')
 </script>
-<button on:click={onClick} on:input={onInput}>go</button>`)
+<button onclick={onClick} oninput={onInput}>go</button>`)
     click(wrap)
     expect(globalThis.__hits).toEqual(['click'])
   })
@@ -96,7 +96,7 @@ describe('what must not change', () => {
   const one = () => globalThis.__hits.push('one')
   const two = () => globalThis.__hits.push('two')
 </script>
-<div><button id="a" on:click={one}>a</button><button id="b" on:click={two}>b</button></div>`)
+<div><button id="a" onclick={one}>a</button><button id="b" onclick={two}>b</button></div>`)
     click(wrap, '#a')
     expect(globalThis.__hits).toEqual(['one'])
   })

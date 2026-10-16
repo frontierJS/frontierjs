@@ -173,6 +173,14 @@ the schema's key, a patch sends only the keys that changed against the row this
 resource READ, and an explicit `null` still clears. `service.patch(id, data)`
 sends exactly what it is handed.
 
+**A changed `Json` column travels as `{ $merge: patch }`, the keys that moved**
+(`FJS-D176`), so two people editing two keys of one document keep both. A removed
+or `null` key is `null` in the patch, which deletes it. Only a document that was
+an object on the read and is an object now merges; an array, a scalar and a row
+read by no one go whole. A `service.patch(id, { doc: {...row.doc, due} })` sends
+the whole document and overwrites a concurrent key, so write the one key:
+`service.patch(id, { doc: { $merge: { due } } })`.
+
 **Every create and patch coerces, turns `''` into `null` on nullable fields, and
 validates — in the browser, before a request.** A failure throws
 `ResourceValidationError`; `<Form>` renders it. `{ validate: false }` is for a

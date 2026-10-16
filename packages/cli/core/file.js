@@ -33,9 +33,10 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join }                        from 'node:path'
 
 import { readRegisters, withRegisterGuard }        from './registers.js'
-import { errorKeys, newErrors } from './register-check.js'
+import { errorKeys, newErrors, envSmells } from './register-check.js'
 import { oneCell, isoDate }     from './close.js'
 import { nextDecisionNumber }   from './decide.js'
+import { envCause }             from './next.js'
 
 const SEVERITIES     = ['S1', 'S2', 'S3', 'S4', 'DECISION']
 const OPEN_WIDTH     = 6
@@ -44,13 +45,15 @@ const QUESTION_WIDTH = 4
 /**
  * File one issue.
  *
- * Answers `{ ok: true, id, file, line }` or `{ ok: false, reason }`.
+ * Answers `{ ok: true, id, file, line, smell }` or `{ ok: false, reason }` —
+ * `smell` when the title reads like an environment failure and the detail
+ * names no `env:` cause.
  */
 export function fileIssue(opts) {
   return withRegisterGuard(opts.root, () => fileUnguarded(opts))
 }
 
-function fileUnguarded({ root, severity, area, title, detail, blocks, today = new Date() }) {
+function fileUnguarded({ root, severity, area, title, detail, blocks, dry = false, today = new Date() }) {
   const doc = readRegisters(root)
   if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no id can be minted')
 
@@ -93,6 +96,16 @@ function fileUnguarded({ root, severity, area, title, detail, blocks, today = ne
 
   lines.splice(table.body, 0, `| ${row.join(' | ')} |`)
 
+  // `env-smell` is a warning, so the write below is never refused for it and
+  // the filer would not hear of it until a check they may never run.
+  const smell = !question && envCause({ body: cells.detail }) === null && envSmells(cells.title)
+  const filed = { id, file: abs.slice(root.length + 1), line: table.body + 1, blocks: blocks ? String(blocks).trim().toUpperCase() : null, smell }
+
+  // `--dry` is on every command, and a preview that files the row hands the
+  // next id to a row nobody meant to keep. register:check is skipped: it grades
+  // the file on disk, and writing it to grade it is the write being refused.
+  if (dry) return { ok: true, dry: true, ...filed }
+
   const baseline = errorKeys(root)
   writeFileSync(abs, lines.join('\n'))
 
@@ -102,7 +115,7 @@ function fileUnguarded({ root, severity, area, title, detail, blocks, today = ne
     return refuse(`the row was put back: register:check found ${added.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
   }
 
-  return { ok: true, id, file: abs.slice(root.length + 1), line: table.body + 1, blocks: blocks ? String(blocks).trim().toUpperCase() : null }
+  return { ok: true, ...filed }
 }
 
 // ─── the id ───────────────────────────────────────────────────────────────────

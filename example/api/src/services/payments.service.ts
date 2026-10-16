@@ -1,4 +1,4 @@
-import { createBaseService, $ } from '@frontierjs/junction'
+import { createService, $ } from '@frontierjs/junction'
 import { occurrenceKey }        from '@frontierjs/toolbelt/history'
 import { createIntent, createRefund } from '../providers/psp/index.ts'
 import { orderIdFromCheckoutCode }     from '../domain/shop'
@@ -12,8 +12,8 @@ import { settleInvoice, declineKind } from '../domain/billing'
 //   record  the provider TELLS the shop what happened — inbound, off a
 //           verified webhook, and the one place an order is settled by machine
 //
-// The CRUD half is the seller's read-only view: `Payment` is @@gate("5.8.8.9")
-// and `PaymentEvent` @@gate("5.8.9.9"), so `find` and `get` answer an
+// The CRUD half is the seller's read-only view: `Payment` is @@gate(5.8.8.9)
+// and `PaymentEvent` @@gate(5.8.9.9), so `find` and `get` answer an
 // administrator and every write below goes through `asSystem()` — the shop
 // recording what it was told. A person at no standing writes one of these
 // rows, which is what 8 says and what a level could not.
@@ -121,7 +121,7 @@ const start = async () => {
     // A policy FILTERS and a gate THROWS, so not being allowed to see this
     // order arrives here in two different shapes: a signed-in shopper who does
     // not own it reads `null`, and a caller at STRANGER(0) — which is every
-    // hosted checkout — is refused by `@@gate("1.4.4.5")` before any policy runs.
+    // hosted checkout — is refused by `@@gate(1.4.4.5)` before any policy runs.
     // Both mean the same thing to this method and both have to answer the same
     // sentence, or the status code is the oracle the code was added to close.
     // Anything that is not a refusal is a real failure and is rethrown.
@@ -598,44 +598,42 @@ const record = async () => {
   return { status: 'settled', eventId, payment: payment.id, order: order.id }
 }
 
-export function createPaymentsService() {
-  return createBaseService({
-    model:   'Payment',
-    channel: 'payments',
+export default createService({
+  model:   'Payment',
+  channel: 'payments',
 
-    // `record` alone. `start` writes one row and calls a third party, and
-    // wrapping a network round trip in a transaction holds SQLite's write lock
-    // open for the length of somebody else's outage.
-    transactional: ['record'],
+  // `record` alone. `start` writes one row and calls a third party, and
+  // wrapping a network round trip in a transaction holds SQLite's write lock
+  // open for the length of somebody else's outage.
+  transactional: ['record'],
 
-    start,
-    refund,
-    record,
+  start,
+  refund,
+  record,
 
-    // Declared, which also declares the surface: `find` and `get` for the
-    // seller's screens, the two verbs, and nothing else — no `create`, no
-    // `patch`, no `remove`. A payment is not a row a person makes, and 405 is
-    // a better answer than a 403 from a gate the caller could not have known
-    // about. surface.snapshot.md carries this list and CI fails a stale one.
-    // `start` states gate 0: a hosted checkout is reached by a shopper with no
-    // session at all and the payment CODE is the credential (`FJS-497`), so the
-    // read-gate floor a custom method otherwise takes (`FJS-826`) would refuse
-    // the one caller this verb exists for. `refund` keeps the floor — it is an
-    // administrator's act and its transition gate is above it.
-    methods: ['find', 'get', { method: 'start', gate: 0 }, 'refund', 'record'],
-    //
-    // ─── Nothing joins this channel, and that is the decision ──────────────
-    //
-    // api/src/app.ts joins every connection to orders, products and customers.
-    // Not this one: `Payment` reads at ADMINISTRATOR(5), a socket connection is
-    // not graded by anything, and joining every one would put a gated row on a
-    // stranger's socket — the exact shape junction reports about an app-level
-    // `announceDefault` (FJS-334). A screen that wants these joins the channel
-    // knowing what it is asking for.
-    //
-    // The seller's ORDER list is not affected and does not need this: the
-    // order's move announces on the `orders` channel, from Litestone's own
-    // write tap, because the transition happens through a client this service
-    // holds rather than through the orders service.
-  })
-}
+  // Declared, which also declares the surface: `find` and `get` for the
+  // seller's screens, the two verbs, and nothing else — no `create`, no
+  // `patch`, no `remove`. A payment is not a row a person makes, and 405 is
+  // a better answer than a 403 from a gate the caller could not have known
+  // about. surface.snapshot.md carries this list and CI fails a stale one.
+  // `start` states gate 0: a hosted checkout is reached by a shopper with no
+  // session at all and the payment CODE is the credential (`FJS-497`), so the
+  // read-gate floor a custom method otherwise takes (`FJS-826`) would refuse
+  // the one caller this verb exists for. `refund` keeps the floor — it is an
+  // administrator's act and its transition gate is above it.
+  methods: ['find', 'get', { method: 'start', gate: 0 }, 'refund', 'record'],
+  //
+  // ─── Nothing joins this channel, and that is the decision ──────────────
+  //
+  // api/src/app.ts joins every connection to orders, products and customers.
+  // Not this one: `Payment` reads at ADMINISTRATOR(5), a socket connection is
+  // not graded by anything, and joining every one would put a gated row on a
+  // stranger's socket — the exact shape junction reports about an app-level
+  // `announceDefault` (FJS-334). A screen that wants these joins the channel
+  // knowing what it is asking for.
+  //
+  // The seller's ORDER list is not affected and does not need this: the
+  // order's move announces on the `orders` channel, from Litestone's own
+  // write tap, because the transition happens through a client this service
+  // holds rather than through the orders service.
+})

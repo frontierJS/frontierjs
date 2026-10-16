@@ -58,12 +58,12 @@
 //   const page = await db.page.findFirst({ where: { id: 1 } })
 //   page.content // → resolved value directly
 
-import { Plugin } from '../core/plugin.js'
+import { LitestonePlugin } from '../core/plugin.js'
 import { buildWhere } from '../core/query.js'
 
 const NO_MAPS = Object.freeze({ fieldMap: Object.freeze({}), relationMap: Object.freeze({}) })
 
-export class ExternalRefPlugin extends Plugin {
+export class ExternalRefPlugin extends LitestonePlugin {
   // Subclasses set this to match the DSL scalar type name
   // e.g. 'File', 'GitHub', 'Stripe'
   fieldType = null

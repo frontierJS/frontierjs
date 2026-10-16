@@ -27,18 +27,18 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createTestApp, request } from '../src/testing/index.ts'
-import { createService } from '../src/core/service.ts'
+import { buildService } from '../src/core/service.ts'
 import { createSchema } from '../src/core/schema.ts'
 import { BULK_FAILURES, partitionBulk, wrapResult, type BulkFailure } from '../src/core/envelope.ts'
 import { createClient }        from '../../litestone/src/index.js'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 describe('an array body survives the bridge', () => {
 
   test('ctx.data is an array, not { 0: …, 1: … }', async () => {
     let seen: unknown = null
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name: 'things',
         create: async (ctx) => { seen = ctx.data; return { ok: true } },
       })],
@@ -98,7 +98,7 @@ describe('the service reports both halves', () => {
     // A service whose create() rejects one specific row, standing in for a
     // constraint violation at the write stage.
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:      'things',
         allowBulk: true,
         create: async (ctx) => {
@@ -128,7 +128,7 @@ describe('the service reports both halves', () => {
 
   test('a fully successful bulk create reports no errors', async () => {
     const app = await createTestApp({
-      services: [() => createService({
+      services: [buildService({
         name:      'things',
         allowBulk: true,
         create: async (ctx) => {
@@ -148,7 +148,7 @@ describe('the service reports both halves', () => {
     // Guards against a missing id in a bulk patch wiping a table by accident.
     const app = await createTestApp({
       // The refusal comes before any read, so the table is never reached.
-      services: [() => createService({ name: 'things', model: 'thing', db: () => ({ thing: {} }) as never })],
+      services: [buildService({ name: 'things', model: 'thing', db: () => ({ thing: {} }) as never })],
     })
     const res = await request(app).post('/things').send([{ t: 1 }])
     expect(res.status).toBe(400)
@@ -213,7 +213,7 @@ describe('a filtered bulk patch enforces what a single patch enforces', () => {
     await db.order!.create({ data: { id: 1 } })   // draft
     await db.order!.create({ data: { id: 2 } })   // draft
 
-    const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
     // draft -> shipped is not a declared move. Single patch has always refused
@@ -234,7 +234,7 @@ describe('a filtered bulk patch enforces what a single patch enforces', () => {
     await db.order!.create({ data: { id: 1 } })
     await db.order!.create({ data: { id: 2 } })
 
-    const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
     const out = await svc.patch(ctx(db, { data: { status: 'pending' }, query: { status: 'draft' } }))
@@ -250,7 +250,7 @@ describe('a filtered bulk patch enforces what a single patch enforces', () => {
     await db.order!.create({ data: { id: 2, status: 'draft' } })
     await paidOrder(db, 3)
 
-    const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
     // Every row is a target, and only paid -> shipped is legal. The filter is
@@ -268,7 +268,7 @@ describe('a filtered bulk patch enforces what a single patch enforces', () => {
     const db  = await mkDb(ORDERS) as never as Record<string, { create(a: unknown): Promise<unknown> }>
     await paidOrder(db, 1)
 
-    const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
     const raw = await svc.patch(ctx(db, { data: { status: 'shipped' }, query: { ref: 'x' } }))
@@ -291,7 +291,7 @@ describe('@version on a filtered bulk write', () => {
     // Move row 2 on, so the two rows are at different versions.
     await (db.doc as never as { update(a: unknown): Promise<unknown> }).update({ where: { id: 2 }, data: { title: 'b2', ver: 1 } })
 
-    const svc = createService({ name: 'docs', model: 'Doc', allowBulk: true }) as never as
+    const svc = buildService({ name: 'docs', model: 'Doc', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
     const out = await svc.patch(ctx(db, { service: 'docs', data: { title: 'z' }, query: { ver: { $gte: 0 } } }))
@@ -307,7 +307,7 @@ describe('@version on a filtered bulk write', () => {
     const db  = await mkDb(VERSIONED) as never as Record<string, { create(a: unknown): Promise<unknown> }>
     await db.doc!.create({ data: { id: 1, title: 'a' } })
 
-    const svc = createService({ name: 'docs', model: 'Doc', allowBulk: true }) as never as
+    const svc = buildService({ name: 'docs', model: 'Doc', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<unknown> }
 
     const err = await svc.patch(ctx(db, { service: 'docs', data: { title: 'z', ver: 1 } })).catch(e => e as Error)
@@ -320,7 +320,7 @@ describe('@version on a filtered bulk write', () => {
     const db  = await mkDb(ORDERS) as never as Record<string, { create(a: unknown): Promise<unknown> }>
     await db.order!.create({ data: { id: 1 } })
 
-    const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
     const out = await svc.patch(ctx(db, { data: { ref: 'renamed' }, query: { ref: 'x' } }))
@@ -341,7 +341,7 @@ describe('a filtered bulk remove', () => {
     await db.account!.create({ data: { id: 2, name: 'b' } })
     await db.user!.create({ data: { id: 1, accountId: 1 } })   // holds account 1 down
 
-    const svc = createService({ name: 'accounts', model: 'Account', allowBulk: true }) as never as
+    const svc = buildService({ name: 'accounts', model: 'Account', allowBulk: true }) as never as
       { remove(c: ServiceContext): Promise<Bulk> }
 
     const out = await svc.remove(ctx(db, { service: 'accounts', method: 'remove', query: { name: { $ne: '' } } }))
@@ -356,7 +356,7 @@ describe('a filtered bulk remove', () => {
 
   test('the no-filter guard still refuses before anything is selected', async () => {
     const db  = await mkDb(ORDERS)
-    const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { remove(c: ServiceContext): Promise<unknown> }
 
     const err = await svc.remove(ctx(db, { method: 'remove' })).catch(e => e as Error)
@@ -376,7 +376,7 @@ describe('a filtered bulk remove', () => {
     }>
     for (let i = 1; i <= 3; i++) await db.order!.create({ data: { id: i } })
 
-    const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
     const err = await svc.patch(ctx(db, { data: { ref: 'WIPED' } })).catch(e => e as Error)
@@ -403,7 +403,7 @@ describe('a filtered bulk remove', () => {
     `) as never as Record<string, { create(a: unknown): Promise<unknown>; count(a?: unknown): Promise<number> }>
     await db.note!.create({ data: { id: 1 } })
 
-    const svc = createService({ name: 'notes', model: 'Note', allowBulk: true }) as never as
+    const svc = buildService({ name: 'notes', model: 'Note', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<unknown>; remove(c: ServiceContext): Promise<unknown> }
 
     const p = await svc.patch(ctx(db, { service: 'notes', data: { body: 'z' } })).catch(e => e as Error)
@@ -416,7 +416,7 @@ describe('a filtered bulk remove', () => {
 
   test('allowBulk: false still refuses both verbs', async () => {
     const db  = await mkDb(ORDERS)
-    const svc = createService({ name: 'orders', model: 'Order' }) as never as
+    const svc = buildService({ name: 'orders', model: 'Order' }) as never as
       { patch(c: ServiceContext): Promise<unknown>; remove(c: ServiceContext): Promise<unknown> }
 
     const p = await svc.patch(ctx(db, { data: { ref: 'x' } })).catch(e => e as Error)
@@ -433,7 +433,7 @@ describe('bulkMax', () => {
     const db  = await mkDb(ORDERS) as never as Record<string, { create(a: unknown): Promise<unknown> }>
     for (let i = 1; i <= 5; i++) await db.order!.create({ data: { id: i } })
 
-    const svc = createService({ name: 'orders', model: 'Order', allowBulk: true, bulkMax: 3 }) as never as
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true, bulkMax: 3 }) as never as
       { patch(c: ServiceContext): Promise<unknown> }
 
     const err = await svc.patch(ctx(db, { data: { ref: 'touched' }, query: { ref: 'x' } })).catch(e => e as Error)
@@ -451,7 +451,7 @@ describe('bulkMax', () => {
     const db  = await mkDb(ORDERS) as never as Record<string, { create(a: unknown): Promise<unknown> }>
     for (let i = 1; i <= 3; i++) await db.order!.create({ data: { id: i } })
 
-    const svc = createService({ name: 'orders', model: 'Order', allowBulk: true, bulkMax: 3 }) as never as
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true, bulkMax: 3 }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
 
     const out = await svc.patch(ctx(db, { data: { ref: 'x' }, query: { ref: 'x' } }))
@@ -462,7 +462,7 @@ describe('bulkMax', () => {
     // Same shape as FJS-231/the transactional: carry-through — a base spread
     // into createService must not drop the option, or the service runs on the
     // default cap while its file says otherwise.
-    const svc = createService({ name: 'orders', model: 'Order', allowBulk: true, bulkMax: 25 }) as never as
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true, bulkMax: 25 }) as never as
       { describe(): { bulkMax: number; allowBulk: boolean } }
 
     expect(svc.describe().bulkMax).toBe(25)
@@ -485,7 +485,7 @@ describe('a filtered bulk restore', () => {
     for (let i = 1; i <= 3; i++) await db.note!.create({ data: { id: i, title: `t${i}` } })
     await db.note!.removeMany({ where: {} })
 
-    const svc = createService({ name: 'notes', model: 'Note', allowBulk: true }) as never as
+    const svc = buildService({ name: 'notes', model: 'Note', allowBulk: true }) as never as
       { restore(c: ServiceContext): Promise<Record<string, unknown>[]> }
 
     // The bulk branch called table.restoreMany, which a Litestone table does
@@ -510,7 +510,7 @@ describe('a filtered bulk restore', () => {
     await db.note!.create({ data: { id: 1, title: 't1' } })
     await db.note!.removeMany({ where: {} })
 
-    const svc = createService({ name: 'notes', model: 'Note', allowBulk: true }) as never as
+    const svc = buildService({ name: 'notes', model: 'Note', allowBulk: true }) as never as
       { restore(c: ServiceContext): Promise<Record<string, unknown>> }
 
     // By id it answers the row, as remove does (FJS-1584) — not the array a

@@ -11,7 +11,7 @@ import { createService } from '../src/core/service.ts'
 import { healthPlugin, collectMetrics } from '../src/transport/health.ts'
 import { channels } from '../src/transport/channels.ts'
 
-const mk = (name: string) => () => createService({ name, find: async () => [] })
+const mk = (name: string) => createService({ name, find: async () => [] })
 
 describe('a service shadowed by a fixed route is refused at start, naming both', () => {
 

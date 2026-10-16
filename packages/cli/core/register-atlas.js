@@ -209,7 +209,7 @@ function projectName(root) {
 }
 
 function withoutLead(body, title) {
-  return title && body.startsWith(title) ? body.slice(title.length).trim() : body
+  return title && body.startsWith(title) ? body.slice(title.length).replace(/^\s*·/, '').trim() : body
 }
 
 function rel(from, abs) {

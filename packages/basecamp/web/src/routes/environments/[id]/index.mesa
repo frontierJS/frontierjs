@@ -288,7 +288,7 @@ title: Environment
 
   <!-- novalidate: the service answers a blank name in its own words, and a
        browser bubble would stop the submit before it could. -->
-  <form class="card stack" novalidate on:submit|preventDefault={addApp}>
+  <form class="card stack" novalidate onsubmit|preventDefault={addApp}>
     <div class="field-row">
       <!-- `bind:` is not used on a component here: a component binding takes a
            writable top-level `let` in the caller, and `newApp.name` is a member

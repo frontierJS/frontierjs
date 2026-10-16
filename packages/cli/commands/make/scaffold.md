@@ -101,7 +101,7 @@ function makeSchemaStanza(name, fields, softDelete) {
   }
 
   lines.push(`  ${'createdAt'.padEnd(col)}DateTime  @default(now())`)
-  lines.push(`  ${'updatedAt'.padEnd(col)}DateTime  @default(now()) @updatedAt`)
+  lines.push(`  ${'updatedAt'.padEnd(col)}DateTime  @updatedAt`)
 
   if (softDelete) {
     lines.push(`  ${'deletedAt'.padEnd(col)}DateTime?`)
@@ -114,7 +114,8 @@ function makeSchemaStanza(name, fields, softDelete) {
   lines.push('  /// The only place those four answers are written down: the service')
   lines.push('  /// derives its 401s from this, and the UI reads it back as')
   lines.push('  /// resource.gate to decide which buttons to offer.')
-  lines.push('  @@gate("0.4.4.6")')
+  lines.push('  /// Above 4 nothing grades a caller until the app declares an isAdmin column.')
+  lines.push('  @@gate(0.4.4.4)')
   lines.push('}')
   lines.push('')
 
@@ -122,46 +123,43 @@ function makeSchemaStanza(name, fields, softDelete) {
 }
 
 // ─── Template: service ────────────────────────────────────────────────────────
-// The autoloader looks for a `create*Service` factory export and takes the
-// registered name from the FILENAME — leads.service.ts becomes 'leads'. A file
-// exporting something it cannot recognize is skipped with a warning rather than
-// an error, so the app starts and the route 404s later.
+// The autoloader reads a file's DEFAULT export and takes the registered name
+// from the FILENAME — leads.service.ts becomes 'leads'. A file with no default
+// definition is reported at start rather than registered (FJS-D1079).
 
-function makeServiceFile(model, plural, pascalPlural) {
+function makeServiceFile(model, plural) {
   const accessor = model.charAt(0).toLowerCase() + model.slice(1)
   return `// The whole service. The name comes from this file's name ('${plural}' →
 // /api/${plural} → db.${accessor}), CRUD from the model, 401s from @@gate, and 400s
 // from the field rules. Nothing below restates the schema.
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
-export function create${pascalPlural}Service() {
-  return createBaseService({
-    // Announce every mutation on the '${plural}' channel. Every write through
-    // this service is published there under its own name — the five CRUD
-    // methods and any action you add.
-    //
-    // NOTHING IS DELIVERED UNTIL A CONNECTION JOINS, and membership is the
-    // app's decision — Junction never makes it. api/src/core/channels.ts is
-    // where this app makes it, and it joins every channel a service declares,
-    // so this line is enough. Narrow it there, not here: a broadcast to a
-    // channel nobody joined succeeds and reaches nobody, with no error.
-    //
-    // Joining is a subscription and not a permission: each frame is graded
-    // per recipient against this model's own @@gate and @@allow, so a
-    // subscriber receives what they could have read and nothing else. Set
-    // channel to false to announce nothing.
-    channel: '${plural}',
+export default createService({
+  // Announce every mutation on the '${plural}' channel. Every write through
+  // this service is published there under its own name — the five CRUD
+  // methods and any action you add.
+  //
+  // NOTHING IS DELIVERED UNTIL A CONNECTION JOINS, and membership is the
+  // app's decision — Junction never makes it. api/src/core/channels.ts is
+  // where this app makes it, and it joins every channel a service declares,
+  // so this line is enough. Narrow it there, not here: a broadcast to a
+  // channel nobody joined succeeds and reaches nobody, with no error.
+  //
+  // Joining is a subscription and not a permission: each frame is graded
+  // per recipient against this model's own @@gate and @@allow, so a
+  // subscriber receives what they could have read and nothing else. Set
+  // channel to false to announce nothing.
+  channel: '${plural}',
 
-    // Adding an action? Declare it, and the CRUD you keep, in one list:
-    //
-    //   methods: ['find', 'get', 'create', 'patch', 'remove', 'approve'],
-    //   async approve(ctx) { … },
-    //
-    // The list is the surface — anything absent answers 405 naming what is
-    // offered, which is also how a verb is removed. Left out entirely, every
-    // CRUD verb is answered and custom methods are found by scanning.
-  })
-}
+  // Adding an action? Declare it, and the CRUD you keep, in one list:
+  //
+  //   methods: ['find', 'get', 'create', 'patch', 'remove', 'approve'],
+  //   async approve(ctx) { … },
+  //
+  // The list is the surface — anything absent answers 405 naming what is
+  // offered, which is also how a verb is removed. Left out entirely, every
+  // CRUD verb is answered and custom methods are found by scanning.
+})
 `
 }
 
@@ -195,7 +193,7 @@ const { resourceFile, servicePlural } =
 // writes, so the links in them and the URL the directory is served at have one
 // answer between the two commands (`FJS-1821`).
 
-const { resourceRoutePage, routeSegment, withNavLink } =
+const { resourceRoutePage, routeSegment, withNavEntry } =
   await import(resolve(global.fliRoot, 'core/crud-templates.js'))
 
 </script>
@@ -245,8 +243,6 @@ const editor     = process.env.EDITOR || 'vi'
 const created    = []
 
 const plural       = servicePlural(modelName)
-
-const pascalPlural = plural.charAt(0).toUpperCase() + plural.slice(1)
 
 const write = (path, content, label) => {
   if (existsSync(path) && !flag.force) {
@@ -299,7 +295,7 @@ if (flag['skip-schema']) {
 
 write(
   resolve($.paths.api, `src/services/${plural}.service.ts`),
-  makeServiceFile(modelName, plural, pascalPlural),
+  makeServiceFile(modelName, plural),
   'service'
 )
 
@@ -328,20 +324,20 @@ if (!skipRoutes) {
 }
 
 // ─── 5. Nav ───────────────────────────────────────────────────────────────────
-// The list is linked from the layout's main nav. Left as advice, the link was
+// The list is linked from the app's nav table. Left as advice, the link was
 // never added, and a generated app could not reach its own pages (`FJS-1808`).
 
 let linked = null
 if (!skipRoutes) {
-  const layoutPath = resolve($.paths.webPages, '_module.mesa')
-  const layout = existsSync(layoutPath) ? readFileSync(layoutPath, 'utf8') : null
-  const next = layout == null ? null : withNavLink(layout, plural)
+  const navPath = resolve($.paths.webPages, '../lib/nav.js')
+  const nav = existsSync(navPath) ? readFileSync(navPath, 'utf8') : null
+  const next = nav == null ? null : withNavEntry(nav, plural)
   if (next == null) linked = false
-  else if (next === layout) linked = true
-  else if (flag.dry) log.dry(`Would link /${routeSegment(plural)}/ from the layout's nav:  ${layoutPath}`)
+  else if (next === nav) linked = true
+  else if (flag.dry) log.dry(`Would add /${routeSegment(plural)}/ to the nav table:  ${navPath}`)
   else {
-    writeFileSync(layoutPath, next, 'utf8')
-    log.success(`Linked ${'nav'.padEnd(13)}  ${layoutPath}`)
+    writeFileSync(navPath, next, 'utf8')
+    log.success(`Linked ${'nav'.padEnd(13)}  ${navPath}`)
     linked = true
   }
 }
@@ -358,7 +354,7 @@ if (!flag.dry && created.length) {
   if (!skipRoutes) {
     const url = routeSegment(plural)
     echo(`  Routes: /${url}/  ·  /${url}/create/  ·  /${url}/[id]/`)
-    if (linked === false) echo(`  The layout has no <nav aria-label="Main">: link /${url}/ from where a person lands`)
+    if (linked === false) echo(`  No src/lib/nav.js with a \`groups\` table: link /${url}/ from where a person lands`)
   }
   echo('')
 }

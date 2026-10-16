@@ -1,0 +1,14 @@
+<script>
+  import { persisted, setPrefix } from '@frontierjs/mesa/browser'
+
+  export let key = 'rail'
+  export let fallback = 'open'
+  export let prefix = ''
+
+  setPrefix(prefix)
+  const pref = persisted(key, fallback)
+  window.kitPref = pref
+  window.kitPersisted = persisted
+</script>
+
+<p id="value">{pref.value}</p>

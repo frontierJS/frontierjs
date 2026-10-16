@@ -28,7 +28,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/auth`
 
-`packages/auth` · ships `LICENSE` `README.md` `auth.ts` `cleanup.ts` `console.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `totp.ts` `types.ts`
+`packages/auth` · ships `LICENSE` `README.md` `auth.ts` `cleanup.ts` `console.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `tenancy.ts` `totp.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -203,6 +203,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./engines/sqlite-wasm (import)` | `src/engines/sqlite-wasm.js` | yes |
 | exports | `./migrate (import)` | `src/core/migrate.js` | yes |
 | exports | `./migrations (import)` | `src/core/migrations.js` | yes |
+| exports | `./migrations (types)` | `src/core/migrations.d.ts` | yes |
 | exports | `./parser (import)` | `src/core/parser.js` | yes |
 | exports | `./device-schema (import)` | `src/device-schema.js` | yes |
 | exports | `./import (import)` | `src/import/index.js` | yes |
@@ -250,6 +251,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./runtime (import)` | `src/runtime.js` | yes |
 | exports | `./runtime/terminal.js (import)` | `src/runtime-terminal.js` | yes |
 | exports | `./runtime/terminal (import)` | `src/runtime-terminal.js` | yes |
+| exports | `./runtime/native.js (import)` | `src/runtime-native.js` | yes |
+| exports | `./runtime/native (import)` | `src/runtime-native.js` | yes |
 | exports | `./compiler.js (import)` | `src/compiler.js` | yes |
 | exports | `./compiler (import)` | `src/compiler.js` | yes |
 | exports | `./compiler-md.js (import)` | `src/compiler-md.js` | yes |
@@ -261,6 +264,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./render-component.js (import)` | `src/render-component.js` | yes |
 | exports | `./render-component (import)` | `src/render-component.js` | yes |
 | exports | `./drive (import)` | `src/drive.js` | yes |
+| exports | `./browser (types)` | `src/browser/browser.d.ts` | yes |
+| exports | `./browser (import)` | `src/browser/index.js` | yes |
 | exports | `./vite (import)` | `mesa-vite/index.js` | yes |
 | exports | `./vite/client (import)` | `mesa-vite/client.js` | yes |
 | exports | `./vite/swap (import)` | `mesa-vite/swap.js` | yes |
@@ -396,6 +401,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |
 | exports | `./markdown` | `src/markdown/markdown.js` | yes |
 | exports | `./match` | `src/match/match.js` | yes |
+| exports | `./mailbox (types)` | `src/mailbox/mailbox.d.ts` | yes |
+| exports | `./mailbox (default)` | `src/mailbox/mailbox.js` | yes |
 | exports | `./mime (types)` | `src/mime/mime.d.ts` | yes |
 | exports | `./mime (default)` | `src/mime/mime.js` | yes |
 | exports | `./predicate` | `src/predicate/predicate.js` | yes |

@@ -37,7 +37,7 @@ database audit {
   model     AuditTrail
 }
 
-model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") }
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -89,7 +89,7 @@ model Account {
 
   @@db(main)
   @@index([slug])
-  @@gate("2.5.5.6")
+  @@gate(2.5.5.6)
   @@allow('read', auth() != null)
 }
 
@@ -121,7 +121,7 @@ model User {
   @@index([accountId])
   @@index([email])
   @@index([displayName])
-  @@gate("2.4.4.6")
+  @@gate(2.4.4.6)
   @@allow('read',   accountId == auth().accountId)
   @@allow('update', id == auth().id || auth().role == 'admin')
   @@allow('delete', auth().role == 'admin')
@@ -146,7 +146,7 @@ model Product {
   @@softDelete
   @@index([slug])
   @@index([salePrice])
-  @@gate("1.4.4.6")
+  @@gate(1.4.4.6)
   @@allow('read', true)
 }
 
@@ -172,7 +172,7 @@ model Lead {
   @@index([accountId])
   @@index([status])
   @@index([fullName])
-  @@gate("3.3.4.6")
+  @@gate(3.3.4.6)
   @@allow('read',   accountId == auth().accountId)
   @@allow('create', accountId == auth().accountId)
   @@allow('update', accountId == auth().accountId)
@@ -201,7 +201,7 @@ model Message {
   @@index([userId])
   @@index([accountId])
   @@index([channel])
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   @@allow('read', accountId == auth().accountId)
 }
 

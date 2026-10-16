@@ -37,10 +37,11 @@ flags:
 ```js
 const { fileIssue }        = await import(resolve(global.fliRoot, 'core/file.js'))
 const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/registers.js'))
+const { ENV_CAUSES }       = await import(resolve(global.fliRoot, 'core/next.js'))
 
 const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 
-const out = fileIssue({ root, severity: flag.sev, area: flag.area, title: flag.title, detail: flag.detail, blocks: flag.blocks })
+const out = fileIssue({ root, severity: flag.sev, area: flag.area, title: flag.title, detail: flag.detail, blocks: flag.blocks, dry: flag.dry })
 
 echo('')
 if (!out.ok) {
@@ -50,10 +51,27 @@ if (!out.ok) {
   return
 }
 
+if (out.dry) {
+  echo(`  ✓ ${out.id} would be filed — ${out.file}:${out.line} (--dry: nothing written, register:check not run)`)
+  if (out.blocks) echo(`    ${out.blocks} would wait on it`)
+  smell(out)
+  echo('')
+  return
+}
+
 echo(`  ✓ ${out.id} filed — ${out.file}:${out.line}`)
 if (out.blocks) echo(`    ${out.blocks} now waits on it — fli next sets it aside until ${out.id} closes`)
 echo('    register:check agrees with the result')
+smell(out)
 echo('')
+
+function smell(out) {
+  if (!out.smell) return
+  echo(`  ⚠ the title reads like an environment failure and names no env: cause (env-smell)`)
+  const add = out.dry ? 'end --detail with " · env: <cause>"' : `fli amend ${out.id} --detail "env: <cause>"`
+  echo(`    if the fix is the machine: ${add} — ${ENV_CAUSES.join(' · ')}`)
+  echo(`    if it is code: ${out.dry ? 'retitle it' : `edit the title in ${out.file}:${out.line}`} to say what the code does wrong`)
+}
 ```
 
 ## What it writes
@@ -64,7 +82,11 @@ detail. The id is one past the highest the registers hold anywhere — § Closed
 and `ISSUES_ARCHIVE.md` included, because an id is never reused.
 
 `register:check` runs over the result, and a write it finds a new error in is
-put back and refused. A row that should wait on another says `blocked by
+put back and refused. A title that reads like an environment failure — a timeout, a hang,
+a port, a run that passes elsewhere — with no `env: <cause>` segment in the
+detail is filed and warned about (`env-smell`, `FJS-D1118`): the warning names
+the `fli amend` that adds the cause, since nothing else surfaces a warning to
+the session that filed it. A row that should wait on another says `blocked by
 FJS-###` in its detail; `fli next` reads it from there, and `--blocks` writes it.
 
 ## A question found in the middle of a fix

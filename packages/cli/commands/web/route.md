@@ -194,7 +194,8 @@ const params = raw.split('/')
   .map(seg => seg.replace(/^\[\.\.\./, '').replace(/^\[/, '').replace(/\]$/, ''))
 
 // How deep the file sits below src/routes/, so a relative import resolves.
-// Sierra has no `@/` alias — imports are relative or bare package specifiers.
+// The page is written with a relative import, which resolves wherever the file
+// sits; the `@/` alias would too.
 //   routes/invoices.mesa        → 1 segment  → ../resources/…
 //   routes/invoices/[id].mesa   → 2 segments → ../../resources/…
 //   routes/admin/_module.mesa   → counts the directory it was placed in

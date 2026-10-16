@@ -51,16 +51,17 @@ describe('fli make:service', () => {
     expect(existsSync(join(ROOT, 'api/src/services/person.service.ts'))).toBe(false)
   })
 
-  test('exports the create…Service factory junction autoloads, over a PascalCase model', () => {
+  test('default-exports the definition junction autoloads, over a PascalCase model', () => {
     const src = read('people.service.ts')
-    expect(src).toContain('export function createPeopleService()')
+    expect(src).toContain('export default createService({')
     expect(src).toContain("model: 'Person'")
-    expect(src).not.toContain('export default')
+    expect(src).not.toContain('export function')
+    expect(src).not.toContain('createBaseService')
   })
 
   test('a multi-word model gets a kebab file and a camelCase service', () => {
     const src = read('clock-entries.service.ts')
-    expect(src).toContain('export function createClockEntriesService()')
+    expect(src).toContain('export default createService({')
     expect(src).toContain("model: 'ClockEntry'")
     expect(src).toContain("channel: 'clockEntries'")
   })

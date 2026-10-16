@@ -290,7 +290,19 @@ export function isAllowedReturnTo(returnTo: string | null | undefined, allow: st
   if (/[\u0000-\u0020]/.test(returnTo)) return false
   if (!returnTo.startsWith('/')) return false
   if (returnTo.startsWith('//') || returnTo.startsWith('/\\')) return false
-  return allow.includes(returnTo) || allow.some(p => p.endsWith('/') && returnTo.startsWith(p))
+  // The browser removes dot segments AFTER this check — `..`, `%2e%2e` in any
+  // case, and `..\` all count — so `/orders/../admin` passes a `/orders/` prefix
+  // and lands on `/admin`. The list must hold for where it LANDS as well as for
+  // what was written, and the URL parser is the one that resolves it the same way.
+  const landed = new URL(returnTo, RESOLVE_BASE)
+  if (landed.origin !== RESOLVE_BASE) return false
+  return permits(returnTo, allow) && permits(landed.pathname, allow)
+}
+
+const RESOLVE_BASE = 'https://return-to.invalid'
+
+function permits(path: string, allow: string[]): boolean {
+  return allow.includes(path) || allow.some(p => p.endsWith('/') && path.startsWith(p))
 }
 
 // ─── Step 1 — where to send the browser ─────────────────────────────────────

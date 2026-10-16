@@ -30,10 +30,10 @@ const { createResource, buildRelations, buildGate, canAtLevel, buildFieldRules }
 const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 // Exactly what generateJsonSchema emits for:
-//   model Account { id Int @id  name String  users User[]  @@gate("2.4.4.5") }
+//   model Account { id Int @id  name String  users User[]  @@gate(2.4.4.5) }
 //   model User    { id Int @id  name String  accountId Int
 //                   account Account @relation(fields:[accountId], references:[id], onDelete: Cascade)
-//                   tags Tag[]  @@gate("4") }
+//                   tags Tag[]  @@gate(4) }
 //   model Tag     { id Int @id  name String  users User[] }
 const DEFS = {
   Account: {
@@ -193,7 +193,7 @@ describe('on the resource', () => {
 
   test('a model only the application writes refuses an edit at no level', () => {
     // What a relayed MCP view asks: it has no level, and a form over a
-    // `@@gate("1.8.8.8")` model is one whose every save is refused.
+    // `@@gate(1.8.8.8)` model is one whose every save is refused.
     registerSchemas({
       CreditNote: { type: 'object', title: 'CreditNote', properties: {}, 'x-gate': { read: 1, create: 8, update: 8, delete: 8 } },
     }, ['CreditNote'])

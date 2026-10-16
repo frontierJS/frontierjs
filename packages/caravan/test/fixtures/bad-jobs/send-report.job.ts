@@ -4,4 +4,4 @@
 
 import { defineJob } from '../../../src/index.ts'
 
-export default defineJob('send-repot', () => {})
+export default defineJob({ name: 'send-repot', handler: () => {} })

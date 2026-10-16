@@ -503,6 +503,7 @@ table `credential` · db `main` · gate `8`
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `label` | `String` | yes | — | — |
+| `linked` | `Boolean` | yes | — | — |
 | `refreshToken` | `String` | yes | — | @secret |
 | `scope` | `String` | yes | — | — |
 | `tokenExpiresAt` | `DateTime` | yes | — | — |

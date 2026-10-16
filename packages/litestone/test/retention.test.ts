@@ -482,11 +482,11 @@ describe('a sweep is batches that yield', () => {
   })
 
   test('a plugin hears deletes only when it answers them — the gate does not', async () => {
-    const { PluginRunner, Plugin } = await import('../src/core/plugin.js')
+    const { PluginRunner, LitestonePlugin } = await import('../src/core/plugin.js')
     const { GatePlugin } = await import('../src/plugins/gate.js')
-    class Listens extends Plugin { async onAfterDelete() {} }
+    class Listens extends LitestonePlugin { async onAfterDelete() {} }
     expect(new PluginRunner([new GatePlugin()]).hearsDeletes).toBe(false)
-    expect(new PluginRunner([new Plugin()]).hearsDeletes).toBe(false)
+    expect(new PluginRunner([new LitestonePlugin()]).hearsDeletes).toBe(false)
     expect(new PluginRunner([new GatePlugin(), new Listens()]).hearsDeletes).toBe(true)
     expect(new PluginRunner([{ onAfterDelete: async () => {} }]).hearsDeletes).toBe(true)
   })
@@ -496,9 +496,9 @@ describe('a sweep is batches that yield', () => {
 // one that answers neither a delete nor a write — so an ORM delete under a gate
 // read every cascaded child to hand it to no one (FJS-2292).
 describe('an ORM delete reads cascaded children only for what hears them', () => {
-  const childReads = async (plugins: (Plugin: any) => unknown[]) => {
+  const childReads = async (plugins: (LitestonePlugin: any) => unknown[]) => {
     const { Database } = await import('bun:sqlite')
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const db: any = await createClient({
       schema: `
         database main { path "${join(tmp(), 'app.db')}" }
@@ -509,7 +509,7 @@ describe('an ORM delete reads cascaded children only for what hears them', () =>
           batchId Int
         }
       `,
-      plugins: plugins(Plugin) as any,
+      plugins: plugins(LitestonePlugin) as any,
     })
     const sys = db.asSystem()
     const batch = await sys.batch.create({ data: {} })
@@ -540,9 +540,9 @@ describe('an ORM delete reads cascaded children only for what hears them', () =>
 // The delete's OWN-row prefetch fired for any installed plugin, so a bulk delete
 // under a gate selected the rows it handed to no listener (FJS-2293).
 describe('an ORM delete reads its own rows only for what hears them', () => {
-  const ownReads = async (plugins: (Plugin: any) => unknown[], cascade = false) => {
+  const ownReads = async (plugins: (LitestonePlugin: any) => unknown[], cascade = false) => {
     const { Database } = await import('bun:sqlite')
-    const { Plugin } = await import('../src/core/plugin.js')
+    const { LitestonePlugin } = await import('../src/core/plugin.js')
     const db: any = await createClient({
       schema: `
         database main { path "${join(tmp(), 'app.db')}" }
@@ -553,7 +553,7 @@ describe('an ORM delete reads its own rows only for what hears them', () => {
           batchId Int
         }
       `,
-      plugins: plugins(Plugin) as any,
+      plugins: plugins(LitestonePlugin) as any,
     })
     const sys = db.asSystem()
     const batch = await sys.batch.create({ data: {} })

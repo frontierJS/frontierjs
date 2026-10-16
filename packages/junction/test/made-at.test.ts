@@ -26,7 +26,7 @@ const SCHEMA = `
     note      String?
     startedAt DateTime @default(now())
     updatedAt DateTime @updatedAt
-    @@gate("0")
+    @@gate(0)
   }
 `
 

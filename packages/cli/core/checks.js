@@ -35,7 +35,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from '
 import { spawnSync }                                                  from 'child_process'
 import { join, relative, basename, extname, resolve, dirname } from 'path'
 
-import { singularize, modelName, camel } from '@frontierjs/toolbelt/inflect'
+import { singularize, pluralize, modelName, camel } from '@frontierjs/toolbelt/inflect'
 import { parseFrontmatter }                from '@frontierjs/toolbelt/frontmatter'
 
 // ─── the rule table ───────────────────────────────────────────────────────────
@@ -52,7 +52,8 @@ export { findApps } from './runnables.js'
 import { runnables, findApps }    from './runnables.js'
 import { appSchemaViews, appSchemaModels, shippedSchemas } from './app-schema.js'
 import { binCommand }                 from './snapshots.js'
-import { DRIVES_FILE, readProofs, resolveRun } from './proofs.js'
+import { DRIVES_FILE, readProofs, resolveRun, reachable, rottedPaths, packageDirs } from './proofs.js'
+import { treePaths }              from './tree.js'
 import { readPreambles, resolveNeeds } from './preflight.js'
 import { readCourse }             from './tutorial.js'
 import { declaredLogDatabases }        from './db-preflight.js'
@@ -61,6 +62,7 @@ import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
          COUNTABLES, checkRulesCountable, docStatusStale, docMapNarration,
          docUncheckedCount } from './doc-audit.js'
 import { invariantCoverage }                   from './invariants.js'
+import { hazardCoverage }                      from './hazards.js'
 import { seamOwnership, unlisted, keyLiteral, SKILL as SEAM_SKILL } from './seams.js'
 import { parseCommands, resolveCommands }      from './command-parse.js'
 import { typeScriptIn }                        from './scope.js'
@@ -68,6 +70,7 @@ import { kindOf }                              from './file-kind.js'
 import { readConfig }                          from './config.js'
 import { previewScope }                        from './preview.js'
 import { dockerfileScripts }                   from './utils.js'
+import { imageNeeds, installsChrome, carriesWebSrc } from './deploy-image.js'
 
 export const RULES = [
   { id: 'model-name-case',      scope: 'app',  severity: 'error', invariant: 2,
@@ -91,8 +94,10 @@ export const RULES = [
   { id: 'drive-opens-chrome',   scope: 'both', severity: 'error', invariant: null,
     title: 'a drive opens Chrome through @frontierjs/mesa/drive' },
   { id: 'test-port-literal',   scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'api: A test may not name a port',
     title: 'a test asks for its port with portFor(), never a literal' },
   { id: 'body-tag-in-comment',  scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'ui: Vite injects the built',
     title: 'the body tag is never written inside a comment' },
   { id: 'untrusted-upload-root', scope: 'app', severity: 'warn', invariant: null,
     title: 'a static root serving uploads says so' },
@@ -101,6 +106,7 @@ export const RULES = [
   { id: 'app-layout',           scope: 'app',  severity: 'warn',  invariant: 3,
     title: 'db/ at the app root, each surface a directory beside it, and each file in its kind\'s folder' },
   { id: 'surface-config',       scope: 'app',  severity: 'warn',  invariant: 3,
+    hazard: 'api: A missing config DIRECTORY',
     title: 'a surface keeps its configuration in config/' },
   { id: 'mesa-compiles',        scope: 'app',  severity: 'error', invariant: null,
     title: 'every .mesa in a surface compiles' },
@@ -111,15 +117,23 @@ export const RULES = [
   { id: 'migration-history',    scope: 'app',  severity: 'error', invariant: null,
     title: 'an app whose container migrates on boot has a migration history to replay' },
   { id: 'raw-route-param',      scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'api: Raw routes',
     title: 'a raw route names a capture {id}, never :id' },
   { id: 'ctx-params',           scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'api: `ctx.params` does not exist',
     title: 'a service context has no ctx.params and no ctx.client' },
   { id: 'set-auth-discarded',   scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'data: `$setAuth(user)` RETURNS',
     title: '$setAuth answers a scoped client rather than mutating one' },
   { id: 'call-header-declared', scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'api: A header the caller varies per call',
     title: 'a per-call header is declared in http.callHeaders' },
   { id: 'service-model',        scope: 'app',  severity: 'error', invariant: 2,
     title: 'a service resolves to the model whose @@gate grades it' },
+  { id: 'auth-service-collision', scope: 'app', severity: 'warn', invariant: null,
+    title: 'no model derives the name of a service @frontierjs/auth registers' },
+  { id: 'service-definition',   scope: 'app',  severity: 'error', invariant: null,
+    title: 'a service file default-exports a definition, never a factory (FJS-D1079)' },
   { id: 'resource-model-miss',  scope: 'app',  severity: 'error', invariant: 2,
     title: 'a resource name resolves to the model it means' },
   { id: 'money-rendered-raw',   scope: 'app',  severity: 'warn',  invariant: null,
@@ -133,12 +147,14 @@ export const RULES = [
   { id: 'detail-read-dead',     scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a row a screen KEEPS is watched, not fetched once' },
   { id: 'envelope-hedge',       scope: 'app',  severity: 'warn',  invariant: null,
+    hazard: 'ui: `find()` answers the list envelope',
     title: 'a service answer is read in the one shape the server gives it' },
   { id: 'service-module-db',    scope: 'app',  severity: 'error', invariant: null,
     title: 'a service reads the request-scoped client, not the module one' },
   { id: 'service-as-system',    scope: 'app',  severity: 'warn',  invariant: 6,
     title: 'asSystem() off the app client crosses tenants; with no row tenancy, any asSystem() in a service crosses users' },
   { id: 'scheduler-dispatch',   scope: 'app',  severity: 'error', invariant: null,
+    hazard: 'api: Caravan owns the clock',
     title: 'a timer that dispatches into a queue is the queue\'s schedule' },
   { id: 'battery-raw-secret',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a battery takes its credential by reference, not as a constructor argument' },
@@ -157,20 +173,26 @@ export const RULES = [
   { id: 'transition-methods',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a declared move and the code that makes it still name each other' },
   { id: 'required-system-unfilled', scope: 'app', severity: 'warn', invariant: null,
+    hazard: 'ui: `@system` is the column an application writes',
     title: 'a required @system column with no @default is filled by code the service runs' },
   { id: 'commitment-swept',     scope: 'app',  severity: 'warn',  invariant: null,
+    hazard: 'data: A row that stops counting at a date',
     title: 'a move a @@commitment owes is made by the commitment, not by a job too' },
   { id: 'capability-ladder',    scope: 'app',  severity: 'warn',  invariant: null,
+    hazard: 'data: A CAPABILITY is a grid',
     title: 'a model graded by capability is not also graded by ladder' },
   { id: 'polymorphic-subject',  scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a polymorphic pair names which models it can point at' },
   { id: 'log-db-unbound',       scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a jsonl/trail database the deploy can point at the volume' },
+  { id: 'deploy-image-needs',   scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'the deploy image carries what the API needs at runtime: a Chrome to print, web/src to render from' },
   { id: 'command-parses',       scope: 'app',  severity: 'error', invariant: 15,
     title: 'every project command compiles, with its namespace module, to JavaScript that parses' },
   { id: 'command-resolves',     scope: 'app',  severity: 'error', invariant: 15,
     title: 'every name a project command uses is declared, imported, or one the shim injects' },
   { id: 'css-token-undefined',  scope: 'app',  severity: 'error', invariant: 13,
+    hazard: 'ui: A `var()` naming a token',
     title: 'a styled value names a token the stylesheets define' },
   { id: 'css-raw-literal',      scope: 'app',  severity: 'warn',  invariant: 13,
     title: 'a .mesa <style> holds no raw color, size or spacing value' },
@@ -189,7 +211,7 @@ export const RULES = [
   { id: 'docs-index',           scope: 'repo', severity: 'warn',  invariant: 17,
     title: 'a docs/ index links every page beside it' },
   { id: 'proof-target',         scope: 'repo', severity: 'error', invariant: null,
-    title: 'every drive the proof table names still exists' },
+    title: 'every drive the proof table names still exists, and every row can be hit' },
   { id: 'proof-drive-named',    scope: 'repo', severity: 'warn',  invariant: null,
     title: 'every drive is named by some row of the proof table' },
   { id: 'drive-preamble',       scope: 'repo', severity: 'error', invariant: null,
@@ -224,6 +246,8 @@ export const RULES = [
     title: 'a number in prose is generated or absent' },
   { id: 'invariant-enforcer',   scope: 'repo', severity: 'error', invariant: null,
     title: 'a declared invariant enforcer resolves to something that exists' },
+  { id: 'hazard-enforcer',      scope: 'repo', severity: 'error', invariant: null,
+    title: 'a rule\'s hazard key names exactly one bullet of its realm skill' },
   { id: 'seam-owner',           scope: 'repo', severity: 'error', invariant: 4,
     title: 'a seam\'s stated owner exists and is where the name is declared' },
   { id: 'seam-listed',          scope: 'repo', severity: 'error', invariant: 4,
@@ -1752,7 +1776,15 @@ const CHECKS = {
         continue
       }
 
-      if (!/\bcreateBaseService\b/.test(code)) continue
+      // Only a definition that writes no function at all leaves its whole
+      // surface to the base, and the base reads the model. One with a method of
+      // its own — a hub, a webhook receiver, a report — asks for a derived layer
+      // over nothing, so a missing model switches nothing off. A hook is a
+      // function too, which leaves that service unjudged rather than wrongly
+      // reported.
+      const call = code.match(/\bcreateService\s*\(/)
+      if (!call) continue
+      if (/=>|\bfunction\b|\basync\b|\b\w+\s*\([^)]*\)\s*\{/.test(code.slice(call.index + call[0].length))) continue
       // `model: null` is junction's word for "there is none" (FJS-D628): the
       // derived layer is the method gates alone, so there is no @@gate to miss.
       if (/\bmodel\s*:\s*null\b/.test(code)) continue
@@ -1760,13 +1792,96 @@ const CHECKS = {
 
       // No edit: a model the schema holds under this name would have resolved,
       // so there is nothing to name.
-      const call = code.match(/\bcreateBaseService\s*\(/)
       findings.push({
-        file: path, line: lineOf(code, call ? call.index : 0),
-        message: `createBaseService with no model:, and '${service}' resolves to none — it singularizes ` +
+        file: path, line: lineOf(code, call.index),
+        message: `createService with no model:, and '${service}' resolves to none — it singularizes ` +
                  `to '${singularize(service)}', and no model has that accessor. The miss is silent and ` +
                  `fails open: the @@gate is not found and the model is served to anyone. State it — ` +
-                 `model: '<Model>', naming one in db/schema.lite.`,
+                 `model: '<Model>', naming one in db/schema.lite, or model: null if there is none.`,
+      })
+    }
+    return { findings }
+  },
+
+  // `createAuthPlugin` registers six services, and `start()` refuses an app that
+  // already has one of the same name. The name an app's own service for a model
+  // takes is the model's plural, so `model Connection` (a third-party grant)
+  // derives `connections`, which is auth's list of linked sign-in providers. The
+  // refusal at boot is clear, but the collision is decidable from the schema and
+  // the plugin call, before any service is written (`FJS-2237`).
+  //
+  // A WARNING: a model with no service of its own collides with nothing. The
+  // models auth ships are exempt, since `sessions` is the service over `Session`.
+  // The names are auth's `DEFAULT_SERVICE_NAMES`, held equal by a test, because
+  // this package depends on no auth.
+  'auth-service-collision': ({ root }) => {
+    if (!schemaFile(root)) return { skipped: 'no db/schema.lite' }
+
+    let call = null
+    for (const path of scripts(root, 'api')) {
+      const code = readCode(path)
+      const m = code.match(/\bcreateAuthPlugin\s*\(/)
+      if (m) { call = spanFrom(code, m.index + m[0].length - 1); break }
+    }
+    if (call === null) return { skipped: 'no createAuthPlugin under api/' }
+    if (/\bservices\s*:\s*false\b/.test(call)) return { findings: [] }
+
+    const ships = new Set()
+    for (const dep of shippedSchemas(root)) {
+      if (dep.pkg === '@frontierjs/auth') for (const m of models(dep)) ships.add(m.name)
+    }
+
+    const findings = []
+    for (const model of appSchemaModels(root)) {
+      if (model.external || model.origin !== 'app' || ships.has(model.name)) continue
+      const derived = camel(pluralize(model.name))
+      for (const [key, service] of Object.entries(AUTH_SERVICES)) {
+        if (camel(service) !== derived) continue
+        if (new RegExp(`\\b${key}\\s*:\\s*(false|['"\`])`).test(call)) continue
+        findings.push({
+          file: join(root, model.file), line: model.line,
+          message: `model ${model.name} derives the service name '${derived}', which createAuthPlugin ` +
+                   `already registers, and start() refuses an app holding two. Name your own service ` +
+                   `differently, or give auth's another name or none: createAuthPlugin(auth, ` +
+                   `{ services: { ${key}: false } }).`,
+        })
+      }
+    }
+    return { findings }
+  },
+
+  // `FJS-D1079`: `createService(def)` returns the definition and a service file
+  // `export default`s it; the registry builds it and the loader reads nothing
+  // else. A file that exports a `create*Service` factory, default-exports a
+  // function, or still names `createBaseService` registers nothing, so its name
+  // answers 404 and the only sign is the loader's report at start.
+  //
+  // Only files under a `services/` directory are judged: a helper beside a
+  // service may legitimately build one (a plugin's `createXServices`).
+  'service-definition': ({ root }) => {
+    const files = scripts(root, 'api')
+      .filter(p => /[/\\]services[/\\]/.test(p) && /\.service\.[cm]?[jt]s$/.test(basename(p)))
+    if (!files.length) return { skipped: 'no *.service.* under api/**/services/' }
+
+    const SHAPES = [
+      [/\bcreateBaseService\b/,                                   'names createBaseService, which no longer exists'],
+      [/\bexport\s+(?:async\s+)?function\s+create\w*Service\b/,   'exports a create*Service factory'],
+      [/\bexport\s+(?:const|let)\s+create\w*Service\b/,           'exports a create*Service factory'],
+      [/\bexport\s+default\s+(?:async\s+)?(?:function\b|\([^)]*\)\s*=>|\w+\s*=>)/, 'default-exports a function'],
+    ]
+
+    const findings = []
+    for (const path of files) {
+      const code = readCode(path)
+      const hit  = SHAPES.map(([re, what]) => ({ m: code.match(re), what })).find(h => h.m)
+      if (!hit) continue
+      findings.push({
+        file: path, line: lineOf(code, hit.m.index),
+        message: `${basename(path)} ${hit.what}. The autoloader reads the DEFAULT export and it must be a ` +
+                 `definition -- export default createService({ … }) -- so this file registers nothing and ` +
+                 `'${basename(path).replace(/\.service\.[cm]?[jt]s$/, '')}' answers 404. What a factory ` +
+                 `closed over is reached at call time as ctx.app or $.app; per-app state goes in a ` +
+                 `WeakMap keyed by the app (FJS-D1079).`,
       })
     }
     return { findings }
@@ -2529,7 +2644,7 @@ const CHECKS = {
   // left in place: a billing clerk holding `Invoice.create` is refused because
   // the clerk grades USER(4) and creates want ADMINISTRATOR(5) — a 403 that
   // reads as *not senior enough* about a person who was deliberately granted the
-  // capability. `@@gate("2")` flat at the read floor is the usual answer.
+  // capability. `@@gate(2)` flat at the read floor is the usual answer.
   //
   // A warning rather than an error: two authorities in front of one operation is
   // legitimate where the ladder is guarding something the grid does not model,
@@ -2554,7 +2669,7 @@ const CHECKS = {
       if (!above.length) continue
       findings.push({
         file: schema.path, line: m.gateLine,
-        message: `${m.name} declares @@capabilities and @@gate("${m.gateSource}") — ` +
+        message: `${m.name} declares @@capabilities and @@gate(${m.gateSource}) — ` +
                  `${above.join(', ')} need${above.length > 1 ? '' : 's'} level ` +
                  `${above.map(o => m.gate[o]).join('/')} where read needs ${m.gate.read}. The grid and ` +
                  `the ladder are ANDed, so a caller granted a capability on this model is still refused ` +
@@ -2673,6 +2788,39 @@ const CHECKS = {
     return { findings }
   },
 
+  // ─── deploy-image-needs ────────────────────────────────────────────────────
+  // make:deploy writes the image an app needs on the day it runs, and skips a
+  // Dockerfile that exists. An app that started printing after that day keeps
+  // an image with no Chrome, or one whose .dockerignore drops the template the
+  // API renders, and the first sight of either is a release that will not
+  // start or a PDF that fails (FJS-2269). core/deploy-image.js says what is
+  // needed; this grades the Dockerfile against it. A warning: an image built
+  // FROM one that already holds a Chrome is correct and invisible here.
+  'deploy-image-needs': ({ root }) => {
+    const dockerfile = ['Dockerfile', join('deploy', 'Dockerfile')]
+      .map(p => join(root, p)).find(p => existsSync(p))
+    if (!dockerfile) return { skipped: 'no Dockerfile — not deployed this way' }
+
+    const needs = imageNeeds(root)
+    if (!needs.chrome && !needs.webSrc) return { skipped: 'the API needs nothing beyond api/ and db/' }
+
+    const text = readFileSync(dockerfile, 'utf8')
+    const ignorePath = join(root, '.dockerignore')
+    const ignore = existsSync(ignorePath) ? readFileSync(ignorePath, 'utf8') : ''
+    const file = relative(root, dockerfile)
+
+    const findings = []
+    if (needs.chrome && !installsChrome(text)) findings.push({ file, message:
+      'the app depends on @frontierjs/print-kit and this image installs no Chrome, so printerPlugin() ' +
+      'refuses to boot and the release does not start. Install chromium in the runtime stage, or point ' +
+      '$FJS_CHROME at a binary the image holds — fli make:deploy writes the lines for a new Dockerfile' })
+    if (needs.webSrc && !carriesWebSrc(text, ignore)) findings.push({ file, message:
+      'the API reads a template from web/src and the image does not carry it — no COPY names it, or ' +
+      '.dockerignore drops web/ whole — so the first render fails in production. COPY web/src into the ' +
+      'image and write web/* then !web/src in .dockerignore' })
+    return { findings }
+  },
+
   'static-publish-db': ({ root }) => {
     if (!schemaFile(root)) return { skipped: 'no db/schema.lite — no gates to prove' }
     const surfaces = staticSurfaces(root)
@@ -2726,8 +2874,30 @@ const CHECKS = {
   'proof-target': ({ root }) => {
     const rows     = safeRunnables(root)
     const findings = []
+    const packages = packageDirs(root)
+    // No git means no answer about what a clone holds, so the rot half is skipped.
+    const tree     = treePaths(root)
 
     for (const p of readProofs(root)) {
+      // The Changed column is the half a diff has to hit, and it fails silently
+      // both ways: a cell nothing can match is a row `fli proves` never prints,
+      // and a path that moved matches nothing from the day it moved.
+      if (!reachable(p.changed, packages)) {
+        findings.push({
+          file: join(root, DRIVES_FILE), line: p.line,
+          message: `the proof table row for "${p.changed}" can be hit by no change: it has no backticked path, ` +
+                   'no package name in its leading words and no backticked symbol of four or more characters, ' +
+                   'so `fli proves` never prints it. Name the package first, or backtick a path or symbol the change touches.',
+        })
+      }
+      for (const dead of tree ? rottedPaths(p.changed, tree) : []) {
+        findings.push({
+          file: join(root, DRIVES_FILE), line: p.line,
+          message: `the proof table row for "${p.changed}" names \`${dead}\`, and no file in the tree is that path. ` +
+                   'A path that moved matches no diff from then on, so the row stops being printed.',
+        })
+      }
+
       const targets = resolveRun(p.run, { root, rows })
       // Targets are read only after a `where` anchor, so a cell with none reads
       // as zero targets: `fli proves` lists the row with nothing to run.
@@ -3118,9 +3288,9 @@ const CHECKS = {
   // would have stored every provider access and refresh token unencrypted. Its
   // 137 tests were green either side of the divergence (`FJS-483`).
   //
-  // A WARNING, because a deviation can be right: basecamp declares `accountId`
-  // as `String?` against auth's `Int?` and has to, since its `Account.id` is a
-  // uuid. So both declarations are printed and the reader judges — the same
+  // A WARNING, because a deviation can be right: maidtech's `role` is written
+  // by an owner where auth's is written by an admin. So both declarations are
+  // printed and the reader judges — the same
   // reasoning `model-name-plural` is a warning for. `check-baseline.json` is how
   // an app accepts the ones it has argued for.
   //
@@ -3963,6 +4133,7 @@ const CHECKS = {
   'doc-map-narration': ({ root }) => docMapNarration({ root }),
   'doc-unchecked-count': ({ root }) => docUncheckedCount({ root, countables: [...COUNTABLES, checkRulesCountable(RULES)] }),
   'invariant-enforcer': ({ root }) => invariantEnforcer({ root }),
+  'hazard-enforcer':    ({ root }) => hazardEnforcer({ root }),
 
   'seam-owner': ({ root }) => seamOwner({ root }),
 
@@ -4828,6 +4999,13 @@ function modelResolver(schema, root) {
   return { resolves, modelNamed }
 }
 
+// The services `createAuthPlugin` registers, by the option key that renames or
+// drops each. `auth-service-collision` reads it; a test holds it to auth's own.
+export const AUTH_SERVICES = {
+  account: 'account', sessions: 'sessions', apiKeys: 'api-keys',
+  connections: 'connections', accountRecovery: 'account-recovery', people: 'people',
+}
+
 // The level scale, as the @@gate grammar spells it. Litestone owns the numbers;
 // this is the reading of a declaration, not a second definition of the scale.
 const GATE_LEVELS = {
@@ -4836,7 +5014,7 @@ const GATE_LEVELS = {
 }
 
 /**
- * Every level a schema requires — `@@gate("0.4.4.5")`, plus the `@gate(N)` a
+ * Every level a schema requires — `@@gate(0.4.4.5)`, plus the `@gate(N)` a
  * `@@transitions` clause hangs on one move.
  *
  * A line scan like `models()`, for its reason: this must answer with no
@@ -4868,7 +5046,7 @@ function capabilityModels({ text }) {
     // way — which was not true of either, and had not been true of any app: the
     // named form reached five declarations in litestone's own example and
     // nothing else, against 320 written as digits.
-    const compact = line.match(/@@gate\s*\(\s*['"`]([\d.]+)['"`]\s*\)/)
+    const compact = line.match(/@@gate\s*\(\s*([\d.]+)\s*\)/)
     if (compact) {
       // "R.C.U.D" with inheritance: a position not stated takes the one before it.
       const [r = 0, c = r, u = c, d = u] = compact[1].split('.').map(Number)
@@ -4886,7 +5064,7 @@ function capabilityModels({ text }) {
  *
  * One owner because there were two readings and both were wrong in the same
  * direction: a line scan that skips a line STARTING with `//` still reads a
- * trailing one, so `// was @@gate("7") once` declared a gate and a comma inside
+ * trailing one, so `// was @@gate(7) once` declared a gate and a comma inside
  * a note split a declared move in half. Both are the same mistake — comment
  * text is content to a regex and is not content to the language.
  *
@@ -4921,7 +5099,7 @@ function declaredGates({ text }) {
   let inBlock = false
   for (let i = 0; i < lines.length; i++) {
     // The comment goes before the match rather than the line being skipped when
-    // it STARTS with one: a trailing `// was @@gate("7") once` is a level this
+    // it STARTS with one: a trailing `// was @@gate(7) once` is a level this
     // schema does not declare, and `gate-unreachable` then reports a rung
     // nobody can reach that nobody wrote.
     const [line, still] = withoutComments(lines[i], inBlock)
@@ -4932,7 +5110,7 @@ function declaredGates({ text }) {
     const where = model ? `model ${model}'s` : 'a'
 
     for (const g of line.matchAll(/@@gate\s*\(([^)]*)\)/g)) {
-      const compact = g[1].match(/^\s*['"`]([\d.]+)['"`]\s*$/)
+      const compact = g[1].match(/^\s*([\d.]+)\s*$/)
       const levels  = compact ? compact[1].split('.').map(Number) : []
       for (const n of levels)
         if (n != null && !Number.isNaN(n)) out.push({ level: n, line: i + 1, what: `${where} @@gate` })
@@ -5530,6 +5708,31 @@ function invariantEnforcer({ root }) {
     }
   }
   return { findings }
+}
+
+// ─── hazard-enforcer ──────────────────────────────────────────────────────────
+//
+// A rule names the live hazard it grades by its realm and a prefix of the
+// bullet's bold lead (`core/hazards.js`), and `hazards.snapshot.md` is read off
+// that. A key that matches no bullet credits nothing, and the hazard it meant
+// turns `none` in the snapshot with nothing saying why — rewording a bullet is
+// all it takes. A key matching two is a guess. Both are one-word fixes, so both
+// are errors. A hazard no rule names is not reported: that is the gap the
+// snapshot publishes, the same line `invariant-enforcer` draws.
+
+function hazardEnforcer({ root }) {
+  const { hazards, unresolved } = hazardCoverage({ root, rules: RULES })
+  if (!hazards.length) return { skipped: 'no realm skill under .claude/skills/ lists a hazard' }
+
+  return {
+    findings: unresolved.map(u => ({
+      file: join(root, 'packages', 'cli', 'core', 'checks.js'),
+      message: `Rule \`${u.rule}\` names hazard '${u.key}', which matches ${u.matches} bullets of ` +
+               `its realm skill. A key must be the realm and a prefix of ONE bullet's bold lead — ` +
+               (u.matches ? 'lengthen the prefix until one is left.' :
+                            'the bullet was reworded or moved; point the key at what it says now.'),
+    })),
+  }
 }
 
 // ─── seam-owner ───────────────────────────────────────────────────────────────

@@ -23,7 +23,6 @@ import { createService } from '@frontierjs/junction'
 import { AccessDeniedError, LEVELS } from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, shapedByCaller } from '../../core/resource.ts'
-import type { BasecampApp } from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** Per kind. A workspace that deleted more than this of one kind sees the newest. */
@@ -91,52 +90,50 @@ async function deletedOf(k: Kind): Promise<Row[]> {
   }
 }
 
-export function createTrashService(app: BasecampApp) {
-  return createService({
-    name: 'trash',
-    scope: keyScope('trash'),
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+export default createService({
+  name: 'trash',
+  scope: keyScope('trash'),
+  reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    // READER: what a member may see is decided per kind by that model's own
-    // read gate, which `deletedOf` meets. There is no model here to carry one.
-    methods: [{ method: 'find', gate: LEVELS.READER }],
+  // READER: what a member may see is decided per kind by that model's own
+  // read gate, which `deletedOf` meets. There is no model here to carry one.
+  methods: [{ method: 'find', gate: LEVELS.READER }],
 
-    async find() {
-      const shown: TrashItem[] = []
-      // Hidden children by stamp, so the parent that shares it can count them.
-      const folded = new Map<string, Map<string, number>>()
+  async find() {
+    const shown: TrashItem[] = []
+    // Hidden children by stamp, so the parent that shares it can count them.
+    const folded = new Map<string, Map<string, number>>()
 
-      for (const k of KINDS) {
-        for (const r of await deletedOf(k)) {
-          // An include of a deleted row answers nothing, so a set key with no
-          // row behind it is a parent in the trash.
-          const parentGone = (k.parents ?? []).some(p => r[`${p}Id`] && !r[p])
-          if (parentGone) {
-            const byKind = folded.get(r.deletedAt) ?? new Map<string, number>()
-            byKind.set(k.kind, (byKind.get(k.kind) ?? 0) + 1)
-            folded.set(r.deletedAt, byKind)
-            continue
-          }
-          const within = (k.parents ?? []).map(p => r[p]?.name).find(Boolean) ?? null
-          shown.push({
-            id: `${k.service}:${r.id}`, service: k.service, ref: r.id, kind: k.kind,
-            name: k.name?.(r) ?? r.name, within, deletedAt: r.deletedAt,
-            href: k.href(r), includes: [], note: k.note ?? null,
-          })
+    for (const k of KINDS) {
+      for (const r of await deletedOf(k)) {
+        // An include of a deleted row answers nothing, so a set key with no
+        // row behind it is a parent in the trash.
+        const parentGone = (k.parents ?? []).some(p => r[`${p}Id`] && !r[p])
+        if (parentGone) {
+          const byKind = folded.get(r.deletedAt) ?? new Map<string, number>()
+          byKind.set(k.kind, (byKind.get(k.kind) ?? 0) + 1)
+          folded.set(r.deletedAt, byKind)
+          continue
         }
+        const within = (k.parents ?? []).map(p => r[p]?.name).find(Boolean) ?? null
+        shown.push({
+          id: `${k.service}:${r.id}`, service: k.service, ref: r.id, kind: k.kind,
+          name: k.name?.(r) ?? r.name, within, deletedAt: r.deletedAt,
+          href: k.href(r), includes: [], note: k.note ?? null,
+        })
       }
+    }
 
-      for (const item of shown) {
-        const byKind = folded.get(item.deletedAt)
-        if (byKind) item.includes = [...byKind].map(([kind, count]) => ({ kind, count }))
-      }
+    for (const item of shown) {
+      const byKind = folded.get(item.deletedAt)
+      if (byKind) item.includes = [...byKind].map(([kind, count]) => ({ kind, count }))
+    }
 
-      shown.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
-      return { total: shown.length, limit: shown.length, offset: 0, data: shapedByCaller(shown) }
-    },
+    shown.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
+    return { total: shown.length, limit: shown.length, offset: 0, data: shapedByCaller(shown) }
+  },
 
-    hooks: {
-      before: { all: [sessionScope(app)] },
-    },
-  })
-}
+  hooks: {
+    before: { all: [sessionScope()] },
+  },
+})

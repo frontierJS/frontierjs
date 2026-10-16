@@ -30,7 +30,7 @@ enum Status { open closed }
 model Customer {
   id    Int    @id @default(autoincrement())
   name  String
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 
 model Visit {
@@ -54,7 +54,7 @@ model Visit {
   tags       String[]
   customer   Customer @relation(fields: [customerId], references: [id])
   customerId Int
-  @@gate("0.0.0.0")
+  @@gate(0.0.0.0)
 }
 `
 

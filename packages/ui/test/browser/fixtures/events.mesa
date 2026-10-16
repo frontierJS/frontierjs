@@ -19,18 +19,18 @@
   }
 </script>
 
-<dialog bind:this={dialogEl} on:close={() => closes++} on:cancel={() => cancels++}>closable</dialog>
+<dialog bind:this={dialogEl} onclose={() => closes++} oncancel={() => cancels++}>closable</dialog>
 
-<details bind:this={detailsEl} on:toggle={() => toggles++}>
+<details bind:this={detailsEl} ontoggle={() => toggles++}>
   <summary>more</summary>
   body
 </details>
 
 <form>
-  <input bind:this={inputEl} required on:invalid={() => invalids++} />
+  <input bind:this={inputEl} required oninvalid={() => invalids++} />
 </form>
 
-<button type="button" id="drive" on:click={drive}>drive</button>
+<button type="button" id="drive" onclick={drive}>drive</button>
 
 <output id="closes">{closes}</output>
 <output id="toggles">{toggles}</output>

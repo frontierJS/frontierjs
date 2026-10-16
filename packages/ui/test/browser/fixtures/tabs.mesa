@@ -59,7 +59,7 @@
   <TabPanel id="two" unmount><p>Two body</p></TabPanel>
 </Tabs>
 
-<button type="button" id="off-billing" on:click={() => billingDisabled = true}>disable billing</button>
+<button type="button" id="off-billing" onclick={() => billingDisabled = true}>disable billing</button>
 
 <output id="active">{activeId}</output>
 <output id="changes">{changes}</output>

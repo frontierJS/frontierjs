@@ -20,7 +20,7 @@ import { describe, it, test, expect } from 'bun:test'
 import { parse }                from '../src/core/parser.js'
 import { generateJsonSchema }   from '../src/jsonschema.js'
 
-const model = (attrs: string) => `model M {\n  id Int @id\n  name String\n  @@gate("2")\n${attrs}\n}`
+const model = (attrs: string) => `model M {\n  id Int @id\n  name String\n  @@gate(2)\n${attrs}\n}`
 
 const syncOf = (src: string) =>
   (parse(src).schema.models[0].attributes as any[]).find(a => a.kind === 'sync')?.policy ?? null
@@ -73,7 +73,7 @@ describe('@@sync', () => {
   // rather than advised, on `@@softDelete`'s precedent: the attribute names a
   // column, and a model without it has already lost.
   it('refuse is accepted on a model that declares @version', () => {
-    const src = 'model M {\n  id Int @id\n  name String\n  v Int @version\n  @@gate("2")\n  @@sync(refuse)\n}'
+    const src = 'model M {\n  id Int @id\n  name String\n  v Int @version\n  @@gate(2)\n  @@sync(refuse)\n}'
     expect(syncOf(src)).toBe('refuse')
   })
 
@@ -191,7 +191,7 @@ describe('@@sync(read)', () => {
   // becomes a column the client may write, and a held, never-written model has
   // no offline create to name its children.
   it('mints no key, so a create form offers no Id', () => {
-    const src = (attr: string) => `model S { id String @id @default(uuid())  n String  @@gate("2")  ${attr} }`
+    const src = (attr: string) => `model S { id String @id @default(uuid())  n String  @@gate(2)  ${attr} }`
     expect(defs(src('@@sync(server)')).S['x-mint']).toEqual({ field: 'id', kind: 'uuid' })
     expect(defs(src('@@sync(read)')).S['x-mint']).toBeUndefined()
   })

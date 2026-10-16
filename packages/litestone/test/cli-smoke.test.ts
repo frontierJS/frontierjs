@@ -302,8 +302,8 @@ model Note   { id Int @id  body String  @@db(extra) }
     await runCli(dir, ['migrate', 'create', 'init'])
     await runCli(dir, ['migrate', 'apply'])
 
-    // One database in, one schema out — the output carries no @@db, so serving
-    // the first would silently answer half the question.
+    // One database in, one schema out, so serving the first would silently
+    // answer half the question.
     const r = await runCli(dir, ['introspect'])
     expect(r.exit).not.toBe(0)
     expect(r.stdout + r.stderr).toMatch(/--db=/)
@@ -312,6 +312,16 @@ model Note   { id Int @id  body String  @@db(extra) }
     expect(named.exit).toBe(0)
     expect(named.stdout).toMatch(/model\s+Note\b/)
     expect(named.stdout).not.toMatch(/model\s+Widget\b/)
+
+    // FJS-1555: the database was named, so the model says where it lives —
+    // pasted into the multi-database schema it would otherwise land in main.
+    expect(named.stdout).toMatch(/@@db\(extra\)/)
+    const outPath = join(dir, 'pulled.lite')
+    await runCli(dir, ['introspect', '--db=extra', `--out=${outPath}`])
+    const { parse } = await import('../src/core/parser.js')
+    const parsed = parse('database main { path "main.db" }\ndatabase extra { path "extra.db" }\n' + readFileSync(outPath, 'utf8'))
+    expect(parsed.errors ?? []).toEqual([])
+    expect(parsed.schema.models.find((m: any) => m.name === 'Note').attributes.find((a: any) => a.kind === 'db')?.name).toBe('extra')
   })
 
   // The property the six substring assertions above could never make (FJS-594).
@@ -348,7 +358,7 @@ model Team { id Int @id  name String }
 model Ticket {
   id     Int    @id
   ref    String @unique
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
 }
 `, 'utf8')
 
@@ -359,6 +369,19 @@ model Ticket {
     expect(r.stdout).toMatch(/1 mutants/)
     expect(r.exit).toBe(0)
   })
+
+  // FJS-3040. A 29-model schema is minutes per run, and a piped run printed the
+  // mutant count and then nothing — a slow run and a hung one read the same.
+  test('mutate names the mutant it is on while piped, every ten', async () => {
+    const models = Array.from({ length: 12 }, (_, i) =>
+      `model Thing${i} {\n  id Int @id\n  ref String @unique\n  @@gate(4.4.4.5)\n}`).join('\n')
+    const dir = makeFixtureDir('mutate-progress', { schema: models })
+    const r = await runCli(dir, ['mutate', '--kinds=unique-drop'], { timeoutMs: 120_000 })
+    expect(r.stdout).toMatch(/12 mutants/)
+    expect(r.stdout).toMatch(/10\/12 · \d+s · unique-drop \w+: /)
+    expect(r.stdout).toMatch(/12\/12 · /)
+    expect(r.exit).toBe(0)
+  }, 120_000)
 
   // The key is read from the environment by every other command in the CLI;
   // this one read `cfg.encryptionKey`, which loadConfig does not populate — so a
@@ -371,7 +394,7 @@ model Vault {
   id    Int    @id
   label String @unique
   data  String @secret
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
 }
 `,
     })
@@ -392,7 +415,7 @@ model Vault {
   id    Int    @id
   label String @unique
   data  String @secret
-  @@gate("4.4.4.5")
+  @@gate(4.4.4.5)
 }
 `,
     })
@@ -402,6 +425,31 @@ model Vault {
     expect(r.exit).not.toBe(0)
     expect(r.stdout + r.stderr).toMatch(/ORIGINAL schema does not build/)
     expect(r.stdout + r.stderr).not.toMatch(/100% killed/)
+  })
+
+  // FJS-1942. A nullable @unique survives the derived checks (SQLite takes any
+  // number of NULLs), so only the app's own tests can fail on it. The mutant is
+  // written over the schema file for the length of the command, then removed.
+  test('mutate --suite runs the app\'s tests on each survivor and puts the schema back', async () => {
+    const schema = `
+model Vault {
+  id    Int     @id
+  label String? @unique
+  @@gate(4.4.4.5)
+}
+`
+    const dir = makeFixtureDir('mutate-suite', { schema })
+    const r = await runCli(dir, ['mutate', '--kinds=unique-drop', '--json', '--suite', `grep -q '@unique' schema.lite`], { timeoutMs: 60_000 })
+    expect(r.exit).toBe(0)
+    const out = JSON.parse(r.stdout)
+    expect(out.suiteKilled).toBe(1)
+    expect(out.survived[0].suite).toBe('killed')
+    expect(readFileSync(join(dir, 'schema.lite'), 'utf8')).toBe(schema)
+
+    const bad = await runCli(dir, ['mutate', '--kinds=unique-drop', '--suite', 'exit 1'], { timeoutMs: 60_000 })
+    expect(bad.exit).not.toBe(0)
+    expect(bad.stdout + bad.stderr).toMatch(/already fails/)
+    expect(readFileSync(join(dir, 'schema.lite'), 'utf8')).toBe(schema)
   })
 
   test('jsonschema writes valid JSON with PascalCase model keys', async () => {
@@ -840,7 +888,7 @@ describe('CLI smoke — repl --eval', () => {
 model Note {
   id    Int    @id
   body  String
-  @@gate("5.5.5.5")
+  @@gate(5.5.5.5)
 }
 `
 
@@ -1136,7 +1184,7 @@ model Variant {
       OLD.replace('@@unique([productId, color, size])',
                   '@@unique([productId, color, size], nullsDistinct: true)') +
       `
-model Note { id Int @id  @@gate("2.4.4.5") }
+model Note { id Int @id  @@gate(2.4.4.5) }
 `, 'utf8')
 
     const out = JSON.parse((await runCli(dir, ['release', '--from', 'HEAD', '--json'])).stdout)
@@ -1179,7 +1227,7 @@ model Note { id Int @id  @@gate("2.4.4.5") }
 // parsed the text. So every executed check — verifyGateLadder, verifyRowPolicies,
 // verifyFieldProtection, verifyConstraints — graded a schema with the imported
 // models missing, and PASSED. A green ladder over models it never saw is worse
-// than no ladder, and `fli auth:install` puts the @@gate("8") credential models
+// than no ladder, and `fli auth:install` puts the @@gate(8) credential models
 // on exactly that side of the line.
 
 describe('createTestEnv over a schema that imports another file', () => {

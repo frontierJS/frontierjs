@@ -5,7 +5,7 @@
 // `OP_FOR_METHOD` names the six CRUD verbs, and a method it does not name was
 // gated by nothing here. That is not the same as unguarded — a body that writes
 // is still refused at the Data boundary by the model's own `@@gate` — but the
-// refusal arrived AFTER the body had run. Measured against a `@@gate("5.5.5.5")`
+// refusal arrived AFTER the body had run. Measured against a `@@gate(5.5.5.5)`
 // model: an anonymous `POST` with `X-Service-Method: refund` executed the
 // handler, charged the card, and only then took a 403 from the first write,
 // while every CRUD verb on the same service answered 401 having run nothing.
@@ -36,7 +36,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createClient, GatePlugin } from '../../litestone/src/index.js'
-import { createService } from '../src/core/service.ts'
+import { buildService } from '../src/core/service.ts'
 import { collectMethodGates } from '../src/core/service.ts'
 import type { App } from '../src/core/app.ts'
 
@@ -46,7 +46,7 @@ database main { path "./a.db" }
 model Order {
   id     Int    @id @default(autoincrement())
   status String @default("draft")
-  @@gate("1.4.4.5")
+  @@gate(1.4.4.5)
   @@db(main)
 }
 
@@ -55,7 +55,7 @@ model Order {
 model Variant {
   id  Int    @id @default(autoincrement())
   sku String @default("s")
-  @@gate("0.4.4.5")
+  @@gate(0.4.4.5)
   @@db(main)
 }
 `
@@ -87,7 +87,7 @@ async function shop(getLevel?: (u: unknown) => number) {
               http: { ...defaultConfig.http, drainTimeout: 50 } },
   } as never)
 
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'orders', model: 'Order',
     methods: ['find', 'get', 'refund', { method: 'settle', gate: 5 }],
     // The side effect that cannot be taken back. It runs BEFORE any write, so
@@ -95,14 +95,14 @@ async function shop(getLevel?: (u: unknown) => number) {
     async refund() { ran.push('refund'); return { ok: true } },
     async settle() { ran.push('settle'); return { ok: true } },
   }))
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'variants', model: 'Variant',
     methods: ['find', 'availability'],
     async availability() { ran.push('availability'); return { ok: true } },
   }))
   // Over no model at all — `revenue`, `shopfront` — so there is no gate to take
   // a floor from, and a declaration is the only thing that can grade a caller.
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'reports',
     methods: [{ method: 'payroll', gate: 5 }, 'ping'],
     async payroll() { ran.push('payroll'); return { ok: true } },
@@ -110,7 +110,7 @@ async function shop(getLevel?: (u: unknown) => number) {
   }))
   // CRUD verbs over no model — conduit's management service, basecamp's
   // portal. Nothing but a declaration can grade them (`FJS-D408`).
-  app.services.register(createService({
+  app.services.register(buildService({
     name: 'targets',
     methods: [{ method: 'find', gate: 5 }, { method: 'remove', gate: 5 }, 'get'],
     async find()   { ran.push('find');   return [] },
@@ -365,14 +365,14 @@ describe('a CRUD verb over no model is graded by its declared gate (FJS-D408)', 
   })
 
   test('over a stated model the declaration is refused where it is written', () => {
-    expect(() => createService({ name: 'orders', model: 'Order', methods: [{ method: 'find', gate: 5 }] }))
+    expect(() => buildService({ name: 'orders', model: 'Order', methods: [{ method: 'find', gate: 5 }] }))
       .toThrow(/model 'Order', whose @@gate grades every CRUD verb/)
   })
 
   test('over a model reached by name alone it is refused at the call, and nothing runs', async () => {
     // No `model:`, so construction cannot see it — the name resolves Order.
     const s = await shop()
-    s.app.services.register(createService({
+    s.app.services.register(buildService({
       name: 'order', methods: [{ method: 'find', gate: 5 }],
       async find() { s.ran.push('order'); return [] },
     }))
@@ -389,7 +389,7 @@ describe('a CRUD verb over no model is graded by its declared gate (FJS-D408)', 
 // with the name resolving `Order` and the declaration graded anyway.
 describe('a service declared over no model is never resolved by its name', () => {
 
-  const overNone = (s: Awaited<ReturnType<typeof shop>>) => s.app.services.register(createService({
+  const overNone = (s: Awaited<ReturnType<typeof shop>>) => s.app.services.register(buildService({
     name: 'order', model: null,
     methods: [{ method: 'find', gate: 5 }, 'get'],
     async find() { s.ran.push('find'); return [] },
@@ -412,8 +412,8 @@ describe('a service declared over no model is never resolved by its name', () =>
   })
 
   test('describe() reports no model, where an omitted one reports the name', () => {
-    expect(createService({ name: 'order', model: null, methods: ['find'] }).describe().model).toBeNull()
-    expect(createService({ name: 'order', methods: ['find'] }).describe().model).toBe('order')
+    expect(buildService({ name: 'order', model: null, methods: ['find'] }).describe().model).toBeNull()
+    expect(buildService({ name: 'order', methods: ['find'] }).describe().model).toBe('order')
   })
 })
 

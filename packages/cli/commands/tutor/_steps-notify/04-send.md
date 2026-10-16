@@ -99,7 +99,7 @@ writeFileSync(join(dir, 'NoteAdded.notification.ts'), [
 let src = readFileSync(service, 'utf8')
 
 if (!src.includes('notify(')) {
-  const ANCHOR = "    channel: 'notes',"
+  const ANCHOR = "  channel: 'notes',"
   if (!src.includes(ANCHOR)) {
     await must($, {
       ok:    false,
@@ -114,32 +114,32 @@ if (!src.includes('notify(')) {
   }
 
   src = src.replace(
-    "import { createBaseService } from '@frontierjs/junction'",
-    "import { createBaseService, resultData } from '@frontierjs/junction'\nimport noteAdded from '../notifications/NoteAdded.notification.ts'",
+    "import { createService } from '@frontierjs/junction'",
+    "import { createService, resultData } from '@frontierjs/junction'\nimport noteAdded from '../notifications/NoteAdded.notification.ts'",
   )
 
   src = src.replace(ANCHOR, [
     ANCHOR,
     '',
-    '    hooks: {',
-    '      after: {',
-    '        create: [async (ctx) => {',
-    '          // resultData, not ctx.result: inside the pipeline the result is',
-    '          // still the envelope, and reading .title off it is undefined',
-    '          // with no error — a notification about nothing.',
-    '          const row = resultData(ctx.result) as { id?: number, title?: string } | undefined',
-    '          const who = ctx.auth?.user as { userId?: string, email?: string, name?: string } | undefined',
-    '          if (!row?.id || !who) return',
+    '  hooks: {',
+    '    after: {',
+    '      create: [async (ctx) => {',
+    '        // resultData, not ctx.result: inside the pipeline the result is',
+    '        // still the envelope, and reading .title off it is undefined',
+    '        // with no error — a notification about nothing.',
+    '        const row = resultData(ctx.result) as { id?: number, title?: string } | undefined',
+    '        const who = ctx.auth?.user as { userId?: string, email?: string, name?: string } | undefined',
+    '        if (!row?.id || !who) return',
     '',
-    '          // A Recipient, not a User: { id, email, name }. id is optional,',
-    '          // which is what lets somebody with no account be emailed.',
-    '          await ctx.app.notify(',
-    '            { id: who.userId, email: who.email, name: who.name },',
-    '            noteAdded(row as { id: number, title: string }),',
-    '          )',
-    '        }],',
-    '      },',
+    '        // A Recipient, not a User: { id, email, name }. id is optional,',
+    '        // which is what lets somebody with no account be emailed.',
+    '        await ctx.app.notify(',
+    '          { id: who.userId, email: who.email, name: who.name },',
+    '          noteAdded(row as { id: number, title: string }),',
+    '        )',
+    '      }],',
     '    },',
+    '  },',
   ].join('\n'))
 
   writeFileSync(service, src, 'utf8')

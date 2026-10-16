@@ -22,10 +22,10 @@
 // that ignores the resolver answers it by construction.
 
 import { describe, test, expect } from 'bun:test'
-import { createService, callService } from '../src/core/service.ts'
+import { buildService, callService } from '../src/core/service.ts'
 import { createChannelManager, announce, channels } from '../src/transport/channels.ts'
 import { createApp } from '../src/core/app.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 type Manager = ReturnType<typeof createChannelManager>
 
@@ -55,7 +55,7 @@ function ctx(manager: Manager, method: string, over: Record<string, unknown> = {
   } as unknown as ServiceContext
 }
 
-const svc = (over: Record<string, unknown> = {}) => createService({
+const svc = (over: Record<string, unknown> = {}) => buildService({
   name:   'posts',
   create: async () => ({ id: 1, title: 'x' }),
   ...over,
@@ -142,9 +142,9 @@ describe('the app-level default publisher', () => {
     const manager = createChannelManager()
     manager.announceDefault(() => null)
 
-    expect(() => createService({ name: 'posts', model: 'Post', channel: 'posts' }).pipelines())
+    expect(() => buildService({ name: 'posts', model: 'Post', channel: 'posts' }).pipelines())
       .not.toThrow()
-    expect(() => createService({
+    expect(() => buildService({
       name: 'posts', model: 'Post', channel: 'posts',
       hooks: { after: { create: [announce(() => null)] } },
     }).pipelines()).toThrow(/declares channel: and also runs a announce\(\) hook/)
@@ -156,10 +156,10 @@ describe('describe() says where a service broadcasts', () => {
   // A function cannot cross the wire, so the description is a summary — and
   // `null` (declares nothing, asks the default) is not `false` (refuses it).
   test('the four states', () => {
-    expect(createService({ name: 'a', model: 'A', channel: 'posts' } as never).describe().channel).toBe('posts')
-    expect(createService({ name: 'b', model: 'B', channel: () => null } as never).describe().channel).toBe(true)
-    expect(createService({ name: 'c', model: 'C', channel: false } as never).describe().channel).toBe(false)
-    expect(createService({ name: 'd', model: 'D' } as never).describe().channel).toBe(null)
+    expect(buildService({ name: 'a', model: 'A', channel: 'posts' } as never).describe().channel).toBe('posts')
+    expect(buildService({ name: 'b', model: 'B', channel: () => null } as never).describe().channel).toBe(true)
+    expect(buildService({ name: 'c', model: 'C', channel: false } as never).describe().channel).toBe(false)
+    expect(buildService({ name: 'd', model: 'D' } as never).describe().channel).toBe(null)
   })
 })
 
@@ -170,7 +170,7 @@ describe('the fall-through report', () => {
     services: Array<Record<string, unknown>>
   ): Promise<string[]> {
     const app  = createApp()
-    for (const s of services) app.services.register(createService(s as never))
+    for (const s of services) app.services.register(buildService(s as never))
     app.configure(channels(setup as never))
 
     const lines: string[] = []

@@ -17,7 +17,7 @@ export async function run(t) {
   // comparison could never be true and the branch was dead (`FJS-321`).
   await t.clickAt('#backdrop')
   await t.eventually(`document.querySelector('#backdrop-hits').textContent`, '1',
-    'on:click|self fires for a click on the element itself')
+    'onclick|self fires for a click on the element itself')
   t.is(await t.evaluate(`return document.querySelector('#seen-target').textContent;`), 'backdrop',
     'currentTarget in a delegated handler is the element, not the delegation root')
 

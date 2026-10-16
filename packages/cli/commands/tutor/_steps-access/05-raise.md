@@ -8,7 +8,7 @@ description: One character, and the same request answers differently
 Change the first number from `0` to `4`:
 
 ```text
-@@gate("4.4.4.6")
+@@gate(4.4.4.6)
 ```
 
 Push, restart, and ask the **same request** as the step before. It is now
@@ -25,7 +25,7 @@ $.config.__step = 5
 
 if (!needs($, ['appDir', 'userToken'], { from: { appDir: '01-app', userToken: '03-people' } })) return
 
-const edit = editSchema($, '@@gate("0.4.4.6")', '@@gate("4.4.4.6")')
+const edit = editSchema($, '@@gate(0.4.4.6)', '@@gate(4.4.4.6)')
 if (!edit.ok) {
   log.error(`${edit.why} — this step edits the gate on model Note`)
   $.config.abort = true

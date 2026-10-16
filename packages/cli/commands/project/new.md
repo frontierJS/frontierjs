@@ -58,7 +58,7 @@ flags:
     description: Force-include or force-skip auth (use --auth or --no-auth); without flag, prompts during execution
   deploy:
     type: boolean
-    description: Scaffold Dockerfile and frontier.config.js deploy block (default true; use --no-deploy to skip)
+    description: Scaffold the Dockerfile, and the frontier.config.js deploy block when --server or --domain names where (default true; use --no-deploy to skip)
     defaultValue: true
   fli:
     type: boolean
@@ -175,8 +175,10 @@ function makePackageJson(spec) {
   const useUI   = useWeb || useWidgets || useSite
 
   // local source → `link:@frontierjs/x` (resolves to a live symlink via bun link);
-  // npm source → the version FJS_PACKAGES pins, which is `latest` while pre-alpha.
-  const specFor = (key) => source === 'local' ? `link:${key}` : (FJS_PACKAGES[key] || 'latest')
+  // npm source → the exact version FJS_PACKAGES or APP_DEV_DEPS pins.
+  const specFor = (key) => source === 'local'
+    ? `link:${key}`
+    : (FJS_PACKAGES[key] ?? APP_DEV_DEPS[key])
 
   const deps = {}
   if (useDb)   deps['@frontierjs/litestone'] = specFor('@frontierjs/litestone')
@@ -388,7 +390,7 @@ function makeFliJson(name) {
 }
 
 function makeReadme(spec) {
-  const { name, useAuth, useWeb, useApi = true, useDb = true, useFli = true, useWidgets = false, useSite = false, useExtension = false, withPkgs } = spec
+  const { name, useAuth, useWeb, useApi = true, useDb = true, useFli = true, useWidgets = false, useSite = false, useExtension = false, deployConfig = false, withPkgs } = spec
   const surface = [useApi && 'api/', useWeb && 'web/', useWidgets && 'widgets/', useSite && 'site/', useExtension && 'extension/'].filter(Boolean)
   const features = [
     `- ${useAuth ? 'Auth via `@frontierjs/auth` — sign in, register, `/account/` (name, password, sessions) and `/reset/`. Reset and verification links print to the API terminal until a mailer is wired' : 'No auth (add later with `fli auth:install`)'}`,
@@ -431,8 +433,9 @@ ports are derived, not chosen: \`env*1000 + category*100 + project*10 + service\
 
 ${useDb ? `Schema DDL runs automatically on first start — no migration step.
 
-\`.env\` is already written and \`ENCRYPTION_KEY\` already has a value${useAuth ? '' : " — if it is\nblank, `fli keygen aes --format hex --name ENCRYPTION_KEY --env` fills it"}. Copying
-\`.env.example\` over it blanks the key, and Litestone refuses to open with one.
+\`.env\` is already written and \`ENCRYPTION_KEY\` already has a value. Copying
+\`.env.example\` over it blanks the key, and Litestone refuses to open with one;
+\`fli keygen aes --format hex --name ENCRYPTION_KEY --env\` fills it again.
 ` : 'This app has no API and no database -- web/ is the whole project.\n'}
 ${useAuth ? `
 ### The first account
@@ -469,7 +472,12 @@ delete a \`User\`, asked of the real schema with the app's own resolver
 (\`api/src/core/gate.ts\`). Every rule it grades lives in \`db/schema.lite\`, so
 loosening one there is a red test rather than a quiet change.
 ` : ''}
-That is exactly what \`.github/workflows/ci.yml\` runs, so a green local run is a
+${useDb ? `\`db/schema.d.ts\` is the schema's own TypeScript and does not exist until
+\`bun run db:types\` has written it; until then every table on the client — in a
+job, a test or a service — is \`unknown\`. \`bun run typecheck\` runs it first, so
+run it by hand after editing \`db/schema.lite\` to refresh the types in your editor.
+
+` : ''}That is exactly what \`.github/workflows/ci.yml\` runs, so a green local run is a
 green pipeline. The order matters: **\`fli check\` goes first because it is the
 half a linter cannot reach** — Biome reads neither \`.mesa\` nor \`.lite\`, and a
 model name that is not PascalCase singular or a \`vite.config.js\` without
@@ -510,7 +518,7 @@ bun run build
 \`\`\`
 ${name}/
 ├── package.json
-${useApi ? '├── frontier.config.js          # FLI deploy config\n├── .env.example\n' : ''}├── tsconfig.json               # one line of extends — @frontierjs/config
+${useApi ? (deployConfig ? '├── frontier.config.js          # FLI deploy config\n' : '') + '├── .env.example\n' : ''}├── tsconfig.json               # one line of extends — @frontierjs/config
 ├── biome.json                  # ditto; linter only, no formatter
 ├── .editorconfig
 ├── README.md
@@ -546,6 +554,7 @@ ${useDb ? '├── db/\n│   └── schema.lite             # Single sourc
         ├── main.js             # Entry: boots the router + client, mounts App
         ├── datetime.js         # The app's clock and zone — at(), ago()
         ├── App.mesa            # Root: <RouterView />
+        ├── lib/nav.js          # The nav table — the Shell draws it, make:scaffold adds to it
         ├── routes/             # Sierra file-based routes (.mesa)
 ${useDb ? '        └── resources/          # One Resource per model — Note.mesa (.mesa)\n' : ''}`
   : ''}${useWidgets
@@ -577,7 +586,7 @@ ${useDb ? `## Where to grow
 
 - **Add a model:** \`fli scaffold Lead --fields "name:string email:email status:string"\`
 - **Background jobs:** add \`@frontierjs/caravan\` and configure under the \`caravan\` block in \`junction.config.js\`
-- **Outbound integrations:** add \`@frontierjs/conduit\` and place targets in \`api/src/conduit/\`
+- **Third-party integrations:** add \`@frontierjs/conduit\` and place targets in \`api/src/conduit/\`
 - **Real-time:** already wired — \`api/src/core/channels.ts\` decides who listens, and joins every channel a service declares
 ` : ''}`
 }
@@ -594,15 +603,11 @@ await app.start()
 `
 }
 
-// `apiPrefix` is only set for the full-stack template, and it is the web half
-// that needs it: the client talks to the page's own origin and the Vite dev
-// proxy carries ONE rule, `/api`. With no prefix the services mount at
-// /{service}, the proxy does not match, and the request falls through to Vite's
-// SPA handler — 200 with an HTML body, which the client reports as the API
-// answering nonsense. An api-only app has no proxy and no such need, so it takes
-// Junction's own default: no prefix, routes at /.
-function makeApiAppTs(useAuth, useWeb, useQueue = false, useNotify = false) {
-  const prefixLine = useWeb ? `\n    apiPrefix: '/api',` : ''
+// `apiPrefix` is not stated here: junction.config.js states it once, for the
+// full-stack template only, and sierra.config.js reads it from there. A second
+// copy in this call would win the merge and move the routes under a proxy and a
+// client that still read the first.
+function makeApiAppTs(useAuth, useQueue = false, useNotify = false) {
   const queueImport = (useQueue ? `\nimport { createCaravan } from '@frontierjs/caravan'\nimport { commitments } from '@frontierjs/junction/commitments'` : '')
     + (useNotify ? `\nimport { notificationsPlugin } from '@frontierjs/notifications'` : '')
   const systemImport = useQueue ? `\nimport { SYSTEM }           from './core/gate.ts'` : ''
@@ -647,7 +652,7 @@ app.configure(notificationsPlugin({ db }))
 // file without binding a port.
 
 import { createApp, channels } from '@frontierjs/junction'${queueImport}
-import { auth, authPlugin, authCleanup } from './core/auth.ts'
+import { auth, authPlugin } from './core/auth.ts'
 import { joinChannels }     from './core/channels.ts'
 import { db }               from './core/db.ts'
 import { env }              from './core/env.ts'${systemImport}
@@ -663,7 +668,7 @@ const app = createApp({
   auth,
   db,${systemLine}
   config: {
-    port: env.PORT,${prefixLine}
+    port: env.PORT,
   },
 })
 
@@ -683,19 +688,9 @@ app.configure(channels((a) => {
 // ─── Auth routes ──────────────────────────────────────────────────────────
 // Mounts {apiPrefix}/auth/register, /auth/login, /auth/logout and the
 // rest — apiPrefix moves the plugin's routes with everything else.
+// Its work() phase also starts the hourly sweep of expired sessions and
+// tokens, which a one-shot boot (junction call) skips.
 app.configure(authPlugin)
-
-// ─── Auth cleanup ─────────────────────────────────────────────────────────
-// Expired sessions and verification tokens. In boot() rather than register(),
-// which junction never awaits — and here rather than in core/auth.ts, because
-// a module that starts a timer by being imported starts one in every test that
-// imports it too.
-app.configure({
-  name: 'auth-cleanup',
-  register() {},
-  async work() { authCleanup.start() },
-  async shutdown() { authCleanup.stop() },
-})
 
 ${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot
 // (configured in api/config/junction.config.js).
@@ -720,7 +715,7 @@ import { env }                                           from './core/env.ts'${s
 const app = createApp({
   db,${systemLine}
   config: {
-    port: env.PORT,${prefixLine}
+    port: env.PORT,
   },
 })
 
@@ -1111,7 +1106,7 @@ function makeApiCoreAuthTs() {
 // Both reference the same \`db\` import — auth uses db.asSystem()
 // internally so its writes bypass gates and policies.
 
-import { createLitestoneAuth, createAuthPlugin, createAuthCleanupJobs } from '@frontierjs/auth'
+import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { db }   from './db.ts'
 import { env }  from './env.ts'
 
@@ -1120,7 +1115,7 @@ export const auth = createLitestoneAuth(db, {
 
   // The one place this app says what 'admin' MEANS, and it is load-bearing.
   // gate.ts grades the gate on \`isAdmin\`, and schema.lite spends it three times —
-  // \`@@gate("4.4.4.5")\` for who may delete a person, \`@@allow('update', … ||
+  // \`@@gate(4.4.4.5)\` for who may delete a person, \`@@allow('update', … ||
   // auth().isAdmin)\` for whose row, \`@allow('write', auth().isAdmin)\` on role
   // and emailVerified. The User model ships a role STRING, which auth stores
   // and never interprets, so without this line \`isAdmin\` is never on the
@@ -1155,15 +1150,15 @@ export const authPlugin = createAuthPlugin(auth, {
   // Token in response body by default. Set true for httpOnly session cookie.
   cookieAuth: false,
 })
-
-// Expired sessions and verification tokens. app.ts starts these — nothing
-// starts a timer by being imported, so a cleanup that is only constructed here
-// is a table that grows for ever.
-export const authCleanup = createAuthCleanupJobs(db)
 `
 }
 
 function makeJunctionConfig(appName, useWeb, useQueue = false) {
+  // The one place the prefix is stated. Sierra's config imports this file, and
+  // the dev proxy follows Sierra's, so the three cannot disagree. Only the web
+  // half needs one: the dev proxy carries a single rule, and with no prefix the
+  // services mount at /{service}, miss it, and fall through to Vite's SPA
+  // handler -- 200 with an HTML body.
   const prefixLine = useWeb ? `\n    apiPrefix: '/api',` : ''
   // Anchored to THIS FILE: a relative queue path resolves against the working
   // directory, so the app would open a second, empty db/jobs.db from anywhere
@@ -1239,23 +1234,7 @@ export default {
     health:   true,
     manifest: true,
   },
-${caravan}
-  // Third-party services this app needs and does not own — an n8n, a mail
-  // server, a search cluster. Declared here, BOUND per environment as ordinary
-  // variables, and the app refuses to start if one is missing or bound halfway.
-  // Setting optional: true forgives a service nobody bound; it never forgives
-  // one bound halfway, because that is the shape that reaches production.
-  //
-  // attachments: {
-  //   n8n: {
-  //     describe: 'workflow automation',
-  //     env: {
-  //       N8N_URL:     { required: true, type: 'url' },
-  //       N8N_API_KEY: { required: true },
-  //     },
-  //   },
-  // },
-}
+${caravan}}
 `
 }
 
@@ -1279,7 +1258,7 @@ import "@frontierjs/litestone/references/AuditTrail.lite"
 
 database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
 
-model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") }
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) }
 
 `
 }
@@ -1392,9 +1371,9 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       // One entry: apiPrefix moves every route the app registers, raw ones
-      // and the auth plugin's included, so they are all under /api. /ws is
+      // and the auth plugin's included, so they are all under it. /ws is
       // the socket, which is not a route.
-      '/api':     { target: API, changeOrigin: true },
+      [sierraConfig.junction.apiPrefix]: { target: API, changeOrigin: true },
       '/ws':      { target: API, ws: true },
     },
   },
@@ -1407,7 +1386,9 @@ function makeSierraConfig(appName, useApi = true) {
 // Sierra runtime config — routes dir, build target${useApi ? ', junction connection' : ''}.
 // Paths are relative to the Vite root (web/), since dev:web cd's into web/
 // before invoking vite -c config/vite.config.js.
-
+${useApi ? `
+import api from '../../api/config/junction.config.js'
+` : ''}
 export default {
   target:        'spa',
   routesDir:     'src/routes',
@@ -1435,11 +1416,10 @@ ${useApi ? `
     // The client upgrades to ws itself, so this stays http.
     url:      'http://localhost:8000',
     tokenKey: '${appName}_token',
-    // Must match the API's config.apiPrefix (api/config/default.ts). Junction
-    // defaults to no prefix — services at /{service} — so this line and that
-    // one move together or the client requests paths the server never
-    // registered.
-    apiPrefix: '/api',
+    // Read from the API's config, which states it once: Junction defaults to
+    // no prefix, so a client that guessed would request paths the server
+    // never registered.
+    apiPrefix: api.app.apiPrefix,
   },
 ` : ''}}
 `
@@ -1518,6 +1498,29 @@ export function ago(instant, none = 'never') {
 `
 }
 
+// The nav table. The Shell draws it and `make:scaffold` appends to it, so a new
+// model's list is reachable without anyone editing the layout.
+function makeNavJs(useAuth) {
+  return `// The app's navigation table, drawn by the Shell in routes/_module.mesa.
+// \`fli make:scaffold\` appends an entry here for each model it lays out.
+//
+// A \`show\` is an affordance and never the boundary (Invariant 6): the server
+// refuses whatever the nav offers, so hiding a link changes what is worth
+// clicking and nothing about what is reachable.
+${useAuth ? `
+// db/schema.lite gates User at level 4, so the link is for members: a nav that
+// offers a stranger a page that always answers "Authentication required" is a
+// working app reporting itself broken.
+const members = ({ user }) => !!user
+` : ''}
+export const groups = [
+  { label: null, entries: [
+    { href: '/', label: 'Home', exact: true },
+${useAuth ? "    { href: '/users/', label: 'Users', show: members },\n" : ''}  ] },
+]
+`
+}
+
 function makeRouteModule(appName, useAuth, useApi = true) {
   if (useAuth) {
     return `---
@@ -1527,6 +1530,9 @@ siteName: ${appName}
   import { goto, isActive, page } from '@frontierjs/sierra/router'
   import { status, session, signOut } from '@frontierjs/sierra/resource'
   import { theme, toggleTheme } from '@frontierjs/sierra/theme'
+  import Shell from '@frontierjs/ui/components/layout/Shell.mesa'
+
+  import { groups } from '../lib/nav.js'
 
   // Naming a property in a $: line is what SUBSCRIBES this component to it.
   // Without it status.connected renders once, at its initial false, and never
@@ -1534,9 +1540,10 @@ siteName: ${appName}
   //
   // session.checked is here for the same reason and answers a different
   // question: the boot restore is asynchronous, so on a cold load session.user
-  // is null for a caller who IS signed in. Rendering the signed-out nav until
-  // it settles is the redirect flash one layer up.
-  $: (page.siteName, page.route, status.connected, session.user, session.checked, theme.value)
+  // is null for a caller who IS signed in. The Shell draws nothing until it
+  // settles, because the signed-out frame in its place is the redirect flash.
+  $: (page.siteName, page.route, page.pathname, page.query)
+  $: (status.connected, session.user, session.level, session.checked, theme.value)
 
   // Awaited: signOut ends the session at the SERVER and then locally, and
   // navigating first would send the guard past a session that is still there.
@@ -1550,50 +1557,35 @@ ${sc}
   Every class here is @frontierjs/css, imported once in main.js, so there is no
   <style> block: a color written here is one a theme cannot reach.
 
-  The current page is aria-current="page" rather than a class — the stylesheet
-  keys off the attribute, and Mesa drops one whose value is null. The leading
-  page.route read in each expression is what makes it move: Mesa takes an
-  expression's dependencies from its own text, and isActive() reads the route
-  where this file cannot see it.
+  The Shell draws the bar and the nav from src/lib/nav.js and marks the current
+  page with aria-current through Sierra's isActive. Home is public, so a
+  visitor with no account gets the same frame and its Sign in button.
 -->
-<div class="shell">
-  <header class="topbar">
-    <nav class="group" aria-label="Main">
-      <strong>{page.siteName}</strong>
-      <a class="navlink" href="/" aria-current={(page.route, isActive('/', { exact: true })) ? 'page' : null}>Home</a>
-      <!-- User reads at gate level 4 in db/schema.lite, so this link cannot
-           work for a stranger. A nav that offers one that always answers
-           "Authentication required" is a working app reporting itself broken. -->
-      {#if session.user}
-        <a class="navlink" href="/users/" aria-current={(page.route, isActive('/users/')) ? 'page' : null}>Users</a>
-      {/if}
-    </nav>
+<Shell {groups} layout="topbar"
+       path={page.pathname} query={page.query}
+       user={session.user} level={session.level} checked={session.checked}
+       {isActive} onsignout={out}>
+  {#snippet brand()}
+    <strong>{page.siteName}</strong>
+  {/snippet}
 
-    <div class="group">
-      <span class="badge" class:success={status.connected} class:muted={!status.connected}>
-        {status.connected ? 'live' : 'offline'}
-      </span>
-      <button class="btn ghost square" on:click={toggleTheme}
-              aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
-        {theme.value === 'theme-dark' ? '☀' : '☾'}
-      </button>
-      {#if !session.checked}
-        <span class="text-muted">…</span>
-      {:else if session.user}
-        <a class="navlink" href="/account/" aria-current={(page.route, isActive('/account/')) ? 'page' : null}>{session.user.email}</a>
-        <button class="btn ghost" on:click={out}>Sign out</button>
-      {:else}
-        <a class="btn primary" href="/login/">Sign in</a>
-      {/if}
-    </div>
-  </header>
+  {#snippet topbar()}
+    <span class="badge" class:success={status.connected} class:muted={!status.connected}>
+      {status.connected ? 'live' : 'offline'}
+    </span>
+    <button class="btn ghost square" onclick={toggleTheme}
+            aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
+      {theme.value === 'theme-dark' ? '☀' : '☾'}
+    </button>
+    {#if session.user}
+      <a class="navlink" href="/account/" aria-current={(page.route, isActive('/account/')) ? 'page' : null}>{session.user.email}</a>
+    {:else}
+      <a class="btn primary" href="/login/">Sign in</a>
+    {/if}
+  {/snippet}
 
-  <main class="screen">
-    <div class="container">
-      <slot />
-    </div>
-  </main>
-</div>
+  <slot />
+</Shell>
 `
   }
 
@@ -1603,45 +1595,44 @@ siteName: ${appName}
 <script>
   import { isActive, page } from '@frontierjs/sierra/router'
 ${useApi ? "  import { status } from '@frontierjs/sierra/resource'\n" : ''}  import { theme, toggleTheme } from '@frontierjs/sierra/theme'
+  import Shell from '@frontierjs/ui/components/layout/Shell.mesa'
+
+  import { groups } from '../lib/nav.js'
 
 ${useApi ? `  // Naming a property in a $: line is what SUBSCRIBES this component to it.
   // Without it status.connected renders once, at its initial false, and never
   // updates — the socket connects and the page still says otherwise.
-  $: (page.siteName, page.route, status.connected, theme.value)
+  $: (page.siteName, page.pathname, page.query, status.connected, theme.value)
 ` : `  // Naming a property in a $: line is what SUBSCRIBES this component to it.
-  $: (page.siteName, page.route, theme.value)
+  $: (page.siteName, page.pathname, page.query, theme.value)
 `}${sc}
 
 <!--
   Every class here is @frontierjs/css, imported once in main.js, so there is no
-  <style> block: a color written here is one a theme cannot reach. The leading
-  page.route read is what makes aria-current move — Mesa takes an expression's
-  dependencies from its own text, and isActive() reads the route out of sight.
+  <style> block: a color written here is one a theme cannot reach.
+
+  The Shell draws the bar and the nav from src/lib/nav.js and marks the current
+  page with aria-current through Sierra's isActive.
 -->
-<div class="shell">
-  <header class="topbar">
-    <nav class="group" aria-label="Main">
-      <strong>{page.siteName}</strong>
-      <a class="navlink" href="/" aria-current={(page.route, isActive('/', { exact: true })) ? 'page' : null}>Home</a>
-    </nav>
+<Shell {groups} layout="topbar"
+       path={page.pathname} query={page.query}
+       {isActive}>
+  {#snippet brand()}
+    <strong>{page.siteName}</strong>
+  {/snippet}
 
-    <div class="group">
-${useApi ? `      <span class="badge" class:success={status.connected} class:muted={!status.connected}>
-        {status.connected ? 'live' : 'offline'}
-      </span>
-` : ''}      <button class="btn ghost square" on:click={toggleTheme}
-              aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
-        {theme.value === 'theme-dark' ? '☀' : '☾'}
-      </button>
-    </div>
-  </header>
+  {#snippet topbar()}
+${useApi ? `    <span class="badge" class:success={status.connected} class:muted={!status.connected}>
+      {status.connected ? 'live' : 'offline'}
+    </span>
+` : ''}    <button class="btn ghost square" onclick={toggleTheme}
+            aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
+      {theme.value === 'theme-dark' ? '☀' : '☾'}
+    </button>
+  {/snippet}
 
-  <main class="screen">
-    <div class="container">
-      <slot />
-    </div>
-  </main>
-</div>
+  <slot />
+</Shell>
 `
 }
 
@@ -1688,7 +1679,7 @@ ${useApi ? `  import { status } from '@frontierjs/sierra/resource'
   // working app reporting itself broken on its own front page.
   // Same origin — web/config/vite.config.js proxies /api to the API in dev, and
   // a deployed build serves both from one host. '/api' is this app's apiPrefix,
-  // set in web/config/sierra.config.js and api/config/default.ts together.
+  // set in api/config/junction.config.js; change it there and here.
   // One request read by two blocks: the badge, and the sentence under it that
   // only a failure needs.
   const health = fetch('/api/health').then(r => {
@@ -1761,7 +1752,7 @@ ${useApi ? `  <div class="cluster">
       <p>No store, no hook, no setter. Assign to it, and the markup that read it
          is what updates.</p>
       <div class="cluster">
-        <button class="btn primary" on:click={() => count++}>Press me</button>
+        <button class="btn primary" onclick={() => count++}>Press me</button>
         <span class="pill" class:muted={count === 0} class:success={count > 0}>pressed {count} times</span>
       </div>
     </article>
@@ -1925,7 +1916,7 @@ ${sc}
 
 <!-- A <form>, so Enter in either box signs in. Buttons that do not submit say
      type="button", or Enter would press the first of them. -->
-<form class="auth-card card stack gap-md" on:submit|preventDefault={session.awaitingCode ? handleCode : handleSubmit}>
+<form class="auth-card card stack gap-md" onsubmit|preventDefault={session.awaitingCode ? handleCode : handleSubmit}>
   <h1 class="text-xl">Sign in</h1>
 
   {#if error}
@@ -1938,7 +1929,7 @@ ${sc}
     <button class="btn primary" type="submit" disabled={loading}>
       {loading ? 'Checking…' : 'Verify'}
     </button>
-    <button class="btn ghost" type="button" on:click={startOver} disabled={loading}>Start over</button>
+    <button class="btn ghost" type="button" onclick={startOver} disabled={loading}>Start over</button>
   {:else}
     <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email"    autocomplete="username" />
     <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" autocomplete="current-password" />
@@ -1952,13 +1943,15 @@ ${sc}
   {/if}
 
   <!-- A fresh app has no rows in \`user\`, so the first person to open this
-       page cannot sign in and there is nothing on screen saying why. The other
-       door is the CLI, which is also the only way to mint an ADMIN — register
-       gives everybody role "user", and db/schema.lite gates delete at 5. -->
+       page cannot sign in and there is nothing on screen saying why. The
+       browser cannot count rows, so the hint is worded for a visitor who may
+       already have an account. The other door is the CLI, which is also the
+       only way to mint an ADMIN — register gives everybody role "user", and
+       db/schema.lite gates delete at 5. -->
   {#if import.meta.env.DEV}
     <div class="alert info">
       <div class="alert-content text-sm stack gap-xs">
-        <p>First run? No user exists yet. Either register above, or from the app root:</p>
+        <p>Dev only: no account to sign in with yet? Create one, or from the app root:</p>
         <Code text="fli auth:create-user you@example.com --role admin" />
       </div>
     </div>
@@ -2027,7 +2020,7 @@ title: Reset your password
   })
 ${sc}
 
-<form class="auth-card card stack gap-md" on:submit|preventDefault={token() ? confirm : request}>
+<form class="auth-card card stack gap-md" onsubmit|preventDefault={token() ? confirm : request}>
   <h1 class="text-xl">Reset your password</h1>
 
   {#if error}
@@ -2066,6 +2059,74 @@ ${sc}
     <a class="link text-sm" href="/login/">Back to sign in</a>
   {/if}
 </form>
+
+<style>
+  .auth-card { max-width: var(--auth-card-width, 24rem); margin: var(--space-3xl) auto }
+  h1, p { margin: 0 }
+</style>
+`
+}
+
+// The page a verification link opens. The token is spent by a button, never on
+// load: POST /auth/email/verify exists so a mail scanner that fetches the link
+// cannot burn it, and a page that posted by itself would hand that back.
+function makeRouteVerifyEmail() {
+  return `---
+title: Verify your email
+---
+<script>
+  // String()ed for the reason the reset page gives: a token of digits would
+  // otherwise reach the route as a number it refuses.
+  //
+  // Nothing here signs anybody in; verifying an address is proof of the mailbox
+  // and not of a password.
+  import { page }      from '@frontierjs/sierra/router'
+  import { getClient } from '@frontierjs/sierra/resource'
+
+  $: page.query
+
+  let busy  = false
+  let error = ''
+  let done  = false
+
+  const token = () => String(page.query?.token ?? '')
+
+  async function confirm() {
+    busy  = true
+    error = ''
+    try {
+      await getClient().auth.verifyEmail(token())
+      done = true
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = false
+    }
+  }
+${sc}
+
+<div class="auth-card card stack gap-md">
+  <h1 class="text-xl">Verify your email</h1>
+
+  {#if error}
+    <div class="alert danger" role="alert"><div class="alert-content">{error}</div></div>
+  {/if}
+
+  {#if done}
+    <div class="alert success" role="status">
+      <div class="alert-content">Your email address is confirmed.</div>
+    </div>
+    <a class="btn primary" href="/login/">Sign in</a>
+  {:else if token()}
+    <p class="text-sm text-muted">Confirm that this address is yours.</p>
+    <button class="btn primary" type="button" onclick={confirm} disabled={busy}>
+      {busy ? 'Confirming…' : 'Confirm email'}
+    </button>
+  {:else}
+    <p class="text-sm text-muted">This page needs the link from the verification email.</p>
+    <a class="link text-sm" href="/login/">Back to sign in</a>
+  {/if}
+</div>
 
 <style>
   .auth-card { max-width: var(--auth-card-width, 24rem); margin: var(--space-3xl) auto }
@@ -2175,13 +2236,13 @@ ${sc}
         <dt>Email</dt>
         <dd>{session.user.email}</dd>
       </dl>
-${withName ? `      <form class="stack gap-sm" on:submit|preventDefault={saveName}>
+${withName ? `      <form class="stack gap-sm" onsubmit|preventDefault={saveName}>
         <input class="field" bind:value={name} placeholder="Your name" aria-label="Name" autocomplete="name" />
         <button class="btn primary" type="submit" disabled={busy}>Save name</button>
       </form>
 ` : ``}    </section>
 
-    <form class="card stack gap-sm" on:submit|preventDefault={changePassword}>
+    <form class="card stack gap-sm" onsubmit|preventDefault={changePassword}>
       <h2 class="text-lg">Password</h2>
       <input class="field" bind:value={current} type="password" placeholder="Current password" aria-label="Current password" autocomplete="current-password" />
       <input class="field" bind:value={next}    type="password" placeholder="New password"     aria-label="New password"     autocomplete="new-password" />
@@ -2192,7 +2253,7 @@ ${withName ? `      <form class="stack gap-sm" on:submit|preventDefault={saveNam
   <section class="card stack gap-sm sessions">
     <div class="split">
       <h2 class="text-lg">Where you are signed in</h2>
-      <button class="btn outlined" on:click={signOutOthers} disabled={busy || sessions.length < 2}>Sign out everywhere else</button>
+      <button class="btn outlined" onclick={signOutOthers} disabled={busy || sessions.length < 2}>Sign out everywhere else</button>
     </div>
     <dl class="facts divided">
       {#each sessions as s}
@@ -2202,7 +2263,7 @@ ${withName ? `      <form class="stack gap-sm" on:submit|preventDefault={saveNam
             <span class="badge success">this browser</span>
           {:else}
             <span class="text-sm text-muted">expires {at(s.expiresAt)}</span>
-            <button class="btn ghost" on:click={() => signOutOne(s.id)} disabled={busy}>Sign out</button>
+            <button class="btn ghost" onclick={() => signOutOne(s.id)} disabled={busy}>Sign out</button>
           {/if}
         </dd>
       {/each}
@@ -2256,7 +2317,7 @@ title: Create an account
   }
 ${sc}
 
-<form class="auth-card card stack gap-md" on:submit|preventDefault={handleSubmit}>
+<form class="auth-card card stack gap-md" onsubmit|preventDefault={handleSubmit}>
   <h1 class="text-xl">Create an account</h1>
 
   {#if error}
@@ -2527,7 +2588,7 @@ if (fjsSource !== 'local' && fjsSource !== 'npm') {
 
 // What this project will be given, decided once. `makePackageJson` is the one
 // answer to that question and the manifest is written from it later.
-const spec = { name: appName, scope: flag.scope, useAuth, useWeb, useApi, useDb, useFli, useWidgets, useSite, useExtension, withPkgs, source: fjsSource }
+const spec = { name: appName, scope: flag.scope, deployConfig: useDeploy && !!(flag.server || flag.domain), useAuth, useWeb, useApi, useDb, useFli, useWidgets, useSite, useExtension, withPkgs, source: fjsSource }
 
 // The @frontierjs packages this project will actually depend on — READ OFF the
 // manifest rather than listed again beside it. A `link:` spec for a package
@@ -2576,7 +2637,7 @@ echo(`  Template:  ${template}`)
 echo(`  FJS pkgs:  ${fjsSource === 'local' ? `local — symlink to ${packagesDir} (live edits; a build packs them)` : 'npm (published)'}`)
 echo(`  Auth:      ${useAuth ? 'yes' : 'no'}`)
 echo(`  Web:       ${useWeb ? 'yes (Sierra + Mesa + Vite)' : 'no'}`)
-echo(`  Deploy:    ${useDeploy && useApi ? 'yes (deploy/Dockerfile + frontier.config.js)' : 'no'}`)
+echo(`  Deploy:    ${useDeploy && useApi ? (flag.server || flag.domain ? 'yes (deploy/Dockerfile + frontier.config.js)' : 'yes (deploy/Dockerfile; pass --server to write frontier.config.js)') : 'no'}`)
 echo(`  FLI:       ${useFli ? 'yes (cli/src/routes/)' : 'no'}`)
 echo(`  Example:   ${useExample ? 'yes (User CRUD vertical slice)' : 'no'}`)
 echo(`  Git:       ${useGit ? 'yes' : 'no'}`)
@@ -2612,9 +2673,9 @@ if (useApi && useAuth) dirs.push('api/test')
 if (useDeploy && useApi) dirs.push('deploy')
 if (flag.ci !== false) dirs.push('.github/workflows')
 if (useWeb) {
-  dirs.push('web', 'web/config', 'web/src', 'web/src/routes', 'web/src/components', 'web/public')
+  dirs.push('web', 'web/config', 'web/src', 'web/src/lib', 'web/src/routes', 'web/src/components', 'web/public')
   if (useDb) dirs.push('web/src/resources')
-  if (useAuth) dirs.push('web/src/routes/login', 'web/src/routes/register', 'web/src/routes/reset', 'web/src/routes/account')
+  if (useAuth) dirs.push('web/src/routes/login', 'web/src/routes/register', 'web/src/routes/reset', 'web/src/routes/verify-email', 'web/src/routes/account')
 }
 
 for (const d of dirs) {
@@ -2647,7 +2708,7 @@ if (useDb) filesToWrite.push(
 if (useApi) {
   filesToWrite.push(
     ['api/index.ts',                makeApiIndexTs()],
-    ['api/src/app.ts',              makeApiAppTs(useAuth, useWeb, useQueue, useNotify)],
+    ['api/src/app.ts',              makeApiAppTs(useAuth, useQueue, useNotify)],
     ['api/src/core/env.ts',         makeApiEnvTs()],
     ['api/src/core/gate.ts',        makeApiCoreGateTs(useQueue)],
     ['api/src/core/db.ts',          makeApiCoreDbTs(useQueue)],
@@ -2677,6 +2738,7 @@ if (useWeb) {
     ['web/src/App.mesa',                    makeAppMesa()],
     ['web/src/main.js',                     makeMainJs(useApi)],
     ['web/src/datetime.js',                 makeDatetimeJs()],
+    ['web/src/lib/nav.js',                  makeNavJs(useAuth)],
     ['web/src/routes/_module.mesa',         makeRouteModule(appName, useAuth, useApi)],
     ['web/src/routes/index.mesa',           makeRouteIndex(appName, useApi)],
     ['web/src/routes/[...404].mesa',        makeRouteNotFound()],
@@ -2686,6 +2748,7 @@ if (useWeb) {
       ['web/src/routes/login/index.mesa',    makeRouteLogin()],
       ['web/src/routes/register/index.mesa', makeRouteRegister()],
       ['web/src/routes/reset/index.mesa',    makeRouteReset()],
+      ['web/src/routes/verify-email/index.mesa', makeRouteVerifyEmail()],
       ['web/src/routes/account/index.mesa',  makeRouteAccount(useExample)],
     )
   }
@@ -2698,8 +2761,12 @@ if (flag.ci !== false) {
   filesToWrite.push(['.github/workflows/ci.yml', appWorkflow({ name: appName })])
 }
 
-// .env (copy of .env.example, gitignored)
-if (useDb) filesToWrite.push(['.env', makeEnvExample(useAuth)])
+// .env (copy of .env.example, gitignored) with ENCRYPTION_KEY filled. env.ts
+// requires it with or without --auth, and auth:install is the only other writer,
+// so a --no-auth app left blank crashes at load on the first `bun run dev`.
+// Hex, because litestone parses this variable as hex.
+if (useDb) filesToWrite.push(['.env', makeEnvExample(useAuth)
+  .replace(/^ENCRYPTION_KEY=$/m, `ENCRYPTION_KEY=${randomBytes(32).toString('hex')}`)])
 
 const written = []
 for (const [relPath, content] of filesToWrite) {
@@ -2901,11 +2968,18 @@ if (useInstall && useDb) {
     // refuses a database its own initial file builds (FJS-1490). `baseline`
     // records the file as applied and refuses if the database lacks anything
     // the file builds, so it cannot record a lie.
+    //
+    // A schema whose only model sits on the audit database (--no-auth) is the
+    // other case: the client builds no table, `baseline` refuses to record
+    // what the database lacks, and a migration file on disk stops the client
+    // building tables at start. `apply` builds them.
     if (existsSync(join(finalTarget, 'db/app.db'))) {
-      $.exec({
-        command: `${$.bin('litestone', finalTarget)} migrate baseline --schema db/schema.lite`,
-        cwd: finalTarget, stdio: 'pipe',
-      })
+      const litestone = $.bin('litestone', finalTarget)
+      try {
+        $.exec({ command: `${litestone} migrate baseline --schema db/schema.lite`, cwd: finalTarget, stdio: 'pipe' })
+      } catch {
+        $.exec({ command: `${litestone} migrate apply --schema db/schema.lite`, cwd: finalTarget, stdio: 'pipe' })
+      }
     }
   } catch (e) {
     // Not fatal: the app runs from `db push` in development either way, and a
@@ -2944,11 +3018,10 @@ log.success(`${appName} created`)
 echo('')
 echo(`  cd ${useHere ? '.' : (useWorkspace ? finalTarget : name)}`)
 if (!useInstall) echo('  bun install')
-// `.env` is always written, and with --auth it comes back from auth:install with
-// both keys generated — so the old unconditional `cp .env.example .env` told
-// everyone to overwrite a filled file with a blank one, which breaks the app the
-// scaffold just finished building. The question is whether the key has a VALUE,
-// which is also the honest answer for --no-auth, where nothing fills it.
+// `.env` is written with its key filled, so `cp .env.example .env` here would
+// overwrite a filled file with a blank one and break the app the scaffold just
+// built. The question is whether the key has a VALUE, asked of the file rather
+// than assumed from the write.
 const envFile = resolve(finalTarget, '.env')
 const keySet  = existsSync(envFile) &&
   /^[ \t]*ENCRYPTION_KEY[ \t]*=[ \t]*\S/m.test(readFileSync(envFile, 'utf8'))

@@ -331,10 +331,73 @@ to be that touch screen.
 Goal: the in-repo apps run on the Shell; the prototypes follow.
 Done when: example's and basecamp's drives pass, and basecamp's ⌘K offers `/security/`.
 
-- [ ] 3.1 example: `src/lib/nav.js`, the Shell, `paletteItems` for `Navigate`
-- [ ] 3.2 basecamp: same, with `PRIMARY` kept in its own topbar snippet
-- [ ] 3.3 ela, maidtech, sstime, serpgrid. Ask the owner first: `fjs-prototypes` is
-  not a git repository, so an edit there cannot be undone
+- [x] 3.1 example: `src/lib/nav.js`, the Shell, `paletteItems` for `Navigate`. **Built,
+  `layout="topbar"`.** example is a shop and a guest reaches Basket at level 0, so the
+  Shell's signed-out branch had nothing to offer it. **`FJS-D1068`**: a guest gets the
+  frame when the table offers a guest any entry, and the narrow page only when it
+  offers none; Sign out needs a user (`shell.spec.mjs`, 77 checks). A members-only
+  table now says `show: ({ user }) => !!user`, which 3.2 and 3.3 owe. Billing and
+  Payroll are one entry each with `match`, so ⌘K offers Billing and no longer lists
+  Plans and Invoices apart. The drives select `nav[aria-label="Main"] a[href=…]`
+  rather than per-link ids, which a table entry has no field for. `nav-href-routes`
+  grades example with no findings. Drives: cart 34, reports 14, stock 41, users 105
+  (after fixing `FJS-2866`), automations 72, payroll 64, all green; `verify` fails only
+  `FJS-1598`'s warning; `verify:ui` stops at `FJS-2905` before its palette steps, so the
+  palette rows were probed directly and match its expectation. The build is over its
+  offline budget by other sessions' work (`FJS-2822`), and this adds 2 kB
+- [x] 3.2 basecamp: same, with `PRIMARY` kept in its own topbar snippet. **Built on
+  its own `_module.mesa`, not the Shell** (owner's ruling, 2026-10-15): the paper's
+  *app that outgrows it* path. `src/lib/nav.js` holds `primary`, `groups` and
+  `elsewhere` (the ⌘K destinations no link names: notifications, your settings, the
+  Admin and Hub subpages). The module draws them through `visible`, and ⌘K's
+  `Navigate` is `paletteItems` over all three, so it offers `/security/` and is
+  members-only, as the old rows were. Five things basecamp draws that the Shell
+  cannot: collapsible `<details>` groups (`open`), a group glyph in the rail, Focus
+  (no sidebar), the rail toggle at the head of the sidebar, and the workspace switcher
+  and primary links at the head of the drawer. Each has one caller, so none went into
+  the kit; a second caller for any of them is the reason to revisit. `/git-activity/`
+  became `exact`, as `/registers/` already was, because `/git-activity/local/` lit
+  both. `nav-href-routes` grades basecamp with no findings. `verify:screens` 167/169;
+  the two failures are `FJS-2870`, and every rail and sidebar check passes. `verify` stops 190 checks in at `FJS-2932`, a `POST /volumes` 400 from HEAD's
+  validator, before its Hub nav check; the ⌘K rows were probed instead: none signed
+  out, 39 for a member with `/security/` among them, 45 for a system admin
+- [x] 3.3 ela, maidtech, sstime, serpgrid. **Built, owner approved 2026-10-15; nothing
+  committed in the four repos.** Each table is `web/src/lib/nav.js`, the old file
+  deleted. Two went onto the Shell and two kept their own module:
+  - **ela, Shell `sidebar`.** Its `/survey/` and `/quote/` prefix check became
+    `reset: true` on the two pages. Lost its group divider, its bell above the groups
+    (`foot` comes after them), and its `<h1>`: the Shell's section bar draws the title
+    as `<strong>`, and ela's pages wrote none of their own (`FJS-2959`). Its committed
+    `routes.snapshot.md` was missing `/quotes/*` and `/support/`; regenerated, the rule
+    grades it clean
+  - **maidtech, Shell `rail`.** Longest prefix moved no page: its three section paths
+    do not nest. A section keeps an app-only `title` ("Settings" over every
+    `/account/` tab). ⌃J's `Navigate` is `paletteItems`. `/portal/` is said by
+    `reset: true` alone. The rail's colors are a theme selector, because the Shell puts
+    no class on the sidebar, and its stickiness is app CSS, because the kit rail
+    scrolls away with a document-scrolled page
+  - **sstime, own module.** Its bottom menu with `short` labels is the phone UX of a
+    time clock. The group shown is picked by the page's PATH (a manager on a manager
+    page sees Admin), which `show({ user, level })` cannot say, so the module calls
+    `visible` with `path` added. `/kiosk/` `/join/` `/n/` are `reset: true`, one page
+    each
+  - **serpgrid, own module.** It has no topbar, and the Shell always draws one. Its
+    collapse button sits in the rail, and the Shell's rail always peeks, so a click
+    would reopen it under the pointer. ⌘K's page rows are `paletteItems`, so a
+    signed-out ⌘K no longer lists all ten
+  **The rail toggle at the head of the sidebar had two callers**, basecamp and
+  serpgrid, and is in the Shell now: `collapsible` and `bind:collapsed`, folded as a
+  non-peeking rail with Sign out in the bar and the foot told `'rail'`. Neither
+  caller moved onto it; both keep their own module for other reasons. One caller
+  each, still: a class on the sidebar, a sticky rail, a frame with no topbar, a
+  path-picked group, `brand(where)`. `nav-href-routes` skips three of the four, which commit no
+  `routes.snapshot.md`. In a scratch copy with one from `sierra routes --stdout`, it
+  found nothing in either app it was run on, and it flagged a planted bad link.
+  Drives: a throwaway CDP probe over ela's build with the network cut (23/23); one
+  over maidtech on its own ports and a db copy (23/23). maidtech's `verify:search`
+  is 14/15; the miss is its search service answering 0 rows, which is not the shell.
+  sstime and serpgrid were not rendered: every drive they have signs in over a real
+  database
 
 ### Phase 4 — The generator
 
@@ -343,8 +406,21 @@ the contract.
 Done when: `fli new` writes `src/lib/nav.js` and a `_module.mesa` on the Shell, and the
 app it writes builds.
 
-- [ ] 4.1 `makeRouteModule` in `new.md`
-- [ ] 4.2 `make:scaffold` appends its model's entry to `src/lib/nav.js`
+- [x] 4.1 `makeRouteModule` in `new.md`. **Built, `layout="topbar"`.** `makeNavJs` writes
+  `web/src/lib/nav.js` (Home, and Users behind a `members` predicate with sign-in), and the
+  module is the Shell with the live badge, theme toggle and account link in its `topbar`
+  snippet. `fli new` creates `web/src/lib`, which the first build of the new files found
+  missing. Signed out, the built app draws the guest frame (Home current on `/` and not on
+  `/login/`, Sign in, no Users). Signed in was not rendered: it needs the API, and
+  `shell.spec.mjs` holds that half. `scaffold-build.mjs` is green through its local-source
+  stages; its `--source npm` stage fails installing the published litestone, which lacks
+  `references/`, and no file here is on that path
+- [x] 4.2 `make:scaffold` appends its model's entry to `src/lib/nav.js`. **Built:**
+  `withNavEntry` replaces `withNavLink` and puts the entry at the end of the last group,
+  carrying `show: members` where the file declares it. A layout with no `nav.js`, which is any
+  app that kept its own module, is told to link the list by hand, where `withNavLink` used to
+  edit a `<nav aria-label="Main">` the Shell now draws itself. `generators-run.test.js`
+  grades the table `fli new` writes, read out of `new.md`
 
 ## Open questions
 

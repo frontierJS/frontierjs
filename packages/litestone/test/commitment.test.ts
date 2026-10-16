@@ -125,20 +125,20 @@ describe('@@commitment — parse', () => {
   // FJS-1994: the fire is a caller, and no caller grades 8 or 9, so the move
   // is refused every time and the queue retries it to failure.
   test('a move no caller can make is refused at parse, whichever model carries the gate', () => {
-    const ungated = (src) => src.replace('  @@commitment(abandon', '  @@gate("4.8.8.8")\n  @@commitment(abandon')
+    const ungated = (src) => src.replace('  @@commitment(abandon', '  @@gate(4.8.8.8)\n  @@commitment(abandon')
     expect(errorsOf(ungated(ORDERS)))
       .toContain("Model 'Order': @@commitment(abandon, …) moves Order, whose update gate is 8")
-    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate("4.6.9")\n  @@commitment(abandon')))
+    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate(4.6.9)\n  @@commitment(abandon')))
       .toContain('whose update gate is 9')
     // The update position cascades from the left when it is not written.
-    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate("1.8")\n  @@commitment(abandon')))
+    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate(1.8)\n  @@commitment(abandon')))
       .toContain('whose update gate is 8')
     // The model that DECLARES it is not the model that moves.
-    const hopped = DUNNING.replace('model Subscription {', 'model Subscription {\n  @@gate("4.8.8.8")')
+    const hopped = DUNNING.replace('model Subscription {', 'model Subscription {\n  @@gate(4.8.8.8)')
     expect(errorsOf(hopped)).toContain('moves Subscription, whose update gate is 8')
     // A level a caller can hold, and a gate that never reaches update, are fine.
-    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate("4.6.7")\n  @@commitment(abandon'))).toBe('')
-    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate("4.6.7.8")\n  @@commitment(abandon'))).toBe('')
+    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate(4.6.7)\n  @@commitment(abandon'))).toBe('')
+    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate(4.6.7.8)\n  @@commitment(abandon'))).toBe('')
   })
 
   test('a move whose own @gate admits no caller is refused too', () => {
@@ -438,7 +438,7 @@ model Order {
   })
 
   test('the caller’s own read path applies — a gate refuses due() as it refuses findMany', async () => {
-    const env = await createTestEnv({ schema: ORDERS.replace('model Order {', 'model Order {\n  @@gate("5.5.5.5")'), now: T0 })
+    const env = await createTestEnv({ schema: ORDERS.replace('model Order {', 'model Order {\n  @@gate(5.5.5.5)'), now: T0 })
     await env.db.asSystem().order.create({ data: { label: 'x', createdAt: '2025-01-01T00:00:00.000Z' } })
     expect(await env.db.asSystem().order.due()).toHaveLength(1)
     await expect(env.db.order.due()).rejects.toThrow()

@@ -18,6 +18,33 @@
   import { oak } from '@/pieces/growth.js'
   import { stone } from '@/pieces/stone.js'
 
+  // In winter the pond freezes: ice `v` with a crack `k` and a glint `g`, a
+  // floor piece, so a figure walks out onto it. The server walks it only in its
+  // own winter (`world.json` carries that season's walls), the same clock
+  // `/fish` reads. The ice leaves four cells in the middle bare for the `hole`,
+  // water a line is cast into; a line cast there in winter can bring up a
+  // penguin (`api/src/fishing.ts`).
+  const ICE = {
+    v: { fg: '#e0f2fe' },
+    k: { fg: '#7dd3fc' },
+    g: { fg: ['#ffffff', '#e0f2fe', '#bae6fd'], chars: '*.*', ms: 1700, flicker: true },
+    h: { fg: ['#0369a1', '#075985', '#0c4a6e'], chars: '~-~', ms: 600, wave: true },
+  }
+
+  const frozen = piece('pond', String.raw`
+   .-============-.
+ .====*=====/=======.
+(======/\    =======*)
+ '=======*=========='
+   '-============-'
+`, String.raw`
+   svvvvvvvvvvvvvvs
+ svvvgvvvvvkvvvvvvvs
+svvvvvvkk    vvvvvvvgs
+ svvvvvvvgvvvvvvvvvvs
+   svvvvvvvvvvvvvvs
+`, { floor: true, palette: ICE })
+
   const pond = piece('pond', String.raw`
    .-~~~~~~~~~~~~-.
  .~~~~~~~~~~~~~~~~~~.
@@ -30,7 +57,11 @@
 sbbbbbbbbbbbbbbbbbbbbs
  sbbbbbbbbbbbbbbbbbbs
    sbbbbbbbbbbbbbbs
-`)
+`, { seasons: { winter: frozen } })
+
+  // Nothing in summer, where the pond holds those cells itself.
+  const holeIce = piece('hole', '(~~)', 'vhhv', { palette: ICE })
+  const hole = piece('hole', ' ', ' ', { seasons: { winter: holeIce } })
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -52,6 +83,7 @@ sbbbbbbbbbbbbbbbbbbbbs
   <Door  x={49} y={9} to="/cellar/" night />
   <Door  x={30} y={25} to="/canal/" />
   <Piece of={pond} x={6} y={15} />
+  <Piece of={hole} x={15} y={17} />
   <Piece of={tree} x={4}  y={1} />
   <Piece of={tree} x={78} y={1} />
   <Piece of={tree} x={82} y={17} />

@@ -274,7 +274,7 @@ Use both: `db.$backup()` before migrations, Litestream for continuous protection
 
 ```js
 import { mkdirSync } from 'node:fs'
-import { apply } from '@frontierjs/litestone'
+import { apply } from '@frontierjs/litestone/migrations'
 
 // Always back up before running migrations
 mkdirSync('./backups', { recursive: true })

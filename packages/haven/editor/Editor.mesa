@@ -453,24 +453,24 @@
 <main class="editor stack" {@attach keys} {@attach watch}>
   <header class="cluster">
     <strong>Haven scenes</strong>
-    <select value={file} on:change={pick} aria-label="Scene file">
+    <select value={file} onchange={pick} aria-label="Scene file">
       {#each files as f (f.file)}<option value={f.file}>{f.file}</option>{/each}
     </select>
     <span class="cluster" role="group" aria-label="What a click does">
       {#each MODES as m (m.id)}
-        <button class="btn" class:primary={mode === m.id} class:ghost={mode !== m.id} aria-pressed={mode === m.id} on:click={() => { mode = m.id }}>{m.label}</button>
+        <button class="btn" class:primary={mode === m.id} class:ghost={mode !== m.id} aria-pressed={mode === m.id} onclick={() => { mode = m.id }}>{m.label}</button>
       {/each}
     </span>
-    <button class="btn primary" disabled={!dirty || !!written.error} on:click={save}>Save</button>
-    <button class="btn ghost" disabled={!steps.past.length} title="Ctrl+Z" on:click={back}>Undo</button>
-    <button class="btn ghost" disabled={!steps.future.length} title="Ctrl+Shift+Z" on:click={forward}>Redo</button>
-    <button class="btn ghost" disabled={!dirty} on:click={revert}>Revert</button>
+    <button class="btn primary" disabled={!dirty || !!written.error} onclick={save}>Save</button>
+    <button class="btn ghost" disabled={!steps.past.length} title="Ctrl+Z" onclick={back}>Undo</button>
+    <button class="btn ghost" disabled={!steps.future.length} title="Ctrl+Shift+Z" onclick={forward}>Redo</button>
+    <button class="btn ghost" disabled={!dirty} onclick={revert}>Revert</button>
     <span data-status>{status}</span>
   </header>
 
   <div class="panes">
     <div class="stack">
-      <div class="frame" on:click={click} on:mousemove={move} on:mouseleave={() => { hover = null }}>
+      <div class="frame" onclick={click} onmousemove={move} onmouseleave={() => { hover = null }}>
         <div class="preview" data-preview {@attach hold}></div>
         <div class="overlay" data-marks>
           {#each picks as p (p.key)}
@@ -490,9 +490,9 @@
         {#if current}
           <p><code>{current.kind}</code> {current.ident ?? ''} at {where.x ?? where.from},{where.y}{#if current.kind === 'Pacer'} to {where.to}{/if}</p>
           {#if current.kind === 'Door'}
-            <label>Door to <input type="text" value={where.to} aria-label="Door target" on:change={(e) => retarget(e.target.value)} /></label>
+            <label>Door to <input type="text" value={where.to} aria-label="Door target" onchange={(e) => retarget(e.target.value)} /></label>
           {/if}
-          <p class="cluster"><small>Arrows move · Delete removes</small> <button class="btn ghost danger" on:click={removeSelected}>Remove</button></p>
+          <p class="cluster"><small>Arrows move · Delete removes</small> <button class="btn ghost danger" onclick={removeSelected}>Remove</button></p>
         {:else}
           <p>Click a piece, a door or the cat's row to select it.</p>
         {/if}
@@ -515,7 +515,7 @@
           <h2>Pieces</h2>
           <div class="cluster" data-pieces>
             {#each stamps as s (s.ident)}
-              <button class="btn piece" class:primary={chosen === s} class:outlined={chosen !== s} title={s.file ? `${s.ident} — imports it from pieces/${s.file}` : s.ident} on:click={() => { chosen = s }}><pre>{s.piece ? s.piece.art : 'n'}</pre><small>{s.ident}{s.file ? ' +' : ''}</small></button>
+              <button class="btn piece" class:primary={chosen === s} class:outlined={chosen !== s} title={s.file ? `${s.ident} — imports it from pieces/${s.file}` : s.ident} onclick={() => { chosen = s }}><pre>{s.piece ? s.piece.art : 'n'}</pre><small>{s.ident}{s.file ? ' +' : ''}</small></button>
             {/each}
           </div>
         </section>
@@ -532,7 +532,7 @@
         <ul class="stack palette" data-palette>
           {#each Object.entries(colors) as [key, hexes] (key)}
             <li class="cluster"><code>{key}</code>
-              {#each hexes as hex, i (i)}<input type="color" value={hex} aria-label={`${key} color ${i + 1}`} on:input={(e) => color(key, i, e.target.value)} />{/each}
+              {#each hexes as hex, i (i)}<input type="color" value={hex} aria-label={`${key} color ${i + 1}`} oninput={(e) => color(key, i, e.target.value)} />{/each}
             </li>
           {/each}
         </ul>
@@ -541,7 +541,7 @@
       <section class="stack">
         <h2>Paste art</h2>
         <textarea class="art" data-import bind:value={pasted} spellcheck="false" wrap="off" rows="6" aria-label="Art to recognize as pieces" placeholder="A block drawn from the pieces at hand"></textarea>
-        <button class="btn outlined" disabled={!pasted.trim()} on:click={importArt}>Place as pieces</button>
+        <button class="btn outlined" disabled={!pasted.trim()} onclick={importArt}>Place as pieces</button>
       </section>
     </aside>
   </div>

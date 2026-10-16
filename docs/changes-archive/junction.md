@@ -214,7 +214,7 @@ A route that returns `new Response(readable)` with `text/csv` or `application/x-
 
 ## 2026-10-04 — `ctx.system.add('@@gate')` lifts the model's gate for one call (`FJS-D575`)
 
-No code moved: the bridge already handed `ctx.system` to litestone as `system: [...]`, and litestone now reads `'@@gate'` there. `test/system-fields.test.ts` pins it with a paired service. The one whose hook names the gate creates on a `@@gate("0.8.8.9")` model, and the identical one without the hook takes 403. The `ctx.system` doc comment names the entry.
+No code moved: the bridge already handed `ctx.system` to litestone as `system: [...]`, and litestone now reads `'@@gate'` there. `test/system-fields.test.ts` pins it with a paired service. The one whose hook names the gate creates on a `@@gate(0.8.8.9)` model, and the identical one without the hook takes 403. The `ctx.system` doc comment names the entry.
 
 ## 2026-10-04 — a private channel's broadcast, over a real socket, end to end (`FJS-1698`)
 
@@ -2206,7 +2206,7 @@ Both were invisible for as long as the strip was silent.
 `OP_FOR_METHOD` names the six CRUD verbs, and a method it does not name reached
 `next()` ungraded. Not unguarded — a body that writes is still refused by the
 model's own `@@gate` — but the refusal arrives after the body has run. Measured
-against a `@@gate("5.5.5.5")` model: an anonymous `POST` with
+against a `@@gate(5.5.5.5)` model: an anonymous `POST` with
 `X-Service-Method: refund` executed the handler, ran its side effect, and only
 then took a 403 from the first write, while every CRUD verb on the same service
 answered 401 having run nothing.
@@ -2342,7 +2342,7 @@ names, and the kit's grader reads `role` where this copy did not: a signed-in
 caller carrying no role now grades CREATOR(3) rather than USER(4). Litestone's
 grader has always answered 3, and a schema declaring any `@@gate` auto-installs
 Litestone's rather than this — so the two answered one caller differently
-depending on how an app was wired, and one `@@gate("4")` read was a 403 or a 200
+depending on how an app was wired, and one `@@gate(4)` read was a 403 or a 200
 (`FJS-520`, ruled `FJS-D197`).
 
 **Who is affected.** `@frontierjs/auth`'s `User` ships
@@ -5640,7 +5640,7 @@ left the other row standing. `$attach` does not help either — SQLite's atomic
 multi-file commit needs rollback-journal mode on every attached file, and both
 Caravan's queue and litestone's tenants run WAL.
 
-So `db/outbox.lite` ships here, `@@gate("8")`, and is IMPORTED rather than
+So `db/outbox.lite` ships here, `@@gate(8)`, and is IMPORTED rather than
 pasted — the split `@frontierjs/auth` already makes, because machinery that
 changes when this package changes has to reach an installed app. `fli
 outbox:install` writes the import line; `outboxSchemaFragment(db)` is the
@@ -7977,9 +7977,9 @@ service whose validation should differ from its table definition.
 A model's `@@gate` already states the minimum level per operation:
 
 ```prisma
-@@gate("4")        read/create/update/delete all require USER
-@@gate("0.4")      read is public; writes require USER
-@@gate("2.4.4.5")  read 2, create 4, update 4, delete 5
+@@gate(4)        read/create/update/delete all require USER
+@@gate(0.4)      read is public; writes require USER
+@@gate(2.4.4.5)  read 2, create 4, update 4, delete 5
 ```
 
 Restating that as `before: { find: [authenticate], get: [authenticate], … }` on

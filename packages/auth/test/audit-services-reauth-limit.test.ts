@@ -73,8 +73,7 @@ describe('the bucket', () => {
     expect(seen).toContain(429)
   })
 
-  // FJS-1848: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a wrong CURRENT password through a session is in the trail', async () => {
+  test('a wrong CURRENT password through a session is in the trail', async () => {
     // `login.failed` records a wrong password at the front door; the same
     // guess through a stolen session answers 403 and writes nothing.
     const u = await person()

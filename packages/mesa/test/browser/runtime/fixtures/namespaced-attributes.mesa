@@ -30,4 +30,4 @@
   <text id="other" foo:bar="x">hi</text>
 </svg>
 
-<button id="swap" on:click={swap}>swap</button>
+<button id="swap" onclick={swap}>swap</button>

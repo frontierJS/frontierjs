@@ -153,6 +153,14 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           own log — never `children.js`, whose in-memory table a `bun --watch`
           restart would lose with the server still up. The checkout's OWN fli,
           and no FLI_PORT_* or PORT of this API's; Unpin and Archive stop it.
+          core/workbench-terminal.ts is the Terminal tab: `/ws/terminal/{pin}`
+          (under /ws/ because both proxies forward that prefix as a socket),
+          Bun's own PTY in the pin's folder, xterm.js in web/src/components/
+          Terminal.mesa. Same refusal and ADMINISTRATOR as the service, a key
+          refused, and an Origin that is not this machine refused at the
+          upgrade. core/workbench-shell.ts names the shell: a tmux session on
+          basecamp's OWN tmux server (`-L basecamp`), so a closed socket
+          detaches rather than ends it; Unpin and Archive end it.
           A pin may carry PLANS (`plans: [{ path, steps }]`, IDEAS/shipped/workbench-plans.md),
           and `plan` is the path of the SHOWN one, as `chat` is for chats — Go,
           Next, tick and decide act on it; `openPlan` shows one, adding a file
@@ -581,10 +589,13 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   between the two. Never add a fourth branch that returns early and lets the
   caller mark the step `success`: that was the whole of `FJS-257`, a release
   finishing green in 23ms having issued no command.
-- **An inline release that names a digest uploads nothing.** `deployments.create`
+- **A release that names a digest uploads and builds nothing.** `deployments.create`
   with `builtImage` on an inline App snapshots `{ kind: 'inline', files: [] }`
   and runs Validate, Activate, Health check — the machine already holds the
-  bytes (a preview's Freeze). Every inline Activate sends the App's live Domain
+  bytes (a preview's Freeze). On a container App it runs Validate, Start
+  container, Health check, whatever the source says: the image was built where
+  the workspace is and loaded onto the machine by `fli deploy:basecamp`
+  (`FJS-D942`), and building the git source would ship the branch instead. Every inline Activate sends the App's live Domain
   rows as `hosts`, as `/deploy` does, so a machine with no Caddy fails the
   release of an inline app that has a Domain rather than leaving it unrouted.
 - **An App's source is a KIND, and `inline` means the files ARE the release**
@@ -612,7 +623,12 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   Outpost's words. A `Domain` changed between releases reaches the machine
   through `domain:dns`, which sends `/route` to every running placement on an
   online server — and a machine it cannot reach fails the job so it retries.
-  The container's BIND does not move until the next release (`FJS-1616`). A
+  The container's BIND moves only with a release, so a `/route` answering
+  `rebind` is followed by one — `deployments.rebind`, internal, the app's own
+  settings over the LIVE digest (never a rebuild, never a rollback's
+  settings), skipped while a release is already queued, and run as whoever
+  wrote the Domain (`FJS-D577`). A machine moving has no caller to own that
+  restart, so there it stays a logged warning. A
   redirecting Domain is not a host: `routedRedirects()` sends it as `redirects`
   beside `hosts`, on `/deploy`, `/static/activate` and `/route`, and Caddy
   answers it with a 308 itself (`FJS-1615`). An inline app's `/route` carries
@@ -633,7 +649,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   `AccessDeniedError` alike (CRUD and a method's declared `gate:`); add to that
   mapper, never beside it.
 - **A placement is written by `apps.place`, through `asSystem()`.** `AppServer`
-  is `@@gate("2.8")` — a member may read it, only the system may write it — so
+  is `@@gate(2.8)` — a member may read it, only the system may write it — so
   the authority check is against the WORKSPACE in the service and the write is a
   system one. Nothing writing the row while three engines read it is what
   leaves a deploy with no machine to talk to.
@@ -649,7 +665,8 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   every rotation. Protected column names come from `db.$protectedFields()`, never
   a list here.
 - **A service DECLARES its channel; it does not run a announce hook.**
-  `channel: workspaceChannel(app)` on the definition. Junction announces in one
+  `channel: workspaceChannel` on the definition, which answers the channel's
+  NAME, so a definition needs no app. Junction announces in one
   place and excludes `find`/`get` there; an `after: { all: [announce(…)] }` hook
   cannot, and broadcast every read to the whole workspace (`FJS-031`). Declaring
   both is refused at construction.
@@ -669,7 +686,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   and the metric store is the line. A card draws both: the bar is what the box
   said a moment ago, the sparkline is the last day. Reading a series is
   `servers.metrics`, and **its confinement is the PARENT READ**:
-  `MetricSeries` is `@@gate("8")` and `@@tenant(none)`, so `getScoped('server')`
+  `MetricSeries` is `@@gate(8)` and `@@tenant(none)`, so `getScoped('server')`
   runs at the caller's own standing first and only then is the series read
   through `asSystem()`. Opening the package's gate for a row policy was refused
   — an app that declares none then serves every reading to anyone, fail-open

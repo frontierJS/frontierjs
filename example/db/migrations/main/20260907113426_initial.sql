@@ -302,7 +302,7 @@ CREATE TABLE IF NOT EXISTS "custom_field" (
 -- 
 -- ─── Why a shopper may not read this table ────────────────────────────────
 -- 
--- `@@gate("5.5.5.5")` — staff only, read included. Every other thing a
+-- `@@gate(5.5.5.5)` — staff only, read included. Every other thing a
 -- shopper interacts with here is readable at 0, because a storefront has to
 -- list it; a discount code is the exception, and the reason is that listing
 -- them IS the exploit. `GET /api/discounts` answering the table hands every

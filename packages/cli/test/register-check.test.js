@@ -33,6 +33,13 @@ beforeAll(() => {
   mkdirSync(join(ROOT, 'IDEAS'))
   mkdirSync(join(ROOT, 'src'), { recursive: true })
   writeFileSync(join(ROOT, 'src', 'real.js'), '// a file that is really there\n')
+  writeFileSync(join(ROOT, 'CLAUDE.md'), [
+    '## Bridge index',
+    '',
+    '**Data → API** — `$setAuth(user)` / `asSystem()` · `withLitestoneDb(db)`',
+    '',
+    '## Where to look',
+  ].join('\n'))
 
   writeFileSync(join(ROOT, 'ISSUES.md'), [
     '## S1 — blockers',
@@ -57,6 +64,20 @@ beforeAll(() => {
     '| <a id="fjs-032"></a>FJS-032 | cli — **A closed-shaped row in an open table.** | 2026-08-17 | how it was fixed |',
     '| <a id="fjs-033"></a>FJS-033 | cli | **An escaped \\| pipe is not a cell.** | open | 2026-08-17 | — |',
     '| <a id="fjs-034"></a>FJS-034 | cli | **A blank date is a state, not a shape.** | open | — | — |',
+    // The env segment: a cause outside the table is an error, a title that
+    // smells with no segment is a warning, `timing` nothing measured is a
+    // warning, and a measured or other listed cause is neither.
+    '| <a id="fjs-040"></a>FJS-040 | cli | **Drive fails after the last one.** | open | 2026-08-17 | [d](src/real.js) · env: bogus |',
+    '| <a id="fjs-041"></a>FJS-041 | cli | **verify:x hangs: an evaluate times out after 30 s.** | open | 2026-08-17 | [d](src/real.js) |',
+    '| <a id="fjs-042"></a>FJS-042 | cli | **verify:y times out waiting for the row.** | open | 2026-08-17 | [d](src/real.js) · env: timing |',
+    '| <a id="fjs-045"></a>FJS-045 | cli | **verify:z times out waiting for the row.** | open | 2026-08-17 | [d](src/real.js) · env: timing · repro: 9/9 alone · 9/9 in suite · 4/9 under 7 typechecks |',
+    '| <a id="fjs-046"></a>FJS-046 | cli | **verify:w times out on 8110.** | open | 2026-08-17 | [d](src/real.js) · env: port |',
+    // A segment FIRST in its Detail follows the date cell, not a dot.
+    '| <a id="fjs-047"></a>FJS-047 | cli | **Fails on alternating runs.** | open | 2026-08-17 | env: timing |',
+    // The seam segment: a name the key list does not hold is an error, and one
+    // it holds is silent however the call is spelled.
+    '| <a id="fjs-043"></a>FJS-043 | cli | **Scope lost across the handoff.** | open | 2026-08-17 | [d](src/real.js) · seam: setAuthority |',
+    '| <a id="fjs-044"></a>FJS-044 | cli | **Scope lost again.** | open | 2026-08-17 | [d](src/real.js) · seam: `$setAuth` |',
     '',
     '## Decisions awaiting a ruling',
     '| Id | Pkg | Question | Detail |',
@@ -229,6 +250,20 @@ describe('warnings', () => {
   test('a row nobody has re-checked, against an injected clock', () => {
     const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'stale-verified')
     expect(hits.map(h => h.id)).toEqual(['FJS-015'])
+  })
+
+  test('env: a cause outside the table errors, a smelling title with no segment warns, unmeasured timing warns, a measured or other cause is silent', () => {
+    const result = runRegisterCheck({ root: ROOT, staleDays: 0, today: TODAY })
+    expect(of(result, 'env-cause').map(h => h.id)).toEqual(['FJS-040'])
+    expect(of(result, 'env-smell').map(h => h.id)).toEqual(['FJS-041'])
+    expect(of(result, 'timing-unmeasured').map(h => h.id)).toEqual(['FJS-042', 'FJS-047'])
+    expect(of(result, 'timing-unmeasured').find(h => h.id === 'FJS-042').message).toMatch(/register:repro cannot: the row links no \*\.test\.\* file/)
+    expect(result.findings.filter(f => ['FJS-045', 'FJS-046'].includes(f.id) && f.rule.startsWith('env-'))).toHaveLength(0)
+  })
+
+  test('seam: a name outside the Bridge index key list errors, a listed one is silent', () => {
+    const result = runRegisterCheck({ root: ROOT, staleDays: 0, today: TODAY })
+    expect(of(result, 'seam-name').map(h => h.id)).toEqual(['FJS-043'])
   })
 
   test('staleDays 0 turns the clock rule off, so the answer is reproducible', () => {
@@ -831,5 +866,76 @@ describe('the overview table', () => {
     expect(here('overview-status')).toHaveLength(0)
     expect(here('row-shape')).toHaveLength(0)
     expect(here('duplicate-id')).toHaveLength(0)
+  })
+})
+
+// ─── a ruling's Lives in, held to the tree (FJS-771) ─────────────────────────
+
+describe('lives-in', () => {
+  let LROOT
+
+  beforeAll(() => {
+    LROOT = mkdtempSync(join(tmpdir(), 'fli-livesin-'))
+    writeFileSync(join(LROOT, 'package.json'), DECLARED)
+    mkdirSync(join(LROOT, 'packages', 'alpha', 'src', 'core'), { recursive: true })
+    writeFileSync(join(LROOT, 'packages', 'alpha', 'package.json'), JSON.stringify({ name: '@frontierjs/alpha' }))
+    writeFileSync(join(LROOT, 'packages', 'alpha', 'src', 'core', 'client.js'), 'export function openClient() {}\n')
+    writeFileSync(join(LROOT, 'ISSUES.md'), '## S1 — blockers\n| Id | Pkg | Title | Status | Verified | Detail |\n| --- | --- | --- | --- | --- | --- |\n')
+    writeFileSync(join(LROOT, 'DECISIONS.md'), [
+      '# Decisions', '', '## Rulings', '',
+      '### <a id="fjs-d11"></a>2026-08-18 · `FJS-D11` — every citation holds.',
+      '*Lives in:* `packages/alpha/src/core/client.js` (`openClient`) · `src/core/client.js` (`openClient`) · `@frontierjs/alpha/sub` · `FJS-D11` · `/a/route` · `*.glob` · `Name.md`.', '',
+      '### <a id="fjs-d12"></a>2026-08-18 · `FJS-D12` — a path nothing holds.',
+      '*Lives in:* `packages/alpha/src/core/gone.js` · `core/also-gone.js`.', '',
+      '### <a id="fjs-d13"></a>2026-08-18 · `FJS-D13` — a symbol the file dropped.',
+      '*Lives in:* `packages/alpha/src/core/client.js` (`openClient`, `closeClient`).', '',
+      '### <a id="fjs-d14"></a>2026-08-18 · `FJS-D14` — a package nobody declares, across two lines.',
+      '*Lives in:* `src/core/client.js`,',
+      '`@frontierjs/utils` and `@frontierjs/alpha`.', '',
+      '### <a id="fjs-d15"></a>2026-08-18 · `FJS-D15` — retired, so its paths are history.',
+      '**Status:** superseded-by [`FJS-D11`](#fjs-d11)',
+      '*Lives in:* `packages/alpha/src/core/gone.js`.', '',
+      '### <a id="fjs-d16"></a>2026-08-18 · `FJS-D16` — a bare path is ambiguous, so its symbol is not graded.',
+      '*Lives in:* `src/core/client.js` (`notHere`).', '',
+    ].join('\n'))
+  })
+
+  afterAll(() => { rmSync(LROOT, { recursive: true, force: true }) })
+
+  const hits = () => of(runRegisterCheck({ root: LROOT, staleDays: 0 }), 'lives-in').map(h => `${h.id}: ${h.message}`)
+
+  test('a citation that resolves, in any of the spellings in use, is silent', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D11:'))).toEqual([])
+  })
+
+  test('a path no package holds is reported, root-relative or package-relative', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D12:'))).toEqual([
+      'FJS-D12: Lives in names packages/alpha/src/core/gone.js, which is not in the tree',
+      'FJS-D12: Lives in names core/also-gone.js, which is not in the tree',
+    ])
+  })
+
+  test('a symbol the file no longer mentions is reported, one it still does is not', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D13:'))).toEqual([
+      'FJS-D13: Lives in names closeClient in packages/alpha/src/core/client.js, which the file no longer mentions',
+    ])
+  })
+
+  test('a package no package.json declares is reported, across a wrapped line', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D14:'))).toEqual([
+      'FJS-D14: Lives in names @frontierjs/utils, which no package.json declares',
+    ])
+  })
+
+  test('a retired ruling is exempt, as a closed row is', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D15:'))).toEqual([])
+  })
+
+  test('a bare package-relative path grades no symbol', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D16:'))).toEqual([])
+  })
+
+  test('the register this ships with has no stale citation', () => {
+    expect(of(runRegisterCheck({ root: REPO, staleDays: 0 }), 'lives-in')).toEqual([])
   })
 })

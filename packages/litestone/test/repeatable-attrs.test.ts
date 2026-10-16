@@ -27,10 +27,10 @@ const refusal = (src: string) => {
 
 describe('an attribute answered twice is refused', () => {
   it('names the word as typed and BOTH answers, so the reader knows which is in force', () => {
-    const err = refusal('model M {\n  id Int @id\n  @@gate("2")\n  @@gate("9")\n}')
+    const err = refusal('model M {\n  id Int @id\n  @@gate(2)\n  @@gate(9)\n}')
     expect(err).toContain('@@gate')
-    expect(err).toContain('@@gate("2") is the one in force')
-    expect(err).toContain('@@gate("9") is ignored')
+    expect(err).toContain('@@gate(2) is the one in force')
+    expect(err).toContain('@@gate(9) is ignored')
   })
 
   it('covers field attributes, which had the same hole', () => {

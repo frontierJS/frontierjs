@@ -29,8 +29,10 @@ Detail: `references/data-api.md`
 - `db.$checkWhere(accessor, where)` — is this a valid filter key; throws — `litestone/src/core/client.js`
 - `db.$checkOrderBy(accessor, orderBy)` — is this a sortable key, with the reason when it is not; throws — `litestone/src/core/client.js`
 - `db.$readAs(accessor, row, principal)` — the row as that principal would read it, for a broadcast; fails closed — `litestone/src/core/client.js`
+- `db.$checkWrite(accessor, op, row, changes?)` — would this client's caller be let make this write, for a write that does not reach the table first (a claimed mirror's forward); a verdict, gate and grid and row policy, never field or transition (`FJS-D1162`) — `litestone/src/core/client.js`
 - `db.$levelOf(accessor?, principal?)` — the level the app's own `getLevel` grades a caller at; `null` is *cannot grade* — `litestone/src/core/client.js`
 - `db.$primaryKey(accessor)` — the key's columns in key order — `litestone/src/core/client.js`
+- `db.$mirrorKey(accessor)` — the column `@@mirror(key:)` names, or `null` — `litestone/src/core/client.js`
 - `db.$claimsFor(principal)` — the claims the schema reads off a row pointing at the caller — `litestone/src/core/client.js`
 - `db.$protectedFields(accessor)` — which columns are guarded, encrypted or hashed — `litestone/src/core/client.js`
 
@@ -61,6 +63,8 @@ Detail: `references/schema.md`
 
 **Machine ↔ control plane**
 Detail: `references/api-internals.md`
+- `app.conduit.receive(receiver)` / `Dialect` — the receiving end of a Provider: a connector's dialect, an app's receiver, conduit's order (`accept()`, beside the types) and applied-not-seen receipts (`FJS-D899`) — `conduit/src/conduit.ts`
+- `app.conduit.mirror(claim)` / `mirrored(accessor)` — a connector's claim on the models a Provider feeds; junction's generated writes forward through it (`FJS-D1125`) — `conduit/src/mirror.ts`, `junction/src/core/litestone.ts` (`mirrorClaimFor`)
 - `signRequest()` / `verifyRequest()` — what a signed machine-to-machine request is — `toolbelt/src/signature/signature.js`
 - `requestMeta().traceparent` / `.tracestate` — the inbound W3C trace, carried verbatim into conduit's `trace` — `junction/src/core/context.ts`
 - `ctx.$raw.rawBody` — the body as bytes, for a signature — `junction/src/transport/http.ts`
@@ -79,7 +83,7 @@ Detail: `references/api-internals.md`
 - `CALL_OPTIONS_AT` — which argument of each `ServiceCaller` method holds `CallOptions` — `junction/src/core/app.ts`
 - `svc.pipelines(appHooks)` — the hook chain, memoized — `junction/src/core/service.ts`
 - `svc.describe()` — what this service is, for `/manifest`, OpenAPI and `/metrics` — `junction/src/core/service.ts`
-- `isBuiltService(v)` / `Symbol.for('junction.service')` — has `createService` built this — `junction/src/core/service.ts`
+- `isBuiltService(v)` / `Symbol.for('junction.service')` — has `buildService` already built this (`createService` only returns the definition; the registry builds) — `junction/src/core/service.ts`
 - `normalizePrefix()` — the one owner of `apiPrefix` — `junction/src/core/app.ts`
 - `ctx.enqueue(job, payload)` / `deliverOutbox(app)` — the durable effect, inside the call's transaction — `junction/src/plugins/outbox/engine.ts`
 - `claimIdempotency(ctx, key, config)` — claimed once in `callService`, for both transports — `junction/src/core/idempotency.ts`

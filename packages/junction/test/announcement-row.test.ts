@@ -26,9 +26,9 @@
 
 import { describe, test, expect, beforeEach } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
-import { createService, callService } from '../src/core/service.ts'
+import { callService, buildService } from '../src/core/service.ts'
 import { resetAnnouncementWarnings } from '../src/core/litestone.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 async function mkDb() {
   const db = await createClient({
@@ -77,7 +77,7 @@ describe('a method that answers the row announces the row', () => {
 
   test('the whole record travels untouched', async () => {
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name: 'servers', model: 'server',
       async heartbeat(ctx: ServiceContext) {
         return (ctx.locals.db as any).server.findFirst({ where: { id: 1 } })
@@ -94,7 +94,7 @@ describe('a method that answers the row announces the row', () => {
     // `{ ...job, queued: true }` is what jobs.trigger answers now, and it must
     // not be read as a projection.
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name: 'servers', model: 'server',
       async heartbeat(ctx: ServiceContext) {
         const row = await (ctx.locals.db as any).server.findFirst({ where: { id: 1 } })
@@ -113,7 +113,7 @@ describe('a method that answers a projection announces the row anyway', () => {
 
   test('the subscriber gets every column, re-read by id', async () => {
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name: 'servers', model: 'server',
       async heartbeat() { return { id: 1, status: 'online' } },   // the real shape basecamp shipped
     } as never)
@@ -125,7 +125,7 @@ describe('a method that answers a projection announces the row anyway', () => {
 
   test('…and says so once, naming the columns and both ways out', async () => {
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name: 'servers', model: 'server',
       async heartbeat() { return { id: 1, status: 'online' } },
     } as never)
@@ -146,7 +146,7 @@ describe('a method that answers a projection announces the row anyway', () => {
     // `{ ok, server_id, status }` — the heartbeat that could not be matched to
     // a row by anything downstream.
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name: 'servers', model: 'server',
       async heartbeat() { return { ok: true, server_id: 1, status: 'online' } },
     } as never)
@@ -167,7 +167,7 @@ describe('when no row can be found, the payload travels as a signal', () => {
 
   test('a collection method with no id still announces, and says why', async () => {
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name: 'servers', model: 'server',
       async prune() { return { freedBytes: 1024, forgotten: ['a'] } },
     } as never)
@@ -180,7 +180,7 @@ describe('when no row can be found, the payload travels as a signal', () => {
 
   test('an id that matches no row announces what the method said, not silence', async () => {
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name: 'servers', model: 'server',
       async heartbeat() { return { status: 'online' } },
     } as never)
@@ -197,7 +197,7 @@ describe('what the app states, the app owns', () => {
 
   test('ctx.dispatch = <value> is sent exactly as given', async () => {
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name: 'servers', model: 'server',
       async prune(ctx: ServiceContext) {
         ctx.dispatch = { freedBytes: 1024 }
@@ -214,7 +214,7 @@ describe('what the app states, the app owns', () => {
 
   test('ctx.dispatch = false still announces nothing', async () => {
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name: 'servers', model: 'server',
       async heartbeat(ctx: ServiceContext) { ctx.dispatch = false; return { id: 1 } },
     } as never)
@@ -227,7 +227,7 @@ describe('a service with no model is left alone', () => {
 
   test('its answer travels untouched — there is no row for it to be part of', async () => {
     const db  = await mkDb()
-    const svc = createService({
+    const svc = buildService({
       name: 'reports',
       async build() { return { generated: 3 } },
     } as never)

@@ -26,7 +26,6 @@ import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import domainDns from '../../jobs/domain-dns.job.ts'
-import type { BasecampApp }    from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 const DAY = 86_400_000
@@ -59,188 +58,185 @@ export function certStatusOf(
 
 const decorate = (row: Record<string, unknown>) => ({ ...row, ...certStatusOf(row as never) })
 
-export function createDomainsService(app: BasecampApp) {
-
-  async function appInWorkspace(appId: string) {
-    const row = await db().app.findFirst({ where: { id: appId, workspaceId: ws() } })
-    if (!row) throw new NotFound(`App '${appId}' not found in this workspace`)
-    return row
-  }
-
-  /** Exactly one primary per app. Demoting the others is the write that makes
-   *  "primary" mean something; without it two rows both claim it and the
-   *  screen picks whichever sorted first. */
-  async function demoteSiblings(appId: string, keepId: string) {
-    const siblings = await db().domain.findMany({ where: { appId, isPrimary: true } })
-    for (const sib of siblings)
-      if (sib.id !== keepId)
-        // Domain declares @version, so every scoped update states the version it
-        // read. Not a formality here: two people promoting different hostnames
-        // at once is exactly the race, and the loser is told rather than
-        // silently demoted back.
-        await db().domain.update({
-          where: { id: sib.id },
-          data:  { isPrimary: false, version: sib.version },
-        })
-  }
-
-  /** Tell the zone. The id is the row's version, so a replayed write is one
-   *  push; the job decides whether this workspace pushes at all. */
-  const toZone = (domainId: string, version: number | string) =>
-    app.jobs.dispatch(domainDns, { domainId }, { id: `dns:${domainId}:${version}` })
-
-  return createService({
-    name:  'domains',
-    scope: keyScope('domains'),
-    model: 'Domain',
-    // The whole surface: a service gaining `input:` lists every verb it answers.
-    methods: [
-      'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
-      'makePrimary',
-      { method: 'uploadCert', input: 'DomainCertUpload' },
-    ],
-    // Announced by the service DEFINITION, not by an after hook: `callService`
-    // is junction's one announcement point and it excludes `find`/`get` by name,
-    // where an `after: { all: [...] }` hook broadcast every read to every browser
-    // in the workspace (FJS-031). Declaring both is refused at construction.
-    channel: workspaceChannel(app),
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
-
-    async find() {
-      const { limit, offset } = getPagination()
-      const appId = $.query.appId as string | undefined
-
-      const result = await findScoped('domain', {
-        where:   { ...(appId ? { appId } : {}) },
-        orderBy: { hostname: 'asc' },
-        limit, offset,
-      })
-      return { ...result, data: result.data.map(decorate) }
-    },
-
-    async get() {
-      return decorate(await getScoped('domain', 'Domain'))
-    },
-
-    async create() {
-      const data = $.data as Record<string, unknown>
-      await appInWorkspace(data.appId as string)
-
-      // The unique is [workspaceId, hostname], and a raw constraint violation
-      // reaches an HTTP caller as a SQLite message rather than a sentence.
-      if (await db().domain.exists({ where: { workspaceId: ws(), hostname: data.hostname } }))
-        throw new Conflict(`'${data.hostname}' is already claimed in this workspace`)
-
-      // The first hostname an app gets IS its primary — nobody means to add a
-      // domain and leave the app with none.
-      const existing = await db().domain.count({ where: { appId: data.appId } })
-      if (existing === 0) data.isPrimary = true
-
-      const created = await db().domain.create({ data })
-      if (created.isPrimary) await demoteSiblings(created.appId, created.id)
-      await toZone(created.id, created.version)
-      return decorate(created)
-    },
-
-    async patch() {
-      const domain = await getScoped('domain', 'Domain')
-      // appId is immutable — moving a hostname to another app is a delete and a
-      // create, and doing it as a patch would carry the certificate with it.
-      // So is the hostname, for the same reason twice over: a certificate is
-      // FOR a hostname, and the CNAME pushed for the old one would stay in its
-      // zone marked as this row's, which no drift reports as wrong. Refused
-      // rather than dropped, or a save that changed nothing looks like one
-      // that renamed it. A form resending the same hostname is not a change.
-      const asked = ($.data ?? {}) as Record<string, unknown>
-      if ('hostname' in asked && String(asked.hostname).trim().toLowerCase() !== domain.hostname.toLowerCase())
-        throw new BadRequest('A hostname is fixed once added — add the new one, then delete this one')
-      // The cert columns are `uploadCert`'s, never a client's.
-      const patch = narrowPatch($.data as Record<string, unknown>,
-        ['appId', 'hostname', 'certSecretId', 'certKind', 'certIssuedAt', 'certExpiresAt'])
-
-      if (changesNothing(patch)) return decorate(domain)
-
-      const updated = await db().domain.update({ where: { id: domain.id }, data: patch })
-      if (updated.isPrimary) await demoteSiblings(updated.appId, updated.id)
-      await toZone(updated.id, updated.version)
-      return decorate(updated)
-    },
-
-    async remove() {
-      const domain = await getScoped('domain', 'Domain')
-      // Refused rather than silently repointing: which hostname is primary is a
-      // routing decision, and making it by deletion is how an app ends up
-      // answering on one nobody chose.
-      if (domain.isPrimary && await db().domain.count({ where: { appId: domain.appId } }) > 1)
-        throw new Conflict('That is the primary hostname — make another one primary first')
-
-      const removed = await removeScoped('domain', 'Domain')
-      await toZone(domain.id, `${domain.version}:removed`)
-      return removed
-    },
-
-    // A Domain brought back is a hostname to push again — its CNAME went when
-    // it was deleted.
-    async restore() {
-      const restored = await restoreScoped('domain', 'Domain')
-      await toZone(restored.id, `${restored.version}:restored`)
-      return decorate(restored)
-    },
-
-    // ── uploadCert ────────────────────────────────────────────────────
-    // The certificate arrives here ONCE. The material goes into a Secret,
-    // whose `data` is `@encrypted`; this row keeps only what an operator reads.
-    async uploadCert() {
-      const domain = await getScoped('domain', 'Domain')
-      const { certPem, keyPem, kind, issuedAt, expiresAt } =
-        ($.data ?? {}) as Record<string, string>
-
-      const secret = await db().secret.create({
-        data: {
-          workspaceId: ws(),
-          name:        `tls:${domain.hostname}`,
-          kind:        'tls_cert',
-          // One value, both halves. Splitting them across two Secrets would
-          // let a rotation replace one and not the other.
-          data:        JSON.stringify({ certPem, keyPem }),
-          createdBy:   actor(),
-          isVerified:  false,
-        },
-      })
-
-      const updated = await db().domain.update({
-        where: { id: domain.id },
-        data: {
-          certSecretId:  secret.id,
-          certKind:      kind ?? 'uploaded',
-          certIssuedAt:  issuedAt ?? new Date().toISOString(),
-          certExpiresAt: expiresAt,
-          version:       domain.version,
-        },
-      })
-      return decorate(updated)
-    },
-
-    // ── makePrimary ───────────────────────────────────────────────────
-    async makePrimary() {
-      const domain = await getScoped('domain', 'Domain')
-      if (domain.isPrimary) throw new BadRequest('Already the primary hostname')
-
-      const updated = await db().domain.update({
-        where: { id: domain.id }, data: { isPrimary: true, version: domain.version },
-      })
-      await demoteSiblings(updated.appId, updated.id)
-      return decorate(updated)
-    },
-
-    hooks: {
-      before: {
-        all:    [sessionScope(app)],
-        // A hostname decides where traffic lands and a certificate decides
-        // whether it is private. Both are admin acts.
-        // No deriveSlug: `Domain` has neither `name` nor `slug`, so it was a
-        // hook that could never fire.
-      },
-    },
-  })
+async function appInWorkspace(appId: string) {
+  const row = await db().app.findFirst({ where: { id: appId, workspaceId: ws() } })
+  if (!row) throw new NotFound(`App '${appId}' not found in this workspace`)
+  return row
 }
+
+/** Exactly one primary per app. Demoting the others is the write that makes
+ *  "primary" mean something; without it two rows both claim it and the
+ *  screen picks whichever sorted first. */
+async function demoteSiblings(appId: string, keepId: string) {
+  const siblings = await db().domain.findMany({ where: { appId, isPrimary: true } })
+  for (const sib of siblings)
+    if (sib.id !== keepId)
+      // Domain declares @version, so every scoped update states the version it
+      // read. Not a formality here: two people promoting different hostnames
+      // at once is exactly the race, and the loser is told rather than
+      // silently demoted back.
+      await db().domain.update({
+        where: { id: sib.id },
+        data:  { isPrimary: false, version: sib.version },
+      })
+}
+
+/** Tell the zone. The id is the row's version, so a replayed write is one
+ *  push; the job decides whether this workspace pushes at all. */
+const toZone = (domainId: string, version: number | string) =>
+  $.app.jobs!.dispatch(domainDns, { domainId }, { id: `dns:${domainId}:${version}` })
+
+export default createService({
+  name:  'domains',
+  scope: keyScope('domains'),
+  model: 'Domain',
+  // The whole surface: a service gaining `input:` lists every verb it answers.
+  methods: [
+    'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+    'makePrimary',
+    { method: 'uploadCert', input: 'DomainCertUpload' },
+  ],
+  // Announced by the service DEFINITION, not by an after hook: `callService`
+  // is junction's one announcement point and it excludes `find`/`get` by name,
+  // where an `after: { all: [...] }` hook broadcast every read to every browser
+  // in the workspace (FJS-031). Declaring both is refused at construction.
+  channel: workspaceChannel,
+  reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+
+  async find() {
+    const { limit, offset } = getPagination()
+    const appId = $.query.appId as string | undefined
+
+    const result = await findScoped('domain', {
+      where:   { ...(appId ? { appId } : {}) },
+      orderBy: { hostname: 'asc' },
+      limit, offset,
+    })
+    return { ...result, data: result.data.map(decorate) }
+  },
+
+  async get() {
+    return decorate(await getScoped('domain', 'Domain'))
+  },
+
+  async create() {
+    const data = $.data as Record<string, unknown>
+    await appInWorkspace(data.appId as string)
+
+    // The unique is [workspaceId, hostname], and a raw constraint violation
+    // reaches an HTTP caller as a SQLite message rather than a sentence.
+    if (await db().domain.exists({ where: { workspaceId: ws(), hostname: data.hostname } }))
+      throw new Conflict(`'${data.hostname}' is already claimed in this workspace`)
+
+    // The first hostname an app gets IS its primary — nobody means to add a
+    // domain and leave the app with none.
+    const existing = await db().domain.count({ where: { appId: data.appId } })
+    if (existing === 0) data.isPrimary = true
+
+    const created = await db().domain.create({ data })
+    if (created.isPrimary) await demoteSiblings(created.appId, created.id)
+    await toZone(created.id, created.version)
+    return decorate(created)
+  },
+
+  async patch() {
+    const domain = await getScoped('domain', 'Domain')
+    // appId is immutable — moving a hostname to another app is a delete and a
+    // create, and doing it as a patch would carry the certificate with it.
+    // So is the hostname, for the same reason twice over: a certificate is
+    // FOR a hostname, and the CNAME pushed for the old one would stay in its
+    // zone marked as this row's, which no drift reports as wrong. Refused
+    // rather than dropped, or a save that changed nothing looks like one
+    // that renamed it. A form resending the same hostname is not a change.
+    const asked = ($.data ?? {}) as Record<string, unknown>
+    if ('hostname' in asked && String(asked.hostname).trim().toLowerCase() !== domain.hostname.toLowerCase())
+      throw new BadRequest('A hostname is fixed once added — add the new one, then delete this one')
+    // The cert columns are `uploadCert`'s, never a client's.
+    const patch = narrowPatch($.data as Record<string, unknown>,
+      ['appId', 'hostname', 'certSecretId', 'certKind', 'certIssuedAt', 'certExpiresAt'])
+
+    if (changesNothing(patch)) return decorate(domain)
+
+    const updated = await db().domain.update({ where: { id: domain.id }, data: patch })
+    if (updated.isPrimary) await demoteSiblings(updated.appId, updated.id)
+    await toZone(updated.id, updated.version)
+    return decorate(updated)
+  },
+
+  async remove() {
+    const domain = await getScoped('domain', 'Domain')
+    // Refused rather than silently repointing: which hostname is primary is a
+    // routing decision, and making it by deletion is how an app ends up
+    // answering on one nobody chose.
+    if (domain.isPrimary && await db().domain.count({ where: { appId: domain.appId } }) > 1)
+      throw new Conflict('That is the primary hostname — make another one primary first')
+
+    const removed = await removeScoped('domain', 'Domain')
+    await toZone(domain.id, `${domain.version}:removed`)
+    return removed
+  },
+
+  // A Domain brought back is a hostname to push again — its CNAME went when
+  // it was deleted.
+  async restore() {
+    const restored = await restoreScoped('domain', 'Domain')
+    await toZone(restored.id, `${restored.version}:restored`)
+    return decorate(restored)
+  },
+
+  // ── uploadCert ────────────────────────────────────────────────────
+  // The certificate arrives here ONCE. The material goes into a Secret,
+  // whose `data` is `@encrypted`; this row keeps only what an operator reads.
+  async uploadCert() {
+    const domain = await getScoped('domain', 'Domain')
+    const { certPem, keyPem, kind, issuedAt, expiresAt } =
+      ($.data ?? {}) as Record<string, string>
+
+    const secret = await db().secret.create({
+      data: {
+        workspaceId: ws(),
+        name:        `tls:${domain.hostname}`,
+        kind:        'tls_cert',
+        // One value, both halves. Splitting them across two Secrets would
+        // let a rotation replace one and not the other.
+        data:        JSON.stringify({ certPem, keyPem }),
+        createdBy:   actor(),
+        isVerified:  false,
+      },
+    })
+
+    const updated = await db().domain.update({
+      where: { id: domain.id },
+      data: {
+        certSecretId:  secret.id,
+        certKind:      kind ?? 'uploaded',
+        certIssuedAt:  issuedAt ?? new Date().toISOString(),
+        certExpiresAt: expiresAt,
+        version:       domain.version,
+      },
+    })
+    return decorate(updated)
+  },
+
+  // ── makePrimary ───────────────────────────────────────────────────
+  async makePrimary() {
+    const domain = await getScoped('domain', 'Domain')
+    if (domain.isPrimary) throw new BadRequest('Already the primary hostname')
+
+    const updated = await db().domain.update({
+      where: { id: domain.id }, data: { isPrimary: true, version: domain.version },
+    })
+    await demoteSiblings(updated.appId, updated.id)
+    return decorate(updated)
+  },
+
+  hooks: {
+    before: {
+      all:    [sessionScope()],
+      // A hostname decides where traffic lands and a certificate decides
+      // whether it is private. Both are admin acts.
+      // No deriveSlug: `Domain` has neither `name` nor `slug`, so it was a
+      // hook that could never fire.
+    },
+  },
+})

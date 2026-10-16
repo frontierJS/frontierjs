@@ -12,15 +12,15 @@
   }
 </script>
 
-<mesa:window on:click|capture={away} />
+<mesa:window onclick|capture={away} />
 <p>before</p>
 <div>
-  <span bind:this={trigger}><button on:click={() => open = !open}>menu</button></span>
+  <span bind:this={trigger}><button onclick={() => open = !open}>menu</button></span>
   {#if open}
     <mesa:portal to={document.body}>
       <div bind:this={menu}>
         <p>count {count}</p>
-        <button on:click={() => count++}>more</button>
+        <button onclick={() => count++}>more</button>
       </div>
     </mesa:portal>
   {/if}

@@ -32,7 +32,7 @@ model Customer {
   email  String
   orders Order[]
 
-  @@gate("4.4.4.6")
+  @@gate(4.4.4.6)
 }
 
 model Order {
@@ -41,7 +41,7 @@ model Order {
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
 
-  @@gate("4.4.4.6")
+  @@gate(4.4.4.6)
 }
 `
 

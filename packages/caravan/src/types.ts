@@ -246,6 +246,15 @@ export interface JobDefinition<T = unknown> {
   timeZone?:    string
 }
 
+/**
+ * What a job file states. `name` is for a name no filename can hold
+ * (`deployment:run`); absent, the file names the job.
+ */
+export interface JobSpec<T = unknown> extends HandlerOptions {
+  name?:   string
+  handler: JobHandler<T>
+}
+
 /** What dispatch() addresses — a definition, or the name in one. */
 export type JobRef = string | { __caravanJob: true; name: string }
 

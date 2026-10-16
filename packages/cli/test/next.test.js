@@ -10,7 +10,8 @@ import { join }          from 'path'
 import { tmpdir }        from 'os'
 import { fileURLToPath } from 'url'
 
-import { rankNext, blockedBy, byHand, blockedLine, WEIGHTS } from '../core/next.js'
+import { execFileSync } from 'child_process'
+import { rankNext, blockedBy, byHand, envCause, ENV_CAUSES, seamOf, bySeam, blockedLine, recentPaths, COMMIT_FILE_CAP, WEIGHTS } from '../core/next.js'
 
 // Every fixture declares the prefix its rows are written under.
 const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
@@ -175,6 +176,50 @@ describe('the declaration', () => {
     expect(byHand({ body: 'The owner takes it by hand once CI is green · [ci](scripts/ci.mjs)' })).toBe(false)
   })
 
+  test('env: is read as its own segment, the cause as written, and not out of prose', () => {
+    expect(envCause({ body: '[d](test/verify.mjs) · env: shared db · by hand' })).toBe('shared db')
+    expect(envCause({ body: '[d](test/verify.mjs) · `env: timing`' })).toBe('timing')
+    expect(envCause({ body: 'the env: var is unset · [d](test/verify.mjs)' })).toBe(null)
+    expect(envCause({ body: '[d](test/verify.mjs) · env: bogus' })).toBe('bogus')
+    expect(ENV_CAUSES).toContain('shared db')
+  })
+
+  test('seam: is read as its own segment, the name as the key list writes it, and not out of prose', () => {
+    expect(seamOf({ body: '[d](src/a.js) · seam: withLitestoneDb · by hand' })).toBe('withLitestoneDb')
+    expect(seamOf({ body: '[d](src/a.js) · `seam: $setAuth`' })).toBe('$setAuth')
+    expect(seamOf({ body: '[d](src/a.js) · seam: `resource.save(data, { mode })`' })).toBe('resource.save(data, { mode })')
+    expect(seamOf({ body: 'the seam: between them · [d](src/a.js)' })).toBe(null)
+  })
+
+  test('--by seam groups on the identifier, most rows first, and counts the rows naming none', () => {
+    const { root, cleanup } = fixture([
+      S3('FJS-001', 'cli', 'One.', '[a](src/a.js) · seam: withLitestoneDb'),
+      S3('FJS-002', 'cli', 'Two.', '[a](src/a.js) · seam: `$setAuth(user)`'),
+      S3('FJS-003', 'cli', 'Three.', '[a](src/a.js) · seam: $setAuth'),
+      S3('FJS-004', 'cli', 'Four.'),
+    ])
+    try {
+      const { ready } = rankNext(root, { touched: new Set() })
+      const { seams, none } = bySeam(ready)
+      expect(seams.map(g => [g.seam, g.count, g.rows.map(r => r.id)])).toEqual([
+        ['$setAuth(user)', 2, ['FJS-002', 'FJS-003']],
+        ['withLitestoneDb', 1, ['FJS-001']],
+      ])
+      expect(none).toBe(1)
+    } finally { cleanup() }
+  })
+
+  test('an env row stays ranked and carries its cause', () => {
+    const { root, cleanup } = fixture([
+      S3('FJS-001', 'cli', 'Fails after another drive ran.', '[a](src/a.js) · env: shared db'),
+      S3('FJS-002', 'cli', 'Fits a session.'),
+    ])
+    try {
+      const out = rankNext(root, { touched: new Set() }).ready
+      expect(out.map(r => [r.id, r.env])).toEqual([['FJS-001', 'shared db'], ['FJS-002', null]])
+    } finally { cleanup() }
+  })
+
   test('a by-hand row stays ranked and says so', () => {
     const { root, cleanup } = fixture([
       S3('FJS-001', 'cli', 'Runs for ten minutes.', '[a](src/a.js) · by hand'),
@@ -231,5 +276,28 @@ describe('what a blocker holds', () => {
       expect(ids(ready)).toEqual(['FJS-003', 'FJS-004'])
       expect(ready[0].terms.find(t => t.term === 'blocks').note).toMatch(/S2/)
     } finally { cleanup() }
+  })
+})
+
+describe('recentPaths — the git side of the touched term', () => {
+  const git = (root, ...argv) => execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...argv], { stdio: 'ignore' })
+
+  test('a squash-style commit marks nothing, and a focused commit and the working tree still do', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-next-git-'))
+    try {
+      git(root, 'init', '-q')
+      mkdirSync(join(root, 'bulk'))
+      for (let i = 0; i < COMMIT_FILE_CAP + 1; i++) writeFileSync(join(root, 'bulk', `f${i}.js`), 'x')
+      git(root, 'add', '.'); git(root, 'commit', '-qm', 'updates')
+      writeFileSync(join(root, 'focused.js'), 'x')
+      git(root, 'add', '.'); git(root, 'commit', '-qm', 'fix')
+      writeFileSync(join(root, 'dirty.js'), 'x')
+      git(root, 'add', 'dirty.js')
+
+      const paths = recentPaths(root)
+      expect(paths.has('focused.js')).toBe(true)
+      expect(paths.has('dirty.js')).toBe(true)
+      expect([...paths].filter(p => p.startsWith('bulk/'))).toEqual([])
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 })

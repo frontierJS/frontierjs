@@ -4,7 +4,7 @@
  *
  * A green run pins: an attach writing the engine's own `position`, `left` and
  * `top` puts a box on the cell asked for, over the art, and a move draws the
- * art back where the figure was; `<mesa:window on:keydown>` hears the arrows
+ * art back where the figure was; `<mesa:window onkeydown>` hears the arrows
  * by their DOM names; a box of `@frontierjs/css`'s surface lineage blanks its
  * cells, so the art under the spaces in `(hi all)` does not show through, while
  * `outlined` beside it, which a browser paints transparent, still lets it

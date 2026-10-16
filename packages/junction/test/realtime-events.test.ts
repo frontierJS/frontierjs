@@ -19,11 +19,11 @@
 // were found by driving the real client against a real server.
 
 import { describe, test, expect } from 'bun:test'
-import { createService, callService } from '../src/core/service.ts'
+import { callService, buildService } from '../src/core/service.ts'
 import { AUTO_EVENT_MAP }             from '../src/core/events.ts'
 import { announce } from '../src/transport/channels.ts'
 import { createJunctionClient } from '../src/client/index.ts'
-import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { ServiceContext } from '../src/core/context.ts'
 
 // Records what announce() hands the channel manager, without a socket.
 function captureNames() {
@@ -32,7 +32,7 @@ function captureNames() {
 }
 
 async function emit(method: string, capture: ReturnType<typeof captureNames>) {
-  const svc = createService({
+  const svc = buildService({
     name: 'posts',
     [method]: async () => ({ id: 1 }),
     hooks: { after: { [method]: [announce(() => ({}) as never)] } },
@@ -70,7 +70,7 @@ describe('announce() event names match what the client listens for', () => {
 
   test('an explicit event name still wins', async () => {
     const seen: string[] = []
-    const svc = createService({
+    const svc = buildService({
       name: 'posts',
       create: async () => ({ id: 1 }),
       hooks: { after: { create: [announce(() => ({}) as never, 'post:published')] } },

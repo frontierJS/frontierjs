@@ -14,23 +14,40 @@ import type {
   BrokerMessage,
   BrokerHandler,
   BrokerHealth,
+  BrokerFraming,
+  BrokerLink,
 } from '../types.ts'
 import { ConduitStreamError } from '../types.ts'
 import { DEFAULT_MAX_BYTES, DEFAULT_TIMEOUT_MS } from './http.ts'
 
 const RECONNECT_BACKOFF = [1000, 2000, 4000, 8000, 16000]
 
-// Frames: `{ id, type: 'message', body }` in, `{ id, type: 'ack' }` out.
+// Conduit's own frames, for a broker whose connector supplies none.
+export const CONDUIT_FRAMING: BrokerFraming<void> = {
+  decode(frame) {
+    let f: { id?: unknown; type?: unknown; body?: unknown }
+    try { f = JSON.parse(frame) } catch { return null }
+    if (f?.type !== 'message' || typeof f.id !== 'string' || f.id === '') return null
+    return { id: f.id, body: f.body }
+  },
+  ack: (m) => JSON.stringify({ id: m.id, type: 'ack' }),
+}
+
 export class BrokerTransport extends BaseTransport {
   readonly protocol = 'websocket' as const
 
   private ws:        WebSocket | null = null
+  // Open and not yet believed: `destroy()` must close it too.
+  private dialing:   WebSocket | null = null
   private handler:   BrokerHandler | null = null
   private timer:     ReturnType<typeof setTimeout> | null = null
   private attempts   = 0
   private destroyed  = false
   private lastReceivedAt: number | null = null
   private received   = 0
+  private dropped    = 0
+  private framing:   BrokerFraming<any> = CONDUIT_FRAMING
+  private opened:    ((state: unknown) => void | Promise<void>) | null = null
 
   private traceHeaders: (() => Record<string, string> | undefined) | null = null
 
@@ -74,6 +91,7 @@ export class BrokerTransport extends BaseTransport {
       connected:        this.ws?.readyState === WebSocket.OPEN,
       last_received_at: this.lastReceivedAt,
       received:         this.received,
+      dropped:          this.dropped,
     }
   }
 
@@ -85,10 +103,14 @@ export class BrokerTransport extends BaseTransport {
   async subscribe(
     handler: BrokerHandler,
     traceHeaders: (() => Record<string, string> | undefined) | null = null,
+    framing: BrokerFraming<any> = CONDUIT_FRAMING,
+    opened: ((state: unknown) => void | Promise<void>) | null = null,
   ): Promise<void> {
     if (this.handler) throw new Error(`[conduit] ${this.descriptor.id} already has a subscriber`)
     this.handler      = handler
     this.traceHeaders = traceHeaders
+    this.framing      = framing
+    this.opened       = opened
     try {
       await this.connect()
     } catch (err) {
@@ -102,47 +124,92 @@ export class BrokerTransport extends BaseTransport {
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
     this.ws?.close()
+    this.dialing?.close()
     this.ws = null
+    this.dialing = null
   }
 
   private async connect(): Promise<void> {
     if (this.destroyed) return
 
     // Resolved before the socket exists, so an unresolvable ref opens no
-    // unauthenticated connection — the websocket transport's rule.
+    // unauthenticated connection — the websocket transport's rule. The secret
+    // the dial spent is the one a handshake presents, so the two cannot name
+    // different credentials.
     const address = this.descriptor.address
+    const spent: { value?: string } = {}
     // Trace sits under auth, so nothing can displace a credential.
     const headers = this.mergeHeaders(this.traceHeaders?.(), await this.buildAuthHeaders({
       method: 'CONNECT',
       path:   pathOf(address),
       query:  queryOf(address),
+      spent,
     }))
+    const framing = this.framing
 
     await new Promise<void>((resolve) => {
       const ws = new WebSocket(address, { headers } as unknown as string[])
+      this.dialing = ws
 
       // A broker that accepts the connection and never completes the upgrade
-      // neither opens nor errors, which would hold `subscribe()` for good.
+      // neither opens nor errors, which would hold `subscribe()` for good. The
+      // same clock covers the handshake: a Provider that never answers the
+      // challenge is the same silence one step later.
       const dialTimer = setTimeout(() => {
         ws.close()
         resolve()
         this.scheduleReconnect()
       }, this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS)
 
-      ws.addEventListener('open', () => {
+      // Until the handshake answers, frames are the handshake's; after, they
+      // are handed over one at a time in the order they arrived, since a
+      // Provider's edit overtaking its create is a row the sync writes wrong.
+      const link = handshakeLink(ws)
+      let believed = false
+      let state: unknown
+      let order = Promise.resolve()
+
+      ws.addEventListener('open', async () => {
+        try {
+          state = framing.handshake ? await framing.handshake(link, spent.value ?? null) : undefined
+        } catch (err) {
+          clearTimeout(dialTimer)
+          console.error(`[conduit] broker ${this.descriptor.id} handshake failed:`, (err as Error)?.message ?? err)
+          ws.close()
+          resolve()
+          return
+        }
+        if (ws.readyState !== WebSocket.OPEN) return
         clearTimeout(dialTimer)
+        believed      = true
+        this.dialing  = null
         this.ws       = ws
         this.attempts = 0
+        // Ahead of the connection's first frame in the same chain, so a
+        // backfill it starts is never overtaken by what it is filling behind.
+        const opened = this.opened
+        if (opened) order = order.then(async () => {
+          try { await opened(state) } catch (err) {
+            console.error(`[conduit] broker ${this.descriptor.id} opened() threw:`, (err as Error)?.message ?? err)
+          }
+        })
         resolve()
       })
       ws.addEventListener('error', () => { clearTimeout(dialTimer); resolve() })
       ws.addEventListener('close', () => {
         clearTimeout(dialTimer)
+        link.closed()
         if (this.ws === ws) this.ws = null
+        if (this.dialing === ws) this.dialing = null
         resolve()
         if (!this.destroyed) this.scheduleReconnect()
       })
-      ws.addEventListener('message', (e) => { void this.onMessage(ws, e) })
+      ws.addEventListener('message', (e) => {
+        const frame = this.admit(e)
+        if (frame === null) return
+        if (!believed) { link.push(frame); return }
+        order = order.then(() => this.onFrame(ws, framing, frame, state))
+      })
     })
   }
 
@@ -159,28 +226,27 @@ export class BrokerTransport extends BaseTransport {
     }, delay)
   }
 
+  // Dropped unhandled and unacked, so the broker redelivers it and an operator
+  // sees it, rather than the process buffering what it was told not to.
+  private admit(e: MessageEvent): string | null {
+    const size = typeof e.data === 'string' ? Buffer.byteLength(e.data) : (e.data as ArrayBuffer).byteLength
+    if (size > (this.opts.max_response_bytes ?? DEFAULT_MAX_BYTES)) {
+      this.dropped++
+      console.error(`[conduit] broker ${this.descriptor.id} sent a ${size}-byte frame over max_response_bytes; dropped`)
+      return null
+    }
+    return typeof e.data === 'string' ? e.data : new TextDecoder().decode(e.data as ArrayBuffer)
+  }
+
   // The ack follows the handler and never precedes it: an ack before the
   // handoff is a lost message, and an ack after an idempotent handoff that then
   // fails to go out is a redelivery that costs nothing (FJS-D235). A handler
   // that throws leaves the message unacknowledged for the broker to redeliver.
-  private async onMessage(ws: WebSocket, e: MessageEvent) {
-    // Dropped unhandled and unacked, so the broker redelivers it and an
-    // operator sees it, rather than the process buffering what it was told not to.
-    const size = typeof e.data === 'string' ? Buffer.byteLength(e.data) : (e.data as ArrayBuffer).byteLength
-    if (size > (this.opts.max_response_bytes ?? DEFAULT_MAX_BYTES)) {
-      console.error(`[conduit] broker ${this.descriptor.id} sent a ${size}-byte frame over max_response_bytes; dropped`)
-      return
-    }
+  private async onFrame(ws: WebSocket, framing: BrokerFraming<any>, frame: string, state: unknown) {
+    let message: BrokerMessage | null
+    try { message = framing.decode(frame, state) } catch { message = null }
+    if (!message) { this.dropped++; return }
 
-    let frame: { id?: unknown; type?: unknown; body?: unknown }
-    try {
-      frame = JSON.parse(e.data as string)
-    } catch {
-      return
-    }
-    if (frame.type !== 'message' || typeof frame.id !== 'string' || frame.id === '') return
-
-    const message: BrokerMessage = { id: frame.id, body: frame.body }
     this.lastReceivedAt = Date.now()
     this.received++
 
@@ -190,7 +256,29 @@ export class BrokerTransport extends BaseTransport {
       console.error(`[conduit] broker handler for ${this.descriptor.id} threw on ${message.id}:`, err)
       return
     }
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ id: message.id, type: 'ack' }))
+    if (framing.ack && ws.readyState === WebSocket.OPEN) ws.send(framing.ack(message))
+  }
+}
+
+// The frames a handshake reads. Buffered only until the handshake answers —
+// a bounded wait the dial timer ends — and never after.
+function handshakeLink(ws: WebSocket): BrokerLink & { push(frame: string): void; closed(): void } {
+  const queue: string[] = []
+  let waiting: { match: (f: string) => boolean; resolve: (f: string) => void; reject: (e: Error) => void } | null = null
+  let shut = false
+  const take = () => {
+    if (!waiting) return
+    while (queue.length) {
+      const f = queue.shift()!
+      if (waiting.match(f)) { const w = waiting; waiting = null; w.resolve(f); return }
+    }
+    if (shut) { const w = waiting; waiting = null; w.reject(new Error('the socket closed during the handshake')) }
+  }
+  return {
+    send: (frame) => ws.send(frame),
+    next: (match) => new Promise((resolve, reject) => { waiting = { match, resolve, reject }; take() }),
+    push: (frame) => { queue.push(frame); take() },
+    closed: () => { shut = true; take() },
   }
 }
 

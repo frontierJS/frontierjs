@@ -5,10 +5,10 @@
 // and extended by db/user.lite, so everything that guards this service is
 // declared in two files neither of which is this one:
 //
-//   @@gate("4.4.4.5")        read/create/update at USER(4), delete at ADMIN(5)
+//   @@gate(4.4.4.5)        read/create/update at USER(4), delete at ADMIN(5)
 //   @@allow('read', …)       your own row, or every row if you are staff
 //   @@allow('update', …)     your own row, or any row if you are an admin
-//   email, accountId, role, emailVerified  @allow('write', auth().isAdmin)
+//   email, role, emailVerified  @allow('write', auth().isAdmin)
 //   isStaff       @allow('write', auth().isAdmin)
 //
 // So the four things a person can do on the users screen — see the roster,
@@ -29,7 +29,7 @@
 //
 //   remove   `User` declares no @@softDelete, and `Credential.userId` /
 //            `Session.userId` are bare String columns with no relation behind
-//            them — auth keeps its own machinery at @@gate("8") rather than
+//            them — auth keeps its own machinery at @@gate(8) rather than
 //            wiring foreign keys into an app's schema. So a delete here would
 //            leave live sessions pointing at a row that is gone: the person
 //            stays signed in, and the next request they make is authenticated
@@ -62,7 +62,7 @@
 // with a 403 naming the model, and moving that line moves this method with it.
 // Three more things come free and none of them is written here:
 //
-//   · `email`, `accountId`, `role`, `emailVerified` and `isStaff` are each
+//   · `email`, `role`, `emailVerified` and `isStaff` are each
 //     `@allow('write', auth().isAdmin)`, so the same payload from a
 //     non-admin is accepted with those columns unmoved.
 //   · `email @unique` answers `UniqueConflictError` — a 409 carrying `errors`,
@@ -89,40 +89,38 @@
 // and nothing here has to hold one. basecamp's `model Invitation` is the fuller
 // answer to the same question — an offer of membership to an address that has
 // no account yet — and it earns a table because it carries state this does not.
-import { createBaseService, resultData } from '@frontierjs/junction'
+import { createService, resultData } from '@frontierjs/junction'
 
 type NewUser = { id?: string; email?: string }
 
-export function createUsersService() {
-  return createBaseService({
-    model:   'User',
-    channel: 'users',
-    methods: ['find', 'get', 'create', 'patch'],
+export default createService({
+  model:   'User',
+  channel: 'users',
+  methods: ['find', 'get', 'create', 'patch'],
 
-    hooks: {
-      after: {
-        create: [
-          function inviteTheNewAccount(ctx) {
-            // `resultData`, not `ctx.result`. Inside the pipeline the result is
-            // still the ENVELOPE — `{ kind: 'single', object: 'users', data }` —
-            // and only the transport unwraps it. Reading `.email` off it is
-            // `undefined` with no error anywhere: the hook runs, the account is
-            // made, and the invitation silently never goes out. Junction exports
-            // the unwrapper for exactly this.
-            const row = resultData(ctx.result) as NewUser | undefined
-            if (!row?.email) return
-            const email = row.email
+  hooks: {
+    after: {
+      create: [
+        function inviteTheNewAccount(ctx) {
+          // `resultData`, not `ctx.result`. Inside the pipeline the result is
+          // still the ENVELOPE — `{ kind: 'single', object: 'users', data }` —
+          // and only the transport unwraps it. Reading `.email` off it is
+          // `undefined` with no error anywhere: the hook runs, the account is
+          // made, and the invitation silently never goes out. Junction exports
+          // the unwrapper for exactly this.
+          const row = resultData(ctx.result) as NewUser | undefined
+          if (!row?.email) return
+          const email = row.email
 
-            ctx.afterCommit(async () => {
-              // Per SHOP. `app.auth` is the proxy in api/src/core/auth.ts, which
-              // routes every method to the provider for the tenant this request
-              // is for — so an invitation is minted against the database the
-              // account was made in, and never against the default shop's.
-              await ctx.app.auth?.requestPasswordReset?.(email)
-            })
-          },
-        ],
-      },
+          ctx.afterCommit(async () => {
+            // Per SHOP. `app.auth` is the proxy in api/src/core/auth.ts, which
+            // routes every method to the provider for the tenant this request
+            // is for — so an invitation is minted against the database the
+            // account was made in, and never against the default shop's.
+            await ctx.app.auth?.requestPasswordReset?.(email)
+          })
+        },
+      ],
     },
-  })
-}
+  },
+})

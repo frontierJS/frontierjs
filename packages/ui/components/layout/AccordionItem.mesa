@@ -44,14 +44,14 @@
   }
 </script>
 
-<details class="disclosure" open={isOpen} {class} {...$attributes} on:toggle={handleToggle}>
+<details class="disclosure" open={isOpen} {class} {...$attributes} ontoggle={handleToggle}>
   <summary
     class="disclosure-summary"
     id={headerId}
     aria-disabled={disabled ? 'true' : null}
     style:opacity={disabled ? 0.5 : null}
     style:cursor={disabled ? 'not-allowed' : null}
-    on:click={handleClick}
+    onclick={handleClick}
   >
     <span>{label}</span>
   </summary>

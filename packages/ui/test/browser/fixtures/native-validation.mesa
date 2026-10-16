@@ -12,16 +12,16 @@
   let submits = 0
 </script>
 
-<form id="bare-form" on:submit|preventDefault={() => submits++}>
+<form id="bare-form" onsubmit|preventDefault={() => submits++}>
   <Input name="bareField" label="Bare" required bind:value={bare} />
   <button type="submit" id="bare-submit">save</button>
 </form>
 
-<form id="opted-form" data-native-validation on:submit|preventDefault={() => submits++}>
+<form id="opted-form" data-native-validation onsubmit|preventDefault={() => submits++}>
   <Input name="optedField" label="Opted" required bind:value={opted} />
 </form>
 
-<form id="quiet-form" novalidate on:submit|preventDefault={() => submits++}>
+<form id="quiet-form" novalidate onsubmit|preventDefault={() => submits++}>
   <Input name="quietField" label="Quiet" required />
 </form>
 

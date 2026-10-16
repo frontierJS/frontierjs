@@ -27,7 +27,7 @@
 // Never imported by production code.
 
 import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, MOVE_WORDS, POSITIONS,
-         POSITION_RULES, positionsOf, hasOrdinaryPositions, typed, grouped, probeFor, docFor,synonymsFor } from '../core/catalog.js'
+         POSITION_RULES, positionsOf, hasOrdinaryPositions, typed, grouped, probeFor, docFor,synonymsFor, seeAlsoRow } from '../core/catalog.js'
 import { VISIBILITY, PER_CALLER, RULES } from '../core/advise.js'
 
 /**
@@ -110,16 +110,8 @@ function entry(row, depth, push) {
     docFor(row)
       ? `- **Deeper** — [${docFor(row).replace(/^docs\//, '')}](${docFor(row).replace(/^docs\//, '')})`
       : null,
-    // `unique` is a word at both levels, and a bare name matches the first row
-    // carrying it — so a model attribute pointing at `@@unique` linked to the
-    // FIELD one with nothing saying so. A `<level>:<word>` entry says which.
     row.seeAlso?.length
-      ? `- **See also** — ${row.seeAlso
-          .map(w => {
-            const [level, word] = w.includes(':') ? w.split(':') : [null, w]
-            return CATALOG.find(r => r.word === word && r !== row && (!level || r.level === level))
-          })
-          .filter(Boolean).map(link).join(' · ')}`
+      ? `- **See also** — ${row.seeAlso.map(w => seeAlsoRow(row, w)).filter(Boolean).map(link).join(' · ')}`
       : null,
   ].filter(Boolean)
 

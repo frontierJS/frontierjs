@@ -98,7 +98,7 @@ const ENC_SCHEMA = `
     p256dh    String  @encrypted
     userAgent String?
     @@db(main)
-    @@gate("4.4.4.4")
+    @@gate(4.4.4.4)
     @@allow('read', userId == auth().id)
     @@trail(audit)
   }

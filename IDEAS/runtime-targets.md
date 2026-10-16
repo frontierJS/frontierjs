@@ -90,6 +90,14 @@ budget (`PHILOSOPHY.md` § V) charges a language the same as a noun.
 - **Do not build it pre-alpha.** Two runtimes means every feature twice and a
   conformance suite to prove they agree, which is `XL` and reopens every
   bridge-owner ruling at once.
+- **Outpost is the one piece that might earn a Go port first, and it is a
+  separate, smaller question.** It is the only process here that runs on a
+  machine where Bun would otherwise have to be installed, it meets the rest of
+  FJS only over a wire protocol, and no upstream binary does its job — so a
+  port reopens no bridge ruling. The price is a second implementation of
+  `@frontierjs/toolbelt/signature`, which needs shared test vectors before
+  either side changes. Same trigger as above: measure the Bun outpost on the
+  smallest fleet box first.
 
 ## The nine, answered
 

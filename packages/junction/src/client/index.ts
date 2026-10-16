@@ -249,15 +249,6 @@ export interface AuthServiceNames {
  */
 export type { QueryDirectives } from '../core/directives.ts'
 
-/**
- * @deprecated Use `ListResult<T>` — the actual shape find() returns.
- *
- * This described the server's list envelope but omitted `kind`, `object` and
- * `errors`, and no method ever returned it: find() unwrapped to `T[]` and threw
- * the metadata away. It was a type describing a value that did not exist.
- */
-export type PaginatedResult<T = unknown> = ListResult<T>
-
 
 export type ServiceEvent = 'created' | 'patched' | 'removed' | 'find' | 'get' | string
 
@@ -445,10 +436,7 @@ export class ServiceProxy<
    *
    *   const res = await client.service('posts').find()
    *   res.data      // the rows
-   *   res.total     // ← was unreachable: this used to return res.data and
-   *                 //   throw away total/limit/offset, so no browser caller
-   *                 //   could build a paginated table. PaginatedResult was
-   *                 //   declared in this file and used by nothing.
+   *   res.total     // with limit/offset, enough to build a paginated table
    *
    * Matches HTTP and app.service() exactly: a list keeps its envelope, a
    * single unwraps to the record.

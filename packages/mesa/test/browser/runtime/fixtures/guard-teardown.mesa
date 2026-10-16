@@ -26,6 +26,6 @@
   {/each}
 </div>
 
-<button type="button" id="shrink" on:click={() => rows = [[1, 2, 3]]}>shrink</button>
-<button type="button" id="grow" on:click={() => rows = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]}>grow</button>
+<button type="button" id="shrink" onclick={() => rows = [[1, 2, 3]]}>shrink</button>
+<button type="button" id="grow" onclick={() => rows = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]}>grow</button>
 <output id="count">{rows.length}</output>

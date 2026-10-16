@@ -34,7 +34,7 @@ const refusal = (src: string) => {
 
 describe('@@gate is written as digits', () => {
   it('four positions are read.create.update.delete', () => {
-    expect(gateOf(model('@@gate("2.4.4.6")'))).toBe('2.4.4.6')
+    expect(gateOf(model('@@gate(2.4.4.6)'))).toBe('2.4.4.6')
   })
 
   // The parser stores the string AS WRITTEN — the cascade of a missing position
@@ -42,13 +42,13 @@ describe('@@gate is written as digits', () => {
   // refusal below builds a four-position string and it would be easy to read
   // that as the parser normalizing one.
   it('the string is stored verbatim; the cascade is the reader\'s', () => {
-    expect(gateOf(model('@@gate("4")'))).toBe('4')
-    expect(gateOf(model('@@gate("2.4")'))).toBe('2.4')
-    expect(gateOf(model('@@gate("2.4.4.6")'))).toBe('2.4.4.6')
+    expect(gateOf(model('@@gate(4)'))).toBe('4')
+    expect(gateOf(model('@@gate(2.4)'))).toBe('2.4')
+    expect(gateOf(model('@@gate(2.4.4.6)'))).toBe('2.4.4.6')
   })
 
   it('the sentinels are ordinary positions', () => {
-    expect(gateOf(model('@@gate("1.8.8.9")'))).toBe('1.8.8.9')
+    expect(gateOf(model('@@gate(1.8.8.9)'))).toBe('1.8.8.9')
   })
 })
 
@@ -69,14 +69,14 @@ describe('@@gate refuses the named form and names the digits', () => {
     it(`@@gate(${named}) is refused, naming "${digits}"`, () => {
       const msg = refusal(model(`@@gate(${named})`))
       expect(msg).toBeTruthy()
-      expect(msg).toContain(`@@gate("${digits}")`)
+      expect(msg).toContain(`@@gate(${digits})`)
     })
   }
 
   it('write: expands to create, update and delete when computing the answer', () => {
     // The expansion is kept ONLY to build the suggestion. If it is ever dropped
     // the refusal still fires and this row is what notices it went generic.
-    expect(refusal(model('@@gate(write: USER)'))).toContain('@@gate("0.4.4.4")')
+    expect(refusal(model('@@gate(write: USER)'))).toContain('@@gate(0.4.4.4)')
   })
 
   it('an unknown level is still named as a level, not as syntax', () => {
@@ -87,5 +87,38 @@ describe('@@gate refuses the named form and names the digits', () => {
     // `all:` among them — `fli check`'s second parser of this grammar had
     // invented it, and the language never had it.
     expect(refusal(model('@@gate(all: READER)'))).toContain('unknown key')
+  })
+})
+
+// `FJS-D1081`: a level is a number, so the gate takes the bare form on a model
+// and on a move, and the quoted spelling is refused naming the bare one. A
+// number token's own value would read `2.0` as `2` — every position at 2 —
+// so the dotted text is kept as written.
+describe('the gate ladder is bare on a model and on a move (FJS-D1081)', () => {
+  it('a two-position gate keeps a trailing zero', () => {
+    expect(gateOf(model('@@gate(2.0)'))).toBe('2.0')
+    expect(gateOf(model('@@gate(0.0.0.0)'))).toBe('0.0.0.0')
+  })
+
+  it('@@gate("2.4.4.6") is refused, naming @@gate(2.4.4.6)', () => {
+    const msg = refusal(model('@@gate("2.4.4.6")'))
+    expect(msg).toBeTruthy()
+    expect(msg).toContain('@@gate(2.4.4.6)')
+  })
+
+  it('a malformed dotted literal is refused as a gate, not lexed as a number', () => {
+    expect(refusal(model('@@gate(2..4)'))).toBeTruthy()
+    expect(refusal(model('@@gate(2.4.4.12)'))).toContain('0–9')
+  })
+
+  const moves = (gate: string) => `enum S { a b }
+model M { id Int @id  s S @default(a)  @@gate(0.0.0.0)  @@transitions(s, go: a -> b ${gate}) }`
+
+  it('a move takes @gate(5)', () => {
+    expect(refusal(moves('@gate(5)'))).toBeNull()
+  })
+
+  it('@gate("5") is refused, naming @gate(5)', () => {
+    expect(refusal(moves('@gate("5")'))).toContain('@gate(5)')
   })
 })

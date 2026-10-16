@@ -507,3 +507,29 @@ describe('JSON kept in a String column — SQLite Prisma has no Json type (`FJS-
 }`)).toEqual([])
   })
 })
+
+describe('a model name that is not PascalCase singular is noted (`FJS-2437`)', () => {
+  const named = (src: string) =>
+    convert({ source: src, format: 'prisma', label: 'fx' }).gaps
+      .filter(g => g.kind === 'model-name-not-singular').map(g => g.model)
+
+  test('a plural join model and an underscore-led implicit table are named, an ordinary model is not', () => {
+    expect(named(`model FathersOnVerses {
+  verseId Int
+  fatherId Int
+  @@id([verseId, fatherId])
+}
+model _ClientToTag {
+  A Int
+  B Int
+  @@id([A, B])
+}
+model BlogPost {
+  id Int @id
+}
+model Status {
+  id Int @id
+}`)).toEqual(['FathersOnVerses', '_ClientToTag'])
+    expect(tierOf('model-name-not-singular')).toBe('noted')
+  })
+})

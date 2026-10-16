@@ -22,6 +22,12 @@
     "./runtime/terminal": {
       "import": "./src/runtime-terminal.js"
     },
+    "./runtime/native.js": {
+      "import": "./src/runtime-native.js"
+    },
+    "./runtime/native": {
+      "import": "./src/runtime-native.js"
+    },
     "./compiler.js": {
       "import": "./src/compiler.js"
     },
@@ -55,6 +61,10 @@
     "./drive": {
       "import": "./src/drive.js"
     },
+    "./browser": {
+      "types": "./src/browser/browser.d.ts",
+      "import": "./src/browser/index.js"
+    },
     "./vite": {
       "import": "./mesa-vite/index.js"
     },
@@ -69,13 +79,16 @@
     }
   },
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'node test/spec-check.mjs && vitest run && node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs && bun test/terminal/run.mjs'",
+    "test": "node ../../scripts/tmp-run.mjs 'node test/spec-check.mjs && vitest run && node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs && node test/browser/kit/run.mjs && bun test/terminal/run.mjs && node test/native/run.mjs && node bench/run.mjs --gate'",
     "test:watch": "vitest",
-    "test:browser": "node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs",
+    "test:browser": "node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs && node test/browser/kit/run.mjs",
     "test:browser:runtime": "node test/browser/runtime/run.mjs",
     "test:browser:vite": "node test/browser/vite/run.mjs",
     "test:browser:repl": "node test/browser/repl/run.mjs",
+    "test:browser:kit": "node test/browser/kit/run.mjs",
     "test:terminal": "bun test/terminal/run.mjs",
+    "test:native": "node test/native/run.mjs",
+    "test:native:device": "node test/native/run.mjs --device",
     "serve:runtime": "node test/browser/runtime/run.mjs --serve",
     "serve:vite": "node test/browser/vite/run.mjs --serve",
     "serve": "npx serve ../..",
@@ -97,6 +110,7 @@
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
+    "tslib": "^2.8.1",
     "unified": "^11.0.5",
     "vite": "^8.3.2"
   },
@@ -141,8 +155,14 @@
     "@codemirror/state": "^6",
     "@codemirror/view": "^6",
     "@lezer/highlight": "^1",
+    "@lynx-js/lynx-core": "0.1.4",
+    "@lynx-js/rsbuild-plugin": "0.1.4",
+    "@lynx-js/vanilla-rsbuild-plugin": "0.1.3",
+    "@lynx-js/web-core": "0.26.3",
+    "@lynx-js/web-elements": "0.12.13",
     "@opentui/core": "0.5.17",
     "@replit/codemirror-vim": "^6",
+    "@rsbuild/core": "2.2.9",
     "css-tree": "^2.0.0",
     "happy-dom": "^20.11.6",
     "lz-string": "^1.5.0",
@@ -151,6 +171,7 @@
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
+    "tslib": "^2.8.1",
     "unified": "^11.0.5",
     "vite": "^8.3.2",
     "vitest": "^5.0.3"

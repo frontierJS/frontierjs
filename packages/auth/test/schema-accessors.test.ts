@@ -26,6 +26,7 @@ import { authSchemaFragments, authUserModel, authMachineryModels, retargetDb } f
 import { parse } from '@frontierjs/litestone/parser'
 import { modelToAccessor } from '@frontierjs/litestone/ddl'
 import { auditDatabase } from './audit-trail-model.ts'
+import { makeAuth, signedIn } from './harness.ts'
 
 // The fragments are injected into a host schema; @@db(main) and @@trail(audit)
 // can't resolve standalone.
@@ -141,7 +142,7 @@ describe('accessor consistency', () => {
 // The two `.lite` files this package ships are the source, and they are split by
 // WHO OWNS THE MODEL — which the gate already states. User is the app's: it gets
 // columns added, relations point at it, and `fli auth:install` appends it into
-// the app's own schema.lite. The other three are @@gate("8"), meaning nothing
+// the app's own schema.lite. The other three are @@gate(8), meaning nothing
 // outside asSystem() speaks to them, so they go in a file the app imports.
 //
 // A model that drifted across that line would be a real change with no other
@@ -246,5 +247,22 @@ describe('fli auth:install carries no copy of the schema', () => {
     for (const db of ['main', 'auth']) {
       expect(cliRetarget(shipped, db)).toBe(authMachineryModels(db))
     }
+  })
+})
+
+// `@@auth` names the principal model, so an app that calls its person Account
+// renames the appended fragment and nothing else. Every read and write this
+// package makes of a person goes to the model @@auth names; a literal `user`
+// accessor answered `"user" is not a table` at the first sign-up (FJS-3146).
+describe('the @@auth model is the person, whatever it is called', () => {
+
+  test('an app whose @@auth model is Account registers, signs in and resolves a session', async () => {
+    const h = await makeAuth({}, undefined, { authModel: 'Account' })
+    const made = await h.auth.createUser({ email: 'acct@x.test', password: 'pw-1', name: 'Acct' })
+    expect(await h.sys.account.findFirst({ where: { email: 'acct@x.test' } })).toMatchObject({ id: made.userId })
+
+    const { token, user } = signedIn(await h.auth.login('acct@x.test', 'pw-1'))
+    expect(user.userId).toBe(made.userId)
+    expect((await h.auth.verifySession(token))?.userId).toBe(made.userId)
   })
 })

@@ -21,9 +21,9 @@ import { join }          from 'node:path'
 
 import { createClient, createTenantRegistry } from '../../litestone/src/index.js'
 import { createApp, createTestApp } from '../../junction/index.ts'
-import { commitments, fireCommitment, COMMITMENT_FIRE_JOB } from '../../junction/src/plugins/commitments/index.ts'
+import { commitments, defineCommitment, fireCommitment, COMMITMENT_FIRE_JOB } from '../../junction/src/plugins/commitments/index.ts'
 import { outbox }        from '../../junction/src/plugins/outbox/index.ts'
-import type { CommitmentHook } from '../../junction/src/plugins/commitments/index.ts'
+import type { CommitmentSpec } from '../../junction/src/plugins/commitments/index.ts'
 import type { App }      from '../../junction/index.ts'
 import { createCaravan } from '../src/index.ts'
 import { auditDatabase } from './audit-trail-model.ts'
@@ -55,7 +55,7 @@ afterEach(async () => { for (const c of closers.splice(0)) await c() })
 const SYSTEM = { userId: 'system', role: 'system' } as any
 
 type BootOpts = {
-  plugin?: boolean; timeZone?: string; hooks?: Record<string, CommitmentHook>; relay?: boolean
+  plugin?: boolean; timeZone?: string; hooks?: Record<string, CommitmentSpec>; relay?: boolean
   system?: any
 }
 
@@ -367,10 +367,10 @@ describe('a hook runs in the move\'s transaction', () => {
   it('the move and its effect commit together, and afterCommit runs once after', async () => {
     const seen: string[] = []
     const { app, db, advance, status } = await started(RECEIPTS, { hooks: {
-      'Order.abandon': async ({ db: tx, record, afterCommit }) => {
+      'Order.abandon': defineCommitment({ after: async ({ db: tx, record, afterCommit }) => {
         await tx.asSystem().receipt.create({ data: { orderId: record.id } })
         afterCommit(async () => { seen.push(await status(record.id)) })
-      },
+      } }),
     } })
     const order = await db.order.create({ data: {} })
 
@@ -383,10 +383,10 @@ describe('a hook runs in the move\'s transaction', () => {
 
   it('a hook that throws takes the move back with it, and the fire fails', async () => {
     const { app, db, queue, advance, status } = await started(RECEIPTS, { hooks: {
-      'Order.abandon': async ({ db: tx, record }) => {
+      'Order.abandon': defineCommitment({ after: async ({ db: tx, record }) => {
         await tx.asSystem().receipt.create({ data: { orderId: record.id } })
         throw new Error('the effect could not be made')
-      },
+      } }),
     } })
     const order = await db.order.create({ data: {} })
 
@@ -400,7 +400,7 @@ describe('a hook runs in the move\'s transaction', () => {
 
   it('a key naming no declared commitment is refused at start', async () => {
     // A renamed commitment would leave its effect unrun with nothing saying so.
-    const { app } = await bootApp(SCHEMA, { hooks: { 'Order.abandonn': () => {} } })
+    const { app } = await bootApp(SCHEMA, { hooks: { 'Order.abandonn': defineCommitment({ after: () => {} }) } })
     await expect(app._startForTest()).rejects.toThrow(/'Order\.abandonn', which no @@commitment declares/)
   })
 
@@ -410,10 +410,10 @@ describe('a hook runs in the move\'s transaction', () => {
     const db = await createClient({ databases: ':memory:', schema: RECEIPTS, now: () => new Date(t) }) as any
     closers.push(() => db.$close())
     const later: string[] = []
-    const hooks = { 'Order.abandon': (async ({ db: tx, record, afterCommit }) => {
+    const hooks = { 'Order.abandon': defineCommitment({ after: async ({ db: tx, record, afterCommit }) => {
       await tx.asSystem().receipt.create({ data: { orderId: record.id } })
       afterCommit(() => later.push('after'))
-    }) as CommitmentHook }
+    } }) }
     const order = await db.order.create({ data: {} })
     const job = { accessor: 'order', transition: 'abandon', id: order.id, dueAt: '' }
 
@@ -423,6 +423,101 @@ describe('a hook runs in the move\'s transaction', () => {
     expect(await fireCommitment(db, job, { hooks })).toBe('lapsed')
     expect(later).toEqual(['after'])
     expect(await db.asSystem().receipt.count()).toBe(1)
+  })
+})
+
+// ─── the three tiers ─────────────────────────────────────────────────────────
+//
+// A sealing move freezes the row it makes, so what the document owes at its
+// seal — the number, a refresh of its lines — has to be written BEFORE the
+// move, and a hook that looks the draft up must find it still a draft
+// (`FJS-2163`). A renewal opens the next period only AFTER the move, since the
+// closing one holds the open-period guard until then (`FJS-D1022`).
+
+const SEALING = `
+database main { path "./app.db" }
+
+enum InvoiceStatus { draft finalized }
+
+model Invoice {
+  id        Int           @id @default(autoincrement())
+  status    InvoiceStatus @default(draft)
+  number    Int?          @immutable
+  createdAt DateTime      @default(now())
+  @@transitions(status, finalize: draft -> finalized @seals @system)
+  @@commitment(finalize, on: createdAt + 14d)
+  @@db(main)
+}
+`
+
+describe('a commitment hook has the service pipeline\'s tiers', () => {
+
+  it('before writes what a sealing move owes while the row is still a draft', async () => {
+    let t = T0
+    const db = await createClient({ databases: ':memory:', schema: SEALING, now: () => new Date(t) }) as any
+    closers.push(() => db.$close())
+    const seen: string[] = []
+    const hooks = { 'Invoice.finalize': defineCommitment({
+      before: async ({ db: tx, record }) => {
+        seen.push(record.status)
+        const draft = await tx.asSystem().invoice.findFirst({ where: { id: record.id, status: 'draft' } })
+        await tx.asSystem().invoice.update({ where: { id: draft.id }, data: { number: 1 } })
+      },
+    }) }
+    const invoice = await db.invoice.create({ data: {} })
+    const job = { accessor: 'invoice', transition: 'finalize', id: invoice.id, dueAt: '' }
+
+    t += 14 * DAY
+    expect(await fireCommitment(db, job, { hooks })).toBe('fired')
+    expect(seen).toEqual(['draft'])
+    const sealed = await db.asSystem().invoice.findUnique({ where: { id: invoice.id } })
+    expect([sealed.status, sealed.number]).toEqual(['finalized', 1])
+    expect(await fireCommitment(db, job, { hooks })).toBe('lapsed')
+  })
+
+  it('around enter, before, the move, after, around exit — in one transaction', async () => {
+    const order: string[] = []
+    const { app, db, advance, status } = await started(RECEIPTS, { hooks: {
+      'Order.abandon': defineCommitment({
+        around: async (ctx, next) => {
+          order.push(`around enter ${ctx.record.status}`)
+          await next()
+          order.push(`around exit ${ctx.record.status}`)
+        },
+        before: ({ record }) => { order.push(`before ${record.status}`) },
+        after:  async ({ db: tx, record }) => {
+          order.push(`after ${record.status}`)
+          await tx.asSystem().receipt.create({ data: { orderId: record.id } })
+        },
+      }),
+    } })
+    const o = await db.order.create({ data: {} })
+
+    advance(14 * DAY)
+    await app.commitments!.sweep()
+    await until('the order to be abandoned', async () => (await status(o.id)) === 'cancelled')
+    expect(order).toEqual([
+      'around enter pending', 'before pending', 'after cancelled', 'around exit cancelled',
+    ])
+    expect(await db.asSystem().receipt.count({ where: { orderId: o.id } })).toBe(1)
+  })
+
+  it('an around that never calls next() fails the fire and makes no move', async () => {
+    let t = T0
+    const db = await createClient({ databases: ':memory:', schema: SCHEMA, now: () => new Date(t) }) as any
+    closers.push(() => db.$close())
+    const hooks = { 'Order.abandon': defineCommitment({ around: async () => {} }) }
+    const o = await db.order.create({ data: {} })
+
+    t += 14 * DAY
+    await expect(fireCommitment(db, { accessor: 'order', transition: 'abandon', id: o.id, dueAt: '' }, { hooks }))
+      .rejects.toThrow(/Order\.abandon's around returned without calling next\(\)/)
+    expect((await db.asSystem().order.findUnique({ where: { id: o.id } })).status).toBe('pending')
+  })
+
+  it('a hook that is not a defineCommitment spec is refused at start, naming the key', async () => {
+    const { app } = await bootApp(SCHEMA, { hooks: { 'Order.abandon': (() => {}) as never } })
+    await expect(app._startForTest()).rejects.toThrow(/'Order\.abandon' is not a defineCommitment\(\{ before, after, around \}\)/)
   })
 })
 
@@ -441,7 +536,7 @@ describe('a hook enqueues on the move\'s transaction', () => {
   it('the row commits with the move and the relay runs the job once', async () => {
     const sent: unknown[] = []
     const { app, db, queue, advance, status } = await bootApp(OUTBOXED, { relay: true, hooks: {
-      'Order.abandon': async ({ record, enqueue }) => { await enqueue('order-notice', { orderId: record.id }) },
+      'Order.abandon': defineCommitment({ after: async ({ record, enqueue }) => { await enqueue('order-notice', { orderId: record.id }) } }),
     } })
     queue.handle('order-notice', async (ctx: { data: unknown }) => { sent.push(ctx.data) })
     await app._startForTest()
@@ -461,10 +556,10 @@ describe('a hook enqueues on the move\'s transaction', () => {
 
   it('a hook that throws after enqueueing leaves no row and no move', async () => {
     const { app, db, advance, status } = await started(OUTBOXED, { relay: true, hooks: {
-      'Order.abandon': async ({ record, enqueue }) => {
+      'Order.abandon': defineCommitment({ after: async ({ record, enqueue }) => {
         await enqueue('order-notice', { orderId: record.id })
         throw new Error('after the enqueue')
-      },
+      } }),
     } })
     const order = await db.order.create({ data: {} })
 
@@ -480,7 +575,7 @@ describe('a hook enqueues on the move\'s transaction', () => {
     const db = await createClient({ databases: ':memory:', schema: OUTBOXED, now: () => new Date(T0 + 14 * DAY) }) as any
     closers.push(() => db.$close())
     const order = await db.order.create({ data: { createdAt: new Date(T0).toISOString() } })
-    const hooks = { 'Order.abandon': (async ({ record, enqueue }) => { await enqueue('order-notice', { orderId: record.id }) }) as CommitmentHook }
+    const hooks = { 'Order.abandon': defineCommitment({ after: async ({ record, enqueue }) => { await enqueue('order-notice', { orderId: record.id }) } }) }
 
     await expect(fireCommitment(db, { accessor: 'order', transition: 'abandon', id: order.id, dueAt: '' }, { hooks }))
       .rejects.toThrow(/ctx\.enqueue\('order-notice'\) in 'commitments\.Order\.abandon': no outbox relay is installed/)
@@ -520,7 +615,7 @@ describe('the move is graded, not bypassed', () => {
     // state machine and its from-state lock. So a gate above the app's
     // standing refuses the move, and the refusal is counted and retried — a
     // row that is owed a move and cannot get one must not look settled.
-    const gated = SCHEMA.replace('model Order {', 'model Order {\n  @@gate("0.0.7.7")')
+    const gated = SCHEMA.replace('model Order {', 'model Order {\n  @@gate(0.0.7.7)')
     const { app, db, queue, advance, status } = await started(gated, { system: SYSTEM })
     const order = await db.asSystem().order.create({ data: {} })
 
@@ -535,7 +630,7 @@ describe('the move is graded, not bypassed', () => {
   // `FJS-1884`: a fire with no principal is STRANGER(0), which no gate above 0
   // admits, so the first word of it was a retrying job's error.
   it('a gated model with no createApp({ system }) is refused at boot, naming both', async () => {
-    const gated = SCHEMA.replace('model Order {', 'model Order {\n  @@gate("0.0.7.7")')
+    const gated = SCHEMA.replace('model Order {', 'model Order {\n  @@gate(0.0.7.7)')
     const err = await started(gated).then(() => null, (e: Error) => e)
     expect(err?.message).toContain('Order.abandon')
     expect(err?.message).toContain('createApp({ system })')
@@ -672,7 +767,7 @@ extend model OutboxMessage { @@tenant(none) }
     app.configure(queue)
     app.configure(outbox())
     app.configure(commitments({ cron: '0 0 1 1 *', hooks: {
-      'Order.abandon': async ({ record, enqueue }) => { await enqueue('order-notice', { orderId: record.id }) },
+      'Order.abandon': defineCommitment({ after: async ({ record, enqueue }) => { await enqueue('order-notice', { orderId: record.id }) } }),
     } }))
     const ran: Array<string | null> = []
     queue.handle('order-notice', async (ctx: { tenantId: string | null }) => { ran.push(ctx.tenantId) })

@@ -22,7 +22,7 @@ model Passage {
   body       String
   embedding  Bytes?  @vector(4)
 
-  @@gate("2")
+  @@gate(2)
 }
 ```
 

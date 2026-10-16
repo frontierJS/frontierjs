@@ -1,4 +1,4 @@
-import { createBaseService } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 
 // `CustomField` is a model, so it gets a service and derived CRUD like every
 // other one — and now that is the whole file.
@@ -16,9 +16,7 @@ import { createBaseService } from '@frontierjs/junction'
 // every declaration over HTTP was a 500 for the life of the feature; and it
 // wrote a `@system` column without saying so, which is a 403. Neither is
 // reachable now, because neither is written here.
-export function createCustomFieldsService() {
-  return createBaseService({
-    model:   'CustomField',
-    channel: 'customFields',
-  })
-}
+export default createService({
+  model:   'CustomField',
+  channel: 'customFields',
+})

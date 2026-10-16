@@ -95,7 +95,7 @@ packages/junction/
 │
 ├── src/core/
 │   ├── app.ts            ← createApp() — lifecycle, plugins, service routing
-│   ├── service.ts        ← createService(), createBaseService(), callService()
+│   ├── service.ts        ← createService(), callService()
 │   ├── context.ts        ← ServiceContext, CallOptions, RequestMeta (ALS)
 │   ├── envelope.ts       ← THE result envelope — wrap/unwrap, one owner
 │   ├── hooks.ts          ← around/before/after/error pipeline
@@ -586,7 +586,7 @@ ctx.file(path, download?)
 ctx.stream(readable, type, status?)
 
 // Pagination envelope with next/prev links built from the request URL
-ctx.paginate(rows, total, { limit, skip })
+ctx.paginate(rows, total, { limit, offset })
 // → { data, total, limit, offset, next: '/posts?$limit=20&$offset=20', prev: null }
 
 // Server-Sent Events
@@ -928,7 +928,7 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `port` | `number` | `3000` | HTTP port |
+| `port` | `number` | `3000` | HTTP port. `PORT`, else the `FLI_PORT_BE` that `fli dev` hands the process, beats the file; a `port` passed to `createApp` beats both |
 | `hostname` | `string` | `'0.0.0.0'` | Bind address |
 | `apiPrefix` | `string` | `''` | Prefix for every route the app registers — `''` mounts services at `/{service}` |
 | `http.drainTimeout` | `number` | `5000` | ms a socket gets to finish during shutdown |
@@ -1260,7 +1260,7 @@ const SCHEMA = `
     createdAt DateTime @default(now())
     updatedAt DateTime @default(now()) @updatedAt
 
-    @@gate("0.4.4.6")   // R=public  C/U=USER  D=OWNER
+    @@gate(0.4.4.6)   // R=public  C/U=USER  D=OWNER
   }
 `
 
@@ -1589,18 +1589,26 @@ does.
   cancels now. The move announces through the Litestone tap under the
   transition's name either way.
 - **What a move owes beyond itself is a hook, run in the move's transaction**
-  (`FJS-D368`). `hooks: { 'SubscriptionPeriod.close': renewPeriod }` — keyed
-  `<Model>.<commitment>` — runs after the move inside one `$transaction` on the
+  (`FJS-D368`). `hooks: { 'SubscriptionPeriod.close': defineCommitment({ after: renewPeriod }) }`
+  — keyed `<Model>.<commitment>` — runs inside one `$transaction` on the
   fire's client, so a closed period and the invoice and next period it owes
   commit together or not at all; a throw rolls both back and fails the fire.
-  The plugin still makes the move, so a hook cannot lose the from-state lock.
+  **The tiers are the service pipeline's, in its order** (`FJS-D1022`):
+  `around` enter → `before` → the move → `after` → `around` exit, with
+  `around(ctx, next)` failing the fire if it never calls `next()`. A `@seals`
+  move's owed writes — the number, a refresh of the draft — go in `before`,
+  where `record` is the row at its from-state: after the seal they are refused,
+  and a look-up of the draft finds none (`FJS-2163`). A write the move's own
+  from-state would contend with — the next period, under an open-period guard
+  — goes in `after`. The plugin still makes the move, so a hook cannot lose the
+  from-state lock.
   `afterCommit(fn)` carries what a rollback could not take back — a dispatch to
   a queue in another file. **`enqueue(job, payload)` is the durable one**: an
   outbox row on the move's transaction, for an effect whose loss the move would
   lie about — a reminder's email, where `reminded` is set and a moved row is
   never due again (`FJS-D370`). It refuses by name with no `outbox()`
   installed. Only the fire runs a hook, and a key naming no declared
-  commitment is refused at start.
+  commitment, or a value that is not a spec, is refused at start.
 - **`fireCommitment(client, payload, { hooks, outbox, tenant })` is the fire
   itself**, exported for a drive with no app: the same re-derivation, move and
   hook on a client the caller scopes. `outbox` is `app.outbox`, which
@@ -1702,9 +1710,10 @@ put.
 
 ```typescript
 import { createTestApp, testCtx, request, callService } from '@frontierjs/junction'
+import notes from './services/notes.service.ts'
 
 const app = await createTestApp({
-  services: [createNotesService],
+  services: [notes],
   users:    [{ id: 'u1', role: 'admin' }],
 })
 
@@ -1821,31 +1830,28 @@ const hook = await app.webhooks.register(
 // hook.secret — show once; the receiver stores this to verify signatures
 ```
 
-**Verifying a payload on the receiver:**
+Every delivery is signed with `@frontierjs/toolbelt/signature` under the `X-Webhook` prefix — `X-Webhook-Signature`, `X-Webhook-Timestamp`, `X-Webhook-Nonce` — over the method, path, query, timestamp, nonce and a hash of the body. The body is `{ id, event, timestamp, data }`; `id` is the delivery, stable across retries, and it is inside the signature where the `X-Webhook-Id` header is not — deduplicate on the body's. A receiver outside FrontierJS verifies with `verifyRequest({ prefix: 'X-Webhook', … })`.
+
+**Receiving — a subscription** (`FJS-D1087`). The same scheme read the other way: a *subscriber* is the far side of a registration this app made, a *subscription* is this app's side of a registration a far app holds. The row carries the secrets the far app signs under, the route is `POST {apiPrefix}/webhooks/subscriptions/{id}`, and one `receive` says what to do:
 
 ```typescript
-// Every delivery is signed with @frontierjs/toolbelt/signature under the
-// X-Webhook prefix — X-Webhook-Signature, X-Webhook-Timestamp, X-Webhook-Nonce —
-// over the method, path, query, timestamp, nonce and a hash of the body.
-// X-Webhook-Id is the EVENT, stable across retries: deduplicate on it.
+app.configure(webhooks({
+  events, store,
+  receive: async (ev, { subscription }) => {
+    // ev: { id, event, timestamp, payload } — verified. No principal: run as
+    // whom the app decides; the route never mints one.
+    await app.service('orders').call('record', null, ev.payload, { auth: { user: SYSTEM } })
+    return 'applied'          // or 'ignored' — both make a redelivery a duplicate
+                              // or 'parked' — the subject is not here yet; the sender's retry runs this again
+  },
+}))
 
-import { verifyRequest } from '@frontierjs/toolbelt/signature'
-
-const url     = new URL(req.url)
-const rawBody = await req.text()
-const result  = await verifyRequest({
-  secret,
-  method:  req.method,
-  path:    url.pathname,
-  query:   url.search,
-  body:    rawBody,
-  headers: req.headers,
-  prefix:  'X-Webhook',
-  now:     Math.floor(Date.now() / 1000),
-  seenNonce: async (nonce) => nonceStore.has(nonce),   // refuse a replay
-})
-if (!result.ok) return new Response(result.reason, { status: 401 })
+const sub = await app.webhooks.subscribe({ to: 'shop' })
+// sub.path is the route under apiPrefix, sub.secrets[0] the key minted for it —
+// hand both to the far app: register(`${origin}${sub.path}`, events, sub.secrets[0])
 ```
+
+The order is verify → receipt → `receive` → mark applied, and **dedupe means applied, not seen**: a `receive` that throws answers 500 and leaves the receipt unapplied, so the sender's retry gets a clean run — applying twice must be safe, which the subject's own unique key is for. A forgery, a stale clock, a replayed nonce and an unknown id are one 401, `not verified`, with the reason in the log and never the body. `secrets` is a list so a rotation is two valid keys for a while; `subscribe({ to, secrets })` states them, absent means one is minted. With no `receive` the route is not mounted.
 
 **Other API:**
 
@@ -1854,6 +1860,8 @@ await app.webhooks.deliver('orders:created', payload)  // manual fan-out
 await app.webhooks.retry(deliveryId)                   // force-retry a dead delivery
 const list = await app.webhooks.list()                  // all registrations
 const log  = await app.webhooks.deliveries(hookId)     // delivery history
+const subs = await app.webhooks.subscriptions()         // what this app receives from
+await app.webhooks.unsubscribe(subId)
 ```
 
 **HTTP management routes** (auto-registered; a caller needs gate level `manage`, default 5 — 401 for a stranger, 403 below it):
@@ -2157,6 +2165,40 @@ A message takes `from`, `replyTo`, `cc`, `bcc`, `headers`, `tags` and
 `batch(messages)` sends several over one SMTP session. Any other provider is
 an `IMail` you write: `send` and `batch`.
 
+**Receiving a reply.** Mail arrives through a conduit Receiver whose dialect the
+mail vendor's connector exports (`conduit-postmark`'s `postmarkMailDialect`
+over Postmark's parsed JSON, `conduit-mailgun`'s `mailgunMailDialect` over raw
+MIME); the dialect parses the vendor's payload into a `ReceivedMail` — a `MailMessage`
+read the other way, plus the envelope `recipient` — and your `apply` decides
+what the address does with it. To have a reply land on the record it answers,
+send with a tagged `replyTo` and read the tag back:
+
+```typescript
+import { replyAddress, splitAddress, readReplyTag, headerOf } from '@frontierjs/junction/mail'
+
+// Out: support+<token>@acme.test, the token naming the message being answered.
+await app.mail.send({ to, subject, text, replyTo: await replyAddress('support@acme.test', message.id, secret) })
+
+// In: the Receiver's apply.
+async apply(ev) {
+  const mail = ev.payload                                   // ReceivedMail
+  const { base, tag } = splitAddress(mail.recipient)        // 'support@acme.test', the token
+  const read = tag ? await readReplyTag(tag, { secret, now, ttlSeconds: 14 * 86_400 }) : null
+  if (read?.ok) return thread(read.id, mail)                // the reply lands on its record
+  return open(base, mail)                                   // a new thread; `from` is a claim
+}
+```
+
+The token is `@frontierjs/toolbelt/signature`'s: a ULID and an 80-bit MAC in
+lower-case Crockford base32, which is what fits a 64-octet local part and
+survives a server folding case — so a mailbox carrying one has at most 21
+characters before the `@`, and `replyAddress` throws past that. A tag expires
+from the instant in its ULID; an expired or forged one still delivers the mail,
+to the base address, unthreaded. **The token proves the holder received your
+mail, not who is holding it**: attribute a reply to the person you wrote to
+only when `from` is the address the mail went to. Message-ID and In-Reply-To
+are `headerOf(mail, 'Message-ID')`.
+
 **SMTP ports:**
 
 | Port | Protocol     | Notes |
@@ -2283,7 +2325,7 @@ Dead jobs (exhausted retries) stay in the database — use `app.jobs.retry(id)` 
 
 ---
 
-### `@frontierjs/conduit` — Outbound Transport
+### `@frontierjs/conduit` — Integrations
 
 One interface for talking to third-party systems — REST APIs, server Outposts, local processes. Abstracts HTTP, WebSocket, and Unix socket protocols behind a single `send()` call.
 
@@ -2392,10 +2434,10 @@ Deploy is `fli deploy`, from the Dockerfile `fli make:deploy` writes. Junction h
 An app that bundles itself anyway (`bun build`) **must register its services statically** and set `autoload: false`:
 
 ```ts
-import { createMessagesService } from './messages.service.ts'
+import messages from './messages.service.ts'
 
 const app = createApp({ autoload: false, config: { /* … */ } })
-app.services.register(createMessagesService())
+app.services.register(messages)
 ```
 
 Directory autoload fails in a bundled build for two independent reasons:

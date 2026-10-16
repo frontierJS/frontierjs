@@ -20,6 +20,10 @@ has the state table, verified by running every drive 2026-10-12). The lane's
 job is now PROMOTION: move a prototype into `packages/conduit-<vendor>/` with its
 sink and drive, swap the two relative imports for workspace dependencies, and
 add the row. Start from the prototype, not from the references below.
+`conduit-postmark` and `conduit-mailgun` in the sibling workspace are the first two
+shaped for `packages/` (2026-10-16, held there until the owner commits them): copy their `package.json`, `tsconfig.json` and `test`
+script (the drive IS the package's test), and import the drive's `results`,
+`report`, `control` and `DRIVE_RESILIENCE` from `@frontierjs/conduit/testing`.
 
 ## Order
 

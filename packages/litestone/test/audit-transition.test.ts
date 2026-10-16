@@ -23,7 +23,7 @@ const SCHEMA = (dir: string) => `
     id     Int    @id
     note   String @default("")
     status S      @default(pending) @trail(audit)
-    @@gate("0")
+    @@gate(0)
     @@trail(audit)
     @@transitions(status,
       pay:     pending -> paid,

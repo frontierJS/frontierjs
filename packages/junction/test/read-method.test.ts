@@ -8,7 +8,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createTestApp } from '../src/testing/index.ts'
-import { createService, callService } from '../src/core/service.ts'
+import { callService, buildService } from '../src/core/service.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { bridge } from '../src/transport/bridge.ts'
 import { withLitestoneDb } from '../src/core/litestone.ts'
@@ -16,7 +16,7 @@ import { createClient } from '../../litestone/src/index.js'
 
 function searchService() {
   const calls = { search: 0, reboot: 0, aggregate: 0 }
-  const svc = createService({
+  const svc = buildService({
     name: 'usages',
     methods: [{ method: 'search', read: true }, 'reboot', 'aggregate'],
     search:    async (ctx) => { calls.search++;    return { q: (ctx.data as { q: string }).q, n: calls.search } },
@@ -28,7 +28,7 @@ function searchService() {
 
 async function call(
   app:    Awaited<ReturnType<typeof createTestApp>>,
-  svc:    ReturnType<typeof createService>,
+  svc:    ReturnType<typeof buildService>,
   method: string,
   key?:   string,
 ) {
@@ -98,7 +98,7 @@ describe('the declaration', () => {
   })
 
   test('read: is refused unless it is true or false', () => {
-    expect(() => createService({
+    expect(() => buildService({
       name: 'usages',
       methods: [{ method: 'search', read: 'yes' as never }],
       search: async () => ({}),
@@ -106,7 +106,7 @@ describe('the declaration', () => {
   })
 
   test('read: on a CRUD verb is refused, since its name already says', () => {
-    expect(() => createService({
+    expect(() => buildService({
       name: 'usages',
       methods: [{ method: 'create', read: true }],
     })).toThrow(/create is a CRUD verb/)
@@ -125,7 +125,7 @@ describe('a declared read is handed a client that refuses writes', () => {
 
   async function run(methods: unknown[], body: (db: any) => Promise<unknown>, method = 'search') {
     const db  = await createClient({ db: ':memory:', schema: SCHEMA }) as any
-    const svc = createService({
+    const svc = buildService({
       name: 'passes',
       methods,
       search: async (ctx: any) => body(ctx.locals.db),

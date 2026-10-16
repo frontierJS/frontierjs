@@ -103,6 +103,31 @@ describe('what does NOT make a column clearable', () => {
   })
 })
 
+// FJS-2042: a create's pre-flight exempts every server-filled column, and a
+// server fill is for an ABSENT key. A present `null` reached SQLite.
+describe('an explicit null on a create', () => {
+  test('is refused by name on an array column, and [] or absence still works', async () => {
+    const err = await refusal(() => db.item.create({ data: { name: 'y', code: 'd', tags: null } }))
+    expect(err).toBeInstanceOf(ValidationError)
+    expect(err.errors).toEqual([{ path: ['tags'], message: 'tags is required' }])
+
+    expect((await db.item.create({ data: { name: 'y', code: 'd', tags: [] } })).tags).toEqual([])
+    expect((await db.item.create({ data: { name: 'y', code: 'd' } })).tags).toEqual([])
+  })
+
+  test('is refused by name on a @default column, and the absent key still takes it', async () => {
+    const err = await refusal(() => db.item.create({ data: { name: 'y', code: 'd', qty: null } }))
+    expect(err.errors[0].path).toEqual(['qty'])
+
+    expect((await db.item.create({ data: { name: 'y', code: 'd' } })).qty).toBe(1)
+  })
+
+  test('is still taken by an optional column', async () => {
+    const made = await db.item.create({ data: { name: 'y', code: 'd', nickname: null } })
+    expect(made.nickname).toBeNull()
+  })
+})
+
 describe('undefined is not null, and stays absent', () => {
   test('an undefined value leaves the column alone where null is refused', async () => {
     const after = await db.item.update({ where: { id: row.id }, data: { name: undefined, qty: 7 } })

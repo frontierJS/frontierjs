@@ -162,7 +162,7 @@ describe('mounted', () => {
       `<script>\n  let o = { x: 1, y: 2 }\n  let log = ''\n` +
       `  $: (o.x, o.y), () => { log = 'x' + o.x + 'y' + o.y }\n` +
       `  function bump() { o.x = o.x + 1 }\n</script>\n` +
-      `<button on:click={bump}>+</button><p>log={log}</p>`)
+      `<button onclick={bump}>+</button><p>log={log}</p>`)
 
     expect(r.container.textContent).toContain('log=')   // deferred: nothing on mount
 
@@ -179,7 +179,7 @@ describe('mounted', () => {
       `  $: o.x\n` +
       `  $: (o.x, o.y), () => { log = 'fired' }\n` +
       `  function bump() { o.y = o.y + 1 }\n</script>\n` +
-      `<button on:click={bump}>+</button><p>x={o.x} log={log}</p>`)
+      `<button onclick={bump}>+</button><p>x={o.x} log={log}</p>`)
 
     expect(r.container.textContent).toContain('x=1')
 

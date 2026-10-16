@@ -6,7 +6,7 @@
  * per-column alignment and width, the sort pair pushed from OUTSIDE, the
  * skeleton row count, and whether a sortable header is operable by keyboard at
  * all — which the component's own header says the old markup got wrong by
- * putting `on:click` on the `<th>`.
+ * putting `onclick` on the `<th>`.
  *
  * Row tone is asked as a painted color rather than a class, because that is
  * where it went wrong before: stripe, hover and tone all set one row's
@@ -225,7 +225,7 @@ export async function run(t) {
 
   /* ── a sortable header is a real control ──────────────────────────────── */
 
-  // The component's own header records the earlier mistake: `on:click` on the
+  // The component's own header records the earlier mistake: `onclick` on the
   // <th>, which meant a keyboard user could not sort at all. A <button> is the
   // fix, and this is what proves it stayed one.
   await t.evaluate(`document.querySelector('#plain thead th:first-child button').focus(); return true;`)

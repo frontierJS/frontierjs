@@ -143,8 +143,8 @@ check('…and for every customer, only their own record',
 // ─── the recurring half, at the boundary ──────────────────────────────────
 //
 // A subscription and an invoice are the shopper's own rows exactly as an order
-// is, and they are gated one notch differently: `@@gate("1.4.4.5")` and
-// `@@gate("1.8.8.8")` both READ at 1, so a stranger is refused by the gate and
+// is, and they are gated one notch differently: `@@gate(1.4.4.5)` and
+// `@@gate(1.8.8.8)` both READ at 1, so a stranger is refused by the gate and
 // a shopper is narrowed by the policy. Two mechanisms, one screen.
 const anonSubs  = await fetch(`${API}/api/subscriptions`)
 const anonBills = await fetch(`${API}/api/invoices`)
@@ -587,7 +587,7 @@ await twoStep.disable(twoStepToken)
 // shop's ledger is the litter the billing drives just learned not to leave.
 try {
   await sys.invoice.delete({ where: { number: OTHER_INV } })
-  // Takes its payment with it. A `Payment` is `@@gate("5.8.9.9")` on delete —
+  // Takes its payment with it. A `Payment` is `@@gate(5.8.9.9)` on delete —
   // LOCKED, so `asSystem()` cannot remove one either — and the only way this
   // row goes is the CASCADE from the invoice that owns it, which is the
   // schema's answer rather than a trick.

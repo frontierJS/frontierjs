@@ -23,7 +23,7 @@ model Folder {
   ws        String
   docs      Doc[]
   deletedAt DateTime?
-  @@gate("2.4.4.5")
+  @@gate(2.4.4.5)
   @@deny('all', ws != auth().ws)
   @@softDelete(cascade)
 }
@@ -32,7 +32,7 @@ model Doc {
   folder    Folder    @relation(fields: [folderId], references: [id])
   folderId  Int
   deletedAt DateTime?
-  @@gate("2")
+  @@gate(2)
   @@softDelete
 }`
 
