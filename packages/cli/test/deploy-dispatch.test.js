@@ -181,7 +181,7 @@ describe('deploy dispatch — legacy mode (no frontier.config.js)', () => {
   })
 
   test('dispatches to _steps when deploy block is absent', async () => {
-    writeFrontierConfig(TMP_LEGACY, { someOtherKey: true })
+    writeFrontierConfig(TMP_LEGACY, {})
     const ev = await runCommand(legacyFixture, [], {}, TMP_LEGACY)
     const lg = logs(ev)
     expect(lg.some(t => t.includes('legacy step ran'))).toBe(true)

@@ -568,6 +568,11 @@ function pointDefs(model, cmap) {
   return { cols, checks }
 }
 
+// What a refused point says to a person: the rule, in the model's own key names.
+export function pointDefaultMessage(pt) {
+  return `must be an object with a numeric ${pt.lat} (-90 to 90) and ${pt.lng} (-180 to 180)`
+}
+
 /**
  * `@vector(n)` → the length CHECK, and nothing else.
  *

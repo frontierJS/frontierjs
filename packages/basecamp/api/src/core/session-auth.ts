@@ -55,6 +55,9 @@ export function basecampSessionFields(user: Record<string, any>): Record<string,
     // hook reading `status === 'suspended'` says what it means at the site.
     status:        user.status,
     kind:          user.kind,
+    // The fleet Account a workspace is created under. Not the tenant —
+    // workspaceId is, through a membership — so auth does not put it here.
+    accountId:     user.accountId != null ? String(user.accountId) : undefined,
   }
 }
 

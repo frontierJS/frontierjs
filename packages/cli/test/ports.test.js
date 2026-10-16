@@ -379,7 +379,7 @@ describe('claimSession — a linked worktree takes a branch block', () => {
   const wt    = (top, repo = REPO) => ({ ...repo, top })
   let dir, lockFile
   const claim = (root, opts = {}) =>
-    claimSession(root, { exists: tree, busy: free, movable: reads, lockFile, worktree: null, ...opts })
+    claimSession(root, { exists: tree, busy: free, movable: reads, worktreeExists: () => true, lockFile, worktree: null, ...opts })
 
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'fli-branch-')); lockFile = join(dir, 'sessions.lock') })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
@@ -429,6 +429,21 @@ describe('claimSession — a linked worktree takes a branch block', () => {
     await expect(claim('/t/6/app', { name: 'app', worktree: wt('/t/6') })).rejects.toThrow(/ports:status --clean/)
     releaseSession('/t/3', { lockFile })
     expect((await claim('/t/6/app', { name: 'app', worktree: wt('/t/6') })).branch).toBe(3)
+  })
+
+  // FJS-2889: a removed worktree's lock entry held its number for good, so five
+  // throwaway checkouts (/tmp, a scratchpad) locked every lane out of portFor.
+  test('five held, two of them in directories that are gone: the new worktree takes the lowest of those', async () => {
+    for (let n = 1; n <= 5; n++) await claim(`/t/${n}/app`, { name: 'app', worktree: wt(`/t/${n}`) })
+    const gone = new Set(['/t/2', '/t/4'])
+    const worktreeExists = (top) => !gone.has(top)
+    const b = await claim('/t/6/app', { name: 'app', worktree: wt('/t/6'), worktreeExists })
+    expect(b.branch).toBe(2)
+    const lock = readLock(lockFile)
+    expect(lock['/t/2/app']).toBeUndefined()
+    expect(lock['/t/4/app']).toBeUndefined()
+    expect(lock['/t/5/app']).toMatchObject({ branch: 5 })
+    expect(lock['/t/6/app']).toMatchObject({ branch: 2 })
   })
 
   test('decode reads the branch digit and leaves the rest as the parent reads it', () => {

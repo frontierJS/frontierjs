@@ -17,7 +17,9 @@ interface LitestoneClient {
 }
 
 export interface AuthCleanupHandle {
+  /** Take a hold on the hourly sweep; the first hold starts its timers. */
   start(): void
+  /** Drop a hold; the last one stops the timers. */
   stop():  void
   /**
    * Run both sweeps once, now. An operator draining these tables ahead of the
@@ -35,6 +37,12 @@ export function createAuthCleanupJobs(db: LitestoneClient): AuthCleanupHandle {
 
   let sessionJob:      JobHandle | null = null
   let verificationJob: JobHandle | null = null
+  // One instance is mounted by every app a process builds from it — a test
+  // suite builds one per test — so each app's work() takes a hold and its
+  // shutdown drops one. A second start that made a second pair of timers would
+  // orphan the first: stop() would halt only the newest and the first sweep
+  // would run for the life of the process (FJS-1000).
+  let holders = 0
 
   // The predicate, named rather than written inline in the timer bodies. A
   // scheduled function lives in a closure nothing can reach, so an inline body
@@ -71,17 +79,7 @@ export function createAuthCleanupJobs(db: LitestoneClient): AuthCleanupHandle {
   return {
 
     start() {
-      // Assigning over a live handle orphans it: nothing holds the old timer
-      // any more, so `stop()` halts only the newest pair and the first sweep
-      // runs for the life of the process. Restart rather than refuse — this is
-      // reached from a plugin's `boot()`, where a throw costs more than the
-      // mistake it reports — and say so, because a double boot is a caller's
-      // bug either way (`FJS-1000`).
-      if (sessionJob || verificationJob) {
-        console.warn('[auth] cleanup jobs were already running — restarting them. `start()` is being called twice.')
-        stopJobs()
-      }
-
+      if (holders++ > 0) return
       sessionJob      = scheduler.every('1 hour', sweepSessions)
       // Both ephemeral tables, on one timer. An OAuthFlow lives minutes rather
       // than hours, so most of what this sweeps is already dead — but a flow
@@ -89,7 +87,10 @@ export function createAuthCleanupJobs(db: LitestoneClient): AuthCleanupHandle {
       verificationJob = scheduler.every('1 hour', sweepEphemeral)
     },
 
-    stop() { stopJobs() },
+    stop() {
+      if (holders === 0 || --holders > 0) return
+      stopJobs()
+    },
 
     async sweepNow() {
       await sweepSessions()

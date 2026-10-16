@@ -26,6 +26,7 @@
  */
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { join, resolve, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { compileSource } from '../../../src/compiler.js'
@@ -33,6 +34,15 @@ import { compileSource } from '../../../src/compiler.js'
 // resolve() rather than the URL path as-is: `new URL('../../..')` keeps its
 // trailing slash, and the containment check below compares against `base + '/'`.
 const PKG = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
+// Mesa's one dependency. The kit imports it by package name, as an app does,
+// so it is served beside mesa and its subpaths are mapped from its own
+// `exports` — a list kept here would miss the next subpath the kit reaches for.
+const TOOLBELT = resolve(PKG, '../toolbelt')
+const toolbeltImports = Object.fromEntries(
+  Object.entries(JSON.parse(readFileSync(join(TOOLBELT, 'package.json'), 'utf8')).exports)
+    .map(([sub, target]) => [sub, typeof target === 'string' ? target : target.import ?? target.default])
+    .filter(([sub, file]) => sub.startsWith('./') && typeof file === 'string')
+    .map(([sub, file]) => [`@frontierjs/toolbelt${sub.slice(1)}`, `/toolbelt/${file.replace(/^\.\//, '')}`]))
 
 const TYPES = {
   '.js':   'text/javascript; charset=utf-8',
@@ -47,12 +57,15 @@ const TYPES = {
  * The import map.
  *
  * Both spellings of the runtime are mapped because the compiler's output and a
- * hand-written import do not have to agree about the extension.
+ * hand-written import do not have to agree about the extension. The kit drive
+ * serves through this same server, so its subpath is mapped here too.
  */
 const IMPORT_MAP = {
   imports: {
     '@frontierjs/mesa/runtime.js': '/mesa/src/runtime.js',
     '@frontierjs/mesa/runtime':    '/mesa/src/runtime.js',
+    '@frontierjs/mesa/browser':    '/mesa/src/browser/index.js',
+    ...toolbeltImports,
   },
 }
 
@@ -125,7 +138,9 @@ export function createMesaServer({ onWarning } = {}) {
     try {
       if (path === '/' || path === '/index.html') return send(200, PAGE, TYPES['.html'])
 
-      const file = path.startsWith('/mesa/') ? safeJoin(PKG, path.slice(6)) : null
+      const file = path.startsWith('/mesa/')     ? safeJoin(PKG, path.slice(6))
+                 : path.startsWith('/toolbelt/') ? safeJoin(TOOLBELT, path.slice(10))
+                 : null
       if (!file) return send(404, `no route for ${path}`)
 
       if (extname(file) === '.mesa') {

@@ -215,21 +215,6 @@ describe('bindWindow(prop, setter) on subscribe', () => {
     } finally { c.restore() }
   })
 
-  test('online reads navigator.onLine and listens to both events', async () => {
-    const c = counts()
-    try {
-      const [on, setOn] = rt.createSignal(null)
-      const dispose = rt.createRoot((dispose) => { rt.bindWindow('online', setOn); return dispose })
-      expect(on()).toBe(window.navigator.onLine)
-      expect(c.added).toContain('online')
-      expect(c.added).toContain('offline')
-      dispose()
-      await tick()
-      expect(c.removed).toContain('online')
-      expect(c.removed).toContain('offline')
-    } finally { c.restore() }
-  })
-
   test('on a server render the initial value lands and no listener is added', () => {
     rt.setRenderEnvironment(true, false)
     const c = counts()

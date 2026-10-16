@@ -117,6 +117,11 @@ const rsbuild = await createRsbuild({
     performance: { chunkSplit: { strategy: 'all-in-one' } },
     environments: device ? { lynx: {} } : { web: {} },
     output: { distPath: { root: dist }, cleanDistPath: false },
+    // The vanilla plugin takes no template options, and without this one a
+    // view's color and font never reach its text: every label paints black.
+    tools: { bundlerChain: (chain) => {
+      for (const name of Object.keys(entries)) chain.plugin(`lynx:vanilla:template:${name}`).tap(([o]) => [{ ...o, enableCSSInheritance: true }])
+    } },
     logLevel: 'warn',
   },
 })

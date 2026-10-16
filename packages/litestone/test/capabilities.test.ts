@@ -1187,3 +1187,14 @@ describe('a @capability column is charged when a write CHANGES it, not when it i
     await db.$close()
   })
 })
+
+// FJS-2694: the refusal's message is read by the person it refuses.
+describe('the refusal reads as a sentence to the person refused', () => {
+  it('names the capability once and leads with the caller', async () => {
+    const db = await client()
+    const holder = db.$setAuth({ id: 1, capabilities: ['Invoice.create'] })
+    const e = await denied(() => holder.invoice.update({ where: { ref: 'A' }, data: { ref: 'B' } }), 'Invoice.update')
+    expect(e.message).toBe('You do not hold the "Invoice.update" capability')
+    expect(e.message.split('Invoice.update').length - 1).toBe(1)
+  })
+})

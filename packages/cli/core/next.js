@@ -23,6 +23,17 @@
 // reading `fli next` is who it is for, and `fix:loop` passes over it. Prose that
 // merely says someone did a thing by hand is not the declaration.
 //
+// ── Env ─────────────────────────────────────────────────────────────────────
+//
+// A row whose fix is the environment and not the code — a port another
+// process holds, a `db/` two drives share, a stale server, a browser race, a
+// machine nobody has — says `env: <cause>` as its own segment of the links
+// cell, cause from `ENV_CAUSES`. It stays ranked and marked, and `fix:loop`
+// skips it: a headless session re-discovers the trap, fixes the symptom and
+// the row comes back. The segment names where the FIX lives, not where the
+// symptom shows — a hold TTL is code, but a drive failing because the last
+// drive left holds in a shared file is `env: shared db`.
+//
 // ── What this does not rank ─────────────────────────────────────────────────
 //
 // Proposals. `IDEAS/overview.md` ranks those by hand, and nothing a reader can
@@ -69,6 +80,13 @@ export const COMMIT_FILE_CAP = 40
 // register's own prefix is what survives the filter in `rankNext`.
 const BLOCKED_BY = /\bblocked by\s+`?([A-Z][A-Z0-9]*-D?\d+)`?/gi
 const BY_HAND    = /(^|·)\s*`?by hand`?\s*(·|\|?\s*$)/im
+
+// A closed list, so the register can be COUNTED by cause — `rg 'env: shared
+// db'` is the number that says whether isolating the drives pays. A word
+// outside it is `register-check`'s `env-cause` error, because a misspelled
+// cause is a row no count ever sees.
+export const ENV_CAUSES = Object.freeze(['port', 'shared db', 'stale process', 'timing', 'real machine', 'network'])
+const ENV_SEGMENT = /(^|·)\s*`?env:\s*([a-z][a-z ]*[a-z])`?\s*(·|\|?\s*$)/im
 
 /**
  * The open rows, ranked, plus the ones that cannot start and what the owner
@@ -143,6 +161,7 @@ export function rankNext(root, { pkg = null, sev = null, touched = null } = {}) 
       terms,
       blockedBy: blockers.get(r.id),
       byHand:    byHand(r),
+      env:       envCause(r),
       // A row inherited from an older audit is a lead: probe it before acting.
       probeFirst: r.status === 'stale?',
     }
@@ -186,6 +205,11 @@ export function blockedLine(r) {
 
 export function byHand(record) {
   return BY_HAND.test(String(record.body ?? ''))
+}
+
+export function envCause(record) {
+  const m = ENV_SEGMENT.exec(String(record.body ?? ''))
+  return m ? m[2].trim() : null
 }
 
 export function blockedBy(record) {

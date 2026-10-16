@@ -1506,6 +1506,13 @@ function provide(n, f) { return null }
       )
       expect(ctx.analysis.errors.some(e => e.includes('mesa:window'))).toBe(true)
     })
+    it('error — a prop bindWindow does not listen for', async () => {
+      const ctx = await compile(
+        `<script>let on=true</script><mesa:window bind:online={on} /><p>{on}</p>`,
+        { debug: false, css: false }
+      )
+      expect(ctx.analysis.errors.some(e => e.includes('bind:online') && e.includes('innerWidth'))).toBe(true)
+    })
     it('self-closing mesa:window is fine', async () => {
       const ctx = await compile(
         `<script>let w=0</script><mesa:window bind:innerWidth={w} /><p>{w}</p>`,

@@ -123,13 +123,8 @@ export const logger = (msg, level = 'log') => {
 //     quote but doesn't close on the same line continues until a matching quote
 //     is found on a later line.
 //
-// Override behavior (configurable via opts.override):
-//   - opts.override = false (default): existing env vars are not changed.
-//     Useful when loading global config that shouldn't override the shell's vars.
-//   - opts.override = true: values from this file replace existing env vars.
-//     Useful for project-local .env files that should win over global config.
-export function loadEnv(filePath, opts = {}) {
-  const { override = false } = opts
+// An existing env var is never changed; see loadFliEnv for the order.
+export function loadEnv(filePath) {
   let content
   try {
     content = readFileSync(filePath, 'utf8')
@@ -202,34 +197,49 @@ export function loadEnv(filePath, opts = {}) {
       val = val.trim()
     }
 
-    if (override || process.env[key] === undefined) {
+    if (process.env[key] === undefined) {
       process.env[key] = val
     }
   }
 }
 
 // ─── loadFrontierConfig ────────────────────────────────────────────────────────
-// Reads frontier.config.js from the project root and returns the parsed config,
-// or null if the file doesn't exist or fails to load.
+// Reads frontier.config.js from the project root and returns its default export.
 //
 // frontier.config.js is an ES module:
 //   export default { deploy: { server: '...', ... } }
 //
-// Returns the default export, or null on any failure.
-// Never throws — callers treat null as "no frontier config present."
+// null means ONLY that the file is absent. A file that is there and will not
+// load, exports no object, or names a key nothing reads THROWS: answering null
+// sent a deploy on to defaults after a warning scrolled past (FJS-1932).
+// FRONTIER_CONFIG_KEYS is the closed table (FJS-D842) -- a key here is one
+// somebody reads; add the reader and the key together.
+export const FRONTIER_CONFIG_KEYS = ['deploy']
+
 export async function loadFrontierConfig(projectRoot) {
   const configPath = resolve(projectRoot, 'frontier.config.js')
 
   if (!existsSync(configPath)) return null
 
+  let mod
   try {
-    const mod = await import(pathToFileURL(configPath))
-    return mod.default ?? null
+    mod = await import(pathToFileURL(configPath))
   } catch (err) {
-    // Malformed or unloadable config — warn but don't crash the deploy
-    console.error(chalk.yellow('⚠') + ' frontier.config.js could not be loaded: ' + err.message)
-    return null
+    throw new Error('frontier.config.js could not be loaded: ' + err.message, { cause: err })
   }
+
+  const conf = mod.default
+  if (conf === null || typeof conf !== 'object' || Array.isArray(conf))
+    throw new Error('frontier.config.js must export default an object, like `export default { deploy: { … } }`')
+
+  for (const key of Object.keys(conf)) {
+    if (FRONTIER_CONFIG_KEYS.includes(key)) continue
+    throw new Error(
+      `frontier.config.js has no key "${key}" — its keys are ${FRONTIER_CONFIG_KEYS.join(', ')}. ` +
+      'A model, field, plural or service belongs in db/schema.lite, a secret or per-machine value in env, ' +
+      'app wiring (plugins, ports, jobs) in junction.config.js')
+  }
+  return conf
 }
 
 // ─── dockerfileScripts ────────────────────────────────────────────────────────
@@ -444,4 +454,12 @@ export function fliVersion(root = global.fliRoot) {
   } catch {}
   _versions.set(root, v)
   return v
+}
+
+// Shell beats project beats global, by load order: nothing overrides, so the
+// first file to name a variable wins. A project .env that overrode would beat
+// `DATABASE_URL=./other.db fli db:migrate` and migrate the .env's database.
+export function loadFliEnv(projectRoot, home) {
+  loadEnv(join(projectRoot, '.env'))
+  loadEnv(join(home, '.config', 'fli', '.env'))
 }

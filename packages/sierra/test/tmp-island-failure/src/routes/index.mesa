@@ -1,0 +1,43 @@
+---
+title: Islands
+render: static
+---
+<script>
+  import Counter from '../islands/Counter.mesa'
+  import Later from '../islands/Later.mesa'
+  import Styled from '../islands/Styled.mesa'
+  import Below from '../islands/Below.mesa'
+  import Seen from '../islands/Seen.mesa'
+  import Wide from '../islands/Wide.mesa'
+  import Narrow from '../islands/Narrow.mesa'
+  import Outer from '../islands/Outer.mesa'
+</script>
+<main>
+  <h1>static heading</h1>
+  <p id="inert">no island here</p>
+  <Counter client:load start={7} />
+  <Later client:idle label="idle" />
+  <Styled client:load />
+  <!-- an island containing an island: Inner must come alive with Outer -->
+  <Outer client:load />
+  <!-- in the initial viewport: client:visible must fire immediately -->
+  <Seen client:visible />
+
+  <!-- matches at any sane viewport -->
+  <Narrow client:media="(min-width: 100px)" />
+  <!-- matches nothing: must never mount, and must never be fetched -->
+  <Wide client:media="(min-width: 5000px)" />
+
+  <!--
+    Out of view, and scrolled into view inside its own box rather than by
+    scrolling the page. IntersectionObserver measures against the viewport
+    either way, so this is the same test — but scrolling the PAGE would take
+    `Seen` out of the viewport before the browser first computes intersections,
+    and Seen's whole point is that it is visible from the start.
+  -->
+  <div id="scroller" style="height: 120px; overflow: auto">
+    <div style="height: 4000px">spacer</div>
+    <!-- must not be fetched until scrolled to -->
+    <Below client:visible />
+  </div>
+</main>

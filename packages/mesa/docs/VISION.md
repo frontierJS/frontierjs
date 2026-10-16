@@ -1672,12 +1672,12 @@ this component file.
     on:keydown|preventDefault={handleKey}
     bind:innerWidth={width}
     bind:scrollY={scrollPos}
-    bind:online={isOnline}
 />
 ```
 
 Bindable: `innerWidth`, `innerHeight`, `outerWidth`, `outerHeight`, `scrollX`, `scrollY`,
-`devicePixelRatio`, `online`.
+`devicePixelRatio`; any other prop is a compile error. Whether the network is up is
+`tab.online` from `@frontierjs/mesa/browser`.
 
 ### 12.2 `<mesa:document>` and `<mesa:body>`
 

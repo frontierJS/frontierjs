@@ -73,8 +73,11 @@
 trait Grant {
   /// The hash of the token the bearer holds. `@unique` because a lookup by
   /// hash is the only read this column ever has; `@guarded` because the hash
-  /// is as good as the token to anyone who can read the row.
-  tokenHash  String    @unique @guarded
+  /// is as good as the token to anyone who can read the row. `(global)`
+  /// because the exchange has no tenant yet -- bearerClaim finds the row BY
+  /// the digest and learns the tenant from it -- so one digest must name one
+  /// row across the installation. Without tenancy it is a no-op.
+  tokenHash  String    @unique(global) @guarded
 
   /// Optional, and the instances disagree: basecamp requires it (an invitation
   /// that never expires is a standing hole), everyone else leaves it nullable

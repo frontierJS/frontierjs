@@ -1388,6 +1388,7 @@ breaks, as above; the numbering continues so `#N` stays unique.*
 | 38 | **Kahoot** — live quiz | three hundred principals that live twenty minutes; one server-owned clock; a cohort broadcast driven in a two-second burst | `bridge-index` (cohort broadcast) · #12 |
 | 39 | **ThingsBoard / Home Assistant** — device telemetry | a device as a principal with a key that rotates and revokes; a command to an offline device delivered once with acknowledgement; readings thinned with age | `overview.md` · `analytics-and-warehouse.md` · #9 |
 | 40 | **Listmonk** — newsletter | a forgotten subscriber who must stay unsendable; a hundred thousand sends at a provider's rate limit; bounce and complaint webhooks | `forgetting.md` · `inbound-integrations.md` · #15 |
+| 41 | **Mattermost** — a chat whose phone is the Provider's app and whose desktop and terminal are FJS | a system of record the app does not own, reached three ways at once: a call out, a webhook in, and a socket the app dials and holds open; a human's write that must spend that human's credential, with no SSO to bridge it; a history cap that is the Provider's window, not the app's; and the exit, graded | `mirror-apps.md` · `conduit-connectors.md` · `FJS-D843` · #24 · #21 |
 
 **Folded into Phase 1 rows rather than numbered**: task dependencies that may
 never form a cycle belong with #3 — nothing in the tree mentions acyclicity —
@@ -1534,6 +1535,25 @@ declaration. Sending overlaps #15.
 **Gradable**: forget a subscriber, re-import the list, and the address is not
 mailed.
 
+### 41. Mattermost — the mirror app, with a phone it does not own
+
+*Added 2026-10-16. The proposal is `mirror-apps.md`; this row is its test case.*
+
+**Why it is a stressor and not only a connector.** #24 is the same shape with
+one ingress, a poll, and a sync that is a machine. Mattermost adds the two
+ELA never needed: a WebSocket the app dials and must hold open, which neither
+Target nor Receiver names (`mirror-apps.md` Q4), and a human's message that
+must be posted as that human, so the app keeps a credential per user with no
+SSO to lean on (Team Edition dropped it in v11). Its history cap is the
+Provider's window rather than the app's, which is the second caller
+`FJS-D843`'s `absent:` waits for. And it is the first mirror app built to be
+left: the phone is Mattermost's until the mobile surface exists, so the exit
+is part of the design rather than a wish.
+
+**Gradable**: a message typed in `fli dev:tui` arrives on the phone as its
+author and one typed on the phone lands in the terminal; the connector
+removed, the app boots and every surface still lists.
+
 ## Not on this list, with reasons
 
 - **Figma proper.** Canvas rendering is not a question about this framework; Mesa
@@ -1587,6 +1607,13 @@ whole exercise worthless:
 ```bash
 cd ~/work/calendly && claude --add-dir /path/to/frontierjs
 ```
+
+**Keep the original out of `bun run check`.** When the product being imitated
+arrives as a `mockup/` (or `fixtures/`) beside `db/`, the scaffolded
+`biome.json` lints it, and a prototype is never clean. Add the exclusion to the
+scaffold's `biome.json` by hand, once: `"files": { "includes": ["!mockup",
+"!fixtures"] }`. `mockup/` is a stressor convention, not an app one, so
+neither `fli new` nor `@frontierjs/config/biome` carries it (`FJS-2764`).
 
 **Start from a schema, and get it from the conversation rather than the
 keyboard.** The `discovery` skill is for exactly this shape — a brief, a

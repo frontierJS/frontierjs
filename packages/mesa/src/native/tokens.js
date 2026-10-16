@@ -122,7 +122,7 @@ export function lowerTokens(rules) {
   const levelLocal = (ctx) => [0, active(ctx).length]
 
   const ambient = contexts.filter(c => c.every((x, i) => !x || !dims[i].self))
-  let hoisted = 0
+  const hoisted = new Map()
   const out = []
   const unset = []
   for (const r of rules) {
@@ -168,8 +168,12 @@ export function lowerTokens(rules) {
         const lit = (env) => evaluate(d.value, env)
         const values = new Set(ambient.map(ctx => lit(inherited(ctx))))
         if (values.size > 1 && contexts.every(ctx => lit(element(r.sel, ctx)) === lit(inherited(ctx)))) {
-          const name = `--_v${hoisted++}`
-          place({ prop: name, value: '', important: false }, [...ambient], (ctx) => lit(inherited(ctx)), true)
+          // What is hoisted reads only the ambient tokens, so one value is one token.
+          let name = hoisted.get(d.value)
+          if (!name) {
+            hoisted.set(d.value, name = `--_v${hoisted.size}`)
+            place({ prop: name, value: '', important: false }, [...ambient], (ctx) => lit(inherited(ctx)), true)
+          }
           decls.push({ ...d, value: `var(${name})` })
           continue
         }
@@ -182,7 +186,7 @@ export function lowerTokens(rules) {
       place(d, ctxs, (ctx) => (k === 'root' || k === 'inh' ? inherited(ctx) : element(r.sel, ctx)).eval(d), global)
     }
     if (decls.length || !r.decls.length) out.push({ ...r, decls })
-    for (const [sel, ds] of extra) out.push({ sel, decls: ds })
+    for (const [sel, ds] of extra) out.push({ ...r, sel, decls: ds })
   }
   return { rules: out, unset }
 }

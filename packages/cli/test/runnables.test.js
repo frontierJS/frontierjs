@@ -109,6 +109,8 @@ describe('surfaces', () => {
     expect(api.start).toBe('bun run api')
     expect(api.open).toBe('http://localhost:8100')
     expect(api.dir).toBe('shop')
+    expect(api.portEnv).toBe('FLI_PORT_BE')
+    expect(web.portEnv).toBe('FLI_PORT_FE')
   })
 
   test('a surface with no script keeps its row and says so', () => {

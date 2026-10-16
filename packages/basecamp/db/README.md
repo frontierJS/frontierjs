@@ -67,11 +67,13 @@ accessors `db.user`, `db.credential`, `db.session`, `db.verification` through
 `asSystem()`, so **those four model names are load-bearing** — renaming one
 breaks the auth package, not just Basecamp.
 
-Two deliberate deviations from the shipped fragment, each noted in the schema:
+`User.accountId` is Basecamp's own column, not the fragment's: the fleet
+`Account` a workspace is created under, put on the session by `sessionFields`.
+The tenant is `workspaceId`, through a membership (`FJS-D1117`).
 
-1. **`accountId` is `String`, not `Int`.** `Account.id` is a uuid; `Int` cannot
-   hold it. Safe for `auth.ts`, which only ever does `String(user.accountId)`.
-2. **`@secret` → `@guarded`** on the `Credential` and `Session` token
+One deliberate deviation from the shipped fragment, noted in the schema:
+
+1. **`@secret` → `@guarded`** on the `Credential` and `Session` token
    columns. Not for a logging reason — log entries redact protected
    fields (Invariant 7), so `@secret` is safe here. What still defers it is
    encryption: `@secret` implies `@encrypted`, and `Session.token` is looked up

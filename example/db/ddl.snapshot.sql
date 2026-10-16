@@ -581,7 +581,6 @@ CREATE TABLE IF NOT EXISTS "user" (
   "name" TEXT,
   "emailVerified" INTEGER NOT NULL DEFAULT 0,
   "role" TEXT NOT NULL DEFAULT 'user',
-  "accountId" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "isStaff" INTEGER NOT NULL DEFAULT 0,

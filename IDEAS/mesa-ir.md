@@ -1963,13 +1963,99 @@ on the emulator as closely as `csskit-resolved` did.
   - No fixture checks the pass (no new test files while experimenting).
     Device run by hand: `csskit-tokens` in the spike. The emulator segfaulted
     once, right after boot.
-- [ ] 4.3 Compute `oklch()` and `color-mix()`; logical properties to physical
-- [ ] 4.4 Text properties copied onto the `<text>` node
+- [x] 4.3 Compute `oklch()` and `color-mix()`; logical properties to physical
+  - `lowerValues()` in `native/values.js`, run by `lowerSheet` after
+    `lowerTokens`. Every `oklch()`, `oklab()` and `color-mix()` over
+    literals, relative `oklch(from …)` with its `calc()`/`clamp()` channels
+    included, is computed by CSS Color 4's formulas and written as
+    `rgb()`/`rgba()`. A color outside sRGB is clipped per channel. Logical
+    properties become physical for horizontal left-to-right text, and so
+    does `text-align: start | end`. Over the kit: no `oklch()` and no
+    logical property left, and 221 KB becomes 170 KB.
+  - In Chrome, the 4.2 sheet and the 4.3 sheet give **0 of 665,496 computed
+    values different**, with every color normalized to clipped sRGB in the
+    page. A perturbed copy of the sheet gives 1,924 differences, so the
+    harness can see one. Directly: 681 distinct color expressions, 61 of
+    them out of gamut, are all within 0.52/255 of Chrome. 95 of 97 logical
+    declarations give the same computed style as their physical pairs. The
+    other two are `text-align: start` and `end`, which paint the same in
+    left-to-right text.
+  - On the emulator, `csskit-values` paints the fills, badges and field as
+    `csskit-tokens` did. The outlined buttons still have no border and no
+    ink. `--btn-ink` is a literal now, but it is set only in
+    `.btn:is(.outlined, .link)` and its vendor copies. The device was
+    measured painting a one-member `:is()` only, so the list form likely
+    drops too (4.6). Every label is still black, because `color` set on a
+    view never reaches its `<text>` (4.4).
+  - Lost:
+    - Right to left. The bundler's `:lang()` copies were the kit's only RTL,
+      and 4.1 drops them.
+    - A gray origin given chroma, like `oklch(from #888 l .1 h)`, takes hue
+      0 because a powerless hue is missing. Chrome gives about 23.8°. The
+      kit never gives chroma to a gray origin.
+    - A two-value logical shorthand whose value is one `var()` is written to
+      both sides.
+  - Two `color-mix()` over `currentColor` (`.pill-close:hover`,
+    `.spinner`) cannot be computed. They come back on `dropped` by line.
+  - The nine were answered before the code:
+    - Q1: no color math or logical-property map exists elsewhere in the
+      tree. The `css` suite's canvas normalizer is test-only.
+    - Q2: no new noun and no option. Writing the math in-house kept the
+      dependency count where it was.
+    - Q5: the logical map is derived from one rule (box × axis × side),
+      not written as a table.
+    - Q6: the owner is the lowering inside `lowerSheet`. Toolbelt would own
+      the color math once a second package needs it.
+    - Q8: as in 4.1, a color it cannot compute is kept and reported.
+    - Q9: wrong math is silent on a device. The artefact is this run's
+      Chrome diff, which is not committed, since no new test files are
+      wanted while experimenting. The RTL loss is `none`.
+    - No § IV adjudication is in tension.
+  - Device run by hand. The emulator raised a System UI ANR on two boots.
+    The clean shot came from one bundle per boot, with 90 s to settle and
+    the system dialogs closed before the screencap.
+- [x] 4.4 Text properties reach the `<text>` node: the engine's own
+      inheritance, turned on at build, in place of a copy pass
+  - Lynx's template has `enableCSSInheritance`, off by default. When it is on,
+    a text element inherits `color`, `direction`, `font-family`, `font-size`,
+    `font-style`, `font-weight`, `letter-spacing`, `line-height`, `text-align`,
+    `text-decoration` and `text-shadow` from its views. The vanilla plugin
+    passes the template no options, so the drive turns it on with a
+    `tools.bundlerChain` tap on each entry's template plugin. Mesa's runtime
+    and sheet are unchanged.
+  - On the emulator, a probe sets eight text properties on a view. With the
+    option off, none of them reach the text, which paints black, small, left
+    and upright. With it on, all eight reach raw text, a span two views down,
+    a `<button>`'s label and a `<p>`, and a nested view's own `color` wins.
+    Lynx for Web shows the same for `color`. Chrome already passed the font
+    properties through there, which is why the web run never showed the gap.
+  - On the kit (`csskit-values` against `csskit-inherit`, the same sheet built
+    with the option on), the solid buttons' labels turn from `(0,0,0)` to
+    white, and the link button and the field hint take the muted ink. Labels
+    go bold, the hint shrinks, and the alert's line height opens up. The
+    outlined buttons stay black, because their ink is 4.6's.
+  - The native drive passes 70 of 70 and the device sweep 49 of 49, both
+    with the option on.
+  - Lost: `text-transform` and `white-space` are not on the engine's list.
+    `customCSSInheritanceList` replaces the list rather than adding to it.
+  - The nine were answered before the code:
+    - Q1/Q5: the list of inherited properties is the engine's. A copy pass
+      would have written CSS's list a second time.
+    - Q3: copying by descendant selector cannot reproduce inheritance. The
+      nearest setter has to win, and specificity orders by the sheet.
+    - Q6: the owner is whatever builds a native bundle. Today that is the
+      drive and the spike. Nothing builds one for an app yet.
+    - Q7/Q9: the runtime cannot see the option. A build without it paints
+      every label black and says nothing. `runtime-native.js` states this.
+      Artefact: `none`, since no new test files are wanted while experimenting.
+    - No § IV adjudication is in tension.
 - [ ] 4.5 Type selectors lowered to a scope-and-tag class (`FJS-D1088`):
       `p.mHASH` becomes `.mHASH_p`, and each element carries one
 - [ ] 4.6 A whole-selector `:where(list)` unwrapped into its members, as
       `FJS-D1069`'s A lists: the Block surface (card, alert, dialog ground,
-      border, tint) and the chip fill `--_fill` are both one such rule
+      border, tint) and the chip fill `--_fill` are both one such rule.
+      `.btn:is(.outlined, .link)`, which sets the outlined ink, is the same
+      shape under `:is()` (4.3)
 
 ### Phase 5 — The kit's DOM habits
 

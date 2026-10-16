@@ -63,11 +63,13 @@ describe('search() — the pre-LIMIT filter', () => {
       const seen: any[] = []
       const db: any = await createClient({ schema: SCHEMA, db: file, onQuery: (e: any) => seen.push(e) })
       const sys = db.asSystem()
-      for (let t = 0; t < 20; t++) await sys.team.create({ data: { id: 't' + t, ownerId: 'u' + (t % 4) } })
-      for (let i = 0; i < 200; i++) await sys.issue.create({ data: { id: 'i' + i, teamId: 't' + (i % 20), title: 'x' } })
-      for (let c = 0; c < 2000; c++) {
-        await sys.comment.create({ data: { id: 'c' + c, issueId: 'i' + (c % 200), body: c === 7 ? 'tachyon relay' : 'filler words here' } })
-      }
+      // One batch per model: 2200 autocommit creates take seconds, and the 5 s default
+      // fails under a loaded full suite (FJS-3020).
+      await sys.team.createMany({ data: Array.from({ length: 20 }, (_, t) => ({ id: 't' + t, ownerId: 'u' + (t % 4) })) })
+      await sys.issue.createMany({ data: Array.from({ length: 200 }, (_, i) => ({ id: 'i' + i, teamId: 't' + (i % 20), title: 'x' })) })
+      await sys.comment.createMany({
+        data: Array.from({ length: 2000 }, (_, c) => ({ id: 'c' + c, issueId: 'i' + (c % 200), body: c === 7 ? 'tachyon relay' : 'filler words here' })),
+      })
       // The one match sits under team t7, owned by u3. The pair: u3 finds it, u1 does not.
       expect((await db.$setAuth({ id: 'u3' }).comment.search('tachyon')).map((r: any) => r.id)).toEqual(['c7'])
       seen.length = 0

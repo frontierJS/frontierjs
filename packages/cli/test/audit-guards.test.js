@@ -8,6 +8,7 @@
 import { test, expect }                                   from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync } from 'node:fs'
 import { tmpdir }                                         from 'node:os'
+import { spawnSync }                                      from 'node:child_process'
 import { join, dirname }                                  from 'node:path'
 
 import { runChecks }                 from '../core/checks.js'
@@ -141,4 +142,47 @@ test('a proof row naming a file path matches that file', () => {
     files: ['packages/cli/core/machine.js'], packages: [],
   })
   expect(m?.tier).toBe('path')
+})
+
+// FJS-2369 — the Changed column is graded as well as the Run column.
+
+const table = rows => [
+  '## Which drive proves a change', '',
+  '| Changed | Run |', '| --- | --- |', ...rows, '',
+].join('\n')
+
+test('proof-target reports a Changed cell that no diff can hit, and passes one that names a package, a path or a symbol', () => {
+  const root = tree({
+    'package.json':                  '{ "name": "ws", "scripts": { "verify": "true" } }',
+    'packages/alpha/package.json':   '{ "name": "@x/alpha", "scripts": { "verify": "true" } }',
+    'DRIVES.md': table([
+      '| a batch — a job per person, an idempotency key | `.`: `verify` |',
+      '| alpha prerender — the shell | `.`: `verify` |',
+      '| a batch — `core/worker.ts` | `.`: `verify` |',
+      '| a batch — `resume()` | `.`: `verify` |',
+      '| a batch — `id` | `.`: `verify` |',
+    ]),
+  })
+  try {
+    const { findings } = runChecks({ root, scope: 'repo', only: ['proof-target'] })
+    expect(findings.map(f => f.line)).toEqual([5, 9])
+    expect(findings[0].message).toMatch(/can be hit by no change/)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('proof-target reports a Changed path that is no longer in the tree', () => {
+  const root = tree({
+    'package.json':                    '{ "name": "ws", "scripts": { "verify": "true" } }',
+    'example/web/src/stores/cart.js':  'export const cart = 1\n',
+    'DRIVES.md': table([
+      '| the basket store (`web/src/cart.js`) | `.`: `verify` |',
+      '| the basket store (`web/src/stores/cart.js`) | `.`: `verify` |',
+      '| a glob `src/scenes/*.mesa`, a route `/auth/login`, a subpath `@x/y/geo`, a symbol `Room.pairId` | `.`: `verify` |',
+    ]),
+  })
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root })
+    const { findings } = runChecks({ root, scope: 'repo', only: ['proof-target'] })
+    expect(findings.map(f => [f.line, /web\/src\/cart\.js/.test(f.message)])).toEqual([[5, true]])
+  } finally { rmSync(root, { recursive: true, force: true }) }
 })

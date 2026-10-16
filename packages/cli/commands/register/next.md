@@ -69,7 +69,7 @@ if (out.decide.rows.length) {
 }
 
 out.ready.slice(0, limit).forEach((r, i) => {
-  const flag_ = (r.probeFirst ? '  (stale? — probe before acting)' : '') + (r.byHand ? '  (by hand)' : '')
+  const flag_ = (r.probeFirst ? '  (stale? — probe before acting)' : '') + (r.byHand ? '  (by hand)' : '') + (r.env ? `  (env: ${r.env})` : '')
   echo(`  ${String(i + 1).padStart(2)}. ${r.id.padEnd(9)} ${String(r.score).padStart(3)}  ${r.pkg.join(' · ')}${flag_}`)
   echo(`      ${r.title.slice(0, 110)}`)
   echo(`      ${r.terms.map(t => `${t.note} +${t.value}`).join(' · ')}   ${r.file}:${r.line}`)
@@ -101,4 +101,4 @@ A row that cannot start until another closes says `blocked by FJS-###` in its
 own text; it leaves the ranking and is listed under *blocked* until the blocker
 closes. The *blocked* list is the same ranking, one line a row with its severity
 and score, and `--limit` does not trim it. A row a headless session cannot finish says `by hand` as its own segment
-of the links cell; it stays ranked, marked *(by hand)*, and `fix:loop` skips it. Proposals are not ranked here — `IDEAS/overview.md` ranks those.
+of the links cell; it stays ranked, marked *(by hand)*, and `fix:loop` skips it. A row whose fix is the environment rather than the code says `env: <cause>` the same way — `port`, `shared db`, `stale process`, `timing`, `real machine` or `network` — and is marked *(env: cause)* and skipped too, because a headless session fixes the symptom and the row comes back. Proposals are not ranked here — `IDEAS/overview.md` ranks those.

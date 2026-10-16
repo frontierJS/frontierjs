@@ -615,3 +615,34 @@ describe('toFieldErrors — a thrown value becomes a form\'s error map', () => {
     expect(Object.keys(fields).sort()).toEqual(['email', 'plan'])
   })
 })
+
+describe('a literal-affix rule names its literal (FJS-2695)', () => {
+  const rules = buildFieldRules({
+    type: 'object',
+    properties: {
+      redirectUrl: { type: 'string', title: 'Redirect Url', pattern: '^https://', 'x-starts-with': 'https://' },
+      file:        { type: 'string', title: 'File', pattern: '\\.pdf$', 'x-ends-with': '.pdf' },
+      note:        { type: 'string', title: 'Note', pattern: 'ok', 'x-contains': 'ok' },
+      code:        { type: 'string', title: 'Code', pattern: '^[A-Z]+$' },
+    },
+  })
+  const say = (field, value) => validateAgainstFields(rules, { [field]: value }).map(e => e.message)
+
+  test('startsWith, endsWith and contains say what was needed', () => {
+    expect(say('redirectUrl', 'http://x.co')).toEqual(['Redirect Url must start with "https://"'])
+    expect(say('file', 'a.txt')).toEqual(['File must end with ".pdf"'])
+    expect(say('note', 'nope')).toEqual(['Note must contain "ok"'])
+  })
+
+  test('a plain @regex keeps the generic sentence', () => {
+    expect(say('code', 'abc')).toEqual(['Code is not in the expected format'])
+  })
+
+  test('an authored message still wins', () => {
+    const r = buildFieldRules({
+      type: 'object',
+      properties: { u: { type: 'string', pattern: '^https://', 'x-starts-with': 'https://', 'x-messages': { pattern: 'Use https' } } },
+    })
+    expect(validateAgainstFields(r, { u: 'http://x' }).map(e => e.message)).toEqual(['Use https'])
+  })
+})

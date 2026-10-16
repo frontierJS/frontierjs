@@ -11,7 +11,7 @@ import { tmpdir }        from 'os'
 import { fileURLToPath } from 'url'
 
 import { execFileSync } from 'child_process'
-import { rankNext, blockedBy, byHand, blockedLine, recentPaths, COMMIT_FILE_CAP, WEIGHTS } from '../core/next.js'
+import { rankNext, blockedBy, byHand, envCause, ENV_CAUSES, blockedLine, recentPaths, COMMIT_FILE_CAP, WEIGHTS } from '../core/next.js'
 
 // Every fixture declares the prefix its rows are written under.
 const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
@@ -174,6 +174,25 @@ describe('the declaration', () => {
     expect(byHand({ body: '[ci](scripts/ci.mjs) · by hand · blocked by FJS-12' })).toBe(true)
     expect(byHand({ body: '[ci](scripts/ci.mjs) · `by hand`' })).toBe(true)
     expect(byHand({ body: 'The owner takes it by hand once CI is green · [ci](scripts/ci.mjs)' })).toBe(false)
+  })
+
+  test('env: is read as its own segment, the cause as written, and not out of prose', () => {
+    expect(envCause({ body: '[d](test/verify.mjs) · env: shared db · by hand' })).toBe('shared db')
+    expect(envCause({ body: '[d](test/verify.mjs) · `env: timing`' })).toBe('timing')
+    expect(envCause({ body: 'the env: var is unset · [d](test/verify.mjs)' })).toBe(null)
+    expect(envCause({ body: '[d](test/verify.mjs) · env: bogus' })).toBe('bogus')
+    expect(ENV_CAUSES).toContain('shared db')
+  })
+
+  test('an env row stays ranked and carries its cause', () => {
+    const { root, cleanup } = fixture([
+      S3('FJS-001', 'cli', 'Fails after another drive ran.', '[a](src/a.js) · env: shared db'),
+      S3('FJS-002', 'cli', 'Fits a session.'),
+    ])
+    try {
+      const out = rankNext(root, { touched: new Set() }).ready
+      expect(out.map(r => [r.id, r.env])).toEqual([['FJS-001', 'shared db'], ['FJS-002', null]])
+    } finally { cleanup() }
   })
 
   test('a by-hand row stays ranked and says so', () => {

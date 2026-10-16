@@ -39,12 +39,17 @@ import { createService, rateLimitHook, BadRequest, Unauthorized, Forbidden, NotF
 import type { IAuth, SessionContext, ServiceContext, ServiceDefinition } from '@frontierjs/junction'
 import type { AuthServicesOptions } from './types.ts'
 import type { AuthOAuth }           from './oauth.ts'
+import { tenancyClaim, userTenancy } from './tenancy.ts'
 
 // The OAuth half is not on IAuth and must not be — junction knows nothing about
 // a redirect flow (`FJS-D10`). It is Partial here for the same reason every
 // optional IAuth method is: a third-party provider has none of it, and the
 // service says so by name rather than by 500.
 type AuthSurface = IAuth & Partial<AuthOAuth>
+
+// Where junction keeps `createApp({ principal })`. A registered symbol, so it
+// is reachable without junction exporting the resolver it installed.
+const PRINCIPAL_RESOLVER = Symbol.for('junction.principalResolver')
 
 /** Defaults, in one place — the plugin and the browser client both name them. */
 export const DEFAULT_SERVICE_NAMES = {
@@ -226,6 +231,76 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
   const signedIn = (...methods: string[]) => methods.map(method => ({ method, gate: LEVELS.VISITOR }))
 
   /**
+   * The person, resolved by the app's own principal resolver in the operator's
+   * tenant, or null where they are not in it (`FJS-D1116`).
+   *
+   * `sessionFor` reads the row as the system with no tenant in play, so it
+   * answers for every person of every tenant, and a person graded with no
+   * tenant has no standing in one: basecamp grades them VISITOR, which every
+   * workspace admin outranks (`FJS-3016`). Re-resolving through `runAs` +
+   * `withDb` asks the question every request asks — which tenant does this
+   * principal's claim name — so an `accountId` tenancy and a membership
+   * tenancy each answer through their own claim, and the standing comes back
+   * with the person's role in THIS tenant on it.
+   *
+   * No tenant in scope is no scoping: an app declaring no tenancy, or an
+   * operator above every tenant, reaches whoever `sessionFor` does.
+   */
+  async function personIn(ctx: ServiceContext, userId: string): Promise<SessionContext | null> {
+    const app = ctx.app
+    const tenant = app?.tenant?.() ?? null
+    if (tenant == null) return need('sessionFor')(userId)
+    try {
+      return await app.runAs(userId, { tenant }, () => app.withDb((db, user) => {
+        const claim = tenancyClaim(db)
+        if (!claim || !user) return user
+        const held = (toDataPrincipal(user) as Record<string, unknown>)[claim]
+        return held != null && String(held) === String(tenant) ? user : null
+      }))
+    } catch (err) {
+      if ((err as { code?: string })?.code === 'PRINCIPAL_MISSING') return null
+      throw err
+    }
+  }
+
+  /**
+   * Whether the person holds a membership in a tenant other than this one —
+   * what makes deleting their whole `User` reach past the operator's tenant.
+   *
+   * Read off what the app's resolver says it is (`describe()`): a membership
+   * resolver names the model, the person's column and the tenant's. Without a
+   * resolver the claim is fixed on the session, one tenant per person. A
+   * resolver that emits the tenancy claim and does not describe a membership
+   * is answered yes, since nothing here can tell how many tenants it reaches.
+   */
+  async function heldElsewhere(ctx: ServiceContext, userId: string): Promise<boolean> {
+    const app = ctx.app
+    const tenant = app?.tenant?.() ?? null
+    if (tenant == null) return false
+    // The app's root client: the call's own is scoped to this tenant, and its
+    // asSystem() keeps the scope, so the other tenants' rows are invisible to it.
+    const db = (app as unknown as { db?: { asSystem?: () => Record<string, unknown> } }).db
+    const claim = tenancyClaim(db)
+    const installed = (app as unknown as Record<symbol, unknown>)[PRINCIPAL_RESOLVER]
+    if (!installed || !claim) return false
+    const sys = db?.asSystem?.()
+    for (const fn of [installed].flat() as Array<{ describe?: () => unknown }>) {
+      const described = [typeof fn.describe === 'function' ? fn.describe() : []].flat() as Array<Record<string, unknown>>
+      if (!described.length) return true
+      for (const d of described) {
+        if (!(d.claims as string[] | undefined)?.includes(claim)) continue
+        if (d.kind !== 'membership' || !sys) return true
+        const table = sys[d.model as string] as { findFirst: (a: unknown) => Promise<unknown> }
+        const row = await table.findFirst({
+          where: { [d.subject as string]: userId, [d.tenant as string]: { not: tenant } },
+        })
+        if (row) return true
+      }
+    }
+    return false
+  }
+
+  /**
    * The operator and the person they are acting on. A write passes `what` and is
    * refused when delegated; a read does not. Not the operator themselves —
    * `sessions` and `api-keys` are that — and, where a resolver is given, not
@@ -238,17 +313,10 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     if (!userId || userId === 'me' || userId === operator.userId) {
       throw new Forbidden('That is your own account — manage it from sessions and api-keys')
     }
-    const person = await need('sessionFor')(userId)
+    // Somebody in another tenant is the same miss as nobody at all, so a
+    // refusal never confirms they are there.
+    const person = await personIn(ctx, userId)
     if (!person) throw new NotFound(`No user '${userId}'`)
-    // An operator who belongs to an account acts inside it. `sessionFor` reads
-    // the row as the system, with no tenant in play, so this is the only thing
-    // between an admin of one account and every person of every other
-    // (`FJS-2643`). Refused as the miss above, so a refusal never confirms
-    // somebody is there. An operator with no account — a single-tenant app,
-    // or a tier above every tenant — is unchanged.
-    if (operator.accountId != null && String(person.accountId ?? '') !== String(operator.accountId)) {
-      throw new NotFound(`No user '${userId}'`)
-    }
     if (standingLevel) {
       const mine = standingLevel(operator)
       const theirs = standingLevel(person)
@@ -656,6 +724,15 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     // row alone, which leaves a password hash with no one to belong to.
     async remove(ctx: ServiceContext) {
       const { operator, person } = await aim(ctx, 'remove somebody')
+      // The row is the person in every tenant, so deleting it from one reaches
+      // into the others; below SYSADMIN that is somebody else's admin's call.
+      if (await heldElsewhere(ctx, person.userId)) {
+        const mine = standingLevel?.(operator)
+        if (!Number.isFinite(mine) || !((mine as number) >= LEVELS.SYSADMIN)) throw new Forbidden(
+          'That person also belongs to another tenant — remove them from this one instead. ' +
+          'Deleting their account requires SYSADMIN (7)'
+        )
+      }
       await need('deleteUser')(person.userId, { actorId: operator.userId })
       return { id: person.userId }
     },
@@ -667,12 +744,15 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const { email, name } = (ctx.data ?? {}) as { email?: unknown; name?: unknown }
       if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BadRequest('email must be an address')
       if (name !== undefined && name !== null && typeof name !== 'string') throw new BadRequest('name must be text')
-      // Into the operator's own account, the only one they act in (`aim`,
-      // above). Without it a row-tenanted app's invitation made a person in
-      // no account, who signs in to nothing (`FJS-2643`).
+      // Into the tenant the operator acts in, the only one `aim` lets them
+      // reach. Without it a row-tenanted app's invitation made a person in no
+      // tenant, who signs in to nothing (`FJS-2643`). A membership app places
+      // the person by its own row, so nothing is stamped there.
+      const tenant = ctx.app?.tenant?.() ?? null
+      const placed = tenant != null && userTenancy(ctx.app?.db)
       return need('createInvitation')(email.trim().toLowerCase(), {
         ...(name ? { name: name as string } : {}),
-        ...(operator.accountId != null ? { accountId: String(operator.accountId) } : {}),
+        ...(placed ? { tenant: String(tenant) } : {}),
         actorId: operator.userId,
       })
     },

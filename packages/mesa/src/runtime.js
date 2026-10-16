@@ -1,6 +1,7 @@
 /**
  * @frontierjs/mesa-runtime  v0.1.0
  */
+import { WINDOW_BINDS } from './window-binds.js'
 
 const _resolved = Promise.resolve()
 /** True in any browser environment. False in Node/Deno/workers without DOM.
@@ -39,6 +40,13 @@ export function setRenderEnvironment(isBrowser, isClient = isBrowser) {
  *  flag; `src/browser/` answers every wrapper by it. */
 export function isBrowserClient() {
   return _isBrowser && _isClient
+}
+
+/** A reactive graph is running, whatever the host. With `isBrowserClient()`
+ *  false it is a terminal or a phone, where a browser wrapper refuses by name
+ *  rather than answering a default that looks like a value. */
+export function isClient() {
+  return _isClient
 }
 function _safeCall(fn) {
   try {
@@ -2004,31 +2012,18 @@ export function subscribe(start) {
   }
 }
 
-// Window property → the event that updates it
-const _windowPropEvent = {
-  innerWidth:       'resize',
-  innerHeight:      'resize',
-  outerWidth:       'resize',
-  outerHeight:      'resize',
-  devicePixelRatio: 'resize',
-  scrollX:          'scroll',
-  scrollY:          'scroll',
-  online:           ['online', 'offline'],
-}
-
-// One subscriber per EVENT SET, shared by every <mesa:window> on the page —
+// One subscriber per EVENT, shared by every <mesa:window> on the page —
 // innerWidth and innerHeight are one resize listener, and a second component
 // binding either adds a reader, not a listener.
 const _windowTracks = new Map()
-function _windowTrack(events) {
-  const key = events.join(',')
-  let track = _windowTracks.get(key)
+function _windowTrack(event) {
+  let track = _windowTracks.get(event)
   if (!track) {
     track = subscribe((update) => {
-      events.forEach((ev) => window.addEventListener(ev, update, { passive: true }))
-      return () => events.forEach((ev) => window.removeEventListener(ev, update))
+      window.addEventListener(event, update, { passive: true })
+      return () => window.removeEventListener(event, update)
     })
-    _windowTracks.set(key, track)
+    _windowTracks.set(event, track)
   }
   return track
 }
@@ -2042,10 +2037,10 @@ function _windowTrack(events) {
  */
 export function bindWindow(prop, setter) {
   if (!_isBrowser) return
-  const read = () => prop === 'online' ? window.navigator.onLine : window[prop]
-  const events = _windowPropEvent[prop]
-  if (!events || !_isClient) { setter(read()); return }
-  const track = _windowTrack(Array.isArray(events) ? events : [events])
+  const read = () => window[prop]
+  const event = WINDOW_BINDS[prop]
+  if (!event || !_isClient) { setter(read()); return }
+  const track = _windowTrack(event)
   createEffect(() => { track(); setter(read()) }, { derived: true })
 }
 

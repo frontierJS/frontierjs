@@ -224,3 +224,12 @@ test('parse: a malformed number literal is refused rather than lexed as NaN', fu
   assert.equal(tokenize('1.5')[0].value, 1.5)
   assert.equal(tokenize('-2')[0].value, -2)
 })
+
+test('tokenize: an unterminated string, a trailing backslash and an unclosed block comment are refused', function () {
+  // 'abc to EOF lexed as a string, a trailing backslash made the value
+  // 'abcundefined', and an unclosed /* silently dropped the rest of the source.
+  for (const src of [`'abc`, `"abc`, `x == 'abc\\`, `'abc\\`]) assert.throws(() => tokenize(src), /Unterminated string/)
+  assert.throws(() => tokenize('a /* never closed\nb'), /Unterminated block comment/)
+  assert.equal(tokenize(`'a\\'b'`)[0].value, `a'b`)
+  assert.equal(tokenize('a /* x */ b').length, 3)
+})

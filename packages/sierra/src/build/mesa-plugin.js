@@ -15,7 +15,7 @@ import { injectAutoImports } from './auto-import-plugin.js'
 import { rewriteMesaSlots, rewriteLayoutSlots } from './slot-rewrite.js'
 import { resolve, dirname, relative } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
-import { existsSync } from 'fs'
+import { existsSync, realpathSync } from 'fs'
 import { createRequire } from 'module'
 import { DEV_ENV, formatDevLine } from '@frontierjs/toolbelt/devline'
 // The HMR boundary and its browser client are MESA'S — this package
@@ -79,8 +79,13 @@ export function findMesaFile(file, root) {
     )
   }
 
+  // The REAL path, because a file inside mesa that imports `./runtime.js`
+  // relatively is resolved from mesa's real directory: a symlinked candidate
+  // handed back as-is is a second module id for the same file, so the build
+  // carries two runtimes and a signal made in one is read by effects of the
+  // other, tracking nothing.
   for (const c of candidates) {
-    if (c && existsSync(c)) return c
+    if (c && existsSync(c)) return realpathSync(c)
   }
   // Undefined rather than a guess: Vite's own resolver gets a turn, and if it
   // also fails the error names the specifier instead of a path we invented.

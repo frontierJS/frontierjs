@@ -6,9 +6,8 @@
 // static import of runtime.js pulls zx back in for every `fli list`.
 import { parseArgv, BOOL_ARGV } from './argv.js'
 import { chalk, amber } from './color.js'
-import { resolve } from 'path'
 import { homedir } from 'os'
-import { logger, loadEnv, fliVersion } from './utils.js'
+import { logger, loadFliEnv, fliVersion } from './utils.js'
 import { printPlanFromFile } from './prose.js'
 import { buildRegistry, uniqueCommands, getModule, userCommandsDir } from './registry.js'
 import { loadConfig } from './config.js'
@@ -19,10 +18,7 @@ import { APPROVED } from './effects.js'
 // ─── .fli.json + .env — load both from project root ──────────────────────────
 loadConfig()
 
-// Global env (~/.config/fli/.env) — loaded first; provides defaults.
-loadEnv(resolve(homedir(), '.config', 'fli', '.env'))
-// Project env — explicitly overrides globals so per-project .env wins.
-loadEnv(resolve(global.projectRoot, '.env'), { override: true })
+loadFliEnv(global.projectRoot, homedir())
 
 
 

@@ -81,6 +81,13 @@ describe('filing a row', () => {
     expect(runRegisterCheck({ root }).errors).toEqual([])
   })
 
+  test('a title that smells of the environment is flagged unless the detail names a cause', () => {
+    const root = project()
+    expect(fileIssue({ root, ...input, title: 'verify:live times out under load' }).smell).toBe(true)
+    expect(fileIssue({ root, ...input, title: 'verify:live times out under load', detail: 'Seen in a lane · env: timing' }).smell).toBe(false)
+    expect(fileIssue({ root, ...input }).smell).toBe(false)
+  })
+
   test('refuses an unknown severity, a missing cell, and a severity with no table', () => {
     const root = project()
     expect(fileIssue({ root, ...input, severity: 'S9' }).reason).toContain('S1, S2, S3, S4')

@@ -27,6 +27,7 @@ import {
 } from './oauth.ts'
 import type { OAuthIdentity, TokenSet, AuthOAuth, OAuthResolution } from './oauth.ts'
 import { createAuthCleanupJobs } from './cleanup.ts'
+import { userTenancy }          from './tenancy.ts'
 import type { AuthCleanupHandle } from './cleanup.ts'
 import {
   generateTotpSecret, otpauthUri, verifyTotp as verifyTotpCode,
@@ -194,11 +195,9 @@ export function createLitestoneAuth(
       role:      user.role ?? undefined,
       email:     user.email,
       name:      user.name ?? undefined,
-      // The column is a String now, so this coerces nothing an app has not
-      // already made a string. Kept because the column belongs to the APP: it is
-      // a hook this package declares and does not write, so what is in it is
-      // whatever that app put there.
-      accountId: user.accountId != null ? String(user.accountId) : undefined,
+      // The claim row tenancy reads off the principal, from the column it
+      // stamps — so a session is in the tenant the person's row is in.
+      ...tenantClaimOf(user),
 
       // Verification standing, in the vocabulary sessionGateLevel() grades on.
       // The User model carries a boolean, not a timestamp, so this is
@@ -215,6 +214,27 @@ export function createLitestoneAuth(
       // which is a breaking change nobody would see.
       ...appSessionFields(user),
     }
+  }
+
+  // ─── The person's tenant ────────────────────────────────────────────────
+
+  let placedBy: { column: string, claim: string } | null | undefined
+  const tenantOfUser = () => placedBy === undefined ? (placedBy = userTenancy(db)) : placedBy
+
+  function tenantClaimOf(user: Record<string, any>): Record<string, string> {
+    const t = tenantOfUser()
+    return t && user[t.column] != null ? { [t.claim]: String(user[t.column]) } : {}
+  }
+
+  // A tenant this app has no column for is refused, not dropped: a seed that
+  // placed a person nowhere and said nothing signs them in to nothing.
+  function tenantColumnFor(tenant: string | undefined): Record<string, string> {
+    if (tenant == null) return {}
+    const t = tenantOfUser()
+    if (!t) throw new AuthConfigError(
+      `A tenant was given ('${tenant}'), and this schema's row tenancy names no column on User to write it to. ` +
+      'Declare the column and tenancy { strategy row  column <name> }, or place the person through the app\'s membership row')
+    return { [t.column]: tenant }
   }
 
   // A promise has no own enumerable keys, so an async sessionFields spread to
@@ -1740,6 +1760,7 @@ export function createLitestoneAuth(
 
     async createUser(data: CreateUserInput): Promise<SessionContext> {
       if (data.password != null) requireStrongPassword(data.password)
+      const placed = tenantColumnFor(data.tenant)
 
       const existing = await sys.user.findFirst({ where: { email: data.email } })
       if (existing) throw new EmailTakenError()
@@ -1757,8 +1778,7 @@ export function createLitestoneAuth(
             email: data.email,
             name:  data.name  ?? null,
             role:  data.role  ?? 'user',
-            // The app's tenant column (db/user.lite), as `createInvitation` writes it.
-            ...(data.accountId != null ? { accountId: data.accountId } : {}),
+            ...placed,
           }
         })
         if (hashed) await tx.credential.create({ data: { userId: row.id, type: 'password', value: hashed } })
@@ -1777,17 +1797,16 @@ export function createLitestoneAuth(
     // is the User row's to change afterwards, by someone allowed to.
 
     async createInvitation(
-      email: string, opts: { name?: string, accountId?: string, actorId: string },
+      email: string, opts: { name?: string, tenant?: string, actorId: string },
     ): Promise<{ userId: string, token: string, expiresAt: string }> {
+      const placed = tenantColumnFor(opts.tenant)
       const existing = await sys.user.findFirst({ where: { email } })
       if (existing) throw new EmailTakenError()
       if (onRegister) await onRegister({ email, name: opts.name ?? null })
 
-      // The operator's account when they have one: the column is the app's
-      // tenant hook (db/user.lite), and an invitation is into the account of
-      // whoever sent it (`FJS-2643`).
+      // An invitation is into the tenant of whoever sent it (`FJS-2643`).
       const user = await registerUser(tx => tx.user.create({
-        data: { email, name: opts.name ?? null, ...(opts.accountId != null ? { accountId: opts.accountId } : {}) },
+        data: { email, name: opts.name ?? null, ...placed },
       }))
 
       const token = generateToken()

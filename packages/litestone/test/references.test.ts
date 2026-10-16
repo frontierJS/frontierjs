@@ -112,3 +112,19 @@ describe('Grant is installed by import, and minted by the caller', () => {
     expect(await db.asSystem().portalLink.count()).toBe(1)
   })
 })
+
+describe('Grant under row tenancy', () => {
+  const host = join(import.meta.dir, 'fixtures', 'references', 'grant-tenant-host.lite')
+
+  // bearerClaim looks a digest up across every tenant, so the constraint must
+  // name the same thing the read does: one token, one row, installation-wide.
+  it('tokenHash stays unique across tenants, with nothing for the host to restate', () => {
+    const { schema, errors, warnings } = parseFile(host)
+    expect((errors ?? []).map((e: any) => e.message ?? String(e))).toEqual([])
+    expect((warnings ?? []).filter((w: string) => w.includes('PortalLink.tokenHash'))).toEqual([])
+    const link = schema.models.find((m: any) => m.name === 'PortalLink')
+    expect(link.attributes.filter((a: any) => a.kind === 'uniqueIndex')).toEqual([])
+    expect(link.fields.find((f: any) => f.name === 'tokenHash').attributes
+      .find((a: any) => a.kind === 'unique').global).toBe(true)
+  })
+})

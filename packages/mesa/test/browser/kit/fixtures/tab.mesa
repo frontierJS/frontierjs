@@ -1,0 +1,14 @@
+<script>
+  import { tab } from '@frontierjs/mesa/browser'
+
+  let wentOffline = 0
+  $: tab.online, () => { if (!tab.online) wentOffline++ }
+  $: tab.visible
+  $: tab.focused
+  window.kitTab = tab
+</script>
+
+<p id="online">{tab.online}</p>
+<p id="visible">{tab.visible}</p>
+<p id="focused">{tab.focused}</p>
+<p id="went-offline">{wentOffline}</p>

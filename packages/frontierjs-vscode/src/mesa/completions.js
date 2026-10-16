@@ -204,7 +204,6 @@ function bindColon(afterBind) {
     item('bind:innerHeight',      K.Property, 'Window property', '`bind:innerHeight={var}` — reactive `window.innerHeight`',      'innerHeight={${1:height}}'),
     item('bind:scrollX',          K.Property, 'Window property', '`bind:scrollX={var}` — reactive `window.scrollX`',             'scrollX={${1:x}}'),
     item('bind:scrollY',          K.Property, 'Window property', '`bind:scrollY={var}` — reactive `window.scrollY`',             'scrollY={${1:y}}'),
-    item('bind:online',           K.Property, 'Window property', '`bind:online={var}` — reactive `navigator.onLine`',            'online={${1:online}}'),
     item('bind:devicePixelRatio', K.Property, 'Window property', '`bind:devicePixelRatio={var}` — reactive device pixel ratio',  'devicePixelRatio={${1:dpr}}'),
   ]
   if (afterBind === 'window') return window
@@ -257,7 +256,7 @@ function pipeModifiers() {
 function mesaColonCompletions() {
   const elements = [
     { name: 'window',   detail: 'Window events + property bindings',
-      doc: '`<mesa:window>` — bind events and properties to `window`.\n\nSupports `on:` events and `bind:innerWidth`, `bind:scrollY`, `bind:online` etc.' },
+      doc: '`<mesa:window>` — bind events and properties to `window`.\n\nSupports `on:` events and `bind:innerWidth`, `bind:scrollY` etc.' },
     { name: 'document', detail: 'Document event listeners',
       doc: '`<mesa:document>` — bind event listeners to `document`.' },
     { name: 'body',     detail: 'Body event listeners',

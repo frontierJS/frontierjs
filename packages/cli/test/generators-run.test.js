@@ -188,6 +188,27 @@ describe('make:scaffold lists the model in the nav table fli new writes', () => 
   }, 30000)
 })
 
+// FJS-2696 — the sign-in page is a form a password manager can read, and its
+// dev hint does not tell a visitor with an account that nobody has one.
+describe('the scaffold sign-in page', () => {
+  const loginOf = async () => {
+    const text = await Bun.file(join(CLI, 'commands/project/new.md')).text()
+    const src = text.match(/\nfunction makeRouteLogin\(\) \{[\s\S]*?\n\}\n/)[0]
+    return new Function('sc', `${src}\nreturn makeRouteLogin`)('</' + 'script>')()
+  }
+
+  test('is a form whose inputs a password manager can key on', async () => {
+    const page = await loginOf()
+    expect(page).toMatch(/<form [^>]*on:submit\|preventDefault/)
+    expect(page).toContain('autocomplete="username"')
+    expect(page).toContain('autocomplete="current-password"')
+  })
+
+  test('never states that no user exists', async () => {
+    expect(await loginOf()).not.toMatch(/no user exists/i)
+  })
+})
+
 // The reference and the example write `@updatedAt` alone; it stamps the create
 // too, so `@default(now())` beside it is a second spelling every new app copies
 // (`FJS-2952`).
@@ -221,5 +242,29 @@ describe('no command writes a Prisma schema', () => {
       if ((await Bun.file(join(CLI, 'commands', f)).text()).includes('schema.prisma')) hits.push(f)
     }
     expect(hits).toEqual([])
+  })
+})
+
+// FJS-2486 — the verification mail links to a web page that posts the token
+// (GET /auth/email/verify is gone), so `fli new --auth` has to write that page.
+describe('the scaffold verification link lands on a page fli new writes', () => {
+  const newMd = () => Bun.file(join(CLI, 'commands/project/new.md')).text()
+
+  test('every route the auth callbacks link to is in the file list', async () => {
+    const text = await newMd()
+    const links = [...text.matchAll(/\$\{env\.WEB_URL\}\/([a-z-]+)\/\?token=/g)].map(m => m[1])
+    expect(links).toContain('verify-email')
+    for (const route of links) {
+      expect(text).toContain(`'web/src/routes/${route}/index.mesa'`)
+      expect(text).toContain(`'web/src/routes/${route}'`)
+    }
+  })
+
+  test('the page posts the token with client.auth.verifyEmail and signs nobody in', async () => {
+    const text = await newMd()
+    const src = text.match(/\nfunction makeRouteVerifyEmail\(\) \{[\s\S]*?\n\}\n/)[0]
+    const page = new Function('sc', `${src}\nreturn makeRouteVerifyEmail`)('</' + 'script>')()
+    expect(page).toContain('auth.verifyEmail(')
+    expect(page).not.toMatch(/on:load|onMount[^\n]*verifyEmail/)
   })
 })

@@ -10,6 +10,8 @@
 // AUTH PLAIN preferred; falls back to AUTH LOGIN.
 // ============================================================
 
+import { formatMailbox as writeMailbox } from '@frontierjs/toolbelt/mailbox'
+
 // ─── Public types ────────────────────────────────────────────
 
 export interface SmtpConfig {
@@ -117,13 +119,11 @@ export function assertMailbox(value: unknown, field: string): { name: string | n
   return { name: name || null, address: assertAddress(m[3], field) }
 }
 
-/** A mailbox as a header writes it: the name as an atom, a quoted-string or encoded-words. */
+/** A mailbox as a header writes it: toolbelt's rule, with encoded-words for a name that is not printable ASCII. */
 function formatMailbox(value: string): string {
   const { name, address } = assertMailbox(value, 'address')
-  if (!name) return address
-  if (/^[A-Za-z0-9!#$%&'*+/=?^_`{|}~ .-]+$/.test(name)) return `${name} <${address}>`
-  if (/^[\x20-\x7e]*$/.test(name)) return `"${name.replace(/(["\\])/g, '\\$1')}" <${address}>`
-  return `${encodeMimeHeader(name)} <${address}>`
+  if (name && !/^[\x20-\x7e]*$/.test(name)) return `${encodeMimeHeader(name)} <${address}>`
+  return writeMailbox(address, name)
 }
 
 /** A header VALUE that cannot become a second header. */

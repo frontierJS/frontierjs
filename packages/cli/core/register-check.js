@@ -34,6 +34,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { treePaths } from './tree.js'
 import { ideaQuestions } from './decisions.js'
+import { envCause, ENV_CAUSES } from './next.js'
 import { readRegisters, readOverviewRows, idPatterns, REGISTER_FILES, ISSUE_STATUS, IDEA_STATUS, RULING_STATUS, SEVERITY } from './registers.js'
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
@@ -60,13 +61,26 @@ export const RULES = [
   { id: 'ruling-status',    level: 'error', what: 'a ruling declaring a status outside the vocabulary, or retiring itself without naming what replaced it' },
   { id: 'unread-recommendation', level: 'error', what: 'an open question\'s `**Recommend …**` line naming no option letter — the queue shows no recommendation, and the line was once read as the words of the option above it' },
   { id: 'malformed-date',   level: 'error', what: 'a date that is not ISO-8601' },
+  { id: 'env-cause',        level: 'error', what: 'an `env:` segment naming a cause outside the table — the row is counted under no cause' },
   { id: 'lives-in',         level: 'error', what: 'a ruling\'s `*Lives in:*` naming a path that is not in the tree, a symbol its file no longer mentions, or a package no package.json declares — advice that fails when taken' },
   { id: 'overview-status',  level: 'error', what: 'an `IDEAS/overview.md` row whose Status cell says the work is still open while its paper says `shipped` or `withdrawn`, or its only cited defects are closed' },
   { id: 'ruling-order',     level: 'warn',  what: 'a ruling dated later than the one above it — a section runs newest first, so the top of one is the current thinking' },
   { id: 'unnamed-ruling',   level: 'warn',  what: 'a ruling with no id — nothing can cite it' },
   { id: 'missing-anchor',   level: 'warn',  what: 'an open row with no anchor — nothing can link it' },
   { id: 'stale-verified',   level: 'warn',  what: 'an open row nobody has re-checked in a long time', clock: true },
+  { id: 'env-smell',        level: 'warn',  what: 'an open row whose title reads like an environment failure — a timeout, a hang, a port, a run that passes elsewhere — and names no `env:` cause' },
 ]
+
+// What an environment failure SAYS about itself in a title. A lead, never a
+// verdict: the row may be code, which is why this warns and `env-cause`
+// errors. Matched on the title alone, since a Detail cell is links.
+const ENV_SMELL = /\b(times? out|timed out|(hangs?|hung)(?=[:,.]|\s+(at|on|in|after|waiting|until|for|forever|when|and)\b)|within \d+ ?(s|sec|seconds|min|minutes)\b|passes? (alone|in (a )?(fresh|new|second) (worktree|clone|checkout))|fails in the main tree|port \d{4}|stale process|flaky|intermittent(ly)?|on a real machine|never run on)\b/i
+
+/** Whether a title reads like an environment failure — `env-smell`'s test,
+ *  which `register:file` asks before the row is in the file. */
+export function envSmells(title) {
+  return ENV_SMELL.test(String(title ?? ''))
+}
 
 const LEVEL_OF = Object.fromEntries(RULES.map(r => [r.id, r.level]))
 
@@ -449,6 +463,13 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
 
     if (!row.anchor) {
       add('missing-anchor', row, 'has no <a id> — a ruling cannot link to it')
+    }
+
+    const cause = envCause(row)
+    if (cause !== null && !ENV_CAUSES.includes(cause)) {
+      add('env-cause', row, `env: "${cause}" is not one of ${ENV_CAUSES.join(', ')}`)
+    } else if (cause === null && envSmells(row.title)) {
+      add('env-smell', row, 'reads like an environment failure and names no env: cause')
     }
 
     const age = staleDays > 0 && ISO.test(row.verified) ? daysBetween(row.verified, today) : null

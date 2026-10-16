@@ -269,7 +269,10 @@ export function schemaMutants(schemaText, { kinds = null } = {}) {
     const code    = cut === -1 ? line : line.slice(0, cut)
     const comment = cut === -1 ? ''   : line.slice(cut)
 
-    const open = code.match(/^\s*model\s+([A-Za-z_][A-Za-z0-9_]*)/)
+    // The brace belongs to the match: an indented FIELD can be named `model`
+    // (`model ChargeModel @default(standard)`), and without it every mutant
+    // after that line is attributed to the field's type.
+    const open = code.match(/^\s*model\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{/)
     // A model opened on this line is still mutable ON this line — `.lite`
     // permits the whole model on one, and skipping the opening line skipped
     // every attribute such a model has, silently. Its own fixtures are written

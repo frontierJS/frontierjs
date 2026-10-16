@@ -45,6 +45,9 @@ import { beginBuildImports, importAppModule } from './app-import.js'
  * @property {'spa'|'static'|'widget'} target
  * @property {string} [routesDir='src/routes']
  * @property {string} [base='/']
+ * @property {string} [prefix] — the namespace `persisted()` stores every key
+ *   under, as `prefix:key`. Default: the name in the nearest package.json above
+ *   the Vite root; `''` stores keys bare.
  * @property {'always'|'never'|'preserve'} [trailingSlash='always']
  * @property {'spa'|'static'} [render='spa']
  * @property {string} [outDir='dist/client']

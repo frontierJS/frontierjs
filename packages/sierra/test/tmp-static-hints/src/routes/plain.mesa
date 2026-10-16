@@ -1,0 +1,8 @@
+---
+title: Plain
+render: static
+---
+<script>
+  import { site } from '../content.js'
+</script>
+<main><h1>{site.tag}</h1></main>

@@ -1280,7 +1280,6 @@ table `user` · db `main` · gate `4.4.4.5`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `accountId` | `String` | yes | — | `@allow(write: auth().isAdmin)` |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `email` | `String` | no | — | unique · `@allow(write: auth().isAdmin)` · **required on write** |
 | `emailVerified` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |

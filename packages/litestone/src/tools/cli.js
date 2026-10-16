@@ -2835,7 +2835,13 @@ async function cmdMutate(cfg) {
   //
   // A fragment that could not be read is named rather than skipped: its models
   // are absent, so every rule they declare is silently outside the run.
-  const { text: schemaText, missing } = inlineImportsFromDisk(schemaPath)
+  const { text: schemaText, origins, missing } = inlineImportsFromDisk(schemaPath)
+  // A mutant's line is a line of the SPLICED text, which no file has; the
+  // report names the file and line the rule is written on.
+  const whereIs = (lineNo) => {
+    const o = origins[lineNo - 1]
+    return o ? { file: rel(o.file), line: o.line } : { file: basename(schemaPath), line: lineNo }
+  }
   if (missing.length) log(
     `  ${yellow('⚠')}  ${missing.length === 1 ? 'an import' : `${missing.length} imports`} could not be read ` +
     `(${missing.join(', ')}) — the models they declare are outside this run`)
@@ -2905,9 +2911,9 @@ async function cmdMutate(cfg) {
     console.log(JSON.stringify({
       mutants: all.length, graded: result.graded, killed: result.killed, score: pct,
       refused: result.refused.length, missing,
-      errored:  result.errored.map(e => ({ kind: e.kind, lineNo: e.lineNo, describe: e.describe, thrown: String(e.thrown) })),
+      errored:  result.errored.map(e => ({ kind: e.kind, ...whereIs(e.lineNo), describe: e.describe, thrown: String(e.thrown) })),
       ...(suite && { suiteKilled: result.suiteKilled }),
-      survived: result.survived.map(s => ({ kind: s.kind, lineNo: s.lineNo, describe: s.describe, ...(s.suite && { suite: s.suite }) })),
+      survived: result.survived.map(s => ({ kind: s.kind, ...whereIs(s.lineNo), describe: s.describe, ...(s.suite && { suite: s.suite }) })),
     }, null, 2))
     return
   }
@@ -2943,7 +2949,10 @@ async function cmdMutate(cfg) {
     for (const s of left) (byKind[s.kind] ??= []).push(s)
     for (const [kind, rows] of Object.entries(byKind)) {
       console.log(`    ${kind}  ${dim(`(${rows.length})`)}`)
-      for (const r of rows) console.log(`      ${dim(`${basename(schemaPath)}:${r.lineNo}`)}  ${r.describe}`)
+      for (const r of rows) {
+        const at = whereIs(r.lineNo)
+        console.log(`      ${dim(`${at.file}:${at.line}`)}  ${r.describe}`)
+      }
     }
     console.log()
     console.log(`  ${dim('A survivor is a fact about the CHECKS, not the schema. Two are expected:')}`)

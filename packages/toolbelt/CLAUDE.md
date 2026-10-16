@@ -8,7 +8,7 @@ license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
-`/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/markdown`, `/match`, `/mime`,
+`/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/mailbox`, `/markdown`, `/match`, `/mime`,
 `/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sigv4`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
@@ -139,6 +139,12 @@ src/mime/            what a file's bytes ARE, and what may be said about them
                      tables disagreed on 24 of 32 extensions and the recorded
                      `.wasm` fix had reached one of them (`FJS-1186`). Ships a
                      `.d.ts` — junction's static transport is TypeScript
+src/mailbox/         `formatMailbox(address, name)`, a mailbox as a header
+                     writes it. Junction's SMTP writer and each inbound mail
+                     connector rendered it, and the copies drifted; a connector
+                     may not import junction (`FJS-D1091`). Renders, never
+                     grades; encoded-words for a non-ASCII name stay junction's,
+                     because they are a wire encoding. Ships a `.d.ts`
 src/bearer/          what a bearer secret looks like at rest — `fingerprint`
                      (a keyed digest, `purpose` REQUIRED so one token does not
                      digest identically in two tables), `matchesFingerprint`

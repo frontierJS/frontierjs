@@ -255,7 +255,7 @@ export interface IAuth {
    * that sets its first password at `confirmPasswordReset`. The caller hands
    * the token over — nothing is mailed. Throws if the address is taken.
    */
-  createInvitation?(email: string, opts: { name?: string, actorId: string }): Promise<{ userId: string, token: string, expiresAt: string }>
+  createInvitation?(email: string, opts: { name?: string, tenant?: string, actorId: string }): Promise<{ userId: string, token: string, expiresAt: string }>
 
   /** The user's API keys. Never carries the key — it exists once, at creation. */
   listApiKeys?(userId: string):                        Promise<ApiKeyInfo[]>
@@ -342,8 +342,11 @@ export interface CreateUserInput {
   password?:    string
   name?:        string
   role?:        string
-  accountId?:   string
-  workspaceId?: string
+  /**
+   * The tenant to place the person in, written to the column the app's row
+   * tenancy names on `User`. A provider refuses one it has no column for.
+   */
+  tenant?:      string
   metadata?:    Record<string, unknown>
 }
 

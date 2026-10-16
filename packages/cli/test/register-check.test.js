@@ -57,6 +57,11 @@ beforeAll(() => {
     '| <a id="fjs-032"></a>FJS-032 | cli — **A closed-shaped row in an open table.** | 2026-08-17 | how it was fixed |',
     '| <a id="fjs-033"></a>FJS-033 | cli | **An escaped \\| pipe is not a cell.** | open | 2026-08-17 | — |',
     '| <a id="fjs-034"></a>FJS-034 | cli | **A blank date is a state, not a shape.** | open | — | — |',
+    // The env segment: a cause outside the table is an error, a title that
+    // smells with no segment is a warning, and a listed cause is neither.
+    '| <a id="fjs-040"></a>FJS-040 | cli | **Drive fails after the last one.** | open | 2026-08-17 | [d](src/real.js) · env: bogus |',
+    '| <a id="fjs-041"></a>FJS-041 | cli | **verify:x hangs: an evaluate times out after 30 s.** | open | 2026-08-17 | [d](src/real.js) |',
+    '| <a id="fjs-042"></a>FJS-042 | cli | **verify:y times out waiting for the row.** | open | 2026-08-17 | [d](src/real.js) · env: timing |',
     '',
     '## Decisions awaiting a ruling',
     '| Id | Pkg | Question | Detail |',
@@ -229,6 +234,13 @@ describe('warnings', () => {
   test('a row nobody has re-checked, against an injected clock', () => {
     const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'stale-verified')
     expect(hits.map(h => h.id)).toEqual(['FJS-015'])
+  })
+
+  test('env: a cause outside the table errors, a smelling title with no segment warns, a listed cause is silent', () => {
+    const result = runRegisterCheck({ root: ROOT, staleDays: 0, today: TODAY })
+    expect(of(result, 'env-cause').map(h => h.id)).toEqual(['FJS-040'])
+    expect(of(result, 'env-smell').map(h => h.id)).toEqual(['FJS-041'])
+    expect(result.findings.filter(f => f.id === 'FJS-042' && f.rule.startsWith('env-'))).toHaveLength(0)
   })
 
   test('staleDays 0 turns the clock rule off, so the answer is reproducible', () => {

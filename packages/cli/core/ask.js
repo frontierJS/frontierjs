@@ -282,7 +282,12 @@ const WALKS = {
     const text = read(join(root, DECISION))
     if (text === null) return { status: 'missing', hits: [], scanned: 0 }
     const heads = [...text.matchAll(/^#+ <a id="(fjs-d\d+)"><\/a>([^\n]+)$/gm)]
+    // The key is the TITLE — what the ruling is about — and the rest of the
+    // heading line is its body. A later ruling that restates an earlier one's
+    // sentence in its body (`FJS-D909` quoting `FJS-D26`) otherwise ties it on
+    // hay alone and, sorting first, is cited in its place.
     const rows  = heads.map((m, i) => ({
+      key:     (m[2].match(/`FJS-D\d+` — ([^—]*?)(?: — |$)/) ?? [])[1] ?? '',
       hay:     m[2],
       cite:    m[1].toUpperCase(),
       line:    m[0].slice(0, 200),

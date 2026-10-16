@@ -138,6 +138,10 @@ true on purpose:
   read: only code spans are claims.
 - **`unknown-status`**, **`unknown-severity`**, **`malformed-date`** — a value
   outside the vocabulary the register declares in its own conventions table.
+- **`env-cause`** — an `env:` segment naming a cause outside the table
+  (`port`, `shared db`, `stale process`, `timing`, `real machine`, `network`).
+  The count per cause is what the segment is for, and a misspelled one is a
+  row no count sees.
 - **`id-section`** — a row filed under a section its ID PREFIX does not belong
   to. `ISSUES.md` holds two registers in one file and the reader tells them
   apart by section, while the conventions table tells them apart by prefix:
@@ -154,6 +158,10 @@ be in on the way somewhere:
 - **`missing-anchor`** — an open row with no `<a id>`, so nothing can deep-link
   it.
 - **`stale-verified`** — an open row nobody has re-checked inside `--stale-days`.
+- **`env-smell`** — an open row whose TITLE reads like an environment failure
+  (a timeout, a hang, a port, a run that passes in a fresh worktree) and names
+  no `env:` cause. A lead: the row may be code, and the answer is either the
+  segment or a title that says what is wrong with the code.
 
 ## The one rule that reads the clock
 

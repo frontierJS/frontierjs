@@ -13,7 +13,8 @@ import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, poin
          SEARCH_TABLE, searchModels, searchRankExpr } from './ddl.js'
 import { buildSealMap, frozenAfterMove, machineWithMove } from './seal.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
-import { buildEdgeMap, arcCheckExpr, arcDefaultMessage, columnMapFor, mapExprCols } from './ddl.js'
+import { buildEdgeMap, arcCheckExpr, arcDefaultMessage, columnMapFor, mapExprCols,
+         pointDefaultMessage } from './ddl.js'
 import {
   buildWhere, buildOrderBy, buildRelationOrderBy, buildWindowCols, windowColumnNames, rawClause, isNamedAgg,
   buildNamedAggExpr, extractNamedAggs, parseSelectArg, trimAllToSelect, vectorOrderPlan,
@@ -636,6 +637,19 @@ function makeTable(readDb, writeDb, shape, ctx) {
       return out
     }
 
+    // SQLite reports a CHECK that opens with a column by that column's name
+    // alone, not by its text, so a point's refusal arrives as `location` and
+    // is found by the field. Without this the refusal is the model-level
+    // sentence below -- no column, no rule.
+    for (const f of model?.fields ?? []) {
+      const pt = f.attributes?.find(a => a.kind === 'point')
+      if (!pt || want !== fieldToColumnName(f)) continue
+      const out = new ValidationError([{ path: [f.name], message: pointDefaultMessage(pt) }])
+      out.model      = modelName
+      out.constraint = expr
+      return out
+    }
+
     // A model-level one spans columns by definition, so there is no single box
     // to mark and the empty path is the form-level answer — the shape
     // `VersionConflictError` already takes for a refusal about a whole record.
@@ -1061,6 +1075,20 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (why) throw new ValidationError([{ path: [op, name], message:
         `Cannot ${op} '${name}' on ${modelName} — it ${why}.` }])
     }
+  }
+
+  // `_count` is `true` or `{ distinct: 'col' }`. Prisma's `{ _all: true }` and
+  // any other object answered a bare number where the caller reads `_count._all`,
+  // so the shape is refused by name rather than counted as COUNT(*).
+  function refuseCountShape(op, _count) {
+    if (!_count || _count === true) return
+    const isDistinct = typeof _count === 'object' && !Array.isArray(_count)
+      && Object.keys(_count).length === 1 && typeof _count.distinct === 'string'
+    if (!isDistinct) throw new ValidationError([{ path: [op, '_count'], message:
+      `${op}() _count takes true or { distinct: '<column>' }, got ${JSON.stringify(_count)}. ` +
+      `The count is a bare number (_count: true), not an object keyed by column — ` +
+      `Prisma's { _all: true } is spelled _count: true here.` }])
+    refuseAggregateKeys(op, [_count.distinct], false)
   }
 
   // The names a `window` spec adds to a row, after the spec is held to the
@@ -4063,7 +4091,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // Required-field pre-flight. The schema knows requiredness; without this
     // a missing NOT NULL field surfaced as SQLite's raw "NOT NULL constraint
     // failed" instead of a ValidationError shaped like every other field rule.
-    if (model && requireAll) refuseMissingRequired(model, data)
+    // A server fill (`@default`, an array's `[]`) is for an ABSENT key, so the
+    // pre-flight exempts those columns and an explicit `null` on one reached
+    // SQLite's NOT NULL (`FJS-2042`).
+    if (model && requireAll) {
+      refuseMissingRequired(model, data)
+      refuseClearingRequired(data)
+    }
 
     // The OTHER thing a payload can say, and the one shape that is
     // unambiguously wrong.
@@ -7440,8 +7474,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         ...(_stringAgg && typeof _stringAgg === 'object' ? [_stringAgg.field, _stringAgg.orderBy] : []),
         ...namedAggFields(extractNamedAggs(args).map(([, spec]) => spec)),
       ])
-      if (_count && typeof _count === 'object' && _count.distinct)
-        refuseAggregateKeys('aggregate', [_count.distinct], false)
+      refuseCountShape('aggregate', _count)
       refuseMixedCurrency('aggregate', args)
       const params = []
       // A SELECT-list value (a _stringAgg separator, a named aggregate's
@@ -7589,8 +7622,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         ...(_stringAgg && typeof _stringAgg === 'object' ? [_stringAgg.field, _stringAgg.orderBy] : []),
         ...namedAggFields(extractNamedAggs(args).map(([, spec]) => spec)),
       ])
-      if (_count && typeof _count === 'object' && _count.distinct)
-        refuseAggregateKeys('groupBy', [_count.distinct], false)
+      refuseCountShape('groupBy', _count)
       refuseMixedCurrency('groupBy', args, by, [having, ...orderTerms.map(([k, v]) => ({ [k]: v }))])
 
       // ── Interval / date truncation ───────────────────────────────────────

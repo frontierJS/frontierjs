@@ -1,0 +1,14 @@
+// The Grant host under row tenancy. Read by test/references.test.ts.
+import "@frontierjs/litestone/references/Grant.lite"
+
+tenancy {
+  strategy row
+  column   workspaceId
+}
+
+model PortalLink {
+  id          Int @id @default(autoincrement())
+  workspaceId Int
+  @@trait(Grant)
+  @@gate("4")
+}

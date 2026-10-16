@@ -146,7 +146,7 @@ export function requireCapability(model, action, ctx) {
   const name = `${model}.${action}`
   if (heldBy(ctx.auth, model).has(name)) return
   throw new AccessDeniedError(
-    `"${name}" requires the capability "${name}" and this caller holds no such grant`,
+    `You do not hold the "${name}" capability`,
     { model, operation: action, capability: name })
 }
 

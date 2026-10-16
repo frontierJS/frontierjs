@@ -6,13 +6,13 @@ it may import is `@frontierjs/toolbelt`, which is substrate below the graph rath
 than a member of it (`FJS-D26`). Sierra, jetty, ui and email-kit all sit on top
 of it.
 
-Run tests with **`bun run test`** — vitest, then the three gating **browser
+Run tests with **`bun run test`** — vitest, then the four gating **browser
 drives**, which need Chrome on PATH or `$FJS_CHROME`, then the **terminal drive**
 (`test:terminal`), which needs no Chrome and no TTY. `bun test` reports ~35 failures
 that are runner artifacts, not defects.
 
-`test:browser` is the three, `test:browser:runtime`, `test:browser:vite` and
-`test:browser:repl` one each; `serve:runtime` / `serve:vite` start one and stay
+`test:browser` is the four, `test:browser:runtime`, `test:browser:vite`,
+`test:browser:repl` and `test:browser:kit` one each; `serve:runtime` / `serve:vite` start one and stay
 up, for looking at a fixture in a real browser.
 
 **The REPL drive is `repl/`, in `test` and offline.** Its third-party code is
@@ -71,6 +71,11 @@ src/
                          axis × tone), so no var() on a phone is more than one
                          hop from a literal. The contexts are read off the
                          sheet: `.theme-*`, and each @property's setters
+  native/values.js     — lowerValues(): oklch(), oklab() and color-mix() over
+                         literals computed to rgb()/rgba(), clipped as Chrome
+                         paints, and logical properties written physical for
+                         left-to-right. A color it cannot compute (currentColor)
+                         comes back by line
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
   runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal.js:
                          `$$host`, a cell tree over @opentui/core (optional peer,
@@ -97,6 +102,20 @@ src/
                          findChrome, createNetwork. Published: an app's drive
                          and every in-repo drive import it (`FJS-D554`). No
                          framework import, no dependency
+  window-binds.js      — what <mesa:window bind:prop> binds and the event
+                         that moves each; the compiler refuses any other prop
+  browser/             — @frontierjs/mesa/browser, the browser kit (`FJS-D1097`;
+                         plan IDEAS/browser-kit.md). Every wrapper answers by
+                         host.js — live in a tab, its default under a server
+                         render, a throw on a terminal (isClient() without
+                         isBrowserClient()). persisted.js is #1, on runtime.js's
+                         subscribe(); prefix.js is the app's key namespace, its
+                         own module because sierra's router sets it in every app
+                         and persisted.js carries /redact. tab.js is #8, an
+                         object watched like session (`$: tab.online`), armed at
+                         its first read and held for the tab. result.js is the
+                         one { ok, via, reason } an action returns;
+                         browser.d.ts states each server answer
 
 mesa-vite/
   index.js             — the Vite plugin, exported as @frontierjs/mesa/vite
@@ -127,6 +146,8 @@ test/browser/
   runtime/             — the language in a real browser (server · page · fixtures · specs)
   vite/                — the plugin in a real dev server (app · specs)
   repl/                — example/index.html itself, offline off example/vendor/
+  kit/                 — @frontierjs/mesa/browser, one spec per wrapper; runtime/'s
+                         server and page, its own fixtures
 
 bench/
   run.mjs              — bun run bench: bytes, DOM mutations, time, heap
@@ -423,12 +444,12 @@ their own label, constraints and server error from it.
 
 ## The browser drives
 
-**`test/browser/` is where this package is run rather than described** — three
+**`test/browser/` is where this package is run rather than described** — four
 drives over one harness, shared with `@frontierjs/ui` (`drive.mjs`,
 `probes.js`) and read by relative path because mesa is the leaf. The browser
 under the runner is `src/drive.js`, which is published: a change to it reaches
 every app's drive, so `test/drive.test.js` pins what an app asks of it and
-the runner never did — a kept `profile` read back after a relaunch. All three
+the runner never did — a kept `profile` read back after a relaunch. All four
 gate. What bites:
 
 - **A spec exports `run(t)`, not a suite.** vitest excludes `test/browser/**`

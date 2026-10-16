@@ -55,7 +55,7 @@ Counts are files. *Prototypes* is 21 apps under `fjs-prototypes`; *repo* is
 | 5 | **Hotkeys** — `hotkey('mod+k', fn, { scope })` | 9 app files and 15 kit components bind `document` keydown each their own way. `FJS-2611`'s Escape defects closed 2026-10-15 at each owner, so this is consolidation, not a fix | the chord parser `'mod+k'` → `{ key, mods }` | scope is the nearest delegation root (Invariant 11; `_delegateRoots` in `runtime.js` is the table); CommandPalette, Popover and Dialog consume it |
 | 6 | **Clipboard, share, download** | `writeText` 6 repo + 12 prototypes; `download()` already sits in `ui/utils.js` — the precedent | — | `copy(text \| blob)` with the execCommand fallback, `share()` falling back to copy, `download` moved beside them |
 | 7 | **Files in** — `pickFiles()`, `dropzone(el)`, `objectUrl(file)` | 25 files; the leaked object URL is `FJS-2474` | `/mime` `sniff` grades a name against its bytes — exists | object URL revoked on `onCleanup`; picker, drop and paste one shape; feeds the `attachments` bridge. `ui/dnd.js` is list reordering, a different gesture, and stays |
-| 8 | **Page state** — `page.online`, `.visible`, `.focused` | `onLine` 7 repo + 12 prototypes; `bindWindow` carries `online` only; sierra `offline.js`, the live store's reconnect and the vscode extension each ask again | — | one object, `watchProxy`-backed like `session`; #2 and the live store pause on it |
+| 8 | **Tab state** — `tab.online`, `.visible`, `.focused` | `onLine` 7 repo + 12 prototypes; `bindWindow` carried `online` only; sierra's `offline.js` and `pending.js` arm on the socket's `connect` and read neither, on purpose | — | one object, `watchProxy`-backed like `session`; #2 and the live store pause on it |
 | 9 | **Head** — `title(fn)`, `meta()` | `document.title` 12 (serpgrid: three copies of one suffix pattern); `<mesa:head>` exists for fragments | — | sierra: per-route title with the app suffix from config; a no-op on the server |
 | 10 | **Push and install** | 0 copies, because nobody can: `ecosystem-gaps.md` § 16 (push is a driver gap), `homestead.md` names the service worker | — | not a wrapper but a rig: service-worker registration in sierra's postbuild and `PushManager.subscribe` → the notifications package's channel list. Highest ceiling, most work |
 
@@ -134,7 +134,7 @@ export function media(query) {
 `bindWindow` is rewritten on it and `<mesa:window bind:prop>` keeps its
 syntax: one subscriber per EVENT SET rather than per property, so every
 `bind:innerWidth` and `bind:innerHeight` on a page is one `resize` listener.
-`watchProxy` stays what `page` and `session` are built from.
+`watchProxy` stays what `tab` and `session` are built from.
 
 ### The host rule — three environments, three answers
 
@@ -166,7 +166,7 @@ answered when a terminal app asks, not before.
 ```js
 import {
   persisted, now, media, reducedMotion, colorScheme,   // signals
-  page,                                               // watchProxy object
+  tab,                                                // watchProxy object
   visible, size, dropzone,                            // attachments ({@attach})
   hotkey,                                             // listener, scoped
   copy, share, download, pickFiles, objectUrl,        // actions, Promise or value
@@ -181,7 +181,7 @@ import { title, meta, prefs } from '@frontierjs/sierra/router'   // #9, #1's pre
 | Shape | Read as | Server | Example |
 | --- | --- | --- | --- |
 | **signal** — an object with getters, each read tracked | `persisted('rail').value`, `media(q).matches` | default | #1 #2 #3 |
-| **object** — `watchProxy`-backed, like `session` | `page.online` | defaults | #8 |
+| **object** — `watchProxy`-backed, like `session` | `tab.online` | defaults | #8 |
 | **attachment** — `(el) => cleanup`, used as `{@attach visible(cb)}` | `{@attach visible(() => resource.more())}` | never runs (`attach()` is off the SSR path) | #4 #7 drop |
 | **action** — a function returning a `Promise<Result>` or a value, never throwing for a missing API | `const r = await copy(text); r.via === 'execCommand'` | refused by name: an action has no server meaning | #6 #7 pick |
 
@@ -199,16 +199,18 @@ persisted(key, fallback, { parse = JSON.parse, format = JSON.stringify } = {})
 // `key` is checked against /redact's credential predicate and a match THROWS
 // by name: junction's tokenStorage owns tokens, and a token in a namespace
 // nothing clears on sign-out is the failure. Cross-tab: `storage` event →
-// update. A blocked or full localStorage reads the fallback, writes nowhere
-// and warns once per key.
-// The stored key is `${prefix}${key}` and the prefix is sierra's (Q2):
-// setPrefix(p) is called once by sierra's router boot from config, the way
-// the theme switch is configured; with no sierra, the prefix is ''.
+// update. A blocked or full localStorage warns once per key and holds a
+// refused write in memory for the tab — the toggle works, it is not saved.
+// The stored key is `${prefix}:${key}` and the prefix is sierra's (Q2):
+// initRouter calls setPrefix(options.prefix), which virtual:sierra fills from
+// config.prefix or the nearest package.json name; with no sierra, keys are
+// bare. The prefix is read at every access, since a store module calling
+// persisted() at import runs before the boot.
 
 // #2 — one interval per resolution, parked while hidden
 now({ every = 1000 } = {})  → { value }          // ms since epoch
 // All readers of `every: 1000` share one setInterval; it is cleared when
-// page.visible goes false and restarted (with an immediate tick) when it
+// tab.visible goes false and restarted (with an immediate tick) when it
 // returns, so a tab brought back shows no stale minute.
 
 // #3 — media
@@ -245,9 +247,10 @@ objectUrl(fileOrBlob)                          → string, revoked on onCleanup
 // Each File is graded by /mime sniff against its name; a mismatch is in the
 // returned list as `file.sniffed`, not thrown, since the caller decides.
 
-// #8 — the page
-page  → { online, visible, focused }    // watchProxy; one listener set, shared
-// bindWindow('online') reads page.online rather than its own listener.
+// #8 — the tab. `page` is the router's (`FJS-D1122`)
+tab   → { online, visible, focused }    // watched like session; one listener set, shared
+// Armed by the first read, held for the tab. `online` is navigator.onLine —
+// the interface, not the server; <mesa:window bind:online> is removed.
 
 // #9 — the head (sierra, /router)
 title(fn)   // fn() → string; the route's title with the app suffix appended
@@ -265,13 +268,13 @@ packages/mesa/src/
   browser/
     index.js           the surface; re-exports the files below
     persisted.js       #1  — setPrefix(), the credential refusal via toolbelt /redact
-    clock.js           #2  — the interval pool, parked on page.visible
+    clock.js           #2  — the interval pool, parked on tab.visible
     media.js           #3
     observers.js       #4  — the two pools; $$virtualEach imports this one
     hotkey.js          #5  — chord parser is toolbelt /chord (new, pure)
     out.js             #6
     files.js           #7
-    page.js            #8
+    tab.js             #8
     result.js          { ok, via, reason } — one shape, one place
     browser.d.ts       the types; each wrapper's SSR answer is in its doc comment
 packages/mesa/test/browser/kit/     one spec per wrapper on the shared CDP harness
@@ -286,11 +289,10 @@ packages/ui/                        consumers: CopyButton, CommandPalette, Popov
 
 | Today | After |
 | --- | --- |
-| `bindWindow` eight listeners | `subscribe` + `page` |
+| `bindWindow` eight listeners, `online` among them | `subscribe` over seven props; `online` is `tab.online` and `bind:online` is a compile error (`FJS-D1122`) |
 | `$$virtualEach`'s own `IntersectionObserver` | `observers.js` pool, relative import |
 | sierra `islands/loader.js`, `router/prefetch.js`, `mcp/index.js` observers | `visible()` / `size()` |
 | sierra `theme/index.js` `localStorage` + `matchMedia` | `persisted()` + `colorScheme`; `theme.key` stays the key, the prefix comes off it |
-| sierra `resource/offline.js` and the live store's `onLine` | `page.online` |
 | `ui/utils.js` `download()` | `browser/out.js` |
 | 15 kit `document` keydown bindings | `hotkey()` |
 | `FileUpload`'s object URL | `objectUrl()`, revoked |
@@ -301,8 +303,8 @@ Mesa's browser drive on the shared CDP harness, one spec per wrapper, each
 flipping the real condition: resize the viewport (`size`), emulate
 `prefers-color-scheme` and `prefers-reduced-motion` (CDP
 `Emulation.setEmulatedMedia`), `Network.emulateNetworkConditions` offline
-(`page.online`), a second tab writing `localStorage` (`persisted` cross-tab,
-over `browser.newPage`), `Page.setWebLifecycleState` hidden (`now` parks),
+(`tab.online`), a second tab writing `localStorage` (`persisted` cross-tab,
+over `browser.newPage`), another tab activated with the drive's focus emulation off (`now` parks; `tab.visible` and `.focused` go false),
 `Input.dispatchKeyEvent` chords (`hotkey`), a dropped file via
 `DOM.setFileInputFiles` (`pickFiles`). The SSR half is one vitest file:
 `renderToHTML` of a fixture reading every wrapper asserts defaults and that no
@@ -340,8 +342,8 @@ listener was added to the happy-dom window. **A wrapper with no drive is
    on a terminal it throws by name rather than lying.
 8. **Failure** — a credential key handed to `persisted()` is refused by name;
    a missing API falls back and says so in `Result.via` rather than throwing;
-   storage quota or a blocked `localStorage` reads the default and writes
-   nowhere, which is a warning, since the page still works; a terminal call is
+   storage quota or a blocked `localStorage` holds the write for the tab and
+   saves nothing, which is a warning, since the page still works; a terminal call is
    a refusal, since a parked hotkey is destructive silence.
 9. **Silence** — a wrapper that reports the wrong value nothing would notice.
    The artefact is § The drive: one spec per wrapper flipping the real
@@ -410,16 +412,16 @@ Done when: `bindWindow` runs on `subscribe(start)`, mesa's browser drive still p
 - [x] 0.1 `subscribe(start)` in `runtime.js`, server-safe; `isBrowserClient()` and `delegationRootOf(el)` exported beside it — `test/subscribe.test.js`
 - [x] 0.2 Rewrite `bindWindow` on it; `<mesa:window>` unchanged
 - [x] 0.3 Rule Q1–Q7 — `FJS-D1097` (Q1, Q2, Q6, Q7), `FJS-D1099` (Q3–Q5)
-- [ ] 0.4 `src/browser/index.js` + `result.js` + `browser.d.ts` scaffolded, the `exports` line, the empty `test/browser/kit/` runner wired into `test:browser`
+- [x] 0.4 `src/browser/index.js` + `result.js` + `browser.d.ts` scaffolded, the `exports` line, the empty `test/browser/kit/` runner wired into `test:browser`
 
 ### Phase 1 — The signals
 
 Goal: #1, #2, #3 and #8 — the four that are a signal and nothing else.
 Done when: each has a drive on the CDP harness flipping the real condition, the SSR vitest shows defaults and no listener, and the theme switch reads #1 and #3 instead of its own copies.
 
-- [ ] 1.1 `persisted()` with the credential refusal and cross-tab sync; `setPrefix()` and sierra's `prefix` config per Q2
-- [ ] 1.2 `page` — online, visible, focused; `bindWindow('online')` and sierra `offline.js` read it
-- [ ] 1.3 `now()` on one interval per resolution, parked on `page.visible`
+- [x] 1.1 `persisted()` with the credential refusal and cross-tab sync; `setPrefix()` and sierra's `prefix` config per Q2 — kit drive `persisted` (15 rows); SSR half owed to the phase's vitest
+- [x] 1.2 `tab` — online, visible, focused (`FJS-D1122`: `page` is the router's; `bind:online` removed, the compiler refuses an unbound prop) — kit drive `tab` (11 rows); SSR half owed to the phase's vitest
+- [ ] 1.3 `now()` on one interval per resolution, parked on `tab.visible`
 - [ ] 1.4 `media()`, `reducedMotion`, `colorScheme`; `breakpoint()` per Q3 — css's `breakpoints` table in `vocabulary.js` first, and its spec grading every literal `@media` width in `src/`
 - [ ] 1.5 The theme switch moved onto 1.1 and 1.4
 

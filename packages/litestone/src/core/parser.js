@@ -8771,28 +8771,68 @@ export function hasImports(text) {
  * rather than silently describing a smaller schema.
  */
 export function inlineImports(text, parent, opts, into = null) {
+  return inlineTraced(text, parent, opts, into).text
+}
+
+/**
+ * `inlineImports` that also answers where each line of the splice came from:
+ * `origins[i]` is the `{ file, line }` of line `i`. A line of a spliced text is
+ * otherwise a number that exists in no file, so a report keyed on it points at
+ * a line of whichever file happens to be that long.
+ */
+function inlineTraced(text, parent, opts, into = null) {
   // This file's OWN models are retargeted before its imports are expanded, so a
   // nested `into` cannot be overwritten by the outer one — the same nearest-wins
   // rule parseFile applies to the AST. Retargeting after the splice would rewrite
   // the child's destination back to the parent's.
-  const own = into ? retargetDbText(text, into) : text
+  const ownFrom = []        // own line i came from line ownFrom[i] of `text`
+  const own     = into ? retargetDbText(text, into, ownFrom) : text
+  const lineOf  = (i) => ({ file: parent, line: (ownFrom[i] ?? i) + 1 })
 
-  return own.replace(IMPORT_LINE, (_line, spec, childInto) => {
+  let out     = ''
+  let origins = []
+  let at      = 0           // how much of `own` is consumed
+  let ownLine = 0           // newlines in own[0..at)
+
+  // A piece continues the line the splice is already on, so its first line has
+  // an origin already and only the lines after it add one.
+  const append = (piece, pieceOrigins) => {
+    if (!piece) return
+    const n = piece.split('\n').length
+    for (let j = out ? 1 : 0; j < n; j++) origins.push(pieceOrigins(j))
+    out += piece
+  }
+  const ownPiece = (to) => {
+    const piece = own.slice(at, to)
+    const base  = ownLine
+    append(piece, j => lineOf(base + j))
+    ownLine += piece.split('\n').length - 1
+    at = to
+  }
+
+  for (const m of own.matchAll(IMPORT_LINE)) {
+    const [line, spec, childInto] = m
+    ownPiece(m.index)
+    at += line.length
     const child = opts.resolveChild(parent, spec)
-    if (child === null) { opts.missing.push(spec); return '' }
-    if (opts.seen.has(child)) return ''         // already inlined — and cycles end here
+    if (child === null) { opts.missing.push(spec); continue }
+    if (opts.seen.has(child)) continue          // already inlined — and cycles end here
     opts.seen.add(child)
     const source = opts.read(child)
-    if (source === null) { opts.missing.push(spec); return '' }
+    if (source === null) { opts.missing.push(spec); continue }
     // An import with no `into` of its own inherits the one it was reached by.
-    const spliced = inlineImports(source, child, opts, childInto ?? into)
+    const spliced = inlineTraced(source, child, opts, childInto ?? into)
     // parseFile's `shippedBy`, for a caller that parses the splice: each model
     // a package's text brought in, by name, the innermost package first.
     if (opts.shipped && !RELATIVE_SPEC.test(spec) && !isAbsolute(spec))
-      for (const [, name] of spliced.matchAll(MODEL_NAME))
+      for (const [, name] of spliced.text.matchAll(MODEL_NAME))
         if (!opts.shipped.has(name)) opts.shipped.set(name, spec)
-    return spliced
-  })
+    append(spliced.text, j => spliced.origins[j])
+  }
+  ownPiece(own.length)
+
+  if (!origins.length) origins = [lineOf(0)]
+  return { text: out, origins }
 }
 
 const MODEL_NAME = /^[ \t]*model\s+([A-Za-z_]\w*)\s*\{/gm
@@ -8813,7 +8853,9 @@ export function markShipped(schema, shipped) {
 const BLOCK_OPEN = /^[ \t]*(?:model|view)\s+[A-Za-z_]\w*\s*\{/
 const DB_ATTR    = /^([ \t]*)@@db\(\s*[A-Za-z_]\w*\s*\)[ \t]*$/
 
-function retargetDbText(text, db) {
+// `from`, when given, is filled with the index in `text` each output line came
+// from; a line added here answers with the block's opening line.
+function retargetDbText(text, db, from = []) {
   const out    = []
   let   openAt = -1        // index in `out` of the open block's first line
   let   hasDb  = false
@@ -8824,35 +8866,43 @@ function retargetDbText(text, db) {
     if (openAt >= 0 && !hasDb) {
       const indent = (out[openAt].match(/^[ \t]*/)?.[0] ?? '') + '  '
       out.splice(openAt + 1, 0, `${indent}@@db(${db})`)
+      from.splice(openAt + 1, 0, from[openAt])
     }
     openAt = -1
     hasDb  = false
   }
 
-  for (const line of text.split('\n')) {
+  const lines = text.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     if (BLOCK_OPEN.test(line)) {
       finish()
       out.push(line)
+      from.push(i)
       openAt = out.length - 1
     } else if (openAt >= 0 && DB_ATTR.test(line)) {
       out.push(line.replace(DB_ATTR, `$1@@db(${db})`))
+      from.push(i)
       hasDb = true
     } else if (openAt >= 0 && /^[ \t]*\}/.test(line)) {
       out.push(line)
+      from.push(i)
       finish()
     } else {
       out.push(line)
+      from.push(i)
     }
   }
   finish()
   return out.join('\n')
 }
 
-/** inlineImports against the working tree. Returns the text and what was missing. */
+/** inlineImports against the working tree. Returns the text, where each of its
+ *  lines came from (`origins`), and what was missing. */
 export function inlineImportsFromDisk(filePath) {
   const abs     = resolve(filePath)
   const missing = []
-  const text    = inlineImports(readFileSync(abs, 'utf8'), abs, {
+  const { text, origins } = inlineTraced(readFileSync(abs, 'utf8'), abs, {
     // The same resolver parseFile uses, so a bare package specifier follows to
     // the same file in both — otherwise a schema parses and its test environment
     // does not, or worse, quietly describes less.
@@ -8861,7 +8911,7 @@ export function inlineImportsFromDisk(filePath) {
     seen:         new Set([abs]),
     missing,
   })
-  return { text, missing }
+  return { text, origins, missing }
 }
 
 export function parseFile(filePath) {

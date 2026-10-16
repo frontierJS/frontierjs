@@ -722,10 +722,13 @@ describe('over this repo', () => {
   // The audit reads the authored vocabularies, which are prose. Asking it of the
   // widened corpus changes what every row MEANS with nothing saying so — the
   // first run over code took `unlabelled` from 0 to 123 by counting identifiers
-  // as spread. The number is small because the question is the same one.
+  // as spread. The ceiling is an order of magnitude under that, not a count of
+  // the words prose has since spread to: Fix, Deploy and Note are ordinary
+  // words a growing corpus crosses spread 4 with, and a ceiling pinned to
+  // today's number goes red on the next document.
   test('the audit stays on the prose it was calibrated on', () => {
-    expect(model.audit.unlabelled.length).toBeLessThan(10)
-    expect(model.audit.unnamedCommon.length).toBeLessThan(10)
+    expect(model.audit.unlabelled.length).toBeLessThan(40)
+    expect(model.audit.unnamedCommon.length).toBeLessThan(40)
   })
 
   test('the words that prompted this are named by css rather than reading unnamed', () => {

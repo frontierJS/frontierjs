@@ -35,7 +35,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from '
 import { spawnSync }                                                  from 'child_process'
 import { join, relative, basename, extname, resolve, dirname } from 'path'
 
-import { singularize, modelName, camel } from '@frontierjs/toolbelt/inflect'
+import { singularize, pluralize, modelName, camel } from '@frontierjs/toolbelt/inflect'
 import { parseFrontmatter }                from '@frontierjs/toolbelt/frontmatter'
 
 // ─── the rule table ───────────────────────────────────────────────────────────
@@ -52,7 +52,8 @@ export { findApps } from './runnables.js'
 import { runnables, findApps }    from './runnables.js'
 import { appSchemaViews, appSchemaModels, shippedSchemas } from './app-schema.js'
 import { binCommand }                 from './snapshots.js'
-import { DRIVES_FILE, readProofs, resolveRun } from './proofs.js'
+import { DRIVES_FILE, readProofs, resolveRun, reachable, rottedPaths, packageDirs } from './proofs.js'
+import { treePaths }              from './tree.js'
 import { readPreambles, resolveNeeds } from './preflight.js'
 import { readCourse }             from './tutorial.js'
 import { declaredLogDatabases }        from './db-preflight.js'
@@ -121,6 +122,8 @@ export const RULES = [
     title: 'a per-call header is declared in http.callHeaders' },
   { id: 'service-model',        scope: 'app',  severity: 'error', invariant: 2,
     title: 'a service resolves to the model whose @@gate grades it' },
+  { id: 'auth-service-collision', scope: 'app', severity: 'warn', invariant: null,
+    title: 'no model derives the name of a service @frontierjs/auth registers' },
   { id: 'service-definition',   scope: 'app',  severity: 'error', invariant: null,
     title: 'a service file default-exports a definition, never a factory (FJS-D1079)' },
   { id: 'resource-model-miss',  scope: 'app',  severity: 'error', invariant: 2,
@@ -192,7 +195,7 @@ export const RULES = [
   { id: 'docs-index',           scope: 'repo', severity: 'warn',  invariant: 17,
     title: 'a docs/ index links every page beside it' },
   { id: 'proof-target',         scope: 'repo', severity: 'error', invariant: null,
-    title: 'every drive the proof table names still exists' },
+    title: 'every drive the proof table names still exists, and every row can be hit' },
   { id: 'proof-drive-named',    scope: 'repo', severity: 'warn',  invariant: null,
     title: 'every drive is named by some row of the proof table' },
   { id: 'drive-preamble',       scope: 'repo', severity: 'error', invariant: null,
@@ -1782,6 +1785,53 @@ const CHECKS = {
     return { findings }
   },
 
+  // `createAuthPlugin` registers six services, and `start()` refuses an app that
+  // already has one of the same name. The name an app's own service for a model
+  // takes is the model's plural, so `model Connection` (a third-party grant)
+  // derives `connections`, which is auth's list of linked sign-in providers. The
+  // refusal at boot is clear, but the collision is decidable from the schema and
+  // the plugin call, before any service is written (`FJS-2237`).
+  //
+  // A WARNING: a model with no service of its own collides with nothing. The
+  // models auth ships are exempt, since `sessions` is the service over `Session`.
+  // The names are auth's `DEFAULT_SERVICE_NAMES`, held equal by a test, because
+  // this package depends on no auth.
+  'auth-service-collision': ({ root }) => {
+    if (!schemaFile(root)) return { skipped: 'no db/schema.lite' }
+
+    let call = null
+    for (const path of scripts(root, 'api')) {
+      const code = readCode(path)
+      const m = code.match(/\bcreateAuthPlugin\s*\(/)
+      if (m) { call = spanFrom(code, m.index + m[0].length - 1); break }
+    }
+    if (call === null) return { skipped: 'no createAuthPlugin under api/' }
+    if (/\bservices\s*:\s*false\b/.test(call)) return { findings: [] }
+
+    const ships = new Set()
+    for (const dep of shippedSchemas(root)) {
+      if (dep.pkg === '@frontierjs/auth') for (const m of models(dep)) ships.add(m.name)
+    }
+
+    const findings = []
+    for (const model of appSchemaModels(root)) {
+      if (model.external || model.origin !== 'app' || ships.has(model.name)) continue
+      const derived = camel(pluralize(model.name))
+      for (const [key, service] of Object.entries(AUTH_SERVICES)) {
+        if (camel(service) !== derived) continue
+        if (new RegExp(`\\b${key}\\s*:\\s*(false|['"\`])`).test(call)) continue
+        findings.push({
+          file: join(root, model.file), line: model.line,
+          message: `model ${model.name} derives the service name '${derived}', which createAuthPlugin ` +
+                   `already registers, and start() refuses an app holding two. Name your own service ` +
+                   `differently, or give auth's another name or none: createAuthPlugin(auth, ` +
+                   `{ services: { ${key}: false } }).`,
+        })
+      }
+    }
+    return { findings }
+  },
+
   // `FJS-D1079`: `createService(def)` returns the definition and a service file
   // `export default`s it; the registry builds it and the loader reads nothing
   // else. A file that exports a `create*Service` factory, default-exports a
@@ -2806,8 +2856,30 @@ const CHECKS = {
   'proof-target': ({ root }) => {
     const rows     = safeRunnables(root)
     const findings = []
+    const packages = packageDirs(root)
+    // No git means no answer about what a clone holds, so the rot half is skipped.
+    const tree     = treePaths(root)
 
     for (const p of readProofs(root)) {
+      // The Changed column is the half a diff has to hit, and it fails silently
+      // both ways: a cell nothing can match is a row `fli proves` never prints,
+      // and a path that moved matches nothing from the day it moved.
+      if (!reachable(p.changed, packages)) {
+        findings.push({
+          file: join(root, DRIVES_FILE), line: p.line,
+          message: `the proof table row for "${p.changed}" can be hit by no change: it has no backticked path, ` +
+                   'no package name in its leading words and no backticked symbol of four or more characters, ' +
+                   'so `fli proves` never prints it. Name the package first, or backtick a path or symbol the change touches.',
+        })
+      }
+      for (const dead of tree ? rottedPaths(p.changed, tree) : []) {
+        findings.push({
+          file: join(root, DRIVES_FILE), line: p.line,
+          message: `the proof table row for "${p.changed}" names \`${dead}\`, and no file in the tree is that path. ` +
+                   'A path that moved matches no diff from then on, so the row stops being printed.',
+        })
+      }
+
       const targets = resolveRun(p.run, { root, rows })
       // Targets are read only after a `where` anchor, so a cell with none reads
       // as zero targets: `fli proves` lists the row with nothing to run.
@@ -3198,9 +3270,9 @@ const CHECKS = {
   // would have stored every provider access and refresh token unencrypted. Its
   // 137 tests were green either side of the divergence (`FJS-483`).
   //
-  // A WARNING, because a deviation can be right: basecamp declares `accountId`
-  // as `String?` against auth's `Int?` and has to, since its `Account.id` is a
-  // uuid. So both declarations are printed and the reader judges — the same
+  // A WARNING, because a deviation can be right: maidtech's `role` is written
+  // by an owner where auth's is written by an admin. So both declarations are
+  // printed and the reader judges — the same
   // reasoning `model-name-plural` is a warning for. `check-baseline.json` is how
   // an app accepts the ones it has argued for.
   //
@@ -4775,6 +4847,13 @@ function modelResolver(schema, root) {
   const modelNamed = (pascal) => known.get(pascal.toLowerCase()) ?? null
 
   return { resolves, modelNamed }
+}
+
+// The services `createAuthPlugin` registers, by the option key that renames or
+// drops each. `auth-service-collision` reads it; a test holds it to auth's own.
+export const AUTH_SERVICES = {
+  account: 'account', sessions: 'sessions', apiKeys: 'api-keys',
+  connections: 'connections', accountRecovery: 'account-recovery', people: 'people',
 }
 
 // The level scale, as the @@gate grammar spells it. Litestone owns the numbers;

@@ -1,0 +1,17 @@
+<script>
+  import Inner from './Inner.mesa'
+  let hits = 0
+</script>
+<!--
+  A nested island. The server render wraps BOTH of these in markers, one inside
+  the other; on the client this component's own render calls Inner directly,
+  because Mesa's island() short-circuits when it is already on the client. So
+  Inner is live the moment Outer mounts — before its own client:idle fires.
+-->
+<section id="outer-box">
+  <button id="outer" onclick={() => hits++}>Outer: {hits}</button>
+  <Inner client:idle />
+</section>
+<style>
+  section { background: rgb(1, 2, 3); }
+</style>

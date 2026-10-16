@@ -1425,14 +1425,26 @@ function applyValidators(schema, attributes) {
       case 'lte':
         if (attr.value != null) schema.maximum = attr.value
         break
+      // The `pattern` enforces; the `x-` key beside it carries the literal, which
+      // a regex cannot be read back into. Without it a refusal can only say
+      // "not in the expected format" and never what the value needed.
       case 'startsWith':
-        if (attr.text) schema.pattern = `^${escapeRegex(attr.text)}`
+        if (attr.text) {
+          schema.pattern = `^${escapeRegex(attr.text)}`
+          schema['x-starts-with'] = attr.text
+        }
         break
       case 'endsWith':
-        if (attr.text) schema.pattern = `${escapeRegex(attr.text)}$`
+        if (attr.text) {
+          schema.pattern = `${escapeRegex(attr.text)}$`
+          schema['x-ends-with'] = attr.text
+        }
         break
       case 'contains':
-        if (attr.text) schema.pattern = escapeRegex(attr.text)
+        if (attr.text) {
+          schema.pattern = escapeRegex(attr.text)
+          schema['x-contains'] = attr.text
+        }
         break
       // Array validators
       case 'minItems':

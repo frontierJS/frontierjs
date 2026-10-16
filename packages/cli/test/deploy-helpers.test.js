@@ -69,16 +69,36 @@ describe('loadFrontierConfig', () => {
     expect(result.deploy.server).toBe('myapp.com')
   })
 
-  test('returns null and warns when config is malformed', async () => {
+  // FJS-1932: a file that is there and will not load is a refusal, not "no
+  // config" -- null here sent a deploy on to defaults after a yellow warning.
+  test('refuses, naming the file, when config is malformed', async () => {
     writeFileSync(resolve(TMP, 'frontier.config.js'), 'export default {{{invalid')
-    const result = await loadFrontierConfig(TMP)
-    expect(result).toBeNull()
+    await expect(loadFrontierConfig(TMP)).rejects.toThrow(/frontier\.config\.js could not be loaded/)
   })
 
-  test('returns null when config has no default export', async () => {
+  test('refuses when config has no default export', async () => {
     writeFileSync(resolve(TMP, 'frontier.config.js'), 'export const x = 1\n')
-    const result = await loadFrontierConfig(TMP)
-    expect(result).toBeNull()
+    await expect(loadFrontierConfig(TMP)).rejects.toThrow(/frontier\.config\.js .*default/)
+  })
+
+  test('refuses a default export that is not an object', async () => {
+    writeFileSync(resolve(TMP, 'frontier.config.js'), 'export default ["deploy"]\n')
+    await expect(loadFrontierConfig(TMP)).rejects.toThrow(/frontier\.config\.js .*object/)
+  })
+
+  test('refuses an unknown top-level key by name, pointing at its bucket', async () => {
+    writeConfig({ deploy: { server: 'myapp.com' }, services: { include: ['User'] } })
+    await expect(loadFrontierConfig(TMP)).rejects.toThrow(/frontier\.config\.js has no key "services".*schema\.lite/)
+  })
+
+  test('an env-shaped key points at env', async () => {
+    writeConfig({ deploy: { server: 'myapp.com' }, DATABASE_URL: './x.db' })
+    await expect(loadFrontierConfig(TMP)).rejects.toThrow(/no key "DATABASE_URL".*env/)
+  })
+
+  test('a junction.config.js key points at junction.config.js', async () => {
+    writeConfig({ plugins: ['@frontierjs/auth'] })
+    await expect(loadFrontierConfig(TMP)).rejects.toThrow(/no key "plugins".*junction\.config\.js/)
   })
 
   test('reads nested deploy block correctly', async () => {

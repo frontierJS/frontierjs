@@ -85,6 +85,9 @@ const _CARRIED = [
   // this key exists only to pick the control, because `<input type="time">`
   // shows a seconds box or does not and nothing in a pattern says which.
   'x-time',
+  // `@startsWith`/`@endsWith`/`@contains`: the `pattern` enforces, and these
+  // carry the literal so the refusal can name it.
+  'x-starts-with', 'x-ends-with', 'x-contains',
   // `@trim`/`@lower`/`@upper`/`@slug`, in order. The checks below grade the
   // value AFTER these, as the Data boundary does; without them a person typing
   // `W` into a `@lower` field with a lowercase `@regex` cannot save it and is
@@ -1627,6 +1630,16 @@ function _say(rule, keyword, fallback) {
 const _required = (name, rule) =>
   _say(rule, 'required', `${fieldLabel(name, rule)} is required`)
 
+// Two affix rules on one column share the one `pattern` slot, so each literal
+// is judged on its own: the sentence names the first one the value misses.
+function _patternSentence(label, rule, value) {
+  const s = rule['x-starts-with'], e = rule['x-ends-with'], c = rule['x-contains']
+  if (typeof s === 'string' && !value.startsWith(s)) return `${label} must start with "${s}"`
+  if (typeof e === 'string' && !value.endsWith(e))   return `${label} must end with "${e}"`
+  if (typeof c === 'string' && !value.includes(c))   return `${label} must contain "${c}"`
+  return `${label} is not in the expected format`
+}
+
 function _checkConstraints(name, rule, value, errors) {
   const label = fieldLabel(name, rule)
   const add = (message) => errors.push({ field: name, message })
@@ -1644,7 +1657,7 @@ function _checkConstraints(name, rule, value, errors) {
     if (rule.pattern) {
       let re = null
       try { re = new RegExp(rule.pattern) } catch { re = null }
-      if (re && !re.test(value)) say('pattern', `${label} is not in the expected format`)
+      if (re && !re.test(value)) say('pattern', _patternSentence(label, rule, value))
     }
     if (rule.format === 'email' && !_EMAIL.test(value)) say('format', `${label} must be a valid email address`)
     if (rule.format === 'uri') {

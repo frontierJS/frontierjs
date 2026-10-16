@@ -5,9 +5,9 @@
  *
  * - **Colors.** The device paints nothing for any `oklch()`, literal or
  *   relative, and nothing for a `color-mix()` it cannot read (§ 11). Every
- *   `oklch()`, `oklab()` and `color-mix()` whose arguments are literal is
- *   computed by CSS Color 4's formulas and written as `rgb()`/`rgba()`, which
- *   the device paints. A color outside sRGB is clipped per channel, as Chrome
+ *   `oklch()`, `oklab()`, `color()` and `color-mix()` whose arguments are
+ *   literal is computed by CSS Color 4's formulas and written as
+ *   `rgb()`/`rgba()`, which the device paints. A color outside sRGB is clipped per channel, as Chrome
  *   paints it. One that reads `currentColor` or an unknown name cannot be
  *   computed here, and comes back on `kept` by line.
  * - **Logical properties.** Each is written as its physical property for
@@ -19,7 +19,7 @@
  * sides, which is wrong when the token itself holds two values.
  */
 
-const COLOR_FN = /(?<![\w-])(oklch|oklab|color-mix)\(/g
+const COLOR_FN = /(?<![\w-])(oklch|oklab|color-mix|color)\(/g
 
 /** `{ rules, kept }`: the same rules with colors computed and logical properties physical; `kept` is `{ what, line }` per color left as written. */
 export function lowerValues(rules) {
@@ -70,6 +70,7 @@ export function parseColor(text) {
   if (name === 'color-mix') return mix(inner)
   if (name === 'rgb' || name === 'rgba') return rgbFn(inner)
   if (name === 'oklch' || name === 'oklab') return okFn(name, inner)
+  if (name === 'color') return colorFn(inner)
   return null
 }
 
@@ -117,6 +118,52 @@ function okFn(name, inner) {
   const [L, x, y] = vals
   const lab = name === 'oklch' ? { L, a: x * Math.cos(y * Math.PI / 180), b: x * Math.sin(y * Math.PI / 180) } : { L, a: x, b: y }
   return { ...fromOklab(lab), alpha: clamp01(a) }
+}
+
+// `color()`'s spaces (CSS Color 4 § 10) as linear-light or gamma sRGB.
+// The chip fill reads luminance off xyz-d65's y and branches on it.
+const SPACES = {
+  'srgb':        { keys: 'rgb', to: (c) => [c.r, c.g, c.b], from: ([r, g, b]) => ({ r, g, b }) },
+  'srgb-linear': { keys: 'rgb', to: (c) => [lin(c.r), lin(c.g), lin(c.b)], from: (v) => { const [r, g, b] = v.map(gam); return { r, g, b } } },
+  'xyz-d65':     { keys: 'xyz', to: (c) => mul(TO_XYZ, [lin(c.r), lin(c.g), lin(c.b)]), from: (v) => { const [r, g, b] = mul(FROM_XYZ, v).map(gam); return { r, g, b } } },
+}
+SPACES.xyz = SPACES['xyz-d65']
+const TO_XYZ = [
+  [0.41239079926595934, 0.357584339383878, 0.1804807884018343],
+  [0.21263900587151027, 0.715168678767756, 0.07219231536073371],
+  [0.01933081871559182, 0.11919477979462598, 0.9505321522496607],
+]
+const FROM_XYZ = [
+  [3.2409699419045226, -1.537383177570094, -0.4986107602930034],
+  [-0.9692436362808796, 1.8759675015077202, 0.04155505740717559],
+  [0.05563007969699366, -0.20397695888897652, 1.0569715142428786],
+]
+const mul = (m, v) => m.map(row => row[0] * v[0] + row[1] * v[1] + row[2] * v[2])
+
+/** `color([from <color>] <space> c1 c2 c3 [/ alpha])`. */
+function colorFn(inner) {
+  let base = null
+  if (/^from\s/i.test(inner)) {
+    const rest = inner.slice(4).trim()
+    const end = colorEnd(rest)
+    base = parseColor(rest.slice(0, end))
+    if (!base) return null
+    inner = rest.slice(end).trim()
+  }
+  const sp = inner.match(/^([a-z\d-]+)\s+/i)
+  const space = sp && SPACES[sp[1].toLowerCase()]
+  if (!space) return null
+  const { channels, alpha } = args(inner.slice(sp[0].length))
+  if (channels.length !== 3) return null
+  const env = {}
+  if (base) {
+    space.to(base).forEach((v, i) => { env[space.keys[i]] = v })
+    env.alpha = base.alpha
+  }
+  const vals = channels.map(s => expr(s, env, 1))
+  const a = alpha === undefined ? (base ? base.alpha : 1) : expr(alpha, env, 1)
+  if (vals.some(x => x === null || Number.isNaN(x)) || a === null || Number.isNaN(a)) return null
+  return { ...space.from(vals), alpha: clamp01(a) }
 }
 
 /** `color-mix(in <space>, c1 [p1], c2 [p2])` (CSS Color 5 § 2), premultiplied. */
@@ -206,13 +253,14 @@ const clamp01 = (v) => Math.min(1, Math.max(0, v))
 
 /** A channel expression: a number, a percentage, a channel keyword, `none`, or `calc()`/`clamp()`/`min()`/`max()` over them. */
 function expr(src, env, ref) {
-  const toks = src.match(/-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?(?:%|deg)?|[a-z-]+\(|[a-z]+|[()+*/,-]/gi)
+  const toks = src.match(/(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?(?:%|deg)?|[a-z-]+\(|[a-z]+|[()+*/,-]/gi)
   if (!toks || toks.join('') !== src.replace(/\s+/g, '')) return null
   let i = 0
   const peek = () => toks[i]
   const atom = () => {
     const t = toks[i++]
     if (t === undefined) throw 0
+    if (t === '-') return -atom()
     if (t === '(') { const v = sum(); if (toks[i++] !== ')') throw 0; return v }
     if (t.endsWith('(')) {
       const fn = t.slice(0, -1).toLowerCase()
@@ -228,6 +276,7 @@ function expr(src, env, ref) {
     if (/^[a-z]+$/i.test(t)) {
       const k = t.toLowerCase()
       if (k === 'none') return 0
+      if (k === 'infinity') return Infinity
       if (k in env) return env[k]
       throw 0
     }

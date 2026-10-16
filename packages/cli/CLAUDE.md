@@ -274,6 +274,8 @@ core/
                 row's, via `workspaceDeps` in runnables.js), every term printed with its
                 row. `WEIGHTS` is one frozen table and no flag moves it. A
                 `by hand` segment stays ranked as `byHand`; `fix:loop` skips it.
+                `env: <cause>` is the sibling, `ENV_CAUSES` the closed list it
+                is counted by, and `register-check` grades it
                 Proposals are not ranked; nothing measurable separates them
   register-atlas.js  the registers as one page to work from — `register:atlas`,
                 for any project declaring `registers`, not only this workspace.

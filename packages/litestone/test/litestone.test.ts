@@ -21218,6 +21218,20 @@ describe('aggregate()', () => {
     db.$close()
   })
 
+  // FJS-2173: Prisma's `_count: { _all: true }` answered a bare number where
+  // Prisma answers { _all: n }, and `{ bogus: true }` answered the same.
+  test('_count takes true or { distinct } and refuses any other object by name', async () => {
+    const db = await makeDb(AGG_SCHEMA, 'agg-count-shape')
+    await db.order.create({ data: { id: 1, amount: 10, status: 'paid', accountId: 1 } })
+    for (const bad of [{ _all: true }, { bogus: true }, {}, { distinct: 'accountId', _all: true }, ['accountId']]) {
+      await expect(db.order.aggregate({ _count: bad as any })).rejects.toThrow(/_count: true/)
+      await expect(db.order.groupBy({ by: ['status'], _count: bad as any })).rejects.toThrow(/_count: true/)
+    }
+    expect((await db.order.aggregate({ _count: true }))._count).toBe(1)
+    expect((await db.order.aggregate({ _count: { distinct: 'accountId' } }))._count).toBe(1)
+    db.$close()
+  })
+
   test('_stringAgg', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-strAgg')
     await db.order.createMany({ data: [
@@ -26249,6 +26263,38 @@ model Site { id Int @id  url String @default("http://x.test") @length(1, 200) }
     expect(all.length).toBeGreaterThan(0)
     for (const m of all) expect(m.text).toContain('http://x.test')
     expect(all.every((m: any) => m.parses)).toBe(true)
+  })
+
+  // FJS-2053: a FIELD named `model` is not a model declaration.
+  test('a field named model does not rename the model it sits in', async () => {
+    const { schemaMutants } = await import('../src/mutate.js')
+    const all = schemaMutants(`
+enum ChargeModel { standard graduated }
+model Charge {
+  id    Int @id
+  model ChargeModel @default(standard)
+  code  String @unique
+  @@gate(read: 1, create: 3)
+}
+`)
+    expect(all.length).toBeGreaterThan(0)
+    for (const m of all) expect(m.model).toBe('Charge')
+  })
+
+  // FJS-2053: a mutant of an imported fragment is reported where the fragment's
+  // own file has it, not at its offset in the inlined text.
+  test('inlineImportsFromDisk maps each line to the file and line it came from', async () => {
+    const { inlineImportsFromDisk } = await import('../src/core/parser.js')
+    const dir = tmpSub('ls-origins-')
+    writeFileSync(join(dir, 'frag.lite'), '// fragment\nmodel Frag {\n  id Int @id\n}\n')
+    writeFileSync(join(dir, 'schema.lite'), 'import "./frag.lite"\n\nmodel App {\n  id Int @id\n}\n')
+    const { text, origins } = inlineImportsFromDisk(join(dir, 'schema.lite'))
+    const lines = text.split('\n')
+    expect(origins.length).toBe(lines.length)
+    const at = (needle: string) => origins[lines.findIndex(l => l.includes(needle))]
+    expect(at('model Frag')).toEqual({ file: join(dir, 'frag.lite'),   line: 2 })
+    expect(at('model App')).toEqual({ file: join(dir, 'schema.lite'), line: 3 })
+    rmSync(dir, { recursive: true, force: true })
   })
 
   // ── the control ────────────────────────────────────────────────────────────

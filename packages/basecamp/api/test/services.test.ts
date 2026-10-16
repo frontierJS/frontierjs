@@ -1109,6 +1109,63 @@ describe('a workspace role is not a thing you may hand yourself', () => {
 // read their parent through the caller's own client, so a row in another
 // workspace answers nothing where an id off a payload used to be written
 // wherever it pointed.
+// FJS-3016. auth's `people` reads a person with no workspace in play, so two
+// workspaces of one Account looked like one tenant and the person was graded
+// VISITOR, which every workspace admin outranks. It re-resolves them through
+// this app's membershipClaim in the operator's workspace now (FJS-D1116).
+describe('auth\'s people service reaches only the operator\'s workspace', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+
+  async function twoWorkspaces() {
+    const sys = env.system as any
+    const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
+    const other = await sys.workspace.create({
+      data: { accountId: wsRow.accountId, name: 'B', slug: `b-${uniq()}`, ownerId: wsRow.ownerId },
+    })
+    const mk = async (memberships: Array<[any, string]>) => {
+      const u = await sys.user.create({ data: { email: `ppl-${uniq()}@x.co`, accountId: wsRow.accountId } })
+      for (const [w, role] of memberships) await sys.workspaceMember.create({
+        data: { workspaceId: w.id, userId: u.id, role, capabilities: grantsFor(role as any),
+                acceptedAt: new Date().toISOString() } })
+      return u
+    }
+    const admin = await mk([[ws, 'admin']])
+    return {
+      people:  env.as(session({ userId: admin.id, workspaceId: ws.id })).service('people'),
+      onlyB:   await mk([[other, 'developer']]),
+      both:    await mk([[ws, 'developer'], [other, 'developer']]),
+      onlyA:   await mk([[ws, 'developer']]),
+      peer:    await mk([[ws, 'admin']]),
+    }
+  }
+  const stillThere = async (u: any) =>
+    (await (env.system as any).user.findFirst({ where: { id: u.id } })) != null
+
+  test('a person only in another workspace of the same account is a miss, and is not deleted', async () => {
+    const { people, onlyB, onlyA } = await twoWorkspaces()
+    await expect(people.get(onlyB.id)).rejects.toThrow(/No user/)
+    await expect(people.call('signOut', onlyB.id, {})).rejects.toThrow(/No user/)
+    await expect(people.remove(onlyB.id)).rejects.toThrow(/No user/)
+    expect(await stillThere(onlyB)).toBe(true)
+
+    expect((await people.get(onlyA.id)).userId).toBe(onlyA.id)
+  })
+
+  test('the person is graded at their role here, so a peer admin is refused', async () => {
+    const { people, peer } = await twoWorkspaces()
+    await expect(people.call('signOut', peer.id, {})).rejects.toThrow(/stands at or above/)
+  })
+
+  test('a person also in another workspace keeps their account; one only here can be removed', async () => {
+    const { people, both, onlyA } = await twoWorkspaces()
+    await expect(people.remove(both.id)).rejects.toThrow(/another tenant/)
+    expect(await stillThere(both)).toBe(true)
+
+    await people.remove(onlyA.id)
+    expect(await stillThere(onlyA)).toBe(false)
+  })
+})
+
 describe('a job runs as whoever asked for it', () => {
   const uniq = () => Math.random().toString(36).slice(2, 8)
 

@@ -13,6 +13,10 @@
  *
  * What a phone does that a browser does not (`IDEAS/mesa-ir.md` §§ 9, 10):
  * - Raw text paints only inside a text element, so `text()` builds one.
+ * - A text element inherits nothing from the view around it, not even
+ *   `color`, unless the bundle is built with `enableCSSInheritance`. That
+ *   option is the build's, so this file cannot see it is missing: every
+ *   label then paints black and nothing reports it.
  * - A write is invisible on a phone until `__FlushElementTree`, so every
  *   mutation schedules one flush per microtask. Lynx for Web ignores it.
  * - A tap's handler runs one microtask after the tap; Mesa's own microtask

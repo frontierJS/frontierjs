@@ -1,0 +1,7 @@
+<script>
+  import { isBrowserClient } from '@frontierjs/mesa/runtime'
+  import * as kit from '@frontierjs/mesa/browser'
+</script>
+
+<p id="client">{String(isBrowserClient())}</p>
+<p id="kit">{typeof kit}</p>

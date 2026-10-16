@@ -109,6 +109,7 @@ export function tokenize(src) {
     if (src.slice(i, i + 2) === '/*') {
       advance(2)
       while (i < src.length && src.slice(i, i + 2) !== '*/') advance()
+      if (i >= src.length) throw new ParseError('Unterminated block comment — no closing */', pos)
       advance(2)
       continue
     }
@@ -179,9 +180,14 @@ export function tokenize(src) {
       advance()
       let str = ''
       while (i < src.length && src[i] !== quote) {
-        if (src[i] === '\\') { advance(); str += STRING_ESCAPES[src[i]] ?? src[i] } else { str += src[i] }
+        if (src[i] === '\\') {
+          advance()
+          if (i >= src.length) break
+          str += STRING_ESCAPES[src[i]] ?? src[i]
+        } else { str += src[i] }
         advance()
       }
+      if (i >= src.length) throw new ParseError(`Unterminated string — no closing ${quote}`, pos)
       advance() // closing quote
       tokens.push({ type: TK.STRING, value: str, ...pos })
       continue

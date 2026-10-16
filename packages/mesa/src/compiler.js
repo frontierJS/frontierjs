@@ -20,6 +20,7 @@ import { lower } from './ir.js'
 import { htmlEntitiesToText } from './entities.js'
 import { buildHost, hostRefusal } from './host/emit.js'
 import { TARGETS } from './host/targets.js'
+import { WINDOW_BINDS } from './window-binds.js'
 
 /**
  * Names a component function may not take. Reserved words are a parse error;
@@ -5386,6 +5387,13 @@ export function buildBlock(data, option = {}) {
                   return
                 }
                 const prop = pname.slice(5)
+                if (!Object.hasOwn(WINDOW_BINDS, prop)) {
+                  ctx.analysis.errors.push(
+                    `mesa:window bind:${prop} — not a bindable window property; ` +
+                    `bind: takes ${Object.keys(WINDOW_BINDS).join(', ')}`
+                  )
+                  return
+                }
                 const varName = p.value ? unwrapExp(p.value) : prop
                 const setter = ctx.setters?.[varName]
                 if (!setter) {

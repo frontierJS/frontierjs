@@ -193,12 +193,27 @@ export function resolveWhere(where, root) {
 // `find` inside `findMany` is not `find()`. A path the row names still matches
 // any file — that is the row saying so.
 
+// What a cell can say, read once for `matchChanged` and for `unreachable` — a
+// grader that restated these would call a row reachable that the matcher cannot hit.
+const backticked  = text => [...text.matchAll(/`([^`]+)`/g)].map(m => m[1])
+const pathTicks   = ticks => ticks.filter(t => /[/.]/.test(t) && !/\s/.test(t))
+const symbolTicks = ticks => ticks
+  .filter(t => /^[A-Za-z_$][\w$.]*(\(\))?$/.test(t))
+  .map(t => t.replace(/\(\)$/, ''))
+  // `id` and `db` appear in every diff ever written.
+  .filter(sym => sym.length >= 4)
+
+/** The packages a cell names in its leading words, up to the first qualifying punctuation. */
+function leadPackages(changedText, packages) {
+  const lead = changedText.toLowerCase().split(/[—·(/]|\s+-\s+/)[0]
+  return packages.filter(p => new RegExp(`(^|\\s)${escapeRe(p.name)}(\\b|'s)`).test(lead))
+}
+
 export function matchChanged(changedText, { files, diff = null, packages = [] }) {
-  const ticks = [...changedText.matchAll(/`([^`]+)`/g)].map(m => m[1])
+  const ticks = backticked(changedText)
   const hits  = []
 
-  for (const t of ticks) {
-    if (!/[/.]/.test(t) || /\s/.test(t)) continue
+  for (const t of pathTicks(ticks)) {
     const token = t.replace(/^\.\//, '')
     // A directory token ends in / and a changed path never does.
     const under = token.endsWith('/')
@@ -210,9 +225,7 @@ export function matchChanged(changedText, { files, diff = null, packages = [] })
 
   const code = files.filter(changesBehavior)
 
-  // The leading words, up to the first punctuation the prose uses to qualify.
-  const lead  = changedText.toLowerCase().split(/[—·(/]|\s+-\s+/)[0]
-  const owned = packages.filter(p => new RegExp(`(^|\\s)${escapeRe(p.name)}(\\b|'s)`).test(lead))
+  const owned = leadPackages(changedText, packages)
 
   if (owned.length) {
     const words = areaWords(changedText, owned)
@@ -228,11 +241,7 @@ export function matchChanged(changedText, { files, diff = null, packages = [] })
 
   if (diff) {
     const text = diffText(diff)
-    for (const t of ticks) {
-      if (!/^[A-Za-z_$][\w$.]*(\(\))?$/.test(t)) continue
-      const sym = t.replace(/\(\)$/, '')
-      // `id` and `db` appear in every diff ever written.
-      if (sym.length < 4) continue
+    for (const sym of symbolTicks(ticks)) {
       if (new RegExp(`(?<![\\w$])${escapeRe(sym)}(?![\\w$])`).test(text)) hits.push({ tier: 'symbol', file: null, on: sym })
     }
   }
@@ -245,6 +254,36 @@ export function matchChanged(changedText, { files, diff = null, packages = [] })
     for (const f of code) if (f.startsWith(`${pkg.dir}/`)) hits.push({ tier: 'package', file: f, on: pkg.name })
   }
   return hits.length ? best(hits) : null
+}
+
+/**
+ * Whether any change could reach this cell: a path token, a package named in the
+ * leading words, or a symbol the symbol tier reads. A cell with none is a row
+ * `fli proves` can never print, whatever the diff — the table loses it silently.
+ */
+export function reachable(changedText, packages) {
+  const ticks = backticked(changedText)
+  return pathTicks(ticks).length > 0 || leadPackages(changedText, packages).length > 0 || symbolTicks(ticks).length > 0
+}
+
+// A FILE or a DIRECTORY the cell names: a slash and either an extension or a
+// trailing slash. `matchChanged` takes every dotted token as a path (`Room.pairLoId`
+// matches nothing, harmlessly), so grading all of them would report a symbol as a
+// moved file. A glob, a URL route and a `@scope/pkg` subpath name no one file.
+const FILE_CLAIM = /^[\w.-][\w./-]*(\/|\.(js|mjs|ts|mesa|lite|md|json|css|html|sql))$/
+
+/** The path claims in a cell that no file in `tree` (`treePaths`) answers to. */
+export function rottedPaths(changedText, tree) {
+  const out = []
+  for (const t of backticked(changedText)) {
+    if (!t.includes('/') || !FILE_CLAIM.test(t)) continue
+    const token = t.replace(/^\.\//, '')
+    const found = token.endsWith('/')
+      ? tree.has(token) || [...tree.files].some(f => f.includes(`/${token}`))
+      : tree.files.has(token) || [...tree.files].some(f => f.endsWith(`/${token}`))
+    if (!found) out.push(t)
+  }
+  return out
 }
 
 // ─── what a change is evidence of ─────────────────────────────────────────────

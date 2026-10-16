@@ -21,6 +21,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { mkdir, writeFile, rm } from 'fs/promises'
+import { realpathSync }         from 'fs'
 import { join, dirname }        from 'path'
 import { fileURLToPath }        from 'url'
 import { createServer }         from 'vite'
@@ -118,5 +119,14 @@ describe('locating Mesa\'s HMR files', () => {
 
   test('a name that is not there answers undefined rather than a guess', () => {
     expect(findMesaFile('mesa-vite/not-a-file.js', TMP)).toBeUndefined()
+  })
+
+  // Mesa's own files import the runtime relatively, from mesa's real
+  // directory. A symlinked path here is a second module id for the same file:
+  // two runtimes in one bundle, and a signal from one read by effects of the
+  // other tracks nothing.
+  test('the runtime is answered at its real path, the one a relative import inside mesa reaches', () => {
+    const real = realpathSync(join(__dirname, '../../mesa/src/runtime.js'))
+    expect(findMesaFile('runtime.js', TMP)).toBe(real)
   })
 })

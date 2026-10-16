@@ -1,0 +1,5 @@
+<script>
+  export let label = 'later'
+  let hits = 0
+</script>
+<button id="later" onclick={() => hits++}>{label}: {hits}</button>

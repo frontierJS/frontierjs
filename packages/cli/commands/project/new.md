@@ -1943,13 +1943,15 @@ ${sc}
   {/if}
 
   <!-- A fresh app has no rows in \`user\`, so the first person to open this
-       page cannot sign in and there is nothing on screen saying why. The other
-       door is the CLI, which is also the only way to mint an ADMIN — register
-       gives everybody role "user", and db/schema.lite gates delete at 5. -->
+       page cannot sign in and there is nothing on screen saying why. The
+       browser cannot count rows, so the hint is worded for a visitor who may
+       already have an account. The other door is the CLI, which is also the
+       only way to mint an ADMIN — register gives everybody role "user", and
+       db/schema.lite gates delete at 5. -->
   {#if import.meta.env.DEV}
     <div class="alert info">
       <div class="alert-content text-sm stack gap-xs">
-        <p>First run? No user exists yet. Either register above, or from the app root:</p>
+        <p>Dev only: no account to sign in with yet? Create one, or from the app root:</p>
         <Code text="fli auth:create-user you@example.com --role admin" />
       </div>
     </div>
@@ -2057,6 +2059,74 @@ ${sc}
     <a class="link text-sm" href="/login/">Back to sign in</a>
   {/if}
 </form>
+
+<style>
+  .auth-card { max-width: var(--auth-card-width, 24rem); margin: var(--space-3xl) auto }
+  h1, p { margin: 0 }
+</style>
+`
+}
+
+// The page a verification link opens. The token is spent by a button, never on
+// load: POST /auth/email/verify exists so a mail scanner that fetches the link
+// cannot burn it, and a page that posted by itself would hand that back.
+function makeRouteVerifyEmail() {
+  return `---
+title: Verify your email
+---
+<script>
+  // String()ed for the reason the reset page gives: a token of digits would
+  // otherwise reach the route as a number it refuses.
+  //
+  // Nothing here signs anybody in; verifying an address is proof of the mailbox
+  // and not of a password.
+  import { page }      from '@frontierjs/sierra/router'
+  import { getClient } from '@frontierjs/sierra/resource'
+
+  $: page.query
+
+  let busy  = false
+  let error = ''
+  let done  = false
+
+  const token = () => String(page.query?.token ?? '')
+
+  async function confirm() {
+    busy  = true
+    error = ''
+    try {
+      await getClient().auth.verifyEmail(token())
+      done = true
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = false
+    }
+  }
+${sc}
+
+<div class="auth-card card stack gap-md">
+  <h1 class="text-xl">Verify your email</h1>
+
+  {#if error}
+    <div class="alert danger" role="alert"><div class="alert-content">{error}</div></div>
+  {/if}
+
+  {#if done}
+    <div class="alert success" role="status">
+      <div class="alert-content">Your email address is confirmed.</div>
+    </div>
+    <a class="btn primary" href="/login/">Sign in</a>
+  {:else if token()}
+    <p class="text-sm text-muted">Confirm that this address is yours.</p>
+    <button class="btn primary" type="button" on:click={confirm} disabled={busy}>
+      {busy ? 'Confirming…' : 'Confirm email'}
+    </button>
+  {:else}
+    <p class="text-sm text-muted">This page needs the link from the verification email.</p>
+    <a class="link text-sm" href="/login/">Back to sign in</a>
+  {/if}
+</div>
 
 <style>
   .auth-card { max-width: var(--auth-card-width, 24rem); margin: var(--space-3xl) auto }
@@ -2605,7 +2675,7 @@ if (flag.ci !== false) dirs.push('.github/workflows')
 if (useWeb) {
   dirs.push('web', 'web/config', 'web/src', 'web/src/lib', 'web/src/routes', 'web/src/components', 'web/public')
   if (useDb) dirs.push('web/src/resources')
-  if (useAuth) dirs.push('web/src/routes/login', 'web/src/routes/register', 'web/src/routes/reset', 'web/src/routes/account')
+  if (useAuth) dirs.push('web/src/routes/login', 'web/src/routes/register', 'web/src/routes/reset', 'web/src/routes/verify-email', 'web/src/routes/account')
 }
 
 for (const d of dirs) {
@@ -2678,6 +2748,7 @@ if (useWeb) {
       ['web/src/routes/login/index.mesa',    makeRouteLogin()],
       ['web/src/routes/register/index.mesa', makeRouteRegister()],
       ['web/src/routes/reset/index.mesa',    makeRouteReset()],
+      ['web/src/routes/verify-email/index.mesa', makeRouteVerifyEmail()],
       ['web/src/routes/account/index.mesa',  makeRouteAccount(useExample)],
     )
   }

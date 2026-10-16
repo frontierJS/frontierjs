@@ -592,8 +592,9 @@ enum NotificationKind {
 // The other four are imported and adjusted with `extend model`; see the
 // section below them.
 //
-// `accountId` is String, not Int. Account.id is a uuid and Int cannot hold it.
-// Safe for auth.ts, which only does String(user.accountId).
+// `accountId` is this app's, not auth's: the fleet Account a workspace is
+// created under, carried onto the session by sessionFields. The tenant is
+// workspaceId, through a membership, so auth neither writes nor reads it.
 //
 // Everything Basecamp adds to User is nullable or defaulted ON PURPOSE:
 // auth's createUser() writes only { email, name, role }, so a required

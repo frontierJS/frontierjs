@@ -13,7 +13,8 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createApp, request } from '@frontierjs/junction'
 import { mcpPlugin } from '../../mcp/src/plugin.ts'
 import { createAuthPlugin } from '../plugin.ts'
-import { makeAuth, type Harness, TEST_KEY } from './harness.ts'
+import { makeAuth, rejectsWith, type Harness, TEST_KEY } from './harness.ts'
+import { AuthConfigError } from '../errors.ts'
 
 const PW = 'pw-people-1'
 
@@ -242,17 +243,62 @@ describe('an administrator invites somebody', () => {
   })
 })
 
-// FJS-2643. Under row tenancy every person carries the app's `accountId`, and
-// `sessionFor` reads the row as the system with no tenant in play — so this
-// is the only thing holding an admin of one account off every other's people.
-// Each refusal re-reads what it could have changed, and is paired with the
-// same call succeeding inside the operator's own account.
+// FJS-2643, FJS-D1116. `sessionFor` reads the row as the system with no
+// tenant in play, so the operator's tenant is the only thing holding an admin
+// of one tenant off every other's people. Two apps, one for each shape a
+// tenancy takes: a column the app adds to User (`accountId`), and a membership row,
+// where one person is in several tenants holding a different role in each
+// (FJS-3016). Each refusal re-reads what it could have changed, and is paired
+// with the same call succeeding inside the operator's own tenant.
+
+const MACHINERY_NOT_TENANTED = ['User', 'Credential', 'Session', 'Verification', 'LoginChallenge', 'OauthFlow', 'AuditTrail']
+  .map(m => `extend model ${m} { @@tenant(none) }`).join('\n')
+
+async function tenantedApp(schema: string, gate: (u: any) => number, principal?: unknown) {
+  const { GatePlugin } = await import('@frontierjs/litestone')
+  const th = await makeAuth(
+    { encryptionKey: TEST_KEY, sessionFields: (u: any) => ({ role: u.role, isAdmin: u.role === 'admin' || u.role === 'sysadmin' }) },
+    undefined,
+    { schema: `\n${schema}\n${MACHINERY_NOT_TENANTED}\n`, plugins: [new GatePlugin({ getLevel: gate })] },
+  )
+  const tapp: any = createApp({
+    db: th.db, auth: th.auth as any,
+    config: { port: 0, services: { dir: '/nonexistent' } },
+    logLevel: 'silent',
+    ...(principal ? { principal } : {}),
+  } as never)
+  tapp.configure(createAuthPlugin(th.auth, { ...rateLimits, services: { standingLevel: gate } }))
+  const warn = console.warn
+  console.warn = () => {}
+  await tapp.start()
+  console.warn = warn
+  return { th, tapp, at: `http://localhost:${tapp.http.port}` }
+}
+
+const call = (at: string, as: string, path: string, method: string, headers: Record<string, string> = {}) =>
+  fetch(`${at}/people${path}`, {
+    method: method === 'get' ? 'GET' : method === 'remove' ? 'DELETE' : 'POST',
+    headers: {
+      authorization: `Bearer ${as}`, ...headers,
+      ...(method === 'get' || method === 'remove' ? {} : { 'content-type': 'application/json', 'x-service-method': method }),
+    },
+    ...(method === 'get' || method === 'remove' ? {} : { body: '{}' }),
+  })
+
 describe('an operator in an account acts inside it (FJS-2643)', () => {
-  async function member(accountId: string, role = 'user') {
+  const accountGate = (u: any) => !u ? 0 : u.role === 'sysadmin' ? 7 : u.isAdmin ? 5 : 4
+  let t: Awaited<ReturnType<typeof tenantedApp>>
+  beforeAll(async () => {
+    t = await tenantedApp(`
+tenancy { strategy row  column accountId  claim accountId }
+extend model User { accountId String? @allow('write', auth().isAdmin) }`, accountGate)
+  })
+  afterAll(async () => { await t.tapp.stop?.(); t.th.cleanup() })
+
+  async function member(accountId: string | null, role = 'user') {
     const email = `acct-${Date.now()}-${seq++}@example.com`
-    const { userId } = await h.auth.createUser({ email, password: PW, role })
-    await h.sys.user.update({ where: { id: userId }, data: { accountId } })
-    const { token } = await h.auth.login(email, PW) as any
+    const { userId } = await t.th.auth.createUser({ email, password: PW, role, ...(accountId ? { tenant: accountId } : {}) })
+    const { token } = await t.th.auth.login(email, PW) as any
     return { email, userId, token }
   }
 
@@ -261,31 +307,129 @@ describe('an operator in an account acts inside it (FJS-2643)', () => {
     const mine = await member('sparkle')
     const ownAdmin = await member('sparkle', 'admin')
 
-    expect((await get(theirAdmin.token, mine.userId)).status).toBe(404)
-    expect((await act(theirAdmin.token, `/${mine.userId}`, 'signOut')).status).toBe(404)
-    expect((await request(app).delete(`/people/${mine.userId}`).auth(theirAdmin.token)).status).toBe(404)
-    expect((await request(app).get('/account/me').auth(mine.token)).status).toBe(200)
-    expect(await h.sys.user.findFirst({ where: { id: mine.userId } })).not.toBeNull()
+    expect((await call(t.at, theirAdmin.token, `/${mine.userId}`, 'get')).status).toBe(404)
+    expect((await call(t.at, theirAdmin.token, `/${mine.userId}`, 'signOut')).status).toBe(404)
+    expect((await call(t.at, theirAdmin.token, `/${mine.userId}`, 'remove')).status).toBe(404)
+    expect((await request(t.tapp).get('/account/me').auth(mine.token)).status).toBe(200)
+    expect(await t.th.sys.user.findFirst({ where: { id: mine.userId } })).not.toBeNull()
 
     // The same calls from inside the account succeed.
-    expect((await get(ownAdmin.token, mine.userId)).status).toBe(200)
-    expect((await act(ownAdmin.token, `/${mine.userId}`, 'signOut')).status).toBe(200)
-    expect((await request(app).get('/account/me').auth(mine.token)).status).toBe(401)
+    expect((await call(t.at, ownAdmin.token, `/${mine.userId}`, 'get')).status).toBe(200)
+    expect((await call(t.at, ownAdmin.token, `/${mine.userId}`, 'signOut')).status).toBe(200)
+    expect((await request(t.tapp).get('/account/me').auth(mine.token)).status).toBe(401)
+    expect((await call(t.at, ownAdmin.token, `/${mine.userId}`, 'remove')).status).toBe(200)
+    expect(await t.th.sys.user.findFirst({ where: { id: mine.userId } })).toBeNull()
   })
 
   test('an invitation lands in the operator’s account', async () => {
     const admin = await member('sparkle', 'admin')
     const email = `invited-acct-${Date.now()}@example.com`
-    const res = await act(admin.token, '', 'invite', { email })
+    const res = await fetch(`${t.at}/people`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-service-method': 'invite', authorization: `Bearer ${admin.token}` },
+      body: JSON.stringify({ email }),
+    })
     expect(res.status).toBe(200)
     const { userId } = await res.json() as any
-    expect((await h.sys.user.findFirst({ where: { id: userId } })).accountId).toBe('sparkle')
+    expect((await t.th.sys.user.findFirst({ where: { id: userId } })).accountId).toBe('sparkle')
   })
 
-  test('an operator with no account is unchanged', async () => {
-    const admin = await person('admin')
+  // FJS-1949. A seed and `fli auth:create-user --tenant` place a person in
+  // one call, in the column this app's tenancy names (FJS-D1117).
+  test('createUser places the person in the tenant, on the row and the session', async () => {
+    const email = `placed-${Date.now()}-${seq++}@example.com`
+    const made = await t.th.auth.createUser({ email, password: PW, tenant: 'sparkle' })
+    expect((await t.th.sys.user.findFirst({ where: { id: made.userId } })).accountId).toBe('sparkle')
+    expect(made.accountId).toBe('sparkle')
+    const { token } = await t.th.auth.login(email, PW) as any
+    expect((await t.th.auth.verifySession(token))?.accountId).toBe('sparkle')
+  })
+
+  test('an operator with no account is above every account', async () => {
+    const admin = await member(null, 'admin')
     const mine = await member('sparkle')
-    expect((await get(admin.token, mine.userId)).status).toBe(200)
+    expect((await call(t.at, admin.token, `/${mine.userId}`, 'get')).status).toBe(200)
+  })
+})
+
+describe('an operator in a workspace acts inside it, where a person may be in several (FJS-3016)', () => {
+  const ROLE: Record<string, number> = { developer: 4, admin: 5 }
+  const workspaceGate = (u: any) => !u ? 0 : u.role === 'sysadmin' ? 7 : ROLE[u.memberRole] ?? 1
+  let t: Awaited<ReturnType<typeof tenantedApp>>
+  beforeAll(async () => {
+    const { membershipClaim, header } = await import('@frontierjs/junction')
+    t = await tenantedApp(`
+tenancy { strategy row  column workspaceId  claim workspaceId }
+model Member {
+  id          Int    @id @default(autoincrement())
+  workspaceId String
+  userId      String
+  role        String
+  @@gate("8")
+}`, workspaceGate, membershipClaim({
+      tenantFrom: header('x-ws'), model: 'member', subject: 'userId',
+      tenant: 'workspaceId', standing: 'role', standingAs: 'memberRole',
+    }))
+  })
+  afterAll(async () => { await t.tapp.stop?.(); t.th.cleanup() })
+
+  async function person(memberships: Record<string, string>, role = 'user') {
+    const email = `ws-${Date.now()}-${seq++}@example.com`
+    const { userId } = await t.th.auth.createUser({ email, password: PW, role })
+    for (const [workspaceId, r] of Object.entries(memberships)) {
+      await t.th.sys.member.create({ data: { workspaceId, userId, role: r } })
+    }
+    const { token } = await t.th.auth.login(email, PW) as any
+    return { email, userId, token }
+  }
+  const inA = { 'x-ws': 'A' }
+
+  test('createUser refuses a tenant, since the column is on Member, and writes nothing', async () => {
+    const email = `ws-placed-${Date.now()}-${seq++}@example.com`
+    await rejectsWith(() => t.th.auth.createUser({ email, password: PW, tenant: 'A' }), AuthConfigError)
+    expect(await t.th.sys.user.findFirst({ where: { email } })).toBeNull()
+  })
+
+  test('a person only in another workspace is a miss to read, sign out or remove, and stays signed in', async () => {
+    const adminA = await person({ A: 'admin' })
+    const onlyB  = await person({ B: 'developer' })
+    const devA   = await person({ A: 'developer' })
+
+    for (const method of ['get', 'signOut', 'remove']) {
+      expect((await call(t.at, adminA.token, `/${onlyB.userId}`, method, inA)).status).toBe(404)
+    }
+    expect((await t.th.auth.listSessions!(onlyB.userId)) as any[]).toHaveLength(1)
+    expect(await t.th.sys.user.findFirst({ where: { id: onlyB.userId } })).not.toBeNull()
+
+    // The same calls on a person in the operator's workspace succeed.
+    expect((await call(t.at, adminA.token, `/${devA.userId}`, 'get', inA)).status).toBe(200)
+    expect((await call(t.at, adminA.token, `/${devA.userId}`, 'signOut', inA)).status).toBe(200)
+    expect((await t.th.auth.listSessions!(devA.userId)) as any[]).toHaveLength(0)
+  })
+
+  test('the person is graded at their role in this workspace, so a peer admin is refused', async () => {
+    const adminA = await person({ A: 'admin' })
+    const peer   = await person({ A: 'admin' })
+    const res = await call(t.at, adminA.token, `/${peer.userId}`, 'signOut', inA)
+    expect(res.status).toBe(403)
+    expect((await t.th.auth.listSessions!(peer.userId)) as any[]).toHaveLength(1)
+  })
+
+  test('a person also in another workspace is not deleted below SYSADMIN, and a person only here is', async () => {
+    const adminA = await person({ A: 'admin' })
+    const both   = await person({ A: 'developer', B: 'developer' })
+    const onlyA  = await person({ A: 'developer' })
+
+    const refused = await call(t.at, adminA.token, `/${both.userId}`, 'remove', inA)
+    expect(refused.status).toBe(403)
+    expect(await t.th.sys.user.findFirst({ where: { id: both.userId } })).not.toBeNull()
+
+    expect((await call(t.at, adminA.token, `/${onlyA.userId}`, 'remove', inA)).status).toBe(200)
+    expect(await t.th.sys.user.findFirst({ where: { id: onlyA.userId } })).toBeNull()
+
+    const sys = await person({}, 'sysadmin')
+    expect((await call(t.at, sys.token, `/${both.userId}`, 'remove')).status).toBe(200)
+    expect(await t.th.sys.user.findFirst({ where: { id: both.userId } })).toBeNull()
   })
 })
 
@@ -321,19 +465,18 @@ describe('over /mcp', () => {
   })
 })
 
-// FJS-1949. `fli auth:create-user --account` and the seed both need a person
-// made inside an account in one call, not made and then moved.
-describe('createUser places the person in an account (FJS-1949)', () => {
-  test('accountId lands on the row and the session', async () => {
-    const email = `placed-${Date.now()}-${seq++}@example.com`
-    const made = await h.auth.createUser({ email, password: PW, accountId: 'sparkle' })
-    expect((await h.sys.user.findFirst({ where: { id: made.userId } })).accountId).toBe('sparkle')
-    expect(made.accountId).toBe('sparkle')
+// FJS-D1117. This package declares no tenant column, so with no row tenancy
+// naming one on User a tenant has nowhere to go — refused, not dropped.
+describe('createUser with no tenant column', () => {
+  test('refuses a tenant and writes nothing', async () => {
+    const email = `unplaceable-${Date.now()}-${seq++}@example.com`
+    await rejectsWith(() => h.auth.createUser({ email, password: PW, tenant: 'sparkle' }), AuthConfigError)
+    expect(await h.sys.user.findFirst({ where: { email } })).toBeNull()
   })
 
-  test('no accountId leaves the column null', async () => {
+  test('puts no tenant claim on the session', async () => {
     const email = `unplaced-${Date.now()}-${seq++}@example.com`
     const made = await h.auth.createUser({ email, password: PW })
-    expect((await h.sys.user.findFirst({ where: { id: made.userId } })).accountId).toBeNull()
+    expect(made.accountId).toBeUndefined()
   })
 })

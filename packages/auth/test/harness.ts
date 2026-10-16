@@ -6,7 +6,7 @@
 // accessors, `.get()` on a table, gate levels — were all invisible to a fake
 // db and obvious against a real one. See ../../VERIFYING.md.
 
-import { createClient, parse, generateDDLForDatabase } from '@frontierjs/litestone'
+import { createClient, parse, generateDDLForDatabase, type LitestonePlugin } from '@frontierjs/litestone'
 import { splitStatements } from '@frontierjs/litestone/migrate'
 import { Database } from 'bun:sqlite'
 import { tempDir } from '../../litestone/src/tmp-dirs.js'
@@ -55,10 +55,15 @@ export interface Harness {
  * than the host's — move it and a session lapses with nothing written and
  * nothing swept. While the predicate was a hand-rolled `new Date()`, no test
  * could stage that at all: it read the wall clock, so a lapse cost real time.
+ *
+ * `app` is the rest of an app's schema, appended after auth's, and the client's
+ * plugins — a tenancy block and a membership model, and the GatePlugin that
+ * grades the claim a resolver adds.
  */
 export async function makeAuth(
   opts:  LitestoneAuthOptions = {},
   clock?: { now: () => Date },
+  app:   { schema?: string; plugins?: LitestonePlugin[] } = {},
 ): Promise<Harness> {
   const dir = tempDir('fjs-auth-')
   const dbPath = join(dir, 'auth.db')
@@ -66,7 +71,7 @@ export async function makeAuth(
   const source = `
 database main  { path "${dbPath}" }
 ${auditDatabase(dir)}
-` + authSchemaFragments('main')
+` + authSchemaFragments('main') + (app.schema ?? '')
 
   const parsed = parse(source)
   if (!parsed.valid) throw new Error(`schema failed to parse: ${parsed.errors.join(', ')}`)
@@ -80,7 +85,7 @@ ${auditDatabase(dir)}
   process.env.MAIN_DB_PATH = dbPath
   process.env.AUDIT_PATH   = `${dir}/audit/`
 
-  const db = await createClient({ parsed, encryptionKey: TEST_KEY, ...(clock ? { now: clock.now } : {}) })
+  const db = await createClient({ parsed, encryptionKey: TEST_KEY, ...(clock ? { now: clock.now } : {}), ...(app.plugins ? { plugins: app.plugins } : {}) })
 
   let resetToken = '', verifyToken = ''
   let resetMinted = () => {}

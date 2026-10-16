@@ -1937,15 +1937,13 @@ export const EXAMPLES = {
   // on:event={handler}      — window.addEventListener
   // bind:innerWidth={var}   — reactive, updates on resize
   // bind:scrollY={var}      — reactive, updates on scroll
-  // bind:online={var}       — reactive, updates on network change
   //
   // Supported bindable props:
   //   innerWidth, innerHeight, outerWidth, outerHeight,
-  //   devicePixelRatio, scrollX, scrollY, online
+  //   devicePixelRatio, scrollX, scrollY
 
   let innerWidth = 0
   let scrollY    = 0
-  let online     = true
   let keyLog     = []
   let mx = 0, my = 0
 
@@ -1960,7 +1958,6 @@ export const EXAMPLES = {
 <mesa:window
   bind:innerWidth={innerWidth}
   bind:scrollY={scrollY}
-  bind:online={online}
   on:keydown={handleKey}
   on:mousemove={handleMouse}
 />
@@ -1975,10 +1972,6 @@ export const EXAMPLES = {
   <div style="padding:10px;background:#f3f4f6;border-radius:6px">
     <div style="font-size:11px;color:#6b7280;margin-bottom:2px">scrollY</div>
     <strong>{scrollY}px</strong>
-  </div>
-  <div style="padding:10px;background:{online?'#d1fae5':'#fee2e2'};border-radius:6px">
-    <div style="font-size:11px;color:#6b7280;margin-bottom:2px">online</div>
-    <strong>{online ? '✓ online' : '✗ offline'}</strong>
   </div>
   <div style="padding:10px;background:#f3f4f6;border-radius:6px">
     <div style="font-size:11px;color:#6b7280;margin-bottom:2px">mouse</div>

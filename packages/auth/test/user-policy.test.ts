@@ -32,13 +32,12 @@ describe('the User fragment, written by its own person', () => {
     expect((await reread(me.id)).name).toBe('Renamed')
   })
 
-  test('their address, organization, verification and role do not', async () => {
+  test('their address, verification and role do not', async () => {
     await h.db.$setAuth({ id: me.id, role: 'user' }).user.update({ where: { id: me.id }, data: {
-      email: 'taken@example.com', accountId: 'acct-elsewhere', emailVerified: true, role: 'admin',
+      email: 'taken@example.com', emailVerified: true, role: 'admin',
     } })
     const row = await reread(me.id)
     expect(row.email).toBe('me@example.com')
-    expect(row.accountId).toBeNull()
     expect(row.emailVerified).toBe(false)
     expect(row.role).toBe('user')
   })

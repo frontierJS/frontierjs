@@ -3,6 +3,7 @@
   "version": "0.1.5",
   "description": "FrontierJS pure-function kits — zero dependencies, no I/O, importable from any package",
   "type": "module",
+  "sideEffects": false,
   "scripts": {
     "test": "node ../../scripts/tmp-run.mjs 'bun test/run.js'",
     "typecheck": "node ../../scripts/typecheck.mjs"
@@ -56,6 +57,10 @@
     "./jsonschema": "./src/jsonschema/jsonschema.js",
     "./markdown": "./src/markdown/markdown.js",
     "./match": "./src/match/match.js",
+    "./mailbox": {
+      "types": "./src/mailbox/mailbox.d.ts",
+      "default": "./src/mailbox/mailbox.js"
+    },
     "./mime": {
       "types": "./src/mime/mime.d.ts",
       "default": "./src/mime/mime.js"

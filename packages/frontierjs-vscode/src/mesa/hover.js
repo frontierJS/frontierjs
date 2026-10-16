@@ -163,7 +163,7 @@ const HOVER_ENTRIES = [
 
   {
     match: (word, line) => line.includes('mesa:window'),
-    hover: "**`<mesa:window>`** — window event and property bindings\n\n```html\n<mesa:window\n  on:resize={handleResize}\n  on:keydown|preventDefault={handleKey}\n  bind:innerWidth={width}\n  bind:scrollY={scrollPos}\n  bind:online={isOnline}\n>\n```\n\n**Bindable properties:** `innerWidth`, `innerHeight`, `outerWidth`, `outerHeight`, `devicePixelRatio`, `scrollX`, `scrollY`, `online`\n\nAll `on:` modifiers work on window events."
+    hover: "**`<mesa:window>`** — window event and property bindings\n\n```html\n<mesa:window\n  on:resize={handleResize}\n  on:keydown|preventDefault={handleKey}\n  bind:innerWidth={width}\n  bind:scrollY={scrollPos}\n>\n```\n\n**Bindable properties:** `innerWidth`, `innerHeight`, `outerWidth`, `outerHeight`, `devicePixelRatio`, `scrollX`, `scrollY`\n\nAll `on:` modifiers work on window events."
   },
   {
     match: (word, line) => line.includes('mesa:document'),
