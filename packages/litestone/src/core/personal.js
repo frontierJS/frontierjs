@@ -3,7 +3,8 @@
 // `@personal(category?)` marks a column about a person and `@@person(child?)` a
 // model whose rows are people. Neither changes who may read a column — that is
 // the gate's question and `@omit`'s (FJS-D205). What they change is what the
-// audit trail keeps, what a redacted copy keeps, and what a data map reports.
+// audit trail keeps and what a redacted copy keeps. A data map is meant to read
+// them too, but no generator makes one yet (IDEAS/data-classification.md).
 //
 // The category list is closed and an unlisted value is refused by name. An
 // `other` escape is what turns a category into a label nothing can group by.
@@ -13,7 +14,7 @@
 // One table, so an app never restates which categories a regime treats as
 // special. `gdpr` is the article that singles the category out (null where it is
 // ordinary personal data); `special` is GDPR Art. 9 or 10; `sensitive` is CPRA's
-// Cal. Civ. Code § 1798.140(ae). A category feeds the data map only and
+// Cal. Civ. Code § 1798.140(ae). A category is for the data map to group by and
 // enforces nothing.
 
 export const PERSONAL_CATEGORIES = Object.freeze({

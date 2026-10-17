@@ -13,7 +13,7 @@
 import type { MiddlewareFn, RouteOptions, TransportContext } from './types.ts'
 import type { App }                            from '../core/app.ts'
 import { Forbidden, toFrameworkError }          from '../core/errors.ts'
-import { clientIp, requestMeta, inboundCorrelationId, mintCorrelationId, PROTOCOL_CALL_HEADERS, PROTOCOL_HTTP_ONLY_HEADERS } from '../core/context.ts'
+import { clientIp, inboundCorrelationId, mintCorrelationId, PROTOCOL_CALL_HEADERS, PROTOCOL_HTTP_ONLY_HEADERS } from '../core/context.ts'
 import {
   createRateLimiter,
   refuseLegacyRateLimitOptions,
@@ -360,10 +360,10 @@ export function requestLogger(opts: RequestLoggerOptions = {}) {
       } finally {
         const ms     = Date.now() - start
         const status = thrown ?? ctx.__status ?? 200
-        // The id the rest of the request's lines carry. Read from the store
-        // rather than from ctx, because `enterRequest` is the one owner of it
-        // and a second reading of `x-request-id` here is a second answer.
-        const correlationId = requestMeta()?.correlationId
+        // The id the `correlationId()` middleware stamped. The request scope
+        // `enterRequest` opens is closed by now, so `requestMeta()` answers
+        // `undefined` here (`FJS-1414`).
+        const correlationId = ctx.requestId
 
         const data = { method: ctx.method, path: ctx.path, status, ms, ip: ctx.ip, correlationId }
 

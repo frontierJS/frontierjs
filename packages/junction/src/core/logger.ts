@@ -1,7 +1,8 @@
 // core/logger.ts
 // Structured, leveled logger.
 // Default: pretty console output in dev, JSON in production.
-// Adapters: console, file, external (Loki, Datadog, etc.)
+// Writers: only `consoleWriter` ships. A file or external sink (Loki, Datadog)
+// is a `LogWriter` the app supplies in `writers` or attaches with `addWriter`.
 
 import { isSecretKey, REDACTED } from '@frontierjs/toolbelt/redact'
 
