@@ -1659,6 +1659,13 @@ class Parser {
         rel.onUpdate = this.eat(TK.IDENT).value
       } else if (key === 'name') {
         rel.name = this.eat(TK.STRING).value
+      } else if (key === 'enforced') {
+        // A reference the database cannot promise: a row whose parent never
+        // landed, which is what a mirror leaves behind when it stops (FJS-D1177).
+        const t = this.peek()
+        if (this.eat(TK.BOOL).value !== false)
+          throw new ParseError(`@relation(enforced: true) is what every relation already is — remove it`, t)
+        rel.unenforced = 'declared'
       } else {
         throw new ParseError(`Unknown @relation argument '${key}'`, this.peek())
       }
@@ -4750,7 +4757,7 @@ function expandMirror(schema) {
       const rel = field.attributes.find(a => a.kind === 'relation' && a.fields)
       if (!rel) continue
       const keys = [rel.fields].flat().map(n => model.fields.find(f => f.name === n))
-      if (keys.some(k => !k || has(k, 'local'))) continue
+      if (keys.some(k => !k || has(k, 'local')) || rel.unenforced) continue
       if (rel.onDelete || rel.onUpdate) {
         errors.push(`Model '${model.name}': relation '${field.name}' is keyed by the Provider's ids, so @@mirror emits no foreign key and ${rel.onDelete ? 'onDelete' : 'onUpdate'} would act on nothing. Remove it`)
         continue
@@ -5335,6 +5342,10 @@ function validate(schema) {
         }
         if (rel.onDelete && !ON_DELETE_ACTIONS.has(rel.onDelete))
           errors.push(`Model '${model.name}': unknown onDelete action '${rel.onDelete}'`)
+        if (rel.unenforced === 'declared' && !rel.fields)
+          errors.push(`Model '${model.name}', field '${field.name}': enforced: false belongs on the side that names fields: [...] — this side holds no column to constrain`)
+        else if (rel.unenforced === 'declared' && (rel.onDelete || rel.onUpdate))
+          errors.push(`Model '${model.name}', field '${field.name}': enforced: false emits no foreign key, so ${rel.onDelete ? 'onDelete' : 'onUpdate'} would act on nothing. Remove it`)
       }
 
       // A relation field is not stored, so a field-level @allow/@deny over it has

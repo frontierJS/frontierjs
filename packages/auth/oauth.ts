@@ -113,6 +113,13 @@ export interface OAuthProviderOptions {
   userinfoUrl?:  string
 }
 
+export interface OAuthProviderSpec extends OAuthProviderOptions {
+  /** The app's word for this provider; the `oauth:<name>` credential type. */
+  name:   string
+  /** The shape it is built from — one of `PROVIDER_PRESETS`. */
+  preset: string
+}
+
 type Preset = Omit<OAuthProvider, 'name' | 'clientId' | 'clientSecret'>
 
 // ─── The presets ────────────────────────────────────────────────────────────
@@ -193,11 +200,8 @@ export const PROVIDER_PRESETS = Object.keys(PRESETS)
  * preset can be configured twice — two Entra tenants, a staging Okta — without
  * either one answering to the other's name.
  */
-export function defineProvider(
-  name:   string,
-  preset: string,
-  opts:   OAuthProviderOptions,
-): OAuthProvider {
+export function defineProvider(spec: OAuthProviderSpec): OAuthProvider {
+  const { name, preset, ...opts } = spec
   const base = PRESETS[preset]
   if (!base) {
     throw new OAuthError(

@@ -50,11 +50,16 @@ import {
 // `$databases` is OPTIONAL because reading it is feature detection: an older
 // client may not have the property, and a Litestone proxy THROWS on an unknown
 // one rather than answering undefined, so the read is guarded at runtime too.
+//
+// `$schema` is `unknown` for litestone's `AnyLitestoneClient` reason: a client
+// from `litestone types` declares its own `$schema`, and naming a shape here
+// makes every generated client unassignable (FJS-018, FJS-3161).
 interface LitestoneClient {
   asSystem(): any
   $databases?: Record<string, { driver?: string } | undefined>
-  $schema:  { models: Array<{ name: string; attributes?: Array<{ kind: string }> }> }
+  readonly $schema: unknown
 }
+type AuthSchema = { models: Array<{ name: string; attributes?: Array<{ kind: string }> }> }
 
 // Four models here declare `@@expires(expiresAt)`, so the window filters
 // WRITES as well as reads: a delete keyed on a person or a purpose means the
@@ -107,7 +112,7 @@ export function createLitestoneAuth(
   // pick it. A literal `user` accessor made the schema's word a second owner of
   // the same fact, and an app that called its person Account answered
   // `"user" is not a table` at its first sign-up (FJS-3146).
-  const authModel = authModelOf(db.$schema)
+  const authModel = authModelOf(db.$schema as AuthSchema)
   if (!authModel) throw new AuthConfigError(
     'No model declares @@auth, and none is called User. Mark the model a person signs in as with @@auth')
   const personModel: string = authModel.name

@@ -22,7 +22,7 @@ export {
   OAUTH_STATE_COOKIE, PROVIDER_PRESETS, OAuthError,
 } from './oauth.ts'
 export type {
-  OAuthProvider, OAuthProviderOptions, OAuthIdentity, TokenSet, BeginResult, AuthOAuth,
+  OAuthProvider, OAuthProviderOptions, OAuthProviderSpec, OAuthIdentity, TokenSet, BeginResult, AuthOAuth,
 } from './oauth.ts'
 
 // ─── Errors ───────────────────────────────────────────────────────────────

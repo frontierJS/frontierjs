@@ -29,9 +29,8 @@ function lastWeek(at: number): { from: string; to: string } {
   return { from: new Date(at - WEEK_MS).toISOString(), to: new Date(at).toISOString() }
 }
 
-export default defineJob<{ at?: number }>(
-  'weekly-digest',
-  async (ctx) => {
+export default defineJob<{ at?: number }>({
+  handler: async (ctx) => {
     // `runsAsApp`: a digest is the installation's own work across every
     // workspace, nobody asked for it, and a service call from here answers 401.
     const { app, db } = runsAsApp(ctx, 'weekly-digest')
@@ -75,8 +74,8 @@ export default defineJob<{ at?: number }>(
   },
   // Monday 09:00. A digest that arrives at 04:00 with the sweeps is one nobody
   // reads; this one is addressed to a person.
-  { cron: '0 9 * * 1' },
-)
+  cron: '0 9 * * 1',
+})
 
 /** `AlertEvent` carries no `workspaceId` — an event belongs to its rule and the
  *  rule carries the workspace, which is the schema saying an event is

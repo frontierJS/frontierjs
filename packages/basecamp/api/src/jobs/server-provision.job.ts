@@ -99,19 +99,17 @@ async function provision(app: App, serverId: string): Promise<void> {
   log.error('machine did not come up inside the deadline', { id: serverId })
 }
 
-export default defineJob<{ serverId: string; workspaceId: string }>(
-  'server:provision',
-  async (ctx) => {
+export default defineJob<{ serverId: string; workspaceId: string }>({
+  name: 'server:provision',
+  handler: async (ctx) => {
     const { app } = runsAsCaller(ctx, 'server:provision')
     await provision(app, ctx.data.serverId)
   },
-  {
-    queue: 'fleet',
-    // ONE attempt. Every other job here retries; this one must not, because a
-    // retry is the queue deciding to spend money again and the recovery for a
-    // half-made machine is a person looking at a row, not a backoff. The steps
-    // inside are individually re-runnable — a person pressing Provision again
-    // is the retry, and the dispatch id makes that safe.
-    maxAttempts: 1,
-  },
-)
+  queue: 'fleet',
+  // ONE attempt. Every other job here retries; this one must not, because a
+  // retry is the queue deciding to spend money again and the recovery for a
+  // half-made machine is a person looking at a row, not a backoff. The steps
+  // inside are individually re-runnable — a person pressing Provision again
+  // is the retry, and the dispatch id makes that safe.
+  maxAttempts: 1,
+})

@@ -220,13 +220,12 @@ async function probe(
   }
 }
 
-export default defineJob(
-  'monitor-sweep',
-  async (ctx) => {
+export default defineJob({
+  handler: async (ctx) => {
     const { app } = runsAsApp(ctx, 'monitor-sweep')
     await sweepMonitors(app)
   },
   // One minute is the interval floor: a monitor's `intervalSec` is at least 60,
   // so a slower sweep would add its whole period to every detection.
-  { cron: '* * * * *' },
-)
+  cron: '* * * * *',
+})

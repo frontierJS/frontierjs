@@ -14,9 +14,9 @@
 import { defineJob }    from '@frontierjs/caravan'
 import { runsAsCaller } from './context.ts'
 
-export default defineJob<{ serverId: string; workspaceId: string }>(
-  'server:destroy',
-  async (ctx) => {
+export default defineJob<{ serverId: string; workspaceId: string }>({
+  name: 'server:destroy',
+  handler: async (ctx) => {
     const { app } = runsAsCaller(ctx, 'server:destroy')
     const log     = app.logger.child('server-destroy')
 
@@ -34,11 +34,9 @@ export default defineJob<{ serverId: string; workspaceId: string }>(
       throw err
     }
   },
-  {
-    queue: 'fleet',
-    // Three attempts with a widening backoff. A cloud having a bad minute is
-    // the ordinary case, and the thing being retried cannot double-charge.
-    maxAttempts: 3,
-    retryDelay:  [10_000, 60_000],
-  },
-)
+  queue: 'fleet',
+  // Three attempts with a widening backoff. A cloud having a bad minute is
+  // the ordinary case, and the thing being retried cannot double-charge.
+  maxAttempts: 3,
+  retryDelay:  [10_000, 60_000],
+})

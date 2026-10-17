@@ -2290,10 +2290,12 @@ principal in scope at `dispatch()` and re-resolves them when the job runs, so a
 service call inside a handler names no `auth` and inherits one:
 
 ```ts
-export default defineJob('courier-book', async (ctx) => {
-  const code = await courier.book(ctx.data)
-  // ctx.app is the running app; no principal stated, none needed
-  await ctx.app.service('orders').call('recordTracking', ctx.data.orderId, { trackingCode: code })
+export default defineJob({
+  handler: async (ctx) => {
+    const code = await courier.book(ctx.data)
+    // ctx.app is the running app; no principal stated, none needed
+    await ctx.app.service('orders').call('recordTracking', ctx.data.orderId, { trackingCode: code })
+  },
 })
 ```
 
@@ -2307,9 +2309,10 @@ File-based handlers via `defineJob()` — mirrors `autoloadServices`:
 // jobs/send-email.job.ts
 import { defineJob } from '@frontierjs/caravan'
 
-export default defineJob('send-email', async (ctx) => {
-  await mailer.send(ctx.data)
-}, { queue: 'email', maxAttempts: 5 })
+export default defineJob({
+  queue: 'email', maxAttempts: 5,
+  handler: async (ctx) => { await mailer.send(ctx.data) },
+})
 ```
 
 Job stats are automatically included in `GET /metrics` under `jobs`:

@@ -21,9 +21,11 @@ interface AnnouncePayment {
   orderId: number
 }
 
-export default defineJob<AnnouncePayment>(
-  'payment-announce',
-  async (ctx) => {
+export default defineJob<AnnouncePayment>({
+  queue:       'fulfillment',
+  maxAttempts: 5,
+  retryDelay:  [30_000, 120_000, 600_000],
+  handler: async (ctx) => {
     const app = ctx.app!
 
     const order = (await db
@@ -87,9 +89,4 @@ export default defineJob<AnnouncePayment>(
     // message so the failed job says which half is missing.
     if (failures.length) throw new Error(`payment-announce: ${failures.join(' | ')}`)
   },
-  {
-    queue: 'fulfillment',
-    maxAttempts: 5,
-    retryDelay: [30_000, 120_000, 600_000]
-  }
-)
+})

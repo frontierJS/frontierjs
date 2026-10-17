@@ -23,9 +23,9 @@ import { sys }       from '../core/db.ts'
  *
  * 04:00 daily, the hour a shop is quietest.
  */
-export default defineJob(
-  'retention',
-  async () => {
+export default defineJob({
+  cron: '0 4 * * *',
+  handler: async () => {
     const swept   = await sys.$retain()
     const removed = swept.reduce((n, r) => n + r.removed, 0)
 
@@ -38,5 +38,4 @@ export default defineJob(
     if (removed)
       console.log(`[retention] removed ${removed} row(s) across ${swept.filter(r => r.removed).length} table(s)`)
   },
-  { cron: '0 4 * * *' },
-)
+})

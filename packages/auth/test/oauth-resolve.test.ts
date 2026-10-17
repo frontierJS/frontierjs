@@ -18,8 +18,9 @@ import { makeAuth, rejectsWith, type Harness } from './harness.ts'
 import { defineProvider, OAuthError } from '../oauth.ts'
 
 // Two providers whose only difference is whether their claim means anything.
-const trusted   = defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' })
-const untrusted = defineProvider('okta',   'oidc',   {
+const trusted   = defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' })
+const untrusted = defineProvider({
+  name: 'okta', preset: 'oidc',
   clientId: 'c', clientSecret: 's',
   authorizeUrl: 'https://o.test/a', tokenUrl: 'https://o.test/t', userinfoUrl: 'https://o.test/u',
 })
@@ -61,7 +62,7 @@ describe('a provider account we have seen', () => {
   test('the same subject at a DIFFERENT provider is a different person', async () => {
     // Two providers can issue the same subject string. The key is the pair.
     // Both trusted, so neither stops at a mailed proof.
-    const twin = await makeAuth({ oauthProviders: { google: trusted, apple: defineProvider('apple', 'google', { clientId: 'c', clientSecret: 's' }) } })
+    const twin = await makeAuth({ oauthProviders: { google: trusted, apple: defineProvider({ name: 'apple', preset: 'google', clientId: 'c', clientSecret: 's' }) } })
     try {
       await twin.auth.oauthResolve('google', id({ providerId: 'collide', email: 'g@shop.test' }))
       const other = await twin.auth.oauthResolve('apple', id({ providerId: 'collide', email: 'o@shop.test' }))

@@ -23,6 +23,7 @@
 import { describe, it, expect } from 'bun:test'
 import { createClient, generateJsonSchema, AccessDeniedError, ValidationError } from '../src/index.js'
 import { parse } from '../src/core/parser.js'
+import { generateDDL } from '../src/core/ddl.js'
 
 const SCHEMA = `
 model Order {
@@ -387,4 +388,104 @@ model C { id Int @id  k String  pk String  p P @relation(fields: [pk], reference
       expect(r.errors.join('\n')).toContain(says)
     })
   }
+})
+
+// `FJS-D1177`. A reference the database cannot promise, written by an author:
+// what `@@mirror` sets on a Provider-keyed relation, and what a mirror leaves
+// behind once it stops — a reply whose root was past the history cap.
+describe('@relation(enforced: false)', () => {
+  const SRC = (arg: string) => `
+model Post {
+  id      Int     @id
+  key     String  @unique
+  rootKey String?
+  root    Post?   @relation("thread", fields: [rootKey], references: [key]${arg})
+  replies Post[]  @relation("thread")
+}`
+
+  it('emits no foreign key, so a dangling reference lands and reads as no row', async () => {
+    expect(generateDDL(parse(SRC('')).schema)).toContain('FOREIGN KEY')
+    expect(generateDDL(parse(SRC(', enforced: false')).schema)).not.toContain('FOREIGN KEY')
+    const db = await createClient({ schema: SRC(', enforced: false'), db: ':memory:' })
+    await db.post.create({ data: { key: 'reply', rootKey: 'gone' } })
+    expect((await db.post.findFirst({ where: { key: 'reply' }, include: { root: true } })).root).toBe(null)
+  })
+
+  for (const [why, src, says] of [
+    ['enforced: true', SRC(', enforced: true'), 'what every relation already is'],
+    ['onDelete beside it', SRC(', enforced: false, onDelete: Cascade'), 'onDelete would act on nothing'],
+    ['the side with no fields', SRC('').replace('@relation("thread")', '@relation("thread", enforced: false)'), "belongs on the side that names fields"],
+  ] as const) {
+    it(`refuses ${why}`, () => {
+      const r = parse(src)
+      expect(r.valid).toBe(false)
+      expect(r.errors.join('\n')).toContain(says)
+    })
+  }
+})
+
+// `FJS-D1178`. Deleting `@@mirror` deletes what it derived: the key's unique,
+// which every relation over it needs, and `missingSince` with its values. The
+// exit writes the derivation out, and the claim is that no table changes.
+describe('litestone mirror exit', () => {
+  const MIRRORED = `model Channel {
+  id         Int    @id
+  externalId String
+  posts      Post[]
+  @@mirror(key: externalId)
+}
+
+model Crew {
+  id    Int    @id
+  posts Post[]
+}
+
+model Post {
+  id                Int     @id
+  externalId        String
+  channelExternalId String
+  channel           Channel @relation(fields: [channelExternalId], references: [externalId]) // the Provider's
+  message           String
+  crewId            Int?    @local
+  crew              Crew?   @relation(fields: [crewId], references: [id])
+  @@mirror(key: externalId)
+}
+
+model Credit {
+  id         Int    @id
+  accountId  String
+  externalId String
+  @@unique([accountId, externalId])
+  @@mirror(key: externalId)
+}
+`
+  const exit = async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { mirrorExit } = await import('../src/mirror-exit.js')
+    const file = join(mkdtempSync(join(tmpdir(), 'mirror-exit-')), 'schema.lite')
+    writeFileSync(file, MIRRORED)
+    return mirrorExit(file)
+  }
+
+  it('writes the key unique, missingSince and each Provider reference unenforced, and nothing else', async () => {
+    const { text, models } = await exit()
+    expect(models).toEqual(['Channel', 'Post', 'Credit'])
+    expect(text).not.toContain('@@mirror')
+    expect(text).not.toContain('@local')
+    expect(text).toContain('  externalId String @unique\n  posts      Post[]\n  missingSince DateTime?\n')
+    expect(text).toContain('references: [externalId], enforced: false) // the Provider\'s')
+    expect(text).toContain('@relation(fields: [crewId], references: [id])\n')
+    // A key a @@unique already names gets no unique of its own.
+    expect(text).toContain('  externalId String\n  missingSince DateTime?\n  @@unique([accountId, externalId])')
+  })
+
+  it('changes no table, and the app may now write what the Provider wrote', async () => {
+    const { text } = await exit()
+    expect(generateDDL(parse(text).schema)).toBe(generateDDL(parse(MIRRORED).schema))
+    const db = await createClient({ schema: text, db: ':memory:' })
+    const row = await db.post.create({ data: { externalId: 'p1', channelExternalId: 'gone', message: 'hi' } })
+    expect((await db.post.update({ where: { id: row.id }, data: { message: 'edited' } })).message).toBe('edited')
+  })
 })

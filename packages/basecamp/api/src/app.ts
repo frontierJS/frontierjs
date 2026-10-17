@@ -152,7 +152,7 @@ export async function buildBasecampApp(
   const sso = ssoFromEnv(opts.sso ?? env)
   let built: App | null = null
   const auth = refuseSuspendedLogin(createLitestoneAuth(db, {
-    oauthProviders: Object.fromEntries(sso.map(p => [p.name, defineProvider(p.name, p.preset, p.opts)])),
+    oauthProviders: Object.fromEntries(sso.map(p => [p.name, defineProvider({ name: p.name, preset: p.preset, ...p.opts })])),
     // '/' covers every same-origin path, which is what `?next=` on the login
     // screen already confines itself to.
     oauthReturnToAllow: ['/'],

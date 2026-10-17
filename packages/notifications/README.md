@@ -260,11 +260,13 @@ after: {
 }
 
 // From a Caravan job — jobs/send-invoice.job.ts
-export default defineJob('send-invoice', async ({ data, app }) => {
-  const { userId, invoiceId } = data as { userId: string; invoiceId: string }
-  const user    = await db.asSystem().user.findUnique({ where: { id: userId } })
-  const invoice = await db.asSystem().invoice.findUnique({ where: { id: invoiceId } })
-  await app!.notify(user, invoiceSent(invoice))
+export default defineJob({
+  handler: async ({ data, app }) => {
+    const { userId, invoiceId } = data as { userId: string; invoiceId: string }
+    const user    = await db.asSystem().user.findUnique({ where: { id: userId } })
+    const invoice = await db.asSystem().invoice.findUnique({ where: { id: invoiceId } })
+    await app!.notify(user, invoiceSent(invoice))
+  },
 })
 
 // From a route handler

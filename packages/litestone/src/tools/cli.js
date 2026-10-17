@@ -244,6 +244,7 @@ const HELP = `
     ${cyan('litestone release')}                      classify the deploy: expand, contract or unknown
     ${dim('  --from=<ref|path>')}                      the release to compare against ${dim('(default: HEAD)')}
     ${dim('  --strict')}                               exit 1 unless the verdict is expand
+    ${cyan('litestone mirror exit')}                  write each @@mirror out as what it derived, in place
     ${cyan('litestone mutate')}                       mutate the schema, report what the checks miss
     ${dim('  --kinds=a,b')}                            only these kinds of mutant
     ${dim('  --suite="bun test api/test"')}            also run the app's own tests on each survivor
@@ -2799,6 +2800,21 @@ async function cmdRelease(cfg) {
 }
 
 
+// ─── Mirror exit ──────────────────────────────────────────────────────────
+
+// The schema is rewritten in place because the exit is an edit the app keeps:
+// git is the undo, and a copy printed elsewhere is a second schema to reconcile.
+async function cmdMirrorExit(cfg) {
+  header('litestone mirror exit')
+  const { mirrorExit } = await import('../mirror-exit.js')
+  const schemaPath = resolve(cfg.schema)
+  const { text, models } = mirrorExit(schemaPath)
+  if (!models.length) { console.log(`  ${dim('no model declares @@mirror — nothing to do')}\n`); return }
+  writeFileSync(schemaPath, text)
+  console.log(`  ${green('✓')}  ${models.length} model${models.length === 1 ? '' : 's'} no longer mirrored: ${models.join(', ')}`)
+  console.log(`  ${dim('The tables are the ones @@mirror built; litestone migrate dry-run should list no change.')}\n`)
+}
+
 // ─── Mutate — the completeness proof ─────────────────────────────────────────
 //
 // Mutate the schema, build a database from each mutant, and run the checks
@@ -5210,6 +5226,13 @@ async function main() {
   if (cmd === 'mutate') {
     const cfg = await loadConfig()
     await cmdMutate(cfg)
+    return
+  }
+
+  if (cmd === 'mirror') {
+    if (sub !== 'exit') { console.error(`\n  ${red('✗')}  litestone mirror ${sub ?? ''}: the one subcommand is ${cyan('exit')}\n`); process.exit(1) }
+    const cfg = await loadConfig()
+    await cmdMirrorExit(cfg)
     return
   }
 

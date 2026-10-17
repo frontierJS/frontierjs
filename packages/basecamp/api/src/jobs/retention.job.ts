@@ -51,9 +51,9 @@ interface Swept { model: string; table: string; removed: number; error?: string 
  * table that could not be swept is a declared policy quietly not applying,
  * which is the failure this job exists to stop being invisible.
  */
-export default defineJob(
-  'retention',
-  async (ctx) => {
+export default defineJob({
+  cron: '0 4 * * *',
+  handler: async (ctx) => {
     const { db }  = runsAsApp(ctx, 'retention')
     const swept   = (await db.$retain()) as Swept[]
     const removed = swept.reduce((n: number, r: Swept) => n + r.removed, 0)
@@ -67,5 +67,4 @@ export default defineJob(
     const postures = await prunePosture(db)
     if (postures) console.log(`[retention] removed ${postures} posture report(s)`)
   },
-  { cron: '0 4 * * *' },
-)
+})

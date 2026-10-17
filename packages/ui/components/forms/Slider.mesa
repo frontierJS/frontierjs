@@ -119,9 +119,12 @@
 
   // ── Drag logic ─────────────────────────────────────────────────────────────
 
+  // The track's box, read once a press: a phone answers a measure by callback,
+  // and a round trip per move would trail the finger.
+  let box = null
+
   function posToValue(clientX) {
-    if (!sliderEl) return 0
-    const { left, width } = sliderEl.getBoundingClientRect()
+    const { left, width } = box
     const pctRaw = Math.max(0, Math.min(1, (clientX - left) / width))
     return snap(pctRaw * (max - min) + min)
   }
@@ -158,16 +161,32 @@
   var moved = false
   const track = drag(() => ({
     accept: (e) => !resolvedDisabled && e.button === 0,
+    // A press on the track picks its handle once the box is known, so the
+    // handle is handed to `move` and `end` in a holder that fills then.
     start: (e) => {
       const grabbed = e.target.closest?.('.fjs-slider-handle')
-      const which = grabbed ? grabbed.dataset.which : handleFor(posToValue(e.clientX))
+      const held = { which: grabbed?.dataset.which ?? null }
+      const x = e.clientX
+      box = null
       moved = false
-      if (!grabbed) { set(which, posToValue(e.clientX)); emit(); moved = true }
-      $.focus(sliderEl.querySelector('[data-which=' + which + ']'))
-      dragging = which
-      return which
+      $.measure(sliderEl).then((b) => {
+        box = b
+        if (!held.which) {
+          held.which = handleFor(posToValue(x))
+          set(held.which, posToValue(x)); emit(); moved = true
+          dragging = held.which
+          $.focus(sliderEl.querySelector('[data-which=' + held.which + ']'))
+        }
+      })
+      if (held.which) {
+        dragging = held.which
+        $.focus(grabbed)
+      }
+      return held
     },
-    move: (e, which) => {
+    move: (e, held) => {
+      const which = held.which
+      if (!box || !which) return
       const before = valueOf(which)
       set(which, posToValue(e.clientX))
       if (valueOf(which) === before) return

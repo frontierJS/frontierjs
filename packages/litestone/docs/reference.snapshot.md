@@ -367,9 +367,9 @@ model Example {
 
 ### Reach another row
 
-#### `@relation` `(["name",] fields: [...], references: [...][, onDelete][, onUpdate])` <a id="relation-field"></a>
+#### `@relation` `(["name",] fields: [...], references: [...][, onDelete][, onUpdate][, enforced: false])` <a id="relation-field"></a>
 
-A foreign key. The scalar column and the relation field are separate declarations; `fields` names the former and `references` the target's key.
+A foreign key. The scalar column and the relation field are separate declarations; `fields` names the former and `references` the target's key. `enforced: false` keeps the relation and emits no constraint, for a reference whose parent may never land — what `@@mirror` derives on a Provider's ids.
 
 ```lite
 model User { id Int @id }

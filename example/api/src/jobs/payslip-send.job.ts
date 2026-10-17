@@ -47,8 +47,7 @@ export async function sendPayslipJob(ctx: JobContext<SendPayslipPayload>): Promi
   return { sent: true, reference: slip.reference }
 }
 
-export default defineJob<SendPayslipPayload>(
-  'payslip-send',
-  async (ctx: JobContext<SendPayslipPayload>) => { await sendPayslipJob(ctx) },
-  { maxAttempts: 5 },
-)
+export default defineJob<SendPayslipPayload>({
+  maxAttempts: 5,
+  handler:     async (ctx: JobContext<SendPayslipPayload>) => { await sendPayslipJob(ctx) },
+})

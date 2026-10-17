@@ -40,7 +40,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@default` | Identify a row | (value \| [value, …] \| now() \| uuid() \| ulid() \| cuid() \| nanoid() \| auth().<claim> \| autoincrement()) |  |  |  |
 | `@sequence` | Identify a row | (scope: <field> \| [<field>, …]) |  |  |  |
 | `@rank` | Identify a row | (scope: <field> \| [<field>, …]) |  |  |  |
-| `@relation` | Reach another row | (["name",] fields: [...], references: [...][, onDelete][, onUpdate]) | on a model's field · on a trait's field | onDelete: Cascade · SetNull · Restrict · NoAction |  |
+| `@relation` | Reach another row | (["name",] fields: [...], references: [...][, onDelete][, onUpdate][, enforced: false]) | on a model's field · on a trait's field | onDelete: Cascade · SetNull · Restrict · NoAction |  |
 | `@from` | Reach another row | (<Model>, last\|first\|count\|sum\|avg\|max\|min\|exists: … [, where][, orderBy][, via][, withDeleted][, withTemplates]) | on a model's field · on a trait's field | operation: last · first · count · exists |  |
 | `@edge` | Reach another row | (ref: <Model>[, key][, as][, onMissing: error\|skip]) |  | onMissing: error · skip |  |
 | `@scoped` | Reach another row | [(as: <ns>[, onMissing: …])] |  |  |  |

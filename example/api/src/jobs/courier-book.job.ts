@@ -1,7 +1,7 @@
 // api/jobs/courier-book.job.ts — the work that happens after the response.
 //
 // Autoloaded by @frontierjs/caravan from `jobsDir` (api/jobs). The file name
-// does not matter; `defineJob`'s first argument is the name a dispatch uses.
+// is the name a dispatch uses.
 //
 // ─── Why this is a job and not part of the `ship` method ──────────────────
 //
@@ -43,28 +43,7 @@ async function bookWithCourier(reference: string): Promise<string> {
   return `TRK-${hash.toString(36).toUpperCase().padStart(4, '0')}`
 }
 
-export default defineJob<BookCourier>('courier-book', async (ctx) => {
-  const { orderId, reference } = ctx.data
-
-  const trackingCode = await bookWithCourier(reference)
-
-  // No `auth` and no app-reference module. Both used to be here: the handler
-  // took one argument and it was the job, so reaching the service layer meant
-  // a module holding a mutable app; and an in-process call had no principal,
-  // and no principal is STRANGER(0) — refused by Order's @@gate exactly as an
-  // anonymous browser is — so every job passed `{ auth: { user: SYSTEM } }`.
-  //
-  // The dispatch recorded who asked, and this runs as them, re-resolved. The
-  // staff member who pressed Ship books the courier; the shop's own standing is
-  // not borrowed to do it, which is what SYSTEM everywhere quietly did.
-  //
-  // A named METHOD, not a patch: `trackingCode` is `@system` in the schema, so a
-  // patch carrying it is refused by name at the Data boundary — for this job
-  // exactly as for a person, which is what makes the annotation worth having.
-  // `recordTracking` names the column on the write and keeps every other rule
-  // (see api/services/orders.service.ts).
-  await ctx.app!.service('orders').call('recordTracking', orderId, { trackingCode })
-}, {
+export default defineJob<BookCourier>({
   queue:       'fulfillment',
   maxAttempts: 5,
   // 1m, 5m, 30m, then 30m again — the last value is reused for every further
@@ -81,4 +60,26 @@ export default defineJob<BookCourier>('courier-book', async (ctx) => {
   // safe HERE because the write it ends in is `recordTracking`, which sets a
   // column to a value derived from the reference: the same answer twice.
   timeout:     30_000,
+  handler: async (ctx) => {
+    const { orderId, reference } = ctx.data
+
+    const trackingCode = await bookWithCourier(reference)
+
+    // No `auth` and no app-reference module. Both used to be here: the handler
+    // took one argument and it was the job, so reaching the service layer meant
+    // a module holding a mutable app; and an in-process call had no principal,
+    // and no principal is STRANGER(0) — refused by Order's @@gate exactly as an
+    // anonymous browser is — so every job passed `{ auth: { user: SYSTEM } }`.
+    //
+    // The dispatch recorded who asked, and this runs as them, re-resolved. The
+    // staff member who pressed Ship books the courier; the shop's own standing is
+    // not borrowed to do it, which is what SYSTEM everywhere quietly did.
+    //
+    // A named METHOD, not a patch: `trackingCode` is `@system` in the schema, so a
+    // patch carrying it is refused by name at the Data boundary — for this job
+    // exactly as for a person, which is what makes the annotation worth having.
+    // `recordTracking` names the column on the write and keeps every other rule
+    // (see api/services/orders.service.ts).
+    await ctx.app!.service('orders').call('recordTracking', orderId, { trackingCode })
+  },
 })

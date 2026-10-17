@@ -2471,8 +2471,84 @@ answer.
       experimenting.
     - No § IV adjudication is in tension. Tier: Map (VISION § 17), and this
       entry as the Assessment.
-- [ ] 5.4 A phone's answer for `drag.js`, then `Slider`'s and `SignaturePad`'s
+- [x] 5.4 A phone's answer for `drag.js`, then `Slider`'s and `SignaturePad`'s
       rects through `$.measure`
+  - Prior art, read first. A phone sends touch events only. Lynx compiles
+    pointer events for Windows and Mac alone (`touch_event_handler.cc`
+    ~L562, lynx@5675f229). The engine keeps every event of a touch at the
+    element it began on (Android `TouchEventDispatcher.java` ~L1036-1235).
+    A single-touch `identifier` is a stack address. Three families exist:
+    - The runtime makes W3C pointer events. Tamagui's
+      `pointerEvents.native.ts` does this, React Native Fabric does it
+      behind flags that are still off, and Flutter has one pointer model on
+      every target.
+    - A gesture primitive per platform, as in RNGH `Gesture.Pan`, Lynx
+      `PanGesture` (a no-op on Lynx for Web) and Flutter's `GestureDetector`.
+    - Touch or responder events written in the component, as in PanResponder.
+  - Ruled by the owner, three questions, the recommended answer each time:
+    - The first family. `native/tags.js` and `ENGINE_EVENTS` gain
+      `pointerdown/move/up/cancel` over `touchstart/move/end/cancel`, plus a
+      made `lostpointercapture`. `pointerId` is always 1, `pointerType` is
+      `'touch'`, `button` is 0, and `clientX`/`pageX` come from the event's
+      `detail`. The mouse trio gets the same position fields.
+    - The wrapper node carries `addEventListener`/`removeEventListener`,
+      routed through `on()`, so an event a phone does not send still throws
+      by name, now as `addEventListener('x')`. It also carries
+      `setPointerCapture` and its pair. The capture is a flag, since the
+      engine already captures a touch. It adds the DOM's retargeting, and
+      the release on lift is heard at the root. `drag.js` does not change.
+    - `Slider` measures its track once per press. A press on the track picks
+      its handle when the box answers, so `start` hands `move` a holder.
+    - Scope: drag and `Slider` only. `SignaturePad` keeps its reads, since
+      `<canvas>` is what keeps it off a phone.
+  - `detail` is the one position a phone and Lynx for Web agree on, the
+    page's own, in `$.measure`'s units. A Touch's `pageX` is the browser
+    document's on Lynx for Web. A lifted finger carries no `detail` there,
+    so an end reports the last move.
+  - Measured:
+    - Lynx for Web, scratch `DragProbe` fixture, with the `<lynx-view>`
+      offset 50,70 in the page: 8 of 8. Start, pointer fields, `clientX`
+      minus the box's measured left, distance, a move off the box, lift,
+      `touchCancel`, and the next touch not held. Negative control: a Touch's
+      `pageX` in place of `detail` fails the `clientX` row. With the view at
+      the page origin the control passed, which is why the view is offset.
+    - Emulator (`lynx34`, `-gpu swiftshader_indirect`), `adb shell input
+      motionevent`. A press at 499 px gives `clientX` 190 (dp at 2.625), and
+      minus the measured left of 40 that is 150. A move to x 400 dp, off the
+      box, still reaches it. `CANCEL` ends the drag as cancelled. Ends:
+      `up@1 cancel@2 up@3`. The fixture was then removed.
+    - Native drive: 71 of 71. ui drag, Slider and SignaturePad specs: 7, 24
+      and 21. Corpus: 712 files, 0 invalid JS, and the four `onpointer*`
+      shapes are off the native refusal list. 347 files still lower, since
+      both files using them are held by something else.
+  - Still off a phone: `Slider` for its 3 `onkeydown` and 1 `@media`, and
+    `SignaturePad` for `<canvas>`. `onkeydown` is 5.5. `@media` and
+    `<canvas>` have no step yet.
+  - The nine, answered before the code:
+    - Q1: one origin. The DOM's event names stay the source, mapped in the
+      table that already mapped `mousedown` to `touchstart`.
+    - Q2: no new noun. Pointer events are the DOM's words.
+    - Q3: the complexity is the problem's. Every runtime in the first family
+      supplies capture, and Lynx already gives it implicitly.
+    - Q4: `onpointerdown={}` in a template and `drag.js` in an attachment
+      both run on a phone.
+    - Q5: the position is read off the event. Nothing is cached but the last
+      move, for an end that carries none.
+    - Q6: the owners are `ENGINE_EVENTS` and `on()`, which already existed.
+    - Q7: an attachment's listener for an event a phone lacks throws by name.
+    - Q8: a `touchcancel` ends the drag as cancelled, which is what
+      `drag.js` exists to handle.
+    - Q9: what must stay true is that a drag on a phone reports moves in
+      `$.measure`'s units. What fails when it stops: the ui drag spec for the
+      DOM. Native: `none`, since the probe was a scratch run and no new test
+      files are wanted while experimenting.
+    - No § IV adjudication is in tension. Tier: Assessment, this entry.
+- [ ] 5.5 What `onkeydown` means on a phone. A phone sends no key events, and
+      27 corpus files (59 unlocked) are refused for it, `Slider` among them
+- [ ] 5.6 `touch-action` as Lynx's `consume-slide-event`, so a drag inside a
+      `<scroll-view>` is not also a scroll. `none` is every angle and `pan-y`
+      is the horizontal ones. Unmeasured: whether an inner scroll-view
+      cancels a touch or scrolls under it
 
 ---
 

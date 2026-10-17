@@ -182,8 +182,10 @@ const authOptions = {
   // the claim trusted, a verified provider address links to a verified account
   // and refuses an unverified one.
   oauthProviders: {
-    devidp: defineProvider('devidp', 'oidc', {
-      clientId:     process.env.IDP_CLIENT_ID     ?? 'dev-idp-client',
+    devidp: defineProvider({
+      name:         'devidp',
+      preset:       'oidc',
+      clientId:    process.env.IDP_CLIENT_ID     ?? 'dev-idp-client',
       clientSecret: process.env.IDP_CLIENT_SECRET ?? 'dev-idp-secret',
       authorizeUrl: `${IDP_URL}/authorize`,
       tokenUrl:     `${IDP_URL}/token`,

@@ -8,6 +8,8 @@ Reference for running a suite or a drive in this workspace. The root `CLAUDE.md`
 
 **Every `test` script runs inside `scripts/tmp-run.mjs`** — `node ../../scripts/tmp-run.mjs '<command>'`, the command as ONE quoted argument so a `&&` chain stays one run. It points `$TMPDIR` at `fjs-run-<pid>` for the whole script, removes it on the way out, and on the way in kills and removes what a SIGKILLed run left: a temp dir a test never removed, a template, a Chrome and its profile. Before it, a week of runs filled the disk (`FJS-2762`). CI's `coverage` phase fails a `test` script outside it. A runner started directly (`bun test`, `npx vitest`) writes to the real `/tmp`.
 
+**A deadline bounds failure; it does not establish completion.** A test that waits a fixed time and then asserts has proved only that the time passed: on a loaded machine the thing it waited for has not happened yet and the assertion fails naming nothing, and on a fast one it passes by luck. Poll for the condition and let the deadline be the failure, worded as what was waited for — `example/web/test/lib/preflight.mjs` is the shape.
+
 | Where                                                     | Test                                         | Runner                                                | Needs                                               |
 | --------------------------------------------------------- | -------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------- |
 | litestone                                                 | `bun run test` (`test:smoke` = CLI only)     | bun                                                   | —                                                   |

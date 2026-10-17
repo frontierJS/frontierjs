@@ -46,8 +46,7 @@ export async function collectInvoice(ctx: JobContext<CollectPayload>): Promise<s
   return paymentRef ?? null
 }
 
-export default defineJob<CollectPayload>(
-  'invoice-collect',
-  async (ctx) => { await collectInvoice(ctx) },
-  { maxAttempts: 4 },
-)
+export default defineJob<CollectPayload>({
+  maxAttempts: 4,
+  handler:     async (ctx) => { await collectInvoice(ctx) },
+})

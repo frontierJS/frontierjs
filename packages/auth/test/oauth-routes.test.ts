@@ -23,7 +23,7 @@ let app: any
 beforeAll(async () => {
   h = await makeAuth({
     oauthProviders: {
-      google: defineProvider('google', 'google', { clientId: 'cid', clientSecret: 'sec' }),
+      google: defineProvider({ name: 'google', preset: 'google', clientId: 'cid', clientSecret: 'sec' }),
     },
     oauthReturnToAllow: ['/dashboard'],
   })
@@ -56,7 +56,7 @@ describe('oauth without cookie mode', () => {
     // nowhere to put a bearer token. Without cookieAuth the flow would run
     // perfectly, set nothing, and redirect somebody who is not signed in to a
     // page that will not say why.
-    const bare = await makeAuth({ oauthProviders: { google: defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' }) } })
+    const bare = await makeAuth({ oauthProviders: { google: defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' }) } })
     try {
       const broken = await createTestApp({ auth: bare.auth as any })
       broken.setAuth(bare.auth as any)

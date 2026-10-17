@@ -48,14 +48,15 @@ every tool in the field leads with.
 | 2 | **Running cost** — totals per card and per day, next to the per-run figure V1 shows | termany, Helicon | The data already exists. | S |
 | 3 | **Diff panel per card**, where a line comment becomes the next message | Conductor, agent-manager, Vibe Kanban | Review is the bottleneck. Today a card shows only a count of changed files. | M |
 | 4 | **Reviewer pass** — when a run ends, a read-only run reviews the diff | Osmani's one reviewer per 3–4 builders, Orbi | `ask-claude.js`'s read-only mode already exists. | S |
-| 5 | **A "needs you" state** — the run ended on a question rather than finishing | Antigravity's inbox, octomux | A green *done* misleads when the run is actually waiting on you. | S–M |
+| 5 | **A "needs you" notice** — the run ended on a question rather than finishing. A notice beside `unread`, never a fifth `RunState` (`FJS-D1176`) | Antigravity's inbox, octomux | A green *done* misleads when the run is actually waiting on you. | S–M |
 | 6 | **A worktree per chat** — fork into a worktree with its own port slot (`ports.js`, the way Conductor hands out `CONDUCTOR_PORT`) and a setup step (install, copy `.env`), then merge back or archive | Conductor, claude-squad, parallel-code | The category's main feature. It also stops concurrent sessions colliding in one tree. A card becomes a branch rather than a checkout, so this is a data-model change. | L |
-| 7 | **Start from `fli next` / `ISSUES.md`** — a card opens pre-filled with the issue, and its states run queued → working → review → done | cyrus, Contrabass, kanban tools | Ties each run to the register. | M |
+| 7 | **Start from `fli next` / `ISSUES.md`** — a card opens pre-filled with the issue; its place moves by the person's hand — intake, review, done — and the run's state and notices overlay it (`FJS-D1176`) | cyrus, Contrabass, kanban tools | Ties each run to the register. | M |
 | 8 | **Import terminal sessions** — adopt a `~/.claude/projects/<repo>/*.jsonl` session as a card | agent-console | The reverse of the handoff V1 already has. | S |
 | 9 | **Phone alerts** — ntfy or web push on *done* or *needs you*, plus a card layout that works at phone width | Happy, Omnara, repomon | The browser notification only reaches someone at the desk. | S–M |
 | 10 | **Scheduled prompts per repo**, on Caravan cron | background-agents, Frink | Reuses `app.jobs`. | M |
 | 11 | **An approval inbox in place of bypass** — `--permission-prompt-tool` routes each permission ask to the UI | Calyx, Remote Control | Makes a safe per-repo mode possible. Worth building only once bypass hurts. | M–L |
 | 12 | **Best-of-N** — one prompt fans out to N worktrees and a person picks the winner | Pragma, Claudexor | Expensive. Needs #6. | M |
+| 13 | **Snooze** — hide a card until a time; a notice raised meanwhile lifts it. With Unpin and Archive, one hidden set: no notification, no sort (`FJS-D1176`) | Agent of Empires' dismissed set | Vocabulary for the board once cards outnumber the stage; nothing to build before that. | S |
 
 **Recommended order: 1 → 2 → 3 → 4**, because each reuses code that already exists.
 Together they turn *a run ended* into *a run ended, here is the diff, the checks are
@@ -90,3 +91,4 @@ plan against `example/` has not.
 - [Nimbalyst — Antigravity review (Manager view, inbox)](https://nimbalyst.com/blog/antigravity-ide-review/)
 - [Vibe Kanban shutdown (Bloop, 2026-04-10; continues as Apache-2.0)](https://vibekanban.com/blog/shutdown)
 - [Omnara vs Happy vs SeaWork](https://seawork.ai/en/blogs/omnara-vs-happy-vs-seawork/)
+- [Agent of Empires (Mozilla.ai) — Stage vs Signal, the dismissed set](https://github.com/mozilla-ai/agent-of-empires)

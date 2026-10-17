@@ -8,7 +8,7 @@ description: A job file, a dispatch from a hook, and a response that does not wa
 Two more files' worth of change, and neither of them is `app.ts`.
 
 **The job is a file, and the file names it.** `api/src/jobs/finish-note.job.ts`
-is the job `finish-note`; a `defineJob` naming anything else is refused when it
+is the job `finish-note`; a `defineJob` stating `name:` as anything else is refused when it
 loads, rather than registered — a handler answering to `finsh-note` while every
 dispatch says `finish-note` is a job that silently never runs, which is the
 worst way a queue can break. Everything about the job lives in that file: which
@@ -61,22 +61,23 @@ mkdirSync(jobsDir, { recursive: true })
 writeFileSync(join(jobsDir, 'finish-note.job.ts'), [
   '// api/src/jobs/finish-note.job.ts',
   '//',
-  '// The file names the job: finish-note. A defineJob that disagrees is refused',
-  '// when it loads rather than registered.',
+  '// The file names the job: finish-note. A defineJob that states a different',
+  '// name is refused when it loads rather than registered.',
   '//',
   '// The default export is also the dispatch handle — import it and the name is',
   '// stated nowhere else, so a rename cannot leave a dispatch behind.',
   '',
   "import { defineJob } from '@frontierjs/caravan'",
   '',
-  "export default defineJob<{ id: string }>('finish-note', async (ctx) => {",
-  '  // ctx.app is the running app. Going back through the service means this',
-  '  // write is validated, announced and audited like any other — a job that',
-  '  // reaches for the database directly is a write nothing can see.',
-  "  await ctx.app.service('notes').patch(ctx.data.id, { done: true })",
-  '}, {',
+  'export default defineJob<{ id: string }>({',
   '  maxAttempts: 3,',
   '  retryDelay:  [1_000, 5_000],',
+  '  handler: async (ctx) => {',
+  '    // ctx.app is the running app. Going back through the service means this',
+  '    // write is validated, announced and audited like any other — a job that',
+  '    // reaches for the database directly is a write nothing can see.',
+  "    await ctx.app.service('notes').patch(ctx.data.id, { done: true })",
+  '  },',
   '})',
   '',
 ].join('\n'), 'utf8')

@@ -107,16 +107,18 @@ async function runRecipe(app: App, runId: string): Promise<void> {
 // transport failure, and a non-zero exit is recorded rather than thrown so it
 // is never retried at all.
 
-export default defineJob<{ runId: string; workspaceId: string }>('recipe:run', async (ctx) => {
-  // Somebody clicked Run. The queue recorded them and the workspace; this
-  // refuses if either is missing rather than helping itself to system.
-  const { app } = runsAsCaller(ctx, 'recipe:run')
-  // `workspaceId` stays on the payload and is no longer read here: the tenant
-  // this work is for is the one caravan recorded and junction re-bound, not a
-  // value the payload could disagree with.
-  await runRecipe(app, ctx.data.runId)
-}, {
+export default defineJob<{ runId: string; workspaceId: string }>({
+  name:        'recipe:run',
   queue:       'fleet',
   maxAttempts: 2,
   retryDelay:  [10_000],
+  handler: async (ctx) => {
+    // Somebody clicked Run. The queue recorded them and the workspace; this
+    // refuses if either is missing rather than helping itself to system.
+    const { app } = runsAsCaller(ctx, 'recipe:run')
+    // `workspaceId` stays on the payload and is no longer read here: the tenant
+    // this work is for is the one caravan recorded and junction re-bound, not a
+    // value the payload could disagree with.
+    await runRecipe(app, ctx.data.runId)
+  },
 })

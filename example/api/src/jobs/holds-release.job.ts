@@ -70,8 +70,7 @@ export async function releaseHolds(ctx: JobContext<{ before?: string }>): Promis
  * the only caller who wants the number is a drive calling `releaseHolds`
  * directly.
  */
-export default defineJob<{ before?: string }>(
-  'holds-release',
-  async (ctx) => { await releaseHolds(ctx) },
-  { cron: '*/5 * * * *' },
-)
+export default defineJob<{ before?: string }>({
+  cron:    '*/5 * * * *',
+  handler: async (ctx) => { await releaseHolds(ctx) },
+})

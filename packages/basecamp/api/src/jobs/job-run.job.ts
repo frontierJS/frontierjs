@@ -145,20 +145,22 @@ function runner(app: App) {
 const MAX_ATTEMPTS = 3
 
 
-export default defineJob<{ id: string; trigger?: string }>('job:run', async (ctx) => {
-  // BOTH ways, and the only handler here that is: `jobs.trigger` queues this as
-  // the person who clicked, and `job-schedule.ts` fires it off a cron with no
-  // actor at all. Declared rather than discovered — the mode decides whether
-  // the service confines the read, and a cron fire is the app acting on its own
-  // behalf across workspaces.
-  const { app } = runsEitherWay(ctx, 'job:run')
-  // `maxAttempts` is stated once, below, and read here — a literal `3` in the
-  // handler is a retry budget that stops matching the queue's the moment either
-  // moves, and what it costs is a failure nobody is told about.
-  await runner(app).runJob(ctx.data.id, ctx.data.trigger ?? 'manual',
-                           ctx.attempts >= MAX_ATTEMPTS)
-}, {
+export default defineJob<{ id: string; trigger?: string }>({
+  name:        'job:run',
   queue:       'jobs',
   maxAttempts: MAX_ATTEMPTS,
   retryDelay:  [5_000, 30_000, 120_000],  // 5s, 30s, 2m
+  handler: async (ctx) => {
+    // BOTH ways, and the only handler here that is: `jobs.trigger` queues this as
+    // the person who clicked, and `job-schedule.ts` fires it off a cron with no
+    // actor at all. Declared rather than discovered — the mode decides whether
+    // the service confines the read, and a cron fire is the app acting on its own
+    // behalf across workspaces.
+    const { app } = runsEitherWay(ctx, 'job:run')
+    // `maxAttempts` is stated once, above, and read here — a literal `3` in the
+    // handler is a retry budget that stops matching the queue's the moment either
+    // moves, and what it costs is a failure nobody is told about.
+    await runner(app).runJob(ctx.data.id, ctx.data.trigger ?? 'manual',
+                             ctx.attempts >= MAX_ATTEMPTS)
+  },
 })

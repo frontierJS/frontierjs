@@ -477,11 +477,13 @@ function runner(app: App) {
 // failed has already happened on the machine, and the way back is a person
 // looking at the steps and triggering another.
 
-export default defineJob<{ deployment_id: string }>('deployment:run', async (ctx) => {
-  // Somebody asked for this release. The queue recorded them and the workspace.
-  const { app } = runsAsCaller(ctx, 'deployment:run')
-  await runner(app).runDeployment(ctx.data.deployment_id)
-}, {
+export default defineJob<{ deployment_id: string }>({
+  name:        'deployment:run',
   queue:       'deployments',
   maxAttempts: 1,
+  handler: async (ctx) => {
+    // Somebody asked for this release. The queue recorded them and the workspace.
+    const { app } = runsAsCaller(ctx, 'deployment:run')
+    await runner(app).runDeployment(ctx.data.deployment_id)
+  },
 })

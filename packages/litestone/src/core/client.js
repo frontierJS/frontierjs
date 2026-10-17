@@ -10333,8 +10333,10 @@ function makeLockPrimitive(rawWriteDb) {
   // than a gap: unattended recurring work belongs to the queue (`FJS-D36`), and
   // this package may not import it (Invariant 1). One line in a `*.job.ts`:
   //
-  //     export default defineJob('retention', () => db.asSystem().$retain(),
-  //                              { cron: '0 4 * * *' })
+  //     export default defineJob({
+  //       cron: '0 4 * * *',
+  //       handler: () => db.asSystem().$retain(),
+  //     })
   //
   // `asSystem()` for raw SQL's reason (`FJS-D52`): it deletes rows through no
   // gate, no row policy and no `@@softDelete`, so the bypass is said at the call

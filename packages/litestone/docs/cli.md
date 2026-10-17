@@ -45,6 +45,7 @@ litestone access --for <who> [--json]                    # what this person can 
 litestone access --from=<ref|path> [--strict] [--json]   # the permission diff
 litestone ddl [--check] [--stdout] [--pluralize] [--out=<path>]
 litestone release [--from=<ref|path>] [--strict] [--check] [--json] [--out=<path>]
+litestone mirror exit                                    # write each @@mirror out as what it derived, in place
 litestone mutate                                         # mutate the schema, report what the checks miss
 litestone mutate --suite "bun test api/test"           # ...and run the app's own tests on each survivor
 litestone replicate [config.js] [--url=<url>] [--interval=<s>] [--retention=<d>] [--db=<name>]

@@ -15,8 +15,9 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { makeAuth, rejectsWith, type Harness } from './harness.ts'
 import { defineProvider, LastCredentialError, NotFoundError } from '../index.ts'
 
-const google = defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' })
-const okta   = defineProvider('okta',   'oidc',   {
+const google = defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' })
+const okta   = defineProvider({
+  name: 'okta', preset: 'oidc',
   clientId: 'c', clientSecret: 's',
   authorizeUrl: 'https://o.test/a', tokenUrl: 'https://o.test/t', userinfoUrl: 'https://o.test/u',
 })

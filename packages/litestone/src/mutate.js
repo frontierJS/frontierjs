@@ -189,7 +189,7 @@ const MUTATIONS = [
 // inside a doc comment explaining what `@guarded` is not. Editing prose produces
 // a mutant identical in behavior to the original, which survives everything, so
 // every documented attribute name was quietly costing a point.
-function _commentAt(line) {
+export function _commentAt(line) {
   let quote = null
   for (let i = 0; i < line.length; i++) {
     const c = line[i]
@@ -230,7 +230,7 @@ function _dropToken(line, name) {
 
 // Index of the `)` matching the `(` at `open`, or -1. Quote-aware: a paren
 // inside `@regex("a(b")` is not structure.
-function _closingParen(line, open) {
+export function _closingParen(line, open) {
   let depth = 0
   let quote = null
   for (let i = open; i < line.length; i++) {

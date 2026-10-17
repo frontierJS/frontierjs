@@ -99,7 +99,9 @@ src/
   runtime-native.js    — the native runtime, @frontierjs/mesa/runtime/native.js:
                          `$$host` over Lynx's Element PAPI, the main-thread
                          globals, so no engine import and no peer. The one file
-                         that names Lynx. `$.measure`/`$.viewport`/`$.focus` answer a Promise
+                         that names Lynx. Pointer and mouse events are made from
+                         touch, one finger, so an attachment's addEventListener runs.
+                         `$.measure`/`$.viewport`/`$.focus` answer a Promise
                          here, in runtime.js and in runtime-terminal.js alike
   entities.js          — htmlEntitiesToText(): character references as text,
                          read by the compiler and the terminal runtime's {@html}

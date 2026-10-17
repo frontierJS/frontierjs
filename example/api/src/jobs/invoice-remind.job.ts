@@ -14,9 +14,8 @@ import { db }              from '../core/db.ts'
 import invoiceDue          from '../notifications/InvoiceDue.notification.ts'
 import { asRecipient }     from '../notifications/OrderConfirmation.notification.ts'
 
-export default defineJob<{ invoiceId: number }>(
-  'invoice-remind',
-  async (ctx) => {
+export default defineJob<{ invoiceId: number }>({
+  handler: async (ctx) => {
     const sys     = db.asSystem() as Record<string, any>
     const invoice = await sys.invoice.findUnique({ where: { id: ctx.data.invoiceId }, include: { customer: true } })
 
@@ -26,4 +25,4 @@ export default defineJob<{ invoiceId: number }>(
 
     await ctx.app!.notify(asRecipient(invoice.customer), invoiceDue({ invoice, customer: invoice.customer }))
   },
-)
+})

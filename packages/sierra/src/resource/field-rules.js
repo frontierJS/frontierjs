@@ -2318,6 +2318,9 @@ export function stripReadOnly(fields, data, opts = {}) {
   for (const [name, rule] of Object.entries(fields ?? {})) {
     if (!rule?.readOnly || keep.has(name)) continue
     if (!Object.hasOwn(data, name)) continue
+    // A claimed mirror's verb takes the Provider's columns as its input, and
+    // the server, which knows the claim, is the one that may refuse them.
+    if (rule['x-litestone-kind'] === 'mirror') continue
 
     if (out === null) out = { ...data }
     delete out[name]

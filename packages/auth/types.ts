@@ -269,7 +269,7 @@ export interface LitestoneAuthOptions {
    * (`oauth:<name>`). Build them with `defineProvider`.
    *
    *   oauthProviders: {
-   *     google: defineProvider('google', 'google', { clientId, clientSecret }),
+   *     google: defineProvider({ name: 'google', preset: 'google', clientId, clientSecret }),
    *   }
    *
    * Absent means the app does no OAuth, and the routes refuse by name.

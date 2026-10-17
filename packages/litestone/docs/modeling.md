@@ -340,6 +340,29 @@ that caller, and lands the answered row as the system (`FJS-D1125`). A
 `@immutable`, which `asSystem()` does not lift, so an upsert matching by the key
 puts it in `create` and not in `update`.
 
+**Leaving the Provider is `litestone mirror exit`** (`FJS-D1178`). Deleting the
+word deletes what it derived: the key's `@unique`, which every relation over it
+needs, and `missingSince` with its values. The command rewrites the schema in
+place with the derivation written out, and the tables do not change, so
+`litestone migrate dry-run` lists nothing:
+
+```lite
+model Post {
+  id         Int     @id
+  externalId String  @unique
+  rootId     String?
+  root       Post?   @relation("replies", fields: [rootId], references: [externalId], enforced: false)
+  replies    Post[]  @relation("replies")
+  message    String
+  missingSince DateTime?
+}
+```
+
+`enforced: false` is a relation with no foreign key, which a mirror leaves
+behind: a reply whose root was past the history cap still names it (`FJS-D1177`).
+`@system` and the key's `@immutable` are not written out, since they say who
+may write the Provider's rows and after the exit the rows are the app's.
+
 ## Should this id be a uuid or an `Int`?
 
 **`Int @id` with no default is SQLite's rowid alias** (an `INTEGER PRIMARY KEY`) —

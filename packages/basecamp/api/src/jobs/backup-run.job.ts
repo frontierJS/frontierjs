@@ -145,12 +145,8 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
 // held by something long-running); a database that cannot be read is not going
 // to become readable on the second try, and the row says why either way.
 
-export default defineJob<{ backupId: string }>('backup:run', async (ctx) => {
-  // Nobody's work but the app's — a hub action has no workspace, so there is
-  // no standing to run as. `backups.create` states `actor: null` to match.
-  const { app } = runsAsApp(ctx, 'backup:run')
-  await takeBackup(app, ctx.data.backupId)
-}, {
+export default defineJob<{ backupId: string }>({
+  name:        'backup:run',
   queue:       'fleet',
   maxAttempts: 2,
   retryDelay:  [30_000],
@@ -158,4 +154,10 @@ export default defineJob<{ backupId: string }>('backup:run', async (ctx) => {
   // unbounded attempt is how a stalled one becomes invisible. Ten minutes is
   // long enough for a database far bigger than this app will hold.
   timeout:     600_000,
+  handler: async (ctx) => {
+    // Nobody's work but the app's — a hub action has no workspace, so there is
+    // no standing to run as. `backups.create` states `actor: null` to match.
+    const { app } = runsAsApp(ctx, 'backup:run')
+    await takeBackup(app, ctx.data.backupId)
+  },
 })

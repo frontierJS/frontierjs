@@ -28,8 +28,9 @@ import { makeAuth, signedIn, type Harness } from './harness.ts'
 import { defineProvider } from '../oauth.ts'
 import { hashPassword } from '../crypto.ts'
 
-const trusted   = defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' })
-const untrusted = defineProvider('okta',   'oidc',   {
+const trusted   = defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' })
+const untrusted = defineProvider({
+  name: 'okta', preset: 'oidc',
   clientId: 'c', clientSecret: 's',
   authorizeUrl: 'https://o.test/a', tokenUrl: 'https://o.test/t', userinfoUrl: 'https://o.test/u',
 })

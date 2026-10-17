@@ -53,22 +53,24 @@ job belongs in `app.ts`.
 // jobs/send-email.job.ts
 import { defineJob } from '@frontierjs/caravan'
 
-export default defineJob<{ to: string }>('send-email', async (ctx) => {
-  // ctx.app is the running Junction app — reach the service layer from here.
-  await mailer.send(ctx.data)
-}, {
+export default defineJob<{ to: string }>({
   queue:       'email',
   maxAttempts: 5,
   retryDelay:  [60_000, 300_000, 1_800_000, 7_200_000],
+  handler: async (ctx) => {
+    // ctx.app is the running Junction app — reach the service layer from here.
+    await mailer.send(ctx.data)
+  },
 })
 ```
 
 **A job in `jobsDir` is named by its file.** `send-email.job.ts` is
-`send-email`, and a `defineJob` name that disagrees is refused at load, naming
-both — a handler answering to `send-emial` while every dispatch says
-`send-email` fails as a job that silently never runs, which is the worst way
-this package can break. Rename the file, or register the job by hand with
-`queue.handle()` from outside `jobsDir`.
+`send-email` and the declaration states no name. A name that cannot be a
+filename (`deployment:run`) is stated as `name:`, and one that disagrees with
+the file is refused at load, naming both — a handler answering to `send-emial`
+while every dispatch says `send-email` fails as a job that silently never runs,
+which is the worst way this package can break. Rename the file, or register the
+job by hand with `queue.handle()` from outside `jobsDir`.
 
 **The default export is also the dispatch handle.** Import it and the name is
 stated nowhere else:
@@ -177,7 +179,7 @@ scope).
 
 ```ts
 // jobs/abandoned-orders-sweep.job.ts
-export default defineJob('abandoned-orders-sweep', sweep, { cron: '0 3 * * *' })
+export default defineJob({ handler: sweep, cron: '0 3 * * *' })
 ```
 
 `queue.schedule(name, expr, handler, opts?)` is sugar over the same
@@ -235,9 +237,11 @@ behalf:
 await app.jobs.dispatch('courier-book', { orderId })
 
 // In the handler — no `auth`, no module-level app reference:
-export default defineJob('courier-book', async (ctx) => {
-  const code = await courier.book(ctx.data)
-  await ctx.app.service('orders').call('recordTracking', ctx.data.orderId, { trackingCode: code })
+export default defineJob({
+  handler: async (ctx) => {
+    const code = await courier.book(ctx.data)
+    await ctx.app.service('orders').call('recordTracking', ctx.data.orderId, { trackingCode: code })
+  },
 })
 ```
 

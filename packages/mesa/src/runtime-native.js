@@ -29,6 +29,9 @@
  * - Measuring and focusing are callbacks (`__InvokeUIMethod`), never
  *   synchronous. `measure()` and `focus()` answer a Promise everywhere, so
  *   code that reads a rect synchronously fails on the web run too.
+ * - A phone sends touch events, never pointer or mouse events. Both are made
+ *   here from the touch, one finger, so `drag.js` and `onpointerdown` run
+ *   as written for the DOM.
  * - Native flattens a plain view into its parent, and a flattened view has
  *   no native view to answer a UI method (code 6). A node is unflattened the
  *   first time something measures or focuses it.
@@ -49,17 +52,22 @@ globalThis.queueMicrotask ??= (fn) => { Promise.resolve().then(fn) }
 // the page; `node` is a listener on the element itself; `synth` is made here
 // from another event. Keyed by NATIVE_EVENTS, which the compiler refuses by.
 const ENGINE_EVENTS = {
-  click:     { name: 'tap',        via: 'root' },
-  mousedown: { name: 'touchstart', via: 'root' },
-  mouseup:   { name: 'touchend',   via: 'root' },
-  mousemove: { name: 'touchmove',  via: 'root' },
-  input:     { name: 'input',      via: 'node' },
-  focus:     { name: 'focus',      via: 'node' },
-  blur:      { name: 'blur',       via: 'node' },
-  load:      { name: 'load',       via: 'node' },
-  error:     { name: 'error',      via: 'node' },
-  change:    { via: 'synth' },
-  submit:    { via: 'synth' },
+  click:              { name: 'tap',         via: 'root' },
+  mousedown:          { name: 'touchstart',  via: 'root' },
+  mouseup:            { name: 'touchend',    via: 'root' },
+  mousemove:          { name: 'touchmove',   via: 'root' },
+  pointerdown:        { name: 'touchstart',  via: 'root' },
+  pointermove:        { name: 'touchmove',   via: 'root' },
+  pointerup:          { name: 'touchend',    via: 'root' },
+  pointercancel:      { name: 'touchcancel', via: 'root' },
+  input:              { name: 'input',       via: 'node' },
+  focus:              { name: 'focus',       via: 'node' },
+  blur:               { name: 'blur',        via: 'node' },
+  load:               { name: 'load',        via: 'node' },
+  error:              { name: 'error',       via: 'node' },
+  change:             { via: 'synth' },
+  submit:             { via: 'synth' },
+  lostpointercapture: { via: 'synth' },
 }
 
 const create = {
@@ -84,7 +92,7 @@ function scheduleFlush() {
 }
 
 function wrap(el, tag, role) {
-  const node = { el, tag, role, parent: null, attrs: {}, __fragment: null }
+  const node = Object.assign(Object.create(Listening), { el, tag, role, parent: null, attrs: {}, __fragment: null })
   byEl.set(el, node)
   byUid.set(__GetElementUniqueID(el), node)
   return node
@@ -270,9 +278,9 @@ function nodeOf(target) {
   return null
 }
 
-export function on(node, event, handler, { capture = false, once = false } = {}) {
+export function on(node, event, handler, { capture = false, once = false } = {}, spelling = `on${event}`) {
   const spec = ENGINE_EVENTS[event]
-  if (!spec) refuse(`on${event}`)
+  if (!spec) refuse(spelling)
   if (!handler) return
   ;((node.listeners ??= {})[event] ??= []).push({ fn: handler, capture, once })
   if (spec.via === 'root') listenAtRoot(event)
@@ -286,11 +294,71 @@ const win = { tag: '#window', role: 'window', parent: null, listeners: {} }
 function listenAtRoot(event) {
   if (rootListening.has(event)) return
   rootListening.add(event)
+  const touch = ENGINE_EVENTS[event].name.startsWith('touch')
+  const pointer = event.startsWith('pointer')
   __AddEventListener(_page, ENGINE_EVENTS[event].name, (e) => {
-    const target = nodeOf(e.target) ?? win
-    const done = dispatch(target, event, { detail: e.detail })
+    const target = (pointer && event !== 'pointerdown' && captured) || (nodeOf(e.target) ?? win)
+    const done = dispatch(target, event, touch ? touchFields(e, event, pointer) : { detail: e.detail })
     if (event === 'click' && !done.defaultPrevented) activate(target)
+    if ((event === 'pointerup' || event === 'pointercancel') && captured) captured.releasePointerCapture(POINTER_ID)
   }, {})
+}
+
+// ─── touch as mouse and pointer ───────────────────────────────────────────────
+
+// One finger, so one id: a single-touch `identifier` is the address of an
+// engine stack frame, a new number on every event of the same touch.
+const POINTER_ID = 1
+
+// `detail` is the one position a phone and Lynx for Web agree on, the page's
+// own coordinates, in `$.measure`'s units. A Touch's `pageX` is the page's on a
+// phone and the browser document's on Lynx for Web. A lifted finger has no
+// `detail` on Lynx for Web, so an end reports where the last move was.
+let lastAt = { x: 0, y: 0 }
+
+function touchFields(e, event, pointer) {
+  const d = e.detail
+  if (typeof d?.x === 'number' && typeof d?.y === 'number') lastAt = { x: d.x, y: d.y }
+  const { x, y } = lastAt
+  const held = event.endsWith('down') || event.endsWith('move')
+  const fields = { detail: d, button: 0, buttons: held ? 1 : 0, clientX: x, clientY: y, pageX: x, pageY: y }
+  if (pointer) Object.assign(fields, { pointerId: POINTER_ID, pointerType: 'touch', isPrimary: true })
+  return fields
+}
+
+// The engine keeps every event of a touch at the element it began on, so a
+// touch is captured before anything asks. What capture adds is the DOM's
+// retargeting, to an ancestor that took it, and `lostpointercapture` once the
+// finger lifts or the capture is released.
+let captured = null
+
+// What an attachment written for the DOM calls on its element. Every listener
+// goes through `on()`, so an event a phone does not send throws by name.
+const Listening = {
+  addEventListener(type, fn, opts = false) {
+    const { capture = false, once = false } = typeof opts === 'boolean' ? { capture: opts } : opts
+    on(this, type, fn, { capture, once }, `addEventListener('${type}')`)
+  },
+  removeEventListener(type, fn, opts = false) {
+    const capture = typeof opts === 'boolean' ? opts : !!opts.capture
+    const list = this.listeners?.[type]
+    const at = list ? list.findIndex((l) => l.fn === fn && l.capture === capture) : -1
+    if (at >= 0) list.splice(at, 1)
+  },
+  // The release is heard at the root whoever else listens, or a capture
+  // nobody released would take the next touch.
+  setPointerCapture(id) {
+    if (id !== POINTER_ID) return
+    captured = this
+    listenAtRoot('pointerup')
+    listenAtRoot('pointercancel')
+  },
+  hasPointerCapture(id) { return id === POINTER_ID && captured === this },
+  releasePointerCapture(id) {
+    if (!this.hasPointerCapture(id)) return
+    captured = null
+    dispatch(this, 'lostpointercapture', { pointerId: POINTER_ID, pointerType: 'touch', isPrimary: true })
+  },
 }
 
 /** Listen at the element for an event the engine reports only there. */

@@ -43,11 +43,11 @@ import { createCaravan, defineJob } from '${join(here, '../../../caravan/src/ind
 // panel has an observable outcome. A handler that always throws re-fails inside
 // one poll interval and the button looks like it did nothing.
 let runs = 0
-const boom  = defineJob('flaky-job', async () => {
+const boom  = defineJob({ name: 'flaky-job', maxAttempts: 1, timeout: 5000, handler: async () => {
   if (runs++ === 0) throw new Error('handler exploded')
   return 1
-}, { maxAttempts: 1, timeout: 5000 })
-const sweep = defineJob('nightly-sweep', async () => 1, { cron: '0 3 * * *' })
+} })
+const sweep = defineJob({ name: 'nightly-sweep', cron: '0 3 * * *', handler: async () => 1 })
 
 const app = createApp({ config: { port: ${APP_PORT},
   services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 200 } } })

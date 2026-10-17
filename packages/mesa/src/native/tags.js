@@ -131,18 +131,24 @@ export const isInline = (tag) => {
  * The DOM events a phone delivers. `change` and `submit` the runtime makes
  * from others, as a browser does: `change` from a field's blur after an
  * edit, `submit` from a tap on a submit button. A phone sends no key events,
- * so `keydown` is refused rather than never fired.
+ * so `keydown` is refused rather than never fired. The pointer events are a
+ * touch's, one finger, as a browser reports a touchscreen.
  */
 export const NATIVE_EVENTS = {
-  click:     { bubbles: true },
-  mousedown: { bubbles: true },
-  mouseup:   { bubbles: true },
-  mousemove: { bubbles: true },
-  input:     { bubbles: true },
-  change:    { bubbles: true },
-  submit:    { bubbles: true },
-  focus:     { bubbles: false },
-  blur:      { bubbles: false },
-  load:      { bubbles: false },
-  error:     { bubbles: false },
+  click:              { bubbles: true },
+  mousedown:          { bubbles: true },
+  mouseup:            { bubbles: true },
+  mousemove:          { bubbles: true },
+  pointerdown:        { bubbles: true },
+  pointermove:        { bubbles: true },
+  pointerup:          { bubbles: true },
+  pointercancel:      { bubbles: true },
+  lostpointercapture: { bubbles: true },
+  input:              { bubbles: true },
+  change:             { bubbles: true },
+  submit:             { bubbles: true },
+  focus:              { bubbles: false },
+  blur:               { bubbles: false },
+  load:               { bubbles: false },
+  error:              { bubbles: false },
 }

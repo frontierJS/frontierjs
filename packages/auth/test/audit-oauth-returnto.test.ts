@@ -49,7 +49,7 @@ describe('GET /auth/oauth/{provider}?returnTo= with a prefix entry', () => {
 
   beforeAll(async () => {
     h = await makeAuth({
-      oauthProviders:     { google: defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' }) },
+      oauthProviders:     { google: defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' }) },
       oauthReturnToAllow: ['/orders/'],
     })
     app = await createTestApp({ auth: h.auth as any })

@@ -47,9 +47,9 @@ import { routedHosts, routedRedirects } from '../core/runtime.ts'
 import { isInline }      from '../core/app-source.ts'
 import type { App }         from '@frontierjs/junction'
 
-const domainDns = defineJob<{ domainId: string }>(
-  'domain:dns',
-  async (ctx) => {
+const domainDns = defineJob<{ domainId: string }>({
+  name: 'domain:dns',
+  handler: async (ctx) => {
     const { app, mode } = runsEitherWay(ctx, 'domain:dns')
     const log     = app.logger.child('domain-dns')
 
@@ -94,16 +94,14 @@ const domainDns = defineJob<{ domainId: string }>(
     if (rebound) throw rebound
     if (dns) throw dns
   },
-  {
-    // Its own queue, one wide (junction.config.js says why).
-    queue:       'dns',
-    maxAttempts: 5,
-    retryDelay:  [10_000, 60_000],
-    // A push is a few vendor calls, and the queue is one wide: a push hung on
-    // a vendor that never answers would hold every push behind it.
-    timeout:     120_000,
-  },
-)
+  // Its own queue, one wide (junction.config.js says why).
+  queue:       'dns',
+  maxAttempts: 5,
+  retryDelay:  [10_000, 60_000],
+  // A push is a few vendor calls, and the queue is one wide: a push hung on
+  // a vendor that never answers would hold every push behind it.
+  timeout:     120_000,
+})
 
 export default domainDns
 

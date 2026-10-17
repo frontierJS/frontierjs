@@ -24,7 +24,7 @@ const nextEmail = () => `magic-${Date.now()}-${seq++}@example.com`
 
 beforeAll(async () => {
   h = await makeAuth({
-    oauthProviders: { google: defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' }) },
+    oauthProviders: { google: defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' }) },
     onMagicLinkRequested: async (m) => { inbox.push(m); arrived() },
   })
 })

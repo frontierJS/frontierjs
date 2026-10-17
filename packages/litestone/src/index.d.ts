@@ -798,8 +798,10 @@ export interface LitestoneClient {
    * (`FJS-D36`) and litestone cannot import it:
    *
    * ```js
-   * export default defineJob('retention', () => db.asSystem().$retain(),
-   *                          { cron: '0 4 * * *' })
+   * export default defineJob({
+   *   cron: '0 4 * * *',
+   *   handler: () => db.asSystem().$retain(),
+   * })
    * ```
    *
    * **`asSystem()` only.** It is a DELETE against the base table and applies no

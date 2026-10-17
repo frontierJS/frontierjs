@@ -703,9 +703,15 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     //
     // `@@tenant(none)` carries no generated default, so a model where the
     // column IS a caller-supplied value is untouched.
+    // A column @@mirror made @system is the Provider's, and a claimed
+    // mirror's create and update take it as the Provider verb's input
+    // (FJS-D1125). Its own kind lets a client send it rather than strip it,
+    // and the server still judges: an unclaimed mirror refuses it by name.
     if (isSystemWritten) {
       fieldSchema.readOnly = true
-      fieldSchema['x-litestone-kind'] = tenancyStamped ? 'tenancy' : 'system'
+      fieldSchema['x-litestone-kind'] = tenancyStamped ? 'tenancy'
+        : field.attributes.some(a => a.kind === 'system' && a.generated === 'mirror') ? 'mirror'
+        : 'system'
     }
 
     // @createdBy / @updatedBy — the principal WINS (`core/stamps.js`), so a

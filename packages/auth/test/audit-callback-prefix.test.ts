@@ -22,7 +22,7 @@ afterAll(() => { for (const c of cleanups) c() })
 
 async function appWithPrefix(apiPrefix: string) {
   const h: Harness = await makeAuth({
-    oauthProviders: { google: defineProvider('google', 'google', { clientId: 'cid', clientSecret: 'sec' }) },
+    oauthProviders: { google: defineProvider({ name: 'google', preset: 'google', clientId: 'cid', clientSecret: 'sec' }) },
   })
   cleanups.push(() => h.cleanup())
   const app: any = await createTestApp({ auth: h.auth as any, config: { apiPrefix } as any })

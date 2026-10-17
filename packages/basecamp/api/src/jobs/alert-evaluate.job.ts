@@ -68,9 +68,8 @@ let lastReported = ''
  *  from it is always a scrape short of the duration. */
 const WINDOW_GRACE_MS = 2 * 60_000
 
-export default defineJob(
-  'alert-evaluate',
-  async (ctx) => {
+export default defineJob({
+  handler: async (ctx) => {
     const { app, db } = runsAsApp(ctx, 'alert-evaluate')
     const now  = Date.now()
 
@@ -181,8 +180,8 @@ export default defineJob(
   },
   // Every minute — the scrape's own interval. A slower evaluator would add its
   // period to every rule's `forMinutes` without saying so.
-  { cron: '* * * * *' },
-)
+  cron: '* * * * *',
+})
 
 /**
  * Deliver one event to every channel the rule is attached to.

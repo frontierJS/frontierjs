@@ -49,12 +49,11 @@ export async function calculatePayslipJob(
   return { made, finished }
 }
 
-export default defineJob<CalculatePayslipPayload>(
-  'payslip-calculate',
-  async (ctx: JobContext<CalculatePayslipPayload>) => { await calculatePayslipJob(ctx) },
+export default defineJob<CalculatePayslipPayload>({
   // Three attempts: a payslip calculation reads four tables and writes two, so
   // the failures worth retrying are contention rather than arithmetic. An
   // arithmetic failure throws the same way three times and ends up on the dead
   // list, which is where somebody should be looking at it.
-  { maxAttempts: 3 },
-)
+  maxAttempts: 3,
+  handler:     async (ctx: JobContext<CalculatePayslipPayload>) => { await calculatePayslipJob(ctx) },
+})

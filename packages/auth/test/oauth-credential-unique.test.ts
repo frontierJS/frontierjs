@@ -12,7 +12,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { makeAuth, type Harness } from './harness.ts'
 import { defineProvider } from '../oauth.ts'
 
-const google = defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' })
+const google = defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' })
 
 let h: Harness
 

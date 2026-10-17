@@ -22,8 +22,8 @@ import {
 const CREDS = { clientId: 'cid', clientSecret: 'secret' }
 const REDIRECT = 'https://shop.test/auth/oauth/google/callback'
 
-const google = () => defineProvider('google', 'google', CREDS)
-const github = () => defineProvider('github', 'github', CREDS)
+const google = () => defineProvider({ name: 'google', preset: 'google', ...CREDS })
+const github = () => defineProvider({ name: 'github', preset: 'github', ...CREDS })
 
 // ─── fetch stubbing ─────────────────────────────────────────────────────────
 
@@ -61,7 +61,8 @@ describe('defineProvider', () => {
     // nOAuth: the issuer is whatever the app pointed this at, and an attacker
     // who can stand one up can assert any address. Google's is a statement
     // about Google; there is no equivalent statement to make about `oidc`.
-    const p = defineProvider('okta', 'oidc', {
+    const p = defineProvider({
+      name: 'okta', preset: 'oidc',
       ...CREDS,
       authorizeUrl: 'https://x.test/authorize',
       tokenUrl:     'https://x.test/token',
@@ -72,19 +73,19 @@ describe('defineProvider', () => {
   })
 
   test('one preset can be configured twice under two names', () => {
-    const a = defineProvider('entra-prod',    'oidc', { ...CREDS, authorizeUrl: 'https://a/a', tokenUrl: 'https://a/t', userinfoUrl: 'https://a/u' })
-    const b = defineProvider('entra-staging', 'oidc', { ...CREDS, authorizeUrl: 'https://b/a', tokenUrl: 'https://b/t', userinfoUrl: 'https://b/u' })
+    const a = defineProvider({ name: 'entra-prod',    preset: 'oidc', ...CREDS, authorizeUrl: 'https://a/a', tokenUrl: 'https://a/t', userinfoUrl: 'https://a/u' })
+    const b = defineProvider({ name: 'entra-staging', preset: 'oidc', ...CREDS, authorizeUrl: 'https://b/a', tokenUrl: 'https://b/t', userinfoUrl: 'https://b/u' })
     expect(a.name).not.toBe(b.name)
     expect(a.authorizeUrl).not.toBe(b.authorizeUrl)
   })
 
   test('an oidc provider missing an endpoint is refused at definition, not at click time', () => {
-    expect(() => defineProvider('okta', 'oidc', CREDS)).toThrow(OAuthError)
+    expect(() => defineProvider({ name: 'okta', preset: 'oidc', ...CREDS })).toThrow(OAuthError)
   })
 
   test('an unknown preset names the ones that exist', () => {
     try {
-      defineProvider('x', 'faceboook', CREDS)
+      defineProvider({ name: 'x', preset: 'faceboook', ...CREDS })
       throw new Error('should have thrown')
     } catch (err) {
       expect(err).toBeInstanceOf(OAuthError)
@@ -93,7 +94,7 @@ describe('defineProvider', () => {
   })
 
   test('credentials are required', () => {
-    expect(() => defineProvider('google', 'google', { clientId: 'a', clientSecret: '' })).toThrow(OAuthError)
+    expect(() => defineProvider({ name: 'google', preset: 'google', clientId: 'a', clientSecret: '' })).toThrow(OAuthError)
   })
 })
 

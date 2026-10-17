@@ -27,10 +27,13 @@ bin/
 ### Declaring a job
 
 - **A job file is named by its file, and a mismatch throws at load.**
-  `send-email.job.ts` is `send-email`; a `defineJob` naming anything else is
-  refused rather than registered, because a handler answering to `send-emial`
-  while every dispatch says `send-email` is a job that silently never runs. A
-  name that cannot be a filename belongs on a `handle()` call outside `jobsDir`.
+  `send-email.job.ts` is `send-email`: `defineJob` takes one spec object, states
+  no name, and the loader stamps the file's (`FJS-2953`). A `name:` that names
+  anything else is refused rather than registered, because a handler answering
+  to `send-emial` while every dispatch says `send-email` is a job that silently
+  never runs. A name that cannot be a filename (`deployment:run`) is stated as
+  `name:` beside a dash-spelled file. A definition read before it is stamped or
+  named throws.
 - **`cron` is a `handle()` option, not a `schedule()` feature.** A registration
   carrying one is a recurring job, which is what lets a `*.job.ts` file declare
   its own schedule — `handle` is the only call autoload makes. `schedule()` is

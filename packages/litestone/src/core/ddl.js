@@ -462,7 +462,7 @@ function tableConstraints(model, schema, pluralize = false) {
   for (const field of model.fields) {
     const rel = field.attributes.find(a => a.kind === 'relation')
     if (!rel?.fields) continue  // skip back-reference fields (no fields: [...])
-    if (rel.unenforced) continue  // a Provider's reference under @@mirror
+    if (rel.unenforced) continue  // enforced: false, or a Provider's reference under @@mirror
 
     // Resolve the TARGET's actual table name — @@map / pluralize aware.
     // Referencing the raw model name broke every FK on @@map'd schemas.

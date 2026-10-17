@@ -112,9 +112,8 @@ export async function sweepUnreachable(
   return result
 }
 
-export default defineJob(
-  'server-reachability',
-  async (ctx) => {
+export default defineJob({
+  handler: async (ctx) => {
     const { app } = runsAsApp(ctx, 'server-reachability')
     const res = await sweepUnreachable(app)
 
@@ -125,5 +124,5 @@ export default defineJob(
   },
   // The scrape's own interval, and the same one `alert-evaluate` runs on: a
   // slower sweep adds its whole period to every detection without saying so.
-  { cron: '* * * * *' },
-)
+  cron: '* * * * *',
+})

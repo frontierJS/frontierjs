@@ -98,12 +98,14 @@ async function runCleanup(app: App, runId: string): Promise<void> {
 // Two attempts, not three. A sweep that timed out may well have freed the disk and
 // lost the answer, and the second attempt covers a transport failure only.
 
-export default defineJob<{ runId: string; workspaceId: string }>('cleanup:run', async (ctx) => {
-  // Somebody asked for this sweep. The queue recorded them and the workspace.
-  const { app } = runsAsCaller(ctx, 'cleanup:run')
-  await runCleanup(app, ctx.data.runId)
-}, {
+export default defineJob<{ runId: string; workspaceId: string }>({
+  name:        'cleanup:run',
   queue:       'fleet',
   maxAttempts: 2,
   retryDelay:  [10_000],
+  handler: async (ctx) => {
+    // Somebody asked for this sweep. The queue recorded them and the workspace.
+    const { app } = runsAsCaller(ctx, 'cleanup:run')
+    await runCleanup(app, ctx.data.runId)
+  },
 })

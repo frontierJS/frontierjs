@@ -24,7 +24,7 @@ let app: any
 
 beforeAll(async () => {
   h = await makeAuth({
-    oauthProviders: { google: defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' }) },
+    oauthProviders: { google: defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' }) },
   })
   app = await createTestApp({ auth: h.auth as any })
   app.setAuth(h.auth as any)

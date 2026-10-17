@@ -33,7 +33,7 @@ beforeAll(async () => {
     // Wide enough to confirm and then sign in again inside one window — the
     // reason `totp-login.test.ts` keeps a second harness.
     totpDrift: 10,
-    oauthProviders: { google: defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' }) },
+    oauthProviders: { google: defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' }) },
     onCredentialChanged: async (change) => {
       told.push(change)
       seen.add(change.event)

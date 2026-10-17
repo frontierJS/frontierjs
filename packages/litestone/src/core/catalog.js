@@ -348,8 +348,8 @@ const FIELD = [
     'relation',
     'field',
     'relate',
-    '(["name",] fields: [...], references: [...][, onDelete][, onUpdate])',
-    "A foreign key. The scalar column and the relation field are separate declarations; `fields` names the former and `references` the target's key.",
+    '(["name",] fields: [...], references: [...][, onDelete][, onUpdate][, enforced: false])',
+    "A foreign key. The scalar column and the relation field are separate declarations; `fields` names the former and `references` the target's key. `enforced: false` keeps the relation and emits no constraint, for a reference whose parent may never land — what `@@mirror` derives on a Provider's ids.",
     'author User @relation(fields: [authorId], references: [id])',
     {
       context: 'model User { id Int @id }',

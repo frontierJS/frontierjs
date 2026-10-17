@@ -16,8 +16,8 @@ import { defineProvider, OAuthError } from '../oauth.ts'
 const REDIRECT = 'https://shop.test/auth/oauth/google/callback'
 
 const providers = {
-  google: defineProvider('google', 'google', { clientId: 'cid', clientSecret: 'sec' }),
-  github: defineProvider('github', 'github', { clientId: 'cid', clientSecret: 'sec' }),
+  google: defineProvider({ name: 'google', preset: 'google', clientId: 'cid', clientSecret: 'sec' }),
+  github: defineProvider({ name: 'github', preset: 'github', clientId: 'cid', clientSecret: 'sec' }),
 }
 
 let h: Harness
