@@ -132,7 +132,8 @@ const CLEAN = {
   // and its absence of findings is the shape an app is meant to be in: import
   // the file, declare nothing twice.
   // `verify:leads` is there so `drive-holds` RUNS over the clean tree, and the
-  // drive declares the port block it asks for.
+  // drive declares the port block it asks for. `api/test/leads.test.ts` is the
+  // same for `test-not-hermetic`: a stub upstream on port 0.
   'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*', '@acme/skin': '*' },
                                    scripts: { 'verify:leads': 'bun web/test/verify-leads.mjs' } }),
   // A dependency that ships CSS, so `css-token-undefined` RUNS on the clean tree
@@ -207,6 +208,7 @@ const CLEAN = {
   // catch — and finds nothing, because the driver opens the browser.
   'web/test/verify-leads.mjs':          "export const holds = ['ports']\nimport { openChrome } from '@frontierjs/mesa/drive'\n" +
                                         "const UI = await portFor(import.meta.url, 'fe')\nconst browser = await openChrome()\n",
+  'api/test/leads.test.ts':             "const upstream = Bun.serve({ port: 0, fetch: () => new Response('ok') })\n",
   'web/src/resources/Lead.mesa':        resource('leads'),
   'web/src/resources/Account.mesa':     resource('accounts'),
   // The third surface. It is in the clean app because every rule must RUN
@@ -1491,6 +1493,60 @@ describe('the silent config hazards', () => {
     expect(only(root, 'drive-holds', { scope: 'repo' }).findings.map(f => relative(root, f.file)))
       .toEqual(['packages/store/test/verify.mjs'])
     expect(only(join(root, 'packages/fleet'), 'drive-holds').findings).toHaveLength(1)
+  })
+
+  // A collected test runs beside every other suite on the machine, so a fixed
+  // port or a real Chrome is a failure filed as environment.
+  test('a collected test binding a fixed port or launching Chrome is an error', () => {
+    const root = tree('not-hermetic', {
+      'package.json':               JSON.stringify({ name: 'app' }),
+      'api/test/block.test.ts':     "const PORT = await portFor(import.meta.url, 'be', { service: 7 })\n",
+      'api/test/literal.test.ts':   "// header\nconst s = Bun.serve({ fetch, port: 3011 })\n",
+      'api/test/listen.test.js':    "server.listen(4000)\n",
+      'api/test/browser.test.js':   "const b = await openChrome()\n",
+      'api/test/probe.test.js':     "const CHROME = findChrome()\n",
+      'api/test/hermetic.test.ts':
+        "const s = Bun.serve({ port: 0, fetch })\n" +
+        "await handler(new Request('http://localhost:8110/x'))\n" +
+        "await fetch(`http://localhost:${s.port}/`)\n" +
+        "await portFor(join(scratch, 'api'), 'be', { lockFile })\n" +
+        "const fixture = \"await portFor(import.meta.url, 'be'); Bun.serve({ port: 7123 })\"\n" +
+        "// openChrome() and findChrome() are the drive's\n" +
+        "await expect(openChrome({ args })).rejects.toThrow(/own flag/)\n" +
+        "expect(findChrome({ ...world })).toBe(null)\n" +
+        "process.env.FLI_PORT_BE = '8120'\n",
+      'api/test/fixtures/served.test.js': "Bun.serve({ port: 8000 })\n",
+      'api/test/verify.spec.mjs':   "const b = await openChrome()\n",
+    })
+    const { findings } = only(root, 'test-not-hermetic')
+    expect(findings.map(f => [relative(root, f.file), f.line, f.message.match(/test (.+?), so/)[1]])).toEqual([
+      ['api/test/block.test.ts',   1, "asks for this checkout's port block"],
+      ['api/test/browser.test.js', 1, 'launches Chrome'],
+      ['api/test/listen.test.js',  1, 'binds a literal port'],
+      ['api/test/literal.test.ts', 2, 'binds a literal port'],
+      ['api/test/probe.test.js',   1, 'launches Chrome'],
+    ])
+    expect(findings[0].message).toMatch(/port: 0.*specs\//s)
+  })
+
+  test('in the repo run a nested app\'s collected tests are left to its own run', () => {
+    const test = "await portFor(import.meta.url, 'be')\n"
+    const root = tree('not-hermetic-repo', {
+      'packages/store/package.json':       JSON.stringify({ name: 'store' }),
+      'packages/store/test/a.test.js':     test,
+      'packages/fleet/db/schema.lite':     'model Server { id Integer @id }\n',
+      'packages/fleet/package.json':       JSON.stringify({ name: 'fleet' }),
+      'packages/fleet/api/test/a.test.ts': test,
+    })
+    expect(only(root, 'test-not-hermetic', { scope: 'repo' }).findings.map(f => relative(root, f.file)))
+      .toEqual(['packages/store/test/a.test.js'])
+    expect(only(join(root, 'packages/fleet'), 'test-not-hermetic').findings).toHaveLength(1)
+  })
+
+  test('the clean tree has a collected test, and it is hermetic', () => {
+    const { findings, skipped } = only(tree('not-hermetic-clean', CLEAN), 'test-not-hermetic')
+    expect(skipped).toEqual([])
+    expect(findings).toEqual([])
   })
 
   test('a port literal is excused by an allowance keyed to the file, with its reason', () => {

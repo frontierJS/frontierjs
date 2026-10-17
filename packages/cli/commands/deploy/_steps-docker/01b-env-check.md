@@ -26,7 +26,7 @@ for (const name of candidates) {
 //
 // `deploy.configuration` and `deploy.secrets` are the second source, and folding them
 // in here is what stops them being vacuous. Their VALUES are not applied by any
-// step — `fli` writes no `.env` on a target, the operator owns that file, and
+// step — a deploy writes no `.env` on a target (setup seeds it once, FJS-D1186), and
 // the container is started with `--env-file` against it — so a block that only
 // fed the Release hash was a declaration nothing on the target was ever graded
 // against ([FJS-585](../../../../../ISSUES.md#fjs-585)).
@@ -116,8 +116,8 @@ for (const key of missing) {
   log.warn(`  ${key.padEnd(28)} declared in ${source.get(key)}`)
 }
 log.info('')
-log.info(`Add the missing keys to ${envFile} on the server, then redeploy.`)
-log.info(`You can set them with:  fli env:set --remote ${missing[0]}=value`)
+log.info(`Add the missing keys to ${envFile} on the server, then redeploy:`)
+log.info(`  ssh ${host} nano ${envFile}`)
 log.info(`Or pull them from local: fli env:pull --from ssh --server ${target} --path ${envFile}`)
 
 $.config.abort = true

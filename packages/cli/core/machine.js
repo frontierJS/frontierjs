@@ -71,6 +71,21 @@ export function transportFor(host, declared = null) {
 export const shQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
 
 /**
+ * One TCP + auth handshake per deploy instead of one per command.
+ *
+ * A deploy makes eighty-odd calls to its target, and a fresh handshake was 1.35s
+ * of each against a 100ms-RTT box (0.21s multiplexed), so most of a two-minute
+ * deploy was logging in. Every ssh, scp and rsync below carries these options.
+ *
+ * The path is under `~/.ssh` and short: a unix socket path is capped at 108
+ * bytes and ssh refuses to start past it, which a per-session temp directory
+ * exceeds. `%C` is a hash of local host, remote host, port and user, so two
+ * users or two boxes never share a socket. The master outlives `fli` by
+ * `ControlPersist` and exits on its own.
+ */
+export const SSH_MUX = `-o ControlMaster=auto -o ControlPath=${shQuote('~/.ssh/fli-%C')} -o ControlPersist=60`
+
+/**
  * The command that reads a script on stdin and runs it on the target.
  *
  * `sh -s` rather than `bash`: a deploy target is whatever the operator has, and
@@ -78,7 +93,7 @@ export const shQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
  * them to the remote login shell, so the remote runs `sh -s` and reads our pipe.
  */
 export const runCommand = (host, transport) =>
-  transport === 'local' ? 'sh -s' : `ssh ${host} sh -s`
+  transport === 'local' ? 'sh -s' : `ssh ${SSH_MUX} ${host} sh -s`
 
 /**
  * Run a PROGRAM there with something else on stdin.
@@ -90,7 +105,7 @@ export const runCommand = (host, transport) =>
  * string in `_module.md`, so the local backend keeps working.
  */
 export const pipeCommand = (host, transport, command) =>
-  transport === 'local' ? command : `ssh ${host} ${command}`
+  transport === 'local' ? command : `ssh ${SSH_MUX} ${host} ${command}`
 
 /**
  * Run an INTERACTIVE program there — one that wants the operator's terminal.
@@ -102,7 +117,7 @@ export const pipeCommand = (host, transport, command) =>
  * — a command the operator typed reaches the target as they typed it.
  */
 export const ttyCommand = (host, transport, command) =>
-  transport === 'local' ? command : `ssh -t ${host} ${shQuote(command)}`
+  transport === 'local' ? command : `ssh -t ${SSH_MUX} ${host} ${shQuote(command)}`
 
 /**
  * Move an image from one machine to another, by content.
@@ -129,13 +144,13 @@ export const sameMachine = (a, b) =>
 
 /** The reachability probe. Local is reachable by construction; saying otherwise would be theater. */
 export const reachCommand = (host, transport) =>
-  transport === 'local' ? null : `ssh -o ConnectTimeout=5 -o BatchMode=yes ${host} true`
+  transport === 'local' ? null : `ssh -o ConnectTimeout=5 -o BatchMode=yes ${SSH_MUX} ${host} true`
 
 /** Put a local file on the target. */
 export const sendCommand = (host, transport, localPath, remotePath) =>
   transport === 'local'
     ? `cp -f ${shQuote(localPath)} ${shQuote(remotePath)}`
-    : `scp -q ${shQuote(localPath)} ${host}:${remotePath}`
+    : `scp -q ${SSH_MUX} ${shQuote(localPath)} ${host}:${remotePath}`
 
 /**
  * Mirror a local directory onto the target, deleting what is no longer in it.
@@ -147,7 +162,7 @@ export const sendCommand = (host, transport, localPath, remotePath) =>
 export const syncCommand = (host, transport, localDir, remoteDir) =>
   transport === 'local'
     ? `rsync -a --delete ${shQuote(localDir + '/')} ${shQuote(remoteDir + '/')}`
-    : `rsync -a --delete ${shQuote(localDir + '/')} ${host}:${remoteDir}/`
+    : `rsync -a --delete -e ${shQuote(`ssh ${SSH_MUX}`)} ${shQuote(localDir + '/')} ${host}:${remoteDir}/`
 
 /**
  * A script with its working directory established.

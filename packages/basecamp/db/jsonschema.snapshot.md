@@ -205,7 +205,7 @@ validates, and a select that silently drops an option.
 - `ComparisonOp` — `gt`, `gte`, `lt`, `lte`
 - `AlertStatus` — `firing`, `resolved`
 - `ActorKind` — `user`, `api_key`, `system`, `support`
-- `ChannelKind` — `slack`, `pagerduty`, `email`, `webhook`
+- `ChannelKind` — `slack`, `pagerduty`, `email`, `webhook`, `chat`
 - `FlagType` — `boolean`, `variant`
 - `WidgetKind` — `server_fleet`, `server_health`, `app_status`, `deploy_feed`, `job_history`, `activity_feed`, `alert_status`, `service_health`, `stat_counter`
 - `ParamGenerator` — `random_hex_16`, `random_hex_32`, `random_hex_64`

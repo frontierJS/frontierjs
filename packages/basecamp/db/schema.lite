@@ -491,7 +491,7 @@ enum ActorKind      { user api_key system support }
 // which is why the kind is an enum and not a free string: the UI builds its
 // form from it, and a kind nothing can deliver is a channel that silently
 // never fires.
-enum ChannelKind    { slack pagerduty email webhook }
+enum ChannelKind    { slack pagerduty email webhook chat }
 
 // A flag is either on/off or one of several named variants. The distinction
 // decides what `variants` means and what an override may pin, so it is a

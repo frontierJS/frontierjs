@@ -56,8 +56,8 @@ function canonical(obj) {
 // the rule is not a convention to remember: a value is committed and a
 // reference points at something that is not.
 //
-// **The hash covers a DECLARATION, not the running configuration.** `fli` writes
-// no `.env` on a target — the operator owns that file, and the container is
+// **The hash covers a DECLARATION, not the running configuration.** A deploy
+// writes no `.env` on a target — setup seeds it once (FJS-D1186), and the container is
 // started with `--env-file` against it — so nothing here is applied by a deploy.
 // What the hash and the generation are for is the pair a revert compares:
 // *has the configuration been changed since the release I am going back to*.

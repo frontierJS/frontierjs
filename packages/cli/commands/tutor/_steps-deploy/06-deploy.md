@@ -46,7 +46,7 @@ try {
 
   log.error([
     'the Docker daemon cannot read the build context',
-    `    ${'asked'.padEnd(10)}docker build in ${$.config.serverDir}`,
+    `    ${'asked'.padEnd(10)}docker build in ${$.config.serverDir}/src`,
     `    ${'got'.padEnd(10)}a path it says is not there, and it is`,
     `    ${'likely'.padEnd(10)}this shell's /tmp is private to it, so the daemon sees a different one`,
     `    ${'continue'.padEnd(10)}fli ${$.config.lesson} --workspace ~/frontier-tutorial`,

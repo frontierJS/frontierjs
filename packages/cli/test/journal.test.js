@@ -231,7 +231,7 @@ describe('the journal, through the runner that ships to the target', () => {
     digest: null, configurationHash: 'b'.repeat(64), generation: 1,
     schemaHash: 'c'.repeat(64), pivot: 'expand', createdBy: 'jordan',
   }
-  const NAMES = ['01-preflight', '02-pull', '04-build-api', '06-swap']
+  const NAMES = ['01-preflight', '02-ship', '04-build-api', '06-swap']
   const steps = (tid) => NAMES.map((name, i) => ({
     id: `deploy:${tid}:${name}`, transitionId: tid, name, ordinal: i + 1,
     status: 'pending', precondition: { serving: null, generation: 1, schemaHash: RELEASE.schemaHash },

@@ -98,6 +98,8 @@ export const RULES = [
     title: 'a test asks for its port with portFor(), never a literal' },
   { id: 'drive-holds',          scope: 'both', severity: 'error', invariant: null,
     title: 'a drive that reaches its checkout\'s ports or dev database declares it in holds' },
+  { id: 'test-not-hermetic',    scope: 'both', severity: 'error', invariant: null,
+    title: 'a collected test binds no fixed port and opens no Chrome' },
   { id: 'body-tag-in-comment',  scope: 'app',  severity: 'error', invariant: null,
     hazard: 'ui: Vite injects the built',
     title: 'the body tag is never written inside a comment' },
@@ -1052,6 +1054,43 @@ const CHECKS = {
                    `(${where}) and does not declare it, so a second \`fli prove\` in this tree runs beside it ` +
                    `and collides. Add \`export const holds = [${[...held, name].filter(n => HOLDS.includes(n)).map(n => `'${n}'`).join(', ')}]\`.`,
         })
+      }
+    }
+    return { findings }
+  },
+
+  // A collected test runs in every package suite, beside every other suite on
+  // the machine, so one that binds a fixed port collides with whichever run
+  // holds it and fails as environment: basecamp's edge.test.ts asked for this
+  // checkout's block slot 7, which `verify:provision` binds too. A test that
+  // launches Chrome depends on a browser being installed, idle and quick. Both
+  // are driven tests wearing a collected name; the way out is `port: 0`, or a
+  // `specs/` file under the `run.mjs` beside it. A server on `port: 0` and a
+  // `new Request('http://localhost/x')` handed to a handler are hermetic and not
+  // read.
+  //
+  // Read as code with strings blanked, so a fixture naming `portFor(` is not a
+  // call. `portFor(import.meta…)` is this checkout's block; a `portFor` given a
+  // scratch root is the port table under test. `FLI_PORT_` is not read: in a
+  // collected test it is an env var set and restored around the code under
+  // test, never a port reached.
+  'test-not-hermetic': ({ root }) => {
+    const files = collectedTests(root)
+    if (!files.length) return { skipped: 'no collected test' }
+    const findings = []
+    for (const path of files) {
+      const code = readCode(path, { strings: true })
+      for (const [re, says] of TEST_NOT_HERMETIC) {
+        const m = re.exec(code)
+        if (!m) continue
+        findings.push({
+          file: path,
+          line: lineOf(code, m.index),
+          message: `this collected test ${says}, so it fails whenever the machine is not as it expects and ` +
+                   'the row gets filed as environment. Bind `port: 0` and read the port back, or move the ' +
+                   'case to a `specs/` file the `run.mjs` beside it drives.',
+        })
+        break
       }
     }
     return { findings }
@@ -4703,7 +4742,7 @@ function optionsInsert(text, brace, entry) {
  * cannot appear inside one (that is an empty regex, which no engine accepts) —
  * and an escaped quote is honored, which is the only escape that matters here.
  */
-function readCode(path) {
+function readCode(path, { strings = false } = {}) {
   let text = ''
   try { text = readFileSync(path, 'utf8') } catch { return '' }
 
@@ -4717,12 +4756,13 @@ function readCode(path) {
     const c = text[i]
 
     if (c === '"' || c === "'" || c === '`') {
-      i++
+      const from = ++i
       while (i < text.length) {
         if (text[i] === '\\') { i += 2; continue }
         if (text[i] === c) { i++; break }
         i++
       }
+      if (strings) blank(from, i - 1)
       continue
     }
 
@@ -5614,6 +5654,37 @@ const lineOf = (text, index) => text.slice(0, index).split('\n').length
 // `db/app.db` in an assertion message is not one.
 const DRIVE_BINDS_PORTS = /\bportFor\s*\(|\bFLI_PORT_/
 const DRIVE_BINDS_DB    = /(['"`])[^'"`\s]*\bdb\/[^'"`\s]*\.db\b[^'"`\s]*\1/
+
+// What `test-not-hermetic` reads, over code with its strings blanked. A
+// `findChrome` given an argument is the probe under test against a fake host,
+// and an `openChrome` handed straight to `expect(` is a refusal that launches
+// nothing.
+const TEST_NOT_HERMETIC = [
+  [/\bportFor\s*\(\s*import\.meta\b/,                         "asks for this checkout's port block"],
+  [/\bBun\.serve\s*\(\s*\{[^}]*?\bport\s*:\s*[1-9]/,          'binds a literal port'],
+  [/\.listen\s*\(\s*[1-9]/,                                   'binds a literal port'],
+  [/(?<!\bexpect\(\s*)\bopenChrome\s*\(|\bfindChrome\s*\(\s*\)/, 'launches Chrome'],
+]
+
+// Every `*.test.*` file under `root` — the files `bun test` and vitest collect —
+// with fixtures and a nested app left out, the second to that app's own run.
+function collectedTests(root) {
+  const apps  = new Set(findApps(root).filter(a => a !== root))
+  const files = []
+  const visit = (dir, depth) => {
+    if (depth < 0) return
+    for (const name of safeRead(dir)) {
+      if (SKIP.has(name) || name.startsWith('.') || name === 'fixtures') continue
+      const child = join(dir, name)
+      let st
+      try { st = statSync(child) } catch { continue }
+      if (st.isDirectory()) { if (!apps.has(child)) visit(child, depth - 1) }
+      else if (/\.test\.[mc]?[jt]sx?$/.test(name)) files.push(child)
+    }
+  }
+  visit(root, 8)
+  return files.sort()
+}
 
 // Every script under a directory whose name `dirs` matches, a nested app left
 // to that app's own run.

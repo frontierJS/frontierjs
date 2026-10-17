@@ -15,24 +15,22 @@ const { host, serverPath, appId, edge, apiPort } = $.config
 // disagree about where the API is.
 const { DEFAULT_PAGE, pagePath, fliDir, guardProbeScript } =
   await import(new URL('file://' + global.fliRoot + '/core/pause.js'))
-const { edgeRoutes, routeId, applyEdge, readConfigScript, parseConfigRead, writeConfigScript, parseConfigWrite, EdgeError } =
-  await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+const { routeId } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 
-let routes
-try { routes = edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api }) }
-catch (e) {
-  if (!(e instanceof EdgeError)) throw e
-  log.error(e.message)
+const { routes, paths, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge })
+if (error) {
+  log.error(error)
   $.config.abort = true
   return
 }
+if (!paths) log.warn('No surface.snapshot.md — only /api/ and /ws are routed to the API. Run `junction surface` to route what the API mounts.')
 
 // ─── Show what will be routed ─────────────────────────────────────────────────
 echo('')
 for (const r of routes) {
   const what = r['@id'] === routeId(appId, 'api') ? `every path → :${apiPort}`
     : edge.api.domain ? `${serverPath}/current`
-    : `${serverPath}/current · /api/ and /ws → :${apiPort}`
+    : `${serverPath}/current · ${paths?.prefix === null ? `${paths.roots.length} API paths (pages by Accept)` : `${paths?.prefix ?? '/api'}/`} and /ws → :${apiPort}`
   echo(`  https://${r.match[0].host[0]}  ${what}`)
 }
 echo('')
@@ -52,40 +50,10 @@ machine.run(`mkdir -p ${fliDir(serverPath)}`)
 machine.run(`cat > ${pagePath(serverPath)} << 'FLIPAGEEOF'
 ${DEFAULT_PAGE}FLIPAGEEOF`)
 
-// ─── Read, merge, write back with If-Match ────────────────────────────────────
-// Outpost writes to the same Caddy, so a write between the read and this one is
-// a 412 and a second read, never a route of its lost.
-let written = null
-for (let attempt = 1; attempt <= 3 && !written; attempt++) {
-  let read
-  try { read = parseConfigRead(machine.capture(readConfigScript())) }
-  catch (e) {
-    if (!(e instanceof EdgeError)) throw e
-    log.error(e.message)
-    log.info('01-check-deps installs Caddy as the caddy-api unit; a Caddy started from a Caddyfile has no config this can add to.')
-    $.config.abort = true
-    return
-  }
-
-  let next
-  try { next = applyEdge(read.config, { appId, routes }) }
-  catch (e) {
-    if (!(e instanceof EdgeError)) throw e
-    log.error(e.message)
-    $.config.abort = true
-    return
-  }
-
-  const result = parseConfigWrite(machine.capture(writeConfigScript(next, read.etag)))
-  if (result.ok) written = true
-  else if (!result.stale) {
-    log.error(result.error)
-    $.config.abort = true
-    return
-  }
-}
-if (!written) {
-  log.error('Caddy\'s config kept changing under the write — three reads, three 412s. Run fli deploy:setup again.')
+const written = await writeEdge(machine, { appId, routes })
+if (written.error) {
+  log.error(written.error)
+  log.info('01-check-deps installs Caddy as the caddy-api unit; a Caddy started from a Caddyfile has no config this can add to.')
   $.config.abort = true
   return
 }

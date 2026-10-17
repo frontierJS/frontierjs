@@ -5,6 +5,7 @@ alias: setup-server
 examples:
   - fli deploy:setup
   - fli deploy:setup --production
+  - fli deploy:setup --auto-install
 flags:
   production:
     type: boolean
@@ -13,6 +14,10 @@ flags:
   stage:
     type: boolean
     description: Set up the staging server
+    defaultValue: false
+  auto-install:
+    type: boolean
+    description: Install every missing dependency without asking
     defaultValue: false
 # Not the directory's index, so it declares its own steps folder rather than
 # inheriting `_steps/` — the runtime attaches a bare `_steps/` to index.md only

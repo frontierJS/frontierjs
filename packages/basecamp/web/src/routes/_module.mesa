@@ -321,7 +321,7 @@ siteName: Basecamp
         <img src="/favicon.svg" alt="" width="20" height="20" />
         <strong>{page.siteName}</strong>
       </a>
-      <span class="hide-sm"><Badge tone="muted">alpha</Badge></span>
+      <span class="hide-sm"><Badge tone="muted">beta</Badge></span>
       {#if session.user}
         <span class="hide-sm">
           <Button variant="ghost" size="sm" id="focus-toggle"

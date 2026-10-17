@@ -1,14 +1,13 @@
 ---
 title: 05-origin
-description: The machine's copy — a git clone, and the environment it runs with
+description: A commit to ship, and the environment it runs with on the machine
 ---
 
 ## What is on the machine
 
-The pipeline's second step is `git pull` on the target, so the target needs a
-checkout. Here that is a **clone of the app itself** into `server/` beside it —
-the app is its own origin, which is the whole trick that makes this runnable
-without a remote.
+The pipeline's second step ships a **commit**: `git archive` of the app's HEAD,
+extracted into `server/src/` — so the app needs one, and the machine needs no
+repository and no key to read one.
 
 Then `.env.production`, which lives on the machine and in no repository. `fli`
 never writes it: what a deploy checks is that the keys the app declares are
@@ -30,17 +29,18 @@ if (!existsSync(join(app, '.git'))) {
 git(app, ['add', '-A'])
 git(app, ['commit', '-qm', 'the app, as the tutorial built it'])
 
-if (existsSync(srv)) rmSync(srv, { recursive: true, force: true })
-const cloned = sh('git', ['clone', '-q', app, srv])
+const head = sh('git', ['rev-parse', '--short', 'HEAD'], { cwd: app })
 
 if (!await must($, {
-  ok:    cloned.code === 0 && existsSync(join(srv, 'package.json')),
-  name:  'the machine has a checkout of the app',
-  asked: `a clone at ${srv}`,
-  got:   cloned.code === 0 ? 'it is there' : (cloned.stderr || `git clone exited ${cloned.code}`),
+  ok:    head.code === 0,
+  name:  'the app has a commit to ship',
+  asked: `a HEAD in ${app}`,
+  got:   head.code === 0 ? String(head.stdout).trim() : (head.stderr || `git rev-parse exited ${head.code}`),
 }, {
   likely: 'the app has no commits — git commit found nothing to record',
 })) return
+
+if (existsSync(srv)) rmSync(srv, { recursive: true, force: true })
 
 mkdirSync(join(srv, 'db'), { recursive: true })
 // The container's environment, not the app's — `02-app` writes it beside the

@@ -6,7 +6,7 @@ description: Can this machine be a deploy target
 ## This machine, as a server
 
 A deploy needs three things here: **Docker**, to build and run the image;
-**git**, because the pipeline's second step is a `git pull` on the target; and
+**git**, because what a deploy ships is a commit; and
 the port the container will answer on.
 
 If Docker is not here the lesson stops rather than failing — there is nothing

@@ -67,9 +67,11 @@ function readSnapshot() {
 //   `/*`  is the CORS preflight catch-all. As a proxy key it swallows the whole
 //         origin; preflight is cross-origin only and neither reader is.
 //
-// A templated path (`/{service}`) is the CRUD handler and names every service at
-// once — the service headings below already name them individually.
-const isMountedButNotProxied = (path) => path === '/' || path.includes('*') || path.includes('{')
+// A path STARTING templated (`/{service}`) is the CRUD handler and names every
+// service at once — the service headings below already name them individually.
+// A template further in (`/orion/hooks/{path}`) is still proxied by its first
+// segment: dropping it left Orion's webhooks answered with the SPA.
+const isMountedButNotProxied = (path) => path === '/' || path.includes('*') || path.startsWith('/{')
 
 /**
  * The one segment a path is proxied by. `/auth/login` and `/auth/register` are

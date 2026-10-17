@@ -82,7 +82,7 @@ describe('the routes the setup step writes', () => {
 
   test('write the default page before the routes, not on first pause', () => {
     expect(CADDY_STEP).toContain('DEFAULT_PAGE')
-    expect(CADDY_STEP.indexOf('pagePath(serverPath)')).toBeLessThan(CADDY_STEP.indexOf('writeConfigScript('))
+    expect(CADDY_STEP.indexOf('pagePath(serverPath)')).toBeLessThan(CADDY_STEP.indexOf('writeEdge('))
   })
 })
 

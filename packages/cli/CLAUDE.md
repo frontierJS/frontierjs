@@ -945,7 +945,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   `app-manifest.json` pointed at the tarballs — **`overrides` included**, or
   sierra installs mesa from npm and the image runs two trees at once, which is
   not guaranteed to fail. `fli deploy:vendor` is the command; `deploy:local` and
-  `_steps-docker/04-build-api` run it before they build; `packages/basecamp/deploy/build.mjs`
+  `_steps-docker/02-ship` run it before they build; `packages/basecamp/deploy/build.mjs`
   had the only working implementation and now calls it. **The generated Dockerfile
   installs from that directory on both source modes** — with nothing linked it is
   a verbatim manifest copy with the lockfile beside it, and the freeze is
@@ -958,10 +958,11 @@ test/     one file per module under core/, plus the deploy pipeline's own
   excluded and `api/.env.production` is COPIED; `**/.env.*` reaches both. That
   is what `02b-build-check` grades and it found a live one, `db/*.db` admitting
   `db/db/basecamp.db` into basecamp's image (`FJS-555`). **The step reads the
-  SERVER rather than this tree, and must**: the file most likely to be baked is
-  the one deliberately in no repository — `.env.production` sits at the deploy
-  root, which IS the build context — and it runs after `02-pull`, because before
-  it the server's Dockerfile is the previous release's. Refusing there and only
+  SERVER rather than this tree, and must**: the context is the committed tree
+  `02-ship` extracted into `<path>/src` plus `deploy/generated/`, which is not
+  the working tree — and it runs after `02-ship`, because before it the server's
+  Dockerfile is the previous release's. The deploy root's `.env.production`
+  sits above `src/` and so outside every context. Refusing there and only
   REPORTING in `deploy:local` is deliberate: that command answers *does this
   build and start at all*, and `deploy:doctor` is where the question is asked
   without deploying anything. `deploy.api.buildCheck = false` opts out, beside
@@ -990,9 +991,9 @@ test/     one file per module under core/, plus the deploy pipeline's own
   `:status`, `:run`, `:unlock`) takes the other one, and every refusal in those
   four exited 0 until it was.
 - **A deploy target has bun and no `node_modules`, and that is what decides how
-  the journal is written.** `deploy:setup` installs docker, caddy, git, bun,
-  rsync and sqlite3; `02-pull` leaves a git checkout and the build happens inside
-  Docker, so litestone is not there and cannot be imported there. Hence the
+  the journal is written.** `deploy:setup` installs docker, caddy, bun,
+  rsync and sqlite3; `02-ship` leaves the app's committed tree in `<path>/src`
+  and the build happens inside Docker, so litestone is not there and cannot be imported there. Hence the
   committed DDL and a runner whose only import is `bun:sqlite` — and hence
   `packages/cli` still depending on no database. **Every rule lives in
   `core/journal.js` on the machine running `fli`**; adding a decision to the

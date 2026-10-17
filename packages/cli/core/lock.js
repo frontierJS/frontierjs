@@ -100,8 +100,16 @@ const replace = (file, args) =>
  */
 export function acquireScript(file, fields, { takeover = false } = {}) {
   const args = quoted(fields)
+  // A box `deploy:setup` never touched has no deploy root, and the redirect's
+  // failure there read as HELD with an empty body — "a deploy is already in
+  // progress" on a server nothing had ever been deployed to (FJS-3171).
+  const missing = `if [ ! -d ${file.slice(0, file.lastIndexOf('/')) || '/'} ]; then
+  echo "MISSING"
+  exit 1
+fi
+`
 
-  if (takeover) return `if [ -f ${file} ]; then
+  if (takeover) return `${missing}if [ -f ${file} ]; then
   echo "TOOK: $(tr '\\n' ';' < ${file})"
 fi
 ${replace(file, args)}
@@ -109,7 +117,7 @@ echo "ok"`
 
   // `set -C` must guard the redirect onto the LOCK itself — a temp file plus a
   // `mv` would make noclobber protect a name nobody is racing for.
-  return `if [ -f ${file} ]; then
+  return `${missing}if [ -f ${file} ]; then
   echo "HELD"
   cat ${file}
   exit 1

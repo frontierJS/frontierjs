@@ -65,7 +65,7 @@ describe('one origin', () => {
 
   test('proxies /api/ and /ws to the container, and serves the SPA from current/', () => {
     const [api] = proxied(r)
-    expect(api.match).toEqual([{ path: ['/api/*', '/ws', '/ws/*'] }])
+    expect(api.match).toEqual([{ path: ['/api', '/api/*', '/ws', '/ws/*'] }])
     expect(api.handle[0].upstreams).toEqual([{ dial: '127.0.0.1:3000' }])
     expect(inner(r).find(x => x.handle[0].handler === 'vars').handle[0].root).toBe('/apps/shop/current')
     expect(handlers(r)).toContain('file_server')
@@ -195,8 +195,10 @@ describe('reading and writing over the admin API', () => {
 describe('the steps read the domains here, and nowhere else', () => {
   test('setup grades them, and the route step writes this module\'s routes', () => {
     expect(src('setup.md')).toContain('edgeNames(deployConf)')
-    expect(src('_steps-setup/05-caddy.md')).toContain('edgeRoutes(')
-    expect(src('_steps-setup/05-caddy.md')).toContain('applyEdge(')
+    expect(src('_module.md')).toContain('edgeRoutes(')
+    expect(src('_steps-setup/05-caddy.md')).toContain('edgeRoutesFor(')
+    expect(src('_steps-docker/07b-edge.md')).toContain('edgeRoutesFor(')
+    expect(src('_module.md')).toContain('applyEdge(')
     expect(src('_steps-setup/05-caddy.md')).not.toMatch(/reverse_proxy|"host"/)
   })
 

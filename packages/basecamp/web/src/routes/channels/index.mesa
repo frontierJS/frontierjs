@@ -60,8 +60,9 @@ title: Channels
     pagerduty: { secret: 'Integration key',    hint: 'Events API v2 integration key',      config: null },
     email:     { secret: null,                 config: 'to',  configLabel: 'Recipients', configHint: 'Comma-separated' },
     webhook:   { secret: 'Shared token',       hint: 'Optional — sent as X-Basecamp-Token', config: 'url', configLabel: 'Endpoint URL', configHint: 'https://hooks.example.com/…' },
+    chat:      { secret: 'API key',            hint: 'An API key the chat app issued to its basecamp user', config: 'url', configLabel: 'Posts URL', configHint: 'https://chat.example.com/api/posts' },
   }
-  const KIND_LABEL = { slack: 'Slack', pagerduty: 'PagerDuty', email: 'Email', webhook: 'Webhook' }
+  const KIND_LABEL = { slack: 'Slack', pagerduty: 'PagerDuty', email: 'Email', webhook: 'Webhook', chat: 'FJS chat' }
 
   $: kinds = channels.fields?.kind?.enum ?? Object.keys(ASKS)
   $: asks  = ASKS[draft.kind] ?? {}

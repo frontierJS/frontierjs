@@ -118,9 +118,9 @@ release whose bytes nothing recorded — there is no image to start.
 
 ## Why configuration is refused rather than fixed
 
-Serving state is the pair. `fli` writes no `.env` on a target — the operator owns
-that file — so once the configuration generation has moved, a revert genuinely cannot
-restore the pair. It can only put old code onto today's configuration, which is
+Serving state is the pair. A deploy writes no `.env` on a target — setup seeds it
+once and the operator owns it after (`FJS-D1186`) — so once the configuration
+generation has moved, a revert genuinely cannot restore the pair. It can only put old code onto today's configuration, which is
 the documented Fly failure this separation exists to refuse.
 
 `--onto-current-configuration` is the operator saying they have read which keys moved

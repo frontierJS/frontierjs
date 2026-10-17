@@ -18,8 +18,7 @@
 //   bun api/src/providers/edge/cloudflare-sink.ts
 //   CLOUDFLARE_URL=http://localhost:8127/client/v4
 //
-// Port 8127 — project 2 (basecamp), backend (`docs/PORTS.md`); 7127 in the
-// unit suite.
+// Port 8127 — project 2 (basecamp), backend (`docs/PORTS.md`).
 
 const PORT = Number(process.env.CF_SINK_PORT ?? 8127)
 

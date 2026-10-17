@@ -92,7 +92,7 @@ export type AlertStatus = 'firing' | 'resolved'
 
 export type ActorKind = 'user' | 'api_key' | 'system' | 'support'
 
-export type ChannelKind = 'slack' | 'pagerduty' | 'email' | 'webhook'
+export type ChannelKind = 'slack' | 'pagerduty' | 'email' | 'webhook' | 'chat'
 
 export type FlagType = 'boolean' | 'variant'
 

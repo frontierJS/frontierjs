@@ -25,8 +25,8 @@
 
 export default {
   deploy: {
-    server: 'your-server.com',   // ← set this
-    path:   '/apps/basecamp',    // deploy root on the server
+    server: 'basecamp', // ← set this
+    path: '/apps/basecamp', // deploy root on the server
     app_id: 'basecamp',
 
     api: {
@@ -44,18 +44,18 @@ export default {
       health: '/health',
 
       dockerfile: 'deploy/Dockerfile',
-      env:        '/apps/basecamp/.env.production',
+      env: '/apps/basecamp/.env.production',
 
       // Validate the server's env against .env.example before deploying.
       // basecamp refuses to boot in production on the dev ENCRYPTION_KEY
       // (core/db.ts) — better to hear that from the check than from a container
       // that exits on the server.
-      envCheck: true,
+      envCheck: true
     },
 
     web: {
-      domain: 'your-app.com',   // ← set this
-      keep_releases: 3,
+      domain: 'basecamp.maverickmade.tech',
+      keep_releases: 3
       // ssl: {
       //   cert: '/etc/ssl/certs/basecamp.pem',
       //   key:  '/etc/ssl/private/basecamp.key',
@@ -66,9 +66,9 @@ export default {
       // Matches the container: DATABASE_URL is /data/basecamp.db and /data is a
       // volume, because a database inside the image is lost on the next swap
       // and the loss is silent — the app simply comes up empty.
-      path:         '/data',
-      file:         'basecamp.db',
-      keep_backups: 5,
-    },
-  },
+      path: '/data',
+      file: 'basecamp.db',
+      keep_backups: 5
+    }
+  }
 }

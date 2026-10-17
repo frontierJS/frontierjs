@@ -152,8 +152,8 @@ normal case, not an edge one.
 production unchanged and only its configuration differs, so the environment is on
 the row and the configuration is in the hash.
 
-**`configurationHash` covers a DECLARATION and not the running configuration.** `fli`
-writes no `.env` on a target — the operator owns that file, and the container is
+**`configurationHash` covers a DECLARATION and not the running configuration.** A deploy
+writes no `.env` on a target — setup seeds it once and the operator owns it after, and the container is
 started with `--env-file` against it — so nothing under `deploy.configuration` is
 applied by a deploy. What the hash and the generation are for is the question a
 revert asks: *has the configuration been changed since the release I am going

@@ -655,8 +655,8 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
 // than a simulation of it. Nothing is stubbed. The only thing not exercised is
 // ssh itself.
 //
-// The app plays both parts: it is the developer's checkout AND the git origin
-// the "server" pulls from, which is what lets `02-pull` be real.
+// The app is the developer's checkout, and `02-ship` archives its HEAD into the
+// "server" directory — the same ship a remote machine gets.
 //
 // Returns { findings, skipped } like its siblings.
 
@@ -667,7 +667,7 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
   const docker = exec('docker', ['version', '--format', '{{.Server.Version}}'], { verbose: false })
   if (docker.status !== 0) return { findings, skipped: 'no Docker daemon — `docker version` failed' }
   if (exec('git', ['--version'], { verbose: false }).status !== 0)
-    return { findings, skipped: 'no git — the server side of this is a clone' }
+    return { findings, skipped: 'no git — a deploy ships a commit' }
 
   const appName   = `fjsjrn${process.pid}`
   // ports.js: env 7 test · category 1 be · project 0 (what `fli new` scaffolds).
@@ -740,8 +740,6 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     git(app, ['init', '-q', '.'])
     git(app, ['add', '-A'])
     git(app, ['commit', '-qm', 'scaffold'])
-    const clone = exec('git', ['clone', '-q', app, srv])
-    if (clone.status !== 0) return fail('could not clone the app into a server directory', clone.output)
 
     mkdirSync(join(srv, 'db'), { recursive: true })
     copyFileSync(join(app, '.env'), join(srv, '.env.production'))
@@ -860,7 +858,6 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     appendFileSync(join(app, 'api', 'index.ts'), `\n// ci ${process.pid}\n`)
     git(app, ['add', '-A'])
     git(app, ['commit', '-qm', 'change'])
-    exec('git', ['pull', '-q', '--ff-only'], { cwd: srv })
 
     const d3 = inApp(['deploy', '--api'])
     if (d3.status !== 0) return fail('the third fli deploy failed', d3.output + dockerLogs(container))
@@ -872,7 +869,6 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     appendFileSync(join(app, 'api', 'index.ts'), `\n// ci crash ${process.pid}\n`)
     git(app, ['add', '-A'])
     git(app, ['commit', '-qm', 'crash'])
-    exec('git', ['pull', '-q', '--ff-only'], { cwd: srv })
 
     const killed = killAtJournal(['bun', fli, 'deploy', '--api'], app)
     if (killed.finished)
@@ -887,16 +883,17 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
 
     // The bytes the killed run built, which its transition recorded. The resume
     // rebuilds before the journal opens, and a rebuild that is not a full cache
-    // hit is a different image — so the build context is MOVED here, on purpose,
-    // and the resume must still start the recorded one. Left to chance it moved
+    // hit is a different image — so the source moves here, by a commit the
+    // resume ships, and the resume must still start the recorded one. Left to chance it moved
     // only when another session was editing the workspace mid-run, and the
     // container served bytes the journal did not name until a revert-of-revert
     // restored the recorded ones (`FJS-937`).
-    const recorded = exec('docker', ['image', 'inspect', `${appName}:${shortCommit(srv)}`, '--format', '{{.Id}}'],
+    const recorded = exec('docker', ['image', 'inspect', `${appName}:${shortCommit(app)}`, '--format', '{{.Id}}'],
                           { verbose: false }).output.trim()
     if (!recorded) return fail('the killed deploy left no image under its tag', killed.output)
-    const drift = join(srv, 'api', 'fjs-ci-drift.ts')
-    writeFileSync(drift, `// ${process.pid}\n`)
+    writeFileSync(join(app, 'api', 'fjs-ci-drift.ts'), `// ${process.pid}\n`)
+    git(app, ['add', '-A'])
+    git(app, ['commit', '-qm', 'drift'])
 
     // A crashed deploy leaves its lock behind, and the refusal has to be worth
     // reading: whether that run is still alive is a fact about a process on the
@@ -941,7 +938,6 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
         `${resumed.output}\n--- journal ---\n${j3.output}`)
     if (health() !== '200') return fail('the resumed deploy does not answer health', dockerLogs(container))
     const C = running()
-    rmSync(drift, { force: true })
     if (C !== recorded)
       return fail(`the resume started ${short(C)}, not the image its adopted transition recorded (${short(recorded)})`,
                   resumed.output)
@@ -1007,7 +1003,7 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     // ── 7 · a declared configuration key the target does not carry ──
     //
     // `deploy.configuration` and `deploy.secrets` feed the Release hash, and their
-    // VALUES are applied by nothing — `fli` writes no `.env` on a target. So the
+    // VALUES are applied by nothing — a deploy writes no `.env` on a target. So the
     // keys are graded for presence instead (`FJS-585`), and this is the
     // assertion that they are graded at all: a declaration nothing checks is the
     // vacuous state being fixed.

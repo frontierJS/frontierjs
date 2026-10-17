@@ -40,8 +40,13 @@ const deps = [
   // admin API, and only --resume brings them back after Caddy restarts. The same
   // install a fleet machine gets (basecamp's providers/compute/enrollment.ts).
   { name: 'caddy',   check: 'caddy version && systemctl is-active --quiet caddy-api', install: CADDY_INSTALL },
-  { name: 'git',     check: 'git --version',       install: 'apt-get install -y git' },
-  { name: 'bun',     check: 'bun --version',       install: 'curl -fsSL https://bun.sh/install | bash' },
+  // The bun installer unpacks a zip and stops dead without unzip, which a
+  // minimal Ubuntu image does not have — so it is installed first.
+  { name: 'unzip',   check: 'unzip -v',            install: 'apt-get install -y unzip' },
+  // Into /usr/local/bin and not ~/.bun: every later step runs over `ssh host sh -s`,
+  // a non-interactive shell, and Ubuntu's .bashrc returns before the PATH line
+  // the installer appends — so a per-user bun is installed and never found.
+  { name: 'bun',     check: 'bun --version',       install: 'curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash' },
   { name: 'rsync',   check: 'rsync --version',     install: 'apt-get install -y rsync' },
   // Not required by the pipeline — 05-backup runs `litestone backup` inside the
   // container, where the schema is. Installed because an operator on a box

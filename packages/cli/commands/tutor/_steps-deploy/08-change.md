@@ -5,7 +5,7 @@ description: Change a line, and watch different bytes start
 
 ## A second deploy
 
-Change one line, commit, pull it onto the machine, deploy again.
+Change one line, commit, deploy again.
 
 What is asserted is the **image id the container is on** — not that the command
 succeeded, and not what the journal says about it. The image is the ground
@@ -20,13 +20,11 @@ $.config.__step = 8
 if (!needs($, ['appDir', 'serverDir', 'firstImage'], { from: { appDir: '02-app', serverDir: '03-target', firstImage: '06-deploy' } })) return
 
 const app       = $.config.appDir
-const srv       = $.config.serverDir
 const container = $.config.container
 
 appendFileSync(join(app, 'api', 'index.ts'), `\n// changed by the tutorial at ${new Date().toISOString()}\n`)
 git(app, ['add', '-A'])
 git(app, ['commit', '-qm', 'a change to deploy'])
-sh('git', ['pull', '-q', '--ff-only'], { cwd: srv })
 
 $.exec({ command: `${$.fli} deploy --api`, cwd: app })
 

@@ -184,7 +184,7 @@ describe('which bytes that release ran', () => {
   // back to an image is what step 04 wrote down.
   test('the build step output is JSON and is read as JSON', () => {
     const got = imageFromSteps([
-      { name: '02-pull', output: null },
+      { name: '02-ship', output: null },
       { name: '04-build-api', output: JSON.stringify({ image: 'sha256:abc', tag: 'shop:1', scope: 'host' }) },
     ])
     expect(got).toMatchObject({ image: 'sha256:abc', tag: 'shop:1', scope: 'host', parsed: true })
@@ -200,7 +200,7 @@ describe('which bytes that release ran', () => {
   })
 
   test('no build step at all answers nothing', () => {
-    expect(imageFromSteps([{ name: '02-pull', output: 'x' }])).toMatchObject({ image: null, parsed: false })
+    expect(imageFromSteps([{ name: '02-ship', output: 'x' }])).toMatchObject({ image: null, parsed: false })
   })
 
   test('an empty step list does not throw', () => {

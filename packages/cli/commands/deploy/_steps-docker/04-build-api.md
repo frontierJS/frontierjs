@@ -20,12 +20,12 @@ const builder     = $.config.builder ?? $.config.api
 const dockerfile  = deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
 const machine     = machineFor($, builder.host, builder.path)
 const target      = machineFor($, host, serverPath)
-const buildPath   = builder.path
+// 02-ship extracted the app here, vendored dependencies included.
+const buildPath   = `${builder.path}/src`
 
 // ─── Can docker READ this context? ───────────────────────────────────────────
-// Asked before the vendor and the upload, because a context docker cannot see
-// fails at the build with a sentence about a missing file that is plainly there
-// (`FJS-748`) — and everything between here and that build is wasted work.
+// Asked before the build, because a context docker cannot see fails there with
+// a sentence about a missing file that is plainly there (`FJS-748`).
 // `core/docker-context.js` carries the measurement and the reasons.
 const { contextProbe, parseProbe, contextRefusal } =
   await import(new URL('file://' + global.fliRoot + '/core/docker-context.js'))
@@ -43,18 +43,6 @@ if (probeOut !== null) {
     return
   }
 }
-
-// ─── Vendor, here rather than on the server ───────────────────────────────────
-// The Dockerfile installs from deploy/generated/, which is generated and
-// git-ignored — so step 02's `git pull` cannot produce it and the build would
-// fail on the COPY. It has to be written HERE for a second reason: an app
-// depending on the framework by `link:`/`workspace:` is packed out of a
-// workspace that exists on this machine and nowhere on the server (FJS-241).
-log.info('Vendoring dependencies into the build $...')
-vendorApp($.paths.root, log)
-
-log.info(`Uploading build $ → ${builder.host}:${buildPath}/${GENERATED_DIR}`)
-machine.sync(`${$.paths.root}/${GENERATED_DIR}`, `${buildPath}/${GENERATED_DIR}`)
 
 log.info(`Building image ${imageTag} on ${machine.describe()}...`)
 machine.run(`docker build -t ${imageTag} -f ${dockerfile} .`, { cwd: buildPath })

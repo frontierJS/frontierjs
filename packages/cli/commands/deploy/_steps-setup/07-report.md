@@ -18,8 +18,11 @@ echo('')
 // `ssh` line is advice that fails when taken.
 const there = (cmd) => (machineFor($, host, serverPath).local ? cmd : `ssh ${host} "${cmd}"`)
 
-echo(`1. Populate production env vars on the server:`)
-echo(`   ${there(`nano ${serverPath}/.env.production`)}`)
+const envFile = $.config.deployConf?.api?.env ?? `${serverPath}/.env.production`
+echo($.config.envSeeded
+  ? `1. Your local .env.production was copied up — the server's copy is the one that counts now:`
+  : `1. Populate production env vars on the server (or put them in a local .env.production and set up a fresh box):`)
+echo(`   ${there(`nano ${envFile}`)}`)
 echo('')
 echo(`2. Point DNS for each domain at this server — Caddy fetches the certificate`)
 echo(`   on the first request, and cannot before the name resolves here`)

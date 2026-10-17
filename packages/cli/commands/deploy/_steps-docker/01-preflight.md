@@ -45,7 +45,27 @@ for (const h of hosts) {
 // One lock per machine+path pair. A split app is two locks; an app whose halves
 // share a host is one, which is why distinctHosts() dedupes on the pair.
 log.info('Acquiring deploy lock...')
-const lock = await acquireLock($, { hosts, target, takeover: $.flag.resume })
+let lock = await acquireLock($, { hosts, target, takeover: $.flag.resume })
+
+// A box never set up is offered `deploy:setup` rather than only told about it.
+// It runs as its own command so the env file is written there and nowhere in
+// this pipeline (FJS-D1186); without a terminal the refusal below stands.
+if (!lock.ok && lock.missing && tty.interactive) {
+  const answer = (await tty.line(`${lock.missing} does not exist on ${lock.host}. Set the server up now? (y/N)`)).trim()
+  if (/^y(es)?$/i.test(answer)) {
+    const targetFlag = target === 'dev' ? [] : [`--${target}`]
+    const installFlag = $.flag['auto-install'] ? ['--auto-install'] : []
+    try {
+      $.exec({ command: [$.fli, 'deploy:setup', '--server', JSON.stringify(lock.host), ...targetFlag, ...installFlag].join(' '), stdio: 'inherit' })
+    } catch {
+      log.error('deploy:setup did not finish — nothing was deployed')
+      $.config.abort = true
+      return
+    }
+    lock = await acquireLock($, { hosts, target, takeover: $.flag.resume })
+  }
+}
+
 if (!lock.ok) {
   for (const [level, line] of await lockRefusal(lock)) log[level](line)
   $.config.abort = true

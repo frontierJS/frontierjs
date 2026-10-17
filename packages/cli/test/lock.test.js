@@ -99,6 +99,15 @@ describe('acquire', () => {
     expect(parseLock(body()).run).toBe(OURS.run)
   })
 
+  test('a deploy root that does not exist says MISSING, not HELD', () => {
+    const gone = lockPath(join(dir, 'never-set-up'))
+    for (const takeover of [false, true]) {
+      const r = sh(acquireScript(gone, OURS, { takeover }))
+      expect(r.ok).toBe(false)
+      expect(r.out).toBe('MISSING')
+    }
+  })
+
   // `set -C` is the compare-and-set. A `[ -f ]` test alone is two operations
   // with a window between them, and the guard was only ever that test.
   test('noclobber refuses the redirect, not just the guard', () => {

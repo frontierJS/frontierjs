@@ -262,10 +262,10 @@ const litestreamInstall = (dir = '/usr/local/bin') => {
 
 // ─── distinctHosts ────────────────────────────────────────────────────────────
 // The machines a run touches, deduplicated by host AND path — the SSH check, the
-// deploy lock, the git pull and the cleanup are per machine, not per side, and
+// deploy lock, the ship and the cleanup are per machine, not per side, and
 // the common case is one machine wearing both hats. Deduplicating on the pair
 // matters: two apps sharing a host but not a path are two locks, and one app
-// split across two hosts is two pulls.
+// split across two hosts is two ships.
 const distinctHosts = (sides) => {
   const seen = new Map()
   for (const side of sides) {
@@ -411,8 +411,10 @@ const acquireLock = async ($, { hosts, target, takeover = false }) => {
       // second time is a second answer, and the run that holds it may have moved
       // on between them. `attribute` folds stderr into the message and leaves
       // stdout where it is, which is where the script wrote this.
-      const body = /HELD\n([\s\S]*)/.exec(String(err?.stdout ?? ''))
+      const stdout = String(err?.stdout ?? '')
+      const body = /HELD\n([\s\S]*)/.exec(stdout)
       await releaseLocks($, locked)
+      if (/^MISSING$/m.test(stdout)) return { ok: false, host: h.host, lockFile, missing: h.path }
       return { ok: false, host: h.host, lockFile, held: parseLock(body?.[1] ?? '') }
     }
   }
@@ -468,6 +470,10 @@ const refreshLock = async ($, step) => {
 // succeeded step replays into a no-op and a step is claimed compare-and-set;
 // `deploy:unlock` drops the lock and deploys fresh.
 const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
+  if (lock.missing) return [
+    ['error', `${lock.missing} does not exist on ${lock.host} — this server has not been set up`],
+    ['info', `    fli deploy:setup --server ${lock.host}`],
+  ]
   const { describeLock } = await lockCore()
   const d = describeLock(lock.held)
   // A revert takes the same lock and cannot resume — `j.attempt` gives it an
@@ -673,6 +679,52 @@ fi`
   }
   log.warn('Restored the previous container, and it answers')
   return { healthy: false, restored: true }
+}
+
+// ─── edgeRoutesFor / writeEdge ────────────────────────────────────────────────
+// Two callers: `_steps-setup/05-caddy` writes the routes first, and
+// `_steps-docker/07b-edge` rewrites them on every deploy, because the API's
+// paths come off the app's surface snapshot and a service added since setup is
+// a path the edge would hand the SPA.
+//
+// `{ routes, paths }`, or `{ error }` for an EdgeError. `paths` null means no
+// snapshot, and the routes fall back to `/api/`.
+const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge }) => {
+  const { edgeRoutes, apiPaths, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+  const { readApiSurface } = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
+  const paths = apiPaths(readApiSurface(root))
+  try { return { routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, paths }), paths } }
+  catch (e) { if (e instanceof EdgeError) return { error: e.message }; throw e }
+}
+
+// Read, merge, write back with If-Match. Outpost writes to the same Caddy, so a
+// write between the read and this one is a 412 and a second read, never a
+// route of its lost. `ifPresent` leaves a machine whose routes setup never wrote
+// alone, a Caddy that does not answer included — setup also writes the pause
+// page the guard serves.
+//
+// Answers 'written' | 'unchanged' | 'absent', or `{ error }`.
+const writeEdge = async (machine, { appId, routes, ifPresent = false }) => {
+  const { routeId, applyEdge, readConfigScript, parseConfigRead, writeConfigScript, parseConfigWrite, INGRESS_SERVER, EdgeError } =
+    await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    let read, next
+    try {
+      read = parseConfigRead(machine.capture(readConfigScript()))
+      const present = (read.config?.apps?.http?.servers?.[INGRESS_SERVER]?.routes ?? []).some(r => r['@id'] === routeId(appId))
+      if (ifPresent && !present) return 'absent'
+      next = applyEdge(read.config, { appId, routes })
+    } catch (e) {
+      if (!(e instanceof EdgeError)) throw e
+      return ifPresent ? 'absent' : { error: e.message }
+    }
+    if (JSON.stringify(next) === JSON.stringify(read.config)) return 'unchanged'
+
+    const result = parseConfigWrite(machine.capture(writeConfigScript(next, read.etag)))
+    if (result.ok) return 'written'
+    if (!result.stale) return { error: result.error }
+  }
+  return { error: 'Caddy\'s config kept changing under the write — three reads, three 412s.' }
 }
 
 // ─── connectJournal ───────────────────────────────────────────────────────────
@@ -1197,7 +1249,9 @@ export default {
 ### The API on a domain of its own
 
 `api.domain` gives the API its own origin — `api.myapp.com` beside `web.domain`. Unset, the
-web domain proxies `/api/` and `/ws` and the page and the API share an origin.
+web domain proxies the API's paths and `/ws` and the page and the API share an origin. The
+paths are read off `surface.snapshot.md`; with no `apiPrefix`, a request asking for HTML is
+served the page and anything else the API. Every deploy rewrites the routes when they moved.
 
 ```
     web: { domain: 'app.myapp.com' },
@@ -1275,7 +1329,7 @@ the failure this is most likely to cause.
 ```
 01-preflight   → SSH check, deploy lock, Litestream detection
 01b-env-check  → validate server env against .env.example (if envCheck: true)
-02-pull        → git pull on server, capture commit SHA
+02-ship        → git archive of HEAD at the app's directory + vendored deps → <path>/src
 03-build-web   → bun build on server, create versioned release
 04-build-api   → docker build on server (no registry needed)
 05-backup      → hot backup of the database before any changes

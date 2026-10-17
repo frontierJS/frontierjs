@@ -15,8 +15,7 @@
 //
 //   bun api/src/providers/compute/hetzner-sink.ts
 //
-// Port 8124 — project 2 (basecamp), backend, the slot after the DigitalOcean
-// stand-in's dev port and its unit-test twin (`packages/cli/core/ports.js`).
+// Port 8124 — project 2 (basecamp), backend (`packages/cli/core/ports.js`).
 
 const PORT = Number(process.env.HZ_SINK_PORT ?? 8124)
 

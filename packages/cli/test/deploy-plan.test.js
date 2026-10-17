@@ -27,7 +27,7 @@ const RELEASE = {
 
 const STEPS = [
   { name: '01-preflight' },
-  { name: '02-pull' },
+  { name: '02-ship' },
   { name: '04-build-api', skip: '!$.config.doApi' },
 ]
 

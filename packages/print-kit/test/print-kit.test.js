@@ -1,32 +1,9 @@
-// print-kit — what the printer promises, against a real Chrome.
-//
-// The text of a PDF is read back with poppler's pdftotext: a PDF's text is
-// compressed and glyph-encoded, so grepping its bytes proves nothing. Without
-// Chrome or pdftotext the tests that need them say so and skip.
+// print-kit — what the printer promises without a browser: the document it
+// builds and the plugin's claim. Everything that prints is `test/run.mjs`, over
+// a real Chrome.
 
-import { afterAll, describe, expect, test } from 'bun:test'
-import { spawnSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { findChrome } from '@frontierjs/mesa/drive'
-import { createPrinter, pageRules, printDocument, printerPlugin } from '../index.js'
-
-const hasChrome  = !!findChrome()
-const hasPoppler = spawnSync('sh', ['-c', 'command -v pdftotext']).status === 0
-const scratch    = mkdtempSync(join(tmpdir(), 'print-kit-'))
-
-function pdfText(bytes) {
-  const file = join(scratch, `${Math.random().toString(36).slice(2)}.pdf`)
-  writeFileSync(file, bytes)
-  return spawnSync('pdftotext', ['-layout', file, '-'], { encoding: 'utf8' }).stdout
-}
-// Page objects are plain dictionaries in Chrome's output; /Pages is the tree.
-const pageCount = (bytes) => (Buffer.from(bytes).toString('latin1').match(/\/Type\s*\/Page(?!s)/g) ?? []).length
-const pngSize = (bytes) => { const b = Buffer.from(bytes); return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) } }
-
-const printer = createPrinter()
-afterAll(() => printer.close())
+import { describe, expect, test } from 'bun:test'
+import { pageRules, printDocument, printerPlugin } from '../index.js'
 
 describe('the document', () => {
   test('a margin box holds data as a string it cannot leave', () => {
@@ -51,106 +28,6 @@ describe('the document', () => {
     expect(printDocument({ body: '', title: '<b>R&D</b>' })).toContain('<title>&lt;b&gt;R&amp;D&lt;/b&gt;</title>')
     expect(() => printDocument({ body: '', css: ['a{}</style><p>'] })).toThrow(/<\/style>/)
   })
-})
-
-describe.skipIf(!hasChrome)('a PDF', () => {
-  const groups = ['North', 'South', 'West'].map((g) =>
-    `<section class="page-group"><h2>${g} region</h2><p>Body of ${g}.</p></section>`).join('')
-  const doc = printDocument({
-    body: groups, title: 'Regions',
-    page: { size: 'A4', top: { left: 'Regional revenue', right: 'USD' }, bottom: { right: 'Page {page} of {pages}' } },
-  })
-
-  test('is a PDF, one page per group, warm after the first', async () => {
-    const pdf = await printer.pdf(doc)
-    expect(Buffer.from(pdf.slice(0, 5)).toString()).toBe('%PDF-')
-    // Without print.css nothing breaks: the three groups share a page.
-    expect(pageCount(pdf)).toBe(1)
-
-    const css = await Bun.file(new URL('../src/print.css', import.meta.url)).text()
-    const broken = await printer.pdf(printDocument({ body: groups, css: [css], page: { bottom: { right: 'Page {page} of {pages}' } } }))
-    expect(pageCount(broken)).toBe(3)
-    expect(printer.stats().launches).toBe(1)
-  }, 30000)
-
-  test.skipIf(!hasPoppler)('carries its running header and page X of Y on every page', async () => {
-    const css = await Bun.file(new URL('../src/print.css', import.meta.url)).text()
-    const text = pdfText(await printer.pdf(printDocument({
-      body: groups, css: [css],
-      page: { top: { left: 'Regional revenue', right: 'USD' }, bottom: { right: 'Page {page} of {pages}' } },
-    })))
-    const pages = text.split('\f').filter((p) => p.trim())
-    expect(pages).toHaveLength(3)
-    pages.forEach((p, i) => {
-      expect(p).toContain('Regional revenue')
-      expect(p).toContain(`Page ${i + 1} of 3`)
-    })
-    expect(pages[1]).toContain('South region')
-  }, 30000)
-
-  test('reaches nothing over the network, and counts what it refused', async () => {
-    let hits = 0
-    const server = Bun.serve({ port: 0, fetch() { hits++; return new Response('x') } })
-    try {
-      const before = printer.stats().blocked
-      const url = `http://127.0.0.1:${server.port}`
-      await printer.pdf(printDocument({
-        body: `<img src="${url}/pixel.png"><div style="background:url(${url}/bg.png)">x</div>`,
-        css: [`@import url("${url}/sheet.css");`],
-      }))
-      expect(hits).toBe(0)
-      expect(printer.stats().blocked - before).toBeGreaterThanOrEqual(2)
-    } finally { server.stop(true) }
-  }, 30000)
-
-  test.skipIf(!hasPoppler)('runs no script the document carries', async () => {
-    const text = pdfText(await printer.pdf(printDocument({
-      body: '<p id="p">landed text</p><script>document.getElementById("p").textContent = "SCRIPT RAN"</script>',
-    })))
-    expect(text).toContain('landed text')
-    expect(text).not.toContain('SCRIPT RAN')
-  }, 30000)
-})
-
-describe.skipIf(!hasChrome)('a PNG', () => {
-  test('is the element alone, at the scale asked for', async () => {
-    const png = await printer.png(printDocument({
-      body: '<p>above</p><svg id="chart" width="200" height="100" style="display:block"><rect width="200" height="100" fill="teal"/></svg>',
-    }), { selector: '#chart', scale: 2 })
-    expect(Buffer.from(png.slice(1, 4)).toString()).toBe('PNG')
-    expect(pngSize(png)).toEqual({ width: 400, height: 200 })
-  }, 30000)
-
-  test('names a selector that matches nothing', async () => {
-    await expect(printer.png(printDocument({ body: '<p>x</p>' }), { selector: '#nope' })).rejects.toThrow(/nothing in the document matches #nope/)
-  }, 30000)
-})
-
-// FJS-2230: a wedged browser is stopped outright, so every call to it goes
-// unanswered — the job's own and any its cleanup sends.
-describe.skipIf(!hasChrome)('a wedged browser', () => {
-  test('fails the one job, and the job behind it prints on a fresh browser', async () => {
-    const wedged = createPrinter()
-    try {
-      await wedged.pdf('<p>warm</p>')
-      const chrome = spawnSync('pgrep', ['-P', String(process.pid), 'chrome'], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean)
-      expect(chrome.length).toBeGreaterThan(0)
-      for (const pid of chrome) process.kill(Number(pid), 'SIGSTOP')
-
-      const t0 = performance.now()
-      const first = wedged.pdf('<p>first</p>').then(() => 'printed', (e) => e.message)
-      const next  = wedged.pdf('<p>next</p>').then(() => 'printed', (e) => e.message)
-      expect(await first).toMatch(/did not answer/)
-      // Resumed so the discarded browser's own close is quick, not so the next
-      // job can use it: the job is already on its way to a fresh one.
-      for (const pid of chrome) process.kill(Number(pid), 'SIGCONT')
-      // The call's own 30s and a launch — not a second and third 30s spent
-      // asking the wedged browser to close its tab.
-      expect(await next).toBe('printed')
-      expect(performance.now() - t0).toBeLessThan(40000)
-      expect(wedged.stats().launches).toBe(2)
-    } finally { await wedged.close() }
-  }, 120000)
 })
 
 describe('the plugin', () => {

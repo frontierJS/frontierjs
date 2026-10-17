@@ -4,9 +4,10 @@
 seam: a document to a PDF, an element to a PNG. Sits above mesa exactly as
 `email-kit` does; imports nothing from junction.
 
-`bun run test` — bun's runner, **needs Chrome and `pdftotext`**; the tests
-that need either skip by name when it is missing, so 12 pass with 0 skipped
-is the only green.
+`bun run test` — bun's runner over `print-kit.test.js`, which needs nothing,
+then `test/run.mjs`, which **needs Chrome and `pdftotext`**: no Chrome skips the
+run with a line saying so, no pdftotext skips each row that reads text by name,
+so 24 passing with nothing skipped is the only green.
 
 ---
 
@@ -18,7 +19,7 @@ index.d.ts       the types, by hand — the kit is plain JS
 src/printer.js   createPrinter() → { pdf, png, close } · printerPlugin() → app.printer
 src/document.js  printDocument(), pageRules(), marginContent(), cssString()
 src/print.css    the print sheet every document carries after the app's own
-test/            the suite, against a real Chrome
+test/            print-kit.test.js (no browser) · run.mjs + specs/ (a real Chrome)
 ```
 
 ---

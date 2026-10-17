@@ -111,6 +111,19 @@ export const KINDS: Record<string, KindSpec> = {
     }),
     describe:    (c) => (c.url as string) ?? 'no URL',
   },
+  // Another FJS app's own posts service, called as a principal of that app
+  // (`FJS-D1190`). `config.url` is the service URL, apiPrefix
+  // included, because the prefix is the receiving app's fact and not ours.
+  chat: {
+    label:       'FJS chat',
+    secretField: 'apiKey',
+    host:        null,
+    render:      (m, c) => ({
+      channelExternalId: c.channelExternalId,
+      message:           m.text ? `${m.title}\n${m.text}` : m.title,
+    }),
+    describe:    (c) => (c.channelExternalId as string) ?? 'no channel',
+  },
 }
 
 /** A test post, in the shape `channels.test` has always sent. Kept as a message
@@ -180,10 +193,14 @@ export async function deliverToChannel(
     body = { ...body, routing_key: key }
   } else {
     const parsed = safeUrl(config.url)
-    if (!parsed) return { ok: false, error: 'This webhook channel has no valid `url` in its config' }
+    if (!parsed) return { ok: false, error: `This ${spec.label} channel has no valid \`url\` in its config` }
     address = parsed.origin
     path    = parsed.pathname + parsed.search
-    if (channel.secretId)
+    if (kind === 'chat') {
+      if (!channel.secretId) return { ok: false, error: 'This channel has no API key stored — rotate its credential' }
+      if (!config.channelExternalId) return { ok: false, error: 'This channel has no `channelExternalId` in its config' }
+      auth = { type: 'bearer', ref: secretRef(channel.secretId as string, 'apiKey') }
+    } else if (channel.secretId)
       auth = { type: 'api_key', ref: secretRef(channel.secretId as string, 'token'), header: 'X-Basecamp-Token' }
   }
 

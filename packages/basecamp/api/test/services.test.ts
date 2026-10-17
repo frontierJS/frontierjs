@@ -1300,7 +1300,7 @@ describe('the proxy path list is what the app mounts', () => {
     // Every hand-registered route, by the one segment it is proxied under.
     for (const r of buildRoutes(env.app)) {
       if (r.kind !== 'raw') continue
-      if (r.path === '/' || r.path.includes('*') || r.path.includes('{')) continue
+      if (r.path === '/' || r.path.includes('*') || r.path.startsWith('/{')) continue
       expect(derived).toContain('/' + r.path.split('/')[1])
     }
 

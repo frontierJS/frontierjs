@@ -50,7 +50,7 @@ SQLite requires that.
 ## The finding
 
 **Every environment builds its own artefact, so no two environments provably run the
-same bytes.** The pipeline pulls source on the target server, runs `bun run build`
+same bytes.** The pipeline ships a commit to the target server (`FJS-D1187`), runs `bun run build`
 there, and runs `docker build` there. Dev, stage and production each execute that
 independently. What is promoted between them is a git ref; what actually runs is
 whatever three separate builds produced from it.
@@ -276,7 +276,7 @@ which is a promise about **a user's app**, not about how the control plane
 arrives.
 
 **Ring 0 and build-once want the same missing capability.** `fli deploy` knows
-exactly one mode — pull source, build on the target. Build-once needs
+exactly one mode — ship a commit, build on the target. Build-once needs
 pull-a-digest-and-run; so does installing Basecamp from an image. Whatever adds
 that mode serves both, which is an argument for doing it once and deliberately
 rather than twice by accident.
@@ -475,6 +475,16 @@ was written to apply.
     had. With C, an operator mid-incident confirms the prompt every time. An image
     whose build reported nothing is `unknown`, which counts as a contract, as in
     ring 0.
+- ~~**FJS-D1186 — How does a first deploy reach a bare box, and may `fli` put an env file on a target?**~~ **Answered 2026-10-17 (`FJS-D1186`): C — B, and `deploy:setup` seeds the target's env file once from a local `.env.production`, mode 600, never over an existing one. A deploy still writes none.** Raised putting Basecamp on its first real server
+  (`FJS-3171`): `deploy:setup` had never run, and the env file is the one step that
+  needs an ssh session by hand.
+  - **A** — Two commands: `deploy:setup` then `fli deploy`; the refusal names the next.
+  - **B** — `fli deploy` finds the missing root and offers `deploy:setup` in a terminal.
+  - **C** — B, and `deploy:setup` seeds the target's env file once from a local
+    `.env.production`, mode 600, never over an existing one. A deploy still writes none.
+  - **D** — A dedicated `install:basecamp`.
+  - **Recommend A** — nothing is added and the refusal already names the command.
+    D restates setup and deploy for one app.
 
 ---
 

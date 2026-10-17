@@ -6,14 +6,15 @@ it may import is `@frontierjs/toolbelt`, which is substrate below the graph rath
 than a member of it (`FJS-D26`). Sierra, jetty, ui and email-kit all sit on top
 of it.
 
-Run tests with **`bun run test`** — vitest, then the four gating **browser
+Run tests with **`bun run test`** — vitest, then the five gating **browser
 drives**, which need Chrome on PATH or `$FJS_CHROME`, then the **terminal drive**
 (`test:terminal`), which needs no Chrome and no TTY. `bun test` reports ~35 failures
 that are runner artifacts, not defects.
 
-`test:browser` is the four, `test:browser:runtime`, `test:browser:vite`,
-`test:browser:repl` and `test:browser:kit` one each; `serve:runtime` / `serve:vite` start one and stay
-up, for looking at a fixture in a real browser.
+`test:browser` is the five, `test:browser:runtime`, `test:browser:vite`,
+`test:browser:repl`, `test:browser:kit` and `test:browser:drive` one each;
+`serve:runtime` / `serve:vite` start one and stay up, for looking at a fixture
+in a real browser.
 
 **The REPL drive is `repl/`, in `test` and offline.** Its third-party code is
 `example/vendor/` — committed bundles of acorn, the unified chain and CodeMirror,
@@ -165,6 +166,8 @@ test/browser/
   repl/                — example/index.html itself, offline off example/vendor/
   kit/                 — @frontierjs/mesa/browser, one spec per wrapper; runtime/'s
                          server and page, its own fixtures
+  drive/               — src/drive.js itself: each spec launches its own browsers
+                         (a kept profile, a wedged close, a signal to the launcher)
 
 bench/
   run.mjs              — bun run bench: bytes, DOM mutations, time, heap
@@ -471,13 +474,15 @@ their own label, constraints and server error from it.
 
 ## The browser drives
 
-**`test/browser/` is where this package is run rather than described** — four
+**`test/browser/` is where this package is run rather than described** — five
 drives over one harness, shared with `@frontierjs/ui` (`drive.mjs`,
 `probes.js`) and read by relative path because mesa is the leaf. The browser
 under the runner is `src/drive.js`, which is published: a change to it reaches
-every app's drive, so `test/drive.test.js` pins what an app asks of it and
-the runner never did — a kept `profile` read back after a relaunch. All four
-gate. What bites:
+every app's drive, so `drive/` pins what an app asks of it and the runner
+never did — a kept `profile` read back after a relaunch — and
+`test/drive.test.js` keeps the half that launches nothing. All five gate. A
+collected test that opens Chrome is `test-not-hermetic` in `fli check`. What
+bites:
 
 - **A spec exports `run(t)`, not a suite.** vitest excludes `test/browser/**`
   for that reason; without the exclusion it collects eleven files and fails
@@ -539,6 +544,6 @@ gate. What bites:
 
 ## Proving a change
 
-`bun run test` — which now includes the two gating browser drives — then,
+`bun run test` — which includes the five gating browser drives — then,
 because SSR and hydration fail apart, both of `example`: `bun run verify` and
 `bun run verify:site`. See `docs/TESTING.md`.

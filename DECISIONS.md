@@ -27,6 +27,14 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1188"></a>2026-10-16 · `FJS-D1188` — Q1 — What two FJS apps that recognize each other's calls are called — A **Peer**, and the relationship between two is **peering**. Not *network*, which names the reachability layer `IDEAS/app-peering.md` declines; not *federation*, where a server relays its users; not *trust domain*, which names the set rather than the relationship.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) Q1, through the question tool. **A** was picked as recommended over **B** (*federation* — Matrix, ActivityPub and SPIFFE all use it for a server relaying its users, which is not the call here), **C** (*trust domain*, SPIFFE's — exact for Phase 2's fleet, but the set and not the relationship) and **D** (*network*, the owner's first word, which names Phase 3's optional overlay). The sense is BGP's: two independent parties agree to exchange, and each keeps its own policy — here, its own gate.
+
+The nine, answered before the edit: 1 origin — the word lives in `VOCABULARY.md` and this ruling · 2 concept — one noun, a kind of Principal, and *network* is not coined beside it · 3 complexity — the problem's; SPIFFE's *workload identity* and OAuth's *client credentials* name it, and the word is borrowed from routing, not invented · 4 predictability — a peer is graded like any principal · 5 derived — n/a, a word · 6 owner — the vocabulary row · 7 boundary — n/a · 8 failure — n/a · 9 silence — a stray *network* or *federation* for this sense is caught by nothing; `fli ws:terms` reports the row's spread only. Adjudication: *familiarity vs. precision* — the ecosystem says *mesh* and *network* for the layer below, and this one is precise about the layer above.
+
+*Lives in:* `VOCABULARY.md` (Peer) · `IDEAS/app-peering.md`.
+
 ### <a id="fjs-d1157"></a>2026-10-16 · `FJS-D1157` — How `.lite` says a column is client-sealed — A new field word, `@opaque`: the server stores these bytes and cannot interpret them. It is refused at parse in `@@index`, `@@unique`, `@@fts`, `@@label` and a declared order; a `where` over it takes only `null` and equality; `advise` reads it as protected; the trail writes its own token (`FJS-D1158`). Who may READ it stays the gate's and `@omit`'s (`FJS-D205`).
 
 Asked in [`fjs-prototypes/vaultwarden/PLAN.md`](../fjs-prototypes/vaultwarden/PLAN.md) § Q10 (`FJS-3064`), through the question tool after 2.2 measured nothing refusing an index, an `@@fts`, a `@@label`, a sort or a `contains` over ciphertext, and `advise` recommending two of them. **B** was picked over **A** (`@encrypted(client)`: every behavior `@encrypted` has inverts under the argument — no decrypt on read, no hiding from the owner, `$rotateKey` skips it, `FJS-715`'s refusal of a ciphertext-shaped input becomes a requirement — the one word meaning two opposite arrangements `FJS-D478` refused) and **C** (no word: `@regex` + `@personal` stays the spelling, leaving 30 columns mislabeled as personal data that the data map and `forget()` read). `@sealed` is taken (`FJS-D167`). `FJS-D657` is the sibling: a field word with one behavior in the trail and none at the gate. Lives, once built, in `buildFieldPolicyMap`, the owner `@personal` and `$protectedFields` already read.
@@ -1405,6 +1413,20 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1190"></a>2026-10-16 · `FJS-D1190` — App peering 0.1 — Phase 0's first message is a monitor going down, sent through a `chat` NotificationChannel kind in Basecamp that calls chat's own `POST /api/posts` with a bearer API key. The glue is on the dialer and chat is unchanged.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) step 0.1, through the question tool. **Monitor down with the glue on the dialer** was picked as recommended over **receiver glue** (Basecamp's `webhook` kind unchanged and a raw route on chat translating it, which treats Basecamp as a third-party Provider, contrary to `FJS-D177`), **deploy finished** (no deploy-to-channel link exists, so the first step would be new Basecamp scope rather than a measurement) and **slack to Mattermost** (zero code, but it skips the chat app, so there is no peering to measure). A monitor is the one Basecamp event that already reaches a `NotificationChannel`. Built as one `ChannelKind` value and one row in `core/delivery.ts` `KINDS`, the one owner of how a channel is reached.
+
+The nine, answered LATE (after the edit, run when the register hook fired): 1 origin — **fails**: chat's body (`channelExternalId`, `message`) is written again in Basecamp's `KINDS` · 2 concept — no new noun, one enum value · 3 complexity — a kind per peer app is the design's cost, kept so it can be measured · 4 predictability — the same row shape as slack, pagerduty and webhook · 5 derived — **fails**, the same restatement as 1 · 6 owner — inside `core/delivery.ts` · 7 boundary — **fails**: the dialer has to know the receiver's body · 8 failure — a missing `channelExternalId` refuses at send rather than at save (plan 0.3 item 7) · 9 must stay true: a `chat` channel delivers. What fails when it stops: **`none`**. The proof was a scratch probe, under the no-new-test-files rule, and the only visible sign is that `lastDeliveryAt` stays null. § IV: *paved road vs. the workaround* — Phase 0 IS the workaround, run on purpose, and items 1, 5 and 7 are its measured cost (plan 0.3 item 8). This ruling lets them land, and Phase 1 or a removal replaces the kind. Tier: Assessment.
+
+*Lives in:* `packages/basecamp/api/src/core/delivery.ts` `KINDS.chat`; `IDEAS/app-peering.md` 0.1–0.3.
+
+### <a id="fjs-d1189"></a>2026-10-16 · `FJS-D1189` — Q2 — Which app peers with Basecamp first — `fjs-prototypes/chat`, with one message in one direction: Basecamp posts a finished deploy or a tripped monitor into a channel.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) Q2, through the question tool. **chat** was picked as recommended over **linear** (an incident becoming an issue is the larger first message) and **both at once** (twice the setup for Phase 0, whose job is to measure friction, not coverage). Phase 0 runs it by hand over what ships — a `basecamp` user and an API key on chat, a conduit target on Basecamp — so the friction is measured rather than guessed.
+
+*Lives in:* `IDEAS/app-peering.md` Phase 0.
 
 ### <a id="fjs-d1182"></a>2026-10-16 · `FJS-D1182` — Q2 — Whose credential `conduit-37signals` spends — Both, as two targets: an Agent's client-credentials token on `api`, for the app acting as itself on the projects the Agent was added to; and a person's Launchpad token on a `per_caller` target, for a verb that must appear as its author — refreshed through the `launchpad` target (`FJS-D933`, `FJS-D1075`) and stored as `FJS-D1126` rules. The Agent half still waits on plan step 0.1: if Launchpad refuses `client_credentials` for it, the person's target is the only one and this ruling is amended.
 
@@ -13923,6 +13945,16 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1187"></a>2026-10-17 · `FJS-D1187` — Where a deploy's source comes from — Pushed, never pulled: `02-ship` runs `git archive` of HEAD at the app's own directory, with `deploy/generated/` beside it, into `<path>/src` on every machine. The target holds no repository and no key to one, and `deploy:setup` neither clones nor installs git. Uncommitted changes are named and not shipped. The build stays on the target.
+
+Asked in chat when `deploy:setup` cloned the whole monorepo to put basecamp on a box: the pipeline built from the checkout root, so an app in a subdirectory of its repository could not deploy at all. Picked over **a `deploy.root` subdirectory** (Capistrano's `repo_tree`, Render's Root Directory: the whole repository and a deploy key on a production box to build one directory of it) and over **push only for a nested app** (two source modes to keep working). Precedent: Kamal builds from a clean clone of HEAD so an uncommitted edit never ships; Heroku and Dokku receive a push. Not the laptop build `IDEAS/deploy-plane.md` warns against: the bytes are one commit and the build still runs on the target. Held by CI's `deploy` phase: `deployJournalCycle` ships to `localhost` and asserts the running build is the app's HEAD and that a new commit deploys different bytes.
+
+### <a id="fjs-d1186"></a>2026-10-17 · `FJS-D1186` — How does a first deploy reach a bare box, and may `fli` put an env file on a target — B, and `deploy:setup` seeds the target's env file once from a local `.env.production`, mode 600, never over an existing one. A deploy still writes none.
+
+Asked in [`IDEAS/deploy-plane.md`](IDEAS/deploy-plane.md) § Open questions. **C** was picked over **A** (Two commands: `deploy:setup` then `fli deploy`; the refusal names the next), **B** (`fli deploy` finds the missing root and offers `deploy:setup` in a terminal), **D** (A dedicated `install:basecamp`).
+
+owner's pick: a fresh box is one door, and the env file is the step that otherwise needs an ssh session; seeded once and never overwritten, the server's copy stays the operator's, so revert's configuration-generation refusal still holds.
+
 ### <a id="fjs-d1176"></a>2026-10-16 · `FJS-D1176` — A workbench card is two facts with two writers: where a person PUT it, and what it NEEDS from them — A *place* is written only by a verb the person invoked (Pin, Unpin, Archive, Fork, Land, the shown chat, a Snooze) and is never read from a log. What the card needs is a *notice*: a condition read off the run log or the checkout, standing until the one act that clears it — `unread` until the chat is seen, a plan's unruled `Q` until it is ruled, and next a permission ask (#11) or a failed check. While a notice stands the card sorts, colors and notifies by it; when the last clears it reads by its place again. *Needs you* is a notice, so `RunState` keeps its four values, and a new attention condition is a notice and never a fifth. The hidden set is one set: a hidden card raises no notification and sorts nowhere. Snooze is its third verb beside Unpin and Archive — hidden until a time, and a notice raised meanwhile lifts it early.
 
 Asked in chat on reading Agent of Empires (Mozilla.ai), whose board separates a *Stage* — the column a person placed a card in, which no rule moves — from a *Signal*, a transient condition a rule raises that owns the column while it stands; and whose dismissed set is Snooze, Archive and Trash as one *do not bother me*. The shape is taken and both words are refused: *Signal* is Mesa's reactive cell (`FJS-D44`) and *stage* is the workbench grid's own word for the cards on show against the dock. *Notice* is Basecamp's own (`web/src/notices.js`, the home screen's *Needs attention*), the same shape computed from rows; a notice is not a `Notification`, which is a record a person can switch off — a pin is a folder on this machine and nothing about it is in the database. Picked over **a fifth `RunState`, `needs-you`** ([`IDEAS/workbench.md`](IDEAS/workbench.md) #5 as written: a run that ended on a question holds one slot for two facts, and the next condition, a permission ask, needs a sixth) and **#7's lanes as run states** (queued → working → review → done, which a run would move a card along, so a person's placing and a run's progress share one column and the first is overwritten by the second).
@@ -16942,6 +16974,12 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d1185"></a>2026-10-17 · `FJS-D1185` — Q1 — Whether conduit-digitalocean and conduit-hetzner enter `packages/` and basecamp moves onto them — Every connector stays in the sibling workspace for now, and basecamp keeps its own copy. A `link:` dependency on the sibling is not a third option: `vendor.js` packs workspace dependencies only, so the image build cannot reach it.
+
+Asked in [`IDEAS/conduit-connectors.md`](IDEAS/conduit-connectors.md) § Open questions. **B** was picked over **A** (promote both, then Phase 3 moves basecamp onto them. One `sendVia` split serves both, where DO alone leaves `AccountSend` half-migrated).
+
+the owner is not ready to commit connector packages into this tree; the prototypes keep maturing in the sibling workspace, and basecamp's compute connectors stay basecamp's own until then.
 
 ### <a id="fjs-d1183"></a>2026-10-16 · `FJS-D1183` — Q3 — How Basecamp reaches an app over `conduit-37signals` — The account event feed, polled; the live stream after it as a wake-up. `pollEvents` reads `/events.json` on a 60 s job and persists `position` only after the page is applied; then a stream ticket dials a `broker` target (`FJS-D1127`) whose frames only trigger a poll and never advance `position`. Legacy per-project webhooks are refused.
 

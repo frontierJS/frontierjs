@@ -33,6 +33,10 @@ flags:
     type: boolean
     description: Continue a deploy a previous run did not finish, taking its lock over
     defaultValue: false
+  auto-install:
+    type: boolean
+    description: If the server needs deploy:setup, install its missing dependencies without asking
+    defaultValue: false
 ---
 
 Deploys via SSH. Environment resolved in order:
@@ -110,8 +114,8 @@ if (deployConf?.server) {
   // health check, so it is what a step means when it says "the server" without
   // qualifying. A web-only run has no API host at all — steps that need one are
   // skipped by `doApi` rather than reading these.
-  $.config.server     = api?.server ?? web.server
-  $.config.user       = api?.user   ?? web.user
+  $.config.server     = api?.server ?? web?.server
+  $.config.user       = api?.user   ?? web?.user
   $.config.serverPath = api?.path   ?? web.path
   $.config.target     = target
   $.config.deployConf = deployConf

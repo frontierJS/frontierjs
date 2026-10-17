@@ -30,7 +30,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `BackupDestination` | `local` · `s3` |
 | `BackupKind` | `manual` · `scheduled` |
 | `Capability` | `Environment.create` · `Environment.delete` · `Environment.update` · `Server.create` · `Server.delete` · `Server.destroy` · `Server.drain` · `Server.provision` · `Server.reboot` · `Server.undrain` · `Server.update` · `Variable.create` · `Variable.delete` · `Variable.update` |
-| `ChannelKind` | `email` · `pagerduty` · `slack` · `webhook` |
+| `ChannelKind` | `chat` · `email` · `pagerduty` · `slack` · `webhook` |
 | `ComparisonOp` | `gt` · `gte` · `lt` · `lte` |
 | `DependencyKind` | `dependency` · `dev` · `optional` · `peer` |
 | `DeployStatus` | `building` · `cancelled` · `failed` · `pending` · `rolled_back` · `success` |

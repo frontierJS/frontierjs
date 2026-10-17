@@ -23,8 +23,8 @@ import { fileURLToPath, pathToFileURL } from 'url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 import {
   LOCAL_SERVERS, serverOf, transportFor, shQuote,
-  runCommand, reachCommand, sendCommand, withCwd, createMachine,
-  shipCommand, sameMachine,
+  runCommand, reachCommand, sendCommand, syncCommand, withCwd, createMachine,
+  shipCommand, sameMachine, SSH_MUX,
 } from '../core/machine.js'
 
 // A real `$.exec`: the same execSync call the runtime makes.
@@ -67,7 +67,24 @@ describe('which transport a host resolves to', () => {
 
 describe('the command that carries a script', () => {
   test('ssh appends sh -s and nothing else — the script is not on the command line', () => {
-    expect(runCommand('deploy@box', 'ssh')).toBe('ssh deploy@box sh -s')
+    expect(runCommand('deploy@box', 'ssh')).toBe(`ssh ${SSH_MUX} deploy@box sh -s`)
+  })
+
+  // A handshake per call was most of a deploy's wall time, so a verb that opens
+  // its own connection is a regression nothing else would notice.
+  test('every ssh-carried verb shares one multiplexed connection', () => {
+    expect(SSH_MUX).toMatch(/ControlMaster=auto/)
+    expect(reachCommand('deploy@box', 'ssh')).toContain(SSH_MUX)
+    expect(sendCommand('deploy@box', 'ssh', '/a', '/b')).toContain(SSH_MUX)
+    expect(syncCommand('deploy@box', 'ssh', '/a', '/b')).toContain(`-e ${shQuote(`ssh ${SSH_MUX}`)}`)
+  })
+
+  // ssh refuses to start when the socket path passes the unix limit of 108
+  // bytes, so the expanded path is measured: `%C` is 40 hex characters.
+  test('the control socket path fits a unix socket', () => {
+    const path = /ControlPath='([^']+)'/.exec(SSH_MUX)[1]
+      .replace('~', process.env.HOME ?? '/home/someone').replace('%C', 'f'.repeat(40))
+    expect(path.length).toBeLessThan(108)
   })
 
   test('local is the same command with no prefix', () => {
@@ -215,14 +232,14 @@ describe('moving an image between machines', () => {
   // distribution strategies open, and this is the one that needs nothing.
   test('save on one end, load on the other, in one pipeline', () => {
     expect(shipCommand(M('ssh', 'deploy@build'), M('ssh', 'deploy@prod'), 'sha256:abc'))
-      .toBe('ssh deploy@build docker save sha256:abc | ssh deploy@prod docker load')
+      .toBe(`ssh ${SSH_MUX} deploy@build docker save sha256:abc | ssh ${SSH_MUX} deploy@prod docker load`)
   })
 
   test('a local end is the pipe itself, with no ssh', () => {
     expect(shipCommand(M('local', 'localhost'), M('ssh', 'deploy@prod'), 'sha256:abc'))
-      .toBe('docker save sha256:abc | ssh deploy@prod docker load')
+      .toBe(`docker save sha256:abc | ssh ${SSH_MUX} deploy@prod docker load`)
     expect(shipCommand(M('ssh', 'deploy@build'), M('local', 'localhost'), 'sha256:abc'))
-      .toBe('ssh deploy@build docker save sha256:abc | docker load')
+      .toBe(`ssh ${SSH_MUX} deploy@build docker save sha256:abc | docker load`)
   })
 
   // Two names for one daemon means the bytes are already there.
@@ -246,7 +263,7 @@ describe('moving an image between machines', () => {
     const a = createMachine({ host: 'localhost',   exec: (o) => { cmd = o.command } })
     const b = createMachine({ host: 'deploy@prod', exec: () => {} })
     expect(a.shipTo(b, 'sha256:abc')).toBe(true)
-    expect(cmd).toBe('docker save sha256:abc | ssh deploy@prod docker load')
+    expect(cmd).toBe(`docker save sha256:abc | ssh ${SSH_MUX} deploy@prod docker load`)
   })
 
   // The property the whole thing rests on: what may not vary is which bytes ran.

@@ -629,7 +629,7 @@ CREATE TABLE IF NOT EXISTS "notification_channel" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
-  CHECK ("kind" IN ('slack', 'pagerduty', 'email', 'webhook')),
+  CHECK ("kind" IN ('slack', 'pagerduty', 'email', 'webhook', 'chat')),
   UNIQUE ("workspaceId", "name"),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;

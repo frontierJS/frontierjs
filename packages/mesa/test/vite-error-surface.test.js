@@ -20,17 +20,13 @@
 // caught a THROW and never read `analysis.errors`, so an inert `$: { }` was a
 // second compile of every save that reported nothing.
 //
-// The browser section is the measure. A unit test that only checks the plugin
-// raised cannot see the linker, which is what actually decided what the author
-// read. The environment is node: happy-dom's global `URL` makes the plugin's
-// `fileURLToPath(new URL(…))` throw.
+// A unit test that only checks the plugin raised cannot see the linker, which
+// is what actually decided what the author read: the cold load in a real
+// browser is `test/browser/vite/specs/cold-error.spec.mjs`. The environment is
+// node: happy-dom's global `URL` makes the plugin's `fileURLToPath(new URL(…))`
+// throw.
 
-import { describe, test, expect, beforeAll, afterAll } from 'vitest'
-import { createServer as createHttpServer } from 'node:http'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { execFileSync } from 'node:child_process'
+import { describe, test, expect } from 'vitest'
 
 import mesaPlugin from '../mesa-vite/index.js'
 
@@ -127,82 +123,5 @@ describe('handleHotUpdate compiles nothing', () => {
     const server = fakeServer()
     expect(await hook(server)(`${ROOT}/main.js`, [{ id: 'x' }])).toBeUndefined()
     expect(server.invalidated).toHaveLength(0)
-  })
-})
-
-// ─── the measure: a cold load in a real browser ───────────────────────────────
-
-const CHROME = (() => {
-  if (process.env.FJS_CHROME) return process.env.FJS_CHROME
-  for (const bin of ['google-chrome', 'chromium', 'chromium-browser']) {
-    try { return execFileSync('which', [bin], { encoding: 'utf8' }).trim() } catch {}
-  }
-  return null
-})()
-
-describe.skipIf(!CHROME)('a cold page load on a broken component', () => {
-  let work, http, vite, browser, origin
-
-  beforeAll(async () => {
-    work = mkdtempSync(join(tmpdir(), 'mesa-error-surface-'))
-    mkdirSync(join(work, 'src'))
-    writeFileSync(join(work, 'index.html'),
-      '<!doctype html><html><body><div id=app></div>' +
-      '<script type="module" src="/src/main.js"></script></body></html>')
-    // The import an author writes. It is the shape that matters: a default
-    // import is what makes the linker, not the module body, decide.
-    writeFileSync(join(work, 'src/main.js'), "import Broken from './Broken.mesa'\nconsole.log(Broken)\n")
-    writeFileSync(join(work, 'src/Broken.mesa'), UNCLOSED)
-
-    const { createServer } = await import('vite')
-    http = createHttpServer()
-    vite = await createServer({
-      root: work, cacheDir: join(work, '.vite'), configFile: false, logLevel: 'silent',
-      server: { middlewareMode: true, hmr: { server: http } },
-      plugins: [mesaPlugin()],
-    })
-    http.on('request', vite.middlewares)
-    await new Promise((r) => http.listen(0, '127.0.0.1', r))
-    origin = `http://127.0.0.1:${http.address().port}`
-
-    const { openChrome } = await import('../src/drive.js')
-    browser = await openChrome()
-  }, 60000)
-
-  afterAll(async () => {
-    await browser?.close()
-    await vite?.close().catch(() => {})
-    if (http) await new Promise((r) => http.close(r))
-    try { rmSync(work, { recursive: true, force: true }) } catch {}
-  }, 60000)
-
-  // The server half. A module request that RESOLVES is what left the overlay
-  // with nothing to show: Vite only reports what its transform rejected.
-  test('the dev server refuses to produce the module', async () => {
-    await expect(vite.transformRequest('/src/Broken.mesa')).rejects.toThrow(/Unexpected EOF/)
-  })
-
-  test('the overlay is on the page and names the file and the fault', async () => {
-    await browser.navigate(`${origin}/`)
-    const seen = await browser.evaluate(`
-      const t0 = Date.now();
-      let el;
-      for (;;) {
-        el = document.querySelector('vite-error-overlay');
-        if (el || Date.now() - t0 > 10000) break;
-        await new Promise(r => setTimeout(r, 100));
-      }
-      return { present: !!el, text: (el?.shadowRoot?.textContent ?? '').slice(0, 800) };
-    `)
-
-    expect(seen.present).toBe(true)
-    expect(seen.text).toContain('Broken.mesa')
-    expect(seen.text).toContain('Unexpected EOF')
-    // The bogus report the author used to get, in place of the real one.
-    expect(seen.text).not.toContain('does not provide an export named')
-  }, 30000)
-
-  test('nothing tells the author their own import is wrong', async () => {
-    expect(browser.errors.join('\n')).not.toContain('does not provide an export named')
   })
 })

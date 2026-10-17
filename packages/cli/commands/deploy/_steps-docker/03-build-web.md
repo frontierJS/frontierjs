@@ -10,25 +10,33 @@ if ($.config.abort) return
 
 const { commit, deployConf } = $.config
 const { host, path: serverPath } = $.config.web
+const src          = `${serverPath}/src`
 const keepReleases = deployConf.web?.keep_releases ?? 3
 const releaseDir   = `${serverPath}/releases/${commit}`
 const machine      = machineFor($, host, serverPath)
 
 // ─── Install dependencies ─────────────────────────────────────────────────────
-// Step 02 pulled new source but not new node_modules, and vite resolves imports
-// against whatever is on disk — so a deploy that adds a dependency either builds
-// against the previous tree or dies mid-build, with the deploy lock already held.
-// The API side never had this problem: its Dockerfile installs inside the image.
+// 02-ship extracted a fresh tree with no node_modules, and vite resolves imports
+// against whatever is on disk. The manifest is the GENERATED one, as in the
+// image: a `workspace:` or `link:` spec resolves to nothing on this machine,
+// and the tarballs beside the manifest are what it names instead.
 //
-// --frozen-lockfile is the point of the step, not a flag on it. A resolve on the
-// server would produce a tree the lockfile never described and nothing downstream
-// could tell you it had happened.
+// --frozen-lockfile whenever a lock travelled with it. A resolve on the server
+// would produce a tree the lockfile never described; a manifest vendor.js
+// rewrote has no lock that matches, so it installs as the image does.
 log.info('Installing dependencies on server...')
-machine.run('bun install --frozen-lockfile', { cwd: serverPath })
+machine.run(`cp ${GENERATED_DIR}/app-manifest.json package.json &&
+  (cp ${GENERATED_DIR}/bun.lock* ./ 2>/dev/null || true) &&
+  if [ -f bun.lock ] || [ -f bun.lockb ]; then bun install --frozen-lockfile; else bun install; fi`, { cwd: src })
 
 // ─── Build on server ──────────────────────────────────────────────────────────
-// Code is already current from step 02 (git pull).
-// Run bun build inside the web sub-directory.
+// `build:web` where the app names one, because `build` may be more than the
+// web: basecamp's also runs a schema drift check that reads litestone by
+// workspace path, which exists on no server.
+const { readFileSync } = await import('fs')
+const scripts = JSON.parse(readFileSync(`${$.paths.root}/package.json`, 'utf8')).scripts ?? {}
+const [buildCmd, buildCwd] = scripts['build:web'] ? ['bun run build:web', src] : ['bun run build', `${src}/web`]
+
 // ─── The build's own identity ─────────────────────────────────────────────────
 //
 // A deploy replaces the code under browsers that are already running, and until
@@ -63,13 +71,13 @@ catch (e) {
 }
 
 log.info(origin ? `Building web on server, calling the API at ${origin}...` : 'Building web on server...')
-machine.run(`VITE_FJS_BUILD=${commit}${origin ? ` VITE_API_URL=${origin}` : ''} bun run build`, { cwd: `${serverPath}/web` })
+machine.run(`VITE_FJS_BUILD=${commit}${origin ? ` VITE_API_URL=${origin}` : ''} ${buildCmd}`, { cwd: buildCwd })
 
 // A build that never inlined VITE_API_URL ships a bundle calling its own
 // origin, where nothing proxies /api/ any more. Asked of the output, because
 // the web build is the app's and may not be Sierra's.
 if (origin) {
-  const carried = machine.capture(`grep -rl --include='*.js' -F '${origin}' ${serverPath}/web/dist 2>/dev/null | head -1 || true`)
+  const carried = machine.capture(`grep -rl --include='*.js' -F '${origin}' ${src}/web/dist 2>/dev/null | head -1 || true`)
   if (!String(carried ?? '').trim()) {
     log.error(`The web build does not contain ${origin}. Sierra inlines VITE_API_URL into the page when its config sets junction.url;`)
     log.error(`a build that is not Sierra's has to read import.meta.env.VITE_API_URL itself.`)
@@ -78,10 +86,18 @@ if (origin) {
   }
 }
 
-// ─── Copy dist/ into versioned release dir ────────────────────────────────────
-// cp -a preserves timestamps and handles symlinks correctly.
+// ─── Copy the built page into versioned release dir ───────────────────────────
+// Sierra writes `dist/client/`, a plain Vite build `dist/` — probed, because a
+// release one level too deep has no index.html at its root and Caddy answers
+// every request 404 while the deploy reports success.
+//
+// Built beside and moved in: a redeploy of the same commit finds the directory
+// there, and `cp -a` into an existing one nests the copy inside it.
 log.info(`Creating release → releases/${commit}`)
-machine.run(`cp -a ${serverPath}/web/dist ${releaseDir}`)
+machine.run(`out=${src}/web/dist
+[ -f "$out/index.html" ] || out="$out/client"
+if [ ! -f "$out/index.html" ]; then echo "the web build wrote no index.html under ${src}/web/dist" >&2; exit 1; fi
+rm -rf "${releaseDir}.next" && cp -a "$out" "${releaseDir}.next" && rm -rf "${releaseDir}" && mv "${releaseDir}.next" "${releaseDir}"`)
 
 // ─── Merge previous release assets ───────────────────────────────────────────
 // SPA clients cache their HTML and keep requesting old content-hashed assets

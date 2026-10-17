@@ -9,18 +9,18 @@ if ($.config.abort) return
 
 // The BUILDER's context, not the target's — that is the tree `docker build`
 // reads, and under a declared `deploy.builder` they are different machines.
-const { host, path: serverPath } = $.config.builder ?? $.config.api
+const { host, path: deployRoot } = $.config.builder ?? $.config.api
+const serverPath = `${deployRoot}/src`
 const dockerfile = $.config.deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
 
 const { gather, inspectBuild, refuses, summarize, renderFinding, CONTEXT_FIND } =
   await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
 
 // ─── Why this reads the SERVER and not the working tree ──────────────────────
-// The build context is the server's checkout, and the file most likely to be
-// baked is the one thing that is NOT in git: `.env.production` sits at
-// {serverPath}, which is the context root, so a check run against the local tree
-// cannot see the case it exists for. It runs after 02-pull for the same reason —
-// before the pull, the server's Dockerfile is the previous release's.
+// The context is what 02-ship extracted plus deploy/generated/, which is not
+// the working tree: an uncommitted file is absent there and present here. The
+// deploy root's `.env.production` sits above the context and cannot be in it;
+// a `.env.*` committed into the app can.
 const machine = machineFor($, host, serverPath)
 const ask = (script) => {
   try { return machine.capture(script, { cwd: serverPath }) }

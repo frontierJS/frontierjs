@@ -138,6 +138,19 @@ if (serveOnly) {
     extend: (browser) => ({
       /** Navigate, and wait for `ready` if one is given. */
       goto: (path, ready) => browser.navigate(origin + path, ready),
+      /** What the dev server makes of a module, without a browser asking. */
+      transform: (id) => vite.transformRequest(id),
+      /** Park the tab on about:blank until no HMR client is connected. Vite
+       *  sends a cold load's transform error to whichever client is open and
+       *  holds it for the next one only when none is, so a page loaded from a
+       *  tab still connected never sees its own overlay. */
+      leave: async () => {
+        await browser.navigate('about:blank')
+        for (let i = 0; i < 100 && vite.ws.clients.size; i++) await new Promise((r) => setTimeout(r, 50))
+        if (vite.ws.clients.size) throw new Error('leave(): an HMR client is still connected')
+      },
+      /** The page errors collected so far, allowed ones included. */
+      errors: async () => browser.errors.slice(),
       /** Open a second tab on this server — the devtools panel needs one. */
       openTab: (path, ready) => browser.newPage(origin + path, ready),
       /** Rewrite a file in the working copy — this is what an edit IS.

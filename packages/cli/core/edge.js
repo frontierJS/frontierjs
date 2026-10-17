@@ -19,8 +19,17 @@
  * ── Two shapes ─────────────────────────────────────────────────────────────
  *
  * **One origin** — `deploy.web.domain` alone. One route serves the SPA and
- * proxies `/api/` and `/ws` to the container, so the page and the API share an
- * origin and `junction.url` defaulting to `location.origin` is correct.
+ * proxies the API's paths and `/ws` to the container, so the page and the API
+ * share an origin and `junction.url` defaulting to `location.origin` is correct.
+ *
+ * ── Which paths are the API's ─────────────────────────────────────────────
+ *
+ * Read off the app's committed `surface.snapshot.md` (`apiPaths`), never
+ * assumed: an app with no `apiPrefix` mounts `/projects`, which is also a page,
+ * and a route hard-coded to `/api/*` hands every one of its calls the SPA.
+ * Unprefixed, the two are told apart by `Accept` — a navigation asks for
+ * text/html and gets the page, the client asks for JSON and is proxied — the
+ * call basecamp's dev proxy and image Caddy make. No snapshot keeps `/api/`.
  *
  * **Two origins** — `deploy.api.domain` as well (`api.example.com` beside
  * `app.example.com`). The web route serves the SPA and proxies nothing; the API
@@ -109,15 +118,19 @@ export const accessLogPath = (id) => `/var/log/caddy/${id}.access.log`
  * @throws {EdgeError} when no side names a domain: Caddy routes by hostname, and
  *   a route matching every host would take over whatever else the machine serves.
  */
-export function edgeRoutes({ appId, serverPath, apiPort, web, api }) {
+export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null }) {
   const split = Boolean(api?.domain)
   if (!web?.domain && !split)
     throw new EdgeError('deploy.web.domain is not set. Caddy routes by hostname and fetches a certificate for it, so the edge needs one.')
 
+  const { prefix = '/api', roots = ['/api'] } = paths ?? {}
+  const matched = [...roots.flatMap(p => [p, `${p}/*`]), '/ws', '/ws/*']
+  const proxy = split ? [] : [...(prefix ? [] : [navigation(roots)]), apiRoute(apiPort, matched)]
+
   const routes = []
   if (web?.domain) routes.push(route({
     id: routeId(appId), host: web.domain,
-    inner: [caddyGuard(serverPath, guardId(appId)), ...(split ? [] : [apiRoute(apiPort, ['/api/*', '/ws', '/ws/*'])]), ...spa(serverPath)],
+    inner: [caddyGuard(serverPath, guardId(appId)), ...proxy, ...spa(serverPath)],
   }))
   if (split) routes.push(route({
     id: routeId(appId, 'api'), host: api.domain,
@@ -140,6 +153,36 @@ const apiRoute = (apiPort, paths = null) => ({
   // the app this one hop is there.
   handle:   [{ handler: 'reverse_proxy', upstreams: [{ dial: `127.0.0.1:${apiPort}` }] }],
   terminal: true,
+})
+
+/**
+ * The paths the API mounted, as first segments, off `readApiSurface`'s parse:
+ * `{ prefix, roots }`, or null with no snapshot. `/{service}` is every service
+ * at once and is expanded to their names; `/` (static routes) and `/*` (the
+ * CORS preflight) would take the whole origin and are left out.
+ */
+export function apiPaths(surface) {
+  if (!surface) return null
+  const roots = new Set()
+  for (const { path } of surface.routes) {
+    if (path === '/' || path === '/*') continue
+    if (path.startsWith('/{')) for (const s of surface.services) roots.add(`/${s.name}`)
+    else roots.add('/' + path.split('/')[1])
+  }
+  return roots.size ? { prefix: surface.prefix, roots: [...roots].sort() } : null
+}
+
+// A provider sign-in is a NAVIGATION to an API redirect (`/auth/oauth/<p>` and
+// its callback), and those routes mount only when a provider is configured, so
+// no snapshot names them. Proxied whatever `Accept` says.
+const NAVIGATED = ['/auth/oauth/*']
+
+// Unprefixed, `/projects` is a service and a page. A request asking for HTML is
+// rewritten to the shell before the proxy sees it; not terminal, so the SPA
+// routes below serve it.
+const navigation = (roots) => ({
+  match:  [{ path: roots.flatMap(p => [p, `${p}/*`]), header: { Accept: ['*text/html*'] }, not: [{ path: NAVIGATED }] }],
+  handle: [{ handler: 'rewrite', uri: '/index.html' }],
 })
 
 // The SPA: a file that exists, else index.html. Root is read per request, so

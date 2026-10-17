@@ -20,7 +20,6 @@ import { startCfSink, EMPTY_TOKEN, BROKEN_ZONE } from '../src/providers/edge/clo
 import { edgeConnectorFor, domainMark } from '../src/providers/edge/index.ts'
 import { connectorFor }            from '../src/providers/compute/index.ts'
 import { registerAccount, sendVia, accountConnectorFor } from '../src/providers/compute/accounts.ts'
-import { portFor }                 from '@frontierjs/cli/core/ports.js'
 
 // Every Domain write also pushes its App's routes to the machines running it
 // (`FJS-1610`), and none of these machines has an outpost. The stub answers
@@ -30,13 +29,13 @@ process.env.BASECAMP_STUB_OUTPOST = '1'
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
 const ENC_KEY    = '0'.repeat(64)
-const CF_PORT    = await portFor(import.meta.url, 'be', { service: 7 })
-const CF_SINK    = `http://localhost:${CF_PORT}/client/v4`
+const sink       = startCfSink(0)
+const CF_SINK    = `http://localhost:${sink.port}/client/v4`
 const CF_TOKEN   = 'cfat_devtoken'
 
 const cloudflare: any = edgeConnectorFor('cloudflare')
 
-let env: any, app: any, sink: any, ws: any, account: any, owner: any
+let env: any, app: any, ws: any, account: any, owner: any
 
 const registerAtSink = async (secret: any): Promise<string> => {
   const target = await registerAccount(app, secret, { address: CF_SINK })
@@ -50,8 +49,6 @@ const cfAccount = (name: string, token: string) => (env.system as any).secret.cr
 }})
 
 beforeAll(async () => {
-  sink = startCfSink(CF_PORT)
-
   env = await createTestEnv({
     schema: SCHEMA, migrations: MIGRATIONS, encryptionKey: ENC_KEY,
     plugins: [new GatePlugin({ getLevel: basecampGateLevel })],
@@ -74,7 +71,7 @@ beforeAll(async () => {
   account = await cfAccount('cf-main', CF_TOKEN)
 })
 
-afterAll(async () => { sink?.stop(); await env?.close?.() })
+afterAll(async () => { sink.stop(); await env?.close?.() })
 
 // ─── The dialect ─────────────────────────────────────────────────────────
 

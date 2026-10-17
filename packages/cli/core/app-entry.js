@@ -196,7 +196,11 @@ export function readApiSurface(root) {
   // `generatedBy` re-reads the file for one line. That is the price of the
   // header having exactly one reader — `appEntry` needs it without any of the
   // above, and two extractions of one line is how the two came to disagree.
-  return { file, generatedBy: generatedBy(file), services, appHooks, routes, plugins }
+  // `51 services · 40 routes · 18 plugins · prefix (none)` — null when unprefixed.
+  const prefix = lines.join('\n').match(/·\s*prefix\s+(\S+)/)?.[1] ?? null
+
+  return { file, generatedBy: generatedBy(file), services, appHooks, routes, plugins,
+    prefix: prefix === '(none)' ? null : prefix }
 }
 
 // ─── the model itself ─────────────────────────────────────────────────────────

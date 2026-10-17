@@ -25,9 +25,9 @@
 //
 // ─── why configuration is a refusal and not a fix ───────────────────────────
 //
-// Serving state is the PAIR. `fli` writes no `.env` on a target — the operator
-// owns that file — so when the configuration generation has moved, a revert genuinely
-// cannot restore the pair; it can only put old code onto today's config. That is
+// Serving state is the PAIR. A deploy writes no `.env` on a target — setup seeds
+// it once and the operator owns it after (FJS-D1186) — so when the configuration
+// generation has moved, a revert genuinely cannot restore the pair; it can only put old code onto today's config. That is
 // the documented Fly failure this separation exists to refuse, so it is refused,
 // and `--onto-current-configuration` is the operator saying they have read which keys
 // moved and want it anyway.
@@ -200,7 +200,7 @@ export function revertRefusals({
       `release ${target.id} stopped being a revert target on ${target.retentionUntil} — its artefacts may already be gone`,
       '--past-retention')
 
-  // The pair. `fli` writes no env file on a target, so this cannot be fixed here
+  // The pair. A deploy writes no env file on a target, so this cannot be fixed here
   // and is not offered as one.
   if (generation != null && target.generation != null && target.generation !== generation)
     add('configuration',

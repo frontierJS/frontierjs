@@ -41,7 +41,7 @@ import { portFor }                from '@frontierjs/cli/core/ports.js'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const API_PORT = await portFor(import.meta.url, 'be')
-const CF_PORT  = await portFor(import.meta.url, 'be', { service: 8 })   // the unit file holds service 7
+const CF_PORT  = await portFor(import.meta.url, 'be', { service: 8 })
 const API      = `http://localhost:${API_PORT}`
 const CF       = `http://localhost:${CF_PORT}/client/v4`
 const CF_TOKEN = 'cfat_devtoken'

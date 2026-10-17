@@ -253,7 +253,7 @@ that names a fixture names one wired to `FIXTURE_URL` and never run.
 | push | B | new (APNs + FCM); APNs 403 is a refusal predicate (`FJS-D941`); the FCM exchange is a send through its own target | 23 | — | APNs h2 unmeasured |
 | gmail | B | new; per-user OAuth over `per_caller` | 41 | — | after oidc; batch endpoint waits on `FJS-2700` |
 | mattermost | C | new; the mirror app's connector (`mirror-apps.md` 2.1–2.3): two bearer targets, service and `per_caller` user, the `mirror` claim (`FJS-D1125`), the backfill reads, the outgoing-webhook and slash-command Dialects (`FJS-D899`) with `respond()`, the socket as a `broker` target with a `FrameDialect` (`FJS-D1127`); `pending_post_id` the one key, in the body | 40 | — | `MirrorClaim` type moves into conduit at 2.4; webhook `Authorization: Token` and the socket's header-vs-challenge auth unverified on a real server; socket resume not built |
-| 37signals | C | new; `conduit-37signals.md` 2.1–2.2: `basecampTargets()` → `{ api, token }`, the account as the address's path, `translate`, the reads (`walk` by `Link` with one `ETag` per page, `recording` typed or by its envelope); Kobami's scrubbed fixtures in `test/fixtures/` | 26 | 0.2's bodies, GET only | its plan's Phase 2.3 onward |
+| 37signals | C | new; `conduit-37signals.md` 2.1–2.5: `basecampTargets()` → `{ api, token }`, the account as the address's path, `translate`, the reads (`walk` by `Link` with one `ETag` per page, `recording` typed or by its envelope), five verbs whose rich text is `{ text }` or `{ html }` (C9), and `findCreated` reading a lost create's parent list (C6); the sink's chaos (a 429 refuses a create, a 500 leaves it `indeterminate`); Kobami's scrubbed fixtures in `test/fixtures/` | 44 | 0.2's bodies, GET only; no write has reached the account | its plan's Phase 2.6 onward |
 | anthropic | C | new | 22 | — | nothing; streams through `conduit.stream()` (`FJS-D934`) |
 | openai | C | new, protocol connector; streams | 23 | Ollama, llama.cpp **unproved** | a local model server |
 | twilio | C | new; the built-in Basic signer (`FJS-D933`) | 12 | — | nothing |
@@ -338,52 +338,52 @@ reconcile sweep that misses every orphan after the first page.
 Goal: the owner rules whether these two enter `packages/`.
 Done when: Q1 is ruled.
 
-- [ ] 0.1 Q1 — promote both into `packages/`, or keep basecamp's copy. A
-  `link:` dependency on the sibling workspace does not work: `vendor.js`
-  packs workspace dependencies only, so the image build cannot reach it.
-  **Recommend both together** — one `sendVia` split serves both, and DO alone
-  leaves `AccountSend` half-migrated.
+- [x] 0.1 Rule Q1 (§ Open questions, below) — B, `FJS-D1185`.
 
 ### Phase 1 — The prototypes, in the sibling workspace
 
 Goal: each connector carries what basecamp's copy carries today.
 Done when: both drives green after `./link.sh`, with the new rows.
 
-- [ ] 1.1 Declare `@frontierjs/toolbelt` as peer and dev dependency.
-- [ ] 1.2 Drive onto `@frontierjs/conduit/testing`; the `test` script is the drive.
-- [ ] 1.3 A 2xx with no id is its own `DoFailure` kind, and `DoFailure` carries
+- [x] 1.1 Declare `@frontierjs/toolbelt` as peer and dev dependency.
+- [x] 1.2 Drive onto `@frontierjs/conduit/testing`; the `test` script is the drive.
+- [x] 1.3 A 2xx with no id is its own `DoFailure` kind, and `DoFailure` carries
   `indeterminate`; drive rows updated.
-- [ ] 1.4 Sink options for boot delay and token, a reset that clears droplets
+- [x] 1.4 Sink options for boot delay and token, a reset that clears droplets
   and the id counter, an in-process `created`/`boot` handle, a logged refusal.
-- [ ] 1.5 The same pass over conduit-hetzner.
+- [x] 1.5 The same pass over conduit-hetzner.
 
 ### Phase 2 — Promote
+
+Dropped by `FJS-D1185`: the connectors stay in the sibling workspace and basecamp keeps its own compute connectors. A step reopens as a new number if that is ruled again.
 
 Goal: both are workspace packages.
 Done when: `fli check` reports no `connector-contract` finding and the
 snapshots phase is clean.
 
-- [ ] 2.1 Move both into `packages/`, using the postmark recipe: package and
+- [~] 2.1 Move both into `packages/`, using the postmark recipe: package and
   tsconfig shape, root `CLAUDE.md` rows (ring `batteries`), `DRIVES.md` both
   tables, a `docs/TESTING.md` row, then `fli ws:exports`, `fli ws:deps`,
   `fli ws:atlas` and `--as=report`.
 
 ### Phase 3 — Basecamp speaks through them
 
+Dropped by `FJS-D1185`: the connectors stay in the sibling workspace and basecamp keeps its own compute connectors. A step reopens as a new number if that is ruled again.
+
 Goal: basecamp's compute connectors are adapters over the packages.
 Done when: `bun run test` and `bun run verify:provision` green in basecamp.
 
-- [ ] 3.1 `workspace:*` dependencies on both.
-- [ ] 3.2 Split `sendVia`: a guarded raw send, with `AccountSend` built on it for edge.
-- [ ] 3.3 `digitalocean.ts` becomes the `ComputeConnector` adapter — mark to
+- [~] 3.1 `workspace:*` dependencies on both.
+- [~] 3.2 Split `sendVia`: a guarded raw send, with `AccountSend` built on it for edge.
+- [~] 3.3 `digitalocean.ts` becomes the `ComputeConnector` adapter — mark to
   tags, tags to `serverId`, `DigitalOceanError` to basecamp's sentences.
-- [ ] 3.4 Delete `digitalocean-sink.ts`; `verify-provision.mjs` starts the
+- [~] 3.4 Delete `digitalocean-sink.ts`; `verify-provision.mjs` starts the
   package's sink on 8122 with a 4000 ms boot.
-- [ ] 3.5 `compute.test.ts`: canned sends answer `ConduitResult`, the sink
+- [~] 3.5 `compute.test.ts`: canned sends answer `ConduitResult`, the sink
   imports move to its handle, the three message matches move.
-- [ ] 3.6 3.3–3.5 for Hetzner.
-- [ ] 3.7 `bun run image` builds with the new dependencies packed.
-- [ ] 3.8 The table row above says promoted; the sibling copies are deleted.
+- [~] 3.6 3.3–3.5 for Hetzner.
+- [~] 3.7 `bun run image` builds with the new dependencies packed.
+- [~] 3.8 The table row above says promoted; the sibling copies are deleted.
 
 ### Phase 4 — A real account
 
@@ -503,6 +503,20 @@ project; and **a sink and a drive** that can move the clock rather than wait a
 fortnight — a 304 served from cache, a `Link` walk to page two, a 429 that does not
 open the breaker, bytes arriving as bytes, a webhook re-read before it is acted on,
 and one refresh with two sends in flight.
+
+---
+
+## Open questions
+
+- ~~**Q1 — Whether conduit-digitalocean and conduit-hetzner enter `packages/` and basecamp moves onto them.**~~ **Answered 2026-10-17 (`FJS-D1185`): B — every connector stays in the sibling workspace for now, and basecamp keeps its own copy. A `link:` dependency on the sibling is not a third option: `vendor.js` packs workspace dependencies only, so the image build cannot reach it.**
+  - **A** — promote both, then Phase 3 moves basecamp onto them. One `sendVia`
+    split serves both, where DO alone leaves `AccountSend` half-migrated.
+  - **B** — every connector stays in the sibling workspace for now, and
+    basecamp keeps its own copy. A `link:` dependency on the sibling is not a
+    third option: `vendor.js` packs workspace dependencies only, so the image
+    build cannot reach it.
+  - **Recommend A** — two copies of one vendor dialect drift with nothing
+    failing, and the move is mostly the adapter.
 
 ---
 
