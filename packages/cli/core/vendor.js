@@ -241,7 +241,7 @@ export function vendorWorkspacePackages({ appRoot, include = [], packagesDir: gi
   manifest.overrides = { ...manifest.overrides, ...packed }
 
   writeManifest(out.manifestPath, transform ? transform(manifest) : manifest)
-  log(`  · packed ${out.packed.length} package(s), ${out.vendored.length} dependenc(ies) now point at the tree`)
+  log(`  · packed ${out.packed.length} package(s), ${out.vendored.length} ${out.vendored.length === 1 ? 'dependency' : 'dependencies'} now point at the tree`)
   return out
 }
 

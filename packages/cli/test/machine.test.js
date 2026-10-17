@@ -24,7 +24,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 import {
   LOCAL_SERVERS, serverOf, transportFor, shQuote,
   runCommand, reachCommand, sendCommand, syncCommand, withCwd, createMachine,
-  shipCommand, sameMachine, SSH_MUX,
+  shipCommand, sameMachine, SSH_MUX, HELD_TAIL_LINES,
 } from '../core/machine.js'
 
 // A real `$.exec`: the same execSync call the runtime makes.
@@ -415,13 +415,39 @@ describe('a script sent to a machine', () => {
     expect(seen.stdio[0]).toBe('pipe')
   })
 
-  test('and stdout and stderr are still the operator\'s', () => {
+  test('and its output is held, both streams merged in order on the target', () => {
     let seen = null
     const m = createMachine({ host: 'localhost', exec: (opts) => { seen = opts } })
     m.run('echo hello')
 
+    expect(seen.stdio[1]).toBe('pipe')
+    expect(seen.stdio[2]).toBe('inherit')
+    expect(seen.input.split('\n')[0]).toBe('exec 2>&1')
+    expect(seen.describe).not.toContain('exec 2>&1')
+  })
+
+  test('under --verbose stdout and stderr are the operator\'s', () => {
+    let seen = null
+    const m = createMachine({ host: 'localhost', verbose: true, exec: (opts) => { seen = opts } })
+    m.run('echo hello')
+
     expect(seen.stdio[1]).toBe('inherit')
     expect(seen.stdio[2]).toBe('inherit')
+    expect(seen.input).not.toContain('exec 2>&1')
+  })
+
+  test('a held run that fails carries its last lines, stderr among them', () => {
+    const m = createMachine({ host: 'localhost', exec: realExec })
+    const lines = Array.from({ length: HELD_TAIL_LINES + 5 }, (_, i) => `echo line-${i}`).join('\n')
+    try {
+      m.run(`${lines}\necho the-reason >&2\nexit 4`)
+      throw new Error('should have thrown')
+    } catch (err) {
+      expect(err.message).toContain('the-reason')
+      expect(err.message).toContain(`line-${HELD_TAIL_LINES + 4}`)
+      expect(err.message).not.toContain('\nline-5\n')
+      expect(err.message).toContain('6 earlier line(s) held')
+    }
   })
 
   test('a caller that states its own stdio still gets it', () => {

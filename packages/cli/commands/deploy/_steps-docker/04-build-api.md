@@ -100,6 +100,6 @@ noteForJournal($, '04-build-api', {
 })
 
 log.success(`Image built → ${imageTag}`)
-log.info(`  bytes: ${describeIdentity(identity)}`)
+log.detail(`  bytes: ${describeIdentity(identity)}`)
 if (!identity) log.warn('  no digest — this deploy cannot say which bytes it ran')
 ```

@@ -755,8 +755,14 @@ export async function Command({ file, arg, flag, emit }) {
 
           await stepContext.run(stepContext)
 
+          // Read by a closing step that reports where the time went; the journal
+          // has the same figure only where a command installed one, and only
+          // from the step that opened it.
+          const durationMs = Date.now() - stepStartMs
+          if (config.config) (config.config.stepTimes ??= []).push({ step: stepName, ms: durationMs })
+
           await config.config?.journal?.afterStep?.(stepName, stepNum, {
-            status: 'succeeded', durationMs: Date.now() - stepStartMs,
+            status: 'succeeded', durationMs,
           })
           if (emit) await emit({ type: 'step:done', id: stepName, status: 'success', elapsed_ms: Date.now() - stepStartMs })
         } catch (err) {

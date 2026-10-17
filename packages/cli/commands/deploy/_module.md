@@ -64,9 +64,9 @@ const machineFor = ($, host, path = null, transport = null) => createMachine({
 // then fails `--frozen-lockfile` outright, which is the worse trade. An
 // unresolvable devDependency is a publish problem and belongs upstream.
 const vendorApp = (root, log) => {
-  const result = vendorWorkspacePackages({ appRoot: root, log: (m) => log.info(m) })
-  if (result.vendored.length)
-    log.success(`Vendored ${result.vendored.length} workspace dependenc(ies) from ${result.packagesDir}`)
+  const result = vendorWorkspacePackages({ appRoot: root, log: (m) => log.detail(m) })
+  const n = result.vendored.length
+  if (n) log.success(`Vendored ${n} workspace ${n === 1 ? 'dependency' : 'dependencies'} from ${result.packagesDir}`)
   return result
 }
 

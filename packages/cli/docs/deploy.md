@@ -34,6 +34,7 @@ below is a summary, not the source of truth.
 - Auto-rollback on health failure (rename `_replaced` back, start it)
 - Stale client protection — previous release's hashed assets merged into new release with `cp -rn` so cached HTML clients can still load `app-x9y8z7.js`
 - Deploy lock at `${path}/.deploy.lock` prevents concurrent deploys to same server
+- What the target prints (bun install, vite, docker build, `docker run`) is held unless `--verbose`; a failed command's error ends with its last 40 lines. The closing line names the three slowest steps
 
 ### Junction-specific notes
 

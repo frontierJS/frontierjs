@@ -43,6 +43,8 @@
 // the `deploy` CI phase owes — a pipeline nothing executes is a pipeline whose
 // nine syntax errors nobody finds.
 
+import { isVerbose } from './verbosity.js'
+
 // ─── which transport ─────────────────────────────────────────────────────────
 
 /** Server names that mean *this machine*. Compared against the server, never the user@ half. */
@@ -177,6 +179,21 @@ export function withCwd(body, cwd) {
   return `cd ${shQuote(cwd)} || exit 1\n${body}`
 }
 
+/** Past this many bytes of held output, execSync kills the child rather than truncating. */
+export const HELD_MAX_BYTES = 256 * 1024 * 1024
+
+/** How many of a held run's last lines a failure carries. --verbose shows them all as they come. */
+export const HELD_TAIL_LINES = 40
+
+const tail = (out) => {
+  const lines = String(out ?? '').trimEnd().split('\n')
+  if (lines.length === 1 && !lines[0]) return ''
+  const shown = lines.slice(-HELD_TAIL_LINES).join('\n')
+  return lines.length > HELD_TAIL_LINES
+    ? `…${lines.length - HELD_TAIL_LINES} earlier line(s) held — --verbose prints every one\n${shown}`
+    : shown
+}
+
 // ─── the machine ─────────────────────────────────────────────────────────────
 
 /**
@@ -187,7 +204,7 @@ export function withCwd(body, cwd) {
  * same reason: the alternative is a pipeline that can only be exercised by
  * having a server.
  *
- *   run(script, opts)      run a script there, output inherited, throw on failure
+ *   run(script, opts)      run a script there, throw on failure; output held unless verbose
  *   capture(script, opts)  the same, answering stdout as a string
  *   tty(command)           an interactive program, the operator's terminal attached
  *   pipe(command, input)   a named program, with `input` on its stdin
@@ -198,7 +215,7 @@ export function withCwd(body, cwd) {
  * `run` and `capture` are the ones to reach for. `tty` and `pipe` exist because
  * stdin can only carry one thing, and those two need it for something else.
  */
-export function createMachine({ host, exec, transport = null, path = null }) {
+export function createMachine({ host, exec, transport = null, path = null, verbose = isVerbose() }) {
   const kind = transportFor(host, transport)
   const cmd  = runCommand(host, kind)
 
@@ -217,13 +234,24 @@ export function createMachine({ host, exec, transport = null, path = null }) {
   // it because the deploy phase invokes `bun <fli>` explicitly (`FJS-738`).
   // Piping stdin alone delivers the script on both runtimes and keeps the
   // operator's view of stdout and stderr.
-  const call = (script, { cwd = null, stdio = ['pipe', 'inherit', 'inherit'], ...opts } = {}) => {
+  //
+  // HELD unless --verbose: a deploy's targets print a bun install, a vite build
+  // and a docker build, several hundred lines between the dozen the operator
+  // acts on. `exec 2>&1` merges the target's two streams in order there, so a
+  // failure's message ends with the last lines it wrote (`attribute`) and the
+  // journal records them. ssh's own stderr stays the operator's, which is where
+  // a refused connection says so. maxBuffer because past it execSync kills the
+  // child, and a held docker build is what would reach it.
+  const holds = (opts) => !verbose && opts?.stdio === undefined
+  const call = (script, { cwd = null, stdio, ...opts } = {}) => {
     const body = withCwd(script, cwd)
+    const held = holds({ stdio })
     return exec({
       command:  cmd,
-      input:    body,
-      stdio,
+      input:    held ? `exec 2>&1\n${body}` : body,
+      stdio:    stdio ?? ['pipe', held ? 'pipe' : 'inherit', 'inherit'],
       describe: `${kind === 'local' ? 'sh' : `ssh ${host}`} <<'EOF'\n${body}\nEOF`,
+      ...(held && { maxBuffer: HELD_MAX_BYTES }),
       ...opts,
     })
   }
@@ -233,16 +261,18 @@ export function createMachine({ host, exec, transport = null, path = null }) {
   // the journal records, so a step that failed cannot be attributed afterwards.
   // The script goes into the message; stderr joins it where it was captured
   // (`capture`), and is on the operator's terminal where it was not (`run`).
-  const attribute = (err, script) => {
+  const attribute = (err, script, held = false) => {
     const first = String(script).split('\n').find(l => l.trim()) ?? ''
     const where = kind === 'local' ? 'the local machine' : host
     // execSync already folds stderr into its own message when it captured any,
     // so appending it again prints the reason twice.
     const errs = String(err?.stderr ?? '').trim()
     const base = String(err.message ?? '')
+    const said = held ? tail(err?.stdout) : ''
     err.script  = script
     err.message = `${base} — on ${where}: ${first.trim().slice(0, 120)}` +
-      (errs && !base.includes(errs) ? `\n${errs}` : '')
+      (errs && !base.includes(errs) ? `\n${errs}` : '') +
+      (said ? `\n${said}` : '')
     return err
   }
 
@@ -257,7 +287,7 @@ export function createMachine({ host, exec, transport = null, path = null }) {
 
     run: (script, opts) => {
       try { return call(script, opts) }
-      catch (err) { throw attribute(err, script) }
+      catch (err) { throw attribute(err, script, holds(opts)) }
     },
 
     // `stdio: 'pipe'`, and never a `capture: true` — the latter is not an

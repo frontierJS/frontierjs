@@ -56,4 +56,6 @@ await dropLocks()
 // ─── Report ───────────────────────────────────────────────────────────────────
 const elapsed = ((Date.now() - $.config.startTime) / 1000).toFixed(1)
 log.success(`Deployed ${$.config.commit} to ${$.config.target} in ${elapsed}s`)
+const slowest = [...($.config.stepTimes ?? [])].sort((a, b) => b.ms - a.ms).slice(0, 3)
+if (slowest.length) log.info(`  slowest: ${slowest.map(t => `${t.step} ${(t.ms / 1000).toFixed(1)}s`).join(' · ')}`)
 ```

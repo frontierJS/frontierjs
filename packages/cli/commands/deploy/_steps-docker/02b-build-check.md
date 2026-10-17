@@ -56,10 +56,11 @@ if (!findings.length) {
 
 for (const f of findings) {
   const [head, detail, fix] = renderFinding(f)
-  const say = f.level === 'error' ? log.error : log.warn
+  // A warning's paragraph is behind --verbose; a refusal's is what to do next.
+  const [say, explain] = f.level === 'error' ? [log.error, log.info] : [log.warn, log.detail]
   say(`  ${head}`)
-  log.info(`    ${detail}`)
-  log.info(`    ${fix}`)
+  explain(`    ${detail}`)
+  explain(`    ${fix}`)
 }
 
 if (!refuses(findings)) {

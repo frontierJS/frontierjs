@@ -54,9 +54,9 @@ $.config.transitionId = opened.transition.id
 $.config.releaseId    = opened.release.id
 
 log.success(`Journal opened → ${opened.release.app} · ${opened.release.environment}`)
-log.info(`  release     ${opened.release.id}`)
-log.info(`  serving     ${opened.serving ?? '— nothing recorded yet'}`)
-log.info(`  transition  ${opened.transition.id}`)
+log.detail(`  release     ${opened.release.id}`)
+log.detail(`  serving     ${opened.serving ?? '— nothing recorded yet'}`)
+log.detail(`  transition  ${opened.transition.id}`)
 
 if (opened.resumed) {
   log.warn(`  RESUMING attempt ${opened.attempt} — a previous run did not finish`)
