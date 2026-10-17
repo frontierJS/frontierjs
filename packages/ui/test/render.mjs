@@ -23,8 +23,9 @@ const UNO = /\bclass="[^"]*\b(?:bg-(?:gray|blue|red|green|yellow|white|slate)-\d
 
 const CASES = [
   // file,                              props,                       classes that must appear
-  ['components/forms/Button.mesa',      { variant: 'danger' },       ['btn', 'danger']],
-  ['components/forms/Button.mesa',      { variant: 'outlined' },     ['btn', 'outlined']],
+  ['components/forms/Button.mesa',      { tone: 'danger' },          ['btn', 'danger']],
+  ['components/forms/Button.mesa',      { treatment: 'outlined' },   ['btn', 'outlined']],
+  ['components/forms/Button.mesa',      { tone: 'danger', treatment: 'ghost' }, ['btn', 'danger', 'ghost']],
   ['components/forms/Input.mesa',       { label: 'Email' },          ['field-group', 'field']],
   ['components/forms/Input.mesa',       { label: 'Email', error: 'Taken' }, ['field-group', 'danger']],
   // FJS-2517: no label and no name still draws its message and hint.
@@ -106,7 +107,12 @@ for (const [file, data, expected] of CASES) {
     continue
   }
 
-  const missing = expected.filter(c => !new RegExp(`\\b${c}\\b`).test(html))
+  // Read off class attributes and tag names, not the whole document: an
+  // undeclared prop lands as an attribute, so `treatment="outlined"` would
+  // satisfy a word search while the button carries no `.outlined`.
+  const classes = new Set([...html.matchAll(/\bclass="([^"]*)"/g)].flatMap(m => m[1].split(/\s+/)))
+  const tags    = new Set([...html.matchAll(/<([a-z][\w-]*)/g)].map(m => m[1]))
+  const missing = expected.filter(c => !classes.has(c) && !tags.has(c))
   if (missing.length) {
     console.error(`✗ ${label}\n    missing class(es): ${missing.join(', ')}`)
     failed++

@@ -57,7 +57,7 @@ describe('the body a signature is computed over', () => {
     // port 0 and no services directory: this is about one hook reading one
     // field, and a test that binds a fixed port collides with every other suite.
     const app = createApp({
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     } as any)
     app.services.register(createService({
       name:    'things',
@@ -89,7 +89,7 @@ describe('the test request builder', () => {
     let seen: unknown = 'never ran'
 
     const app = createApp({
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     } as never)
     app.services.register(createService({
       name: 'things', methods: ['create'],
@@ -114,7 +114,7 @@ describe('the Request a route handler is handed', () => {
   // (`FJS-1180`).
   async function appWith(mount: (app: any) => void) {
     const app = createApp({
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     } as never)
     mount(app)
     await app.start()

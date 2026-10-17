@@ -161,14 +161,14 @@ title: Infrastructure graph
   >
     The graph is made of servers, apps, networks and domains. Add one and it appears here.
     {#snippet action()}
-      <Button variant="primary" href="/servers/provision/">Provision a machine</Button>
+      <Button tone="primary" href="/servers/provision/">Provision a machine</Button>
     {/snippet}
   </EmptyState>
 {:else if view}
   <div class="cluster" id="graph-filters">
     {#each LANES as kind}
       <Button
-        variant={show[kind] ? 'outlined' : 'ghost'}
+        treatment={show[kind] ? 'outlined' : 'ghost'}
         aria-pressed={show[kind] ? 'true' : 'false'}
         onclick={() => toggle(kind)}
       >{LABELS[kind]} {graph.counts[`${kind}s`]}</Button>
@@ -176,10 +176,10 @@ title: Infrastructure graph
 
     <span class="divider" aria-hidden="true"></span>
 
-    <Button variant="ghost" onclick={() => (zoom = Math.max(0.5, +(zoom - 0.25).toFixed(2)))}>&minus;</Button>
+    <Button treatment="ghost" onclick={() => (zoom = Math.max(0.5, +(zoom - 0.25).toFixed(2)))}>&minus;</Button>
     <span class="text-sm text-muted">{Math.round(zoom * 100)}%</span>
-    <Button variant="ghost" onclick={() => (zoom = Math.min(2, +(zoom + 0.25).toFixed(2)))}>+</Button>
-    <Button variant="ghost" onclick={() => (zoom = 1)}>Reset</Button>
+    <Button treatment="ghost" onclick={() => (zoom = Math.min(2, +(zoom + 0.25).toFixed(2)))}>+</Button>
+    <Button treatment="ghost" onclick={() => (zoom = 1)}>Reset</Button>
   </div>
 
   <p class="text-sm text-muted" id="graph-summary">
@@ -250,8 +250,8 @@ title: Infrastructure graph
           {#if selected.status}<dt>Status</dt><dd>{selected.status}</dd>{/if}
         </dl>
         <div class="cluster">
-          <Button variant="outlined" href={HREF[selected.kind](selected)}>Open</Button>
-          <Button variant="ghost" onclick={() => (selected = null)}>Clear</Button>
+          <Button treatment="outlined" href={HREF[selected.kind](selected)}>Open</Button>
+          <Button treatment="ghost" onclick={() => (selected = null)}>Clear</Button>
         </div>
       {:else}
         <h2 class="h4">Legend</h2>

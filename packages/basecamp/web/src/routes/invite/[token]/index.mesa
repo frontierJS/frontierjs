@@ -77,7 +77,7 @@ title: Invitation
       <div class="alert-content">{error}</div>
     </article>
     <div class="cluster">
-      <Button id="invite-to-login" variant="ghost" onclick={() => goto('/login/')}>Go to sign in</Button>
+      <Button id="invite-to-login" treatment="ghost" onclick={() => goto('/login/')}>Go to sign in</Button>
     </div>
   {:else}
     <article class="card stack">
@@ -96,7 +96,7 @@ title: Invitation
            drive. -->
       {#if mine}
         <div class="cluster">
-          <Button id="invite-accept" variant="primary" onclick={() => accept()}>Accept</Button>
+          <Button id="invite-accept" tone="primary" onclick={() => accept()}>Accept</Button>
         </div>
       {:else if session.user}
         <article class="alert warning">
@@ -105,14 +105,14 @@ title: Invitation
           </div>
         </article>
         <div class="cluster">
-          <Button id="invite-switch" variant="primary" onclick={switchAccount}>Sign in as {invitation.email}</Button>
+          <Button id="invite-switch" tone="primary" onclick={switchAccount}>Sign in as {invitation.email}</Button>
         </div>
       {:else if invitation.hasAccount}
         <p class="text-sm text-muted">
           That address already has an account. Sign in and this link will bring you back.
         </p>
         <div class="cluster">
-          <Button id="invite-signin" variant="primary" onclick={() => goto(signInHref)}>Sign in to accept</Button>
+          <Button id="invite-signin" tone="primary" onclick={() => goto(signInHref)}>Sign in to accept</Button>
         </div>
       {:else}
         <!-- Nobody signed in and no account for the address: the password typed
@@ -125,7 +125,7 @@ title: Invitation
           <Input id="invite-password" name="password" label="Choose a password" type="password"
                  required minlength={8} autocomplete="new-password" bind:value={password} />
           <div class="cluster">
-            <Button id="invite-accept" type="submit" variant="primary">Accept and create my account</Button>
+            <Button id="invite-accept" type="submit" tone="primary">Accept and create my account</Button>
           </div>
         </Form>
       {/if}

@@ -180,7 +180,7 @@ describe('a window over HTTP', () => {
     const app: any = createApp({
       db,
       config: {
-        port: 0, services: { dir: '/nonexistent' },
+        port: 0,
         http: { ...defaultConfig.http, drainTimeout: 50 },
       },
     } as never)
@@ -509,7 +509,7 @@ describe('a refetch keeps the grown window, against a real app (FJS-2612)', () =
     const app: any = createApp({
       db,
       config: {
-        port: 0, services: { dir: '/nonexistent' },
+        port: 0,
         http: { ...defaultConfig.http, drainTimeout: 50 },
       },
     } as never)

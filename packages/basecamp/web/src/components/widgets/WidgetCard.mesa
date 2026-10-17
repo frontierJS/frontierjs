@@ -43,15 +43,15 @@
       <!-- Thirds of a row. The buttons say the fraction rather than a number
            of columns, because the grid is what the reader sees. -->
       {#each [1, 2, 3] as n}
-        <Button variant={cols === n ? 'outlined' : 'ghost'}
+        <Button treatment={cols === n ? 'outlined' : 'ghost'}
                 aria-label={`Make ${title} ${n} of 3 wide`}
                 onclick={() => onresize?.(n)}>{n}/3</Button>
       {/each}
-      <Button variant="ghost" aria-label={`Move ${title} earlier`}
+      <Button treatment="ghost" aria-label={`Move ${title} earlier`}
               onclick={() => onmove?.(-1)}>←</Button>
-      <Button variant="ghost" aria-label={`Move ${title} later`}
+      <Button treatment="ghost" aria-label={`Move ${title} later`}
               onclick={() => onmove?.(1)}>→</Button>
-      <Button variant="ghost" aria-label={`Remove ${title} from this dashboard`}
+      <Button treatment="ghost" aria-label={`Remove ${title} from this dashboard`}
               onclick={() => onremove?.()}>Remove</Button>
     </footer>
   {/if}

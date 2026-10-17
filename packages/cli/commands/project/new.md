@@ -129,7 +129,7 @@ import { join } from 'path'
 // What the app is given besides its own source — dev dependencies, the check
 // scripts, tsconfig, biome.json, .editorconfig, the workflow. One module, so
 // the framework's opinion about tooling is written down once and can be read.
-const { EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, appTsconfig, appBiomeJson, appCheckScripts, appWorkflow,
+const { EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, appTsconfig, appBiomeJson, appCheckScripts, appSurfaceScripts, appWorkflow,
         appAgentsMd, appAgentsProjectMd, appClaudeMd } =
   await import(resolve(global.fliRoot, 'core/app-config.js'))
 
@@ -234,50 +234,17 @@ function makePackageJson(spec) {
     Object.assign(devDeps, siteDevDeps())
   }
 
-  // Scripts. Each surface contributes its own pair and `dev`/`build` run
-  // whichever ones exist — a surface an app does not have must not leave a
-  // script that fails naming a directory nobody removed.
-  const scripts = {}
-  const devs   = []
-  const builds = []
-
-  if (useApi) {
-    scripts['dev:api'] = 'bun --watch run api/index.ts'
-    scripts['start']   = 'bun run api/index.ts'
-    devs.push('dev:api')
-  }
-  if (useWeb) {
-    // `--configLoader native`: the default loader bundles the config and the
-    // whole sierra build tree it imports on every start, 190 ms before vite
-    // reads a byte of the app; the runtime imports the same files in 110.
-    scripts['dev:web']   = 'cd web && vite -c config/vite.config.js --configLoader native'
-    scripts['build:web'] = 'cd web && vite build -c config/vite.config.js'
-    devs.push('dev:web')
-    builds.push('build:web')
-  }
-  if (useExtension) {
-    Object.assign(scripts, extensionScripts())
-    devs.push('dev:extension')
-    builds.push('build:extension')
-  }
-  if (useWidgets) {
-    // A widget is its own library build, one per file in widgets/src/Embeds/,
-    // so this is `sierra widgets` and not `vite build`. `serve:widgets` answers
-    // with the CORS and cache headers the deployment sends.
-    Object.assign(scripts, widgetScripts())
-    devs.push('dev:widgets')
-    builds.push('build:widgets')
-  }
-  if (useSite) {
-    // An ordinary Vite build that prerenders afterwards, so this IS `vite
-    // build` — the difference is what closeBundle does with it.
-    Object.assign(scripts, siteScripts())
-    devs.push('dev:site')
-    builds.push('build:site')
-  }
-
-  scripts['dev'] = devs.length > 1 ? `bun run --parallel ${devs.join(' ')}` : (scripts[devs[0]] ?? '')
-  if (builds.length) scripts['build'] = builds.map(b => `bun run ${b}`).join(' && ')
+  // Scripts — the surface table is core/app-config.js's (FJS-D1083).
+  const surfaces = []
+  if (useExtension) surfaces.push({ scripts: extensionScripts(), dev: 'dev:extension', build: 'build:extension' })
+  // A widget is its own library build, one per file in widgets/src/Embeds/,
+  // so this is `sierra widgets` and not `vite build`. `serve:widgets` answers
+  // with the CORS and cache headers the deployment sends.
+  if (useWidgets)   surfaces.push({ scripts: widgetScripts(),    dev: 'dev:widgets',   build: 'build:widgets' })
+  // An ordinary Vite build that prerenders afterwards, so this IS `vite
+  // build` — the difference is what closeBundle does with it.
+  if (useSite)      surfaces.push({ scripts: siteScripts(),      dev: 'dev:site',      build: 'build:site' })
+  const scripts = appSurfaceScripts({ api: useApi, web: useWeb, surfaces })
 
   // The deploy container's entrypoint is `bun run db:migrate && bun run start`,
   // so this script is part of the contract with deploy/Dockerfile rather than a
@@ -614,8 +581,8 @@ function makeApiAppTs(useAuth, useQueue = false, useNotify = false) {
   // Deferred work nobody asked for -- a commitment's clock firing -- has no
   // caller, and no caller grades STRANGER on a gated model.
   const systemLine = useQueue ? `\n  system: SYSTEM,` : ''
-  // The queue's own settings are DECLARED in junction.config.js (its database,
-  // its job directory), so the call takes none.
+  // The queue's own settings are DECLARED in junction.config.js (its database),
+  // and its job directory is jobs/ beside the root, so the call takes none.
   const queue = useQueue ? `// ─── Deferred work ────────────────────────────────────────────────────────
 // Caravan is a SQLite queue in its own file, jobs.db beside DATABASE_URL. \`boot()\` autoloads
 // api/src/jobs/*.job.ts and \`work()\` starts the workers; a job that declares
@@ -665,6 +632,8 @@ import { env }              from './core/env.ts'${systemImport}
 // telemetry the devtools console reads. Scoping the client by hand instead
 // gets the first of those and none of the rest, silently.
 const app = createApp({
+  // services/, jobs/, notifications/ beside this file, ../config above it.
+  root: import.meta.url,
   auth,
   db,${systemLine}
   config: {
@@ -692,8 +661,7 @@ app.configure(channels((a) => {
 // tokens, which a one-shot boot (junction call) skips.
 app.configure(authPlugin)
 
-${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot
-// (configured in api/config/junction.config.js).
+${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot.
 
 export default app
 `
@@ -713,6 +681,8 @@ import { env }                                           from './core/env.ts'${s
 // the audit metrics and the query telemetry, none of which has another install
 // site. Scoping by hand gets the scoping alone, and says nothing.
 const app = createApp({
+  // services/, jobs/, notifications/ beside this file, ../config above it.
+  root: import.meta.url,
   db,${systemLine}
   config: {
     port: env.PORT,
@@ -727,8 +697,7 @@ app.configure(channels((a) => {
   a.channels.on('connection', (session, conn) => joinChannels(a, session, conn))
 }))
 
-${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot
-// (configured in api/config/junction.config.js).
+${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot.
 
 export default app
 `
@@ -1002,7 +971,7 @@ function makeRetentionJobTs() {
 // app's, because the clock belongs to the queue and litestone cannot import it.
 //
 // The file name is the job's name, \`cron\` is when it runs, and autoloading from
-// \`jobsDir\` (api/config/junction.config.js) is the rest.
+// api/src/jobs/ is the rest.
 
 import { defineJob } from '@frontierjs/caravan'
 import { sys }       from '../core/db.ts'
@@ -1185,27 +1154,19 @@ const jobsDb = dbUrl && dbUrl !== ':memory:'
   : here('../../db/jobs.db')
 ` : ''
   const caravan = useQueue ? `
-  // The job queue: a SQLite file of its own, and the directory its \`*.job.ts\`
-  // files are autoloaded from. Declared here, so app.ts passes createCaravan()
-  // nothing.
+  // The job queue: a SQLite file of its own. Declared here, so app.ts passes
+  // createCaravan() nothing.
   caravan: {
-    db:      jobsDb,
-    jobsDir: here('../src/jobs'),
+    db: jobsDb,
   },
 ` : ''
   return `// api/config/junction.config.js
-// Loaded automatically by createApp() when called with no opts, or merged
-// with opts.config when both are present. Tells Junction's autoloaders
-// where to find services / jobs / conduit targets, and configures the
-// built-in middleware.
+// Read by createApp({ root }) from ../config beside api/src, and merged under
+// opts.config. Configures the built-in middleware and the batteries.
 ${hereImport}
 export default {
   app: {
     name:      '${appName}',${prefixLine}
-  },
-
-  services: {
-    dir: './api/src/services',
   },
 
   middleware: {
@@ -1233,10 +1194,12 @@ export default {
   //
   // health serves /health and /metrics; frontier.config.js points the deploy's
   // health check at the same path and a deploy ROLLS BACK when it does not
-  // answer, so the two move together. manifest serves /manifest, which
-  // fli api:routes reads: the HTTP surface is emergent, so running the app is
-  // the only way to ask what it serves. It is devOnly, so a production build
-  // 404s there.
+  // answer, so the two move together. /metrics is not served in production
+  // without a token, and a token gates /health as well, which the deploy's
+  // health check does not send. manifest serves /manifest, which fli
+  // api:routes reads: the HTTP surface is emergent, so running the app is the
+  // only way to ask what it serves. It is devOnly, so a production build 404s
+  // there.
   plugins: {
     health:   true,
     manifest: true,
@@ -1391,7 +1354,7 @@ export default defineConfig({
 function makeSierraConfig(appName, useApi = true) {
   return `// web/config/sierra.config.js
 // Sierra runtime config — routes dir, build target${useApi ? ', junction connection' : ''}.
-// Paths are relative to the Vite root (web/), since dev:web cd's into web/
+// Paths are relative to the Vite root (web/), since the web script cd's into web/
 // before invoking vite -c config/vite.config.js.
 ${useApi ? `
 import api from '../../api/config/junction.config.js'
@@ -1744,7 +1707,7 @@ ${useApi ? `  <div class="cluster">
   {#await health}{:then}{:catch error}
     <div class="alert danger" role="alert">
       <div class="alert-content">
-        Is <code>bun run dev:api</code> running? ({error.message})
+        Is <code>bun run api</code> running? ({error.message})
       </div>
     </div>
   {/await}

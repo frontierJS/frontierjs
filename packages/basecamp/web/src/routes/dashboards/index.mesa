@@ -111,7 +111,7 @@ title: Dashboards
 
 <div class="section-header">
   <h1>Dashboards</h1>
-  <Button variant="primary" id="new-dashboard" onclick={() => creating = !creating}>
+  <Button tone="primary" id="new-dashboard" onclick={() => creating = !creating}>
     {creating ? 'Cancel' : 'New dashboard'}
   </Button>
 </div>
@@ -138,7 +138,7 @@ title: Dashboards
              value={draft.description} oninput={(e) => write('description', e.target.value)} />
       <Input name="icon" id="icon" hint="An emoji, if you want one"
              value={draft.icon} oninput={(e) => write('icon', e.target.value)} />
-      <Button type="submit" variant="primary">Create and open</Button>
+      <Button type="submit" tone="primary">Create and open</Button>
     </Form>
   </Card>
 {/if}
@@ -170,12 +170,12 @@ title: Dashboards
         <p class="text-sm text-muted">{dashboard.widget_count} widget(s)</p>
 
         <div class="cluster">
-          <Button variant="ghost" disabled={busy === dashboard.id}
+          <Button treatment="ghost" disabled={busy === dashboard.id}
                   aria-label={`${dashboard.isPinned ? 'Unpin' : 'Pin'} ${dashboard.name} to the workspace's home screen`}
                   onclick={() => togglePin(dashboard)}>
             {dashboard.isPinned ? 'Unpin' : 'Pin'}
           </Button>
-          <Button variant="ghost" disabled={busy === dashboard.id}
+          <Button treatment="ghost" disabled={busy === dashboard.id}
                   aria-label={`Delete ${dashboard.name}`}
                   data-confirm={`${dashboard.name} is deleted.`}
                   data-confirm-title="Delete this dashboard?" data-confirm-label="Delete"

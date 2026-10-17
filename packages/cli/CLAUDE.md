@@ -1301,8 +1301,9 @@ test/     one file per module under core/, plus the deploy pipeline's own
   for a first run; a port that is already answering is not correct in any
   reading. `core/ports.js` derives which ports rather than reading a per-app
   list, so nothing goes stale the day somebody adds a surface, and it names a
-  script the manifest actually declares, because two conventions are live (the
-  apps here call it `api`, `fli new` writes `dev:api`). **Two functions and the
+  script the manifest actually declares — `api`/`web` for those two surfaces and
+  no other spelling (`FJS-D1083`), so an app still saying `dev:api` gets `null`
+  and `fli check`'s `surface-script` names it. **Two functions and the
   difference is the bug** (`FJS-568`): `appPorts()` is the CATALOG — every
   surface that exists (Invariant 3), which is what `runnables.js` wants —
   and `devPorts()` is what `fli dev` refuses on, that set narrowed to the

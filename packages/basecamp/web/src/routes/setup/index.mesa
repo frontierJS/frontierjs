@@ -69,7 +69,7 @@ title: First run
          bind:value={password} />
 
   <div class="cluster">
-    <Button variant="primary" type="submit" disabled={busy}>
+    <Button tone="primary" type="submit" disabled={busy}>
       {busy ? 'Creating…' : 'Create workspace'}
     </Button>
   </div>

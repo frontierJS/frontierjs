@@ -54,5 +54,5 @@ test('the printed outbox wiring names the scaffold\'s file and the $ spelling', 
   const text = readFileSync(resolve(import.meta.dir, '../commands/outbox/install.md'), 'utf8')
   expect(text).not.toContain('server.ts')
   expect(text).not.toContain('ctx.locals')
-  expect(text).not.toContain("jobsDir: './src/jobs'")
+  expect(text).not.toContain('jobsDir')
 })

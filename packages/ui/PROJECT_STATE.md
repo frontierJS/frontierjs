@@ -113,7 +113,7 @@ a component is otherwise invisible to the app testing it.
   found the same `.btn`, the same tones, the same treatments and the same
   `type` — the two differed only in defaults, `primary` at body size against
   `ghost` one step down. A defaults-only alias is not a second component:
-  `<Btn>x</Btn>` is `<Button variant="ghost" size="sm">x</Button>`.
+  `<Btn>x</Btn>` is `<Button treatment="ghost" size="sm">x</Button>`.
 
 ## Bugs found and fixed in Mesa during this work
 

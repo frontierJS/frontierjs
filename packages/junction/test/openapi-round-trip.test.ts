@@ -26,7 +26,7 @@ let spec: Record<string, any>
 
 beforeAll(async () => {
   app = createApp({
-    config: { port: PORT, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http } },
+    config: { port: PORT, http: { ...defaultConfig.http } },
   })
   // Narrowed on purpose: create, patch and remove are NOT answered.
   app.services.register(createService({
@@ -98,7 +98,7 @@ describe('what a service ANSWERS decides what is documented', () => {
   })
 
   it('a path with no operations left is not emitted at all', async () => {
-    const solo = createApp({ config: { port: PORT + 1, services: { dir: '/nonexistent' } } })
+    const solo = createApp({ config: { port: PORT + 1 } })
     solo.services.register(createService({ name: 'pings', methods: ['find'], async find() { return [] } }))
     solo.configure(openapi({ title: 'x', version: '1' }))
     await solo.start()
@@ -173,7 +173,7 @@ describe('the docs page interpolates two caller-supplied values', () => {
   let html: string
 
   beforeAll(async () => {
-    const ui = createApp({ config: { port: PORT + 2, services: { dir: '/nonexistent' } } })
+    const ui = createApp({ config: { port: PORT + 2 } })
     ui.services.register(createService({ name: 'orders', methods: ['find'], async find() { return [] } }))
     ui.configure(openapi({
       title:   'Shop </title><script>alert(1)</script>',

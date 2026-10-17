@@ -48,7 +48,7 @@
           <span class="step-label">{step.title}</span>
           <span class="step-hint">{step.detail}</span>
           {#if step.href && (next.id === step.id || step.done)}
-            <Button variant={next.id === step.id ? 'primary' : 'ghost'} href={step.href}>
+            <Button treatment={next.id === step.id ? '' : 'ghost'} href={step.href}>
               {step.done ? 'Open' : 'Do this'}
             </Button>
           {/if}

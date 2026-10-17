@@ -273,6 +273,7 @@ export function helmet(opts: HelmetOptions = {}) {
 
   return function helmetPlugin(app: App): void {
     patchRouterWithMiddleware(app, middleware)
+    app.http.setSecurityHeaders(securityHeaders)
   }
 }
 
@@ -517,6 +518,47 @@ export interface CsrfOptions {
   onRejected?: (ctx: TransportContext, reason: string) => void | Promise<void>
 }
 
+// 'https://myapp.com/some/path' → URL, or null for 'null' and garbage
+function parseUrl(url: string): URL | null {
+  try { return new URL(url) } catch { return null }
+}
+
+/**
+ * Steps 1–5 above: why a request's origin may not act with the credentials a
+ * browser attaches by itself, or null when it may. csrf() asks it of a
+ * mutating request and the WebSocket upgrade of every handshake, because a
+ * browser applies no CORS to an upgrade and sends its cookies with it
+ * (`FJS-D1207`).
+ */
+export function originRefusal(
+  headers:            Record<string, string | undefined>,
+  origins:            CsrfOptions['origins'],
+  allowMissingOrigin: boolean,
+): string | null {
+  const site = headers['sec-fetch-site']?.trim().toLowerCase()
+  if (site === 'same-origin' || site === 'none') return null
+
+  const originHeader  = headers['origin']?.trim()
+  const refererHeader = headers['referer'] ?? headers['referrer']
+  const referer       = refererHeader ? parseUrl(refererHeader) : null
+  const requestOrigin = originHeader || (referer ? `${referer.protocol}//${referer.host}` : null)
+
+  const listed = requestOrigin !== null && !!origins && (Array.isArray(origins)
+    ? origins.includes(requestOrigin) || origins.includes('*')
+    : origins(requestOrigin))
+
+  if (listed) return null
+  if (site === 'cross-site' || site === 'same-site')
+    return `a ${site} request from '${requestOrigin ?? 'no origin'}' is not allowed`
+  if (requestOrigin) {
+    const host = headers['host']?.trim().toLowerCase()
+    return host && parseUrl(requestOrigin)?.host.toLowerCase() === host
+      ? null
+      : `origin '${requestOrigin}' is not allowed`
+  }
+  return allowMissingOrigin ? null : 'request has no Origin or Referer header'
+}
+
 export function csrf(opts: CsrfOptions = {}) {
 
   const mutateMethods = new Set(
@@ -524,42 +566,11 @@ export function csrf(opts: CsrfOptions = {}) {
   )
   const allowMissingOrigin = opts.allowMissingOrigin ?? true
 
-  function isListed(origin: string): boolean {
-    const listed = opts.origins
-    if (!listed) return false
-    if (Array.isArray(listed)) return listed.includes(origin) || listed.includes('*')
-    return listed(origin)
-  }
-
-  // 'https://myapp.com/some/path' → URL, or null for 'null' and garbage
-  function parse(url: string): URL | null {
-    try { return new URL(url) } catch { return null }
-  }
-
   const middleware: MiddlewareFn = async (ctx, next) => {
     if (!mutateMethods.has(ctx.method.toUpperCase())) return next()
 
-    const site = ctx.headers['sec-fetch-site']?.trim().toLowerCase()
-    if (site === 'same-origin' || site === 'none') return next()
-
-    const originHeader  = ctx.headers['origin']?.trim()
-    const refererHeader = ctx.headers['referer'] ?? ctx.headers['referrer']
-    const referer       = refererHeader ? parse(refererHeader) : null
-    const requestOrigin = originHeader || (referer ? `${referer.protocol}//${referer.host}` : null)
-
-    let reason: string | null = null
-    if (requestOrigin && isListed(requestOrigin)) {
-      reason = null
-    } else if (site === 'cross-site' || site === 'same-site') {
-      reason = `CSRF: a ${site} request from '${requestOrigin ?? 'no origin'}' is not allowed`
-    } else if (requestOrigin) {
-      const host = ctx.headers['host']?.trim().toLowerCase()
-      if (!host || parse(requestOrigin)?.host.toLowerCase() !== host) {
-        reason = `CSRF: origin '${requestOrigin}' is not allowed`
-      }
-    } else if (!allowMissingOrigin) {
-      reason = 'CSRF: request has no Origin or Referer header'
-    }
+    const refused = originRefusal(ctx.headers, opts.origins, allowMissingOrigin)
+    const reason  = refused && `CSRF: ${refused}`
 
     if (reason) {
       if (opts.onRejected) {
@@ -573,5 +584,6 @@ export function csrf(opts: CsrfOptions = {}) {
 
   return function csrfPlugin(app: App): void {
     patchRouterWithMiddleware(app, middleware)
+    if (opts.origins) app.http.setUpgradeOrigins(opts.origins)
   }
 }

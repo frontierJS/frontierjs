@@ -79,9 +79,9 @@
 
 <div class="cluster">
   {#if onretry && !gone}
-    <Button variant="primary" onclick={onretry}>Try again</Button>
+    <Button tone="primary" onclick={onretry}>Try again</Button>
   {/if}
   {#if backHref}
-    <Button variant="ghost" href={backHref}>{backLabel}</Button>
+    <Button treatment="ghost" href={backHref}>{backLabel}</Button>
   {/if}
 </div>

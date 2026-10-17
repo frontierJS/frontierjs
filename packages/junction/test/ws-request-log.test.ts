@@ -28,7 +28,6 @@ beforeAll(async () => {
     logger: createLogger({ level: 'debug', writers: [e => { lines.push(e) }] }),
     config: {
       port:     0,
-      services: { dir: '/nonexistent' },
       http:     { ...defaultConfig.http, drainTimeout: 250 },
     },
   })

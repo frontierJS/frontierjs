@@ -29,7 +29,7 @@ let overSocket: any
 
 beforeAll(async () => {
   app = createApp({
-    config: { port: PORT, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http } },
+    config: { port: PORT, http: { ...defaultConfig.http } },
   } as never)
   app.configure(channels() as never)
   app.services.register(createService({

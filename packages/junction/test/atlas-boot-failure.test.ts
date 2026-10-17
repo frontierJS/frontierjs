@@ -21,7 +21,7 @@ describe('junction atlas — an app that will not boot', () => {
       writeFileSync(join(dir, 'app.ts'), `
         import { createApp } from ${JSON.stringify(INDEX)}
         export const app = createApp({
-          config: { port: 0, services: { dir: '/nonexistent' } },
+          config: { port: 0 },
         })
         app.configure({
           name:     'collider',

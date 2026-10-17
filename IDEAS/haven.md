@@ -1604,7 +1604,7 @@ passes with Haven's snapshots in its count.
   `schema.json` instead, which is not the snapshot. The access snapshot first:
   a ban is a row policy, and this is what shows one moving in a diff.
 - [ ] 16.2 The API's snapshots at the package root: `surface` and `principal`
-  (`junction <kind> --app api/src/app.ts --services api/src/services`), and
+  (`junction <kind> --app api/src/app.ts`), and
   `jobs` and `notifications` where Haven declares any. Blocked today: the
   generator builds the app with no environment, and `createHavenAuth` throws
   without `HAVEN_SESSION_KEY` (`api/src/auth.ts:42`). Building the app needs to

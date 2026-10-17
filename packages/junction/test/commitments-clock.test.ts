@@ -44,7 +44,7 @@ const GATED = SCHEMA.replace('model Order {', 'model Order {\n  @@gate(0.0.4.4)'
 const DAY    = 86_400_000
 const T0     = Date.parse('2026-01-01T00:00:00.000Z')
 const SYSTEM = { userId: 'system', role: 'system' } as any
-const CONFIG = { port: 0, services: { dir: '/nonexistent' } }
+const CONFIG = { port: 0 }
 
 /** A plugin answering to the name `commitments()` requires — the queue, as far as the check can see. */
 const queue = (): Plugin => ({ name: 'caravan', register() {} })

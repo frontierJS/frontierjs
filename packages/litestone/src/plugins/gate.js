@@ -136,13 +136,21 @@ export function validateGate(gate, modelName) {
 
 // ─── Build access map from parsed schema ─────────────────────────────────────
 
+// A model declaring neither a gate nor a row policy is SYSTEM on every
+// operation: open, it took anonymous creates, updates and deletes, and nothing
+// said so but `access.snapshot.md` (`FJS-D1206`). `@@gate(0)` says public.
+const UNDECLARED = Object.freeze({ read: 8, create: 8, update: 8, delete: 8, undeclared: true })
+
 function buildAccessMap(schema) {
   const map = {}
   // Views are in the walk because a view is a read path onto rows a model
   // guards: leaving them out is a gate that stops at the projection.
   for (const model of [...schema.models, ...(schema.views ?? [])]) {
     const gateAttr = model.attributes?.find(a => a.kind === 'gate')
-    if (!gateAttr) continue
+    if (!gateAttr) {
+      if (!model.attributes?.some(a => a.kind === 'allow' || a.kind === 'deny')) map[model.name] = UNDECLARED
+      continue
+    }
     const gate = parseGateString(gateAttr.value)
     validateGate(gate, model.name)
     map[model.name] = gate
@@ -214,12 +222,18 @@ function namedIn(args, among) {
 
 // ─── Access check ─────────────────────────────────────────────────────────────
 
-function checkLevel(required, userLevel, model, operation) {
+function checkLevel(required, userLevel, model, operation, undeclared = false) {
   if (levelPasses(required, userLevel)) return
 
   if (required === 9)
     throw new AccessDeniedError(
       `"${model}.${operation}" is LOCKED — not accessible via ORM`,
+      { model, operation, required, got: userLevel }
+    )
+  if (required === 8 && undeclared)
+    throw new AccessDeniedError(
+      `"${model}.${operation}" requires SYSTEM access: ${model} declares no @@gate and no @@allow/@@deny, ` +
+      `so only asSystem() reaches it. Declare who may — @@gate(0) makes it public`,
       { model, operation, required, got: userLevel }
     )
   if (required === 8)
@@ -281,6 +295,7 @@ export class GatePlugin extends LitestonePlugin {
     // is not this client's principal, so it needs both halves and may spell
     // neither. `null` where the model declares no gate for that operation.
     ctx.gateFor = (model, op) => accessMap[model]?.[op] ?? null
+    ctx.gateUndeclared = model => accessMap[model]?.undeclared === true
 
     // The refusal itself, for a caller that must answer it before a validation
     // message can name a column: a below-gate caller is told "denied" and never
@@ -323,7 +338,7 @@ export class GatePlugin extends LitestonePlugin {
     const required  = ctx.gateFor(model, op)
     if (required == null) return
     const userLevel = lifted ? SYSTEM_RESOLVER() : this._resolver(ctx)(model)
-    checkLevel(required, userLevel, model, op)
+    checkLevel(required, userLevel, model, op, ctx.gateUndeclared(model))
   }
 
   // ── Read ────────────────────────────────────────────────────────────────────
@@ -351,7 +366,7 @@ export class GatePlugin extends LitestonePlugin {
     for (const { model: m, op } of nested) {
       const required = ctx.gateFor(m, op) ?? ctx.gateFor(m, 'create')
       if (required == null) continue
-      checkLevel(required, resolve(m), m, op)
+      checkLevel(required, resolve(m), m, op, ctx.gateUndeclared(m))
     }
   }
 
@@ -364,7 +379,7 @@ export class GatePlugin extends LitestonePlugin {
     for (const { model: m, op } of nested) {
       const required = ctx.gateFor(m, op) ?? ctx.gateFor(m, 'update')
       if (required == null) continue
-      checkLevel(required, resolve(m), m, op)
+      checkLevel(required, resolve(m), m, op, ctx.gateUndeclared(m))
     }
   }
 

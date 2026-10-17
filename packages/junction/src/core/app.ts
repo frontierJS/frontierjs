@@ -19,7 +19,7 @@ import { createEventBus }           from '../events/index.ts'
 import { createMemoryCache }        from '../cache/index.ts'
 import { createScheduler }          from '../scheduler/index.ts'
 import { autoloadServices, autoloadRoutes, watchForNewServices, findServiceFiles } from './loader.ts'
-import { resolveServicesDir, resolveRoutesDir, describeServicesDir, type ServicesDirResolution } from './services-dir.ts'
+import { resolveAppRoot, configDirOf, resolveServicesDir, resolveRoutesDir, describeServicesDir, type ServicesDirResolution } from './app-root.ts'
 import { checkAttachments, formatAttachmentRefusal, formatAttachmentSkips } from './attachments.ts'
 import { resolveBuildId } from './build-id.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
@@ -280,6 +280,13 @@ export interface DevService {
 export interface App {
   // Config
   config:    AppConfig
+
+  /**
+   * The directory `createApp({ root })` named, or null. A battery's folder is
+   * derived from it — caravan's `jobs/`, notifications' `notifications/` —
+   * and never probed (`FJS-D1080`).
+   */
+  root:      string | null
 
   /**
    * The application's database client.
@@ -677,14 +684,10 @@ export interface App {
    * This IS the `load-config` start phase, exposed because the phase is
    * `needsHost` and `_startForTest()` therefore skips it — so anything a plugin
    * reads out of that file is absent for every caller that boots an app without
-   * a port. The snapshot tools are exactly that caller, and `example` declares
-   * its `jobsDir` in the file: `junction jobs` reported **no handlers
-   * registered** for an app with three (`FJS-418`).
-   *
-   * Same shape as the autoload workaround beside it in `tools/app-module.ts` —
-   * a phase named explicitly and run in the position production runs it, which
-   * is BEFORE `_startForTest()`, or a plugin's `boot()` reads the config as it
-   * was without the file.
+   * a port — the snapshot tools, where `junction jobs` reported **no handlers
+   * registered** for an app with three (`FJS-418`). Run it BEFORE
+   * `_startForTest()`, or a plugin's `boot()` reads the config as it was
+   * without the file.
    *
    * Idempotent in effect: the merge is over the same two inputs every time.
    */
@@ -698,8 +701,14 @@ export interface AppOptions {
   // keeps the rest of the http block. A one-level Partial demanded every key
   // of a section back.
   config?:      DeepPartial<AppConfig>  // merged over defaults + junction.config.js
-  configPath?:  string              // path to junction.config.js dir, default './api/config'
-  logger?:      ILogger             // custom logger — defaults to createLogger()
+  /**
+   * Where the app's files are: `import.meta.url` of the module calling
+   * `createApp`, or a directory. `services/`, `routes/`, `jobs/` and
+   * `notifications/` sit beside it and `junction.config.js` in `../config`
+   * (`FJS-D1080`). Absent, nothing is read from disk.
+   */
+  root?:        string | URL
+  logger?:     ILogger             // custom logger — defaults to createLogger()
   logLevel?:    import('./logger.ts').LogLevel   // override log level
   auth?:        SessionVerifier
   /**
@@ -817,13 +826,6 @@ export interface AppOptions {
   tenants?:     import('./litestone.ts').TenantRegistryLike
   mail?:        AppMail
   ai?:          AppAI
-  /**
-   * Service auto-discovery. ON by default: the `services/` directory next
-   * to your entry file (Bun.main) is scanned for *.service.ts files.
-   * Pass a string to point somewhere else (resolved relative to CWD), or
-   * `false` to disable auto-discovery entirely.
-   */
-  autoload?:    string | false
 }
 
 // ─── ServiceCaller — returned by app.service(name) ───────────────────────
@@ -974,7 +976,7 @@ export function createApp(opts: AppOptions = {}): App {
   const config: AppConfig = opts.config
     ? deepMerge(defaultConfig, opts.config) as AppConfig
     : { ...defaultConfig } as AppConfig
-  const _configPath = opts.configPath ?? './api/config'
+  const _root = resolveAppRoot(opts.root)
 
   // Built here rather than in a start phase, because `assertOverridable` is a
   // BOOT-time refusal by design — a reserved path caught per request is a
@@ -1110,10 +1112,6 @@ export function createApp(opts: AppOptions = {}): App {
   // rethrown by start() — a half-registered plugin must not boot.
   const _registerFailures: Array<{ plugin: string; err: unknown }> = []
   // What `autoload-services` decided, kept so the banner can report a miss.
-  // The report is on the banner rather than beside the decision because that
-  // phase needs a host: every app mounted by a test runner or a snapshot tool
-  // resolves the entry to the runner's own file and finds nothing, which is
-  // not news — an app about to SERVE with no services anywhere is.
   let _servicesDir: ServicesDirResolution = { dir: null, source: 'none', probed: [] }
   const events    = createEventBus()
   const telemetry = createEventBus()
@@ -1196,6 +1194,7 @@ export function createApp(opts: AppOptions = {}): App {
   // ── Build the app object ─────────────────────────────────────────────
   const body: Omit<App, AppSlot> & Partial<Pick<App, AppSlot>> = {
     config,
+    root: _root,
     // The OPTION stays `unknown` and the field is `AppDb`, which is the one
     // place those two meet. Narrowing the option too would mean an app that
     // augments `AppDb` could no longer pass the plain table-shaped object
@@ -1606,7 +1605,7 @@ export function createApp(opts: AppOptions = {}): App {
 
     async applyConfigFile(): Promise<void> {
       try {
-        const junctionCfg = await loadConfig(_configPath)
+        const junctionCfg = await loadConfig(_root ? configDirOf(_root) : null)
         const merged = deepMerge(
           junctionCfg as Partial<AppConfig>,
           (opts.config ?? {}) as Partial<AppConfig>,
@@ -2060,49 +2059,14 @@ export function createApp(opts: AppOptions = {}): App {
         if (report.fatal.length) throw new Error(formatAttachmentRefusal(report.fatal))
       }},
 
-      // Auto-load services — ON BY DEFAULT. Resolution order:
-      //   autoload: false        → disabled
-      //   opts.autoload (string) → explicit path, CWD-relative
-      //   _junction.services.dir → from junction.config.js, CWD-relative
-      //   default                → probed beside the ENTRY FILE (Bun.main):
-      //                            `./services`, then `./src/services`
-      // `resolveServicesDir` is the one owner of that list — the snapshot tools
-      // ask it the same question, where `Bun.main` is the tool.
+      // `services/` and `routes/` beside `createApp({ root })`.
       //
       // NOT needsHost. Registering services reads a directory and builds
-      // objects; it binds nothing. It was grouped with the host phases and the
-      // cost was invisible until an app was mounted by @frontierjs/testing:
-      // `_startForTest` skips needsHost, so every app that autoloads had ZERO
-      // services in a test env and every call answered `Service 'x' not found`
-      // — a 404 that reads like a wrong name rather than an unloaded app.
-      //
-      // The one thing a test cannot reach is `_junction.services.dir`:
-      // `load-config` IS needsHost, so junction.config.js is not read, and an
-      // app that wants its services in a test states `autoload:` directly —
-      // an ABSOLUTE path, because the entry under `bun test` is the test file.
+      // objects; it binds nothing, and `_startForTest` skips needsHost — an app
+      // mounted by @frontierjs/testing would have ZERO services and every call
+      // would answer `Service 'x' not found`, a 404 that reads like a wrong name.
       { name: 'autoload-services', run: async () => {
-        const declared = opts.autoload === false
-          ? false
-          : (opts.autoload
-              ?? (config as { _junction?: { services?: { dir?: string } } })._junction?.services?.dir)
-
-        _servicesDir = resolveServicesDir({
-          entry:    typeof Bun !== 'undefined' ? Bun.main : null,
-          declared,
-        })
-
-        // A declared directory that is not there is a statement that failed,
-        // so it is loud wherever it happens — including in a test, where the
-        // app is the thing that stated it. What it names is the RESOLVED path:
-        // a relative one is resolved against the cwd, and a command run from
-        // the wrong directory is most of how this goes wrong.
-        if (_servicesDir.source === 'declared-missing') {
-          logger.warn(
-            `[Junction] No services directory at ${_servicesDir.probed[0]} — ` +
-            `declared as "${_servicesDir.declared}", and nothing will be autoloaded from it. ` +
-            `A relative path is resolved against the working directory.`
-          )
-        }
+        _servicesDir = resolveServicesDir({ root: _root })
 
         if (_servicesDir.dir) {
           await autoloadServices({
@@ -2114,10 +2078,7 @@ export function createApp(opts: AppOptions = {}): App {
           watchForNewServices({ dir: _servicesDir.dir, known: await findServiceFiles(_servicesDir.dir) })
         }
 
-        const routesDir = declared === false ? null : resolveRoutesDir({
-          servicesDir: _servicesDir.dir,
-          entry:       typeof Bun !== 'undefined' ? Bun.main : null,
-        })
+        const routesDir = resolveRoutesDir({ root: _root })
         if (routesDir) {
           await autoloadRoutes({
             dir: routesDir, app: app as unknown as Record<string, unknown>,
@@ -2337,8 +2298,7 @@ export function createApp(opts: AppOptions = {}): App {
         // without the variable and the banner below prints instead.
         if (process.env[DEV_ENV]) {
           const _host = ['0.0.0.0', '::', ''].includes(config.hostname) ? 'localhost' : config.hostname
-          // A declared directory that is missing has its own warning above.
-          const _servicesMissed = _servicesDir.source === 'none' && services.list().length === 0
+          const _servicesMissed = _servicesDir.dir === null && services.list().length === 0
           console.log(formatDevLine({ ready: {
             url:  `http://${_host}:${_port}${_prefix}`,
             rows: [
@@ -2485,16 +2445,21 @@ function applyConfiguredMiddleware(app: App, config: AppConfig): void {
   // before an origin check refuses it. Cookie mode installs it undeclared: the
   // mode that opens the exposure brings the defense (`FJS-D610`). The auth
   // plugin turns cookie mode on from register(), which has run by now.
-  const csrfCfg = http.csrf
-  if (csrfCfg || app.http?.authCookie) {
-    const declared = typeof csrfCfg === 'object' ? csrfCfg as Record<string, unknown> : {}
-    // A cors '*' says who may READ a response, and cors() refuses it beside
-    // credentials, so it names no origin that may write with the cookie.
-    // Borrowed without it, or a dev app with an open cors list cannot start.
-    const corsOrigins = (((http.cors as Record<string, unknown> | undefined)?.origins) as string[] | undefined)
-      ?.filter(o => o !== '*')
-    const origins = (declared.origins as string[] | undefined) ?? corsOrigins
+  const csrfCfg  = http.csrf
+  const declared = typeof csrfCfg === 'object' ? csrfCfg as Record<string, unknown> : {}
+  // A cors '*' says who may READ a response, and cors() refuses it beside
+  // credentials, so it names no origin that may write with the cookie.
+  // Borrowed without it, or a dev app with an open cors list cannot start.
+  const corsOrigins = (((http.cors as Record<string, unknown> | undefined)?.origins) as string[] | undefined)
+    ?.filter(o => o !== '*')
+  const origins = (declared.origins as string[] | undefined) ?? corsOrigins
 
+  // The upgrade checks Origin with or without csrf installed (`FJS-D1207`), and
+  // a bearer app with a cors list has a page on another origin to admit. A
+  // csrf() the app installed by hand has already named its own list.
+  if (origins?.length && !app.http?.upgradeOrigins) app.http?.setUpgradeOrigins(origins)
+
+  if (csrfCfg || app.http?.authCookie) {
     // A '*' written for csrf lets every origin through, which is no guard.
     // Refused by name rather than installed permissive, because an app that
     // declared it believes it is guarded.

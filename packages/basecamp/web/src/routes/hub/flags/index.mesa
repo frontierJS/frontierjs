@@ -120,7 +120,7 @@ title: Hub flags
               </span>
               <span class="cluster">
                 <Pill tone={f.isEnabled ? 'success' : 'muted'}>{f.isEnabled ? 'enabled' : 'disabled'}</Pill>
-                <Button variant="ghost" disabled={busy === f.id}
+                <Button treatment="ghost" disabled={busy === f.id}
                         aria-label={`${f.isEnabled ? 'Disable' : 'Enable'} ${f.key}`}
                         onclick={() => toggle(f)}>{f.isEnabled ? 'Disable' : 'Enable'}</Button>
               </span>

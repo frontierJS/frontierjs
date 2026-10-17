@@ -515,7 +515,7 @@ model Thing {
     ] })
     const app: any = createApp({
       db, auth,
-      config: { port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 50 } },
+      config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 50 } },
     } as never)
     app.configure(createCaravan({ db: ':memory:', pollInterval: 10, admin: true, queues: { mail: {} } }))
     return app

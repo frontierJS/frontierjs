@@ -31,7 +31,7 @@ const clients: any[] = []
 
 beforeAll(async () => {
   h = await makeAuth({ encryptionKey: TEST_KEY, sessionFields: (u: any) => ({ role: u.role }) })
-  app = createApp({ db: h.db, auth: h.auth as any, config: { port: 0, services: { dir: '/nonexistent' } }, logLevel: 'silent' } as never)
+  app = createApp({ db: h.db, auth: h.auth as any, config: { port: 0 }, logLevel: 'silent' } as never)
   app.configure(createAuthPlugin(h.auth, {
     services: { level: levelOf },
     canStartSupport: (op) => op.role === 'sysadmin',

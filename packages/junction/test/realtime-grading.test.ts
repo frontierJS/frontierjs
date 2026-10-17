@@ -79,7 +79,7 @@ async function mkApp(opts: { telemetry?: boolean; second?: boolean; named?: bool
   const app: any = createApp({
     db,
     logLevel: 'silent',
-    config: { port: 0, services: { dir: '/nonexistent' } },
+    config: { port: 0 },
     auth: {
       verifySession: async (token: string) => {
         const u = sessionFor(token)
@@ -527,7 +527,7 @@ async function mkReachApp() {
   const app: any = createApp({
     db,
     logLevel: 'silent',
-    config: { port: 0, services: { dir: '/nonexistent' } },
+    config: { port: 0 },
     auth: {
       verifySession: async (token: string) => {
         const u = sessionFor(token)

@@ -25,7 +25,7 @@ const alice = { userId: 'alice', role: 'user' } as never
 
 function app(...services: any[]) {
   const a: any = createApp({
-    config: { port: 0, services: { dir: '/nonexistent' } },
+    config: { port: 0 },
   })
   for (const s of services) a.services.register(s)
   return a
@@ -196,7 +196,7 @@ describe('db', () => {
     let outer: unknown, inner: unknown, moved = false
     const a: any = createApp({
       db,
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     })
     a.services.register(buildService({
       name: 'posts', model: 'Post', transactional: true, methods: ['run'],
@@ -339,7 +339,7 @@ describe('log', () => {
   function logging(...services: any[]) {
     const entries: any[] = []
     const a: any = createApp({
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
       logger: createLogger({ level: 'debug', writers: [(e) => entries.push(e)] }),
     })
     for (const s of services) a.services.register(s)
@@ -563,7 +563,7 @@ describe('a call that has ended (FJS-687)', () => {
     let before: unknown, during: unknown
     const a: any = createApp({
       db,
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     })
     a.services.register(buildService({
       name: 'posts', model: 'Post', transactional: true, methods: ['run'],

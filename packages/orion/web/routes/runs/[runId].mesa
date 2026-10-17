@@ -97,7 +97,7 @@ title: Run
       <div class="cluster">
         <Pill tone={TONE[run.status] ?? 'muted'} id="run-status" data-status={run.status}>{run.status}</Pill>
         {#if run.status === 'waiting'}
-          <Button variant="ghost" id="run-cancel" disabled={busy} onclick={cancel}>Cancel</Button>
+          <Button treatment="ghost" id="run-cancel" disabled={busy} onclick={cancel}>Cancel</Button>
         {/if}
       </div>
     {/snippet}

@@ -342,7 +342,7 @@ describe('a grant presented as Authorization: Bearer', () => {
     const app: any = createApp({
       db,
       logLevel:  'silent',
-      config:    { port: 0, services: { dir: '/nonexistent' } },
+      config:    { port: 0 },
       principal: bearerClaim({ from, model: 'portalLink', column: 'tokenHash', key: KEY, claims: { portalClientId: 'clientId' } }),
       auth: {
         verifySession: async (token: string) => {
@@ -410,7 +410,7 @@ describe('a grant presented as a cookie', () => {
     const app: any = createApp({
       db,
       logLevel:  'silent',
-      config:    { port: 0, services: { dir: '/nonexistent' } },
+      config:    { port: 0 },
       principal: bearerClaim({ from: cookie('portal'), model: 'portalLink', column: 'tokenHash', key: KEY, claims: { portalClientId: 'clientId' } }),
       auth: {
         verifySession: async (token: string) => {

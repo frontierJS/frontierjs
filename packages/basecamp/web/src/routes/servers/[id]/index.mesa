@@ -358,8 +358,8 @@ title: Server
     <h1>{server.name}</h1>
     <div class="cluster">
       <span class="pill {TONE[server.status] ?? ''}" id="server-status">{server.status}</span>
-      <Button variant="outlined" id="server-edit" onclick={() => editing = true}>Edit</Button>
-      <Button variant="ghost" href="/servers/">All servers</Button>
+      <Button treatment="outlined" id="server-edit" onclick={() => editing = true}>Edit</Button>
+      <Button treatment="ghost" href="/servers/">All servers</Button>
     </div>
   </div>
 
@@ -413,11 +413,11 @@ title: Server
           </p>
           <pre class="code" id="enroll-command"><code>{enrollCommand}</code></pre>
           <div class="cluster">
-            <CopyButton text={enrollCommand} label="Copy command" variant="outlined" />
+            <CopyButton text={enrollCommand} label="Copy command" treatment="outlined" />
           </div>
         {:else}
           <div class="cluster">
-            <Button variant="primary" disabled={busy === 'enroll'} onclick={issueEnrollment}>
+            <Button tone="primary" disabled={busy === 'enroll'} onclick={issueEnrollment}>
               {busy === 'enroll' ? 'Issuing…' : 'Get the install command'}
             </Button>
           </div>
@@ -428,24 +428,24 @@ title: Server
 
   <div class="cluster" id="server-actions">
     {#if moves.has('drain')}
-      <Button variant="outlined" disabled={busy === 'drain'} onclick={() => act('drain')}>
+      <Button treatment="outlined" disabled={busy === 'drain'} onclick={() => act('drain')}>
         {busy === 'drain' ? 'Draining…' : 'Drain'}
       </Button>
     {/if}
     {#if moves.has('undrain')}
-      <Button variant="outlined" disabled={busy === 'undrain'} onclick={() => act('undrain')}>
+      <Button treatment="outlined" disabled={busy === 'undrain'} onclick={() => act('undrain')}>
         {busy === 'undrain' ? 'Cancelling…' : 'Cancel drain'}
       </Button>
     {/if}
     {#if moves.has('reboot')}
-      <Button variant="outlined" disabled={busy === 'reboot'} onclick={() => act('reboot')}>Reboot</Button>
+      <Button treatment="outlined" disabled={busy === 'reboot'} onclick={() => act('reboot')}>Reboot</Button>
     {/if}
     {#if cloudMade}
-      <Button variant="ghost" disabled={busy === 'sync'} onclick={() => act('sync')}>
+      <Button treatment="ghost" disabled={busy === 'sync'} onclick={() => act('sync')}>
         {busy === 'sync' ? 'Syncing…' : 'Sync from provider'}
       </Button>
     {/if}
-    <Button variant="ghost" tone="danger" disabled={busy === 'remove'} onclick={remove}
+    <Button treatment="ghost" tone="danger" disabled={busy === 'remove'} onclick={remove}
             data-confirm={removeWarning} data-confirm-title="Remove this server?" data-confirm-label="Remove">Remove</Button>
   </div>
 
@@ -524,7 +524,7 @@ title: Server
   <article class="card stack" id="server-posture">
     <div class="cluster">
       <h2 class="h4">Posture</h2>
-      <Button variant="outlined" id="posture-check" disabled={busy === 'posture'} onclick={checkPosture}>
+      <Button treatment="outlined" id="posture-check" disabled={busy === 'posture'} onclick={checkPosture}>
         {busy === 'posture' ? 'Checking…' : 'Check now'}
       </Button>
     </div>
@@ -552,7 +552,7 @@ title: Server
   <article class="card stack" id="server-routes">
     <div class="cluster">
       <h2 class="h4">Routes</h2>
-      <Button variant="outlined" id="routes-read" disabled={busy === 'routes'} onclick={readRoutes}>
+      <Button treatment="outlined" id="routes-read" disabled={busy === 'routes'} onclick={readRoutes}>
         {busy === 'routes' ? 'Reading…' : ingress ? 'Read again' : 'Read from the machine'}
       </Button>
     </div>
@@ -615,7 +615,7 @@ title: Server
         <Input id="destroy-confirm" name="destroy-confirm" label="Machine name" autocomplete="off"
                placeholder={server.name} bind:value={destroyName} />
         <div class="cluster">
-          <Button type="submit" variant="primary" tone="danger"
+          <Button type="submit" tone="danger"
                   disabled={destroyName !== server.name || busy === 'destroy'}>
             {busy === 'destroy' ? 'Destroying…' : 'Destroy'}
           </Button>

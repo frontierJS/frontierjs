@@ -8,8 +8,8 @@
  * real directory.
  */
 
-import { describe, test, expect, beforeAll, afterAll } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
+import { describe, test, expect, beforeAll, afterAll, vi } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -486,6 +486,64 @@ describe('_redirects (FJS-2717)', () => {
       expect((await fetch(`${c.url}/_redirects`)).status).toBe(404)
     } finally {
       await c.close()
+    }
+  })
+})
+
+describe('a rebuild in place under a running server (FJS-3122)', () => {
+  // Pages are resolved per request, so the rules must be too: a renamed post's
+  // old address answered 404 until restart while its new one was already served.
+  let root, s
+  const hop = (path) => fetch(`${s.url}${path}`, { redirect: 'manual' })
+
+  beforeAll(async () => {
+    root = mkdtempSync(join(tmpdir(), 'sierra-redirects-rebuild-'))
+    mkdirSync(join(root, 'a'))
+    writeFileSync(join(root, 'a', 'index.html'), '<h1>a</h1>')
+    s = await serveSite({ dir: root })
+  })
+
+  afterAll(async () => {
+    await s?.close()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  test('a _redirects written after start is followed', async () => {
+    expect((await hop('/a/')).status).toBe(200)
+
+    rmSync(join(root, 'a'), { recursive: true })
+    mkdirSync(join(root, 'a-a'))
+    writeFileSync(join(root, 'a-a', 'index.html'), '<h1>a-a</h1>')
+    await generateRedirects([['/a/', '/a-a/']], root)
+
+    const res = await hop('/a/')
+    expect(res.status).toBe(301)
+    expect(res.headers.get('location')).toBe('/a-a/')
+  })
+
+  test('a rewritten _redirects replaces the rules, and a removed one clears them', async () => {
+    rmSync(join(root, '_redirects'))
+    await generateRedirects([['/b/', '/a-a/']], root)
+    utimesSync(join(root, '_redirects'), new Date(), new Date(Date.now() + 5000))
+    expect((await hop('/a/')).status).toBe(404)
+    expect((await hop('/b/')).status).toBe(301)
+
+    rmSync(join(root, '_redirects'))
+    expect((await hop('/b/')).status).toBe(404)
+  })
+
+  test('a rebuilt file with a rule it cannot answer keeps the previous rules', async () => {
+    await generateRedirects([['/c/', '/a-a/']], root)
+    expect((await hop('/c/')).status).toBe(301)
+    writeFileSync(join(root, '_redirects'), '/c/  /a-a/  301\n/blog/*  /news/:splat  301\n')
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect((await hop('/c/')).status).toBe(301)
+      expect(quiet).toHaveBeenCalledOnce()
+      await hop('/c/')
+      expect(quiet).toHaveBeenCalledOnce()
+    } finally {
+      quiet.mockRestore()
     }
   })
 })

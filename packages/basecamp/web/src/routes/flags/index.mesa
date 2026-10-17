@@ -257,7 +257,7 @@ title: Flags
 
 <div class="section-header">
   <h1>Feature flags</h1>
-  <Button variant="primary" id="new-flag" onclick={() => creating = !creating}>
+  <Button tone="primary" id="new-flag" onclick={() => creating = !creating}>
     {creating ? 'Cancel' : 'New flag'}
   </Button>
 </div>
@@ -290,7 +290,7 @@ title: Flags
       {#if draft.type === 'variant'}
         <VariantsEditor idPrefix="new-variant" value={draft.variants} onchange={(next) => write('variants', next)} />
       {/if}
-      <Button type="submit" variant="primary">Create flag</Button>
+      <Button type="submit" tone="primary">Create flag</Button>
     </Form>
   </Card>
 {/if}
@@ -357,11 +357,11 @@ title: Flags
                     {/if}
                   </td>
                   <td>
-                    <Button variant="ghost" disabled={busy === flag.id}
+                    <Button treatment="ghost" disabled={busy === flag.id}
                             onclick={() => change(flag, o, { isEnabled: !o.isEnabled })}>
                       {o.isEnabled ? 'Force off' : 'Turn on'}
                     </Button>
-                    <Button variant="ghost" disabled={busy === flag.id}
+                    <Button treatment="ghost" disabled={busy === flag.id}
                             aria-label={`Clear the ${envLabel(o)} override on ${flag.key}`}
                             data-confirm={`${envLabel(o)} falls back to the flag's default.`}
                             data-confirm-title="Clear this override?" data-confirm-label="Clear" data-confirm-tone="warning"
@@ -383,23 +383,23 @@ title: Flags
                         .filter(e => !(detail[flag.id].overrides ?? []).some(o => o.environmentId === e.id))
                         .map(e => ({ value: e.id, label: named(e.projectId, e.name) }))}
                       onchange={(e) => picked = { ...picked, [flag.id]: e.target.value }} />
-              <Button variant="outlined" disabled={busy === flag.id || !picked[flag.id]}
+              <Button treatment="outlined" disabled={busy === flag.id || !picked[flag.id]}
                       onclick={() => override(flag, picked[flag.id], true)}>Turn on here</Button>
-              <Button variant="ghost" disabled={busy === flag.id || !picked[flag.id]}
+              <Button treatment="ghost" disabled={busy === flag.id || !picked[flag.id]}
                       onclick={() => override(flag, picked[flag.id], false)}>Force off here</Button>
             </div>
           {/if}
         {/if}
 
         <div class="cluster">
-          <Button variant="outlined" disabled={busy === flag.id}
+          <Button treatment="outlined" disabled={busy === flag.id}
                   onclick={() => open(flag)}>Environments</Button>
-          <Button variant="ghost" disabled={busy === flag.id}
+          <Button treatment="ghost" disabled={busy === flag.id}
                   aria-label={`Edit ${flag.key}`} onclick={() => startEdit(flag)}>Edit</Button>
-          <Button variant="ghost" disabled={busy === flag.id} onclick={() => toggleDefault(flag)}>
+          <Button treatment="ghost" disabled={busy === flag.id} onclick={() => toggleDefault(flag)}>
             {flag.isEnabled ? 'Turn off by default' : 'Turn on by default'}
           </Button>
-          <Button variant="ghost" disabled={busy === flag.id}
+          <Button treatment="ghost" disabled={busy === flag.id}
                   aria-label={`Delete ${flag.key}`}
                   data-confirm={`${flag.key} is deleted, with its overrides in every environment.`}
                   data-confirm-title="Delete this flag?" data-confirm-label="Delete"
@@ -427,8 +427,8 @@ title: Flags
                         onchange={(next) => editing = { ...editing, variants: next }} />
       {/if}
       <div class="cluster">
-        <Button type="submit" variant="primary" id="flag-edit-save" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-        <Button variant="ghost" onclick={() => editing = null}>Cancel</Button>
+        <Button type="submit" tone="primary" id="flag-edit-save" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+        <Button treatment="ghost" onclick={() => editing = null}>Cancel</Button>
       </div>
     </form>
   {/if}

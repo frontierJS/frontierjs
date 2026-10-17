@@ -301,7 +301,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V13.4.2 | 2 | covered | `packages/junction/src/core/errors.ts:275`, `packages/cli/commands/deploy/_module.md:545`, `packages/junction/test/wire-safety.test.ts` | deploy sets NODE_ENV=production; debug fails open whenever NODE_ENV is anything else · [FJS-3207](../ISSUES.md#fjs-3207) |
 | V13.4.3 | 2 | covered | `packages/junction/src/transport/static.ts:135`, `packages/junction/test/static-root.test.ts` | a directory answers its index file or 404; no listing exists |
 | V13.4.4 | 2 | covered | `packages/junction/src/transport/http.ts:757` | no route answers TRACE; it gets 405 or 404 |
-| V13.4.5 | 2 | partial | `packages/junction/src/transport/health.ts:396`, `packages/cli/commands/project/new.md:1240`, `packages/junction/src/plugins/manifest/index.ts:93` | manifest dev-only; scaffold's `health: true` serves `/metrics` unauthenticated in production · [FJS-3191](../ISSUES.md#fjs-3191) |
+| V13.4.5 | 2 | covered | `packages/junction/src/transport/health.ts:468`, `packages/junction/test/health-probes.test.ts`, `packages/junction/src/plugins/manifest/index.ts:93` | manifest dev-only; `/metrics` is not mounted in production without a `token` or `authFn`, while `/health` stays public for the deploy's health check · [FJS-3191](../ISSUES.md#fjs-3191) |
 
 ## V14 Data Protection
 

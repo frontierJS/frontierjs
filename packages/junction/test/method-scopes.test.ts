@@ -26,7 +26,7 @@ const TOKENS: Record<string, { scopes?: string[] }> = {
 async function clockApp() {
   const ran: string[] = []
   const app: any = createApp({
-    config: { port: 0, services: { dir: '/nonexistent' },
+    config: { port: 0,
               http: { ...defaultConfig.http, drainTimeout: 50 } },
   })
   app.services.register(buildService({

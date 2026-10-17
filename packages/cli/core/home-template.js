@@ -46,7 +46,7 @@ export function homePage(o) {
     .join('\n')
 
   const join = o.register
-    ? `\n      <Button variant="outlined" href="/register/">Create an account</Button>`
+    ? `\n      <Button treatment="outlined" href="/register/">Create an account</Button>`
     : ''
 
   return `---
@@ -171,7 +171,7 @@ ${SC}
       <section class="stack">
         <SectionHeader title={f.label + ' by ' + f.machine.label} level={2}>
           {#snippet action()}
-            <Button variant="link" href={f.href}>All {f.label.toLowerCase()}</Button>
+            <Button treatment="link" href={f.href}>All {f.label.toLowerCase()}</Button>
           {/snippet}
         </SectionHeader>
         <div class="tiles">
@@ -193,7 +193,7 @@ ${SC}
           {#snippet row(record)}
             <tr>
               {#each shown as c (c.name)}<td><Cell value={cellOf(record, c.name)} column={c} {record} /></td>{/each}
-              <td><Button variant="link" href={focus.href + record[idField] + '/'}>Open</Button></td>
+              <td><Button treatment="link" href={focus.href + record[idField] + '/'}>Open</Button></td>
             </tr>
           {/snippet}
         </Table>

@@ -147,7 +147,7 @@ title: Hub backups
 
 <div class="section-header">
   <h2 class="h3">Backups</h2>
-  <Button variant="primary" id="take-backup" disabled={asking} onclick={takeOne}>
+  <Button tone="primary" id="take-backup" disabled={asking} onclick={takeOne}>
     {asking ? 'Asking…' : 'Back up now'}
   </Button>
 </div>
@@ -210,7 +210,7 @@ title: Hub backups
         <td class="text-sm text-muted"><code>{b.location ?? '—'}</code></td>
         <td>
           {#if SETTLED.has(b.status)}
-            <Button variant="ghost" disabled={busy === b.id} aria-label={`Forget the backup taken ${ago(b.finishedAt ?? b.startedAt ?? b.createdAt)}`}
+            <Button treatment="ghost" disabled={busy === b.id} aria-label={`Forget the backup taken ${ago(b.finishedAt ?? b.startedAt ?? b.createdAt)}`}
                     data-confirm={b.location
                       ? `The row goes from this list. The archive at ${b.location} stays on disk — delete that yourself.`
                       : 'The row goes from this list.'}

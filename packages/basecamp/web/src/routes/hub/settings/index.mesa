@@ -208,11 +208,11 @@ title: Hub settings
   </Card>
 
   <div class="cluster">
-    <Button variant="primary" id="save-settings" disabled={saving} onclick={save}>
+    <Button tone="primary" id="save-settings" disabled={saving} onclick={save}>
       {saving ? 'Saving…' : unset ? 'Create settings' : 'Save settings'}
     </Button>
     {#if !unset}
-      <Button variant="ghost" onclick={load}>Discard changes</Button>
+      <Button treatment="ghost" onclick={load}>Discard changes</Button>
     {/if}
   </div>
 {/if}

@@ -91,7 +91,7 @@ title: Plans
       <td><Pill tone={p.active ? 'success' : 'muted'} data-active={String(p.active)}>
         {p.active ? 'on sale' : 'retired'}
       </Pill></td>
-      <td><Button variant="ghost" href={'/plans/' + p.id + '/'}>Open</Button></td>
+      <td><Button treatment="ghost" href={'/plans/' + p.id + '/'}>Open</Button></td>
     </tr>
   {/snippet}
 </Table>

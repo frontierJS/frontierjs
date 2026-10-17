@@ -162,6 +162,46 @@ export function appBiomeJson() {
 }
 
 // ─── the scripts ──────────────────────────────────────────────────────────────
+// The app's script table (FJS-D1083): `dev`, `api`, `web`, `build`, `test`,
+// `db:seed`, `db:reset`, `check`. A surface's script is named for its directory
+// because `fli dev:api`, `fli dev` and every drive's *Start first* look for that
+// name, and a scaffold spelling it another way starts nothing they can find.
+//
+// Each surface contributes its own scripts and `dev`/`build` run whichever ones
+// exist — a surface an app does not have must not leave a script that fails
+// naming a directory nobody removed. `surfaces` is the rest, each written by
+// its own module: `{ scripts, dev, build }`.
+
+export function appSurfaceScripts({ api = false, web = false, surfaces = [] } = {}) {
+  const scripts = {}
+  const devs    = []
+  const builds  = []
+
+  if (api) {
+    scripts.api   = 'bun --watch run api/index.ts'
+    scripts.start = 'bun run api/index.ts'
+    devs.push('api')
+  }
+  if (web) {
+    // `--configLoader native`: the default loader bundles the config and the
+    // whole sierra build tree it imports on every start, 190 ms before vite
+    // reads a byte of the app; the runtime imports the same files in 110.
+    scripts.web          = 'cd web && vite -c config/vite.config.js --configLoader native'
+    scripts['build:web'] = 'cd web && vite build -c config/vite.config.js'
+    devs.push('web')
+    builds.push('build:web')
+  }
+  for (const s of surfaces) {
+    Object.assign(scripts, s.scripts)
+    devs.push(s.dev)
+    if (s.build) builds.push(s.build)
+  }
+
+  scripts.dev = devs.length > 1 ? `bun run --parallel ${devs.join(' ')}` : (scripts[devs[0]] ?? '')
+  if (builds.length) scripts.build = builds.map(b => `bun run ${b}`).join(' && ')
+  return scripts
+}
+
 // `check` is the app's whole gate, and the ORDER in it is the decision: `fli
 // check` runs first because it is the half a linter cannot reach. Biome reads
 // neither .mesa nor .lite, which is where an FJS app's real mistakes live — a

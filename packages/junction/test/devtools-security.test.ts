@@ -22,7 +22,7 @@ afterEach(async () => { for (const a of running.splice(0)) await a.stop().catch(
 async function mkApp(opts: Parameters<typeof devtools>[0] = {}) {
   const app: any = createApp({
     logLevel: 'silent',
-    config: { port: 0, services: { dir: '/nonexistent' } },
+    config: { port: 0 },
   })
   app.configure(devtools({ port: 0, ...opts }))
   await app.start()

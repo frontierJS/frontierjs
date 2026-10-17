@@ -71,9 +71,10 @@ src/
     serve.js             the static server that surface deploys with — a
                          directory index, a cache answer per file kind, the
                          site's own 404.html served with a 404, and the
-                         `_redirects` the build wrote — read at start, parsed by
-                         `postbuild/redirects.js`, and refused there for a rule
-                         shape it cannot answer
+                         `_redirects` the build wrote — read at start and again
+                         when its mtime changes (a rebuild in place), parsed by
+                         `postbuild/redirects.js`, and refused there at start
+                         for a rule shape it cannot answer
                          Takes `functions` (the entry `postbuild/functions.js`
                          wrote, as a path or as the imported module) and
                          mounts it BEFORE the verb check, since a function

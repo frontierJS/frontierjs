@@ -290,7 +290,7 @@ describe('autoFilter — unknown filter keys', () => {
     const app = createApp({
       db,
       config: {
-        port: 0, services: { dir: '/nonexistent' },
+        port: 0,
         http: { ...defaultConfig.http, drainTimeout: 50 },
       },
     })
@@ -549,7 +549,7 @@ describe('a service that declares no model: — the accessor is plural', () => {
     const app = createApp({
       db,
       config: {
-        port: 0, services: { dir: '/nonexistent' },
+        port: 0,
         http: { ...defaultConfig.http, drainTimeout: 50 },
       },
     })

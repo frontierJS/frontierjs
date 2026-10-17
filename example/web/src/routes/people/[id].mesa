@@ -213,7 +213,7 @@ title: Person
 
   <div class="cluster">
     <Input type="date" label="As at" bind:value={asAt} id="pd-asat" onchange={ask} />
-    <Button variant="ghost" id="pd-ask" disabled={!asAt || asking} onclick={ask}>Ask</Button>
+    <Button treatment="ghost" id="pd-ask" disabled={!asAt || asking} onclick={ask}>Ask</Button>
     {#if wasOn}
       <!--
         The answer is carried twice — on a plain element and forwarded to the

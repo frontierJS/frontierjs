@@ -146,8 +146,7 @@ export async function createTestEnv(opts: ApiTestEnvOptions): Promise<Record<str
   // ── The port, when one is asked for ────────────────────────────────────────
   // `_startForTest()` skips the `listen` phase along with everything else that
   // needs a host; this is that one phase, run on its own. The alternative —
-  // `app.start()` — also loads config from the working directory, autoloads
-  // services from beside `Bun.main` (the test runner) and installs process
+  // `app.start()` — also binds the app's host phases and installs process
   // signal handlers, none of which belongs to a test that wanted a socket.
   const server = listen ? app.http.start(listen === true ? 0 : listen) : null
   const port   = server ? app.http.port : null

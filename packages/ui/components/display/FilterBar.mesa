@@ -343,7 +343,7 @@
   {/each}
 
   {#if active}
-    <Button variant="ghost" size="sm" onclick={clearAll}>Clear</Button>
+    <Button treatment="ghost" size="sm" onclick={clearAll}>Clear</Button>
   {/if}
 </div>
 

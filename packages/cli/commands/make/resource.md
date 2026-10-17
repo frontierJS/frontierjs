@@ -30,8 +30,7 @@ import { mkdirSync, writeFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 
 // One owner for what a generated Resource IS — `core/resource-template.js`,
-// shared with `fli web:resource` and `fli make:scaffold`. Three commands wrote
-// the same file three times and had already drifted (Invariant 4).
+// shared with `fli make:scaffold` (Invariant 4).
 const { resourceFile, servicePlural } =
   await import(resolve(global.fliRoot, 'core/resource-template.js'))
 </script>

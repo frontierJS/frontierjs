@@ -18,7 +18,7 @@
     oncancel={() => cancels++}
   >
     {#snippet trigger()}
-      <Button id="confirm-trigger" variant="ghost">Remove</Button>
+      <Button id="confirm-trigger" treatment="ghost">Remove</Button>
     {/snippet}
   </ConfirmationPopover>
 </div>

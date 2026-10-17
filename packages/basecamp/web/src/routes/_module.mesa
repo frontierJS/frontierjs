@@ -300,7 +300,7 @@ siteName: Basecamp
   {#if session.user && focus}
     <div class="focus-peek">
       <span class="focus-peek-tab">
-        <Button variant="outlined" size="sm" id="focus-leave" aria-pressed="true"
+        <Button treatment="outlined" size="sm" id="focus-leave" aria-pressed="true"
                 title="Show the header and side panels (Ctrl+.)"
                 onclick={toggleFocus}>Toggle focus</Button>
       </span>
@@ -324,7 +324,7 @@ siteName: Basecamp
       <span class="hide-sm"><Badge tone="muted">beta</Badge></span>
       {#if session.user}
         <span class="hide-sm">
-          <Button variant="ghost" size="sm" id="focus-toggle"
+          <Button treatment="ghost" size="sm" id="focus-toggle"
                   aria-pressed="false" title="Hide the header and side panels (Ctrl+.)"
                   onclick={toggleFocus}>Focus</Button>
         </span>
@@ -376,7 +376,7 @@ siteName: Basecamp
       </span>
 
       {#if session.user}
-        <Button variant="ghost" id="palette-open" onclick={() => commandPalette.show()}>
+        <Button treatment="ghost" id="palette-open" onclick={() => commandPalette.show()}>
           Search <kbd class="kbd hide-sm">⌘K</kbd>
         </Button>
 
@@ -384,7 +384,7 @@ siteName: Basecamp
              part of the button's name to a screen reader as well as its look. -->
         <DropdownMenu placement="bottom-end">
           {#snippet trigger()}
-            <Button variant="ghost" id="bell"
+            <Button treatment="ghost" id="bell"
                     aria-label={unread.length ? `Notifications, ${unread.length} unread` : 'Notifications'}
             >🔔{#if unread.length} <Badge tone="danger" id="bell-count">{unread.length}</Badge>{/if}</Button>
           {/snippet}
@@ -416,7 +416,7 @@ siteName: Basecamp
              fewer items is the app's half of the same answer. -->
         <DropdownMenu placement="bottom-end">
           {#snippet trigger()}
-            <Button variant="ghost" id="account-menu">Account</Button>
+            <Button treatment="ghost" id="account-menu">Account</Button>
           {/snippet}
           <DropdownGroup heading={session.user.email}>
             <DropdownItem onclick={() => goto('/settings/')}>Your settings</DropdownItem>

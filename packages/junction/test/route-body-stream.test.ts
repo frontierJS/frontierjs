@@ -37,7 +37,7 @@ function chunked(path: string, chunks: number) {
 
 function app(maxBodySize?: number) {
   return createApp({
-    config: { port: 0, services: { dir: '/nonexistent' }, ...(maxBodySize ? { http: { maxBodySize } } : {}) },
+    config: { port: 0, ...(maxBodySize ? { http: { maxBodySize } } : {}) },
   } as any)
 }
 

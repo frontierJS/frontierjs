@@ -652,7 +652,7 @@ describe('defineJob', () => {
     expect(def.name).toBe('my-job')
   })
 
-  // FJS-2953: a job in jobsDir states no name; reading one nobody named is an
+  // FJS-2953: a job in jobs/ states no name; reading one nobody named is an
   // error, not a registration under `undefined`.
   it('has no name until the file or the spec gives it one', () => {
     const def = defineJob({ handler: async () => {} })

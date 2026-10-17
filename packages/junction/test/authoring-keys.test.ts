@@ -13,25 +13,28 @@
  */
 
 import { describe, it, expect } from 'bun:test'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join }   from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { createApp, createService, type Plugin } from '../index.ts'
 import { JUNCTION_SECTIONS, unknownSections, loadConfig } from '../src/config/index.ts'
 
-/** A config directory holding one junction.config.js. */
+/** A config directory holding one junction.config.js, with the `src/` root beside it. */
 function configDir(source: string) {
-  const dir = mkdtempSync(join(tmpdir(), 'fjs-authoring-'))
-  writeFileSync(join(dir, 'junction.config.js'), source)
-  return dir
+  const base = mkdtempSync(join(tmpdir(), 'fjs-authoring-'))
+  mkdirSync(join(base, 'src'))
+  mkdirSync(join(base, 'config'))
+  writeFileSync(join(base, 'config', 'junction.config.js'), source)
+  return join(base, 'config')
 }
+const rootOf = (configDir: string) => join(configDir, '..', 'src')
 
 /** Start an app against that directory and answer what start() said, if anything. */
 async function startAgainst(source: string): Promise<string | null> {
   const dir = configDir(source)
   try {
-    const app = createApp({ logLevel: 'silent', configPath: dir, config: { port: 0 } })
+    const app = createApp({ logLevel: 'silent', root: rootOf(dir), config: { port: 0 } })
     try {
       await app.start()
       await app.stop()
@@ -40,7 +43,7 @@ async function startAgainst(source: string): Promise<string | null> {
       return (err as Error).message
     }
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(join(dir, '..'), { recursive: true, force: true })
   }
 }
 
@@ -83,7 +86,6 @@ describe('a section nothing reads is refused by name', () => {
       app: { name: 'x' },
       middleware: { helmet: true },
       plugins: { health: true },
-      services: { dir: '/tmp/fjs-nothing-here' },
       caravan: { pollInterval: 1000 },
       attachments: {},
     }\n`
@@ -101,7 +103,7 @@ describe('the suggestion is offered, never forced', () => {
   })
 
   it('a near miss is', () => {
-    expect(unknownSections({ servces: {} })[0].nearest).toBe('services')
+    expect(unknownSections({ plugin: {} })[0].nearest).toBe('plugins')
   })
 
   it('a declared section is not a finding at all', () => {
@@ -127,7 +129,7 @@ describe('the list is what loadConfig actually consumes', () => {
       const stashed = Object.keys(cfg._junction ?? {})
       for (const section of JUNCTION_SECTIONS) expect(stashed).toContain(section)
     } finally {
-      rmSync(dir, { recursive: true, force: true })
+      rmSync(join(dir, '..'), { recursive: true, force: true })
     }
   })
 })
@@ -138,7 +140,7 @@ describe('a service method that cannot work is refused by the same phase', () =>
   function app(...svcs: unknown[]) {
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     }) as unknown as { services: { register(s: unknown): void }, start(): Promise<void>, stop(): Promise<void> }
     for (const s of svcs) a.services.register(s)
     return a
@@ -204,9 +206,11 @@ describe('a service method that cannot work is refused by the same phase', () =>
 // arrived later as a 404 against a name somebody had written down.
 
 describe('a service the loader could not load is refused, not stepped over', () => {
+  /** An app root whose `services/` holds the files. */
   function servicesDir(files: Record<string, string>) {
     const dir = mkdtempSync(join(tmpdir(), 'fjs-svcs-'))
-    for (const [name, src] of Object.entries(files)) writeFileSync(join(dir, name), src)
+    mkdirSync(join(dir, 'services'))
+    for (const [name, src] of Object.entries(files)) writeFileSync(join(dir, 'services', name), src)
     return dir
   }
 
@@ -218,7 +222,7 @@ describe('a service the loader could not load is refused, not stepped over', () 
     const dir = servicesDir(files)
     try {
       const a = createApp({
-        logLevel: 'silent', autoload: dir,
+        logLevel: 'silent', root: dir,
         config: { port: 0 },
       }) as unknown as { start(): Promise<void>, stop(): Promise<void> }
       try { await a.start(); await a.stop(); return null }
@@ -256,7 +260,7 @@ describe('a service the loader could not load is refused, not stepped over', () 
     const dir = servicesDir({ 'thing.service.ts': SERVICE('thing') })
     try {
       const a = createApp({
-        logLevel: 'silent', autoload: dir,
+        logLevel: 'silent', root: dir,
         config: { port: 0 },
       }) as unknown as {
         services: { register(s: unknown): void }
@@ -309,7 +313,7 @@ describe('a hook that can never run is refused', () => {
   function app(...svcs: unknown[]) {
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     }) as unknown as { services: { register(s: unknown): void }, start(): Promise<void>, stop(): Promise<void> }
     for (const s of svcs) a.services.register(s)
     return a
@@ -372,7 +376,7 @@ describe("an 'error' hook that throws is reported, and does not change the answe
     const events: Array<{ name: string, data: unknown }> = []
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     }) as unknown as {
       services: { register(s: unknown): void }
       telemetry: { on(n: string, f: (d: unknown) => void): void }
@@ -404,7 +408,7 @@ describe("an 'error' hook that throws is reported, and does not change the answe
     const events: unknown[] = []
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     }) as unknown as {
       services: { register(s: unknown): void }
       telemetry: { on(n: string, f: (d: unknown) => void): void }
@@ -436,7 +440,7 @@ describe('a plugin boot() that throws unwinds what already booted', () => {
   function bare() {
     return createApp({
       logLevel: 'silent',
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     }) as unknown as {
       configure(p: unknown): unknown
       start(): Promise<void>, stop(): Promise<void>
@@ -508,7 +512,7 @@ describe('start() twice is refused by name', () => {
     // caller whose mistake was calling start() twice.
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     }) as unknown as { start(): Promise<void>, stop(): Promise<void> }
     await a.start()
     let msg = ''
@@ -529,7 +533,7 @@ describe('start() twice is refused by name', () => {
     // contract (FJS-D479); the refusal is what says so.
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     }) as unknown as { start(): Promise<void>, stop(): Promise<void> }
     await a.start()
     await a.stop()
@@ -545,7 +549,7 @@ describe('start() twice is refused by name', () => {
     // A latch that refused every app would satisfy both refusals above.
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     }) as unknown as { start(): Promise<void>, stop(): Promise<void> }
     await a.start()
     await a.stop()
@@ -558,7 +562,7 @@ describe('start() twice is refused by name', () => {
 async function startWithPlugins(source: string, ...plugins: Plugin[]): Promise<string | null> {
   const dir = configDir(source)
   try {
-    const app = createApp({ logLevel: 'silent', configPath: dir, config: { port: 0 } })
+    const app = createApp({ logLevel: 'silent', root: rootOf(dir), config: { port: 0 } })
     for (const p of plugins) app.configure(p)
     try {
       await app.start()
@@ -568,7 +572,7 @@ async function startWithPlugins(source: string, ...plugins: Plugin[]): Promise<s
       return (err as Error).message
     }
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(join(dir, '..'), { recursive: true, force: true })
   }
 }
 
@@ -583,12 +587,15 @@ describe('a key inside a section nothing reads is refused by name', () => {
     expect(await startAgainst(`export default { middleware: { helmet: true, csrf: true } }\n`)).toBeNull()
   })
 
-  it('`plugins` and `services` have the same check', async () => {
-    const msg = await startAgainst(
-      `export default { plugins: { helth: true }, services: { dirs: '/tmp/fjs-nothing-here' } }\n`)
-    expect(msg).toContain('2 authoring mistake(s)')
+  it('`plugins` has the same check', async () => {
+    const msg = await startAgainst(`export default { plugins: { helth: true } }\n`)
     expect(msg).toContain("'plugins' declares 'helth'")
-    expect(msg).toContain("'services' declares 'dirs'")
+  })
+
+  // Where the services are is `createApp({ root })` (`FJS-D1080`), so a
+  // section saying it is one nothing reads.
+  it('a `services` section is refused', async () => {
+    expect(await startAgainst(`export default { services: { dir: './src/services' } }\n`)).toContain("declares 'services'")
   })
 
   it('a plugin that states its keys owns the section of its name', async () => {

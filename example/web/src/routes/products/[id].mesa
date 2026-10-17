@@ -354,7 +354,7 @@ title: Product
 
         <Button
           id="buy-add"
-          variant="primary"
+          tone="primary"
           disabled={!!reason || cart.busy}
           loading={cart.busy}
           onclick={addToBasket}

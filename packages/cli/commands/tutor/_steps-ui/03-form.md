@@ -42,7 +42,7 @@ if (!await must($, api, {
 const web = await ensureWeb($)
 if (!await must($, web, {
   likely:    'the dev server did not come up — see .tutor/web.log in the workspace',
-  reproduce: `cd ${app} && bun run dev:web`,
+  reproduce: `cd ${app} && bun run web`,
 })) return
 
 // A fresh address per run: an app reused from an earlier lesson already has the

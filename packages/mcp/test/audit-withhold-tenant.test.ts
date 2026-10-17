@@ -36,7 +36,7 @@ beforeAll(async () => {
   app = createApp({
     tenants:  registry,
     auth:     createStubAuth({ users: [{ id: 'staff', isAdmin: true }] }),
-    config:   { port: 0, services: { dir: '/nonexistent' } },
+    config:   { port: 0 },
     logLevel: 'silent',
   }) as never
 

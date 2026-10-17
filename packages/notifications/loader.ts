@@ -1,19 +1,15 @@
 // loader.ts — where an app's notifications are, and what naming one costs.
 //
-// PROBED, not derived, and the reasoning is junction's own (`FJS-458`): the
-// flat layout puts `notifications/` beside the entry, the layout this framework
-// scaffolds puts it at `src/notifications/`, and a missing directory is a
-// silent no-op — the app boots, sends nothing, and says nothing. Both layouts
-// are one probe apart. A DECLARED path is never probed around: a relative path
-// resolved against the wrong working directory lands on nothing and looks
-// exactly like an app that has no notifications.
+// `notifications/` beside `createApp({ root })` (`FJS-D1080`). Never probed
+// from the entry: under a test runner or a drive the entry is the runner, and
+// every definition then threw unnamed on its first send.
 //
 // The file name is the type. `OrderPaid.notification.ts` is `OrderPaid` —
 // verbatim, before the suffix, the same rule `<name>.job.ts` follows. A module
 // exporting no factory is a warning rather than a skip, because the shape it
 // is most likely to be is a notification somebody forgot to default-export.
 
-import { resolve, dirname, basename } from 'node:path'
+import { resolve, join, basename }  from 'node:path'
 import { existsSync, statSync }       from 'node:fs'
 import { isNotificationFactory, stampType } from './define.ts'
 import type { NotificationFactory }   from './define.ts'
@@ -24,41 +20,11 @@ const isDir = (p: string): boolean => {
   try { return existsSync(p) && statSync(p).isDirectory() } catch { return false }
 }
 
-export type NotificationsDirSource =
-  'disabled' | 'declared' | 'declared-missing' | 'probed' | 'none'
-
-export interface NotificationsDirResolution {
-  dir:       string | null
-  source:    NotificationsDirSource
-  declared?: string
-  probed:    string[]
-}
-
-export function resolveNotificationsDir(opts: {
-  entry?:    string | null | undefined
-  declared?: string | false | null | undefined
-  cwd?:      string
-}): NotificationsDirResolution {
-  const { entry, declared, cwd = process.cwd() } = opts
-
-  if (declared === false) return { dir: null, source: 'disabled', probed: [] }
-
-  if (declared) {
-    const abs = resolve(cwd, declared)
-    return isDir(abs)
-      ? { dir: abs,  source: 'declared',         declared, probed: [abs] }
-      : { dir: null, source: 'declared-missing', declared, probed: [abs] }
-  }
-
-  if (!entry) return { dir: null, source: 'none', probed: [] }
-
-  const base   = dirname(entry)
-  const probed = [resolve(base, 'notifications'), resolve(base, 'src', 'notifications')]
-  const found  = probed.find(isDir)
-
-  return found
-    ? { dir: found, source: 'probed', probed }
-    : { dir: null,  source: 'none',   probed }
+/** `notifications/` under the app's root, or null when there is none. */
+export function notificationsDirOf(root: string | null | undefined): string | null {
+  if (!root) return null
+  const dir = join(root, 'notifications')
+  return isDir(dir) ? dir : null
 }
 
 /** Every notification this app declares, by type. Read-only at runtime and not
@@ -93,9 +59,7 @@ export function sealRegistry(m: Map<string, NotificationFactory<unknown>>): Noti
 async function findFiles(dir: string): Promise<string[]> {
   const out: string[] = []
   try {
-    // Bun.Glob handles the recursion; scan() throws when the directory is not
-    // there, which resolveNotificationsDir has already ruled out for a probed
-    // path and has NOT for a declared one that vanished between the two.
+    // scan() throws when the directory vanished after notificationsDirOf saw it.
     const glob = new Bun.Glob(`**/*${SUFFIX}`)
     for await (const f of glob.scan({ cwd: dir, absolute: false })) out.push(resolve(dir, f))
   } catch {

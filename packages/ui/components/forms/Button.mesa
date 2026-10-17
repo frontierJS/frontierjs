@@ -2,14 +2,9 @@
   // Button.mesa
   // Polymorphic button. `.btn` plus a tone and/or a treatment.
   //
-  // ── Why `variant` splits in two ──────────────────────────────────────
-  //
   // In @frontierjs/css a tone (primary, danger, …) and a treatment (outlined,
-  // ghost, link, raised) are different kinds of class and compose freely, so
-  // `outlined danger` is a red outline button with no third entry in a table.
-  // The old six-value `variant` conflated them — which is why `outline` and
-  // `danger` were mutually exclusive. Both still work as `variant` values,
-  // and `tone` + `variant` can now be given together.
+  // ghost, link, raised, glass) are different kinds of class and compose
+  // freely, so `tone="danger" treatment="outlined"` is a red outline button.
   //
   // Sizes are a font-size: `.btn` is sized in em, so the padding scales.
   //
@@ -24,9 +19,9 @@
 
   import { tone as toTone, cx } from '../../utils.js'
 
-  export let tone     = ''
-  export let variant  = 'primary'  // tone name OR 'outlined'|'ghost'|'link'|'raised'
-  export let size     = 'md'       // 'xs' | 'sm' | 'md' | 'lg'
+  export let tone      = ''
+  export let treatment = ''         // 'outlined' | 'ghost' | 'link' | 'raised' | 'glass'
+  export let size      = 'md'       // 'xs' | 'sm' | 'md' | 'lg'
   export let type     = 'button'
   export let disabled = false
   export let loading  = false
@@ -37,12 +32,10 @@
   export let trailing = null       // snippet — icon after label
   export let onclick  = undefined
 
-  const TREATMENTS = { outlined: 'outlined', outline: 'outlined', ghost: 'ghost', link: 'link', raised: 'raised' }
-
-  const treatment = TREATMENTS[variant] ?? ''
-  // A treatment name in `variant` leaves the tone to the `tone` prop;
-  // otherwise `variant` IS the tone, which is how it read before.
-  const t = toTone(tone) || (treatment ? '' : toTone(variant)) || (treatment ? '' : 'primary')
+  // An untoned ghost reads --ink-soft and an untoned fill reads primary, so
+  // primary is the default only where no treatment is stated: a toggle
+  // written `treatment={on ? '' : 'ghost'}` is a primary fill when on.
+  const t = toTone(tone) || (treatment ? '' : 'primary')
 
   const sizeMap = { xs: 'var(--text-xs)', sm: 'var(--text-sm)', md: '', lg: 'var(--text-lg)' }
   const fontSize = sizeMap[size] ?? ''

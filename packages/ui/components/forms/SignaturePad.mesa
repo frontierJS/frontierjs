@@ -150,7 +150,7 @@
             {@attach pointer} {@attach watch}></canvas>
     <div class="fjs-signature-foot">
       <span class="fjs-signature-hint" aria-live="polite" data-pad-hint>{empty ? hint : 'Signed. Clear to start again.'}</span>
-      <Button variant="outlined" size="sm" type="button" disabled={resolvedDisabled || empty} onclick={clear} data-clear>{clearLabel}</Button>
+      <Button treatment="outlined" size="sm" type="button" disabled={resolvedDisabled || empty} onclick={clear} data-clear>{clearLabel}</Button>
     </div>
   </div>
 {/snippet}

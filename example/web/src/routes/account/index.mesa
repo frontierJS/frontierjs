@@ -117,8 +117,8 @@ title: Account
         {/each}
       </ol>
       <div class="cluster">
-        <CopyButton text={recoveryCodes.join('\n')} label="Copy all" variant="outlined" />
-        <Button variant="ghost" id="recovery-done" onclick={() => { recoveryCodes = [] }}>I have saved them</Button>
+        <CopyButton text={recoveryCodes.join('\n')} label="Copy all" treatment="outlined" />
+        <Button treatment="ghost" id="recovery-done" onclick={() => { recoveryCodes = [] }}>I have saved them</Button>
       </div>
     {:else if !status}
       <p class="text-muted">Asking…</p>
@@ -131,7 +131,7 @@ title: Account
         </div>
       </Field>
       <div class="cluster">
-        <CopyButton text={enrollment.qr} label="Copy the otpauth:// link" variant="outlined" />
+        <CopyButton text={enrollment.qr} label="Copy the otpauth:// link" treatment="outlined" />
       </div>
       <form class="stack" onsubmit={e => { e.preventDefault(); confirm() }}>
         <Field label="Code from the app">
@@ -139,7 +139,7 @@ title: Account
         </Field>
         <div class="cluster">
           <Button type="submit" id="totp-confirm" disabled={busy}>Turn it on</Button>
-          <Button variant="ghost" id="totp-abandon" onclick={abandon}>Cancel</Button>
+          <Button treatment="ghost" id="totp-abandon" onclick={abandon}>Cancel</Button>
         </div>
       </form>
     {:else if !status.enabled}
@@ -161,8 +161,8 @@ title: Account
           <Input id="totp-password" type="password" bind:value={password} autocomplete="current-password" required />
         </Field>
         <div class="cluster">
-          <Button variant="outlined" id="totp-regenerate" disabled={busy} onclick={regenerate}>New recovery codes</Button>
-          <Button tone="danger" variant="outlined" id="totp-disable" disabled={busy} onclick={disable}>Turn it off</Button>
+          <Button treatment="outlined" id="totp-regenerate" disabled={busy} onclick={regenerate}>New recovery codes</Button>
+          <Button tone="danger" treatment="outlined" id="totp-disable" disabled={busy} onclick={disable}>Turn it off</Button>
         </div>
       </form>
     {/if}

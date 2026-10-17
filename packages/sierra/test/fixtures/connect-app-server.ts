@@ -60,7 +60,6 @@ const hosted = createApp({
   config: {
     port: hostedPort,
     apiPrefix: '/api',
-    services: { dir: '/nonexistent' },
   },
   auth: {
     verifySession: async (token: string) => token === OWNER_TOKEN

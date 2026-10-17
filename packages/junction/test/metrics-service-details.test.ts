@@ -26,7 +26,6 @@ beforeAll(async () => {
   app = createApp({
     config: {
       port: PORT,
-      services: { dir: '/nonexistent' },
       http: { ...defaultConfig.http, drainTimeout: 200 },
     },
   })

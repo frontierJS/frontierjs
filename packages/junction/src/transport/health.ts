@@ -19,9 +19,9 @@
 //   app.configure(healthPlugin())
 //   app.configure(healthPlugin({ path: '/_internal', token: process.env.METRICS_TOKEN }))
 //
-// Auth: pass a static bearer token or a custom check function.
-// If no auth is configured the endpoints are public — fine for internal
-// networks, should be locked down for internet-facing deployments.
+// Auth: pass a static bearer token or a custom check function. With neither,
+// both endpoints are public — except under NODE_ENV=production, where /metrics
+// is not mounted at all and /health stays public.
 
 import type { App }              from '../core/app.ts'
 import type { TransportContext } from './types.ts'
@@ -34,7 +34,7 @@ export interface HealthPluginOptions {
   path?: string
 
   // Optional auth guard — either a static bearer token or an async function.
-  // If omitted, endpoints are public.
+  // If omitted, endpoints are public, and in production /metrics is not served.
   token?:   string
   authFn?:  (ctx: TransportContext) => boolean | Promise<boolean>
 
@@ -459,6 +459,19 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
       // ── GET /metrics ─────────────────────────────────────────────
       // Full runtime snapshot. Always 200 — the data describes health,
       // the endpoint itself is always reachable.
+      //
+      // Not mounted in production without a gate, as devtools refuses to bind
+      // (`FJS-3191`): it names the pid, the runtime and every service with its
+      // methods, and a scaffold declares `health: true` with no token. `/health`
+      // above stays public — a deploy's rollback and a load balancer poll it.
+
+      if (process.env.NODE_ENV === 'production' && !opts.token && !opts.authFn) {
+        console.warn(
+          `[Junction health] NODE_ENV=production and no \`token\` or \`authFn\` — ${prefix}/metrics NOT served. ` +
+          `Pass healthPlugin({ token }) or plugins: { health: { token } } to scrape it.`
+        )
+        return
+      }
 
       app.get(`${prefix}/metrics`, async (ctx: TransportContext) => {
         if (!await isAuthorized(ctx))

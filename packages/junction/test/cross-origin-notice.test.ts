@@ -10,7 +10,7 @@ import { describe, it, expect } from 'bun:test'
 import { createApp, defaultConfig } from '../index.ts'
 import type { ILogger } from '../src/core/logger.ts'
 
-const base = { ...defaultConfig, port: 0, services: { dir: '/nonexistent' } }
+const base = { ...defaultConfig, port: 0 }
 
 async function boot(http: Record<string, unknown>, cookie = false) {
   const warns: string[] = []

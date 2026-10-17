@@ -161,7 +161,7 @@ title: Pages
       {/if}
     </div>
     <div class="cluster gap-2xs">
-      <Button variant="ghost" size="sm" disabled={busy[r.id] || running(r)} onclick={() => act(r, 'start')}>
+      <Button treatment="ghost" size="sm" disabled={busy[r.id] || running(r)} onclick={() => act(r, 'start')}>
         {running(r) ? 'Generating…' : r.writtenAt ? 'Regenerate' : 'Generate'}
       </Button>
       <Button size="sm" disabled={!r.writtenAt} onclick={() => view(r)}>Open</Button>
@@ -172,7 +172,7 @@ title: Pages
 <div class="section-header">
   <h1>Pages</h1>
   <span class="cluster">
-    <Button variant="ghost" href="/workbench/">Workbench</Button>
+    <Button treatment="ghost" href="/workbench/">Workbench</Button>
   </span>
 </div>
 
@@ -246,9 +246,9 @@ title: Pages
               </div>
               <div class="cluster gap-2xs">
                 {#if running(r)}
-                  <Button variant="ghost" size="sm" disabled={busy[r.id]} onclick={() => act(r, 'stop')}>Stop</Button>
+                  <Button treatment="ghost" size="sm" disabled={busy[r.id]} onclick={() => act(r, 'stop')}>Stop</Button>
                 {:else if r.start && r.state?.state !== 'up'}
-                  <Button variant="ghost" size="sm" disabled={busy[r.id]} onclick={() => act(r, 'start')}>Start</Button>
+                  <Button treatment="ghost" size="sm" disabled={busy[r.id]} onclick={() => act(r, 'start')}>Start</Button>
                 {/if}
                 {#if r.state?.state === 'up'}
                   <Button size="sm" href={r.open} target="_blank" rel="noreferrer">Open</Button>
@@ -268,7 +268,7 @@ title: Pages
     <iframe id="pages-viewer" title={shown.name} src={shown.url}
             style:width="100%" style:height="65vh" style:border="0"></iframe>
     {#snippet footer()}
-      <Button variant="ghost" href={shown.url} target="_blank" rel="noreferrer">Open in a new tab</Button>
+      <Button treatment="ghost" href={shown.url} target="_blank" rel="noreferrer">Open in a new tab</Button>
       <Button onclick={closeViewer}>Close</Button>
     {/snippet}
   </Modal>

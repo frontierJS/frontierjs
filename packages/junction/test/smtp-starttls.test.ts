@@ -97,3 +97,61 @@ describe('a server that advertises STARTTLS', () => {
     expect(new SmtpError('nope', 501, 'raw')).toBeInstanceOf(Error)
   })
 })
+
+describe('a server that does not offer STARTTLS (FJS-3195)', () => {
+
+  // Advertises AUTH and no STARTTLS -- what a server that never had it looks
+  // like, and what one whose STARTTLS line an attacker on the path stripped
+  // looks like. Answers every command, so the client is the only refusal.
+  async function sendThrough(host: string) {
+    const seen: string[] = []
+    const server = Bun.listen({
+      hostname: host,
+      port:     0,
+      socket: {
+        open(sock) { sock.write('220 test.invalid ESMTP\r\n') },
+        data(sock, data: Buffer) {
+          const line = data.toString('utf8').trim()
+          seen.push(line)
+
+          if (line.toUpperCase().startsWith('EHLO'))      sock.write('250-test.invalid\r\n250 AUTH PLAIN LOGIN\r\n')
+          else if (line.toUpperCase().startsWith('AUTH')) sock.write('235 Authenticated\r\n')
+          else if (line.toUpperCase() === 'DATA')         sock.write('354 Go ahead\r\n')
+          else                                            sock.write('250 OK\r\n')
+        },
+        close() {}, error() {},
+      },
+    })
+
+    let error: unknown
+    try {
+      await sendMail(
+        { host, port: server.port, user: 'u', pass: 'secret' },
+        { from: 'a@test.invalid', to: 'b@test.invalid', subject: 's', text: 't' },
+      )
+    } catch (err) {
+      error = err
+    } finally {
+      server.stop(true)
+    }
+    return { seen, error, auth: seen.filter(l => /^AUTH/i.test(l)) }
+  }
+
+  // 127.0.0.2 is loopback on Linux and not on the exempt list, so it stands
+  // for a host across a network. macOS configures only 127.0.0.1.
+  it.skipIf(process.platform !== 'linux')('is never sent credentials over the plaintext connection', async () => {
+    const { seen, error, auth } = await sendThrough('127.0.0.2')
+
+    expect(seen.some(l => /^EHLO/i.test(l))).toBe(true)
+    expect(auth).toEqual([])
+    expect(error).toBeInstanceOf(SmtpError)
+    expect((error as Error).message).toMatch(/did not offer STARTTLS/)
+  }, 30_000)
+
+  it('a loopback host is exempt, since those bytes reach no network', async () => {
+    const { error, auth } = await sendThrough('127.0.0.1')
+
+    expect(error).toBeUndefined()
+    expect(auth).toHaveLength(1)
+  }, 30_000)
+})

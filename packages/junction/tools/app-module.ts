@@ -87,9 +87,9 @@ export async function quietly<T>(fn: () => Promise<T>): Promise<T> {
 // and `fli app:atlas` keeps the last few lines of stderr -- so a named refusal
 // ("service 'people' is already registered") reached the reader as five frames
 // and `Bun v1.4.2` with no cause (`FJS-2816`). The frames stay, above the message.
-export async function loadApp(modulePath: string, exportName: string | null, servicesDir: string | null): Promise<App> {
+export async function loadApp(modulePath: string, exportName: string | null): Promise<App> {
   try {
-    return await loadAppUnguarded(modulePath, exportName, servicesDir)
+    return await loadAppUnguarded(modulePath, exportName)
   } catch (err) {
     const frames = err instanceof Error ? (err.stack ?? '').split('\n').filter(l => /^\s+at /.test(l)) : []
     if (frames.length) console.error(frames.join('\n'))
@@ -97,7 +97,7 @@ export async function loadApp(modulePath: string, exportName: string | null, ser
   }
 }
 
-async function loadAppUnguarded(modulePath: string, exportName: string | null, servicesDir: string | null): Promise<App> {
+async function loadAppUnguarded(modulePath: string, exportName: string | null): Promise<App> {
   const abs = resolve(modulePath)
   if (!existsSync(abs)) fatal(`No such module: ${rel(abs)}`)
 
@@ -111,7 +111,7 @@ async function loadAppUnguarded(modulePath: string, exportName: string | null, s
   if (exportName) {
     const picked = mod[exportName]
     if (picked === undefined) fatal(`${rel(abs)} has no export \`${exportName}\` — found: ${Object.keys(mod).join(', ') || '(none)'}`)
-    return build(picked, exportName, servicesDir, abs)
+    return build(picked, exportName)
   }
 
   const apps      = Object.entries(mod).filter(([, v]) => isApp(v))
@@ -127,7 +127,7 @@ async function loadAppUnguarded(modulePath: string, exportName: string | null, s
   if (candidates.length > 1)
     fatal(`${rel(abs)} exports more than one candidate — name one with --export: ${candidates.map(([k]) => k).join(', ')}`)
 
-  return build(candidates[0][1], candidates[0][0], servicesDir, abs)
+  return build(candidates[0][1], candidates[0][0])
 }
 
 // A committed artefact may not vary with a developer's local switches, and one
@@ -146,42 +146,19 @@ function clearLocalToggles(): void {
   delete process.env.DEVTOOLS
 }
 
-async function build(value: unknown, label: string, servicesDir: string | null, modulePath: string): Promise<App> {
+async function build(value: unknown, label: string): Promise<App> {
 
   const app = typeof value === 'function'
     ? await quietly(() => Promise.resolve((value as () => App | Promise<App>)()))
     : value
   if (!isApp(app)) fatal(`\`${label}\` is not a Junction app (no .service()/.configure())`)
 
-  // The app's own autoload phase resolves its directory against `Bun.main`,
-  // which HERE is this tool — so an app whose services are all autoloaded
-  // describes as empty. Asked the same question the app asks, with the app's
-  // own module named as the entry: `--services` is an override now rather than
-  // the only way to get an answer, which is what kept the snapshot of an app's
-  // surface dependent on a flag somebody had to remember (`FJS-458`).
-  //
-  // Loaded here rather than left to the phase, and in the position production
-  // runs it — before boot, so a plugin's boot() sees every service.
-  const { autoloadServices }   = await import('../src/core/loader.ts')
-  const { resolveServicesDir } = await import('../src/core/services-dir.ts')
-  const resolved = resolveServicesDir({ entry: modulePath, declared: servicesDir })
-
-  if (servicesDir && resolved.source === 'declared-missing')
-    fatal(`No services directory at ${rel(resolved.probed[0])}`)
-
-  if (resolved.dir) {
-    await quietly(() => autoloadServices({ dir: resolved.dir!, registry: app.services }))
-  }
-
   // `load-config` is a `needsHost` phase too, and skipping it means every
   // section of junction.config.js is absent from the app this tool describes.
   // Run BEFORE the boot below, in the position production runs it, or a
-  // plugin's boot() reads the config as it was without the file: `example`
-  // declares its caravan `jobsDir` there, and this reported **no handlers
-  // registered** for an app with three (`FJS-418`).
-  //
-  // cwd is the app root — every snapshot generator is rerun from its own
-  // file's directory — so the default `./api/config` resolves to the right one.
+  // plugin's boot() reads the config as it was without the file, and
+  // `junction jobs` reported **no handlers registered** for an app with three
+  // (`FJS-418`).
   await quietly(() => app.applyConfigFile())
 
   // Plugins boot, hooks compile, service routes mount — everything except the

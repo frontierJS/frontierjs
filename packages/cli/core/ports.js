@@ -195,20 +195,18 @@ export function guiPort(appRoot, { env = 'dev', lockFile = LOCK_FILE } = {}) {
 // each app keeps, because a list is the thing that goes stale the day somebody
 // adds `widgets/`.
 
-// Two naming conventions are live and both are correct. The apps in this repo
-// call a surface's script by its own name (`api`, `web`) and `fli new` writes
-// `dev:api`/`dev:web`, because there the scripts are composed into one `dev`.
-// The refusal prints a script for the person to stop, so it has to name one
-// that exists — a message telling somebody to run `bun run api` in an app whose
-// script is `dev:api` is a message that wastes their next minute.
+// `scripts` is the name a surface's script goes by. The API and web surfaces
+// have one, their directory (FJS-D1083); a surface script under any other name
+// is no surface script, so the row says `null` rather than naming one the app
+// does not run.
 //
 // `env` is the variable a surface's own config reads its port from, which is
 // what lets `fli dev` move it to another slot. The extension has none: its dev
 // port is compiled into the unpacked extension the browser has loaded, so it
 // stays where jetty.config.js says and is only checked.
 const SURFACE_PORTS = [
-  { dir: 'web',       category: 'fe',         env: 'FLI_PORT_FE',      scripts: ['web', 'dev:web'],             label: 'web' },
-  { dir: 'api',       category: 'be',         env: 'FLI_PORT_BE',      scripts: ['api', 'dev:api'],             label: 'API' },
+  { dir: 'web',       category: 'fe',         env: 'FLI_PORT_FE',      scripts: ['web'],                        label: 'web' },
+  { dir: 'api',       category: 'be',         env: 'FLI_PORT_BE',      scripts: ['api'],                        label: 'API' },
   { dir: 'widgets',   category: 'widgetDev',  env: 'FLI_PORT_WIDGET',  scripts: ['dev:widgets', 'widgets'],     label: 'widgets' },
   { dir: 'site',      category: 'siteDev',    env: 'FLI_PORT_SITE',    scripts: ['dev:site', 'site'],           label: 'site' },
   { dir: 'extension', category: 'ext',        env: null,               scripts: ['dev:extension', 'extension'], label: 'extension' },
@@ -361,7 +359,7 @@ export function devPorts(appRoot, opts = {}) {
 
 /**
  * The rows a `dev` script only COMPOSES — `bun run api & bun run web & wait`,
- * `bun run --parallel dev:api dev:web` — so `fli dev` can start each one itself
+ * `bun run --parallel api web` — so `fli dev` can start each one itself
  * and label its lines. Null for anything else: a `&&` chain, a command that is
  * not a surface script, or a single surface, all of which run as written.
  */

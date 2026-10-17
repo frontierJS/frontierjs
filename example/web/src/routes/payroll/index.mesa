@@ -151,11 +151,11 @@ title: Payroll
       <td class="text-right" data-headcount={r.headcount ?? ''}>{r.headcount ?? '—'}</td>
       <td>
         <div class="cluster">
-          <Button variant="ghost" href={'/payroll/' + r.id + '/'}>Open</Button>
+          <Button treatment="ghost" href={'/payroll/' + r.id + '/'}>Open</Button>
 
           <!-- The two that write documents. Custom methods, not transitions. -->
           {#if r.status === 'draft'}
-            <Button variant="ghost" data-act="calculate" disabled={busy === r.id}
+            <Button treatment="ghost" data-act="calculate" disabled={busy === r.id}
                     onclick={() => calculate(r)}>Calculate</Button>
           {/if}
           {#if r.status === 'approved'}
@@ -166,7 +166,7 @@ title: Payroll
               onconfirm={() => pay(r)}
             >
               {#snippet trigger()}
-                <Button variant="ghost" tone="success" data-act="pay" disabled={busy === r.id}>Pay</Button>
+                <Button treatment="ghost" tone="success" data-act="pay" disabled={busy === r.id}>Pay</Button>
               {/snippet}
             </ConfirmationPopover>
           {/if}
@@ -174,10 +174,10 @@ title: Payroll
           <!-- …and whatever the schema says this caller may ask for. -->
           {#each movesFor(r) as m}
             {#if m.name === 'revert'}
-              <Button variant="ghost" tone="danger" data-move="revert" disabled={busy === r.id}
+              <Button treatment="ghost" tone="danger" data-move="revert" disabled={busy === r.id}
                       onclick={() => revert(r)}>Revert</Button>
             {:else}
-              <Button variant="ghost" data-move={m.name} disabled={busy === r.id}
+              <Button treatment="ghost" data-move={m.name} disabled={busy === r.id}
                       onclick={() => move(r, m.name)}>{m.name}</Button>
             {/if}
           {/each}

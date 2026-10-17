@@ -165,6 +165,7 @@ describe('the refusal a caller reads', () => {
         duplex: 'half',
       })
       expect(over.status).toBe(413)
+      expect(over.headers.get('content-type')).toBe('text/plain; charset=utf-8')
       expect(await over.text()).toContain('262144')
     } finally { await t.stop(100) }
   })

@@ -451,14 +451,14 @@ title: App
     </div>
     <span class="cluster">
       {#if primaryHost}
-        <Button variant="outlined" href={`https://${primaryHost}`} target="_blank" rel="noopener" id="app-visit">Visit</Button>
+        <Button treatment="outlined" href={`https://${primaryHost}`} target="_blank" rel="noopener" id="app-visit">Visit</Button>
       {/if}
-      <Button variant="primary" id="app-deploy" disabled={!!busy} onclick={deploy}>
+      <Button tone="primary" id="app-deploy" disabled={!!busy} onclick={deploy}>
         {busy === 'deploy' ? 'Deploying…' : 'Deploy'}
       </Button>
       <DropdownMenu placement="bottom-end">
         {#snippet trigger()}
-          <Button variant="ghost" aria-label="More actions" id="app-more">⋯</Button>
+          <Button treatment="ghost" aria-label="More actions" id="app-more">⋯</Button>
         {/snippet}
         <DropdownItem id="app-edit" onclick={() => editing = true}>Edit</DropdownItem>
         <DropdownSeparator />
@@ -486,7 +486,7 @@ title: App
        current by the attribute the stylesheet already keys off. -->
   <div class="cluster" role="tablist" aria-label="App sections" id="app-tabs">
     {#each TABS as t}
-      <Button variant={tab === t ? 'outlined' : 'ghost'} role="tab"
+      <Button treatment={tab === t ? 'outlined' : 'ghost'} role="tab"
               aria-selected={tab === t ? 'true' : 'false'}
               onclick={() => tab = t}>{t}</Button>
     {/each}
@@ -498,7 +498,7 @@ title: App
       <Card>
         <div class="section-header">
           <h2 class="h4">Deployments</h2>
-          <Button variant="ghost" onclick={() => tab = 'releases'}>All releases</Button>
+          <Button treatment="ghost" onclick={() => tab = 'releases'}>All releases</Button>
         </div>
         {#if !latest}
           <p class="text-sm text-muted" id="app-latest-empty">Never released. Deploy ships what the Source tab names.</p>
@@ -515,13 +515,13 @@ title: App
               {#if rollbackIt}
                 <!-- Drawn disabled below the move's level rather than hidden:
                      a developer can see a rollback exists and who may make it. -->
-                <Button variant="ghost" tone="warning" id="app-rollback" disabled={!rollbackIt.allowed || busy === latest.id}
+                <Button treatment="ghost" tone="warning" id="app-rollback" disabled={!rollbackIt.allowed || busy === latest.id}
                         data-confirm="A new release puts back the bytes and config this one replaced."
                         data-confirm-title="Roll back this release?" data-confirm-label="Roll back"
                         onclick={() => rollback(latest)}>Roll back</Button>
               {/if}
               {#if canRetry}
-                <Button variant="ghost" id="app-retry" disabled={!!busy} onclick={deploy}>Retry</Button>
+                <Button treatment="ghost" id="app-retry" disabled={!!busy} onclick={deploy}>Retry</Button>
               {/if}
             </span>
           </div>
@@ -538,7 +538,7 @@ title: App
                 <a href={`/servers/${p.serverId}/`}>{p.server?.name ?? p.serverId}</a>
                 <Badge tone="muted">replica {p.replicaIndex}</Badge>
                 <Pill>{p.status}</Pill>
-                <Button variant="ghost" tone="danger" disabled={busy === p.id}
+                <Button treatment="ghost" tone="danger" disabled={busy === p.id}
                         data-confirm={`This replica stops running on ${p.server?.name ?? 'that server'}.`}
                         data-confirm-title="Unplace this replica?" data-confirm-label="Unplace"
                         onclick={() => unplace(p)}>Unplace</Button>
@@ -554,7 +554,7 @@ title: App
                   options={fleet.map(s => ({ value: s.id, label: `${s.name} · ${s.status}` }))}
                   oninput={(e) => placeOn = e.target.value}
                   onchange={(e) => placeOn = e.target.value} />
-          <Button variant="primary" disabled={!placeOn || busy === 'placement'}
+          <Button tone="primary" disabled={!placeOn || busy === 'placement'}
                   onclick={place}>Place</Button>
         </div>
       </Card>
@@ -591,7 +591,7 @@ title: App
         <dd><a href={`/environments/${app.environmentId}/`}>{app.environment?.name ?? '—'}</a></dd>
         <dt>Created</dt><dd>{at(app.createdAt)}</dd>
       </dl>
-      <Button variant="outlined" onclick={() => editing = true}>Edit details</Button>
+      <Button treatment="outlined" onclick={() => editing = true}>Edit details</Button>
     </aside>
     </div>
   {/if}
@@ -599,7 +599,7 @@ title: App
   {#if tab === 'domains'}
     <div class="section-header">
       <h2 class="h4">Domains &amp; SSL</h2>
-      <Button variant="primary" id="add-domain" onclick={() => adding = !adding}>
+      <Button tone="primary" id="add-domain" onclick={() => adding = !adding}>
         {adding ? 'Cancel' : 'Add hostname'}
       </Button>
     </div>
@@ -617,7 +617,7 @@ title: App
                  oninput={(e) => write('hostname', e.target.value)} />
           <Input name="redirectTo" id="redirectTo" label="Redirect to (optional)"
                  value={draft.redirectTo} oninput={(e) => write('redirectTo', e.target.value)} />
-          <Button type="submit" variant="primary" disabled={busy === 'domain'}>Add hostname</Button>
+          <Button type="submit" tone="primary" disabled={busy === 'domain'}>Add hostname</Button>
         </Form>
       </Card>
     {/if}
@@ -664,19 +664,19 @@ title: App
                 <Input id="expiresAt" name="expiresAt" label="Expires at"
                        value={certDraft.expiresAt} oninput={(e) => writeCert('expiresAt', e.target.value)} />
                 <div class="cluster">
-                  <Button variant="primary" disabled={busy === d.id} onclick={() => uploadCert(d)}>Store certificate</Button>
-                  <Button variant="ghost" onclick={() => certFor = null}>Cancel</Button>
+                  <Button tone="primary" disabled={busy === d.id} onclick={() => uploadCert(d)}>Store certificate</Button>
+                  <Button treatment="ghost" onclick={() => certFor = null}>Cancel</Button>
                 </div>
               </Card>
             {:else}
               <div class="cluster">
-                <Button variant="outlined" onclick={() => certFor = d.id}>
+                <Button treatment="outlined" onclick={() => certFor = d.id}>
                   {d.cert_status === 'none' ? 'Upload certificate' : 'Replace certificate'}
                 </Button>
                 {#if !d.isPrimary}
-                  <Button variant="ghost" disabled={busy === d.id} onclick={() => makePrimary(d)}>Make primary</Button>
+                  <Button treatment="ghost" disabled={busy === d.id} onclick={() => makePrimary(d)}>Make primary</Button>
                 {/if}
-                <Button variant="ghost" disabled={busy === d.id}
+                <Button treatment="ghost" disabled={busy === d.id}
                         aria-label={`Delete ${d.hostname}`}
                         data-confirm={`${d.hostname} stops routing to this app.`}
                         data-confirm-title="Delete this domain?" data-confirm-label="Delete"
@@ -696,7 +696,7 @@ title: App
           <h2 class="h4">Files</h2>
           <span class="cluster">
             {#if sourceDirty}<Badge tone="warning" id="app-source-dirty">unsaved</Badge>{/if}
-            <Button variant="ghost" onclick={() => addFile()} id="app-source-add">Add file</Button>
+            <Button treatment="ghost" onclick={() => addFile()} id="app-source-add">Add file</Button>
           </span>
         </div>
         <p class="text-sm text-muted">
@@ -722,7 +722,7 @@ title: App
             <div class="cluster">
               <Input label="Path" value={f.path} id={`app-source-path-${i}`}
                      oninput={e => editFile(i, 'path', e.target.value)} />
-              <Button variant="ghost" tone="danger" onclick={() => dropFile(i)}
+              <Button treatment="ghost" tone="danger" onclick={() => dropFile(i)}
                       id={`app-source-drop-${i}`}>Remove</Button>
             </div>
             <Textarea label="Contents" rows={18} value={f.content} id={`app-source-body-${i}`}
@@ -735,7 +735,7 @@ title: App
                   id="app-source-deploy">
             {busy === 'deploy' ? 'Deploying…' : 'Save and deploy'}
           </Button>
-          <Button variant="outlined" onclick={() => saveSource()} disabled={busy || !files.length}
+          <Button treatment="outlined" onclick={() => saveSource()} disabled={busy || !files.length}
                   id="app-source-save">
             {busy === 'save' ? 'Saving…' : 'Save'}
           </Button>
@@ -767,7 +767,7 @@ title: App
                   disabled={busy || !(imageDraft || app.source?.image)}>
             {busy === 'deploy' ? 'Deploying…' : 'Save and deploy'}
           </Button>
-          <Button variant="outlined" onclick={() => saveImage()} id="app-image-save"
+          <Button treatment="outlined" onclick={() => saveImage()} id="app-image-save"
                   disabled={busy || !imageDraft}>Save</Button>
         </div>
       </Card>
@@ -795,7 +795,7 @@ title: App
         <dt>CPU</dt><dd>{app.cpuLimit ?? 'no limit'}</dd>
         <dt>Memory</dt><dd>{app.memLimitMb != null ? `${app.memLimitMb} MiB` : 'no limit'}</dd>
       </dl>
-      <Button variant="outlined" onclick={() => editing = true}>Edit</Button>
+      <Button treatment="outlined" onclick={() => editing = true}>Edit</Button>
     </Card>
 
     <Card>
@@ -823,12 +823,12 @@ title: App
             <td class="text-sm text-muted">{d.trigger}{whoShipped(d)}</td>
             <td>
               {#if d === latest && rollbackIt}
-                <Button variant="ghost" tone="warning" disabled={!rollbackIt.allowed || busy === d.id}
+                <Button treatment="ghost" tone="warning" disabled={!rollbackIt.allowed || busy === d.id}
                         data-confirm="A new release puts back the bytes and config this one replaced."
                         data-confirm-title="Roll back this release?" data-confirm-label="Roll back"
                         onclick={() => rollback(d)}>Roll back</Button>
               {:else if d === latest && canRetry}
-                <Button variant="ghost" disabled={!!busy} onclick={deploy}>Retry</Button>
+                <Button treatment="ghost" disabled={!!busy} onclick={deploy}>Retry</Button>
               {/if}
             </td>
           </tr>

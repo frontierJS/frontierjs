@@ -113,13 +113,13 @@ title: Invoices
           {/if}
         </td>
       {/each}
-      <td><Button variant="ghost" href={'/invoices/' + inv.id + '/'} data-open>Open</Button></td>
+      <td><Button treatment="ghost" href={'/invoices/' + inv.id + '/'} data-open>Open</Button></td>
     </tr>
   {/snippet}
 </Table>
 
 {#if list.hasMore}
-  <Button variant="ghost" id="i-more" onclick={list.more}>Load more</Button>
+  <Button treatment="ghost" id="i-more" onclick={list.more}>Load more</Button>
 {/if}
 
 <Alert tone="info" id="i-derived">

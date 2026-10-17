@@ -100,8 +100,8 @@ export class BodyTooLargeError extends Error {
  */
 export class UnsafeIntegerError extends Error {
   readonly path: string
-  constructor(path: string) {
-    super(`Request body: ${path} is an integer outside the safe range (±${Number.MAX_SAFE_INTEGER}) and would be rounded; send it as a string of digits`)
+  constructor(path: string, what = 'Request body') {
+    super(`${what}: ${path} is an integer outside the safe range (±${Number.MAX_SAFE_INTEGER}) and would be rounded; send it as a string of digits`)
     this.name = 'UnsafeIntegerError'
     this.path = path
   }

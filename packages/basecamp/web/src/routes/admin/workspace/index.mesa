@@ -115,7 +115,7 @@ title: Workspace
              hint="Unique across this Basecamp"
              oninput={(e) => draft = { ...draft, slug: e.target.value }} />
       <div class="cluster">
-        <Button type="submit" variant="primary" id="ws-save" disabled={!changed || busy === 'rename'}>Save</Button>
+        <Button type="submit" tone="primary" id="ws-save" disabled={!changed || busy === 'rename'}>Save</Button>
       </div>
     </form>
   </Card>
@@ -126,7 +126,7 @@ title: Workspace
     <form class="cluster" novalidate onsubmit={e => { e.preventDefault(); create() }}>
       <Input id="ws-new-name" name="name" label="" placeholder="Name" aria-label="New workspace name"
              value={newName} oninput={(e) => newName = e.target.value} />
-      <Button type="submit" variant="outlined" id="ws-create" disabled={!newName.trim() || busy === 'create'}>Create workspace</Button>
+      <Button type="submit" treatment="outlined" id="ws-create" disabled={!newName.trim() || busy === 'create'}>Create workspace</Button>
     </form>
   </Card>
 
@@ -141,7 +141,7 @@ title: Workspace
       <Input id="ws-delete-confirm" name="confirm" label="Workspace name" autocomplete="off"
              placeholder={ws.name} value={typed} oninput={(e) => typed = e.target.value} />
       <div class="cluster">
-        <Button type="submit" variant="primary" tone="danger" id="ws-delete"
+        <Button type="submit" tone="danger" id="ws-delete"
                 disabled={typed !== ws.name || busy === 'delete'}>Delete workspace</Button>
       </div>
     </form>

@@ -201,14 +201,14 @@ siteName: Kitchen sink
       {status.connected ? 'live' : 'offline'}
     </Pill>
 
-    <Button variant="ghost" id="palette-open" onclick={() => commandPalette.show()}>
+    <Button treatment="ghost" id="palette-open" onclick={() => commandPalette.show()}>
       Search <Kbd>⌘K</Kbd>
     </Button>
 
     {#if session.user}
       <DropdownMenu>
         {#snippet trigger()}
-          <Button variant="ghost" id="bell" aria-label="Notifications">
+          <Button treatment="ghost" id="bell" aria-label="Notifications">
             🔔{#if unread}<Badge tone="danger" id="bell-count">{unread}</Badge>{/if}
           </Button>
         {/snippet}
@@ -257,14 +257,14 @@ siteName: Kitchen sink
       />
       <Badge tone="info">{session.user.email} · level {session.level}</Badge>
     {:else}
-      <Button variant="outlined" onclick={() => as('user')}  disabled={busy}>Sign in (user)</Button>
-      <Button variant="primary"  onclick={() => as('admin')} disabled={busy}>Sign in (admin)</Button>
+      <Button treatment="outlined" onclick={() => as('user')}  disabled={busy}>Sign in (user)</Button>
+      <Button tone="primary"  onclick={() => as('admin')} disabled={busy}>Sign in (admin)</Button>
       <a class="navlink" id="nav-sign-in" href="/sign-in/">Sign in…</a>
       {#each providers as name}
         <!-- signInWith LEAVES THE PAGE — the flow is a browser navigation, so
              nothing after it runs and there is no promise to await. -->
         <Button
-          variant="ghost"
+          treatment="ghost"
           data-oauth={name}
           onclick={() => getClient().auth.signInWith(name, { returnTo: page.pathname + page.search })}
         >Continue with {name}</Button>
@@ -291,7 +291,7 @@ siteName: Kitchen sink
       </Field>
       <div class="cluster">
         <Button type="submit" id="code-submit" disabled={codeBusy}>Verify</Button>
-        <Button variant="ghost" id="code-cancel" onclick={out}>Start over</Button>
+        <Button treatment="ghost" id="code-cancel" onclick={out}>Start over</Button>
       </div>
     </form>
   {/if}

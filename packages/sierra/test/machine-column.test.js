@@ -84,7 +84,7 @@ describe('formFieldList', () => {
 describe('the resource', () => {
   test('summary() shows the state the form no longer offers', () => {
     registerSchemas({ Todo: TODO }, ['Todo'])
-    const todos = createResource('todos', 'id', { model: 'Todo' })
+    const todos = createResource('todos',{ model: 'Todo' })
     expect(todos.formFields().map(f => f.name)).not.toContain('status')
     expect(todos.summary().columns.map(c => c.name)).toContain('status')
   })
@@ -116,7 +116,7 @@ describe('a @rank column', () => {
 
   test('summary() shows the order the form no longer offers', () => {
     registerSchemas({ Card: CARD }, ['Card'])
-    const cards = createResource('cards', 'id', { model: 'Card' })
+    const cards = createResource('cards',{ model: 'Card' })
     expect(cards.formFields().map(f => f.name)).not.toContain('rank')
     expect(cards.summary().columns.map(c => c.name)).toContain('rank')
   })

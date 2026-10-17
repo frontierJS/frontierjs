@@ -72,8 +72,8 @@ title: Git activity
       <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
     </dl>
     <div class="cluster">
-      <Button variant="ghost" href="/admin/adapters/">All adapters</Button>
-      <Button variant="ghost" href="/git-activity/local/">Local repositories</Button>
+      <Button treatment="ghost" href="/admin/adapters/">All adapters</Button>
+      <Button treatment="ghost" href="/git-activity/local/">Local repositories</Button>
     </div>
   </Card>
 

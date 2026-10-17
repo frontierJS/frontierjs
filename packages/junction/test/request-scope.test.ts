@@ -61,7 +61,6 @@ beforeAll(async () => {
     system: SYS,
     config: {
       port:     PORT,
-      services: { dir: '/nonexistent' },
       http:     { ...defaultConfig.http, drainTimeout: 250 },
     },
   })

@@ -246,6 +246,7 @@ export function createAuthPlugin(
         if (!password) throw new BadRequest('password is required')
 
         const result = await auth.login(email, password)
+        await endArrivingSession(auth, ctx, result)
         return respond(ctx, result, cookieAuth, cookieMaxAge)
       })
 
@@ -285,6 +286,7 @@ export function createAuthPlugin(
         }
         // Spent either way: the ticket is single-use.
         if (cookieAuth) clearChallengeCookie(ctx)
+        await endArrivingSession(auth, ctx, result)
         return respond(ctx, result, cookieAuth, cookieMaxAge)
       })
 
@@ -791,6 +793,19 @@ function extractToken(ctx: TransportContext): string | null {
   const header = ctx.headers?.authorization ?? ''
   if (header.startsWith('Bearer ')) return header.slice(7).trim()
   return ctx.cookies?.session ?? null
+}
+
+/**
+ * A login ends the session its request arrived with, so a token planted or
+ * stolen before the sign-in does not outlive it (ASVS V7.2.4, `FJS-3196`).
+ * A half-finished login (`challenge`) issued no session and ends nothing.
+ * A token that names no live session is not an error: the person is signing in.
+ */
+async function endArrivingSession(auth: IAuth, ctx: TransportContext, result: unknown): Promise<void> {
+  const issued = (result as { token?: unknown } | null)?.token
+  if (typeof issued !== 'string') return
+  const arrived = extractToken(ctx)
+  if (arrived && arrived !== issued) await auth.logout(arrived)
 }
 
 function clearCookie(ctx: TransportContext): void {

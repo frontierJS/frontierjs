@@ -98,7 +98,7 @@ title: Audit trail
   <label class="visually-hidden" for="audit-filter">Subject type</label>
   <Input id="audit-filter" style="--field-inline-size: 14rem"
          placeholder="subject type, e.g. servers" bind:value={filter} />
-  <Button variant="outlined" type="submit">Filter</Button>
+  <Button treatment="outlined" type="submit">Filter</Button>
 </form>
 
 {#if loading}
@@ -126,7 +126,7 @@ title: Audit trail
   <div class="cluster" id="audit-window">
     <span class="text-sm text-muted">{rows().length} events</span>
     {#if more}
-      <Button id="audit-more" variant="outlined" disabled={growing} onclick={grow}>
+      <Button id="audit-more" treatment="outlined" disabled={growing} onclick={grow}>
         {growing ? 'Loading…' : 'Load more'}
       </Button>
     {:else}

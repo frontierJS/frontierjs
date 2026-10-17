@@ -198,7 +198,7 @@ title: Customers
   {#snippet action()}
     <div class="cluster" style="align-items: center; gap: 1rem">
       <Switch id="c-removed" label="Removed" checked={removed} onchange={showRemoved} />
-      <Button variant="outlined" onclick={reload} disabled={loading}>
+      <Button treatment="outlined" onclick={reload} disabled={loading}>
         {#if loading}<Spinner size="sm" label="Reloading" />{/if}
         Reload
       </Button>
@@ -234,7 +234,7 @@ title: Customers
       <td>
         <Popover label={'Contact card for ' + c.name}>
           {#snippet trigger()}
-            <Button variant="link">
+            <Button treatment="link">
               {#snippet leading()}<Avatar name={c.name} size="sm" />{/snippet}
               <span data-name>{c.name}</span>
             </Button>
@@ -257,14 +257,14 @@ title: Customers
           <div class="cluster">
             {#if removed}
               <Button
-                variant="ghost"
+                treatment="ghost"
                 data-restore
                 disabled={!canRemove || busy === c.id}
                 onclick={() => restore(c)}>
                 Restore
               </Button>
             {:else}
-              <Button variant="ghost" data-edit disabled={!canEdit} onclick={() => open(c)}>Edit</Button>
+              <Button treatment="ghost" data-edit disabled={!canEdit} onclick={() => open(c)}>Edit</Button>
 
               <!--
                 Remove asks first, and asks where the button is. Not a Modal: a
@@ -278,7 +278,7 @@ title: Customers
                 onconfirm={() => remove(c)}
               >
                 {#snippet trigger()}
-                  <Button variant="ghost" tone="danger" data-remove disabled={!canRemove}>Remove</Button>
+                  <Button treatment="ghost" tone="danger" data-remove disabled={!canRemove}>Remove</Button>
                 {/snippet}
               </ConfirmationPopover>
             {/if}
@@ -310,7 +310,7 @@ title: Customers
           it is now at <Mono size="xs"><span data-actual>{conflict.actual}</span></Mono>.
         </p>
         <div class="cluster">
-          <Button variant="outlined" id="c-take-theirs" onclick={takeTheirs}>Reload theirs</Button>
+          <Button treatment="outlined" id="c-take-theirs" onclick={takeTheirs}>Reload theirs</Button>
           <Button tone="danger" id="c-take-mine" onclick={takeMine}>Overwrite with mine</Button>
         </div>
       </Alert>

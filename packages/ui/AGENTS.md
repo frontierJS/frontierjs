@@ -348,7 +348,7 @@ library produces, and what this kit wants.
 
 | You will write | The kit wants |
 |---|---|
-| `<Button variant="destructive">`, `color="red"`, `size="icon"` | `tone="danger"` (with `variant="outlined"` for an outline), `square` plus an `aria-label` |
+| `<Button variant="destructive">`, `color="red"`, `size="icon"` | `tone="danger"` (with `treatment="outlined"` for an outline), `square` plus an `aria-label` |
 | `<Button on:click={save}>`, `onClick` | `onclick={save}` |
 | `<Button>Save</Button>` as a form's submit | `<Button type="submit">` — the kit's default `type` is `button` |
 | `<Dialog open onOpenChange>` | `<Modal bind:open title="…" onclose={…}>` |

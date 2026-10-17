@@ -308,7 +308,7 @@ title: Your settings
           {me?.email}
           {#if unverified}
             <Pill tone="warning">not verified</Pill>
-            <Button variant="ghost" id="resend-verification" disabled={busy === 'verify'}
+            <Button treatment="ghost" id="resend-verification" disabled={busy === 'verify'}
                     onclick={resendVerification}>Send the link again</Button>
           {/if}
         </span>
@@ -318,7 +318,7 @@ title: Your settings
           {#if session.user?.isSystemAdmin}<Pill tone="warning">system admin</Pill>{/if}
           <Pill tone="muted" id="standing-role">{here?.role ?? 'no membership'} here</Pill>
           {#if here?.role}
-            <Button variant="ghost" tone="danger" id="leave-workspace" disabled={busy === 'leave'}
+            <Button treatment="ghost" tone="danger" id="leave-workspace" disabled={busy === 'leave'}
                     data-confirm={`You lose access to ${here.name}. Somebody there has to invite you back.`}
                     data-confirm-title={`Leave ${here.name}?`} data-confirm-label="Leave"
                     onclick={leave}>Leave {here.name}</Button>
@@ -349,7 +349,7 @@ title: Your settings
                autocomplete="current-password" required value={emailPassword}
                oninput={e => emailPassword = e.target.value} />
         <div class="cluster">
-          <Button type="submit" variant="primary" id="email-change-submit"
+          <Button type="submit" tone="primary" id="email-change-submit"
                   disabled={busy === 'email' || !newEmail.trim() || !emailPassword}>
             {busy === 'email' ? 'Sending…' : 'Send the link'}
           </Button>
@@ -385,7 +385,7 @@ title: Your settings
     <Input id="pw-confirm" name="confirmPassword" type="password" label="Confirm new password"
            autocomplete="new-password" value={confirm}
            oninput={(e) => confirm = e.target.value} />
-    <Button variant="primary" id="change-password" disabled={changing || !current || !next}
+    <Button tone="primary" id="change-password" disabled={changing || !current || !next}
             onclick={changePassword}>
       {changing ? 'Changing…' : 'Change password'}
     </Button>
@@ -422,7 +422,7 @@ title: Your settings
                     disabled={busy === `${k.kind}:inApp`}
                     onchange={(checked) => toggle(k, 'inApp', checked)} />
             {#if k.source === 'chosen'}
-              <Button variant="ghost" disabled={busy === k.kind}
+              <Button treatment="ghost" disabled={busy === k.kind}
                       aria-label={`Reset ${k.label} to its default`}
                       onclick={() => reset(k)}>Reset</Button>
             {/if}
@@ -446,7 +446,7 @@ title: Your settings
     <div class="section-header">
       <h2 class="h5">Where you are signed in</h2>
       {#if sessions.length > 1}
-        <Button variant="outlined" id="revoke-others" disabled={busy === 'others'}
+        <Button treatment="outlined" id="revoke-others" disabled={busy === 'others'}
                 data-confirm="Every other browser and device signed in as you is signed out."
                 data-confirm-title="Sign out everywhere else?" data-confirm-label="Sign out" data-confirm-tone="warning"
                 onclick={revokeOthers}>Sign out everywhere else</Button>
@@ -464,7 +464,7 @@ title: Your settings
           <td class="text-sm text-muted">{ago(s.lastSeenAt ?? s.createdAt)}</td>
           <td>
             {#if !s.current}
-              <Button variant="ghost" disabled={busy === s.id}
+              <Button treatment="ghost" disabled={busy === s.id}
                       aria-label="Revoke this session"
                       onclick={() => revoke(s)}>Revoke</Button>
             {/if}
@@ -497,8 +497,8 @@ title: Your settings
         {/each}
       </ol>
       <div class="cluster">
-        <CopyButton text={recoveryCodes.join('\n')} label="Copy all" variant="outlined" />
-        <Button variant="ghost" id="recovery-done" onclick={() => { recoveryCodes = [] }}>I have saved them</Button>
+        <CopyButton text={recoveryCodes.join('\n')} label="Copy all" treatment="outlined" />
+        <Button treatment="ghost" id="recovery-done" onclick={() => { recoveryCodes = [] }}>I have saved them</Button>
       </div>
     {:else if !totp}
       <p class="text-sm text-muted">Asking…</p>
@@ -509,14 +509,14 @@ title: Your settings
       <div class="cluster">
         <Mono id="totp-secret">{enrollment.secret}</Mono>
         <CopyButton text={enrollment.secret} label="Copy secret" />
-        <CopyButton text={enrollment.qr} label="Copy otpauth:// link" variant="outlined" />
+        <CopyButton text={enrollment.qr} label="Copy otpauth:// link" treatment="outlined" />
       </div>
       <form class="stack" novalidate onsubmit={e => { e.preventDefault(); confirmTotp() }}>
         <Input id="totp-code" name="code" label="Code from the app" autocomplete="one-time-code"
                inputmode="numeric" required value={totpCode} oninput={e => totpCode = e.target.value} />
         <div class="cluster">
-          <Button type="submit" variant="primary" id="totp-confirm" disabled={busy === 'totp'}>Turn it on</Button>
-          <Button variant="ghost" id="totp-abandon" onclick={abandonTotp}>Cancel</Button>
+          <Button type="submit" tone="primary" id="totp-confirm" disabled={busy === 'totp'}>Turn it on</Button>
+          <Button treatment="ghost" id="totp-abandon" onclick={abandonTotp}>Cancel</Button>
         </div>
       </form>
     {:else if !totp.enabled}
@@ -526,7 +526,7 @@ title: Your settings
                hint="Asked again because this changes how you sign in" autocomplete="current-password"
                required value={totpPassword} oninput={e => totpPassword = e.target.value} />
         <div class="cluster">
-          <Button type="submit" variant="primary" id="totp-enable" disabled={busy === 'totp' || !totpPassword}>Set up two-step sign-in</Button>
+          <Button type="submit" tone="primary" id="totp-enable" disabled={busy === 'totp' || !totpPassword}>Set up two-step sign-in</Button>
         </div>
       </form>
     {:else}
@@ -540,11 +540,11 @@ title: Your settings
                hint="Needed for either of these" autocomplete="current-password"
                value={totpPassword} oninput={e => totpPassword = e.target.value} />
         <div class="cluster">
-          <Button variant="outlined" id="totp-regenerate" disabled={busy === 'totp' || !totpPassword}
+          <Button treatment="outlined" id="totp-regenerate" disabled={busy === 'totp' || !totpPassword}
                   data-confirm="Every recovery code you saved stops working."
                   data-confirm-title="Replace your recovery codes?" data-confirm-label="Replace"
                   onclick={regenerateCodes}>New recovery codes</Button>
-          <Button variant="outlined" tone="danger" id="totp-disable" disabled={busy === 'totp' || !totpPassword}
+          <Button treatment="outlined" tone="danger" id="totp-disable" disabled={busy === 'totp' || !totpPassword}
                   data-confirm="Signing in asks for your password only."
                   data-confirm-title="Turn off two-step sign-in?" data-confirm-label="Turn off"
                   onclick={disableTotp}>Turn it off</Button>

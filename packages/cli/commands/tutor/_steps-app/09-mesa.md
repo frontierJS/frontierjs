@@ -73,7 +73,7 @@ if (!needs($, ['appDir'], { from: '02-new' })) return
 const up = await ensureWeb($)
 if (!await must($, up, {
   likely:    'vite is not running and would not start — the last of its output is below',
-  reproduce: `cd ${$.config.appDir} && bun run dev:web`,
+  reproduce: `cd ${$.config.appDir} && bun run web`,
   detail:    serverLog($.config.__servers?.web ?? {}),
 })) return
 

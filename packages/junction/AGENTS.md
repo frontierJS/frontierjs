@@ -9,8 +9,8 @@ If you are changing this package rather than consuming it, read `CLAUDE.md` in
 the repository instead — the rules are different and the suite enforces them.
 
 **This file does not list the API surface of your app.** What your app actually
-serves is read off the built app by `junction surface --app src/app.ts
---services src/services` (run from `api/`), which writes `surface.snapshot.md`
+serves is read off the built app by `junction surface --app src/app.ts`
+(run from `api/`), which writes `surface.snapshot.md`
 and rechecks it with `--check`. What is here is the half a generated table
 cannot carry: which shape to reach for, and where a legal spelling does
 something you did not intend.
@@ -473,7 +473,7 @@ Run it after writing, not instead. Three more ways to ask:
 
 ```
 fli api:routes                                          # every route the running API serves
-junction surface --app src/app.ts --services src/services   # from api/: the committed surface
+junction surface --app src/app.ts   # from api/: the committed surface
 fli test:snapshots                                      # recheck every committed snapshot
 ```
 

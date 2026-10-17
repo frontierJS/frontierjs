@@ -70,7 +70,7 @@ title: Notifications
   <span class="cluster">
     <a href="/settings/" class="text-sm">Choose what you are told about</a>
     {#if unread.length}
-      <Button variant="outlined" id="notifications-read-all" onclick={readAll}>Mark all read</Button>
+      <Button treatment="outlined" id="notifications-read-all" onclick={readAll}>Mark all read</Button>
     {/if}
   </span>
 </div>
@@ -82,8 +82,8 @@ title: Notifications
 {/if}
 
 <div class="cluster" role="group" aria-label="Show" id="notifications-filter">
-  <Button variant={only === 'unread' ? 'outlined' : 'ghost'} onclick={() => only = 'unread'}>Unread ({unread.length})</Button>
-  <Button variant={only === 'all' ? 'outlined' : 'ghost'} onclick={() => only = 'all'}>All</Button>
+  <Button treatment={only === 'unread' ? 'outlined' : 'ghost'} onclick={() => only = 'unread'}>Unread ({unread.length})</Button>
+  <Button treatment={only === 'all' ? 'outlined' : 'ghost'} onclick={() => only = 'all'}>All</Button>
 </div>
 
 {#if loading && !notes().length}
@@ -118,7 +118,7 @@ title: Notifications
         <td class="text-sm text-muted">{at(n.createdAt)}</td>
         <td>
           {#if isUnread(n)}<Pill tone="primary">new</Pill>{/if}
-          <Button variant="ghost" size="sm" onclick={() => toggle(n)}>
+          <Button treatment="ghost" size="sm" onclick={() => toggle(n)}>
             {isUnread(n) ? 'Mark read' : 'Mark unread'}
           </Button>
         </td>

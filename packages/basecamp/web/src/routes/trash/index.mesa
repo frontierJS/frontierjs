@@ -93,7 +93,7 @@ title: Trash
         <td><Pill>{item.kind}</Pill></td>
         <td class="text-sm text-muted" title={at(item.deletedAt)}>{ago(item.deletedAt)}</td>
         <td>
-          <Button variant="outlined" size="sm" disabled={busy === item.id} onclick={() => restore(item)}>
+          <Button treatment="outlined" size="sm" disabled={busy === item.id} onclick={() => restore(item)}>
             {busy === item.id ? 'Restoring…' : 'Restore'}
           </Button>
         </td>

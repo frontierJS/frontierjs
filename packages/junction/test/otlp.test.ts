@@ -52,7 +52,7 @@ beforeAll(async () => {
   app = createApp({
     db:     db as never,
     logger: createLogger({ level: 'debug', writers: [(_: LogEntry) => {}] }),
-    config: { name: 'shop', version: '1.2.3', port: 0, services: { dir: '/nonexistent' },
+    config: { name: 'shop', version: '1.2.3', port: 0,
               http: { ...defaultConfig.http, drainTimeout: 250 } },
   })
   exporter = otlp({ endpoint: `http://localhost:${receiver.port}/`, headers: { 'x-api-key': 'k' } })
@@ -158,7 +158,7 @@ describe('the wire', () => {
     const probe = Bun.serve({ port: 0, fetch(req) { seen = req.headers; return Response.json({}) } })
     try {
       const one = otlp({ endpoint: `http://localhost:${probe.port}`, headers: { 'x-api-key': 'k' } })
-      const solo = createApp({ logger: createLogger({ writers: [] }), config: { name: 'shop', version: '1.2.3', port: 0, services: { dir: '/nonexistent' } } })
+      const solo = createApp({ logger: createLogger({ writers: [] }), config: { name: 'shop', version: '1.2.3', port: 0 } })
       solo.configure(one)
       solo.logger.info('hello')
       await one.flush()
@@ -191,7 +191,7 @@ describe('a dead collector', () => {
     const dead = otlp({ endpoint: 'http://127.0.0.1:9' })
     const solo = createApp({
       logger: createLogger({ level: 'debug', writers: [e => { if (e.level === 'warn') warned.push(e) }] }),
-      config: { port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 250 } },
+      config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 250 } },
     })
     solo.configure(dead)
     solo.services.register(createService({ name: 'ping', methods: ['find'], async find() { return [{ ok: true }] } } as never))

@@ -26,7 +26,8 @@ import type { App } from '@frontierjs/junction'
 import { createCaravan, CARAVAN_CONFIG_KEYS } from '../src/index.ts'
 import type { CaravanOptions, CaravanInstance, JobRecord } from '../src/types.ts'
 
-const FIXTURES = resolve(import.meta.dir, 'fixtures/jobs')
+// An app root whose `jobs/` holds the job fixtures (`FJS-D1080`).
+const ROOT = resolve(import.meta.dir, 'fixtures')
 
 // `app.jobs` is fully typed here: Caravan augments Junction's AppJobs
 // interface, so CaravanInstance's members resolve without a cast. If that
@@ -141,16 +142,16 @@ describe('plugin lifecycle against a real app', () => {
 
 describe('_startOnce() queues and runs nothing', () => {
   it('a dispatch is accepted and stays pending; the same dispatch under _startForTest() runs', async () => {
-    const once = await createTestApp()
-    once.configure(createCaravan(opts({ jobsDir: FIXTURES })))
+    const once = await createTestApp({ root: ROOT })
+    once.configure(createCaravan(opts()))
     await once._startOnce()
     const id = await jobsOf(once).dispatch('send-email', { to: 'a@b.c' })
     await new Promise(r => setTimeout(r, 100))
     const held = jobsOf(once).find(id)!
     await once.stop()
 
-    const test = await createTestApp()
-    test.configure(createCaravan(opts({ jobsDir: FIXTURES })))
+    const test = await createTestApp({ root: ROOT })
+    test.configure(createCaravan(opts()))
     await test._startForTest()
     const ran = await jobsOf(test).dispatch('send-email', { to: 'a@b.c' })
     const done = await until(() => jobsOf(test).find(ran)!.status !== 'pending')
@@ -206,7 +207,7 @@ describe('metrics provider', () => {
 //
 // register() reads `app.config._junction.caravan` and honors every key of it
 // (JunctionCaravanConfig in junction's src/config/index.ts). It could once
-// honor only jobsDir and cleanupAfter: createCaravan() opened the database and
+// honor only cleanupAfter and the jobs folder: createCaravan() opened the database and
 // built the workers before any app existed, so db, pollInterval, queues and
 // admin were already spent by the time a config file was visible. The database
 // now opens on first use and the workers are built in start(), which is what
@@ -236,20 +237,16 @@ describe('junction config caravan section', () => {
     for (const suffix of ['', '-wal', '-shm']) rmSync(`${path}${suffix}`, { force: true })
   }
 
-  it('picks up jobsDir from config when opts does not set it', async () => {
-    const app = await withConfig({ jobsDir: FIXTURES })
+  it('loads jobs/ beside createApp({ root })', async () => {
+    const app = await createTestApp({ root: ROOT })
+    app.configure(createCaravan(opts()))
+    await app._startForTest()
 
     // The autoloaded 'send-email' handler declares queue 'email', so dispatch
     // routing off the registration proves the handler was loaded.
     const id = await jobsOf(app).dispatch('send-email', { to: 'a@b.c' })
     expect(jobsOf(app).find(id)!.queue).toBe('email')
-  })
-
-  it('opts.jobsDir wins over the config file', async () => {
-    const app = await withConfig({ jobsDir: resolve(FIXTURES, 'nope') }, { jobsDir: FIXTURES })
-
-    const id = await jobsOf(app).dispatch('send-email', { to: 'a@b.c' })
-    expect(jobsOf(app).find(id)!.queue).toBe('email')
+    await app.stop()
   })
 
   it('boots normally when no _junction config is present', async () => {
@@ -589,12 +586,14 @@ describe('CARAVAN_CONFIG_KEYS', () => {
 
   it('makes junction refuse a misspelled key and accept the right one', async () => {
     const { createApp } = await import('@frontierjs/junction')
-    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs')
     const boot = async (section: string): Promise<string | null> => {
       const dir = mkdtempSync(join(tmpdir(), 'caravan-cfgkeys-'))
-      writeFileSync(join(dir, 'junction.config.js'), `export default { caravan: ${section} }\n`)
+      mkdirSync(join(dir, 'src'))
+      mkdirSync(join(dir, 'config'))
+      writeFileSync(join(dir, 'config', 'junction.config.js'), `export default { caravan: ${section} }\n`)
       try {
-        const app = createApp({ logLevel: 'silent', configPath: dir, config: { port: 0 } })
+        const app = createApp({ logLevel: 'silent', root: join(dir, 'src'), config: { port: 0 } })
         app.configure(createCaravan(opts()))
         try { await app.start(); await app.stop(); return null }
         catch (err) { return (err as Error).message }
@@ -604,6 +603,8 @@ describe('CARAVAN_CONFIG_KEYS', () => {
     expect(msg).toContain("'caravan' declares 'pollIntervel'")
     expect(msg).toContain("did you mean 'pollInterval'")
     expect(await boot(`{ pollInterval: 1000 }`)).toBeNull()
+    // The folder is `jobs/` beside the root (`FJS-D1080`), never a key.
+    expect(await boot(`{ jobsDir: './src/jobs' }`)).toContain("'caravan' declares 'jobsDir'")
   })
 })
 

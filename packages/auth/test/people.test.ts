@@ -34,7 +34,7 @@ beforeAll(async () => {
   h = await makeAuth({ encryptionKey: TEST_KEY, sessionFields: (u: any) => ({ role: u.role, isAdmin: u.role === 'admin' || u.role === 'sysadmin' }) })
   app = createApp({
     db: h.db, auth: h.auth as any,
-    config: { port: 0, services: { dir: '/nonexistent' } },
+    config: { port: 0 },
     logLevel: 'silent',
   } as never)
   app.configure(createAuthPlugin(h.auth, { ...rateLimits, services: { level: levelOf } }))
@@ -263,7 +263,7 @@ async function tenantedApp(schema: string, gate: (u: any) => number, principal?:
   )
   const tapp: any = createApp({
     db: th.db, auth: th.auth as any,
-    config: { port: 0, services: { dir: '/nonexistent' } },
+    config: { port: 0 },
     logLevel: 'silent',
     ...(principal ? { principal } : {}),
   } as never)

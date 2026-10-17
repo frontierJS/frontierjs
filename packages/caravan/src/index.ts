@@ -7,14 +7,15 @@
 //   await queue.start()
 //   await queue.dispatch('send-email', { to: 'alice@example.com' })
 //
-// As a Junction plugin:
-//   app.configure(createCaravan({ jobsDir: './jobs' }))
+// As a Junction plugin, loading `jobs/` beside `createApp({ root })`:
+//   app.configure(createCaravan())
 //   await app.jobs.dispatch('send-email', { to: 'alice@example.com' })
 //
 // A handler then reaches the app as `ctx.app` and runs as whoever dispatched
 // the job — see JobContext in types.ts.
 
 import { timingSafeEqual } from 'node:crypto'
+import { join }            from 'node:path'
 import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import { jsonLoss, jsonLossAdvice } from '@frontierjs/toolbelt/json'
 import { REDACTED } from '@frontierjs/toolbelt/redact'
@@ -70,7 +71,7 @@ export const PAYLOAD_MAX_BYTES = 256 * 1024
  * against the reader in both directions.
  */
 export const CARAVAN_CONFIG_KEYS = [
-  'db', 'busyTimeout', 'synchronous', 'jobsDir', 'cleanupAfter', 'pollInterval',
+  'db', 'busyTimeout', 'synchronous', 'cleanupAfter', 'pollInterval',
   'drainTimeout', 'admin', 'heartbeat', 'lease', 'queues',
 ] as const
 
@@ -118,7 +119,8 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   let synchronous  = opts.synchronous  ?? 'NORMAL'
   let pollInterval = opts.pollInterval ?? 1_000
   let drainTimeout = opts.drainTimeout ?? 30_000
-  let jobsDir      = opts.jobsDir
+  // `jobs/` beside the app's root (`FJS-D1080`), set at boot; standalone, none.
+  let jobsDir: string | null = null
   let cleanupAfter = opts.cleanupAfter ?? 7 * 24 * 60 * 60 * 1_000  // 7 days
   let adminOpts    = opts.admin
   let heartbeatMs  = opts.heartbeat ?? 5_000
@@ -374,7 +376,6 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         if (opts.db           === undefined && junctionCaravan.db           !== undefined) dbPath       = junctionCaravan.db
         if (opts.busyTimeout  === undefined && junctionCaravan.busyTimeout  !== undefined) busyTimeout  = junctionCaravan.busyTimeout
         if (opts.synchronous  === undefined && junctionCaravan.synchronous  !== undefined) synchronous  = junctionCaravan.synchronous
-        if (opts.jobsDir      === undefined && junctionCaravan.jobsDir      !== undefined) jobsDir      = junctionCaravan.jobsDir
         if (opts.cleanupAfter === undefined && junctionCaravan.cleanupAfter !== undefined) cleanupAfter = junctionCaravan.cleanupAfter
         if (opts.pollInterval === undefined && junctionCaravan.pollInterval !== undefined) pollInterval = junctionCaravan.pollInterval
         if (opts.drainTimeout === undefined && junctionCaravan.drainTimeout !== undefined) drainTimeout = junctionCaravan.drainTimeout
@@ -1221,6 +1222,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       // admin routes this mounts are registered in time to be served.
       applyJunctionConfig(app)
       mountAdminRoutes(app)
+      if (app.root) jobsDir = join(app.root, 'jobs')
       await loadJobFiles()
     },
 
@@ -1242,7 +1244,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 // ─── defineJob ────────────────────────────────────────────────────────────────
 //
 // Used in *.job.ts files for autoloading. The __caravanJob marker lets
-// autoload.ts identify valid exports. A job in `jobsDir` is named by its file:
+// autoload.ts identify valid exports. A job in `jobs/` is named by its file:
 // the loader stamps the name, so the declaration states none. `name:` is for a
 // name no filename can hold (`deployment:run`), and autoload refuses one that
 // disagrees with the file rather than registering one name while every dispatch
@@ -1282,7 +1284,7 @@ export function defineJob<T = unknown>(
       const n = spec.name ?? stamped
       if (!n) {
         throw new Error(
-          '[Caravan] this job has no name. Put it in jobsDir as `<name>.job.ts` — ' +
+          '[Caravan] this job has no name. Put it in jobs/ as `<name>.job.ts` — ' +
           'the file names it — or state `name:` on the definition.'
         )
       }

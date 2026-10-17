@@ -52,7 +52,7 @@ describe('sealedFields', () => {
   const locked = (user, record) => {
     registerSchemas({ Account: ACCOUNT }, ['Account'])
     session.user = user
-    return createResource('accounts', 'id', { model: 'Account' }).sealedFields(record).sort()
+    return createResource('accounts',{ model: 'Account' }).sealedFields(record).sort()
   }
   afterEach(() => { session.user = null })
 

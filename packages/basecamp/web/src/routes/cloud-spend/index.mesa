@@ -276,7 +276,7 @@ title: Cloud spend
       >
         Nothing is being paid for, which is the one honest number on this screen.
         {#snippet action()}
-          <Button variant="primary" href="/servers/provision/">Provision a machine</Button>
+          <Button tone="primary" href="/servers/provision/">Provision a machine</Button>
         {/snippet}
       </EmptyState>
     {:else}

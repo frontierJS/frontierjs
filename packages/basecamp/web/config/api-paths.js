@@ -46,7 +46,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const SNAPSHOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'surface.snapshot.md')
-const REGEN    = 'junction surface --app api/src/app.ts --services api/src/services'
+const REGEN    = 'junction surface --app api/src/app.ts'
 
 function readSnapshot() {
   try {

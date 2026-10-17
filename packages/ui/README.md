@@ -81,18 +81,17 @@ prop through that map.
 ## Treatments
 
 Tones and treatments are different kinds of class in the css package, and they
-compose freely — which is why `variant` on Button takes either:
+compose freely, so Button takes each as its own prop:
 
 ```svelte
-<Button variant="outlined" tone="danger">Delete</Button>   <!-- red outline -->
-<Button variant="ghost">Cancel</Button>
-<Button variant="link">Learn more</Button>
+<Button treatment="outlined" tone="danger">Delete</Button>   <!-- red outline -->
+<Button treatment="ghost">Cancel</Button>
+<Button treatment="link">Learn more</Button>
 <Button tone="primary" loading>Saving</Button>
 <Button square aria-label="Delete"><IconTrash /></Button>
 ```
 
-The old six-value `variant` conflated the two, which is why `outline` and
-`danger` used to be mutually exclusive. Both spellings still work.
+`CopyButton` takes `treatment` too, defaulting to `ghost`.
 
 ## What's in the box
 

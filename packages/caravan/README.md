@@ -36,7 +36,8 @@ await queue.dispatch('send-email', { to: 'alice@example.com' })
 ```ts
 import { createCaravan } from '@frontierjs/caravan'
 
-const queue = createCaravan({ jobsDir: './jobs' })
+// *.job.ts files load from jobs/ beside createApp({ root }) (FJS-D1080).
+const queue = createCaravan()
 
 app.configure(queue)
 // Now available as app.jobs
@@ -64,13 +65,13 @@ export default defineJob<{ to: string }>({
 })
 ```
 
-**A job in `jobsDir` is named by its file.** `send-email.job.ts` is
+**A job in `jobs/` is named by its file.** `send-email.job.ts` is
 `send-email` and the declaration states no name. A name that cannot be a
 filename (`deployment:run`) is stated as `name:`, and one that disagrees with
 the file is refused at load, naming both — a handler answering to `send-emial`
 while every dispatch says `send-email` fails as a job that silently never runs,
 which is the worst way this package can break. Rename the file, or register the
-job by hand with `queue.handle()` from outside `jobsDir`.
+job by hand with `queue.handle()` from outside `jobs/`.
 
 **The default export is also the dispatch handle.** Import it and the name is
 stated nowhere else:
@@ -90,7 +91,6 @@ await app.jobs.dispatch(sendEmail, { to: 'alice@example.com' })  // typed payloa
 | `db` | `'./db/jobs.db'` | SQLite file path. Use `':memory:'` for tests. |
 | `queues` | `{ default: { concurrency: 2 } }` | Named queue config |
 | `pollInterval` | `1000` | How often to poll for new jobs (ms) |
-| `jobsDir` | — | Directory to autoload `*.job.ts` files from |
 | `cleanupAfter` | 7 days | How long terminal jobs are kept. `0` disables the sweep |
 | `admin` | `false` | Mount the admin routes: `{ path, authorize, secret }`. They are raw routes with no gate, so under `NODE_ENV=production` they are not mounted without `authorize(ctx)`, and `secret` (a development shortcut) is refused there |
 | `drainTimeout` | `30000` | How long `stop()` waits for in-flight jobs (ms) |
@@ -184,7 +184,7 @@ export default defineJob({ handler: sweep, cron: '0 3 * * *' })
 
 `queue.schedule(name, expr, handler, opts?)` is sugar over the same
 registration, for a handler that is not a job file — a closure, or a function
-imported from outside `jobsDir`. A name is one schedule: registering it again
+imported from outside `jobs/`. A name is one schedule: registering it again
 replaces it rather than firing the job twice.
 
 `queue.nextRuns()` answers `{ name, cron, nextRun }` per schedule, which proves

@@ -109,7 +109,7 @@ title: Pickup points
   <Select label="Within" name="within" bind:value={within} options={RADII} />
   <Button type="submit" id="p-search-go">Search</Button>
   {#if searching()}
-    <Button variant="ghost" id="p-search-clear" onclick={clearSearch}>Show all</Button>
+    <Button treatment="ghost" id="p-search-clear" onclick={clearSearch}>Show all</Button>
   {/if}
 </form>
 
@@ -134,7 +134,7 @@ title: Pickup points
 </Table>
 
 {#if list.hasMore}
-  <Button variant="ghost" id="p-more" onclick={list.more}>Load more</Button>
+  <Button treatment="ghost" id="p-more" onclick={list.more}>Load more</Button>
 {/if}
 
 {#if creating}

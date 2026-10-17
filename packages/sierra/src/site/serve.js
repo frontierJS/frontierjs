@@ -139,8 +139,9 @@ function resolveEntry(files, safe) {
  *                                     only the strings reach it
  * @returns {Promise<{ port: number, url: string, close: () => Promise<void> }>}
  *
- * `_redirects` is read once, here, so a rule serveSite cannot answer throws
- * before the origin listens. A rebuild under a running server keeps the old rules.
+ * `_redirects` is read here first, so a rule serveSite cannot answer throws
+ * before the origin listens, and again whenever the file changes under a
+ * running server. A changed file with such a rule keeps the previous rules.
  */
 export async function serveSite({
   dir, files, port = 0, host = '0.0.0.0', notFound = '404.html', allowOutside = [],
@@ -158,10 +159,32 @@ export async function serveSite({
     ? async (safe) => resolveEntry(files, safe)
     : (safe) => resolveFile(rootDir, safe, allowOutside)
 
-  const rulesFile = await find('_redirects')
-  const redirects = rulesFile
-    ? parseRedirects(await readFile(rulesFile.read, 'utf8'))
-    : new Map()
+  // A rebuild in place replaces `_redirects` along with the pages, and pages are
+  // resolved per request: rules held from start would 404 a renamed page's old
+  // address while its new one is already served (`FJS-3122`). The file is
+  // re-read when its mtime or size changes. A closed `files` map cannot change.
+  let rules = { stamp: null, map: new Map() }
+  async function redirectsNow() {
+    const file = await find('_redirects')
+    if (!file) {
+      if (rules.stamp !== 'none') rules = { stamp: 'none', map: new Map() }
+      return rules.map
+    }
+    const info  = files ? null : await stat(file.read)
+    const stamp = info ? `${info.mtimeMs}:${info.size}` : 'closed'
+    if (stamp === rules.stamp) return rules.map
+    try {
+      rules = { stamp, map: parseRedirects(await readFile(file.read, 'utf8')) }
+    } catch (err) {
+      // A rebuilt file this server cannot answer keeps the rules it has, and
+      // says so once: throwing here would turn every request into a 500.
+      if (rules.stamp === null) throw err
+      rules = { ...rules, stamp }
+      console.error(`[Sierra] site: ${err.message} — keeping the previous rules`)
+    }
+    return rules.map
+  }
+  await redirectsNow()
 
   const server = createServer(async (req, res) => {
     const headers = { 'X-Content-Type-Options': 'nosniff' }
@@ -206,7 +229,7 @@ export async function serveSite({
 
     // Before the file lookup: the host follows a rule whether or not a file
     // sits at its path.
-    const rule = redirects.get(redirectKey('/' + safe))
+    const rule = (await redirectsNow()).get(redirectKey('/' + safe))
     if (rule) {
       const location = query && !rule.to.includes('?') ? `${rule.to}?${query}` : rule.to
       res.writeHead(rule.status, { ...headers, Location: location })

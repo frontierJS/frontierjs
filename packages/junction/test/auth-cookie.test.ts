@@ -41,7 +41,7 @@ function oneTokenAuth(token: string, user: Partial<SessionContext>): SessionVeri
 /** An app with a single route that reports who the transport thinks you are. */
 function appWith(auth: SessionVerifier, cookieName: string | null) {
   const app = createApp({
-    config: { ...defaultConfig, port: 0, services: { dir: '/nonexistent' } },
+    config: { ...defaultConfig, port: 0 },
     auth,
   })
   if (cookieName) app.http.setAuthCookie(cookieName)
@@ -160,7 +160,7 @@ describe('session from a cookie', () => {
     // plugin to do it, and this is how it says so.
     const app = createApp({
       config: {
-        ...defaultConfig, port: 0, services: { dir: '/nonexistent' },
+        ...defaultConfig, port: 0,
         auth: { cookie: 'my_session' },
       } as any,
       auth: oneTokenAuth('tok-1', { userId: 'configured' }),
@@ -209,7 +209,7 @@ describe('session from a cookie, over the WebSocket upgrade', () => {
 
   it('the socket knows who you are from the cookie', async () => {
     const app = createApp({
-      config: { ...defaultConfig, port: 0, services: { dir: '/nonexistent' } },
+      config: { ...defaultConfig, port: 0 },
       auth: oneTokenAuth('tok-ws', { userId: 'wsuser' }),
     })
     app.http.setAuthCookie('session')

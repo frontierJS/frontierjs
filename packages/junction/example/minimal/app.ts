@@ -21,9 +21,8 @@ const app = createApp({
     port:      3100,
     apiPrefix: '/api',
   },
-  // No autoload option needed: the ./services directory next to this file
-  // is auto-discovered by default. (Pass a string to point elsewhere, or
-  // autoload: false to disable.)
+  // ./services beside this file loads; ../config would hold junction.config.js.
+  root: import.meta.url,
 })
 
 // db-less services (createService({ model }) with no db option)

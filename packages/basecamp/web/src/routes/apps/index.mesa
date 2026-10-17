@@ -64,11 +64,11 @@ title: Apps
         {#each cols as c}
           <td data-col={c.name}><Cell value={app[c.name]} column={c} record={app} /></td>
         {/each}
-        <td><Button variant="ghost" href={`/apps/${app.id}/`}>Open</Button></td>
+        <td><Button treatment="ghost" href={`/apps/${app.id}/`}>Open</Button></td>
       </tr>
     {/snippet}
   </Table>
   {#if list.hasMore}
-    <Button variant="ghost" id="app-more" onclick={list.more}>Load more</Button>
+    <Button treatment="ghost" id="app-more" onclick={list.more}>Load more</Button>
   {/if}
 {/if}

@@ -16,7 +16,7 @@ import { describe, test, expect, beforeAll } from 'bun:test'
 import { join } from 'node:path'
 import { defineNotification } from '../define.ts'
 import { inApp, mail } from '../builders.ts'
-import { resolveNotificationsDir, loadNotifications } from '../loader.ts'
+import { notificationsDirOf, loadNotifications } from '../loader.ts'
 import { makeApp, type Harness } from './harness.ts'
 
 const FIXTURES = join(import.meta.dir, 'fixtures', 'notifications')
@@ -84,23 +84,13 @@ describe('defineNotification — the definition itself', () => {
 
 describe('the loader — the file name is the type', () => {
 
-  test('a declared directory that is not there is reported, never probed around', () => {
-    const r = resolveNotificationsDir({ declared: join(FIXTURES, 'nope') })
-    expect(r.source).toBe('declared-missing')
-    expect(r.dir).toBeNull()
+  test('notifications/ under the app root (FJS-D1080)', () => {
+    expect(notificationsDirOf(join(FIXTURES, '..'))).toBe(FIXTURES)
   })
 
-  test('false turns loading off', () => {
-    expect(resolveNotificationsDir({ declared: false }).source).toBe('disabled')
-  })
-
-  test('probes both layouts beside the entry — flat, and the scaffolded one', () => {
-    const r = resolveNotificationsDir({ entry: join(FIXTURES, '..', '..', 'entry.ts') })
-    // test/fixtures/../../ → the package root; neither candidate exists there,
-    // and what matters is that BOTH were looked at and are nameable.
-    expect(r.probed).toHaveLength(2)
-    expect(r.probed[0]).toMatch(/notifications$/)
-    expect(r.probed[1]).toMatch(/src[/\\]notifications$/)
+  test('a root with no notifications/, or no root, loads nothing', () => {
+    expect(notificationsDirOf(import.meta.dir)).toBeNull()
+    expect(notificationsDirOf(null)).toBeNull()
   })
 
   test('names each definition for its file, with no case conversion to get wrong', async () => {
@@ -127,7 +117,7 @@ describe('through the real plugin', () => {
   let h: Harness
 
   beforeAll(async () => {
-    h = await makeApp({ notifications: FIXTURES, transports: { email: { mailer: 'default' } } })
+    h = await makeApp({ root: join(FIXTURES, '..'), transports: { email: { mailer: 'default' } } })
   })
 
   test('app.notifications answers what this app can send, without sending one', () => {

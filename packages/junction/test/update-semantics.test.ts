@@ -41,7 +41,7 @@ async function appWith() {
   const db  = await createClient({ db: ':memory:', schema: SCHEMA })
   const app = createApp({
     db: db as never,
-    config: { port: 0, services: { dir: '/nonexistent' } },
+    config: { port: 0 },
   })
   app.services.register(createService({ name: 'docs',   model: 'Doc'   } as never))
   app.services.register(createService({ name: 'plains', model: 'Plain', allowBulk: true } as never))
@@ -199,7 +199,7 @@ describe('a write naming a @guarded column', () => {
     const db  = await createClient({ db: ':memory:', schema: GUARDED, encryptionKey: 'a'.repeat(64) } as never)
     const app = createApp({
       db: db as never,
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     })
     app.services.register(createService({ name: 'hooks', model: 'Hook', allowBulk: true } as never))
     return { app, db }
@@ -220,7 +220,7 @@ describe('a write naming a @guarded column', () => {
   // key was stripped with a 201 again (maidtech 7d, Account.settings).
   test('and so on a service that names no model, resolved from its plural name', async () => {
     const db  = await createClient({ db: ':memory:', schema: GUARDED, encryptionKey: 'a'.repeat(64) } as never)
-    const app = createApp({ db: db as never, config: { port: 0, services: { dir: '/nonexistent' } } })
+    const app = createApp({ db: db as never, config: { port: 0 } })
     app.services.register(createService({ name: 'hooks' } as never))
 
     const res = await request(app).post('/hooks').send({ name: 'a', token: 'x' })

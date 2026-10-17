@@ -90,7 +90,7 @@ try {
   const exporter = otlp({ endpoint: `http://localhost:${PORT}` })
   app = createApp({
     db, logger: createLogger({ level: 'info', writers: [] }),
-    config: { name: 'verify-otlp', version: '0.0.1', port: 0, services: { dir: '/nonexistent' },
+    config: { name: 'verify-otlp', version: '0.0.1', port: 0,
               http: { ...defaultConfig.http, drainTimeout: 250 } },
   })
   app.configure(exporter)

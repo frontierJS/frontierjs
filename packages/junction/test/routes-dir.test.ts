@@ -36,7 +36,7 @@ async function withApp<T>(
 ): Promise<T> {
   const root = appDir(files)
   const app = createApp({
-    logLevel: 'silent', autoload: join(root, 'services'), config: { port: 0, ...config },
+    logLevel: 'silent', root, config: { port: 0, ...config },
   }) as unknown as Started
   try {
     await app.start()

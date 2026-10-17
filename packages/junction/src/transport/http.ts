@@ -11,6 +11,7 @@ import { parsePathSegments, matchPathDirect } from './router.ts'
 import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError, UnsafeIntegerError } from './body.ts'
 import type { ParsedBody } from './body.ts'
 import { serveStatic }                    from './static.ts'
+import { originRefusal, type CsrfOptions } from './middleware.ts'
 import { REFUSE, resolvePrincipal, resolveCaller, bearerPrincipal, type CredentialVerifier } from '../auth/credentials.ts'
 // `type` matters: StaticOptions is an interface, and importing it as a value
 // breaks any runtime that strips types rather than transpiling — Node's
@@ -280,6 +281,7 @@ export class HttpTransport {
   // after the fact.
   private _wsPerIp:     Map<string, number> = new Map()
   private _wsLimits:    Required<WsLimits>
+  private _upgradeOrigins: CsrfOptions['origins']
   private _ddosGc:      ReturnType<typeof setInterval> | null = null
   private _reverifyTick: ReturnType<typeof setInterval> | null = null
   private _wsRoutes: Array<{
@@ -506,6 +508,25 @@ export class HttpTransport {
 
   private _draining = false
 
+  /**
+   * helmet's headers, for the answers that never reach a route: a static file,
+   * a 404, a 405. Middleware runs only for a matched route, so without this an
+   * unrouted path goes out with none of them. `helmet()` is the only caller.
+   */
+  setSecurityHeaders(headers: Record<string, string> | null): void {
+    this._securityHeaders = headers
+  }
+
+  private _securityHeaders: Record<string, string> | null = null
+
+  private _withSecurityHeaders(response: Response): Response {
+    const security = this._securityHeaders
+    if (!security) return response
+    const headers = new Headers(response.headers)
+    for (const [k, v] of Object.entries(security)) headers.set(k, v)
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+  }
+
   setAuth(auth: SessionVerifier): void {
     this._opts.auth = auth
   }
@@ -530,6 +551,17 @@ export class HttpTransport {
    *  that installs `csrf()` (`FJS-D610`). */
   get authCookie(): string | null {
     return this._opts.authCookie ?? null
+  }
+
+  /** The origins besides the app's own that may open a socket: the csrf list,
+   *  stated by csrf() or by the start phase that would borrow cors's for it.
+   *  With none, an Origin must name the request's own host (`FJS-D1207`). */
+  setUpgradeOrigins(origins: CsrfOptions['origins']): void {
+    this._upgradeOrigins = origins
+  }
+
+  get upgradeOrigins(): CsrfOptions['origins'] {
+    return this._upgradeOrigins
   }
 
   /**
@@ -795,7 +827,7 @@ export class HttpTransport {
       const staticResp = await serveStatic(req, path, this._opts.static)
       if (staticResp) {
         this.stats.response.file++
-        return staticResp
+        return this._withSecurityHeaders(staticResp)
       }
     }
 
@@ -805,8 +837,9 @@ export class HttpTransport {
       // URL, 405 says look at your verb, and only the second can name what
       // would have worked.
       const allowed = this.router.allowedMethods(path)
-      if (allowed.length > 0) return this._methodNotAllowed(method, allowed)
-      return this._notFound(path)
+      return this._withSecurityHeaders(
+        allowed.length > 0 ? this._methodNotAllowed(method, allowed) : this._notFound(path)
+      )
     }
 
     // ── Parse body ─────────────────────────────────────────────────
@@ -834,13 +867,13 @@ export class HttpTransport {
         // a flood the app has already refused.
         return new Response(err.message, {
           status:  413,
-          headers: { 'content-type': 'text/plain', connection: 'close' },
+          headers: { 'content-type': 'text/plain; charset=utf-8', connection: 'close' },
         })
       }
       // The one malformed body that says why: the sender wrote digits this
       // transport cannot keep, and "Bad Request" would send them hunting.
       if (err instanceof UnsafeIntegerError) {
-        return new Response(err.message, { status: 400, headers: { 'content-type': 'text/plain' } })
+        return new Response(err.message, { status: 400, headers: { 'content-type': 'text/plain; charset=utf-8' } })
       }
       return new Response('Bad Request', { status: 400 })
     }
@@ -1312,6 +1345,13 @@ export class HttpTransport {
     let query: Record<string, unknown>
     try { query = parseQuery(url.search) } catch (err) { return this._errorResponse(err) }   // over a limit: refused at the upgrade
     const headers = Object.fromEntries(req.headers.entries())
+
+    // Before any credential is read: a browser applies no CORS to a handshake
+    // and sends its cookies with it, so any page could otherwise open a socket
+    // the session cookie authenticates (`FJS-3189`). No Origin passes, since
+    // only a browser sends one.
+    const foreign = originRefusal(headers, this._upgradeOrigins, true)
+    if (foreign) return new Response(`WebSocket: ${foreign}`, { status: 403 })
 
     // Read once here and taken off the headers the socket keeps: those become
     // every frame's `ctx.caller.headers`, and the logger redacts by name, which

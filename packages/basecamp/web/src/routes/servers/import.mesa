@@ -79,7 +79,7 @@ title: Import a machine
 
 <div class="section-header">
   <h1>Import a machine</h1>
-  <Button variant="ghost" href="/servers/">Back to list</Button>
+  <Button treatment="ghost" href="/servers/">Back to list</Button>
 </div>
 
 <div class="container narrow">
@@ -142,10 +142,10 @@ title: Import a machine
            hint="A label of your own — an imported machine has no catalog to pick from." />
 
     <div class="cluster">
-      <Button variant="primary" type="submit" disabled={saving || !draft.name}>
+      <Button tone="primary" type="submit" disabled={saving || !draft.name}>
         {saving ? 'Importing…' : 'Import machine'}
       </Button>
-      <Button variant="ghost" href="/servers/">Cancel</Button>
+      <Button treatment="ghost" href="/servers/">Cancel</Button>
     </div>
   </form>
 </div>

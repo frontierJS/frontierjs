@@ -15,7 +15,7 @@
 
 <DropdownMenu>
   {#snippet trigger()}
-    <Button id="more" variant="ghost">More</Button>
+    <Button id="more" treatment="ghost">More</Button>
   {/snippet}
   <DropdownItem id="remove" tone="danger" data-confirm="Remove it?"
                 data-confirm-label="Remove" onclick={() => did('remove')}>Remove</DropdownItem>

@@ -28,7 +28,6 @@ beforeAll(async () => {
   app = createApp({
     config: {
       port: PORT,
-      services: { dir: '/nonexistent' },
       http: { ...defaultConfig.http, drainTimeout: 200 },
     },
   })
@@ -231,7 +230,7 @@ describe('renderPrometheus emits numbers and invents nothing', () => {
 describe('createApp({ db }) contributes the database readiness', () => {
   const dbApp = async (db: unknown) => createApp({
     db: db as never,
-    config: { port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 200 } },
+    config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 200 } },
   })
 
   it('a live Litestone client reads ok under the name db', async () => {
@@ -262,5 +261,47 @@ describe('createApp({ db }) contributes the database readiness', () => {
     const body = await collectHealth(app, Date.now(), { checkTimeout: 500 })
     expect(body.checks.db.status).toBe('fail')
     db.$close()
+  })
+})
+
+describe('/metrics in production needs a gate (FJS-3191)', () => {
+
+  // `/metrics` names the pid, the runtime, every service and its methods, so a
+  // scaffold's `plugins: { health: true }` served all of it to the internet.
+  // `/health` is what a deploy's rollback and a load balancer poll, so it stays.
+  async function prodApp(opts: Parameters<typeof healthPlugin>[0] = {}) {
+    const was  = process.env.NODE_ENV
+    const warn = console.warn
+    process.env.NODE_ENV = 'production'
+    console.warn = () => {}
+    try {
+      const prod = createApp({ config: { port: 0 } })
+      prod.configure(healthPlugin(opts))
+      await prod.start()
+      return prod
+    } finally {
+      process.env.NODE_ENV = was
+      console.warn = warn
+    }
+  }
+
+  it('no token and no authFn: /metrics is not served, /health still answers', async () => {
+    const prod = await prodApp()
+    try {
+      const at = (p: string) => `http://localhost:${prod.http.port}${p}`
+      expect((await fetch(at('/metrics'))).status).toBe(404)
+      expect((await fetch(at('/health'))).status).toBe(200)
+      expect((await fetch(at('/health/live'))).status).toBe(200)
+    } finally { await prod.stop() }
+  })
+
+  it('a token serves it to the holder and refuses everyone else', async () => {
+    const prod = await prodApp({ token: 'scrape-me' })
+    try {
+      const at = (p: string) => `http://localhost:${prod.http.port}${p}`
+      expect((await fetch(at('/metrics'))).status).toBe(401)
+      const res = await fetch(at('/metrics'), { headers: { authorization: 'Bearer scrape-me' } })
+      expect(res.status).toBe(200)
+    } finally { await prod.stop() }
   })
 })

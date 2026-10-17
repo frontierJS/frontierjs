@@ -10,7 +10,7 @@ import { createApp, defaultConfig } from '../index.ts'
 import { Conflict, NotFound } from '../src/core/errors.ts'
 import type { ILogger } from '../src/core/logger.ts'
 
-const cfg = { ...defaultConfig, port: 0, services: { dir: '/nonexistent' } }
+const cfg = { ...defaultConfig, port: 0 }
 
 function recorder() {
   const errors: string[] = []

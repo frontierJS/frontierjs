@@ -90,7 +90,7 @@ title: Jobs
     <h1>Jobs</h1>
     <span class="text-sm text-muted">scheduled and one-shot work</span>
   </div>
-  <Button variant="primary" id="job-new" onclick={() => creating = true}>New job</Button>
+  <Button tone="primary" id="job-new" onclick={() => creating = true}>New job</Button>
 </div>
 
 <Drawer open={creating} title="New job" onclose={() => creating = false}>
@@ -130,10 +130,10 @@ title: Jobs
         </td>
         <td>
           <div class="cluster">
-            <Button variant="ghost" disabled={busy === job.id || !startable(job)} onclick={() => trigger(job)}>
+            <Button treatment="ghost" disabled={busy === job.id || !startable(job)} onclick={() => trigger(job)}>
               {busy === job.id ? 'Queuing…' : 'Run now'}
             </Button>
-            <Button variant="ghost" href={`/jobs/${job.id}/`}>Open</Button>
+            <Button treatment="ghost" href={`/jobs/${job.id}/`}>Open</Button>
           </div>
         </td>
       </tr>

@@ -44,7 +44,6 @@ beforeAll(async () => {
     logLevel: 'silent',
     config: {
       port:     0,
-      services: { dir: '/nonexistent' },
       http:     { ...defaultConfig.http, drainTimeout: 250, ws: { reverifySeconds: 1 } },
     },
     credentials: [req => {

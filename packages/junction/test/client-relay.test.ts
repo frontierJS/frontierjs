@@ -23,7 +23,7 @@ const rows: Array<Record<string, unknown>> = []
 
 beforeAll(async () => {
   app = createApp({
-    config: { port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http } },
+    config: { port: 0, http: { ...defaultConfig.http } },
   } as never)
   app.configure(channels((a: any) => {
     a.channels.on('connection', (_s: unknown, conn: unknown) => { a.channel(ROOM).join(conn) })

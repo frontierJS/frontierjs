@@ -194,21 +194,9 @@ app.notifications           // every type this app declares, by name
 
 ### Where they are found
 
-Two directories are probed beside the entry — `notifications/` and
-`src/notifications/` — which covers the flat layout and the scaffolded one.
-State the path when neither applies, or when the entry is not the app (a test
-runner and a drive that imports the app module both make themselves the entry):
-
-```typescript
-app.configure(notificationsPlugin({
-  db,
-  notifications: new URL('./notifications', import.meta.url).pathname,
-  transports:    { email: { mailer: 'default' } },
-}))
-```
-
-A stated path that is not a directory throws naming it. `notifications: false`
-turns loading off, and definitions then have to state `type:` themselves.
+In `notifications/` beside the app's root — `createApp({ root: import.meta.url })`
+(`FJS-D1080`). An app with no root loads none, and its definitions then have to
+state `type:` themselves.
 
 ### Renaming
 

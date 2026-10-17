@@ -70,16 +70,16 @@ title: Reset password
       <Input id="reset-confirm" name="confirm" label="Confirm new password" type="password"
              autocomplete="new-password" required bind:value={confirm} />
       <div class="cluster">
-        <Button type="submit" variant="primary" id="reset-submit">Change password</Button>
-        <Button variant="ghost" href="/reset-password/">Send a new link</Button>
+        <Button type="submit" tone="primary" id="reset-submit">Change password</Button>
+        <Button treatment="ghost" href="/reset-password/">Send a new link</Button>
       </div>
     </Form>
   {:else if sentTo}
     <article class="card stack" id="reset-sent">
       <p>If <strong>{sentTo}</strong> is a Basecamp account, a link to choose a new password is on its way. It works once.</p>
       <div class="cluster">
-        <Button variant="primary" href="/login/">Back to sign in</Button>
-        <Button variant="ghost" onclick={() => sentTo = null}>Use another address</Button>
+        <Button tone="primary" href="/login/">Back to sign in</Button>
+        <Button treatment="ghost" onclick={() => sentTo = null}>Use another address</Button>
       </div>
     </article>
   {:else}
@@ -94,8 +94,8 @@ title: Reset password
       <Input id="reset-email" name="email" label="Email" type="email" autocomplete="username"
              required bind:value={email} />
       <div class="cluster">
-        <Button type="submit" variant="primary" id="reset-send">Send link</Button>
-        <Button variant="ghost" href="/login/">Back to sign in</Button>
+        <Button type="submit" tone="primary" id="reset-send">Send link</Button>
+        <Button treatment="ghost" href="/login/">Back to sign in</Button>
       </div>
     </Form>
   {/if}

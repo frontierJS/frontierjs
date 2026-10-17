@@ -11,7 +11,7 @@ import { fileURLToPath }          from 'node:url'
 
 import {
   EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, AGENT_DOCS,
-  appTsconfig, appBiomeJson, appCheckScripts, appWorkflow, appAgentsMd, appAgentsProjectMd, appClaudeMd,
+  appTsconfig, appBiomeJson, appCheckScripts, appSurfaceScripts, appWorkflow, appAgentsMd, appAgentsProjectMd, appClaudeMd,
 } from '../core/app-config.js'
 import { RULES }                             from '../core/checks.js'
 import { extensionDevDeps }                  from '../core/extension-surface.js'
@@ -183,6 +183,45 @@ describe('what fli new actually writes', () => {
     // the command is a second answer that no test would contradict.
     expect(source).not.toContain('function makeTsconfig')
     expect(source).not.toContain('moduleResolution')
+    expect(source).not.toContain(`scripts['dev:api']`)
+    expect(source).not.toContain(`scripts['dev:web']`)
+  })
+})
+
+// FJS-D1083 — the scaffold wrote `dev:api`/`dev:web` while every app in this
+// repo says `api`/`web`, and every drive's *Start first* says `bun run api`.
+describe('the script table', () => {
+  test('a surface script is named for its directory', () => {
+    const scripts = appSurfaceScripts({ api: true, web: true })
+    expect(scripts.api).toBe('bun --watch run api/index.ts')
+    expect(scripts.web).toContain('vite -c config/vite.config.js')
+    expect(scripts.start).toBe('bun run api/index.ts')
+    expect(scripts.dev).toBe('bun run --parallel api web')
+    expect(scripts.build).toBe('bun run build:web')
+    expect(Object.keys(scripts).filter(k => k === 'dev:api' || k === 'dev:web')).toEqual([])
+  })
+
+  test('one surface makes dev the surface command itself', () => {
+    const scripts = appSurfaceScripts({ web: true })
+    expect(scripts.dev).toBe(scripts.web)
+    expect(scripts.api).toBeUndefined()
+  })
+
+  test('another surface brings its own scripts and joins dev and build', () => {
+    const scripts = appSurfaceScripts({
+      api: true, web: true,
+      surfaces: [{ scripts: { 'dev:site': 'cd site && vite', 'build:site': 'cd site && vite build' }, dev: 'dev:site', build: 'build:site' }],
+    })
+    expect(scripts.dev).toBe('bun run --parallel api web dev:site')
+    expect(scripts.build).toBe('bun run build:web && bun run build:site')
+  })
+
+  test('the API surface names the script appPorts reads', async () => {
+    const { appPorts } = await import('../core/ports.js')
+    const scripts = appSurfaceScripts({ api: true, web: true })
+    const rows = appPorts('/x/new-app', { name: 'new-app', exists: () => true, scripts })
+    expect(rows.find(r => r.surface === 'api').script).toBe('api')
+    expect(rows.find(r => r.surface === 'web').script).toBe('web')
   })
 })
 

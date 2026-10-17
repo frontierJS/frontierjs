@@ -153,7 +153,7 @@ describe('over HTTP, under the gate', () => {
     const db: any = await createClient({ db: ':memory:', schema: GATED })
     await db.asSystem().folder.create({ data: { id: 1, title: 'f' } })
     const app: any = createApp({ db: db as never, config: {
-      port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 50 },
+      port: 0, http: { ...defaultConfig.http, drainTimeout: 50 },
     } } as never)
     app.services.register(createService({ name: 'folders', model: 'Folder' } as never))
     // sessionGateLevel grades a plain user 4 and an admin 5.

@@ -31,7 +31,7 @@ async function served() {
   const app = createApp({
     db,
     config: {
-      port: 0, services: { dir: '/nonexistent' },
+      port: 0,
       http: { ...defaultConfig.http, drainTimeout: 50 },
     },
   })

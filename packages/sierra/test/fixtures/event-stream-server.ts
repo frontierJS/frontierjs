@@ -16,7 +16,6 @@ let disconnects = 0
 const app = createApp({
   config: {
     port,
-    services: { dir: '/nonexistent' },
   },
   logLevel: 'silent',
 })

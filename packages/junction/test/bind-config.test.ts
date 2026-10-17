@@ -11,7 +11,7 @@
 // files can collide on it (`test-ports.test.ts`).
 
 import { describe, test, expect, afterEach } from 'bun:test'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join }   from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -41,14 +41,16 @@ function freePort (): number {
 function configDir (file: Record<string, unknown>): string {
   const dir = mkdtempSync(join(tmpdir(), 'fjs-bind-'))
   dirs.push(dir)
-  writeFileSync(join(dir, 'junction.config.js'), `export default ${JSON.stringify(file)}\n`)
-  return dir
+  mkdirSync(join(dir, 'src'))
+  mkdirSync(join(dir, 'config'))
+  writeFileSync(join(dir, 'config', 'junction.config.js'), `export default ${JSON.stringify(file)}\n`)
+  return join(dir, 'src')
 }
 
 type Bound = { http: { port: number | null, _server?: { hostname?: string } } }
 
 async function boot (file: Record<string, unknown>, config: Record<string, unknown> = {}): Promise<Bound> {
-  const app = createApp({ configPath: configDir(file), config: config as never, logLevel: 'silent' })
+  const app = createApp({ root: configDir(file), config: config as never, logLevel: 'silent' })
   await app.start()
   running.push(app as unknown as { stop: () => Promise<void> })
   return app as unknown as Bound
@@ -108,8 +110,8 @@ describe('the bind is read after the config file', () => {
 describe("the file's apiPrefix moves every route", () => {
   test('routes registered before start, during it and by services', async () => {
     const app = createApp({
-      configPath: configDir({ app: { apiPrefix: '/api' } }),
-      config:     { port: 0, services: { dir: '/nonexistent' } } as never,
+      root: configDir({ app: { apiPrefix: '/api' } }),
+      config:     { port: 0 } as never,
       logLevel:   'silent',
     })
     app.post('/auth/login', ctx => ctx.json({ ok: true }))
@@ -129,8 +131,8 @@ describe("the file's apiPrefix moves every route", () => {
 
   test('a prefix passed to createApp still beats the file', async () => {
     const app = createApp({
-      configPath: configDir({ app: { apiPrefix: '/api' } }),
-      config:     { port: 0, apiPrefix: '/v1', services: { dir: '/nonexistent' } } as never,
+      root: configDir({ app: { apiPrefix: '/api' } }),
+      config:     { port: 0, apiPrefix: '/v1' } as never,
       logLevel:   'silent',
     })
     app.post('/auth/login', ctx => ctx.json({ ok: true }))

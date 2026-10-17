@@ -35,11 +35,11 @@
              aria-label={`Variant ${i + 1} weight`} style="--field-inline-size: 6rem" value={v.weight}
              oninput={(e) => set(i, 'weight', e.target.value)} />
       <span class="text-sm text-muted">%</span>
-      <Button variant="ghost" aria-label={`Remove variant ${i + 1}`} onclick={() => drop(i)}>Remove</Button>
+      <Button treatment="ghost" aria-label={`Remove variant ${i + 1}`} onclick={() => drop(i)}>Remove</Button>
     </div>
   {/each}
   <div class="cluster">
-    <Button variant="outlined" id={`${idPrefix}-add`} onclick={add}>Add variant</Button>
+    <Button treatment="outlined" id={`${idPrefix}-add`} onclick={add}>Add variant</Button>
     <span class="text-sm {total === 100 ? 'text-muted' : ''}" id={`${idPrefix}-total`}>
       {total}% of 100{list.length < 2 ? ' · needs at least two' : ''}
     </span>

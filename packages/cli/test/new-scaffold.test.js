@@ -73,7 +73,9 @@ test('a caravan app is scaffolded with the job that runs its declared retention'
   expect(readFileSync(job, 'utf8')).toContain('$retain()')
   expect(readFileSync(join(app, 'api/src/core/db.ts'), 'utf8')).toMatch(/export const sys\s*=\s*db\.asSystem\(\)/)
   expect(readFileSync(join(app, 'api/src/app.ts'), 'utf8')).toContain('createCaravan')
-  expect(readFileSync(join(app, 'api/config/junction.config.js'), 'utf8')).toMatch(/jobsDir:\s*here\('\.\.\/src\/jobs'\)/)
+  // jobs/ loads from beside createApp({ root }) (FJS-D1080), so the config names no folder.
+  expect(readFileSync(join(app, 'api/src/app.ts'), 'utf8')).toContain('root: import.meta.url')
+  expect(readFileSync(join(app, 'api/config/junction.config.js'), 'utf8')).not.toContain('jobsDir')
 }, 60_000)
 
 test('an app with no queue gets no job it could not run', () => {
@@ -137,9 +139,9 @@ test('--template web-only writes web/ and nothing that needs an API or a databas
   const deps = { ...manifest.dependencies, ...manifest.devDependencies }
   expect(deps['@frontierjs/litestone']).toBeUndefined()
   expect(deps['@frontierjs/junction']).toBeUndefined()
-  for (const s of ['dev:api', 'start', 'db:migrate', 'db:backup', 'db:types'])
+  for (const s of ['api', 'start', 'db:migrate', 'db:backup', 'db:types'])
     expect(manifest.scripts[s]).toBeUndefined()
-  expect(manifest.scripts.dev).toBe(manifest.scripts['dev:web'])
+  expect(manifest.scripts.dev).toBe(manifest.scripts.web)
 
   expect(readFileSync(join(app, 'tsconfig.json'), 'utf8')).not.toContain('api/')
   expect(readFileSync(join(app, 'web/config/sierra.config.js'), 'utf8')).not.toContain('junction')

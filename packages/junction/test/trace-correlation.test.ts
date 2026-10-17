@@ -42,7 +42,7 @@ beforeAll(async () => {
   app = createApp({
     db:     db as never,
     logger: createLogger({ level: 'debug', writers: [e => { lines.push(e) }] }),
-    config: { port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 250 } },
+    config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 250 } },
   })
   app.services.register(createService({
     name: 'orders', model: 'Order', db: db as never,

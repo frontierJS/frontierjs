@@ -124,7 +124,7 @@ title: People
           <span class="text-muted">no open window</span>
         {/if}
       </td>
-      <td><Button variant="ghost" href={'/people/' + e.id + '/'}>Open</Button></td>
+      <td><Button treatment="ghost" href={'/people/' + e.id + '/'}>Open</Button></td>
     </tr>
   {/snippet}
 </Table>

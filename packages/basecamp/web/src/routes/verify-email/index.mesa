@@ -49,9 +49,9 @@ title: Verify email
     <p class="text-sm text-muted">Checking the link…</p>
   {:else if state === 'done'}
     <Alert tone="success" title="Address verified">Your email address is confirmed.</Alert>
-    <Button variant="primary" href={session.user ? '/' : '/login/'}>{session.user ? 'Continue' : 'Sign in'}</Button>
+    <Button tone="primary" href={session.user ? '/' : '/login/'}>{session.user ? 'Continue' : 'Sign in'}</Button>
   {:else}
     <Alert tone="danger" title="Not verified">{error}</Alert>
-    <Button variant="ghost" href={session.user ? '/settings/' : '/login/'}>{session.user ? 'Your settings' : 'Sign in'}</Button>
+    <Button treatment="ghost" href={session.user ? '/settings/' : '/login/'}>{session.user ? 'Your settings' : 'Sign in'}</Button>
   {/if}
 </div>

@@ -185,7 +185,7 @@ title: API keys
 
 <div class="section-header">
   <h1>API keys</h1>
-  <Button variant="primary" id="new-key" onclick={() => creating = !creating}>
+  <Button tone="primary" id="new-key" onclick={() => creating = !creating}>
     {creating ? 'Cancel' : 'New key'}
   </Button>
 </div>
@@ -277,7 +277,7 @@ title: API keys
         </div>
       </fieldset>
 
-      <Button type="submit" variant="primary" id="issue-key">Generate key</Button>
+      <Button type="submit" tone="primary" id="issue-key">Generate key</Button>
     </Form>
   </Card>
 {/if}
@@ -320,13 +320,13 @@ title: API keys
         <td>
           <div class="cluster">
             {#if k.status === 'active'}
-              <Button variant="ghost" disabled={busy === k.id}
+              <Button treatment="ghost" disabled={busy === k.id}
                       aria-label={`Revoke ${k.name}`}
                       data-confirm={`Anything using ${k.name} is refused from its next request.`}
                       data-confirm-title="Revoke this key?" data-confirm-label="Revoke"
                       onclick={() => revoke(k)}>Revoke</Button>
             {/if}
-            <Button variant="ghost" disabled={busy === k.id}
+            <Button treatment="ghost" disabled={busy === k.id}
                     aria-label={`Delete ${k.name}`}
                     data-confirm={`${k.name} is deleted, and anything still using it is refused.`}
                     data-confirm-title="Delete this key?" data-confirm-label="Delete"

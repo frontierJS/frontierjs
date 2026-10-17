@@ -149,7 +149,7 @@ describe('a save does not send the server its own columns back', () => {
   beforeEach(() => registerSchemas({ Customer: CUSTOMER }, ['Customer']))
 
   test('patch — the row a GET answered, written straight back', async () => {
-    const customers = createResource('customers', 'id', { model: 'Customer' })
+    const customers = createResource('customers',{ model: 'Customer' })
     await customers.save(row(), { mode: 'patch' })
 
     const [verb, id, data] = _calls.at(-1)
@@ -161,13 +161,13 @@ describe('a save does not send the server its own columns back', () => {
   })
 
   test('…and the revision it read goes with it', async () => {
-    const customers = createResource('customers', 'id', { model: 'Customer' })
+    const customers = createResource('customers',{ model: 'Customer' })
     await customers.save(row(), { mode: 'patch' })
     expect(_calls.at(-1)[2].version).toBe(3)
   })
 
   test('create — a seeded blank carrying a stray server column', async () => {
-    const customers = createResource('customers', 'id', { model: 'Customer' })
+    const customers = createResource('customers',{ model: 'Customer' })
     await customers.save({ name: 'Ada', email: 'ada@x.test', userId: 'usr_9' }, { mode: 'create' })
 
     const data = _calls.at(-1)[1]

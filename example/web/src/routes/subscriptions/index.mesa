@@ -114,10 +114,10 @@ title: Subscriptions
       </td>
       <td>
         <div class="cluster">
-          <Button variant="ghost" href={'/subscriptions/' + s.id + '/'}>Open</Button>
+          <Button treatment="ghost" href={'/subscriptions/' + s.id + '/'}>Open</Button>
           {#if canStop(s) && s.cancelAtPeriodEnd}
             <Button
-              variant="ghost"
+              treatment="ghost"
               data-resume={s.reference}
               disabled={busy === s.id}
               onclick={() => setRenewal(s, true)}
@@ -136,7 +136,7 @@ title: Subscriptions
               onconfirm={() => setRenewal(s, false)}
             >
               {#snippet trigger()}
-                <Button variant="ghost" tone="danger" data-stop={s.reference} disabled={busy === s.id}>
+                <Button treatment="ghost" tone="danger" data-stop={s.reference} disabled={busy === s.id}>
                   Stop renewing
                 </Button>
               {/snippet}

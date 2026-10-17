@@ -116,6 +116,25 @@ describe('attachments', () => {
     expect(w).not.toContain('multipart/mixed')
     expect(w).toContain('Content-Type: text/plain; charset=UTF-8')
   })
+
+  // FJS-3204: the filename parameter is a quoted-string and an RFC 2231 value.
+  it('a " in a filename is escaped and ends no parameter early', async () => {
+    const w = await wire({ ...FULL, attachments: [{ filename: 'a"; filename="evil.exe', content: 'x' }] })
+    expect(w).toContain('Content-Disposition: attachment; filename="a\\"; filename=\\"evil.exe"')
+    expect(w).toContain('name="a\\"; filename=\\"evil.exe"')
+  })
+
+  it('a backslash in a filename is escaped', async () => {
+    const w = await wire({ ...FULL, attachments: [{ filename: 'a\\b.txt', content: 'x' }] })
+    expect(w).toContain('filename="a\\\\b.txt"')
+  })
+
+  it('a non-ASCII filename goes out as an RFC 2231 value beside an ASCII fallback', async () => {
+    const w = await wire({ ...FULL, attachments: [{ filename: 'résumé 日本.pdf', content: 'x' }] })
+    expect(w).toContain(`filename="r_sum_ __.pdf"; filename*=UTF-8''r%C3%A9sum%C3%A9%20%E6%97%A5%E6%9C%AC.pdf`)
+    expect(w).toContain(`name="r_sum_ __.pdf"; name*=UTF-8''r%C3%A9sum%C3%A9%20%E6%97%A5%E6%9C%AC.pdf`)
+    expect(/[^\x00-\x7f]/.test(w)).toBe(false)
+  })
 })
 
 describe('an inline image (FJS-1666)', () => {

@@ -80,7 +80,7 @@ async function mkApp(opts: { claims?: (name: string, conn: unknown) => null } = 
   const app: any = createApp({
     db,
     logLevel: 'silent',
-    config: { port: 0, services: { dir: '/nonexistent' } },
+    config: { port: 0 },
     auth: {
       verifySession: async (token: string) => {
         const m = /^u(\d+)$/.exec(token)
@@ -208,7 +208,7 @@ describe('a claim an app resolver derives', () => {
     const app: any = createApp({
       db,
       logLevel: 'silent',
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
       auth: {
         verifySession: async (token: string) => {
           const m = /^u(\d+)$/.exec(token)
@@ -273,7 +273,7 @@ model Page {
     const app: any = createApp({
       tenants: registry,
       logLevel: 'silent',
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
       auth: {
         verifySession: async (token: string) => {
           const m = /^u(\d+)$/.exec(token)
@@ -332,7 +332,7 @@ model Page {
   test('a pattern that names no tenant is refused at boot, and so is one that names a tenant with no registry', async () => {
     await expect(fleet('page:{id}')).rejects.toThrow(/must name the tenant exactly once/)
     const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
-    const app: any = createApp({ db, logLevel: 'silent', config: { port: 0, services: { dir: '/nonexistent' } } })
+    const app: any = createApp({ db, logLevel: 'silent', config: { port: 0 } })
     expect(() => app.configure(channels(undefined, { rooms: { '{tenant}:page:{id}': 'Page' } })))
       .toThrow(/names \{tenant\} and this app has no createApp/)
   })

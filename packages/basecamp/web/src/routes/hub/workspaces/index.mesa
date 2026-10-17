@@ -124,13 +124,13 @@ title: Hub workspaces
         <td class="text-sm text-muted">{day(w.createdAt)}</td>
         <td>
           {#if w.status === 'active'}
-            <Button variant="ghost" tone="danger" disabled={busy === w.id}
+            <Button treatment="ghost" tone="danger" disabled={busy === w.id}
                     aria-label={`Suspend ${w.name}`}
                     data-confirm={`Every member of ${w.name} is refused on their next request until it is reinstated.`}
                     data-confirm-title="Suspend this workspace?" data-confirm-label="Suspend"
                     onclick={() => setStatus(w, 'suspended')}>Suspend</Button>
           {:else}
-            <Button variant="ghost" disabled={busy === w.id}
+            <Button treatment="ghost" disabled={busy === w.id}
                     aria-label={`Reinstate ${w.name}`}
                     onclick={() => setStatus(w, 'active')}>Reinstate</Button>
           {/if}

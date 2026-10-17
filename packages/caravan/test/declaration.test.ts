@@ -21,7 +21,9 @@ import type {
   CaravanInstance, HandlerOptions, JobContext, JobRegistrar,
 } from '../src/types.ts'
 
-const CRON_FIXTURES = resolve(import.meta.dir, 'fixtures/cron-jobs')
+// An app root: its `jobs/` is the cron fixtures (`FJS-D1080`).
+const CRON_ROOT     = resolve(import.meta.dir, 'fixtures/cron')
+const CRON_FIXTURES = resolve(CRON_ROOT, 'jobs')
 const BAD_FIXTURES  = resolve(import.meta.dir, 'fixtures/bad-jobs')
 
 const queues: CaravanInstance[] = []
@@ -41,7 +43,8 @@ afterEach(async () => {
 describe('cron on a registration', () => {
 
   it('a job file that declares cron is scheduled by autoloading it', async () => {
-    const q = makeQueue({ jobsDir: CRON_FIXTURES })
+    const q = makeQueue()
+    await q.boot!({ root: CRON_ROOT })
     await q.start()
 
     expect(q.nextRuns()).toEqual([
@@ -50,7 +53,8 @@ describe('cron on a registration', () => {
   })
 
   it('the schedule dispatches onto the queue the same registration names', async () => {
-    const q = makeQueue({ jobsDir: CRON_FIXTURES })
+    const q = makeQueue()
+    await q.boot!({ root: CRON_ROOT })
     await q.start()
 
     // The scheduler fires on a clock; what is assertable without one is that
@@ -308,7 +312,9 @@ describe('the load line', () => {
     if (env === undefined) delete process.env.FLI_DEV
     else process.env.FLI_DEV = env
     try {
-      await makeQueue({ jobsDir: CRON_FIXTURES }).start()
+      const q = makeQueue()
+      await q.boot!({ root: CRON_ROOT })
+      await q.start()
     } finally {
       console.log = real
       if (was === undefined) delete process.env.FLI_DEV

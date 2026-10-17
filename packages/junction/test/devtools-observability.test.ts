@@ -32,7 +32,6 @@ beforeAll(async () => {
   app = createApp({
     config: {
       port: PORT,
-      services: { dir: '/nonexistent' },
       http: { ...defaultConfig.http, drainTimeout: 200 },
     },
   })
@@ -107,7 +106,6 @@ describe('readiness takes checks from plugins', () => {
     const solo = createApp({
       config: {
         port: PORT + 40,
-        services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },
     })
@@ -146,7 +144,6 @@ describe('the banner says where the console is', () => {
     const bare = createApp({
       config: {
         port: PORT + 41,
-        services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },
     })
@@ -160,7 +157,6 @@ describe('the banner says where the console is', () => {
     const locked = createApp({
       config: {
         port: PORT + 42,
-        services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },
     })
@@ -181,7 +177,6 @@ describe('the banner says where the console is', () => {
     const dyn = createApp({
       config: {
         port: PORT + 44,
-        services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },
     })
