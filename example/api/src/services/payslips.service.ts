@@ -17,6 +17,7 @@ import { createService, NotFound, $ } from '@frontierjs/junction'
 export default createService({
   model:   'Payslip',
   channel: 'payslips',
+  paginate: { default: 20, max: 500 },
 
   async get() {
     const db = $.db as Record<string, any>

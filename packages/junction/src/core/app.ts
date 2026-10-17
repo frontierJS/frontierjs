@@ -32,7 +32,7 @@ import type { ILogger }          from './logger.ts'
 import type { AppConfig }                          from '../config/index.ts'
 import type { SessionVerifier } from '../auth/types.ts'
 import type { IEventBus }           from '../events/index.ts'
-import type { RouteHandler, MiddlewareFn, WsHandlerSet } from '../transport/types.ts'
+import type { RouteHandler, MiddlewareFn, WsHandlerSet, HttpMethod } from '../transport/types.ts'
 
 // ─── Shutdown ─────────────────────────────────────────────────────────────
 
@@ -955,9 +955,25 @@ export function createApp(opts: AppOptions = {}): App {
     : null
 
   // Every route registered through app.get/post/put/patch/delete is mounted
-  // under this. Normalized once — an app may write 'api', '/api' or '/api/'.
-  const _apiPrefix = normalizePrefix(config.apiPrefix)
-  const prefixPath = (path: string): string => `${_apiPrefix}${path}`
+  // under this. Normalized — an app may write 'api', '/api' or '/api/'.
+  // Each registration is recorded, since a prefix stated only in
+  // junction.config.js arrives after a plugin's register() has mounted its
+  // routes, and `rebasePrefix` moves them (`FJS-3072`).
+  let _apiPrefix = normalizePrefix(config.apiPrefix)
+  const _prefixed: Array<{ method: HttpMethod | 'WS', path: string }> = []
+  const prefixPath = (method: HttpMethod | 'WS', path: string): string => {
+    _prefixed.push({ method, path })
+    return `${_apiPrefix}${path}`
+  }
+  const rebasePrefix = (): void => {
+    const next = normalizePrefix(config.apiPrefix)
+    if (next === _apiPrefix) return
+    for (const { method, path } of _prefixed) {
+      if (method === 'WS') http.moveWs(`${_apiPrefix}${path}`, `${next}${path}`)
+      else http.router.move(method, `${_apiPrefix}${path}`, `${next}${path}`)
+    }
+    _apiPrefix = next
+  }
 
   /**
    * A raw route handler, run inside the request scope.
@@ -1584,6 +1600,7 @@ export function createApp(opts: AppOptions = {}): App {
         // rather than silently booting on defaults.
         throw new Error(`[Junction] Failed to load configuration: ${err instanceof Error ? err.message : err}`)
       }
+      rebasePrefix()
     },
 
     errorMappers,
@@ -1695,14 +1712,14 @@ export function createApp(opts: AppOptions = {}): App {
     // `tenancy { strategy database }` that is the difference between a sign-in
     // reaching the caller's own shop and reaching whichever one the provider
     // was built against.
-    get(path, handler, mw)    { http.router.get(prefixPath(path), scoped(handler), mw);    return app },
-    post(path, handler, mw)   { http.router.post(prefixPath(path), scoped(handler), mw);   return app },
-    put(path, handler, mw)    { http.router.put(prefixPath(path), scoped(handler), mw);    return app },
-    patch(path, handler, mw)  { http.router.patch(prefixPath(path), scoped(handler), mw);  return app },
-    delete(path, handler, mw) { http.router.delete(prefixPath(path), scoped(handler), mw); return app },
+    get(path, handler, mw)    { http.router.get(prefixPath('GET', path), scoped(handler), mw);       return app },
+    post(path, handler, mw)   { http.router.post(prefixPath('POST', path), scoped(handler), mw);     return app },
+    put(path, handler, mw)    { http.router.put(prefixPath('PUT', path), scoped(handler), mw);       return app },
+    patch(path, handler, mw)  { http.router.patch(prefixPath('PATCH', path), scoped(handler), mw);   return app },
+    delete(path, handler, mw) { http.router.delete(prefixPath('DELETE', path), scoped(handler), mw); return app },
 
     // ── WebSocket shortcut ────────────────────────────────────────
-    ws(path, handlers, opts)  { http.ws(prefixPath(path), handlers, opts); return app },
+    ws(path, handlers, opts)  { http.ws(prefixPath('WS', path), handlers, opts); return app },
 
     // ── Startup ──────────────────────────────────────────────────
     // Both entry points run ONE ordered, named phase list (see startPhases

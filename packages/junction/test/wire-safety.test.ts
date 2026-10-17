@@ -146,11 +146,13 @@ describe('a window that cannot be served (FJS-683)', () => {
     expect(ok.status).toBe(200)
     expect((ok.body.data as unknown[]).length).toBe(5)
 
-    // The ceiling is the half that already worked; it is here as the control,
-    // so a clamp that refused everything would not look like a clamp that works.
+    // The ceiling is the control: the max itself is served whole, and one
+    // past it is refused rather than clamped (`FJS-1972`).
+    const max = await http(app, 'GET', '/notes?$limit=100')
+    expect(max.status).toBe(200)
+    expect((max.body.data as unknown[]).length).toBe(100)
     const over = await http(app, 'GET', '/notes?$limit=9999')
-    expect(over.status).toBe(200)
-    expect((over.body.data as unknown[]).length).toBe(100)
+    expect(over.status).toBe(400)
     await app.stop()
   })
 })

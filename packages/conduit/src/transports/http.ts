@@ -426,9 +426,15 @@ export class HttpTransport extends BaseTransport {
       // resolved to a public address at the first can resolve to a private
       // one by the second (`FJS-1667`). Loaded only by a target that needs it,
       // so a conduit with none never imports junction.
+      // The fetch connects to the graded address (`pinned`), so it cannot
+      // resolve the name a second time and land somewhere else.
+      let pinned: { url: string; headers: { host: string }; tls?: { serverName: string } } | undefined
       if (this.descriptor.address_from === 'request') {
-        const { assertPublicUrl } = await import('@frontierjs/junction/public-url')
-        try { await assertPublicUrl(url, this.descriptor.destinations ?? {}) }
+        const { gradePublicUrl, pinTo } = await import('@frontierjs/junction/public-url')
+        try {
+          const graded = await gradePublicUrl(url, this.descriptor.destinations ?? {})
+          if (graded.address) pinned = pinTo(graded.url, graded.address)
+        }
         catch (err) {
           return this.fail('invalid_request', `Refused to send: ${(err as Error).message}`, { retryable: false })
         }
@@ -513,9 +519,9 @@ export class HttpTransport extends BaseTransport {
           for (const [k, v] of Object.entries(signed.query)) keyed.searchParams.set(k, v)
           wire = keyed.toString()
         }
-        return { wire, init: this.fetchInit({
+        const init = this.fetchInit({
           method,
-          headers: this.mergeHeaders(plain, signed.headers),
+          headers: this.mergeHeaders(plain, signed.headers, pinned?.headers),
           // `Uint8Array<ArrayBufferLike>` does not structurally satisfy this
           // lib's `BodyInit` union even though fetch accepts it; the cast is
           // about the type declaration, not about the value.
@@ -525,7 +531,10 @@ export class HttpTransport extends BaseTransport {
           // given except `Authorization` — so an `api_key` header and an HMAC
           // signature both went to whatever host the 3xx named (`FJS-679`).
           redirect: 'manual' as RequestRedirect,
-        }) }
+        })
+        // biome-ignore lint/suspicious/noTsIgnore: the option is Bun-only and absent from the DOM fetch types
+        // @ts-ignore — Bun-specific TLS option
+        return { wire: pinned?.url ?? wire, init: pinned?.tls ? { ...init, tls: { ...init.tls, ...pinned.tls } } : init }
       })
 
       // The timeout deliberately stays armed through the body read below.

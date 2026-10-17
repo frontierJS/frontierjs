@@ -15,7 +15,8 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join }   from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { createApp } from '../src/core/app.ts'
+import { createApp }     from '../src/core/app.ts'
+import { createService } from '../src/core/service.ts'
 
 const running: Array<{ stop: () => Promise<void> }> = []
 const dirs:    string[] = []
@@ -96,5 +97,45 @@ describe('the bind is read after the config file', () => {
     const app = await boot({ app: { port: freePort() } }, { port: 0 })
     expect(app.http.port).not.toBe(Number(process.env.PORT))
     expect(app.http.port).toBeGreaterThan(0)
+  })
+})
+
+// A plugin's `register()` runs inside `configure()`, before `start()` reads the
+// file, so its routes were mounted under the prefix `createApp` saw while the
+// manifest advertised the file's. Every `fli new --full` app states apiPrefix in
+// junction.config.js alone, and served its login and its services at the root
+// behind a web proxy forwarding `/api` (`FJS-3072`).
+describe("the file's apiPrefix moves every route", () => {
+  test('routes registered before start, during it and by services', async () => {
+    const app = createApp({
+      configPath: configDir({ app: { apiPrefix: '/api' } }),
+      config:     { port: 0, services: { dir: '/nonexistent' } } as never,
+      logLevel:   'silent',
+    })
+    app.post('/auth/login', ctx => ctx.json({ ok: true }))
+    app.ws('/media', { message () {} })
+    app.services.register(createService({ name: 'items', find: async () => [] }))
+    await app.start()
+    running.push(app as unknown as { stop: () => Promise<void> })
+    const base = `http://127.0.0.1:${app.http.port}`
+
+    expect((await fetch(`${base}/api/auth/login`, { method: 'POST' })).status).toBe(200)
+    expect((await fetch(`${base}/auth/login`,     { method: 'POST' })).status).toBe(404)
+    expect((await fetch(`${base}/api/items`)).status).toBe(200)
+    expect((await fetch(`${base}/items`)).status).toBe(404)
+    expect(app.http.router.routePaths('POST')).toContain('/api/auth/login')
+    expect((await fetch(`${base}/api/media`, { headers: { upgrade: 'websocket' } })).status).not.toBe(404)
+  })
+
+  test('a prefix passed to createApp still beats the file', async () => {
+    const app = createApp({
+      configPath: configDir({ app: { apiPrefix: '/api' } }),
+      config:     { port: 0, apiPrefix: '/v1', services: { dir: '/nonexistent' } } as never,
+      logLevel:   'silent',
+    })
+    app.post('/auth/login', ctx => ctx.json({ ok: true }))
+    await app.start()
+    running.push(app as unknown as { stop: () => Promise<void> })
+    expect(app.http.router.routePaths('POST')).toContain('/v1/auth/login')
   })
 })

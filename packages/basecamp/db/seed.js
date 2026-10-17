@@ -652,6 +652,18 @@ export class BasecampSeeder extends Seeder {
                 await sys.appServer.create({
                   data: { appId: app.id, serverId: host.id, replicaIndex: 0, status: 'running' },
                 })
+                // An archive already taken, so the list is not empty on a demo
+                // fleet. The path is on the machine that took it.
+                if (app === apps[0]) {
+                  const at = new Date(Date.now() - 6 * 3_600_000)
+                  await sys.appBackup.create({
+                    data: {
+                      appId: app.id, serverId: host.id, status: 'success', requestedBy: owner.id,
+                      location: `/var/lib/outpost/backups/${app.id}-seeded.tar.gz`, sizeBytes: 2_400_000, fileCount: 3,
+                      startedAt: at.toISOString(), finishedAt: new Date(at.getTime() + 4_000).toISOString(), durationMs: 4_000,
+                    },
+                  })
+                }
               }
 
               // Deployment history, most recent first. Only production gets a
@@ -1128,7 +1140,7 @@ if (import.meta.main) {
       // `kvEntry` stand alone.
       'wait', 'runStep', 'run', 'flowLayout', 'flowVersion', 'flow',
       'flowCredential', 'kvEntry',
-      'jobRun', 'job', 'deploymentStep', 'deployment', 'appNetwork', 'appServer',
+      'jobRun', 'job', 'deploymentStep', 'deployment', 'appNetwork', 'appBackup', 'appServer',
       'dashboardWidget', 'dashboard', 'recipeRun', 'recipe', 'cleanupRun', 'diskUsage', 'serverPosture',
       'domain', 'app', 'flagOverride', 'featureFlag', 'environment', 'project',
       'monitorChannel', 'monitorEvent', 'monitorCheck', 'monitor',

@@ -233,6 +233,7 @@ index.ts     public API
   the ADDRESS names and is never used to find one, and `Verification.attempts`
   counts misses up to `loginChallengeAttempts`. An unknown address gets its
   account at the click, through `onRegister`, never at the request.
+- **Only a `kind: user` signs in, and `issueSession` is where that is refused** (`FJS-D1198`). A `bot` or a `peer` holds API keys only. `toContext` states the kind as `userType`, never the role, and it is the trail's `actorType`. A way to mint a session that does not end in `issueSession` lets a bot sign in.
 - **`Credential.linked` is how "a provider made this account" is told from "the mailbox made it and a provider joined later"** (`FJS-D1011`). `oauthResolve` § 4 and `confirmOAuthLink` write the `oauth:*` row onto an EXISTING account with `linked: true`; § 3 and the proof path's new-user branch write it unmarked. `securedByProvider(creds)` counts only an unmarked `oauth:*` row, and `providerOnly` (magic link) and `confirmPasswordReset` both call it. A new place that attaches a provider to an existing account sets the flag, or that account loses magic-link sign-in and reset (`FJS-2545`).
 - **`onRegistered({ user, db })` is the fifth and the one that runs INSIDE the
   registration** (`FJS-D520`, `FJS-1458`): after the row and its credential,

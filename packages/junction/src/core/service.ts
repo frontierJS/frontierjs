@@ -296,6 +296,13 @@ export interface Service {
   bulkMax?: number
 
   /**
+   * The page size, carried because `callService` is where a wire's `$limit` is
+   * graded against `max` -- it holds nothing but the service once the context
+   * is made (`FJS-D896`). Absent on a service over no model.
+   */
+  paginate?: { default: number; max: number }
+
+  /**
    * Query keys this service owns rather than filters on — see the declaration.
    * Carried onto the built service because `callService` reads it off the
    * service, which is the only thing it holds when the context is already made.
@@ -643,6 +650,22 @@ async function _callService(
   if (ctx.transport && ctx.transport !== 'internal') {
     const refused = scopeRefusal(service, method as string, ctx.auth?.user)
     if (refused) throw new Forbidden(refused)
+  }
+
+  // ── A page past the max ─────────────────────────────────────────────
+  // A `$limit` over `paginate.max` was clamped with a 200, so a caller that
+  // asked for a day's 260 rows read 100 and a correct-looking day
+  // (`FJS-1972`). Refused for a caller that STATED it over a wire; an internal
+  // call still clamps (`clampPage`), since its limit is code rather than a
+  // request. `paginate()`'s own max is a hook's and stays a clamp.
+  const stated = ctx.directives?.limit
+  if (method === 'find' && service.paginate && ctx.transport && ctx.transport !== 'internal'
+      && stated != null && Number(stated) > service.paginate.max) {
+    throw new BadRequest(
+      `$limit ${Number(stated)} is above this service's maximum page of ${service.paginate.max}. ` +
+      `Ask for ${service.paginate.max} or fewer and follow $offset (or hasMore) for the rest.`,
+      { directive: '$limit', value: Number(stated), max: service.paginate.max }
+    )
   }
 
   // ── Idempotency-Key ──────────────────────────────────────────────────
@@ -2833,6 +2856,7 @@ export function buildService(def: ServiceDefinition): Service {
     // onto the built service, so anything reading it back saw undefined.
     allowBulk: def.allowBulk ?? (base as { allowBulk?: boolean }).allowBulk ?? false,
     bulkMax:   def.bulkMax   ?? (base as { bulkMax?: number }).bulkMax   ?? 1000,
+    ...(def.model === null ? {} : { paginate: def.paginate ?? { default: 20, max: 100 } }),
     ...(reservedQuery.length ? { reservedQuery } : {}),
 
     find:    def.find    ?? base.find,

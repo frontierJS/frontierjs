@@ -44,7 +44,7 @@ export type WorkspaceType = 'personal' | 'team' | 'enterprise'
 
 export type WorkspaceRole = 'viewer' | 'billing' | 'developer' | 'admin' | 'owner'
 
-export type UserKind = 'human' | 'bot' | 'ai'
+export type UserKind = 'user' | 'bot' | 'peer' | 'ai'
 
 export type UserStatus = 'pending_verification' | 'active' | 'suspended'
 
@@ -302,6 +302,15 @@ export interface AppVolumeRestore {
   serverId: string
   path: string
   overwrite?: boolean | null
+}
+
+/**
+ * What `app-backups.create` accepts: the app, and the machine whose copy of
+ * its data volume is taken (`FJS-D679`).
+ */
+export interface AppBackupCreate {
+  appId: string
+  serverId: string
 }
 
 /**
@@ -3088,6 +3097,82 @@ export interface AppServerRelations {
   server: Server | null
 }
 
+// ─── AppBackup ───────────────────────────────────────────────────
+
+export interface AppBackup {
+  id: string
+  appId: string
+  serverId: string
+  status: RunStatus
+  sizeBytes?: number | null
+  fileCount?: number | null
+  location?: string | null
+  error?: string | null
+  requestedBy?: string | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  durationMs?: number | null
+  createdAt: string
+}
+
+export interface AppBackupCreate {
+  id?: string
+  appId: string
+  serverId: string
+  status?: RunStatus
+  sizeBytes?: number | null
+  fileCount?: number | null
+  location?: string | null
+  error?: string | null
+  requestedBy?: string | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  durationMs?: number | null
+}
+
+export interface AppBackupUpdate {
+  id?: string
+  appId?: string
+  serverId?: string
+  status?: RunStatus
+  sizeBytes?: number | null
+  fileCount?: number | null
+  location?: string | null
+  error?: string | null
+  requestedBy?: string | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  durationMs?: number | null
+}
+
+export interface AppBackupWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  appId?: string | WhereOp<string> | null
+  serverId?: string | WhereOp<string> | null
+  status?: RunStatus | WhereOp<RunStatus> | null
+  sizeBytes?: number | WhereOp<number> | null
+  fileCount?: number | WhereOp<number> | null
+  location?: string | WhereOp<string> | null
+  error?: string | WhereOp<string> | null
+  requestedBy?: string | WhereOp<string> | null
+  startedAt?: string | WhereOp<string> | null
+  finishedAt?: string | WhereOp<string> | null
+  durationMs?: number | WhereOp<number> | null
+  createdAt?: string | WhereOp<string> | null
+  AND?: AppBackupWhere[]
+  OR?:  AppBackupWhere[]
+  NOT?: AppBackupWhere
+}
+
+export type AppBackupOrderBy =
+  | { [K in keyof Omit<AppBackup, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<AppBackup, never>]?: OrderDir }>
+
+export interface AppBackupRelations {
+  app: App | null
+  server: Server | null
+}
+
 // ─── AppNetwork ──────────────────────────────────────────────────
 
 export interface AppNetwork {
@@ -5439,6 +5524,7 @@ export interface ServiceTypes {
   variables: Variable
   domains: Domain
   appServers: AppServer
+  appBackups: AppBackup
   appNetworks: AppNetwork
   deployments: Deployment
   deploymentSteps: DeploymentStep
@@ -5623,7 +5709,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appBackup' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations>
@@ -5660,6 +5746,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations>
   readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations>
   readonly appServer: TableClient<AppServer, AppServerCreate, AppServerUpdate, AppServerWhere, AppServerRelations>
+  readonly appBackup: TableClient<AppBackup, AppBackupCreate, AppBackupUpdate, AppBackupWhere, AppBackupRelations>
   readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations>
   readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations>
   readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations>

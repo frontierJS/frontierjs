@@ -264,6 +264,6 @@ describe('session()', () => {
   })
 
   test('a stated field wins', () => {
-    expect(session({ userId: 'u1', userType: 'admin', verifiedAt: null }).userType).toBe('admin')
+    expect(session({ userId: 'u1', userType: 'bot', verifiedAt: null }).userType).toBe('bot')
   })
 })

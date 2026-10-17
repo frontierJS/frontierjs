@@ -14,5 +14,6 @@ import { createService } from '@frontierjs/junction'
 export default createService({
   model:   'PayWindow',
   channel: 'pay-windows',
+  paginate: { default: 20, max: 500 },
   methods: ['find', 'get', 'create', 'update', 'patch'],
 })

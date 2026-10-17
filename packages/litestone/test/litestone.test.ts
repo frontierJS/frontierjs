@@ -7814,8 +7814,11 @@ describe('audit trail covers bulk writes', () => {
     })
     expect(res.count).toBe(2)
     const all = await entries(db)
+    // The conflicting insert of 'b' spends an autoincrement id, so the new row's
+    // id is read rather than assumed.
+    const d = (await db.widget.findUnique({ where: { code: 'd' } }))!
     expect(all.filter((e: any) => e.operation === 'create').map((e: any) => e.records))
-      .toEqual([[1, 2, 3], [4]])          // the seed, then the one new row
+      .toEqual([[1, 2, 3], [d.id]])       // the seed, then the one new row
     expect(all.filter((e: any) => e.operation === 'update')[0].records).toEqual([2])
     expect((await db.widget.findUnique({ where: { code: 'b' } }))!.name).toBe('B2')
     db.$close()
@@ -10102,13 +10105,11 @@ describe('fileUrl()', () => {
     expect(fileUrl(ref)).toBe('https://abc123.r2.cloudflarestorage.com/my-bucket/users/1/avatar/photo.jpg')
   })
 
-  test('uses publicBase when present', async () => {
-    const { fileUrl } = await import('../src/storage/index.js')
-    const ref = JSON.stringify({
-      key:        'users/1/avatar/photo.jpg',
-      publicBase: 'https://cdn.example.com',
-    })
-    expect(fileUrl(ref)).toBe('https://cdn.example.com/users/1/avatar/photo.jpg')
+  test('useStorage(config).url joins the config\'s publicBase', async () => {
+    const { useStorage } = await import('../src/storage/index.js')
+    const ref = JSON.stringify({ key: 'users/1/avatar/photo.jpg', provider: 'local' })
+    expect(useStorage({ provider: 'local', publicBase: 'https://cdn.example.com' }).url(ref))
+      .toBe('https://cdn.example.com/users/1/avatar/photo.jpg')
   })
 
   test('returns null for null/undefined input', async () => {
@@ -10120,11 +10121,11 @@ describe('fileUrl()', () => {
 
   test('accepts a pre-parsed object (not a string)', async () => {
     const { fileUrl } = await import('../src/storage/index.js')
-    const ref = { key: 'a/b.jpg', publicBase: 'https://cdn.example.com' }
-    expect(fileUrl(ref as any)).toBe('https://cdn.example.com/a/b.jpg')
+    const ref = { key: 'a/b.jpg', bucket: 'test', endpoint: 'https://abc123.r2.cloudflarestorage.com' }
+    expect(fileUrl(ref as any)).toBe('https://abc123.r2.cloudflarestorage.com/test/a/b.jpg')
   })
 
-  test('returns null when neither endpoint nor publicBase is in ref', async () => {
+  test('returns null when the ref has no endpoint', async () => {
     const { fileUrl } = await import('../src/storage/index.js')
     const ref = JSON.stringify({ key: 'a/b.jpg', bucket: 'test', provider: 'local' })
     expect(fileUrl(ref)).toBeNull()

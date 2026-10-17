@@ -71,8 +71,9 @@ is `development` or `test` and refuses to build otherwise, so a production
 process cannot fall back to a local directory by accident.
 
 A `File` column stores a reference — `{ key, name, provider, bucket, endpoint,
-publicBase, size, mime, uploadedAt }` — and a read resolves it to a URL:
-`publicBase` (or, failing that, `endpoint`) joined to the key. With neither,
+size, mime, uploadedAt }` — and a read resolves it to a URL: the config's
+current `publicBase` (or, failing that, the ref's `endpoint`) joined to the key,
+so moving hosts re-points every file. With neither,
 the field reads back as `null`.
 
 ---

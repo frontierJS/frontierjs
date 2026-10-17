@@ -771,6 +771,7 @@
 
   let _autoTimer  = null
   let _autoWarned = false
+  let _destroyed  = false
 
   const _autoDelay = () => (typeof autosave === 'number' ? autosave : AUTOSAVE_MS)
 
@@ -815,7 +816,9 @@
     // sending a second copy: <Form> refuses a re-entrant submit, and that
     // refusal would be reported as a failed autosave over a write that
     // succeeded.
-    if (submitting) { _autoBump(); return }
+    // A destroyed form has no later to wait for, and the button's write carries
+    // the record.
+    if (submitting) { if (!_destroyed) _autoBump(); return }
 
     // Refused over what is ALREADY speaking, and nothing is revealed to find
     // more. A control that cannot convert its own text is on screen by
@@ -833,7 +836,7 @@
     if (!out.ok) { _setAutoState('error'); return }
 
     _setAutoState('saved')
-    onautosaved?.(out.result, record)
+    if (!_destroyed) onautosaved?.(out.result, record)
   }
 
   /**
@@ -1047,7 +1050,13 @@
   }
 
   $.onDestroy(() => {
-    clearTimeout(_autoTimer)
+    // The edit is waiting in the quiet window and nothing will be here to send
+    // it. Fire and forget: the screen that owned this form has moved on.
+    if (_autoTimer) {
+      clearTimeout(_autoTimer)
+      _destroyed = true
+      _autosaveNow()
+    }
     if (typeof window !== 'undefined') window.removeEventListener('beforeunload', _unloadGuard)
   })
 

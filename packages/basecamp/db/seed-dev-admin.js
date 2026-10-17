@@ -45,7 +45,7 @@ if (!user) {
 await sys.user.update({
   where: { id: user.id },
   data: {
-    accountId: account.id, status: 'active', kind: 'human', name: NAME,
+    accountId: account.id, status: 'active', kind: 'user', name: NAME,
     displayName: NAME, emailVerified: true, isSystemAdmin: true,
   },
 })

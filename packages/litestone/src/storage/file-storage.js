@@ -31,7 +31,7 @@
 
 import { ExternalRefPlugin } from '../plugins/external-ref.js'
 import { createProvider }     from './index.js'
-import { refUrl }             from './ref-url.js'
+import { refUrlUnder }        from './ref-url.js'
 import { contentTypeFor, sniff, baseType, extensionFor, sameType } from '@frontierjs/toolbelt/mime'
 import { buildWhere }         from '../core/query.js'
 import { ValidationError }    from '../core/validate.js'
@@ -353,7 +353,6 @@ class FileStoragePlugin extends ExternalRefPlugin {
       bucket:     this.config.bucket,
       provider:   this.config.provider ?? 'local',
       endpoint:   this.config.endpoint ?? null,
-      publicBase: this.config.publicBase ?? null,
       size,
       mime: type,
       uploadedAt: new Date().toISOString(),
@@ -366,7 +365,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
   // fileUrl() still works for manual resolution of raw ref strings.
   async resolve(ref, { field, model, ctx }) {
     if (!ref) return null
-    return refUrl(ref)
+    return refUrlUnder(ref, this.config)
   }
 
   // cleanup: delete the S3/R2 object

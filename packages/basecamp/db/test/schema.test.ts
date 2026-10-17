@@ -308,7 +308,7 @@ describe('generated migration', () => {
     expect(readFileSync(join(dir, files[0]), 'utf8')).toContain(generateDDLForDatabase(r.schema, 'audit'))
   })
 
-  test('applies to a fresh database — 67 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 68 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -352,8 +352,9 @@ describe('generated migration', () => {
     // the host's tenant column (`FJS-D310`). 60 with `Variable`, which took
     // an environment's and an app's variables out of two Json columns. 62 with
     // `Dependency` and `DependencyUse`, the dependency mirror. 63 with
-    // `ServerPosture`. 67 with the four monitor tables (`FJS-1557`).
-    expect(tables.length).toBe(67)
+    // `ServerPosture`. 67 with the four monitor tables (`FJS-1557`). 68 with
+    // `AppBackup`.
+    expect(tables.length).toBe(68)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {
@@ -661,7 +662,7 @@ describe('the gate ladder', () => {
     const row = await sys.user.findUnique({ where: { id: 'u1' } })
     expect(row.isSystemAdmin).toBe(false)
     expect(row.status).toBe('pending_verification')
-    expect(row.kind).toBe('human')
+    expect(row.kind).toBe('user')
     // A field write policy DROPS the field; the rest of the write lands, which
     // is why the assertion above is the one that matters.
     expect(row.displayName).toBe('ok')
@@ -1615,7 +1616,7 @@ describe('auth compatibility', () => {
       data: { email: 'sam@example.com', name: 'Sam', role: 'user' },
     })
     expect(user.id).toBeTruthy()
-    expect(user.kind).toBe('human')          // defaulted
+    expect(user.kind).toBe('user')          // defaulted
     expect(user.accountId).toBe(null)        // nullable
     db.$close()
   })

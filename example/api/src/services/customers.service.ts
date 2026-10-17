@@ -33,6 +33,7 @@ const declared = (): Promise<CustomField[]> => $.db.customer.$declaredFields()
 
 export default createService({
   channel: 'customers',
+  paginate: { default: 20, max: 200 },
 
   // Declaring `methods:` narrows the surface — anything absent answers 405 —
   // so this list is the committed `surface.snapshot.md` verbatim plus the two

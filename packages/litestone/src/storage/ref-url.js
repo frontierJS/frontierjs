@@ -12,9 +12,23 @@ function keyPath(key) {
 }
 
 // publicBase wins and holds no bucket; otherwise the endpoint is path-style,
-// bucket first. Neither means the ref carries no address.
+// bucket first. Neither means no address.
 export function refUrl({ publicBase, endpoint, bucket, key }) {
   if (publicBase) return `${publicBase.replace(/\/$/, '')}/${keyPath(key)}`
   if (endpoint)   return `${endpoint.replace(/\/$/, '')}/${bucket}/${keyPath(key)}`
   return null
+}
+
+// A ref stores no public origin: the origin an app is served from changes
+// (a port, a domain, a CDN) and the key does not, so a stored copy orphans
+// every file the moment it moves. A ref's address is its own endpoint + bucket.
+export function refAddress({ endpoint, bucket, key }) {
+  return refUrl({ endpoint, bucket, key })
+}
+
+// A ref on the config's own provider takes the config's CURRENT publicBase; a
+// ref on another provider was uploaded elsewhere and keeps its own address.
+export function refUrlUnder(ref, config) {
+  if ((config.provider ?? 'local') !== ref.provider) return refAddress(ref)
+  return refUrl({ publicBase: config.publicBase, endpoint: ref.endpoint, bucket: ref.bucket, key: ref.key })
 }

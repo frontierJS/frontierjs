@@ -42,7 +42,8 @@ const PKG = '@frontierjs/junction'
 // because this used to resolve with `createRequire(...).resolve(specifier)` and
 // bun answers that from its global install CACHE for a package the app does not
 // have. See the note on `shippedFile`.
-const { shippedFile } = await import(resolve(global.fliRoot, 'core/app-schema.js'))
+const { shippedFile }       = await import(resolve(global.fliRoot, 'core/app-schema.js'))
+const { schemaApplyStep }   = await import(resolve(global.fliRoot, 'core/schema-apply.js'))
 
 const resolveFromApp = (root, subpath) =>
   shippedFile(root, PKG, `.${subpath.slice(PKG.length)}`)?.file ?? null
@@ -50,7 +51,7 @@ const resolveFromApp = (root, subpath) =>
 const schemaBlock = (db) => `
 // ─── Outbox — installed by fli outbox:install ────────────────────────────────
 //
-// One row per effect that must survive a crash. \`ctx.enqueue(job, payload)\`
+// One row per effect that must survive a crash. \`$.enqueue(job, payload)\`
 // writes it inside the call's own transaction, so the intent is recorded if and
 // only if the write it belongs to committed; the relay hands it to app.jobs and
 // marks it delivered.
@@ -64,7 +65,7 @@ import "${PKG}/outbox.lite"${db === 'main' ? '' : ` into ${db}`}
 `
 
 const wiringHint = `
-// ─── Add to api/src/server.ts ─────────────────────────────────────────────────
+// ─── Add to api/src/app.ts ────────────────────────────────────────────────────
 
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath }    from 'node:url'
@@ -78,14 +79,16 @@ import { env }              from './core/env.ts'
 const appRoot = fileURLToPath(new URL('../../', import.meta.url))
 const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), 'jobs.db')
 
-app.configure(createCaravan({ db: jobsDb, jobsDir: './src/jobs' }))  // the outbox needs a queue
+const jobsDir = fileURLToPath(new URL('./jobs', import.meta.url))
+
+app.configure(createCaravan({ db: jobsDb, jobsDir }))  // the outbox needs a queue
 app.configure(outbox())
 
 // Then, in a service that declares \`transactional:\`
 //
-//   async create(ctx) {
-//     const order = await ctx.locals.db.order.create({ data: ctx.data })
-//     await ctx.enqueue('order.shipped', { orderId: order.id })
+//   async create() {
+//     const order = await $.db.order.create({ data: $.data })
+//     await $.enqueue('order.shipped', { orderId: order.id })
 //     return order
 //   }
 //
@@ -96,12 +99,12 @@ app.configure(outbox())
 
 Installs the transactional outbox into the current project.
 
-`ctx.afterCommit(fn)` runs an effect only if the call succeeded and the
+`$.afterCommit(fn)` runs an effect only if the call succeeded and the
 transaction committed. It buys nothing against a **crash**: the process dies
 between the commit and the callback and the effect is simply never done, with
 nothing anywhere recording that it was owed.
 
-The outbox is the durable half. `ctx.enqueue(job, payload)` writes a row inside
+The outbox is the durable half. `$.enqueue(job, payload)` writes a row inside
 the call's own transaction, so the intent is recorded if and only if the write
 it belongs to committed, and a relay delivers it to `app.jobs` afterwards.
 
@@ -113,8 +116,8 @@ idempotent.
 
 What it does:
 - Appends `import "@frontierjs/junction/outbox.lite"` to `db/schema.lite`
-- Pushes the schema so the table exists
-- Prints the two lines to add to `api/src/server.ts`
+- Creates the table: a migration file when the app has a migration history, `db push` when it has none
+- Prints the two lines to add to `api/src/app.ts`
 
 ```js
 const schemaPath = resolve($.paths.db, 'schema.lite')
@@ -182,12 +185,14 @@ if (flag.dry) {
 
 // ─── 4. Push the schema ───────────────────────────────────────────────────────
 
+const apply = schemaApplyStep($.paths.db, 'outbox')
+
 if (flag.dry) {
-  log.dry('Would run: litestone db push')
+  log.dry(`Would run: ${apply.dry}`)
 } else {
-  log.info('Pushing schema to database...')
-  $.exec({ command: `cd ${$.paths.root} && bun run litestone db push --schema db/schema.lite` })
-  log.success('Schema pushed')
+  log.info(apply.kind === 'migrate' ? 'Writing and applying the migration...' : 'Pushing schema to database...')
+  $.exec({ command: `cd ${$.paths.root} && bun run litestone ${apply.argv}` })
+  log.success(apply.done)
 }
 
 // ─── 5. What to wire ──────────────────────────────────────────────────────────

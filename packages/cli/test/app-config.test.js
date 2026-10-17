@@ -484,3 +484,17 @@ describe('every dependency a scaffold writes is an exact version', () => {
     expect(bad).toEqual([])
   })
 })
+
+// ─── the scaffolded auth plugin grades the session (FJS-2090) ────────────────
+//
+// `account.me` publishes `session.level` only when the plugin is handed a
+// resolver, and sierra's can() answers true for a null level -- so a scaffold
+// without one shows a plain user the manager's nav.
+describe('the scaffolded auth plugin is handed the app’s getLevel', () => {
+  test('project/new.md wires services.level to gate.ts', () => {
+    const text = readFileSync(join(CLI, 'commands', 'project', 'new.md'), 'utf8')
+    const auth = text.slice(text.indexOf('function makeApiCoreAuthTs'), text.indexOf('function makeJunctionConfig'))
+    expect(auth).toContain("import { getLevel }")
+    expect(auth).toMatch(/createAuthPlugin\(auth, \{[^]*services:\s*\{\s*level:\s*getLevel\s*\}/)
+  })
+})

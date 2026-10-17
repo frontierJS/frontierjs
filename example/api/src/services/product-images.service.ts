@@ -5,4 +5,4 @@
 // put down the socket.
 import { createService } from '@frontierjs/junction'
 
-export default createService({ model: 'ProductImage', channel: 'product-images' })
+export default createService({ model: 'ProductImage', channel: 'product-images', paginate: { default: 20, max: 500 } })

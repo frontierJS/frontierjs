@@ -213,6 +213,8 @@ const child = spawn(process.execPath, [entry], {
     // Where an archive for `apps.restoreVolume` is copied. Under the app root,
     // because a snap-packaged docker cannot bind-mount the host's /tmp.
     OUTPOST_RESTORE_DIR: join(HOME, 'restore'),
+    // Where `app-backups.take` has the machine write an archive.
+    OUTPOST_BACKUP_DIR:  join(HOME, 'backups'),
   },
 })
 

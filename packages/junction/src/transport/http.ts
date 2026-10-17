@@ -62,6 +62,9 @@ function serializeSetCookie(
 // Below this threshold compression overhead exceeds the saving
 const MIN_COMPRESS_BYTES = 1024
 
+// Bun.serve's own `maxRequestBodySize` when none is passed.
+const BUN_MAX_REQUEST_BODY = 128 * 1024 * 1024
+
 // Every Response body is a ReadableStream in Bun, so a stream cannot be told
 // from a string by looking. Compressing means reading to the end first, which
 // holds an open stream's every byte until it closes (FJS-1416) — the helpers
@@ -262,6 +265,7 @@ export class HttpTransport {
   private _wsLimits:    Required<WsLimits>
   private _ddosGc:      ReturnType<typeof setInterval> | null = null
   private _wsRoutes: Array<{
+    path:     string
     segments: RouteSegment[]
     handlers: WsHandlerSet
     limits:   Required<Omit<WsLimits, 'maxPayloadLength'>>
@@ -402,8 +406,13 @@ export class HttpTransport {
       port:     port ?? this._opts.port,
       hostname: hostname ?? this._opts.hostname,
       ...(this._opts.idleTimeout !== undefined ? { idleTimeout: this._opts.idleTimeout } : {}),
+      // Bun refuses a declared length over this before `fetch` runs, with an
+      // empty 413 and no log line, so a `maxBodySize` above its 128 MB default
+      // meant 128 MB (`FJS-3090`). Never lowered below that default: under it
+      // `parseBody` refuses first, and its 413 names the setting.
+      maxRequestBodySize: Math.max(this._opts.maxBodySize ?? 0, BUN_MAX_REQUEST_BODY),
 
-      fetch: (req, server) => this._handle(req, server),
+      fetch:(req, server) => this._handle(req, server),
 
       // WebSocket handlers
       websocket: {
@@ -579,7 +588,18 @@ export class HttpTransport {
       ...this._wsLimits,
       ...Object.fromEntries(Object.entries(opts.limits ?? {}).filter(([, v]) => v !== undefined)),
     }
-    this._wsRoutes.push({ segments, handlers, limits, upgrade: opts.upgrade })
+    this._wsRoutes.push({ path, segments, handlers, limits, upgrade: opts.upgrade })
+  }
+
+  /** `Router.move` for a WS route — the same `apiPrefix` case (`FJS-3072`). */
+  moveWs(from: string, to: string): void {
+    if (this.router.isBuilt) {
+      throw new Error(`Cannot move WS route ${from} after router is built`)
+    }
+    const route = this._wsRoutes.find(r => r.path === from)
+    if (!route) throw new Error(`No WS route ${from} to move to ${to}`)
+    route.path     = to
+    route.segments = parsePathSegments(to)
   }
 
   // ─── fetch() — public request handler for testing ─────────────────

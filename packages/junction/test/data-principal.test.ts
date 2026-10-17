@@ -138,7 +138,7 @@ describe('toDataPrincipal carries the kind of caller to the audit trail', () => 
   })
 
   it('a user principal is still a user, whatever its role', async () => {
-    const row = await writeAs(toDataPrincipal({ userId: 'u-1', userType: 'admin', role: 'admin' }))
+    const row = await writeAs(toDataPrincipal({ userId: 'u-1', userType: 'user', role: 'admin' }))
     expect(row.actorType).toBe('user')
   })
 })

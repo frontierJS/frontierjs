@@ -19,7 +19,7 @@ import { Database } from 'bun:sqlite'
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { webhooks, createSqliteWebhookStore } from '../src/plugins/webhooks/index.ts'
-import { assertPublicUrl, PublicUrlError } from '../src/core/public-url.ts'
+import { assertPublicUrl, gradePublicUrl, pinTo, PublicUrlError } from '../src/core/public-url.ts'
 
 // ─── a receiver that can also redirect ────────────────────────────────────
 
@@ -310,5 +310,55 @@ describe('the lookup is bounded', () => {
   it('an address literal does no lookup at all — the control', async () => {
     // With a 1ms budget this could only pass by never resolving.
     await expect(assertPublicUrl('https://93.184.216.34/x', { lookupTimeoutMs: 1 })).resolves.toBeTruthy()
+  })
+})
+
+// ─── the connect uses the address that was graded (FJS-2928) ──────────────
+
+describe('a name is connected to at the address that was graded', () => {
+  // A resolver that answers public once and loopback next: the rebinding
+  // answer. `fetch` resolving the name again would take the second.
+  const rebinding = () => {
+    let calls = 0
+    return (async () => ++calls === 1
+      ? [{ address: '93.184.216.34', family: 4 }]
+      : [{ address: '127.0.0.1', family: 4 }]) as unknown as typeof import('node:dns/promises').lookup
+  }
+
+  it('answers the address it graded, for the connect to use', async () => {
+    const graded = await gradePublicUrl('https://rebind.test/x', {}, rebinding())
+    expect(graded.address).toBe('93.184.216.34')
+  })
+
+  it('prefers a v4 address and pins a v6 one in brackets', async () => {
+    const both = (async () => [{ address: '2606:4700::1111', family: 6 }, { address: '93.184.216.34', family: 4 }]) as never
+    expect((await gradePublicUrl('https://x.test/', {}, both)).address).toBe('93.184.216.34')
+    const pin = pinTo(new URL('https://x.test:8443/p?q=1'), '2606:4700::1111')
+    expect(pin.url).toBe('https://[2606:4700::1111]:8443/p?q=1')
+  })
+
+  it('pins the address, keeps the Host, and names the certificate for https', () => {
+    const pin = pinTo(new URL('https://hooks.example.com/x'), '93.184.216.34')
+    expect(pin).toEqual({
+      url:     'https://93.184.216.34/x',
+      headers: { host: 'hooks.example.com' },
+      tls:     { serverName: 'hooks.example.com' },
+    })
+    expect(pinTo(new URL('http://hooks.example.com:8080/x'), '93.184.216.34'))
+      .toEqual({ url: 'http://93.184.216.34:8080/x', headers: { host: 'hooks.example.com:8080' } })
+  })
+
+  it('a literal and allowPrivate have nothing to pin — the controls', async () => {
+    expect((await gradePublicUrl('https://93.184.216.34/x')).address).toBeNull()
+    expect((await gradePublicUrl('https://rebind.test/x', { allowPrivate: true }, rebinding())).address).toBeNull()
+  })
+
+  it('a fetch through the pin reaches the graded address and sends the name as Host', async () => {
+    const s = Bun.serve({ port: 0, fetch: req => new Response(req.headers.get('host')) })
+    try {
+      const pin = pinTo(new URL(`http://hooks.example.com:${s.port}/x`), '127.0.0.1')
+      const res = await fetch(pin.url, { headers: pin.headers })
+      expect(await res.text()).toBe(`hooks.example.com:${s.port}`)
+    } finally { s.stop(true) }
   })
 })

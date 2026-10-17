@@ -1108,6 +1108,7 @@ function makeApiCoreAuthTs() {
 import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { db }   from './db.ts'
 import { env }  from './env.ts'
+import { getLevel } from './gate.ts'
 
 export const auth = createLitestoneAuth(db, {
   encryptionKey:        env.ENCRYPTION_KEY,
@@ -1148,6 +1149,13 @@ export const auth = createLitestoneAuth(db, {
 export const authPlugin = createAuthPlugin(auth, {
   // Token in response body by default. Set true for httpOnly session cookie.
   cookieAuth: false,
+
+  // The same ladder every @@gate is graded on, published as \`session.level\`
+  // on account.me. Without it that level is null and the browser's can()
+  // answers true for everyone: a nav that offers a manager's links by can()
+  // shows them to a plain user. gate.ts is the one resolver; this is not a
+  // second mapping.
+  services: { level: getLevel },
 })
 `
 }

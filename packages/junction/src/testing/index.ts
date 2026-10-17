@@ -39,6 +39,8 @@ import type { HookMap }                          from '../core/hooks.ts'
 export interface StubUser {
   id:           string
   role?:        string
+  /** `user` · `bot` · `peer` — auth's `User.kind`, which a session states as `userType`. */
+  kind?:        string
   workspaceId?: string
   accountId?:  string
   scopes?:      string[]
@@ -66,7 +68,7 @@ export function createStubAuth(opts: { users?: StubUser[] } = {}): IAuth & {
   function toSession(user: StubUser, method: 'session' | 'apiKey' = 'session'): SessionContext {
     return {
       userId:      user.id,
-      userType:    user.role ?? 'user',
+      userType:    user.kind ?? 'user',
       accountId:   user.accountId,
       workspaceId: user.workspaceId,
       role:         user.role ?? 'user',

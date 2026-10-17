@@ -181,3 +181,76 @@ describe('the refusal a caller reads', () => {
     } finally { await t.stop(100) }
   })
 })
+
+// ─── The runtime's ceiling ────────────────────────────────────────────────
+// Bun refuses a declared length over its own `maxRequestBodySize` before the
+// fetch handler runs: an empty 413 and no log line. Unset, that is 128 MB, so
+// an `http.maxBodySize` above it was refused at 128 MB (`FJS-3090`).
+//
+// Only the HEAD of the request is sent. A body with no content-type is never
+// read, so the route answers on the headers alone and the 150 MB is never
+// allocated by either side.
+
+describe('the runtime ceiling', () => {
+
+  async function answerTo(maxBodySize: number, declared: number): Promise<string> {
+    const { HttpTransport } = await import('../src/transport/http.ts')
+    const t = new HttpTransport({ port: 0, maxBodySize })
+    t.router.post('/echo', (ctx) => ctx.text('reached'))
+    t.router.build()
+    t.start(0)
+    try {
+      let got = ''
+      const done = Promise.withResolvers<void>()
+      const socket = await Bun.connect({
+        hostname: '127.0.0.1',
+        port:     t.port!,
+        socket: {
+          data(_s, chunk) { got += new TextDecoder().decode(chunk); if (got.includes('\r\n\r\n')) done.resolve() },
+          close()         { done.resolve() },
+          error()         { done.resolve() },
+        },
+      })
+      socket.write(`POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: ${declared}\r\n\r\n`)
+      await Promise.race([done.promise, Bun.sleep(2000)])
+      socket.end()
+      return got.split('\r\n')[0] ?? ''
+    } finally { await t.stop(100) }
+  }
+
+  it('reaches the app for a declared length between 128 MB and maxBodySize', async () => {
+    const status = await answerTo(200 * 1024 * 1024, 150 * 1024 * 1024)
+    expect(status).toBe('HTTP/1.1 200 OK')
+  })
+
+  it('keeps the app the one that answers under the default limit', async () => {
+    // Paired: a ceiling lowered to 256 KB would answer this one empty, from Bun.
+    const status = await answerTo(256 * 1024, 1024 * 1024)
+    expect(status).toBe('HTTP/1.1 200 OK')
+  })
+})
+
+// ─── a file part ───────────────────────────────────────────────────────────
+
+// `maxBodySize` is the one bound on a multipart file (FJS-3092). A per-part cap
+// below it dropped the part and handed the service a write without the field,
+// so the caller's 60 MB upload became a 'missing field' about a field it sent.
+describe('a multipart file part', () => {
+
+  function upload(bytes: number) {
+    const form = new FormData()
+    form.append('title', 'x')
+    form.append('file', new Blob([new Uint8Array(bytes)]), 'big.bin')
+    return new Request('http://localhost/x', { method: 'POST', body: form })
+  }
+
+  it('lands above 50 MB when maxBodySize admits it', async () => {
+    const parsed = await parseBody(upload(60 * 1024 * 1024), 128 * 1024 * 1024)
+    expect(parsed.files.map(f => [f.name, f.size])).toEqual([['file', 60 * 1024 * 1024]])
+    expect(parsed.data).toEqual({ title: 'x' })
+  })
+
+  it('is refused with the body, never dropped from it, above maxBodySize', async () => {
+    expect(parseBody(upload(2 * 1024 * 1024), 1024 * 1024)).rejects.toThrow(BodyTooLargeError)
+  })
+})

@@ -1715,10 +1715,10 @@ describe('backup / replicate — the rest of db/', () => {
     const fake = join(dir, 'fake-litestream')
     // Answers the version floor, then prints the config it was handed.
     writeFileSync(fake, `#!/bin/sh\nif [ "$1" = version ]; then echo v0.5.2; exit 0; fi\ncat "$3"\n`, { mode: 0o755 })
-    const r = await runCli(dir, ['replicate', '--url', 'file:///tmp/replica'], { env: { LITESTREAM_BIN: fake } })
+    const r = await runCli(dir, ['replicate', '--url', `file://${join(dir, 'replica')}`], { env: { LITESTREAM_BIN: fake } })
     expect(r.exit).toBe(0)
     expect(r.stdout).toContain(`path: ${join(dir, 'db', 'jobs.db')}`)
-    expect(r.stdout).toContain('url: file:///tmp/replica/db-jobs')
+    expect(r.stdout).toContain(`url: file://${join(dir, 'replica')}/db-jobs`)
     expect(r.stdout).toContain(`path: ${join(dir, 'db', 'app.db')}`)
     expect(r.stdout).not.toContain('db-app')
     expect(r.stdout).toContain('not replicated')
@@ -1760,6 +1760,104 @@ describe('backup / replicate — the rest of db/', () => {
     const stamp = back.query(`SELECT value FROM _litestone_meta WHERE key = 'backup.takenAt'`).get() as any
     expect(Date.parse(stamp.value)).toBeGreaterThan(0)
     back.close()
+    const queue = new Database(join(dir, 'db', 'jobs.db'), { readonly: true })
+    expect(queue.query('SELECT id FROM jobs').all()).toEqual([{ id: 'pending-1' }])
+    queue.close()
+  })
+
+  // The copy names where each layout file goes (FJS-D1103): the tree being
+  // restored into is empty exactly when a restore is needed, so it cannot.
+  test('restore --from-backup into an empty db/ brings the queue and the stored bytes back', async () => {
+    const dir = appFixture('layout-empty')
+    mkdirSync(join(dir, 'db', 'nest'), { recursive: true })
+    new Database(join(dir, 'db', 'nest', 'a.db')).run('CREATE TABLE n (id TEXT)')
+    expect((await runCli(dir, ['backup', 'out'])).exit).toBe(0)
+    const manifest = JSON.parse(readFileSync(join(dir, 'out', 'db-layout.json'), 'utf8'))
+    expect(manifest.sqlite).toContainEqual({ name: 'db-jobs', rel: 'jobs.db' })
+    expect(manifest.sqlite).toContainEqual({ name: 'db-nest-a', rel: 'nest/a.db' })
+    expect(manifest.files).toContain('public/storage/ProductImage/a.png')
+
+    for (const gone of ['jobs.db', 'app.db', 'nest', 'public'])
+      rmSync(join(dir, 'db', gone), { recursive: true, force: true })
+
+    const r = await runCli(dir, ['restore', '--from-backup', join(dir, 'out')])
+    expect(r.exit).toBe(0)
+    const queue = new Database(join(dir, 'db', 'jobs.db'), { readonly: true })
+    expect(queue.query('SELECT id FROM jobs').all()).toEqual([{ id: 'pending-1' }])
+    queue.close()
+    // `db-nest-a` is `nest/a.db`; the name alone would say `nest-a.db`.
+    expect(new Database(join(dir, 'db', 'nest', 'a.db'), { readonly: true }).query("SELECT name FROM sqlite_master WHERE name = 'n'").all()).toEqual([{ name: 'n' }])
+    expect(readFileSync(join(dir, 'db', 'public', 'storage', 'ProductImage', 'a.png'), 'utf8')).toBe('PNGBYTES')
+  })
+
+  test('two paths that would share a backup name are refused', async () => {
+    const dir = appFixture('layout-collide')
+    mkdirSync(join(dir, 'db', 'nest'), { recursive: true })
+    new Database(join(dir, 'db', 'nest', 'a.db')).run('CREATE TABLE n (id TEXT)')
+    new Database(join(dir, 'db', 'nest-a.db')).run('CREATE TABLE flat (id TEXT)')
+    const r = await runCli(dir, ['backup', 'out'])
+    expect(r.exit).toBe(1)
+    expect(r.stdout + r.stderr).toContain('db/nest/a.db')
+    expect(r.stdout + r.stderr).toContain('db/nest-a.db')
+  })
+
+  test('stored files are put back only where nothing is at the path, and the schema stays the repo\'s', async () => {
+    const dir = appFixture('layout-files')
+    expect((await runCli(dir, ['backup', 'out'])).exit).toBe(0)
+    const png = join(dir, 'db', 'public', 'storage', 'ProductImage', 'a.png')
+    writeFileSync(png, 'NEWER')
+    writeFileSync(join(dir, 'db', 'schema.lite'), `model Post {\n  id    Int    @id\n  title String\n  extra String?\n}\n`, 'utf8')
+    rmSync(join(dir, 'db', 'jobs.db'))
+    const r = await runCli(dir, ['restore', '--from-backup', join(dir, 'out'), '--force'])
+    expect(r.exit).toBe(0)
+    expect(readFileSync(png, 'utf8')).toBe('NEWER')
+    expect(readFileSync(join(dir, 'db', 'schema.lite'), 'utf8')).toContain('extra')
+  })
+
+  test('a manifest path that leaves db/ is refused by name', async () => {
+    const dir = appFixture('layout-escape')
+    expect((await runCli(dir, ['backup', 'out'])).exit).toBe(0)
+    writeFileSync(join(dir, 'out', 'db-layout.json'), JSON.stringify({ sqlite: [], files: ['../escaped.txt'] }))
+    const r = await runCli(dir, ['restore', '--from-backup', join(dir, 'out'), '--force'])
+    expect(r.exit).toBe(1)
+    expect(r.stdout + r.stderr).toContain('../escaped.txt')
+    expect(existsSync(join(dir, 'escaped.txt'))).toBe(false)
+  })
+
+  test('replicate writes the layout beside the replica, and restore --url reads it', async () => {
+    const dir     = appFixture('layout-replica')
+    const replica = join(dir, 'replica')
+    const fake    = join(dir, 'fake-litestream')
+    // `replicate` prints its config; `restore -o <out> <url>` copies the file a
+    // replica of that name holds, which is what a real replica would stream back.
+    writeFileSync(fake, [
+      '#!/bin/sh',
+      'if [ "$1" = version ]; then echo v0.5.2; exit 0; fi',
+      'if [ "$1" = replicate ]; then cat "$3"; exit 0; fi',
+      'if [ "$1" = restore ]; then',
+      '  for a in "$@"; do url="$a"; done',
+      '  while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done',
+      '  [ -f "${url#file://}" ] || { echo "Error: no replica" >&2; exit 1; }',
+      '  case " $* " in *" -dry-run "*) exit 0 ;; esac',
+      '  cp "${url#file://}" "$out"; exit 0',
+      'fi',
+      'exit 0',
+    ].join('\n') + '\n', { mode: 0o755 })
+
+    const rep = await runCli(dir, ['replicate', '--url', `file://${replica}`], { env: { LITESTREAM_BIN: fake } })
+    expect(rep.exit).toBe(0)
+    const manifest = JSON.parse(readFileSync(join(replica, 'db-layout.json'), 'utf8'))
+    expect(manifest.sqlite).toContainEqual({ name: 'db-jobs', rel: 'jobs.db' })
+    expect(manifest.files).toContain('public/storage/ProductImage/a.png')
+
+    // What litestream would hold for each name.
+    for (const [name, file] of [['main', 'app.db'], ['db-jobs', 'jobs.db']])
+      writeFileSync(join(replica, name), readFileSync(join(dir, 'db', file)))
+    rmSync(join(dir, 'db', 'jobs.db'))
+    rmSync(join(dir, 'db', 'app.db'))
+
+    const r = await runCli(dir, ['restore', '--url', `file://${replica}`], { env: { LITESTREAM_BIN: fake } })
+    expect(r.stdout + r.stderr).toContain('restore complete')
     const queue = new Database(join(dir, 'db', 'jobs.db'), { readonly: true })
     expect(queue.query('SELECT id FROM jobs').all()).toEqual([{ id: 'pending-1' }])
     queue.close()

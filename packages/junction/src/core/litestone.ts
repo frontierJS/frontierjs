@@ -3549,13 +3549,14 @@ export const sessionGateLevel: (user?: GradableUser | null) => number = gradeSta
  * The same rename carries the KIND of caller. The audit trail's `actorType`
  * reads `type` and a session states `userType`, so the app's own principal
  * (`createApp({ system })`) writing through its scoped client was filed as a
- * user on every entry (`FJS-2514`). Only `service` crosses: `admin` is a
- * standing a person holds, and the trail files that person as a user.
+ * user on every entry (`FJS-2514`). Every kind but `user` crosses — `service`,
+ * and auth's `bot` and `peer` (`FJS-D1196`) — and `user` is what the trail
+ * already files for a principal with an id.
  */
 export function toDataPrincipal(user: unknown): unknown {
   if (!user || typeof user !== 'object') return user
   const u = user as { id?: unknown; userId?: unknown; type?: unknown; userType?: unknown }
-  const type = u.type == null && u.userType === 'service' ? { type: 'service' } : null
+  const type = u.type == null && typeof u.userType === 'string' && u.userType !== 'user' ? { type: u.userType } : null
   if (u.id !== undefined && u.id !== null) return type ? { ...user, ...type } : user
   if (u.userId === undefined || u.userId === null) return type ? { ...user, ...type } : user
   return { ...user, id: u.userId, ...type }

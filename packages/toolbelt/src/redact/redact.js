@@ -126,9 +126,13 @@ export const REDACTED = '[redacted]'
  * a value reached twice by two paths is walked twice, or a response body that
  * names one object in two places reads `[circular]` the second time.
  *
- * **A non-plain object is returned untouched.** A `Date`, a `URL`, an `Error`, a
- * class instance: walking one rebuilds it as a bare object and destroys it, and
- * a logger that turned every Date into `{}` would be worse than the leak.
+ * **A non-plain object with nothing to walk is returned untouched.** A `Date`, a
+ * `URL`, an `Error` with no own members: walking one rebuilds it as a bare
+ * object and destroys it, and a logger that turned every Date into `{}` would
+ * be worse than the leak. One that HOLDS members — a `Map`, `Headers`,
+ * `URLSearchParams`, a class instance, an `Error` with own properties — is
+ * copied as a bare object, because `password` on an instance is as much a
+ * credential as on a literal.
  */
 export function redactBy(value, isSecret, seen = new WeakSet()) {
   return walk(value, isSecret, true, seen)
@@ -152,6 +156,33 @@ function put(out, k, v) {
   Object.defineProperty(out, k, { value: v, writable: true, enumerable: true, configurable: true })
 }
 
+// A non-plain object as a plain bag of its named members, or null when it has
+// none worth walking. An object that serializes itself (`toJSON`: Date, URL,
+// Buffer) or is raw memory is opaque.
+function keyedView(v) {
+  const bag = {}
+  let any = false
+  // Checked before `toJSON`: bun's Headers has one.
+  if (v instanceof Map || (typeof Headers === 'function' && v instanceof Headers) ||
+      (typeof URLSearchParams === 'function' && v instanceof URLSearchParams)) {
+    for (const [k, val] of v) {
+      const name = String(k)
+      put(bag, name, Object.hasOwn(bag, name) ? [].concat(bag[name], val) : val)
+      any = true
+    }
+    return any ? bag : null
+  }
+  if (typeof v.toJSON === 'function' || ArrayBuffer.isView(v) || v instanceof ArrayBuffer) return null
+  for (const k of Object.keys(v)) { put(bag, k, v[k]); any = true }
+  if (!any) return null
+  // An Error's own message is not enumerable, and it is what a log line is for.
+  if (v instanceof Error) {
+    if (!('name' in bag)) put(bag, 'name', v.name)
+    if (!('message' in bag)) put(bag, 'message', v.message)
+  }
+  return bag
+}
+
 // An explicit stack, not recursion: junction runs this over every response of
 // a model with a protected field, and a stored Json value nested deeper than
 // the call stack made every later read of that model a 500 (FJS-2183).
@@ -162,10 +193,14 @@ function walk(value, isSecret, replace, ancestors) {
     if (ancestors.has(v)) return '[circular]'
     const isArray = Array.isArray(v)
     const proto = Object.getPrototypeOf(v)
-    if (!isArray && proto !== Object.prototype && proto !== null) return v
+    let from = v
+    if (!isArray && proto !== Object.prototype && proto !== null) {
+      from = keyedView(v)
+      if (!from) return v
+    }
     ancestors.add(v)
     const out = isArray ? new Array(v.length) : {}
-    stack.push({ src: v, out, keys: isArray ? null : Object.keys(v), i: 0 })
+    stack.push({ src: v, from, out, keys: isArray ? null : Object.keys(from), i: 0 })
     return out
   }
 
@@ -173,7 +208,7 @@ function walk(value, isSecret, replace, ancestors) {
   try {
     while (stack.length) {
       const frame = stack[stack.length - 1]
-      const { src, out, keys } = frame
+      const { src, from, out, keys } = frame
       if (frame.i === (keys ? keys.length : src.length)) {
         ancestors.delete(src)
         stack.pop()
@@ -182,7 +217,7 @@ function walk(value, isSecret, replace, ancestors) {
       const k = keys ? keys[frame.i] : frame.i
       frame.i++
       if (!keys) { if (k in src) out[k] = enter(src[k]) }
-      else if (!isSecret(k)) put(out, k, enter(src[k]))
+      else if (!isSecret(k)) put(out, k, enter(from[k]))
       else if (replace)      put(out, k, REDACTED)
     }
   } finally {

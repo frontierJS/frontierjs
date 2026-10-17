@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 68 models · 2 databases
+-- 69 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -288,7 +288,7 @@ CREATE TABLE IF NOT EXISTS "user" (
   "emailVerified" INTEGER NOT NULL DEFAULT 0,
   "role" TEXT NOT NULL DEFAULT 'user',
   "accountId" TEXT,
-  "kind" TEXT NOT NULL DEFAULT 'human',
+  "kind" TEXT NOT NULL DEFAULT 'user',
   "status" TEXT NOT NULL DEFAULT 'pending_verification',
   "username" TEXT,
   "displayName" TEXT,
@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS "user" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
-  CHECK ("kind" IN ('human', 'bot', 'ai')),
+  CHECK ("kind" IN ('user', 'bot', 'peer', 'ai')),
   CHECK ("status" IN ('pending_verification', 'active', 'suspended')),
   UNIQUE ("accountId", "username"),
   FOREIGN KEY ("accountId") REFERENCES "account" ("id")
@@ -1118,6 +1118,27 @@ CREATE TABLE IF NOT EXISTS "app_server" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_app_server_serverId" ON "app_server" ("serverId");
 
+CREATE TABLE IF NOT EXISTS "app_backup" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "appId" TEXT NOT NULL,
+  "serverId" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "sizeBytes" INTEGER,
+  "fileCount" INTEGER,
+  "location" TEXT,
+  "error" TEXT,
+  "requestedBy" TEXT,
+  "startedAt" TEXT,
+  "finishedAt" TEXT,
+  "durationMs" INTEGER,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
+  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_app_backup_appId" ON "app_backup" ("appId");
+CREATE INDEX IF NOT EXISTS "idx_app_backup_serverId" ON "app_backup" ("serverId");
+
 CREATE TABLE IF NOT EXISTS "app_network" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "appId" TEXT NOT NULL,
@@ -1274,7 +1295,7 @@ CREATE TABLE IF NOT EXISTS "audit_trail" (
   "tenant" TEXT,
   "meta" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "id" INTEGER NOT NULL PRIMARY KEY
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_actorId" ON "audit_trail" ("actorId");
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_model" ON "audit_trail" ("model");

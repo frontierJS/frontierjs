@@ -232,6 +232,7 @@ const checkOrderRules = async () => {
 
 export default createService({
   channel: 'orders',
+  paginate: { default: 20, max: 200 },
 
   // BEFORE the derived gateAuth and autoValidate — an app's layer is merged
   // first and there is no slot after them (`FJS-403`). That is why these

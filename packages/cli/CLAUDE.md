@@ -437,6 +437,11 @@ core/
                 Reading the prose beat declaring it beside the script and beat
                 asking the drive, because the answer was already written down
   typecheck.js  tsc's output, filtered to your files — shared with scripts/typecheck.mjs
+  schema-apply.js  how `outbox:install`, `backfill:install` and `auth:install`
+                land the schema they edited — `migrate dev` in an app with a
+                migration history, `db push` in one with none. A push there
+                leaves a table in app.db and in no file, and the next
+                `db:migrate` refuses it (`FJS-1797`)
   app-config.js what a scaffolded app is GIVEN — deps, scripts, configs, workflow,
                 and AGENTS.md: `AGENT_DOCS` is the packages whose TARBALL carries one,
                 held to `exports.snapshot.md` in both directions, so a package that

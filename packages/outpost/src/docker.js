@@ -15,7 +15,7 @@
  */
 
 import { stripVTControlCharacters } from 'node:util'
-import { realpath, stat }          from 'node:fs/promises'
+import { mkdir, realpath, stat }   from 'node:fs/promises'
 import { validRelativePath }       from './static.js'
 
 /** A digest is `sha256:` and 64 hex characters. Anything else is not an
@@ -114,9 +114,23 @@ find /data -type f -exec stat -c %s {} + | awk '{ n++; b += $1 } END { printf "%
 // it partway with the volume half written.
 const RESTORE_TIMEOUT_MS = 3_600_000
 
+// ─── backup ──────────────────────────────────────────────────────────────────
+// The volume is mounted read-only and the container has no network, so the
+// capture cannot change the app's data or send it anywhere. The archive is
+// written under a `.partial` name and renamed, so a tar that dies partway never
+// leaves a file that reads as a finished backup; `umask 077` because the
+// archive holds whatever the app keeps, including secrets it stored itself.
+// The last line is `<bytes> <files>`.
+const BACKUP_SCRIPT = `set -e
+umask 077
+tar -czf "/out/$FJS_NAME.partial" -C /data .
+mv "/out/$FJS_NAME.partial" "/out/$FJS_NAME"
+echo "$(stat -c %s "/out/$FJS_NAME") $(find /data -type f | wc -l)"`
+const BACKUP_TIMEOUT_MS = 3_600_000
+
 export function createDocker({
   run = spawnRun, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/apps', health = HEALTH,
-  restoreDir = '/var/lib/outpost/restore',
+  restoreDir = '/var/lib/outpost/restore', backupDir = '/var/lib/outpost/backups',
 } = {}) {
 
   /** Run a docker command, or throw with what the machine actually said. A
@@ -533,6 +547,42 @@ export function createDocker({
       }
       const [files, bytes] = result.stdout.trim().split('\n').at(-1).split(/\s+/).map(Number)
       return { volume, archive, files, bytes, overwrite: overwrite === true }
+    },
+
+    /**
+     * The app's data volume tarred into `backupDir` on this machine
+     * (`FJS-D679`, `FJS-1782`). The archive stays here and the answer is its
+     * path, so no bytes cross the command port; a lost machine takes its
+     * backups with it. A running container is a SQLite writer with the file
+     * open: its `-wal` is in the archive beside the database, and a restore
+     * replays it, but the copy is a crash-consistent one, not a checkpointed one.
+     */
+    async backup({ appId }) {
+      if (typeof appId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(appId))
+        throw new Error(`app_id '${appId}' is not a plain name`)
+      const volume = `fjs-${appId}-data`
+      const held   = await run(['docker', 'volume', 'inspect', volume])
+      if (held.exitCode !== 0) throw new Error(`${volume} does not exist on this machine — the app has no data here to back up`)
+
+      await mkdir(backupDir, { recursive: true, mode: 0o700 })
+      const root = await realpath(backupDir)
+      if (/[,:]/.test(root)) throw new Error(`'${root}' has a ':' or ',' that a mount cannot carry`)
+
+      // `:` is legal in a filename and awkward to scp.
+      const name = `${appId}-${new Date().toISOString().replace(/[:.]/g, '-')}.tar.gz`
+      const result = await run([
+        'docker', 'run', '--rm', '--network', 'none',
+        '-e', `FJS_NAME=${name}`,
+        '-v', `${volume}:/data:ro`,
+        '--mount', `type=bind,src=${root},dst=/out`,
+        RESTORE_IMAGE, 'sh', '-c', BACKUP_SCRIPT,
+      ], { timeoutMs: BACKUP_TIMEOUT_MS })
+      if (result.exitCode !== 0) {
+        const said = (result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
+        throw new Error(`backup of ${volume} failed (exit ${result.exitCode}): ${said}`)
+      }
+      const [bytes, files] = result.stdout.trim().split('\n').at(-1).split(/\s+/).map(Number)
+      return { volume, path: `${root}/${name}`, bytes, files }
     },
 
     /** An operator's script, as root over the box. The unit is sandboxed and the

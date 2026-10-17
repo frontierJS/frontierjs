@@ -774,9 +774,10 @@ be worse.
   the destination**, an ALLOW-list of schemes plus a public-address check over
   every address a name answers with, run at registration AND before every
   attempt — a name that resolved publicly an hour ago can resolve to loopback
-  now. A rebind BETWEEN the check and the connect is not closed and `public-url.ts`
-  says so: it needs the socket pinned to the graded address, and `fetch` has no
-  way to do that. `targets: { allowHttp, allowPrivate }` is the opt-out and the
+  now. A rebind BETWEEN the check and the connect is closed by connecting to the
+  graded address: `gradePublicUrl` answers it, `pinTo` builds the fetch (address
+  in the URL, `Host` kept, `tls.serverName` for the certificate), and a caller
+  using `assertPublicUrl` alone leaves the window open (`FJS-2928`). `targets: { allowHttp, allowPrivate }` is the opt-out and the
   only thing in this repo that turns it off is the delivery suite, whose
   receiver is a real server on localhost.
 - **A webhook subscriber is a principal, and it is read rather than stated**

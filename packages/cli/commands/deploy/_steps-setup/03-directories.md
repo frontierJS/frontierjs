@@ -19,6 +19,13 @@ const dirs = [
 
 machine.run(`mkdir -p ${dirs}`)
 
+// The container runs as the image's user and /db is bound over the host's db
+// directory, so that directory belongs to the same uid (FJS-D1120). sudo for a
+// login that is not root; a box where the login already owns uid 1000 needs none.
+const { IMAGE_USER } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
+const dbDir = $.config.deployConf?.db?.path ?? `${serverPath}/db`
+machine.run(`chown ${IMAGE_USER.uid}:${IMAGE_USER.gid} ${dbDir} 2>/dev/null || sudo chown ${IMAGE_USER.uid}:${IMAGE_USER.gid} ${dbDir}`)
+
 // ─── The env file, seeded once ────────────────────────────────────────────────
 // The local `.env.production` is copied up only when the target has none, and
 // never over one: from then on the server's copy is the operator's, and a revert

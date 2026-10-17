@@ -79,6 +79,11 @@
   // The parent swapping the record UNDER the form — reloading somebody else's
   // revision after a conflict. It is not an edit and must schedule nothing.
   function pushFromParent() { recordB = { ...EXISTING, reference: 'THEIRS' } }
+
+  // A drawer the person closes inside the quiet window (FJS-3157). It never
+  // sets `onautosaved` to anything the page shows: a destroyed form calls none.
+  let showD   = true
+  let savedD  = 0
 </script>
 
 <div id="auto">
@@ -111,6 +116,13 @@
   <Form resource={RESOURCE} record={{ ...EXISTING }} />
 </div>
 
+<div id="closing">
+  {#if showD}
+    <Form resource={RESOURCE} record={{ ...EXISTING }} autosave={QUIET} onautosaved={() => savedD++} />
+  {/if}
+</div>
+
+<button type="button" id="close-d" onclick={() => showD = false}>close</button>
 <button type="button" id="push" onclick={pushFromParent}>push</button>
 <button type="button" id="submit" onclick={() => apiA?.submit()}>submit</button>
 <button type="button" id="flush" onclick={() => apiA?.flushAutosave()}>flush</button>
@@ -123,3 +135,4 @@
 <output id="held-version">{recordA?.version}</output>
 <output id="autosaved">{savedA}</output>
 <output id="done">{doneA}</output>
+<output id="autosaved-d">{savedD}</output>

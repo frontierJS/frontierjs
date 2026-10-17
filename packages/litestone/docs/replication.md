@@ -87,8 +87,14 @@ what a declaration or the tenancy block already covers, `-wal`/`-shm`
 companions, dot-entries, and `db/backups/`. A schema outside `db/` is a bare
 project whose directory is its source, and gets none of this.
 
-`restore` does not bring these back yet: it resolves its targets from the tree
-it is restoring into, and an empty one has no `jobs.db` to name (`FJS-1509`).
+Each copy carries `db-layout.json` — `{ sqlite: [{ name, rel }], files: [rel] }` —
+because a restore runs into a tree that is empty exactly when it is needed, and
+a name like `db-a-b` cannot say whether it was `a/b.db` or `a-b.db` (`FJS-D1103`).
+`backup` writes it into the destination; `replicate` writes it to
+`<url>/db-layout.json` before streaming, and can do so for `file://` and `s3://`
+replicas only — on any other it says so and the `db-*` files are not restored.
+Two paths that would take one name (`nest/a.db` and `nest-a.db`) are refused by
+both commands.
 
 ## S3-compatible storage
 
@@ -143,7 +149,7 @@ check for you:
 
 - **The app is not restored — the Data realm is.** A restore does not un-send an
   email, un-run a job, or un-notify a client, and a Caravan queue or a storage
-  adapter's files are outside it (`FJS-1391`).
+  adapter's files come back only from a backup's `db-files/` (`--from-backup`).
 - **A restore nothing has read is a rumor** — § Proving a copy.
 
 ### From a local backup
@@ -158,19 +164,23 @@ not needed. `replicate.url` in the config does not count, so a local checkpoint
 never reaches for the production replica. The directory's layout is the map:
 `<name>.db`, `<name>/` for jsonl and trail, `tenant-files/` and
 `tenant-registry/`, and `db-<path>.db` for a SQLite file under `db/` no schema
-names, which goes back to the live file of that name. It is all or nothing, and
+names, which `db-layout.json` places at its path under `db/`. It is all or nothing, and
 replaces files only with `--force`, the way a replica restore does, `-wal` and
 `-shm` removed.
 
 - **A database the backup does not hold is left as it is**, and named. `backup`
   writes nothing for a database nothing had written to, and nothing for one
   `--db` left out, and the directory cannot say which.
-- **`db-files/` is not restored.** It holds `schema.lite` and the migrations
-  beside any stored files, and those are the repo's. A database whose history is
-  behind the files applies the rest at the next `migrate apply`.
-- **A `db-<path>.db` with no live file of that name is refused.** The name turns
-  the path's slashes into hyphens, so it cannot say where the file goes; `--db
-  <name>` restores the declared databases without it.
+- **`db-files/` is put back only where nothing is at the path.** `schema.lite` and
+  `migrations/` are skipped by name — they are the repo's — and a stored file
+  already there is left as it is. A database whose history is behind the schema
+  applies the rest at the next `migrate apply`.
+- **A copy with `db-*` files and no `db-layout.json` is refused**, and so is a
+  manifest path that leaves `db/`; `--db <name>` restores the declared databases
+  without them.
+- **From a replica (`--url`)**, the manifest is read from `<url>/db-layout.json`
+  and each `db-*` file comes back from its own replica. Stored files are not on a
+  replica: add `--from-backup <dir>` to bring them from a backup's `db-files/`.
 
 ## Proving a copy
 

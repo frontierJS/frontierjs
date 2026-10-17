@@ -56,7 +56,7 @@ import type { Database } from 'bun:sqlite'
 import { normalizePrefix }     from '../../core/app.ts'
 import { signRequest, verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
 import { sessionGateLevel }    from '../../core/litestone.ts'
-import { assertPublicUrl }                   from '../../core/public-url.ts'
+import { assertPublicUrl, gradePublicUrl, pinTo } from '../../core/public-url.ts'
 import type { PublicUrlOptions } from '../../core/public-url.ts'
 import { shapeForSubscriber, sayUnowned } from './payload.ts'
 import type { ShapeResult }    from './payload.ts'
@@ -538,8 +538,14 @@ async function attemptDelivery(
 
   // Re-graded per attempt, not only at registration: a name that resolved to a
   // public address when somebody registered it can resolve to `127.0.0.1` an
-  // hour later, and a retry ladder runs for a day.
-  try { await assertPublicUrl(registration.url, targets) }
+  // hour later, and a retry ladder runs for a day. The fetch connects to the
+  // address that was graded: a name resolved again by the connect could answer
+  // loopback this time.
+  let pin: ReturnType<typeof pinTo> | null = null
+  try {
+    const graded = await gradePublicUrl(registration.url, targets)
+    if (graded.address) pin = pinTo(graded.url, graded.address)
+  }
   catch (err) {
     return { ok: false, statusCode: null, error: (err as Error).message, ms: 0 }
   }
@@ -578,15 +584,17 @@ async function attemptDelivery(
   const start = Date.now()
 
   try {
-    const res = await fetch(registration.url, {
+    const res = await fetch(pin?.url ?? registration.url, {
       method:  'POST',
       headers: {
         'content-type':        'application/json',
         'x-webhook-id':        delivery.id,
         'x-webhook-event':     delivery.event,
         ...signed,
+        ...pin?.headers,
       },
       body,
+      ...(pin?.tls && { tls: pin.tls }),
       // A redirect is a destination this app never graded, and `fetch` follows
       // one by default carrying the signature and the payload with it — so a
       // subscriber who passes the target check can hand both to any host by

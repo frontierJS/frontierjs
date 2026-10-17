@@ -3535,6 +3535,9 @@ describe('paginate() hook', () => {
     const app = await createTestApp({
       services: [buildService({
         name:  'things',
+        // A service max above the hook's, so the clamp under test is the hook's:
+        // past the service's own max the wire refuses (`FJS-1972`).
+        paginate: { default: 20, max: 10_000 },
         hooks: { before: { find: [hook] } },
         find:  async (ctx) => {
           directives = { ...(ctx.directives ?? {}) }

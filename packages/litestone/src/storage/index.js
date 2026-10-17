@@ -12,7 +12,7 @@
 
 import { S3Provider }     from './providers/s3.js'
 import { LocalProvider }  from './providers/local.js'
-import { refUrl }         from './ref-url.js'
+import { refAddress, refUrlUnder } from './ref-url.js'
 
 export { FileStorage, fromPath } from './file-storage.js'
 
@@ -37,13 +37,15 @@ export function parseRef(value) {
 
 // ─── fileUrl() ────────────────────────────────────────────────────────────────
 // Pure function — reconstructs the public URL from the stored JSON reference.
-// No credentials needed. Falls back to endpoint + bucket + key if no publicBase.
+// No credentials needed. A ref stores no public origin, so this is endpoint +
+// bucket + key and null without an endpoint; useStorage(config).url(ref) is the
+// one that joins the config's publicBase.
 
 export function fileUrl(value) {
   const ref = parseRef(value)
   if (!ref) return null
 
-  return refUrl(ref)
+  return refAddress(ref)
 }
 
 // ─── fileUrls() — for File[] fields ──────────────────────────────────────────
@@ -55,7 +57,7 @@ export function fileUrls(value) {
   const parsed = typeof value === 'string' ? (() => { try { return JSON.parse(value) } catch { return null } })() : value
   if (!parsed) return []
   const arr = Array.isArray(parsed) ? parsed : [parsed]
-  return arr.map(ref => ref ? refUrl(ref) : null).filter(Boolean)
+  return arr.map(ref => ref ? refAddress(ref) : null).filter(Boolean)
 }
 
 // ─── useStorage() ─────────────────────────────────────────────────────────────
@@ -89,7 +91,8 @@ export function useStorage(config) {
 
     // Public URL from reference
     url(value) {
-      return fileUrl(value)
+      const ref = parseRef(value)
+      return ref ? refUrlUnder(ref, config) : null
     },
 
     // Direct access to the provider

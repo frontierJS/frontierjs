@@ -13,6 +13,9 @@ import { levelsFor } from '../domain/shop'
 export default createService({
   model:   'ProductVariant',
   channel: 'product-variants',
+  // The storefront island and the web drive read every variant in one page; past
+  // the max the wire refuses, so the page they ask for has to be one it allows.
+  paginate: { default: 20, max: 500 },
 
   /**
    * What may actually be sold, per variant — the number the buy box needs and

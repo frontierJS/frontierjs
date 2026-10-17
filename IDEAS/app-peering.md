@@ -154,10 +154,12 @@ is refused.
 - [x] 1.1 Hearing on Q3 — **a user that owns a key** (`FJS-D1196`).
 - [ ] 1.2 Signed calls: conduit's `hmac` on the dialer; on the receiver,
   `signedRequest({ keyFor })` (`FJS-D475`) resolving to the peer's own account.
-- [ ] 1.3 The audit entry carries the actor's kind. Under `FJS-D1196` the
-  account is a User, so the kind is stated by that account and must not be
-  `service`, which means *names no row* (`stamps.js`). Chat's `Post` must be
-  `@@trail`ed first, or nothing records the write (0.3 item 2).
+- [ ] 1.3 The audit entry carries the actor's kind. Auth half built
+  2026-10-17 (`FJS-D1198`): `User.kind` is `user · bot · peer`, the trail
+  files it as `actorType`, and only a `user` signs in. Left: chat's `User` takes
+  the column (its schema has its own copy of `User`, not the fragment), its
+  `basecamp` account is created as `peer`, and its `Post` is `@@trail`ed, or
+  nothing records the write (0.3 item 2).
 
 ### Phase 2 — Basecamp is the trust root for its fleet
 

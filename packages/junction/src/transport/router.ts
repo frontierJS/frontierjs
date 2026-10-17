@@ -125,6 +125,33 @@ export class Router {
     return this
   }
 
+  /**
+   * Re-mount a registered route at another path, before the build.
+   *
+   * `apiPrefix` may be stated in junction.config.js alone, which is merged
+   * after a plugin's `register()` mounted its routes under the prefix
+   * `createApp` saw (`FJS-3072`). The duplicate check runs on the new path.
+   */
+  move(method: HttpMethod, from: string, to: string): this {
+    if (this._built)
+      throw new Error(`Cannot move route ${method} ${from} after router is built`)
+    const route = this._routes.find(r => r.method === method && r.path === from)
+    if (!route) throw new Error(`No route ${method} ${from} to move to ${to}`)
+
+    const segments = parsePath(to, `${method} ${to}`)
+    const shape    = routeShape(method, segments)
+    const owner    = this._claimed.get(shape)
+    if (owner !== undefined)
+      throw new Error(
+        `Route ${method} ${from} cannot move under apiPrefix to ${to}: ${owner} is already registered there.`
+      )
+    this._claimed.delete(routeShape(method, route.segments))
+    this._claimed.set(shape, to)
+    route.path     = to
+    route.segments = segments
+    return this
+  }
+
   get(path: string, handler: RouteHandler, mw?: MiddlewareFn[])    { return this.add('GET',     path, handler, mw) }
   post(path: string, handler: RouteHandler, mw?: MiddlewareFn[])   { return this.add('POST',    path, handler, mw) }
   put(path: string, handler: RouteHandler, mw?: MiddlewareFn[])    { return this.add('PUT',     path, handler, mw) }

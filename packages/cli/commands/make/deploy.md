@@ -121,7 +121,14 @@ COPY --from=base /app .
 # container too: a deploy starts an empty queue and a deploy while paused starts
 # one with no pause in it. Put it beside DATABASE_URL. The deploy asks the running
 # app where its jobs database is before the swap, and says so when it is not here.
-RUN mkdir -p /db
+#
+# The process runs as \`${IMAGE_USER.name}\`, not root, so the directory is handed to it here and
+# the HOST directory bound over it must belong to the same uid -- \`fli deploy:setup\`
+# creates it so, and \`fli deploy:doctor --remote\` says when it is not.
+RUN mkdir -p /db && chown ${IMAGE_USER.name}:${IMAGE_USER.name} /db
+
+# After every RUN above, which needs root.
+USER ${IMAGE_USER.name}
 
 EXPOSE 3000
 
@@ -153,7 +160,7 @@ const { resolveHealthPath, declaresHealth } =
 // What the image needs beyond api/ and db/ is core/deploy-image.js's to say:
 // `fli check`'s deploy-image-needs grades a Dockerfile written before the app
 // printed, and two readings of one app would disagree about it.
-const { imageNeeds, CHROME_RUN } =
+const { imageNeeds, CHROME_RUN, IMAGE_USER } =
   await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 
 // Live keys only. The options an app does not set (`user`, `transport`,

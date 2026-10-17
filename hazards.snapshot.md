@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 173**.
+Graded: **13 of 176**.
 
-## data — 3 of 60
+## data — 3 of 61
 
 ### Schema and parse
 
@@ -49,6 +49,7 @@ Graded: **13 of 173**.
 | `$setAuth(user)` RETURNS a scoped client, it does not mutate. | `set-auth-discarded` |
 | A CAPABILITY is a grid beside the ladder, and a finer grant REPLACES the coarse one rather than adding to it | `capability-ladder` |
 | A `CHECK` fails only on FALSE, so a NULL passes it | **none** |
+| A bare `check(rel)` over an optional parent is TRUE for a row naming no parent — beside another scope, that row is the other scope's | **none** |
 | `asSystem()` does not bypass a `@check`, a `@@check` or an `@@arc`, and it bypasses everything else. | **none** |
 | Raw SQL requires `asSystem()` once a schema declares access rules. | **none** |
 | A field `@allow` is a PREDICATE and it is compiled into SQL, both ways | **none** |
@@ -124,7 +125,7 @@ Graded: **13 of 173**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 61
+## api — 6 of 63
 
 ### `ctx` and the call
 
@@ -168,11 +169,13 @@ Graded: **13 of 173**.
 | Raw routes (`app.get`/`app.post`) take `{id}`, not `:id` | `raw-route-param` |
 | `apiPrefix` moves EVERY route the app registers | **none** |
 | Every READ carries `$withDeleted`; on a WRITE only `update`/`patch` by id do. | **none** |
+| A wire `$limit` above the service's `paginate.max` is a 400, not a clamp. | **none** |
 | `hasRoute()` is a matching question, not an existence one | **none** |
 | A header the caller varies per call must be DECLARED, or it works until the socket connects. | `call-header-declared` |
 | A raw route's own `new Response(readable)` is held to its end for a gzip caller; build a stream with `ctx.stream()` or name `content-encoding` | **none** |
 | The client's address is declared, never discovered. | **none** |
 | An API on a sibling subdomain needs no cookie `Domain`; the cross-origin list is `cors.origins` + `credentials` + `csrf.origins` | **none** |
+| Above 128 MB, a declared length over `http.maxBodySize` is refused by Bun, not by junction | **none** |
 
 ### Sockets
 

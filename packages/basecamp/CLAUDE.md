@@ -611,6 +611,13 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   **A list carries `summarizeSource`, not the files**: fifty pasted pages on a
   request that draws a table of names, and `content` is removed rather than
   blanked so nothing renders an empty editor over a file that has a page in it.
+- **`Backup` is the installation's and `AppBackup` is the app's** (`FJS-D965`).
+  `app-backups.take` asks the Outpost on one placement to tar `fjs-<app>-data`
+  and records the path ON THAT MACHINE (`FJS-1782`) — no bytes reach Basecamp, so
+  a lost machine takes its archives with it. It writes the row at SYSTEM, which
+  is why `take` states its own gate, and a stub executor's answer is recorded
+  `failed`: no archive was taken. Restoring is `apps.restoreVolume` once the
+  file is in the machine's restore directory.
 - **Deleting an app retires it from the machine** — `/static/retire` for inline,
   `/stop` for a container, which also drops its Caddy route. Neither stops on
   its own, so a row removed here and a page still answering on the internet is

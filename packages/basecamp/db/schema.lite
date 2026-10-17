@@ -190,7 +190,7 @@ tenancy { strategy row  column workspaceId  claim workspaceId }
 enum AccountType    { individual organization }
 enum WorkspaceType  { personal team enterprise }
 enum WorkspaceRole  { viewer billing developer admin owner }
-enum UserKind       { human bot ai }
+enum UserKind       { user bot peer ai }
 
 // Whether a principal or a tenant may act at all. Two enums rather than one
 // shared word, following the ServerStatus / AppStatus / JobStatus convention
@@ -363,6 +363,13 @@ type AppVolumeRestore {
   serverId  String
   path      String
   overwrite Boolean?
+}
+
+/// What `app-backups.create` accepts: the app, and the machine whose copy of
+/// its data volume is taken (`FJS-D679`).
+type AppBackupCreate {
+  appId    String
+  serverId String
 }
 
 /// What `flags.setOverride` and `flags.clearOverride` accept. A rollout outside
@@ -631,7 +638,7 @@ model User {
   // `status == 'suspended'` STRANGER, and api-keys refuses an owner whose
   // `kind` is not `bot`. A column a caller can write is not a column a level
   // can be graded from.
-  kind           UserKind   @default(human) @allow('write', auth().isSystemAdmin)
+  kind           UserKind   @default(user)  @allow('write', auth().isSystemAdmin)
   status         UserStatus @default(pending_verification) @allow('write', auth().isSystemAdmin)
   username       String?    @trim
   displayName    String?    @trim
@@ -1795,6 +1802,41 @@ model AppServer {
   // replicas of one app on one machine is a constraint violation and the app
   // quietly loses the ability to scale.
   @@relator([appId, serverId], many: replicaIndex)
+}
+
+// One archive of an app's data volume, taken on the machine that holds it
+// (`FJS-D679`, `FJS-1782`). `Backup` is the installation's own and stays
+// `@@tenant(none)`; this is the app's, scoped through App and Server by the
+// ordinary desugar (`FJS-D965`).
+//
+// `location` is a path ON THAT MACHINE: the archive never crosses the command
+// port, and a lost machine takes it along. The outcome columns are written at
+// SYSTEM, as `Backup`'s are.
+model AppBackup {
+  id          String    @id @default(uuid())
+  appId       String
+  app         App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+  serverId    String
+  server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  status      RunStatus @default(pending)
+  sizeBytes   Int?
+  fileCount   Int?
+  location    String?   @trim @length(0, 500)
+  error       String?   @length(0, 2000)
+
+  requestedBy String?
+
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  durationMs  Int?
+  createdAt   DateTime  @default(now())
+
+  // An admin reads them and asks for one; the service writes the outcome.
+  @@gate(5.8.8.8)
+  @@trail(audit)
+  @@index([appId])
+  @@index([serverId])
 }
 
 model AppNetwork {

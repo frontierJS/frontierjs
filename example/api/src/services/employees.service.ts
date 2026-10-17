@@ -19,6 +19,7 @@ import { payAsAt, assertEffectiveFrom }   from '../domain/payroll'
 export default createService({
   model:   'Employee',
   channel: 'employees',
+  paginate: { default: 20, max: 500 },
 
   /**
    * Open a new pay window, closing the one that is open.

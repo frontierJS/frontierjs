@@ -11,7 +11,6 @@ import type { TrustProxy } from './forwarded.ts'
 // ─── Module-level constants ────────────────────────────────────────────────
 
 const MAX_BODY_SIZE   = 256 * 1024        // 256 KB default
-const MAX_FILE_SIZE   = 50  * 1024 * 1024 // 50 MB default
 const BOUNDARY_PREFIX = 'boundary='
 const CRLF            = '\r\n'
 const CRLF_CRLF       = '\r\n\r\n'
@@ -305,7 +304,7 @@ export async function parseBody(
       .slice(boundaryIdx + BOUNDARY_PREFIX.length)
       .trim()
       .replace(/^"(.*)"$/, '$1')
-    const { fields, files } = parseMultipart(buffer, boundary, MAX_FILE_SIZE)
+    const { fields, files } = parseMultipart(buffer, boundary)
     // The junction client sends what is not a string (a list, a Json value, a
     // number, a null) as one JSON part, since a text part cannot say `[]` from
     // "[]" (FJS-1897). It is read back over the text fields; one that does not
@@ -457,10 +456,12 @@ interface MultipartResult {
   files:  UploadedFile[]
 }
 
+// A file part is bounded by maxBodySize alone, since the whole body is already
+// buffered: a per-part cap below it dropped the part and the write reached the
+// service without its field (FJS-3092).
 function parseMultipart(
-  buffer:      ArrayBuffer,
-  boundary:    string,
-  maxFileSize: number
+  buffer:   ArrayBuffer,
+  boundary: string
 ): MultipartResult {
 
   const result: MultipartResult = { fields: {}, files: [] }
@@ -509,16 +510,13 @@ function parseMultipart(
     const mimeType    = partHeaders['content-type'] ?? 'application/octet-stream'
 
     if (filename) {
-      // File upload
-      if (content.byteLength <= maxFileSize) {
-        result.files.push({
-          name:     name ?? 'file',
-          filename: filename,
-          type:     mimeType,
-          size:     content.byteLength,
-          data:     content.buffer
-        })
-      }
+      result.files.push({
+        name:     name ?? 'file',
+        filename: filename,
+        type:     mimeType,
+        size:     content.byteLength,
+        data:     content.buffer
+      })
     } else if (name) {
       // Text field
       result.fields[name] = DECODER.decode(content)

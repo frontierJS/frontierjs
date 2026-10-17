@@ -66,6 +66,7 @@ async function openPeriodOf(ctx: { result?: unknown }) {
 export default createService({
   model:   'Subscription',
   channel: 'subscriptions',
+  paginate: { default: 20, max: 200 },
 
   transactional: ['create'],
   hooks: { after: { create: [openPeriodOf] } },

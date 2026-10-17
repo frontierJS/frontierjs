@@ -3,7 +3,7 @@
 -- rather than skip it. A skipped migration is an empty database.
 BEGIN;
 CREATE TABLE "account" (
-  "id"   INTEGER PRIMARY KEY,
+  "id"   INTEGER PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL
 ) STRICT;
 COMMIT;

@@ -29,6 +29,13 @@ export const CHROME_RUN = `RUN apt-get update \\
  && apt-get install -y --no-install-recommends chromium fonts-liberation fonts-dejavu-core \\
  && rm -rf /var/lib/apt/lists/*`
 
+// Who the container runs as (`FJS-D1120`). oven/bun ships a `bun` user at 1000,
+// and the db directory the deploy bind-mounts must belong to that uid or the
+// first migration cannot open it, health fails and the swap rolls back. The
+// image says who runs; `deploy:setup` and `deploy:doctor` say who owns, from
+// these numbers, so a host directory and an image cannot name two users.
+export const IMAGE_USER = Object.freeze({ name: 'bun', uid: 1000, gid: 1000 })
+
 /** What this app's image needs beyond api/ and db/. */
 export function imageNeeds(root) {
   return { chrome: dependsOnPrintKit(root), webSrc: apiReadsWebSrc(root) }

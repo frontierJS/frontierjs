@@ -6,7 +6,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { spawnSync } from 'child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
@@ -65,4 +65,27 @@ describe('deploy:doctor as a program reads it', () => {
     expect(r.status).not.toBe(0)
   })
 
+})
+
+// FJS-2433: the image make:deploy writes ran as root. The runtime stage names a
+// non-root user and hands it /db, the one directory the container writes.
+describe('the Dockerfile make:deploy writes', () => {
+  test('the runtime stage runs as a non-root user that owns /db', () => {
+    const app = mkdtempSync(join(tmpdir(), 'fli-mkdeploy-'))
+    try {
+      writeFileSync(join(app, 'package.json'), '{"name":"t","scripts":{}}')
+      const r = spawnSync(process.execPath, [resolve(ROOT, 'bin/fli.js'), 'make:deploy'], {
+        encoding: 'utf8', cwd: app, env: { ...process.env, NO_COLOR: '1' },
+      })
+      expect(r.status).toBe(0)
+      const runtime = readFileSync(join(app, 'deploy', 'Dockerfile'), 'utf8').split('FROM oven/bun:1-slim')[1]
+      expect(runtime).toMatch(/^USER bun$/m)
+      expect(runtime).toMatch(/chown bun:bun \/db/)
+      // the user line comes after every RUN, which needs root, and before CMD
+      expect(runtime.indexOf('USER bun')).toBeGreaterThan(runtime.lastIndexOf('\nRUN '))
+      expect(runtime.indexOf('USER bun')).toBeLessThan(runtime.indexOf('CMD '))
+    } finally {
+      rmSync(app, { recursive: true, force: true })
+    }
+  })
 })

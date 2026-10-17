@@ -35,7 +35,8 @@ const PKG = '@frontierjs/junction'
 // resolve with `createRequire(...).resolve(specifier)`, which bun answers from
 // its global install CACHE for a package the app does not have — see the note
 // on `shippedFile`.
-const { shippedFile } = await import(resolve(global.fliRoot, 'core/app-schema.js'))
+const { shippedFile }     = await import(resolve(global.fliRoot, 'core/app-schema.js'))
+const { schemaApplyStep } = await import(resolve(global.fliRoot, 'core/schema-apply.js'))
 
 const resolveFromApp = (root, subpath) =>
   shippedFile(root, PKG, `.${subpath.slice(PKG.length)}`)?.file ?? null
@@ -81,7 +82,9 @@ import orderShippedAt       from './backfills/order-shipped-at.ts'
 const appRoot = fileURLToPath(new URL('../../', import.meta.url))
 const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), 'jobs.db')
 
-app.configure(createCaravan({ db: jobsDb, jobsDir: './src/jobs' }))  // a chunk runs as a job
+const jobsDir = fileURLToPath(new URL('./jobs', import.meta.url))
+
+app.configure(createCaravan({ db: jobsDb, jobsDir }))  // a chunk runs as a job
 app.configure(backfills([orderShippedAt]))
 
 // It starts itself: boot queues the first chunk of anything unfinished, and each
@@ -106,7 +109,7 @@ filled is skipped whatever position was saved.
 
 What it does:
 - Appends `import "@frontierjs/junction/backfill.lite"` to `db/schema.lite`
-- Pushes the schema so the table exists
+- Creates the table: a migration file when the app has a migration history, `db push` when it has none
 - Prints a declaration and the two lines to add to `api/src/app.ts`
 
 ```js
@@ -175,12 +178,14 @@ if (flag.dry) {
 
 // ─── 4. Push the schema ───────────────────────────────────────────────────────
 
+const apply = schemaApplyStep($.paths.db, 'backfill')
+
 if (flag.dry) {
-  log.dry('Would run: litestone db push')
+  log.dry(`Would run: ${apply.dry}`)
 } else {
-  log.info('Pushing schema to database...')
-  $.exec({ command: `cd ${$.paths.root} && bun run litestone db push --schema db/schema.lite` })
-  log.success('Schema pushed')
+  log.info(apply.kind === 'migrate' ? 'Writing and applying the migration...' : 'Pushing schema to database...')
+  $.exec({ command: `cd ${$.paths.root} && bun run litestone ${apply.argv}` })
+  log.success(apply.done)
 }
 
 // ─── 5. What to wire ──────────────────────────────────────────────────────────

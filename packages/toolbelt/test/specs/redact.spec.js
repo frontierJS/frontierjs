@@ -100,7 +100,7 @@ test('redact: a non-plain object is returned WHOLE', function () {
   const d = new Date(0)
   const e = new Error('boom')
   const u = new URL('https://example.com/x')
-  const m = new Map([['password', 'p']])
+  const m = new Map()
   const out = redactSecrets({ d, e, u, m, password: 'p' })
 
   assert.equal(out.d, d)
@@ -108,6 +108,27 @@ test('redact: a non-plain object is returned WHOLE', function () {
   assert.equal(out.u, u)
   assert.equal(out.m, m)
   assert.equal(out.password, REDACTED)   // …while the plain sibling still goes
+})
+
+test('redact: a non-plain object holding members is walked as a bare copy', function () {
+  class Cred { constructor() { this.user = 'u'; this.password = 'p' } }
+  const err = Object.assign(new Error('boom'), { password: 'p', code: 'X' })
+  const out = redactSecrets({
+    cred: new Cred(),
+    err,
+    map:  new Map([['password', 'p'], ['a', 1]]),
+    head: new Headers({ authorization: 'Bearer x', accept: 'a' }),
+    qs:   new URLSearchParams('password=p&a=1'),
+    deep: new Map([['inner', new Cred()]]),
+  })
+
+  assert.deepEqual(out.cred, { user: 'u', password: REDACTED })
+  assert.deepEqual(out.err, { password: REDACTED, code: 'X', name: 'Error', message: 'boom' })
+  assert.deepEqual(out.map, { password: REDACTED, a: 1 })
+  assert.deepEqual(out.head, { accept: 'a', authorization: REDACTED })
+  assert.deepEqual(out.qs, { password: REDACTED, a: '1' })
+  assert.deepEqual(out.deep, { inner: { user: 'u', password: REDACTED } })
+  assert.equal(err.password, 'p')        // the caller's own object is never touched
 })
 
 test('redact: redactBy takes the predicate, so the schema can ask too', function () {

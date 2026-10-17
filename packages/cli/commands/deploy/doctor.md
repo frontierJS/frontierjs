@@ -585,6 +585,22 @@ if (flag.remote) {
           fail()
         }
 
+        // /db is bound over this directory and the container runs as the image's
+        // user, so a directory owned by anyone else fails the first migration.
+        const { IMAGE_USER } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
+        const dbDir  = deployConf.db?.path ?? `${path}/db`
+        const dbOwner = ask(`stat -c %u ${dbDir} 2>/dev/null`)
+        if (dbOwner === String(IMAGE_USER.uid)) {
+          renderCheck(`${dbDir} owned by uid ${IMAGE_USER.uid}`, 'pass')
+        } else if (dbOwner) {
+          renderCheck(`${dbDir} owned by uid ${dbOwner}`, 'fail',
+            `the container runs as uid ${IMAGE_USER.uid} and cannot open it — fix: ${machine.local ? '' : `ssh ${host} `}sudo chown -R ${IMAGE_USER.uid}:${IMAGE_USER.gid} ${dbDir}`)
+          fail()
+        } else {
+          renderCheck(`${dbDir}`, 'fail', `fix: fli deploy:setup  (creates it owned by uid ${IMAGE_USER.uid})`)
+          fail()
+        }
+
         // Container state
         const container = apiContainer(appId, deployConf)
         const containerStatus = ask(`docker inspect ${container} --format '{{.State.Status}}' 2>/dev/null || echo absent`)

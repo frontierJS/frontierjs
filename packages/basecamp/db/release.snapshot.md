@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-68 model(s) · 43 enum(s) · 2 database(s)
+69 model(s) · 43 enum(s) · 2 database(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -56,7 +56,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
 | `ServerStatus` | `destroyed` · `destroying` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
 | `StepStatus` | `failed` · `pending` · `running` · `skipped` · `success` |
-| `UserKind` | `ai` · `bot` · `human` |
+| `UserKind` | `ai` · `bot` · `peer` · `user` |
 | `UserStatus` | `active` · `pending_verification` · `suspended` |
 | `VerificationPurpose` | `emailChange` · `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` |
 | `WidgetKind` | `activity_feed` · `alert_status` · `app_status` · `deploy_feed` · `job_history` · `server_fleet` · `server_health` · `service_health` · `stat_counter` |
@@ -255,6 +255,43 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+```
+
+### `AppBackup`
+
+table `app_backup` · db `main` · gate `5.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `app` | `App` | — | — | relation |
+| `appId` | `String` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `durationMs` | `Int` | yes | — | — |
+| `error` | `String` | yes | — | — |
+| `fileCount` | `Int` | yes | — | — |
+| `finishedAt` | `DateTime` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `location` | `String` | yes | — | — |
+| `requestedBy` | `String` | yes | — | — |
+| `server` | `Server` | — | — | relation |
+| `serverId` | `String` | no | — | **required on write** |
+| `sizeBytes` | `Int` | yes | — | — |
+| `startedAt` | `DateTime` | yes | — | — |
+| `status` | `RunStatus` | no | `'pending'` | — |
+
+```
+@@index(appId)
+@@index(serverId)
+@@deny('create', !check(app, tenancy))
+@@deny('create', !check(server, tenancy))
+@@deny('delete', !check(app, tenancy))
+@@deny('delete', !check(server, tenancy))
+@@deny('post-update', !check(app, tenancy))
+@@deny('post-update', !check(server, tenancy))
+@@deny('read', !check(app, tenancy))
+@@deny('read', !check(server, tenancy))
+@@deny('update', !check(app, tenancy))
+@@deny('update', !check(server, tenancy))
 ```
 
 ### `AppNetwork`
@@ -1915,7 +1952,7 @@ table `user` · db `main` · gate `1.8.1.5` · @@softDelete
 | `emailVerified` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isSystemAdmin` | `Boolean` | no | `0` | `@allow(write: auth().isSystemAdmin)` |
-| `kind` | `UserKind` | no | `'human'` | `@allow(write: auth().isSystemAdmin)` |
+| `kind` | `UserKind` | no | `'user'` | `@allow(write: auth().isSystemAdmin)` |
 | `memberships` | `WorkspaceMember[]` | — | — | relation |
 | `name` | `String` | yes | — | — |
 | `role` | `String` | no | `'user'` | `@allow(write: auth().isAdmin)` |

@@ -24,7 +24,7 @@ const JSON_HEADERS = { 'content-type': 'application/json' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
 
 export function createOutpostServer(config, {
-  docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir }),
+  docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir }),
   inspector = createInspector(),
   statics   = createStatic({ staticDir: config.staticDir, staticUrl: config.staticUrl }),
   ingress   = createIngress({ admin: config.caddyAdmin }),
@@ -250,6 +250,8 @@ export function createOutpostServer(config, {
     'POST /volumes/prune': (body) => inspector.pruneVolumes(body.names ?? []),
     // An archive already on the machine, into the app's stopped volume.
     'POST /volume/restore': (body) => docker.restore({ appId: body.app_id, path: body.path, overwrite: body.overwrite }),
+    // An app's data volume, tarred into this machine's backup directory.
+    'POST /backup':        (body) => docker.backup({ appId: body.app_id }),
     // Basecamp's *check now*: the readings come back in the answer and
     // Basecamp ingests them, rather than this posting a report beside it.
     'POST /posture':       () => inspector.posture(),

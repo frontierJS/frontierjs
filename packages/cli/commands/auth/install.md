@@ -44,7 +44,8 @@ import { resolve }                                             from 'path'
 
 const AUTH_PKG = '@frontierjs/auth'
 
-const { shippedFile } = await import(resolve(global.fliRoot, 'core/app-schema.js'))
+const { shippedFile }     = await import(resolve(global.fliRoot, 'core/app-schema.js'))
+const { schemaApplyStep } = await import(resolve(global.fliRoot, 'core/schema-apply.js'))
 
 // A shipped `.lite` file has to parse standalone, so it spells the attribute out
 // rather than carrying a placeholder — `packages/auth/schema.ts` makes the same
@@ -211,7 +212,7 @@ What it does:
 - Installs `@frontierjs/auth` if the project does not already have it
 - Appends `import "@frontierjs/auth/schema.lite"` plus `model User` to
   `db/schema.lite` — the three `@@gate(8)` models stay in the package
-- Pushes the schema changes to the database
+- Creates the tables: a migration file when the app has a migration history, `db push` when it has none
 - Generates `ENCRYPTION_KEY` in `.env`
 - Scaffolds `api/src/auth.ts` with `createLitestoneAuth` wired up
 - Prints the two lines to add to `api/src/app.ts`
@@ -428,18 +429,20 @@ if (!flag.dry && existsSync(envPath)) {
 // created is one `bun install` away.
 const litestoneBin = resolve($.paths.root, 'node_modules', '.bin', 'litestone')
 
+const apply = schemaApplyStep($.paths.db, 'auth')
+
 if (flag.dry) {
-  log.dry('Would run: fli db:push')
+  log.dry(`Would run: ${apply.dry}`)
 } else if (!existsSync(litestoneBin)) {
-  log.warn('Skipped the schema push — node_modules is empty, so there is no litestone to run')
-  log.info('  Run `bun install`, then `fli db:push`. The schema itself is already written.')
+  log.warn(`Skipped the schema ${apply.kind === 'migrate' ? 'migration' : 'push'} — node_modules is empty, so there is no litestone to run`)
+  log.info(`  Run \`bun install\`, then \`fli ${apply.kind === 'migrate' ? 'db:migrate' : 'db:push'}\`. The schema itself is already written.`)
 } else {
-  log.info('Pushing schema to database...')
+  log.info(apply.kind === 'migrate' ? 'Writing and applying the migration...' : 'Pushing schema to database...')
   $.exec({
-    command: `cd ${$.paths.root} && bun run litestone db push --schema db/schema.lite`,
+    command: `cd ${$.paths.root} && bun run litestone ${apply.argv}`,
     env:     childEnv,
   })
-  log.success('Schema pushed')
+  log.success(apply.done)
 }
 
 // ─── 6. Append .env.example entries ──────────────────────────────────────────

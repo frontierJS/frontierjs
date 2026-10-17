@@ -288,7 +288,6 @@ export function generateJsonSchema(schema, options = {}) {
         bucket:     { type: 'string',              description: 'Bucket name' },
         provider:   { type: 'string', enum: ['r2', 's3', 'b2', 'minio', 'local'], description: 'Storage provider' },
         endpoint:   { type: ['string', 'null'],    description: 'S3-compatible endpoint URL' },
-        publicBase: { type: ['string', 'null'],    description: 'CDN or public URL base' },
         size:       { type: 'integer', minimum: 0, description: 'File size in bytes' },
         mime:       { type: 'string',              description: 'MIME type' },
         uploadedAt: { type: 'string', format: 'date-time', description: 'Upload timestamp' },

@@ -330,7 +330,7 @@ export default createService({
     // A bot with the run of every tenant is a credential, not a person, and
     // the whole reason `isSystemAdmin` is a revocable human is that somebody
     // can be asked why they used it.
-    if (isSystemAdmin && user.kind !== 'human')
+    if (isSystemAdmin && user.kind !== 'user')
       throw new Forbidden('Only a human account can be a system administrator')
 
     return sys().user.update({ where: { id: user.id }, data: { isSystemAdmin } })

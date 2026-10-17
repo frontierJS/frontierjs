@@ -1650,9 +1650,10 @@ async function copyTargets(parseResult, cfg, onlyDb = null) {
 // Only a schema IN a `db/` directory has one. A bare litestone project keeps its
 // schema beside its source, and copying that directory would copy the project.
 //
-//   sqlite [{ name, path }]   every other `*.db`, named `db-<path>` — a hyphen no
-//                             declared database name can hold
-//   files  [{ rel, path }]    everything else, copied byte for byte
+//   sqlite [{ name, rel, path }]   every other `*.db`, named `db-<path>` — a hyphen no
+//                                 declared database name can hold; the copy's
+//                                 `db-layout.json` carries `rel`
+//   files  [{ rel, path }]         everything else, copied byte for byte
 //
 // Skipped: what the declared set already covers, a SQLite file's companions,
 // dot-entries (litestream's own state, generated output) and the backups root,
@@ -1677,11 +1678,19 @@ function layoutFiles(cfg, declared, dirs) {
       if (!entry.isFile() || coveredFile.has(path) || byTenancy(dir, entry.name)) continue
       if (/\.db-(wal|shm|journal)$/.test(entry.name)) continue
       const rel = relative(root, path).split(sep).join('/')
-      if (entry.name.endsWith('.db')) sqlite.push({ name: `db-${rel.slice(0, -3).replaceAll('/', '-')}`, path })
+      if (entry.name.endsWith('.db')) sqlite.push({ name: `db-${rel.slice(0, -3).replaceAll('/', '-')}`, rel, path })
       else files.push({ rel, path })
     }
   }
   walk(root)
+
+  // Two paths with one name would share a backup file and a replica, and the
+  // second would overwrite the first without a word.
+  const byName = Map.groupBy(sqlite, t => t.name)
+  for (const [name, same] of byName)
+    if (same.length > 1)
+      fatal(`${same.map(t => cyan(`db/${t.rel}`)).join(' and ')} would both be copied as ${cyan(name)}.\n     Rename one of them.`)
+
   return { root, sqlite, files }
 }
 
@@ -4154,6 +4163,12 @@ async function cmdBackup(dest, cfg) {
     console.log()
   }
 
+  // The copy says where its layout files go; see layoutManifest.
+  if (layout && (layout.sqlite.length || layout.files.length)) {
+    const { LAYOUT_FILE, layoutManifest } = await import('./replicate.js')
+    writeFileSync(resolve(resolvedDest, LAYOUT_FILE), JSON.stringify(layoutManifest(layout), null, 2) + '\n')
+  }
+
   // ── Zip the backup directory ────────────────────────────────────────────────
   if (zip) {
     const tZip = performance.now()
@@ -4275,6 +4290,20 @@ async function cmdReplicate(cfg) {
     )
   }
 
+  // Litestream stores databases only, so the replica carries no word of where
+  // the `db-*` ones belong until this puts it there. Written before streaming
+  // starts: the target list is fixed for the run.
+  if (layout?.sqlite.length) {
+    const { LAYOUT_FILE, layoutManifest, putReplicaFile, canStoreBesideReplica } = await import('./replicate.js')
+    if (!canStoreBesideReplica(options.url)) {
+      console.log(`  ${yellow(bold('⚠  no layout written'))}  ${dim(`a ${options.url.split(':')[0]}:// replica cannot hold ${LAYOUT_FILE}, so ${cyan('restore')} will not know where ${layout.sqlite.map(t => t.name).join(', ')} go`)}`)
+      console.log()
+    } else {
+      try { await putReplicaFile(options.url, LAYOUT_FILE, JSON.stringify(layoutManifest(layout), null, 2) + '\n') }
+      catch (e) { fatal(`Could not write ${LAYOUT_FILE} to ${cyan(options.url)} — a replica without it restores without its layout.\n     ${e.message}`) }
+    }
+  }
+
   await replicate({ targets, options, dir: dirname(resolve(cfg.schema)) })
 }
 
@@ -4352,6 +4381,29 @@ async function cmdRestore(cfg) {
   // Every file this run will write, collected before anything is fetched.
   const jobs = sqlite.map(t => ({ kind: 'declared', name: t.name, url: replicaUrl(url, t.name), dest: t.path }))
 
+  // ── The files under db/ no schema names, as the replica's manifest says ────
+  // Streamed by litestream like the rest, but only the manifest can say what
+  // they are called and where they go; stored bytes were never streamed, so
+  // they come from a backup or not at all.
+  const stored = []
+  let layoutNote = null
+  if (!onlyDb && targets.layout) {
+    const { LAYOUT_FILE, getReplicaFile, parseLayoutManifest } = await import('./replicate.js')
+    let manifest = null
+    try {
+      const text = await getReplicaFile(url, LAYOUT_FILE)
+      if (text != null) manifest = parseLayoutManifest(text, `${replicaUrl(url, LAYOUT_FILE)}`)
+    } catch (e) { fatal(`Could not read ${LAYOUT_FILE} from the replica — nothing was restored.\n     ${e.message}`) }
+    if (!manifest) {
+      layoutNote = `no ${LAYOUT_FILE} on the replica — files under db/ that no schema names are not restored`
+    } else {
+      for (const e of manifest.sqlite)
+        jobs.push({ kind: 'layout', name: e.name, url: replicaUrl(url, e.name), dest: verifyDir ? join(verifyDir, `${e.name}.db`) : join(targets.layout.root, e.rel) })
+      if (fromBackup && !verifyDir) stored.push(...storedFileJobs(manifest.files, targets.layout.root, cfg, resolve(fromBackup)).jobs)
+      else if (manifest.files.length) layoutNote = `${manifest.files.length} stored file(s) are not on a replica — pass --from-backup <dir> to bring them from a backup`
+    }
+  }
+
   // ── The registry, then the tenants it names ────────────────────────────────
   const files = dirs.find(d => d.name === 'tenant-files')
   const reg   = dirs.find(d => d.name === 'tenant-registry')
@@ -4395,6 +4447,7 @@ async function cmdRestore(cfg) {
   console.log()
   console.log(`  ${dim('replica:')}     ${cyan(url)}`)
   console.log(`  ${dim('as of:')}       ${at ? cyan(at) : dim('the latest')}`)
+  if (layoutNote) console.log(`  ${yellow('⚠')}  ${dim(layoutNote)}`)
   console.log()
 
   // ── Fetch everything beside its destination ───────────────────────────────
@@ -4428,6 +4481,12 @@ async function cmdRestore(cfg) {
     cpSync(join(resolve(fromBackup), o.name), o.path, { recursive: true })
     console.log(`  ${green('✓')}  ${cyan(o.name)}  ${dim(`${rel(o.path)} ← ${rel(join(resolve(fromBackup), o.name))}`)}`)
   }
+  // Nothing is at these paths, so there is nothing to stage over.
+  for (const s of stored) {
+    mkdirSync(dirname(s.dest), { recursive: true })
+    cpSync(s.from, s.dest)
+    console.log(`  ${green('✓')}  ${cyan(s.name)}  ${dim(`${rel(s.dest)} ← ${rel(s.from)}`)}`)
+  }
 
   console.log()
   console.log(`  ${green(bold('✓  restore complete'))}  ${dim(`${jobs.length + other.length} database${jobs.length + other.length !== 1 ? 's' : ''}`)}`)
@@ -4440,7 +4499,8 @@ async function cmdRestore(cfg) {
 // The layout `backup` writes is the map: `<name>.db` for a SQLite database,
 // `<name>/` for a jsonl or trail one, `tenant-files/` and `tenant-registry/`
 // for the per-tenant files, `db-<path>.db` for a SQLite file under db/ that no
-// schema names. All or nothing, as a replica restore is: every copy is staged
+// schema names, placed by the copy's `db-layout.json`. All or nothing, as a
+// replica restore is: every copy is staged
 // beside its destination before any is moved into place.
 //
 // A database the backup does not hold is left as it is, and named. `backup`
@@ -4448,9 +4508,23 @@ async function cmdRestore(cfg) {
 // a `--db` left out, and the directory cannot say which — deleting a live audit
 // trail on the strength of an absence is the wrong way round.
 //
-// `db-files/` is not put back: it holds the schema and the migrations beside
-// any stored bytes, and those are the repo's to restore. A database whose
-// history is behind the files applies the rest on the next migrate.
+// `db-files/` is put back only where nothing is at the path, and the schema and
+// the migrations beside the stored bytes are skipped by name: those are the
+// repo's to restore, and a database whose history is behind them applies the
+// rest on the next migrate.
+function storedFileJobs(files, root, cfg, backupDir) {
+  const schemaRel = relative(root, resolve(cfg.schema)).split(sep).join('/')
+  const jobs = [], kept = [], absent = []
+  for (const rel of files) {
+    if (rel === schemaRel || rel === 'migrations' || rel.startsWith('migrations/')) continue
+    const dest = join(root, rel), from = join(backupDir, 'db-files', rel)
+    if (existsSync(dest))      kept.push(rel)
+    else if (existsSync(from)) jobs.push({ name: `db-files/${rel}`, from, dest })
+    else                       absent.push(`db-files/${rel}`)
+  }
+  return { jobs, kept, absent }
+}
+
 async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force }) {
   const { rmSync, renameSync, cpSync } = await import('fs')
 
@@ -4480,19 +4554,33 @@ async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force }
       jobs.push({ name: `${d.name}/${f}`, from: join(from, f), dest: join(d.dir, f) })
   }
 
-  // Found by the name the live walk gives a file: `db-<path>` turns the path's
-  // slashes into hyphens, so `db-a-b.db` alone is `a/b.db` or `a-b.db`.
+  // The files under db/ no schema names go where the copy's own manifest says.
+  // The name alone cannot: `db-a-b.db` is `a/b.db` or `a-b.db`.
+  let kept = []
   if (!onlyDb) {
-    const live     = new Map((layout?.sqlite ?? []).map(t => [`${t.name}.db`, t.path]))
-    const unplaced = []
-    for (const f of readdirSync(src).filter(f => /^db-.+\.db$/.test(f))) {
-      if (live.has(f)) jobs.push({ name: f.slice(0, -3), from: join(src, f), dest: live.get(f) })
-      else unplaced.push(f)
+    const { LAYOUT_FILE, parseLayoutManifest } = await import('./replicate.js')
+    const manifestPath = join(src, LAYOUT_FILE)
+    const holdsLayout  = readdirSync(src).some(f => /^db-.+\.db$/.test(f) || f === 'db-files')
+    if (existsSync(manifestPath)) {
+      if (!layout)
+        fatal(`The backup holds ${cyan(LAYOUT_FILE)}, and this schema is not in a ${cyan('db/')} directory to put it under.\n` +
+              `     Pass ${cyan('--db <name>')} to restore one declared database and leave the rest.`)
+      let manifest
+      try { manifest = parseLayoutManifest(readFileSync(manifestPath, 'utf8'), `${rel(src)}/${LAYOUT_FILE}`) }
+      catch (e) { fatal(e.message) }
+      for (const e of manifest.sqlite) {
+        const from = join(src, `${e.name}.db`)
+        if (existsSync(from)) jobs.push({ name: e.name, from, dest: join(layout.root, e.rel) })
+        else absent.push(e.name)
+      }
+      const stored = storedFileJobs(manifest.files, layout.root, cfg, src)
+      jobs.push(...stored.jobs)
+      absent.push(...stored.absent)
+      kept = stored.kept
+    } else if (holdsLayout) {
+      fatal(`The backup holds files from under db/ and no ${cyan(LAYOUT_FILE)} to say where they go.\n` +
+            `     Pass ${cyan('--db <name>')} to restore one declared database and leave them out.`)
     }
-    if (unplaced.length)
-      fatal(`The backup holds ${unplaced.map(f => cyan(f)).join(', ')} — a SQLite file under db/ that no schema names — ` +
-            `and nothing on this machine is at the path it came from, so its name cannot say where it goes.\n` +
-            `     Pass ${cyan('--db <name>')} to restore one declared database and leave it out.`)
   }
 
   if (!jobs.length)
@@ -4533,8 +4621,8 @@ async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force }
   }
   for (const name of absent)
     console.log(`  ${dim('·')}  ${cyan(name)}: ${dim('not in the backup — left as it is')}`)
-  if (existsSync(join(src, 'db-files')))
-    console.log(`  ${dim('·')}  ${cyan('db-files')}: ${dim('not restored — the schema and migrations are the repo\'s; copy stored files back by hand')}`)
+  if (kept.length)
+    console.log(`  ${dim('·')}  ${cyan('db-files')}: ${dim(`${kept.length} already there — left as ${kept.length > 1 ? 'they are' : 'it is'}`)}`)
 
   console.log()
   console.log(`  ${green(bold('✓  restore complete'))}  ${dim(`${jobs.length} file${jobs.length !== 1 ? 's' : ''} from the backup`)}`)
@@ -4646,7 +4734,7 @@ async function verifyRestored({ parseResult, cfg, jobs, other, files, dir, binar
     const r = { name: j.name, path: j.dest, checks: pragmas(j.dest), lag: null, rows: null }
     const last = lastWrite(binary, j.url)
     r.lag = last == null ? null : Math.max(0, Math.round((Date.now() - last) / 1000))
-    if (j.kind !== 'registry') r.checks.schema = drift(j.dest, j.kind === 'tenant' ? sqliteNames : [j.name])
+    if (j.kind !== 'registry' && j.kind !== 'layout') r.checks.schema = drift(j.dest, j.kind === 'tenant' ? sqliteNames : [j.name])
     results.push(r)
   }
 

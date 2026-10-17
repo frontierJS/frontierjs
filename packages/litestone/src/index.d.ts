@@ -252,7 +252,6 @@ export interface FileRef {
   bucket:     string | null
   provider:   string
   endpoint:   string | null
-  publicBase: string | null
   size:       number
   mime:       string
   uploadedAt: string

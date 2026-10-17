@@ -104,7 +104,7 @@ if (readdirSync('./storage/User/photos').length !== 0) throw new Error('the phot
 
 ## Resolving URLs
 
-With `autoResolve: true` (the default), a single `File?` field reads as a URL — `publicBase` (or, failing that, `endpoint`) joined to the stored key. A local store declaring neither reads as `null` (`FJS-1504`), and a `File[]` reads as the list of those URLs:
+With `autoResolve: true` (the default), a single `File?` field reads as a URL — the config's CURRENT `publicBase` (or, failing that, the ref's `endpoint` + `bucket`) joined to the stored key. A ref stores no origin, so moving the app to another host or a CDN re-points every file (`FJS-D875`); a ref uploaded under another `provider` keeps its own `endpoint`. A local store declaring neither reads as `null` (`FJS-1504`), and a `File[]` reads as the list of those URLs:
 
 ```js
 import { FileStorage } from '@frontierjs/litestone/storage'
@@ -138,7 +138,7 @@ const user = await db.user.findUnique({
   select: { id: true, avatar: { resolve: false } }
 })
 const ref = parseRef(user.avatar)
-// → { key: 'User/avatar/<uuid>.png', name: 'alice.png', bucket, provider: 'local', endpoint: null, publicBase: null, size: 70, mime: 'image/png', uploadedAt }
+// → { key: 'User/avatar/<uuid>.png', name: 'alice.png', bucket, provider: 'local', endpoint: null, size: 70, mime: 'image/png', uploadedAt }
 if (ref.mime !== 'image/png' || ref.size !== 70) throw new Error('expected the stored ref')
 ```
 
@@ -155,12 +155,13 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 await db.user.create({ data: { id: 1, email: 'alice@example.com', avatar: new File([png], 'alice.png', { type: 'image/png' }) } })
 const user = await db.user.findUnique({ where: { id: 1 }, select: { avatar: { resolve: false }, photos: { resolve: false } } })
 
-// Derive URL from a ref (the stored string or the parsed object) — null with no publicBase or endpoint
-fileUrl(user.avatar)       // → 'https://cdn.example.com/User/avatar/<uuid>.png'
-fileUrls(user.photos)      // → ['https://...', ...]
+// Derive URL from a ref (the stored string or the parsed object) — endpoint + bucket + key, null with no endpoint
+fileUrl(user.avatar)       // → null: a local ref has no endpoint, and the origin is the config's
+fileUrls(user.photos)      // → []
 
 // Storage operations
 const storage = useStorage(config)
+storage.url(user.avatar)   // → 'https://cdn.example.com/User/avatar/<uuid>.png', the config's publicBase
 await storage.sign(user.avatar, { expiresIn: 3600 })  // presigned URL; the local provider answers its public URL
 const bytes = await storage.download(user.avatar)      // → Buffer
 if (bytes.length !== 70) throw new Error('expected the uploaded bytes back')

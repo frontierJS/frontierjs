@@ -31,7 +31,7 @@ function reportHost(config) {
 }
 
 function serveMachine(config) {
-  const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir })
+  const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir })
   const inspector = createInspector()
   const outpost   = createOutpostServer(config, { docker, inspector })
   const reporter  = createReporter(config, { inspector })

@@ -3979,3 +3979,52 @@ describe('monitors', () => {
     await expect(env.as(outsider).service('monitors').get(m.id)).rejects.toThrow()
   })
 })
+
+// FJS-1782. An app's data volume is archived on the machine that holds it, and
+// the row is a sibling of `Backup`, scoped through App (FJS-D965). The real
+// Outpost path is `verify:outpost`; here the stub executor stands in, and a
+// stub took no archive, so the row must say failed.
+describe('app-backups: an app\'s volume is archived on its machine', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let app: any, server: any, previous: string | undefined
+
+  beforeAll(async () => {
+    previous = process.env.BASECAMP_STUB_OUTPOST
+    process.env.BASECAMP_STUB_OUTPOST = '1'
+    const sys     = env.system as any
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Bk', slug: `bk-${tag()}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
+    app    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'bk', slug: `bk-${tag()}` } })
+    server = await serverAt('online', { workspaceId: ws.id, name: 'bk-host', slug: `bk-host-${tag()}` })
+    await sys.appServer.create({ data: { appId: app.id, serverId: server.id, replicaIndex: 0, status: 'running' } })
+  })
+  afterAll(() => {
+    if (previous === undefined) delete process.env.BASECAMP_STUB_OUTPOST
+    else process.env.BASECAMP_STUB_OUTPOST = previous
+  })
+
+  const take = (who: any, body: Record<string, unknown>) => env.as(who).service('app-backups').call('take', undefined, body)
+
+  test('an owner takes one, and a stub that took nothing is recorded as failed', async () => {
+    const row = await take(owner, { appId: app.id, serverId: server.id }) as any
+    expect(row.status).toBe('failed')
+    expect(row.error).toMatch(/stub executor/)
+    expect(row.location).toBeNull()
+    expect(row.durationMs).toBeGreaterThanOrEqual(0)
+
+    const listed = await env.as(owner).service('app-backups').find({ appId: app.id }) as any
+    expect(listed.data.map((r: any) => r.id)).toContain(row.id)
+  })
+
+  test('a developer is below the gate, and the base create is not offered at all', async () => {
+    await expect(take(developer, { appId: app.id, serverId: server.id })).rejects.toThrow()
+    await expect(env.as(developer).service('app-backups').find()).rejects.toThrow()
+    await expect(env.as(owner).service('app-backups').create({ appId: app.id, serverId: server.id, status: 'success' }))
+      .rejects.toThrow()
+  })
+
+  test('another workspace cannot name the app, and an unplaced server is refused', async () => {
+    await expect(take(outsider, { appId: app.id, serverId: server.id })).rejects.toThrow()
+    await expect(take(owner, { appId: app.id, serverId: machine.id })).rejects.toThrow(/not placed/)
+  })
+})

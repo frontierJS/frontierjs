@@ -35,7 +35,8 @@ default — `OUTPOST_PORT` (8180 dev, 7180 test — the number comes from
 `packages/cli/core/ports.js`, project id 8), `OUTPOST_PUBLIC_URL`,
 `OUTPOST_HEARTBEAT_MS`, `OUTPOST_REPORT_MS`, `OUTPOST_WORK_DIR`,
 `OUTPOST_RESTORE_DIR` (`/var/lib/outpost/restore`, the one directory
-`/volume/restore` reads an archive from), and the four
+`/volume/restore` reads an archive from), `OUTPOST_BACKUP_DIR`
+(`/var/lib/outpost/backups`, where `/backup` writes one), and the four
 that belong to the static half — `OUTPOST_STATIC_DIR`, `OUTPOST_STATIC_PORT`
 (8181 dev, 7181 test; `0` turns it off) and `OUTPOST_STATIC_URL` — and
 `OUTPOST_CADDY_ADMIN`, the machine's Caddy admin API (`http://127.0.0.1:2019`),
@@ -72,6 +73,7 @@ process's user, so the default is refuse and a route opts out rather than in.
 | `POST /system/prune` | `{ targets, keep_images }` → `{ freed_bytes, removed, volumes, usage }` |
 | `POST /volumes/prune` | `{ names }` → `{ removed }` |
 | `DELETE /volumes/<name>` | → `{ removed }`, or 409 with the container holding it |
+| `POST /backup` | `{ app_id }` → `{ volume, path, bytes, files }`; `fjs-<app>-data` tarred (gzip) into `OUTPOST_BACKUP_DIR` by a throwaway container holding the volume read-only. The archive stays on the machine and the answer is its path. Refused for a volume the machine does not hold |
 | `POST /volume/restore` | `{ app_id, path, overwrite? }` → `{ volume, archive, files, bytes, overwrite }`; a tar (gzip or not) under `OUTPOST_RESTORE_DIR`, extracted into `fjs-<app>-data`. Refused while any container holds the volume, and into one with files unless `overwrite: true`, which empties it first |
 | `GET /health` | unsigned liveness — says nothing about the machine |
 

@@ -5450,6 +5450,24 @@ describe('a target whose address comes per send (FJS-1667)', () => {
     } finally { r.stop() }
   })
 
+  // FJS-2208 · a class instance serializes its own members onto the wire, so
+  // the observer's floor has to read them too.
+  it('redacts a credential on a class-instance body', async () => {
+    class Login { constructor(public user: string, public password: string) {} }
+    const r = receiver(200)
+    try {
+      const seen: ConduitRequest[] = []
+      const c = await conduitWith(hookTarget(local), { observers: { onRequest: (q) => seen.push(q) } })
+      await c.send({ target: 'hook:slack', address: `${r.url}/x`, method: 'POST', body: new Login('visible', 'hunter2') })
+      expect(seen.length).toBeGreaterThan(0)
+      for (const q of seen) {
+        const wire = JSON.stringify(q.body)
+        expect(wire).not.toContain('hunter2')
+        expect(wire).toContain('visible')
+      }
+    } finally { r.stop() }
+  })
+
   it('shows a stream observer the origin only, and the same floor', async () => {
     const seen: ConduitRequest[] = []
     const c = await conduitWith(hookTarget(local), { observers: { onRequest: (q) => seen.push(q) } })

@@ -42,6 +42,8 @@
  *   directory into the stopped app's data volume, refuses a second one into a
  *   volume with files unless told to overwrite, refuses a path off that
  *   directory, and refuses while a container holds the volume (`FJS-D943`).
+ *   `backup.*` — `/backup` tars the volume into the backup directory and
+ *   refuses a volume the machine does not hold (`FJS-1782`).
  *   The directory is under `$HOME`, because a snap-packaged docker cannot
  *   bind-mount the host's `/tmp`.
  *
@@ -178,6 +180,7 @@ const hadCaddy = sh('docker', 'image', 'inspect', CADDY_IMAGE).status === 0
 const hadBusybox = sh('docker', 'image', 'inspect', BUSYBOX).status === 0
 mkdirSync(join(homedir(), '.cache'), { recursive: true })
 const restoreDir = mkdtempSync(join(homedir(), '.cache', 'fjs-verify-restore-'))
+const backupDir  = mkdtempSync(join(homedir(), '.cache', 'fjs-verify-backup-'))
 const rootPath = join(scratch, 'caddy-root.pem')
 let outpost    = null
 let stoppedEarly = null
@@ -220,6 +223,7 @@ try {
       OUTPOST_WORK_DIR:     join(scratch, 'apps'),
       OUTPOST_STATIC_DIR:   join(scratch, 'static'),
       OUTPOST_RESTORE_DIR:  restoreDir,
+      OUTPOST_BACKUP_DIR:   backupDir,
       OUTPOST_CADDY_ADMIN:  ADMIN,
     },
   })
@@ -389,6 +393,16 @@ try {
   t('volume.refusesWhileHeld',         held.status === 500 && held.body?.error?.includes(`held by ${NAME}`))
   const over = await call('/volume/restore', { app_id: APP, path: 'again.tar.gz', overwrite: true })
   t('volume.overwriteReplacesTheFiles', over.status === 200 && inVolume('find', '/data', '-type', 'f') === '/data/fresh.db')
+  const saved = await call('/backup', { app_id: APP })
+  if (saved.status !== 200) console.log(saved.body)
+  // The archive is the daemon's (root, mode 0600), so it is read back through the daemon.
+  const listing = saved.status === 200
+    ? sh('docker', 'run', '--rm', '--mount', `type=bind,src=${backupDir},dst=/out,readonly`, BUSYBOX,
+        'tar', '-tzf', `/out/${saved.body.path.split('/').pop()}`).stdout
+    : ''
+  t('backup.tarsTheVolumeToTheMachine',
+    saved.status === 200 && saved.body.files === 1 && saved.body.path.startsWith(`${backupDir}/${APP}-`) && /fresh\.db/.test(listing))
+  t('backup.refusesAVolumeItDoesNotHold', (await call('/backup', { app_id: `${APP}-absent` })).status === 500)
   // The report below counts the daemon's volumes against one sent before this
   // one existed.
   sh('docker', 'volume', 'rm', '-f', `${NAME}-data`)
@@ -431,6 +445,7 @@ try {
   if (!hadBusybox) sh('docker', 'rmi', BUSYBOX)
   rmSync(scratch, { recursive: true, force: true })
   rmSync(restoreDir, { recursive: true, force: true })
+  rmSync(backupDir, { recursive: true, force: true })
 }
 
 // ─── Report ───────────────────────────────────────────────────────────────
@@ -453,6 +468,7 @@ const expected = [
   'route.unknownIs404',
   'volume.restoresIntoTheVolume', 'volume.refusesANonEmptyOne', 'volume.refusesAPathOffTheRoot',
   'volume.refusesWhileHeld', 'volume.overwriteReplacesTheFiles',
+  'backup.tarsTheVolumeToTheMachine', 'backup.refusesAVolumeItDoesNotHold',
   'reports.areSigned', 'reports.heartbeatRegistersTheUrl', 'reports.heartbeatCarriesVitals',
   'reports.volumesAreEveryVolume', 'reports.volumesHaveMountpoints', 'reports.diskCountsTheImages', 'reports.diskIsInBytes',
 ]

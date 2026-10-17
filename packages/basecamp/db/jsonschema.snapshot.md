@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-141 definitions · 68 models · 1 view · 29 types · 43 enums · 0 other
+143 definitions · 69 models · 1 view · 30 types · 43 enums · 0 other
 ```
 
 ## Definitions
@@ -61,6 +61,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Variable` | model |
 | `Domain` | model |
 | `AppServer` | model |
+| `AppBackup` | model |
 | `AppNetwork` | model |
 | `Deployment` | model |
 | `DeploymentStep` | model |
@@ -162,6 +163,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppPlace` | type |
 | `AppUnplace` | type |
 | `AppVolumeRestore` | type |
+| `AppBackupCreate` | type |
 | `FlagOverrideSet` | type |
 | `FlagOverrideClear` | type |
 | `ServerProvision` | type |
@@ -181,7 +183,7 @@ validates, and a select that silently drops an option.
 - `AccountType` — `individual`, `organization`
 - `WorkspaceType` — `personal`, `team`, `enterprise`
 - `WorkspaceRole` — `viewer`, `billing`, `developer`, `admin`, `owner`
-- `UserKind` — `human`, `bot`, `ai`
+- `UserKind` — `user`, `bot`, `peer`, `ai`
 - `UserStatus` — `pending_verification`, `active`, `suspended`
 - `WorkspaceStatus` — `active`, `suspended`
 - `ProvisionStepName` — `start`, `create`, `poll`, `timeout`
@@ -536,7 +538,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `role` | `string` = `"user"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `accountId` | `string`? | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
-| `kind` | `UserKind` = `"human"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
+| `kind` | `UserKind` = `"user"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `status` | `UserStatus` = `"pending_verification"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `username` | `string`? | — | — | `x-transforms` | — |
 | `displayName` | `string`? | — | — | `x-transforms` | — |
@@ -940,6 +942,29 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `assignedAt` | `string` | — | — | `format: "date-time"` | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `stoppedAt` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `appId`, `serverId` · not accepted — `id`
+
+### `AppBackup`
+
+- gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `app` — belongsTo `App` via `appId` · on delete Cascade
+- relation `server` — belongsTo `Server` via `serverId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `appId` | `string` | yes | — | — | — |
+| `serverId` | `string` | yes | — | — | — |
+| `status` | `RunStatus` = `"pending"` | — | — | — | — |
+| `sizeBytes` | `integer`? | — | — | — | — |
+| `fileCount` | `integer`? | — | — | — | — |
+| `location` | `string`? | — | — | `minLength: 0` `maxLength: 500` `x-transforms` | — |
+| `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
+| `requestedBy` | `string`? | — | — | — | — |
+| `startedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `durationMs` | `integer`? | — | — | — | — |
 
 **On create**: required — `appId`, `serverId` · not accepted — `id`
 
@@ -1922,6 +1947,17 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `overwrite` | `boolean`? | — | — | — | — |
 
 **On create**: required — `serverId`, `path`
+
+### `AppBackupCreate`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `appId` | `string` | yes | — | — | — |
+| `serverId` | `string` | yes | — | — | — |
+
+**On create**: required — `appId`, `serverId`
 
 ### `FlagOverrideSet`
 

@@ -211,7 +211,7 @@ const app = createApp({
       if (!entry) return null
       return {
         userId:     entry.userId,
-        userType:   entry.role === 'admin' ? 'admin' : 'user',
+        userType:   'user',
         authMethod: 'session' as const,
         role:       entry.role,
         scopes:     [],

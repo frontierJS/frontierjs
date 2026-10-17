@@ -420,6 +420,14 @@ try {
   const off = await restore({ path: '/etc/passwd' })
   check('…and a path off the restore directory is refused', /under/.test(off?.message ?? ''))
 
+  // ── Backing it up: the volume tarred on the machine, the path recorded (`FJS-1782`) ──
+  const taken = await call('/app-backups', { ...auth, serviceMethod: 'take', body: { appId: adopt?.id, serverId: first.serverId } })
+  check('an app\'s volume is archived on its machine and the row says where',
+    taken?.status === 'success' && taken?.fileCount === 1 && taken?.location?.startsWith(`${join(OWN, 'backups')}/`))
+  check('…and the archive holds the file the volume did',
+    taken?.location && sh('docker', 'run', '--rm', '--mount', `type=bind,src=${join(OWN, 'backups')},dst=/out,readonly`, 'busybox:1.36',
+      'tar', '-tzf', `/out/${taken.location.split('/').pop()}`).stdout.includes('app.db'))
+
   // ── An image built where the workspace is, released by digest (`FJS-D942`) ──
   // `fli deploy:basecamp` from an app root: build here, load onto the machine
   // (this laptop's daemon, so nothing is shipped), release the image id. The

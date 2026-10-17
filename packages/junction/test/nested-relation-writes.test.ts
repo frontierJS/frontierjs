@@ -159,7 +159,7 @@ describe('over HTTP, under the gate', () => {
     // sessionGateLevel grades a plain user 4 and an admin 5.
     const AS: Record<string, unknown> = {
       user:  { userId: 'u1', userType: 'user',  role: 'user' },
-      admin: { userId: 'u2', userType: 'admin', role: 'admin', isStaff: true, isAdmin: true },
+      admin: { userId: 'u2', userType: 'user',  role: 'admin', isStaff: true, isAdmin: true },
     }
     app.setAuth({ verifySession: async (t: string) => AS[t] ?? null })
     await app.start()

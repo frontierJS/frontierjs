@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-51 services · 40 routes · 18 plugins · prefix (none)
+52 services · 40 routes · 18 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -23,6 +23,7 @@ text, so a body that elevates through a helper is not listed.
 | Method | Who may call it |
 | --- | --- |
 | `api-keys.owners` | standing 5 or above — declared `gate: 5` |
+| `app-backups.take` | standing 5 or above — declared `gate: 5` |
 | `apps.place` | standing 4 or above — declared `gate: 4` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `channels.test` | standing 5 or above — declared `gate: 5` |
@@ -266,6 +267,26 @@ name when it declares none.
 | before | `aggregate` | `autoFilter` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+
+### `app-backups` · model `AppBackup`
+
+- **methods** — `find`, `get`, `take`
+- **custom methods** — `take`
+- **input** — `take` takes `AppBackupCreate`
+- **who may call** —
+  - `take` — standing 5 or above — declared `gate: 5`; body writes as the app
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+| before | `take` | `validateInput` |
 
 ### `apps` · model `App`
 

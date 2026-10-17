@@ -1055,7 +1055,7 @@ Three rules worth knowing:
 ```typescript
 interface SessionContext {
   userId:       string                           // always present
-  userType:     string                           // 'user' | 'admin' | 'service'
+  userType:     string                           // the kind, never a role: 'user' | 'bot' | 'peer' | 'service'
   authMethod:   'session' | 'apiKey' | 'oauth'  // how they authenticated
                 | 'created' | 'verified'
   email?:       string

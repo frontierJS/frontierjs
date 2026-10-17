@@ -14,8 +14,8 @@
 // hour later, so a caller runs this again before every request, and again on
 // every redirect hop. What that still does not close is a rebind BETWEEN the
 // check and the connect, which needs the socket pinned to the address that was
-// graded — `fetch` gives no way to do that, so it is stated here rather than
-// implied.
+// graded: a caller using `fetch` connects through `pinTo`, to the address
+// `gradePublicUrl` answered, and `assertPublicUrl` alone leaves that window open.
 
 import { lookup } from 'node:dns/promises'
 import { isIP }   from 'node:net'
@@ -113,12 +113,50 @@ function withTimeout<T>(p: Promise<T>, ms: number, host: string): Promise<T> {
   ]).finally(() => clearTimeout(timer)) as Promise<T>
 }
 
+// What `fetch` needs to connect to the address that was graded: the URL with the
+// address in place of the name, the Host the name would have sent, and the
+// certificate name for TLS. Spread `headers` over the request's and `tls` into
+// the init (Bun reads `tls.serverName`).
+export interface PinnedRequest {
+  url:     string
+  headers: { host: string }
+  tls?:    { serverName: string }
+}
+
+export function pinTo(url: URL, address: string): PinnedRequest {
+  const pinned = new URL(url)
+  pinned.hostname = isIP(address) === 6 ? `[${address}]` : address
+  return {
+    url:     pinned.toString(),
+    headers: { host: url.host },
+    ...(url.protocol === 'https:' ? { tls: { serverName: url.hostname.replace(/^\[|\]$/g, '') } } : {}),
+  }
+}
+
+export interface GradedUrl {
+  url: URL
+  // The address the grade was made on, to be connected to with `pinTo`. Null
+  // where there is nothing to pin: an address literal is already the address,
+  // and `allowPrivate` grades nothing.
+  address: string | null
+}
+
 /**
  * Throws `PublicUrlError` unless this server may send a request to `raw`, and
  * answers the parsed URL. Run it before every request, and on every redirect
- * hop with the redirect's own URL.
+ * hop with the redirect's own URL. A caller that connects with `fetch` uses
+ * `gradePublicUrl` and `pinTo` instead, so the connect cannot resolve the name
+ * a second time.
  */
 export async function assertPublicUrl(raw: string | URL, policy: PublicUrlOptions = {}): Promise<URL> {
+  return (await gradePublicUrl(raw, policy)).url
+}
+
+export async function gradePublicUrl(
+  raw:    string | URL,
+  policy: PublicUrlOptions = {},
+  resolve: typeof lookup = lookup,
+): Promise<GradedUrl> {
   let url: URL
   try { url = new URL(raw) }
   catch { throw new PublicUrlError(`not a URL: ${JSON.stringify(String(raw))}`) }
@@ -133,7 +171,7 @@ export async function assertPublicUrl(raw: string | URL, policy: PublicUrlOption
   if (http && !policy.allowHttp)
     throw new PublicUrlError('url must be https')
 
-  if (policy.allowPrivate) return url
+  if (policy.allowPrivate) return { url, address: null }
 
   const host = url.hostname.replace(/^\[|\]$/g, '')
   const literal = isIP(host) !== 0
@@ -149,7 +187,7 @@ export async function assertPublicUrl(raw: string | URL, policy: PublicUrlOption
     // stall unrelated file I/O across the process rather than just this
     // request. The fetch's own `AbortSignal.timeout` is downstream of here.
     : (await withTimeout(
-        lookup(host, { all: true }).catch(() => { throw new PublicUrlError(`${host} does not resolve`) }),
+        resolve(host, { all: true }).catch(() => { throw new PublicUrlError(`${host} does not resolve`) }),
         lookupTimeoutMs, host)).map(a => a.address)
 
   if (!addresses.length) throw new PublicUrlError(`${host} does not resolve`)
@@ -157,5 +195,8 @@ export async function assertPublicUrl(raw: string | URL, policy: PublicUrlOption
   if (priv)
     throw new PublicUrlError(literal ? `${host} is a private address` : `${host} resolves to a private address (${priv})`)
 
-  return url
+  // IPv4 first: the connect is to this one address, with none of the fallback
+  // a name gets, and a host's v6 route is the likelier one to be dead.
+  const pick = addresses.find(a => isIP(a) === 4) ?? addresses[0]
+  return { url, address: literal ? null : pick }
 }

@@ -343,8 +343,9 @@ async function observe(root: any, kind: any, op: any): Promise<{ threw?: string,
 async function seed(root: any) {
   const sys = root.asSystem()
   await sys.cell.deleteMany({})
-  await sys.cell.create({ data: { ...ROW_A } })
-  await sys.cell.create({ data: { ...ROW_B } })
+  // Ids are stated: an autoincrement id does not restart after the delete above.
+  await sys.cell.create({ data: { id: 1, ...ROW_A } })
+  await sys.cell.create({ data: { id: 2, ...ROW_B } })
 }
 
 const { ops, cells } = parseGrid(GRID)

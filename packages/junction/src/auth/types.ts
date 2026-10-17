@@ -5,7 +5,8 @@
 
 export interface SessionContext {
   userId:       string
-  userType:     string        // 'user' | 'admin' | 'service'
+  /** What kind of caller, never a role: `user` · `bot` · `peer` · `service`. The trail's `actorType`. */
+  userType:     string
   email?:       string
   name?:        string
   accountId?:   string

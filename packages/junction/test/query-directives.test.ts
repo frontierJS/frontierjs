@@ -204,3 +204,43 @@ describe('a query past a limit is refused, not truncated', () => {
     expect(res.status).toBe(400)
   })
 })
+
+// FJS-1972: a `$limit` past the service's `paginate.max` was clamped to it with
+// a 200, so a caller that asked for a day's 260 jobs read 100 and a
+// correct-looking day. The wire refuses by name (`FJS-D896`).
+describe('a $limit past paginate.max is refused, not clamped', () => {
+  const capped = (paginate?: { default: number; max: number }) => createService({
+    name: 'things',
+    ...(paginate ? { paginate } : {}),
+    find: async (ctx) => ({
+      total: 0, limit: 0, offset: 0, data: [{ directives: { ...ctx.directives } }],
+    }),
+  })
+
+  test('over the declared max answers 400 naming the directive and the max', async () => {
+    const app = await createTestApp({ services: [capped({ default: 10, max: 50 })] })
+    const res = await request(app).get('/things?$limit=51')
+    expect(res.status).toBe(400)
+    const message = String((res.body as { message?: string }).message)
+    expect(message).toContain('$limit')
+    expect(message).toContain('50')
+  })
+
+  test('exactly the max is served', async () => {
+    const app = await createTestApp({ services: [capped({ default: 10, max: 50 })] })
+    const res = await request(app).get('/things?$limit=50')
+    expect(res.status).toBe(200)
+  })
+
+  test('the default max (100) is a contract too', async () => {
+    const app = await createTestApp({ services: [capped()] })
+    expect((await request(app).get('/things?$limit=101')).status).toBe(400)
+    expect((await request(app).get('/things?$limit=100')).status).toBe(200)
+  })
+
+  test('an in-process caller is still clamped, not refused', async () => {
+    const app = await createTestApp({ services: [capped({ default: 10, max: 50 })] })
+    const res = await app.service('things').find({ query: {}, directives: { limit: 5000 } } as never)
+    expect(res).toBeDefined()
+  })
+})

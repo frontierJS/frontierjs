@@ -70,6 +70,10 @@ export function readConfig(env = process.env) {
     /** The one directory `/volume/restore` reads an archive from. Inside the
      *  unit's StateDirectory, so it exists on a box the install built. */
     restoreDir:  (env.OUTPOST_RESTORE_DIR ?? '/var/lib/outpost/restore').replace(/\/$/, ''),
+    /** Where `/backup` writes an app's archive. Inside the unit's
+     *  StateDirectory, so the sandbox lets it and it exists on a box the
+     *  install built. */
+    backupDir:   (env.OUTPOST_BACKUP_DIR ?? '/var/lib/outpost/backups').replace(/\/$/, ''),
     /** Where published static releases live. One directory per app, one
      *  subdirectory per digest, plus the `hosts/` links the server resolves. */
     staticDir:   env.OUTPOST_STATIC_DIR ?? '/var/lib/outpost/static',

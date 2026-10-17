@@ -190,7 +190,7 @@ CREATE TABLE IF NOT EXISTS "kv_entry" (
 CREATE INDEX IF NOT EXISTS "idx_kv_entry_expiresAt" ON "kv_entry" ("expiresAt");
 
 CREATE TABLE IF NOT EXISTS "product" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL UNIQUE,
   "slug" TEXT NOT NULL UNIQUE,
   "description" TEXT,
@@ -247,7 +247,7 @@ END;
 -- colorway that is retired is still what the navy tees in the warehouse are,
 -- and a deleted row must not take that answer with it.
 CREATE TABLE IF NOT EXISTS "color" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL UNIQUE,
   "hex" TEXT,
   "retired" INTEGER NOT NULL DEFAULT 0,
@@ -256,7 +256,7 @@ CREATE TABLE IF NOT EXISTS "color" (
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "customer" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL,
   "firstName" TEXT NOT NULL,
   "lastName" TEXT NOT NULL,
@@ -286,7 +286,7 @@ CREATE INDEX IF NOT EXISTS "idx_customer_t1_t2_n1_t3_t4_n2_t5_t6_n3_t7_t8_n4" ON
 CREATE INDEX IF NOT EXISTS "idx_customer_deletedAt" ON "customer" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "custom_field" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "model" TEXT NOT NULL,
   "key" TEXT NOT NULL,
   "label" TEXT NOT NULL,
@@ -317,7 +317,7 @@ CREATE TABLE IF NOT EXISTS "custom_field" (
 -- is what this code is worth to THIS basket, which is the only fact about it
 -- they are entitled to.
 CREATE TABLE IF NOT EXISTS "discount" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "code" TEXT NOT NULL UNIQUE,
   "label" TEXT NOT NULL,
   "kind" TEXT NOT NULL DEFAULT 'percent',
@@ -358,7 +358,7 @@ CREATE TABLE IF NOT EXISTS "discount" (
 -- a residential address would be that model, and this is not one
 -- (`FJS-D322`).
 CREATE TABLE IF NOT EXISTS "pickup_point" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL UNIQUE,
   "address" TEXT NOT NULL,
   "site" TEXT,
@@ -379,7 +379,7 @@ CREATE INDEX IF NOT EXISTS "idx_pickup_point_site" ON "pickup_point" ("siteLat",
 -- statement in this schema that a gate answers *what kind of caller* and not
 -- *what kind of table*.
 CREATE TABLE IF NOT EXISTS "shipping_method" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL UNIQUE,
   "description" TEXT,
   "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
@@ -399,7 +399,7 @@ CREATE TABLE IF NOT EXISTS "shipping_method" (
 -- `label` is not decoration. A line on a receipt reading `Tax` where the law
 -- says `VAT` is a receipt a business customer cannot file.
 CREATE TABLE IF NOT EXISTS "tax_rate" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "label" TEXT NOT NULL,
   "rate" REAL NOT NULL,
   "isDefault" INTEGER NOT NULL DEFAULT 0,
@@ -427,7 +427,7 @@ CREATE TABLE IF NOT EXISTS "tax_rate" (
 -- claimed and the order unpaid — and the provider's retry is deduped away by
 -- the very row that recorded nothing happening.
 CREATE TABLE IF NOT EXISTS "payment_event" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "eventId" TEXT NOT NULL UNIQUE,
   "kind" TEXT NOT NULL,
   "paymentRef" TEXT,
@@ -438,7 +438,7 @@ CREATE TABLE IF NOT EXISTS "payment_event" (
 -- about what it costs — the price is `PlanVersion`, because a price has a
 -- lifetime and a plan does not.
 CREATE TABLE IF NOT EXISTS "plan" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "code" TEXT NOT NULL UNIQUE,
   "name" TEXT NOT NULL,
   "description" TEXT,
@@ -482,7 +482,7 @@ CREATE TABLE IF NOT EXISTS "stocktake_sheet" (
 -- its own SQLite file, so each one is a separate legal employer with no column
 -- and no policy doing the separating.
 CREATE TABLE IF NOT EXISTS "employee" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "name" TEXT NOT NULL,
   "email" TEXT NOT NULL UNIQUE,
@@ -518,7 +518,7 @@ CREATE TABLE IF NOT EXISTS "employee" (
 -- written. `toAmount` null is *and everything above*, which every real band
 -- table has exactly one of per kind.
 CREATE TABLE IF NOT EXISTS "pay_rate" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "kind" TEXT NOT NULL,
   "fromAmount" INTEGER NOT NULL DEFAULT 0 CHECK ("fromAmount" BETWEEN -9007199254740991 AND 9007199254740991),
   "toAmount" INTEGER CHECK ("toAmount" BETWEEN -9007199254740991 AND 9007199254740991),
@@ -545,7 +545,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_pay_rate_kind_fromAmount" ON "pay_rate" 
 -- against the wrong period is the ordinary mistake, and the alternative to
 -- reverting is deleting payslips, which are documents.
 CREATE TABLE IF NOT EXISTS "pay_run" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "periodStart" TEXT NOT NULL,
   "periodEnd" TEXT NOT NULL,
@@ -563,7 +563,7 @@ CREATE TABLE IF NOT EXISTS "pay_run" (
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "notification" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "userId" TEXT NOT NULL,
   "type" TEXT NOT NULL,
   "data" TEXT NOT NULL,
@@ -630,7 +630,7 @@ CREATE TABLE IF NOT EXISTS "flow_layout" (
 -- The buyable thing. One row per option combination, and the row a basket
 -- line, a price and a stock count all point at.
 CREATE TABLE IF NOT EXISTS "product_variant" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "productId" INTEGER NOT NULL,
   "sku" TEXT NOT NULL UNIQUE,
   "color" TEXT NOT NULL DEFAULT 'Default',
@@ -650,7 +650,7 @@ CREATE INDEX IF NOT EXISTS "idx_product_variant_productId" ON "product_variant" 
 CREATE INDEX IF NOT EXISTS "idx_product_variant_deletedAt" ON "product_variant" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "order" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "status" TEXT NOT NULL DEFAULT 'pending',
   "subtotal" INTEGER NOT NULL DEFAULT 0 CHECK ("subtotal" BETWEEN -9007199254740991 AND 9007199254740991),
@@ -710,7 +710,7 @@ CREATE INDEX IF NOT EXISTS "idx_order_deletedAt" ON "order" ("deletedAt") WHERE 
 -- split is per COLUMN, which is what `@guarded` is and what a model-level gate
 -- can never express.
 CREATE TABLE IF NOT EXISTS "payment_method" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "customerId" INTEGER NOT NULL,
   "providerRef" TEXT NOT NULL UNIQUE,
   "brand" TEXT NOT NULL,
@@ -743,7 +743,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_payment_method_customerId" ON "payment_m
 -- query and no log line: what crosses the Data boundary is a number the
 -- resolver already proved they hold a grant for (`FJS-D343`).
 CREATE TABLE IF NOT EXISTS "cart" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "userId" TEXT,
   "status" TEXT NOT NULL DEFAULT 'open',
   "discountId" INTEGER,
@@ -773,7 +773,7 @@ CREATE INDEX IF NOT EXISTS "idx_cart_shippingMethodId" ON "cart" ("shippingMetho
 -- `effectiveFrom` where it ended. Nothing edits a version that has been sold
 -- against, which is what `@immutable` says here.
 CREATE TABLE IF NOT EXISTS "plan_version" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "planId" INTEGER NOT NULL,
   "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
   "effectiveFrom" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -821,7 +821,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_plan_version_planId" ON "plan_version" (
 -- column. What changed is that the rule now holds against a seed, a migration,
 -- a job and `asSystem()`, none of which go through the service.
 CREATE TABLE IF NOT EXISTS "pay_window" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "employeeId" INTEGER NOT NULL,
   "basis" TEXT NOT NULL,
   "rate" INTEGER NOT NULL CHECK ("rate" BETWEEN -9007199254740991 AND 9007199254740991),
@@ -859,7 +859,7 @@ CREATE INDEX IF NOT EXISTS "idx_run_status_heartbeatAt" ON "run" ("status", "hea
 -- reference — `File` is the type that means that, and `FileStorage` in
 -- api/db.ts is what turns a path or an upload into one.
 CREATE TABLE IF NOT EXISTS "product_image" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "productId" INTEGER NOT NULL,
   "variantId" INTEGER,
   "file" TEXT NOT NULL,
@@ -903,7 +903,7 @@ CREATE INDEX IF NOT EXISTS "idx_product_image_deletedAt" ON "product_image" ("de
 -- client a `move()` is handed is therefore a real decision at every call site,
 -- and it is why `api/inventory.ts` takes one rather than reaching for a global.
 CREATE TABLE IF NOT EXISTS "inventory_movement" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "variantId" INTEGER NOT NULL,
   "kind" TEXT NOT NULL,
   "quantity" INTEGER NOT NULL,
@@ -963,7 +963,7 @@ CREATE INDEX IF NOT EXISTS "idx_stocktake_count_sheetId" ON "stocktake_count" ("
 -- signed tape is the only thing that answers it. The question here is what
 -- the shop billed for, which the tape cannot answer: it carries no prices.
 CREATE TABLE IF NOT EXISTS "order_line" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "orderId" INTEGER NOT NULL,
   "variantId" INTEGER NOT NULL,
   "sku" TEXT NOT NULL,
@@ -1007,7 +1007,7 @@ CREATE INDEX IF NOT EXISTS "idx_order_line_deletedAt" ON "order_line" ("deletedA
 -- `@immutable`, and a journal has no states at all, so *checked once when it
 -- is posted* is the whole of its life. There is no drift to catch.
 CREATE TABLE IF NOT EXISTS "journal_entry" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "narrative" TEXT NOT NULL,
   "postedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -1039,7 +1039,7 @@ CREATE INDEX IF NOT EXISTS "idx_journal_entry_payRunId" ON "journal_entry" ("pay
 -- omission: `bearerClaim` reads those columns where a model declares them, and
 -- a basket's grant lives as long as the basket, which the sweep abandons.
 CREATE TABLE IF NOT EXISTS "cart_grant" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "cartId" INTEGER NOT NULL,
   "tokenHash" TEXT NOT NULL UNIQUE,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -1052,7 +1052,7 @@ CREATE INDEX IF NOT EXISTS "idx_cart_grant_cartId" ON "cart_grant" ("cartId");
 -- either honor what it quoted or say out loud that it changed, and it can do
 -- neither if the number was never written down.
 CREATE TABLE IF NOT EXISTS "cart_line" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "cartId" INTEGER NOT NULL,
   "variantId" INTEGER NOT NULL,
   "quantity" INTEGER NOT NULL DEFAULT 1,
@@ -1084,7 +1084,7 @@ CREATE INDEX IF NOT EXISTS "idx_cart_line_variantId" ON "cart_line" ("variantId"
 -- because there is no caller-facing read — the shopper learns about their own
 -- hold from the basket the `carts` service builds for them.
 CREATE TABLE IF NOT EXISTS "stock_reservation" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "variantId" INTEGER NOT NULL,
   "cartId" INTEGER NOT NULL,
   "quantity" INTEGER NOT NULL,
@@ -1103,7 +1103,7 @@ CREATE INDEX IF NOT EXISTS "idx_stock_reservation_variantId_expiresAt" ON "stock
 -- until something moves them, and *something moved them* is a row change with
 -- a date on it rather than a silent reprice.
 CREATE TABLE IF NOT EXISTS "subscription" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "customerId" INTEGER NOT NULL,
   "planVersionId" INTEGER NOT NULL,
@@ -1147,7 +1147,7 @@ CREATE INDEX IF NOT EXISTS "idx_subscription_planVersionId" ON "subscription" ("
 -- whatever they are paid now, which is the exact failure effective dating
 -- exists to prevent.
 CREATE TABLE IF NOT EXISTS "payslip" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "payRunId" INTEGER NOT NULL,
   "employeeId" INTEGER NOT NULL,
@@ -1203,7 +1203,7 @@ CREATE INDEX IF NOT EXISTS "idx_wait_timeoutAt" ON "wait" ("timeoutAt");
 -- of the other*, and with one signed column it is *the sum is zero*. The
 -- second is the rule a database could one day be asked to hold.
 CREATE TABLE IF NOT EXISTS "journal_line" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "entryId" INTEGER NOT NULL,
   "account" TEXT NOT NULL,
   "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
@@ -1228,7 +1228,7 @@ CREATE INDEX IF NOT EXISTS "idx_journal_line_entryId" ON "journal_line" ("entryI
 -- row already `closed`, and the constraint below refuses a second open period
 -- whatever path tries to write one.
 CREATE TABLE IF NOT EXISTS "subscription_period" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "subscriptionId" INTEGER NOT NULL,
   "startsOn" TEXT NOT NULL,
   "endsOn" TEXT NOT NULL,
@@ -1271,7 +1271,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_subscription_period_subscriptionId" ON "
 -- the MOMENT that check belongs at, which is the half `FJS-D162` left open and
 -- `FJS-D167` supplies without yet spending.
 CREATE TABLE IF NOT EXISTS "invoice" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "number" TEXT NOT NULL UNIQUE,
   "status" TEXT NOT NULL DEFAULT 'draft',
   "customerId" INTEGER NOT NULL,
@@ -1309,7 +1309,7 @@ CREATE INDEX IF NOT EXISTS "idx_invoice_subscriptionId" ON "invoice" ("subscript
 -- invariant is *the lines that count sum to net* rather than *the lines sum to
 -- net*. Frappe spells the same thing `do_not_include_in_total`.
 CREATE TABLE IF NOT EXISTS "payslip_line" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "payslipId" INTEGER NOT NULL,
   "kind" TEXT NOT NULL,
   "description" TEXT NOT NULL,
@@ -1328,7 +1328,7 @@ CREATE INDEX IF NOT EXISTS "idx_payslip_line_rateId" ON "payslip_line" ("rateId"
 CREATE INDEX IF NOT EXISTS "idx_payslip_line_correctsPayRunId" ON "payslip_line" ("correctsPayRunId");
 
 CREATE TABLE IF NOT EXISTS "payment" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "providerRef" TEXT NOT NULL UNIQUE,
   "status" TEXT NOT NULL DEFAULT 'pending',
   "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
@@ -1359,7 +1359,7 @@ CREATE INDEX IF NOT EXISTS "idx_payment_paymentMethodId" ON "payment" ("paymentM
 -- two genuinely differ and the line has to say what was charged rather than
 -- what multiplies out.
 CREATE TABLE IF NOT EXISTS "invoice_line" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "invoiceId" INTEGER NOT NULL,
   "description" TEXT NOT NULL,
   "quantity" INTEGER NOT NULL DEFAULT 1,
@@ -1378,7 +1378,7 @@ CREATE INDEX IF NOT EXISTS "idx_invoice_line_invoiceId" ON "invoice_line" ("invo
 -- It is the reason every column on `Invoice` can be frozen: with a credit note
 -- there is no case left where editing one would be the answer.
 CREATE TABLE IF NOT EXISTS "credit_note" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "number" TEXT NOT NULL UNIQUE,
   "invoiceId" INTEGER NOT NULL,
   "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),

@@ -64,7 +64,7 @@ model Variant {
 const AS: Record<string, unknown> = {
   nobody:  null,
   shopper: { userId: 'u1', userType: 'user',  role: 'user' },
-  staff:   { userId: 'u2', userType: 'admin', role: 'admin', isStaff: true, isAdmin: true },
+  staff:   { userId: 'u2', userType: 'user',  role: 'admin', isStaff: true, isAdmin: true },
   // For the app-mapping block below: a standing the shipped grader cannot see.
   // `role` is read for PRESENCE there, so this is USER(4) to it and whatever
   // the app's own `getLevel` says to the app.

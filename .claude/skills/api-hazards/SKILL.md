@@ -48,11 +48,13 @@ Detail: `references/routes-query-and-headers.md`
 - **Raw routes (`app.get`/`app.post`) take `{id}`, not `:id`**
 - **`apiPrefix` moves EVERY route the app registers**
 - **Every READ carries `$withDeleted`; on a WRITE only `update`/`patch` by id do.**
+- **A wire `$limit` above the service's `paginate.max` is a 400, not a clamp.**
 - **`hasRoute()` is a matching question, not an existence one**
 - **A header the caller varies per call must be DECLARED, or it works until the socket connects.**
 - **A raw route's own `new Response(readable)` is held to its end for a gzip caller; build a stream with `ctx.stream()` or name `content-encoding`** (`FJS-D509`)
 - **The client's address is declared, never discovered.**
 - **An API on a sibling subdomain needs no cookie `Domain`; the cross-origin list is `cors.origins` + `credentials` + `csrf.origins`** (`FJS-2655`)
+- **Above 128 MB, a declared length over `http.maxBodySize` is refused by Bun, not by junction** (`FJS-3090`)
 
 ## Sockets
 Detail: `references/sockets.md`

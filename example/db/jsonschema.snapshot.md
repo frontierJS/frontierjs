@@ -1333,7 +1333,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `bucket` | `string` | yes | — | — | — |
 | `provider` | `string` | yes | — | — | — |
 | `endpoint` | `string`? | — | — | — | — |
-| `publicBase` | `string`? | — | — | — | — |
 | `size` | `integer` | yes | — | `minimum: 0` | — |
 | `mime` | `string` | yes | — | — | — |
 | `uploadedAt` | `string` | yes | — | `format: "date-time"` | — |

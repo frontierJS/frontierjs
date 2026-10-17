@@ -125,6 +125,22 @@ export async function run(t) {
   await t.eventually(text('#count'), String(beforeFlush + 1),
     'flushAutosave sends what is sitting in the quiet window')
 
+  /* ── closing inside the quiet window sends the edit (FJS-D1170) ───────── */
+
+  // A drawer dismissed 10ms after the last keystroke: the timer is armed, the
+  // form is destroyed. Dropping the edit is the failure a form with no button
+  // cannot afford; calling onautosaved on a form that is gone is the other.
+  const beforeClose = Number(await t.evaluate(`return ${text('#count')};`))
+  await typeInto(t, '#closing [name=reference]', 'CLOS-1')
+  await t.clickAt('#close-d')
+  await t.eventually(text('#count'), String(beforeClose + 1),
+    'a form destroyed inside its quiet window still sends the waiting edit')
+  await settle(t)
+  t.is(await t.evaluate(`return ${text('#count')};`), String(beforeClose + 1),
+    'and sends it once')
+  t.is(await t.evaluate(`return ${text('#autosaved-d')};`), '0',
+    'and onautosaved is not called on a form that is gone')
+
   /* ── the button disarms the timer ─────────────────────────────────────── */
 
   // Pressing Save does what the timer was about to do. An armed timer left

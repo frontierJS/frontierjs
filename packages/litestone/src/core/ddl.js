@@ -313,7 +313,11 @@ function columnDef(field, schema = null, compositePk = false, strict = true, cma
   // PRIMARY KEY (single-column only — a composite PK is emitted once at the
   // table level by tableConstraints, so suppress the per-column keyword then).
   const isId = field.attributes.find(a => a.kind === 'id')
-  if (isId && !compositePk) parts.push('PRIMARY KEY')
+  // A lone Int is SQLite's rowid alias; without AUTOINCREMENT the next id is
+  // max(id)+1, so deleting the newest row hands its id to the next create and
+  // a permalink comes to mean another row (FJS-D887).
+  if (isId && !compositePk)
+    parts.push(field.type.name === 'Int' && !field.type.array ? 'PRIMARY KEY AUTOINCREMENT' : 'PRIMARY KEY')
 
   // UNIQUE
   const isUnique = field.attributes.find(a => a.kind === 'unique')

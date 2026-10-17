@@ -77,28 +77,30 @@ if (asText.length !== 0 || cast.length !== 1 || asInt.length !== 1) throw new Er
 
 ---
 
-## There is no `sqlite_sequence`, and an id is reused
+## A lone `Int @id` is AUTOINCREMENT, and a gap is normal
 
-Litestone emits `"id" INTEGER NOT NULL PRIMARY KEY` for an `Int @id`, with or
-without `@default(autoincrement())` — never SQLite's `AUTOINCREMENT` keyword.
-Two things follow:
+Litestone emits `"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT` for a lone
+`Int @id`, with or without `@default(autoincrement())` (`FJS-D887`). Three
+things follow:
 
-- **`sqlite_sequence` does not exist** in a Litestone database; a query against
-  it fails with `no such table`. The row count is `db.user.count()`.
-- **The next id is `max(id) + 1`**, so deleting the highest row hands its id to
-  the next create. A deleted row's id is not retired:
+- **A deleted row's id is retired.** The next id is one past the highest id
+  the table ever held, so a permalink never comes to mean another row.
+- **A gap is normal.** An `upsertMany` row that lands on the conflict branch
+  spends an id. Never count rows by the highest id; the row count is
+  `db.user.count()`.
+- **`sqlite_sequence` exists** in the database, one row per such table.
+  `introspect` skips it. A composite key and a `String @id` take no
+  `AUTOINCREMENT`.
 
 ```js
 const a = await db.user.create({ data: { name: 'a' } })
 await db.user.delete({ where: { id: a.id } })       // a hard delete; remove() would keep the row
 const b = await db.user.create({ data: { name: 'b' } })
-if (b.id !== a.id) throw new Error(`expected ${a.id} to be reused, got ${b.id}`)
+if (b.id <= a.id) throw new Error(`expected a new id, got ${b.id} after ${a.id}`)
 ```
 
-Never build an idempotency key, an external reference or an occurrence key
-from a row id — `@frontierjs/toolbelt/history` exists for that, and a
-`String @id @default(uuid())` is the shape for an id that must stay unique
-forever.
+A key that must be unique across databases, or must not be guessable, is
+still `String @id @default(uuid())`.
 
 ---
 

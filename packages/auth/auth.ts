@@ -206,10 +206,10 @@ export function createLitestoneAuth(
   function toContext(user: any, authMethod: SessionContext['authMethod']): SessionContext {
     return {
       userId:    user.id,
-      userType:  user.role ?? 'user',
-      // The User model's role was written to userType and then dropped, so
-      // SessionContext.role — the field consumers actually read, including
-      // anything grading a caller for @@gate — was always undefined.
+      // The kind, never the role: the trail files `userType` as `actorType`,
+      // so a role named `service` was filed as the app and left out of every
+      // author column.
+      userType:  user.kind ?? 'user',
       role:      user.role ?? undefined,
       email:     user.email,
       name:      user.name ?? undefined,
@@ -223,7 +223,8 @@ export function createLitestoneAuth(
       //   emailVerified false → null      → VISITOR (1)
       //   emailVerified true  → undefined → no objection; grades USER (4)
       // Absence means "nothing holding this user back", never "not yet".
-      ...(user.emailVerified === false ? { verifiedAt: null } : {}),
+      // A bot or a peer has no mailbox to prove, so it is never held there.
+      ...(user.emailVerified === false && (user.kind ?? 'user') === 'user' ? { verifiedAt: null } : {}),
 
       authMethod,
 
@@ -281,6 +282,17 @@ export function createLitestoneAuth(
     authMethod: SessionContext['authMethod'],
     meta:       Record<string, unknown> = {},
   ): Promise<{ token: string; user: SessionContext }> {
+    // A bot or a peer reaches this app through its API keys only. The refusal is
+    // the wrong-password one, so a login form does not tell a stranger which
+    // addresses belong to automations.
+    if ((user.kind ?? 'user') !== 'user') {
+      await audit('login.failed', {
+        model: personModel, records: [user.id], actorId: user.id,
+        meta:  { ...meta, reason: 'not-a-person', kind: user.kind },
+      })
+      throw new InvalidCredentialsError()
+    }
+
     // Before the session is issued, so a refusal leaves nothing behind. The hook
     // therefore has no session id to be given — what happened after this point
     // is the trail's to report, not the gate's.

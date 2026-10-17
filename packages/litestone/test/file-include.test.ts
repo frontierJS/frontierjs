@@ -32,7 +32,7 @@ const SCHEMA = `
 `
 
 const ref = (key: string) => JSON.stringify({
-  key, provider: 'local', publicBase: 'https://cdn.test', size: 1, mime: 'image/png',
+  key, provider: 'local', size: 1, mime: 'image/png',
 })
 
 // One ctx stands for the one client: the plugin keeps its maps per client.

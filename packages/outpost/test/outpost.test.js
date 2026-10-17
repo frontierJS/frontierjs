@@ -611,6 +611,56 @@ describe('what the machine is asked to do', () => {
       expect(again.calls.find(a => a[1] === 'run')).toContain('FJS_OVERWRITE=1')
     })
   })
+
+  describe('/backup — an app\'s volume, tarred onto the machine (FJS-1782)', () => {
+    const backupDir = join(mkdtempSync(join(tmpdir(), 'outpost-backups-')), 'backups')
+
+    const backing = (answers = {}) => {
+      const runner = fakeRunner(answers)
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run: runner.run, backupDir }), inspector: createInspector({ run: runner.run }),
+        log: { warn() {}, error() {} },
+      })
+      return { server, calls: runner.calls }
+    }
+    const backup = async (server, body) => {
+      const res = await send(server, 'POST', '/backup', body)
+      return { status: res.status, body: await res.json() }
+    }
+
+    test('tars the volume read-only in a throwaway container, into the backup directory', async () => {
+      const { server, calls } = backing({ 'docker run --rm': { stdout: '4096 3\n' } })
+      const { status, body } = await backup(server, { app_id: 'ela' })
+      expect(status).toBe(200)
+      expect(body).toMatchObject({ volume: 'fjs-ela-data', bytes: 4096, files: 3 })
+      expect(body.path.startsWith(`${realpathSync(backupDir)}/ela-`)).toBe(true)
+      expect(body.path.endsWith('.tar.gz')).toBe(true)
+      const argv = calls.find(a => a[1] === 'run')
+      expect(argv).toEqual(expect.arrayContaining(['--network', 'none', '-v', 'fjs-ela-data:/data:ro']))
+      expect(argv).toContain(`type=bind,src=${realpathSync(backupDir)},dst=/out`)
+    })
+
+    test('a volume this machine does not hold is refused before anything is written', async () => {
+      const { server, calls } = backing({ 'docker volume inspect': { exitCode: 1, stderr: 'no such volume' } })
+      const { status, body } = await backup(server, { app_id: 'ela' })
+      expect(status).toBe(500)
+      expect(body.error).toContain('fjs-ela-data')
+      expect(calls.some(a => a[1] === 'run')).toBe(false)
+    })
+
+    test('an app id that is not a plain name addresses no volume', async () => {
+      const { server, calls } = backing()
+      expect((await backup(server, { app_id: '../x' })).status).toBe(500)
+      expect(calls).toEqual([])
+    })
+
+    test('a tar that fails answers the machine\'s words', async () => {
+      const { server } = backing({ 'docker run --rm': { exitCode: 1, stderr: 'tar: no space left on device' } })
+      const { status, body } = await backup(server, { app_id: 'ela' })
+      expect(status).toBe(500)
+      expect(body.error).toContain('no space left on device')
+    })
+  })
 })
 
 describe('the ingress — Caddy, through its admin API', () => {

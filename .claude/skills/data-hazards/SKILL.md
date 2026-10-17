@@ -41,6 +41,7 @@ Detail: `references/gates-policies-and-claims.md`
 - **`$setAuth(user)` RETURNS a scoped client, it does not mutate.**
 - **A CAPABILITY is a grid beside the ladder, and a finer grant REPLACES the coarse one rather than adding to it** (`FJS-D146`)
 - **A `CHECK` fails only on FALSE, so a NULL passes it**
+- **A bare `check(rel)` over an optional parent is TRUE for a row naming no parent — beside another scope, that row is the other scope's** (`FJS-3130`)
 - **`asSystem()` does not bypass a `@check`, a `@@check` or an `@@arc`, and it bypasses everything else.**
 - **Raw SQL requires `asSystem()` once a schema declares access rules.**
 - **A field `@allow` is a PREDICATE and it is compiled into SQL, both ways** (`FJS-D129`)

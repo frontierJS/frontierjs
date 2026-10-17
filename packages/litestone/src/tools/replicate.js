@@ -8,7 +8,7 @@
 // schema and never decides what is replicable. It takes a list and runs it.
 
 import { spawn, spawnSync } from 'child_process'
-import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { openDatabase } from '../core/engine.js'
 
@@ -75,6 +75,84 @@ export function findLitestream() {
 //   litestream restore -o ./log.db  s3://bucket/myapp/audit
 
 export const replicaUrl = (base, name) => `${base.replace(/\/+$/, '')}/${name}`
+
+// ─── The layout manifest ──────────────────────────────────────────────────────
+// What `backup` and `replicate` copy from beside the schema, named by the COPY
+// (`FJS-D1103`). A restore runs into a tree that is empty exactly when it is
+// needed, so it cannot name a `jobs.db` it has never seen, and a hyphenated
+// name (`db-a-b`) cannot say whether it was `a/b.db` or `a-b.db`.
+//
+//   { sqlite: [{ name: 'db-jobs', rel: 'jobs.db' }], files: ['public/x.png'] }
+//
+// `rel` is a path under the schema's directory; a restore refuses one that
+// leaves it, since the manifest is read from a bucket or a directory someone
+// else can write to.
+
+export const LAYOUT_FILE = 'db-layout.json'
+
+export const layoutManifest = (layout) => ({
+  sqlite: layout.sqlite.map(({ name, rel }) => ({ name, rel })),
+  files:  layout.files.map(f => f.rel).sort(),
+})
+
+export function parseLayoutManifest(text, where) {
+  let m
+  try { m = JSON.parse(text) } catch (e) { throw new Error(`${where} is not JSON: ${e.message}`) }
+  const okRel = rel => typeof rel === 'string' && rel !== '' && !rel.startsWith('/') && !rel.split('/').includes('..')
+  for (const e of m?.sqlite ?? [])
+    if (typeof e?.name !== 'string' || !/^db-/.test(e.name) || !okRel(e.rel)) throw new Error(`${where} names a SQLite file it cannot place: ${JSON.stringify(e)}`)
+  for (const rel of m?.files ?? [])
+    if (!okRel(rel)) throw new Error(`${where} names a file outside db/: ${JSON.stringify(rel)}`)
+  return { sqlite: m?.sqlite ?? [], files: m?.files ?? [] }
+}
+
+// ─── Reading and writing a file beside a replica ──────────────────────────────
+// Litestream stores databases and nothing else, so the manifest is put there by
+// us. `file://` and `s3://` are the replicas this can reach; anything else is
+// refused by scheme, and `replicate` says so rather than leave a replica that
+// restores without its layout.
+
+async function s3Store(url) {
+  const { S3Provider } = await import('../storage/providers/s3.js')
+  const m = /^s3:\/\/([^/]+)\/?(.*)$/.exec(url)
+  const env = process.env
+  const provider = new S3Provider({
+    provider: 's3', bucket: m[1],
+    endpoint: env.AWS_ENDPOINT_URL_S3 ?? env.AWS_ENDPOINT_URL,
+    region: env.AWS_REGION ?? env.AWS_DEFAULT_REGION,
+    accessKeyId: env.AWS_ACCESS_KEY_ID, secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+  })
+  return { provider, key: m[2].replace(/\/+$/, '') }
+}
+
+export const canStoreBesideReplica = url => /^(file|s3):\/\//.test(url)
+
+export async function putReplicaFile(base, name, body) {
+  const url = replicaUrl(base, name)
+  if (url.startsWith('file://')) {
+    const path = url.slice('file://'.length)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, body)
+  } else if (url.startsWith('s3://')) {
+    const { provider, key } = await s3Store(url)
+    await provider.put(key, Buffer.from(body), { contentType: 'application/json' })
+  } else {
+    throw new Error(`a ${url.split(':')[0]}:// replica cannot hold ${name} — only file:// and s3:// can`)
+  }
+}
+
+// Null when the replica holds none; a replica written before there was a layout
+// to name, or a bare project's, is not an error.
+export async function getReplicaFile(base, name) {
+  const url = replicaUrl(base, name)
+  if (url.startsWith('file://')) return existsSync(url.slice('file://'.length)) ? readFileSync(url.slice('file://'.length), 'utf8') : null
+  if (url.startsWith('s3://')) {
+    const { provider, key } = await s3Store(url)
+    try { return (await provider.get(key)).toString('utf8') }
+    catch (e) { if (/\(404\)/.test(e.message)) return null; throw e }
+  }
+  return null
+}
 
 // ─── YAML generation ──────────────────────────────────────────────────────────
 // Litestream's config is simple enough that a string template is cleaner than
