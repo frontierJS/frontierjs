@@ -10,7 +10,7 @@ const { apiPort, healthPath, container, replaced, revertImage, host } = $.config
 
 // The same function the deploy's health step calls, so a revert's safety net is
 // the deploy's safety net rather than a copy of it.
-const { healthy, restored } = healthOrRestore($, {
+const { healthy, restored } = await healthOrRestore($, {
   host, container, replaced, apiPort, healthPath, log,
 })
 

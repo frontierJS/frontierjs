@@ -10,12 +10,14 @@ if ($.config.abort) return
 const { apiPort, healthPath, container, replaced, imageTag } = $.config
 const { host } = $.config.api
 
-const { healthy } = healthOrRestore($, {
+const { healthy, unbound } = await healthOrRestore($, {
   host, container, replaced, apiPort, healthPath, log,
 })
 
 if (!healthy) {
   $.config.abort = true
-  throw new Error(`Health check failed for ${imageTag} — rolled back`)
+  throw new Error(unbound.length
+    ? `${imageTag} opened ${unbound.join(', ')} outside the volume — rolled back`
+    : `Health check failed for ${imageTag} — rolled back`)
 }
 ```

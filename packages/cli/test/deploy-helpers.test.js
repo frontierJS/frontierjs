@@ -481,7 +481,7 @@ describe('swapContainer', () => {
 // polled like the deploy was, and only an answer counts.
 
 describe('healthOrRestore', () => {
-  const drive = ({ answersAfterRestore }) => {
+  const drive = async ({ answersAfterRestore, answersFirst = false, open = '' }) => {
     const commands = []
     let restored = false
     const context = {
@@ -490,14 +490,15 @@ describe('healthOrRestore', () => {
         const body = input ?? command
         commands.push(body)
         if (body.includes('docker rename')) { restored = true; return 'restored' }
+        if (body.includes('/proc/')) return open
         if (body.includes('curl')) {
-          if (restored && answersAfterRestore) return 'ok'
+          if (restored ? answersAfterRestore : answersFirst) return 'ok'
           throw new Error('fail')
         }
         return ''
       },
     }
-    const result = healthOrRestore(context, {
+    const result = await healthOrRestore(context, {
       host: 'localhost', container: 'my-app-api', replaced: 'my-app-api_replaced',
       apiPort: 7102, healthPath: '/api/health', attempts: 1, intervalS: 0,
       log: { info() {}, success() {}, warn() {}, error() {} },
@@ -505,16 +506,28 @@ describe('healthOrRestore', () => {
     return { commands, result }
   }
 
-  test('the put-back container is polled before it is called restored', () => {
-    const { commands } = drive({ answersAfterRestore: true })
+  test('the put-back container is polled before it is called restored', async () => {
+    const { commands } = await drive({ answersAfterRestore: true })
     const rename = commands.findIndex(c => c.includes('docker rename'))
     expect(rename).toBeGreaterThanOrEqual(0)
     expect(commands.slice(rename + 1).some(c => c.includes('curl'))).toBe(true)
   })
 
-  test('a put-back container that never answers is not restored', () => {
-    expect(drive({ answersAfterRestore: false }).result).toEqual({ healthy: false, restored: false })
-    expect(drive({ answersAfterRestore: true }).result).toEqual({ healthy: false, restored: true })
+  test('a put-back container that never answers is not restored', async () => {
+    expect((await drive({ answersAfterRestore: false })).result).toEqual({ healthy: false, restored: false, unbound: [] })
+    expect((await drive({ answersAfterRestore: true })).result).toEqual({ healthy: false, restored: true, unbound: [] })
+  })
+
+  // A 200 is not enough: a database in the container's own layer is empty after
+  // the next swap, so the release that wrote it is put back like a sick one.
+  test('a container answering with a database outside the volume is put back; one on the volume passes', async () => {
+    const outside = await drive({ answersFirst: true, answersAfterRestore: true, open: '/data/app.db\n/db/audit.db\n' })
+    expect(outside.result).toEqual({ healthy: false, restored: true, unbound: ['/data/app.db'] })
+    expect(outside.commands.some(c => c.includes('docker rename'))).toBe(true)
+
+    const inside = await drive({ answersFirst: true, answersAfterRestore: true, open: '/db/app.db\n' })
+    expect(inside.result).toEqual({ healthy: true, restored: false, unbound: [] })
+    expect(inside.commands.some(c => c.includes('docker rename'))).toBe(false)
   })
 })
 

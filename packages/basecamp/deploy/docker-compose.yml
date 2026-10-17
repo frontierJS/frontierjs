@@ -22,7 +22,7 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 8120
-      DATABASE_URL: /data/basecamp.db
+      DATABASE_URL: /db/basecamp.db
     # The secrets, written once by deploy/build.mjs into a git-ignored file and
     # never regenerated — ENCRYPTION_KEY is what @encrypted columns in the
     # `basecamp-data` volume are readable with, so rotating it silently orphans
@@ -36,7 +36,7 @@ services:
     volumes:
       # The database lives OUTSIDE the image. Without this every write is lost
       # on the next swap, and the loss is silent — the app comes up empty.
-      - basecamp-data:/data
+      - basecamp-data:/db
     expose:
       - '8120'
 

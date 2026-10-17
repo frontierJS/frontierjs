@@ -63,9 +63,9 @@ export default {
     },
 
     db: {
-      // Matches the container: DATABASE_URL is /data/basecamp.db and /data is a
-      // volume, because a database inside the image is lost on the next swap
-      // and the loss is silent — the app simply comes up empty.
+      // The HOST directory; the deploy mounts it at /db in the container, where
+      // the Dockerfile's DATABASE_URL points. A database anywhere else is lost
+      // on the next swap, and the health step puts the old container back.
       path: '/data',
       file: 'basecamp.db',
       keep_backups: 5

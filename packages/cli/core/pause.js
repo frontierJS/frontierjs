@@ -356,3 +356,28 @@ export function jobsVolumeVerdict({ output, volume }) {
       `  refused because the new container would migrate with every queue claiming — unpause, deploy the binding, then pause again`] }
   return { level: 'warn', lines }
 }
+
+/**
+ * Every file the container's processes hold open, one path per line. Asked of
+ * the kernel rather than of the app, so a path set in code, in config or in an
+ * env variable is read the same way.
+ */
+export function openFilesScript(container) {
+  return `docker exec ${container} sh -c 'for f in /proc/[0-9]*/fd/*; do readlink "$f"; done' 2>/dev/null | sort -u || true`
+}
+
+const SQLITE_FILE = /\.(db|sqlite3?)$/
+
+/**
+ * The SQLite files a NEW container opened outside the volume, from
+ * `openFilesScript`'s output. Each one is in the container's own layer, so the
+ * release works until the next swap and that swap starts it empty — a main
+ * database there sends the app back to its first-run screen with nothing said.
+ * Asked after the new container answers health, where a refusal puts the old
+ * one back; asked of the old one before the swap, it would refuse the deploy
+ * that binds the path.
+ */
+export function unboundDatabases({ output, volume }) {
+  return [...new Set(String(output ?? '').split('\n').map(l => l.trim())
+    .filter(p => p.startsWith('/') && SQLITE_FILE.test(p) && !under(p, volume)))].sort()
+}

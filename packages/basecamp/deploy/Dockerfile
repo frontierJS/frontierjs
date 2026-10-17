@@ -69,15 +69,17 @@ WORKDIR /app
 
 COPY --from=build /app /app
 
-# The live database is a bind mount, never the image: point DATABASE_URL at
-# /data or every write is lost on the next container swap. The audit trail is
-# /data/audit.db for the same reason.
-RUN mkdir -p /data
+# The live database is a bind mount, never the image: `fli deploy` and compose
+# both mount it at /db, and a DATABASE_URL anywhere else is in the container's
+# own layer, so the next swap starts it empty and the app opens on /setup. The
+# audit trail is /db/audit.db and the jobs queue /db/basecamp-jobs.db for the
+# same reason.
+RUN mkdir -p /db
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8120 \
-    DATABASE_URL=/data/basecamp.db
+    DATABASE_URL=/db/basecamp.db
 
 EXPOSE 8120
 

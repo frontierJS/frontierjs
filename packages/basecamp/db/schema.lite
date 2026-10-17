@@ -154,7 +154,7 @@
 // launch was assumed. Writing them relative to `db/` instead moves both.
 //
 // A deployment is unaffected either way: it binds both absolutely
-// (`/data/basecamp.db`, `/data/audit.db`), and an absolute path has no anchor.
+// (`/db/basecamp.db`, `/db/audit.db`), and an absolute path has no anchor.
 //
 // NOTE: this declaration WINS over `createClient({ db })`. Passing both is not
 // an error and produces no warning — the option is simply ignored — so core/db.ts

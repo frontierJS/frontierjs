@@ -1057,7 +1057,11 @@ test/     one file per module under core/, plus the deploy pipeline's own
   container. `05b-jobs-volume` asks the RUNNING container which file it has open
   before `06-swap` replaces it, and refuses only when a pause is in force — a
   refusal on pending jobs would block the very deploy that fixes the binding.
-  `CONTAINER_DB_DIR` in `deploy/_module.md` is the mount point; never write `/db`
+  The refusal is on the NEW container: `healthOrRestore` asks the kernel which
+  SQLite files it opened (`unboundDatabases` in `core/pause.js`), and one
+  outside the volume puts the old container back, as a failed health check does
+  — basecamp's `DATABASE_URL=/data/…` opened every release on `/setup`
+  (`FJS-3175`). `CONTAINER_DB_DIR` in `deploy/_module.md` is the mount point; never write `/db`
   as a literal beside it.
 - **The journal and the file can disagree, and nothing reconciles them.**
   `driftVerdict` grades the pair and `deploy:status` prints it. Recorded but not

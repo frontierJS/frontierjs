@@ -600,10 +600,15 @@ const showContainerTail = (machine, container, log, lines = 40) => {
 // the day it matters, and a revert whose own safety net had drifted from the
 // deploy's would be discovered at the worst moment.
 //
-// Answers `{ healthy, restored }` and throws nothing — the caller decides what a
-// failure means, because for a deploy it is a rollback and for a revert it is a
-// revert that could not land.
-const healthOrRestore = ($, { host, container, replaced, apiPort, healthPath, log, attempts = 10, intervalS = 2 }) => {
+// A container that answers but holds a database outside CONTAINER_DB_DIR is
+// put back too: it works until the next swap, which starts that database empty.
+//
+// Answers `{ healthy, restored, unbound }` and throws nothing — the caller decides
+// what a failure means, because for a deploy it is a rollback and for a revert it
+// is a revert that could not land.
+const pauseCore = () => import(new URL('file://' + global.fliRoot + '/core/pause.js'))
+
+const healthOrRestore = async ($, { host, container, replaced, apiPort, healthPath, log, attempts = 10, intervalS = 2 }) => {
   const machine = machineFor($, host)
   log.info(`Waiting for ${healthPath} (up to ${attempts * intervalS}s)...`)
 
@@ -623,34 +628,43 @@ exit 1`
 
   const answers = () => { try { machine.run(healthCmd); return true } catch { return false } }
 
-  if (answers()) {
-    log.success('Health check passed')
-    return { healthy: true, restored: false }
+  const answered = answers()
+  let unbound = []
+  if (answered) {
+    const { openFilesScript, unboundDatabases } = await pauseCore()
+    unbound = unboundDatabases({ output: machine.capture(openFilesScript(container)), volume: CONTAINER_DB_DIR })
+    if (!unbound.length) {
+      log.success('Health check passed')
+      return { healthy: true, restored: false, unbound }
+    }
+    log.error(`${container} answers ${healthPath} but has a database open outside ${CONTAINER_DB_DIR}, the one directory a swap keeps:`)
+    for (const path of unbound) log.error(`  ${path}`)
+    log.info(`  the next swap would start each one empty — point its path under ${CONTAINER_DB_DIR} (DATABASE_URL, AUDIT_PATH, createCaravan({ db }))`)
+  } else {
+    // Name the URL. The most common cause is not a sick app but a health path that
+    // omits the app's apiPrefix — healthPlugin() registers through app.get(), which
+    // moves with the prefix, so an app serving /api/health polls 404 here and a
+    // working release gets taken down. Without the URL in the message that reads as
+    // the app's fault.
+    log.error(`Health check failed after ${attempts * intervalS}s`)
+    log.error(`  polled: http://localhost:${apiPort}${healthPath}`)
+    log.info(`  if the API is healthy, check deploy.api.health includes your apiPrefix`)
+
+    // ── The container's own last words ──────────────────────────────────────────
+    //
+    // An app that REFUSED to start says why, clearly, in its own output — an
+    // attachment nobody configured, a bad encryption key, a port already taken —
+    // and until this the operator saw none of it. All they got was "health check
+    // failed", a rollback, and a message about apiPrefix that is wrong whenever
+    // the app never came up at all. The refusal was sitting in `docker logs`,
+    // where nobody looks at 3am because nothing said to.
+    //
+    // Tailed rather than dumped: an app that started and is merely unwell has
+    // written thousands of lines, and burying the one that matters is the same
+    // failure one layer along. A stopped container still answers, which is the
+    // case that matters most — it is the one that exited.
+    showContainerTail(machine, container, log)
   }
-
-  // Name the URL. The most common cause is not a sick app but a health path that
-  // omits the app's apiPrefix — healthPlugin() registers through app.get(), which
-  // moves with the prefix, so an app serving /api/health polls 404 here and a
-  // working release gets taken down. Without the URL in the message that reads as
-  // the app's fault.
-  log.error(`Health check failed after ${attempts * intervalS}s`)
-  log.error(`  polled: http://localhost:${apiPort}${healthPath}`)
-  log.info(`  if the API is healthy, check deploy.api.health includes your apiPrefix`)
-
-  // ── The container's own last words ──────────────────────────────────────────
-  //
-  // An app that REFUSED to start says why, clearly, in its own output — an
-  // attachment nobody configured, a bad encryption key, a port already taken —
-  // and until this the operator saw none of it. All they got was "health check
-  // failed", a rollback, and a message about apiPrefix that is wrong whenever
-  // the app never came up at all. The refusal was sitting in `docker logs`,
-  // where nobody looks at 3am because nothing said to.
-  //
-  // Tailed rather than dumped: an app that started and is merely unwell has
-  // written thousands of lines, and burying the one that matters is the same
-  // failure one layer along. A stopped container still answers, which is the
-  // case that matters most — it is the one that exited.
-  showContainerTail(machine, container, log)
 
   const restoreCmd = `docker stop ${container} || true
 docker rm   ${container} || true
@@ -666,7 +680,7 @@ fi`
     machine.run(restoreCmd)
   } catch (err) {
     log.error('Restore also failed: ' + err.message)
-    return { healthy: false, restored: false }
+    return { healthy: false, restored: false, unbound }
   }
 
   // `docker start` returns while the app is still migrating, so a put-back
@@ -675,10 +689,10 @@ fi`
   if (!answers()) {
     log.error(`The previous container was put back and does not answer ${healthPath} either`)
     showContainerTail(machine, container, log)
-    return { healthy: false, restored: false }
+    return { healthy: false, restored: false, unbound }
   }
   log.warn('Restored the previous container, and it answers')
-  return { healthy: false, restored: true }
+  return { healthy: false, restored: true, unbound }
 }
 
 // ─── edgeRoutesFor / writeEdge ────────────────────────────────────────────────

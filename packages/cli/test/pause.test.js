@@ -26,6 +26,7 @@ import {
   caddyGuard, guardId, guardProbeScript, pausedFile, pagePath, fliDir,
   DEFAULT_PAGE, driftVerdict, pauseRefusals, REFUSALS,
   queueScript, queueVerdict, queueStateLine, jobsVolumeVerdict, QUEUE_HOLDER, CARAVAN_BIN,
+  openFilesScript, unboundDatabases,
 } from '../core/pause.js'
 import { execFileSync } from 'child_process'
 import { chooseTarget, transitionsSince, servingHistory } from '../core/revert.js'
@@ -396,5 +397,19 @@ describe('what a swap throws away (FJS-1095)', () => {
     for (const out of ['{"fli":"no-container"}', '{"fli":"no-caravan"}', '{"source":"open","exists":false,"error":"none open"}'])
       expect(jobsVolumeVerdict({ output: out, volume: '/db' })).toEqual({ level: 'ok', lines: [] })
     expect(jobsVolumeVerdict({ output: '{"source":"open","candidates":["/a","/b"],"error":"2 open"}', volume: '/db' }).level).toBe('warn')
+  })
+
+  // The shape basecamp shipped: DATABASE_URL=/data/… with the volume at /db, so
+  // every swap sent the app back to /setup.
+  test('a database the new container holds outside the volume is named, once; its WAL and the volume are not', () => {
+    const output = ['/data/app.db', '/data/app.db-wal', '/data/app.db-shm', '/data/app.db',
+      '/db/audit.db', '/db/nested/jobs.db', '/dbx/x.sqlite3', 'socket:[71773]', '/dev/null', ''].join('\n')
+    expect(unboundDatabases({ output, volume: '/db' })).toEqual(['/data/app.db', '/dbx/x.sqlite3'])
+    expect(unboundDatabases({ output: '/db/app.db\n/db/app.db-wal\n', volume: '/db' })).toEqual([])
+    expect(unboundDatabases({ output: '', volume: '/db' })).toEqual([])
+  })
+
+  test('the open-files script parses', () => {
+    execFileSync('sh', ['-n'], { input: openFilesScript('shop_api_3000') })
   })
 })

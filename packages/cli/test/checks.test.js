@@ -133,9 +133,12 @@ const CLEAN = {
   // the file, declare nothing twice.
   // `verify:leads` is there so `drive-holds` RUNS over the clean tree, and the
   // drive declares the port block it asks for. `api/test/leads.test.ts` is the
-  // same for `test-not-hermetic`: a stub upstream on port 0.
+  // same for `test-not-hermetic`: a stub upstream on port 0. The `test`
+  // script's `--timeout` is the package timeout `test-timeout-inline` grades
+  // against, and that test sets none of its own.
   'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*', '@acme/skin': '*' },
-                                   scripts: { 'verify:leads': 'bun web/test/verify-leads.mjs' } }),
+                                   scripts: { test: 'bun test --timeout 20000',
+                                              'verify:leads': 'bun web/test/verify-leads.mjs' } }),
   // A dependency that ships CSS, so `css-token-undefined` RUNS on the clean tree
   // rather than skipping. The token below is the one the clean page reads.
   'node_modules/@acme/skin/package.json':
@@ -1547,6 +1550,47 @@ describe('the silent config hazards', () => {
     const { findings, skipped } = only(tree('not-hermetic-clean', CLEAN), 'test-not-hermetic')
     expect(skipped).toEqual([])
     expect(findings).toEqual([])
+  })
+
+  // A package timeout and an inline one are two answers to how long a test may
+  // take; with no package timeout an inline one is the only answer.
+  test('an inline timeout in a package that sets its own is a warning', () => {
+    const root = tree('timeout-inline', {
+      'package.json':          JSON.stringify({ name: 'app', scripts: { test: 'bun test --timeout=20000' } }),
+      'api/test/slow.test.ts':
+        "test('builds', async () => {\n  await build()\n}, 60_000)\n" +
+        "it('options', { timeout: 9000 }, () => {})\n" +
+        "beforeAll(async () => { await boot() }, BOOT_MS * 2)\n" +
+        "test.each([[1], [2]])('row %d', n => {}, 5000)\n",
+      'api/test/fine.test.ts':
+        "test('plain', () => { expect(f(1, 2, 3)).toBe(6) })\n" +
+        "test('a job timeout is not a test timeout', () => q.dispatch(job, { timeout: 50 }))\n" +
+        "const re = test('x', () => [...s.matchAll(/a(b/g)], 'not a timeout')\n" +
+        "const fixture = \"test('x', fn, 1000)\"\n",
+      'tools/package.json':    JSON.stringify({ name: 'tools', scripts: { test: 'bun test' } }),
+      'tools/test/own.test.js': "test('slow', fn, 30000)\n",
+      'kit/package.json':      JSON.stringify({ name: 'kit', scripts: { test: 'vitest run' } }),
+      'kit/vitest.config.js':  'export default { test: { testTimeout: 30000 } }\n',
+      'kit/test/a.test.js':    "it('slow', fn, 45000)\n",
+    })
+    const { findings } = only(root, 'test-timeout-inline')
+    expect(findings.map(f => [relative(root, f.file), f.line, f.message.match(/timeout \((.+?)\)/)[1]])).toEqual([
+      ['api/test/slow.test.ts', 1, '60_000'],
+      ['api/test/slow.test.ts', 4, '9000'],
+      ['api/test/slow.test.ts', 5, 'BOOT_MS * 2'],
+      ['api/test/slow.test.ts', 6, '5000'],
+      ['kit/test/a.test.js',    1, '45000'],
+    ])
+    expect(findings[0].message).toMatch(/`--timeout` in its `test` script/)
+    expect(findings[4].message).toMatch(/`testTimeout` in vitest\.config\.js/)
+  })
+
+  test('with no package timeout the rule skips and says why', () => {
+    const root = tree('timeout-inline-none', {
+      'package.json':          JSON.stringify({ name: 'app', scripts: { test: 'bun test' } }),
+      'api/test/slow.test.ts': "test('builds', fn, 60_000)\n",
+    })
+    expect(only(root, 'test-timeout-inline')).toMatchObject({ findings: [], skipped: [{ why: 'no package sets a test timeout' }] })
   })
 
   test('a port literal is excused by an allowance keyed to the file, with its reason', () => {

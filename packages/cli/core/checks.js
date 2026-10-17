@@ -100,6 +100,8 @@ export const RULES = [
     title: 'a drive that reaches its checkout\'s ports or dev database declares it in holds' },
   { id: 'test-not-hermetic',    scope: 'both', severity: 'error', invariant: null,
     title: 'a collected test binds no fixed port and opens no Chrome' },
+  { id: 'test-timeout-inline',  scope: 'both', severity: 'warn',  invariant: null,
+    title: 'a package that sets its test timeout sets it in one place' },
   { id: 'body-tag-in-comment',  scope: 'app',  severity: 'error', invariant: null,
     hazard: 'ui: Vite injects the built',
     title: 'the body tag is never written inside a comment' },
@@ -1093,6 +1095,38 @@ const CHECKS = {
         break
       }
     }
+    return { findings }
+  },
+
+  // A package that states its test timeout once and then overrides it in a
+  // test has two answers to how long a test may take, and the next timing row
+  // gets fixed by a third. Graded only where the package states one: an inline
+  // timeout with no package timeout is a known-slow test, the ecosystem's
+  // ordinary shape. Bun reads no timeout from `bunfig.toml` (1.4.2), so a bun
+  // package states it as `--timeout` in its `test` script.
+  'test-timeout-inline': ({ root }) => {
+    const files = collectedTests(root)
+    if (!files.length) return { skipped: 'no collected test' }
+    const owners = new Map()
+    const findings = []
+    let graded = 0
+    for (const path of files) {
+      const dir = packageDirOf(path, root)
+      if (!owners.has(dir)) owners.set(dir, timeoutOwner(dir))
+      const owner = owners.get(dir)
+      if (!owner) continue
+      graded++
+      const code = readCode(path, { strings: true })
+      for (const { index, timeout } of inlineTimeouts(code)) {
+        findings.push({
+          file: path,
+          line: lineOf(code, index),
+          message: `this test sets its own timeout (${timeout}), and ${owner} already sets the package's. ` +
+                   'Raise the package timeout, or keep this one and say in an allowance why the test is slower.',
+        })
+      }
+    }
+    if (!graded) return { skipped: 'no package sets a test timeout' }
     return { findings }
   },
 
@@ -5665,6 +5699,55 @@ const TEST_NOT_HERMETIC = [
   [/\.listen\s*\(\s*[1-9]/,                                   'binds a literal port'],
   [/(?<!\bexpect\(\s*)\bopenChrome\s*\(|\bfindChrome\s*\(\s*\)/, 'launches Chrome'],
 ]
+
+// The calls a timeout rides on, and where it sits: a third argument to a test,
+// a second to a hook, or an options object after the name. A `.each(table)` or
+// `.skipIf(cond)` chain is read through. The argument must read as arithmetic,
+// because `readCode` does not track regex literals and a `(` inside one
+// unbalances the call.
+const TEST_CALL = /(?<![\w.$])(test|it|describe|beforeAll|beforeEach|afterAll|afterEach)((?:\.\w+(?:\([^()]*\))?)*)\s*\(/g
+const TIMEOUT_ARG = /^[\w.\s*+]+$/
+const TIMEOUT_OPTION = /^\s*\{[^{}]*\btimeout\s*:\s*([^,}]+)/
+
+function inlineTimeouts(code) {
+  const out = []
+  for (const m of code.matchAll(TEST_CALL)) {
+    const args = []
+    let depth = 1, start = m.index + m[0].length
+    for (let i = start; i < code.length && depth; i++) {
+      const c = code[i]
+      if (c === '(' || c === '[' || c === '{') depth++
+      else if (c === ')' || c === ']' || c === '}') { if (!--depth) args.push(code.slice(start, i)) }
+      else if (c === ',' && depth === 1) { args.push(code.slice(start, i)); start = i + 1 }
+    }
+    const option = args.slice(1).map(a => TIMEOUT_OPTION.exec(a)).find(Boolean)
+    const at = (/^(before|after)/.test(m[1]) ? args[1] : args[2])?.trim()
+    const timeout = option ? option[1].trim() : at && TIMEOUT_ARG.test(at) ? at : null
+    if (timeout) out.push({ index: m.index, timeout: timeout.replace(/\s+/g, ' ') })
+  }
+  return out
+}
+
+// The nearest directory at or above `path` holding a package.json, `root` the
+// last one asked.
+function packageDirOf(path, root) {
+  let dir = dirname(path)
+  while (dir !== root && dir.startsWith(root) && !existsSync(join(dir, 'package.json'))) dir = dirname(dir)
+  return dir.startsWith(root) ? dir : root
+}
+
+// Where a package states its test timeout, or null: `--timeout` in its `test`
+// script for bun, `testTimeout`/`hookTimeout` in its vitest config.
+function timeoutOwner(dir) {
+  let script = ''
+  try { script = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).scripts?.test ?? '' } catch {}
+  if (/--timeout[= ]\d/.test(script)) return '`--timeout` in its `test` script'
+  for (const name of safeRead(dir)) {
+    if (!/^vite(st)?\.config\.[mc]?[jt]s$/.test(name)) continue
+    if (/\b(test|hook)Timeout\s*:/.test(readCode(join(dir, name)))) return `\`testTimeout\` in ${name}`
+  }
+  return null
+}
 
 // Every `*.test.*` file under `root` — the files `bun test` and vitest collect —
 // with fixtures and a nested app left out, the second to that app's own run.

@@ -47,8 +47,8 @@
 // back to the shared db/audit.db and the suite locking on it — and it cannot
 // happen to a caller that names AUDIT_PATH.
 //
-// A deployment is unaffected — it binds both absolutely (/data/basecamp.db,
-// /data/audit.db) and an absolute path has no anchor.
+// A deployment is unaffected — it binds both absolutely (/db/basecamp.db,
+// /db/audit.db) and an absolute path has no anchor.
 
 import { createClient, GatePlugin } from '@frontierjs/litestone'
 import { env, DEV_ENCRYPTION_KEY } from './env.ts'
