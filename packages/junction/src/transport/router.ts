@@ -11,6 +11,7 @@ import type {
   RouteSegment,
   HttpMethod,
   RouteHandler,
+  RouteOptions,
   MiddlewareFn
 } from './types.ts'
 
@@ -56,7 +57,7 @@ export class Router {
     method:     HttpMethod,
     path:       string,
     handler:    RouteHandler,
-    middleware: MiddlewareFn[] = []
+    opts:       RouteOptions = {}
   ): this {
 
     if (this._built)
@@ -97,7 +98,8 @@ export class Router {
       segments,
       dynamic,
       paramKeys,
-      middleware
+      middleware: opts.middleware ?? [],
+      body:       opts.body,
     })
 
     return this
@@ -152,13 +154,13 @@ export class Router {
     return this
   }
 
-  get(path: string, handler: RouteHandler, mw?: MiddlewareFn[])    { return this.add('GET',     path, handler, mw) }
-  post(path: string, handler: RouteHandler, mw?: MiddlewareFn[])   { return this.add('POST',    path, handler, mw) }
-  put(path: string, handler: RouteHandler, mw?: MiddlewareFn[])    { return this.add('PUT',     path, handler, mw) }
-  patch(path: string, handler: RouteHandler, mw?: MiddlewareFn[])  { return this.add('PATCH',   path, handler, mw) }
-  delete(path: string, handler: RouteHandler, mw?: MiddlewareFn[]) { return this.add('DELETE',  path, handler, mw) }
-  options(path: string, handler: RouteHandler, mw?: MiddlewareFn[]){ return this.add('OPTIONS', path, handler, mw) }
-  head(path: string, handler: RouteHandler, mw?: MiddlewareFn[])   { return this.add('HEAD',    path, handler, mw) }
+  get(path: string, handler: RouteHandler, opts?: RouteOptions)     { return this.add('GET',     path, handler, opts) }
+  post(path: string, handler: RouteHandler, opts?: RouteOptions)    { return this.add('POST',    path, handler, opts) }
+  put(path: string, handler: RouteHandler, opts?: RouteOptions)     { return this.add('PUT',     path, handler, opts) }
+  patch(path: string, handler: RouteHandler, opts?: RouteOptions)   { return this.add('PATCH',   path, handler, opts) }
+  delete(path: string, handler: RouteHandler, opts?: RouteOptions)  { return this.add('DELETE',  path, handler, opts) }
+  options(path: string, handler: RouteHandler, opts?: RouteOptions) { return this.add('OPTIONS', path, handler, opts) }
+  head(path: string, handler: RouteHandler, opts?: RouteOptions)    { return this.add('HEAD',    path, handler, opts) }
 
   // ─── Build cache ──────────────────────────────────────────────────────
   // Called once at app startup. After this, no routes can be added.

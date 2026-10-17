@@ -30,11 +30,11 @@ export function scheduleJob(
 ): void {
   if (!job.cronExpression) return
 
-  app.jobs!.schedule(
+  app.jobs.schedule(
     scheduleName(job.id),
     job.cronExpression,
     async () => {
-      await app.jobs!.dispatch('job:run',
+      await app.jobs.dispatch('job:run',
         { id: job.id, workspace_id: job.workspaceId, trigger: 'scheduled' },
         {
           queue: 'jobs',
@@ -61,7 +61,7 @@ export function scheduleJob(
  * has to find something to execute. This unbinds the clock and nothing else.
  */
 export function unscheduleJob(app: App, jobId: string): void {
-  app.jobs!.unschedule(scheduleName(jobId))
+  app.jobs.unschedule(scheduleName(jobId))
 }
 
 /**
@@ -75,7 +75,7 @@ export function unscheduleJob(app: App, jobId: string): void {
  */
 export function nextRunAt(app: App, jobId: string): string | null {
   const name = scheduleName(jobId)
-  const next = app.jobs!.nextRuns().find(r => r.name === name)?.nextRun
+  const next = app.jobs.nextRuns().find(r => r.name === name)?.nextRun
   return next ? next.toISOString() : null
 }
 

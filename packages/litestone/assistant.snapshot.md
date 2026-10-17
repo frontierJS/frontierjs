@@ -607,7 +607,7 @@ valueset TaskTag {
 
 tier: **situational** · see also: `exclude`
 
-What a no-overlap rule serializes on, declared once for every model sharing it: each model's `@@exclude(<name>, range: […])` cites it, and a write on any of them is checked against all of them. One declaration rather than each model listing its siblings, because the model nobody updated is the one that lets two rows overlap. Every citing model must carry every field. More than one field is one key: `scope personDay(personId, dayId)` grades a wall-clock `@time` range per day, where `person` alone would call Monday 09:00–12:00 and Tuesday 09:00–12:00 an overlap. Not `@@scope`, which is a named read filter on one model.
+What a no-overlap rule serializes on, declared once for every model sharing it: each model's `@@exclude(<name>, range: […])` cites it, and a write on any of them is checked against all of them. One declaration rather than each model listing its siblings, because the model nobody updated is the one that lets two rows overlap. Every citing model must carry every field. More than one field is one key: `scope personDay(personId, dayId)` grades a wall-clock `@time` range per day, where `person` alone would call Monday 09:00–12:00 and Tuesday 09:00–12:00 an overlap.
 
 ```lite
 scope person(employeeId)
@@ -1788,7 +1788,7 @@ The move is the moment this row becomes a DOCUMENT. After it the row's @sealed c
 
 tier: **common** · legal in: on a @@transitions move · see also: `transitions`, `system`
 
-The level a caller needs to MAKE this move, a floor on top of the model's update level. @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller reaches it and asSystem() bypasses. With @system it must stay below 8, because 8 says no caller and @system says the application makes the move through one. Not the model's @@gate, which grades the four operations on every row.
+The model's @@gate at move grain: the level a caller needs to MAKE this move, a floor on top of the model's update level. @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller reaches it and asSystem() bypasses. With @system it must stay below 8, because 8 says no caller and @system says the application makes the move through one. Not the model's @@gate, which grades the four operations on every row.
 
 ```lite
 @@transitions(state, void: [draft, issued] -> void @gate(5))
@@ -1798,7 +1798,7 @@ The level a caller needs to MAKE this move, a floor on top of the model's update
 
 tier: **common** · legal in: on a @@transitions move · see also: `transitions`, `gate`, `guarded`
 
-The move is the APPLICATION's: a caller may ask for it and never make one, and the app states { system: true } on the call. The move still runs on the caller's own client, so the gate, the row policies and the audit actor all survive, which is the whole difference from asSystem(). Takes no argument. Combine with @gate(N) below 8 to say who may ask. Not the column's @system, which is a value the application writes.
+The column's @system at move grain: the move is the APPLICATION's write, where the column is a value the application writes. A caller may ask for it and never make one, and the app states { system: true } on the call. The move still runs on the caller's own client, so the gate, the row policies and the audit actor all survive, which is the whole difference from asSystem(). Takes no argument. Combine with @gate(N) below 8 to say who may ask.
 
 ```lite
 @@transitions(state, issue: draft -> issued @system @gate(5))

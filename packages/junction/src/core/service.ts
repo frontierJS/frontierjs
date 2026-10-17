@@ -1029,7 +1029,7 @@ async function _callService(
     // client, so under `strategy database` the kick is one query against one
     // tenant — where an unnamed pass resolves the whole registry to find the
     // file it already had in hand (`FJS-778`).
-    void (ctx.app?.outbox as OutboxRelay | undefined)?.deliver({
+    void ((ctx.app && 'outbox' in ctx.app ? ctx.app.outbox : undefined) as OutboxRelay | undefined)?.deliver({
       db:     ctx.locals?.db,
       tenant: ctx.locals?.tenantId ?? null,
     }).catch((err: unknown) => {
@@ -1588,6 +1588,43 @@ function describeChannel(decl: ChannelDeclaration | undefined): string | boolean
 export const READ_ONLY_METHODS: readonly string[] = ['find', 'get', 'aggregate']
 
 /**
+ * Seed `type` name → its interface, for `input:` and `defineMethod`.
+ *
+ * Empty until an app augments it, which `litestone types --augment junction`
+ * writes (Invariant 5):
+ *
+ *   declare module '@frontierjs/junction' {
+ *     interface SeedTypes extends GeneratedSeedTypes {}
+ *   }
+ */
+export interface SeedTypes {}
+
+/** A `type` name `input:` may carry: the registry's keys, or any string while it is empty. */
+export type SeedTypeName = keyof SeedTypes extends never ? string : Extract<keyof SeedTypes, string>
+
+type SeedData<T extends string> = T extends keyof SeedTypes ? SeedTypes[T] : Record<string, unknown>
+
+/** The context a `defineMethod` body receives: the call's, with `data` as the seed type. */
+export type MethodContext<T extends string> = Omit<ServiceContext, 'data'> & { data: SeedData<T> }
+
+/** The mark `defineMethod` leaves, read by `collectMethodInputs`. */
+export const METHOD_INPUT = Symbol.for('junction.methodInput')
+
+/**
+ * A custom method whose payload is the seed `type` named here.
+ *
+ * The name is the method's `input:`: the validator that runs before the body and
+ * the type `ctx.data` has in it are one declaration, so the body cannot assert a
+ * shape the validator never checked. A `methods:` entry for it needs no `input:`.
+ */
+export function defineMethod<const T extends SeedTypeName, R>(
+  input: T,
+  fn:    (ctx: MethodContext<T>) => R,
+): (ctx: ServiceContext) => R {
+  return Object.assign((ctx: ServiceContext) => fn(ctx as unknown as MethodContext<T>), { [METHOD_INPUT]: input })
+}
+
+/**
  * One entry of a `methods:` list, where the method needs more said about it
  * than its name.
  *
@@ -1602,7 +1639,7 @@ export const READ_ONLY_METHODS: readonly string[] = ['find', 'get', 'aggregate']
  */
 export interface MethodDeclaration {
   method: string
-  input?: string
+  input?: SeedTypeName
   /**
    * The `type` in the seed this method ANSWERS with.
    *
@@ -1880,8 +1917,24 @@ function refuseModelCrudGates(gates: Record<string, number>, model: unknown, ser
 export function collectMethodInputs(
   declared:    MethodSelection | undefined,
   serviceName: string,
+  source?:     object,
 ): Record<string, string> {
-  return collectTypeNames(declared, serviceName, 'input')
+  const out = collectTypeNames(declared, serviceName, 'input')
+  if (!source) return out
+
+  // A `defineMethod` handle carries its own input. Stated again in the entry it
+  // must agree; two names for one payload is the disagreement the handle exists
+  // to rule out.
+  for (const [name, fn] of Object.entries(source)) {
+    const input = typeof fn === 'function' ? (fn as unknown as Record<symbol, unknown>)[METHOD_INPUT] : undefined
+    if (typeof input !== 'string') continue
+    if (out[name] !== undefined && out[name] !== input) throw new TypeError(
+      `[Junction] service '${serviceName}': '${name}' is defined with defineMethod('${input}', …) ` +
+      `but methods declares its input as '${out[name]}'. Drop the entry's input: or make them agree.`
+    )
+    out[name] = input
+  }
+  return out
 }
 
 /** The `output:` declarations in a `methods:` list, keyed by method name. */
@@ -2782,7 +2835,7 @@ export function buildService(def: ServiceDefinition): Service {
   // declaration. On a CRUD name this runs after autoValidate and is therefore
   // the one that decides — which is what "an input replaces the model-derived
   // validator" has to mean.
-  const methodInputs = collectMethodInputs(def.methods, defName ?? '(unnamed)')
+  const methodInputs = collectMethodInputs(def.methods, defName ?? '(unnamed)', def)
   const inputEntries = Object.entries(methodInputs)
   if (inputEntries.length) {
     hookMaps.push({

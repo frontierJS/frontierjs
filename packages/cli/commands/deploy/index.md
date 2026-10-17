@@ -37,6 +37,10 @@ flags:
     type: boolean
     description: If the server needs deploy:setup, install its missing dependencies without asking
     defaultValue: false
+  outpost:
+    type: boolean
+    description: "Enroll the API's box in the app's fleet, where the deploy block says outpost: true"
+    defaultValue: true
 ---
 
 Deploys via SSH. Environment resolved in order:

@@ -219,7 +219,7 @@ export default createService({
     })
 
     // The app's work, not the pusher's: the registry columns are @system.
-    await $.app.jobs!.dispatch(dependencyCheck, { workspaceId: ws() }, { queue: 'sync', actor: null })
+    await $.app.jobs.dispatch(dependencyCheck, { workspaceId: ws() }, { queue: 'sync', actor: null })
     // A summary of a push, not a row; the screen reloads on its own answer.
     $.dispatch = false
 
@@ -228,7 +228,7 @@ export default createService({
 
   /** Ask the registry again now, rather than at the next daily run. */
   async check() {
-    await $.app.jobs!.dispatch(dependencyCheck, { workspaceId: ws() }, { queue: 'sync', actor: null })
+    await $.app.jobs.dispatch(dependencyCheck, { workspaceId: ws() }, { queue: 'sync', actor: null })
     $.dispatch = false
     return { check: 'queued' }
   },

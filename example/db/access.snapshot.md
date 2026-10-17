@@ -276,6 +276,7 @@ rather than refusing the row.
 | `User` | `email` | `@allow('write', auth().isAdmin)` |
 | `User` | `emailVerified` | `@allow('write', auth().isAdmin)` |
 | `User` | `role` | `@allow('write', auth().isAdmin)` |
+| `User` | `kind` | `@system` |
 | `User` | `isStaff` | `@allow('write', auth().isAdmin)` |
 | `User` | `isSystemAdmin` | `@allow('write', auth().isSystemAdmin)` |
 | `Verification` | `value` | `@guarded` |

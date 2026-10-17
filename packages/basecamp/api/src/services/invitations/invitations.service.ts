@@ -89,7 +89,7 @@ function toEmail(value: unknown): string {
 async function deliver(
   to: string, workspaceName: string, inviter: string | null, url: string,
 ): Promise<{ mailed: boolean; mailError: string | null }> {
-  if (!$.app.mail)
+  if (!('mail' in $.app))
     return { mailed: false, mailError: 'No mailer is configured — send this link yourself' }
 
   const from = inviter ? `${inviter} has invited you` : 'You have been invited'

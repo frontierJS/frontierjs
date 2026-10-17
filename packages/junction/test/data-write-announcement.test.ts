@@ -264,7 +264,7 @@ describe('the socket half', () => {
     const frames: string[] = []
     // Stand in for a subscribed browser at the one seam a broadcast has to
     // cross — the connection's socket.
-    app.channels!.channel('orders').join({
+    app.channels.channel('orders').join({
       socket: { readyState: 1, send: (f: string) => { frames.push(f); return 1 } },
     } as never)
 
@@ -281,7 +281,7 @@ describe('the socket half', () => {
   test('a bulk write broadcasts changed, and the filter does not go with it', async () => {
     const { db, app, changed } = await mkApp({ channel: 'orders' })
     const frames: string[] = []
-    app.channels!.channel('orders').join({
+    app.channels.channel('orders').join({
       socket: { readyState: 1, send: (f: string) => { frames.push(f); return 1 } },
     } as never)
 
@@ -307,10 +307,10 @@ describe('the socket half', () => {
   test('a function channel: is called with the row and a null ctx', async () => {
     const calls: unknown[][] = []
     const { db, app, seen } = await mkApp({
-      channel: (row: unknown, ctx: unknown) => { calls.push([row, ctx]); return app.channels!.channel('orders') },
+      channel: (row: unknown, ctx: unknown) => { calls.push([row, ctx]); return app.channels.channel('orders') },
     })
     const frames: string[] = []
-    app.channels!.channel('orders').join({
+    app.channels.channel('orders').join({
       socket: { readyState: 1, send: (f: string) => { frames.push(f); return 1 } },
     } as never)
 
@@ -330,7 +330,7 @@ describe('the socket half', () => {
   // and the warning names the fix.
   test('a resolver that reads ctx throws, and the bus alone hears it', async () => {
     const { db, app, seen } = await mkApp({
-      channel: ((_row: unknown, ctx: { auth: { user: { w: string } } }) => app.channels!.channel(`w:${ctx.auth.user.w}`)) as never,
+      channel: ((_row: unknown, ctx: { auth: { user: { w: string } } }) => app.channels.channel(`w:${ctx.auth.user.w}`)) as never,
     })
     const warn = console.warn, said: string[] = []
     console.warn = (m: string) => { said.push(String(m)) }
@@ -370,7 +370,7 @@ describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
       name: 'legs', model: 'Leg', db: db as never,
       channel: ((row: { agencyId?: string }, ctx: unknown) => {
         routed.push([row, ctx])
-        return row?.agencyId ? app.channels!.channel(`agency:${row.agencyId}`) : null
+        return row?.agencyId ? app.channels.channel(`agency:${row.agencyId}`) : null
       }) as never,
     }))
     app.configure(channels(() => {}))
@@ -384,7 +384,7 @@ describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
     await tick(); await tick()
 
     const heard: Record<string, string[]> = { a1: [], a2: [], a3: [] }
-    for (const a of Object.keys(heard)) app.channels!.channel(`agency:${a}`).join({
+    for (const a of Object.keys(heard)) app.channels.channel(`agency:${a}`).join({
       socket: { readyState: 1, send: (f: string) => { heard[a]!.push(f); return 1 } },
     } as never)
     routed.length = 0
@@ -427,7 +427,7 @@ describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
     `
     const db  = await createClient({ db: ':memory:', schema: VIA })
     const app = createApp({ db: db as never })
-    const byRow = (row: { agencyId?: string }) => row?.agencyId ? app.channels!.channel(`agency:${row.agencyId}`) : null
+    const byRow = (row: { agencyId?: string }) => row?.agencyId ? app.channels.channel(`agency:${row.agencyId}`) : null
     const routed: unknown[] = []
     app.services.register(createService({
       name: 'notes', model: 'Note', db: db as never,
@@ -445,7 +445,7 @@ describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
     await tick(); await tick()
 
     const heard: Record<string, string[]> = { a1: [], a2: [] }
-    for (const a of Object.keys(heard)) app.channels!.channel(`agency:${a}`).join({
+    for (const a of Object.keys(heard)) app.channels.channel(`agency:${a}`).join({
       socket: { readyState: 1, send: (f: string) => { heard[a]!.push(f); return 1 } },
     } as never)
     routed.length = 0
@@ -562,7 +562,7 @@ describe('a transition announces (FJS-463)', () => {
     await app._startForTest()
 
     const frames: Array<{ event: string; data: Record<string, unknown> }> = []
-    app.channels!.channel('orders').join({
+    app.channels.channel('orders').join({
       socket: { readyState: 1, send: (f: string) => { frames.push(JSON.parse(f)); return 1 } },
     } as never)
 
@@ -737,7 +737,7 @@ describe('a transition inside another service call announces (FJS-567)', () => {
     await app._startForTest()
 
     const frames: Array<{ event: string }> = []
-    app.channels!.channel('orders').join({
+    app.channels.channel('orders').join({
       socket: { readyState: 1, send: (f: string) => { frames.push(JSON.parse(f)); return 1 } },
     } as never)
     return { db, app, frames, move }

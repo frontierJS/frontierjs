@@ -117,14 +117,14 @@ app.configure(healthPlugin())
 app.configure(channels((a: App) => {
   // Braces, not an expression body: a connection handler returns nothing, and
   // `join()` answers the channel.
-  a.channels!.on('connection', (_session, conn) => { a.channel!('leads').join(conn) })
+  a.channels.on('connection', (_session, conn) => { a.channel('leads').join(conn) })
 }))
 
 // ─── The service. ─────────────────────────────────────────────────────────
 // CRUD, validation, auth, and pagination are derived from the model.
 // `live` broadcasts every mutation to WebSocket subscribers.
 
-const live = announce(() => app.channel!('leads'))
+const live = announce(() => app.channel('leads'))
 
 app.services.register(createService({
   name:  'leads',

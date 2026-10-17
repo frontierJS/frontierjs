@@ -59,8 +59,8 @@ type Session = { userId?: string; id?: string } | null | undefined
 
 /** Everything one connection listens to. Called once, on connection. */
 export function joinChannels(app: App, session: Session, conn: unknown): void {
-  for (const name of OPEN_CHANNELS) app.channel!(name).join(conn as never)
+  for (const name of OPEN_CHANNELS) app.channel(name).join(conn as never)
 
   const userId = session?.userId ?? session?.id
-  if (userId) app.channel!(notificationChannel(userId)).join(conn as never)
+  if (userId) app.channel(notificationChannel(userId)).join(conn as never)
 }

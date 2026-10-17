@@ -64,7 +64,7 @@ export async function sendEmail(
   message:   MailMessage,
   app:       App
 ): Promise<void> {
-  if (!app.mail) {
+  if (!('mail' in app) || !app.mail) {
     throw new Error(
       'Email transport requires mailerPlugin to be configured before notificationsPlugin.'
     )

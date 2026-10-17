@@ -471,7 +471,7 @@ describe('plugin wiring', () => {
     // The destination is not what this test is about, and `.test` does not
     // resolve — which the target guard correctly refuses.
     app.configure(webhooks({ events: [], store: store as never, targets: { allowPrivate: true } }))
-    await app.webhooks!.register('https://x.test', ['a'])
+    await app.webhooks.register('https://x.test', ['a'])
 
     expect(registrations).toHaveLength(1)
   })

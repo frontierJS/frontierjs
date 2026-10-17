@@ -324,7 +324,7 @@ export function withCallEffects(
   ctx.enqueue = (job, payload, opts) => {
     // The table is the outbox battery's, so the write goes through its slot.
     // Refused here rather than there, because with no relay there is no there.
-    const relay = ctx.app?.outbox as OutboxRelay | undefined
+    const relay = (ctx.app && 'outbox' in ctx.app ? ctx.app.outbox : undefined) as OutboxRelay | undefined
     if (!relay) {
       const name = typeof job === 'string' ? job : job.name
       return Promise.reject(new Error(

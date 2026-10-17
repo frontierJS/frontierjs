@@ -114,7 +114,7 @@ export async function notify(
 
     // The built-in email path sends through app.mail. Found at delivery, the
     // in-app row is already written and the caller's retry writes another.
-    if (transport === 'email' && !state.drivers.has('email') && !app.mail) {
+    if (transport === 'email' && !state.drivers.has('email') && !('mail' in app)) {
       throw new NotificationDriverNotFoundError(
         transport, notificationType,
         'but app.mail is not set and no driver is registered under transports.email. ' +

@@ -574,3 +574,62 @@ describe('drift, and the direction it does not run in', () => {
     expect(Number(cred.totpLastStep)).toBe(totpStep(at))
   })
 })
+
+// ─── Concurrent attempts ──────────────────────────────────────────────────
+
+// Every guard on this path reads a row and writes it later, so a burst of
+// requests that all read before any of them writes sees one count and one
+// unspent code (FJS-3185). Sequential tests above cannot see it.
+describe('concurrent attempts — the guards hold under a burst', () => {
+  const won = (results: PromiseSettledResult<unknown>[]) =>
+    results.filter(r => r.status === 'fulfilled').length
+
+  test('a burst of wrong codes spends the ticket, and the right code is then refused', async () => {
+    const u = await makeUserWithTotp(w)
+    const { challenge } = await w.auth.login(u.email, PASSWORD) as any
+
+    const burst = await Promise.allSettled(
+      Array.from({ length: 20 }, () => w.auth.completeLogin!(challenge, '000000')))
+    expect(won(burst)).toBe(0)
+    expect(await w.sys.loginChallenge.count({ where: { value: challenge } })).toBe(0)
+    await rejectsWith(() => w.auth.completeLogin!(challenge, codeAt(u.secret, 1)), InvalidSecondFactorError)
+  })
+
+  test('one TOTP code raced on one ticket signs in once', async () => {
+    const u = await makeUserWithTotp(w)
+    const { challenge } = await w.auth.login(u.email, PASSWORD) as any
+    const code = codeAt(u.secret, 2)
+
+    const race = await Promise.allSettled([
+      w.auth.completeLogin!(challenge, code),
+      w.auth.completeLogin!(challenge, code),
+    ])
+    expect(won(race)).toBe(1)
+    expect(await w.sys.session.count({ where: { userId: u.userId } })).toBe(1)
+  })
+
+  test('one recovery code raced on one ticket signs in once and spends one code', async () => {
+    const u = await makeUserWithTotp(w)
+    const { challenge } = await w.auth.login(u.email, PASSWORD) as any
+
+    const race = await Promise.allSettled([
+      w.auth.completeLogin!(challenge, u.recoveryCodes[0]),
+      w.auth.completeLogin!(challenge, u.recoveryCodes[0]),
+    ])
+    expect(won(race)).toBe(1)
+    expect(await w.sys.session.count({ where: { userId: u.userId } })).toBe(1)
+    expect((await w.auth.totpStatus!(u.userId)).recoveryCodesRemaining).toBe(9)
+  })
+
+  test('two good answers raced on one ticket sign in once', async () => {
+    const u = await makeUserWithTotp(w)
+    const { challenge } = await w.auth.login(u.email, PASSWORD) as any
+
+    const race = await Promise.allSettled([
+      w.auth.completeLogin!(challenge, codeAt(u.secret, 3)),
+      w.auth.completeLogin!(challenge, u.recoveryCodes[1]),
+    ])
+    expect(won(race)).toBe(1)
+    expect(await w.sys.session.count({ where: { userId: u.userId } })).toBe(1)
+  })
+})

@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-94 definitions · 56 models · 1 view · 12 types · 25 enums · 0 other
+95 definitions · 56 models · 1 view · 12 types · 26 enums · 0 other
 ```
 
 ## Definitions
@@ -107,6 +107,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `PayRunStatus` | enum |
 | `PayComponentKind` | enum |
 | `NotificationContext` | enum |
+| `UserKind` | enum |
 | `SegmentQuery` | type |
 | `TrackingUpdate` | type |
 | `PlanChange` | type |
@@ -150,6 +151,7 @@ validates, and a select that silently drops an option.
 - `PayRunStatus` — `draft`, `calculated`, `approved`, `paid`
 - `PayComponentKind` — `basicPay`, `overtime`, `bonus`, `incomeTax`, `employeePension`, `employerPension`, `employerNI`
 - `NotificationContext` — `Order`
+- `UserKind` — `user`, `bot`, `peer`
 
 ## Models
 
@@ -1179,6 +1181,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string`? | — | — | `x-transforms` | — |
 | `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `role` | `string` = `"user"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
+| `kind` | `UserKind` = `"user"` | — | — | `x-litestone-kind` | — |
 | `isStaff` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `isSystemAdmin` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 

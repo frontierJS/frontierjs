@@ -194,7 +194,7 @@ export interface JobsSurface {
 // what it must not do is render the same as an app whose queue is empty, which
 // is why `hasQueue` is a field rather than an inference from `durable.length`.
 export function describeJobs(app: App): JobsSurface {
-  const jobs = (app as { jobs?: { registrations?: () => DurableJob[] } }).jobs
+  const jobs = ('jobs' in app ? app.jobs : undefined) as { registrations?: () => DurableJob[] } | undefined
   const hasQueue = typeof jobs?.registrations === 'function'
 
   const durable = hasQueue ? jobs!.registrations!() : []

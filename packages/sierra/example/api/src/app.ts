@@ -96,7 +96,7 @@ const app = createApp({
 
 app.configure(healthPlugin())
 app.configure(channels((a: App) => {
-  a.channels!.on('connection', (_session, conn) => { a.channel!('leads').join(conn) })
+  a.channels.on('connection', (_session, conn) => { a.channel('leads').join(conn) })
 }))
 
 // ─── 4. Demo login ────────────────────────────────────────────────────────

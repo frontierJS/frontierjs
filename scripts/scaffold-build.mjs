@@ -588,13 +588,14 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
     // ── .env ─────────────────────────────────────────────────
     // The container needs a real key: `encryptionKey` is parsed as HEX, so 64
     // characters is not necessarily 32 bytes and a non-hex filler decodes short
-    // and is rejected by name. DATABASE_URL points at /db, the volume the
-    // deploy mounts — inside the image `./db/app.db` is a copy that every swap
-    // discards.
+    // and is rejected by name. DATABASE_URL and AUDIT_PATH point at /db, the
+    // volume the deploy mounts and the one directory the non-root image user
+    // may write — the scaffold's `./db/...` defaults are unwritable there.
     const key = randomBytes(32).toString('hex')
     writeFileSync(join(app, '.env'), [
       `ENCRYPTION_KEY=${key}`,
       'DATABASE_URL=/db/app.db',
+      'AUDIT_PATH=/db/audit.db',
       'NODE_ENV=production',
       '',
     ].join('\n'))
@@ -717,7 +718,7 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     if (s.status !== 0) return fail('fli new failed', s.output)
 
     const key = randomBytes(32).toString('hex')
-    writeFileSync(join(app, '.env'), `ENCRYPTION_KEY=${key}\nDATABASE_URL=/db/app.db\nNODE_ENV=production\n`)
+    writeFileSync(join(app, '.env'), `ENCRYPTION_KEY=${key}\nDATABASE_URL=/db/app.db\nAUDIT_PATH=/db/audit.db\nNODE_ENV=production\n`)
 
     const m = inApp(['make:deploy', '--server', 'localhost', '--domain', 'ci.invalid'])
     if (m.status !== 0) return fail('fli make:deploy failed', m.output)

@@ -945,6 +945,7 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 | `http.ws.maxInFlight` | `number` | `32` | concurrent unresolved frames per socket. The rate bounds arrivals; this bounds outstanding work |
 | `http.ws.maxConnectionsPerIp` | `number` | `256` | refused at the upgrade with a 503, so the caller reads a status rather than a close code. 0 is unlimited |
 | `http.ws.maxConnections` | `number` | `0` | total sockets. Unlimited by default — only an operator knows what the box holds |
+| `http.ws.reverifySeconds` | `number` | `60` | seconds a socket that sends nothing keeps its principal before `verifySession` is asked again; every frame asks it anyway. A session gone closes the app's socket 4001, a changed principal closes 1001 and the reconnect re-resolves it. `0` asks only on a frame (`FJS-D1201`) |
 | `cache.defaultTtl` | `string` | `'5 minutes'` | default cache entry TTL |
 
 ### Where the services are
@@ -1667,6 +1668,18 @@ app.patch('/users/{id}/avatar', async ctx => {
   // pass file to your storage layer
 })
 ```
+
+**Streaming an upload larger than memory** — every route's body is parsed and buffered before its handler runs, under `http.maxBodySize`. A route that states `{ body: 'stream' }` skips the parse: `ctx.body` is the unread `ReadableStream` (or `null`), `ctx.files` is empty, and `ctx.$raw.$req` is the original Request (`FJS-D1159`):
+
+```typescript
+app.put('/uploads', async ctx => {
+  const id = crypto.randomUUID()
+  await Bun.write(`/data/uploads/${id}`, new Response(ctx.body as ReadableStream))
+  return ctx.json({ id }, 201)
+}, { body: 'stream' })
+```
+
+The `maxBodySize` parse bound does not apply to such a route; Bun's `maxRequestBodySize`, the larger of `maxBodySize` and 128 MB, still does. A credential verifier that reads the body sees none there. The third argument also takes `middleware: MiddlewareFn[]`.
 
 **Expanding file refs in responses** — Litestone stores file references as JSON. Use an after hook to expand them to URLs before the response goes out:
 

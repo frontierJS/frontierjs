@@ -142,7 +142,7 @@ function runner(app: App) {
     try {
       const domains = await app.db!.asSystem().domain.findMany({ where: { appId }, select: { id: true } }) as { id: string }[]
       for (const d of domains)
-        await app.jobs!.dispatch(domainDns, { domainId: d.id }, { id: `dns:${d.id}:release:${deploymentId}` })
+        await app.jobs.dispatch(domainDns, { domainId: d.id }, { id: `dns:${d.id}:release:${deploymentId}` })
     } catch (err) {
       log.warn('release not pushed to its zones', { id: deploymentId, error: (err as Error).message })
     }

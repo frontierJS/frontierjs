@@ -272,3 +272,78 @@ describe('a declared method answer reaches invoke() and call()', () => {
     expect(bare.ok).toBe(true)
   }, 30_000)
 })
+
+// ─── FJS-503: a method's input types its body ───────────────────────────────
+
+describe('defineMethod types ctx.data from the seed type its input names', () => {
+  const SEED = `
+    type TrackingUpdate { trackingCode String }
+    model Order { id Int @id }
+  `
+
+  function compileSeed(usage: string, generated: boolean): { ok: boolean; out: string } {
+    const dir = mkdtempSync(join(tmpdir(), 'junction-seed-types-'))
+    try {
+      const files = ['use.ts']
+      if (generated) {
+        writeFileSync(join(dir, 'db.d.ts'), generateTypeScript(parse(SEED).schema, { augment: 'junction' }))
+        files.unshift('db.d.ts')
+      }
+      writeFileSync(join(dir, 'use.ts'), usage)
+      writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({
+        compilerOptions: {
+          strict: true, noImplicitAny: false, target: 'ESNext', module: 'Preserve',
+          moduleResolution: 'bundler', lib: ['ESNext', 'DOM', 'DOM.Iterable'],
+          types: ['bun-types'], typeRoots: [resolve(HERE, '../../../node_modules')],
+          skipLibCheck: true, allowImportingTsExtensions: true, noEmit: true,
+          paths: { '@frontierjs/junction': [resolve(HERE, '../index.ts')] },
+        },
+        files,
+      }, null, 2))
+      const proc = Bun.spawnSync([TSC, '--noEmit', '-p', dir], { cwd: dir })
+      const out  = new TextDecoder().decode(proc.stdout) + new TextDecoder().decode(proc.stderr)
+      return { ok: proc.exitCode === 0, out }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  test('ctx.data infers the declared shape, and a typo in input: is a compile error', () => {
+    const { ok, out } = compileSeed(`
+      import { defineMethod, type MethodDeclaration } from '@frontierjs/junction'
+
+      export const recordTracking = defineMethod('TrackingUpdate', ctx => {
+        const { trackingCode } = ctx.data
+        const code: string = trackingCode
+        // @ts-expect-error -- trackingCode is a string
+        trackingCode.toFixed()
+        // @ts-expect-error -- not a field of TrackingUpdate
+        ctx.data.courier
+        return code
+      })
+
+      export const entry: MethodDeclaration = { method: 'recordTracking', input: 'TrackingUpdate' }
+
+      // @ts-expect-error -- no seed type of that name
+      export const typo: MethodDeclaration = { method: 'recordTracking', input: 'TrackingUpdte' }
+
+      // @ts-expect-error -- no seed type of that name
+      defineMethod('TrackingUpdte', () => null)
+    `, true)
+
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  }, 90_000)
+
+  test('an app that generates nothing keeps the open shape', () => {
+    const { ok, out } = compileSeed(`
+      import { defineMethod, type MethodDeclaration } from '@frontierjs/junction'
+
+      export const m = defineMethod('Anything', ctx => ctx.data.whatever)
+      export const entry: MethodDeclaration = { method: 'm', input: 'Anything' }
+    `, false)
+
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  }, 90_000)
+})

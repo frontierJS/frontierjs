@@ -31,7 +31,6 @@ text, so a body that elevates through a helper is not listed.
 | `infra.onboarding` | standing 2 or above — declared `gate: 2` |
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.issueEnrollment` | standing 5 or above — declared `gate: 5` |
 | `servers.heartbeat` | anyone, a stranger included — declared `gate: 0` |
 | `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `workspaces.transferOwnership` | **any signed-in caller** — floor, read gate 1; standing not graded |
@@ -57,7 +56,7 @@ and what it does.
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (90)
+### A service hook runs in front of the body (91)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -147,6 +146,7 @@ name, and is as unread as the body.
 | `servers.provisionStep` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `servers.destroy` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `servers.destroyStep` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `servers.host` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `volumes.usage` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `workspaces.restore` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` |
 | `workspaces.members` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` |
@@ -1138,8 +1138,8 @@ name when it declares none.
 
 ### `servers` · model `Server`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `localSshHosts`, `localSshProbe`, `heartbeat`
-- **custom methods** — `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **custom methods** — `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `useHost`, `host`, `localSshHosts`, `localSshProbe`, `heartbeat`
 - **input** — `provision` takes `ServerProvision`
 - **input** — `provisionStep` takes `ServerProvisionStep`
 - **who may call** —
@@ -1160,7 +1160,9 @@ name when it declares none.
   - `destroy` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `destroyStep` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `reconcile` — standing 4 or above — declared `gate: 4`
-  - `issueEnrollment` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `issueEnrollment` — standing 5 or above — declared `gate: 5`
+  - `useHost` — standing 5 or above — declared `gate: 5`
+  - `host` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `localSshHosts` — standing 5 or above — declared `gate: 5`
   - `localSshProbe` — standing 5 or above — declared `gate: 5`
   - `heartbeat` — anyone, a stranger included — declared `gate: 0`; body writes as the app

@@ -10,7 +10,7 @@ callback:
 
 ```text
 app.configure(channels((a) => {
-  a.channels!.on('connection', (session, conn) => joinChannels(a, session, conn))
+  a.channels.on('connection', (session, conn) => joinChannels(a, session, conn))
 }))
 ```
 

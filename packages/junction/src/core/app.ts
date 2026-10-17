@@ -32,7 +32,7 @@ import type { ILogger }          from './logger.ts'
 import type { AppConfig }                          from '../config/index.ts'
 import type { SessionVerifier } from '../auth/types.ts'
 import type { IEventBus }           from '../events/index.ts'
-import type { RouteHandler, MiddlewareFn, WsHandlerSet, HttpMethod } from '../transport/types.ts'
+import type { RouteHandler, RouteOptions, WsHandlerSet, HttpMethod } from '../transport/types.ts'
 
 // ─── Shutdown ─────────────────────────────────────────────────────────────
 
@@ -304,10 +304,12 @@ export interface App {
   scheduler: AppScheduler
   http:      HttpTransport
 
-  // Optional — registered via configure()
-  auth?:     SessionVerifier
-  mail?:     AppMail
-  ai?:       AppAI
+  // A plugin's slot is typed present, and reading one nothing installed throws
+  // naming the plugin (`APP_SLOTS` below). `'jobs' in app` asks whether it is
+  // there (`FJS-D1138`).
+  auth:      SessionVerifier
+  mail:      AppMail
+  ai:        AppAI
   // Conduit is provided by @frontierjs/conduit. Typed as the augmentable
   // AppConduit below rather than `unknown`, so in-tree code can read
   // app.conduit without a hard dep AND the conduit package can
@@ -317,20 +319,18 @@ export interface App {
   // declaration merging requires every declaration of a property to have
   // an identical type, so `conduit?: unknown` here plus `conduit?: IConduit`
   // in the augmenting package is an error (TS2717) and the augmentation
-  // silently loses — which is exactly what used to happen.
-  conduit?:  AppConduit
+  // silently loses.
+  conduit:   AppConduit
 
   // Job queue is provided by @frontierjs/caravan. Same augmentable-interface
   // rule as `conduit` above — never redeclare this property in the plugin.
-  jobs?:     AppJobs
+  jobs:      AppJobs
 
-  // The outbox relay, when `app.configure(outbox())` installed one.
-  // `ctx.enqueue` refuses when it is absent — a row nothing delivers is worse
-  // than a refusal.
-  outbox?:   AppOutbox
+  // The outbox relay. `ctx.enqueue` refuses when it is absent — a row nothing
+  // delivers is worse than a refusal.
+  outbox:    AppOutbox
 
-  // The commitments sweep, when `app.configure(commitments())` installed one.
-  commitments?: AppCommitments
+  commitments: AppCommitments
 
   // Notifications are provided by @frontierjs/notifications, which attaches
   // app.notify in its register(). Same augmentable-interface rule: the plugin
@@ -341,18 +341,16 @@ export interface App {
   // with junction's `IMail` (authoring shape `{subject, lines}` vs wire shape
   // `{subject, html, text}`) with no compiler anywhere to notice. Every
   // notification email went out with an empty body.
-  notify?:   AppNotify
+  notify:    AppNotify
 
-  // Real-time channels — available after app.configure(channels(...))
-  channels?:    ReturnType<typeof import('../transport/channels.ts').createChannelManager>
-  channel?:     (name: string) => import('../transport/channels.ts').Channel
+  channels:     ReturnType<typeof import('../transport/channels.ts').createChannelManager>
+  channel:      (name: string) => import('../transport/channels.ts').Channel
   // On this node only: a socket held by another instance is absent (FJS-D686).
-  localPresence?:   (channelId: string) => import('../transport/channels.ts').PresenceMember[]
-  localPresenceOf?: (userId: string | number) => import('../transport/channels.ts').PresenceMember[]
-  addOpenApiPaths?: (paths: Record<string, unknown>) => void
+  localPresence:    (channelId: string) => import('../transport/channels.ts').PresenceMember[]
+  localPresenceOf:  (userId: string | number) => import('../transport/channels.ts').PresenceMember[]
+  addOpenApiPaths:  (paths: Record<string, unknown>) => void
 
-  // Webhooks manager — available after app.configure(webhooks(...)).
-  webhooks?: AppWebhooks
+  webhooks:  AppWebhooks
 
   // ── Internal plugin/subsystem attachment points (typed, not casts) ──
   /** OpenAPI extra paths registered via addOpenApiPaths(). */
@@ -596,11 +594,11 @@ export interface App {
   registerDevService: (svc: DevService) => void
 
   // Route shortcuts (delegate to http.router)
-  get:     (path: string, handler: RouteHandler, mw?: MiddlewareFn[]) => App
-  post:    (path: string, handler: RouteHandler, mw?: MiddlewareFn[]) => App
-  put:     (path: string, handler: RouteHandler, mw?: MiddlewareFn[]) => App
-  patch:   (path: string, handler: RouteHandler, mw?: MiddlewareFn[]) => App
-  delete:  (path: string, handler: RouteHandler, mw?: MiddlewareFn[]) => App
+  get:     (path: string, handler: RouteHandler, opts?: RouteOptions) => App
+  post:    (path: string, handler: RouteHandler, opts?: RouteOptions) => App
+  put:     (path: string, handler: RouteHandler, opts?: RouteOptions) => App
+  patch:   (path: string, handler: RouteHandler, opts?: RouteOptions) => App
+  delete:  (path: string, handler: RouteHandler, opts?: RouteOptions) => App
 
   // WebSocket route — same {param} syntax as HTTP routes
   // Handlers receive WsContext: params, query, headers, user, send(), close()
@@ -925,6 +923,49 @@ export interface ServiceCaller {
   _restore(query: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
 }
 
+// ─── Plugin slots ─────────────────────────────────────────────────────────
+//
+// Each `app.<slot>` a plugin installs, and what installs it. `App` types every
+// one present (`FJS-D1138`), so a read nothing installed would be an
+// `undefined` the types call impossible; the guard throws instead, naming the
+// line to add. `'jobs' in app` answers whether it is there.
+
+const APP_SLOTS = {
+  auth:            'createApp({ auth }) or app.configure(createAuthPlugin(...))',
+  mail:            'createApp({ mail }) or app.configure(mailerPlugin(...))',
+  ai:              'createApp({ ai })',
+  conduit:         "app.configure(conduit()) from '@frontierjs/conduit'",
+  jobs:            "app.configure(createCaravan()) from '@frontierjs/caravan'",
+  outbox:          'app.configure(outbox())',
+  commitments:     'app.configure(commitments())',
+  notify:          "app.configure(notificationsPlugin(...)) from '@frontierjs/notifications'",
+  channels:        'app.configure(channels())',
+  channel:         'app.configure(channels())',
+  localPresence:   'app.configure(channels())',
+  localPresenceOf: 'app.configure(channels())',
+  addOpenApiPaths: 'app.configure(openapi(...))',
+  webhooks:        'app.configure(webhooks(...))',
+}
+
+type AppSlot = keyof typeof APP_SLOTS
+
+const slotGuard: ProxyHandler<object> = {
+  get(target, key, receiver) {
+    const value = Reflect.get(target, key, receiver)
+    if (value === undefined && typeof key === 'string' && Object.hasOwn(APP_SLOTS, key)) {
+      throw new Error(
+        `[Junction] app.${key} is not configured — add ${APP_SLOTS[key as AppSlot]} in app.ts. ` +
+        `Code that runs either way asks '${key}' in app first.`
+      )
+    }
+    return value
+  },
+  has(target, key) {
+    if (typeof key === 'string' && Object.hasOwn(APP_SLOTS, key)) return Reflect.get(target, key) !== undefined
+    return Reflect.has(target, key)
+  },
+}
+
 export function createApp(opts: AppOptions = {}): App {
 
   // Build config: defaultConfig → junction.config.js (loaded in start()) → opts.config
@@ -1152,7 +1193,7 @@ export function createApp(opts: AppOptions = {}): App {
   const tenantClientObservers = new Set<(client: unknown, tenantId: string) => void>()
 
   // ── Build the app object ─────────────────────────────────────────────
-  const app: App = {
+  const body: Omit<App, AppSlot> & Partial<Pick<App, AppSlot>> = {
     config,
     // The OPTION stays `unknown` and the field is `AppDb`, which is the one
     // place those two meet. Narrowing the option too would mean an app that
@@ -1497,7 +1538,7 @@ export function createApp(opts: AppOptions = {}): App {
         // falling back to the system principal would run a demoted user's work
         // with more authority than they ever had, and falling back to nobody
         // reinstates the STRANGER(0) refusal this exists to remove.
-        const resolve = app.auth?.sessionFor
+        const resolve = 'auth' in app ? app.auth.sessionFor : undefined
         if (!resolve) throw new Error(
           `[Junction] app.runAs('${userId}') — the auth provider has no sessionFor(), ` +
           `so a principal cannot be re-resolved. Implement IAuth.sessionFor, or run ` +
@@ -1614,8 +1655,8 @@ export function createApp(opts: AppOptions = {}): App {
     },
 
     claim(name: string, value: unknown): void {
-      const existing = (app as unknown as Record<string, unknown>)[name]
-      if (existing !== undefined) {
+      // Read past the slot guard, which would throw on the free name.
+      if (Reflect.get(body, name) !== undefined) {
         throw new Error(
           `[Junction] app.claim('${name}') — that name is already claimed. ` +
           `Two plugins cannot both own app.${name}; the second used to win ` +
@@ -1712,11 +1753,11 @@ export function createApp(opts: AppOptions = {}): App {
     // `tenancy { strategy database }` that is the difference between a sign-in
     // reaching the caller's own shop and reaching whichever one the provider
     // was built against.
-    get(path, handler, mw)    { http.router.get(prefixPath('GET', path), scoped(handler), mw);       return app },
-    post(path, handler, mw)   { http.router.post(prefixPath('POST', path), scoped(handler), mw);     return app },
-    put(path, handler, mw)    { http.router.put(prefixPath('PUT', path), scoped(handler), mw);       return app },
-    patch(path, handler, mw)  { http.router.patch(prefixPath('PATCH', path), scoped(handler), mw);   return app },
-    delete(path, handler, mw) { http.router.delete(prefixPath('DELETE', path), scoped(handler), mw); return app },
+    get(path, handler, opts)    { http.router.get(prefixPath('GET', path), scoped(handler), opts);       return app },
+    post(path, handler, opts)   { http.router.post(prefixPath('POST', path), scoped(handler), opts);     return app },
+    put(path, handler, opts)    { http.router.put(prefixPath('PUT', path), scoped(handler), opts);       return app },
+    patch(path, handler, opts)  { http.router.patch(prefixPath('PATCH', path), scoped(handler), opts);   return app },
+    delete(path, handler, opts) { http.router.delete(prefixPath('DELETE', path), scoped(handler), opts); return app },
 
     // ── WebSocket shortcut ────────────────────────────────────────
     ws(path, handlers, opts)  { http.ws(prefixPath('WS', path), handlers, opts); return app },
@@ -1817,6 +1858,8 @@ export function createApp(opts: AppOptions = {}): App {
       // get a clean, non-fatal shutdown.
     }
   }
+  // Every reader — a plugin's register(), ctx.app, the caller — holds this one.
+  const app = new Proxy(body, slotGuard) as App
 
   // ── Litestone scoping ──────────────────────────────────────────────────
   // A client exposing $setAuth is a Litestone client, and every request must

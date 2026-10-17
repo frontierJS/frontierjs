@@ -52,7 +52,7 @@ export const notificationChannelName = (userId: string): string => `notification
 
 /** The channels plugin's manager, or undefined when it is not configured. */
 export function channelManager(app: App): Manager | undefined {
-  return (app as unknown as Record<string, unknown>).channels as Manager | undefined
+  return 'channels' in app ? app.channels as unknown as Manager : undefined
 }
 
 /** Tell everyone watching one workspace who may read `row`, a whole row of

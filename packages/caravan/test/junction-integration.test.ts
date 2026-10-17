@@ -67,7 +67,7 @@ async function until(pred: () => boolean, timeoutMs = 2_000): Promise<boolean> {
 describe('plugin lifecycle against a real app', () => {
   it('register() attaches app.jobs at configure() time', async () => {
     const app = await createTestApp()
-    expect(app.jobs).toBeUndefined()
+    expect('jobs' in app).toBe(false)
 
     app.configure(createCaravan(opts()))
 

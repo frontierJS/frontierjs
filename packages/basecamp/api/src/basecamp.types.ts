@@ -167,8 +167,8 @@ export interface BasecampProviders {
 // @frontierjs/caravan's own augmentations. `app.db` is the Litestone client
 // createApp was given; services use the caller-scoped copy (`$.db`), and
 // `app.db` is the unscoped root, for jobs and the outpost paths that have no
-// session to scope to. Junction types `db` and `jobs` optional because it runs
-// without either; this app never does, so a reader asserts them with `!`.
+// session to scope to. Junction types `db` optional because it runs without
+// one; this app never does, so a reader asserts it with `!`.
 declare module '@frontierjs/junction' {
   interface AppDb extends BasecampDb {}
   interface App {

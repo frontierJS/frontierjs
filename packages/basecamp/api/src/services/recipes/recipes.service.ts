@@ -193,7 +193,7 @@ export default createService({
     const candidates = serverId ? [serverId] : [...fleet.keys()]
     if (!candidates.length) throw new BadRequest('There are no servers in this workspace to run this on')
 
-    if (!$.app.conduit)
+    if (!('conduit' in $.app))
       throw new BadRequest('Outbound delivery is not configured on this server — no conduit plugin')
 
     // A machine with no registered outpost cannot be reached, and queueing a
@@ -225,7 +225,7 @@ export default createService({
       // both off the request in scope, and the handler declares
       // `runsAsCaller` — so this work runs as the person who asked for it,
       // in the workspace they asked in (`FJS-384`).
-      await $.app.jobs!.dispatch(recipeRun,
+      await $.app.jobs.dispatch(recipeRun,
         { runId: run.id, workspaceId: ws() },
         { queue: 'fleet', priority: 5 })
       runs.push({ ...run, serverName: fleet.get(id) ?? null })

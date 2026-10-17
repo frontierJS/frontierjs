@@ -14,11 +14,14 @@ import { fileURLToPath } from 'url'
 
 const CLI = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-// The passing app make-resource.test.js grades against.
+// The passing app make-resource.test.js grades against. gate.ts stands for the
+// resolver every `fli new` app has: make:model's @@gate deletes at OWNER, and
+// gate-unreachable reports that in an app with no resolver of its own.
 const APP = {
   'db/schema.lite': 'model Lead { id Int @id  name String }\n',
   'api/index.ts':   "import app from './src/app.ts'\nawait app.start()\n",
   'api/src/app.ts': '// api\n',
+  'api/src/core/gate.ts': 'export function getLevel(user) { return user ? 4 : 0 }\n',
   'api/config/junction.config.js': 'export default {}\n',
   'web/index.html': '<!doctype html>\n<body><div id="app"></div></body>\n',
   'web/config/vite.config.js': 'export default { server: { port: 8010, strictPort: true } }\n',

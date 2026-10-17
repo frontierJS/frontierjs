@@ -1031,7 +1031,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
           return ctx.json({ error: 'Forbidden' }, 403)
         }
         const isProd = process.env.NODE_ENV === 'production'
-        if (!app.auth && !isProd) return null                        // dev convenience only
+        if (!('auth' in app) && !isProd) return null                       // dev convenience only
         return ctx.json({ error: 'Unauthorized' }, 401)
       }
 

@@ -191,7 +191,7 @@ export default createService({
   // ── check — POST /posture/:serverId  X-Service-Method: check ──────
   async check() {
     const server = await scopedServer($.id as string)
-    if (!$.app.conduit) throw new BadRequest('Outbound delivery is not configured on this server — no conduit plugin')
+    if (!('conduit' in $.app)) throw new BadRequest('Outbound delivery is not configured on this server — no conduit plugin')
     const target = `outpost:${server.id}`
     if (!await $.app.conduit.resolve(target))
       throw new BadRequest(`No outpost is registered for '${server.name}'. An outpost registers itself on its first heartbeat.`)

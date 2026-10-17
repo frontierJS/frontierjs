@@ -121,7 +121,7 @@ export async function pushAppsOn(app: App, serverId: string, status: string, at:
   if (!appIds.length) return 0
   const domains = await sys.domain.findMany({ where: { appId: { in: appIds } }, select: { id: true } }) as { id: string }[]
   for (const d of domains)
-    await app.jobs!.dispatch(domainDns, { domainId: d.id },
+    await app.jobs.dispatch(domainDns, { domainId: d.id },
       { id: `dns:${d.id}:server:${serverId}:${status}:${at}`, actor: null })
   return domains.length
 }

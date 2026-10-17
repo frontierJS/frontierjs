@@ -43,6 +43,12 @@ export const OUTPOST_VERSION = '0.1.2'
  *  metadata blob to be useful tomorrow. */
 export const ENROLL_WINDOW_MS = 15 * 60 * 1000
 
+/** The port an outpost listens on. `packages/cli/core/ports.js` — project 8
+ *  (outpost), backend. It reaches a machine in the cloud-init a provisioned box
+ *  boots with and in the command a person pastes, and two literals is two
+ *  places for them to disagree. */
+export const OUTPOST_PORT = 8180
+
 /** The prefix makes one of these recognizable in a log or a metadata dump,
  *  which is what somebody grepping for a leak needs. */
 const PREFIX = 'bcen_'

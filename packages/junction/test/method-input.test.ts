@@ -32,7 +32,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createClient }           from '../../litestone/src/index.js'
 import { createApp }              from '../src/core/app.ts'
-import { collectMethodInputs, collectMethodOutputs, methodEntryName, buildService } from '../src/core/service.ts'
+import { collectMethodInputs, collectMethodOutputs, methodEntryName, buildService, defineMethod } from '../src/core/service.ts'
 import { describeSurface }    from '../src/core/app-model.ts'
 import { generateOpenAPI }    from '../src/plugins/openapi/index.ts'
 
@@ -371,5 +371,48 @@ describe('a list member is graded by its size rules', () => {
     }
     await call(app, 'preview', { labels: ['a', 'b'] })
     expect(seen).toHaveLength(1)
+  })
+})
+
+// ─── defineMethod ─────────────────────────────────────────────────────────
+
+describe('defineMethod carries the input with the body (FJS-503)', () => {
+  async function mk(methods?: unknown) {
+    const db  = await createClient({ db: ':memory:', schema: SCHEMA })
+    const app = createApp({ db: db as never })
+    const seen: unknown[] = []
+    const svc = buildService({
+      name: 'orders', model: 'Order', db: db as never,
+      ...(methods ? { methods: methods as never } : {}),
+      pay: defineMethod('PayOrder', ctx => { seen.push(ctx.data); ctx.dispatch = false; return { ok: true } }),
+    } as never)
+    app.services.register(svc)
+    await app._startForTest()
+    return { app, svc, seen }
+  }
+
+  test('the handle alone declares the input -- an entry need not repeat it', async () => {
+    const { app, svc, seen } = await mk(['find', 'pay'])
+    expect((svc as { _inputs?: Record<string, string> })._inputs).toEqual({ pay: 'PayOrder' })
+    await call(app, 'pay', { reference: ' ABC123 ', amount: '5' as never })
+    expect(seen[0]).toMatchObject({ reference: 'ABC123', amount: 5 })
+    let err: any
+    try { await call(app, 'pay', { reference: 'x', amount: 5 }) } catch (e) { err = e }
+    expect(err.code ?? err.status ?? err.statusCode).toBe(400)
+  })
+
+  test('with no methods: list the handle still validates', async () => {
+    const { app } = await mk()
+    let err: any
+    try { await call(app, 'pay', { reference: 'x', amount: 5 }) } catch (e) { err = e }
+    expect(err.code ?? err.status ?? err.statusCode).toBe(400)
+  })
+
+  test('an entry that names a different input than the handle is refused', () => {
+    expect(() => buildService({
+      name: 'orders',
+      methods: [{ method: 'pay', input: 'Other' }] as never,
+      pay: defineMethod('PayOrder', () => null),
+    } as never)).toThrow(/defineMethod\('PayOrder'.*'Other'/)
   })
 })

@@ -113,7 +113,7 @@ export default createService({
     const wsId = ws()
 
     if (job.kind === 'one_shot')
-      await $.app.jobs!.dispatch(jobRun, { id: job.id, workspace_id: wsId }, { queue: 'jobs' })
+      await $.app.jobs.dispatch(jobRun, { id: job.id, workspace_id: wsId }, { queue: 'jobs' })
 
     syncSchedule($.app, job)
 
@@ -164,7 +164,7 @@ export default createService({
     const job = await getScoped('job', 'Job')
     if (job.status === 'running') throw new BadRequest('Job is already running')
 
-    await $.app.jobs!.dispatch(jobRun,
+    await $.app.jobs.dispatch(jobRun,
       { id: job.id, workspace_id: ws(), trigger: 'manual' },
       { queue: 'jobs', priority: 10 })
 

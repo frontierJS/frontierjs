@@ -150,7 +150,7 @@ describe('under junction, who is the call in progress', () => {
 
   it('reads the tenant the work runs in, so two tenants spend two logins through one target', async () => {
     const app  = await boot()
-    const send = () => app.conduit!.send({ target: 'provider:vendor', method: 'GET' })
+    const send = () => app.conduit.send({ target: 'provider:vendor', method: 'GET' })
     const a = await app.runAs(null, { tenant: 'A' }, send)
     const b = await app.runAs(null, { tenant: 'B' }, send)
     expect(tokenOf(a)).toBe('A-token-1')
@@ -159,12 +159,12 @@ describe('under junction, who is the call in progress', () => {
 
   it('refuses a send that states its own who', async () => {
     const app = await boot()
-    expect(() => app.conduit!.send({ target: 'provider:vendor', method: 'GET', who: who('B') })).toThrow(/states `who`/)
+    expect(() => app.conduit.send({ target: 'provider:vendor', method: 'GET', who: who('B') })).toThrow(/states `who`/)
   })
 
   it('outside any tenant the resolver is asked for nobody\'s, and the send fails closed', async () => {
     const app = await boot()
-    const r = await app.conduit!.send({ target: 'provider:vendor', method: 'GET' })
+    const r = await app.conduit.send({ target: 'provider:vendor', method: 'GET' })
     expect(r.error?.kind).toBe('auth_failed')
   })
 })

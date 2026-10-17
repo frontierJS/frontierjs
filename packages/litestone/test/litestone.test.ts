@@ -12458,6 +12458,23 @@ describe('generateTypeScript — ServiceTypes', () => {
     expect(wired).toContain('interface ServiceTypes extends GeneratedServiceTypes {}')
   })
 
+  test('seed types get a SeedTypes registry, wired to junction only when asked for (FJS-503)', () => {
+    const SEED = `
+      type TrackingUpdate { trackingCode String }
+      model Order { id Int @id }
+    `
+    const plain = generateTypeScript(parse(SEED).schema)
+    expect(plain).toContain('export interface SeedTypes {\n  TrackingUpdate: TrackingUpdate\n}')
+    expect(plain).not.toContain(`declare module '@frontierjs/junction'`)
+
+    const wired = generateTypeScript(parse(SEED).schema, { augment: 'junction' })
+    expect(wired).toContain('type GeneratedSeedTypes = SeedTypes')
+    expect(wired).toContain('interface SeedTypes extends GeneratedSeedTypes {}')
+
+    // A schema declaring no `type` has nothing to register.
+    expect(generateTypeScript(parse(SERVICE_SCHEMA).schema, { augment: 'junction' })).not.toContain('SeedTypes')
+  })
+
   test('the map follows the audience, because a row type is what a caller may read', () => {
     const GUARDED = `
       model Account {

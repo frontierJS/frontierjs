@@ -134,7 +134,7 @@ export function notificationsPlugin(opts: NotificationsPluginOptions) {
       // definition holds `via` rather than closing over a payload.
       if (typeof app.claim === 'function') app.claim('notifications', registry)
 
-      if (emailUsesMailer && !app.mail) {
+      if (emailUsesMailer && !('mail' in app)) {
         throw new Error(
           '[notifications] the email transport is configured but app.mail is not set. ' +
           'Configure mailerPlugin(...) before notificationsPlugin(...), or register ' +

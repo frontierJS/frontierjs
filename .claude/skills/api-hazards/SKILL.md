@@ -55,6 +55,7 @@ Detail: `references/routes-query-and-headers.md`
 - **The client's address is declared, never discovered.**
 - **An API on a sibling subdomain needs no cookie `Domain`; the cross-origin list is `cors.origins` + `credentials` + `csrf.origins`** (`FJS-2655`)
 - **Above 128 MB, a declared length over `http.maxBodySize` is refused by Bun, not by junction** (`FJS-3090`)
+- **A `{ body: 'stream' }` route bounds nothing a chunked sender writes, and its credential verifier sees an empty body** (`FJS-D1159`)
 
 ## Sockets
 Detail: `references/sockets.md`

@@ -460,7 +460,7 @@ export default createService({
 
     const keepImages = Math.max(0, Math.min(50, Math.round(Number(data.keepImages ?? 3))))
 
-    if (!$.app.conduit)
+    if (!('conduit' in $.app))
       throw new BadRequest('Outbound delivery is not configured on this server — no conduit plugin')
 
     const candidates = serverId ? [serverId] : [...fleet.keys()]
@@ -486,7 +486,7 @@ export default createService({
       // both off the request in scope, and the handler declares
       // `runsAsCaller` — so this work runs as the person who asked for it,
       // in the workspace they asked in (`FJS-384`).
-      await $.app.jobs!.dispatch(cleanupRun,
+      await $.app.jobs.dispatch(cleanupRun,
         { runId: run.id, workspaceId: ws() },
         { queue: 'fleet', priority: 5 })
       await recordEvent(id, 'cleanup_queued',

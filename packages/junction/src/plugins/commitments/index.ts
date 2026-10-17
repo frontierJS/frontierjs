@@ -262,7 +262,7 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
     },
 
     async boot(app: App): Promise<void> {
-      const jobs = app.jobs as unknown as Jobs | undefined
+      const jobs = ('jobs' in app ? app.jobs : undefined) as unknown as Jobs | undefined
       if (!jobs?.handle) throw new Error(
         `[Junction] commitments(): app.jobs has no handle() — configure caravan before commitments().`)
 
@@ -399,7 +399,7 @@ async function fireAsApp(
 ): Promise<FireOutcome> {
   return app.withDb(async (raw) => {
     try {
-      return await fireCommitment(raw, job, { hooks, outbox: app.outbox, tenant })
+      return await fireCommitment(raw, job, { hooks, outbox: 'outbox' in app ? app.outbox : undefined, tenant })
     } catch (err) {
       // With no system principal the fire is STRANGER(0), and the gate's
       // refusal names the level it wanted, not the principal nobody declared.

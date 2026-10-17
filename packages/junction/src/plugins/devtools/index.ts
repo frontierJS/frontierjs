@@ -294,7 +294,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
       }
 
       // ── Track WS connections via channels plugin ───────────────────
-      const channelManager = (app as unknown as Record<string, unknown>).channels as
+      const channelManager = ('channels' in app ? app.channels : undefined) as unknown as
         { on?: (event: string, handler: (...a: unknown[]) => void) => (() => void) | void } | undefined
 
       if (channelManager?.on) {
@@ -454,7 +454,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
           // Duck-typed for the same reason Caravan duck-types the app: this
           // file must not import a package Junction only peers on.
           if (url.pathname.startsWith('/api/jobs')) {
-            const q = app.jobs as unknown as JobsView | undefined
+            const q = ('jobs' in app ? app.jobs : undefined) as unknown as JobsView | undefined
             if (!q || typeof q.list !== 'function')
               return Response.json({ error: 'No job queue installed' }, { status: 501 })
 

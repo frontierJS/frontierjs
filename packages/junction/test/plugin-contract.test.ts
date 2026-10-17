@@ -206,6 +206,34 @@ describe('app.claim', () => {
   })
 })
 
+// ─── an unconfigured slot ───────────────────────────────────────────────
+//
+// FJS-2940 / FJS-D1138: a slot is typed present so no app writes `!`, which
+// makes an unconfigured read the runtime's to refuse, naming the plugin.
+
+describe('an app.<slot> no plugin claimed', () => {
+  // A compile-time case: `bun run typecheck` fails it while the slot is `jobs?:`.
+  it('is typed present', () => {
+    const read = (a: App) => { const jobs: import('../src/core/app.ts').AppJobs = a.jobs; return jobs }
+    expect(typeof read).toBe('function')
+  })
+
+  it('throws on read, naming the plugin that installs it', async () => {
+    const app = await createTestApp()
+    expect(() => app.jobs).toThrow(/app\.jobs is not configured.*createCaravan/s)
+    expect(() => app.conduit).toThrow(/app\.conduit is not configured.*conduit\(\)/s)
+    expect(() => app.channel).toThrow(/app\.channel is not configured.*channels\(\)/s)
+  })
+
+  it('answers `in` with whether it is configured', async () => {
+    const app = await createTestApp()
+    expect('conduit' in app).toBe(false)
+    expect('mail' in app).toBe(false)
+    app.claim('conduit', { send: () => {} })
+    expect('conduit' in app).toBe(true)
+  })
+})
+
 // ─── a battery's slot is claimed, not assigned ──────────────────────────
 
 describe('battery slots go through app.claim', () => {
@@ -245,7 +273,7 @@ describe('battery slots go through app.claim', () => {
     const { openapi } = await import('../src/plugins/openapi/index.ts')
     const app = await createTestApp()
     app.configure(openapi({ title: 't', version: '1' } as never))
-    app.addOpenApiPaths!({ '/x': { get: {} } })
+    app.addOpenApiPaths({ '/x': { get: {} } })
 
     expect(app._openapiExtraPaths).toHaveProperty('/x')
   })

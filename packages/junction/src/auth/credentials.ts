@@ -107,21 +107,45 @@ export function signedRequest(opts: SignedRequestOptions): CredentialVerifier {
  * lookup on a token that was already bad, and one that does not no longer
  * leaves an issued key unusable.
  */
-export async function resolvePrincipal(opts: {
+export async function resolvePrincipal(opts: ResolveOptions): Promise<SessionContext | null | typeof REFUSE> {
+  return (await resolveCaller(opts)).principal
+}
+
+type BearerAuth = Pick<IAuth, 'verifySession'> & Partial<Pick<IAuth, 'verifyApiKey'>>
+
+interface ResolveOptions {
   verifiers: readonly CredentialVerifier[] | undefined
   req:       InboundRequest
-  auth?:     Pick<IAuth, 'verifySession'> & Partial<Pick<IAuth, 'verifyApiKey'>> | undefined
+  auth?:     BearerAuth | undefined
   token?:    string | null
-}): Promise<SessionContext | null | typeof REFUSE> {
+}
+
+/**
+ * `resolvePrincipal`, saying also whether the bearer token is what answered.
+ * That half is the one a socket may ask again (`FJS-D1201`): a verifier is
+ * shown the upgrade request, and `signedRequest` refuses its nonce a second time.
+ */
+export async function resolveCaller(opts: ResolveOptions): Promise<{
+  principal: SessionContext | null | typeof REFUSE
+  bearer:    boolean
+}> {
   for (const verify of opts.verifiers ?? []) {
     let answer: CredentialAnswer
-    try { answer = await verify(opts.req) } catch { return REFUSE }
-    if (answer === REFUSE) return REFUSE
-    if (answer) return answer
+    try { answer = await verify(opts.req) } catch { return { principal: REFUSE, bearer: false } }
+    if (answer === REFUSE) return { principal: REFUSE, bearer: false }
+    if (answer) return { principal: answer, bearer: false }
   }
-  if (!opts.auth || !opts.token) return null
-  const origin = { host: opts.req.host, headers: opts.req.headers }
-  const session = await opts.auth.verifySession(opts.token, origin)
+  if (!opts.auth || !opts.token) return { principal: null, bearer: false }
+  return { principal: await bearerPrincipal(opts.auth, opts.token, opts.req), bearer: true }
+}
+
+/** The bearer token alone — a session, else an API key. */
+export async function bearerPrincipal(
+  auth:  BearerAuth,
+  token: string,
+  req:   Pick<InboundRequest, 'host' | 'headers'>,
+): Promise<SessionContext | null> {
+  const session = await auth.verifySession(token, { host: req.host, headers: req.headers })
   if (session) return session
-  return opts.auth.verifyApiKey ? opts.auth.verifyApiKey(opts.token) : null
+  return auth.verifyApiKey ? auth.verifyApiKey(token) : null
 }

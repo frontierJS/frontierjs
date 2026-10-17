@@ -3538,6 +3538,13 @@ model Notification {
 //
 // Keep it in step with `packages/auth/db/user.lite`; `fli check`'s
 // `package-model-drift` compares the two and names a column that differs.
+
+/// Who an account is. `user` is a person. `bot` is an automation a person set
+/// up, and `peer` is another app calling this one (`FJS-D1196`). It is what the
+/// audit trail files as `actorType`, and only a `user` may sign in: the other
+/// two hold API keys and nothing else.
+enum UserKind { user bot peer }
+
 model User {
   id             String    @id @default(uuid())
   // The address a password reset is mailed to. Written by its owner it is an
@@ -3555,6 +3562,10 @@ model User {
   // this package sets them.
   emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
   role           String    @default("user") @allow('write', auth().isAdmin)
+  // Written once by the app, never by the caller. A person who could mark
+  // themselves a bot would refile who did what, and a later change would make
+  // every past entry's actorType disagree with the row.
+  kind           UserKind  @default(user) @system @immutable
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @default(now()) @updatedAt
 

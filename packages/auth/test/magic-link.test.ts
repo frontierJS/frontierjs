@@ -353,3 +353,18 @@ describe('the routes', () => {
     off.cleanup()
   })
 })
+
+describe('concurrent codes', () => {
+  // FJS-3185: a burst that reads the row before any miss is written sees one
+  // count, so a read-then-write ceiling never trips.
+  test('a burst of wrong codes spends the link, and the right code is then refused', async () => {
+    const email = nextEmail()
+    const mail  = await mailed(email)
+    const wrong = mail.code === '000000' ? '000001' : '000000'
+
+    const burst = await Promise.allSettled(
+      Array.from({ length: 20 }, () => h.auth.verifyMagicLink!({ email, code: wrong })))
+    expect(burst.every(r => r.status === 'rejected')).toBe(true)
+    await rejectsWith(() => h.auth.verifyMagicLink!({ email, code: mail.code }), InvalidTokenError)
+  })
+})

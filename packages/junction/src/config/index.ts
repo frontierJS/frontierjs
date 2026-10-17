@@ -131,6 +131,7 @@ export interface AppConfig {
       maxInFlight?:         number
       maxConnectionsPerIp?: number
       maxConnections?:      number
+      reverifySeconds?:     number
     }
   }
 

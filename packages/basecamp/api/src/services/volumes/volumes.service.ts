@@ -103,7 +103,7 @@ async function getScopedVolume(fleet: Map<string, string>) {
  * direction nothing can detect.
  */
 async function outpostFor(serverId: string, serverName: string): Promise<string> {
-  if (!$.app.conduit)
+  if (!('conduit' in $.app))
     throw new BadRequest('Outbound delivery is not configured on this server — no conduit plugin')
 
   const target = `outpost:${serverId}`
@@ -325,7 +325,7 @@ export default createService({
     }
 
     const target = await outpostFor(volume.serverId as string, server)
-    const res    = await $.app.conduit!.send({
+    const res    = await $.app.conduit.send({
       target,
       method: 'DELETE',
       path:   `/volumes/${encodeURIComponent(name)}`,
@@ -385,7 +385,7 @@ export default createService({
         continue
       }
 
-      const res = await $.app.conduit!.send({
+      const res = await $.app.conduit.send({
         target, method: 'POST', path: '/volumes/prune',
         body: { names: volumes.map(v => v.name) },
       })

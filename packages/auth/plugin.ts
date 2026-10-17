@@ -771,7 +771,7 @@ function respond(
  */
 function closeSockets(app: { channels?: { disconnectSession?: (id: string, reason?: string) => number } },
                       sessionId: string | undefined, reason: string): void {
-  if (!sessionId) return
+  if (!sessionId || !('channels' in app)) return
   app.channels?.disconnectSession?.(sessionId, reason)
 }
 

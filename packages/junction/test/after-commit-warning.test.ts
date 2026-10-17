@@ -50,7 +50,7 @@ describe('FJS-2070 — mail inside an afterCommit drain', () => {
       name: 'posts',
       async create(c: ServiceContext) { return (c.locals.db as any).post.create({ data: c.data }) },
       hooks: { after: { create: [(c: ServiceContext) => {
-        c.afterCommit(async () => { await c.app.mail!.send({ to: 'a@b.co', subject: 's', html: 'h' }) })
+        c.afterCommit(async () => { await c.app.mail.send({ to: 'a@b.co', subject: 's', html: 'h' }) })
       }] } },
     } as never)
 

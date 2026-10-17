@@ -29,6 +29,11 @@ export default {
     path: '/apps/basecamp', // deploy root on the server
     app_id: 'basecamp',
 
+    // This box joins the fleet this Basecamp runs: after the web release, `fli
+    // deploy` runs api/enroll-host.ts in the container and the install it
+    // answers on the host (FJS-D1191). `--no-outpost` skips it for one run.
+    outpost: true,
+
     api: {
       // 8120 everywhere: the port scheme's backend slot for project 2
       // (packages/cli/core/ports.js), which is what the Dockerfile EXPOSEs, what

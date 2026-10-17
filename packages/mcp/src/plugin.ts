@@ -756,7 +756,7 @@ interface HandlerCtx {
  * block is what an agent reading only text is told.
  */
 async function held(app: App, call: CallScope, since: number, ctx: HandlerCtx, answer: CallResult): Promise<CallResult> {
-  const jobs = (app as { jobs?: Partial<JobsReader> }).jobs
+  const jobs = ('jobs' in app ? app.jobs : undefined) as Partial<JobsReader> | undefined
   if (!call.correlationId || typeof jobs?.findByCorrelation !== 'function') {
     answer.content.push({ type: 'text', text: 'Nothing to wait on: this app has no job queue this surface can read.' })
     answer._meta = { ...answer._meta, [JOBS_META]: [] }

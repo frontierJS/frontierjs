@@ -123,13 +123,13 @@ app.configure(healthPlugin())
 app.configure(channels((a: App) => {
   // Block body, not a concise one: Channel.join() returns the channel for
   // chaining, and the connection handler is typed to return void.
-  a.channels!.on('connection', (_session, conn) => { a.channel!('posts').join(conn) })
+  a.channels.on('connection', (_session, conn) => { a.channel('posts').join(conn) })
 }))
 
 // Nothing here. Broadcasting is declared on the service itself — see
 // services/posts.service.ts, `channel: 'posts'`. This used to be:
 //
-//   const live = announce(() => app.channel!('posts'))
+//   const live = announce(() => app.channel('posts'))
 //   app.hooks({ after: { create: [live], patch: [live], remove: [live] } })
 //
 // with the per-method list mandatory, because `after: { all }` would have

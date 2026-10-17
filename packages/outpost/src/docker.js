@@ -595,9 +595,11 @@ export function createDocker({
       // that way must not reach `run` as "never kill" (`FJS-1857`).
       if (!(timeoutSeconds > 0)) timeoutSeconds = 300
       // Killing the systemd-run client leaves its unit running, so the unit
-      // carries the bound itself and the client's is the backstop.
+      // carries the bound itself and the client's is the backstop. A non-root
+      // caller (a drive on a dev box) otherwise raises a polkit password
+      // dialog on the desktop, so it is refused instead.
       const result = await run([
-        'systemd-run', '--pipe', '--wait', '--collect', '--quiet',
+        'systemd-run', '--no-ask-password', '--pipe', '--wait', '--collect', '--quiet',
         `--property=RuntimeMaxSec=${Math.ceil(timeoutSeconds)}`,
         '--', 'sh', '-c', command,
       ], { timeoutMs: (timeoutSeconds + 10) * 1_000 })

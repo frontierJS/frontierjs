@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-56 model(s) · 25 enum(s) · 2 database(s) · 2 value set(s)
+56 model(s) · 26 enum(s) · 2 database(s) · 2 value set(s)
 audit → trail · main → sqlite
 ```
 
@@ -44,6 +44,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `Size` | `l` · `m` · `one` · `s` · `xl` · `xs` · `xxl` |
 | `StockMovementKind` | `adjusted` · `damaged` · `received` · `returned` · `sold` |
 | `SubscriptionStatus` | `active` · `cancelled` · `pastDue` · `trialing` |
+| `UserKind` | `bot` · `peer` · `user` |
 | `VerificationPurpose` | `emailChange` · `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` |
 
 ## Value sets
@@ -1287,6 +1288,7 @@ table `user` · db `main` · gate `4.4.4.5`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isStaff` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |
 | `isSystemAdmin` | `Boolean` | no | `0` | `@allow(write: auth().isSystemAdmin)` |
+| `kind` | `UserKind` | no | `'user'` | @system |
 | `name` | `String` | yes | — | — |
 | `role` | `String` | no | `'user'` | `@allow(write: auth().isAdmin)` |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |

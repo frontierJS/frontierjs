@@ -30,9 +30,9 @@ import type { Schema, FieldDef } from './schema.ts'
 import { serviceAccessor } from './service.ts'
 import type { HookMap } from './hooks.ts'
 import { NotFound, BadRequest, BadGateway, Unauthorized, Forbidden, FrameworkError } from './errors.ts'
-import type { MirrorForward } from './app.ts'
+import type { AppDb, MirrorForward } from './app.ts'
 import { fieldError } from './field-errors.ts'
-import type { ServiceContext, QueryDirectives } from './context.ts'
+import type { ServiceContext, ServiceContextLocals, QueryDirectives } from './context.ts'
 import { clampPage } from './directives.ts'
 import { coveredWrite, freezeUser, requestMeta, currentCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, list, resultData, isServiceResult, type BulkFailure } from './envelope.ts'
@@ -45,11 +45,13 @@ import type { GradableUser } from '@frontierjs/toolbelt/gate'
 import { normalizeOrderBy, normalizeSelect, type SortParam, type SelectParam, type OrderBy } from '@frontierjs/toolbelt/query'
 
 // Module augmentation: typing ctx.locals.db without forcing a hard
-// Litestone dependency on junction core. Apps using the litestone
-// integration get ctx.locals.db typed; others don't pay for it.
+// Litestone dependency on junction core. An app that augments `AppDb` (`litestone
+// types --audience system --augment junction` writes it) reads its generated
+// client here, the one `app.db` already reads; an app that augments nothing keeps
+// the hand-written client below (`FJS-D877`).
 declare module './context.ts' {
   interface ServiceContextLocals {
-    db?: LitestoneClient
+    db?: keyof AppDb extends never ? LitestoneClient : AppDb
   }
 }
 
@@ -126,6 +128,18 @@ interface LitestoneClientApi {
 }
 
 type LitestoneClient = LitestoneClientApi & { [model: string]: LitestoneTable }
+
+// `ctx.locals.db` is the app's generated client where `AppDb` is augmented, and
+// that type is not comparable to the one this adapter builds and reads. A cast
+// at each site would hide which ones are the crossing, so both directions go
+// through here.
+function localsDb(ctx: ServiceContext): LitestoneClient | undefined {
+  return ctx.locals.db as unknown as LitestoneClient | undefined
+}
+
+function setLocalsDb(ctx: ServiceContext, client: LitestoneClient): void {
+  ctx.locals.db = client as unknown as ServiceContextLocals['db']
+}
 
 export interface LitestoneQueryEvent {
   model: string
@@ -797,7 +811,7 @@ interface ClaimedMirror {
  * `@@mirror` is an app's own row.
  */
 export function mirrorClaimFor(ctx: ServiceContext, accessorOpt?: string): ClaimedMirror | null {
-  const conduit = (ctx.app as { conduit?: Partial<{ mirrored: unknown }> } | undefined)?.conduit
+  const conduit = (ctx.app && 'conduit' in ctx.app ? ctx.app.conduit : undefined) as Partial<{ mirrored: unknown }> | undefined
   if (!conduit || typeof conduit.mirrored !== 'function') return null
   const db = ctx.locals?.db as Record<string, unknown> | undefined
   if (!db) return null
@@ -1163,9 +1177,9 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     const value = row[m.key]
     if (value === undefined || value === null)
       throw new BadGateway(`${providerOf(m)}: the Provider's answer parsed to a row with no ${m.key}`)
-    const db = ctx.locals.db as Record<string, unknown>
+    const db = localsDb(ctx) as Record<string, unknown>
     const sys = ('asSystem' in db ? (db.asSystem as () => Record<string, LitestoneTable>)() : db)[m.accessor] as LitestoneTable
-    const columns = writableColumns(db, m.accessor)
+const columns = writableColumns(db, m.accessor)
     const data = columns ? Object.fromEntries(Object.entries(row).filter(([k]) => columns.has(k))) : row
     const { [m.key]: _key, ...changed } = data
     await sys.upsert({ where: { [m.key]: value }, create: data, update: changed })
@@ -1188,7 +1202,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     row: Record<string, unknown>, changes?: Record<string, unknown>,
   ): Promise<void> {
     // No guard: a client that answered `$mirrorKey` answers this.
-    const v = await (ctx.locals.db as LitestoneClientApi).$checkWrite!(m.accessor, op, row, changes)
+    const v = await (localsDb(ctx) as LitestoneClientApi).$checkWrite!(m.accessor, op, row, changes)
     if (v.ok) return
     throw new Forbidden(v.message ?? (op === 'create'
       ? `${modelLabel(ctx)}: this is not one you may create`
@@ -1228,8 +1242,8 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     // one answering a bare OK is gone there, so it goes here.
     if (row) await landMirrored(ctx, m, row)
     else {
-      const db = ctx.locals.db as Record<string, unknown>
-      const sys = ('asSystem' in db ? (db.asSystem as () => Record<string, LitestoneTable>)() : db)[m.accessor] as LitestoneTable
+      const db = localsDb(ctx) as Record<string, unknown>
+      const sys =('asSystem' in db ? (db.asSystem as () => Record<string, LitestoneTable>)() : db)[m.accessor] as LitestoneTable
       await sys.remove({ where: { [m.key]: current[m.key] } })
     }
     return current
@@ -3723,7 +3737,7 @@ function mergeClaims(ctx: ServiceContext, db: unknown, claims: PrincipalClaims):
   if (!user) {
     if (!Object.keys(claims).length) return
     if (typeof client?.$setAuth === 'function')
-      ctx.locals.db = client.$setAuth({ ...claims })
+      setLocalsDb(ctx, client.$setAuth({ ...claims }))
     return
   }
 
@@ -3731,7 +3745,7 @@ function mergeClaims(ctx: ServiceContext, db: unknown, claims: PrincipalClaims):
   ctx.auth.user   = principal as typeof user
 
   if (typeof client?.$setAuth === 'function')
-    ctx.locals.db = client.$setAuth(toDataPrincipal(principal))
+    setLocalsDb(ctx, client.$setAuth(toDataPrincipal(principal)))
 }
 
 /**
@@ -3870,12 +3884,12 @@ export function withLitestoneDb(
     // ctx.auth.user is already populated by the transport bridge before
     // callService() runs.
     const client = db as LitestoneClient
-    ctx.locals.db =
+    setLocalsDb(ctx,
       ctx.auth?.user && typeof client?.$setAuth === 'function'
         ? client.$setAuth(toDataPrincipal(ctx.auth.user))
-        : client
+        : client)
 
-    if (ctx.locals.readCall) ctx.locals.db = refuseWrites(ctx.locals.db, ctx.service, ctx.method) as LitestoneClient
+    if (ctx.locals.readCall) setLocalsDb(ctx, refuseWrites(localsDb(ctx), ctx.service, ctx.method) as LitestoneClient)
 
     // Before the resolver, because most apps have no resolver: the claim came
     // from `sessionFields` at sign-in and is already on the principal.
@@ -5125,7 +5139,7 @@ export function announceDataWrites(
     mode: 'row' | 'gate' = 'row', tenants: readonly unknown[] | null = null,
   ): void => {
     const svc = app.services.get(name) as { channel?: unknown; model?: string | null } | undefined
-    const manager = app.channels as {
+    const manager = ('channels' in app ? app.channels : undefined) as {
       channel?:    (n: string) => { send?: (event: string, data: unknown) => void }
       sendGraded?: (
         targets: Target | Target[], event: string, payload: unknown,
@@ -5654,9 +5668,9 @@ export function withTenantDb(registry: TenantRegistryLike, principal?: Principal
       tapTenantWrites((ctx as { app?: unknown }).app, client, id)
 
       ctx.locals.tenantId = id
-      ctx.locals.db = dataPrincipal && typeof client?.$setAuth === 'function'
+      setLocalsDb(ctx, dataPrincipal && typeof client?.$setAuth === 'function'
         ? client.$setAuth(dataPrincipal)
-        : client
+        : client)
 
       // A standing is orthogonal to WHICH DATABASE the tenant lives in — an app
       // on this strategy can still want a per-request level — so the resolver

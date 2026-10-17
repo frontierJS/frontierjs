@@ -79,7 +79,7 @@ describe('the relay hands rows to the queue', () => {
     queue.handle('order.shipped', async () => { ran++ })
 
     const row = await owe(db)
-    const result = await app.outbox!.deliver()
+    const result = await app.outbox.deliver()
 
     expect(result).toEqual({ delivered: 1, failed: 0 })
     await until('the job to run', () => ran === 1)
@@ -99,7 +99,7 @@ describe('the relay hands rows to the queue', () => {
     queue.handle('order.shipped', async () => {})
 
     const row = await owe(db)
-    await app.outbox!.deliver()
+    await app.outbox.deliver()
 
     expect(queue.find(`outbox:${row.id}`)!.name).toBe('order.shipped')
   })
@@ -114,7 +114,7 @@ describe('the relay hands rows to the queue', () => {
     queue.handle('order.shipped', async () => { ran++ })
 
     const row = await owe(db)
-    await app.outbox!.deliver()
+    await app.outbox.deliver()
     await until('the first run', () => ran === 1)
 
     await db.asSystem().outboxMessage.update({
@@ -122,7 +122,7 @@ describe('the relay hands rows to the queue', () => {
       data:  { deliveredAt: null, claimedAt: null },
     })
 
-    const replay = await app.outbox!.deliver()
+    const replay = await app.outbox.deliver()
     await Bun.sleep(100)   // nothing to wait FOR — the claim is that nothing runs
 
     expect(replay).toEqual({ delivered: 1, failed: 0 })
@@ -135,7 +135,7 @@ describe('the relay hands rows to the queue', () => {
     queue.handle('order.shipped', async () => {})
 
     const row = await owe(db, { actorId: 'u-7' })
-    await app.outbox!.deliver()
+    await app.outbox.deliver()
 
     expect(queue.find(`outbox:${row.id}`)!.actor_id).toBe('u-7')
   })
@@ -145,7 +145,7 @@ describe('the relay hands rows to the queue', () => {
     queue.handle('sweep', async () => {})
 
     const row = await owe(db, { job: 'sweep', actorId: null })
-    await app.outbox!.deliver()
+    await app.outbox.deliver()
 
     expect(queue.find(`outbox:${row.id}`)!.actor_id).toBeNull()
   })
@@ -162,10 +162,10 @@ describe('the relay hands rows to the queue', () => {
     await Bun.sleep(5)
     const second = await owe(db, { payload: { orderId: 2 } })
 
-    expect(await app.outbox!.deliver({ batch: 1 })).toEqual({ delivered: 1, failed: 0 })
+    expect(await app.outbox.deliver({ batch: 1 })).toEqual({ delivered: 1, failed: 0 })
     expect(queue.list({ limit: 50 }).map(j => j.id)).toEqual([`outbox:${first.id}`])
 
-    expect(await app.outbox!.deliver({ batch: 1 })).toEqual({ delivered: 1, failed: 0 })
+    expect(await app.outbox.deliver({ batch: 1 })).toEqual({ delivered: 1, failed: 0 })
     expect(queue.find(`outbox:${second.id}`)).not.toBeNull()
   })
 })
@@ -183,7 +183,7 @@ describe('the relay recovers what a crash left behind', () => {
       data:  { claimedAt: new Date(Date.now() - 5_000) },
     })
 
-    expect(await app.outbox!.deliver()).toEqual({ delivered: 1, failed: 0 })
+    expect(await app.outbox.deliver()).toEqual({ delivered: 1, failed: 0 })
   })
 
   it('leaves a FRESH claim alone — another relay is on it', async () => {
@@ -195,7 +195,7 @@ describe('the relay recovers what a crash left behind', () => {
       where: { id: row.id }, data: { claimedAt: new Date() },
     })
 
-    expect(await app.outbox!.deliver()).toEqual({ delivered: 0, failed: 0 })
+    expect(await app.outbox.deliver()).toEqual({ delivered: 0, failed: 0 })
   })
 
   it('a dispatch that throws releases the claim and counts the attempt', async () => {
@@ -205,7 +205,7 @@ describe('the relay recovers what a crash left behind', () => {
     ;(app.jobs as { dispatch: unknown }).dispatch = async () => { throw new Error('queue is down') }
 
     const row = await owe(db)
-    expect(await app.outbox!.deliver()).toEqual({ delivered: 0, failed: 1 })
+    expect(await app.outbox.deliver()).toEqual({ delivered: 0, failed: 1 })
 
     const after = await db.asSystem().outboxMessage.findUnique({ where: { id: row.id } })
     expect(after.claimedAt).toBeNull()
@@ -225,7 +225,7 @@ describe('the relay recovers what a crash left behind', () => {
     queue.handle('order.shipped', async () => { ran++ })
 
     const row = await owe(db)
-    const passes = await Promise.all([app.outbox!.deliver(), app.outbox!.deliver()])
+    const passes = await Promise.all([app.outbox.deliver(), app.outbox.deliver()])
 
     expect(passes.reduce((n, p) => n + p.delivered, 0)).toBe(1)
     await until('the job to run', () => ran === 1)
@@ -242,10 +242,10 @@ describe('the relay recovers what a crash left behind', () => {
 
     await owe(db)
     await owe(db)
-    expect(await app.outbox!.pending()).toBe(2)
+    expect(await app.outbox.pending()).toBe(2)
 
-    await app.outbox!.deliver()
-    expect(await app.outbox!.pending()).toBe(0)
+    await app.outbox.deliver()
+    expect(await app.outbox.pending()).toBe(0)
   })
 })
 
@@ -270,7 +270,7 @@ describe('what /metrics is told', () => {
 
     await owe(db)
     await owe(db)
-    await app.outbox!.deliver()
+    await app.outbox.deliver()
 
     // A source must be synchronous — /metrics assigns fn() straight into the
     // body — so `pending` is as of the last PASS and a hand-driven deliver has
@@ -284,7 +284,7 @@ describe('what /metrics is told', () => {
     ;(app.jobs as { dispatch: unknown }).dispatch = async () => { throw new Error('queue is down') }
 
     await owe(db)
-    await app.outbox!.deliver()
+    await app.outbox.deliver()
 
     const m = (app as unknown as { _metricsSources: Map<string, () => unknown> })
       ._metricsSources.get('outbox')!() as { delivered: number; failed: number }
@@ -307,7 +307,7 @@ describe('what /metrics is told', () => {
         ._metricsSources.get('outbox')!() as { pending: number; dead: number }
 
     await owe(db)
-    await app.outbox!.pass()
+    await app.outbox.pass()
     expect(metrics()).toMatchObject({ pending: 1, dead: 0 })
     expect(health()).toBe(true)
 
@@ -316,7 +316,7 @@ describe('what /metrics is told', () => {
     await db.asSystem().outboxMessage.updateMany({
       where: { deliveredAt: null }, data: { nextAttemptAt: new Date(0) },
     })
-    await app.outbox!.pass()
+    await app.outbox.pass()
 
     expect(metrics()).toMatchObject({ pending: 0, dead: 1 })
     expect(health()).toBe(false)
@@ -332,13 +332,13 @@ describe('retention', () => {
     queue.handle('order.shipped', async () => {})
 
     const old = await owe(db)
-    await app.outbox!.deliver()
+    await app.outbox.deliver()
     await db.asSystem().outboxMessage.update({
       where: { id: old.id }, data: { deliveredAt: new Date(Date.now() - 10_000) },
     })
     const owed = await owe(db)
 
-    expect(await app.outbox!.sweep(5_000)).toBe(1)
+    expect(await app.outbox.sweep(5_000)).toBe(1)
 
     const left = await db.asSystem().outboxMessage.findMany({})
     expect(left.map((r: { id: string }) => r.id)).toEqual([owed.id])

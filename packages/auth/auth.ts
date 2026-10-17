@@ -456,21 +456,29 @@ export function createLitestoneAuth(
   // process-local too.
   const enrollmentMisses = new Map<string, number>()
 
-  const bumpAttempts = (row: any) =>
-    sys.loginChallenge.update({
-      where: { id: row.id },
-      data:  { attempts: Number(row.attempts ?? 0) + 1 }
+  /**
+   * One guess at a six-digit code, taken BEFORE the code is compared and in one
+   * conditional UPDATE. A count read and written back later is read once by a
+   * whole burst, so the ceiling never trips (FJS-3185). False is a spent row.
+   */
+  async function claimAttempt(table: any, id: unknown): Promise<boolean> {
+    const { count } = await table.updateMany({
+      where: { id, attempts: { lt: loginChallengeAttempts } },
+      data:  { attempts: { increment: 1 } },
     })
+    return count > 0
+  }
 
   /**
-   * Whether typing again is worth anything — read AFTER the bump, and it spends
-   * the ticket when it is not. A person left typing into a box that will refuse
-   * every future code has been told nothing, which is the whole of what
+   * Whether typing again is worth anything — re-read after the claim, and it
+   * spends the row when it is not. A person left typing into a box that will
+   * refuse every future code has been told nothing, which is the whole of what
    * `retryable` is for.
    */
-  async function attemptsLeft(row: any): Promise<boolean> {
-    if (Number(row.attempts ?? 0) + 1 < loginChallengeAttempts) return true
-    await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+  async function attemptsLeft(table: any, id: unknown): Promise<boolean> {
+    const now = await table.findFirst({ where: { id } })
+    if (now && Number(now.attempts) < loginChallengeAttempts) return true
+    await table.deleteMany({ where: { id } })
     return false
   }
 
@@ -702,16 +710,14 @@ export function createLitestoneAuth(
       row = await sys.verification.findFirst({ where: { purpose: MAGIC, identifier: address } })
       if (!row) return refuseMagicLink('no-such-link', null, address)
 
-      if (!codesMatch(proof.code, String(row.code ?? ''))) {
-        // The ceiling is `completeLogin`'s: both are six digits standing in
-        // front of a session, so one number answers how many guesses that is.
-        const misses = Number(row.attempts ?? 0) + 1
-        if (misses < loginChallengeAttempts) {
-          await sys.verification.update({ where: { id: row.id }, data: { attempts: misses } })
-          return refuseMagicLink('bad-code', null, address, true)
-        }
+      // The ceiling is `completeLogin`'s: both are six digits standing in
+      // front of a session, so one number answers how many guesses that is.
+      if (!await claimAttempt(sys.verification, row.id)) {
         await sys.verification.deleteMany({ where: { id: row.id } })
-        return refuseMagicLink('bad-code', null, address)
+        return refuseMagicLink('no-such-link', null, address)
+      }
+      if (!codesMatch(proof.code, String(row.code ?? ''))) {
+        return refuseMagicLink('bad-code', null, address, await attemptsLeft(sys.verification, row.id))
       }
     }
 
@@ -1080,20 +1086,29 @@ export function createLitestoneAuth(
         throw await spend(user ? 'factor-removed' : 'no-such-user', row, false)
       }
 
+      if (!await claimAttempt(sys.loginChallenge, row.id)) {
+        await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+        throw await spend('no-such-challenge', row, false)
+      }
+
+      // Every spend below is a write whose WHERE carries the check and whose
+      // count is the answer: two requests holding one code both pass a read.
+      const spendTicket = async () =>
+        (await sys.loginChallenge.deleteMany({ where: { id: row.id } })).count > 0
+
       const at   = sys.$now()
       const step = verifyTotpCode(cred.value, code, at, totpDrift)
 
       if (step !== null) {
         // The window is 30 seconds wide and a code is good for all of it, so
-        // without this the window IS a replay window. `<=` and not `<`: the same
-        // step is the same code.
-        if (cred.totpLastStep != null && step <= Number(cred.totpLastStep)) {
-          await bumpAttempts(row)
-          throw await spend('code-replayed', row, await attemptsLeft(row))
-        }
-
-        await sys.credential.update({ where: { id: cred.id }, data: { totpLastStep: step } })
-        await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+        // without this the window IS a replay window. `lt` and not `lte`: the
+        // same step is the same code.
+        const { count } = await sys.credential.updateMany({
+          where: { id: cred.id, OR: [{ totpLastStep: null }, { totpLastStep: { lt: step } }] },
+          data:  { totpLastStep: step },
+        })
+        if (!count) throw await spend('code-replayed', row, await attemptsLeft(sys.loginChallenge, row.id))
+        if (!await spendTicket()) throw await spend('no-such-challenge', row, false)
         return issueSession(user, 'session', { factor: 'totp' })
       }
 
@@ -1103,8 +1118,9 @@ export function createLitestoneAuth(
       if (recovery) {
         // Deleted rather than flagged. A spent code that still exists is one
         // column away from being accepted again, and nothing would read wrong.
-        await sys.credential.deleteMany({ where: { id: recovery.id } })
-        await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+        const used = await sys.credential.deleteMany({ where: { id: recovery.id } })
+        if (!used.count) throw await spend('code-replayed', row, await attemptsLeft(sys.loginChallenge, row.id))
+        if (!await spendTicket()) throw await spend('no-such-challenge', row, false)
 
         const left = await countRecoveryCodes(row.userId)
         await credentialChanged('recovery.used', String(row.userId), {
@@ -1117,8 +1133,7 @@ export function createLitestoneAuth(
         return issueSession(user, 'session', { factor: 'recovery', recoveryCodesRemaining: left })
       }
 
-      await bumpAttempts(row)
-      throw await spend('bad-code', row, await attemptsLeft(row))
+      throw await spend('bad-code', row, await attemptsLeft(sys.loginChallenge, row.id))
     },
 
     // ── TOTP: enrollment and the way back ────────────────────────────────

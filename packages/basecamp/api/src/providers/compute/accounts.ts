@@ -79,7 +79,7 @@ export function accountConnectorFor(kind: ProviderKind | null | undefined): Acco
 export async function registerAccount(
   app: App, secret: SecretRow, opts: { address?: string } = {},
 ): Promise<string | null> {
-  if (!app.conduit) return null
+  if (!('conduit' in app))return null
   if (secret.kind && secret.kind !== 'provider_key') return null
 
   const connector = accountConnectorFor(secret.providerKind)
@@ -95,7 +95,7 @@ export async function registerAccount(
 /** Drop an account's target. Called when the secret is removed, so a revoked
  *  key stops being a registered address rather than an address that fails. */
 export async function unregisterAccount(app: App, secret: SecretRow): Promise<void> {
-  if (!app.conduit) return
+  if (!('conduit' in app))return
   const connector = accountConnectorFor(secret.providerKind)
   if (!connector) return
   await app.conduit.deregister(targetFor(connector.kind, secret.id))
@@ -110,7 +110,7 @@ export async function unregisterAccount(app: App, secret: SecretRow): Promise<vo
  * nothing here returns a row to a caller; it reads ids and registers addresses.
  */
 export async function registerAllAccounts(app: App, db: any): Promise<number> {
-  if (!app.conduit) return 0
+  if (!('conduit' in app))return 0
 
   const accounts = await db.asSystem().secret.findMany({
     where:  { kind: 'provider_key' },
@@ -197,7 +197,7 @@ function vendorSaid(raw: unknown): unknown {
 
 export function sendVia(app: App, target: string): AccountSend {
   return async (req) => {
-    if (!app.conduit) throw new Error('compute: app.conduit is not configured')
+    if (!('conduit' in app))throw new Error('compute: app.conduit is not configured')
 
     // The guard is on the TRANSPORT and not on each connector method, which is
     // what makes it complete: a spending call somebody adds next year is

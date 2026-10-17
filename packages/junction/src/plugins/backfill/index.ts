@@ -141,7 +141,7 @@ export function backfills(defs: BackfillDefinition[] = [], opts: BackfillPluginO
       // One handler for every backfill: the chunk it runs is named in the
       // payload. A handler per definition would put a caller-supplied name in a
       // job name, and the queue's names are a namespace shared with the app's.
-      const jobs = app.jobs as unknown as {
+      const jobs = ('jobs' in app ? app.jobs : undefined) as unknown as {
         handle(name: string, fn: (ctx: { data: { name: string } }) => Promise<void>, o?: unknown): void
       } | undefined
       if (!jobs?.handle) return
@@ -195,7 +195,7 @@ export function backfills(defs: BackfillDefinition[] = [], opts: BackfillPluginO
    * a RESTART is reachable, which it is not on the cursor alone.
    */
   async function kick(app: App, def: BackfillDefinition, row: BackfillRow, delay: number): Promise<void> {
-    const jobs = app.jobs as unknown as {
+    const jobs = ('jobs' in app ? app.jobs : undefined) as unknown as {
       dispatch(name: string, data: unknown, o: Record<string, unknown>): Promise<string>
     } | undefined
     if (!jobs?.dispatch) return

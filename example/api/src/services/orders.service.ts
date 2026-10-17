@@ -1,4 +1,4 @@
-import { createService, validateFields, $ } from '@frontierjs/junction'
+import { createService, defineMethod, validateFields, $ } from '@frontierjs/junction'
 
 // The job DEFINITIONS, not their names. `dispatch(bookCourier, …)` states the
 // name nowhere, so it cannot drift from the file that answers to it, and the
@@ -129,19 +129,18 @@ const ship = async () => {
  * the courier said" is a thing the shop does, and a service that says so reads
  * better than a payload that happens to carry one column.
  */
-const recordTracking = async () => {
-  // Not a cast. `methods:` below declares this method's payload as
-  // `type TrackingUpdate` in db/schema.lite, so by the time this line runs the
-  // body has been through the same validator a model create gets — the key is
-  // present, it is a string, and it is 4 to 40 characters in the schema's own
-  // wording. A cast asserted all three and checked none.
-  const { trackingCode } = $.data as { trackingCode: string }
+const recordTracking = defineMethod('TrackingUpdate', async ctx => {
+  // `defineMethod` names the payload's `type` in db/schema.lite: the validator
+  // that runs before this body and the type of `ctx.data` are that one name.
+  // The key is present, a string, and 4 to 40 characters in the schema's own
+  // wording; once an app generates its types, `ctx.data` says so too.
+  const { trackingCode } = ctx.data
   return $.db.order.update({
     where:  { id: Number($.id) },
     data:   { trackingCode },
     system: ['trackingCode'],
   })
-}
+})
 
 /**
  * The rules the seed cannot state, reported the way the seed's rules are.
@@ -269,12 +268,12 @@ export default createService({
   // surface.snapshot.md carries this list and CI fails a stale one, so a verb
   // that stopped being answered is a diff before it is a bug.
   //
-  // `input:` names a `type` in db/schema.lite. Only recordTracking takes a
-  // body — the four moves take an id and nothing else, and a move's rules are
-  // in @@transitions where every other rule about this row lives.
+  // recordTracking's `defineMethod` names its payload's `type` in
+  // db/schema.lite. Only it takes a body — the four moves take an id and
+  // nothing else, and a move's rules are in @@transitions where every other
+  // rule about this row lives.
   methods: [
     'find', 'get', 'create', 'update', 'patch', 'remove',
-    'pay', 'ship', 'refund', 'cancel', 'paymentCode',
-    { method: 'recordTracking', input: 'TrackingUpdate' },
+    'pay', 'ship', 'refund', 'cancel', 'paymentCode', 'recordTracking',
   ],
 })

@@ -90,8 +90,7 @@ export async function sendInApp(
   }
 
   // Publish WS event — optional, degrades gracefully if channels not configured
-  // app.channel() returns undefined when the channels() plugin is absent
-  const channel = app.channel?.(`notifications:user:${recipient.id}`)
+  const channel = 'channel' in app ? app.channel?.(`notifications:user:${recipient.id}`) : undefined
   if (channel) {
     channel.send(CREATED_EVENT, record)
   }

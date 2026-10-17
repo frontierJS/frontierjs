@@ -159,7 +159,7 @@ export function renderCatalogReference() {
     ['model', 'Model attributes',
      'Two `@@`, and it describes the whole model rather than one of its columns.'],
     ['move', 'Move words',
-     'One `@`, after the target of a `@@transitions` move. `@system` and `@gate` share a spelling with another word, so `litestone explain @system` answers for both.'],
+     'One `@`, after the target of a `@@transitions` move. `@system` and `@gate` are the column\'s `@system` and the model\'s `@@gate` at move grain: the same fact, said of one act rather than of a value or of every row.'],
   ]) {
     push(`## ${title}`, '', lead, '')
     // A level with one group needs no group heading — the declarations are all

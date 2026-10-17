@@ -91,7 +91,7 @@ export default createService({
     // `actor: null` — see the header. A hub action has no tenant, so the
     // handler declares `runsAsApp` and this says so rather than letting
     // caravan inherit a principal the handler would then refuse.
-    await $.app.jobs!.dispatch(backupRun, { backupId: backup.id },
+    await $.app.jobs.dispatch(backupRun, { backupId: backup.id },
       { queue: 'fleet', priority: 5, actor: null })
 
     return backup

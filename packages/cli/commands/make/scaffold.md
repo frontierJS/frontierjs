@@ -110,12 +110,11 @@ function makeSchemaStanza(name, fields, softDelete) {
   }
 
   lines.push('')
-  lines.push('  /// read.create.update.delete — reads are public, writes need a user.')
+  lines.push('  /// read.create.update.delete — reads are public, create and update need a user, delete needs OWNER.')
   lines.push('  /// The only place those four answers are written down: the service')
   lines.push('  /// derives its 401s from this, and the UI reads it back as')
   lines.push('  /// resource.gate to decide which buttons to offer.')
-  lines.push('  /// Above 4 nothing grades a caller until the app declares an isAdmin column.')
-  lines.push('  @@gate(0.4.4.4)')
+  lines.push('  @@gate(0.4.4.6)')
   lines.push('}')
   lines.push('')
 

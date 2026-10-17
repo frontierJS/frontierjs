@@ -62,7 +62,7 @@ async function bootApp(opts: Parameters<typeof conduitPlugin>[0] = {}) {
 describe('plugin lifecycle against a real app', () => {
   it('register() attaches app.conduit at configure() time', async () => {
     const app = await createTestApp()
-    expect(app.conduit).toBeUndefined()
+    expect('conduit' in app).toBe(false)
 
     app.configure(conduitPlugin({ credentials: secrets() }))
 

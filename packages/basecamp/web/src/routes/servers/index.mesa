@@ -192,10 +192,9 @@ title: Servers
   // one on its host without an SSH key it may not hold (FJS-D241) — so the
   // button makes the row and the token, and the operator runs one command.
   //
-  // Found again by its fixed slug, so a second click re-issues the token for
-  // the same row rather than adding a twin to the fleet.
-  const SELF_SLUG = 'basecamp-host'
-
+  // `servers.useHost` finds or makes the row, so a second click re-issues the
+  // token for the same row rather than adding a twin, and `fli deploy` finds
+  // the same one (FJS-D1191).
   let self       = null    // the row, once made
   let selfCmd    = null    // the install command — shown once, the token is not answered twice
   let selfWindow = 15
@@ -205,7 +204,7 @@ title: Servers
 
   async function loadSelf() {
     try {
-      self = (await servers.service.find({ slug: SELF_SLUG }, { limit: 1 })).data[0] ?? null
+      self = await servers.service.invoke('host')
     } catch { self = null }
   }
   loadSelf()
@@ -218,12 +217,12 @@ title: Servers
   async function enrollSelf() {
     selfError = null; selfCmd = null; enrolling = true; busySelf = true
     try {
-      self ??= await servers.service.create({
-        name: 'Basecamp host', slug: SELF_SLUG, role: 'general', region: 'self',
-      })
-      const issued = await servers.service.invoke('issueEnrollment', self.id)
-      selfCmd    = issued.command
-      selfWindow = Math.round((issued.windowMs ?? 15 * 60_000) / 60_000)
+      const used = await servers.service.invoke('useHost')
+      self = used.server
+      if (!used.enrolled) {
+        selfCmd    = used.command
+        selfWindow = Math.round((used.windowMs ?? 15 * 60_000) / 60_000)
+      }
       load()
     } catch (e) {
       selfError = e.message

@@ -111,11 +111,11 @@ describe('a due row is transitioned', () => {
     const { app, db, queue, advance, status } = await started()
     const order = await db.order.create({ data: {} })
 
-    expect(await app.commitments!.sweep()).toEqual({ due: 0 })
+    expect(await app.commitments.sweep()).toEqual({ due: 0 })
     expect(fires(queue)).toHaveLength(0)
 
     advance(14 * DAY)
-    expect(await app.commitments!.sweep()).toEqual({ due: 1 })
+    expect(await app.commitments.sweep()).toEqual({ due: 1 })
     await until('the order to be abandoned', async () => (await status(order.id)) === 'cancelled')
   })
 
@@ -126,7 +126,7 @@ describe('a due row is transitioned', () => {
     const order = await db.order.create({ data: {} })
 
     advance(14 * DAY - 4 * 60_000)
-    expect(await app.commitments!.sweep()).toEqual({ due: 1 })
+    expect(await app.commitments.sweep()).toEqual({ due: 1 })
 
     const [job] = fires(queue)
     expect(job.status).toBe('pending')
@@ -139,8 +139,8 @@ describe('a due row is transitioned', () => {
     await db.order.create({ data: {} })
 
     advance(14 * DAY - 4 * 60_000)
-    await app.commitments!.sweep()
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
+    await app.commitments.sweep()
     expect(fires(queue)).toHaveLength(1)
   })
 
@@ -153,7 +153,7 @@ describe('a due row is transitioned', () => {
     await db.order.create({ data: {} })
 
     advance(14 * DAY)
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await until('the transition event', () => heard.includes('abandon'))
   })
 
@@ -170,7 +170,7 @@ describe('a due row is transitioned', () => {
     const order = await db.order.create({ data: {} })
 
     advance(14 * DAY)
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await until('the order to be abandoned', async () => (await status(order.id)) === 'cancelled')
     await Bun.sleep(20)
 
@@ -229,7 +229,7 @@ describe('the fire asks again before it moves', () => {
 
     advance(14 * DAY)
     queue.queue('default').pause()
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await db.order.transition(order.id, 'pay')
     queue.queue('default').resume()
 
@@ -248,7 +248,7 @@ describe('the fire asks again before it moves', () => {
 
     advance(14 * DAY)
     queue.queue('default').pause()
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await db.order.update({ where: { id: order.id }, data: { held: true } })
     queue.queue('default').resume()
 
@@ -257,7 +257,7 @@ describe('the fire asks again before it moves', () => {
     expect(await status(order.id)).toBe('pending')
 
     await db.order.update({ where: { id: order.id }, data: { held: false } })
-    expect(await app.commitments!.sweep()).toEqual({ due: 1 })
+    expect(await app.commitments.sweep()).toEqual({ due: 1 })
     expect(fires(queue)).toHaveLength(2)
     await until('the released row to be abandoned', async () => (await status(order.id)) === 'cancelled')
   })
@@ -267,7 +267,7 @@ describe('the fire asks again before it moves', () => {
     await db.order.create({ data: { held: true } })
 
     advance(15 * DAY)
-    expect(await app.commitments!.sweep()).toEqual({ due: 0 })
+    expect(await app.commitments.sweep()).toEqual({ due: 0 })
     expect(fires(queue)).toHaveLength(0)
   })
 })
@@ -318,13 +318,13 @@ describe('a commitment on a related model moves the TARGET', () => {
 
     advance(DAY)
     queue.queue('default').pause()
-    expect(await app.commitments!.sweep()).toEqual({ due: 2 })
+    expect(await app.commitments.sweep()).toEqual({ due: 2 })
     queue.queue('default').resume()
 
     await until('both fires to finish', () => fires(queue).every(j => j.status === 'done'))
     expect(await subStatus()).toBe('pastDue')
     expect(metrics(app)).toMatchObject({ fired: 1, lapsed: 1, failed: 0 })
-    expect(await app.commitments!.sweep()).toEqual({ due: 0 })
+    expect(await app.commitments.sweep()).toEqual({ due: 0 })
   })
 
   it('a DAY is read in the zone the plugin is given, and the delay is to its start there', async () => {
@@ -339,11 +339,11 @@ describe('a commitment on a related model moves the TARGET', () => {
       env.advance(8 * DAY + 11.5 * 3_600_000)
       return env
     }
-    expect(await (await staged()).app.commitments!.sweep()).toEqual({ due: 0 })
+    expect(await (await staged()).app.commitments.sweep()).toEqual({ due: 0 })
 
     const nz = await staged('Pacific/Auckland')
     nz.queue.queue('default').pause()
-    expect(await nz.app.commitments!.sweep()).toEqual({ due: 1 })
+    expect(await nz.app.commitments.sweep()).toEqual({ due: 1 })
     const [job] = fires(nz.queue)
     expect(job.run_at - job.created_at).toBeLessThan(1_000)
   })
@@ -352,7 +352,7 @@ describe('a commitment on a related model moves the TARGET', () => {
     const { app, db, advance } = await started(DUNNING)
     await db.invoice.create({ data: { subscriptionId: null, dueOn: '2025-01-01', graceDays: 3 } })
     advance(365 * DAY)
-    expect(await app.commitments!.sweep()).toEqual({ due: 0 })
+    expect(await app.commitments.sweep()).toEqual({ due: 0 })
   })
 })
 
@@ -375,7 +375,7 @@ describe('a hook runs in the move\'s transaction', () => {
     const order = await db.order.create({ data: {} })
 
     advance(14 * DAY)
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await until('the afterCommit', () => seen.length === 1)
     expect(seen).toEqual(['cancelled'])
     expect(await db.asSystem().receipt.count({ where: { orderId: order.id } })).toBe(1)
@@ -391,7 +391,7 @@ describe('a hook runs in the move\'s transaction', () => {
     const order = await db.order.create({ data: {} })
 
     advance(14 * DAY)
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await until('the fire to be attempted', () => metrics(app).failed >= 1)
     expect(await status(order.id)).toBe('pending')
     expect(await db.asSystem().receipt.count()).toBe(0)
@@ -494,7 +494,7 @@ describe('a commitment hook has the service pipeline\'s tiers', () => {
     const o = await db.order.create({ data: {} })
 
     advance(14 * DAY)
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await until('the order to be abandoned', async () => (await status(o.id)) === 'cancelled')
     expect(order).toEqual([
       'around enter pending', 'before pending', 'after cancelled', 'around exit cancelled',
@@ -543,12 +543,12 @@ describe('a hook enqueues on the move\'s transaction', () => {
     const order = await db.order.create({ data: {} })
 
     advance(14 * DAY)
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await until('the notice', () => sent.length === 1)
     expect(sent).toEqual([{ orderId: order.id }])
     expect(await status(order.id)).toBe('cancelled')
 
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await Bun.sleep(100)
     expect(sent).toHaveLength(1)
     expect(await db.asSystem().outboxMessage.count({ where: { deliveredAt: null } })).toBe(0)
@@ -564,7 +564,7 @@ describe('a hook enqueues on the move\'s transaction', () => {
     const order = await db.order.create({ data: {} })
 
     advance(14 * DAY)
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await until('the fire to fail', () => metrics(app).failed >= 1)
     expect(await status(order.id)).toBe('pending')
     expect(await db.asSystem().outboxMessage.count()).toBe(0)
@@ -591,7 +591,7 @@ describe('the sweep reports itself', () => {
     const { app, db, advance, status } = await started()
     const order = await db.order.create({ data: {} })
     advance(14 * DAY)
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await until('the move', async () => (await status(order.id)) === 'cancelled')
 
     expect(metrics(app)).toMatchObject({ due: 1, fired: 1, lapsed: 0, failed: 0 })
@@ -620,7 +620,7 @@ describe('the move is graded, not bypassed', () => {
     const order = await db.asSystem().order.create({ data: {} })
 
     advance(14 * DAY)
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await until('the fire to be refused', () => metrics(app).failed >= 1)
     expect(await status(order.id)).toBe('pending')
     expect(metrics(app).lapsed).toBe(0)
@@ -648,7 +648,7 @@ describe('the move is graded, not bypassed', () => {
     const order = await db.asSystem().order.create({ data: {} })
 
     advance(14 * DAY)
-    await app.commitments!.sweep()
+    await app.commitments.sweep()
     await until('the fire to be refused', () => metrics(app).failed >= 1)
     expect(await status(order.id)).toBe('pending')
     expect(metrics(app).fired).toBe(0)

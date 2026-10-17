@@ -15,7 +15,7 @@ import type { App }         from '@frontierjs/junction'
  *  `app.conduit` is optional on the type, which is what makes this one function
  *  rather than a non-null assertion at every call. */
 export function outbound(app: App) {
-  if (!app.conduit) throw new Error('Outbound delivery is not configured — no conduit plugin')
+  if (!('conduit' in app)) throw new Error('Outbound delivery is not configured — no conduit plugin')
   return app.conduit
 }
 

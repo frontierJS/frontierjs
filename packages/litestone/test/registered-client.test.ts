@@ -95,6 +95,15 @@ describe('the generated client reaches createClient()', () => {
     expect(sys).toContain('interface Register')
     expect(client).not.toContain('interface Register')
   })
+
+  test('junction\'s AppDb is augmented only for the system audience asked to augment', () => {
+    const parsed = parse(SCHEMA).schema
+    const at     = (audience: 'client' | 'system', augment?: 'junction') =>
+      generateTypeScript(parsed, { audience, augment })
+    expect(at('system', 'junction')).toContain('interface AppDb extends GeneratedLitestoneClient')
+    expect(at('system')).not.toContain('AppDb')
+    expect(at('client', 'junction')).not.toContain('AppDb')
+  })
 })
 
 // FJS-2779 -- a read is typed by what it asked for. include and select were

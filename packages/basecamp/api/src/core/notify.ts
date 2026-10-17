@@ -34,7 +34,7 @@ import type { App }         from '@frontierjs/junction'
  *  only where a provider is configured, which `app.mail` is the one answer to. */
 function available(app: App): Set<string> {
   const set = new Set(['inApp'])
-  if ((app as { mail?: unknown }).mail) set.add('email')
+  if ('mail' in app) set.add('email')
   return set
 }
 

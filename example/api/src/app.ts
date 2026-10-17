@@ -658,7 +658,7 @@ app.configure(manifestPlugin({ db }))
 // channel a connection joined hands it every row published there with no
 // policy applied. Both halves are silent, so they are owned in one place.
 app.configure(channels((a: App) => {
-  a.channels!.on('connection', (session, conn) => joinChannels(a, session, conn))
+  a.channels.on('connection', (session, conn) => joinChannels(a, session, conn))
 }))
 
 // ─── The provider talking back ────────────────────────────────────────────
@@ -684,7 +684,7 @@ app.configure(channels((a: App) => {
 // effect. An event about a payment this shop has no row for is recorded by the
 // ledger and answered `ignored`: 200, because a 4xx retries a stranger's event
 // forever.
-app.conduit!.receive({
+app.conduit.receive({
   provider:   'payments',
   path:       WEBHOOK_PATH,
   dialect:    pspDialect,
@@ -708,7 +708,7 @@ app.conduit!.receive({
 // already has a provider doing that, and pointing two at one machine is a
 // decision about which one is authoritative rather than a detail of wiring. The
 // line where that would go is the `payments.record` call in the receiver above.
-app.conduit!.receive({
+app.conduit.receive({
   provider:   'stripe',
   path:       STRIPE_WEBHOOK_PATH,
   dialect:    stripeDialect,

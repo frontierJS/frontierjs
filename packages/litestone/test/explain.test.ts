@@ -139,3 +139,36 @@ describe('litestone explain — the words a move takes', () => {
     expect(rows.map((r: any) => r.level)).toEqual(['move'])
   })
 })
+
+// FJS-2951 (FJS-D1094) — @system and @gate keep one spelling for one fact at two
+// grains. The move entry says so in its FIRST sentence, so a reader of either
+// word is told the other grain exists without a lead that apologizes for it.
+describe('litestone explain — one word, two grains', () => {
+  const firstSentence = (rows: any[], level: string) => {
+    const doc: string = rows.find(r => r.level === level).blurb
+    return doc.slice(0, doc.indexOf('. ') + 1)
+  }
+  const rowsOf = (word: string) => JSON.parse(run(word, '--json').out)
+
+  test("a move's @system opens by naming the column's @system as the same fact", () => {
+    const first = firstSentence(rowsOf('@system'), 'move')
+    expect(first).toContain("column's @system")
+  })
+
+  test("a move's @gate opens by naming the model's @@gate as the same fact", () => {
+    const first = firstSentence(rowsOf('@gate'), 'move')
+    expect(first).toContain("model's @@gate")
+  })
+
+  test('explain @system prints both grains', () => {
+    const { out } = run('@system')
+    expect(out).toContain('trackingCode String @system')
+    expect(out).toContain('@@transitions(state, issue: draft -> issued @system')
+  })
+
+  test('the Move words lead does not apologize for the shared spelling', () => {
+    const ref = require('fs').readFileSync(resolve(import.meta.dir, '..', 'docs', 'reference.snapshot.md'), 'utf8')
+    const lead = ref.slice(ref.indexOf('## Move words'), ref.indexOf('### ', ref.indexOf('## Move words')))
+    expect(lead).not.toContain('answers for both')
+  })
+})

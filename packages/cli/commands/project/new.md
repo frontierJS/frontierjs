@@ -682,7 +682,7 @@ const app = createApp({
 // connection JOINS that channel the announcement reaches nobody. core/channels.ts
 // is where an app decides who listens to what.
 app.configure(channels((a) => {
-  a.channels!.on('connection', (session, conn) => joinChannels(a, session, conn))
+  a.channels.on('connection', (session, conn) => joinChannels(a, session, conn))
 }))
 
 // ─── Auth routes ──────────────────────────────────────────────────────────
@@ -724,7 +724,7 @@ const app = createApp({
 // half that is silent without it: a write is announced on the channel its
 // service declares, and reaches nobody until a connection has joined one.
 app.configure(channels((a) => {
-  a.channels!.on('connection', (session, conn) => joinChannels(a, session, conn))
+  a.channels.on('connection', (session, conn) => joinChannels(a, session, conn))
 }))
 
 ${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot
@@ -1041,7 +1041,7 @@ function makeApiCoreChannelsTs(useAuth) {
   // only reason this is not "join everything".
   const who    = (session ?? {}) as Session
   const userId = who.userId ?? who.id
-  if (userId) app.channel!(\`notifications:user:\${userId}\`).join(conn as never)
+  if (userId) app.channel(\`notifications:user:\${userId}\`).join(conn as never)
 `
     : ''
 
@@ -1091,7 +1091,7 @@ export function joinChannels(app: App, ${sessionArg}: unknown, conn: unknown): v
     // broadcast, so there is no name here to join ahead of time — an app using
     // one names the channels it wants below, by hand.
     const declared = (service as { channel?: unknown }).channel
-    if (typeof declared === 'string') app.channel!(declared).join(conn as never)
+    if (typeof declared === 'string') app.channel(declared).join(conn as never)
   }
 ${notify}}
 `
@@ -2236,7 +2236,7 @@ ${sc}
   {#if error}<div class="alert danger" role="alert"><div class="alert-content">{error}</div></div>{/if}
   {#if notice}<div class="alert success" role="status"><div class="alert-content">{notice}</div></div>{/if}
 
-  <div class="grid">
+  <div class="grid panels">
     <section class="card stack gap-sm">
       <h2 class="text-lg">Profile</h2>
       <dl class="facts">
@@ -2279,7 +2279,7 @@ ${withName ? `      <form class="stack gap-sm" onsubmit|preventDefault={saveName
 {/if}
 
 <style>
-  .grid { margin-top: var(--space-2xl) }
+  .panels { margin-top: var(--space-2xl) }
   .sessions { margin-top: var(--space-lg) }
   h1, h2, p { margin: 0 }
 </style>

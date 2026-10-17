@@ -133,7 +133,8 @@ export default createService({
   methods: [
     'find', 'get', 'create', 'patch', 'remove',
     { method: 'ship', gate: 5 },                              // above the model's read gate
-    { method: 'recordTracking', input: 'TrackingUpdate' },    // a `type` in schema.lite
+    { method: 'recordTracking', input: 'TrackingUpdate' },    // a `type` in schema.lite; or write the body as
+                                                              // defineMethod('TrackingUpdate', ctx => …) so ctx.data is typed too
   ],
 
   transactional: ['ship'],   // or true

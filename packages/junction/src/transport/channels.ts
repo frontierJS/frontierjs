@@ -1072,12 +1072,11 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
     //
     // Close every socket a given session holds.
     //
-    // A session is resolved ONCE, at upgrade, and the principal it produced is
-    // handed to every frame after that — so a change to what that session means
-    // reaches HTTP on the next request and reaches an open socket never. The
-    // case it was written for is support mode: an operator who ends an episode
-    // stops acting as the subject over HTTP and keeps acting as them down a
-    // connection nobody re-asked.
+    // The transport asks a socket's bearer again on each frame and on
+    // `http.ws.reverifySeconds` (`FJS-D1201`), so a change to what a session
+    // means reaches a quiet socket only on that interval. Support mode cannot
+    // wait for it: an operator who ends an episode stops acting as the subject
+    // at once.
     //
     // Blunt rather than careful, deliberately. Re-resolving a live connection
     // in place would mean rebuilding a principal underneath frames that are
@@ -1508,7 +1507,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
       ;(app as unknown as Record<string, unknown>).localPresence   = (channelId: string) => manager.localPresence(channelId)
       ;(app as unknown as Record<string, unknown>).localPresenceOf = (userId: string | number) => manager.localPresenceOf(userId)
 
-      const _auth = app.auth
+      const _auth = 'auth' in app ? app.auth : undefined
 
       // Pre-import service dispatch dependencies — resolved once at register,
       // not on every incoming WebSocket message.

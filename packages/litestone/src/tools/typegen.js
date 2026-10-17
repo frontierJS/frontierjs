@@ -365,6 +365,21 @@ export function generateTypeScript(schema, opts = {}) {
   }
   lines.push(`}`, ``)
 
+  // Seed `type` name → its interface: what a method's `input:` names. Emitted
+  // with the interfaces it points at, so a schema declaring none has no registry.
+  const seedTypes = schema.types ?? []
+  if (seedTypes.length) {
+    lines.push(
+      `/**`,
+      ` * Seed \`type\` name → its interface. Feeds @frontierjs/junction's SeedTypes`,
+      ` * registry, so a method's \`input:\` is checked and its \`ctx.data\` is typed.`,
+      ` */`,
+      `export interface SeedTypes {`,
+    )
+    for (const t of seedTypes) lines.push(`  ${pascal(t.name)}: ${pascal(t.name)}`)
+    lines.push(`}`, ``)
+  }
+
   if (augment === 'junction') {
     // Written only when asked for, because a module augmentation names a package:
     // emitted unconditionally it is a type error in every app that installed
@@ -382,6 +397,16 @@ export function generateTypeScript(schema, opts = {}) {
       `}`,
       ``,
     )
+    if (seedTypes.length) {
+      lines.push(
+        `type GeneratedSeedTypes = SeedTypes`,
+        ``,
+        `declare module '@frontierjs/junction' {`,
+        `  interface SeedTypes extends GeneratedSeedTypes {}`,
+        `}`,
+        ``,
+      )
+    }
   }
 
   // ── Cursor result ────────────────────────────────────────────────────────────
@@ -662,6 +687,16 @@ export interface CursorResult<T> {`,
       `}`,
       ``,
     )
+    // Junction's \`app.db\`, \`$.db\` and \`ctx.locals.db\` read this one interface.
+    // Named only on request, for the reason the ServiceTypes block gives.
+    if (augment === 'junction') {
+      lines.push(
+        `declare module '@frontierjs/junction' {`,
+        `  interface AppDb extends GeneratedLitestoneClient {}`,
+        `}`,
+        ``,
+      )
+    }
   }
 
   // ── createClient ─────────────────────────────────────────────────────────────

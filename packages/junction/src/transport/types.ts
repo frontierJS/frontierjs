@@ -15,7 +15,8 @@ export interface RawRequest {
   // The Request, for a handler that wants the fetch API (native Headers,
   // FormData) or takes a whole Request, like Better Auth or the MCP transport.
   // Its body is still readable: the transport read the original's, and this is
-  // rebuilt from the bytes it kept.
+  // rebuilt from the bytes it kept. On a `{ body: 'stream' }` route it is the
+  // original, unread.
   $req: Request
   // Full URL string including origin, path, and query
   url:  string
@@ -47,6 +48,22 @@ export interface RouteDefinition {
   paramKeys: string[]
   // compiled middleware chain
   middleware: MiddlewareFn[]
+  body?:     RouteOptions['body']
+}
+
+/**
+ * The third argument of a route registration.
+ *
+ * `body: 'stream'` skips the parse: the handler's `ctx.body` is the request's
+ * unread `ReadableStream` (or `null`), `ctx.files` is empty, and
+ * `ctx.$raw.$req` is the original Request. The `maxBodySize` parse bound does
+ * not apply, since nothing is buffered; Bun's `maxRequestBodySize` still does.
+ * A credential verifier that reads the body sees none on such a route
+ * (`FJS-D1159`).
+ */
+export interface RouteOptions {
+  body?:       'stream'
+  middleware?: MiddlewareFn[]
 }
 
 export type RouteSegment =
@@ -255,12 +272,18 @@ export interface WsData {
   locals:   Record<string, unknown>
   // The frame bounds this route enforces: `config.http.ws` with the route's
   // own `limits` laid over it.
-  bounds:   { maxFrameBytes: number; maxFramesPerSecond: number; maxInFlight: number }
+  bounds:   { maxFrameBytes: number; maxFramesPerSecond: number; maxInFlight: number; reverifySeconds: number }
   // Resolved during _wsOpen after async auth — null until then.
   // Always set before any user-facing handler is called.
   user:     SessionContext | null
-  // The credential read at upgrade, held only until _wsOpen verifies it.
+  // The credential read at upgrade. Kept past _wsOpen only when the bearer
+  // half answered, so verifySession can be asked again (`FJS-D1201`).
   credential?: string | null
+  // When the kept credential last verified, and whether a check is running.
+  verifiedAt?:  number
+  verifying?:   Promise<boolean>
+  // Set before the close a re-verify sends, so a frame racing it is dropped.
+  revoked?:     boolean
   // _wsOpen in progress; false when it refused the socket. Bun delivers frames
   // and the close while it awaits, and each waits on this (`FJS-1828`).
   opened?:  Promise<boolean>

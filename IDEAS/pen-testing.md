@@ -6,11 +6,11 @@ dated: 2026-10-17
 
 # Idea — pen testing against a standard
 
-Not behavior; see `VERIFYING.md`. Proposes OWASP ASVS 5.0 Level 2 as the requirement list `THREATS.md` grades against, OWASP WSTG as the method, and ZAP as the dynamic scan. Chapter names below are from ASVS 5.0; Step 0.2 checks every ID against the published text before one is cited.
+Not behavior; see `VERIFYING.md`. Proposes OWASP ASVS 5.0 Level 2 as the requirement list `THREATS.md` grades against, OWASP WSTG as the method, and ZAP as the dynamic scan. `docs/ASVS.md` grades every requirement in scope.
 
 ## 1. What `THREATS.md` covers today (measured)
 
-Each row's chapter is `THREATS.md`'s *ASVS* column. A signed request (B8–B10) sits under V4 (4.1.5, per-message signatures) and V12 (12.3, service-to-service authentication), not V9, which covers JWT and SAML only. Each row names a test, so these rows are the strong half.
+Each row's requirements are `THREATS.md`'s *ASVS* column. A signed request (B8–B10) answers V4.1.5 (per-message signatures) and V12.3.5 (service-to-service authentication), not V9, which covers self-contained tokens. Each row names a test, so these rows are the strong half.
 
 **Built, tested or configured, but no row:**
 
@@ -38,7 +38,11 @@ Goal: every ASVS L2 requirement is marked covered, partial or none.
 Done when: a gap sheet exists and each `THREATS.md` row cites at least one ASVS ID.
 
 - [x] 0.1 Read how `fli check`'s `threat-row` parses the table, then add an *ASVS* column (the column moves with its parser)
-- [ ] 0.2 Gap sheet: ASVS 5.0 L2, one line per requirement, covered / partial / none / n.a., each with a path
+- [x] 0.2 Gap sheet: ASVS 5.0 L2, one line per requirement, covered / partial / none / n.a., each with a path
+  - `docs/ASVS.md`. Each `THREATS.md` row now cites requirement IDs, and `threat-row` refuses a bare chapter.
+  - The grading found 28 new defects, `FJS-3185` and `FJS-3187`–`FJS-3213`. Two are S1: the second-factor attempt ceiling and TOTP replay can both be raced (`FJS-3185`), and an open WebSocket keeps its principal after a revocation (`FJS-3187`).
+
+**Done 2026-10-17.** Of 271 requirements, 120 were covered, 78 partial, 21 none and 52 n.a. The weakest chapters are V7 Session Management and V14 Data Protection, where most lines are partial or none. A fresh app's biggest exposures are scaffold defaults rather than missing mechanisms: `make:model`'s gate (`FJS-3194`), a public `/metrics` (`FJS-3191`), and a SPA document served with no security headers (`FJS-3190`).
 
 ### Phase 1 — Add rows for what already holds
 
@@ -60,6 +64,7 @@ Done when: Phase 4's scan reports no header findings.
 - [ ] 2.2 HSTS on whenever the app is served over https in production
 - [ ] 2.3 A default CSP (Q1)
 - [ ] 2.4 Document that rate limits are per process and reset on restart, in junction's docs and in B14's *Open* cell (`FJS-D1193`)
+- [ ] 2.5 Security headers on the SPA document `fli deploy` serves, which helmet never reaches (`FJS-3190`)
 
 ### Phase 3 — Probe what is unmeasured
 
@@ -67,9 +72,12 @@ Goal: each item in § 1 *Not probed* becomes a row, an `ISSUES.md` defect, or n.
 Done when: § 1's *Not probed* list is empty.
 
 - [ ] 3.1 Session rotation on login, password change and level change
+  - Probed in 0.2. Login leaves the incoming session live (`FJS-3196`). A level change is re-read on every HTTP request but not by an open socket (`FJS-3187`).
 - [ ] 3.2 Mesa output encoding in text, attributes, `href` and `style`
-- [ ] 3.3 Upload type, size and served content-type for `attachments`
+  - 0.2 graded V1.2.1 covered (`packages/mesa/test/render-ssr.test.js`). `{@html}` is a raw sink with no sanitizer (V1.3.1 none).
+- [ ] 3.3 Upload type, size and served content-type for litestone `FileStorage` (`File` columns, `@accept`) and junction's multipart parser
 - [ ] 3.4 OAuth `state` and PKCE; TOTP replay
+  - Probed in 0.2. `state` and PKCE hold (`packages/auth/test/oauth-flow.test.ts`). Sequential TOTP replay is refused, but concurrent replay is not (`FJS-3185`).
 
 ### Phase 4 — Dynamic scan as a drive
 

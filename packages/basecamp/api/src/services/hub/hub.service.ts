@@ -170,12 +170,12 @@ export default createService({
       // off `authenticated`'s membership: a connection joins that channel
       // only once it carries a session, so the channel's own length under-
       // reports anyone still connecting.
-      wsConnections:   $.app.channels?.connections.size ?? 0,
+      wsConnections:   'channels' in $.app ? $.app.channels.connections.size : 0,
       // AWAITED. `list()` is async, and `.length` on the promise is
       // undefined, which `?? 0` then turns into a confident zero — a stat
       // tile that reads "no targets registered" on a hub with twelve. Found
       // by the typechecker, not by the browser: both answers render.
-      conduitTargets:  (await $.app.conduit?.list())?.length ?? 0,
+      conduitTargets:  'conduit' in $.app ? (await $.app.conduit.list()).length : 0,
       // Subscribers, by event. `stats()` answers the count the mock's
       // "Event subscribers" tile always wanted; the bus used to expose
       // hasListeners() and nothing else, so the card stated the gap rather
@@ -184,7 +184,7 @@ export default createService({
       // and deriving it here means one shape reaches the screen.
       eventBusActive:  $.app.events.hasListeners(),
       eventBus:        $.app.events.stats(),
-      queues:          $.app.jobs!.stats(),
+      queues:          $.app.jobs.stats(),
       counts:          { workspaces, users, servers, apps, projects },
     }
   },

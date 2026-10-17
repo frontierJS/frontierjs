@@ -9,8 +9,9 @@ import { BUILD_HEADER } from '../core/build-id.ts'
 import { WS_PROTOCOL, bearerFromProtocols, withoutBearer, CREDENTIAL_HEADER, CREDENTIAL_CHANGED } from '../core/ws-auth.ts'
 import { parsePathSegments, matchPathDirect } from './router.ts'
 import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError, UnsafeIntegerError } from './body.ts'
+import type { ParsedBody } from './body.ts'
 import { serveStatic }                    from './static.ts'
-import { REFUSE, resolvePrincipal, type CredentialVerifier } from '../auth/credentials.ts'
+import { REFUSE, resolvePrincipal, resolveCaller, bearerPrincipal, type CredentialVerifier } from '../auth/credentials.ts'
 // `type` matters: StaticOptions is an interface, and importing it as a value
 // breaks any runtime that strips types rather than transpiling — Node's
 // --experimental-strip-types fails with "does not provide an export named
@@ -227,6 +228,10 @@ export interface WsLimits {
   /** Sockets in total. Default 0 — unlimited, because only an operator knows
    *  what this box can hold, and a wrong guess here refuses real users. */
   maxConnections?:      number
+  /** Seconds a socket that sends nothing keeps its principal before the
+   *  bearer is asked again (`FJS-D1201`); a frame asks it every time. Default
+   *  60. 0 asks only on a frame. */
+  reverifySeconds?:     number
 }
 
 /**
@@ -246,6 +251,7 @@ const WS_DEFAULTS = {
   maxInFlight:         32,
   maxConnectionsPerIp: 256,
   maxConnections:      0,
+  reverifySeconds:     60,
 } as const
 
 // ─── HTTP Transport ───────────────────────────────────────────────────────
@@ -264,6 +270,7 @@ export class HttpTransport {
   private _wsPerIp:     Map<string, number> = new Map()
   private _wsLimits:    Required<WsLimits>
   private _ddosGc:      ReturnType<typeof setInterval> | null = null
+  private _reverifyTick: ReturnType<typeof setInterval> | null = null
   private _wsRoutes: Array<{
     path:     string
     segments: RouteSegment[]
@@ -319,6 +326,10 @@ export class HttpTransport {
       maxFrameBytes: opts.maxBodySize ?? 256 * 1024,
       ...Object.fromEntries(Object.entries(opts.ws ?? {}).filter(([, v]) => v !== undefined)),
     } as Required<WsLimits>
+    const every = this._wsLimits.reverifySeconds
+    if (typeof every !== 'number' || !Number.isFinite(every) || every < 0) {
+      throw new Error(`http.ws.reverifySeconds must be a number of seconds, zero or more (got ${every})`)
+    }
 
     const stats = this.stats
     this._sharedHelpers = {
@@ -396,6 +407,10 @@ export class HttpTransport {
     this.router.build()
 
     setMaxQueuedBytes(this._opts.wsMaxQueued)
+
+    // Once a second, so a socket comes due within a second of its interval.
+    this._reverifyTick ??= setInterval(() => this._wsReverifyDue(), 1000)
+    this._reverifyTick.unref?.()
 
     // The generic is what types `ws` in the four handlers below. Without it Bun
     // infers `ServerWebSocket<unknown>` and every one of them is an argument
@@ -539,6 +554,10 @@ export class HttpTransport {
       this._ddosGc = null
     }
     this._ddos.clear()
+    if (this._reverifyTick) {
+      clearInterval(this._reverifyTick)
+      this._reverifyTick = null
+    }
 
     if (!this._server) return
     const server = this._server
@@ -764,9 +783,14 @@ export class HttpTransport {
     }
 
     // ── Parse body ─────────────────────────────────────────────────
-    let parsed
+    // A `{ body: 'stream' }` route is handed `req.body` unread: a parse buffers
+    // the whole body before the handler runs, so an upload larger than memory
+    // could not be a route at all (`FJS-D1159`).
+    let parsed: ParsedBody
     try {
-      parsed = await parseBody(req, this._opts.maxBodySize)
+      parsed = match.route.body === 'stream'
+        ? { type: 'stream', data: req.body, files: [], size: 0 }
+        : await parseBody(req, this._opts.maxBodySize)
     } catch (err) {
       // Only the size bound answers 413. Everything else this can throw is a
       // body the parser could not make sense of, and calling that too large
@@ -1294,6 +1318,7 @@ export class HttpTransport {
         maxFrameBytes:      routeLimits.maxFrameBytes,
         maxFramesPerSecond: routeLimits.maxFramesPerSecond,
         maxInFlight:        routeLimits.maxInFlight,
+        reverifySeconds:    routeLimits.reverifySeconds,
       },
     }
 
@@ -1369,8 +1394,9 @@ export class HttpTransport {
       ws.data.credential = null
       const headers = ws.data.headers ?? {}
       let principal: SessionContext | null | typeof REFUSE
+      let bearer = false
       try {
-        principal = await resolvePrincipal({
+        ;({ principal, bearer } = await resolveCaller({
           verifiers: this._opts.credentials,
           // The UPGRADE request's headers — the only ones a socket ever has, and
           // the same ones `withTenantDb` reads off a frame's context.
@@ -1380,7 +1406,7 @@ export class HttpTransport {
           },
           auth:  this._opts.auth,
           token,
-        })
+        }))
       } catch {
         principal = REFUSE
       }
@@ -1407,6 +1433,10 @@ export class HttpTransport {
         return false
       }
       ws.data.user = principal
+      if (bearer && principal) {
+        ws.data.credential = token
+        ws.data.verifiedAt = Date.now()
+      }
     }
 
     const ctx = this._buildWsContext(ws)
@@ -1525,10 +1555,66 @@ export class HttpTransport {
     l.inFlight++
     try {
       if (!await ws.data.opened) return
+      if (!await this._wsReverify(ws)) return
       const ctx = this._buildWsContext(ws)
       await ws.data.handlers.message?.(ctx, message)
     } catch (err) { this._wsFailed(err) }
     finally { l.inFlight-- }
+  }
+
+  // ── Asking the bearer again ───────────────────────────────────────
+  //
+  // A logout, a revoke from another device, an expiry or a role change reaches
+  // HTTP on the next request and reached an open socket never: it went on
+  // receiving graded broadcasts as the principal it upgraded with (`FJS-3187`).
+  // Every frame asks again, at HTTP's cost, and the tick asks for a socket that
+  // only receives (`FJS-D1201`). An unchanged answer keeps the OLD object,
+  // because channels memoizes a cohort key on it.
+
+  /** Resolves false when the socket was closed for it, so the frame is dropped. */
+  private _wsReverify(ws: Bun.ServerWebSocket<WsData>): Promise<boolean> {
+    if (ws.data.revoked) return Promise.resolve(false)
+    const token = ws.data.credential
+    if (!token || !this._opts.auth) return Promise.resolve(true)
+    // A burst of frames shares one check.
+    return ws.data.verifying ??= this._wsAsk(ws, token).finally(() => { ws.data.verifying = undefined })
+  }
+
+  private async _wsAsk(ws: Bun.ServerWebSocket<WsData>, token: string): Promise<boolean> {
+    let fresh: SessionContext | null
+    try {
+      fresh = await bearerPrincipal(this._opts.auth!, token, { host: ws.data.headers.host ?? null, headers: ws.data.headers })
+    } catch (err) {
+      // 1011 and not 4001: a provider that cannot answer has not refused, and
+      // 4001 is the code the client stops reconnecting on.
+      this._wsFailed(err)
+      return this._wsEnd(ws, 1011, 'reverify_failed')
+    }
+    if (fresh && Bun.deepEquals(fresh, ws.data.user)) {
+      ws.data.verifiedAt = Date.now()
+      return true
+    }
+    // The upgrade's split (`FJS-1830`): the app's socket refuses a session that
+    // is gone, and a raw route's reconnect is anonymous.
+    const refused = !fresh && !!ws.data.handlers[SESSION_SOCKET]
+    return this._wsEnd(ws, refused ? 4001 : 1001, refused ? 'auth_failed' : 'session changed')
+  }
+
+  private _wsEnd(ws: Bun.ServerWebSocket<WsData>, code: number, reason: string): false {
+    ws.data.revoked = true
+    // A socket already closing throws on a second close.
+    try { ws.close(code, reason) } catch {}
+    return false
+  }
+
+  private _wsReverifyDue(): void {
+    const now = Date.now()
+    for (const ws of this._sockets) {
+      const every = ws.data.bounds.reverifySeconds
+      if (!every || !ws.data.credential || ws.data.verifying) continue
+      if (now - (ws.data.verifiedAt ?? 0) < every * 1000) continue
+      void this._wsReverify(ws)
+    }
   }
 
   // ── A cookie that changed after a socket's upgrade ────────────────

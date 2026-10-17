@@ -39,7 +39,9 @@ const RE_CONTENT_DISPOSITION_FILENAME = /filename="([^"]*)"/i
 
 // ─── Body parse result ────────────────────────────────────────────────────
 
-export type BodyType = 'json' | 'urlencoded' | 'multipart' | 'xml' | 'text' | 'binary' | 'empty'
+// `stream` is never parseBody's answer: it is a route's `{ body: 'stream' }`,
+// whose `data` is the unread `req.body`.
+export type BodyType = 'json' | 'urlencoded' | 'multipart' | 'xml' | 'text' | 'binary' | 'empty' | 'stream'
 
 export interface ParsedBody {
   type:  BodyType

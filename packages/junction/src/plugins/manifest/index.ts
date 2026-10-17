@@ -183,6 +183,6 @@ function buildServices(app: App): ServiceManifest[] {
 }
 
 function buildChannels(app: App): ChannelManifest[] {
-  const list = app.channels?.stats?.().channelList ?? []
+  const list = ('channels' in app ? app.channels.stats?.().channelList : undefined) ?? []
   return list.map(c => ({ name: c.name, connections: c.size }))
 }

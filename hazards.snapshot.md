@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 176**.
+Graded: **13 of 177**.
 
 ## data — 3 of 61
 
@@ -125,7 +125,7 @@ Graded: **13 of 176**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 63
+## api — 6 of 64
 
 ### `ctx` and the call
 
@@ -176,6 +176,7 @@ Graded: **13 of 176**.
 | The client's address is declared, never discovered. | **none** |
 | An API on a sibling subdomain needs no cookie `Domain`; the cross-origin list is `cors.origins` + `credentials` + `csrf.origins` | **none** |
 | Above 128 MB, a declared length over `http.maxBodySize` is refused by Bun, not by junction | **none** |
+| A `{ body: 'stream' }` route bounds nothing a chunked sender writes, and its credential verifier sees an empty body | **none** |
 
 ### Sockets
 

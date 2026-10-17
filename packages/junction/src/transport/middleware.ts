@@ -10,7 +10,7 @@
 //   HttpTransport._injectCtxHeaders() reads these after the handler returns
 //   and merges them into the final response before it leaves the server.
 
-import type { MiddlewareFn, TransportContext } from './types.ts'
+import type { MiddlewareFn, RouteOptions, TransportContext } from './types.ts'
 import type { App }                            from '../core/app.ts'
 import { Forbidden, toFrameworkError }          from '../core/errors.ts'
 import { clientIp, requestMeta, inboundCorrelationId, mintCorrelationId, PROTOCOL_CALL_HEADERS, PROTOCOL_HTTP_ONLY_HEADERS } from '../core/context.ts'
@@ -219,9 +219,9 @@ function patchRouterWithMiddleware(app: App, mw: MiddlewareFn): void {
     ;(router as unknown as Record<string, Function>)[method] = (
       path:    string,
       handler: Function,
-      existing?: MiddlewareFn[]
+      opts:    RouteOptions = {}
     ) => {
-      return original(path, handler, [mw, ...(existing ?? [])])
+      return original(path, handler, { ...opts, middleware: [mw, ...(opts.middleware ?? [])] })
     }
   }
 }

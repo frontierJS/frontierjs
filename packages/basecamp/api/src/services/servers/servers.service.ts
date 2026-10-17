@@ -50,16 +50,12 @@ import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../core/server-
 import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions } from '../../providers/compute/index.ts'
 import { sendVia }               from '../../providers/compute/accounts.ts'
 import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
-import { mintEnrollToken, cloudInit, installCommand, ENROLL_WINDOW_MS } from '../../providers/compute/enrollment.ts'
+import { mintEnrollToken, cloudInit, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
+import { issueEnrollmentFor, useHost, findHost } from '../../core/host-machine.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { listSshHosts, probeSshHost } from '../../core/local-ssh.ts'
 import { outbound, outpostFor } from '../../providers/outpost.ts'
 
-/** The port an outpost listens on. `packages/cli/core/ports.js` — project 8
- *  (outpost), backend. Named once: it reaches a machine twice, in the cloud-init
- *  a provisioned box boots with and in the command a person pastes, and two
- *  literals is two places for them to disagree. */
-const OUTPOST_PORT = 8180
 import type { TargetDescriptor } from '@frontierjs/conduit'
 import type { ProviderKind, ServerEventKind } from '../../../../db/schema.d.ts'
 import { keyScope } from '../api-keys/scopes.ts'
@@ -189,6 +185,8 @@ export default createService({
     // of this fleet, the same weight as buying or destroying one, which are
     // `@gate(5)` moves. It is not a move, so the level is declared here.
     { method: 'issueEnrollment', gate: LEVELS.ADMINISTRATOR },
+    { method: 'useHost', gate: LEVELS.ADMINISTRATOR },
+    { method: 'host', read: true },
     // The operator's own ~/.ssh/config, on a Basecamp running on their
     // machine and nowhere else (`core/local-ssh.ts`). Reads, so a keyed
     // retry runs them again rather than replaying a stale listing. At
@@ -624,7 +622,7 @@ export default createService({
 
     // The token crosses to the job in the DISPATCH rather than being re-read,
     // because the row holds only its hash and nothing can recover it.
-    await $.app.jobs!.dispatch('server:provision',
+    await $.app.jobs.dispatch('server:provision',
       { serverId: server.id, workspaceId: ws(), enrollToken: enroll.token },
       // The job's PRIMARY KEY. A second dispatch for this machine is a no-op
       // for all time — which is what makes a double-click cost one machine.
@@ -742,7 +740,7 @@ export default createService({
     await recordEvent(id, 'destroy_requested',
       `Asked ${connector.label} to destroy this machine`, { requested_by: actor() })
 
-    await $.app.jobs!.dispatch('server:destroy', { serverId: id, workspaceId: ws() },
+    await $.app.jobs.dispatch('server:destroy', { serverId: id, workspaceId: ws() },
       { id: `server:destroy:${id}` })
 
     return getScoped('server', 'Server', id)
@@ -810,42 +808,22 @@ export default createService({
     const server = await db().server.findFirst({ where: { id } })
     if (!server) throw new NotFound(`Server '${id}' not found`)
 
+    // The token is returned ONCE and stored nowhere it can be read back, the
+    // rule an invitation link follows.
+    return issueEnrollmentFor(db(), id, actor())
+  },
 
-    // The token's HASH is what the row keeps. `@guarded` refuses a scoped
-    // client here, and it is right to: what is being written is a credential
-    // artifact rather than the caller's data, so it is a second statement made
-    // as the application.
-    const enroll = mintEnrollToken()
-    await db().asSystem().server.update({
-      where: { id },
-      data:  { enrollTokenHash: enroll.hash, enrollExpiresAt: enroll.expiresAt },
-    })
+  // ── host / useHost — the box this Basecamp runs on ──
+  //
+  // `core/host-machine.ts` owns the row; `fli deploy` reaches the same one from
+  // inside the container (FJS-D1191). `useHost` answers `enrolled` for a box
+  // that has checked in and mints nothing.
+  async host() {
+    return (await findHost(db())) ?? null
+  },
 
-    await recordEvent(id, 'enrollment_issued',
-      'An enrollment token was issued for this machine',
-      { issued_by: actor(), expires_at: enroll.expiresAt.toISOString() })
-
-    // The token is returned ONCE and stored nowhere it can be read back. The
-    // same rule an invitation link follows, for the same reason.
-    //
-    // `token` is returned BESIDE the command rather than only inside it. The
-    // command is derived from the token, so a caller that has to recover it
-    // with a regex over a shell string is re-deriving the input from the
-    // output — and the one caller that must is an installer rather than a
-    // person, which is the half `install.sh` covers on a real machine and
-    // nothing covers anywhere else. It discloses nothing the command did not:
-    // the value is already in that string, single-use, and behind @gate(5).
-    return {
-      command:   installCommand({
-        serverId:    id,
-        basecampUrl: env.API_URL,
-        token:       enroll.token,
-        outpostPort: OUTPOST_PORT,
-      }),
-      token:     enroll.token,
-      expiresAt: enroll.expiresAt.toISOString(),
-      windowMs:  ENROLL_WINDOW_MS,
-    }
+  async useHost() {
+    return useHost(db(), { actor: actor() })
   },
 
   async reconcile() {

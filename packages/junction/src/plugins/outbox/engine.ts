@@ -127,7 +127,7 @@ export async function enqueueOutbox(
       `declare transactional: ['${String(ctx.method)}'] on the '${ctx.service}' service.`
     )
 
-  if (!ctx.app?.outbox)
+  if (!(ctx.app && 'outbox' in ctx.app && ctx.app.outbox))
     throw new Error(
       `ctx.enqueue('${name}') in '${at}': no outbox relay is installed, so this row would never be delivered. ` +
       `app.configure(outbox()) — it needs app.jobs, so configure caravan too.`
@@ -381,7 +381,7 @@ export async function deliverOutbox(
   app:  App,
   opts: DeliverOptions = {}
 ): Promise<DeliverResult> {
-  const jobs = app.jobs as unknown as JobDispatcher | undefined
+  const jobs = ('jobs' in app ? app.jobs : undefined) as unknown as JobDispatcher | undefined
   if (typeof jobs?.dispatch !== 'function') return { delivered: 0, failed: 0 }
 
   // A named client is the post-commit kick: the call already knows which
@@ -615,7 +615,7 @@ export async function outboxPass(
   opts:        DeliverOptions = {},
   retentionMs: number = 0,
 ): Promise<DeliverResult & OutboxCounts> {
-  const jobs   = app.jobs as unknown as JobDispatcher | undefined
+  const jobs   = ('jobs' in app ? app.jobs : undefined) as unknown as JobDispatcher | undefined
   const maxTry = opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS
   const before = new Date(Date.now() - retentionMs)
 

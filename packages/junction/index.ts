@@ -39,9 +39,9 @@ export type { FieldError, FieldErrorBuilder }      from './src/core/field-errors
 export { createService, ServiceRegistry, callService,
          SERVICE_OPTION_KEYS, SERVICE_RUNTIME_KEYS, isCustomMethod, customMethodNames,
          READ_ONLY_METHODS, resolveMethodSelection, serviceMethodNames,
-         methodEntryName, collectMethodInputs, collectMethodOutputs, serviceAccessor,
+         methodEntryName, defineMethod, collectMethodInputs, collectMethodOutputs, serviceAccessor,
          isMethodAllowed, allowedMethodNames, scopeRefusal, requiredScope } from './src/core/service.ts'
-export type { Service, ServiceDefinition, ServiceDefinitionValue, CacheDeclaration, MethodSelection, MethodEntry, MethodDeclaration, ServiceScope, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
+export type { Service, ServiceDefinition, ServiceDefinitionValue, CacheDeclaration, MethodSelection, MethodEntry, MethodDeclaration, SeedTypes, SeedTypeName, MethodContext, ServiceScope, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
 
 // ─── Hooks ────────────────────────────────────────────────────────────────
 export {

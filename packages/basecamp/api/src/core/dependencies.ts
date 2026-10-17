@@ -152,7 +152,7 @@ export async function checkNames(
   app: App,
   wanted: { name: string; installed: string[] }[],
 ): Promise<CheckResult[]> {
-  const conduit = (app as any).conduit as { send: Send } | undefined
+  const conduit = ('conduit' in app ? app.conduit : undefined) as { send: Send } | undefined
   if (!conduit) throw new Error('dependency check: app.conduit is not configured')
   const send: Send = (req) => conduit.send(req)
 

@@ -93,7 +93,7 @@ function outpostExecutor(app: App, serverId: string, target: string): Executor {
     serverId,
     target,
     async call(path, body, opts) {
-      const sent = await app.conduit!.send({
+      const sent = await app.conduit.send({
         target,
         method: 'POST',
         path,
@@ -125,7 +125,7 @@ export function machineSaid(raw: unknown): string | null {
 
 /** The outpost on this one machine, when it holds a pinned target. */
 async function reachable(app: App, serverId: string): Promise<Executor | null> {
-  if (!app.conduit) return null
+  if (!('conduit' in app)) return null
   const target = `outpost:${serverId}`
   return (await app.conduit.resolve(target).catch(() => null))?.pinned_cert
     ? outpostExecutor(app, serverId, target)

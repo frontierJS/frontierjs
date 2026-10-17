@@ -582,10 +582,12 @@ CREATE TABLE IF NOT EXISTS "user" (
   "name" TEXT,
   "emailVerified" INTEGER NOT NULL DEFAULT 0,
   "role" TEXT NOT NULL DEFAULT 'user',
+  "kind" TEXT NOT NULL DEFAULT 'user',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "isStaff" INTEGER NOT NULL DEFAULT 0,
-  "isSystemAdmin" INTEGER NOT NULL DEFAULT 0
+  "isSystemAdmin" INTEGER NOT NULL DEFAULT 0,
+  CHECK ("kind" IN ('user', 'bot', 'peer'))
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "metric_point" (

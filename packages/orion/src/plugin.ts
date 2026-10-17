@@ -129,7 +129,7 @@ export function orion(options: OrionOptions = {}): Plugin {
     requires: ["caravan"],
 
     register(app: App) {
-      if (!app.jobs) throw new Error("[orion] needs Caravan configured before it: app.configure(createCaravan(…))")
+      if (!('jobs' in app)) throw new Error("[orion] needs Caravan configured before it: app.configure(createCaravan(…))")
       const tenants = (app as unknown as { tenants?: { schema?: { models: Array<{ name: string }> } } }).tenants
       const db      = app.db as any
       if (!tenants && (!db || typeof db.asSystem !== "function")) {
@@ -154,7 +154,7 @@ export function orion(options: OrionOptions = {}): Plugin {
 
       const ai: IAIModels = {
         complete: (actor, model, req) => asOwner(actor, () => {
-          if (!app.ai) throw new Error("This app registered no AI models: createApp({ ai })")
+          if (!('ai' in app)) throw new Error("This app registered no AI models: createApp({ ai })")
           return app.ai.get(model).complete(req)
         }),
       }
@@ -163,7 +163,7 @@ export function orion(options: OrionOptions = {}): Plugin {
       // the owner and the tenant are stated rather than read from the scope.
       const jobs: IJobDispatcher = {
         dispatch: (actor, job, data, { id }) =>
-          app.jobs!.dispatch(job, data, { id, actor: actorOf(actor).userId, tenant: actorOf(actor).tenant }),
+          app.jobs.dispatch(job, data, { id, actor: actorOf(actor).userId, tenant: actorOf(actor).tenant }),
       }
 
       const notifier: INotifier = {

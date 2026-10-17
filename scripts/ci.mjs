@@ -1767,8 +1767,12 @@ function mutate() {
     const ms     = Date.now() - started
     const result = parseJsonOr(run.stdout ?? '', null)
     if (!result) {
-      fail(`${app} — litestone mutate did not report\n      Run \`cd ${app} && bunx litestone mutate --schema db/schema.lite\`.`,
-           { stdout: run.stdout ?? '', stderr: run.stderr ?? '' }, { key: app, ms })
+      // A run killed by a signal or the timeout prints nothing on either stream,
+      // and the exit is then the only thing that says which.
+      const exit = run.error ? `spawn failed: ${run.error.message}`
+                 : run.signal ? `killed by ${run.signal}` : `exited ${run.status}`
+      fail(`${app} — litestone mutate did not report (${exit})\n      Run \`cd ${app} && bunx litestone mutate --schema db/schema.lite\`.`,
+           { stdout: run.stdout ?? '', stderr: run.stderr ?? '', ci: exit }, { key: app, ms })
       continue
     }
 

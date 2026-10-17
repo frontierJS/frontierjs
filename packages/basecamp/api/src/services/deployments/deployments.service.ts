@@ -139,7 +139,7 @@ async function queueRelease(target: { id: string; environmentId: string; type: s
   // both off the request in scope, and the handler declares
   // `runsAsCaller` — so this work runs as the person who asked for it,
   // in the workspace they asked in (`FJS-384`).
-  await $.app.jobs!.dispatch(deploymentRun, {
+  await $.app.jobs.dispatch(deploymentRun, {
     deployment_id: deployment.id,
     app_id:        target.id,
     workspace_id:  ws(),
@@ -429,7 +429,7 @@ export default createService({
       })),
     })
 
-    await $.app.jobs!.dispatch(deploymentRun, {
+    await $.app.jobs.dispatch(deploymentRun, {
       deployment_id: replacement.id,
       app_id:        being.appId,
       workspace_id:  ws(),

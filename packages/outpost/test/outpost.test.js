@@ -513,6 +513,8 @@ describe('what the machine is asked to do', () => {
     const [argv] = fake.calls
     expect(argv.slice(0, 1)).toEqual(['systemd-run'])
     expect(argv).toEqual(expect.arrayContaining(['--pipe', '--wait', '--collect']))
+    // Without it a non-root drive raises a polkit password dialog on the desktop.
+    expect(argv).toContain('--no-ask-password')
     // A killed systemd-run client leaves its unit running, so the unit carries the bound.
     expect(argv).toContain('--property=RuntimeMaxSec=60')
     expect(argv.slice(argv.indexOf('--'))).toEqual(['--', 'sh', '-c', 'apt-get -y upgrade'])
