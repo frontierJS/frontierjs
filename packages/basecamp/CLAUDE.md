@@ -219,7 +219,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           or a key's: `NOT_FOR_AGENTS` and `OFF_LIMITS` in
           services/api-keys/scopes.ts, proved by verify:mcp
           jobs/ is what runs unattended — a file per job, autoloaded by
-          caravan (`jobsDir`), and the default export is the dispatch handle
+          caravan from beside the app root, and the default export is the dispatch handle
           jobs/{recipe,cleanup}-run are both ways this app acts on a MACHINE —
           one shape, opposite safeguards; jobs/outpost-run.ts is their half
           providers/ is who the app SPEAKS to — `index.ts` is nine (eight

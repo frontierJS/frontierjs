@@ -60,6 +60,7 @@ beforeAll(async () => {
   })
 
   app = createApp({
+    root: join(import.meta.dir, "fixtures"),
     db:   env.db,
     ai,
     auth: createStubAuth({ users: [
@@ -74,7 +75,7 @@ beforeAll(async () => {
   app.configure(channels())
   const send = async (m: any) => { mailed.push({ to: m.to, subject: m.subject }); return { id: String(mailed.length), message: "captured" } }
   app.configure(mailerPlugin({ send, batch: (ms: any[]) => Promise.all(ms.map(send)) } as never))
-  app.configure(notificationsPlugin({ db: env.db, notifications: join(import.meta.dir, "fixtures", "notifications") }))
+  app.configure(notificationsPlugin({ db: env.db }))
   // An app's own job, which records who it ran as.
   app.jobs.handle("leads.touch", async (job: any) => {
     touched.push({ id: job.id, actorId: job.actorId, principal: app.principal()?.userId ?? null, data: job.data })

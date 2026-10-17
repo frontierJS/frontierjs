@@ -153,7 +153,7 @@ describe('audit 1.5 — per-recipient grading of the WS push', () => {
   test('createTestApp has no channels — the push is skipped and the row still lands', async () => {
     const app: any = await createTestApp()
     const h = await makeApp()
-    app.configure(notificationsPlugin({ db: h.db, notifications: false }))
+    app.configure(notificationsPlugin({ db: h.db }))
     await app._startForTest()
     await app.notify({ id: 'u-carol' }, new (class extends Notification {
       static type = 'OnlyInApp'

@@ -3,7 +3,7 @@
 // packages/junction/src/email/system/smtp.ts
 //
 // Implements ESMTP over:
-//   - Plain TCP + STARTTLS upgrade  (port 587, default)
+//   - Plain TCP + STARTTLS upgrade  (port 587, default; refused without it)
 //   - Implicit TLS                  (port 465, auto-detected)
 //
 // No external dependencies. Uses Bun.connect() throughout.
@@ -228,6 +228,8 @@ function parseResponse(raw: string): { response: SmtpResponse; consumed: number 
 
 // ─── Session ─────────────────────────────────────────────────
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
+
 async function openSession(config: SmtpConfig): Promise<{
   /** Answers the Message-ID the message went out under. */
   sendMessage: (msg: SmtpMessage) => Promise<string>
@@ -379,7 +381,24 @@ async function openSession(config: SmtpConfig): Promise<{
   // ── STARTTLS ──
   // Only attempt if we're not already on TLS and server advertises it
 
-  if (!useTls && capabilities.some(c => c === 'STARTTLS' || c.startsWith('STARTTLS '))) {
+  const offersStartTls = capabilities.some(c => c === 'STARTTLS' || c.startsWith('STARTTLS '))
+
+  // Credentials never cross a plaintext connection. A server that offers no
+  // STARTTLS -- or one whose STARTTLS line an attacker on the path stripped from
+  // the EHLO reply -- was sent AUTH in the clear, and base64 is not encryption.
+  // A loopback host is exempt, by the list Go's net/smtp PlainAuth uses: those
+  // bytes never reach a network.
+  if (!useTls && !offersStartTls && !LOOPBACK_HOSTS.has(config.host)) {
+    try { await command('QUIT') } catch { /* refusing regardless */ }
+    socket.end()
+    throw new SmtpError(
+      `${config.host}:${config.port} did not offer STARTTLS, so the credentials ` +
+      'would have been sent unencrypted. Use implicit TLS (port 465 or tls: true) ' +
+      'or a server that offers STARTTLS.'
+    )
+  }
+
+  if (!useTls && offersStartTls) {
     const starttls = await command('STARTTLS')
     assertCode(starttls, 220, 'STARTTLS')
 
@@ -679,12 +698,12 @@ function buildMimeMessage(msg: SmtpMessage): string {
         `--${part}`,
         // The filename reaches a header, so it is graded like one.
         `Content-Type: ${assertHeaderValue(a.type ?? 'application/octet-stream', 'attachment.type')}; ` +
-          `name="${assertHeaderValue(a.filename, 'attachment.filename')}"`,
+          mimeParam('name', a.filename),
         'Content-Transfer-Encoding: base64',
         ...(a.cid === undefined
-          ? [`Content-Disposition: attachment; filename="${assertHeaderValue(a.filename, 'attachment.filename')}"`]
+          ? [`Content-Disposition: attachment; ${mimeParam('filename', a.filename)}`]
           : [`Content-ID: <${assertContentId(a.cid)}>`,
-             `Content-Disposition: inline; filename="${assertHeaderValue(a.filename, 'attachment.filename')}"`]),
+             `Content-Disposition: inline; ${mimeParam('filename', a.filename)}`]),
         '',
         base64Lines(a.content),
       ]),
@@ -758,7 +777,23 @@ function encodeMimeHeader(value: string): string {
   return words.map(w => `=?UTF-8?B?${Buffer.from(w).toString('base64')}?=`).join(' ')
 }
 
-const HEADER_LINE_SOFT = 78     // RFC 5322 § 2.1.1 SHOULD
+/**
+ * A header parameter holding a caller's text. The quoted form escapes `"` and
+ * `\` -- left raw, a `"` ends the value early and the rest reads as further
+ * parameters. A name that is not printable ASCII adds the RFC 2231 `name*=`
+ * form beside an ASCII fallback, since a raw 8-bit byte in a header has no
+ * defined charset.
+ */
+function mimeParam(name: string, value: string): string {
+  assertHeaderValue(value, `attachment.${name}`)
+  const quote = (s: string) => `"${s.replace(/[\\"]/g, '\\$&')}"`
+  if (/^[\x20-\x7e]*$/.test(value)) return `${name}=${quote(value)}`
+  const fallback = Array.from(value, ch => /^[\x20-\x7e]$/.test(ch) ? ch : '_').join('')
+  const pct = encodeURIComponent(value.toWellFormed()).replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+  return `${name}=${quote(fallback)}; ${name}*=UTF-8''${pct}`
+}
+
+const HEADER_LINE_SOFT = 78    // RFC 5322 § 2.1.1 SHOULD
 const HEADER_LINE_MAX  = 998    // RFC 5322 § 2.1.1 MUST
 
 /**

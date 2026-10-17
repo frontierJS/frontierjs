@@ -22,12 +22,12 @@
  */
 
 import { describe, test, expect, afterEach } from 'bun:test'
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join }   from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { createApp } from '../src/core/app.ts'
-import { MIDDLEWARE_CONFIG_KEYS, PLUGINS_CONFIG_KEYS, SERVICES_CONFIG_KEYS } from '../src/config/index.ts'
+import { MIDDLEWARE_CONFIG_KEYS, PLUGINS_CONFIG_KEYS } from '../src/config/index.ts'
 
 // ─── The table ────────────────────────────────────────────────────────────
 // One row per declarable key, naming how this file proves it is read. A row
@@ -83,14 +83,16 @@ afterEach(async () => {
 function configDir(file: Record<string, unknown>): string {
   const dir = mkdtempSync(join(tmpdir(), 'fjs-cfg-'))
   dirs.push(dir)
-  writeFileSync(join(dir, 'junction.config.js'), `export default ${JSON.stringify(file, null, 2)}\n`)
-  return dir
+  mkdirSync(join(dir, 'src'))
+  mkdirSync(join(dir, 'config'))
+  writeFileSync(join(dir, 'config', 'junction.config.js'), `export default ${JSON.stringify(file, null, 2)}\n`)
+  return join(dir, 'src')
 }
 
 async function serve(file: Record<string, unknown>, config: Record<string, unknown> = {}) {
   // Port 0 and read back, so parallel suites cannot collide.
   const app = createApp({
-    configPath: configDir(file),
+    root:       configDir(file),
     config:     { port: 0, ...config } as never,
     logLevel:   'silent',
   })
@@ -143,7 +145,6 @@ describe('every declarable key is graded', () => {
   test('each exported key list is the interface it reads for', () => {
     expect(([...MIDDLEWARE_CONFIG_KEYS] as string[]).sort()).toEqual(declaredKeys('JunctionMiddlewareConfig').sort())
     expect(([...PLUGINS_CONFIG_KEYS] as string[]).sort()).toEqual(declaredKeys('JunctionPluginsConfig').sort())
-    expect(([...SERVICES_CONFIG_KEYS] as string[]).sort()).toEqual(declaredKeys('JunctionServicesConfig').sort())
   })
 
   // The control. A scan that matched nothing would pass both directions above

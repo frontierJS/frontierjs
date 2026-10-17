@@ -45,7 +45,7 @@ if (!await must($, api.up, {
 // a 502 from a page that loaded perfectly.
 const web = await startServer($, {
   name:   'web',
-  script: 'dev:web',
+  script: 'web',
   cwd:    $.config.appDir,
   env:    { WEB_PORT: String($.config.webPort), FLI_PORT_BE: String($.config.apiPort) },
   port:   $.config.webPort,
@@ -54,7 +54,7 @@ const web = await startServer($, {
 
 if (!await must($, web.up, {
   likely:    'vite exited, or refused the port — it is strictPort, so it does not move',
-  reproduce: `cd ${$.config.appDir} && WEB_PORT=${$.config.webPort} bun run dev:web`,
+  reproduce: `cd ${$.config.appDir} && WEB_PORT=${$.config.webPort} bun run web`,
   detail:    serverLog(web),
 })) return
 

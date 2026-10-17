@@ -240,10 +240,13 @@ const CLEAN = {
   // A job that READS a model declaring \`@@commitment\` and makes none of its
   // moves, so \`commitment-swept\` runs here and is answered.
   'api/src/jobs/leads-digest.job.ts':
-    "export default defineJob('leads-digest', async (ctx) => {\n" +
-    "  const open = await ctx.app.db.lead.count({ where: { status: 'qualified' } })\n" +
-    "  console.log(open)\n" +
-    "}, { cron: '0 8 * * 1' })\n",
+    "export default defineJob({\n" +
+    "  cron: '0 8 * * 1',\n" +
+    "  handler: async (ctx) => {\n" +
+    "    const open = await ctx.app.db.lead.count({ where: { status: 'qualified' } })\n" +
+    "    console.log(open)\n" +
+    "  },\n" +
+    "})\n",
   'api/src/services/leads.service.ts':
     "import { createService } from '@frontierjs/junction'\n" +
     "export default createService({})\n" +
@@ -1373,6 +1376,25 @@ describe('the silent config hazards', () => {
     })
     const { findings } = only(root, 'vite-strict-port')
     expect(findings.map(f => relative(root, f.file))).toEqual(['widgets/config/vite.config.js'])
+  })
+
+  test('a surface script under dev:<dir> with none named for the dir is an error (FJS-D1083)', () => {
+    const root = tree('surface-script', {
+      ...CLEAN,
+      'api/index.ts': '',
+      'web/index.html': '',
+      'package.json': JSON.stringify({ scripts: { 'dev:api': 'bun run api/index.ts', 'dev:web': 'cd web && vite', web: 'vite' } }),
+    })
+    const { findings } = only(root, 'surface-script')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/^`dev:api` starts api\/ and no `api` script does/)
+
+    const named = tree('surface-script-named', {
+      ...CLEAN,
+      'api/index.ts': '',
+      'package.json': JSON.stringify({ scripts: { api: 'bun run api/index.ts' } }),
+    })
+    expect(only(named, 'surface-script').findings).toEqual([])
   })
 
   // Port 0 as well as a fixed one: port 0 fixed the collision and left the
@@ -3498,10 +3520,13 @@ model Order {
 }
 `
   const SWEEP =
-    "export default defineJob('abandoned-orders-sweep', async (ctx) => {\n" +
-    "  const { data } = await ctx.app.service('orders').find({ status: 'pending' })\n" +
-    "  for (const o of data) await ctx.app.service('orders').call('cancel', o.id, null)\n" +
-    "}, { cron: '0 3 * * *' })\n"
+    "export default defineJob({\n" +
+    "  cron: '0 3 * * *',\n" +
+    "  handler: async (ctx) => {\n" +
+    "    const { data } = await ctx.app.service('orders').find({ status: 'pending' })\n" +
+    "    for (const o of data) await ctx.app.service('orders').call('cancel', o.id, null)\n" +
+    "  },\n" +
+    "})\n"
 
   test('the sweep a commitment replaced is a finding, though it names another move', () => {
     const root = tree('cs-sweep', { 'db/schema.lite': ORDER, 'api/src/jobs/abandoned-orders-sweep.job.ts': SWEEP })
@@ -3509,7 +3534,7 @@ model Order {
     expect(findings).toHaveLength(1)
     expect(findings[0].severity).toBe('warn')
     expect(findings[0].message).toMatch(/Order\.abandon \(it names 'cancel'\)/)
-    expect(findings[0].line).toBe(3)
+    expect(findings[0].line).toBe(5)
   })
 
   test('the move on a RELATED model is graded on that model', () => {
@@ -3532,9 +3557,9 @@ model Invoice {
 }
 `,
       'api/src/jobs/subscriptions-dun.job.ts':
-        "export default defineJob('subscriptions-dun', async () => {\n" +
+        "export default defineJob({ handler: async () => {\n" +
         "  for (const s of await sys.subscription.findMany({})) await sys.subscription.transition(s.id, 'lapse')\n" +
-        "})\n",
+        "} })\n",
     })
     const { findings } = only(root, 'commitment-swept')
     expect(findings).toHaveLength(1)
@@ -3545,26 +3570,26 @@ model Invoice {
   // schema, because a rule that stopped reading the schema would pass all four.
   test('a job moving the model somewhere else is silent', () => {
     const root = tree('cs-other', { 'db/schema.lite': ORDER, 'api/src/jobs/orders-ship.job.ts':
-      "export default defineJob('orders-ship', async (ctx) => { await ctx.app.db.order.transition(ctx.data.id, 'ship') })\n" })
+      "export default defineJob({ handler: async (ctx) => { await ctx.app.db.order.transition(ctx.data.id, 'ship') } })\n" })
     expect(only(root, 'commitment-swept').findings).toEqual([])
   })
 
   test("a job naming the state but not the model is silent", () => {
     const root = tree('cs-no-model', { 'db/schema.lite': ORDER, 'api/src/jobs/bookings-tidy.job.ts':
-      "export default defineJob('bookings-tidy', async (ctx) => { await ctx.app.db.booking.updateMany({ data: { status: 'cancelled' } }) })\n" })
+      "export default defineJob({ handler: async (ctx) => { await ctx.app.db.booking.updateMany({ data: { status: 'cancelled' } }) } })\n" })
     expect(only(root, 'commitment-swept').findings).toEqual([])
   })
 
   test('a service making the move is somebody asking for it early, and silent', () => {
     const root = tree('cs-service', { 'db/schema.lite': ORDER, 'api/src/services/orders.service.ts': SWEEP,
-      'api/src/jobs/orders-ship.job.ts': "export default defineJob('orders-ship', async () => {})\n" })
+      'api/src/jobs/orders-ship.job.ts': "export default defineJob({ handler: async () => {} })\n" })
     expect(only(root, 'commitment-swept').findings).toEqual([])
   })
 
   test('the move named only in a comment is silent', () => {
     const root = tree('cs-comment', { 'db/schema.lite': ORDER, 'api/src/jobs/orders-report.job.ts':
       "// the old sweep called service('orders').call('cancel') here\n" +
-      "export default defineJob('orders-report', async (ctx) => ctx.app.db.order.count({}))\n" })
+      "export default defineJob({ handler: async (ctx) => ctx.app.db.order.count({}) })\n" })
     expect(only(root, 'commitment-swept').findings).toEqual([])
   })
 })

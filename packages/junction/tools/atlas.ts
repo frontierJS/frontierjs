@@ -24,7 +24,7 @@
 // JSON carries the structure the prose drops.
 //
 // Usage:
-//   junction atlas --app api/app.ts [--services api/services]
+//   junction atlas --app api/app.ts
 //   junction atlas --app api/app.ts --pretty
 
 import { getFlag, flag, fatal, loadApp, writeOut, stopApp } from './app-module.ts'
@@ -34,7 +34,7 @@ if (import.meta.main) {
   const appPath = getFlag('app')
   if (!appPath) fatal('junction atlas needs --app <module> — the module exposing the app or a factory for it')
 
-  const app   = await loadApp(appPath, getFlag('export'), getFlag('services'))
+  const app   = await loadApp(appPath, getFlag('export'))
   const model = describeAppModel(app)
 
   // `loadApp` already moved the build's own chatter to stderr, so stdout holds

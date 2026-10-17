@@ -137,9 +137,11 @@ worker:
   S26: `const queue  = new Queue('email', { connection })
 const worker = new Worker('email', handler, { connection })
 // plus a separate node-cron in yet another process`,
-  S27: `export default defineJob('send-email', async (job) => {
-  await mailer.send(job.data)
-}, { maxAttempts: 5, retryDelay: [60_000, 300_000] })`,
+  S27: `export default defineJob({
+  handler: async (job) => { await mailer.send(job.data) },
+  maxAttempts: 5,
+  retryDelay: [60_000, 300_000],
+})`,
   S28: `await app.jobs.dispatch('send-email', { to: lead.email })
 app.jobs.schedule('digest', '0 9 * * *', sendDigest)`,
   S29: `await db.notification.create({ data: { userId, title: 'Payment received', … } })

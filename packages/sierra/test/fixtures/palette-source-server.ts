@@ -65,7 +65,7 @@ await sys.secret.create({ data: { id: 's1', name: 'quasar launch codes' } })
 
 const app = createApp({
   db,
-  config: { port, services: { dir: '/nonexistent' } },
+  config: { port },
   auth: {
     verifySession: async (token: string) => token === TOKEN
       ? { userId: 'ana', userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }

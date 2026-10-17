@@ -41,7 +41,7 @@ beforeAll(async () => {
   const { createApp, defaultConfig } = await import('../index.ts')
   app = createApp({
     db,
-    config: { port: 0, services: { dir: '/nonexistent' },
+    config: { port: 0,
               http: { ...defaultConfig.http, drainTimeout: 50 } },
   } as never)
 

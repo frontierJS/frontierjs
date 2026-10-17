@@ -34,7 +34,6 @@ async function banner(env: string | undefined, debug = false) {
     config: {
       port: 0,
       debug,
-      services: { dir: '/nonexistent' },
       http: { ...defaultConfig.http, drainTimeout: 200 },
     },
   })

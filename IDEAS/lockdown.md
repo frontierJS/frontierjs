@@ -65,7 +65,7 @@ packages/ui/components packages/cli/commands` returns only `aliasesOf` (held for
 subpath.
 
 - [ ] 1.1 Kit prop aliases out: `color`, `type`, `variant`, `icon` and the legacy map in `utils.js tone()` (`FJS-1140`); Button gets `treatment` and loses `variant` (`FJS-2943`)
-- [ ] 1.2 Duplicate generators out: `api:service`, `api:model`, `web:resource`, `web:route`, `web:component`, `make:schema`, `db:schema` (`FJS-2944`, `FJS-1130`)
+- [x] 1.2 Duplicate generators out: `api:service`, `api:model`, `web:resource`, `web:route`, `web:component`, `make:schema`, `db:schema` (`FJS-2944`, `FJS-1130`)
 - [x] 1.3 Junction back-compat residue out: `skip`, `PaginatedResult`, the compat re-exports, the `junction.call` alias, the `errors.ts` TODO (`FJS-2957`); the `channels:` shim in notifications (`FJS-2960`)
 - [ ] 1.4 One spelling per subpath in mesa, ui, config, css; `fli ws:exports` fails a pair (`FJS-2964`); junction drops its 15 internal mirrors and the `/email` footer, orion gains `.` (`FJS-2958`)
 - [ ] 1.5 Scaffold truth: `ENCRYPTION_KEY` always written (`FJS-2945`); `make:model` writes the reference's `updatedAt` (`FJS-2952`); `make:component` / `make:resource` lose the false `@/` line, raw hex and `on:click` (`FJS-2970`, `FJS-1379`); `@required`'s catalog entry matches its parser (`FJS-2690`)

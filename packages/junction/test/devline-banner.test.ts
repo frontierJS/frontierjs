@@ -36,7 +36,6 @@ beforeAll(async () => {
         port: 0,
         hostname: '0.0.0.0',
         apiPrefix: '/api',
-        services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },
     })

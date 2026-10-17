@@ -57,7 +57,6 @@ export type {
 
 export type {
   NotificationRegistry,
-  NotificationsDirResolution,
 } from './loader.ts'
 
 export type {

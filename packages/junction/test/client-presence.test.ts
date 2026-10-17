@@ -52,7 +52,7 @@ afterEach(async () => {
 async function serve(port: number) {
   const app: any = createApp({
     config: {
-      port, services: { dir: '/nonexistent' },
+      port,
       http: { ...defaultConfig.http, drainTimeout: 250 },
     },
     logLevel: 'silent',

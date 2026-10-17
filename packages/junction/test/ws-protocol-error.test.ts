@@ -48,7 +48,7 @@ function client() {
 
 beforeAll(async () => {
   app = createApp({
-    config: { port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 250 } },
+    config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 250 } },
   })
   app.services.register(createService({
     name: 'probe', methods: ['find', 'get'],
@@ -115,6 +115,34 @@ describe('a frame the server cannot act on (FJS-2147)', () => {
     c.send({ type: 'service_call', id: '3', service: 'probe', method: 'get', meta: { id: 'abc' } })
     expect(await c.wait(() => c.frames.filter(f => f?.type === 'service_result').length === 3)).toBe(true)
     expect(c.frames.some(f => f?.type === 'pong')).toBe(true)
+    expect(c.protocolErrors()).toEqual([])
+    c.close()
+  })
+})
+
+// An integer past 2^53 is rounded by the frame's JSON.parse before any validator
+// sees it, the socket's counterpart of the body refusal (`FJS-2152`, `FJS-2922`).
+describe('a frame integer past 2^53 (FJS-2922)', () => {
+  it('is refused as unsafe_integer naming the path, answering the call by its id, and does NOT run', async () => {
+    const c = client()
+    await c.ready
+    const before = ran
+    c.send('{"type":"service_call","id":"9","service":"probe","method":"get","data":{"properties":{"bytes":9007199254740993}}}')
+    expect(await c.wait(() => c.protocolErrors().length > 0)).toBe(true)
+    const e = c.protocolErrors()[0]
+    expect(e.error.code).toBe('unsafe_integer')
+    expect(e.error.message).toContain('data.properties.bytes')
+    expect(e.id).toBe('9')
+    await new Promise(r => setTimeout(r, 100))
+    expect(ran).toBe(before)
+    c.close()
+  })
+
+  it('passes a string of digits, a safe integer and a float — the control', async () => {
+    const c = client()
+    await c.ready
+    c.send('{"type":"service_call","id":"10","service":"probe","method":"get","data":{"a":"9007199254740993","b":9007199254740991,"c":1.5e300}}')
+    expect(await c.wait(() => c.frames.some(f => f?.type === 'service_result' && f.id === '10'))).toBe(true)
     expect(c.protocolErrors()).toEqual([])
     c.close()
   })

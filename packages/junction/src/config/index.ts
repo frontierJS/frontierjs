@@ -322,19 +322,10 @@ export interface JunctionPluginsConfig {
   devtools?: boolean | { port?: number; hostname?: string; maxEntries?: number }
 }
 
-export interface JunctionServicesConfig {
-  // Where the *.service.ts files are, resolved against the working directory.
-  // Absent, junction probes `./services` then `./src/services` beside the ENTRY
-  // — see `resolveServicesDir`. Stating one is a statement: a path that is not
-  // there is reported, never probed around.
-  dir?: string
-}
-
 export interface JunctionCaravanConfig {
   db?:           string
   busyTimeout?:  number
   synchronous?:  'NORMAL' | 'FULL'
-  jobsDir?:      string
   pollInterval?: number
   cleanupAfter?: number
   drainTimeout?: number
@@ -348,7 +339,6 @@ export interface JunctionConfig {
   app?:        Partial<AppConfig>
   middleware?: JunctionMiddlewareConfig
   plugins?:    JunctionPluginsConfig
-  services?:   JunctionServicesConfig
   caravan?:    JunctionCaravanConfig
 
   /**
@@ -376,7 +366,7 @@ export interface JunctionConfig {
  * checks (`FJS-940`, `FJS-D483`).
  */
 export const JUNCTION_SECTIONS = [
-  'app', 'middleware', 'plugins', 'services', 'caravan', 'attachments',
+  'app', 'middleware', 'plugins', 'caravan', 'attachments',
 ] as const
 
 /**
@@ -398,15 +388,10 @@ export const PLUGINS_CONFIG_KEYS = [
   'health', 'manifest', 'openapi', 'devtools',
 ] as const satisfies ReadonlyArray<keyof JunctionPluginsConfig>
 
-export const SERVICES_CONFIG_KEYS = [
-  'dir',
-] as const satisfies ReadonlyArray<keyof JunctionServicesConfig>
-
 /** Section → the keys junction reads in it. `app` and `attachments` are open shapes and have no entry. */
 const OWN_SECTION_KEYS: Record<string, readonly string[]> = {
   middleware: MIDDLEWARE_CONFIG_KEYS,
   plugins:    PLUGINS_CONFIG_KEYS,
-  services:   SERVICES_CONFIG_KEYS,
 }
 
 /** The candidate nearest to `key` by edit distance, or null when none is close. */
@@ -483,10 +468,11 @@ function editDistance(a: string, b: string): number {
 
 // ─── Config loader ────────────────────────────────────────────────────────
 
-export async function loadConfig(configDir = './config'): Promise<AppConfig & { _junction?: JunctionConfig }> {
+/** `null` is an app with no root: defaults and the environment, no file. */
+export async function loadConfig(configDir: string | null): Promise<AppConfig & { _junction?: JunctionConfig }> {
+  if (configDir === null) return { ...deepClone(defaultConfig) as AppConfig, ...envOverrides() }
 
-  // Resolve to absolute path from CWD — dynamic import() resolves relative to
-  // the importing file (deep in junction package), not the app root
+  // Absolute, because dynamic import() resolves against this file, not the app.
   const absConfigDir = resolve(process.cwd(), configDir)
 
   const env = process.env.NODE_ENV ?? 'development'

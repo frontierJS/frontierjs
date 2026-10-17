@@ -50,7 +50,7 @@ const boom  = defineJob({ name: 'flaky-job', maxAttempts: 1, timeout: 5000, hand
 const sweep = defineJob({ name: 'nightly-sweep', cron: '0 3 * * *', handler: async () => 1 })
 
 const app = createApp({ config: { port: ${APP_PORT},
-  services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 200 } } })
+  http: { ...defaultConfig.http, drainTimeout: 200 } } })
 
 const queue = createCaravan({ db: '${join(dir, 'jobs.db')}', pollInterval: 50 })
 queue.handle(boom); queue.handle(sweep)

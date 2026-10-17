@@ -1,6 +1,6 @@
-// api/jobs/courier-book.job.ts — the work that happens after the response.
+// api/src/jobs/courier-book.job.ts — the work that happens after the response.
 //
-// Autoloaded by @frontierjs/caravan from `jobsDir` (api/jobs). The file name
+// Autoloaded by @frontierjs/caravan from `jobs/` beside the app root. The file name
 // is the name a dispatch uses.
 //
 // ─── Why this is a job and not part of the `ship` method ──────────────────

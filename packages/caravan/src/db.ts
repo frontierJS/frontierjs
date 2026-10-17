@@ -734,9 +734,10 @@ export function buildStatements(db: Database) {
   `)
 
   // ── Cancel ──────────────────────────────────────────────────────────────────
-  // Allows cancelling pending OR running jobs. A running job still completes its
-  // current attempt; the status guard on markDone/markFailed is what keeps the
-  // cancellation.
+  // Allows cancelling pending OR running jobs. Interrupting a running handler is
+  // its ctx.signal, aborted by the worker; a handler that ignores the signal runs
+  // on, and the status guard on markDone/markFailed is what stops its late finish
+  // from overwriting the cancelled row.
 
   const cancel = wrap<void, { id: string; now: number }>(db.prepare(`
     UPDATE jobs SET

@@ -74,7 +74,7 @@ beforeAll(async () => {
 
   app = createApp({
     db, auth,
-    config:   { port: 0, services: { dir: '/nonexistent' } },
+    config:   { port: 0 },
     logLevel: 'silent',
   }) as never
 
@@ -238,7 +238,7 @@ describe('a @system move is offered only where a method lifts it (FJS-1925)', ()
     const db = await createClient({ db: ':memory:', schema: SCHEMA, encryptionKey: '0'.repeat(64) }) as Record<string, never>
     own = createApp({
       db, auth: createStubAuth({ users: [{ id: 'staff', isAdmin: true }, { id: 'shopper' }] }),
-      config:   { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config:   { port: 0, database: { url: '', log: false } },
       logLevel: 'silent',
     }) as never
     own.services.register(createService({ name: 'purchases', model: 'Order' }))
@@ -820,7 +820,7 @@ describe('a declared ui.root that cannot be read refuses the boot (FJS-D955)', (
     const db  = await createClient({ db: ':memory:', schema: SCHEMA, encryptionKey: '0'.repeat(64) }) as Record<string, never>
     const own = createApp({
       db, auth: createStubAuth({ users: [] }),
-      config:   { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config:   { port: 0, database: { url: '', log: false } },
       logLevel: 'silent',
     }) as never as { configure(p: unknown): void; start(): Promise<void>; stop?(): Promise<void> }
     own.configure(mcpPlugin({ ui: { root } }))

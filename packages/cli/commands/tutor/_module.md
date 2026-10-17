@@ -260,7 +260,7 @@ const defaultSource = () =>
 // and the port is dead. So the step that starts them is declared `ephemeral`
 // and runs every time, and this is what it calls.
 //
-// Detached, in a process group of its own, because `bun run dev:web` spawns
+// Detached, in a process group of its own, because `bun run web` spawns
 // vite as a child and killing the parent alone leaves the port held — which the
 // next run then refuses at step 1, blaming the person for a process this
 // tutorial started.
@@ -462,7 +462,7 @@ const ensureWeb = async ($) => {
 
   const web = await startServer($, {
     name:   'web',
-    script: 'dev:web',
+    script: 'web',
     cwd:    $.config.appDir,
     env:    { WEB_PORT: String(port), FLI_PORT_BE: String($.config.apiPort) },
     port,

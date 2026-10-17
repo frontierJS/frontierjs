@@ -1004,7 +1004,7 @@ describe('start over a database that is not the schema\'s', () => {
     const entries: Array<{ level: string; message: string }> = []
     const app = createApp({
       db,
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
       logger: createLogger({ level: 'debug', writers: [(e) => entries.push(e as never)] }),
     } as never)
     await app.start()

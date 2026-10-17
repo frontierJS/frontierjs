@@ -130,10 +130,9 @@ const auth: IAuth = {
 
 // ─── Create app ───────────────────────────────────────────────────────────
 
-// autoload: false — this demo registers its services manually below;
-// without it, default auto-discovery would find ./services and (harmlessly
-// but noisily) skip them as duplicates.
-const app = createApp({ config, auth, autoload: false })
+// No `root`: this demo registers its services by hand below, and a root
+// would load ./services a second time.
+const app = createApp({ config, auth })
 
 // ─── Plugins ──────────────────────────────────────────────────────────────
 

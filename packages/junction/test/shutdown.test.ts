@@ -35,7 +35,6 @@ async function serve(http: Record<string, unknown> = {}, routes?: (app: ReturnTy
   const app = createApp({
     config: {
       port:     0,
-      services: { dir: '/nonexistent' },
       http,
     },
   })
@@ -186,7 +185,7 @@ describe('shutdown says what it is doing (FJS-693)', () => {
 
   test('readiness answers 503 while draining, with Connection: close', async () => {
     const { healthPlugin } = await import('../src/transport/health.ts')
-    const app  = createApp({ config: { port: 0, services: { dir: '/nonexistent' } } })
+    const app  = createApp({ config: { port: 0 } })
     app.configure(healthPlugin())
     await app.start()
     const port = app.http.port as number
@@ -229,7 +228,7 @@ describe('shutdown says what it is doing (FJS-693)', () => {
     const ran: string[] = []
     const app = createApp({
       config: {
-        port: 0, services: { dir: '/nonexistent' },
+        port: 0,
         shutdown: { pluginTimeout: 60 },
       },
     })
@@ -252,7 +251,7 @@ describe('shutdown says what it is doing (FJS-693)', () => {
     const ran: string[] = []
     const app = createApp({
       config: {
-        port: 0, services: { dir: '/nonexistent' },
+        port: 0,
         shutdown: { pluginTimeout: 500 },
       },
     })
@@ -267,7 +266,7 @@ describe('shutdown says what it is doing (FJS-693)', () => {
 
   test('a plugin shutdown that throws is logged and the rest still run', async () => {
     const ran: string[] = []
-    const app = createApp({ config: { port: 0, services: { dir: '/nonexistent' } } })
+    const app = createApp({ config: { port: 0 } })
     app.configure({ name: 'ok',     register() {}, shutdown() { ran.push('ok') } })
     app.configure({ name: 'throws', register() {}, shutdown() { throw new Error('boom') } })
     await app.start()
@@ -280,7 +279,7 @@ describe('shutdown says what it is doing (FJS-693)', () => {
     const mine = () => {}
     process.on('unhandledRejection', mine)
     try {
-      const app = createApp({ config: { port: 0, services: { dir: '/nonexistent' } } })
+      const app = createApp({ config: { port: 0 } })
       await app.start()
       expect(process.listenerCount('unhandledRejection')).toBe(1)
       await app.stop()
@@ -298,7 +297,7 @@ describe('shutdown says what it is doing (FJS-693)', () => {
       rejection: process.listenerCount('unhandledRejection'),
       exception: process.listenerCount('uncaughtException'),
     }
-    const app = createApp({ config: { port: 0, services: { dir: '/nonexistent' } } })
+    const app = createApp({ config: { port: 0 } })
     await app.start()
     expect(process.listenerCount('unhandledRejection')).toBe(before.rejection + 1)
     expect(process.listenerCount('uncaughtException')).toBe(before.exception + 1)
@@ -312,7 +311,7 @@ describe('shutdown says what it is doing (FJS-693)', () => {
     const before = process.listenerCount('unhandledRejection')
     const app = createApp({
       config: {
-        port: 0, services: { dir: '/nonexistent' },
+        port: 0,
         shutdown: { crashHandlers: false },
       },
     })
@@ -331,7 +330,7 @@ describe('stop() and the crash path (FJS-1875)', () => {
     // `stop()` stops writing it. Read from a plugin's shutdown, which runs
     // after the transport has stopped, so the flag has to have been set first.
     const seen: { app?: boolean; at?: string } = {}
-    const app = createApp({ config: { port: 0, services: { dir: '/nonexistent' } } })
+    const app = createApp({ config: { port: 0 } })
     app.configure({
       name: 'witness', register() {},
       shutdown(a: typeof app) { seen.app = a.draining },
@@ -353,7 +352,7 @@ describe('stop() and the crash path (FJS-1875)', () => {
     const before = process.listeners('unhandledRejection')
     const app = createApp({
       config: {
-        port: 0, services: { dir: '/nonexistent' },
+        port: 0,
         shutdown: { timeout: 60, pluginTimeout: 600 },
       },
     })

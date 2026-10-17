@@ -12,7 +12,7 @@
 // against the process's working directory, so the queue opened `db/jobs.db`
 // beside whatever directory the command was typed in — a second, empty queue
 // on every run from anywhere but the app root, with nothing said (`FJS-449`'s
-// class). `api/src/app.ts` states `configPath` for the same reason.
+// class).
 import { fileURLToPath } from 'node:url'
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url))
@@ -48,7 +48,6 @@ export default {
   // `admin: { secret }` is the option that stops it being public.
   caravan: {
     db:      here('../../db/jobs.db'),
-    jobsDir: here('../src/jobs'),
     admin:   true,
     queues: {
       default:    { concurrency: 2 },

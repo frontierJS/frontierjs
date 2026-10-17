@@ -50,11 +50,7 @@ app.configure(mailerPlugin(createResendMailer({
 app.configure(notificationsPlugin({
   db,
 
-  // Absent, `notifications/` and `src/notifications/` are probed beside the
-  // entry. State it when the entry is not the app — a test runner and a drive
-  // that imports the app module both make themselves the entry, and a probe
-  // that finds nothing leaves every definition unnamed.
-  notifications: new URL('./notifications', import.meta.url).pathname,
+  // `notifications/` loads from beside `createApp({ root: import.meta.url })`.
 
   transports: {
     email: { mailer: 'default' },       // uses app.mail

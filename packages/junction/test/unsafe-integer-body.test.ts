@@ -39,7 +39,7 @@ describe('a body integer past 2^53', () => {
   it('is refused over HTTP with a 400 naming the path, and a string of digits is stored as sent', async () => {
     const seen: unknown[] = []
     const app = createApp({
-      config: { port: 0, services: { dir: '/nonexistent' } },
+      config: { port: 0 },
     } as never)
     app.services.register(createService({
       name: 'events', methods: ['create'],
@@ -53,6 +53,7 @@ describe('a body integer past 2^53', () => {
       body:    '{"properties":{"bytes":9007199254740993}}',
     }))
     expect(bad.status).toBe(400)
+    expect(bad.headers.get('content-type')).toBe('text/plain; charset=utf-8')
     expect(await bad.text()).toContain('properties.bytes')
     expect(seen).toEqual([])
 

@@ -44,6 +44,36 @@ describe('session fixation', () => {
     expect(me.status).toBe(200)
     expect(me.body.email).toBe(b.email)
   })
+
+  // FJS-3196: V7.2.4 -- a login ends the session the request arrived with.
+  test('a login that arrives carrying a session ends that session', async () => {
+    const a = await person('a'), b = await person('b')
+    const la = await json(cookieApp, 'POST', '/auth/login', { email: a.email, password: a.password })
+    const sa = cookieValue(la, 'session')!
+
+    await json(cookieApp, 'POST', '/auth/login', { email: b.email, password: b.password }, withCookie(sa))
+    expect(await h.auth.verifySession(sa)).toBeNull()
+  })
+
+  test('a bearer login that arrives carrying a token ends that token', async () => {
+    const a = await person('a')
+    const first = await json(bearerApp, 'POST', '/auth/login', { email: a.email, password: a.password })
+    const old = first.body.token as string
+
+    const second = await json(bearerApp, 'POST', '/auth/login', { email: a.email, password: a.password },
+      { authorization: `Bearer ${old}` })
+    expect(second.body.token).not.toBe(old)
+    expect(await h.auth.verifySession(old)).toBeNull()
+    expect(await h.auth.verifySession(second.body.token)).not.toBeNull()
+  })
+
+  test('a login carrying a dead token still signs in', async () => {
+    const a = await person('a')
+    const res = await json(bearerApp, 'POST', '/auth/login', { email: a.email, password: a.password },
+      { authorization: 'Bearer no-such-token' })
+    expect(res.status).toBe(200)
+    expect(res.body.token).toBeTruthy()
+  })
 })
 
 describe('cookie attributes', () => {

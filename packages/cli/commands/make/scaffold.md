@@ -167,8 +167,7 @@ export default createService({
 // <script module>, and the model's default form below it.
 //
 // What a generated Resource IS lives in `core/resource-template.js`, shared with
-// `fli make:resource` and `fli web:resource` — three commands wrote the same
-// file three times and had already drifted (Invariant 4).
+// `fli make:resource` (Invariant 4).
 const { resourceFile, servicePlural } =
   await import(resolve(global.fliRoot, 'core/resource-template.js'))
 

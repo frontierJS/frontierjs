@@ -79,9 +79,7 @@ import { env }              from './core/env.ts'
 const appRoot = fileURLToPath(new URL('../../', import.meta.url))
 const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), 'jobs.db')
 
-const jobsDir = fileURLToPath(new URL('./jobs', import.meta.url))
-
-app.configure(createCaravan({ db: jobsDb, jobsDir }))  // the outbox needs a queue
+app.configure(createCaravan({ db: jobsDb }))  // the outbox needs a queue
 app.configure(outbox())
 
 // Then, in a service that declares \`transactional:\`

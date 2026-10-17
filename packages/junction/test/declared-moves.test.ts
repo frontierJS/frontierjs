@@ -57,7 +57,7 @@ beforeAll(async () => {
   const { createApp, defaultConfig } = await import('../index.ts')
   app = createApp({
     db,
-    config: { port: 0, services: { dir: '/nonexistent' },
+    config: { port: 0,
               http: { ...defaultConfig.http, drainTimeout: 50 } },
   } as never)
 
@@ -180,7 +180,7 @@ describe('the Data boundary grades the move', () => {
   test('a methods: list that names it with no method written refuses start(), by name', async () => {
     const svc = buildService({ name: 'shelved', model: 'Todo', methods: ['get', 'archive'] })
     const a = (await import('../index.ts')).createApp({
-      db, config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      db, config: { port: 0, database: { url: '', log: false } },
     } as never)
     a.services.register(svc)
     expect(svc._authoringFindings!.join('\n')).toContain(`'archive'`)
@@ -269,7 +269,7 @@ model Project {
     const { createApp, defaultConfig } = await import('../index.ts')
     const a = createApp({
       db: pdb,
-      config: { port: 0, services: { dir: '/nonexistent' },
+      config: { port: 0,
                 http: { ...defaultConfig.http, drainTimeout: 50 } },
     } as never)
     const svc = buildService({ name: 'projects', model: 'Project' })

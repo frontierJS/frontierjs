@@ -10,17 +10,15 @@ A queue is a plugin, and it is configured the way every other one is:
 ```text
 import { createCaravan } from '@frontierjs/caravan'
 
-app.configure(createCaravan({ jobsDir: join(import.meta.dir, 'jobs') }))
+app.configure(createCaravan())
 ```
 
 `app.jobs` exists from here on, and job statistics are added to `/metrics`
 without anything asking for them.
 
-Two details worth having now rather than the first time they bite. **The
-directory is absolute**, derived from this file rather than written as `./jobs`:
-a relative path resolves against the process's working directory, so an app
-started from anywhere but its own root loads no jobs at all and every dispatch
-is a job that silently never runs. And **the database opens on first use**, at
+Two details worth having now rather than the first time they bite. **The jobs
+are the `jobs/` folder beside `createApp({ root: import.meta.url })`**, so the
+call names no directory. And **the database opens on first use**, at
 `db/jobs.db`, so nothing is spent by an app that never queues anything.
 
 The queue is its own SQLite file rather than a table in the app's database. That
@@ -60,7 +58,6 @@ if (!src.includes('createCaravan')) {
 
   const last = imports[imports.length - 1]
   src = src.slice(0, last.index + last[0].length)
-    + "\nimport { join }             from 'node:path'"
     + "\nimport { createCaravan }    from '@frontierjs/caravan'"
     + src.slice(last.index + last[0].length)
 
@@ -68,10 +65,8 @@ if (!src.includes('createCaravan')) {
     CONFIGURE,
     '',
     '// ─── Background work ──────────────────────────────────────────────────────',
-    '// app.jobs from here on. jobsDir is ABSOLUTE: a relative path resolves',
-    '// against the working directory, so an app started from anywhere but its',
-    '// own root loads no jobs and every dispatch silently never runs.',
-    "app.configure(createCaravan({ jobsDir: join(import.meta.dir, 'jobs') }))",
+    '// app.jobs from here on; *.job.ts files load from jobs/ beside the root.',
+    'app.configure(createCaravan())',
   ].join('\n'))
 
   writeFileSync(appTs, src, 'utf8')

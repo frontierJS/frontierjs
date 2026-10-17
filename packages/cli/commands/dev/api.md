@@ -14,8 +14,7 @@ flags:
 ---
 
 Starts the one surface. A `api/` with its own `package.json` runs its own
-`dev`; otherwise the app's script for the surface runs at the root — `api` or
-`dev:api`, whichever the app declares. Running `dev` from inside `api/` there
+`dev`; otherwise the app's `api` script runs at the root. Running `dev` from inside `api/` there
 would reach the app's `dev`, which starts every surface.
 
 <script>
@@ -48,7 +47,7 @@ const row = appPorts(root, { name: manifest.name, scripts: manifest.scripts })
   .find(r => r.surface === 'api')
 
 if (!row?.script) {
-  log.error(`No script starts api/ here — declare \`api\` or \`dev:api\` in ${resolve(root, 'package.json')}`)
+  log.error(`No script starts api/ here — declare \`api\` in ${resolve(root, 'package.json')}`)
   process.exit(1)
 }
 

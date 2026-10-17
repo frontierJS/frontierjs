@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 180**.
+Graded: **13 of 181**.
 
 ## data — 3 of 62
 
@@ -126,7 +126,7 @@ Graded: **13 of 180**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 66
+## api — 6 of 67
 
 ### `ctx` and the call
 
@@ -187,6 +187,7 @@ Graded: **13 of 180**.
 | Never call `ws.send()` directly. | **none** |
 | `app.ws` is the raw door: no `connected`, no `{type:'error'}`, a refused frame closes `1008`, and the path takes `apiPrefix` | **none** |
 | A `removed` frame goes only to a reader the row's BEFORE-image admitted | **none** |
+| An upgrade carrying an Origin is 403 unless the csrf list names it or its host is `Host` | **none** |
 
 ### Secrets and the log line
 
@@ -232,7 +233,7 @@ Graded: **13 of 180**.
 | A job attempt has no bound unless one is declared, and `oldestRunningMs` is how you see the ones that do not. | **none** |
 | Caravan's `unique` is a lock on work IN FLIGHT, not an idempotency key. | **none** |
 | A restored database's outbox sends nothing it already held until an operator says so | **none** |
-| A job in `jobsDir` is named by its file and declares its own schedule. | **none** |
+| A job in `jobs/` is named by its file and declares its own schedule. | **none** |
 | A cache value is JSON, and what JSON would LOSE is refused at `set()`. | **none** |
 | The docs page is hand-written HTML with two caller-supplied values in it. | **none** |
 | A battery names a vendor in a comment and never in a call | **none** |

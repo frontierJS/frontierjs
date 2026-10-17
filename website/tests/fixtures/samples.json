@@ -74,7 +74,7 @@
   "export default createService({\n  channel: 'leads',   // the declared broadcast target\n})\n// name and model come from the filename",
   "# docker-compose.yml\nredis:\n  image: redis:7\nworker:\n  command: node dist/worker.js   # a second deploy target",
   "const queue  = new Queue('email', { connection })\nconst worker = new Worker('email', handler, { connection })\n// plus a separate node-cron in yet another process",
-  "export default defineJob('send-email', async (job) => {\n  await mailer.send(job.data)\n}, { maxAttempts: 5, retryDelay: [60_000, 300_000] })",
+  "export default defineJob({\n  handler: async (job) => { await mailer.send(job.data) },\n  maxAttempts: 5,\n  retryDelay: [60_000, 300_000],\n})",
   "await app.jobs.dispatch('send-email', { to: lead.email })\napp.jobs.schedule('digest', '0 9 * * *', sendDigest)",
   "await db.notification.create({ data: { userId, title: 'Payment received', … } })\nawait sendgrid.send({ to: user.email, subject: 'Payment received', html: render(…) })\nio.to(`user:${userId}`).emit('notification', { title: 'Payment received' })\n\n// three wordings, one of which is now out of date\n// and no per-user preference unless you add a fourth thing",
   "class PaymentReceived extends Notification {\n  via(user)     { return user.notificationPreferences ?? ['inApp', 'email'] }\n  toInApp(user) { return inApp().title('Payment received')… }\n  toEmail(user) { return mail().subject('Payment received')… }\n}",

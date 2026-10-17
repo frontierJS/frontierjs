@@ -115,15 +115,15 @@ describe('two files claiming one job name', () => {
   })
 })
 
-describe('jobsDir wired through createCaravan().start()', () => {
-  it('start() autoloads handlers and they can process a dispatch', async () => {
+describe('jobs/ beside the app root, loaded at boot()', () => {
+  it('boot() autoloads handlers and they can process a dispatch', async () => {
     const caravan = createCaravan({
       db:           ':memory:',
       pollInterval: 10,
-      jobsDir:      FIXTURES,
       queues:       { default: { concurrency: 2 }, email: { concurrency: 1 } },
     })
 
+    await caravan.boot!({ root: resolve(FIXTURES, '..') })
     await caravan.start()
 
     // The autoloaded 'send-email' handler declares queue 'email'; dispatch

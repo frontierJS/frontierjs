@@ -79,13 +79,13 @@ describe('create', () => {
 
   test('fills the column from the session', async () => {
     session.user = { userId: 'usr_9' }
-    await createResource('events', 'id', { model: 'Event' }).save({ name: 'Intro' }, { mode: 'create' })
+    await createResource('events',{ model: 'Event' }).save({ name: 'Intro' }, { mode: 'create' })
     expect(_calls[0]).toMatchObject({ name: 'Intro', hostId: 'usr_9' })
   })
 
   test('a blank seed from make() is replaced, a stated value is not', async () => {
     session.user = { userId: 'usr_9' }
-    const events = createResource('events', 'id', { model: 'Event' })
+    const events = createResource('events',{ model: 'Event' })
     await events.save({ name: 'A', hostId: '' }, { mode: 'create' })
     await events.save({ name: 'B', hostId: 'usr_2' }, { mode: 'create' })
     expect(_calls[0].hostId).toBe('usr_9')
@@ -93,7 +93,7 @@ describe('create', () => {
   })
 
   test('with no session nothing is invented, and the boundary refuses', async () => {
-    await createResource('events', 'id', { model: 'Event' }).save({ name: 'Intro' }, { mode: 'create' })
+    await createResource('events',{ model: 'Event' }).save({ name: 'Intro' }, { mode: 'create' })
     expect('hostId' in _calls[0]).toBe(false)
   })
 })
@@ -118,18 +118,18 @@ describe('options() under x-pick-where', () => {
 
   test('the picker asks for the caller\'s rows, the claim filled from the session', async () => {
     session.user = { userId: 'usr_9' }
-    await createResource('bookings', 'id', { model: 'Booking' }).options('scheduleId', { reload: true })
+    await createResource('bookings',{ model: 'Booking' }).options('scheduleId', { reload: true })
     expect(_finds[0]).toMatchObject({ hostId: 'usr_9' })
   })
 
   test('a filter the caller states wins over the derived one', async () => {
     session.user = { userId: 'usr_9' }
-    await createResource('bookings', 'id', { model: 'Booking' }).options('scheduleId', { query: { hostId: 'usr_2' }, reload: true })
+    await createResource('bookings',{ model: 'Booking' }).options('scheduleId', { query: { hostId: 'usr_2' }, reload: true })
     expect(_finds[0].hostId).toBe('usr_2')
   })
 
   test('with no session nothing is invented and the boundary decides', async () => {
-    await createResource('bookings', 'id', { model: 'Booking' }).options('scheduleId', { reload: true })
+    await createResource('bookings',{ model: 'Booking' }).options('scheduleId', { reload: true })
     expect('hostId' in _finds[0]).toBe(false)
   })
 })

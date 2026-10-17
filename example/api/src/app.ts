@@ -209,33 +209,9 @@ const auth = perShopAuth(shops, DEFAULT_SHOP, authOptions, createLitestoneAuth(d
 // ─── App ──────────────────────────────────────────────────────────────────
 
 const app = createApp({
-  // ── Where the services are, stated rather than probed ──────────────────
-  //
-  // `resolveServicesDir` probes `./services` then `./src/services` beside the
-  // ENTRY file, and under a test runner the entry is the TEST FILE. So a drive
-  // that imports this module to start the app in its own process — which is
-  // what `verify:collect` has to do, because a conduit target is registered in
-  // `boot()` and an unstarted app has none — got an app with four services and
-  // no route for the rest. A missing directory is a silent no-op: the app
-  // boots, `/health` answers, and every service route is a 404.
-  //
-  // An absolute URL rather than a relative path, because a relative one is
-  // resolved against the process's working directory and the whole point is
-  // that this file cannot know what started it.
-  autoload: new URL('./services', import.meta.url).pathname,
-
-  // ── Where the config is, for the same reason ───────────────────────────
-  //
-  // The default is `./api/config` resolved against the CWD, so this app read
-  // its own config only when the command was typed at the app root. From
-  // `api/` it looked for `api/api/config`, found nothing, and booted on
-  // junction's defaults — with `caravan: { admin: true }` never applied, so
-  // the /api/jobs* routes were absent from an app that plainly mounts them
-  // (`FJS-431`'s shape, and the reason `scripts/ci-allowances.json` had to
-  // name a second surface snapshot that disagreed with this one by six
-  // routes). Anchored here, every `junction <tool> --app` runs from wherever
-  // the artefact it writes lives.
-  configPath: new URL('../config', import.meta.url).pathname,
+  // services/, routes/, jobs/, notifications/ beside this file, ../config
+  // above it (`FJS-D1080`).
+  root: import.meta.url,
 
   // The FLEET, not one database. `withTenantDb` resolves the shop this request
   // is for and puts that shop's caller-scoped client on `ctx.locals.db`, which
@@ -631,13 +607,8 @@ process.env.STRIPE_WEBHOOK_SECRET    ??= 'whsec_dev'
 // getting it wrong is a boot failure rather than a send failure an hour later.
 
 app.configure(mailerPlugin(createConduitMailer(app, { from: 'shop@example.test' })))
-// `notifications:` is DECLARED and not probed, for the same reason `autoload`
-// above is: the probe is relative to the entry, and two drives import this
-// module directly, which makes the drive file the entry. Probed, they would
-// find no notifications, and an unnamed definition throws on first send.
 app.configure(notificationsPlugin({
   db,
-  notifications: new URL('./notifications', import.meta.url).pathname,
   transports:    { email: { mailer: 'default' } },
 }))
 

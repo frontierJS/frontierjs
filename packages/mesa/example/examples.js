@@ -4256,7 +4256,7 @@ anything that changes at runtime.`,
 
 <h2 style="margin-bottom:16px">UI Component Library</h2>
 
-<Card title="Button" subtitle="variant · size · loading · disabled">
+<Card title="Button" subtitle="tone · treatment · size · loading · disabled">
   <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
     <Button label="Primary"   tone="primary" />
     <Button label="Secondary" tone="secondary" />

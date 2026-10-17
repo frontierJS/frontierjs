@@ -53,7 +53,7 @@ async function render(file, data) {
   check(/\bdanger\b/.test(ok), 'Alert tone="danger" does')
 }
 
-// FJS-3240: tone() answers the seven tones and nothing else -- a hue or a
+// FJS-3251: tone() answers the seven tones and nothing else -- a hue or a
 // foreign semantic name is a typo, and it renders untoned.
 {
   const { tone, TONES } = await import('../utils.js')

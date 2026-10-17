@@ -81,7 +81,6 @@ beforeAll(async () => {
   app = createApp({
     config: {
       port: 0,
-      services: { dir: '/nonexistent' },
       http: {
         ...defaultConfig.http,
         drainTimeout: 250,
@@ -209,7 +208,7 @@ describe('too many sockets from one address (FJS-705)', () => {
   beforeAll(async () => {
     capped = createApp({
       config: {
-        port: 0, services: { dir: '/nonexistent' },
+        port: 0,
         http: { ...defaultConfig.http, drainTimeout: 250, ws: { maxConnectionsPerIp: 3 } },
       },
     })
@@ -368,7 +367,6 @@ describe('maxPayloadLength reaches the runtime (FJS-1875)', () => {
     const small = createApp({
       config: {
         port: 0,
-        services: { dir: '/nonexistent' },
         http: {
           ...defaultConfig.http,
           drainTimeout: 250,

@@ -452,20 +452,12 @@ describe('make:component / make:resource text', async () => {
   })
 })
 
-// FJS-3004: the web: namespace and fli validate repeated make:*'s old text.
-describe('web:* / validate text', async () => {
+// FJS-3004: fli validate repeated make:*'s old text.
+describe('validate text', async () => {
   const { readFileSync } = await import('node:fs')
-  const read = (f) => readFileSync(resolve(HERE, '../commands', f), 'utf8')
 
-  test('none says Sierra has no @/ alias', () => {
-    for (const f of ['web/component.md', 'web/resource.md', 'web/route.md', 'fli/validate.md']) {
-      expect(read(f), f).not.toMatch(/(?:no|resolves no)\s+`?@\/`?\s+alias/)
-    }
-  })
-
-  test('the web:component template writes onclick and no raw color', () => {
-    const src = read('web/component.md')
-    expect(src).not.toContain('on:click')
-    expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+  test('it does not say Sierra has no @/ alias', () => {
+    const src = readFileSync(resolve(HERE, '../commands/fli/validate.md'), 'utf8')
+    expect(src).not.toMatch(/(?:no|resolves no)\s+`?@\/`?\s+alias/)
   })
 })

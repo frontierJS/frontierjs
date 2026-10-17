@@ -28,7 +28,7 @@
 //   that already has an executed one is worse than a gap.
 //
 // Usage:
-//   junction principal --app api/app.ts [--services api/services]
+//   junction principal --app api/app.ts
 //   junction principal --app api/app.ts --check     ← exit 1 if stale (CI)
 //   junction principal --app api/app.ts --stdout
 
@@ -341,8 +341,7 @@ if (import.meta.main) {
   if (!appPath) fatal('junction principal needs --app <module> — the module exposing the app or a factory for it')
 
   const exportName  = getFlag('export')
-  const servicesDir = getFlag('services')
-  const app         = await loadApp(appPath, exportName, servicesDir) as App & { db?: unknown }
+  const app         = await loadApp(appPath, exportName) as App & { db?: unknown }
   const realm       = describePrincipalRealm(app, (app as { db?: unknown }).db)
 
   const outPath = getFlag('out')
@@ -352,8 +351,7 @@ if (import.meta.main) {
   const from    = dirname(outPath)
   const arg     = (p: string) => relative(from, resolve(p)) || '.'
   const command = `junction principal --app ${arg(appPath)}` +
-                  (exportName  ? ` --export ${exportName}`         : '') +
-                  (servicesDir ? ` --services ${arg(servicesDir)}` : '')
+                  (exportName  ? ` --export ${exportName}`         : '')
   const body    = renderPrincipalSnapshot(realm, { source: arg(appPath), command })
 
   if (flag('stdout')) {

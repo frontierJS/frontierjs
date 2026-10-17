@@ -45,7 +45,7 @@ beforeAll(async () => {
   await autoMigrate(db as never)
   app = createApp({
     db, auth: createStubAuth({ users: [{ id: 'u1' }] }),
-    config:   { port: 0, services: { dir: '/nonexistent' } },
+    config:   { port: 0 },
     logLevel: 'silent',
   }) as never
   app.services.register(createService({ name: 'photos', model: 'Photo', methods: ['find', 'get', 'create'] }))

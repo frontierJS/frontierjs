@@ -195,6 +195,7 @@ The route table is derived from the file tree. Nothing is registered by hand.
 | `Sidebar.mesa` (PascalCase) | component | co-located, never routed |
 | `_helper.mesa` (`_` prefix) | component | co-located, never routed |
 | `about.meta.js` | companion | `meta` / `load` / `getStaticPaths` for `about.mesa` |
+| `automations.mount.js` | mount | default-exports a directory (a `URL` or absolute path, normally re-exported from the package that owns it); its files route as if they sat in `automations/` beside the mount (`FJS-D282`) |
 | anything else | ignored | — |
 
 `.md` files route exactly like `.mesa` — the Mesa compiler handles both, and fenced code
@@ -297,7 +298,8 @@ Router-owned fields — these are reserved, and the scanner warns if frontmatter
 
 | Field | Value |
 | --- | --- |
-| `path` | current pathname + search |
+| `pathname` | current pathname |
+| `search` | current query string |
 | `params` | path params — `/leads/:leadId/` → `{ leadId }`. Path captures only |
 | `query` | the URL's filters, coerced — `?status=active&tier=3` → `{ status: 'active', tier: 3 }` |
 | `directives` | the URL's `$` params, structured — `?$limit=20&$orderBy=-name` → `{ limit: 20, orderBy: '-name' }` |
@@ -337,7 +339,7 @@ import {
 
 | Call | Behavior |
 | --- | --- |
-| `goto(path, query?, { scroll, replace })` | navigate |
+| `goto(path, query?, { scroll, replace, directives })` | navigate. `directives` is `page.directives` shaped and unprefixed; the router joins it to the URL as `$` params, so a page never spells one |
 | `back()` / `forward()` | history |
 | `url(path, query?)` | build a URL with the configured trailing-slash policy |
 | `isActive(path, { exact })` | prefix match by default. **Name `page.route` in the expression too** — `aria-current={(page.route, isActive('/leads/')) ? 'page' : null}` — or the call is evaluated once at mount. Mesa reads dependencies out of the expression text, and the route read happens inside `isActive`, where it cannot see it |

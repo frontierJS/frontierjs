@@ -11,6 +11,7 @@ title: Settings
   // control put on a page to be looked at.
   import { session } from '@frontierjs/sierra/resource'
   import { orders } from '../../resources/Order.mesa'
+  import { customFields } from '../../resources/CustomField.mesa'
   import { prefs, savePrefs } from '@/stores/prefs.js'
   import { CURRENCIES, BASE, rateNote } from '@/lib/money.js'
   import { theme as appTheme, setTheme, themes } from '@frontierjs/sierra/theme'
@@ -152,6 +153,11 @@ title: Settings
   <Mono>localStorage</Mono> — putting it in <Mono>db/schema.lite</Mono> would
   make it a fact about the shop.
 </Callout>
+
+<!-- Affordance only: the CustomField gate enforces who may declare one. -->
+{#if customFields.can('create', session.level)}
+  <p id="settings-fields-link"><a href="/settings/fields/">Customer fields</a> — what this shop records about a person</p>
+{/if}
 
 <div class="card stack" style="max-width: 40rem">
   <Progress

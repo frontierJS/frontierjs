@@ -2,7 +2,7 @@ import type { App, NotificationDriver, NotificationsPluginOptions, Recipient } f
 import type { Notification } from './notification.ts'
 import { setState } from './state.ts'
 import { notify } from './notify.ts'
-import { resolveNotificationsDir, loadNotifications, sealRegistry } from './loader.ts'
+import { notificationsDirOf, loadNotifications, sealRegistry } from './loader.ts'
 import type { NotificationRegistry } from './loader.ts'
 
 const isDriver = (v: unknown): v is NotificationDriver =>
@@ -113,21 +113,8 @@ export function notificationsPlugin(opts: NotificationsPluginOptions) {
     // holds — so a file imported directly by a job is the same object the
     // loader named.
     async boot(app: App) {
-      const resolution = resolveNotificationsDir({
-        entry:    typeof Bun !== 'undefined' ? Bun.main : null,
-        declared: opts.notifications,
-      })
-
-      if (resolution.source === 'declared-missing') {
-        throw new Error(
-          `[notifications] notifications: "${resolution.declared}" is not a directory ` +
-          `(${resolution.probed[0]}). A declared path is a statement, so it is reported ` +
-          'rather than probed around — a wrong relative path looks exactly like an app ' +
-          'that declares no notifications.'
-        )
-      }
-
-      registry = resolution.dir ? await loadNotifications(resolution.dir) : sealRegistry(new Map())
+      const dir = notificationsDirOf(app.root)
+      registry = dir ? await loadNotifications(dir) : sealRegistry(new Map())
 
       // Claimed so a devtools panel, a preferences screen or a snapshot can ask
       // what this app can send WITHOUT sending one. That is the whole reason a

@@ -91,6 +91,8 @@ export const RULES = [
     title: 'one Resource per file' },
   { id: 'vite-strict-port',     scope: 'app',  severity: 'error', invariant: null,
     title: 'every vite config sets strictPort' },
+  { id: 'surface-script',       scope: 'app',  severity: 'error', invariant: null,
+    title: 'the api/ and web/ scripts are named api and web' },
   { id: 'drive-opens-chrome',   scope: 'both', severity: 'error', invariant: null,
     title: 'a drive opens Chrome through @frontierjs/mesa/drive' },
   { id: 'test-port-literal',   scope: 'app',  severity: 'error', invariant: null,
@@ -918,6 +920,28 @@ const CHECKS = {
     })) }
   },
 
+  // FJS-D1083. `fli dev:api`, `fli dev`'s port check and every drive's *Start
+  // first* find a surface's script by its directory name, so a `dev:api` with
+  // no `api` beside it is a script `fli dev` skips the port check for and
+  // `fli dev:api` refuses to start.
+  'surface-script': ({ root }) => {
+    let pkg
+    try { pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) } catch { return { skipped: 'no package.json' } }
+    const scripts  = pkg.scripts ?? {}
+    const findings = []
+    for (const dir of ['api', 'web']) {
+      if (!existsSync(join(root, dir)) || existsSync(join(root, dir, 'package.json'))) continue
+      if (typeof scripts[`dev:${dir}`] !== 'string' || typeof scripts[dir] === 'string') continue
+      findings.push({
+        file: join(root, 'package.json'),
+        message: `\`dev:${dir}\` starts ${dir}/ and no \`${dir}\` script does. Rename it \`${dir}\`: ` +
+                 `\`fli dev:${dir}\` refuses to start a surface whose script it cannot find, and \`fli dev\` ` +
+                 `skips that surface's port check.`,
+      })
+    }
+    return { findings }
+  },
+
   // A drive that launches Chrome itself has to learn, one at a time, what the
   // driver already knows. A FIXED debugging port binds only the first browser,
   // so a second drive attached to somebody else's session and graded their
@@ -1407,7 +1431,7 @@ const CHECKS = {
   //
   // The absence IS a finding, rather than "this surface declares nothing on
   // purpose", because the framework resolves that path whether or not the app
-  // meant it to: junction's default configPath is `api/config` unconditionally.
+  // meant it to: `createApp({ root })` reads `../config` beside the root unconditionally.
   // An app that genuinely wants the defaults writes a config file saying so in
   // one line, which costs nothing and is the difference between a decision and
   // an accident.

@@ -118,8 +118,7 @@ if (import.meta.main) {
   if (!appPath) fatal('junction notifications needs --app <module> — the module exposing the app or a factory for it')
 
   const exportName  = getFlag('export')
-  const servicesDir = getFlag('services')
-  const app         = await loadApp(appPath, exportName, servicesDir)
+  const app         = await loadApp(appPath, exportName)
   const surface     = describeNotifications(app)
 
   const outPath = getFlag('out')
@@ -129,8 +128,7 @@ if (import.meta.main) {
   const from    = dirname(outPath)
   const arg     = (p: string) => relative(from, resolve(p)) || '.'
   const command = `junction notifications --app ${arg(appPath)}` +
-                  (exportName  ? ` --export ${exportName}`         : '') +
-                  (servicesDir ? ` --services ${arg(servicesDir)}` : '')
+                  (exportName  ? ` --export ${exportName}`         : '')
   const body    = renderNotificationsSnapshot(surface, { source: arg(appPath), command })
 
   if (flag('stdout')) {

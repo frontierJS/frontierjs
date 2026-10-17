@@ -181,7 +181,7 @@ title: Flow
   }
 
   $: moves       = !flow ? [] : [
-    ...(['draft', 'paused'].includes(flow.status) && isAdmin ? [['activate', 'Activate', 'primary']] : []),
+    ...(['draft', 'paused'].includes(flow.status) && isAdmin ? [['activate', 'Activate', '']] : []),
     ...(flow.status === 'active' && mayChange ? [['pause', 'Pause', 'ghost']] : []),
     ...(flow.status !== 'archived' && mayChange ? [['archive', 'Archive', 'ghost']] : []),
     ...(flow.status === 'archived' && mayChange ? [['unarchive', 'Unarchive', 'ghost']] : []),
@@ -252,8 +252,8 @@ title: Flow
     {#snippet action()}
       <div class="cluster">
         <Pill tone={TONE[flow.status] ?? 'muted'} id="flow-status" data-status={flow.status}>{flow.status}</Pill>
-        {#each moves as [name, label, variant]}
-          <Button {variant} id={'flow-' + name} disabled={busy} onclick={() => move(name)}>{label}</Button>
+        {#each moves as [name, label, treatment]}
+          <Button {treatment}id={'flow-' + name} disabled={busy} onclick={() => move(name)}>{label}</Button>
         {/each}
       </div>
     {/snippet}

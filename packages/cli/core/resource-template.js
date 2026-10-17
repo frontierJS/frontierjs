@@ -1,10 +1,8 @@
 // What a GENERATED Resource file IS, for every command that writes one.
 //
-// Three commands write one — `fli make:resource`, `fli web:resource` and
-// `fli make:scaffold` — and until this module existed they each carried their
-// own copy of it. They had already drifted in their comments, which is the
-// harmless half of the drift that ends with two of them emitting a different
-// FILE (Invariant 4: one owner per translation).
+// Two commands write one — `fli make:resource` and `fli make:scaffold` — and a
+// copy in each drifts until the two emit a different FILE (Invariant 4: one
+// owner per translation).
 //
 // A Resource is the model's whole client-side surface (`FJS-D114`): the data
 // half in `<script module>`, which runs once at import and is what every other

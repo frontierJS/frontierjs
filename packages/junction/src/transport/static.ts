@@ -150,7 +150,7 @@ export async function serveStatic(
   if (!await withinRoot(root, filePath, allowOutside)) return null
 
   const ext      = extname(filePath).slice(1).toLowerCase()
-  const mimeType = contentTypeFor(ext)
+  const mimeType = contentTypeFor(ext, { charset: true })
   const size     = file.size
   const mtime    = new Date(file.lastModified)
   const mtimeStr = mtime.toUTCString()

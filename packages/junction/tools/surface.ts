@@ -302,8 +302,7 @@ if (import.meta.main) {
   if (!appPath) fatal('junction surface needs --app <module> — the module exposing the app or a factory for it')
 
   const exportName  = getFlag('export')
-  const servicesDir = getFlag('services')
-  const app         = await loadApp(appPath, exportName, servicesDir)
+  const app         = await loadApp(appPath, exportName)
   const surface     = describeSurface(app)
 
   // Default beside the CWD, not beside the app module. An app is built with the
@@ -318,8 +317,7 @@ if (import.meta.main) {
   const from    = dirname(outPath)
   const arg     = (p: string) => relative(from, resolve(p)) || '.'
   const command = `junction surface --app ${arg(appPath)}` +
-                  (exportName  ? ` --export ${exportName}`      : '') +
-                  (servicesDir ? ` --services ${arg(servicesDir)}` : '')
+                  (exportName  ? ` --export ${exportName}`      : '')
   const body    = renderSurfaceSnapshot(surface, { source: arg(appPath), command })
 
   if (flag('stdout')) {

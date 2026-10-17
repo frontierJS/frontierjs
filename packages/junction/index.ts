@@ -15,7 +15,7 @@ export { CALL_OPTIONS_AT, normalizePrefix } from './src/core/app.ts'
 // ─── Config ───────────────────────────────────────────────────────────────
 export { loadConfig, deepMerge, parseTtl, defaultConfig } from './src/config/index.ts'
 export type { AppConfig, DeepPartial, JunctionConfig, JunctionMiddlewareConfig,
-              JunctionPluginsConfig, JunctionServicesConfig,
+              JunctionPluginsConfig,
               JunctionCaravanConfig }  from './src/config/index.ts'
 
 // ─── Errors ───────────────────────────────────────────────────────────────

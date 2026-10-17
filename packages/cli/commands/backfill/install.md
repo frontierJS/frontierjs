@@ -82,9 +82,7 @@ import orderShippedAt       from './backfills/order-shipped-at.ts'
 const appRoot = fileURLToPath(new URL('../../', import.meta.url))
 const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), 'jobs.db')
 
-const jobsDir = fileURLToPath(new URL('./jobs', import.meta.url))
-
-app.configure(createCaravan({ db: jobsDb, jobsDir }))  // a chunk runs as a job
+app.configure(createCaravan({ db: jobsDb }))  // a chunk runs as a job
 app.configure(backfills([orderShippedAt]))
 
 // It starts itself: boot queues the first chunk of anything unfinished, and each

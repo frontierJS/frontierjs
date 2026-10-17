@@ -513,6 +513,12 @@ try {
     };
   `))
 
+  // FJS-1105: the custom-fields screen is reachable from /settings/.
+  t('settings.fieldsLink', await evaluate(`
+    await waitFor(() => document.querySelector('#settings-fields-link a'));
+    return document.querySelector('#settings-fields-link a').getAttribute('href');
+  `))
+
   t('settings.expand', await evaluate(`
     const item = [...document.querySelectorAll('details.disclosure')]
       .find(d => d.querySelector('summary').textContent.trim().startsWith('Lists'));
@@ -823,6 +829,7 @@ const expected = {
   'settings.accordion': { sections: ['Appearance', 'Lists', 'Order notes'], openAtStart: ['Appearance'] },
   'settings.expand':    { expanded: true, numberInput: true, radiogroup: true },
   'settings.switch':    { role: 'switch', toggled: true },
+  'settings.fieldsLink': '/settings/fields/',
   'settings.save':      { toast: 'Preferences saved', toastOpacity: '1', stored: true },
   'settings.jsonTree':  { spinner: '25', stillMono: true },
   'settings.jsonStray': { said: true },

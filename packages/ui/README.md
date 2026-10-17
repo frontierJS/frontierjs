@@ -90,6 +90,8 @@ compose freely, so Button takes each as its own prop:
 <Button square aria-label="Delete"><IconTrash /></Button>
 ```
 
+`CopyButton` takes `treatment` too, defaulting to `ghost`.
+
 ## What's in the box
 
 **forms** — `Form` `Button` `Field` `Fieldset` `Label` `Input` `Textarea`

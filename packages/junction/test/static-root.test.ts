@@ -121,7 +121,7 @@ describe('the declared content type binds', () => {
     const res = await ask('/assets/real.css')
     expect(res?.status).toBe(200)
     expect(res!.headers.get('x-content-type-options')).toBe('nosniff')
-    expect(res!.headers.get('content-type')).toBe('text/css')
+    expect(res!.headers.get('content-type')).toBe('text/css; charset=utf-8')
   })
 
   it('a range response too, because it is the same bytes', async () => {

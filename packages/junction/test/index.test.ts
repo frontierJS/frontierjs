@@ -4781,6 +4781,33 @@ describe('helmet — security headers applied by default', () => {
     expect(res.headers['referrer-policy']).toBe('no-referrer')
   })
 
+  // The router never runs for a path nothing routes, so the miss is answered
+  // before helmet's middleware could stamp it (FJS-3231).
+  it('an unrouted path (404) carries the same headers', async () => {
+    const app = await createTestApp()
+    // Deep: a one-segment path reaches the service wildcard and is a routed 404.
+    const res = await request(app).get('/no/such/deep/path')
+    expect(res.status).toBe(404)
+    expect(res.headers['x-content-type-options']).toBe('nosniff')
+    expect(res.headers['x-frame-options']).toBe('DENY')
+  })
+
+  it('a wrong verb (405) carries the same headers', async () => {
+    const app = await createTestApp()
+    app.get('/x/y/z/w', (ctx) => ctx.json({ ok: true }))
+    const res = await request(app).delete('/x/y/z/w')
+    expect(res.status).toBe(405)
+    expect(res.headers['x-content-type-options']).toBe('nosniff')
+    expect(res.headers['x-frame-options']).toBe('DENY')
+  })
+
+  it('helmet: false leaves the 404 bare too', async () => {
+    const app = await createTestApp({ config: { http: { helmet: false } } })
+    const res = await request(app).get('/no/such/deep/path')
+    expect(res.status).toBe(404)
+    expect(res.headers['x-frame-options']).toBeUndefined()
+  })
+
   it('helmet disabled via config.http.helmet = false', async () => {
     const app = await createTestApp({ config: { http: { helmet: false } } })
     app.services.register(buildService({ name: 'items', find: async () => [] }))

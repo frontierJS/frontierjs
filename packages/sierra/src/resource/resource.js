@@ -2,8 +2,7 @@
  * @frontierjs/sierra/resource — resource factory
  *
  * Provides:
- *   createResource(serviceName, schema?, opts)  — full 4-phase hook pipeline
- *   createResource({ model, service, ... })     — object form
+ *   createResource(serviceName, opts?)          — full 4-phase hook pipeline
  *   createMakeFromSchema(properties)            — make() factory from JSON schema
  *   createStore(service, opts)                  — independent store for sub-sets
  *
@@ -111,11 +110,11 @@
  *   `service.find()` when you need the count alongside it.
  *
  * Hook registration:
- *   At createResource time:   createResource('leads', schema, { hooks: { ... } })
+ *   At createResource time:   createResource('leads', { hooks: { ... } })
  *   After creation:           resource.hooks({ error: { all: [handleErrors] } })
  *
  * Example:
- *   createResource('leads', LeadSchema, {
+ *   createResource('leads', {
  *     hooks: {
  *       around: {
  *         all: [
@@ -525,19 +524,35 @@ export function resetResourcesForIdentityChange() {
 
 // ── createResource ────────────────────────────────────────────────────────────
 
+// Each of these once constructed a resource. Refused rather than read, since a
+// misread object form binds a service named `undefined` and a misread schema
+// becomes the options bag.
+function refuseOtherShapes(serviceName, opts, extra) {
+  const one = `createResource('${typeof serviceName === 'string' ? serviceName : serviceName?.service ?? 'leads'}', { ... })`
+  if (typeof serviceName !== 'string') {
+    throw new TypeError(`[resource] the service name is the first argument — ${one}`)
+  }
+  if (typeof opts === 'string' || opts === null) {
+    throw new TypeError(`[resource:${serviceName}] the key column is \`idField\` in the options — ${one}`)
+  }
+  if (opts.$defs || opts.definitions || opts.properties) {
+    throw new TypeError(`[resource:${serviceName}] a schema goes in the options as \`schema\` — ${one}`)
+  }
+  if (extra.length) {
+    throw new TypeError(`[resource:${serviceName}] createResource takes two arguments — ${one}`)
+  }
+}
+
 /**
  * Create a resource wrapper for a Junction service with a full 4-phase
  * hook pipeline matching the API realm.
  *
- * Signatures:
- *   createResource('leads', LeadSchema, { hooks, idField })   — with schema
- *   createResource('leads', { hooks, schema, idField })       — no schema arg
- *   createResource('leads', 'id', { model: 'Lead' })          — positional key
+ *   createResource('leads', { model, schema, idField, hooks, ... })
  *
- * `idField: null` says these rows have NO identity, which is what a `view` is:
- * the store holds the list as it arrives rather than keying rows by a column
- * that does not exist (`FJS-998`).
- *   createResource({ model, service, optionsQuery, hooks })   — object form
+ * The one call shape; every option is optional. `idField: null` says these
+ * rows have NO identity, which is what a `view` is: the store holds the list
+ * as it arrives rather than keying rows by a column that does not exist
+ * (`FJS-998`).
  *
  * Returns { service, store, make, load, save, fields, relations, gate, can,
  *           transitions, commitments, validate, normalize, coerce, fieldErrors, context,
@@ -677,57 +692,20 @@ export function resetResourcesForIdentityChange() {
  * none. The device machinery (`@@sync`, `offlineQuery`, the local database)
  * belongs to this page's app and stays off.
  */
-export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
-  let serviceName, model, optionsQuery, detailQuery, listQuery, offlineQuery, columnDefaults, initialHooks, schema, idField, opts
+export function createResource(serviceName, opts = {}, ...extra) {
+  refuseOtherShapes(serviceName, opts, extra)
 
-  if (typeof nameOrSpec === 'string') {
-    serviceName = nameOrSpec
-    // createResource('leads', schema, opts)  or  createResource('leads', opts)
-    // Three second arguments, and the third was reaching here by accident:
-    // `createResource('customers', 'id', { … })` mirrors `client.resource()`'s
-    // positional idField, and it worked only because `opts.idField` on a STRING
-    // is undefined and the old `??` then defaulted it. Named, because the branch
-    // below now asks whether the key is PRESENT rather than whether it is falsy.
-    let positionalId
-    if (typeof schemaOrOpts === 'string' || schemaOrOpts === null) {
-      positionalId = schemaOrOpts
-      opts   = maybeOpts ?? {}
-      schema = opts.schema
-    } else if (schemaOrOpts && (schemaOrOpts.$defs || schemaOrOpts.definitions || schemaOrOpts.properties)) {
-      // second arg looks like a schema
-      opts   = maybeOpts
-      schema = schemaOrOpts
-    } else {
-      // second arg is opts
-      opts   = schemaOrOpts ?? {}
-      schema = opts.schema
-    }
-    initialHooks = opts.hooks    ?? {}
-    // `??` would swallow an explicit null, and null is a STATEMENT here: these
-    // rows have no identity, which is what a `view` is. Presence, not falsiness.
-    idField      = positionalId !== undefined ? positionalId
-                 : 'idField' in opts          ? opts.idField
-                 : 'id'
-    model        = opts.model    ?? serviceName
-    optionsQuery = opts.optionsQuery
-    detailQuery  = opts.detailQuery
-    listQuery    = opts.listQuery
-    offlineQuery = opts.offlineQuery
-    columnDefaults = opts.columns
-  } else {
-    // object form
-    opts         = nameOrSpec
-    serviceName  = opts.service
-    model        = opts.model        ?? serviceName
-    optionsQuery = opts.optionsQuery
-    detailQuery  = opts.detailQuery
-    listQuery    = opts.listQuery
-    offlineQuery = opts.offlineQuery
-    columnDefaults = opts.columns
-    initialHooks = opts.hooks        ?? {}
-    schema       = opts.schema
-    idField      = 'idField' in opts ? opts.idField : 'id'
-  }
+  const optionsQuery   = opts.optionsQuery
+  const detailQuery    = opts.detailQuery
+  const listQuery      = opts.listQuery
+  const offlineQuery   = opts.offlineQuery
+  const columnDefaults = opts.columns
+  const initialHooks   = opts.hooks ?? {}
+  let   schema         = opts.schema
+  let   model          = opts.model ?? serviceName
+  // `??` would swallow an explicit null, and null is a STATEMENT here: these
+  // rows have no identity, which is what a `view` is. Presence, not falsiness.
+  const idField        = 'idField' in opts ? opts.idField : 'id'
 
   // The payload pipeline is ON unless the caller says `false` — see the header.
   // `!== false` rather than `?? true` so an explicit `undefined` (a prop threaded

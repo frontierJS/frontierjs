@@ -59,7 +59,6 @@ const LEAD_SERVICE  = { 'api/src/services/leads.service.ts': 'export default {}\
 const CASES = [
   { cmd: 'make:model',     arg: ['Invoice'], flag: { resource: true },   wrote: 'web/src/resources/Invoice.mesa' },
   { cmd: 'make:route',     arg: ['leads'],   flag: { resource: 'Lead' }, before: [LEAD_RESOURCE], wrote: 'web/src/routes/leads/index.mesa' },
-  { cmd: 'web:route',      arg: ['leads'],   flag: { resource: 'Lead' }, before: [LEAD_RESOURCE], wrote: 'web/src/routes/leads.mesa' },
   { cmd: 'admin:generate', arg: [],          flag: {}, before: [LEAD_RESOURCE], files: LEAD_SERVICE, wrote: 'web/src/routes/admin' },
 ]
 
@@ -269,5 +268,26 @@ describe('the scaffold verification link lands on a page fli new writes', () => 
     const page = new Function('sc', `${src}\nreturn makeRouteVerifyEmail`)('</' + 'script>')()
     expect(page).toContain('auth.verifyEmail(')
     expect(page).not.toMatch(/onload|onMount[^\n]*verifyEmail/)
+  })
+})
+
+// FJS-2944 — api:service, api:model, make:schema and web:{resource,route,component}
+// were a second door onto make:*, and web:route drifted into writing a page that
+// does not parse. A command whose description repeats another's, or calls itself
+// an alias, is that drift waiting.
+describe('one command per generator', () => {
+  test('no shipped command repeats or aliases another', async () => {
+    const seen = new Map()
+    const dupes = []
+    for await (const f of new Bun.Glob('**/*.md').scan({ cwd: join(CLI, 'commands') })) {
+      if (f.split('/').some(part => part.startsWith('_'))) continue
+      const text = await Bun.file(join(CLI, 'commands', f)).text()
+      const desc = text.match(/^description:\s*(.+)$/m)?.[1]?.trim()
+      if (!desc) continue
+      if (/\balias for\b/i.test(desc)) dupes.push(`${f} = ${desc}`)
+      else if (seen.has(desc)) dupes.push([seen.get(desc), f].sort().join(' = '))
+      else seen.set(desc, f)
+    }
+    expect(dupes.sort()).toEqual([])
   })
 })

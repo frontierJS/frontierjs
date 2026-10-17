@@ -197,20 +197,6 @@ export async function buildBasecampApp(
   // every service gets a client on ctx.locals.db already scoped to the caller.
   // Omitting it leaves services running against an unscoped client — an option
   // with exactly one correct answer.
-  // `autoload` stated rather than defaulted, and the reason is the TEST RUNNER.
-  // The default probes beside the entry file (`Bun.main`), which is this app in
-  // production and the test file under `bun test` — so an app mounted by
-  // @frontierjs/testing found no services at all. An absolute path is the same
-  // answer from either. Nothing to do with the layout: `api/src/services` is
-  // where the probe looks anyway (`FJS-458`).
-  const servicesDir = new URL('./services', import.meta.url).pathname
-  // The config directory is the same fact and had the same defect. Its default
-  // is `./api/config` resolved against the CWD, so this app read its own config
-  // only when the command was typed at the package root — from `api/`, where
-  // the API's own snapshots now live, it looked for `api/api/config`, found
-  // nothing and booted on junction's defaults, taking the CORS origins with it
-  // (`FJS-430`'s shape, from the other direction).
-  const configDir   = new URL('../config', import.meta.url).pathname
   // `principal:` is what makes this app's tenancy work, and it is the whole of
   // what used to be `withWorkspaceStanding` + `applyStanding` (`FJS-D113`).
   //
@@ -225,7 +211,9 @@ export async function buildBasecampApp(
   // tenancy, emitting `workspaceId` for a caller with no membership scopes them
   // INTO that workspace and every read answers 200.
   const app = createApp({
-    config, auth, db, logger, autoload: servicesDir, configPath: configDir,
+    // services/, jobs/, notifications/ beside this file, ../config above (`FJS-D1080`).
+    root: import.meta.url,
+    config, auth, db, logger,
     credentials: [outpostCredential({ db, logger, hostKey: hostReportKey(env.ENCRYPTION_KEY) })],
     principal: membershipClaim({
       tenantFrom:  workspaceOrKeys,
@@ -354,7 +342,7 @@ export async function buildBasecampApp(
 
   // ── Caravan — durable job queue ───────────────────────────────────────
   // Plugin augments app with app.jobs and wires /metrics job stats.
-  // `jobsDir`, `pollInterval` and the queue concurrencies are declared in
+  // `pollInterval` and the queue concurrencies are declared in
   // api/config/junction.config.js — caravan reads that block and an explicit
   // option here would win over it, so a key belongs in exactly one of the two.
   // The database path is not a declaration: it is derived from the resolved one
@@ -390,14 +378,8 @@ export async function buildBasecampApp(
   // and `core/notify.ts` drops `email` per recipient — a person who asked for it
   // on an app that cannot mail must still get their in-app copy, and `notify()`
   // throws on an undeliverable transport before delivering any of them.
-  //
-  // `notifications:` is DECLARED rather than probed, for `example`'s reason:
-  // the probe is relative to the process entry, and the test suite imports this
-  // module directly — which makes the test file the entry, finds no
-  // definitions, and an unnamed definition throws on its first send.
   app.configure(notificationsPlugin({
     db,
-    notifications: new URL('./notifications', import.meta.url).pathname,
     transports:    mail ? { email: { mailer: 'default' } } : {},
   }))
 

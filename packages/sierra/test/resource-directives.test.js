@@ -77,8 +77,7 @@ describe('directives threading', () => {
   })
 
   test('getOptions() falls back to optionsQuery.directives', async () => {
-    const { service } = createResource({
-      service: 'categories',
+    const { service } = createResource('categories', {
       optionsQuery: { query: { active: true }, directives: { orderBy: 'name', limit: 500 } },
     })
     await service.getOptions()
@@ -91,8 +90,7 @@ describe('directives threading', () => {
   })
 
   test('an explicit getOptions() argument overrides optionsQuery', async () => {
-    const { service } = createResource({
-      service: 'categories',
+    const { service } = createResource('categories', {
       optionsQuery: { query: { active: true }, directives: { limit: 500 } },
     })
     await service.getOptions({ active: false }, { limit: 10 })

@@ -153,7 +153,7 @@ const PKGS = [
       r:['BullMQ + Redis','Agenda','node-cron'] },
     { k:'Declaration', v:'The file names the job, and the file is the whole of it',
       why:'send-email.job.ts is send-email. A defineJob naming anything else is refused at load rather than registered, because a handler answering to send-emial while every dispatch says send-email never runs and never says so.',
-      code:"export default handle(async ({ payload }) => {\n  await mail.send(payload)\n}, { queue: 'mail', maxAttempts: 5 })",
+      code:"export default defineJob({\n  handler: async ({ data }) => { await mail.send(data) },\n  queue: 'mail',\n  maxAttempts: 5,\n})",
       r:['a registry file listing every job'] },
     { k:'Recurring', v:'<code>cron</code> is an option on the handler, not a second system',
       why:'A job file declares its own schedule, so moving the file moves the schedule. A name is one schedule — registering it twice replaces, where two entries used to fire the job twice a minute.',

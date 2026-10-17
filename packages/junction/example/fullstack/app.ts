@@ -109,9 +109,10 @@ const auth = {
 
 // ─── 3. API ───────────────────────────────────────────────────────────────
 // createApp({ db }) installs per-request Litestone scoping, so the gate and any
-// row policies see the calling user. services/ next to this file is autoloaded.
+// row policies see the calling user. `root` loads services/ next to this file.
 
 const app = createApp({
+  root: import.meta.url,
   db,
   auth,
   config: { name: 'fullstack', port: PORT, apiPrefix: '/api' },

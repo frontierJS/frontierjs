@@ -24,7 +24,7 @@ import { splitParams, unknownDirectives }                       from '@frontierj
 
 // The flags that take a value, so the value is not read as an argument to the
 // method. A flag named here and not handled below is a flag silently ignored.
-const VALUED = new Set(['app', 'export', 'services', 'as', 'tenant'])
+const VALUED = new Set(['app', 'export', 'as', 'tenant'])
 
 const argv = Bun.argv.slice(2)
 const words: string[] = []
@@ -63,7 +63,7 @@ const isBag = (v: unknown): v is Record<string, unknown> =>
 
 // ─── the call ─────────────────────────────────────────────────────────────────
 
-const app = await loadApp(appPath, getFlag('export'), getFlag('services'))
+const app = await loadApp(appPath, getFlag('export'))
 
 // Every exit goes through here, because `stop()` is what drains a job the boot's
 // worker already claimed — exiting past it strands the job until its lease lapses.

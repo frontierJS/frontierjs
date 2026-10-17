@@ -64,6 +64,7 @@ Detail: `references/sockets.md`
 - **Never call `ws.send()` directly.**
 - **`app.ws` is the raw door: no `connected`, no `{type:'error'}`, a refused frame closes `1008`, and the path takes `apiPrefix`** (`FJS-D688`)
 - **A `removed` frame goes only to a reader the row's BEFORE-image admitted**, and a write with no before-image sends none (`FJS-1742`, `FJS-D1199`)
+- **An upgrade carrying an Origin is 403 unless the csrf list names it or its host is `Host`**, csrf installed or not (`FJS-D1207`)
 
 ## Secrets and the log line
 Detail: `references/secrets-and-the-log-line.md`
@@ -105,7 +106,7 @@ Detail: `references/jobs-and-the-clock.md`
 - **A job attempt has no bound unless one is declared, and `oldestRunningMs` is how you see the ones that do not.**
 - **Caravan's `unique` is a lock on work IN FLIGHT, not an idempotency key.**
 - **A restored database's outbox sends nothing it already held until an operator says so** (`FJS-D665`).
-- **A job in `jobsDir` is named by its file and declares its own schedule.**
+- **A job in `jobs/` is named by its file and declares its own schedule.**
 - **A cache value is JSON, and what JSON would LOSE is refused at `set()`.**
 - **The docs page is hand-written HTML with two caller-supplied values in it.**
 - **A battery names a vendor in a comment and never in a call** (`FJS-D215`)

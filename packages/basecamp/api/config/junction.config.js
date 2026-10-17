@@ -12,8 +12,7 @@
 // Paths here are anchored to THIS FILE. A cwd-relative one is only correct
 // when the command was typed at the package root, so a tool run from `api/` —
 // which is where the API's own snapshots live — resolved it to nothing
-// (`FJS-449`'s class). `api/src/app.ts` states `configPath` for the same
-// reason.
+// (`FJS-449`'s class).
 import { fileURLToPath } from 'node:url'
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url))
@@ -47,7 +46,6 @@ export default {
   caravan: {
     // A job file names the job, declares its own queue and retry budget, and
     // is the dispatch handle every service imports.
-    jobsDir:      here('../src/jobs'),
     pollInterval: 1_000,
     queues: {
       default:     { concurrency: 2 },

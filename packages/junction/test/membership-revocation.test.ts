@@ -61,7 +61,7 @@ async function mkApp() {
   const app: any = createApp({
     db,
     logLevel: 'silent',
-    config: { port: 0, services: { dir: '/nonexistent' } },
+    config: { port: 0 },
     auth: {
       // The token IS the user id — the session shape, not its verification, is
       // what this file is about.

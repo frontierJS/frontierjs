@@ -115,22 +115,20 @@ describe('appPorts — what this app is about to bind', () => {
   })
 
   test('the script it names is one the app actually declares', () => {
-    // Two conventions are live: the apps here call the script `api`, and
-    // `fli new` writes `dev:api` because there they are composed into one
-    // `dev`. Telling somebody to run a script their app does not have wastes
-    // the next minute of their day.
     const here = appPorts('/x/example', {
       name: 'example', exists: treeOf('web', 'api'),
       scripts: { api: 'bun run api/app.ts', web: 'vite' },
     })
     expect(here.find(r => r.surface === 'api').script).toBe('api')
+  })
 
-    const scaffolded = appPorts('/x/new-app', {
+  test('a surface script has one name, its directory (FJS-D1083)', () => {
+    const prefixed = appPorts('/x/new-app', {
       name: 'new-app', exists: treeOf('web', 'api'),
       scripts: { 'dev:api': 'bun --watch run api/index.ts', 'dev:web': 'cd web && vite' },
     })
-    expect(scaffolded.find(r => r.surface === 'api').script).toBe('dev:api')
-    expect(scaffolded.find(r => r.surface === 'web').script).toBe('dev:web')
+    expect(prefixed.find(r => r.surface === 'api').script).toBe(null)
+    expect(prefixed.find(r => r.surface === 'web').script).toBe(null)
   })
 
   test('a surface with no script says so rather than inventing one', () => {
@@ -164,9 +162,9 @@ describe('devPorts — what `fli dev` is about to bind', () => {
 
   test('a scaffolded app composes every surface, so every one is checked', () => {
     const scripts = {
-      dev:        'bun run --parallel dev:api dev:web dev:site',
-      'dev:api':  'bun --watch run api/index.ts',
-      'dev:web':  'cd web && vite -c config/vite.config.js',
+      dev:        'bun run --parallel api web dev:site',
+      api:        'bun --watch run api/index.ts',
+      web:        'cd web && vite -c config/vite.config.js',
       'dev:site': 'cd site && bun --bun vite -c config/vite.config.js',
     }
     const rows = devPorts('/x/new-app', { name: 'new-app', exists: treeOf('web', 'api', 'site'), scripts })
@@ -196,22 +194,22 @@ describe('devPorts — what `fli dev` is about to bind', () => {
   })
 
   test('a surface matches on either spelling, not just the one appPorts prints', () => {
-    // An app may declare both `web` and `dev:web` and run the other one.
+    // An app may declare both `dev:site` and `site` and run the other one.
     const scripts = {
-      dev:       'bun run dev:web',
-      web:       'vite',
-      'dev:web': 'cd web && vite',
+      dev:        'bun run site',
+      'dev:site': 'cd site && vite',
+      site:       'cd site && vite',
     }
-    const rows = devPorts('/x/both', { name: 'both', exists: treeOf('web'), scripts })
-    expect(rows.map(r => r.surface)).toEqual(['web'])
+    const rows = devPorts('/x/both', { name: 'both', exists: treeOf('site'), scripts })
+    expect(rows.map(r => r.surface)).toEqual(['site'])
   })
 
   test('an indirection is followed', () => {
     const scripts = {
       dev:     'bun run dev:all',
-      'dev:all': 'bun run --parallel dev:api dev:web',
-      'dev:api': 'bun --watch run api/index.ts',
-      'dev:web': 'cd web && vite',
+      'dev:all': 'bun run --parallel api web',
+      api:       'bun --watch run api/index.ts',
+      web:       'cd web && vite',
     }
     const rows = devPorts('/x/deep', { name: 'deep', exists: treeOf('web', 'api', 'site'), scripts })
     expect(rows.map(r => r.surface).sort()).toEqual(['api', 'web'])

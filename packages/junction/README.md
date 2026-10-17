@@ -64,7 +64,7 @@ my-app/
 │   └── schema.lite
 ├── api/                     ← Junction. Everything below is yours
 │   ├── index.ts             ← bun --watch entry
-│   ├── config/              ← junction.config.js — autoload paths, plugins
+│   ├── config/              ← junction.config.js — plugins, middleware
 │   ├── src/
 │   │   ├── app.ts
 │   │   ├── core/            ← env, Litestone client, auth, hooks
@@ -658,7 +658,7 @@ There is no built-in database check — junction opens no database, so the app n
 
 **`GET /health`** — readiness: `200` when healthy, `503` when any check fails or the app is draining. **`GET /health/live`** — liveness: consults no check, so a draining process is still alive. Point a `readinessProbe` at the first and a `livenessProbe` at the second.
 
-**`GET /metrics`** — process memory, request counts, response types, WebSocket connections, cache hit rate, service registry.
+**`GET /metrics`** — process memory, request counts, response types, WebSocket connections, cache hit rate, service registry. Under `NODE_ENV=production` it is not mounted unless `token` or `authFn` is set, since it names the pid and every service. Either option gates `/health` too.
 
 A plugin contributes its own block through `app.registerMetricsSource(name, fn)`
 rather than mounting a second endpoint: Caravan adds `jobs`, the outbox adds
@@ -951,22 +951,20 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 
 ### Where the services are
 
-Nowhere, ideally. Junction probes two directories beside the **entry file** —
-`./services`, then `./src/services` — and autoloads `**/*.service.ts` from the
-first one that exists. That is the flat layout and the canonical one, so an app
-laid out either way says nothing:
+Where `createApp({ root: import.meta.url })` says (`FJS-D1080`). The root is
+the directory of the module that calls `createApp`, and every folder derives
+from it: `services/` and `routes/` beside it, caravan's `jobs/` and the
+notifications plugin's `notifications/` beside it too, `junction.config.js` in
+`../config` above it. Nothing is probed from the entry file or the working
+directory — under a test runner or a drive both name the RUNNER — and an app
+with no root reads nothing from disk.
 
 ```
-api/index.ts + api/services/          api/index.ts + api/src/services/
-api/src/app.ts + api/src/services/
+api/src/app.ts        createApp({ root: import.meta.url })
+api/src/services/     *.service.ts
+api/src/jobs/         *.job.ts
+api/config/           junction.config.js
 ```
-
-Say otherwise with `services: { dir }` in `junction.config.js` (resolved against
-the working directory) or `createApp({ autoload: '/abs/path' })`, and switch it
-off with `autoload: false`. A **declared** directory is never probed around: if
-it is not there, junction says so by name and loads nothing — a relative path
-resolved against the wrong working directory lands on nothing and otherwise
-looks exactly like an app with no services.
 
 The boot banner carries the answer either way:
 
@@ -976,16 +974,12 @@ The boot banner carries the answer either way:
     autoload  api/src/services
 🚀 shop v1.0.0
     services  3
-    autoload  none — probed api/services, api/src/services
+    autoload  none — no api/src/services
 ```
 
 The second banner is an app that loaded nothing and will 404 every route those
 services would have mounted. Nothing throws — a missing directory is a
 deliberate no-op — so the banner is where that shows.
-
-Under a test runner the entry is the **test file**, so an app that needs its
-services in a test states an absolute path: `autoload: new URL('./services',
-import.meta.url).pathname`.
 
 ### Where the routes are
 
@@ -1007,8 +1001,8 @@ export const POST = async (ctx) => { /* verify the signature, answer 200 */ }
 private to the files beside it. Boot refuses, naming the files, a file that
 exports no verb, one that threw, and two that answer one URL (`routes/a.ts` and
 `routes/a/index.ts`, or `[id]` and `[slug]` at one position). A route that must
-sit outside the prefix still goes through `app.http.router`. `autoload: false`
-switches this off with the services.
+sit outside the prefix still goes through `app.http.router`. An app with no
+`root` loads neither.
 
 ---
 
@@ -1500,7 +1494,7 @@ fli outbox:install     # imports the OutboxMessage model into db/schema.lite
 ```typescript
 import { outbox } from '@frontierjs/junction/outbox'
 
-app.configure(createCaravan({ jobsDir: './api/jobs' }))   // the relay needs a queue
+app.configure(createCaravan())   // the relay needs a queue
 app.configure(outbox())
 
 createService({
@@ -1560,7 +1554,7 @@ due (`db.order.due()`). Nothing in Litestone moves a row; this plugin does.
 ```typescript
 import { commitments } from '@frontierjs/junction/commitments'
 
-app.configure(createCaravan({ jobsDir: './api/jobs' }))   // the sweep is a Caravan cron
+app.configure(createCaravan())   // the sweep is a Caravan cron
 app.configure(commitments())
 ```
 
@@ -2219,9 +2213,9 @@ are `headerOf(mail, 'Message-ID')`.
 |------|--------------|-------|
 | 587  | STARTTLS     | Default — plain TCP upgraded to TLS after connect |
 | 465  | Implicit TLS | `tls` auto-enabled |
-| 25   | Plain        | Blocked by most providers |
+| 25   | STARTTLS     | Blocked by most providers |
 
-`AUTH PLAIN` is used when the server supports it, falls back to `AUTH LOGIN`. Both methods are only sent after the connection is encrypted.
+`AUTH PLAIN` is used when the server supports it, falls back to `AUTH LOGIN`. Both methods are only sent after the connection is encrypted: a server that does not offer STARTTLS is refused with an `SmtpError` before any credential is written, unless the host is `localhost`, `127.0.0.1` or `::1`.
 
 Mail to someone who has an account is a notification: `@frontierjs/notifications`
 (`app.notify`) stores it, honors their preferences and sends the email through
@@ -2280,8 +2274,7 @@ const queue = createCaravan({
     critical: { concurrency: 5 },
     email:    { concurrency: 1 },
   },
-  jobsDir: './jobs',          // autoload *.job.ts files
-})
+})                            // *.job.ts files load from jobs/ beside the root
 
 app.configure(queue)
 
@@ -2448,12 +2441,12 @@ Deploy is `fli deploy`, from the Dockerfile `fli make:deploy` writes. Junction h
 
 ### Autoload does not survive bundling
 
-An app that bundles itself anyway (`bun build`) **must register its services statically** and set `autoload: false`:
+An app that bundles itself anyway (`bun build`) **must register its services statically** and state no `root`:
 
 ```ts
 import messages from './messages.service.ts'
 
-const app = createApp({ autoload: false, config: { /* … */ } })
+const app = createApp({ config: { /* … */ } })
 app.services.register(messages)
 ```
 

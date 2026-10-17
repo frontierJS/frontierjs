@@ -52,16 +52,6 @@ beforeAll(async () => {
     emit: (e) => events.push(e),   // structured events, read back below
   })
   await run()
-
-  // The same file has three writers. They are one module now — prove it by
-  // running a second one rather than by reading both templates.
-  const runWeb = await Command({
-    file: join(CLI, 'commands', 'web', 'resource.md'),
-    arg:  ['Invoice'],
-    flag: {},
-    emit: (e) => events.push(e),
-  })
-  await runWeb()
 })
 
 afterAll(() => rmSync(ROOT, { recursive: true, force: true }))
@@ -123,18 +113,6 @@ describe('fli make:resource', () => {
     // What <Form> is handed: the module's binding, never the prop's signal.
     expect(ctx.result).toContain('{resource: resource,')
     expect(ctx.result).not.toMatch(/resource: \$\$runtime\.get\(\$\$sig_actions\)/)
-  })
-
-  test('`web:resource` writes the same file, because it is the same module', () => {
-    const a = readFileSync(file(), 'utf8')
-    const b = readFileSync(join(ROOT, 'web/src/resources/Invoice.mesa'), 'utf8')
-
-    // Three commands write a Resource. The drift that matters is structural,
-    // so compare what they emit with the names swapped out.
-    const shape = (src, model, service) =>
-      src.split(model).join('«model»').split(service).join('«service»')
-
-    expect(shape(b, 'Invoice', 'invoices')).toBe(shape(a, 'Lead', 'leads'))
   })
 
   // The service name is also the route directory `fli scaffold` writes, and

@@ -31,7 +31,6 @@ const USERS: Record<string, { userId: string; userType: string; authMethod: 'ses
 const app: any = createApp({
   config: {
     port,
-    services: { dir: '/nonexistent' },
     http: { ...defaultConfig.http, drainTimeout: 250 },
   },
   logLevel: 'silent',

@@ -68,7 +68,7 @@ file would not have run).
 
 Open defects are in `../../ISSUES.md`; add a new item there, not here.
 
-Junction publishes `JunctionCaravanConfig` with `db`, `jobsDir`, `pollInterval`,
+Junction publishes `JunctionCaravanConfig` with `db`, `pollInterval`,
 `cleanupAfter`, `queues` and `admin` (`src/config/index.ts`), and `register()`
 honors every one of them, opts always winning.
 

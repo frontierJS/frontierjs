@@ -170,8 +170,8 @@ export interface TestAppOptions {
   // Pre-seeded test users (shorthand for createStubAuth)
   users?:      StubUser[]
 
-  // Auto-discover services from a directory
-  autoload?:   string
+  // The app's root, as `createApp({ root })` takes it (`FJS-D1080`)
+  root?:       AppOptions['root']
 
   // Extra config overrides. Deep — `http: { helmet: false }` keeps the rest of
   // the http block, the same as createApp. It used to be a shallow spread, so
@@ -199,7 +199,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
     opts.config ?? {}
   )
 
-  const app = createApp({ config, auth, system: opts.system, autoload: opts.autoload }) as TestApp
+  const app = createApp({ config, auth, system: opts.system, root: opts.root }) as TestApp
 
   // ── Register services ──────────────────────────────────────────────
   for (const def of (opts.services ?? [])) app.services.register(def)

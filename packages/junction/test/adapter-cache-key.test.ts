@@ -70,7 +70,7 @@ beforeAll(async () => {
   ] })
   app = createApp({
     db: db as never,
-    config: { port: 0, services: { dir: '/nonexistent' } },
+    config: { port: 0 },
   })
   app.services.register(createService({ name: 'docs', model: 'Doc' } as never))
 })

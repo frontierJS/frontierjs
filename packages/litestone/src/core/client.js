@@ -11047,8 +11047,9 @@ function makeLockPrimitive(rawWriteDb) {
   // no GatePlugin — the declaration is the contract, and a declared gate that
   // silently does nothing is a fail-open security default. The shipped
   // FrontierGateGetLevel resolver is the default; installing your own
-  // GatePlugin({ getLevel }) replaces it entirely. Models without @@gate are
-  // untouched: no gate declared, no gate enforced.
+  // GatePlugin({ getLevel }) replaces it entirely. Once a schema declares any
+  // access rule, a model with no @@gate and no policy is SYSTEM-only
+  // (`FJS-D1206`), so any access declaration installs it too.
   //
   // A @@transitions clause carrying @gate(N) needs a level resolver for the
   // same reason, so it triggers the same auto-install — and so does a policy
@@ -11058,7 +11059,7 @@ function makeLockPrimitive(rawWriteDb) {
   const _anyGates = schema.models.some(m => m.attributes?.some(a =>
     a.kind === 'gate' ||
     (a.kind === 'transitions' && Object.values(a.transitions).some(t => t.gate != null))
-  )) || authClaimsUsed(schema).has('level')
+  )) || authClaimsUsed(schema).has('level') || schemaDeclaresAccessRules(schema)
   if (_anyGates && !effectivePlugins.some(p => p instanceof GatePlugin)) {
     effectivePlugins = [...effectivePlugins, new GatePlugin({ getLevel: FrontierGateGetLevel })]
   }

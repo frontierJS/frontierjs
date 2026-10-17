@@ -418,11 +418,6 @@ export interface CaravanOptions {
    */
   drainTimeout?: number
   /**
-   * Directory to autoload *.job.ts files from.
-   * Mirrors Junction's autoloadServices pattern.
-   */
-  jobsDir?:      string
-  /**
    * How long to retain terminal jobs (done/dead/cancelled), in ms.
    * Jobs older than this are deleted during the cleanup sweep.
    * Default: 7 days. Set to 0 to disable cleanup.
@@ -648,6 +643,8 @@ export interface CaravanApp {
   claim?: (name: string, value: unknown) => void
   /** Junction's resolved config — read for an optional `caravan` section */
   config?: unknown
+  /** `createApp({ root })` — `*.job.ts` files load from `jobs/` beside it (`FJS-D1080`) */
+  root?: string | null
 
   /**
    * WHO is in scope right now — read at dispatch to record who asked.
@@ -799,7 +796,7 @@ export interface CaravanInstance {
    * Sugar over `handle(name, handler, { cron })`, which is the same
    * registration a `*.job.ts` file makes for itself. Reach for this when the
    * handler is not a job file — a closure, or a function imported from
-   * somewhere that is not `jobsDir`.
+   * somewhere that is not `jobs/`.
    *
    * @param opts.timeZone IANA timezone string — job fires at the right local time
    */

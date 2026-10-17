@@ -24,7 +24,7 @@ const ROWS = [{ id: 1 }, { id: 2 }]
 
 beforeAll(async () => {
   app = createApp({
-    config: { port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 250 } },
+    config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 250 } },
   } as never)
   app.configure(channels(() => {}) as never)
   app.services.register(createService({

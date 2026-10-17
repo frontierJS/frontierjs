@@ -8,7 +8,7 @@
 // (`FJS-D36`) and litestone cannot import it.
 //
 // This is the whole wiring. The file name is the job's name, `cron` on the
-// definition is when it runs, and autoloading from `jobsDir` is the rest.
+// definition is when it runs, and autoloading from `jobs/` is the rest.
 
 import { defineJob } from '@frontierjs/caravan'
 import { sys }       from '../core/db.ts'

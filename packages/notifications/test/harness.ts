@@ -56,9 +56,8 @@ export async function makeApp(opts: {
   transports?: Record<string, unknown>
   /** Omit the mailer entirely, to exercise the missing-mailer path. */
   noMailer?: boolean
-  /** Where `*.notification.ts` live. Absent, the plugin probes from the entry —
-   *  which under a test runner is the TEST FILE, so it finds nothing. */
-  notifications?: string | false
+  /** The app's root; `*.notification.ts` load from `notifications/` under it. */
+  root?: string
 } = {}): Promise<Harness> {
   const dir = tempDir('fjs-notif-')
   const dbPath = join(dir, 'n.db')
@@ -76,7 +75,7 @@ export async function makeApp(opts: {
   const db = await createClient({ parsed })
 
   const sent: OutgoingMail[] = []
-  const app: any = await createTestApp()
+  const app: any = await createTestApp({ root: opts.root })
   app.configure(channels())
   // CONFIGURED, not assigned. `app.mail = {...}` set the property without the
   // plugin, so `requires: ['mailer']` — which notificationsPlugin declares and
@@ -91,7 +90,6 @@ export async function makeApp(opts: {
   }
   app.configure(notificationsPlugin({
     db,
-    notifications: opts.notifications,
     transports:    opts.transports as never,
   }))
 

@@ -83,15 +83,9 @@ describe('opts.model overrides the lookup', () => {
     expect(r.fields.name.required).toBe(true)     // seeded, not bare
   })
 
-  test('works in the schema-second signature', () => {
-    const r = createResource('children', DEFS.Child, { model: 'Child' })
+  test('works beside a schema handed in opts', () => {
+    const r = createResource('children', { schema: DEFS.Child, model: 'Child' })
     expect(r.context.model).toBe('Child')
-    expect(r.fields.name).toBeTruthy()
-  })
-
-  test('works in the object form', () => {
-    const r = createResource({ service: 'people', model: 'Person' })
-    expect(r.context.model).toBe('Person')
     expect(r.fields.name).toBeTruthy()
   })
 
@@ -158,5 +152,28 @@ describe('suggestModel', () => {
     expect(suggestModel('zzz')).toBeNull()
     expect(suggestModel('')).toBeNull()
     expect(suggestModel(undefined)).toBeNull()
+  })
+})
+
+// FJS-2933: one call shape. The others are refused naming it, since each used
+// to construct a resource and a silent misread would bind the wrong service.
+describe('createResource(name, opts) is the one call shape', () => {
+
+  test('the object form is refused', () => {
+    expect(() => createResource({ service: 'people', model: 'Person' }))
+      .toThrow(/createResource\('people', \{ \.\.\. \}\)/)
+  })
+
+  test('a positional idField is refused', () => {
+    expect(() => createResource('people', 'id', { model: 'Person' })).toThrow(/idField/)
+    expect(() => createResource('people', null, { model: 'Person' })).toThrow(/idField/)
+  })
+
+  test('a positional schema is refused', () => {
+    expect(() => createResource('children', DEFS.Child, { model: 'Child' })).toThrow(/schema/)
+  })
+
+  test('a third argument is refused', () => {
+    expect(() => createResource('people', { model: 'Person' }, {})).toThrow(/two arguments/)
   })
 })

@@ -46,7 +46,6 @@ beforeAll(async () => {
     logger: capturingLogger(),
     config: {
       port: PORT,
-      services: { dir: '/nonexistent' },
       http: { ...defaultConfig.http, drainTimeout: 200 },
     },
   })
@@ -115,7 +114,6 @@ describe('an app that started no second listener', () => {
     const quiet = createApp({
       config: {
         port: PORT + 1,
-        services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },
     })

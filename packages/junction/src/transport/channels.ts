@@ -40,6 +40,7 @@ import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, de
 import { PROTOCOL_CALL_HEADERS, acceptedRequestId } from '../core/context.ts'
 import { serviceAccessor }      from '../core/service.ts'
 import { wsSend }               from './send-queue.ts'
+import { firstUnsafeInteger, UnsafeIntegerError } from './body.ts'
 import { logSocketCall }        from './middleware.ts'
 import type { ServiceContext } from '../core/context.ts'
 import type { App, Plugin }    from '../core/app.ts'
@@ -1642,6 +1643,19 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
           const parsed = manager.handleMessage(connId, msg)
           if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
             refuse('malformed_frame', 'Frame is not a JSON object')
+            return
+          }
+
+          // The parse above has already rounded a digit-only literal past 2^53,
+          // so the text is the only place the digits sent still exist.
+          const unsafe = firstUnsafeInteger(typeof msg === 'string' ? msg : msg.toString())
+          if (unsafe) {
+            const id = (parsed as { id?: unknown }).id
+            refuse(
+              'unsafe_integer',
+              new UnsafeIntegerError(unsafe, 'Frame').message,
+              typeof id === 'string' || typeof id === 'number' ? id : undefined,
+            )
             return
           }
 

@@ -158,6 +158,8 @@ export interface App {
   mail?:    { send(msg: OutgoingMail): Promise<unknown> }
   /** Junction's broadcast channel — the other reading of the word, and the one it keeps. */
   channel?: (name: string) => { send(event: string, payload: unknown): void } | undefined
+  /** `createApp({ root })` — definitions load from `notifications/` beside it (`FJS-D1080`). */
+  root?:    string | null
   notify?:  (recipient: Recipient, notification: Notification) => Promise<void>
   /**
    * Junction's guarded namespace claim. Used when present so a second plugin
@@ -171,20 +173,6 @@ export interface App {
 
 export interface NotificationsPluginOptions {
   db:          unknown          // Litestone client
-
-  /**
-   * Where this app's `*.notification.ts` files are.
-   *
-   * Absent, two candidates are probed beside the entry — `notifications/` and
-   * `src/notifications/` — which is the flat layout and the scaffolded one. A
-   * stated path is never probed around: a relative path resolved against the
-   * wrong working directory lands on nothing and is indistinguishable from an
-   * app that declares none, so a miss throws naming what it looked at.
-   *
-   * `false` turns loading off. Definitions then have to state `type:`, because
-   * nothing will have named them.
-   */
-  notifications?: string | false
 
   /**
    * A driver per transport name. `email: { mailer }` is the one plain object

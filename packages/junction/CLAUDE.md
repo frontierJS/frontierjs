@@ -258,7 +258,7 @@ src/
     errors.ts — named HTTP error classes and retryable
     schema.ts — request validation from the generated JSON Schema
     loader.ts — auto-discovers *.service.ts
-    services-dir.ts — where an app's services are, one answer
+    app-root.ts — createApp({ root }) and the folders derived from it (FJS-D1080)
     rate-limit.ts — the one rate limiter
     public-url.ts — assertPublicUrl: whether a URL a stranger chose may be fetched; @frontierjs/junction/public-url (FJS-1579)
     idempotency.ts — claimIdempotency

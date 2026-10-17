@@ -2,7 +2,7 @@
 // Scans a directory for *.job.ts files and registers their default exports.
 // Mirrors Junction's autoloadServices pattern exactly.
 //
-// A job in `jobsDir` is NAMED BY ITS FILE, and the loader stamps the name onto
+// A job in `jobs/` is NAMED BY ITS FILE, and the loader stamps the name onto
 // a definition that states none. A stated `name:` that disagrees with the file
 // is refused here rather than registered: the symptom otherwise is a handler
 // answering to `send-emial` while every dispatch says `send-email`, and a job
@@ -103,7 +103,7 @@ export async function autoloadJobs(
     if (def.name !== expected && fileNameForJob(def.name) !== expected) {
       throw new Error(
         `[Caravan] ${entry}: defineJob({ name: '${def.name}' }) does not match the file name. ` +
-        `A job in jobsDir is named by its file, so this would register '${def.name}' ` +
+        `A job in jobs/ is named by its file, so this would register '${def.name}' ` +
         `while every dispatch naming '${expected}' waits for a handler that never arrives. ` +
         `Rename the file to '${fileNameForJob(def.name)}.job.ts', or the job to '${expected}'.`
       )

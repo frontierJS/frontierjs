@@ -3,9 +3,9 @@
   // Polymorphic button. `.btn` plus a tone and/or a treatment.
   //
   // In @frontierjs/css a tone (primary, danger, …) and a treatment (outlined,
-  // ghost, link, raised) are different kinds of class and compose freely, so
-  // `tone="danger" treatment="outlined"` is a red outline button. With neither
-  // given the button is primary; a treatment alone takes no tone.
+  // ghost, link, raised, glass) are different kinds of class and compose
+  // freely, so `tone="danger" treatment="outlined"` is a red outline button.
+  // With neither given the button is primary; a treatment alone takes no tone.
   //
   // Sizes are a font-size: `.btn` is sized in em, so the padding scales.
   //
@@ -21,7 +21,7 @@
   import { tone as toTone, cx } from '../../utils.js'
 
   export let tone      = ''
-  export let treatment = ''         // '' | 'outlined' | 'ghost' | 'link' | 'raised'
+  export let treatment = ''         // '' | 'outlined' | 'ghost' | 'link' | 'raised' | 'glass'
   export let size      = 'md'       // 'xs' | 'sm' | 'md' | 'lg'
   export let type      = 'button'
   export let disabled  = false

@@ -115,7 +115,7 @@ group('a Resource over Harbor, against a real Junction app')
   const patches = []
 
   const app = createApp({
-    config: { port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http } },
+    config: { port: 0, http: { ...defaultConfig.http } },
   })
   app.configure(channels((a) => {
     a.channels.on('connection', (_s, conn) => { a.channel(ROOM).join(conn) })

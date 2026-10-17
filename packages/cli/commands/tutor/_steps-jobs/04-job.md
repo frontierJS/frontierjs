@@ -174,7 +174,7 @@ if (!await must($, probe.eventually(() => probe.sqliteRow({
   expect: (rows) => Number(rows[0]?.done) === 1,
   name:   'and then the job finished it',
 }), { retries: 16, everyMs: 500 }), {
-  likely:    'the job never ran — jobsDir may not be loading, which is silent',
+  likely:    'the job never ran — api/src/jobs/ may not be loading, which is silent',
   reproduce: `cd ${app} && bun -e "console.log(await Bun.file('db/jobs.db').exists())"`,
   detail:    serverLog(api),
 })) return

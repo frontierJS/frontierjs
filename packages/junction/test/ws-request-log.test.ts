@@ -8,7 +8,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { createApp, createService, channels, defaultConfig } from '../index.ts'
 import { createLogger, type LogEntry } from '../src/core/logger.ts'
-import { requestLogger } from '../src/transport/middleware.ts'
+import { correlationId, requestLogger } from '../src/transport/middleware.ts'
 import { Forbidden } from '../src/core/errors.ts'
 
 
@@ -28,14 +28,15 @@ beforeAll(async () => {
     logger: createLogger({ level: 'debug', writers: [e => { lines.push(e) }] }),
     config: {
       port:     0,
-      services: { dir: '/nonexistent' },
       http:     { ...defaultConfig.http, drainTimeout: 250 },
     },
   })
   app.services.register(probe)
   app.configure(channels())
+  app.configure(correlationId())
   app.configure(requestLogger({ format: 'json' }))
   app.post('/refuse', () => { throw new Forbidden('no') })
+  app.get('/ok', (ctx: any) => ctx.json({ ok: true }))
   await app.start()
 })
 
@@ -75,4 +76,16 @@ test('a raw route that throws is logged with the status it answered', async () =
   expect(res.status).toBe(403)
   const line = lines.find(l => l.message === 'request' && l.data?.path === '/refuse')
   expect(line?.data?.status).toBe(403)
+})
+
+// `requestLogger` read the id from the request scope in its `finally`, after
+// the scope had closed, so every HTTP line carried none (`FJS-1414`).
+test('an HTTP request line carries the correlation id the response echoes', async () => {
+  const res = await fetch(`http://localhost:${app.http.port}/ok`, {
+    headers: { 'x-request-id': 'a'.repeat(32) },
+  })
+  const echoed = res.headers.get('x-request-id')
+  expect(echoed).toBe('a'.repeat(32))
+  const line = lines.filter(l => l.message === 'request' && l.data?.path === '/ok').at(-1)
+  expect(line?.data?.correlationId).toBe(echoed)
 })
