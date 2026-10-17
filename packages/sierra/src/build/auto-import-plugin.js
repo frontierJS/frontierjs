@@ -23,8 +23,13 @@
  * 4. The Mesa compiler plugin prepends import statements to each .mesa file
  *    before compilation, for names the file actually uses.
  *
- * Two sources exporting the same name → build error. A directory tree and a
- * package are the same namespace, because the injected import is the same
+ * Two sources exporting the same name → build error, with one exception: the
+ * `components` list is ORDERED and a later directory wins a name an earlier one
+ * holds, which is how a site cut from a template replaces the template's block
+ * without copying the rest (`FJS-D1004`). Each override is logged, so an
+ * accidental shadow stays visible. Inside ONE directory, and between a directory
+ * and a `modules` binding, there is no order to appeal to. A directory tree and
+ * a package are the same namespace, because the injected import is the same
  * identifier either way.
  */
 
@@ -91,14 +96,23 @@ export function autoImportPlugin(config, sierraContext) {
   let componentMap = new Map()
   let root = process.cwd()
 
-  async function scan(root) {
+  async function scan(root, onOverride) {
     const map = new Map()
     // Where each name came from, for the conflict message. A package entry has
     // no file path, so this is what both halves can report.
     const origin = new Map()
+    // The components directory index that holds a name; absent for a module.
+    const dirOf = new Map()
 
-    const claim = (name, entry, where) => {
+    const claim = (name, entry, where, dirIndex = null) => {
       if (map.has(name)) {
+        if (dirIndex !== null && dirOf.get(name) < dirIndex) {
+          onOverride?.(name, where, origin.get(name))
+          map.set(name, entry)
+          origin.set(name, where)
+          dirOf.set(name, dirIndex)
+          return
+        }
         throw new Error(
           `[Sierra] Auto-import naming conflict: '${name}' is provided by both\n` +
           `  ${origin.get(name)}\n` +
@@ -108,9 +122,10 @@ export function autoImportPlugin(config, sierraContext) {
       }
       map.set(name, entry)
       origin.set(name, where)
+      if (dirIndex !== null) dirOf.set(name, dirIndex)
     }
 
-    for (const dir of dirs) {
+    for (const [dirIndex, dir] of dirs.entries()) {
       const absDir = resolve(root, dir)
       let files
 
@@ -129,7 +144,7 @@ export function autoImportPlugin(config, sierraContext) {
         // Only PascalCase components
         if (!/^[A-Z]/.test(name)) continue
 
-        claim(name, { kind: 'default', from: abs, imported: null }, relative(root, abs))
+        claim(name, { kind: 'default', from: abs, imported: null }, relative(root, abs), dirIndex)
       }
     }
 
@@ -152,7 +167,8 @@ export function autoImportPlugin(config, sierraContext) {
     },
 
     async buildStart() {
-      componentMap = await scan(root)
+      componentMap = await scan(root, (name, winner, loser) =>
+        console.log(`[Sierra] Auto-import: '${name}' from ${winner} replaces ${loser}`))
       sierraContext.autoImportMap = componentMap
 
       if (componentMap.size > 0) {

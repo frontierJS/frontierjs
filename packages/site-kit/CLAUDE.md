@@ -45,8 +45,9 @@ what they mean in any app.
   `routesDir` and `markdownLayouts`, which neither a preset nor a site can
   move. `markdownLayouts` is site-kit's `src/layouts`, then the
   preset's, then the site's `content/layouts` when it exists; a later
-  directory wins a name. `autoImport` gains the settings module beside the
-  preset's or the site's own. `document` merges key by key, the preset's then
+  directory wins a name. `autoImport.components` is the preset's directories
+  then the site's, so a later one wins a name too (`FJS-D1004`); `autoImport`
+  gains the settings module beside the preset's or the site's own. `document` merges key by key, the preset's then
   the site's, so a site's own `head` never costs the preset's `jsonLd`.
 - `config/content.js` — `content/settings/site.md` is the site's settings, the
   data its pages and its preset read; `site.js` stays its Sierra config.

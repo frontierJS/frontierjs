@@ -152,15 +152,13 @@ normal case, not an edge one.
 production unchanged and only its configuration differs, so the environment is on
 the row and the configuration is in the hash.
 
-**`configurationHash` covers a DECLARATION and not the running configuration.** A deploy
-writes no `.env` on a target — setup seeds it once and the operator owns it after, and the container is
-started with `--env-file` against it — so nothing under `deploy.configuration` is
-applied by a deploy. What the hash and the generation are for is the question a
-revert asks: *has the configuration been changed since the release I am going
-back to*, which is why `fli deploy:revert` refuses rather than putting old code
-onto today's config. Reading the hash as *what the process is running on* is
-[`FJS-585`](../../../../ISSUES.md#fjs-585); `01b-env-check` is what turns the
-declaration into something the target is actually graded against.
+**`deploy.configuration` is what the process runs on; `deploy.secrets` is named, not applied.**
+A deploy writes no `.env` on a target — setup seeds it once and the operator owns it after
+(`FJS-D1186`) — and `06-swap` passes the plain values to `docker run` as `--env K=V` after
+`--env-file`, so they win (`FJS-D1029`). A secret reference stays in the operator's file and
+`01b-env-check` grades it present by key. The generation is the question a revert asks: *has
+the configuration been changed since the release I am going back to*, which is why
+`fli deploy:revert` refuses once it has moved, since the secrets half cannot be restored.
 
 **The digest is absent unless one is passed.** `fli deploy` records what it
 built — `core/image.js` asks the daemon and keeps the registry digest where one

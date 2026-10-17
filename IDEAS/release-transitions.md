@@ -862,7 +862,7 @@ column has exactly one value in it.
 Ruled as [`FJS-D158`](../DECISIONS.md#fjs-d158). `attachments` is declared in the
 app (`junction.config.js`, or `createApp({ config })`) and bound per environment
 by the variables the process actually carries — **not** phase 1's configuration set,
-which is recorded into the Release and applied by nobody (`FJS-585`);
+whose plain values `06-swap` applies as `--env K=V` and whose secrets nobody applies (`FJS-D1029`);
 `check-attachments` is a
 junction start phase that refuses to boot on a service that is unbound or bound
 halfway.

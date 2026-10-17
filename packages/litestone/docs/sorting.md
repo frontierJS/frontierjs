@@ -302,3 +302,35 @@ Two places refuse it, because it cannot mean anything there:
 
 `$checkOrderBy` passes `$raw` through: the fragment names its own columns, so
 there is nothing to check — the same standing `where`'s `$raw` has.
+
+## Case: `@collate`
+
+A `String` column sorts in SQLite's BINARY order, so every capitalised word comes
+before every lowercase one — `BNI`, `Bing`, `apple`. A picker ordered by its label
+reads wrong. `@collate(nocase)` writes the order into the column, so `ORDER BY`,
+`=` and an index on the column all agree:
+
+```lite
+model LeadSource {
+  id    Int    @id
+  label String @collate(nocase)
+}
+```
+
+```js
+await db.leadSource.create({ data: { label: 'Bing' } })
+await db.leadSource.create({ data: { label: 'BNI' } })
+await db.leadSource.create({ data: { label: 'apple' } })
+
+const rows = await db.leadSource.findMany({ orderBy: { label: 'asc' } })
+// apple, Bing, BNI
+```
+
+The three are the ones SQLite ships: `binary` (the default), `nocase` and `rtrim`.
+`nocase` folds ASCII case only — `bun:sqlite` has no ICU — so `Émile` still sorts
+after `Zed`; an accented list that must read in the reader's language needs a sort
+key column the app writes. A `@values` set ordered by its label, and
+`resource.options()` over it, take the order from the column.
+
+Adding or changing it on a populated column rebuilds the table, and it is refused
+off a stored `String` column and beside `@encrypted`, `@secret` and `@hashed`.

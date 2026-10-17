@@ -458,6 +458,28 @@ describe('swapContainer', () => {
     expect(drive({ deployConf: {} }).runCmd).not.toContain('FJS_BUILD')
   })
 
+  test('the configuration values reach the process, after the env file so they win (FJS-585)', () => {
+    // The Release hash names these values, so they are what the process runs on:
+    // `--env K=V` after `--env-file`, never a file written on the target.
+    const { runCmd } = drive({ deployConf: {}, configuration: { A: '1', GREETING: "it's here" } })
+
+    expect(runCmd).toContain(`--env A='1'`)
+    expect(runCmd).toContain(`--env GREETING='it'\\''s here'`)
+    expect(runCmd.indexOf('--env A=')).toBeGreaterThan(runCmd.indexOf('--env-file'))
+  })
+
+  test('PORT and NODE_ENV still beat a configuration value of the same name', () => {
+    const { runCmd } = drive({ deployConf: {}, configuration: { PORT: '9999' } })
+
+    expect(runCmd.lastIndexOf('--env PORT=')).toBeGreaterThan(runCmd.indexOf(`--env PORT='9999'`))
+  })
+
+  test('no configuration adds no --env beyond the framework\'s own', () => {
+    const { runCmd } = drive({ deployConf: {} })
+
+    expect(runCmd).not.toContain(`='`)
+  })
+
   test('the app is told the one proxy the edge puts in front of it (FJS-1841)', async () => {
     // Untold, every caller arrives from Caddy's address and shares one
     // rate-limit bucket, so one caller's failed logins lock out the site.

@@ -1000,7 +1000,7 @@ Everything in `sierra.config.js`:
 | `theme` | — | `{ themes, default, system, persist, key, apply, attribute }` — `attribute` only with `apply: 'attribute'` |
 | `analytics` | — | `{ provider }` — `'plausible'` (`domain`, `apiHost`), `'gtm'` (`containerId`), or a custom provider's module path relative to the Vite root (`'/src/analytics.js'`), which exports `init`, `pageview` and `track`. On `static` the build writes the vendor's tag into every page's `<head>` and an island's `track()` reaches it; a custom provider is refused there, since a prerendered page has nothing to run it |
 | `devtools` | — | `{ port, position, n1Threshold }` |
-| `autoImport.components` | `[]` | directories, scanned recursively, whose PascalCase components need no import |
+| `autoImport.components` | `[]` | directories, scanned recursively, whose PascalCase components need no import. Ordered: a later directory wins a name an earlier one holds, and the build logs each override; the same name twice in one directory, or against a `modules` binding, is a build error |
 | `autoImport.modules` | `{}` | package → bindings that need no import |
 | `siteUrl` | `''` | absolute origin for the sitemap |
 | `llms` | `false` | `true` emits `llms.txt` unless `public/llms.txt` exists · `'auto'` always regenerates it |

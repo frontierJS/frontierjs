@@ -12,7 +12,7 @@ defaults:
 <script>
 const { loadFrontierConfig, dockerfileScripts } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { vendorWorkspacePackages, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
-const { createMachine } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
+const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { dockerLogArgs } = await import(new URL('file://' + global.fliRoot + '/core/docker-logging.js'))
 const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
 const { EDGE_HOPS } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
@@ -512,7 +512,7 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // every real deploy threw `ReferenceError: deployConf is not defined` while
 // building the `docker run` line. By then the running container had been renamed
 // to `_replaced` and stopped, and the new one was never started (`FJS-726`).
-const swapContainer = ($, { host, container, image, apiPort, dbPath, envFile, build, deployConf, log }) => {
+const swapContainer = ($, { host, container, image, apiPort, dbPath, envFile, build, deployConf, configuration = {}, log }) => {
   const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
 
@@ -537,7 +537,12 @@ fi`)
     `-p 127.0.0.1:${apiPort}:3000`,
     `--volume ${dbPath}:${CONTAINER_DB_DIR}`,
     `--env-file ${envFile}`,
-    // AFTER --env-file so it wins: the mapping above targets 3000 inside the
+    // The Release's plain configuration values, AFTER --env-file so a declared
+    // value beats a stale line in the operator's file. Nothing is written on the
+    // target (FJS-D1186); secrets stay in that file and never travel this way,
+    // because these show in docker inspect (FJS-D1029).
+    ...Object.entries(configuration).map(([k, v]) => `--env ${k}=${shQuote(v)}`),
+    // AFTER --env-file and the values above so it wins: the mapping above targets 3000 inside the
     // container, and the app binds whatever PORT says. A PORT in .env.production
     // otherwise leaves the container listening where nothing forwards, which the
     // health step then reports as a sick application.
@@ -702,12 +707,15 @@ fi`
 // a path the edge would hand the SPA.
 //
 // `{ routes, paths }`, or `{ error }` for an EdgeError. `paths` null means no
-// snapshot, and the routes fall back to `/api/`.
-const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge }) => {
-  const { edgeRoutes, apiPaths, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+// snapshot, and the routes fall back to `/api/`. `html` is the `index.html` the
+// route will serve, read off the target: its inline scripts are hashed into the
+// CSP, and a page whose hash is missing has its theme and service worker refused.
+const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge, html = '' }) => {
+  const { edgeRoutes, apiPaths, inlineScriptHashes, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
   const { readApiSurface } = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
-  const paths = apiPaths(readApiSurface(root))
-  try { return { routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, paths }), paths } }
+  const paths   = apiPaths(readApiSurface(root))
+  const scripts = inlineScriptHashes(html)
+  try { return { routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, paths, scripts }), paths } }
   catch (e) { if (e instanceof EdgeError) return { error: e.message }; throw e }
 }
 

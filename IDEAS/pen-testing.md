@@ -65,7 +65,7 @@ Done when: Phase 4's scan reports no header findings.
 - [ ] 2.2 HSTS on whenever the app is served over https in production
 - [ ] 2.3 A default CSP (Q1)
 - [ ] 2.4 Document that rate limits are per process and reset on restart, in junction's docs and in B14's *Open* cell (`FJS-D1193`)
-- [ ] 2.5 Security headers on the SPA document `fli deploy` serves, which helmet never reaches (`FJS-3190`)
+- [x] 2.5 Security headers on the SPA document `fli deploy` serves, which helmet never reaches (`FJS-3190`)
 
 ### Phase 3 — Probe what is unmeasured
 
@@ -116,7 +116,7 @@ Done when: a report is filed and each finding has an `FJS-###`.
    - **B** — L2 throughout.
    - **C** — L1 for now.
    - **Recommend A** — those two boundaries hold every other app's data.
-5. **Q5 — The CSP on the SPA document `fli deploy` serves (`FJS-3190`, step 2.5).** Caddy's `file_server` sends no header today. A built `index.html` holds two inline scripts: `sierra-theme`, which sets the theme class before paint, and the service-worker registration. `FJS-D1192`'s `default-src 'self'` would block both. A static file server cannot mint a nonce.
+5. ~~**Q5 — The CSP on the SPA document `fli deploy` serves (`FJS-3190`, step 2.5).**~~ **Answered 2026-10-17 (`FJS-D1205`): B — A's headers, plus a strict CSP whose `script-src 'self'` carries a `sha256-` hash of each inline script, read from the built `index.html` at deploy and written into the Caddy route. This is SvelteKit's `kit.csp` hash mode for prerendered pages, Astro's `security.csp`, and nuxt-security for SSG.** Caddy's `file_server` sends no header today. A built `index.html` holds two inline scripts: `sierra-theme`, which sets the theme class before paint, and the service-worker registration. `FJS-D1192`'s `default-src 'self'` would block both. A static file server cannot mint a nonce.
    - **A** — send the headers that need no CSP now (`nosniff`, `Referrer-Policy`, `X-Frame-Options` plus `frame-ancestors`), and add the script CSP when 2.3 lands the default.
    - **B** — A's headers, plus a strict CSP whose `script-src 'self'` carries a `sha256-` hash of each inline script, read from the built `index.html` at deploy and written into the Caddy route. This is SvelteKit's `kit.csp` hash mode for prerendered pages, Astro's `security.csp`, and nuxt-security for SSG.
    - **C** — move both scripts into files so plain `script-src 'self'` holds. The cost is a blocking request before first paint for the theme script.

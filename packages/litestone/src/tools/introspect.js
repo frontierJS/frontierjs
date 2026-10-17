@@ -1,5 +1,5 @@
 import { isIndexExpression, predicateToLite } from '../core/migrate.js'
-import { mapIdentifiers } from '../core/ddl.js'
+import { mapIdentifiers, COLLATIONS } from '../core/ddl.js'
 // src/introspect.js — Entity Generator
 // Reverse-engineers an existing SQLite database into a .lite schema file.
 //
@@ -428,6 +428,11 @@ export function introspectToLite(db, { camelCase = true, database = null } = {})
       // A composite key is declared once at the model level instead — the two
       // spellings are refused together, and only @@id states the order.
       if (col.pk && !compositePk)       attrs.push('@id')
+      if (col.collation !== 'binary') {
+        if (liteType === 'String' && COLLATIONS.includes(col.collation)) attrs.push(`@collate(${col.collation})`)
+        else gap('collation', modelName, fieldName, `COLLATE ${col.collation.toUpperCase()}`,
+                 `no collation — .lite names ${COLLATIONS.join(', ')}, the three SQLite ships`)
+      }
       if (!col.notnull && !col.pk)      {} // optional suffix handles it
       const def     = renderDefault(col.default, liteType)
       const defAttr = def.attr

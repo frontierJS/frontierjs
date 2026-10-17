@@ -8,8 +8,7 @@
  * named by its basename. The list is ORDERED and a later directory wins a name:
  * that is how a site cut from a template replaces one of the template's layouts
  * without copying the rest — ksite's `content/layouts/` over `src/blocks/`
- * (`FJS-1493`). Unlike `autoImport`, where two files claiming a name is an
- * error (`FJS-1494`), here the author has already written the order down.
+ * (`FJS-1493`). `autoImport.components` takes the same rule (`FJS-D1004`).
  *
  * Layouts are a namespace of their own. ksite's `content/blocks/Trust.md` says
  * `layout: Trust` and is wrapped by `src/blocks/Trust.mesa`; the tag `<Trust />`

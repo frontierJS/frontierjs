@@ -63,22 +63,39 @@ function scanTo(sql, i, stop) {
   return sql.length
 }
 
-export function parseGeneratedColumns(sql) {
-  const out  = new Map()
-  const open = sql ? sql.indexOf('(') : -1
-  if (open === -1) return out
-
-  // The column list, one top-level entry at a time. Table constraints land in
-  // here too and simply never match the generated form.
+// A CREATE TABLE's column list, one top-level entry at a time. Table
+// constraints land in it too and simply never match a column's form.
+function createTableParts(sql) {
   const parts = []
+  const open  = sql ? sql.indexOf('(') : -1
+  if (open === -1) return parts
   for (let i = open + 1; i < sql.length; ) {
     const end = scanTo(sql, i, ',)')
     parts.push(sql.slice(i, end))
     if (sql[end] !== ',') break
     i = end + 1
   }
+  return parts
+}
 
-  for (const part of parts) {
+/**
+ * Each column's declared collation, read off the CREATE statement — no pragma
+ * names one for a column. A column naming none is absent, which is BINARY.
+ */
+export function parseCollations(sql) {
+  const out = new Map()
+  for (const part of createTableParts(sql)) {
+    const name = part.trim().match(/^(?:"([^"]+)"|`([^`]+)`|\[([^\]]+)\]|(\w+))/)
+    const at   = /\bCOLLATE\s+(\w+)/i.exec(part)
+    if (name && at) out.set(name[1] ?? name[2] ?? name[3] ?? name[4], at[1].toLowerCase())
+  }
+  return out
+}
+
+export function parseGeneratedColumns(sql) {
+  const out  = new Map()
+
+  for (const part of createTableParts(sql)) {
     const name = part.trim().match(/^(?:"([^"]+)"|`([^`]+)`|\[([^\]]+)\]|(\w+))/)
     if (!name) continue
     // `GENERATED ALWAYS` is optional in SQLite — `x AS (expr)` is the same column.
@@ -110,21 +127,9 @@ export function parseGeneratedColumns(sql) {
  * Sorted, because a constraint moving position is not a constraint changing.
  */
 export function parseChecks(sql) {
-  const out  = []
-  const open = sql ? sql.indexOf('(') : -1
-  if (open === -1) return out
+  const out = []
 
-  // The same top-level walk `parseGeneratedColumns` does — one column or table
-  // constraint at a time, with quotes and nesting respected.
-  const parts = []
-  for (let i = open + 1; i < sql.length; ) {
-    const end = scanTo(sql, i, ',)')
-    parts.push(sql.slice(i, end))
-    if (sql[end] !== ',') break
-    i = end + 1
-  }
-
-  for (const part of parts) {
+  for (const part of createTableParts(sql)) {
     const at = /\bCHECK\s*\(/i.exec(part)
     if (!at) continue
     const from = at.index + at[0].length
@@ -198,7 +203,8 @@ export function introspect(db) {
     // migration (FJS-407). `table_xinfo` is the same pragma that lists them —
     // `hidden` 2 = VIRTUAL, 3 = STORED — and 1 is a virtual table's own hidden
     // column, which is not a column any schema declares.
-    const generated = parseGeneratedColumns(tblSql)
+    const generated  = parseGeneratedColumns(tblSql)
+    const collations = parseCollations(tblSql)
 
     const columns = db.prepare(`PRAGMA table_xinfo("${t}")`).all()
       .filter(r => r.hidden !== 1)
@@ -208,6 +214,7 @@ export function introspect(db) {
         notnull: !!r.notnull,
         pk:      !!r.pk,
         default: r.dflt_value ?? null,
+        collation: collations.get(r.name) ?? 'binary',
         // The pragma says WHETHER a column is generated; only the CREATE
         // statement says from what. The pragma is the authority — a column is
         // never treated as generated because the text parse thought so.
@@ -722,6 +729,7 @@ function diffColumns(pristineCols, liveCols) {
       if (live.type    !== col.type)    changes.push({ field: 'type',    from: live.type,    to: col.type })
       if (live.notnull !== col.notnull) changes.push({ field: 'notnull', from: live.notnull, to: col.notnull })
       if (live.pk      !== col.pk)      changes.push({ field: 'pk',      from: live.pk,      to: col.pk })
+      if (live.collation !== col.collation) changes.push({ field: 'collation', from: live.collation, to: col.collation })
       const ld = live.default?.trim() ?? null
       const pd = col.default?.trim()  ?? null
       if (ld !== pd) changes.push({ field: 'default', from: ld, to: pd })

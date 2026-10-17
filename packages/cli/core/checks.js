@@ -4007,24 +4007,32 @@ const CHECKS = {
             // Blanked rather than cut, so every index still maps to its line.
             const css = block[1]
               .replace(/\/\*[\s\S]*?\*\//g, s => s.replace(/[^\n]/g, ' '))
-              // Declaring a token is where a literal belongs, and a var() fallback names the token first.
-              .replace(/--[A-Za-z0-9_-]+\s*:[^;}]*/g, s => s.replace(/[^\n]/g, ' '))
+              // A color that is the data (a levels ramp, a hue swatch) is declared in --data-* (FJS-D1001).
+              .replace(/--data-[A-Za-z0-9_-]+\s*:[^;}]*/g, s => s.replace(/[^\n]/g, ' '))
+              // A var() fallback names the token first.
               .replace(/var\([^)]*\)/g, s => s.replace(/[^\n]/g, ' '))
               // A condition cannot read var(), so a breakpoint has no token spelling to offer.
               .replace(/@(?:media|container|supports)\b[^{;]*/g, s => s.replace(/[^\n]/g, ' '))
-            const hits = [...css.matchAll(RAW)]
+            // Declaring a size token is where a literal belongs; a color in one is graded.
+            const tokens = [...css.matchAll(/--[A-Za-z0-9_-]+\s*:[^;}]*/g)].map(t => [t.index, t.index + t[0].length])
+            const inToken = (i) => tokens.some(([a, b]) => i >= a && i < b)
+            const hits = [...css.matchAll(RAW)].filter(m => !inToken(m.index) || !/^[\d.]/.test(m[0]))
             for (const d of css.matchAll(/:([^;{}]*)/g)) {
               for (const m of d[1].matchAll(NAMED)) hits.push({ 0: m[0], index: d.index + 1 + m.index })
             }
             hits.sort((a, b) => a.index - b.index)
             for (const m of hits) {
+              const token = inToken(m.index)
               findings.push({
                 file,
                 line: lineOf(text, start + m.index),
-                message: `${m[0].replace(/\($/, '(…)')} in a <style> — a raw color, size or spacing value is the ` +
-                         `one thing @frontierjs/css rules out, since a theme switch and a density change cannot ` +
-                         `reach it. Say what the thing is and what is true of it — a tone and a treatment on the ` +
-                         `element — or read a token with var(--…).`,
+                message: `${m[0].replace(/\($/, '(…)')} in a <style> — ` + (token
+                  ? `a raw color in a custom property is themed by nothing. A color that is the data goes in a ` +
+                    `--data-* property; any other color is a tone and a treatment, or a token from @frontierjs/css.`
+                  : `a raw color, size or spacing value is the one thing @frontierjs/css rules out, since a theme ` +
+                    `switch and a density change cannot reach it. Say what the thing is and what is true of it — ` +
+                    `a tone and a treatment on the element — or read a token with var(--…), or --data-* for a ` +
+                    `color that is the data.`),
               })
             }
           }

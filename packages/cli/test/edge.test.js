@@ -9,9 +9,10 @@
 
 import { describe, test, expect } from 'bun:test'
 import { readFileSync } from 'fs'
+import { createHash } from 'crypto'
 import {
   edgeNames, apiOrigin, edgeRoutes, applyEdge, routeId, accessLogPath, INGRESS_SERVER,
-  parseConfigRead, parseConfigWrite, writeConfigScript, EdgeError,
+  parseConfigRead, parseConfigWrite, writeConfigScript, EdgeError, inlineScriptHashes,
 } from '../core/edge.js'
 import { guardId } from '../core/pause.js'
 
@@ -207,5 +208,56 @@ describe('the steps read the domains here, and nowhere else', () => {
     expect(build).toContain('apiOrigin(edgeNames(deployConf))')
     expect(build).toContain('VITE_API_URL=${origin}')
     expect(build).toMatch(/grep -rl .* '\$\{origin\}'/)
+  })
+})
+
+// Caddy's file_server sends no header of its own, and helmet is a Junction
+// router middleware, so the document a person uses reached the browser
+// frameable, sniffable and with no script policy (FJS-3190, FJS-D1205).
+describe('the document the web route serves', () => {
+  const sha = (s) => `'sha256-${createHash('sha256').update(s).digest('base64')}'`
+  const theme = 'document.documentElement.classList.add("dark")'
+  const sw    = "if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js')"
+  const html  = `<html><head><script id="sierra-theme">${theme}</script>` +
+    '<script type="module" crossorigin src="/assets/index.js"></script></head>' +
+    `<body><script>${sw}</script></body></html>`
+  const served    = (r) => inner(r).at(-1)
+  const headersOf = (r) => served(r).handle.find(h => h.handler === 'headers')?.response?.set ?? {}
+
+  test('hashes each inline script and nothing with a src', () => {
+    expect(inlineScriptHashes(html)).toEqual([sha(theme), sha(sw)])
+    expect(inlineScriptHashes('')).toEqual([])
+  })
+
+  test('carries nosniff, a referrer policy and both framing refusals', () => {
+    const [r] = routesFor({ web: { domain: 'shop.example' } })
+    const h = headersOf(r)
+    expect(h['X-Content-Type-Options']).toEqual(['nosniff'])
+    expect(h['Referrer-Policy']).toEqual(['strict-origin-when-cross-origin'])
+    expect(h['X-Frame-Options']).toEqual(['DENY'])
+    expect(h['Content-Security-Policy'][0]).toContain("frame-ancestors 'none'")
+  })
+
+  test('allows its own scripts and the inline ones it was built with, by hash', () => {
+    const names = edgeNames({ web: { domain: 'shop.example' } })
+    const [r] = edgeRoutes({ appId: 'shop', serverPath: '/apps/shop', apiPort: 3000, ...names, scripts: inlineScriptHashes(html) })
+    const csp = headersOf(r)['Content-Security-Policy'][0]
+    expect(csp).toContain(`script-src 'self' 'wasm-unsafe-eval' ${sha(theme)} ${sha(sw)}`)
+    expect(csp).toContain("object-src 'none'")
+    expect(csp).not.toContain('unsafe-inline')
+  })
+
+  // The headers are the SPA's: a response the API sends is helmet's to dress.
+  test('sit after the proxy, so the API\'s own responses keep their headers', () => {
+    const [r] = routesFor({ web: { domain: 'shop.example' } })
+    expect(inner(r).indexOf(served(r))).toBeGreaterThan(inner(r).indexOf(proxied(r)[0]))
+    expect(proxied(r)[0].handle.map(h => h.handler)).toEqual(['reverse_proxy'])
+    const [, api] = routesFor({ web: { domain: 'app.shop.example' }, api: { domain: 'api.shop.example' } })
+    expect(JSON.stringify(api)).not.toContain('Content-Security-Policy')
+  })
+
+  test('both steps that write the routes hash the index.html being served', () => {
+    expect(src('_steps-docker/07b-edge.md')).toMatch(/index\.html/)
+    expect(src('_steps-setup/05-caddy.md')).toMatch(/index\.html/)
   })
 })

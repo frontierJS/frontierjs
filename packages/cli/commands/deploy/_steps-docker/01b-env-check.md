@@ -24,25 +24,23 @@ for (const name of candidates) {
 
 // ─── The DECLARED keys ────────────────────────────────────────────────────────
 //
-// `deploy.configuration` and `deploy.secrets` are the second source, and folding them
-// in here is what stops them being vacuous. Their VALUES are not applied by any
-// step — a deploy writes no `.env` on a target (setup seeds it once, FJS-D1186), and
-// the container is started with `--env-file` against it — so a block that only
-// fed the Release hash was a declaration nothing on the target was ever graded
-// against ([FJS-585](../../../../../ISSUES.md#fjs-585)).
-//
-// The keys are still worth declaring: they say what this environment is supposed
-// to carry, per target, in a file that is reviewed. So they are checked for
-// PRESENCE exactly as `.env.example`'s are, and the values stay the operator's.
+// `deploy.secrets` is the second source: a secret is never applied by a deploy (a
+// deploy writes no `.env` on a target, FJS-D1186, and `docker inspect` shows what
+// `--env` carries), so its key is checked for PRESENCE in the operator's file exactly
+// as `.env.example`'s are. `deploy.configuration` is applied by `06-swap`
+// (FJS-D1029), so its keys are not required there -- but one ALSO set in the file is
+// a line the declared value silently overrides, and that is warned.
 //
 // `configurationSet` is asked rather than the two objects merged here, because
 // per-target-beats-app-wide is its rule and a second merge is a second answer.
 const { configurationSet, ConfigurationError } = await import(new URL('file://' + global.fliRoot + '/core/release.js'))
 
 let declaredKeys = []
+let appliedKeys  = []
 try {
   const set = configurationSet(deployConf, target)
-  declaredKeys = [...Object.keys(set.values), ...Object.keys(set.secretRefs)]
+  declaredKeys = Object.keys(set.secretRefs)
+  appliedKeys  = Object.keys(set.values)
 } catch (err) {
   // A malformed configuration set is the mint's refusal to make, not this step's — it
   // runs later and says it better. Nothing is checked from a set that would not
@@ -51,7 +49,7 @@ try {
   log.warn(`Env check: the configuration set does not resolve (${err.message}) — checking .env.example only`)
 }
 
-if (!refFile && !declaredKeys.length) {
+if (!refFile && !declaredKeys.length && !appliedKeys.length) {
   log.info('Env check: no .env.example or .env.keys found, and no keys declared — skipping')
   log.info('  Create one, or declare deploy.configuration / deploy.secrets, to enable pre-deploy env validation')
   return
@@ -74,11 +72,11 @@ const fileKeys = refFile
 // block is a statement this environment carries it.
 const source = new Map()
 for (const k of fileKeys)     source.set(k, refFile.split('/').pop())
-for (const k of declaredKeys) source.set(k, 'deploy block')
+for (const k of declaredKeys) source.set(k, 'deploy.secrets')
 
 const requiredKeys = [...source.keys()]
 
-if (!requiredKeys.length) {
+if (!requiredKeys.length && !appliedKeys.length) {
   log.info('Env check: nothing declares a required key — skipping')
   return
 }
@@ -103,10 +101,14 @@ const serverKeys = new Set(
     .filter(Boolean)
 )
 
+const shadowed = appliedKeys.filter(k => serverKeys.has(k))
+for (const key of shadowed)
+  log.warn(`Env check: ${key} is set in ${envFile} and in deploy.configuration — the declared value wins`)
+
 const missing = requiredKeys.filter(k => !serverKeys.has(k))
 
 if (missing.length === 0) {
-  log.success(`Env check: all ${requiredKeys.length} required keys present on ${target}` + (declaredKeys.length ? ` (${declaredKeys.length} from the deploy block)` : ''))
+  log.success(`Env check: all ${requiredKeys.length} required keys present on ${target}` + (declaredKeys.length ? ` (${declaredKeys.length} from deploy.secrets)` : ''))
   return
 }
 

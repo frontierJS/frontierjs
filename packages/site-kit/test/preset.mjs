@@ -10,7 +10,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { siteKit } from '../config/vite.js'
+import { resolveSite, siteKit } from '../config/vite.js'
 
 const failed = []
 const check = (label, ok, detail = '') => {
@@ -85,6 +85,18 @@ try {
     check("dev serves a preset's public/ file", await serve('/theme/mark.svg') === '<svg>preset</svg>', await serve('/theme/mark.svg'))
     check("dev leaves a path the site's public/ has to the site", await serve('/shared.txt') === 'next')
     check('dev never serves outside the preset public/', await serve('/../preset.js') === 'next')
+  }
+
+  {
+    const root = site('components', 'demo-preset', {
+      'package.json': PKG({ './preset': './preset.js' }),
+      'preset.js': "export default () => ({ sierra: { autoImport: { components: ['node_modules/demo-preset/blocks'] } } })",
+    })
+    write(join(root, 'content/settings/site.js'), "export default { preset: 'demo-preset', autoImport: { components: ['content/blocks'] } }\n")
+    const { sierra } = await resolveSite({ root })
+    check("autoImport.components is the preset's directories, then the site's, so the site's wins a name",
+      JSON.stringify(sierra.autoImport.components) === JSON.stringify(['node_modules/demo-preset/blocks', 'content/blocks']),
+      JSON.stringify(sierra.autoImport.components))
   }
 
   await refuses('a preset that is not installed stops the build', site('missing', 'demo-preset'), /names the preset 'demo-preset', which does not resolve/)

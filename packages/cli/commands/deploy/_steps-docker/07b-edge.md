@@ -20,8 +20,14 @@ catch (e) {
   return
 }
 
-const { routes, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge })
-const written = error ? { error } : await writeEdge(machineFor($, host, serverPath), { appId, routes, ifPresent: true })
+// The release this deploy built, which 08-release-web is about to make current;
+// an API-only deploy keeps the page already serving.
+const machine = machineFor($, host, serverPath)
+const docRoot = $.config.releaseDir ?? `${serverPath}/current`
+const html    = machine.capture(`cat ${docRoot}/index.html 2>/dev/null || true`)
+
+const { routes, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
+const written = error ? { error } : await writeEdge(machine, { appId, routes, ifPresent: true })
 
 if (written === 'written') log.success('Routes rewritten — the API mounts paths it did not at the last write')
 else if (written === 'unchanged') log.info('Routes unchanged')

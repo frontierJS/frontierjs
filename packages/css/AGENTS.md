@@ -236,6 +236,13 @@ Your own stylesheet wins with no `!important` and no specificity ladder:
 
 Layer order: `reset → tokens → themes → tones → base → layout → components → patterns → utilities → a11y`
 
+A color that is the *data* — a levels ramp from black to white, a hue swatch —
+has no tone and no token, because it must not follow the theme. Declare it in a
+custom property named `--data-*` and read it back: `--data-ramp:
+linear-gradient(to right, black, white)`, then `background: var(--data-ramp)`.
+It is the one custom property `fli check`'s `css-raw-literal` lets a raw color
+sit in; a color in any other custom property is reported, so the name is graded.
+
 For one-off spacing, either write the unlayered rule above or run UnoCSS
 alongside (supported — see README §Using it with UnoCSS for the layer position,
 the reset trap, and three colliding names).

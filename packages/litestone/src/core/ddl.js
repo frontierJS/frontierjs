@@ -55,6 +55,9 @@ const TYPE_MAP = {
   File:     'TEXT',      // JSON reference object — bytes live in object storage
 }
 
+/** The collations `@collate` names — the three SQLite ships; bun:sqlite has no ICU. */
+export const COLLATIONS = ['binary', 'nocase', 'rtrim']
+
 // ─── Model name → table name / accessor ──────────────────────────────────────
 //
 // Model names are PascalCase singular (User, ServiceAgreement).
@@ -309,6 +312,9 @@ function columnDef(field, schema = null, compositePk = false, strict = true, cma
   } else if (!field.type.optional && !isGenerated) {
     parts.push('NOT NULL')
   }
+
+  const collate = field.attributes.find(a => a.kind === 'collate')
+  if (collate) parts.splice(1, 0, `COLLATE ${collate.name.toUpperCase()}`)
 
   // PRIMARY KEY (single-column only — a composite PK is emitted once at the
   // table level by tableConstraints, so suppress the per-column keyword then).

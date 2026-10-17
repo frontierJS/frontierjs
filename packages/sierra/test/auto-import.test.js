@@ -366,7 +366,7 @@ describe('autoImportPlugin.scan', () => {
     ).rejects.toThrow(/naming conflict.*Button/s)
   })
 
-  test('throws on naming conflict between two dirs', async () => {
+  test('a later components directory wins a name an earlier one holds', async () => {
     const dir2 = join(TMP, 'components/Other')
     await mkdir(dir2, { recursive: true })
     await writeFile(join(dir2, 'Button.mesa'), '<button />', 'utf8')
@@ -377,10 +377,44 @@ describe('autoImportPlugin.scan', () => {
       ctx
     )
     plugin.configResolved({ root: TMP, command: 'build' })
+    const logged = []
+    const log = console.log
+    console.log = (...a) => logged.push(a.join(' '))
+    try { await plugin.buildStart.call({ warn: () => {} }) } finally { console.log = log }
+
+    expect(ctx.autoImportMap.get('Button').from).toBe(join(dir2, 'Button.mesa'))
+    expect(logged.join('\n')).toMatch(/'Button'.*components\/Other\/Button\.mesa.*replaces.*components\/UI\/Button\.mesa/s)
+  })
+
+  test('the same name twice inside ONE directory is still a build error', async () => {
+    const dir = join(TMP, 'components/Twice')
+    await mkdir(join(dir, 'a'), { recursive: true })
+    await mkdir(join(dir, 'b'), { recursive: true })
+    await writeFile(join(dir, 'a/Chip.mesa'), '<i />', 'utf8')
+    await writeFile(join(dir, 'b/Chip.mesa'), '<i />', 'utf8')
+
+    const ctx = { autoImportMap: new Map() }
+    const plugin = autoImportPlugin({ autoImport: { components: ['components/Twice'] } }, ctx)
+    plugin.configResolved({ root: TMP, command: 'build' })
 
     await expect(
       plugin.buildStart.call({ warn: () => {} })
-    ).rejects.toThrow(/naming conflict.*Button/)
+    ).rejects.toThrow(/naming conflict.*Chip/s)
+  })
+
+  test('a module binding colliding with a LATER directory is still a build error', async () => {
+    const ctx = { autoImportMap: new Map() }
+    const plugin = autoImportPlugin({
+      autoImport: {
+        components: ['components/UI'],
+        modules: { 'some/pkg': ['Button'] },
+      },
+    }, ctx)
+    plugin.configResolved({ root: TMP, command: 'build' })
+
+    await expect(
+      plugin.buildStart.call({ warn: () => {} })
+    ).rejects.toThrow(/naming conflict.*Button/s)
   })
 })
 

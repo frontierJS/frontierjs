@@ -56,7 +56,15 @@ export async function resolveSite({ root }) {
   const preset = presetName
     ? await loadPreset(presetName, { root, content, settings })
     : {}
-  const autoImport = siteConfig.autoImport ?? preset.sierra?.autoImport
+  // The preset's component directories, then the site's: a later directory wins
+  // a name, so a site's own block replaces the preset's (FJS-D1004). Modules
+  // are a site's replacement for the preset's, as before.
+  const declared = siteConfig.autoImport ?? preset.sierra?.autoImport
+  const components = [
+    ...(preset.sierra?.autoImport?.components ?? []),
+    ...(siteConfig.autoImport?.components ?? []),
+  ]
+  const autoImport = declared && components.length ? { ...declared, components } : declared
 
   const sierra = {
     ...preset.sierra,

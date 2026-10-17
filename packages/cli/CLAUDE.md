@@ -1046,9 +1046,11 @@ test/     one file per module under core/, plus the deploy pipeline's own
   first makes them discover the rest one flag at a time, mid-incident. `no-image`
   (nothing recorded which bytes that release ran), `in-flight` and
   `nothing-prior` have no flag, and the line says so — *not a judgement call*.
-  **`configuration` is a refusal rather than a fix**: `fli` writes no `.env` on a
-  target, so once the generation has moved a revert genuinely cannot restore the
-  pair, only put old code onto today's config.
+  **`configuration` is a refusal rather than a fix**: `06-swap` applies the plain
+  `configuration` values as `--env K=V` after `--env-file` (`FJS-D1029`) and a revert
+  restarts with the restored Release's recorded ones, but `fli` writes no `.env` on a
+  target, so once the generation has moved the secrets half cannot be restored, only
+  today's put under old code.
 - **A pause is a transition and the file is only the mechanism.** `deploy:pause`
   writes `<path>/.fli/paused`; Caddy stats it per request, so neither direction
   needs a reload or sudo and the guard cannot be half applied. *Is it paused* is

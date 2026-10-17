@@ -19,6 +19,7 @@ const { container, replaced } = swapContainer($, {
   dbPath:  deployConf.db?.path ?? `${serverPath}/db`,
   envFile: deployConf.api?.env ?? `${serverPath}/.env.production`,
   deployConf,
+  configuration: $.config.revertConfiguration,
   log,
 })
 

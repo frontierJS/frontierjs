@@ -17,7 +17,12 @@ const { DEFAULT_PAGE, pagePath, fliDir, guardProbeScript } =
   await import(new URL('file://' + global.fliRoot + '/core/pause.js'))
 const { routeId } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 
-const { routes, paths, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge })
+// A first setup has no page yet and 07b-edge hashes the one each deploy builds;
+// a setup run again keeps the hashes of the page already serving.
+const machine = machineFor($, host, serverPath)
+const html    = machine.capture(`cat ${serverPath}/current/index.html 2>/dev/null || true`)
+
+const { routes, paths, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
 if (error) {
   log.error(error)
   $.config.abort = true
@@ -40,8 +45,6 @@ if (answer.trim().toLowerCase() !== 'y') {
   log.info('Skipped — nothing routes to this app until the routes are written. Run fli deploy:setup again.')
   return
 }
-
-const machine = machineFor($, host, serverPath)
 
 // The page the guard serves. Written before the routes, because a guard in force
 // with nothing behind it answers an empty 503 that says nothing to the person

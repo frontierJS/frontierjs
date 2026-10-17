@@ -9,6 +9,7 @@ if ($.config.abort) return
 
 const { imageTag, appId, apiPort, deployConf } = $.config
 const { host, path: serverPath } = $.config.api
+const { configurationSet } = await import(new URL('file://' + global.fliRoot + '/core/release.js'))
 
 // The DIGEST where step 04 could read one, and the tag only as a fallback.
 // Running the tag means running whatever currently answers to that name, and the
@@ -26,6 +27,7 @@ const { container, replaced } = swapContainer($, {
   // build on both sides of the wire — the server states it, the browser compares.
   build:   $.config.commit,
   deployConf,
+  configuration: configurationSet(deployConf, $.config.target).values,
   log,
 })
 

@@ -4950,9 +4950,25 @@ describe('a .mesa <style> holds no raw color, size or spacing value', () => {
     expect(findings[0].message).toMatch(/#c0ffee/)
   })
 
-  test('a token read, a token declared, a hairline and a zero are not', () => {
-    const root = tree('raw-ok', styled('--mine: #fff; color: var(--mine, #000); border: 1px solid; margin: 0'))
+  test('a token read, a size token declared, a hairline and a zero are not', () => {
+    const root = tree('raw-ok', styled('--mine: 16px; color: var(--mine, 0); border: 1px solid; margin: 0'))
     expect(only(root, 'css-raw-literal').findings).toEqual([])
+  })
+
+  // FJS-2493 (FJS-D1001): a color that is the data is declared in --data-*, the
+  // one custom property a raw color may sit in; the name is graded, not honored.
+  test('a raw color sits in a --data-* custom property, and in no other', () => {
+    const ramp = 'linear-gradient(to right, black, white)'
+    expect(only(tree('raw-data-ok', styled(`--data-ramp: ${ramp}; --data-red: #f00; background: var(--data-ramp)`)), 'css-raw-literal').findings).toEqual([])
+    const bad = tree('raw-data-bad', styled(`--mine: #fff;\n --ramp: ${ramp}; --dataset: rgb(0 0 0)`))
+    const { findings } = only(bad, 'css-raw-literal')
+    expect(findings.map(f => f.message.split(' ')[0])).toEqual(['#fff', 'black', 'white', 'rgb(…)'])
+    expect(findings[0].message).toMatch(/--data-/)
+  })
+
+  test('a raw color is still reported on a rule that reads a --data-* token without var()', () => {
+    const root = tree('raw-data-use', styled('--data-ramp: #000; background: #000'))
+    expect(only(root, 'css-raw-literal').findings).toHaveLength(1)
   })
 
   // FJS-1430: a breakpoint was reported with a var() fix no media query can

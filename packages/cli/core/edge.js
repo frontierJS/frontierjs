@@ -50,6 +50,7 @@
  * Pure functions over strings and JSON. Nothing here runs a command.
  */
 
+import { createHash } from 'crypto'
 import { caddyGuard, guardId } from './pause.js'
 
 export class EdgeError extends Error {}
@@ -118,7 +119,7 @@ export const accessLogPath = (id) => `/var/log/caddy/${id}.access.log`
  * @throws {EdgeError} when no side names a domain: Caddy routes by hostname, and
  *   a route matching every host would take over whatever else the machine serves.
  */
-export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null }) {
+export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null, scripts = [] }) {
   const split = Boolean(api?.domain)
   if (!web?.domain && !split)
     throw new EdgeError('deploy.web.domain is not set. Caddy routes by hostname and fetches a certificate for it, so the edge needs one.')
@@ -130,7 +131,7 @@ export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null 
   const routes = []
   if (web?.domain) routes.push(route({
     id: routeId(appId), host: web.domain,
-    inner: [caddyGuard(serverPath, guardId(appId)), ...proxy, ...spa(serverPath)],
+    inner: [caddyGuard(serverPath, guardId(appId)), ...proxy, ...spa(serverPath, scripts)],
   }))
   if (split) routes.push(route({
     id: routeId(appId, 'api'), host: api.domain,
@@ -187,12 +188,56 @@ const navigation = (roots) => ({
 
 // The SPA: a file that exists, else index.html. Root is read per request, so
 // the `current` symlink swap is the whole of a web release — nothing reloads.
-const spa = (serverPath) => [
+const spa = (serverPath, scripts) => [
   { handle: [{ handler: 'vars', root: `${serverPath}/current` }] },
   { match:  [{ file: { try_files: ['{http.request.uri.path}', '/index.html'] } }],
     handle: [{ handler: 'rewrite', uri: '{http.matchers.file.relative}' }] },
-  { handle: [{ handler: 'encode', encodings: { gzip: {} }, prefer: ['gzip'] }, { handler: 'file_server' }] },
+  { handle: [
+    { handler: 'headers', response: { set: documentHeaders(scripts) } },
+    { handler: 'encode', encodings: { gzip: {} }, prefer: ['gzip'] },
+    { handler: 'file_server' },
+  ] },
 ]
+
+/**
+ * The `'sha256-…'` source of each inline script in a built page, for the CSP's
+ * `script-src` (`FJS-D1205`). A static file server cannot mint a nonce, so the
+ * hash is read off the bytes being deployed and cannot drift from them. A
+ * `<script src>` needs none: `'self'` already names it.
+ */
+export function inlineScriptHashes(html) {
+  const out = []
+  for (const [, attrs, body] of String(html ?? '').matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
+    if (/\bsrc\s*=/i.test(attrs)) continue
+    const source = `'sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}'`
+    if (!out.includes(source)) out.push(source)
+  }
+  return out
+}
+
+// Caddy's file_server sends none of these, and helmet dresses only what the
+// API's router answers, so without them the page a person signs in on could be
+// framed, sniffed and run any inline script.
+//
+// The CSP is scripts only. `default-src 'self'` (FJS-D1192) would also refuse
+// the `<style>` Mesa's runtime appends for a component, unstyling every page.
+// `'wasm-unsafe-eval'` is Litestone's SQLite in a worker, whose script is
+// served under this same policy; it compiles wasm and never evaluates a string.
+//
+// `strict-origin-when-cross-origin`, not helmet's `no-referrer`: under
+// `no-referrer` a browser sends `Origin: null` on a POST, which fails CORS to
+// a split API origin and the csrf check in cookie mode.
+const documentHeaders = (scripts = []) => ({
+  'X-Content-Type-Options':  ['nosniff'],
+  'Referrer-Policy':         ['strict-origin-when-cross-origin'],
+  'X-Frame-Options':         ['DENY'],
+  'Content-Security-Policy': [[
+    `script-src ${["'self'", "'wasm-unsafe-eval'", ...scripts].join(' ')}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ')],
+})
 
 /**
  * Caddy's whole config with this app's routes and access logs in it.

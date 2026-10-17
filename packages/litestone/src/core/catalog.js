@@ -666,6 +666,14 @@ const FIELD = [
     { seeAlso: ['scale', 'money'] }
   ),
   t(
+    'collate',
+    'field',
+    'shape',
+    '(binary | nocase | rtrim)',
+    "The order a String column sorts and compares in, written into the column so ORDER BY, `=` and an index on it agree. SQLite's default is binary, so `BNI` sorts before `Bing` and a picker ordered by its label puts every capitalised word before every lowercase one; nocase folds ASCII case. It folds ASCII only (bun:sqlite ships no ICU), so `Émile` still sorts after `Zed`. Changing it on a populated column rebuilds the table. Refused off a stored String column and beside @encrypted, @secret and @hashed.",
+    'label String @collate(nocase)'
+  ),
+  t(
     'scale',
     'field',
     'shape',
@@ -1622,6 +1630,7 @@ export const DOCS = {
   'field:createdBy': 'schema.md',
   'field:version': 'schema.md',
   'field:big': 'exact-numbers.md',
+  'field:collate': 'sorting.md',
   'field:scale': 'exact-numbers.md',
   'field:money': 'exact-numbers.md',
   'field:unit': 'exact-numbers.md',
@@ -1790,6 +1799,7 @@ export const TIERS = {
     'field:createdBy',
     'field:trim',
     'field:lower',
+    'field:collate',
     'field:values',
     'field:email',
     'field:url',
@@ -1914,7 +1924,7 @@ export const AXES = {
     'schema:valueset', 'schema:scope', 'schema:function', 'schema:trait', 'schema:extend',
     'schema:type', 'field:id', 'field:unique', 'field:map', 'field:default', 'field:sequence', 'field:rank',
     'field:relation', 'field:from', 'field:edge', 'field:scoped', 'field:computed',
-    'field:transient', 'field:derived', 'field:generated', 'field:check', 'field:big',
+    'field:transient', 'field:derived', 'field:generated', 'field:check', 'field:big', 'field:collate',
     'field:scale', 'field:money', 'field:unit', 'field:point', 'field:vector', 'field:trim',
     'field:lower', 'field:upper', 'field:slug', 'field:values', 'field:label', 'field:required',
     'field:email', 'field:url', 'field:phone', 'field:syntax', 'field:accept', 'field:date',

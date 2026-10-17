@@ -96,6 +96,7 @@ const LOST = [
   'generated-expression',     // a GENERATED column whose SQL holds a double quote: @generated takes a
                               // string, so the expression is handed over as a comment rather than mangled
   'foreign-key-action',       // ON DELETE SET DEFAULT — SQLite has it and .lite has no word for it
+  'collation',                // a COLLATE other than the three @collate names, or on a column that is not String
 ]
 
 // noted — a decision for the author, or an exact translation worth saying out loud.

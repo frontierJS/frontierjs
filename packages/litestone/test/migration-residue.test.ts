@@ -54,16 +54,16 @@ const AS_DECLARED = `CREATE TABLE "account" ("id" TEXT NOT NULL PRIMARY KEY, "em
 
 describe('the residue tripwire', () => {
   it('names a dimension the enumeration cannot read — and says nothing about the same database declared', () => {
-    // COLLATE is the adoption door's case: a real database has one, this
+    // ON CONFLICT is the adoption door's case: a real database has one, this
     // language cannot say it, so no enumeration will ever grow to cover it.
     const bad = against(SCHEMA, [
-      `CREATE TABLE "account" ("id" TEXT NOT NULL PRIMARY KEY, "email" TEXT NOT NULL UNIQUE COLLATE NOCASE) STRICT`,
+      `CREATE TABLE "account" ("id" TEXT NOT NULL PRIMARY KEY, "email" TEXT NOT NULL UNIQUE ON CONFLICT REPLACE) STRICT`,
     ])
     expect(bad.diff.hasChanges).toBe(false)
     expect(bad.diff.residue).toHaveLength(1)
     expect(bad.diff.residue[0].name).toBe('account')
-    expect(bad.diff.residue[0].live).toContain('COLLATE NOCASE')
-    expect(bad.diff.residue[0].pristine).not.toContain('COLLATE')
+    expect(bad.diff.residue[0].live).toContain('ON CONFLICT REPLACE')
+    expect(bad.diff.residue[0].pristine).not.toContain('ON CONFLICT')
 
     const good = against(SCHEMA, [AS_DECLARED])
     expect(good.diff.hasChanges).toBe(false)
@@ -111,16 +111,16 @@ model Account {
 
   it('is not part of hasChanges — a difference nothing can migrate must not migrate every boot', () => {
     const { diff } = against(SCHEMA, [
-      `CREATE TABLE "account" ("id" TEXT NOT NULL PRIMARY KEY, "email" TEXT NOT NULL UNIQUE COLLATE NOCASE) STRICT`,
+      `CREATE TABLE "account" ("id" TEXT NOT NULL PRIMARY KEY, "email" TEXT NOT NULL UNIQUE ON CONFLICT REPLACE) STRICT`,
     ])
     expect(diff.residue.length).toBeGreaterThan(0)
     expect(diff.hasChanges).toBe(false)
   })
 
   it('reaches the summary, where "in sync — no changes needed" was the false sentence', () => {
-    const bad  = against(SCHEMA, [`CREATE TABLE "account" ("id" TEXT NOT NULL PRIMARY KEY, "email" TEXT NOT NULL UNIQUE COLLATE NOCASE) STRICT`])
+    const bad  = against(SCHEMA, [`CREATE TABLE "account" ("id" TEXT NOT NULL PRIMARY KEY, "email" TEXT NOT NULL UNIQUE ON CONFLICT REPLACE) STRICT`])
     const good = against(SCHEMA, [AS_DECLARED])
-    expect(summarizeDiff(bad.diff)).toContain('COLLATE NOCASE')
+    expect(summarizeDiff(bad.diff)).toContain('ON CONFLICT REPLACE')
     expect(summarizeDiff(good.diff)).toBe('✓ schema is in sync — no changes needed')
   })
 })
@@ -184,12 +184,12 @@ model Credential {
 
   it('…and the same table with a column that REALLY differs is still named', () => {
     const { diff } = against(SCHEMA, [
-      `CREATE TABLE "account" ("email" TEXT NOT NULL UNIQUE COLLATE NOCASE, "id" TEXT NOT NULL PRIMARY KEY) STRICT`,
+      `CREATE TABLE "account" ("email" TEXT NOT NULL UNIQUE ON CONFLICT REPLACE, "id" TEXT NOT NULL PRIMARY KEY) STRICT`,
     ])
     expect(diff.residue.map((r: any) => r.name)).toEqual(['account'])
   })
 
-  it('a residue an older reading RECORDED goes quiet on the fast path — the collation one below still re-announces', () => {
+  it('a residue an older reading RECORDED goes quiet on the fast path — the conflict-clause one below still re-announces', () => {
     // The fast path replays what the last full diff stored while the schema hash
     // holds still, so without a re-grade every database that heard the position
     // verdict once would go on hearing it on every boot.
@@ -247,16 +247,16 @@ describe('a foreign key\'s ON UPDATE — the seventh missed dimension', () => {
 })
 
 describe('autoMigrate carries the residue', () => {
-  const withCollation = () => {
+  const withConflictClause = () => {
     const parsed = parse(SCHEMA, { path: '/x/db/schema.lite' })
     const dir    = tempDir('litestone-residue-boot-')
     const live   = new Database(join(dir, 'live.db'))
-    live.run(`CREATE TABLE "account" ("id" TEXT NOT NULL PRIMARY KEY, "email" TEXT NOT NULL UNIQUE COLLATE NOCASE) STRICT`)
+    live.run(`CREATE TABLE "account" ("id" TEXT NOT NULL PRIMARY KEY, "email" TEXT NOT NULL UNIQUE ON CONFLICT REPLACE) STRICT`)
     return { shim: { $rawDbs: { main: live } } as any, parsed }
   }
 
   it('re-announces off the FAST PATH, which is where saying it once would go quiet', () => {
-    const { shim, parsed } = withCollation()
+    const { shim, parsed } = withConflictClause()
     const first  = autoMigrate(shim, parsed)          // the full diff
     const second = autoMigrate(shim, parsed)          // the ddlHash fast path
     expect(first.main.state).toBe('in-sync')
@@ -265,7 +265,7 @@ describe('autoMigrate carries the residue', () => {
   })
 
   it('goes quiet when the caller states it, and stays quiet', () => {
-    const { shim, parsed } = withCollation()
+    const { shim, parsed } = withConflictClause()
     autoMigrate(shim, parsed)
     expect(autoMigrate(shim, parsed, { acceptResidue: true }).main.residue).toBeUndefined()
     expect(autoMigrate(shim, parsed).main.residue).toBeUndefined()

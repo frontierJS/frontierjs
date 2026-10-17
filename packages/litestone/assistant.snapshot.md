@@ -1323,6 +1323,16 @@ The column's values use the whole 64 bits. SQLite's INTEGER always did; the CROS
 externalId Int @big
 ```
 
+#### `@collate` (binary | nocase | rtrim)
+
+tier: **common** · legal in: on a model's field, on a type's field, on a trait's field
+
+The order a String column sorts and compares in, written into the column so ORDER BY, `=` and an index on it agree. SQLite's default is binary, so `BNI` sorts before `Bing` and a picker ordered by its label puts every capitalised word before every lowercase one; nocase folds ASCII case. It folds ASCII only (bun:sqlite ships no ICU), so `Émile` still sorts after `Zed`. Changing it on a populated column rebuilds the table. Refused off a stored String column and beside @encrypted, @secret and @hashed.
+
+```lite
+label String @collate(nocase)
+```
+
 #### `@scale` (<places>)
 
 tier: **situational** · legal in: on a model's field, on a trait's field, on a view column · also called: precision · see also: `money`

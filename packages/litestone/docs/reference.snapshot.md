@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**124 words** — 13 declarations · 71 field attributes · 36 model attributes · 4 move words.
+**125 words** — 13 declarations · 72 field attributes · 36 model attributes · 4 move words.
 
 ## Index
 
@@ -34,7 +34,7 @@ and shows you the diff first.
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@trail`](#trail-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
 - *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@zone`](#zone-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
-- *Shape the table* — [`@big`](#big-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@unit`](#unit-field) · [`@point`](#point-field) · [`@vector`](#vector-field) · [`@zoned`](#zoned-field)
+- *Shape the table* — [`@big`](#big-field) · [`@collate`](#collate-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@unit`](#unit-field) · [`@point`](#point-field) · [`@vector`](#vector-field) · [`@zoned`](#zoned-field)
 - *Decide who may* — [`@allow`](#allow-field)
 
 **Model attributes**
@@ -1271,6 +1271,19 @@ model Example {
 - **Legal** — on a model's field · on a trait's field
 - **Deeper** — [exact-numbers.md](exact-numbers.md)
 - **See also** — [`@scale`](#scale-field) · [`@money`](#money-field)
+
+#### `@collate` `(binary | nocase | rtrim)` <a id="collate-field"></a>
+
+The order a String column sorts and compares in, written into the column so ORDER BY, `=` and an index on it agree. SQLite's default is binary, so `BNI` sorts before `Bing` and a picker ordered by its label puts every capitalised word before every lowercase one; nocase folds ASCII case. It folds ASCII only (bun:sqlite ships no ICU), so `Émile` still sorts after `Zed`. Changing it on a populated column rebuilds the table. Refused off a stored String column and beside @encrypted, @secret and @hashed.
+
+```lite
+model Example {
+  id Int @id
+  label String @collate(nocase)
+}
+```
+
+- **Deeper** — [sorting.md](sorting.md)
 
 #### `@scale` `(<places>)` <a id="scale-field"></a>
 

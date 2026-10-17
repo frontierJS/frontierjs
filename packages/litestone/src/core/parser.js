@@ -15,7 +15,7 @@ import { parseGateString, validateGate } from '../plugins/gate.js'
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
 import { suggestKey } from './args.js'
 import { compileStatic, policyExprToString } from './policy.js'
-import { pointColumnNames, isStoredField, mapIdentifiers, labelColumn } from './ddl.js'
+import { pointColumnNames, isStoredField, mapIdentifiers, labelColumn, COLLATIONS } from './ddl.js'
 import { inferFromFk, inferFromHop, inferToOneFrom } from './schema-maps.js'
 import { sealedStates, sealFaults, machineWithMove } from './seal.js'
 import { PERSONAL_CATEGORIES, isPersonModel, personalNameCategory } from './personal.js'
@@ -1274,6 +1274,18 @@ class Parser {
 
       // ── Transforms (applied before validation + write) ─────────────────────
       case 'trim':      return { kind: 'trim' }
+      // @collate(nocase) — the order this column sorts and compares in, written
+      // into the DDL so ORDER BY, `=` and an index on it agree (`FJS-D885`).
+      case 'collate': {
+        this.eat(TK.LPAREN)
+        const tok = this.eat(TK.IDENT)
+        if (!COLLATIONS.includes(tok.value))
+          throw new ParseError(
+            `@collate(${tok.value}) is not a collation. SQLite ships ${COLLATIONS.join(', ')}; ` +
+            'nocase folds ASCII case only, so an accented capital still sorts after Z.', tok)
+        this.eat(TK.RPAREN)
+        return { kind: 'collate', name: tok.value }
+      }
       case 'lower':     return { kind: 'lower' }
       case 'upper':     return { kind: 'upper' }
       case 'slug': {
@@ -6414,6 +6426,22 @@ function validate(schema) {
       const dbAttr = model.attributes.find(a => a.kind === 'db')
       if (dbAttr && jsonlNames.has(dbAttr.name))
         errors.push(`Model '${model.name}', field '${field.name}': @hashed is not supported on jsonl databases`)
+    }
+  }
+
+  // ── @collate (FJS-D885) ─────────────────────────────────────────────────────
+  // A collation orders TEXT, so a column holding anything else, or no column at
+  // all, would carry a word SQLite never reads. An array is a JSON text whose
+  // order is the array's, and ciphertext sorts as noise whatever it is told.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (!field.attributes.some(a => a.kind === 'collate')) continue
+      const at = `Model '${model.name}', field '${field.name}'`
+      if (field.type?.name !== 'String' || field.type.array || !isStoredField(field))
+        errors.push(`${at}: @collate requires a stored String column — a collation orders TEXT, and a ${field.type?.array ? 'String[]' : field.type?.name} has none to order`)
+      const sealed = ['encrypted', 'secret', 'hashed'].find(k => field.attributes.some(a => a.kind === k))
+      if (sealed)
+        errors.push(`${at}: @collate conflicts with @${sealed} — the column holds ${sealed === 'hashed' ? 'a digest' : 'ciphertext'}, whose order says nothing about the value`)
     }
   }
 

@@ -118,13 +118,15 @@ release whose bytes nothing recorded — there is no image to start.
 
 ## Why configuration is refused rather than fixed
 
-Serving state is the pair. A deploy writes no `.env` on a target — setup seeds it
-once and the operator owns it after (`FJS-D1186`) — so once the configuration
-generation has moved, a revert genuinely cannot restore the pair. It can only put old code onto today's configuration, which is
-the documented Fly failure this separation exists to refuse.
+Serving state is the pair. A revert restarts with the plain `configuration` values
+the restored Release recorded (`FJS-D1029`), but a deploy writes no `.env` on a target —
+setup seeds it once and the operator owns it after (`FJS-D1186`) — so once the
+generation has moved a revert cannot restore the secrets half. It can only put old
+code onto today's secrets, which is the documented Fly failure this separation exists
+to refuse.
 
 `--onto-current-configuration` is the operator saying they have read which keys moved
-and want it anyway. It is a different sentence from *restore the pair*, and the
+and want it anyway; the restarted container then carries today's `configuration` values too. It is a different sentence from *restore the pair*, and the
 journal records which one happened.
 
 ## `--plan` first

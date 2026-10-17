@@ -88,6 +88,19 @@ describe('configuration', () => {
       .not.toBe(configurationSet({ secrets: { K: 'v' } }, 'dev').hash)
   })
 
+  // A configuration key becomes `--env KEY=` on a command line (FJS-585).
+  test.each([
+    [{ configuration: { 'A B': '1' } }, 'A B'],
+    [{ configuration: { 'A;rm': '1' } }, 'A;rm'],
+    [{ configuration: { A: { nested: 1 } } }, 'A'],
+    [{ secrets: { 'X Y': 'name@3' } }, 'X Y'],
+  ])('a key or value the shell cannot carry is refused (%j)', (conf, key) => {
+    let err = null
+    try { configurationSet(conf, 'dev') } catch (e) { err = e }
+    expect(err).toBeInstanceOf(ConfigurationError)
+    expect(err.key).toBe(key)
+  })
+
   // A secret is resolved when a process starts, so `latest` means two instances
   // of one immutable Release hold two different values.
   test.each(['name@latest', 'name:latest', 'LATEST'])('an unpinned reference (%s) is refused by name', (ref) => {

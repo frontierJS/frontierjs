@@ -162,6 +162,18 @@ $.config.transitionId  = planned.transition.id
 $.config.journalClient = j
 $.config.revertTo      = targetRelease
 $.config.revertImage   = image.image
+
+// The plain values the restored Release ran on, from the generation it was minted
+// at (FJS-D1029). `--onto-current-configuration` is the operator choosing today's
+// instead, and a generation the journal holds no row for falls back to today's.
+const { configurationSet } = await core('release.js')
+const recorded = flag['onto-current-configuration']
+  ? null
+  : await j.configurationSet({ app: appId, environment: target, generation: targetRelease.generation })
+const parseValues = (v) => (typeof v === 'string' ? JSON.parse(v) : v)
+$.config.revertConfiguration = recorded?.values
+  ? parseValues(recorded.values)
+  : configurationSet(deployConf, target).values
 $.config.revertFrom    = chosen.serving
 
 log.success(`Revert transition opened → ${planned.transition.id}`)

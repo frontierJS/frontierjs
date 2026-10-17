@@ -56,14 +56,13 @@ function canonical(obj) {
 // the rule is not a convention to remember: a value is committed and a
 // reference points at something that is not.
 //
-// **The hash covers a DECLARATION, not the running configuration.** A deploy
-// writes no `.env` on a target — setup seeds it once (FJS-D1186), and the container is
-// started with `--env-file` against it — so nothing here is applied by a deploy.
-// What the hash and the generation are for is the pair a revert compares:
+// **`values` are what the process runs on; `secretRefs` are named, not applied.**
+// `06-swap` passes `values` to `docker run` as `--env K=V` after `--env-file`
+// (FJS-D1029), so no file is written on the target (FJS-D1186). A secret
+// reference stays in the operator's env file, graded present by key in
+// `01b-env-check`, so the hash fixes which secrets a Release names and cannot say
+// which value the file holds. The generation is the pair a revert compares:
 // *has the configuration been changed since the release I am going back to*.
-// Reading it as *what the process is running on* is `FJS-585`, and the place
-// that invites it is the `values` recorded beside the hash — and the word
-// itself, which is why every surface that prints the hash says *declared*.
 //
 // A reference is pinned, and `latest` is refused by name. Cloud Run resolves a
 // secret reference at instance startup, so `latest` means two instances of one
@@ -81,6 +80,7 @@ export class ConfigurationError extends Error {
 }
 
 const UNPINNED = /(^|[@:])latest$/i
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /**
  * Resolve the configuration set for one target.
@@ -94,7 +94,18 @@ export function configurationSet(deployConf, target) {
   const values  = { ...(deployConf?.configuration ?? {}), ...(at.configuration ?? {}) }
   const refs    = { ...(deployConf?.secrets  ?? {}), ...(at.secrets  ?? {}) }
 
+  // A key becomes `--env KEY=` on a command line, so it is a name and nothing
+  // else; a value is one scalar the shell can quote.
+  for (const [key, value] of Object.entries(values)) {
+    if (!ENV_NAME.test(key))
+      throw new ConfigurationError(`configuration key ${JSON.stringify(key)} is not an environment variable name`, key)
+    if (!['string', 'number', 'boolean'].includes(typeof value))
+      throw new ConfigurationError(`configuration ${key} must be a string, number or boolean, got ${JSON.stringify(value)}`, key)
+  }
+
   for (const [key, ref] of Object.entries(refs)) {
+    if (!ENV_NAME.test(key))
+      throw new ConfigurationError(`secret key ${JSON.stringify(key)} is not an environment variable name`, key)
     if (typeof ref !== 'string' || !ref.trim())
       throw new ConfigurationError(`secret ${key} must be a reference like "name@3", got ${JSON.stringify(ref)}`, key)
     if (UNPINNED.test(ref.trim()))
@@ -208,11 +219,7 @@ export function formatRelease(rel, { configuration } = {}) {
   // it were one.
   row('digest',     rel.digest ?? '— not built (fli deploy builds on the target; see 2.3f)')
   if (rel.imageRef) row('image', `${rel.imageRef}  (a name, not an identity)`)
-  // Named as DECLARED, because the values recorded beside this hash are not
-  // applied by any step — the container reads the target's own env file, which
-  // `fli` does not write (`FJS-585`). A reader who takes this as the running
-  // configuration is reading a fact about the repository.
-  row('configuration', `${short(rel.configurationHash)}  · generation ${rel.generation}  (declared)` +
+  row('configuration', `${short(rel.configurationHash)}  · generation ${rel.generation}` +
                        (configuration ? `  · ${configuration.count} key(s), ${Object.keys(configuration.secretRefs).length} secret ref(s)` : ''))
   row('schema',     rel.schemaHash ? short(rel.schemaHash) : '— no release.snapshot.md (run fli release:check)')
   row('pivot',      rel.pivot + (rel.pivotDeclared ? '  (declared)' : ''))

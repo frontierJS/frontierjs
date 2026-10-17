@@ -428,6 +428,18 @@ export class ServiceProxy<
     return `${this._client._apiPrefix}/${this.name}`
   }
 
+  // The id is one segment. Sierra hands a page its route params decoded, so a
+  // raw id of `../../auth/logout` sends the caller's request wherever a link
+  // chose, and `?` or `#` injects a query. `.` and `..` stay dot segments
+  // however they are encoded, so they are refused (FJS-3188).
+  private _at(id: string | number): string {
+    const segment = String(id)
+    if (segment === '.' || segment === '..') {
+      throw new TypeError(`junction client: id ${JSON.stringify(segment)} cannot be sent as a path segment`)
+    }
+    return `${this._base}/${encodeURIComponent(segment)}`
+  }
+
   // ── CRUD ────────────────────────────────────────────────────────────
   // Prefer WS when connected. Files always use HTTP.
 
@@ -506,7 +518,7 @@ export class ServiceProxy<
       ) as Promise<T>
     }
     const qs = (params || _wire) ? buildQueryString(_wire, params) : ''
-    return this._client._request('GET', `${this._base}/${idOrQuery}${qs}`, undefined, _callHeader(opts)) as Promise<T>
+    return this._client._request('GET', `${this._at(idOrQuery)}${qs}`, undefined, _callHeader(opts)) as Promise<T>
   }
 
   // create(data, params?) → T
@@ -563,7 +575,7 @@ export class ServiceProxy<
     const { body, extra } = _envelope(data, opts)
     return this._client._request(
       'PATCH',
-      `${this._base}/${idOrQuery}${params ? buildQueryString(undefined, params) : ''}`,
+      `${this._at(idOrQuery)}${params ? buildQueryString(undefined, params) : ''}`,
       body,
       extra
     ) as Promise<T>
@@ -596,7 +608,7 @@ export class ServiceProxy<
       ) as Promise<T>
     }
     return this._client._request(
-      'DELETE', `${this._base}/${idOrQuery}${params ? buildQueryString(undefined, params) : ''}`, undefined, _callHeader(opts)
+      'DELETE', `${this._at(idOrQuery)}${params ? buildQueryString(undefined, params) : ''}`, undefined, _callHeader(opts)
     ) as Promise<T>
   }
 
@@ -624,7 +636,7 @@ export class ServiceProxy<
     if (this._client._wsReady) {
       return this._client._wsCall(this.name, 'restore', idOrQuery, null, null, opts) as Promise<T>
     }
-    return this._client._request('PUT', `${this._base}/${idOrQuery}`, undefined,
+    return this._client._request('PUT', this._at(idOrQuery), undefined,
       _methodCall('restore', opts)) as Promise<T>
   }
 
@@ -688,7 +700,7 @@ export class ServiceProxy<
     // interpolated `id` unconditionally, so the only way to reach one was to
     // invent a throwaway id and post to `/{service}/null` — found writing
     // basecamp's fleet-wide event feed, where there IS no subject row.
-    const path = id == null ? this._base : `${this._base}/${id}`
+    const path = id == null ? this._base : this._at(id)
     // A plain filter map, NOT QueryDirectives — so it is serialized plainly rather
     // than through buildQueryString, which exists to turn {limit, orderBy, …}
     // into the `$`-prefixed directive syntax. A custom method declares its own query
