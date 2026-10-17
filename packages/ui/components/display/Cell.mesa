@@ -75,9 +75,22 @@
 
   // The related row's label, when the row was read with the relation included.
   // A label that is null or empty is not a name, so the id shows instead.
+  // Read the way the picker reads it (`labelOf`, sierra's resource.js): a
+  // declared list joins its parts with ' · ', a hop through a relation of the
+  // related row, and a conventional label falls to the columns below it.
   function relationLabel() {
-    const label = record?.[column?.relation]?.[column?.labelField]
-    return label === null || label === undefined || label === '' ? null : label
+    const row = record?.[column?.relation]
+    const filled = v => v !== null && v !== undefined && v !== ''
+    if (column?.labelParts) {
+      const text = column.labelParts
+        .map(p => p.via ? row?.[p.via]?.[p.field] : row?.[p.field])
+        .filter(filled)
+      return text.length ? text.join(' · ') : null
+    }
+    for (const col of [column?.labelField, ...(column?.labelAlt ?? [])]) {
+      if (filled(row?.[col])) return row[col]
+    }
+    return null
   }
 
   // Money is the reason this component exists, and the conversion is the whole

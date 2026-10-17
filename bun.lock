@@ -159,6 +159,9 @@
     "packages/email-kit": {
       "name": "@frontierjs/email-kit",
       "version": "0.1.5",
+      "dependencies": {
+        "@frontierjs/toolbelt": "workspace:*",
+      },
       "devDependencies": {
         "css-tree": "^2.0.0",
         "happy-dom": "^20.11.6",

@@ -658,3 +658,73 @@ describe('the exported component map matches the directory (FJS-933)', () => {
     }
   })
 })
+
+// ── renderStored (FJS-2685) ───────────────────────────────────────────────────
+//
+// The body is a stranger's: markdown an office user stored, with merge fields
+// typed by them and filled from values typed by someone else again.
+
+describe('renderStored: a body somebody stored, rendered in a channel', () => {
+  const ctx = {
+    contact: { name: 'Ann', evil: '<img src=x onerror=alert(1)>', link: 'javascript:alert(1)' },
+    order: { url: 'https://shop.test/o?id=7&tab=pay' },
+  }
+  const stored = (body, subject = 'Hi {contact.name}') => ({ subject, body })
+  const run = async (body, channel = 'email', extra = {}) => {
+    const { renderStored } = await import('./render.js')
+    return renderStored(stored(body), ctx, { channel, ...extra })
+  }
+
+  it('email: markdown in the kit element styles, inside the Email wrapper', async () => {
+    const r = await run('## Hello {contact.name}\n\nYour [order]({order.url}) is *ready*.\n\n- one\n- two')
+    expect(r.html).toContain('<!DOCTYPE html>')
+    expect(r.html).toMatch(/<h2 style="[^"]*padding:20px 16px[^"]*">Hello Ann<\/h2>/)
+    expect(r.html).toMatch(/<p style="[^"]*padding:8px 16px/)
+    expect(r.html).toContain('<li style="padding:4px 0">one</li>')
+    expect(r.html).toContain('href="https://shop.test/o?id=7&amp;tab=pay"')
+    expect(r.subject).toBe('Hi Ann')
+    expect(r.text).toContain('Hello Ann')
+    expect(r.text).not.toContain('<')
+  })
+
+  it('email: no raw HTML from the body and none from a filled value', async () => {
+    const r = await run('<script>alert(1)</script>\n\n{contact.evil}')
+    expect(r.html).not.toContain('<script>alert')
+    expect(r.html).not.toContain('<img src=x')
+    expect(r.html).toContain('&lt;img src=x onerror=alert(1)&gt;')
+  })
+
+  it('email: a link a value turns into javascript: is not an anchor target', async () => {
+    const r = await run('[go]({contact.link})')
+    expect(r.html).not.toContain('javascript:')
+  })
+
+  it('email: a quoted expression, a literal brace and an unknown name survive markdown', async () => {
+    const r = await run(`{contact.name != null ? contact.name : 'there'} \\{ {nobody.here}`)
+    expect(r.html).toContain('Ann { {nobody.here}')
+  })
+
+  it('sms: the text-mode fill, markdown left as typed and nothing escaped', async () => {
+    const r = await run('**Hi** {contact.name} & <co>', 'sms')
+    expect(r).toEqual({ subject: 'Hi Ann', text: '**Hi** Ann & <co>' })
+  })
+
+  it('page: a fragment, with a named slot for a registered live widget', async () => {
+    const r = await run('# Review\n\n{slot.EstimateReview}\n\nThanks {contact.name}', 'page', { slots: ['EstimateReview'] })
+    expect(r.html).toContain('<h1>Review</h1>')
+    expect(r.html).toContain('<div data-slot="EstimateReview"></div>')
+    expect(r.html).not.toContain('<p><div')
+    expect(r.html).not.toContain('<!DOCTYPE')
+    expect(r.slots).toEqual(['EstimateReview'])
+  })
+
+  it('page: a slot nobody registered stays as written', async () => {
+    const r = await run('{slot.Other}', 'page', { slots: ['EstimateReview'] })
+    expect(r.html).toContain('{slot.Other}')
+    expect(r.slots).toEqual([])
+  })
+
+  it('refuses a channel it does not know', async () => {
+    await expect(run('x', 'fax')).rejects.toThrow(/channel/)
+  })
+})

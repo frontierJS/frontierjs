@@ -209,6 +209,12 @@ export async function run(t) {
     'an empty label is not a name, so the id shows')
   t.is(await t.evaluate(`return ${text('nolabel')}`), 'u_7',
     'an answer naming no label field falls back to the id')
+  t.is(await t.evaluate(`return ${text('hop')}`), 'North · A1',
+    'a declared list joins its parts, a hop read through the related row’s relation (FJS-3228)')
+  t.is(await t.evaluate(`return ${text('hopblank')}`), 'North',
+    'and a blank part is skipped')
+  t.is(await t.evaluate(`return ${text('altmail')}`), 'ada@x.test',
+    'a conventional label falls to the next column before the id')
   t.is(await t.evaluate(`return ${text('none')}`), '—',
     'and a null key is still the dash')
 }

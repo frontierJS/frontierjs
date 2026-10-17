@@ -10,6 +10,7 @@
  *
  *   fill(source, ctx, { mode: 'html' | 'text' })    the filled text
  *   check(source, names)                             what to refuse at save
+ *   mergeFields(declared)                            the names, declared once
  *
  * A hole is `{path}` -- a dotted name of any depth read by own keys, or a
  * `/predicate` values expression (`{c.name ? c.name : 'there'}`). A literal
@@ -36,7 +37,9 @@ const DOTTED = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/
 
 // Yields `{ text }` for literal text (with `\{` already a `{`) and
 // `{ hole, raw }` for a brace pair, or `{ open }` for a `{` that never closes.
-function* segments(source) {
+// Exported for a caller that must keep the holes out of another reader's way
+// (email-kit hides them from markdown), so the scan stays this file's.
+export function* segments(source) {
   let text = ''
   let i = 0
   while (i < source.length) {
@@ -141,4 +144,83 @@ export function check(source, names) {
     }
   }
   return problems
+}
+
+// ─── mergeFields ──────────────────────────────────────────────────────────────
+
+const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'money']
+const SEGMENT = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+function declare(field) {
+  const { key } = field ?? {}
+  const parts = typeof key === 'string' ? key.split('.') : []
+  if (parts.length !== 2 || !parts.every((p) => SEGMENT.test(p))) {
+    throw new Error(`mergeFields: key ${JSON.stringify(key)} must be owner.field -- two dotted names, the pair \`check\` can grade`)
+  }
+  if (parts.includes('__proto__')) throw new Error(`mergeFields: ${key} -- __proto__ is not a name`)
+  if (typeof field.label !== 'string' || !field.label) throw new Error(`mergeFields: ${key} declares no label`)
+  if (!FIELD_TYPES.includes(field.type)) {
+    throw new Error(`mergeFields: ${key} has type ${JSON.stringify(field.type)}, not one of ${FIELD_TYPES.join(' | ')}`)
+  }
+  for (const slot of ['example', 'default']) {
+    if (field[slot] !== undefined && render(field[slot], 'text') === undefined) {
+      throw new Error(`mergeFields: ${key} ${slot} is not a value a hole can fill -- a scalar or { html, text }`)
+    }
+  }
+  return Object.freeze({ ...field, owner: parts[0], name: parts[1] })
+}
+
+// `{ owner: { name: value } }` from the fields where `pick` yields a value.
+function nest(fields, pick, into = {}) {
+  for (const f of fields) {
+    const v = pick(f)
+    if (v === undefined) continue
+    into[f.owner] = { ...into[f.owner], [f.name]: v }
+  }
+  return into
+}
+
+const absent = (v) => v === undefined || v === null || v === ''
+
+/**
+ * The fields an app lets a template name, declared once. `declared` is the app's
+ * catalog -- `{ key: 'contact.name', label, description?, example?, default?,
+ * type }`, any further keys (`group`, `channels`, `uses`) carried through for the
+ * app's own `filter`. One list feeds the editor (`list`), the preview (`example`),
+ * the save-time refusal (`check`) and the render (`fill`, where a `default` stands
+ * in for a missing value). A template row's own fields join through `with`.
+ */
+export function mergeFields(declared = []) {
+  const fields = []
+  const seen = new Set()
+  for (const raw of declared) {
+    const f = declare(raw)
+    if (seen.has(f.key)) throw new Error(`mergeFields: ${f.key} is declared twice`)
+    seen.add(f.key)
+    fields.push(f)
+  }
+  const pick = (filter) => (filter ? fields.filter((f) => filter(f)) : fields)
+  const registry = {
+    list: (filter) => pick(filter).map(({ owner, name, ...f }) => f),
+    example: (filter) => nest(pick(filter), (f) => f.example),
+    names: (filter) => {
+      const names = {}
+      for (const f of pick(filter)) (names[f.owner] ??= []).push(f.name)
+      return names
+    },
+    check: (source, filter) => check(source, registry.names(filter)),
+    context(data = {}) {
+      const out = { ...data }
+      for (const f of fields) {
+        if (f.default === undefined) continue
+        const owner = out[f.owner]
+        if (owner !== undefined && (owner === null || typeof owner !== 'object')) continue
+        if (absent(owner?.[f.name])) out[f.owner] = { ...owner, [f.name]: f.default }
+      }
+      return out
+    },
+    fill: (source, data, options) => fill(source, registry.context(data), options),
+    with: (more) => mergeFields([...fields.map(({ owner, name, ...f }) => f), ...more]),
+  }
+  return Object.freeze(registry)
 }

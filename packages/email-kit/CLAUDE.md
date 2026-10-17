@@ -11,7 +11,8 @@
 
 ```
 index.js       public API
-render.js      the email render path — target: 'email', inlining, wrapper
+render.js      the email render path — target: 'email', inlining, wrapper; and
+               `renderStored` for a body somebody stored (markdown + merge fields)
 components/    Email (the document) · Header · Footer · Section · Row · Column ·
                TwoCol · Card · Heading · Text · Button · Link · Image · Divider ·
                Spacer · DataTable · KeyValue · Address · Contact · Avatar ·
@@ -37,6 +38,11 @@ docs/          Outlook conditional-comment handling — read before touching it
   it must be escaped where the string is built. `>` included: a comment ends at
   a literal `-->`, so a label can otherwise close the block and show the Outlook
   fallback to everyone.
+- **`renderStored` hides the holes from markdown, then fills.** Markdown rewrites
+  quotes inside a hole (`'there'` → `&#39;there&#39;`), so the order is mask →
+  markdown → unmask → `fill` → grade every `href` once filled (a value can make
+  `href="{x}"` a `javascript:` URL markdown could not see). `slot` is reserved
+  in the page channel's context.
 - **Never opened in a real mail client.** Every claim about rendering is a claim
   about HTML, not about Outlook or Gmail. Say so when reporting.
 

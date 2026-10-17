@@ -23,6 +23,9 @@
     "test:watch": "vitest",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
+  "dependencies": {
+    "@frontierjs/toolbelt": "workspace:*"
+  },
   "peerDependencies": {
     "@frontierjs/mesa": "^0.1.0",
     "css-tree": "^2.0.0",

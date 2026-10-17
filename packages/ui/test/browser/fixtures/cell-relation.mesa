@@ -10,10 +10,16 @@
 
   const rel = { name: 'authorId', display: 'relation', model: 'User', relation: 'author', labelField: 'name' }
   const bare = { name: 'authorId', display: 'relation' }
+  const hop  = { name: 'siteId', display: 'relation', model: 'Site', relation: 'site', labelField: 'code',
+                 labelParts: [{ via: 'region', field: 'name' }, { via: null, field: 'code' }] }
+  const alt  = { ...rel, labelAlt: ['email'] }
 </script>
 
 <div id="named"><Cell value={'u_7'} column={rel} record={{ authorId: 'u_7', author: { id: 'u_7', name: 'Ada' } }} /></div>
 <div id="notloaded"><Cell value={'u_7'} column={rel} record={{ authorId: 'u_7' }} /></div>
 <div id="blankname"><Cell value={'u_7'} column={rel} record={{ authorId: 'u_7', author: { id: 'u_7', name: '' } }} /></div>
 <div id="nolabel"><Cell value={'u_7'} column={bare} record={{ authorId: 'u_7', author: { name: 'Ada' } }} /></div>
+<div id="hop"><Cell value={3} column={hop} record={{ siteId: 3, site: { id: 3, code: 'A1', region: { name: 'North' } } }} /></div>
+<div id="hopblank"><Cell value={3} column={hop} record={{ siteId: 3, site: { id: 3, code: '', region: { name: 'North' } } }} /></div>
+<div id="altmail"><Cell value={'u_7'} column={alt} record={{ authorId: 'u_7', author: { id: 'u_7', name: '', email: 'ada@x.test' } }} /></div>
 <div id="none"><Cell value={null} column={rel} record={{ authorId: null, author: null }} /></div>

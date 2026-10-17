@@ -630,6 +630,37 @@ describe('a relation column names the label of the row it points at', () => {
 
     expect(column).toMatchObject({ display: 'relation', model: 'Customer', relation: 'customer', labelField: 'name' })
   })
+
+  // FJS-3228: the picker labels a row from the target's whole declaration, so a
+  // column reading only `labelField` prints the id for a list or a hop.
+  test('columns() carries the target\'s @@label list, hop included', async () => {
+    await build(`
+      model Region {
+        id   Int    @id @default(autoincrement())
+        name String
+        @@gate(0.0.0.0)
+      }
+
+      model Site {
+        id       Int    @id @default(autoincrement())
+        regionId Int
+        region   Region @relation(fields: [regionId], references: [id])
+        code     String
+        @@label([region.name, code])
+        @@gate(0.0.0.0)
+      }
+
+      model Visit {
+        id     Int  @id @default(autoincrement())
+        siteId Int
+        site   Site @relation(fields: [siteId], references: [id])
+        @@gate(0.0.0.0)
+      }
+    `)
+    const column = createResource('visits', { model: 'Visit' }).columns({ limit: 99 }).columns.find(c => c.name === 'siteId')
+
+    expect(column.labelParts).toEqual([{ via: 'region', field: 'name' }, { via: null, field: 'code' }])
+  })
 })
 
 // FJS-2743 — the children a seal freezes are a RELATION, which has no property

@@ -28,10 +28,14 @@
  *                     It comes back exactly as exported — apply it yourself. The
  *                     document's <title> uses it only when it is a string.
  *   result.css      — collected CSS before inlining (for debugging)
+ *
+ * A body somebody STORED (markdown with merge fields) is `renderStored`, below.
  */
 
 import path               from 'path'
 import { fileURLToPath }  from 'url'
+import { markdown, safeUrl } from '@frontierjs/toolbelt/markdown'
+import { fill, segments }    from '@frontierjs/toolbelt/fill'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const COMPONENTS_DIR = path.join(__dirname, 'components')
@@ -205,6 +209,96 @@ export async function renderEmailFile(filePath, options = {}) {
     ? filePath
     : path.join(options.cwd ?? process.cwd(), filePath)
   return expand(await renderFile(abs, resolveOptions({ ...options, cwd: path.dirname(abs) })))
+}
+
+/*
+ * ── Stored bodies ────────────────────────────────────────────────────────
+ *
+ * The body is markdown somebody typed at runtime, with `{contact.name}` holes
+ * (`@frontierjs/toolbelt/fill`). No expression reaches JavaScript: markdown
+ * writes the only tags, `fill` escapes every value, and the document is the
+ * kit's own `Email`, so a stored body can style and cannot run.
+ *
+ * Markdown runs FIRST and the holes are hidden from it, because it rewrites
+ * what a hole is made of (`'there'` becomes `&#39;there&#39;`, `contact.first_name`
+ * can open emphasis) and a filled value is not markdown to be read. A hole is a
+ * private-use token while markdown runs and its own text again before `fill`.
+ */
+const HOLE_OPEN = '\uE001'
+const HOLE_CLOSE = '\uE002'
+const BRACE = '\uE003'
+const PRIVATE_USE = /[\uE001-\uE003]/g
+
+function maskHoles(source) {
+  const holes = []
+  let out = ''
+  for (const seg of segments(source.replace(PRIVATE_USE, ''))) {
+    if ('hole' in seg) out += `${HOLE_OPEN}${holes.push(seg.raw) - 1}${HOLE_CLOSE}`
+    else if ('open' in seg) out += seg.open
+    else out += seg.text.replaceAll('{', BRACE)
+  }
+  return { masked: out, holes }
+}
+
+const unmaskHoles = (html, holes) =>
+  html
+    .replace(new RegExp(`${HOLE_OPEN}(\\d+)${HOLE_CLOSE}`, 'g'), (_, n) => holes[n])
+    .replaceAll(BRACE, '\\{')
+
+// A value can turn a safe-looking `href="{x}"` into `javascript:`, which
+// markdown could not see through the mask; the scheme is graded once filled.
+const unsafeHrefs = (html) =>
+  html.replace(/href="([^"]*)"/g, (whole, url) => (safeUrl(url) === null ? 'href="#"' : whole))
+
+const SLOT = (name) => `<div data-slot="${name}"></div>`
+const SLOT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+const STORED_EMAIL = `<script>
+  import Email from './Email.mesa'
+  export let subject = ''
+  export let body = ''
+</script>
+<Email subject={subject}><div>{@html body}</div></Email>`
+
+/**
+ * Render a stored template -- `{ subject, body }`, the body markdown -- for a
+ * channel, filling its merge fields from `ctx`.
+ *
+ *   email   `{ subject, html, text }` -- the body in the kit's element styles,
+ *           wrapped in `Email` and inlined; `text` is derived from the HTML
+ *   sms     `{ subject, text }` -- the text-mode fill; markdown is not read
+ *   page    `{ subject, html, slots }` -- a fragment. `options.slots` names
+ *           the live widgets the page may place; the author writes
+ *           `{slot.EstimateReview}` and gets `<div data-slot="EstimateReview">`
+ *           to mount into, `slots` listing those present. A name not offered
+ *           stays as written. `slot` is therefore reserved in `ctx`.
+ *
+ * The body's raw HTML is never passed through and a filled value is escaped.
+ */
+export async function renderStored({ subject = '', body = '' }, ctx = {}, options = {}) {
+  const { channel, slots = [] } = options
+  const title = fill(String(subject), ctx, { mode: 'text' })
+  if (channel === 'sms') return { subject: title, text: fill(String(body), ctx, { mode: 'text' }) }
+  if (channel !== 'email' && channel !== 'page') {
+    throw new Error(`renderStored: channel must be 'email', 'sms' or 'page', got ${JSON.stringify(channel)}`)
+  }
+
+  const names = channel === 'page' ? slots : []
+  for (const name of names) {
+    if (!SLOT_NAME.test(name)) throw new Error(`renderStored: slot ${JSON.stringify(name)} is not a name`)
+  }
+  const fields = { ...ctx, slot: Object.fromEntries(names.map((n) => [n, { html: SLOT(n), text: '' }])) }
+
+  const { masked, holes } = maskHoles(String(body))
+  const filled = unsafeHrefs(fill(unmaskHoles(markdown(masked), holes), fields, { mode: 'html' }))
+  const html = filled.replace(/<p>\s*(<div data-slot="\w+"><\/div>)\s*<\/p>/g, '$1')
+
+  if (channel === 'page') {
+    const found = [...html.matchAll(/<div data-slot="(\w+)"><\/div>/g)].map((m) => m[1])
+    return { subject: title, html, slots: found }
+  }
+  const out = await renderEmail(STORED_EMAIL, { data: { subject: title, body: html } })
+  return { subject: title, html: out.html, text: out.text }
 }
 
 /**

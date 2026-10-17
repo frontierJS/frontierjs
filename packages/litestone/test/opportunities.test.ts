@@ -492,6 +492,18 @@ describe('a-document-priced-through-a-relation', () => {
       'charged Int @money(USD) @immutable\n status S @default(draft)'), ID)).toEqual([])
   })
 
+  // A bare @scale is any exact number -- a cap, a weight -- and names no charge.
+  // FJS-2180: serpgrid's Agency.monthlySpendCap reported its members as underpriced.
+  test('silent where the related row holds only a @scale quantity', () => {
+    expect(found(DOC.replace('price Int @money(USD)', 'cap Int @scale(6)'), ID)).toEqual([])
+  })
+
+  // A sub-minor rate is spelled @money with places, so it is still a price.
+  test('fires where the related row holds a @money rate finer than the minor unit', () => {
+    expect(found(DOC.replace('@money(USD)', '@money(USD, places: 6)'), ID).map(x => `${x.model}.${x.field}`))
+      .toEqual(['D.c'])
+  })
+
   // A basket line legitimately reads the live price. Nothing about it is meant
   // to stand, and it declares none of the words that say otherwise.
   test('silent on a row that is not document-shaped', () => {

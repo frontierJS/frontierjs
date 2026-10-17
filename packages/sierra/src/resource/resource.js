@@ -2016,14 +2016,16 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     }
   }
 
-  // A cell holds a foreign key and nobody recognizes one. Which column of the
-  // related row a person does is that model's own `labelField`, the one a
-  // picker shows; without it on the answer `<Cell>` cannot read a loaded
+  // A cell holds a foreign key and nobody recognizes one. What a person
+  // recognizes is that model's own label, the one a picker shows: its
+  // `labelField`, the conventional columns below it and a declared list with
+  // its hops. Without them on the answer `<Cell>` cannot read a loaded
   // `row[relation]` and prints the id. A registered display that claims
-  // `relation` is handed the same field.
+  // `relation` is handed the same three.
   function relationLabel(shown) {
     if (shown.display !== 'relation' || !shown.model) return null
-    return { labelField: relatedResource(serviceNameFor(shown.model) ?? shown.model, shown.model).labelField }
+    const { labelField, labelAlt, labelParts } = relatedResource(serviceNameFor(shown.model) ?? shown.model, shown.model)
+    return { labelField, labelAlt, labelParts }
   }
 
   /**

@@ -9,7 +9,7 @@
  * every other rule is the part of the ruling that makes the output predictable.
  */
 
-import { fill, check } from '../../src/fill/fill.js'
+import { fill, check, mergeFields, segments } from '../../src/fill/fill.js'
 
 const CTX = {
   contact: { name: 'Ann', first: null, visits: 0, active: false, evil: '<img src=x onerror=alert(1)>' },
@@ -102,4 +102,80 @@ test('check: an expression is graded the way a value is', function () {
 test('check: a brace that opens nothing is refused, so a stray one is written \\{', function () {
   assert.equal(check('cost { oops', { contact: ['name'] }).length, 1)
   assert.equal(check('{ oops }', { contact: ['name'] }).length, 1)
+})
+
+// ─── mergeFields (FJS-2683) ───────────────────────────────────────────────────
+
+const CATALOG = [
+  { key: 'contact.name',  label: 'Name',  description: 'Who it is for', example: 'Ann Lee', default: 'there', type: 'text', channels: ['email', 'text'] },
+  { key: 'contact.phone', label: 'Phone', example: '555-0100', type: 'text', channels: ['text'] },
+  { key: 'quote.total',   label: 'Total', example: 1200, type: 'money', channels: ['email'] },
+]
+
+test('mergeFields: one declaration feeds the editor list, the example data, the check and the render', function () {
+  const reg = mergeFields(CATALOG)
+  assert.deepEqual(reg.list().map((f) => f.key), ['contact.name', 'contact.phone', 'quote.total'])
+  assert.deepEqual(reg.example(), { contact: { name: 'Ann Lee', phone: '555-0100' }, quote: { total: 1200 } })
+  assert.deepEqual(reg.names(), { contact: ['name', 'phone'], quote: ['total'] })
+  assert.equal(reg.check('{contact.name} {contact.nope}').length, 1)
+  assert.equal(reg.fill('Hi {contact.name}', { contact: { name: 'Bo' } }, { mode: 'text' }), 'Hi Bo')
+})
+
+test('mergeFields: a declared default applies at render where the data has no value', function () {
+  const reg = mergeFields(CATALOG)
+  assert.equal(reg.fill('Hi {contact.name}', {}, { mode: 'text' }), 'Hi there')
+  assert.equal(reg.fill('Hi {contact.name}', { contact: { name: null } }, { mode: 'text' }), 'Hi there')
+  assert.equal(reg.fill('Hi {contact.name}', { contact: { name: '' } }, { mode: 'text' }), 'Hi there')
+  assert.equal(reg.fill('[{quote.total}]', { quote: { total: 0 } }, { mode: 'text' }), '[0]')
+  assert.equal(reg.fill('{contact.phone}', {}, { mode: 'text' }), '{contact.phone}')
+})
+
+test('mergeFields: render does not touch the caller\'s data, and keeps what is not declared', function () {
+  const data = { contact: { id: 7 }, extra: { x: 1 } }
+  const out = mergeFields(CATALOG).context(data)
+  assert.deepEqual(out, { contact: { id: 7, name: 'there' }, extra: { x: 1 } })
+  assert.deepEqual(data, { contact: { id: 7 }, extra: { x: 1 } })
+})
+
+test('mergeFields: a filter scopes the list, the example data and the names to one use', function () {
+  const reg = mergeFields(CATALOG)
+  const email = (f) => f.channels.includes('email')
+  assert.deepEqual(reg.list(email).map((f) => f.key), ['contact.name', 'quote.total'])
+  assert.deepEqual(reg.example(email), { contact: { name: 'Ann Lee' }, quote: { total: 1200 } })
+  assert.equal(reg.check('{contact.phone}', email).length, 1)
+  assert.equal(reg.check('{contact.phone}').length, 0)
+})
+
+test('mergeFields: a template row declares fields of its own, beside the app\'s', function () {
+  const reg = mergeFields(CATALOG).with([{ key: 'custom.venue', label: 'Venue', example: 'Hall A', default: 'TBA', type: 'text' }])
+  assert.equal(reg.check('{custom.venue} {contact.name}').length, 0)
+  assert.equal(reg.fill('At {custom.venue}', {}, { mode: 'text' }), 'At TBA')
+  assert.equal(mergeFields(CATALOG).check('{custom.venue}').length, 1)
+  assert.throws(() => mergeFields(CATALOG).with([{ key: 'contact.name', label: 'Name', type: 'text' }]), /contact\.name/)
+})
+
+test('mergeFields: the example data is escaped like any other value', function () {
+  const reg = mergeFields([{ key: 'contact.name', label: 'Name', example: '<b>Ann</b>', type: 'text' }])
+  assert.equal(reg.fill('{contact.name}', reg.example(), { mode: 'html' }), '&lt;b&gt;Ann&lt;/b&gt;')
+})
+
+test('mergeFields: a malformed declaration is refused when declared, by name', function () {
+  assert.throws(() => mergeFields([{ key: 'name', label: 'x', type: 'text' }]), /owner\.field/)
+  assert.throws(() => mergeFields([{ key: 'a.b.c', label: 'x', type: 'text' }]), /owner\.field/)
+  assert.throws(() => mergeFields([{ key: '__proto__.x', label: 'x', type: 'text' }]), /__proto__/)
+  assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'colour' }]), /colour/)
+  assert.throws(() => mergeFields([{ key: 'a.b', type: 'text' }]), /label/)
+  assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'text', example: {} }]), /a\.b/)
+  assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'text' }, { key: 'a.b', label: 'y', type: 'text' }]), /a\.b/)
+})
+
+test('segments: the scan fill reads -- text, a hole with its raw, an unclosed brace', function () {
+  assert.deepEqual([...segments(`a \\{ {x.y} {z ? 'q}' : 1} {`)], [
+    { text: 'a { ' },
+    { hole: 'x.y', raw: '{x.y}' },
+    { text: ' ' },
+    { hole: `z ? 'q}' : 1`, raw: `{z ? 'q}' : 1}` },
+    { text: ' ' },
+    { open: '{' },
+  ])
 })

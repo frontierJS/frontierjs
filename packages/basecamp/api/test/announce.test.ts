@@ -81,9 +81,10 @@ describe('announce() — a system-read row, graded per recipient', () => {
       await announce(env.app, ws.id, 'Job', 'jobs patched', job)
 
       expect(kept.frames.map(f => [f.event, f.data?.id])).toEqual([['jobs patched', job.id]])
-      // A refused `patched` arrives as a removal naming the key alone, so a
-      // store already holding the row drops it rather than keeping it stale.
-      expect(gone.frames.map(f => [f.event, f.data])).toEqual([['jobs removed', { id: job.id }]])
+      // `announce()` hands the grader no before-image, and a removal goes only
+      // to a reader the before-image admitted (`FJS-D1199`) -- so the refused
+      // socket is told nothing, neither the row nor a removal.
+      expect(gone.frames).toEqual([])
     } finally {
       const ch = env.app.channels.channel(workspaceChannelName(ws.id))
       ch.leave(kept.conn); ch.leave(gone.conn)

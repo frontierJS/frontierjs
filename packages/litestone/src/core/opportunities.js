@@ -29,6 +29,9 @@ import { lookup } from './catalog.js'
 import { parseGateString } from '../plugins/gate.js'
 
 const has        = (f, kind) => (f.attributes ?? []).some(a => a.kind === kind)
+// A price is a column naming a currency. A bare @scale is any exact number (a cap,
+// a weight) and a rate finer than the minor unit is `@money(USD, places: n)`.
+const isPrice    = f => has(f, 'money')
 const modelAttr  = (m, kind) => (m.attributes ?? []).find(a => a.kind === kind)
 const isOptional = f => f.type?.optional === true
 const scalarOf   = f => (f.type?.kind === 'scalar' ? f.type.name : null)
@@ -439,14 +442,14 @@ export const OPPORTUNITIES = [
                 'document holding what was charged, @immutable once the document is issued.',
     run(schema) {
       const priced = new Set(authored(schema)
-        .filter(m => (m.fields ?? []).some(f => has(f, 'money') || has(f, 'scale')))
+        .filter(m => (m.fields ?? []).some(f => isPrice(f)))
         .map(m => m.name))
       if (!priced.size) return []
 
       const out = []
       for (const model of authored(schema)) {
         const fields = model.fields ?? []
-        if (fields.some(f => has(f, 'money') || has(f, 'scale'))) continue
+        if (fields.some(f => isPrice(f))) continue
 
         // Document-shaped: something about this row is meant to stand. A basket
         // line legitimately reads the live price, and it declares none of these.
@@ -463,7 +466,7 @@ export const OPPORTUNITIES = [
         const pricedChild = authored(schema).some(child =>
           (child.fields ?? []).some(f => f.type?.name === model.name
             && f.attributes?.some(a => a.kind === 'relation' && a.fields?.length))
-          && (child.fields ?? []).some(f => has(f, 'money') || has(f, 'scale')))
+          && (child.fields ?? []).some(f => isPrice(f)))
         if (pricedChild) continue
 
         const via = fields.find(f =>
@@ -474,7 +477,7 @@ export const OPPORTUNITIES = [
         // or a target that is itself a dated version, is the correct shape here —
         // `example`'s Subscription reads PlanVersion for exactly that reason.
         const target = authored(schema).find(m => m.name === via.type.name)
-        const amounts = (target.fields ?? []).filter(f => has(f, 'money') || has(f, 'scale'))
+        const amounts = (target.fields ?? []).filter(f => isPrice(f))
         const frozen  = amounts.every(f => has(f, 'immutable'))
           || (target.fields ?? []).some(f => /^(effective|valid|active)(From|To)$/i.test(f.name))
         if (frozen) continue

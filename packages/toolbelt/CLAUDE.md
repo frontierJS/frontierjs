@@ -236,8 +236,15 @@ src/fill/            merge fields into text a user wrote -- `fill(source, ctx,
                      is `{path}` or a `/predicate` values expression; `\{` is a
                      literal brace. `mode` is REQUIRED, `html` escaping a value
                      and `text` not, because a body's format is stated and never
-                     sniffed from its tags. orion's `data.template` and every
-                     app that stores a template are the callers. Ships a `.d.ts`
+                     sniffed from its tags. `segments(source)` is the scan both read, exported for a
+                     caller that hides holes from another reader (email-kit's markdown). orion's `data.template` and every
+                     app that stores a template are the callers. `mergeFields`
+                     is the catalog (`FJS-2683`): `{ key: 'owner.field', label,
+                     example, default, type }` declared once, read as the
+                     editor's `list`, the preview's `example`, the save-time
+                     `check` and the render's `fill` (a `default` stands in for
+                     a missing value); `.with(rowFields)` adds a template row's
+                     own. Ships a `.d.ts`
 src/search/          ranked fuzzy matching, adapted from quick-score (MIT,
                      `LICENSE` beside it). Two callers, both in @frontierjs/ui:
                      CommandPalette and MultiSelect. `rank`'s `words` and
