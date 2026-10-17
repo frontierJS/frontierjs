@@ -11,7 +11,7 @@
   // `animal` event: every screen runs the gull off, and every screen but the
   // caller's, which has its own line in the answer, says it in the note.
   import { getClient } from '@frontierjs/sierra/resource'
-  import { inView } from '@/crowd.js'
+  import { inView } from '@/lib/scene/crowd.js'
   import { at, tint } from '#cell'
 
   export let room

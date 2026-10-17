@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { barActivity, barCommand } from '../src/errand.js'
+import { barActivity, barCommand } from '../src/lib/hash/errand.js'
 import { bar as barPiece } from '../src/pieces/bar.js'
 import { spotsOf } from '../src/pieces/index.js'
 import { stageOf } from './stage.mjs'

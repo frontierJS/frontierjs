@@ -2,7 +2,7 @@
 // A scene as the server knows it (`IDEAS/haven.md` 12.2): the cells that can be
 // walked, the doors, what stands on the rest. The client draws the art and the
 // server never mounts it, so `bun run frames` writes `web/src/scenes/<slug>.
-// world.json` (`web/src/world.js`) and this reads it, as `hearing.ts` is read
+// world.json` (`web/src/lib/scene/world.js`) and this reads it, as `hearing.ts` is read
 // by both sides. A bolt is resolved here rather than on the caller's screen,
 // so there is one answer for every screen.
 
@@ -13,7 +13,7 @@ import { cellsOf, inLane, riderOn, ridersAt } from './carousel.ts'
 import type { CarouselSpec } from './carousel.ts'
 import { pacerNow } from './pacer.ts'
 import type { PacerSpec } from './pacer.ts'
-import { almanacAt } from '../../web/src/sky.js'
+import { almanacAt } from '../../web/src/lib/scene/sky.js'
 
 export interface SceneWorld {
   slug: string, width: number, height: number

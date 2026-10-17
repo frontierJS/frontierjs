@@ -26,7 +26,7 @@ import { ROOMS } from '../../api/src/rooms.ts'
 import { signIn } from '../../api/test/sign-in.ts'
 import { cellOf, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
-import { dataFile } from '../src/ledger.js'
+import { dataFile } from '../src/lib/hash/ledger.js'
 
 const WEB      = join(import.meta.dir, '..')
 const square   = await stageOf('Square')
@@ -46,7 +46,7 @@ for (const p of ['litestone', 'mesa', 'haven']) {
   mkdirSync(join(fake, 'packages', p), { recursive: true })
   writeFileSync(join(fake, 'packages', p, 'package.json'), '{}')
 }
-mkdirSync(join(fake, 'packages/haven/web/src'), { recursive: true })
+mkdirSync(join(fake, 'packages/haven/web/src/lib/hash'), { recursive: true })
 const row = (id, pkg) => `| <a id="fjs-${id}"></a>FJS-${id} | ${pkg} | a title |`
 const register = (rows) => writeFileSync(join(fake, 'ISSUES.md'), ['# Issues', '', '## S2 — serious', '', row(1, 'litestone'), '## S3 — minor', '', ...rows].join('\n'))
 register([row(2, 'mesa'), row(3, 'mesa')])
@@ -113,7 +113,7 @@ async function quit(term) {
 
 // ─── the snapshot, then the root's count ──────────────────────────────
 
-const { LEDGER } = await import('../src/ledger.data.js')
+const { LEDGER } = await import('../src/lib/hash/ledger.data.js')
 const total = (s) => Object.values(LEDGER).reduce((n, c) => n + c[s], 0)
 const SNAPSHOT = `━ S3 ${total('S3')}   ━ S4 ${total('S4')} ]`
 const COUNTED  = '━ S1 0   ━ S2 1   ━ S3 2   ━ S4 0 ]'

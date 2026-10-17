@@ -16,7 +16,7 @@
 // scene sees them (`sierra/src/terminal/shell.js`), so after `f`, `s` or `a`
 // an arrow is read back as its letter — an `f` then Left finds a nick in h.
 
-import { glyphOf, shapeOf } from '../../api/src/shape.ts'
+import { glyphOf, shapeOf } from '../../../../api/src/shape.ts'
 
 /** How long a lone `d` waits for a second key before it fires the way faced. */
 export const PENDING_MS = 400

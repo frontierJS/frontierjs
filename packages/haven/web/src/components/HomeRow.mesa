@@ -21,9 +21,9 @@
   // the server's answer (`rooms.bolt`); `Scene.mesa` draws the room's `bolt`
   // event. Draws nothing.
   import { rooms } from '@/resources/Room.mesa'
-  import { createHomeRow, PENDING_MS } from '@/home-row.js'
-  import { findByNick, pathBeside } from '@/paths.js'
-  import { cellOf } from '@/crowd.js'
+  import { createHomeRow, PENDING_MS } from '@/lib/home/home-row.js'
+  import { findByNick, pathBeside } from '@/lib/scene/paths.js'
+  import { cellOf } from '@/lib/scene/crowd.js'
   import { SHAPE_MS } from '../../../api/src/shape.ts'
 
   export let stage

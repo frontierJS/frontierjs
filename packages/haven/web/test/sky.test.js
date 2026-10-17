@@ -3,9 +3,9 @@
 // a given `ms`; what `#paint` draws is `look()`, so the two targets cannot
 // disagree.
 import { test, expect, setSystemTime } from 'bun:test'
-import { createStage, INK, INDOORS, OUTDOORS, MOON_ROW } from '../src/stage.js'
+import { createStage, INK, INDOORS, OUTDOORS, MOON_ROW } from '../src/lib/scene/stage.js'
 import { piece } from '../src/pieces/index.js'
-import { DAY_MS, SKY_MS, WEATHER_MS, FALL, DROPS, GUST, GROUND, GROUND_MS, tempAt, groundAt, groundOn, darkness, isNight, shade, moonAt, MOON_FG, SYNODIC_MS, scheduleAt, seasonAt, almanacAt, windAt, hold, heldOf, fallAt, cloudAt, CLOUD_MS, untilWeatherChange } from '../src/sky.js'
+import { DAY_MS, SKY_MS, WEATHER_MS, FALL, DROPS, GUST, GROUND, GROUND_MS, tempAt, groundAt, groundOn, darkness, isNight, shade, moonAt, MOON_FG, SYNODIC_MS, scheduleAt, seasonAt, almanacAt, windAt, hold, heldOf, fallAt, cloudAt, CLOUD_MS, untilWeatherChange } from '../src/lib/scene/sky.js'
 import { mountScene } from './stage.mjs'
 
 const NOON = 0.25 * DAY_MS

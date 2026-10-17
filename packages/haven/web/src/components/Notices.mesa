@@ -21,7 +21,7 @@
   import { messages } from '@/resources/Message.mesa'
   import { rooms }    from '@/resources/Room.mesa'
   import { noticeBoard } from '@/pieces/board.js'
-  import { clip } from '@/cells.js'
+  import { clip } from '@/lib/scene/cells.js'
   import { at } from '#cell'
 
   const scene = $context.scene

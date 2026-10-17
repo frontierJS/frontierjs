@@ -1,6 +1,6 @@
 // api/src/townhall.ts
 // The town hall as the server reads it (`IDEAS/haven.md` Phase 15): the room
-// it is, and the ideas that stand in it -- `web/src/townhall.data.json`,
+// it is, and the ideas that stand in it -- `web/src/lib/hash/townhall.data.json`,
 // written by `bun run townhall` from `IDEAS/overview.md`. The server reads the
 // file the hall is drawn from, as `world.ts` reads a scene's `world.json`, so a
 // vote can name only a delegate a screen can walk up to.
@@ -17,7 +17,7 @@ let ideas: Set<string> | null = null
 /** Every idea standing in the hall, read once. */
 export function hallIdeas (): Set<string> {
   if (!ideas) {
-    const waves = JSON.parse(readFileSync(new URL('../../web/src/townhall.data.json', import.meta.url), 'utf8')) as Wave[]
+    const waves = JSON.parse(readFileSync(new URL('../../web/src/lib/hash/townhall.data.json', import.meta.url), 'utf8')) as Wave[]
     ideas = new Set(waves.flatMap(w => w.ideas.map(i => i.id)))
   }
   return ideas

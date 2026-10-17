@@ -9,7 +9,7 @@
   import { useStore } from '@frontierjs/sierra/resource'
   import { messages } from '@/resources/Message.mesa'
   import { at } from '#cell'
-  import { clip } from '@/cells.js'
+  import { clip } from '@/lib/scene/cells.js'
 
   export let room
   export let nicks

@@ -30,8 +30,8 @@ import { ROOMS } from '../../api/src/rooms.ts'
 import { signIn } from '../../api/test/sign-in.ts'
 import { terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
-import { arrival } from '../src/stage.js'
-import { nameOf } from '../src/townhall.js'
+import { arrival } from '../src/lib/scene/stage.js'
+import { nameOf } from '../src/lib/hash/townhall.js'
 
 const WEB  = join(import.meta.dir, '..')
 const hall = await stageOf('TownHall')

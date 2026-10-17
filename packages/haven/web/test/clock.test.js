@@ -3,7 +3,7 @@
 // the wall's beat, a paint runs only when the picture changed, and a stage made
 // `manual` keeps no timer, so a scene with state is pinned at frame N.
 import { test, expect } from 'bun:test'
-import { createStage, PHASES } from '../src/stage.js'
+import { createStage, PHASES } from '../src/lib/scene/stage.js'
 import { piece } from '../src/pieces/index.js'
 
 const probe = (opts = {}) => createStage({ slug: 'clock', spawn: { x: 0, y: 0 }, manual: true, layers: [], ...opts })

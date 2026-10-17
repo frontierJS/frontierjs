@@ -50,7 +50,7 @@ import { buildHavenApp } from '../../api/src/app.ts'
 import { signIn } from '../../api/test/sign-in.ts'
 import { TUI, blank, cellOf, screen, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
-import { follow, VIEW } from '../src/stage.js'
+import { follow, VIEW } from '../src/lib/scene/stage.js'
 
 const WEB = join(import.meta.dir, '..')
 const square = await stageOf('Square')

@@ -8,7 +8,7 @@
   // dance floor, and the sconces the back corners.
   // The picture this draws is `upstairs.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
-  import { INDOORS } from '@/stage.js'
+  import { INDOORS } from '@/lib/scene/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import { piece, withSeasons } from '@/pieces/index.js'
@@ -18,7 +18,7 @@
   import { sconce } from '@/pieces/sconce.js'
   import { chandelier } from '@/pieces/chandelier.js'
   import { stairs } from '@/pieces/stairs.js'
-  import { PARTS }  from '@/band.js'
+  import { PARTS }  from '@/lib/band/band.js'
 
   // Arms and strumming hands are cells that cycle between two glyphs (`chars`
   // in the palette), so the band plays with no clock of its own. Two cells of

@@ -3,9 +3,9 @@
 // walk rather than the crow. A room is drawn as text, `#` a wall piece, and
 // stamped onto a stage, so `walkable` is the stage's own.
 import { test, expect } from 'bun:test'
-import { createStage } from '../src/stage.js'
+import { createStage } from '../src/lib/scene/stage.js'
 import { piece } from '../src/pieces/index.js'
-import { findByNick, pathBeside, reach } from '../src/paths.js'
+import { findByNick, pathBeside, reach } from '../src/lib/scene/paths.js'
 
 function room(rows) {
   const stage = createStage({ slug: 'probe', palette: { w: { fg: '#ffffff' } }, spawn: { x: 1, y: 1 } })

@@ -1,7 +1,7 @@
 <script>
   // Nameplates.mesa — a figure within reach of this one wears its full nick on
   // the row below it (`crowd.js`'s `plates`). Placed by `Scene.mesa`.
-  import { plates } from '@/crowd.js'
+  import { plates } from '@/lib/scene/crowd.js'
   import { at } from '#cell'
 
   export let here

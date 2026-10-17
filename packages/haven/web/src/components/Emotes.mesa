@@ -11,7 +11,7 @@
   // bench's, a bar stool, a table's stool) within a cell, not taken, the
   // nearest first; with none it sits where it stands. Stepping onto a seat
   // sits too, so a stool walked onto reads as sat on.
-  import { cellOf, figures, inView } from '@/crowd.js'
+  import { cellOf, figures, inView } from '@/lib/scene/crowd.js'
   import { spotsOf } from '@/pieces/index.js'
   import { at } from '#cell'
   import { EMOTE_MS } from '../../../api/src/shape.ts'

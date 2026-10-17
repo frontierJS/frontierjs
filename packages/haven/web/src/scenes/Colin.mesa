@@ -8,7 +8,7 @@
   // gramophone whose record turns, and a bookshelf under them.
   // The picture this draws is `colin.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
-  import { INDOORS } from '@/stage.js'
+  import { INDOORS } from '@/lib/scene/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import { frame } from '@/pieces/frame.js'

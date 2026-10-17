@@ -30,7 +30,7 @@
 // (`api/src/inventory.ts`), and it is gone from the cell for a while after
 // (`IDEAS/haven.md` 9.9). The server resolves it from `world.json`.
 import { ITEMS, isItem } from '../../../api/src/inventory.ts'
-import { SEASONS } from '../sky.js'
+import { SEASONS } from '../lib/scene/sky.js'
 
 /**
  * @param {string} name

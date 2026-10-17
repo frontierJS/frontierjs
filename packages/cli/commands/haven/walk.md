@@ -29,7 +29,7 @@ flags:
 Haven is an app, `packages/haven`, and this is its door (`FJS-D977`): it
 signs this machine in, then runs Haven's own `web/` in this terminal the
 way `fli dev:tui` runs an app's. The sign-in is Haven's code too
-(`web/src/sign-in.js`), so the client, the login and the server version
+(`web/src/lib/session/sign-in.js`), so the client, the login and the server version
 together.
 
 The first run writes this machine's key pair to `~/.fli/haven/key.json`. The
@@ -139,6 +139,6 @@ try {
 
 const shellArgs = ['--api', api, ...(flag.frame ? ['--frame', flag.frame] : [])]
 // The token reaches the shell as HAVEN_TOKEN: a terminal has no storage a
-// client could restore a session from (`web/src/walk-in.js`).
+// client could restore a session from (`web/src/lib/session/walk-in.js`).
 $.exec({ command: `bun ${JSON.stringify(shell)}`, args: shellArgs, cwd: web, env: { ...process.env, HAVEN_TOKEN: walker.token } })
 ```

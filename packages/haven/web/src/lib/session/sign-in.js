@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path'
 
 import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
 
-import { LOGIN_PATH } from '../../api/src/login.ts'
+import { LOGIN_PATH } from '../../../../api/src/login.ts'
 
 export const KEY_FILE = join(homedir(), '.fli', 'haven', 'key.json')
 

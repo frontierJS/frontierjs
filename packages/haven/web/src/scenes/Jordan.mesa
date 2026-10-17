@@ -8,7 +8,7 @@
   // blinking beside the desk, a bookshelf, and a stove by the bed.
   // The picture this draws is `jordan.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
-  import { INDOORS } from '@/stage.js'
+  import { INDOORS } from '@/lib/scene/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import { frame } from '@/pieces/frame.js'

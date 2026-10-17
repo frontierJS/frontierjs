@@ -2,8 +2,8 @@
 // drawn, the name under one within reach and the line over one that spoke,
 // over a real stage and a presence snapshot of the shape `here.get()` hands.
 import { test, expect } from 'bun:test'
-import { createStage } from '../src/stage.js'
-import { BUBBLE, bubbles, cellOf, figures, inView, NEAR, plates } from '../src/crowd.js'
+import { createStage } from '../src/lib/scene/stage.js'
+import { BUBBLE, bubbles, cellOf, figures, inView, NEAR, plates } from '../src/lib/scene/crowd.js'
 
 const spawn = { x: 5, y: 5 }
 const stage = createStage({ slug: 'crowd', palette: {}, spawn, manual: true })

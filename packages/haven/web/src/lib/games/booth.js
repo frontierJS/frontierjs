@@ -11,7 +11,7 @@
 // screen; `components/Booth.mesa` places what this returns. Every width is
 // counted in cells (`cells.js`), since a line may hold an emoji or 中文.
 
-import { cells, clip } from './cells.js'
+import { cells, clip } from '../scene/cells.js'
 
 /** The booth's column: wide enough for a sentence, narrow enough to leave each member a side. */
 export const COLUMN = { w: 50, h: 24 }

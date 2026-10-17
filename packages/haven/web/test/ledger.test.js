@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { benchesOf, checkout, count, dataFile, recount } from '../src/ledger.js'
+import { benchesOf, checkout, count, dataFile, recount } from '../src/lib/hash/ledger.js'
 
 const row = (id, pkg) => `| <a id="fjs-${id}"></a>FJS-${id} | ${pkg} | a title |`
 
@@ -16,7 +16,7 @@ function fakeRoot() {
     writeFileSync(join(root, 'packages', p, 'package.json'), '{}')
   }
   mkdirSync(join(root, 'packages', 'notes'))
-  mkdirSync(join(root, 'packages', 'haven', 'web', 'src'), { recursive: true })
+  mkdirSync(join(root, 'packages', 'haven', 'web', 'src', 'lib', 'hash'), { recursive: true })
   writeFileSync(join(root, 'ISSUES.md'), [
     '# Issues', '',
     '## S2 — serious', '',
@@ -55,6 +55,6 @@ test('recount writes the file the workshop imports, and it reads back as the cou
   const counts = recount({ root })
   const { LEDGER } = await import(dataFile(root))
   expect(LEDGER).toEqual(counts)
-  expect(readFileSync(dataFile(root), 'utf8')).toStartWith('// web/src/ledger.data.js')
+  expect(readFileSync(dataFile(root), 'utf8')).toStartWith('// web/src/lib/hash/ledger.data.js')
   rmSync(root, { recursive: true })
 })

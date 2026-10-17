@@ -39,9 +39,9 @@ import { ROOMS } from '../../api/src/rooms.ts'
 import { signIn } from '../../api/test/sign-in.ts'
 import { blank, cellOf, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
-import { follow } from '../src/stage.js'
+import { follow } from '../src/lib/scene/stage.js'
 import { BENCH_WIDTH } from '../src/pieces/bench.js'
-import { QUIET_MS, readWorkers } from '../src/workers.js'
+import { QUIET_MS, readWorkers } from '../src/lib/hash/workers.js'
 
 const WEB      = join(import.meta.dir, '..')
 const REPO     = join(WEB, '../../..')
@@ -215,7 +215,7 @@ check(await until(() => at(s0.x, s0.y) === '✓' && !term.screen().includes(WAIT
 // Litestone has the most issues, so its piles are the tallest and its bench is
 // in the row far below the door. Sam walks up to the aisle past its table,
 // level with the top of its tallest pile, and the view pans up the room to it.
-const { LEDGER } = await import('../src/ledger.data.js')
+const { LEDGER } = await import('../src/lib/hash/ledger.data.js')
 const lite = workshop.marks.find((m) => m.piece?.bench === 'litestone')
 const pile = workshop.marks.find((m) => m.piece?.ledger === 'litestone')
 const top = pile.piece.cells.reduce((a, c) => (c.dy < a.dy ? c : a))

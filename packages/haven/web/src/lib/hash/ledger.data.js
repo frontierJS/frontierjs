@@ -1,4 +1,4 @@
-// web/src/ledger.data.js — open issues per package and severity in ISSUES.md.
+// web/src/lib/hash/ledger.data.js — open issues per package and severity in ISSUES.md.
 // Written by `bun run ledger` (scripts/ledger.mjs); never by hand.
 export const LEDGER = {
   auth: { S1: 0, S2: 0, S3: 7, S4: 9 },

@@ -11,12 +11,12 @@
   // `components/Assembly.mesa`'s, placed by the route. The picture this draws
   // is `townhall.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
-  import { INDOORS } from '@/stage.js'
+  import { INDOORS } from '@/lib/scene/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import { framed }     from '@/pieces/frame.js'
   import { layoutHall } from '@/pieces/townhall.js'
-  import WAVES          from '@/townhall.data.json'
+  import WAVES          from '@/lib/hash/townhall.data.json'
 
   const hall = layoutHall(WAVES)
   const frame = framed(hall.width, hall.height)

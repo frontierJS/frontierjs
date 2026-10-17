@@ -16,12 +16,12 @@
   // pans up it. The picture this draws is `workshop.frame.txt`, which
   // `scenes.test.js` pins, beside a test that every package has its bench.
   import Scene from '@/components/Scene.mesa'
-  import { INDOORS } from '@/stage.js'
+  import { INDOORS } from '@/lib/scene/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import { framed }          from '@/pieces/frame.js'
   import { layoutWorkshop }  from '@/pieces/workshop.js'
-  import { LEDGER }          from '@/ledger.data.js'
+  import { LEDGER }          from '@/lib/hash/ledger.data.js'
 
   // The route hands a fresh count after `/ledger` and mounts the room again,
   // since where every bench stands follows the counts.

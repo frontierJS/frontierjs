@@ -11,11 +11,11 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { SCENES, WEB, mountScene } from './stage.mjs'
 import { inLane } from '../../api/src/carousel.ts'
-import { pacerAt, createStage, follow, arrival, litAt, dim, INK, VIEW, EDGE, SIGHT, OUTDOORS, INDOORS, viewFor, edgeFor, MOON_ROW } from '../src/stage.js'
+import { pacerAt, createStage, follow, arrival, litAt, dim, INK, VIEW, EDGE, SIGHT, OUTDOORS, INDOORS, viewFor, edgeFor, MOON_ROW } from '../src/lib/scene/stage.js'
 import { piece } from '../src/pieces/index.js'
-import { worldOf, worldJson, pieceId } from '../src/world.js'
-import { DAY_MS } from '../src/sky.js'
-import HALL from '../src/townhall.data.json'
+import { worldOf, worldJson, pieceId } from '../src/lib/scene/world.js'
+import { DAY_MS } from '../src/lib/scene/sky.js'
+import HALL from '../src/lib/hash/townhall.data.json'
 
 const STEPS = [[0, 1], [0, -1], [1, 0], [-1, 0]]
 // Three quarters into the day is full night, when a `night` door is one.
@@ -241,7 +241,7 @@ test('workshop: the row under every bench is floor its whole width, where its wo
 // draw a picture. A package with no issues has no pile and no table of its
 // own: it is listed under `(no work)`.
 test('workshop: on every bench with work a pile per severity, a slip in its color for each issue ledger.data.js counts for that package, lying on the bench', async () => {
-  const { LEDGER } = await import('../src/ledger.data.js')
+  const { LEDGER } = await import('../src/lib/hash/ledger.data.js')
   const { PILE } = await import('../src/pieces/ledger.js')
   const stage = scenes.get('/workshop/')
   const benches = stage.marks.filter((m) => m.piece?.bench)
@@ -262,7 +262,7 @@ test('workshop: on every bench with work a pile per severity, a slip in its colo
 })
 
 test('workshop: a package with no issues takes no table, and is listed under (no work) in a row below every table', async () => {
-  const { LEDGER } = await import('../src/ledger.data.js')
+  const { LEDGER } = await import('../src/lib/hash/ledger.data.js')
   const stage = scenes.get('/workshop/')
   const idle = Object.keys(LEDGER).filter((n) => Object.values(LEDGER[n]).every((c) => c === 0)).sort()
   const listed = stage.marks.filter((m) => m.piece?.bench && idle.includes(m.piece.bench))

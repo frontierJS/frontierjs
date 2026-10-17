@@ -40,8 +40,8 @@ import { openChrome } from '../../../mesa/src/drive.js'
 import { buildHavenApp } from '../../api/src/app.ts'
 import { signIn } from '../../api/test/sign-in.ts'
 import { cellOf, terminal, until } from './terminal.mjs'
-import { litAt } from '../src/stage.js'
-import { DAY_MS } from '../src/sky.js'
+import { litAt } from '../src/lib/scene/stage.js'
+import { DAY_MS } from '../src/lib/scene/sky.js'
 import { stageOf } from './stage.mjs'
 
 const WEB  = join(import.meta.dir, '..')

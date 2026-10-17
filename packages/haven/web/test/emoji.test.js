@@ -12,9 +12,9 @@
 import { test, expect, describe } from 'bun:test'
 import { join } from 'node:path'
 
-import { cells, clip, estimate } from '../src/cells.js'
-import { bubbles } from '../src/crowd.js'
-import { bubble, transcript, wrap, COLUMN } from '../src/booth.js'
+import { cells, clip, estimate } from '../src/lib/scene/cells.js'
+import { bubbles } from '../src/lib/scene/crowd.js'
+import { bubble, transcript, wrap, COLUMN } from '../src/lib/games/booth.js'
 
 const SAID = ['🙂', '中文', '👍🏽', '👩‍💻', '🇯🇵']
 const OTHERS = ['❤️', '❤', 'é', '1️⃣', '🏳️‍🌈', '👨‍👩‍👧‍👦', '한국', 'Ａ', '✓', '━', '·', '​']

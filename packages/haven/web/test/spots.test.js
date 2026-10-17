@@ -9,7 +9,7 @@ import { table } from '../src/pieces/table.js'
 import { bar, STOOLS } from '../src/pieces/bar.js'
 import { namedBench } from '../src/pieces/bench.js'
 import { deskPiece } from '../src/pieces/workshop.js'
-import { createStage } from '../src/stage.js'
+import { createStage } from '../src/lib/scene/stage.js'
 
 const art = 'o-o'
 const paint = 'www'

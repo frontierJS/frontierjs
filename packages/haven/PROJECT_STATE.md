@@ -31,7 +31,7 @@ last step (10.1).
 - `web/` — the square and the tavern, compiled for the terminal by Sierra's
   shell: art, figures from presence, bubbles from the newest line per member,
   an input line that also takes `/ban <nick>` and `/unban <nick>`, and a door
-  between them that cycles the socket into the other room. `web/src/sign-in.js`
+  between them that cycles the socket into the other room. `web/src/lib/session/sign-in.js`
   is this machine's key and signed login, which `fli haven`
   (`packages/cli/commands/haven/walk.md`) runs before the shell.
   `web/test/verify-explore.mjs` — 54 checks over three live terminals, the

@@ -9,7 +9,7 @@
   // server built, so the line never shows there.
   import { status } from '@frontierjs/sierra/resource'
   import { rooms }  from '@/resources/Room.mesa'
-  import { walkIn } from '@/walk-in.js'
+  import { walkIn } from '@/lib/session/walk-in.js'
 
   export let slug
 

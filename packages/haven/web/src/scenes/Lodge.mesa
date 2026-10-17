@@ -9,7 +9,7 @@
   // near it and `#paint` blooms it. The picture this draws is
   // `lodge.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
-  import { INDOORS } from '@/stage.js'
+  import { INDOORS } from '@/lib/scene/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import Pacer from '@/components/Pacer.mesa'

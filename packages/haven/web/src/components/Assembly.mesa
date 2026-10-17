@@ -20,8 +20,8 @@
   import { getClient } from '@frontierjs/sierra/resource'
   import { votes } from '@/resources/Vote.mesa'
   import { boardPiece, BOARD_ROWS } from '@/pieces/townhall.js'
-  import { nameOf } from '@/townhall.js'
-  import WAVES from '@/townhall.data.json'
+  import { nameOf } from '@/lib/hash/townhall.js'
+  import WAVES from '@/lib/hash/townhall.data.json'
 
   const scene = $context.scene
   var verbs = $context.commands

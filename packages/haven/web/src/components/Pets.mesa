@@ -9,8 +9,8 @@
   // Which pet is `petOf` the member's id, drawn in the member's ink. It is
   // drawn under the figures and never on one, and only where a figure there
   // would be: in view and in the light.
-  import { cellOf, inView, standsOn } from '@/crowd.js'
-  import { petOf, trail } from '@/pet.js'
+  import { cellOf, inView, standsOn } from '@/lib/scene/crowd.js'
+  import { petOf, trail } from '@/lib/scene/pet.js'
   import { at, tint } from '#cell'
 
   export let stage

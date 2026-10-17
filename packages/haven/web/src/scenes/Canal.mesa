@@ -11,7 +11,7 @@
   // `canal.frame.txt`, the canal with every cell lit, which `scenes.test.js`
   // pins. A rat runs the south towpath.
   import Scene from '@/components/Scene.mesa'
-  import { INDOORS } from '@/stage.js'
+  import { INDOORS } from '@/lib/scene/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import Pacer from '@/components/Pacer.mesa'

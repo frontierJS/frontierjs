@@ -26,8 +26,8 @@ Done when: every finding below carries a measurement or a read.
 Goal: the five defects the review tripped over.
 Done when: each has a fix and the package's own suite passes.
 
-- [x] 1.1 The map snap folds held weather — `web/src/map.js` `glyphOf` calls `look(x, y, 0)`, which still applies a held `/weather`; under `hold('weather', 'snow')` 8 Square blocks were written to `~/.fli/haven/seen` as `*`. Measured. Count over the day's picture plus a door check instead (also 13 ms → less per walk-in).
-- [x] 1.2 A held errand carries its first caller's AbortSignal — `web/src/errand.js` `homeBoard` shares one promise across callers, built with the first one's signal; leave the lane mid-run and a home sharing it shows "the board is blank: …aborted". Plausible.
+- [x] 1.1 The map snap folds held weather — `web/src/lib/scene/map.js` `glyphOf` calls `look(x, y, 0)`, which still applies a held `/weather`; under `hold('weather', 'snow')` 8 Square blocks were written to `~/.fli/haven/seen` as `*`. Measured. Count over the day's picture plus a door check instead (also 13 ms → less per walk-in).
+- [x] 1.2 A held errand carries its first caller's AbortSignal — `web/src/lib/hash/errand.js` `homeBoard` shares one promise across callers, built with the first one's signal; leave the lane mid-run and a home sharing it shows "the board is blank: …aborted". Plausible.
 - [x] 1.3 `taskmaster.js` leaks a file descriptor per loop started — `openSync(log)` is handed to `spawn` and never closed in the parent. Read.
 - [x] 1.4 The Vite proxy misses `/votes` and `/barkeep` — `web/config/vite.config.js` `API_PATHS` lists three of five services; an HTTP fallback (Assembly's `tally` before the socket opens) gets the SPA's HTML. Read; derive the list from `api/src/services/`.
 - [x] 1.5 The Session table grows without bound — `api/src/auth.ts` mints a row per login and per agent reconnect, nothing deletes; dev db held 109 sessions for 5 members. Read; sweep expired and revoked rows in the hourly job in `api/src/app.ts`.
@@ -46,7 +46,7 @@ Checks: `bun run test` failed only the 6 outdoor `scenes.test.js` frames, which 
 Goal: a step costs one paint and re-renders only what moved.
 Done when: a Square step measures ≤ 4 ms and one repaint, two where it pans.
 
-- [x] 2.1 Cache `stage.view` — `web/src/stage.js` `get view()` returns a fresh object per read; mesa compares with `Object.is`, so every `tell()` re-renders Scene and nine slot components (Notices, Taskmaster, Bar, Assembly, Workers, HomeBoard, Barkeep, Runner, Profile) on every other member's step. Keep one object until x/y/w/h changes. Read.
+- [x] 2.1 Cache `stage.view` — `web/src/lib/scene/stage.js` `get view()` returns a fresh object per read; mesa compares with `Object.is`, so every `tell()` re-renders Scene and nine slot components (Notices, Taskmaster, Bar, Assembly, Workers, HomeBoard, Barkeep, Runner, Profile) on every other member's step. Keep one object until x/y/w/h changes. Read.
   - Done: one object, replaced only when x/y/w/h moves. A probe on Square: the same object across `see`/`touch`, a new one after a pan and after a `fit`. `verify:view` passes. `verify:explore` fails 6, none from this: 4 fog checks (fog off), and 2 that expect an off-screen marker for a plain line, which 7.1 limited to a shout — the drive is stale.
 - [x] 2.2 Paint only when the art changed — measured 3.5 repaints per step:
   - `see()` relights and tells, but no scene names `fog`; notify, and invalidate only under fog.
@@ -107,7 +107,7 @@ Done when: `rg` finds each helper once.
 
 - [ ] 5.1 Jordan, Vlad and Colin `PALETTE` blocks are byte-identical (21 entries); `f` is in 13/13 scenes, `d` in 12/13. Put furniture letters on the pieces in `pieces/home.js` (12.8's `adopt` route); each home keeps its decor. Closes the cause of 4.1.
 - [ ] 5.2 One-off pieces repeated in scenes: `signpost` ×4 (text differs), `shroom` ×2, `flower` ×2. Export from `pieces/`, a `signpost(text)` factory.
-- [ ] 5.3 Flood fill — `editor/doc.js` and `web/test/scenes.test.js` keep their own `reach` with O(n²) `queue.shift()`; import `web/src/paths.js`, numeric keys there (Square `reach` 3.0 ms, re-run every 120 ms during an `f` walk).
+- [ ] 5.3 Flood fill — `editor/doc.js` and `web/test/scenes.test.js` keep their own `reach` with O(n²) `queue.shift()`; import `web/src/lib/scene/paths.js`, numeric keys there (Square `reach` 3.0 ms, re-run every 120 ms during an `f` walk).
 - [ ] 5.4 Small helpers repeated: `ago()` ×3, `wrap` ×2 (`Barkeep.mesa`, `booth.js`), Chebyshev `away` ×3, `client.on('event')` + filter + `off` ×4, bar stools derived twice, `Season`/`Weather` the same shape, the `.pane p` rule ×6.
 - [ ] 5.5 Per-target halves: `signIn` identical in `sign-in.js` and `sign-in.browser.js` (a third copy in `api/test/sign-in.ts`); IndexedDB `request()`/`store()` identical in `seen.browser.js` and `sign-in.browser.js`. A target-neutral `login.js` and `idb.js`. `cli/commands/haven/walk.md` imports `KEY_FILE`, `machineKeys`, `signIn` from `sign-in.js` by path — keep them exported there.
 - [ ] 5.6 API boilerplate: the caller-id cast ×5 → `callerId()` in `principal.ts`; four ad-hoc App casts (`RoomApp`, `ChannelApp`, `PlayApp`, `HallApp`) that Junction's `App` already types; `HAVEN_MODS` parsed ×3 → one `parseMods`.

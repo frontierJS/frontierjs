@@ -11,7 +11,7 @@
   import { useStore } from '@frontierjs/sierra/resource'
   import { members }  from '@/resources/Member.mesa'
   import { messages } from '@/resources/Message.mesa'
-  import { cells, clip } from '@/cells.js'
+  import { cells, clip } from '@/lib/scene/cells.js'
   import { at } from '#cell'
   import { CRIER, CRY_MS } from '../../../api/src/crier.ts'
 

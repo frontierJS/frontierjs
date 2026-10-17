@@ -14,7 +14,7 @@
 // step through it.
 import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
 
-import { LOGIN_PATH } from '../../api/src/login.ts'
+import { LOGIN_PATH } from '../../../../api/src/login.ts'
 
 const DB    = 'haven'
 const STORE = 'keys'

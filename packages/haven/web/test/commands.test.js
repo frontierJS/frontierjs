@@ -2,7 +2,7 @@
 // Tab: which command a partial word names, what Tab makes of the line, what a
 // verb's reach lets a figure say, and the mode that takes a key first.
 import { test, expect } from 'bun:test'
-import { complete, createCommands, matches, partial, reaches } from '../src/commands.js'
+import { complete, createCommands, matches, partial, reaches } from '../src/lib/hash/commands.js'
 
 const verb = (extra) => ({ help: '/x', run: () => 'ok', ...extra })
 const at = (x, y) => ({ x, y })

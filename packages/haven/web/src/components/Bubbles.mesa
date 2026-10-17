@@ -8,7 +8,7 @@
   // lands a cell left of the one above it with a hole in its ground.
   import { useStore } from '@frontierjs/sierra/resource'
   import { messages } from '@/resources/Message.mesa'
-  import { bubbles, BUBBLE, TAIL } from '@/crowd.js'
+  import { bubbles, BUBBLE, TAIL } from '@/lib/scene/crowd.js'
   import { at, tint } from '#cell'
 
   export let here

@@ -12,7 +12,7 @@ import { mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'nod
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { QUIET_MS, WORDS, benchOf, lastWords, readWorkers, recordWorker } from '../src/workers.js'
+import { QUIET_MS, WORDS, benchOf, lastWords, readWorkers, recordWorker } from '../src/lib/hash/workers.js'
 
 const ROOT = '/repo'
 const base = mkdtempSync(join(tmpdir(), 'haven-workers-'))
@@ -140,9 +140,9 @@ test('the hook seats a session through recordWorker, and exits 0 silent on input
   const home = mkdtempSync(join(base, 'home-'))
   const repo = join(import.meta.dir, '../../../..')
   const run = (stdin) => spawnSync('node', [hook], { input: stdin, env: { ...process.env, HOME: home, CLAUDE_PROJECT_DIR: repo }, encoding: 'utf8' })
-  const ok = run(JSON.stringify({ session_id: 'hook-1', tool_name: 'Edit', tool_input: { file_path: join(repo, 'packages/haven/web/src/stage.js') } }))
+  const ok = run(JSON.stringify({ session_id: 'hook-1', tool_name: 'Edit', tool_input: { file_path: join(repo, 'packages/haven/web/src/lib/scene/stage.js') } }))
   expect({ code: ok.status, out: ok.stdout, err: ok.stderr }).toEqual({ code: 0, out: '', err: '' })
-  expect(readWorkers({ dir: join(home, '.fli/haven/workers') }).map((w) => [w.session, w.bench, w.file])).toEqual([['hook-1', 'haven', 'packages/haven/web/src/stage.js']])
+  expect(readWorkers({ dir: join(home, '.fli/haven/workers') }).map((w) => [w.session, w.bench, w.file])).toEqual([['hook-1', 'haven', 'packages/haven/web/src/lib/scene/stage.js']])
   const asked = run(JSON.stringify({ session_id: 'hook-1', hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash', cwd: repo }))
   expect({ code: asked.status, out: asked.stdout, err: asked.stderr }).toEqual({ code: 0, out: '', err: '' })
   expect(readWorkers({ dir: join(home, '.fli/haven/workers') })[0].asking?.why).toBe('Claude needs your permission to use Bash')

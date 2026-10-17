@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { checkout, loopArgv, loopReport, proposals, running, startLoop } from '../src/taskmaster.js'
+import { checkout, loopArgv, loopReport, proposals, running, startLoop } from '../src/lib/hash/taskmaster.js'
 
 const until = async (fn, ms = 5000) => {
   const end = Date.now() + ms

@@ -18,7 +18,7 @@ import { pacerNow } from '../pacer.ts'
 import { roomChannelName } from '../rooms.ts'
 import { pieceAt, worldFor } from '../world.ts'
 import type { SceneWorld } from '../world.ts'
-import { almanacAt } from '../../../web/src/sky.js'
+import { almanacAt } from '../../../web/src/lib/scene/sky.js'
 
 type Roster = { localPresence: (channel: string) => Array<{ userId: string | number, meta: Record<string, unknown> }> }
 type PondApp = HavenApp & { channel: (name: string) => Channel, channels: Roster }

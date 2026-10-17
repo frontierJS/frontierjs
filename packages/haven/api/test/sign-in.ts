@@ -1,6 +1,6 @@
 // api/test/sign-in.ts
 // A test's machine walking in: a key pair, a signed POST /haven/login, the
-// member and the token it answers. `web/src/sign-in.js` is the real machine's;
+// member and the token it answers. `web/src/lib/session/sign-in.js` is the real machine's;
 // this one keeps the request's parts, for a test that tampers with them.
 
 import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'

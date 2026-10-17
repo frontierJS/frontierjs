@@ -6,40 +6,40 @@
   "type": "module",
   "imports": {
     "#paint": {
-      "browser": "./web/src/paint.browser.js",
-      "default": "./web/src/paint.js"
+      "browser": "./web/src/lib/scene/paint.browser.js",
+      "default": "./web/src/lib/scene/paint.js"
     },
     "#cell": {
-      "browser": "./web/src/cell.browser.js",
-      "default": "./web/src/cell.js"
+      "browser": "./web/src/lib/scene/cell.browser.js",
+      "default": "./web/src/lib/scene/cell.js"
     },
     "#sign-in": {
-      "browser": "./web/src/sign-in.browser.js",
-      "default": "./web/src/sign-in.js"
+      "browser": "./web/src/lib/session/sign-in.browser.js",
+      "default": "./web/src/lib/session/sign-in.js"
     },
     "#errand": {
-      "browser": "./web/src/errand.browser.js",
-      "default": "./web/src/errand.js"
+      "browser": "./web/src/lib/hash/errand.browser.js",
+      "default": "./web/src/lib/hash/errand.js"
     },
     "#workers": {
-      "browser": "./web/src/workers.browser.js",
-      "default": "./web/src/workers.js"
+      "browser": "./web/src/lib/hash/workers.browser.js",
+      "default": "./web/src/lib/hash/workers.js"
     },
     "#taskmaster": {
-      "browser": "./web/src/taskmaster.browser.js",
-      "default": "./web/src/taskmaster.js"
+      "browser": "./web/src/lib/hash/taskmaster.browser.js",
+      "default": "./web/src/lib/hash/taskmaster.js"
     },
     "#ledger": {
-      "browser": "./web/src/ledger.browser.js",
-      "default": "./web/src/ledger.js"
+      "browser": "./web/src/lib/hash/ledger.browser.js",
+      "default": "./web/src/lib/hash/ledger.js"
     },
     "#seen": {
-      "browser": "./web/src/seen.browser.js",
-      "default": "./web/src/seen.js"
+      "browser": "./web/src/lib/hash/seen.browser.js",
+      "default": "./web/src/lib/hash/seen.js"
     },
     "#sound": {
-      "browser": "./web/src/sound.browser.js",
-      "default": "./web/src/sound.js"
+      "browser": "./web/src/lib/band/sound.browser.js",
+      "default": "./web/src/lib/band/sound.js"
     }
   },
   "license": "MIT",

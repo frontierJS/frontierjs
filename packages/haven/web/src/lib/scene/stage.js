@@ -101,12 +101,12 @@
 // up, walk in front of all of them, and the two targets cannot disagree about
 // which cell has a drop or a footprint.
 
-import { pacerAt, pacerNow, pick } from '../../api/src/pacer.ts'
-import { ridersAt } from '../../api/src/carousel.ts'
+import { pacerAt, pacerNow, pick } from '../../../../api/src/pacer.ts'
+import { ridersAt } from '../../../../api/src/carousel.ts'
 import { almanacAt, SEASONS, skyDarkness, isNight, shade, MOON_FG, SKY_MS, hash, fallAt, untilWeatherChange, FALL, STRIKE_MS, BURN_MS, CHAR_MS, FIRE_MS, strikeAt, flashAt, cloudAt, groundOn } from './sky.js'
-import { fadeOf } from '../../api/src/memory.ts'
+import { fadeOf } from '../../../../api/src/memory.ts'
 import { pieceId } from './world.js'
-import { spotsOf } from './pieces/index.js'
+import { spotsOf } from '../../pieces/index.js'
 
 export { pacerAt }
 

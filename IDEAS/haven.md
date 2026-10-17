@@ -93,7 +93,7 @@ server states the Haven version it runs and `fli haven` installs that one
 (`FJS-D982`), the direction junction's build id already takes: the server
 states, the client acts. So the frame shapes never cross versions, and the
 contract across `fli` versions is only the door's: `GET /haven/client` and what
-`web/src/sign-in.js` exports.
+`web/src/lib/session/sign-in.js` exports.
 
 ## The nine
 
@@ -212,7 +212,7 @@ second frame shows the first client's figure where it walked.
   becomes the terminal shell's, beside the browser's `tokenStorage`: one
   terminal app with a session is a workaround, a second is a ruling.
   `packages/cli/commands/haven/walk.md`, alias `haven`: it finds Haven beside
-  the running `fli`, imports Haven's own `web/src/sign-in.js` (the key at
+  the running `fli`, imports Haven's own `web/src/lib/session/sign-in.js` (the key at
   `~/.fli/haven/key.json`, made 0600 on the first run; a signed login on every
   run, so no session is kept on disk), then runs Sierra's shell in Haven's
   `web/` with the token as `HAVEN_TOKEN`. The default origin is Haven's
@@ -458,7 +458,7 @@ blocks it is made of: paint is RECOGNIZED, never typed at scene scale.
   to want it beside the file, and comes back as a new step at the end when
   it is. The same page in a webview from `frontierjs-vscode`, opened from a
   scene file.
-- [x] 5.5 The stage (`FJS-D997`). `web/src/stage.js` is `createStage({ slug,
+- [x] 5.5 The stage (`FJS-D997`). `web/src/lib/scene/stage.js` is `createStage({ slug,
   palette, spawn })`: a registry of claims — `stamp(name, x, y, cells,
   { floor })` answering a handle with `move` and `remove`, `door(x, y, to)`,
   `pace(spec)` — and the pure reads over it that `scenes/index.js` holds
@@ -533,14 +533,14 @@ nobody has walked near is drawn blank.
 **The reading** (2026-10-14). Haven feels static because a scene is the
 screen: 97×26, all of it drawn at once, so there is nothing past the edge.
 Nothing in the drawing pipeline needs that to be true. A stage's size is its
-claims' extent (`web/src/stage.js`, 5.5), `stage.look()` answers one cell at a
+claims' extent (`web/src/lib/scene/stage.js`, 5.5), `stage.look()` answers one cell at a
 tick, and `at()` places a box on a cell, so a world larger than the screen is a
 slice and an offset. The 26-row
 cap in Haven's traps is the VIEWPORT's, from `--frame`'s 100×30, and stays;
 a scene's art is bounded only by the server's `MAX_CELL` (255) in `api/src/rooms.ts`.
 FJS-D985's "never a forked world" holds: both targets show the same viewport.
 
-- [x] 6.1 The camera is the stage's `view` (`web/src/stage.js`): the slice a
+- [x] 6.1 The camera is the stage's `view` (`web/src/lib/scene/stage.js`): the slice a
   screen draws, `VIEW` (97×26) cells at most, following the figure the scene
   tells it to with `EDGE` (8 columns, 4 rows) of slack, so it pans only when
   the figure nears a side and a stage no bigger than a screen never pans. It
@@ -612,7 +612,7 @@ FJS-D985's "never a forked world" holds: both targets show the same viewport.
   walks; Esc closes. What a machine has seen is kept on that machine
   (`FJS-D991`): `~/.fli/haven/seen/<slug>.json` in the terminal, a record in
   IndexedDB (`haven-seen`) in a browser, a `#seen` twin. Built: a scene is
-  kept as a snap (`coarse()` in `web/src/map.js` — the picture at `SCALE`, its
+  kept as a snap (`coarse()` in `web/src/lib/scene/map.js` — the picture at `SCALE`, its
   size, its doors, its route) when it is walked into, and the map is those
   snaps plus the live stage of the scene the figure is in. Where a scene sits
   is derived, never stored: a border puts its neighbor on that side with the
@@ -693,7 +693,7 @@ footprints, and a line said at one end of the square does not reach the other.
 - [x] 7.2 Night and day. The wall clock the pacers already share runs a cycle
   (an hour of real time is a day, to start): a palette entry gains a night
   `fg`, the lamps light at dusk, and 6.3's radius shrinks after dark. Nothing
-  is sent, so every terminal sees the same sky. Built: `web/src/sky.js`, a pure
+  is sent, so every terminal sees the same sky. Built: `web/src/lib/scene/sky.js`, a pure
   function of the clock -- `darkness(ms)` in thirds (half the hour is day, a
   tenth dusk, three tenths night, a tenth dawn), `isNight(ms)` for 6.6's door,
   `shade()` toward moonlight. A palette entry gains no `night` field: the night
@@ -716,7 +716,7 @@ footprints, and a line said at one end of the square does not reach the other.
 - [x] 7.3 Weather. Rain and snow as an overlay drawn over the art and under the
   figures, hashed from the clock the way `flicker` is, so a storm falls on the
   same cells everywhere. The real weather at the server is a later door, not
-  a first one. Built: `web/src/sky.js` -- a spell of weather is ten minutes
+  a first one. Built: `web/src/lib/scene/sky.js` -- a spell of weather is ten minutes
   of the clock (`scheduleAt`: half clear, three tenths rain, a fifth snow), and
   a drop is a function of the clock and the cell (`fallAt`: a drop a column a
   period, a row lower each step; snow drifts a column every few steps). A drop
@@ -929,7 +929,7 @@ and the crier announces a new member's first walk-in.
   - Built (owner: opt-in, the kind by id in the owner's ink): `/pet` calls it
     and sends it home, and `pet: true` is the one presence key it adds
     (`roomMeta`; `presenceMetaBytes` 128, since the fullest meta with an emoji
-    shape is 123). `web/src/pet.js`: `PETS` (dog `ö`, cat `ɷ`, snail `&`,
+    shape is 123). `web/src/lib/scene/pet.js`: `PETS` (dog `ö`, cat `ɷ`, snail `&`,
     mouse `ε` -- no letter, since a figure is one), `petOf(id)`, and
     `trail(was, at, facing, free)` -- a step puts the pet on the cell left,
     anything else (a first sight, a door, a knock-back) behind the facing or
@@ -1150,7 +1150,7 @@ its shape.
   directory, a browser has none. Transcripts in `~/.claude/projects/` are the
   other source, rejected because their shape is Claude Code's to change.
   Built: `.claude/hooks/haven-worker.mjs` hands its input to `recordWorker` in
-  `web/src/workers.js`, which also reads — one owner of the shape. Quiet is ten
+  `web/src/lib/hash/workers.js`, which also reads — one owner of the shape. Quiet is ten
   minutes, since a session reading and testing goes that long between edits;
   an edit outside the repo writes nothing.
 - [x] 11.3 Workers at their benches. A figure per live session at the bench of
@@ -1434,7 +1434,7 @@ while a non-mod's is not.
   character with `Bun.stringWidth`, so most may already hold. A joined
   sequence (ZWJ) draws differently per terminal, VS Code's included.
   - Held: OpenTUI draws 🙂 中文 👍🏽 👩‍💻 🇯🇵 at `Bun.stringWidth` cells and the bubble never tears the art; the browser's emoji font runs ~0.04ch short of 2ch, printed by `verify:emoji`, not asserted. ZWJ per real terminal is not chased.
-  - Broke and fixed: Haven laid bubbles, the booth and history rows out by `length` (`web/src/cells.js` now); the engine reads a key per code point, so a typed skin tone or ZWJ left the cursor past the text and a combining mark landed after the next key (`joined` in mesa's `runtime-terminal.js`, `wide.spec.mjs`).
+  - Broke and fixed: Haven laid bubbles, the booth and history rows out by `length` (`web/src/lib/scene/cells.js` now); the engine reads a key per code point, so a typed skin tone or ZWJ left the cursor past the text and a combining mark landed after the next key (`joined` in mesa's `runtime-terminal.js`, `wide.spec.mjs`).
 - [x] 14.4 An emoji figure. A figure drawn as an emoji is two cells wide: the
   stage claims both cells for it, and a step still moves one column. This is
   9.7's shapeshift taking a wide character.
@@ -1530,7 +1530,7 @@ while a non-mod's is not.
     loop's own ladder and `--budget` are the bill.
   - Built: `idsIn`, `PLANNER`, `checkPlan`, `planLine`, `reportLine` and
     `followLoop` in `agents/agents.js`; `readyRows`, `loopArgv`, `fileRow` and
-    `loopReport` in `web/src/taskmaster.js`, whose `startLoop` takes a plan
+    `loopReport` in `web/src/lib/hash/taskmaster.js`, whose `startLoop` takes a plan
     and the desk calls with `{ pkg }`. A plan from free words names one row
     (`--rows 1`). `agents.test.js` proves it over a fake checkout's `fli` and
     loop; `verify:taskmaster` the desk. No real loop run yet, and no pty drive.
@@ -1969,10 +1969,10 @@ house:
   rarely.
 
 Pacers that keep hours take `night: true`, the key 6.6's `<Door night>` already
-spells and answered by the same `isNight()` (`web/src/sky.js`). A second
+spells and answered by the same `isNight()` (`web/src/lib/scene/sky.js`). A second
 spelling of the same gate is what this rules out: a day-only animal is
 `night: false` (absent means always), and the field joins the pacer's whitelist
-in `web/src/world.js` as `flee` did. Built: `pacerNow()` (`api/src/pacer.ts`)
+in `web/src/lib/scene/world.js` as `flee` did. Built: `pacerNow()` (`api/src/pacer.ts`)
 answers `null` outside a pacer's hours, so the stage draws nothing there and the
 server's `obstacleAt` lets a bolt through, the one check both read --
 `fishing.service.ts` already imports `sky.js` server side. Placed: the owl, the
@@ -2000,7 +2000,7 @@ every screen but the caller's, which has its own in the answer.
   is (`fishing.ts`). It lays a `spooked` trace, so it flies off away from the
   caster and is gone for the trace's five minutes.
 - **Rare animals on rare skies,** by the fishing pier's rule for a rare fish: a
-  pacer's `sky` names a rule in `SKIES` (`web/src/sky.js`), asked in
+  pacer's `sky` names a rule in `SKIES` (`web/src/lib/scene/sky.js`), asked in
   `pacerNow` beside `night`. A rule reads the WORLD's almanac -- the clock under
   `HAVEN_WEATHER`/`HAVEN_SEASON` -- never a screen's `/weather` hold, which the
   server cannot see, so a held snow draws no stag a bolt flies through. An
@@ -2108,8 +2108,8 @@ every screen but the caller's, which has its own in the answer.
     and the per-target attach is the mechanism `FJS-D978` already chose for
     placing a figure, so A adds a resolver where B adds a directory.
 
-- ~~**Q6 — How a machine with no checkout gets the client, and how it stays the server's version.**~~ **Answered 2026-10-14 (`FJS-D982`): A — publish `@frontierjs/haven`. The server states the version it runs at `GET /haven/client` (`{ package, version }`, read from its own `package.json`). `fli haven` installs exactly that version into `~/.fli/haven/<version>/` on first sight, then imports its `web/src/sign-in.js` as it does now. A checkout's sibling Haven still wins, the way `dev:tui` runs the app in front of it. There is no floor: the client is always the server's. A version npm does not have is refused by name.** 3.1 names "the build floor the server refuses", and § Version skew has the client send `x-fjs-build` for the server to refuse. Junction's protocol is the reverse, on purpose: the server STATES its build and the client compares (`junction/src/core/build-id.ts`), and that build is a browser bundle's hash, which a terminal client never has. Today `fli haven` runs only the Haven found beside it in a checkout.
-  - **A** — publish `@frontierjs/haven`. The server states the version it runs at `GET /haven/client` (`{ package, version }`, read from its own `package.json`). `fli haven` installs exactly that version into `~/.fli/haven/<version>/` on first sight, then imports its `web/src/sign-in.js` as it does now. A checkout's sibling Haven still wins, the way `dev:tui` runs the app in front of it. There is no floor: the client is always the server's. A version npm does not have is refused by name.
+- ~~**Q6 — How a machine with no checkout gets the client, and how it stays the server's version.**~~ **Answered 2026-10-14 (`FJS-D982`): A — publish `@frontierjs/haven`. The server states the version it runs at `GET /haven/client` (`{ package, version }`, read from its own `package.json`). `fli haven` installs exactly that version into `~/.fli/haven/<version>/` on first sight, then imports its `web/src/lib/session/sign-in.js` as it does now. A checkout's sibling Haven still wins, the way `dev:tui` runs the app in front of it. There is no floor: the client is always the server's. A version npm does not have is refused by name.** 3.1 names "the build floor the server refuses", and § Version skew has the client send `x-fjs-build` for the server to refuse. Junction's protocol is the reverse, on purpose: the server STATES its build and the client compares (`junction/src/core/build-id.ts`), and that build is a browser bundle's hash, which a terminal client never has. Today `fli haven` runs only the Haven found beside it in a checkout.
+  - **A** — publish `@frontierjs/haven`. The server states the version it runs at `GET /haven/client` (`{ package, version }`, read from its own `package.json`). `fli haven` installs exactly that version into `~/.fli/haven/<version>/` on first sight, then imports its `web/src/lib/session/sign-in.js` as it does now. A checkout's sibling Haven still wins, the way `dev:tui` runs the app in front of it. There is no floor: the client is always the server's. A version npm does not have is refused by name.
   - **B** — publish `@frontierjs/haven`. `fli haven` installs `latest`, sends its version on `POST /haven/login`, and the server refuses a client below a declared floor by name.
   - **C** — the server serves its own client source, and `fli haven` downloads and runs it.
   - **Recommend A** — it keeps junction's direction (the server states, the client acts), derives the version from the deployed package instead of keeping a floor by hand, and closes the version gap rather than refusing it. B adds a floor someone has to remember to raise. C runs code from whatever `--api` names, which gives a private server's operator code execution on every visitor's machine. A's trust is npm's, the same as `bunx fli` itself.

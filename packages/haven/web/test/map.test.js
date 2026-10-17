@@ -11,7 +11,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SCENES, mountScene } from './stage.mjs'
-import { DOOR, GLYPH, SCALE, coarse, drawn, layoutOf, painted, recall, remember, valid } from '../src/map.js'
+import { DOOR, GLYPH, SCALE, coarse, drawn, layoutOf, painted, recall, remember, valid } from '../src/lib/scene/map.js'
 
 const base = mkdtempSync(join(tmpdir(), 'haven-seen-'))
 let dir

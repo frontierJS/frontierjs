@@ -32,7 +32,7 @@ export const CAST_MS = 5000
 /** The float sits on the water this long before the line comes up: the server's dice, within these. */
 export const BITE_MS = { min: 1200, max: 3200 }
 
-/** The part of the almanac (`web/src/sky.js`, `almanacAt`) a fish answers to. */
+/** The part of the almanac (`web/src/lib/scene/sky.js`, `almanacAt`) a fish answers to. */
 export interface Sky {
   darkness: number
   season:   string

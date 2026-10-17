@@ -8,7 +8,7 @@
   // to find the row ready. Draws nothing.
   import { goto, page } from '@frontierjs/sierra/router'
   import { rooms } from '@/resources/Room.mesa'
-  import { cellOf } from '@/crowd.js'
+  import { cellOf } from '@/lib/scene/crowd.js'
 
   export let stage
   export let here

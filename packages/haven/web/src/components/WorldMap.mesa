@@ -8,7 +8,7 @@
   // opens and not on every scene mounted.
   import { at } from '#cell'
   import { paintGrid } from '#paint'
-  import { coarse, layoutOf, painted, recall } from '@/map.js'
+  import { coarse, layoutOf, painted, recall } from '@/lib/scene/map.js'
 
   export let stage
   export let route

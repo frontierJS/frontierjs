@@ -3,7 +3,7 @@
   // weather where you like, or hand it back to the clock with `auto`. Drawn on
   // this screen only and never sent, so two screens in one room may stand in
   // two weathers; it holds from scene to scene until `auto`. Draws nothing.
-  import { KINDS, almanacAt, heldOf, hold } from '@/sky.js'
+  import { KINDS, almanacAt, heldOf, hold } from '@/lib/scene/sky.js'
 
   export let stage
 

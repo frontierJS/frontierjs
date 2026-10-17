@@ -3,7 +3,7 @@
 // lone `d` on the clock, and the arrows the terminal's NORMAL hands a scene
 // for h j k l.
 import { test, expect } from 'bun:test'
-import { PENDING_MS, createHomeRow } from '../src/home-row.js'
+import { PENDING_MS, createHomeRow } from '../src/lib/home/home-row.js'
 
 const press = (row, keys, t = 0) => keys.map((k) => row.key(k, t))
 

@@ -4,7 +4,7 @@
 
 import { test, expect, describe } from 'bun:test'
 
-import { createStage, CRUMBLE } from '../src/stage.js'
+import { createStage, CRUMBLE } from '../src/lib/scene/stage.js'
 import { piece } from '../src/pieces/index.js'
 
 const WATER = { ch: '~', key: 'b' }

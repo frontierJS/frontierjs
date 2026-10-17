@@ -33,7 +33,7 @@ const FLI = join('packages', 'cli', 'bin', 'fli.js')
  * gives him a ranking and a loop that cost nothing.
  */
 export function checkout({ from = HERE, env = process.env.HAVEN_TASKMASTER_ROOT } = {}) {
-  const root = env || join(from, '..', '..', '..', '..')
+  const root = env || join(from, '..', '..', '..', '..', '..', '..')
   return existsSync(join(root, LOOP)) && existsSync(join(root, FLI)) ? root : null
 }
 

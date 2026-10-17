@@ -6,7 +6,7 @@
 // the real file: like the ledger it is a snapshot `bun run townhall` rewrites,
 // and a check would fail Haven on every edit to the overview.
 import { test, expect } from 'bun:test'
-import { wavesOf, nameOf, idsOf, NAMES } from '../src/townhall.js'
+import { wavesOf, nameOf, idsOf, NAMES } from '../src/lib/hash/townhall.js'
 
 const OVERVIEW = `
 # Overview

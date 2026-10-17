@@ -5,7 +5,7 @@
   // only and never sent, so two screens in one room may stand in two seasons;
   // it holds from scene to scene until `auto`, since the next stage is made in
   // the almanac's season. Draws nothing.
-  import { SEASONS, almanacAt, heldOf, hold } from '@/sky.js'
+  import { SEASONS, almanacAt, heldOf, hold } from '@/lib/scene/sky.js'
 
   export let stage
 

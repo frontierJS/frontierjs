@@ -3,8 +3,8 @@
 // screen walks a pet from the cells it sees its member's figure on, so two
 // screens agree from the figure's next step, and one that saw no step yet --
 // a joiner, a door, a knock-back -- puts it beside the figure.
-import { behind, FACINGS, FIRST_FACING, STEP } from '../../api/src/facing.ts'
-import { stepped } from '../../api/src/memory.ts'
+import { behind, FACINGS, FIRST_FACING, STEP } from '../../../../api/src/facing.ts'
+import { stepped } from '../../../../api/src/memory.ts'
 
 // None is a letter: a figure is its initial, and sitting its lower case.
 export const PETS = [

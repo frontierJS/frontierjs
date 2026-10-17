@@ -18,7 +18,7 @@
   // never the scene file, whose picture is pinned.
   import { getClient } from '@frontierjs/sierra/resource'
   import { at } from '#cell'
-  import { cells, clip } from '@/cells.js'
+  import { cells, clip } from '@/lib/scene/cells.js'
   import { bar as barPiece } from '@/pieces/bar.js'
   import { spotsOf } from '@/pieces/index.js'
 

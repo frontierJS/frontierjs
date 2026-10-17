@@ -10,7 +10,7 @@
 // light one a space. The files and ranks keep their real names, so reading a
 // square off the picture is what `/move` takes.
 
-import { FILES, sideOf } from '../../api/src/checkers.ts'
+import { FILES, sideOf } from '../../../../api/src/checkers.ts'
 
 /** The board's width in cells: a rank's number, a space, and eight squares a space apart. */
 export const BOARD_W = 17

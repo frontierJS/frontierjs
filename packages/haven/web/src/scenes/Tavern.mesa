@@ -7,7 +7,7 @@
   // (`IDEAS/haven.md` 6.5): stepping on that cell is the only sign of it. The
   // picture this draws is `tavern.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
-  import { INDOORS } from '@/stage.js'
+  import { INDOORS } from '@/lib/scene/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import Pacer from '@/components/Pacer.mesa'

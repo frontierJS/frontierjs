@@ -4,9 +4,9 @@
 // never on the art, under a falling drop, shaded by the night, and a redraw
 // at each third on the stage's clock.
 import { test, expect } from 'bun:test'
-import { createStage, STEP_FG, INDOORS, OUTDOORS } from '../src/stage.js'
+import { createStage, STEP_FG, INDOORS, OUTDOORS } from '../src/lib/scene/stage.js'
 import { piece } from '../src/pieces/index.js'
-import { DAY_MS, FALL, fallAt, windAt, shade, moonAt } from '../src/sky.js'
+import { DAY_MS, FALL, fallAt, windAt, shade, moonAt } from '../src/lib/scene/sky.js'
 import { TRACES } from '../../api/src/memory.ts'
 
 const LIFE = TRACES.step.ms

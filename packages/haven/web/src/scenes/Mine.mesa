@@ -9,7 +9,7 @@
   // with every cell lit, which `scenes.test.js` pins. Bats work the gallery's
   // roof.
   import Scene from '@/components/Scene.mesa'
-  import { INDOORS } from '@/stage.js'
+  import { INDOORS } from '@/lib/scene/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import Pacer from '@/components/Pacer.mesa'

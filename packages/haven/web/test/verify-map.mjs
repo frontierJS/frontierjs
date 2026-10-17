@@ -31,7 +31,7 @@ import { ROOMS } from '../../api/src/rooms.ts'
 import { signIn } from '../../api/test/sign-in.ts'
 import { terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
-import { SCALE, coarse, layoutOf } from '../src/map.js'
+import { SCALE, coarse, layoutOf } from '../src/lib/scene/map.js'
 
 const WEB    = join(import.meta.dir, '..')
 const square = await stageOf('Square')

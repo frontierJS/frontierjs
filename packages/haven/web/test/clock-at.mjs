@@ -11,7 +11,7 @@
  *   (`fli haven`) stamps the request with this clock, and the server refuses
  *   one more than five minutes from its own as stale (`WINDOW`, login.ts).
  */
-import { DAY_MS } from '../src/sky.js'
+import { DAY_MS } from '../src/lib/scene/sky.js'
 
 const at = Number(process.env.HAVEN_CLOCK_AT)
 if (process.env.HAVEN_CLOCK_AT && Number.isFinite(at)) {

@@ -5,7 +5,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { SCENES, WEB, mountScene } from './stage.mjs'
-import { worldOf, worldJson } from '../src/world.js'
+import { worldOf, worldJson } from '../src/lib/scene/world.js'
 
 for (const { name, slug } of SCENES) {
   const { stage, dispose } = await mountScene(name)

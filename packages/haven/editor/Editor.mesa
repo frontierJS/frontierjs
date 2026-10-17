@@ -28,8 +28,8 @@
   import { recognize } from './import.js'
   // By the alias the scene itself uses, so under a drive's copy this is the
   // copy's stage registry and cell module, the ones the mounted scene writes.
-  import { stages } from '@/stage.js'
-  import { at } from '@/cell.browser.js'
+  import { stages } from '@/lib/scene/stage.js'
+  import { at } from '@/lib/scene/cell.browser.js'
 
   const MODES = [
     { id: 'select', label: 'Select' },

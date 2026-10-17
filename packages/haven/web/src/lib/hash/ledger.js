@@ -1,6 +1,6 @@
 // src/ledger.js — `#ledger` in the terminal: the open issues in a checkout's
 // `ISSUES.md` per bench and severity, counted and written to
-// `web/src/ledger.data.js`. `bun run ledger` (scripts/ledger.mjs) and the
+// `web/src/lib/hash/ledger.data.js`. `bun run ledger` (scripts/ledger.mjs) and the
 // workshop's `/ledger` (`components/Ledger.mesa`) both count here, so the rule
 // for which bench a row belongs to has one owner. A browser takes
 // `ledger.browser.js`.
@@ -16,7 +16,7 @@ const HERE = fileURLToPath(new URL('.', import.meta.url))
 const ALIAS = { fli: 'cli' }
 
 /** Where the file the workshop imports sits, under a workspace root. */
-export const dataFile = (root) => join(root, 'packages', 'haven', 'web', 'src', 'ledger.data.js')
+export const dataFile = (root) => join(root, 'packages', 'haven', 'web', 'src', 'lib', 'hash', 'ledger.data.js')
 
 /**
  * The workspace root this Haven sits in, or null when it has no `ISSUES.md` —
@@ -24,7 +24,7 @@ export const dataFile = (root) => join(root, 'packages', 'haven', 'web', 'src', 
  * names another root, which is how a drive recounts without touching this tree.
  */
 export function checkout({ from = HERE, env = process.env.HAVEN_LEDGER_ROOT } = {}) {
-  const root = env || join(from, '..', '..', '..', '..')
+  const root = env || join(from, '..', '..', '..', '..', '..', '..')
   return existsSync(join(root, 'ISSUES.md')) && existsSync(join(root, 'packages')) ? root : null
 }
 
@@ -60,7 +60,7 @@ export function write(counts, out) {
     const c = counts[b]
     return `  ${/^[a-z]\w*$/.test(b) ? b : `'${b}'`}: { S1: ${c.S1}, S2: ${c.S2}, S3: ${c.S3}, S4: ${c.S4} },`
   }).join('\n')
-  writeFileSync(out, `// web/src/ledger.data.js — open issues per package and severity in ISSUES.md.
+  writeFileSync(out, `// web/src/lib/hash/ledger.data.js — open issues per package and severity in ISSUES.md.
 // Written by \`bun run ledger\` (scripts/ledger.mjs); never by hand.
 export const LEDGER = {
 ${body}

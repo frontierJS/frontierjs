@@ -18,7 +18,7 @@
   import { at, tint } from '#cell'
   import { homeBoard } from '#errand'
   import { spotsOf } from '@/pieces/index.js'
-  import { pinCards, screenLines, calendarLines, pingLines, ringing, post } from '@/home-board.js'
+  import { pinCards, screenLines, calendarLines, pingLines, ringing, post } from '@/lib/home/home-board.js'
 
   const scene = $context.scene
   const PULL_MS = 60_000

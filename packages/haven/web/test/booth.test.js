@@ -4,8 +4,8 @@
 
 import { test, expect, describe } from 'bun:test'
 
-import { wrap, bubble, transcript, COLUMN } from '../src/booth.js'
-import { createStage, arrival } from '../src/stage.js'
+import { wrap, bubble, transcript, COLUMN } from '../src/lib/games/booth.js'
+import { createStage, arrival } from '../src/lib/scene/stage.js'
 import { table } from '../src/pieces/table.js'
 import { candle } from '../src/pieces/candle.js'
 import { leftFace, rightFace, LIT } from '../src/pieces/face.js'

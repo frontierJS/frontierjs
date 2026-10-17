@@ -22,7 +22,7 @@
   import { barActivity } from '#errand'
   import { bar as barPiece } from '@/pieces/bar.js'
   import { spotsOf } from '@/pieces/index.js'
-  import { clip } from '@/cells.js'
+  import { clip } from '@/lib/scene/cells.js'
 
   const scene = $context.scene
   const CACHE_MS = 60_000
