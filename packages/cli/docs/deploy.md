@@ -82,7 +82,9 @@ export default {
 `fli deploy` (the full pipeline), `fli deploy:doctor`, `fli deploy:local`,
 `fli deploy:setup`, `fli deploy:status`, `fli deploy:logs`, `fli deploy:run`,
 `fli deploy:rollback`, `fli deploy:revert`, `fli deploy:pause`,
-`fli deploy:unpause`, `fli deploy:unlock`, `fli deploy:journal`,
+`fli deploy:unpause`, `fli deploy:unlock`, `fli deploy:retire` (the app off
+its server — routes, Outpost, container, images and the deploy root with its
+database; `--keep-data` leaves the database and env file), `fli deploy:journal`,
 `fli deploy:plan`, `fli deploy:vendor`. `fli make:deploy` scaffolds the
 Dockerfile, deploy block, and health endpoint hint.
 

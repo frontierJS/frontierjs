@@ -145,7 +145,7 @@ describe('the catalog covers the parser', () => {
     const next = rest.slice(1).search(/\n  [a-zA-Z$_][\w$]*\(\) \{/)
     const body = next > 0 ? rest.slice(0, next + 1) : rest
     const arms = [...body.matchAll(/attr\.value === '([A-Za-z]+)'/g)].map(m => m[1])
-    expect(arms.length).toBe(3)
+    expect(arms.length).toBe(4)
     const have = new Set(MOVE_WORDS.map(r => r.word))
     expect(arms.filter(a => !have.has(a))).toEqual([])
     expect([...have].filter(w => !arms.includes(w))).toEqual([])

@@ -1004,8 +1004,8 @@ function columnReader(model, schema, modelName, overflow) {
     let col
     if (f.type.array)                    col = { kind: 'json' }
     else if (f.type.kind === 'enum')     col = { kind: 'enum', values: schema.enums.find(e => e.name === t).values.map(v => v.name) }
-    else if (money?.field)               col = { kind: 'scaled', currencyField: money.field }
-    else if (money)                      col = { kind: 'scaled', scale: minorUnits(money.currency) }
+    else if (money?.field)               col = { kind: 'scaled', currencyField: money.field, extra: money.places ?? 0 }
+    else if (money)                      col = { kind: 'scaled', scale: minorUnits(money.currency) + (money.places ?? 0) }
     else if (scale)                      col = { kind: 'scaled', scale: scale.places }
     else col = { kind: { String: 'string', Int: 'int', Float: 'float', Boolean: 'boolean', DateTime: 'datetime', Json: 'json' }[t] }
     col = { ...col, name, optional: f.type.optional, defaulted: f.attributes.some(a => a.kind === 'default' || a.kind === 'id' || a.kind === 'updatedAt') }
@@ -1038,7 +1038,7 @@ function columnReader(model, schema, modelName, overflow) {
     }
     for (const [col, raw] of later) {
       let scale
-      try { scale = minorUnits(data[col.currencyField]) }
+      try { scale = minorUnits(data[col.currencyField]) + col.extra }
       catch { return { field: col.currencyField, reason: 'not an ISO 4217 currency' } }
       const out = cell(col, raw, scale)
       if (out.reason) return { field: col.name, reason: out.reason }

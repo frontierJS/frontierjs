@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 179**.
+Graded: **13 of 180**.
 
-## data — 3 of 61
+## data — 3 of 62
 
 ### Schema and parse
 
@@ -84,6 +84,7 @@ Graded: **13 of 179**.
 | Under `strategy database` four seams belong to the tenant path rather than the single-client path. | **none** |
 | Tenancy is declared in the schema and there are two strategies. | **none** |
 | A row scoped through a parent that names NO parent is `asSystem()`'s alone | **none** |
+| A tenant read of a `@@tenant` view runs `@@sql` over the reader's rows only | **none** |
 
 ### Migrations and release
 

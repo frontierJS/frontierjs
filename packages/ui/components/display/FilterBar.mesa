@@ -132,7 +132,7 @@
 
   /** One bound's text → the query, or nothing while the text is not an amount. */
   function writeMoneyBound(f, key, text) {
-    const { value: minor } = readMoney(text, moneyCode(f))
+    const { value: minor } = readMoney(text, moneyCode(f), f.places ?? 0)
     if (minor === undefined) return
     write(f, { ...current(f), [key]: minor ?? undefined })
   }
@@ -293,7 +293,7 @@
         <Input
           type="text"
           inputmode="decimal"
-          value={showMoney(current(f)?.gte, moneyCode(f))}
+          value={showMoney(current(f)?.gte, moneyCode(f), f.places ?? 0)}
           placeholder={f.label + ' from'}
           aria-label={f.label + ' from'}
           data-currency={moneyCode(f)}
@@ -302,7 +302,7 @@
         <Input
           type="text"
           inputmode="decimal"
-          value={showMoney(current(f)?.lte, moneyCode(f))}
+          value={showMoney(current(f)?.lte, moneyCode(f), f.places ?? 0)}
           placeholder={f.label + ' to'}
           aria-label={f.label + ' to'}
           data-currency={moneyCode(f)}

@@ -47,6 +47,45 @@ describe('login limiter keying', () => {
   })
 })
 
+describe('login limiter — a room behind one address (FJS-3128, FJS-D1200)', () => {
+
+  const login = (app: any, email: string, ip = '203.0.113.7') =>
+    json(app, 'POST', '/auth/login', { email, password: 'wrong' }, { 'x-forwarded-for': ip })
+
+  test('the per-address default admits a class of fifty distinct accounts', async () => {
+    const app = await appWith(h.auth, { loginRateLimit: undefined })
+    for (let i = 0; i < 50; i++) expect((await login(app, `student${i}@example.com`)).status).toBe(401)
+  }, 60_000)
+
+  test('one account from one address is still bounded at ten', async () => {
+    const app = await appWith(h.auth, { loginRateLimit: undefined })
+    for (let i = 0; i < 10; i++) expect((await login(app, 'target@example.com')).status).toBe(401)
+    expect((await login(app, 'target@example.com')).status).toBe(429)
+    // Another account behind the spent address still gets its own bucket.
+    expect((await login(app, 'other@example.com')).status).toBe(401)
+  }, 30_000)
+
+  test('the key is the (account, address) pair: a stranger\'s failures do not lock the account out', async () => {
+    const before = process.env.FJS_TRUST_PROXY
+    process.env.FJS_TRUST_PROXY = '1'
+    let app: any
+    try { app = await appWith(h.auth, { loginRateLimit: undefined }) }
+    finally {
+      if (before === undefined) delete process.env.FJS_TRUST_PROXY
+      else process.env.FJS_TRUST_PROXY = before
+    }
+    for (let i = 0; i < 10; i++) expect((await login(app, 'target@example.com', '198.51.100.9')).status).toBe(401)
+    expect((await login(app, 'target@example.com', '198.51.100.9')).status).toBe(429)
+    expect((await login(app, 'target@example.com', '203.0.113.7')).status).toBe(401)
+  })
+
+  test('the account bucket is its own option', async () => {
+    const app = await appWith(h.auth, { loginAccountRateLimit: { max: 2, window: '15 minutes' } })
+    for (let i = 0; i < 2; i++) expect((await login(app, 'target@example.com')).status).toBe(401)
+    expect((await login(app, 'Target@Example.com')).status).toBe(429)
+  })
+})
+
 describe('routes with no limiter', () => {
 
   test('POST /auth/email/verify/request is bounded — it sends a mail per call', async () => {

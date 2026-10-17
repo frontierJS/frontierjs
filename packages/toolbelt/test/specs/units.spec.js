@@ -248,6 +248,14 @@ test('units: the minor-unit conversion is the currency\'s, not a hundred', funct
   assert.equal(fromMinor('1250', 'USD'), 12.5)   // the wire is text
 })
 
+test('units: places adds digits past the currency\'s minor unit (@money(USD, places: n))', function () {
+  // $0.00025 a call at 8 places (2 + 6) is 25000.
+  assert.equal(toMinor(0.00025, 'USD', 6), 25000)
+  assert.equal(fromMinor(25000, 'USD', 6), 0.00025)
+  assert.equal(fromMinor(25000, 'JPY', 6), 0.025)
+  assert.equal(formatMoney(fromMinor(25000, 'USD', 6), 'USD', { decimals: 8 }), '$0.00025000')
+})
+
 test('units: toMinor ROUNDS, because 8.29 * 100 is not 829', function () {
   // The truncation a caller reaches for first loses a cent here.
   assert.equal(Math.trunc(8.29 * 100), 828)

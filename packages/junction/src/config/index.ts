@@ -44,6 +44,13 @@ export interface AppConfig {
      * timer, so this answer wins the race instead of the socket resetting.
      */
     requestTimeout?: number // ms, default off
+    /**
+     * Requests being handled at once before the next is refused 503 with
+     * `Retry-After`. Counts requests, not sockets (Bun has no connection
+     * hook); a WebSocket upgrade falls under `ws.maxConnections`. 0 or absent
+     * is unlimited.
+     */
+    maxConcurrentRequests?: number
     cors: {
       origins:    string[]
       methods:    string[]

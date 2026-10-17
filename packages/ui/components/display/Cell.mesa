@@ -42,7 +42,7 @@
   // An empty cell and a cell holding an empty string look identical and mean
   // different things, so nothing here returns '' — the em dash is the answer.
 
-  import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
+  import { formatMoney, fromMinor, minorUnits } from '@frontierjs/toolbelt/units'
   import { cx } from '../../utils.js'
   import { displayComponent, defaultDisplayProps } from '../../controls.js'
   import Badge from './Badge.mesa'
@@ -100,7 +100,10 @@
     // and an exception in one cell takes the whole table down. A cell renders
     // what it has or says it has nothing.
     try {
-      const shown = formatMoney(fromMinor(v, currency), currency)
+      // `places` is the digits a rate carries past the minor unit.
+      const extra = column?.places ?? 0
+      const shown = formatMoney(fromMinor(v, currency, extra), currency,
+        extra ? { decimals: minorUnits(currency) + extra } : {})
       // `fromMinor` answers NaN for an amount that is not a number and
       // `formatMoney` turns that into '' — an empty cell, which is the one
       // thing this component's own rule says never to render.

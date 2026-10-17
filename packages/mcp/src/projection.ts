@@ -342,9 +342,11 @@ export function schemaViews(
  * the currency is per row. There is no third shape (`FJS-D556`).
  */
 function moneyNote(x: unknown): string {
-  const spec = (x ?? {}) as { currency?: string; field?: string }
-  if (spec.field) return `A whole number of minor units, not a decimal amount. The currency is in this row's \`${spec.field}\`.`
-  return `A whole number of ${spec.currency} minor units, not a decimal amount.`
+  const spec = (x ?? {}) as { currency?: string; field?: string; places?: number }
+  // `places` makes the unit finer than the minor one, so "minor units" would be off by 10^places.
+  const unit = spec.places ? `minor units scaled by 10^${spec.places} (amount × 10^(minor places + ${spec.places}))` : 'minor units'
+  if (spec.field) return `A whole number of ${unit}, not a decimal amount. The currency is in this row's \`${spec.field}\`.`
+  return `A whole number of ${spec.currency} ${unit}, not a decimal amount.`
 }
 
 /**

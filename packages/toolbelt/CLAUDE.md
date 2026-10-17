@@ -8,7 +8,7 @@ license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
-`/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/mailbox`, `/markdown`, `/match`, `/mime`,
+`/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/mailbox`, `/markdown`, `/match`, `/mime`,
 `/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sigv4`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
@@ -224,13 +224,20 @@ src/predicate/       the `.lite` expression language, whole. `tokenize.js` is th
                      `compileSql` and this are still the two halves an oracle
                      holds together, so a second CALLER is not `FJS-195`'s third
                      compilation (`FJS-D259`). `values.js` is the same language
-                     as TEXT that yields VALUES (a stored template's `{{ … }}`):
+                     as TEXT that yields VALUES (a stored template's `{ … }`):
                      `parseText` makes the cursor and refuses trailing tokens,
                      `assertValues` refuses `auth()`, `now()`, `check()`,
                      `.some()` and any name off the caller's closed list (own
                      keys only), and `evaluateValues` grades again before it
                      answers, because `evaluate`'s resolver defaults are a
                      policy's (`FJS-1998`)
+src/fill/            merge fields into text a user wrote -- `fill(source, ctx,
+                     { mode })` and `check(source, names)` (`FJS-D980`). A hole
+                     is `{path}` or a `/predicate` values expression; `\{` is a
+                     literal brace. `mode` is REQUIRED, `html` escaping a value
+                     and `text` not, because a body's format is stated and never
+                     sniffed from its tags. orion's `data.template` and every
+                     app that stores a template are the callers. Ships a `.d.ts`
 src/search/          ranked fuzzy matching, adapted from quick-score (MIT,
                      `LICENSE` beside it). Two callers, both in @frontierjs/ui:
                      CommandPalette and MultiSelect. `rank`'s `words` and
@@ -652,6 +659,13 @@ license.
   `fli make:resource` had written (`FJS-1421`). A singular ending in a bare `s`
   that the `us`/`is`/`as` guards miss goes on that list, never into
   `INVARIANT`, which would make its plural `lens` as well.
+
+- **A string is truthy in a values ternary by its NUMERIC PREFIX**, because
+  `evaluate` answers in SQLite's logic: `{contact.name ? contact.name : 'x'}`
+  fills `x` for `Ann`. A hole choosing a default writes `contact.name != null`.
+- **`fill` leaves what it cannot fill AS WRITTEN** -- a name the context lacks, a
+  value that is not a scalar, a brace that holds no readable expression -- so a
+  gap shows. `check` is where an unknown name is refused, at save.
 
 ## Proving a change
 

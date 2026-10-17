@@ -211,9 +211,9 @@ describe("data.code", () => {
 })
 
 describe("data.template", () => {
-  test("interpolates {{variable}} references", async () => {
+  test("interpolates {variable} references", async () => {
     const ctx = makeCtx({
-      config: { template: "Hello, {{name}}!" },
+      config: { template: "Hello, {name}!" },
       nodes:  { name: "World" } as any,
     })
     const res = await getImpl("data.template").execute(ctx)
@@ -223,17 +223,17 @@ describe("data.template", () => {
 
   test("a placeholder reads own properties only", async () => {
     const ctx = makeCtx({
-      config: { template: "[{{trigger.constructor}}][{{user.toString}}]" },
+      config: { template: "[{trigger.constructor}][{user.toString}]" },
       nodes:  { user: { name: "Alice" } } as any,
     })
     const res = await getImpl("data.template").execute(ctx)
     expect(res.ok).toBe(true)
-    if (res.ok) expect((res.data as any).rendered).toBe("[][]")
+    if (res.ok) expect((res.data as any).rendered).toBe("[{trigger.constructor}][{user.toString}]")
   })
 
   test("nested path interpolation", async () => {
     const ctx = makeCtx({
-      config: { template: "User: {{user.name}}" },
+      config: { template: "User: {user.name}" },
       nodes:  { user: { name: "Alice" } } as any,
     })
     const res = await getImpl("data.template").execute(ctx)
@@ -241,11 +241,18 @@ describe("data.template", () => {
     if (res.ok) expect((res.data as any).rendered).toBe("User: Alice")
   })
 
-  test("unknown variable renders empty string", async () => {
-    const ctx = makeCtx({ config: { template: "{{missing}}" }, nodes: {} as any })
+  test("a variable the context lacks is left as written", async () => {
+    const ctx = makeCtx({ config: { template: "{missing}" }, nodes: {} as any })
     const res = await getImpl("data.template").execute(ctx)
     expect(res.ok).toBe(true)
-    if (res.ok) expect((res.data as any).rendered).toBe("")
+    if (res.ok) expect((res.data as any).rendered).toBe("{missing}")
+  })
+
+  test("a null value renders empty and a falsy one as written", async () => {
+    const ctx = makeCtx({ config: { template: "[{user.nick}][{user.age}]" }, nodes: { user: { nick: null, age: 0 } } as any })
+    const res = await getImpl("data.template").execute(ctx)
+    expect(res.ok).toBe(true)
+    if (res.ok) expect((res.data as any).rendered).toBe("[][0]")
   })
 
   test("fails if template is not a string", async () => {

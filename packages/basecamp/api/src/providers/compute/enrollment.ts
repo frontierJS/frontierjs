@@ -402,8 +402,117 @@ LockPersonality=yes
 WantedBy=multi-user.target
 UNITEOF
 
+# The way back off, written by the install that put the Outpost on, so it is
+# here whatever becomes of the Basecamp that enrolled this machine.
+cat > /usr/local/sbin/outpost-uninstall <<'UNINSTALLEOF'
+${uninstallScript()}UNINSTALLEOF
+chmod 0755 /usr/local/sbin/outpost-uninstall
+
 systemctl daemon-reload
 systemctl enable --now outpost.service
+`
+}
+
+/**
+ * The install undone — written onto the box by `installScript` as
+ * `/usr/local/sbin/outpost-uninstall`, which is the only way it is run.
+ *
+ * Bare, it takes off the Outpost and what exists only for it: the unit, the
+ * machine's credential and certificate, and the firewall, whose forward chain
+ * drops a published port nothing refills the exposed set for once the Outpost
+ * is gone. The apps it placed keep running. `--purge` takes the rest: those
+ * apps and their volumes, `/var/lib/outpost` with its backups, Docker, Caddy
+ * with every route and certificate, the Docker and Caddy apt sources and the
+ * Outpost's bun.
+ *
+ * What would be worse undone stays, and the script ends by naming it: the sshd
+ * drop-in (gone, cloud-init's password login comes back), chrony (gone, the
+ * image may have no time sync left) and security updates.
+ *
+ * The Server row is Basecamp's: the box stops heartbeating, and removing it is
+ * a person's act there.
+ *
+ * Embedded in a quoted heredoc, so nothing here is expanded at install time,
+ * and no line may read UNINSTALLEOF.
+ */
+export function uninstallScript(): string {
+  return `#!/bin/bash
+set -euo pipefail
+
+PURGE=0
+YES=0
+for arg in "$@"; do
+  case "$arg" in
+    --purge) PURGE=1 ;;
+    --yes)   YES=1 ;;
+    *) echo "usage: outpost-uninstall [--purge [--yes]]" >&2; exit 2 ;;
+  esac
+done
+[ "$(id -u)" = 0 ] || { echo "run as root: sudo outpost-uninstall" >&2; exit 1; }
+
+UNIT=/etc/systemd/system/outpost.service
+# Where the install put bun, read off the unit before the unit goes.
+BUNX=$(awk -F= '$1 == "ExecStart" { split($2, w, " "); print w[1] }' $UNIT 2>/dev/null || true)
+BUN_DIR=
+[ -n "$BUNX" ] && BUN_DIR=$(dirname "$(dirname "$BUNX")")
+
+if [ $PURGE = 1 ] && [ $YES = 0 ]; then
+  HELD=$(docker ps -a --format '{{.Names}}' 2>/dev/null | paste -sd' ' - || true)
+  echo "--purge removes every container on this machine ($HELD), every Docker volume,"
+  echo "Caddy with every route and certificate, and /var/lib/outpost with its backups."
+  if [ -t 0 ]; then
+    read -r -p "Type purge to go on: " ANSWER
+    [ "$ANSWER" = purge ] || { echo "nothing removed" >&2; exit 1; }
+  else
+    echo "no terminal to confirm on: pass --yes" >&2
+    exit 1
+  fi
+fi
+
+# The agent first: a running Outpost refills the exposed set and rewrites routes.
+systemctl disable --now outpost.service 2>/dev/null || true
+systemctl disable --now basecamp-firewall.service 2>/dev/null || true
+nft delete table inet basecamp 2>/dev/null || true
+rm -f $UNIT /etc/systemd/system/basecamp-firewall.service
+rm -rf /etc/basecamp
+systemctl daemon-reload
+echo "Outpost removed: its unit, its credential and its firewall."
+
+# The 80/20 line: what is cheap to keep and worse to undo is named, not undone.
+left() {
+  echo
+  echo "Left on purpose -- remove by hand if you want them gone:"
+  echo "  Basecamp       this machine's Server row; remove it under Servers"
+  echo "  ssh hardening  /etc/ssh/sshd_config.d/10-basecamp.conf; removing it can turn password login back on"
+  echo "  time sync      chrony, which replaced systemd-timesyncd"
+  echo "  auto-updates   unattended-upgrades and /etc/apt/apt.conf.d/20auto-upgrades"
+  echo "  firewall       gone with the Outpost; this box now takes inbound on every port it listens on"
+}
+
+if [ $PURGE = 0 ]; then
+  echo "Its apps, their data, Docker, Caddy and /var/lib/outpost are left: outpost-uninstall --purge removes them."
+  left
+  exit 0
+fi
+
+if command -v docker >/dev/null 2>&1; then
+  docker ps -aq | xargs -r docker rm -f >/dev/null || true
+  docker volume ls -q | xargs -r docker volume rm >/dev/null || true
+fi
+rm -rf /var/lib/outpost
+
+systemctl disable --now caddy-api.service 2>/dev/null || true
+export DEBIAN_FRONTEND=noninteractive
+apt-get purge -yqq caddy docker-ce docker-ce-cli containerd.io >/dev/null 2>&1 || true
+rm -rf /var/lib/docker /var/lib/containerd /var/lib/caddy /etc/caddy
+rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.asc
+rm -f /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+rm -f /etc/apt/apt.conf.d/52basecamp-unattended-upgrades
+
+[ -n "$BUN_DIR" ] && [ "$BUN_DIR" != /usr/local ] && rm -rf "$BUN_DIR"
+rm -f /usr/local/sbin/outpost-uninstall
+echo "Purged: apps, volumes, Docker, Caddy, /var/lib/outpost and the Outpost's bun."
+left
 `
 }
 

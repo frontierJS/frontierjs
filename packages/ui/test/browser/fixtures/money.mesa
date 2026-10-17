@@ -15,6 +15,7 @@
   import { formFieldList } from '@frontierjs/sierra/field-rules'
 
   let seen      = undefined
+  let rateSeen  = undefined
 
   // A row's currency loading after its amount: the value is the stored minor
   // units and nobody has typed (`FJS-2582`).
@@ -52,6 +53,11 @@
 
 <output id="seen">{JSON.stringify(seen)}</output>
 <output id="seen-count">{seenCount}</output>
+
+<h2>a rate finer than a cent — @money(USD, places: 6) is eight places</h2>
+<MoneyInput id="rate" label="Rate" name="rate" currency="USD" field={{ places: 6 }} value={25000}
+            onvalue={(v) => { rateSeen = v }} />
+<output id="rate-seen">{JSON.stringify(rateSeen)}</output>
 
 <h2>a currency that arrives after the value</h2>
 <MoneyInput id="late" label="Deposit" name="deposit" currency={lateCurrency} value={1250}

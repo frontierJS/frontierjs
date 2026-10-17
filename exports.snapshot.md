@@ -385,6 +385,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./devline (default)` | `src/devline/devline.js` | yes |
 | exports | `./directives (types)` | `src/directives/directives.d.ts` | yes |
 | exports | `./directives (default)` | `src/directives/directives.js` | yes |
+| exports | `./fill (types)` | `src/fill/fill.d.ts` | yes |
+| exports | `./fill (default)` | `src/fill/fill.js` | yes |
 | exports | `./gate (types)` | `src/gate/gate.d.ts` | yes |
 | exports | `./gate (default)` | `src/gate/gate.js` | yes |
 | exports | `./geo (types)` | `src/geo/geo.d.ts` | yes |

@@ -328,3 +328,53 @@ describe('why — measured, so the argument in the docs can be checked', () => {
     expect(10 * 3).toBe(30)
   })
 })
+
+// ─── @money(…, places: n) — a rate finer than the minor unit (FJS-2049, FJS-D1043) ───
+
+describe('@money places — digits past the currency\'s minor unit', () => {
+  test('parses on a stated and a per-row currency, and rides on the JSON Schema', () => {
+    const r = parse(`model P {
+      id       Int @id
+      rate     Int @money(USD, places: 6)
+      perRow   Int @money(field: currency, places: 3)
+      plain    Int @money(USD)
+      currency String
+    }`)
+    expect(r.valid).toBe(true)
+    const at = (n: string) =>
+      r.schema.models[0].fields.find((f: any) => f.name === n)!.attributes.find((a: any) => a.kind === 'money')
+    expect(at('rate')).toMatchObject({ currency: 'USD', places: 6 })
+    expect(at('perRow')).toMatchObject({ field: 'currency', places: 3 })
+    expect(at('plain')).toMatchObject({ places: null })
+
+    const props = (generateJsonSchema(r.schema) as any).$defs?.P?.properties
+      ?? (generateJsonSchema(r.schema) as any).definitions?.P?.properties
+    expect(props.rate['x-money']).toEqual({ currency: 'USD', places: 6 })
+    expect(props.perRow['x-money']).toEqual({ field: 'currency', places: 3 })
+    expect(props.plain['x-money']).toEqual({ currency: 'USD' })
+  })
+
+  test('the 9-place cap counts the currency\'s own places', () => {
+    expect(errsOf(`model P { id Int @id  t Int @money(USD, places: 7) }`)).toBe('')
+    expect(errsOf(`model P { id Int @id  t Int @money(USD, places: 8) }`)).toMatch(/at most 7 extra/)
+    expect(errsOf(`model P { id Int @id  t Int @money(JPY, places: 9) }`)).toBe('')
+    expect(errsOf(`model P { id Int @id  t Int @money(KWD, places: 7) }`)).toMatch(/at most 6 extra/)
+    expect(errsOf(`model P { id Int @id  t Int @money(field: c, places: 6)  c String }`)).toMatch(/at most 5 extra/)
+  })
+
+  test('places is a whole number of 1 or more, and no other key is accepted', () => {
+    expect(errsOf(`model P { id Int @id  t Int @money(USD, places: 0) }`)).toMatch(/whole number of 1 or more/)
+    expect(errsOf(`model P { id Int @id  t Int @money(USD, scale: 4) }`)).toMatch(/takes 'places:'/)
+  })
+
+  test('still refused beside @scale and @big', () => {
+    expect(errsOf(`model P { id Int @id  t Int @scale(9) @money(USD, places: 6) }`))
+      .toMatch(/@money derives the scale from the currency/)
+  })
+
+  test('a fixed @default and a bound read the widened scale', () => {
+    // 0.00025 USD at 8 places is 25000; at the bare two it would read as 0.
+    expect(errsOf(`model P { id Int @id  t Int @money(USD, places: 6) @default(0.00025) }`))
+      .toMatch(/Write it in minor units: @default\(25000\)/)
+  })
+})

@@ -1333,11 +1333,11 @@ The column is an integer and the decimal point sits <places> places in — 1_500
 qty Int @scale(6)
 ```
 
-#### `@money` (<CURRENCY>) | (field: <column>)
+#### `@money` (<CURRENCY>[, places: <n>]) | (field: <column>[, places: <n>])
 
 tier: **situational** · legal in: on a model's field, on a trait's field, on a view column · also called: price, cents · see also: `scale`
 
-An amount, stored as a whole number of minor units. The scale is DERIVED from the currency and is not the author's to pick — JPY has none, USD has two, KWD has three — and the ISO 4217 table is shipped by @frontierjs/toolbelt rather than read off the host, because Intl answers how an amount is DISPLAYED and node and bun disagree about fourteen currencies including the dinar, so a code ISO does not carry is refused at parse rather than silently taking two places. `field:` names a sibling String column holding the code per row, for a shop that takes more than one currency. A bare @money is refused: with no currency there is no scale. Formatting is formatMoney in @frontierjs/toolbelt/units; rounding and splitting a bill are the application's, not the schema's.
+An amount, stored as a whole number of minor units. The scale is DERIVED from the currency and is not the author's to pick — JPY has none, USD has two, KWD has three — and the ISO 4217 table is shipped by @frontierjs/toolbelt rather than read off the host, because Intl answers how an amount is DISPLAYED and node and bun disagree about fourteen currencies including the dinar, so a code ISO does not carry is refused at parse rather than silently taking two places. `field:` names a sibling String column holding the code per row, for a shop that takes more than one currency. A bare @money is refused: with no currency there is no scale. `places: n` is for a rate finer than a cent ($0.00025 a call): the currency still decides the point and n adds digits past its minor unit, so @money(USD, places: 6) is 8 places and the stored integer is the amount times 10^8, capped at 9 places in all and refused beside @scale or @big. Formatting is formatMoney in @frontierjs/toolbelt/units; rounding and splitting a bill are the application's, not the schema's.
 
 ```lite
 total Int @money(USD)
@@ -1481,11 +1481,11 @@ The table name in SQL, where it differs from the model name.
 @@map("legacy_orders")
 ```
 
-#### `@@label` (<field>)
+#### `@@label` (<field> | [<field> | <relation>.<field>, …])
 
 tier: **common** · legal in: in a model, in a trait · also called: display name, human name · see also: `label`
 
-Which column a picker SHOWS for a row of this model. A bare field NAME, like @@index and @@transitions take — a quoted argument is the shape that looks like a caption, and is refused with the spelling it meant. The consumer sorts by this column and searches it with `contains`, so a value the database cannot order and match is refused at parse rather than becoming a list of `1, 2, 3` with nothing saying why. One per model.
+Which column a picker SHOWS for a row of this model. A bare field NAME, like @@index and @@transitions take — a quoted argument is the shape that looks like a caption, and is refused with the spelling it meant. The consumer sorts by this column and searches it with `contains`, so a value the database cannot order and match is refused at parse rather than becoming a list of `1, 2, 3` with nothing saying why. A list is JOINED with " · ", a null part dropped, and an entry may be ONE hop through a to-one relation (`group.name`), read from the far model's column under the same refusals; two hops and a to-many are refused. One per model.
 
 ```lite
 @@label(name)
@@ -1653,7 +1653,7 @@ How this model belongs to a tenant under `tenancy { strategy row }`. `none` says
 @@tenant(none)
 ```
 
-#### `@@transitions` (<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) | (<field>, declaredBy: Model, scope: <column>)
+#### `@@transitions` (<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …)], …) | (<field>, declaredBy: Model, scope: <column>)
 
 tier: **common** · legal in: in a model, in a trait · also called: workflow, status · see also: `gate`
 
@@ -1780,6 +1780,18 @@ The move is the moment this row becomes a DOCUMENT. After it the row's @sealed c
 
 ```lite
 @@transitions(state, issue: draft -> issued @seals)
+```
+
+**Record who and when**
+
+#### `@stamps` (<column>, …)
+
+tier: **common** · legal in: on a @@transitions move · see also: `transitions`, `updatedAt`
+
+The move records WHEN it was made: the named DateTime columns get the clock in the move's own UPDATE, the way @updatedAt does, whether the move was made by transition(id, name) or by an update that lands it. The column is the engine's, so a payload naming it is refused by name; a direct transition() cannot leave it null, and a @@check requiring it holds in the same statement. Move-keyed, so two moves into one state can stamp different columns.
+
+```lite
+@@transitions(state, issue: draft -> issued @stamps(issuedAt))
 ```
 
 **Decide who may**

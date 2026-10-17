@@ -1884,7 +1884,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           throw new TransitionViolationError(tableName, fieldName, currentValue, named.to,
             Object.values(transitions).filter(t => t.from.includes(currentValue)).map(t => t.to))
 
-        return { transitionName: requestedMove, field: fieldName, from: currentValue, to: named.to }
+        return { transitionName: requestedMove, field: fieldName, from: currentValue, to: named.to, stamps: named.stamps ?? [] }
       }
 
       if (currentValue === newValue) return null   // no change — nothing to enforce
@@ -1906,7 +1906,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // The move is legal — is this caller allowed to make it?
       await gradeMove(fieldName, matchedName, transitions[matchedName])
 
-      return { transitionName: matchedName, field: fieldName, from: currentValue, to: newValue }
+      return { transitionName: matchedName, field: fieldName, from: currentValue, to: newValue, stamps: transitions[matchedName].stamps ?? [] }
     }
     return null
   }
@@ -4804,6 +4804,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return _stampCols.filter(c => !named.includes(c)).map(c => `"${col(c)}" = '${_at}'`)
   }
 
+  // The columns a move's `@stamps` names, written with the same clock as
+  // `@updatedAt` so one event carries one instant.
+  function moveStampSets(cols) {
+    if (!cols.length) return []
+    const _at = nowISO(ctx.stampClock ?? ctx.now).replace(/'/g, "''")
+    return cols.map(c => `${ident(col(c)).sql} = '${_at}'`)
+  }
+
   // Pre-compute base SELECT — reused by every buildSQL call
   const _baseSql = `SELECT * FROM "${tableName}"`
 
@@ -6650,6 +6658,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // why — the version, the seal, the move's refusal — so a row outside
       // the caller's read scope leaves before any of them can describe it.
       if (_transResult === NOT_VISIBLE) return null
+      // A column the move stamps is the engine's: a payload naming it would be
+      // a second clock for one event, so it is refused by name, as @system is.
+      const _moveStamps = _transResult?.stamps ?? []
+      const _namedStamps = _moveStamps.filter(c => c in data)
+      if (_namedStamps.length) throw new ValidationError(
+        _namedStamps.map(f => ({
+          path: [f],
+          message: `${f} is stamped by the '${_transResult.transitionName}' move — the engine writes it with the move. ` +
+                   `Leave it out of the payload.`,
+        })),
+        { model: modelName, operation: 'write' }
+      )
       // If transitions apply, narrow WHERE to include AND field = currentValue (optimistic lock)
       const { sql: _txWhereSql, params: _txWhereParams } = _transResult
         ? applyTransitionWhereClause(_transResult, finalWhere.sql, finalWhere.params)
@@ -6692,7 +6712,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // naming no column issues no statement at all below, and the trigger it
       // used to lean on never fired for one either.
       const _setColsV     = _setColsBase
-        ? [_setColsBase, ...stampSets(Object.keys(row))].join(', ')
+        ? [_setColsBase, ...stampSets(Object.keys(row)), ...moveStampSets(_moveStamps)].join(', ')
         : _setColsBase
 
       const version = _expectVersion == null ? null : { field: _versionField, expect: _expectVersion }

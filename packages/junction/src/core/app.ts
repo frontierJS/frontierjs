@@ -1146,7 +1146,8 @@ export function createApp(opts: AppOptions = {}): App {
     // request with no status and no log line (`FJS-756`).
     idleTimeout:    config.http.idleTimeout,
     requestTimeout: config.http.requestTimeout,
-    ddos:        config.http.ddos,
+    maxConcurrentRequests: config.http.maxConcurrentRequests,
+    ddos:       config.http.ddos,
     static:      config.http.static,
     // Which forwarding headers to believe. Declared, never guessed: absent
     // behind a proxy means every caller shares the proxy's bucket, and this

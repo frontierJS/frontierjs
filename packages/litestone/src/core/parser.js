@@ -15,7 +15,7 @@ import { parseGateString, validateGate } from '../plugins/gate.js'
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
 import { suggestKey } from './args.js'
 import { compileStatic, policyExprToString } from './policy.js'
-import { pointColumnNames, isStoredField, mapIdentifiers } from './ddl.js'
+import { pointColumnNames, isStoredField, mapIdentifiers, labelColumn } from './ddl.js'
 import { inferFromFk, inferFromHop, inferToOneFrom } from './schema-maps.js'
 import { sealedStates, sealFaults, machineWithMove } from './seal.js'
 import { PERSONAL_CATEGORIES, isPersonModel, personalNameCategory } from './personal.js'
@@ -2259,9 +2259,22 @@ class Parser {
           `should be @@label(${this.peek().value}). A caption for one field is @label("…") on that field.`,
           this.peek(),
         )
-        const field = this.eat(TK.IDENT).value
+        const part = () => {
+          const first = this.eat(TK.IDENT).value
+          if (!this.maybeEat(TK.DOT)) return { via: null, field: first }
+          const far = this.eat(TK.IDENT).value
+          if (this.check(TK.DOT)) throw new ParseError(
+            `@@label(${first}.${far}.…) — one hop through a to-one relation is the most a display name takes`,
+            this.peek())
+          return { via: first, field: far }
+        }
+        const parts = []
+        if (this.maybeEat(TK.LBRACKET)) {
+          do parts.push(part()); while (this.maybeEat(TK.COMMA))
+          this.eat(TK.RBRACKET)
+        } else parts.push(part())
         this.eat(TK.RPAREN)
-        return { kind: 'labelField', field }
+        return { kind: 'labelField', parts }
       }
       case 'external': return { kind: 'external' }  // table exists outside migrations
       // @@extensible(fields, declaredBy: CustomField)
@@ -2854,7 +2867,8 @@ class Parser {
   }
 
   /**
-   * `@money(USD)` · `@money("USD")` · `@money(field: currency)`
+   * `@money(USD)` · `@money("USD")` · `@money(field: currency)` · any of them
+   * followed by `, places: n`
    *
    * A bare `@money` parses, and validation refuses it by name.
    *
@@ -2862,29 +2876,42 @@ class Parser {
    * unquoted and a string is what somebody pasting from JSON will write.
    * `field:` names a sibling column holding the code per row, which is the shape
    * a shop taking more than one currency needs — django-money's two columns and
-   * one declaration.
+   * one declaration. `places:` adds n digits past the currency's minor unit, for
+   * a rate finer than a cent (`FJS-D1043`).
    */
   parseMoney() {
-    if (!this.check(TK.LPAREN)) return { kind: 'money', currency: null, field: null }
+    if (!this.check(TK.LPAREN)) return { kind: 'money', currency: null, field: null, places: null }
 
     this.eat(TK.LPAREN)
+
+    let currency = null
+    let field = null
 
     // `field: currency` — an IDENT followed by a colon, which no currency is.
     if (this.check(TK.IDENT) && this.peek(1)?.type === TK.COLON) {
       const key = this.eat(TK.IDENT).value
       this.eat(TK.COLON)
-      const field = this.eat(TK.IDENT).value
-      this.eat(TK.RPAREN)
+      field = this.eat(TK.IDENT).value
       if (key !== 'field') {
         const t = this.peek()
         throw new ParseError(`@money takes a currency or 'field:', got '${key}:'`, { line: t.line, col: t.col })
       }
-      return { kind: 'money', currency: null, field }
+    } else {
+      currency = String(this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value).toUpperCase()
     }
 
-    const currency = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
+    let places = null
+    if (this.check(TK.COMMA)) {
+      this.eat(TK.COMMA)
+      const t = this.peek()
+      const key = this.eat(TK.IDENT).value
+      if (key !== 'places')
+        throw new ParseError(`@money takes 'places:' after the currency, got '${key}'`, { line: t.line, col: t.col })
+      this.eat(TK.COLON)
+      places = Number(this.eat(TK.NUMBER).value)
+    }
     this.eat(TK.RPAREN)
-    return { kind: 'money', currency: String(currency).toUpperCase(), field: null }
+    return { kind: 'money', currency, field, places }
   }
 
   /**
@@ -3116,9 +3143,17 @@ class Parser {
       let gate   = null
       let system = false
       let seals  = false
+      let stamps = []
       while (this.check(TK.AT)) {
         this.eat(TK.AT)
         const attr = this.eat(TK.IDENT)
+
+        if (attr.value === 'stamps') {
+          if (stamps.length)
+            throw new ParseError(`@@transitions(${field}) '${name}': @stamps stated twice — name every column in one list`, attr)
+          stamps = this.parseTransitionStamps(field, name)
+          continue
+        }
 
         if (attr.value === 'gate') {
           if (gate !== null)
@@ -3153,7 +3188,7 @@ class Parser {
         }
 
         throw new ParseError(
-          `@@transitions(${field}): unknown transition attribute '@${attr.value}' — only @gate, @system and @seals are supported`, attr)
+          `@@transitions(${field}): unknown transition attribute '@${attr.value}' — only @gate, @system, @seals and @stamps are supported`, attr)
       }
 
       // 8 and 9 are sentinels meaning *no caller reaches this*, which is the
@@ -3167,11 +3202,29 @@ class Parser {
 
       if (name in transitions)
         throw new ParseError(`@@transitions(${field}): duplicate transition name '${name}'`, this.peek())
-      transitions[name] = { from, to, gate, system, seals }
+      transitions[name] = { from, to, gate, system, seals, stamps }
     } while (this.maybeEat(TK.COMMA))
 
     this.eat(TK.RPAREN)
     return { field, transitions }
+  }
+
+  // @stamps(sentAt, …) — the DateTime columns the move writes with the clock,
+  // in the move's own UPDATE. Whether each names a DateTime column of this
+  // model is checked once the fields are known (validate()).
+  parseTransitionStamps(field, name) {
+    this.eat(TK.LPAREN)
+    const cols = []
+    do {
+      const tok = this.advance()
+      if (tok.type !== TK.IDENT)
+        throw new ParseError(`@@transitions(${field}) '${name}': @stamps expects column names, got '${tok.value}'`, tok)
+      if (cols.includes(tok.value))
+        throw new ParseError(`@@transitions(${field}) '${name}': @stamps names '${tok.value}' twice`, tok)
+      cols.push(tok.value)
+    } while (this.maybeEat(TK.COMMA))
+    this.eat(TK.RPAREN)
+    return cols
   }
 
   // @gate(5) — a single level, unlike @@gate's R.C.U.D tuple. A level name is
@@ -5092,7 +5145,7 @@ function resolveTransitions(schema) {
         field: field.name,
         // The enum form carries no gates — a gate is a model concern.
         transitions: Object.fromEntries(
-          Object.entries(shared).map(([name, { from, to }]) => [name, { from: [...from], to, gate: null }])
+          Object.entries(shared).map(([name, { from, to }]) => [name, { from: [...from], to, gate: null, stamps: [] }])
         ),
         fromEnum: field.type.name,   // provenance, for error messages
       })
@@ -5140,6 +5193,27 @@ function labelFieldRefusal(field, schema) {
 }
 
 // Why this field cannot be the column a record STORES for a value set.
+// Why one `@@label` part cannot be shown, or null. A hop is one step through a
+// to-one relation to a column of the model it points at; an own column and a
+// far column answer to the same refusals.
+function labelPartRefusal(model, part, schema) {
+  if (!part.via) {
+    const field = model.fields.find(f => f.name === part.field)
+    if (!field) return `@@label references unknown field '${part.field}'`
+    const why = labelFieldRefusal(field, schema)
+    return why ? `{part} — ${why}` : null
+  }
+  const via = model.fields.find(f => f.name === part.via)
+  if (!via) return `{part} — '${part.via}' is not a field of ${model.name}`
+  const target = schema.models.find(m => m.name === via.type.name)
+  if (!target) return `{part} — '${part.via}' is not a relation`
+  if (via.type.array) return `{part} — '${part.via}' is to-many, and a name read through it has no single row to come from`
+  const far = target.fields.find(f => f.name === part.field)
+  if (!far) return `{part} — ${target.name} has no field '${part.field}'`
+  const why = labelFieldRefusal(far, schema)
+  return why ? `{part} — on ${target.name}, ${why}` : null
+}
+
 // The same question `labelFieldRefusal` asks about a display column, on the
 // other axis: that one has to be readable text, this one has to be a value
 // SQLite can compare — every check the strength performs is an equality against
@@ -5665,11 +5739,14 @@ function validate(schema) {
     if (labelAttrs.length > 1)
       errors.push(`Model '${model.name}': duplicate @@label — a model has one display column`)
     if (labelAttrs.length) {
-      const attr  = labelAttrs[0]
-      const field = model.fields.find(f => f.name === attr.field)
-      const why   = !field ? null : labelFieldRefusal(field, schema)
-      if (!field)     errors.push(`Model '${model.name}': @@label references unknown field '${attr.field}'`)
-      else if (why)   errors.push(`Model '${model.name}': @@label(${attr.field}) — ${why}`)
+      const seen = new Set()
+      for (const part of labelAttrs[0].parts) {
+        const spelled = part.via ? `${part.via}.${part.field}` : part.field
+        if (seen.has(spelled)) { errors.push(`Model '${model.name}': @@label names '${spelled}' twice`); continue }
+        seen.add(spelled)
+        const refusal = labelPartRefusal(model, part, schema)
+        if (refusal) errors.push(`Model '${model.name}': ${refusal.replace('{part}', `@@label(${spelled})`)}`)
+      }
     }
 
     // A @@fts model is in the shared `_search` index, and its hit is titled by
@@ -5678,6 +5755,8 @@ function validate(schema) {
     // search fine alone and come back untitled in a palette with nothing saying
     // which model forgot.
     const ftsAttr = model.attributes.find(a => a.kind === 'fts')
+    if (ftsAttr && labelAttrs.length && !labelColumn(labelAttrs[0]))
+      errors.push(`Model '${model.name}': @@fts titles a hit by an own @@label column, and this @@label names only fields read through a relation`)
     if (ftsAttr && !labelAttrs.length) {
       const candidate = ftsAttr.fields.find(name => {
         const f = model.fields.find(x => x.name === name)
@@ -5864,7 +5943,7 @@ function validate(schema) {
 
     vs.valueField = valName
     vs.isIdValue  = valName === idField?.name
-    vs.labelField = (src.attributes ?? []).find(a => a.kind === 'labelField')?.field ?? null
+    vs.labelField = labelColumn((src.attributes ?? []).find(a => a.kind === 'labelField'))
 
     // The order a picker offers, checked against the SOURCE — an order naming a
     // column that is not there is a list that loads alphabetically forever with
@@ -6848,6 +6927,7 @@ function validate(schema) {
       if (scale.kind === 'money') {
         try { places = scale.currency ? minorUnits(scale.currency) : 2 }
         catch { places = 2 }
+        places += scale.places ?? 0
       }
       const whole = 10 ** (places ?? 2)
       for (const bound of field.attributes) {
@@ -7704,6 +7784,18 @@ function validate(schema) {
         if (money.currency && !isKnownCurrency(money.currency))
           errors.push(`${at}: @money(${money.currency}) — not an ISO 4217 currency. The scale comes from the currency, so a code nobody recognizes would silently take two places`)
 
+        // The cap is the same 9 places `@scale` has. A per-row currency's own
+        // exponent is not knowable here, so the bound assumes the widest ISO
+        // gives (4: CLF, UYW) and a row whose code is wider is refused at write.
+        if (money.places !== null) {
+          let own = money.currency ? null : 4
+          if (money.currency && isKnownCurrency(money.currency)) { try { own = minorUnits(money.currency) } catch {} }
+          if (!Number.isInteger(money.places) || money.places < 1)
+            errors.push(`${at}: @money(…, places: ${money.places}) — places is the number of digits past the currency's minor unit, a whole number of 1 or more`)
+          else if (own !== null && own + money.places > 9)
+            errors.push(`${at}: @money(${money.currency ?? `field: ${money.field}`}, places: ${money.places}) — ${money.currency ? `${money.currency} has ${own} minor places, so` : 'a per-row currency may have up to 4 minor places, so'} at most ${9 - own} extra (9 places in all), or the integer runs out of room for the value in front of the point`)
+        }
+
         if (money.field) {
           const sibling = model.fields.find(f => f.name === money.field)
           if (!sibling)
@@ -7971,6 +8063,20 @@ function validate(schema) {
                     `A new row starts at the default and reaches every other state by a move, so the machine needs one.`)
 
       if (attr.fromEnum) continue
+
+      // @stamps writes the clock into a column, so it must be a stored
+      // DateTime that is not the state column; anything else is a stamp that
+      // lands nowhere or on the wrong type.
+      for (const [moveName, move] of Object.entries(attr.transitions)) {
+        for (const c of move.stamps ?? []) {
+          const target = model.fields.find(f => f.name === c)
+          const where  = `Model '${model.name}': @@transitions(${attr.field}) '${moveName}' @stamps(${c})`
+          if (!target) errors.push(`${where} — no such field`)
+          else if (c === attr.field) errors.push(`${where} — that is the state column the move writes`)
+          else if (target.type.name !== 'DateTime' || target.type.array || !isStoredField(target))
+            errors.push(`${where} — '${c}' must be a stored DateTime column`)
+        }
+      }
 
       const field = model.fields.find(f => f.name === attr.field)
       if (!field) {

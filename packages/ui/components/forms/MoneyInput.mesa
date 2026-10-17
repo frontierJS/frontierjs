@@ -33,14 +33,15 @@
    *                 has is refused rather than rounded, because rounding
    *                 changes the amount a person typed and says nothing.
    */
-  export function readMoney(text, currency) {
+  export function readMoney(text, currency, places = 0) {
     const t = String(text ?? '').replace(/\s+/g, '')
     if (t === '') return { value: null, message: '' }
 
     const code = String(currency ?? '').toUpperCase()
     if (!code) return { value: undefined, message: 'choose the currency first' }
-    const digits = digitsOf(code)
-    if (digits == null) return { value: undefined, message: `${code} is not a currency` }
+    const base = digitsOf(code)
+    if (base == null) return { value: undefined, message: `${code} is not a currency` }
+    const digits = base + places
 
     const m = AMOUNT.exec(t)
     if (!m || (m[2] === undefined && !m[3])) {
@@ -68,12 +69,14 @@
    * Blank for no amount; the raw integer where the code is not a currency,
    * because an edit box that showed nothing would erase the amount on save.
    */
-  export function showMoney(minor, currency) {
+  export function showMoney(minor, currency, places = 0) {
     if (minor == null || minor === '') return ''
     const n = Number(minor)
     if (!Number.isInteger(n)) return String(minor)
-    const digits = digitsOf(String(currency ?? '').toUpperCase())
-    if (digits == null || digits === 0) return String(n)
+    const base = digitsOf(String(currency ?? '').toUpperCase())
+    if (base == null) return String(n)
+    const digits = base + places
+    if (digits === 0) return String(n)
 
     const s = String(Math.abs(n)).padStart(digits + 1, '0')
     return (n < 0 ? '-' : '') + s.slice(0, -digits) + '.' + s.slice(-digits)
@@ -155,11 +158,13 @@
   // through `currency`; with none yet the box asks for it.
   const code = String(currency ?? field?.currency ?? rule?.['x-money']?.currency ?? '').toUpperCase()
   const symbol = code ? currencySymbol(code) : ''
+  // Digits a rate carries past the minor unit (`@money(USD, places: n)`).
+  const places = field?.places ?? rule?.['x-money']?.places ?? 0
 
   // What the box holds. Owned by the control once typing starts: `12.` is on
   // the way to an amount, and rewriting it from the value would take the
   // point away mid-keystroke.
-  let text = showMoney(value, code)
+  let text = showMoney(value, code, places)
 
   // Whether the text is the person's or was drawn from `value`. Only typed text
   // is an amount someone stated; drawn text is the value shown in whatever code
@@ -177,7 +182,7 @@
   export function focus() { return $.focus(inputEl) }
 
   function commit() {
-    const { value: next, message } = readMoney(text, code)
+    const { value: next, message } = readMoney(text, code, places)
     setLocalError(message)
     if (next === undefined || next === value) return
     value = next
@@ -195,8 +200,8 @@
   // A value set from outside — a reset, a record that arrived after mount —
   // replaces the text, unless the text already reads as that value.
   $: value, () => {
-    if (readMoney(text, code).value !== value) {
-      text = showMoney(value, code)
+    if (readMoney(text, code, places).value !== value) {
+      text = showMoney(value, code, places)
       _typed = false
       setLocalError('')
     }
@@ -208,7 +213,7 @@
   // nobody has changed.
   $: code, () => {
     if (_typed) { commit(); return }
-    text = showMoney(value, code)
+    text = showMoney(value, code, places)
     if (localError) setLocalError('')
   }
 </script>

@@ -10924,8 +10924,8 @@ describe('@@transitions — parser', () => {
 
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
     expect(attr.field).toBe('status')
-    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false })
-    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5, system: false, seals: false })
+    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [] })
+    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5, system: false, seals: false, stamps: [] })
     expect(attr.transitions.cancel.from).toEqual(['pending', 'paid'])
   })
 
@@ -10934,7 +10934,7 @@ describe('@@transitions — parser', () => {
 model Order { id Int @id  status S @default(pending)  @@transitions(status, pending -> paid) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
-    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false })
+    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [] })
   })
 
   test('@gate refuses a level name and names the digit it means (FJS-D239)', () => {
@@ -10954,7 +10954,7 @@ model M { id Int @id  s S @default(a)  @@transitions(s, go: a -> b @gate(ADMINIS
     ['gate out of range',  `@@transitions(s, a -> b @gate(12))`, 'integer 0–9'],
     ['unknown level name', `@@transitions(s, a -> b @gate(NOPE))`, 'expects a level 0–9'],
     ['no clauses',         `@@transitions(s)`,                   'at least one transition'],
-    ['unknown attribute',  `@@transitions(s, a -> b @wat(1))`,   'only @gate, @system and @seals are supported'],
+    ['unknown attribute',  `@@transitions(s, a -> b @wat(1))`,   'only @gate, @system, @seals and @stamps are supported'],
   ])('rejects: %s', (_label, attr, fragment) => {
     const r = parse(`enum S { a b }
 model M { id Int @id  s S  n Int  ${attr} }`)
@@ -11096,6 +11096,67 @@ describe('@@transitions — gates', () => {
     expect(err.got).toBe(3)
     expect((await bare.asSystem().order.findUnique({ where: { id: 9 } })).status).toBe('paid')
     bare.$close()
+  })
+})
+
+
+describe('@@transitions — @stamps (FJS-2801)', () => {
+  const STAMPED = `enum S { draft sent void }
+model Msg {
+  id     Int @id
+  status S @default(draft)
+  sentAt DateTime?
+  voidAt DateTime?
+  @@transitions(status,
+    send:  draft -> sent @stamps(sentAt),
+    drop:  draft -> void @stamps(sentAt, voidAt),
+    reopen: void -> draft)
+  @@check("status != 'sent' OR sentAt IS NOT NULL")
+  @@allow('all', true)
+}`
+
+  test('parses a stamp list, and refuses a column that cannot hold the clock', () => {
+    const r = parse(STAMPED)
+    expect(r.errors).toEqual([])
+    const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
+    expect(attr.transitions.send.stamps).toEqual(['sentAt'])
+    expect(attr.transitions.drop.stamps).toEqual(['sentAt', 'voidAt'])
+    expect(attr.transitions.reopen.stamps).toEqual([])
+
+    const bad = (fields: string, stamps: string) => parse(`enum S { a b }
+model M { id Int @id  s S @default(a)  ${fields}  @@transitions(s, go: a -> b @stamps(${stamps})) }`)
+    expect(bad('', 'nope').errors.join()).toContain('no such field')
+    expect(bad('n Int', 'n').errors.join()).toContain('must be a stored DateTime')
+    expect(bad('', 's').errors.join()).toContain('state column')
+  })
+
+  test('transition() stamps the clock in the move itself, and a form update does too', async () => {
+    const { db } = await makeTestClient(STAMPED)
+    await db.msg.create({ data: { id: 1 } })
+    await db.msg.create({ data: { id: 2 } })
+
+    const sent = await db.msg.transition(1, 'send')
+    expect(sent.status).toBe('sent')
+    expect(typeof sent.sentAt === 'string' || sent.sentAt instanceof Date).toBe(true)
+
+    const viaUpdate = await db.msg.update({ where: { id: 2 }, data: { status: 'sent' } })
+    expect(viaUpdate.sentAt).not.toBeNull()
+
+    // A move that names no @stamps leaves the column alone.
+    await db.msg.create({ data: { id: 3 } })
+    await db.msg.transition(3, 'drop')
+    const back = await db.msg.transition(3, 'reopen')
+    expect(back.voidAt).not.toBeNull()
+    db.$close()
+  })
+
+  test('a payload naming a stamped column is refused by name', async () => {
+    const { db } = await makeTestClient(STAMPED)
+    await db.msg.create({ data: { id: 1 } })
+    await expect(db.msg.update({ where: { id: 1 }, data: { status: 'sent', sentAt: new Date('2001-01-01') } }))
+      .rejects.toThrow(/sentAt is stamped by the 'send' move/)
+    expect((await db.msg.findUnique({ where: { id: 1 } })).status).toBe('draft')
+    db.$close()
   })
 })
 

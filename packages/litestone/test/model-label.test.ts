@@ -34,7 +34,7 @@ describe('@@label parses', () => {
 }`)
     expect(r.valid).toBe(true)
     expect(r.schema.models[0].attributes.find((a: any) => a.kind === 'labelField'))
-      .toEqual({ kind: 'labelField', field: 'fullName' })
+      .toEqual({ kind: 'labelField', parts: [{ via: null, field: 'fullName' }] })
   })
 
   it('accepts the case it exists for — a @generated column', () => {
@@ -158,4 +158,70 @@ model C {
     expect(s.$defs.C['x-label-field']).toBe('name')
     expect(s.$defs.P['x-labels']).toEqual({ pro: 'Pro' })
   })
+})
+
+// `FJS-D674`, `FJS-2130`: a list joins its parts, and an entry may be ONE hop
+// through a to-one relation. Everything else is refused at parse, by name.
+describe('@@label takes a list, and one hop through a to-one relation', () => {
+  const people = (label: string, extra = '') => `model User {
+  id   Int @id
+  name String
+  secret String @guarded
+  ${extra}
+}
+model Group {
+  id   Int @id
+  name String
+}
+model Employee {
+  id      Int   @id
+  userId  Int
+  user    User  @relation(fields: [userId], references: [id])
+  groupId Int?
+  group   Group? @relation(fields: [groupId], references: [id])
+  label   String
+  tags    Tag[]
+  @@label(${label})
+}
+model Tag {
+  id Int @id
+  employeeId Int
+  employee Employee @relation(fields: [employeeId], references: [id])
+  name String
+}`
+  const labelOf = (src: string) => {
+    const r = parse(src)
+    expect(r.errors ?? []).toEqual([])
+    return r.schema.models.find((m: any) => m.name === 'Employee').attributes.find((a: any) => a.kind === 'labelField')
+  }
+
+  it('a hop to a to-one relation lands as a part with its via', () => {
+    expect(labelOf(people('user.name')).parts).toEqual([{ via: 'user', field: 'name' }])
+  })
+
+  it('a list keeps its order, own columns and hops together', () => {
+    expect(labelOf(people('[group.name, label]')).parts)
+      .toEqual([{ via: 'group', field: 'name' }, { via: null, field: 'label' }])
+  })
+
+  it('x-label-field is the list once there is more than one part or a hop, the bare name otherwise', () => {
+    const json = (label: string) => (generateJsonSchema(parse(people(label)).schema) as any).$defs.Employee
+    expect(json('label')['x-label-field']).toBe('label')
+    expect(json('user.name')['x-label-field']).toEqual(['user.name'])
+    expect(json('[group.name, label]')['x-label-field']).toEqual(['group.name', 'label'])
+  })
+
+  const refused: Array<[string, string, string]> = [
+    ['two hops',            'user.group.name',    'one hop'],
+    ['a to-many',           'tags.name',          'to-many'],
+    ['a column the far model hides', 'user.secret', 'is @guarded'],
+    ['a far column that is not there', 'user.nope', `no field 'nope'`],
+    ['a hop through a scalar', 'label.name',      'is not a relation'],
+    ['a repeated part',     '[label, label]',     'twice'],
+  ]
+  for (const [what, label, expected] of refused) {
+    it(`refuses ${what}`, () => {
+      expect(errorsFor(people(label)).join('\n')).toContain(expected)
+    })
+  }
 })

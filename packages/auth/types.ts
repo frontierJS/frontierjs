@@ -489,9 +489,19 @@ export interface AuthPluginOptions {
   sessionTtl?: string
 
   // Override default rate limits.
-  // Login default:    { max: 10, window: '15 minutes' }
-  // Register default: { max: 5,  window: '15 minutes' }
+  // Login default:    { max: 100, window: '15 minutes' } per address
+  // Register default: { max: 5,   window: '15 minutes' }
   loginRateLimit?:    RateLimitHookOptions
+  /**
+   * `POST /auth/login` (and `/magic-link/verify` with an email and a code) — a
+   * second bucket keyed on the (email, address) pair, beside the per-address
+   * `loginRateLimit`. A room of people behind one address shares the loose
+   * bucket and each holds a bucket of their own here; a spray at one account
+   * from one address stops at this one. Keyed on the email alone it would let a
+   * stranger lock a known user out. Default: `{ max: 10, window: '15 minutes' }`.
+   * `/login/challenge` takes only the per-address bucket.
+   */
+  loginAccountRateLimit?: RateLimitHookOptions
   registerRateLimit?: RateLimitHookOptions
   /**
    * `POST /auth/password-reset/request` — the only public route here that sends

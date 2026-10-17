@@ -2,6 +2,7 @@ import type { INodeImplementation, NodeContext } from "../executor"
 import type { IKeyValueStore, IAIModels, IJobDispatcher, IModelActions, INotifier, IOutbound, IServiceCaller, Recipient } from "../ports"
 import { RESERVED_JOB_PREFIX } from "../ports"
 import { CodeWorkerPool }          from "./code-worker-pool"
+import { fill }                    from "@frontierjs/toolbelt/fill"
 
 // ─────────────────────────────────────────────
 // NODE DEPENDENCIES
@@ -105,7 +106,7 @@ function makeDataCode(pool: CodeWorkerPool): INodeImplementation {
   }
 }
 
-// data.template — Mustache-style {{variable}} interpolation
+// data.template — {path} holes, filled by the toolbelt kit every stored template uses (FJS-D980)
 const dataTemplate: INodeImplementation = {
   type: "data.template",
   async execute(ctx: NodeContext) {
@@ -114,11 +115,7 @@ const dataTemplate: INodeImplementation = {
       return { ok: false, error: "data.template: config.template must be a string" }
     }
     const vars: Record<string, unknown> = { ...ctx.nodes, trigger: ctx.trigger }
-    const rendered = template.replace(/\{\{([^}]+)\}\}/g, (_, path: string) => {
-      const val = resolvePath(vars, path.trim())
-      return val == null ? "" : String(val)
-    })
-    return { ok: true, data: { rendered } }
+    return { ok: true, data: { rendered: fill(template, vars, { mode: "text" }) } }
   },
 }
 
@@ -549,13 +546,6 @@ function errorMessage(err: unknown): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-function resolvePath(obj: Record<string, unknown>, path: string): unknown {
-  return path.split(".").reduce<unknown>((acc, key) => {
-    if (acc != null && typeof acc === "object" && Object.hasOwn(acc, key)) return (acc as Record<string, unknown>)[key]
-    return undefined
-  }, obj)
 }
 
 function randomKey(): string {

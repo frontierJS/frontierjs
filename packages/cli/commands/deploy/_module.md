@@ -489,7 +489,7 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
     ['info', ''],
     ['info', '  If that run is dead:'],
     ['info', resume],
-    ['info', `    fli deploy:unlock      drop the lock and ${verb === 'deploy' ? 'start over' : 'revert'} (${lock.lockFile})`],
+    ['info', `    fli deploy:unlock      drop the lock and ${verb === 'deploy' ? 'start over' : verb} (${lock.lockFile})`],
   ]
 }
 
@@ -1125,6 +1125,7 @@ fli deploy:logs         ← stream or show API container logs
 fli deploy:run <cmd>    ← run a one-off command inside the running container
 fli deploy:rollback     ← roll back to the previous release
 fli deploy:setup        ← first-time server setup walkthrough
+fli deploy:retire       ← take the app off its server — routes, Outpost, container, images, files
 
 fli deploy:basecamp --app <id> ← build here, load onto the App's Basecamp machines, release that digest
 ```

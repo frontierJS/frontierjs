@@ -680,3 +680,66 @@ describe('a session beside a grant', () => {
     expect((merging as any).describe().session).toBe('merge')
   })
 })
+
+// A key read from a header is used on every request and `redeem()` never runs
+// for it, so the resolver stamps `lastUsedAt` itself (`FJS-3080`, `FJS-D1140`):
+// when the column is null or older than four minutes, so a hot key costs one
+// write per window.
+describe('a header bearer stamps lastUsedAt when the row declares it', () => {
+  const KEYED = `
+    model ApiKey {
+      id         Int       @id @default(autoincrement())
+      clientId   Int
+      tokenHash  String    @unique @guarded
+      lastUsedAt DateTime? @system
+      @@gate(8)
+    }
+    model Note {
+      id       Int    @id @default(autoincrement())
+      clientId Int
+      @@gate(0)
+      @@allow('read', clientId == auth().portalClientId)
+    }
+  `
+  const keyed = bearerClaim({
+    from: header('x-api-key'), model: 'apiKey', column: 'tokenHash', subject: 'clientId',
+    key: KEY, claims: { portalClientId: 'clientId' },
+  })
+  const asKey = <T>(token: string, fn: () => Promise<T>) =>
+    enterRequest({ origin: 'http', headers: { 'x-api-key': token }, caller: { headers: { 'x-api-key': token } } } as never, fn)
+
+  test('null stamps, a fresh stamp stays, an old one is renewed', async () => {
+    let now = new Date('2026-01-01T00:00:00.000Z')
+    const db: any = await createClient({ db: ':memory:', schema: KEYED, claims: ['portalClientId'], now: () => now })
+    const made = await db.asSystem().apiKey.create({
+      data: { clientId: 1, tokenHash: await fingerprint('k1', { key: KEY, purpose: 'apiKey.tokenHash' }) },
+    })
+    const app = createApp({ db, principal: keyed })
+    app.services.register(buildService({
+      name: 'notes',
+      async find(ctx: ServiceContext) { return (ctx.locals.db as any).note.findMany({}) },
+    }))
+    const stamp = async () => (await db.asSystem().apiKey.findUnique({ where: { id: made.id } })).lastUsedAt
+    const use   = () => asKey('k1', () => app.service('notes').find({}))
+
+    expect(await stamp()).toBeNull()
+    await use()
+    const first = await stamp()
+    expect(new Date(first).getTime()).toBe(now.getTime())
+
+    now = new Date(now.getTime() + 3 * 60_000)
+    await use()
+    expect(await stamp()).toBe(first)
+
+    now = new Date(now.getTime() + 2 * 60_000)
+    await use()
+    expect(new Date(await stamp()).getTime()).toBe(now.getTime())
+  })
+
+  test('a model without the column is read as before', async () => {
+    const db = await seeded()
+    const { app } = await appWith(db)
+    const rows = rowsOf(await holding('live-one', () => app.service('answers').find({})))
+    expect(rows.map(r => r.answer)).toEqual(['one'])
+  })
+})

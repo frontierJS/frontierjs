@@ -47,6 +47,14 @@ export async function run(t) {
   await t.eventually(`document.querySelector('#seen').textContent`, '2500',
     'and 2.5 dinar is handed back as 2500 fils')
 
+  /* ── places: digits past the minor unit (FJS-D1043) ──────────────────── */
+
+  t.is(await t.evaluate(`return document.querySelector('input[name=rate]').value;`),
+    '0.00025000', 'a rate shows its eight places, two of them the cents')
+  await setValue(t, `document.querySelector('input[name=rate]')`, '0.0003')
+  await t.eventually(`document.querySelector('#rate-seen').textContent`, '30000',
+    'and $0.0003 is handed back as 30000')
+
   /* ── the wiring: no control is named anywhere in that form ────────────── */
 
   t.is(await t.evaluate(`

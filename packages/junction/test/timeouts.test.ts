@@ -131,3 +131,50 @@ describe('http.requestTimeout', () => {
     } finally { await t.stop(100) }
   }, 30_000)
 })
+
+// The cap on requests being handled (`FJS-D901`). Sockets have `ws.maxConnections`;
+// HTTP counts what Bun lets it count, which is requests in hand.
+describe('http.maxConcurrentRequests', () => {
+
+  async function held(opts: Opts) {
+    const s = await serve(opts, 400)
+    return s
+  }
+
+  it('refuses the request over the cap with 503, Retry-After and a retryable body', async () => {
+    const { t, url } = await held({ maxConcurrentRequests: 2 })
+    try {
+      const rs = await Promise.all([1, 2, 3].map(() => fetch(url('/slow'))))
+      const statuses = rs.map(r => r.status).sort()
+      expect(statuses).toEqual([200, 200, 503])
+      const refused = rs.find(r => r.status === 503)!
+      expect(refused.headers.get('retry-after')).toBe('1')
+      const body = await refused.json() as Record<string, unknown>
+      expect(body.retryable).toBe(true)
+      expect(body.code).toBe(503)
+      expect(t.stats.response.error).toBe(1)
+    } finally { await t.stop(100) }
+  })
+
+  it('frees the slot when a request ends', async () => {
+    const { t, url } = await held({ maxConcurrentRequests: 1 })
+    try {
+      expect((await fetch(url('/slow'))).status).toBe(200)
+      expect((await fetch(url('/slow'))).status).toBe(200)
+    } finally { await t.stop(100) }
+  })
+
+  it('is off by default', async () => {
+    const { t, url } = await held({})
+    try {
+      const rs = await Promise.all([1, 2, 3, 4].map(() => fetch(url('/slow'))))
+      expect(rs.map(r => r.status)).toEqual([200, 200, 200, 200])
+    } finally { await t.stop(100) }
+  })
+
+  it('is refused at boot when not a positive whole number', () => {
+    expect(() => new HttpTransport({ port: 0, maxConcurrentRequests: 1.5 })).toThrow(/maxConcurrentRequests/)
+    expect(() => new HttpTransport({ port: 0, maxConcurrentRequests: -1 })).toThrow(/maxConcurrentRequests/)
+    expect(() => new HttpTransport({ port: 0, maxConcurrentRequests: 0 })).not.toThrow()
+  })
+})

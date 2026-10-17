@@ -573,7 +573,7 @@ model Order { id Int @id  amount Int @money(field: currency)  currency String  c
     const r = parse(view('revenue Int @money(field: currency)'))
     expect(r.errors).toEqual([])
     const col = r.schema.views[0].fields.find((f: any) => f.name === 'revenue')
-    expect(col.attributes).toEqual([{ kind: 'money', currency: null, field: 'currency' }])
+    expect(col.attributes).toEqual([{ kind: 'money', currency: null, field: 'currency', places: null }])
   })
 
   test('the JSON Schema carries x-money for the view column', () => {

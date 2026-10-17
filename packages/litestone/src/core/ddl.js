@@ -836,13 +836,20 @@ export function searchModels(schema) {
   return schema.models.filter(isSearchModel)
 }
 
+// The one own column a consumer that needs a single column reads off `@@label`
+// (the shared search index's title, the column an `open` set writes typed text
+// to): the first part that is not a hop.
+export function labelColumn(attr) {
+  return attr?.parts?.find(p => !p.via)?.field ?? null
+}
+
 // The title column and the body columns of one model, as SQL column names.
 export function searchColumnsFor(model) {
   const cmap  = columnMapFor(model)
   const fts   = model.attributes.find(a => a.kind === 'fts')
   const label = model.attributes.find(a => a.kind === 'labelField')
-  if (!fts || !label) return null
-  return { title: mapCol(cmap, label.field), body: fts.fields.map(f => mapCol(cmap, f)) }
+  if (!fts || !labelColumn(label)) return null
+  return { title: mapCol(cmap, labelColumn(label)), body: fts.fields.map(f => mapCol(cmap, f)) }
 }
 
 // trigram whatever the models' own tokenizers: a short word is then a match

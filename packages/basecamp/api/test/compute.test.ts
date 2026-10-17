@@ -662,6 +662,32 @@ describe('a machine claims its own credential', () => {
     expect(run.exitCode).toBe(0)
   })
 
+  // The install and its undo are two statements of one footprint, and the
+  // undo is the one nobody runs until the box is being given back.
+  test('every file the install writes, outpost-uninstall removes', async () => {
+    const { installScript, uninstallScript } = await import('../src/providers/compute/enrollment.ts')
+    const install = installScript()
+    const undo    = uninstallScript()
+    expect(install).toContain(`cat > /usr/local/sbin/outpost-uninstall <<'UNINSTALLEOF'\n${undo}UNINSTALLEOF`)
+
+    // Worse undone than kept, and named by the script as left: security
+    // updates, and the drop-in whose removal can turn password login back on.
+    const KEPT    = ['/etc/apt/apt.conf.d/20auto-upgrades', '/etc/ssh/sshd_config.d/10-basecamp.conf']
+    const written = [...install.matchAll(/(?:cat >|-o|-out|-keyout|^\s*>)\s+(\/[^\s;'"]+)/gm)].map(m => m[1])
+    expect(written.length).toBeGreaterThan(8)
+    const unit    = /^UNIT=(\S+)$/m.exec(undo)?.[1] ?? ''
+    const targets = [...undo.matchAll(/^\s*rm -r?f ([^\n]+)$/gm)]
+      .flatMap(m => m[1].replaceAll('$UNIT', unit).split(/\s+/))
+    const removes = (p: string) => targets.some(t => p === t || p.startsWith(`${t}/`))
+    expect(written.filter(p => !KEPT.includes(p) && !removes(p))).toEqual([])
+    expect(KEPT.filter(removes)).toEqual([])
+    for (const p of KEPT) expect(undo).toContain(p)
+
+    const run = Bun.spawnSync(['bash', '-n'], { stdin: new TextEncoder().encode(undo) })
+    expect(run.stderr.toString()).toBe('')
+    expect(run.exitCode).toBe(0)
+  })
+
   // FJS-1762: the install runs as root on every machine, so nothing in it may be
   // whatever an upstream returns that day. Docker comes from a signed apt
   // repository, Bun and the Outpost by a version Basecamp holds.

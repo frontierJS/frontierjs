@@ -47,7 +47,8 @@ export function createAuthPlugin(
   const {
     prefix            = '/auth',
     cookieAuth        = false,
-    loginRateLimit    = { max: 10, window: '15 minutes' },
+    loginRateLimit    = { max: 100, window: '15 minutes' },
+    loginAccountRateLimit = { max: 10, window: '15 minutes' },
     registerRateLimit = { max: 5,  window: '15 minutes' },
     passwordResetRateLimit = { max: 3, window: '15 minutes' },
     magicLinkRateLimit     = { max: 3, window: '15 minutes' },
@@ -64,7 +65,15 @@ export function createAuthPlugin(
   const sessionTtl   = opts.sessionTtl ?? (auth as IAuth & { _sessionTtl?: string })._sessionTtl ?? '30 days'
   const cookieMaxAge = Math.floor(parseTtl(sessionTtl) / 1000)
 
+  // The address bucket is loose, because a school or an office is one address.
+  // This one holds a single account's guesses from a single address; keyed on the
+  // email alone it would let a stranger lock a known user out. Called after the
+  // body is read.
   const loginLimiter    = rateLimitHook(loginRateLimit)
+  const accountLimiter  = rateLimitHook({
+    key: ctx => `${(body(ctx as unknown as TransportContext).email ?? '').trim().toLowerCase()}|${(ctx as unknown as TransportContext).ip}`,
+    ...loginAccountRateLimit,
+  })
   const registerLimiter = rateLimitHook(registerRateLimit)
   const resetLimiter    = rateLimitHook(passwordResetRateLimit)
   const magicLimiter    = rateLimitHook(magicLinkRateLimit)
@@ -93,6 +102,7 @@ export function createAuthPlugin(
     shutdown() {
       cleanup?.stop()
       ;(loginLimiter    as unknown as { dispose?(): void }).dispose?.()
+      ;(accountLimiter  as unknown as { dispose?(): void }).dispose?.()
       ;(registerLimiter as unknown as { dispose?(): void }).dispose?.()
       ;(resetLimiter    as unknown as { dispose?(): void }).dispose?.()
       ;(magicLimiter    as unknown as { dispose?(): void }).dispose?.()
@@ -232,6 +242,7 @@ export function createAuthPlugin(
 
         const { email, password } = body(ctx)
         if (!email)    throw new BadRequest('email is required')
+        accountLimiter(ctx)
         if (!password) throw new BadRequest('password is required')
 
         const result = await auth.login(email, password)
@@ -354,6 +365,7 @@ export function createAuthPlugin(
           loginLimiter(ctx)
 
           const { token, email, code } = body(ctx)
+          if (email && code) accountLimiter(ctx)
           let result
           if (token)              result = await verifyMagicLink.call(auth, { token })
           else if (email && code) result = await verifyMagicLink.call(auth, { email, code })

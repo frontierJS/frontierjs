@@ -49,6 +49,19 @@ refuses to start otherwise: Basecamp registers no target for a plain-http one. I
 the Conduit target, and until that lands Basecamp refuses every release for the
 machine — with a message saying so, rather than a green deploy that ran nothing.
 
+## Taking one off
+
+The install (Basecamp's `installScript()`) writes `/usr/local/sbin/outpost-uninstall`
+beside the unit, so a box carries its own way back whatever happened to the
+Basecamp that enrolled it. `sudo outpost-uninstall` removes the Outpost, its
+credential and its firewall, and leaves the apps it placed running.
+`--purge` also removes those apps and every Docker volume, `/var/lib/outpost`
+with its backups, Docker, Caddy, their apt sources and the Outpost's bun.
+It asks you to type `purge`, or takes `--yes` when there's no terminal. Both
+end by listing what they left on purpose: the sshd drop-in (removing it can
+turn password login back on), chrony, security updates, and the Server row,
+which stays in Basecamp until a person removes it there.
+
 ## The protocol
 
 Basecamp reaches it at `outpost:<server-id>` over Conduit. Every route but

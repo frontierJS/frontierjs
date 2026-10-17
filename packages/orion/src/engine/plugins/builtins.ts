@@ -168,7 +168,7 @@ export const BUILTIN_DESCRIPTORS: NodeTypeDescriptor[] = [
     type:        "data.template",
     category:    "transform",
     label:       "Template",
-    description: "Renders a Mustache-style template string using context values.",
+    description: "Renders a template string, filling each {path} hole from context values.",
     configSchema: {
       type: "object",
       properties: {

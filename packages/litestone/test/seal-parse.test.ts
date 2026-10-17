@@ -111,14 +111,14 @@ model Invoice {
     expect(errors.join('\n')).toContain('@seals stated twice')
   })
 
-  test('an unknown transition attribute names all three that exist', () => {
+  test('an unknown transition attribute names all four that exist', () => {
     const { errors } = parse(`${HEAD}
 model Invoice {
   id    Int      @id
   state DocState
   @@transitions(state, issue: draft -> issued @freezes)
 }`)
-    expect(errors.join('\n')).toContain('@gate, @system and @seals')
+    expect(errors.join('\n')).toContain('@gate, @system, @seals and @stamps')
   })
 
   test('the enum shared block still refuses it, because WHICH children is a model concern', () => {

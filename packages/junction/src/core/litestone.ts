@@ -4365,6 +4365,8 @@ export interface BearerResolver extends SelfDescribedResolver {
   redeem(db: unknown, opts?: RedeemOptions): (ctx: RedeemContext) => Promise<Response>
 }
 
+const LAST_USED_WINDOW_MS = 4 * 60_000
+
 export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
   // Every request carrying the header would otherwise answer 500 *not a table
   // in this schema*; a model's name reads as the right value for this option.
@@ -4479,6 +4481,21 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
     } satisfies ResolvedBearer
     ctx.locals[`${BEARER}:${opts.model}`] = held
     ctx.locals[BEARER] ??= held
+
+    // `redeem()` stamps a cookie bearer once; a header bearer never redeems, so
+    // the column that says whether a stolen key is in use would stay null. One
+    // write per window keeps a hot key off the write path (`FJS-D1140`).
+    if ('lastUsedAt' in row && typeof (sys?.[opts.model] as { update?: unknown } | undefined)?.update === 'function') {
+      const now  = ((db as { $now?: () => Date } | undefined)?.$now ?? (() => new Date()))()
+      const last = row.lastUsedAt == null ? NaN : new Date(row.lastUsedAt as string | number | Date).getTime()
+      if (!(now.getTime() - last < LAST_USED_WINDOW_MS)) {
+        // A refused stamp (a read-only replica, a read inside a transaction)
+        // must not turn a valid key into a failed request.
+        await (sys![opts.model] as { update: (a: Record<string, unknown>) => Promise<unknown> })
+          .update({ where: { id: row.id }, data: { lastUsedAt: now.toISOString() } })
+          .then(() => { row.lastUsedAt = now.toISOString() }, () => {})
+      }
+    }
 
     return Object.fromEntries(
       Object.entries(opts.claims).map(([claim, column]) => [

@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**123 words** — 13 declarations · 71 field attributes · 36 model attributes · 3 move words.
+**124 words** — 13 declarations · 71 field attributes · 36 model attributes · 4 move words.
 
 ## Index
 
@@ -47,6 +47,7 @@ and shows you the diff first.
 **Move words**
 
 - *Hide or lock a value* — [`@seals`](#seals-move)
+- *Record who and when* — [`@stamps`](#stamps-move)
 - *Decide who may* — [`@gate`](#gate-move) · [`@system`](#system-move)
 
 ## Declarations
@@ -1287,9 +1288,9 @@ model Example {
 - **Deeper** — [exact-numbers.md](exact-numbers.md)
 - **See also** — [`@money`](#money-field)
 
-#### `@money` `(<CURRENCY>) | (field: <column>)` <a id="money-field"></a>
+#### `@money` `(<CURRENCY>[, places: <n>]) | (field: <column>[, places: <n>])` <a id="money-field"></a>
 
-An amount, stored as a whole number of minor units. The scale is DERIVED from the currency and is not the author's to pick — JPY has none, USD has two, KWD has three — and the ISO 4217 table is shipped by @frontierjs/toolbelt rather than read off the host, because Intl answers how an amount is DISPLAYED and node and bun disagree about fourteen currencies including the dinar, so a code ISO does not carry is refused at parse rather than silently taking two places. `field:` names a sibling String column holding the code per row, for a shop that takes more than one currency. A bare @money is refused: with no currency there is no scale. Formatting is formatMoney in @frontierjs/toolbelt/units; rounding and splitting a bill are the application's, not the schema's.
+An amount, stored as a whole number of minor units. The scale is DERIVED from the currency and is not the author's to pick — JPY has none, USD has two, KWD has three — and the ISO 4217 table is shipped by @frontierjs/toolbelt rather than read off the host, because Intl answers how an amount is DISPLAYED and node and bun disagree about fourteen currencies including the dinar, so a code ISO does not carry is refused at parse rather than silently taking two places. `field:` names a sibling String column holding the code per row, for a shop that takes more than one currency. A bare @money is refused: with no currency there is no scale. `places: n` is for a rate finer than a cent ($0.00025 a call): the currency still decides the point and n adds digits past its minor unit, so @money(USD, places: 6) is 8 places and the stored integer is the amount times 10^8, capped at 9 places in all and refused beside @scale or @big. Formatting is formatMoney in @frontierjs/toolbelt/units; rounding and splitting a bill are the application's, not the schema's.
 
 ```lite
 model Example {
@@ -1525,9 +1526,9 @@ model Example {
 - **Legal** — in a model
 - **Deeper** — [schema.md](schema.md)
 
-#### `@@label` `(<field>)` <a id="label-model"></a>
+#### `@@label` `(<field> | [<field> | <relation>.<field>, …])` <a id="label-model"></a>
 
-Which column a picker SHOWS for a row of this model. A bare field NAME, like @@index and @@transitions take — a quoted argument is the shape that looks like a caption, and is refused with the spelling it meant. The consumer sorts by this column and searches it with `contains`, so a value the database cannot order and match is refused at parse rather than becoming a list of `1, 2, 3` with nothing saying why. One per model.
+Which column a picker SHOWS for a row of this model. A bare field NAME, like @@index and @@transitions take — a quoted argument is the shape that looks like a caption, and is refused with the spelling it meant. The consumer sorts by this column and searches it with `contains`, so a value the database cannot order and match is refused at parse rather than becoming a list of `1, 2, 3` with nothing saying why. A list is JOINED with " · ", a null part dropped, and an entry may be ONE hop through a to-one relation (`group.name`), read from the far model's column under the same refusals; two hops and a to-many are refused. One per model.
 
 ```lite
 model Example {
@@ -1812,7 +1813,7 @@ model Example {
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`tenancy`](#tenancy-declaration) · [`@@deny`](#deny-model)
 
-#### `@@transitions` `(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) | (<field>, declaredBy: Model, scope: <column>)` <a id="transitions-model"></a>
+#### `@@transitions` `(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …)], …) | (<field>, declaredBy: Model, scope: <column>)` <a id="transitions-model"></a>
 
 A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. `declaredBy:` is the machine a tenant edits: the field is a state's key, the moves are rows of the declaring model — `fromId?` (null is an entry, where a row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin — each move is checked inside the UPDATE's own WHERE, a create names one of its scope's entries or takes the only one, and a move is named for its target. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.
 
@@ -2030,6 +2031,30 @@ model Example {
 
 - **Deeper** — [modeling.md](modeling.md)
 - **See also** — [`@@transitions`](#transitions-model) · [`@sealed`](#sealed-field) · [`@immutable`](#immutable-field)
+
+### Record who and when
+
+#### `@stamps` `(<column>, …)` <a id="stamps-move"></a>
+
+The move records WHEN it was made: the named DateTime columns get the clock in the move's own UPDATE, the way @updatedAt does, whether the move was made by transition(id, name) or by an update that lands it. The column is the engine's, so a payload naming it is refused by name; a direct transition() cannot leave it null, and a @@check requiring it holds in the same statement. Move-keyed, so two moves into one state can stamp different columns.
+
+```lite
+enum DocState {
+  draft
+  issued
+  void
+}
+
+model Example {
+  id Int @id
+  state DocState @default(draft)
+  issuedAt DateTime?
+  @@transitions(state, issue: draft -> issued @stamps(issuedAt))
+}
+```
+
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@@transitions`](#transitions-model) · [`@updatedAt`](#updatedat-field)
 
 ### Decide who may
 

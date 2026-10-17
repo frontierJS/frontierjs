@@ -250,8 +250,11 @@ const hostsOf = (r) => (r.match ?? []).flatMap(m => m.host ?? []).map(h => Strin
 
 // ─── the admin API, as scripts for the target's own shell ─────────────────────
 
-/** Prints the response headers, a blank line, then the body. */
-export const readConfigScript = () => `curl -s -D - ${CADDY_ADMIN}/config/`
+/**
+ * Prints the response headers, a blank line, then the body. Exits 0 when
+ * nothing answers, so `parseConfigRead` says so rather than the shell.
+ */
+export const readConfigScript = () => `curl -s -D - ${CADDY_ADMIN}/config/ || true`
 
 /** The `{ etag, config }` a read answered. Throws when nothing Caddy-shaped came back. */
 export function parseConfigRead(output) {

@@ -305,6 +305,12 @@ The methods that check the password again share a rate limit per account,
 `services: { reauthenticationRateLimit }`, which defaults to login's own
 10 per 15 minutes. Over it is a 429, and the session stays signed in.
 
+Sign-in has two buckets. `loginRateLimit` is per address and loose (100 per 15
+minutes), since a school or an office is one address. `loginAccountRateLimit`
+(10 per 15 minutes) is keyed on the email and the address together, so a spray
+at one account from one address stops there while the rest of the room signs in.
+`/login/challenge` takes the per-address bucket only.
+
 The four that change what the account requires are refused inside a support
 episode. `totpStatus` is not — seeing what somebody sees is what an episode is
 for, and it answers about the subject.

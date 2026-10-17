@@ -278,11 +278,12 @@ function isoDigits(code) {
  *
  * @param {number} minor  a whole number of minor units, e.g. 1299
  * @param {string} currency  ISO 4217
+ * @param {number} [places]  digits past the minor unit, from `@money(USD, places: n)`
  * @returns {number}  the major-unit amount, e.g. 12.99
  */
-export function fromMinor(minor, currency) {
+export function fromMinor(minor, currency, places = 0) {
   const n = asNumber(minor)
-  const scale = 10 ** minorUnits(currency)
+  const scale = 10 ** (minorUnits(currency) + places)
   if (!Number.isFinite(n)) return NaN
   return n / scale
 }
@@ -304,13 +305,14 @@ export function fromMinor(minor, currency) {
  *
  * @param {number} major  e.g. 12.99
  * @param {string} currency  ISO 4217
+ * @param {number} [places]  digits past the minor unit, from `@money(USD, places: n)`
  * @returns {number}  minor units, e.g. 1299
  */
-export function toMinor(major, currency) {
+export function toMinor(major, currency, places = 0) {
   const n = asNumber(major)
   if (!Number.isFinite(n))
     throw new Error(`toMinor: ${JSON.stringify(major)} is not a finite number of ${String(currency).toUpperCase()}`)
-  return Math.round(n * 10 ** minorUnits(currency))
+  return Math.round(n * 10 ** (minorUnits(currency) + places))
 }
 
 /*

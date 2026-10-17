@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**123 words** — 13 declarations · 71 field attributes · 36 model attributes · 3 move words.
+**124 words** — 13 declarations · 71 field attributes · 36 model attributes · 4 move words.
 
 ## Declarations
 
@@ -69,7 +69,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@version` | Record who and when |  | on a model's field · on a trait's field |  |  |
 | `@big` | Shape the table |  | on a model's field · on a trait's field |  |  |
 | `@scale` | Shape the table | (<places>) | on a model's field · on a trait's field · on a view column |  |  |
-| `@money` | Shape the table | (<CURRENCY>) \| (field: <column>) | on a model's field · on a trait's field · on a view column |  |  |
+| `@money` | Shape the table | (<CURRENCY>[, places: <n>]) \| (field: <column>[, places: <n>]) | on a model's field · on a trait's field · on a view column |  |  |
 | `@unit` | Shape the table | (<symbol>) | on a model's field · on a type's field · on a trait's field · on a view column |  |  |
 | `@point` | Shape the table | (<latKey>, <lngKey>) |  |  |  |
 | `@vector` | Shape the table | (<dimensions>) |  |  |  |
@@ -118,7 +118,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@arc` | Shape the table | ([field, …][, optional: true]) |  |  |  |
 | `@@relator` | Shape the table | ([field, …], once \| many \| many: <column>) |  |  |  |
 | `@@map` | Shape the table | ("table_name") | in a model |  |  |
-| `@@label` | Shape the table | (<field>) |  |  | parses as `labelField` |
+| `@@label` | Shape the table | (<field> \| [<field> \| <relation>.<field>, …]) |  |  | parses as `labelField` |
 | `@@external` | Shape the table |  |  |  |  |
 | `@@noStrict` | Shape the table |  |  |  |  |
 | `@@fts` | Shape the table | ([field, …][, tokenize: unicode61\|ascii\|porter\|trigram]) | in a model | tokenize: unicode61 · ascii · porter · trigram |  |
@@ -136,7 +136,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@deny` | Decide who may | ('read'\|…, <expression>[, message]) |  |  |  |
 | `@@scope` | Decide who may | (<name>, <expression>) |  |  |  |
 | `@@tenant` | Decide who may | (<column> \| none \| via: parent) |  | mode: none |  |
-| `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |
+| `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …)], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |
 | `@@auth` | Wire it to the app |  |  |  |  |
 | `@@person` | Wire it to the app | [(child)] |  | kind: child |  |
 | `@@trail` | Wire it to the app | (<database>[, reads: false][, writes: false]) |  |  |  |
@@ -154,6 +154,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@gate` | Decide who may | (<0-9>) |  |  |  |
 | `@system` | Decide who may |  |  |  |  |
 | `@seals` | Hide or lock a value |  |  |  |  |
+| `@stamps` | Record who and when | (<column>, …) |  |  |  |
 
 ## Positions
 

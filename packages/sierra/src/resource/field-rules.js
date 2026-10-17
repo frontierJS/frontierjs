@@ -696,6 +696,7 @@ function _builtinControl(rule) {
       task:          'quantify',
       currency:      rule['x-money'].currency,
       currencyField: rule['x-money'].field,
+      places:        rule['x-money'].places,
     }
   }
 
@@ -1045,6 +1046,7 @@ function _builtinDisplay(rule) {
     display: 'money',
     currency:      rule['x-money'].currency,
     currencyField: rule['x-money'].field,
+    places:        rule['x-money'].places,
   }
   if (rule['x-scale'] != null) return { display: 'scale', scale: rule['x-scale'] }
 
@@ -1359,6 +1361,17 @@ export function labelFieldInfo(fields, fallback = 'id', declared = null) {
   // client `readOnly`, which the scan below skips by design. It is also absent
   // from a create-mode registry, and a picker reads it off a row.
   if (typeof declared === 'string' && declared) return { field: declared, source: 'declared' }
+
+  // A list (`@@label([group.name, label])`): each entry an own column or one hop
+  // `relation.column`. `field` is the first own column, the one a sort and a
+  // narrowing of the list can lean on; `parts` is what the label is joined from.
+  if (Array.isArray(declared) && declared.length) {
+    const parts = declared.map(p => {
+      const [via, far] = p.includes('.') ? p.split('.') : [null, p]
+      return { via, field: far }
+    })
+    return { field: parts.find(p => !p.via)?.field ?? fallback, source: 'declared', parts }
+  }
 
   // `alt` is the conventional columns BELOW the chosen one: a row whose `name`
   // is empty (a User who never gave one) is still identified by its `email`.

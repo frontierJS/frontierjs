@@ -136,6 +136,17 @@ export interface HttpTransportOptions {
    * settles, the way caravan announces an orphaned job attempt.
    */
   requestTimeout?: number  // ms, default off
+  /**
+   * Requests being handled at once before the next is refused 503 with
+   * `Retry-After`, before any work is done for it. Bun offers no accept/close
+   * hook, so an idle keep-alive socket cannot be counted; requests in hand is
+   * what can be, which is why this is not called `maxConnections`. A WebSocket
+   * upgrade is not counted — `ws.maxConnections` bounds those, and the two are
+   * never summed.
+   *
+   * 0 or absent means unlimited: only an operator knows what the box holds.
+   */
+  maxConcurrentRequests?: number
   ddos?: {
     enabled:    boolean
     limit:      number     // requests per window
@@ -376,6 +387,11 @@ export class HttpTransport {
         `It is the runtime's own bound and 255 is its ceiling; for a longer request, set ` +
         `http.requestTimeout, which this app answers itself.`
       )
+    }
+
+    const cap = this._opts.maxConcurrentRequests
+    if (cap !== undefined && (!Number.isInteger(cap) || cap < 0)) {
+      throw new Error(`http.maxConcurrentRequests must be a whole number, 0 for unlimited (got ${cap}).`)
     }
 
     // GC: prune expired DDoS counters every window interval so the map
@@ -638,6 +654,17 @@ export class HttpTransport {
   }
 
   private async _handle(req: Request, server: ReturnType<typeof Bun.serve>): Promise<Response> {
+    const cap = this._opts.maxConcurrentRequests
+    if (cap && this._inFlight >= cap && req.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
+      this.stats.response.error++
+      return new Response(
+        JSON.stringify({
+          name: 'ServerBusy', code: 503, retryable: true,
+          message: `This server is handling ${cap} requests already. Try again shortly.`,
+        }),
+        { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '1' } }
+      )
+    }
     this._inFlight++
     try {
       const bound = this._opts.requestTimeout

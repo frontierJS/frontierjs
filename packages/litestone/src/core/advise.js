@@ -581,11 +581,14 @@ export const RULES = [
       for (const model of schema.models ?? []) {
         const attr = modelAttr(model, 'labelField')
         if (!attr) continue
-        const f = (model.fields ?? []).find(x => x.name === attr.field)
+        // A list drops a null part and shows the rest, so only a lone own column can leave a blank row.
+        if (attr.parts.length !== 1 || attr.parts[0].via) continue
+        const name = attr.parts[0].field
+        const f = (model.fields ?? []).find(x => x.name === name)
         if (!f || !isOptional(f)) continue
         out.push({
-          model: model.name, field: attr.field,
-          message: `${model.name}.${attr.field} is the @@label and is optional, so a row without one ` +
+          model: model.name, field: name,
+          message: `${model.name}.${name} is the @@label and is optional, so a row without one ` +
             `shows blank in every picker. Make it required, give it a @default, or point @@label at a ` +
             `column that is always there.`,
         })

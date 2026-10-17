@@ -927,7 +927,10 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // and this is the other question. Emitted on every mode, because which column
   // identifies a row does not depend on whether you are writing one.
   const labelAttr = model.attributes.find(a => a.kind === 'labelField')
-  if (labelAttr) result['x-label-field'] = labelAttr.field
+  if (labelAttr) {
+    const spelled = labelAttr.parts.map(p => p.via ? `${p.via}.${p.field}` : p.field)
+    result['x-label-field'] = spelled.length === 1 && !labelAttr.parts[0].via ? spelled[0] : spelled
+  }
 
   // ── x-templates ────────────────────────────────────────────────────────────
   // The column `@@hasTemplates` marks a template with. Every write leaves a
@@ -1391,7 +1394,11 @@ function applyValidators(schema, attributes) {
         // and one held per row in a sibling column. The scale is NOT resolved
         // here: for `field:` it is not knowable from the schema, and a number
         // that is right for most rows is worse than an absent one.
+        // `places` rides only where stated: it is the digits past the
+        // currency's minor unit, and a reader adds it to the exponent it
+        // already derives from the code.
         schema['x-money'] = attr.currency ? { currency: attr.currency } : { field: attr.field }
+        if (attr.places) schema['x-money'].places = attr.places
         break
 
       // Beside `x-money` for its reason, and carrying the same two facts it

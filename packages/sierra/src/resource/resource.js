@@ -419,7 +419,13 @@ const WEAK_LABEL = new Set(['scan', 'fallback'])
 // it, skipping a blank one. `??` alone passes `''` through, and a picker
 // labelled with an empty string is an option nobody can find. Undefined when
 // none is readable, so each caller keeps its own last resort.
-function labelOf(row, shown, alt = []) {
+function labelOf(row, shown, alt = [], parts = null) {
+  if (parts) {
+    const text = parts
+      .map(p => p.via ? row?.[p.via]?.[p.field] : row?.[p.field])
+      .filter(v => v != null && v !== '')
+    return text.length ? text.join(' · ') : undefined
+  }
   for (const col of [shown, ...alt]) {
     const v = row?.[col]
     if (v != null && v !== '') return v
@@ -443,6 +449,14 @@ function labelOf(row, shown, alt = []) {
 // again. A screen wanting another arrangement states `directives`, which turns
 // the head off along with the rest of the ordering.
 const RECENT_HEAD = 5
+
+// What a list label reads off a row beyond its own columns: the relations a hop goes through.
+const populateFor = (parts) => parts?.some(p => p.via) ? { populate: [...new Set(parts.filter(p => p.via).map(p => p.via))] } : {}
+
+// A term narrows on every part a person reads, a hop as a filter on its relation.
+const searchOver = (parts, shown, term) => parts
+  ? { OR: parts.map(p => p.via ? { [p.via]: { [p.field]: { contains: term } } } : { [p.field]: { contains: term } }) }
+  : { [shown]: { contains: term } }
 
 function optionsOrder(order, shown) {
   return order?.length ? order.map(o => ({ [o.field]: o.dir })) : shown
@@ -2501,7 +2515,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * an id falls through to the id, because `17 (unavailable)` is worse than the
    * bug being fixed.
    */
-  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, labelAlt: alt = [], isArray, strength = 'required', within = null, scope }) {
+  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, labelAlt: alt = [], labelParts: parts = null, isArray, strength = 'required', within = null, scope }) {
     const held = record?.[fieldName]
     if (held == null) return answer
     const wanted = (isArray ? (Array.isArray(held) ? held : [held]) : [held]).filter(v => v != null)
@@ -2520,10 +2534,10 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // what it does not find goes on to be judged below.
     if (answer.truncated !== false) {
       return service
-        .getOptions({ ...(within ?? {}), [valueField]: { in: missing } }, { limit: missing.length, ...(scope ? { scope } : {}) })
+        .getOptions({ ...(within ?? {}), [valueField]: { in: missing } }, { limit: missing.length, ...(scope ? { scope } : {}), ...populateFor(parts) })
         .then(res => {
           const rows = Array.isArray(res) ? res : (res?.data ?? [])
-          return new Map(rows.map(r => [r?.[valueField], labelOf(r, shown, alt)]))
+          return new Map(rows.map(r => [r?.[valueField], labelOf(r, shown, alt, parts)]))
         })
         // Unknown is not a member: the judgement below is the one that cannot
         // pass a refused value.
@@ -2535,14 +2549,14 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
             ...members.map(v => ({ value: v, label: listed.get(v) ?? v })),
             ...(answer.options ?? []),
           ] }
-          return rest.length ? judgeMissing(withMembers, rest, { service, valueField, shown, alt, strength }) : withMembers
+          return rest.length ? judgeMissing(withMembers, rest, { service, valueField, shown, alt, parts, strength }) : withMembers
         })
     }
-    return judgeMissing(answer, missing, { service, valueField, shown, alt, strength })
+    return judgeMissing(answer, missing, { service, valueField, shown, alt, parts, strength })
   }
 
   /** The held values that are NOT in the list, shown and marked by strength. */
-  function judgeMissing(answer, missing, { service, valueField, shown, alt = [], strength = 'required' }) {
+  function judgeMissing(answer, missing, { service, valueField, shown, alt = [], parts = null, strength = 'required' }) {
 
     // Whether a held value outside the list is REFUSED is the binding's
     // strength, not the list's (`FJS-2501`). `required` refuses it. `open`
@@ -2561,10 +2575,10 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const blind = () => missing.map(v => mark(v, humanize(v) || String(v), true))
 
     return service
-      .getOptions({ [valueField]: { in: missing } }, { limit: missing.length })
+      .getOptions({ [valueField]: { in: missing } }, { limit: missing.length, ...populateFor(parts) })
       .then(res => {
         const rows = Array.isArray(res) ? res : (res?.data ?? [])
-        const byValue = new Map(rows.map(r => [r?.[valueField], labelOf(r, shown, alt)]))
+        const byValue = new Map(rows.map(r => [r?.[valueField], labelOf(r, shown, alt, parts)]))
         // Pinned at the FRONT: it is the value in the box, and a person should
         // not have to scroll a capped list to find out why it reads oddly.
         return { ...answer, options: [
@@ -2746,6 +2760,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const related        = relatedResource(relatedService, ref.model)
     const shown          = labelField ?? related.labelField
     const alt            = labelField ? [] : (related.labelAlt ?? [])
+    const parts          = labelField ? null : (related.labelParts ?? null)
 
     // A guessed display column is the failure this cannot fix and can stop
     // hiding: *Ada, Ada, Ada* down a list of people, or `1, 2, 3`, both of
@@ -2769,18 +2784,18 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const filter = {
       ...pickFilter(rule, app ? app.user : session.user),
       ...(query ?? {}),
-      ...(search ? { [shown]: { contains: String(search) } } : {}),
+      ...(search ? searchOver(parts, shown, String(search)) : {}),
     }
 
     const pending = related.service
-      .getOptions(filter, directives ?? { limit, orderBy: optionsOrder(null, shown) })
+      .getOptions(filter, directives ?? { limit, orderBy: optionsOrder(null, shown), ...populateFor(parts) })
       .then(res => {
         const rows = Array.isArray(res) ? res : (res?.data ?? [])
         const opts = rows.map(row => ({
           value: row?.[ref.field],
           // The id is the honest last resort: a blank option is unpickable and
           // a guessed label is worse than a number.
-          label: labelOf(row, shown, alt) ?? String(row?.[ref.field]),
+          label: labelOf(row, shown, alt, parts) ?? String(row?.[ref.field]),
         }))
 
         // An array answer carries no envelope, so there is no total to read —
@@ -2790,7 +2805,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
         return withUnavailable(
           { options: opts, total, truncated: total == null ? null : total > opts.length },
-          { fieldName, record, service: related.service, valueField: ref.field, labelField: shown, labelAlt: alt,
+          { fieldName, record, service: related.service, valueField: ref.field, labelField: shown, labelAlt: alt, labelParts: parts,
             isArray: rule?.type === 'array', within: query ?? null },
         )
       })
@@ -3204,7 +3219,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     version, versionField: versionOf, conflict,
     formFields, columns, declaredFields, summary, children, filters, options, sealedFields, requiredFields, declined,
     withheld: withheldFor,
-    labelField: labelInfo.field, labelSource: labelInfo.source, labelAlt: labelInfo.alt,
+    labelField: labelInfo.field, labelSource: labelInfo.source, labelAlt: labelInfo.alt, labelParts: labelInfo.parts,
     fieldErrors, context, hooks: addHooks,
   }
 }
