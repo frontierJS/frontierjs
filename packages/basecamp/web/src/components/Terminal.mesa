@@ -1,7 +1,7 @@
 <script>
   // Terminal.mesa — a shell in a pinned checkout, drawn by xterm.js.
   //
-  // The socket is api/src/core/workbench-terminal.ts. With tmux on the API's
+  // The socket is api/src/plugins/workbench-terminal.ts. With tmux on the API's
   // machine, closing this (a tab switch, a reload) detaches rather than ends the
   // shell, so the next mount lands in the same session with its scrollback.
   //
@@ -102,7 +102,7 @@
   .workbench-terminal { flex: 1; min-block-size: 0; gap: var(--space-xs); }
   .workbench-terminal-screen {
     flex: 1;
-    min-block-size: 16rem;
+    min-block-size: var(--terminal-min-block, 16rem);
     padding: var(--space-xs);
     background: var(--surface-sunken);
     color: var(--ink);

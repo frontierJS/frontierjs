@@ -1,4 +1,4 @@
-// src/core/workbench-terminal.ts — a shell in a pinned checkout, over a socket.
+// src/plugins/workbench-terminal.ts — a shell in a pinned checkout, over a socket.
 //
 // The Terminal tab of a workbench card: a real terminal (Bun's own PTY, no
 // native addon) in the pin's folder, as the operator's own account, streamed
@@ -24,9 +24,9 @@
 // this machine is refused at the upgrade, before the credential is read.
 
 import { LEVELS }                from '@frontierjs/litestone'
-import { localMachineRefusal }   from './env.ts'
-import { basecampGateLevel }     from './gate.ts'
-import { shellArgv }             from './workbench-shell.ts'
+import { localMachineRefusal }   from '../core/env.ts'
+import { basecampGateLevel }     from '../core/gate.ts'
+import { shellArgv }             from '../core/workbench-shell.ts'
 import type { App }              from '@frontierjs/junction'
 
 const ORIGIN_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', 'tauri.localhost'])

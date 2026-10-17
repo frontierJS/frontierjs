@@ -91,7 +91,7 @@ db/       schema.lite (43 models declared, 50 with the two imported fragments;
           litestone.config.js · test/ · README.md (the depth doc)
 api/      index.ts (the entry — start() and nothing else) · config/
 api/src/  app.ts (builds the app, never starts it) · services/ ·
-          jobs/ (*.job.ts) · notifications/ · providers/ · core/
+          jobs/ (*.job.ts) · notifications/ · providers/ · plugins/ · core/
           notifications/ is one file per NotificationKind and the FILE NAME is
           the persisted type — so the directory, the enum and kinds.ts are
           three spellings of one vocabulary, held together by api/test/notify.test.ts
@@ -109,7 +109,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           core/delivery.ts is the ONE owner of how a NotificationChannel is
           reached; `channels.test`, the alert evaluator and the `basecamp.page`
           flow node are its callers
-          core/automations.ts is what this app contributes to orion — one node,
+          plugins/automations.ts is what this app contributes to orion — one node,
           `basecamp.page`, which reads the channel as the FLOW'S OWNER and hands
           it to core/delivery.ts. A dry run answers which channel it would have
           reached and moves no `lastDeliveryAt`
@@ -153,7 +153,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           own log — never `children.js`, whose in-memory table a `bun --watch`
           restart would lose with the server still up. The checkout's OWN fli,
           and no FLI_PORT_* or PORT of this API's; Unpin and Archive stop it.
-          core/workbench-terminal.ts is the Terminal tab: `/ws/terminal/{pin}`
+          plugins/workbench-terminal.ts is the Terminal tab: `/ws/terminal/{pin}`
           (under /ws/ because both proxies forward that prefix as a socket),
           Bun's own PTY in the pin's folder, xterm.js in web/src/components/
           Terminal.mesa. Same refusal and ADMINISTRATOR as the service, a key

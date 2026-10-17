@@ -149,11 +149,11 @@ describe('a mod', () => {
 })
 
 describe('a booth', () => {
-  let booth, line
+  let booth
 
   beforeEach(async () => {
     booth = await sys.room.create({ data: { slug: `booth-${sam.id}-${ana.id}`, name: 'A booth', pairLoId: sam.id, pairHiId: ana.id } })
-    line  = await as(sam).message.create({ data: { roomId: booth.id, body: 'psst' } })
+    await as(sam).message.create({ data: { roomId: booth.id, body: 'psst' } })
   })
 
   test('is read by its pair, line and room, and by nobody else', async () => {

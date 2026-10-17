@@ -493,7 +493,7 @@ describe('submitInPlace — a submit the view dispatches itself', () => {
   })
 
   test('removed, it hears nothing', () => {
-    const heard = form('<button id="save">Save</button>')
+    form('<button id="save">Save</button>')
     submitInPlace(doc)()
     const click = new MouseEvent('click', { bubbles: true, cancelable: true })
     doc.getElementById('save').dispatchEvent(click)

@@ -8,7 +8,7 @@
 import { createClient }    from '../src/index.js'
 import { parseFile, generateDDLForDatabase } from '../src/index.js'
 import { splitStatements } from '../src/core/migrate.js'
-import { existsSync, unlinkSync, rmSync, readFileSync } from 'fs'
+import { existsSync, unlinkSync, rmSync } from 'fs'
 import { Database } from 'bun:sqlite'
 
 const __dir      = import.meta.dir

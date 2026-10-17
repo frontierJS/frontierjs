@@ -15,8 +15,7 @@
  * - A stool is a cell of the bar piece's own, walked onto from the floor
  *   below it (`seats` with `solo`), so the route ends ON the stool.
  */
-import { spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 

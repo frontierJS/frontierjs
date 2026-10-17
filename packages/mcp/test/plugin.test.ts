@@ -406,7 +406,7 @@ describe('the answer is structured: the object a view reads is the text an agent
   test('a find carries the list envelope whole, kind and data, as the socket hands it', async () => {
     const r = result(await callTool('orders_find', { query: { customerId: 50 } }, 'staff'))
     expect(r.structuredContent?.kind).toBe('list')
-    expect((r.structuredContent?.data as Array<{ id: number }>).map(o => o.id)).toEqual([51])
+    expect((r.structuredContent?.data as Array<{ id: number }> | undefined)?.map(o => o.id)).toEqual([51])
     expect(r.structuredContent).toEqual(JSON.parse(r.content![0].text))
   })
 
@@ -423,7 +423,7 @@ describe('the answer is structured: the object a view reads is the text an agent
     expect(r.result?.isError).toBe(true)
     expect(r.result?.structuredContent).toEqual(wire)
     expect(r.result?.structuredContent?.code).toBe(http.status)
-    expect(r.result?.content![0].text).toBe(wire.message)
+    expect(r.result?.content?.[0].text).toBe(wire.message)
     // The half `toFieldErrors` reads: without it the message lands on the form, not under the field.
     expect(r.result?.structuredContent?.data).toEqual([expect.objectContaining({ path: ['reference'] })])
   })

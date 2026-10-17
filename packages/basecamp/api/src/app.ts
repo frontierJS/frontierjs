@@ -27,7 +27,7 @@ import { mcpPlugin }         from '@frontierjs/mcp'
 import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
 import { createWorkbench }           from './core/workbench.ts'
-import { workbenchTerminal }         from './core/workbench-terminal.ts'
+import { workbenchTerminal }         from './plugins/workbench-terminal.ts'
 import { LEVELS }                                from '@frontierjs/litestone'
 import { apply }                                 from '@frontierjs/litestone/migrations'
 import type { WriteEvent }                       from '@frontierjs/litestone'
@@ -48,7 +48,7 @@ import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './
 import { agentGuard, apiKeyGuard, apiKeyUsage, narrowForAgent } from './services/api-keys/scopes.ts'
 import { slugify }                        from './core/resource.ts'
 import { basecampGateLevel, roleForLevel } from './core/gate.ts'
-import { basecampNodes }                  from './core/automations.ts'
+import { basecampNodes }                  from './plugins/automations.ts'
 import { restoreSchedules }          from './services/jobs/job-schedule.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
 import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './channels.ts'
@@ -914,7 +914,7 @@ export async function buildBasecampApp(
   })
 
   // The workbench's Terminal tab — a shell in a pinned checkout, behind the
-  // same refusal as the workbench service (core/workbench-terminal.ts).
+  // same refusal as the workbench service (plugins/workbench-terminal.ts).
   app.configure(function terminalRoute() { workbenchTerminal(app) })
 
   app.configure(function staticRoutes(a) {

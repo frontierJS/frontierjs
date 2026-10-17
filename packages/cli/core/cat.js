@@ -161,7 +161,7 @@ export function blockCommentLines(text) {
   return lines
 }
 
-const JSON_TOKEN = /("(?:[^"\\\n]|\\.)*")|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(true|false|null)\b|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|([{}[\],:])|(\s+)|([^])/g
+const JSON_TOKEN = /("(?:[^"\\\n]|\\.)*")|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(true|false|null)\b|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|([{}[\],:])|(\s+)|([\s\S])/g
 const JSON_PAINT = { key: 36, string: 32, number: 33, literal: 35, comment: 2 }
 
 /**

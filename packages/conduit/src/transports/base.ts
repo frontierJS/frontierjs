@@ -4,6 +4,7 @@
 // ============================================================
 
 import { signRequest } from '@frontierjs/toolbelt/signature'
+// biome-ignore lint/suspicious/noShadowRestrictedNames: credentials.ts's export, not Object.prototype.valueOf
 import { valueOf } from '../credentials.ts'
 import { CredentialError, MintError } from '../types.ts'
 import type {

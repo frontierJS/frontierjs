@@ -5,7 +5,7 @@ import { Database } from 'bun:sqlite'
 import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { backupSqliteTo, readBackupStamp } from '../src/core/backup.js'
+import { backupSqliteTo } from '../src/core/backup.js'
 
 // A handle whose serialize() fails the way a 4.5 GB file does.
 function oomOnSerialize(db: Database) {

@@ -16,7 +16,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createApp }                        from '../index.ts'
-import { buildService, buildBase }         from '../src/core/service.ts'
+import { buildService }                     from '../src/core/service.ts'
 import { createLogger }                                   from '../src/core/logger.ts'
 import { $, currentCall, enterCall, announcingService }   from '../src/core/context.ts'
 import { createClient }                                   from '../../litestone/src/index.js'

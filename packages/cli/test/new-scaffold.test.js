@@ -149,7 +149,7 @@ test('--template web-only writes web/ and nothing that needs an API or a databas
   expect(readFileSync(join(app, 'web/src/routes/_module.mesa'), 'utf8')).not.toContain('sierra/resource')
   expect(readFileSync(join(app, 'web/src/routes/index.mesa'), 'utf8')).not.toContain('/api/health')
   expect(readFileSync(join(app, 'web/src/main.js'), 'utf8')).not.toContain('db/schema.lite')
-  expect(readFileSync(join(app, 'AGENTS.md'), 'utf8')).not.toContain('schema.lite\`: **Data')
+  expect(readFileSync(join(app, 'AGENTS.md'), 'utf8')).not.toContain('schema.lite`: **Data')
   expect(readFileSync(join(app, 'README.md'), 'utf8')).not.toMatch(/api\/|schema\.lite/)
 }, 60_000)
 

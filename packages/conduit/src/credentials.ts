@@ -20,6 +20,7 @@ import type { CredentialCaller, CredentialResolver, Material } from './types.ts'
 // none: an unset env var read through a shell default is the common way to
 // end up with one. An `expires_at` that is not a finite number is refused by
 // name here rather than read as never-expiring by `withCache`.
+// biome-ignore lint/suspicious/noShadowRestrictedNames: a module export, not Object.prototype.valueOf
 export function valueOf(m: Material | null | undefined): string | null {
   if (m === null || m === undefined) return null
   if (typeof m === 'string') return m === '' ? null : m

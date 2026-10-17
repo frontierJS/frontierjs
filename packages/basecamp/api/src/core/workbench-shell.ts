@@ -1,7 +1,7 @@
 // src/core/workbench-shell.ts — which shell a pin's Terminal tab attaches to.
 //
 // One spelling of the tmux session, read by the socket that attaches to it
-// (core/workbench-terminal.ts) and by Unpin and Archive, which end it: a shell
+// (plugins/workbench-terminal.ts) and by Unpin and Archive, which end it: a shell
 // left running in a worktree Archive removed sits in a folder that is gone.
 //
 // The tmux server is basecamp's own (`-L basecamp`): the operator's

@@ -114,3 +114,6 @@ registers.html
 
 # A scene-editor drive edits a copy of Haven's web surface made beside the editor.
 packages/haven/editor/.copy-*/
+
+# The bench copies each fixture app here and builds it in place.
+packages/sierra/bench/dist/

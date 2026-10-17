@@ -24,7 +24,7 @@
 // directions. That is the pair of tests below that matter.
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { createApp, createService, healthPlugin, defaultConfig } from '../index.ts'
+import { createApp, healthPlugin, defaultConfig } from '../index.ts'
 import { manifestPlugin } from '../src/plugins/manifest/index.ts'
 import { buildBase, buildService, callService } from '../src/core/service.ts'
 

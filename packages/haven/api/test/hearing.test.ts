@@ -20,7 +20,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 interface Sock { ws: WebSocket, frames: any[], callId: number }
 
-let env: any, sys: any, square: any, sam: any, ana: any, bob: any, cy: any, mod: any
+let env: any, sys: any, square: any, sam: any, ana: any, bob: any, mod: any
 const open: Sock[] = []
 
 beforeEach(async () => {
@@ -34,7 +34,7 @@ beforeEach(async () => {
   sam = await signIn(env.port, 'sam')
   ana = await signIn(env.port, 'ana')
   bob = await signIn(env.port, 'bob')
-  cy  = await signIn(env.port, 'cy')
+  await signIn(env.port, 'cy')
   mod = await signIn(env.port, 'mod')
 })
 

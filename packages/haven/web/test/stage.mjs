@@ -68,7 +68,7 @@ let loader = null
  * drive gives for a saved copy.
  */
 export async function mountScene(name) {
-  loader ??= await installTerminalLoader({ root: WEB })
+  await (loader ??= installTerminalLoader({ root: WEB }))
   const path = name.endsWith('.mesa') ? name : join(WEB, 'src/scenes', `${name}.mesa`)
   const Component = (await import(path)).default
   const { renderer, renderOnce, captureCharFrame } = await tui.createHeadlessRenderer({ width: 100, height: 30 })

@@ -101,7 +101,7 @@ describe('a mint sent through a second target', () => {
     expect(r.error?.retryable).toBe(true)
     expect(r.error?.indeterminate).toBeUndefined()
     expect(r.error?.message).toContain(`mint through '${TOKEN}' failed: server_error`)
-    expect((r.error?.raw as ConduitError).target).toBe(TOKEN)
+    expect((r.error?.raw as ConduitError | undefined)?.target).toBe(TOKEN)
     expect(apiSeen).toHaveLength(0)
     // The endpoint's own failure reached the observer under its own name.
     expect(errors.some(e => e.target === TOKEN && e.kind === 'server_error')).toBe(true)
@@ -131,7 +131,7 @@ describe('a mint sent through a second target', () => {
     const r = await conduit.send({ target: API, method: 'GET', path: '/x' })
     expect(r.error?.kind).toBe('auth_failed')
     expect(r.error?.retryable).toBe(false)
-    expect((r.error?.raw as ConduitError).kind).toBe('client_error')
+    expect((r.error?.raw as ConduitError | undefined)?.kind).toBe('client_error')
   })
 
   it('a resolver that throws anything else is still a permanent auth_failed', async () => {

@@ -88,6 +88,7 @@ textarea.field {
   field-sizing: content;
   resize:       vertical;
   min-height:   4lh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: the 4lh above is the fallback, see the header */
   min-height:   calc(attr(rows type(<number>), 4) * 1lh);
   max-height:   16lh;
   font-family:  var(--font-primary);

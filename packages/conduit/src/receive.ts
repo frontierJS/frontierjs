@@ -28,6 +28,7 @@
 // junction's door (`createApp({ credentials })`), not this.
 // ============================================================
 
+// biome-ignore lint/suspicious/noShadowRestrictedNames: credentials.ts's export, not Object.prototype.valueOf
 import { valueOf } from './credentials.ts'
 import type { BrokerFraming, BrokerMessage, ConduitStore, CredentialResolver, Receipt } from './types.ts'
 

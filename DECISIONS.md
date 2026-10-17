@@ -11634,13 +11634,6 @@ Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A
 
 The paper's recommendation, taken as written: B makes six controls fake a DOM event to reach a function in the same component tree, and a click-committed value has no element to be honest about; A is Invariant 4's shape (add to the owner) and a control outside a form calls nothing. Either way a control that forgets is silent, so the ruling carries its artefact: a kit drive spec that commits a value in every form control inside a hand-written `<Form>` and asserts `dirty` and a retired server error, walking the component list the way `test/attributes.mjs` does.
 
-### <a id="fjs-d987"></a>2026-10-13 · `FJS-D987` — The terminal shell's keys are modal — Focus sets the mode: a text field is INSERT and takes every key but Esc; anywhere else, or a field after Esc, is NORMAL, where h j k l are the arrows, a j or k the page leaves alone moves focus, `i` types into the field again, and a letter types nothing. The mode line sits in a footer under the page.
-
-Picked by the owner over **vim proper** (start NORMAL everywhere, `i` or Enter to type), **list screen only**, and **later**. Auto-insert costs no key before typing and keeps every drive that types into a field working unchanged; what it gives up is j and k leaving a field without an Esc or a Tab first.
-
-**The mode is Sierra's shell's, not Mesa's runtime's.** The runtime delivers keys as a browser does (`FJS-D809`), and a browser has no modes. What the runtime added is what a DOM handler already reads — `tagName`, and `type` on an input — and `footerOf(renderer)`, a strip beside the scrolling page, because a mode line at the top scrolls away on any list taller than the screen. **Esc out of INSERT is stopped at the window**, so a dialog closes and the shell goes back on the second Esc, not the first. **The arrows stay the route's**: a Haven scene walks on them, so the shell moves focus with them only between its own list buttons. **h j k l are renamed to the arrows before the runtime makes a keydown of them**, in a key listener `shell.js` adds ahead of the first mount, so a route reading arrows walks on vim's keys without knowing a mode exists, and the browser, which has none, is untouched. A route that acts on an arrow prevents it; that is what tells the shell a j was a step and not a move of focus.
-*Lives in:* `packages/sierra/src/terminal/Shell.mesa` (the keys), `shell.js` (h j k l as the arrows, and j or k moving focus), `Mode.mesa` (the line), `packages/mesa/src/runtime-terminal.js` (`footerOf`, `tagName`). *Proved by:* `example/web/test/verify-tui.mjs` (the modes), `packages/haven/web/test/verify-explore.mjs` (h j k l walking), `packages/mesa/test/terminal/specs/footer.spec.mjs` (the footer, `tagName`, `type`).
-
 ### <a id="fjs-d979"></a>2026-10-14 · `FJS-D979` — Q4 — A box that hides what is under it — One opaque treatment lowered in `runtime-terminal.js`, so no color is written in a `.mesa`.
 
 Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **B** was picked over **A** (leave it to the app, the same attach helper as Q3).
@@ -11660,6 +11653,13 @@ The paper's recommendation, taken as written: placement by cell is a thing only 
 Asked in [`IDEAS/app-shell.md`](IDEAS/app-shell.md) § Open questions. **B** was picked over **A** (`sidebar` and `rail` only. The topbar apps keep their own `_module.mesa` over `ui/nav`).
 
 The paper's recommendation, taken as written: the scaffold, example and portal are topbar shells, and Phase 4 cannot put a new app on the Shell without one. Portal's overflow menu is the single-caller field the contract leaves out.
+
+### <a id="fjs-d987"></a>2026-10-13 · `FJS-D987` — The terminal shell's keys are modal — Focus sets the mode: a text field is INSERT and takes every key but Esc; anywhere else, or a field after Esc, is NORMAL, where h j k l are the arrows, a j or k the page leaves alone moves focus, `i` types into the field again, and a letter types nothing. The mode line sits in a footer under the page.
+
+Picked by the owner over **vim proper** (start NORMAL everywhere, `i` or Enter to type), **list screen only**, and **later**. Auto-insert costs no key before typing and keeps every drive that types into a field working unchanged; what it gives up is j and k leaving a field without an Esc or a Tab first.
+
+**The mode is Sierra's shell's, not Mesa's runtime's.** The runtime delivers keys as a browser does (`FJS-D809`), and a browser has no modes. What the runtime added is what a DOM handler already reads — `tagName`, and `type` on an input — and `footerOf(renderer)`, a strip beside the scrolling page, because a mode line at the top scrolls away on any list taller than the screen. **Esc out of INSERT is stopped at the window**, so a dialog closes and the shell goes back on the second Esc, not the first. **The arrows stay the route's**: a Haven scene walks on them, so the shell moves focus with them only between its own list buttons. **h j k l are renamed to the arrows before the runtime makes a keydown of them**, in a key listener `shell.js` adds ahead of the first mount, so a route reading arrows walks on vim's keys without knowing a mode exists, and the browser, which has none, is untouched. A route that acts on an arrow prevents it; that is what tells the shell a j was a step and not a move of focus.
+*Lives in:* `packages/sierra/src/terminal/Shell.mesa` (the keys), `shell.js` (h j k l as the arrows, and j or k moving focus), `Mode.mesa` (the line), `packages/mesa/src/runtime-terminal.js` (`footerOf`, `tagName`). *Proved by:* `example/web/test/verify-tui.mjs` (the modes), `packages/haven/web/test/verify-explore.mjs` (h j k l walking), `packages/mesa/test/terminal/specs/footer.spec.mjs` (the footer, `tagName`, `type`).
 
 ### <a id="fjs-d672"></a>2026-10-13 · `FJS-D672` — Who sorts when a `<Table>` has no `onsort`: the Table locally, the caller only, or an explicit opt-in — The Table sorts locally when no `onsort` is stated: it owns the sort, so `rows` reach the row snippet ordered by `orderBy`. `onsort` stays the "the sort lives elsewhere (URL, server)" switch. A caller that sorts server-side behind `bind:orderBy` is sorted a second time, harmlessly for a stable sort on the same key. The comparator is a fact with one owner, `comparatorFor`/`compareValues` in junction's `query-values.ts`; `@frontierjs/ui` depends on toolbelt only, so that comparator would have to move down to `@frontierjs/toolbelt/query` first. The case it gets wrong in silence is a Table over ONE PAGE of a server list with no `onsort` (basecamp's `apps/index.mesa` and `deployments/index.mesa` pass `rows={list.rows}` and no `onsort`): it sorts the page, not the list. The switch already exists, `onsort={list.sort}` (ELA's `forms`, `actions`, `integrations` screens), so a list handle's Table states it.
 
@@ -14064,17 +14064,17 @@ Asked in [`IDEAS/performance-regression-watch.md`](IDEAS/performance-regression-
 
 The paper's recommendation, taken as written: A/B against a base ref is a question about this repo, and the timing half is useful without valgrind. B waits for an app that asks.
 
-### <a id="fjs-d1073"></a>2026-10-15 · `FJS-D1073` — What shape is Basecamp's workbench stage — A grid of panes, rows × columns, every cell the same size; the owner arranges it in a Layout mode where the panes fold to cards and the grid is drawn one column wider and one row taller, each empty cell a box that takes a dropped tile or starts a new chat in a checkout it asks for. The two-pane split handle goes; zoom stays as one cell filling the stage.
-
-Asked in chat, for the workbench screen. **A** (replace the two-pane stage, split and zoom with the grid) was picked over **B** (the grid capped at 3 × 3) and **C** (keep two panes, Layout only reorders them). For what a box starts, **new chat in a checkout picked from the dock** was picked over **new chat in the freshest checkout** and **pin a new checkout**. For the grid's shape, **uniform rows × columns** was picked over **per-row columns**.
-
-One mechanism rather than two: a split is the one-row case of a grid, and a cap is a number nobody asked for. An empty trailing row or column is not kept, so docking a pane gives the stage back rather than leaving a hole, and the box a chat starts in asks which checkout because a cell holds a checkout and one checkout holds one cell. Proved by `packages/basecamp/web/test/verify-provision.mjs` § Layout, which replaced the split checks.
-
 ### <a id="fjs-d1070"></a>2026-10-16 · `FJS-D1070` — How are Sierra's bytes per surface counted, and where — `packages/sierra/bench/`: one floor fixture per target (spa, static, widget), counted by cli's `measureSurface` reached by relative path, ratcheted in `bench/bench.baseline.json`, run at the end of sierra's `test` script.
 
 Asked in [`IDEAS/performance-regression-watch.md`](IDEAS/performance-regression-watch.md) § Open questions. **A** was picked over **B** (No sierra bench: the vanilla floor scaffolds with `--site --widgets` and `BUILT_SURFACES` gains `widgets`. One baseline, but it stays a by-hand run of a full scaffold until `--floor` is wired into CI), **C** (Mesa's runner copied: sierra counts its own bytes, in gzip. Three measurers in two units).
 
 The paper's recommendation, taken as written: one measurer and one unit for every built surface, and a rise is caught the day it lands, which `FJS-D532` already ruled for mesa.
+
+### <a id="fjs-d1073"></a>2026-10-15 · `FJS-D1073` — What shape is Basecamp's workbench stage — A grid of panes, rows × columns, every cell the same size; the owner arranges it in a Layout mode where the panes fold to cards and the grid is drawn one column wider and one row taller, each empty cell a box that takes a dropped tile or starts a new chat in a checkout it asks for. The two-pane split handle goes; zoom stays as one cell filling the stage.
+
+Asked in chat, for the workbench screen. **A** (replace the two-pane stage, split and zoom with the grid) was picked over **B** (the grid capped at 3 × 3) and **C** (keep two panes, Layout only reorders them). For what a box starts, **new chat in a checkout picked from the dock** was picked over **new chat in the freshest checkout** and **pin a new checkout**. For the grid's shape, **uniform rows × columns** was picked over **per-row columns**.
+
+One mechanism rather than two: a split is the one-row case of a grid, and a cap is a number nobody asked for. An empty trailing row or column is not kept, so docking a pane gives the stage back rather than leaving a hole, and the box a chat starts in asks which checkout because a cell holds a checkout and one checkout holds one cell. Proved by `packages/basecamp/web/test/verify-provision.mjs` § Layout, which replaced the split checks.
 
 ### <a id="fjs-d1009"></a>2026-10-15 · `FJS-D1009` — When CI's structure phase grades a rule an app's `check-baseline.json` never adopted, is the debt adopted with a reasoned count or lowered to zero before CI goes green — Adopt the brand-new rules with `fli check --adopt` and a `//` reason each (css-raw-literal 33, css-class-collision 5, example app-layout 7), and fix the two +1 regressions, since a count that moved is a new site rather than old debt. CI goes green today; each adopted key is a ceiling that falls as rows move them.
 
@@ -14218,6 +14218,30 @@ Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **B** was picked 
 
 The paper's recommendation, taken as written: the cli declares no framework package today and `dev:tui` already resolves the runtime from the app it runs; B keeps that and versions the client with its server.
 
+### <a id="fjs-d969"></a>2026-10-14 · `FJS-D969` — Q4 — Who ticks the box — The session, by instruction; the UI reparses and offers a manual tick when the box did not move.
+
+Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (the UI, on the result event).
+
+The paper's recommendation, taken as written: the findings under the step need the session anyway, and a box the UI ticks can tick a step that was not done.
+
+### <a id="fjs-d968"></a>2026-10-14 · `FJS-D968` — Q3 — Does a step commit — Never; the step prompt says so, and the owner commits off the Diff tab.
+
+Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (a pin option, *commit each step*).
+
+The paper's recommendation, taken as written: no option, and it matches the rule that a session commits only when asked.
+
+### <a id="fjs-d967"></a>2026-10-14 · `FJS-D967` — Q2 — What is Next: a fresh session, or a fork of the last one — A fresh chat; the plan file is the carry.
+
+Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (`--fork-session`, which keeps the context and its cost).
+
+The paper's recommendation, taken as written: a fresh session is the flow being replaced, and Fork stays as the escape hatch when the context is worth paying for.
+
+### <a id="fjs-d966"></a>2026-10-14 · `FJS-D966` — Q1 — Where does a plan live — A markdown file in the checkout, at a path the owner gives: `IDEAS/<slug>.md` in this repo, `PLAN.md` at an app's root.
+
+Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (a file under `WORKBENCH_DIR`, beside the pin's logs).
+
+The paper's recommendation, taken as written: the session edits it natively, it diffs and commits with the work, and a plan already is a file in this repo.
+
 ### <a id="fjs-d984"></a>2026-10-13 · `FJS-D984` — Invariant 13 governs styling, not content: a terminal scene's palette is its pixels, and hex is how it says them.
 
 Asked in [`IDEAS/haven.md`](IDEAS/haven.md) 4.1. **Content** was picked over **Tones** (a palette names `@frontierjs/css` tones and a terminal theme maps them) and **Leave open**. A Haven scene is an art grid plus a `paint` grid naming `palette` entries (`packages/haven/web/src/scenes/`), drawn into an OpenTUI frame buffer by `web/src/paint.js`. A hearth needs four oranges and a fountain three blues, and the tone set has one of each, so tones would narrow the drawing to the vocabulary built for UI chrome. An image's pixels were never styled by tones either; a palette is that, typed by hand. The line is the thing drawn: chrome around a scene (a bubble, the input line, the roster) stays in tones and treatments, and a cell of the art is content. The nine, answered after the build and named as late: the paint grid is a second drawing beside the art, so `web/test/scenes.test.js` pins its shape and its letters; nothing in the suite asserts that a color reaches the screen (the drive reads characters), which is recorded as unenforced.
@@ -14249,30 +14273,6 @@ The check's two halves were already named in the plan, and the test is `FJS-D604
 - **Silence.** A kit rule that stops firing is caught by `test/check.mjs`, which builds a fixture site and asserts each group's findings; a preset's replacement rule is caught by ksite's `check:site` reading the same 9 errors as before the move. The one thing nothing grades is a preset rule that returns nothing on a site where it should fire — that is the preset's own test to write, and ksite's `checks.test.js` is it for the schema rule.
 
 Adjudication: *batteries vs. smallness* — the check is a battery of site-kit and stays severable from Sierra, which has no site check and gains none here (`FJS-D608`: a Sierra owner is earned by a second consumer that is not a site-kit site). Tier: Map — `site-kit/README.md` and its `CLAUDE.md` state the key and the command; this ruling is the why.
-
-### <a id="fjs-d969"></a>2026-10-14 · `FJS-D969` — Q4 — Who ticks the box — The session, by instruction; the UI reparses and offers a manual tick when the box did not move.
-
-Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (the UI, on the result event).
-
-The paper's recommendation, taken as written: the findings under the step need the session anyway, and a box the UI ticks can tick a step that was not done.
-
-### <a id="fjs-d968"></a>2026-10-14 · `FJS-D968` — Q3 — Does a step commit — Never; the step prompt says so, and the owner commits off the Diff tab.
-
-Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (a pin option, *commit each step*).
-
-The paper's recommendation, taken as written: no option, and it matches the rule that a session commits only when asked.
-
-### <a id="fjs-d967"></a>2026-10-14 · `FJS-D967` — Q2 — What is Next: a fresh session, or a fork of the last one — A fresh chat; the plan file is the carry.
-
-Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (`--fork-session`, which keeps the context and its cost).
-
-The paper's recommendation, taken as written: a fresh session is the flow being replaced, and Fork stays as the escape hatch when the context is worth paying for.
-
-### <a id="fjs-d966"></a>2026-10-14 · `FJS-D966` — Q1 — Where does a plan live — A markdown file in the checkout, at a path the owner gives: `IDEAS/<slug>.md` in this repo, `PLAN.md` at an app's root.
-
-Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (a file under `WORKBENCH_DIR`, beside the pin's logs).
-
-The paper's recommendation, taken as written: the session edits it natively, it diffs and commits with the work, and a plan already is a file in this repo.
 
 ### <a id="fjs-d961"></a>2026-10-13 · `FJS-D961` — Where a site's hand-written redirects live, and who reads them — Sierra merges the app's own `_redirects` (what reaches the output from its public directory, or from a site-kit site's `content/settings/_redirects`) with every route's `redirect:`, the routes' rules first; one path sent two places stops the build.
 

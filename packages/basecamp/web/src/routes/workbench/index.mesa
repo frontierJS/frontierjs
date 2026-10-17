@@ -1932,7 +1932,7 @@ title: Workbench
     display: grid;
     place-items: center;
     min-block-size: 6rem;
-    border: 2px dashed var(--tint-rule);
+    border: calc(var(--border-width) * 2) dashed var(--tint-rule);
     border-radius: var(--card-radius);
     color: var(--ink-mute);
   }

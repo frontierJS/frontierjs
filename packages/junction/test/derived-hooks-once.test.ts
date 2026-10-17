@@ -13,7 +13,7 @@
 // not ours, and letting it suppress the real one is fail-open on access.
 
 import { describe, test, expect } from 'bun:test'
-import { createService, buildBase, buildService } from '../src/core/service.ts'
+import { buildBase, buildService } from '../src/core/service.ts'
 import { isDerivedHook } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 

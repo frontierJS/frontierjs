@@ -26,7 +26,7 @@
 // leak onto the service alongside it.
 
 import { describe, test, expect } from 'bun:test'
-import { buildBase, createService, requiredScope, scopeRefusal, buildService } from '../src/core/service.ts'
+import { buildBase, requiredScope, scopeRefusal, buildService } from '../src/core/service.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 
 const authenticate = () => {}

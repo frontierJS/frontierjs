@@ -15,7 +15,8 @@
       "!**/.jetty-cache",
       "!**/*.html",
       "!**/*.svelte",
-      "!brand/font"
+      "!brand/font",
+      "!packages/litestone/src/tools/studio.css"
     ]
   },
   "overrides": [

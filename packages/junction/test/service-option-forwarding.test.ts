@@ -16,7 +16,7 @@
 // handoff so a future option cannot be added to one side only.
 
 import { describe, test, expect } from 'bun:test'
-import { createService, buildBase, buildService } from '../src/core/service.ts'
+import { buildBase, buildService } from '../src/core/service.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 
 type Log = string[]

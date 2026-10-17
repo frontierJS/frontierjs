@@ -11,7 +11,7 @@
 
 import { DERIVED_HOOKS, buildService } from '../src/core/service.ts'
 import { describe, it, expect, spyOn } from 'bun:test'
-import { createService, callService }               from '../src/core/service.ts'
+import { callService }               from '../src/core/service.ts'
 import { bridge }                                   from '../src/transport/bridge.ts'
 import type { CallStartEvent, TelemetryEvent, HookTelemetryEvent } from '../src/core/service.ts'
 import { asRecord }                                 from './helpers.ts'

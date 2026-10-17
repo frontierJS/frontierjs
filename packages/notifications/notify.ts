@@ -96,6 +96,7 @@ export async function notify(
   if (key !== undefined && (typeof key !== 'string' || key === '')) {
     throw new Error(
       `[notifications] "${notificationType}" key() answered ${JSON.stringify(key)}; ` +
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the message quotes a key for the caller to write
       'a delivery key is a non-empty string naming what makes two sends the same — `order:${order.id}`.'
     )
   }

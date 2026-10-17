@@ -2350,7 +2350,7 @@ describe('a protected environment — a developer deploys to it and does not res
     const open      = await putVar(dev)
     const appOwn    = await putVar(prod, { appId: app.id })
     const nameOf    = async (id: string) => (await sys.environment.findUnique({ where: { id } })).name
-    const valueOf   = async (id: string) => (await sys.variable.findUnique({ where: { id } }))?.value
+    const valueAt   = async (id: string) => (await sys.variable.findUnique({ where: { id } }))?.value
 
     // An update and a delete FILTER (the deny compiles into the WHERE, so the
     // statement matches no row); a create is the one policy that throws.
@@ -2361,21 +2361,21 @@ describe('a protected environment — a developer deploys to it and does not res
       .rejects.toThrow(/Protected environments/)
     expect(await sys.variable.findFirst({ where: { environmentId: prod.id, key: 'DATABASE_URL' } })).toBeNull()
     await developer.variable.update({ where: { id: held.id }, data: { value: 'y', version: held.version } })
-    expect(await valueOf(held.id)).toBe('v')
+    expect(await valueAt(held.id)).toBe('v')
     await developer.variable.delete({ where: { id: held.id } })
-    expect(await valueOf(held.id)).toBe('v')
+    expect(await valueAt(held.id)).toBe('v')
 
     // Not protected, and an app's own variable: the developer's, as before.
     await developer.environment.update({ where: { id: dev.id }, data: { name: 'renamed', version: dev.version } })
     expect(await nameOf(dev.id)).toBe('renamed')
     await developer.variable.update({ where: { id: open.id }, data: { value: 'y', version: open.version } })
     await developer.variable.update({ where: { id: appOwn.id }, data: { value: 'y', version: appOwn.version } })
-    expect([await valueOf(open.id), await valueOf(appOwn.id)]).toEqual(['y', 'y'])
+    expect([await valueAt(open.id), await valueAt(appOwn.id)]).toEqual(['y', 'y'])
 
     await admin.environment.update({ where: { id: prod.id }, data: { name: 'renamed', version: prod.version } })
     expect(await nameOf(prod.id)).toBe('renamed')
     await admin.variable.update({ where: { id: held.id }, data: { value: 'y', version: held.version } })
-    expect(await valueOf(held.id)).toBe('y')
+    expect(await valueAt(held.id)).toBe('y')
     db.$close()
   })
 })

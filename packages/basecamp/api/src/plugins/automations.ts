@@ -1,4 +1,4 @@
-// src/core/automations.ts — the nodes this app contributes to orion.
+// src/plugins/automations.ts — the nodes this app contributes to orion.
 //
 // Orion runs a workspace's flows as the member who owns them. What it cannot do
 // on its own is reach a `NotificationChannel`: the credential is in a `Secret`,
@@ -17,7 +17,7 @@
 
 import type { JunctionActor, INodeImplementation, NodeContext, NodeResult, PluginManifest } from '@frontierjs/orion/plugin'
 import type { App }         from '@frontierjs/junction'
-import { deliverToChannel, type Message } from './delivery.ts'
+import { deliverToChannel, type Message } from '../core/delivery.ts'
 
 const SEVERITIES = ['info', 'warning', 'critical'] as const
 
