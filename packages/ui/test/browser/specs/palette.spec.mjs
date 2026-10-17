@@ -302,4 +302,11 @@ export async function run(t) {
     const cs  = getComputedStyle(cap);
     return cs.borderBottomWidth !== '0px' && cs.backgroundColor !== 'rgba(0, 0, 0, 0)';
   `), 'a shortcut hint is the shipped <kbd> keycap, not a local one')
+
+  // FJS-2606 / FJS-D905: an open palette belongs to the person who opened it;
+  // sierra announces a change of person on `document`.
+  await t.evaluate(`window.commandPalette.show(); return true;`)
+  t.ok(await t.evaluate(`return await waitVisible('.fjs-cp-panel');`), 'the palette is open')
+  await t.evaluate(`document.dispatchEvent(new CustomEvent('fjs:session-changed')); return true;`)
+  await t.eventually(`!!document.querySelector('.fjs-cp-panel')`, false, 'a change of person closes it')
 }

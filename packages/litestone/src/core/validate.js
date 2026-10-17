@@ -696,6 +696,9 @@ export function validateField(fieldName, value, attributes) {
       case 'gte':
         pass       = VALIDATORS[kind](value, attr.value)
         defaultMsg = DEFAULT_MESSAGES[kind](attr.value)
+        // The bound compares the stored integer, and the message is the one
+        // place a reader of the error learns which side of the point it is on.
+        if (attributes.some(a => a.kind === 'scale' || a.kind === 'money')) defaultMsg += ' minor units'
         break
 
       case 'minItems':

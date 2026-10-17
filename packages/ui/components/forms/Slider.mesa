@@ -46,8 +46,8 @@
   // The platform's two names, as `Input` has them: `oninput` per value a drag
   // or key produces, `onchange` once when the gesture ends. A page with an
   // undo history keys on `onchange`, or one drag is a hundred steps.
-  export let oninput  = undefined    // ({ value } | { start, end }) => void
-  export let onchange = undefined    // ({ value } | { start, end }) => void
+  export let oninput  = undefined    // (value | [start, end]) => void
+  export let onchange = undefined    // (value | [start, end]) => void
 
   // The enclosing <Form> and this field's rule, both undefined standing alone.
   // A slider inside a <Form> showed no server error and no schema label — and
@@ -223,7 +223,7 @@
     }
   }
 
-  const payload = () => range ? { start, end } : { value }
+  const payload = () => range ? [start, end] : value
 
   // The handles are divs, so a drag or an arrow key emits no event a form can
   // key on: the form is told by name.

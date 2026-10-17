@@ -487,3 +487,25 @@ describe('a count names its tenants under row tenancy (FJS-1741)', () => {
     for (const e of got) expect('tenants' in e).toBe(false)
   })
 })
+
+// ─── the row as it stood before (FJS-1742) ───────────────────────────────
+
+describe('an update announces the row as it stood before', () => {
+
+  test('a single-row update carries `before`, shaped like `result`', async () => {
+    await db.widget.create({ data: { id: 1, name: 'a' } })
+    seen.length = 0
+    await db.widget.update({ where: { id: 1 }, data: { name: 'b' } })
+    await settle()
+    const e = seen.find(x => x.event === 'update') as Ev & { before?: { name?: string } }
+    expect(e.before?.name).toBe('a')
+    expect((e.result as { name: string }).name).toBe('b')
+  })
+
+  test('a bulk write and a create carry none: absent means unknown', async () => {
+    await db.widget.create({ data: { id: 1, name: 'a' } })
+    await db.widget.updateMany({ where: { id: 1 }, data: { name: 'b' } })
+    await settle()
+    for (const e of seen) expect('before' in e).toBe(false)
+  })
+})

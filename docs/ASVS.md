@@ -117,7 +117,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 
 | ID | L | Grade | Where | Note |
 | --- | --- | --- | --- | --- |
-| V6.1.1 | 1 | partial | `packages/auth/types.ts:491`, `packages/junction/README.md:743` | Option types give the limits and defaults. Nothing written on stuffing or malicious lockout, and THREATS B12 does not exist yet |
+| V6.1.1 | 1 | partial | `packages/auth/types.ts:491`, `packages/junction/README.md:743` | Option types give the limits and defaults. THREATS B12 names the throttle and the bcrypt cost. Nothing written on credential stuffing or malicious lockout |
 | V6.1.2 | 2 | none | `packages/auth/auth.ts:337` | No context-specific word list anywhere |
 | V6.1.3 | 2 | partial | `packages/auth/README.md:115`, `packages/auth/CLAUDE.md:223` | Pathways are spread across README sections. No single list of pathway against strength |
 | V6.2.1 | 1 | covered | `packages/auth/auth.ts:336`, `packages/auth/test/password-policy.test.ts:20` | Default minimum 8. One grader serves register, reset and change |
@@ -132,21 +132,21 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V6.2.10 | 2 | covered | `packages/auth/auth.ts:337` | Passwords never expire and are never forced to rotate |
 | V6.2.11 | 2 | none | `packages/auth/auth.ts:337` | There is no word list to apply |
 | V6.2.12 | 2 | none | `packages/auth/auth.ts:337` | No breached-password check |
-| V6.3.1 | 1 | partial | `packages/auth/plugin.ts:50`, `packages/junction/src/core/hooks-resilience.ts:150`, `packages/auth/test/audit-routes-ratelimit.test.ts:23` | 10 per 15 min per IP only, per process (FJS-D1193). No per-account budget. Lockout is left to `onLoginFailed` · [FJS-3198](../ISSUES.md#fjs-3198) |
+| V6.3.1 | 1 | partial | `packages/auth/plugin.ts:50`, `packages/junction/src/core/hooks-resilience.ts:150`, `packages/auth/test/audit-routes-ratelimit.test.ts:23` | THREATS B12. 10 per 15 min per IP only, per process (FJS-D1193). No per-account budget. Lockout is left to `onLoginFailed` · [FJS-3198](../ISSUES.md#fjs-3198) |
 | V6.3.2 | 1 | covered | `packages/cli/commands/auth/dev-admin.md:132`, `packages/cli/commands/project/new.md:447` | A fresh app seeds no user. `dev-admin` refuses production |
 | V6.3.3 | 2 | partial | `packages/auth/auth.ts:415`, `packages/auth/test/totp-login.test.ts:160` | TOTP is opt-in per person, with no switch to require it. No FIDO or passkey for L3 |
 | V6.3.4 | 2 | covered | `packages/auth/auth.ts:415`, `packages/auth/test/magic-link.test.ts:187`, `packages/auth/test/oauth-routes.test.ts:339` | Password, magic link and OAuth all end at `firstFactorProven`, so TOTP is owed on each |
 | V6.3.5 | 3 | none | `packages/auth/auth.ts:433` | `login.challenged` and `login.failed` go to the trail. Nobody is notified |
 | V6.3.6 | 3 | partial | `packages/auth/auth.ts:754`, `packages/auth/README.md:200` | Off by default. Turning on magic link makes the mailbox the only factor |
 | V6.3.7 | 3 | partial | `packages/auth/auth.ts:180`, `packages/auth/test/credential-events.test.ts:68` | `onCredentialChanged` is built, but the scaffold never wires it, so a fresh app tells nobody · [FJS-3200](../ISSUES.md#fjs-3200) |
-| V6.3.8 | 3 | partial | `packages/auth/auth.ts:994`, `packages/auth/test/flows.test.ts:79`, `packages/auth/test/audit-routes-reset-timing.test.ts:50` | Login and reset are equalized. `/auth/register` answers 409 for an address that has an account · [FJS-3197](../ISSUES.md#fjs-3197) |
+| V6.3.8 | 3 | partial | `packages/auth/auth.ts:994`, `packages/auth/test/flows.test.ts:79`, `packages/auth/test/audit-routes-reset-timing.test.ts:50` | THREATS B12. Login and reset are equalized. `/auth/register` answers 409 for an address that has an account · [FJS-3197](../ISSUES.md#fjs-3197) |
 | V6.4.1 | 1 | covered | `packages/auth/auth.ts:1834`, `packages/auth/test/audit-data-token-lifecycle.test.ts:60` | No generated passwords. An invitation is a 256-bit token, single-use, 1 hour |
 | V6.4.2 | 1 | covered | `packages/auth/db/user.lite` | No hint or secret-question column or flow exists |
 | V6.4.3 | 2 | covered | `packages/auth/auth.ts:1929`, `packages/auth/test/audit-data-token-lifecycle.test.ts:96` | A reset issues no session, so the next login still owes TOTP. No test combines reset with TOTP |
 | V6.4.4 | 2 | partial | `packages/auth/services.ts:631`, `packages/auth/test/account-recovery.test.ts` | `resetTotp` is SYSADMIN-only. Identity proofing is neither defined nor documented |
 | V6.4.5 | 3 | none | `packages/auth/auth.ts:2091` | No reminder before an API key expires. Nothing else expires |
 | V6.4.6 | 3 | partial | `packages/auth/services.ts:741` | No admin-started reset for an existing person. `people.invite` gives the operator the token that sets the first password |
-| V6.5.1 | 2 | covered | `packages/auth/auth.ts:1090`, `packages/auth/test/totp-login.test.ts` § concurrent attempts | The step is spent by a conditional update, so of two concurrent requests with one code only one signs in. `verifyTotp` inside a session does not consume, by design (`packages/auth/CLAUDE.md`) · [FJS-3185](../ISSUES.md#fjs-3185) |
+| V6.5.1 | 2 | covered | `packages/auth/auth.ts:1090`, `packages/auth/test/totp-login.test.ts` § concurrent attempts | THREATS B12. The step is spent by a conditional update, so of two concurrent requests with one code only one signs in. `verifyTotp` inside a session does not consume, by design (`packages/auth/CLAUDE.md`) · [FJS-3185](../ISSUES.md#fjs-3185) |
 | V6.5.2 | 2 | partial | `packages/auth/auth.ts:379` | Recovery codes (~49 bits) are stored as keyed HMAC-SHA256, not a salted password hash |
 | V6.5.3 | 2 | covered | `packages/auth/totp.ts:68`, `packages/auth/test/audit-data-token-lifecycle.test.ts:129` | `randomBytes` / `randomInt` for every secret, seed and code |
 | V6.5.4 | 2 | covered | `packages/auth/totp.ts:191`, `packages/auth/crypto.ts:104` | Recovery codes ~49 bits. Magic-link code is 6 digits |
@@ -156,7 +156,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V6.5.8 | 3 | covered | `packages/auth/auth.ts:1083`, `packages/auth/CLAUDE.md:85` | Uses the server clock `sys.$now()`. A caller-supplied `at` is refused by rule |
 | V6.6.1 | 2 | n.a. | — | No SMS or phone OTP, so the L3 absence holds |
 | V6.6.2 | 2 | covered | `packages/auth/auth.ts:669`, `packages/auth/test/magic-link.test.ts:128` | One live link per address. The code is checked against the row its address names |
-| V6.6.3 | 2 | covered | `packages/auth/plugin.ts:354`, `packages/auth/auth.ts:708`, `packages/auth/test/magic-link.test.ts` § concurrent codes | Per-IP limiter plus a 5-miss ceiling, each guess claimed by a conditional update before the code is compared, so a burst cannot pass it · [FJS-3185](../ISSUES.md#fjs-3185) |
+| V6.6.3 | 2 | covered | `packages/auth/plugin.ts:354`, `packages/auth/auth.ts:708`, `packages/auth/test/magic-link.test.ts` § concurrent codes | THREATS B12. Per-IP limiter plus a 5-miss ceiling, each guess claimed by a conditional update before the code is compared, so a burst cannot pass it · [FJS-3185](../ISSUES.md#fjs-3185) |
 | V6.6.4 | 3 | n.a. | — | No push MFA |
 | V6.7.1 | 3 | n.a. | `packages/auth/PROJECT_STATE.md:129` | No certificate or WebAuthn authenticator. Passkeys are listed as open |
 | V6.7.2 | 3 | n.a. | — | No challenge-response authenticator |
@@ -265,7 +265,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V11.3.2 | 1 | covered | `packages/litestone/src/core/encryption.js:125` | AES-256-GCM is the one cipher |
 | V11.3.3 | 2 | covered | `packages/litestone/src/core/encryption.js:220`, `packages/litestone/test/write-claims.test.ts` | GCM tag checked on read and on a client-supplied envelope at write |
 | V11.4.1 | 1 | covered | `packages/toolbelt/src/signature/signature.js:77`, `packages/auth/totp.ts:94` | SHA-256 throughout; HMAC-SHA1 only in RFC 6238 TOTP; cli SHA-1 is cache keys |
-| V11.4.2 | 2 | covered | `packages/auth/crypto.ts:11`, `packages/auth/test/flows.test.ts:105` | bcrypt cost 12, rehashed at login when cost differs |
+| V11.4.2 | 2 | covered | `packages/auth/crypto.ts:11`, `packages/auth/test/flows.test.ts:105` | THREATS B12. bcrypt cost 12, rehashed at login when cost differs |
 | V11.4.3 | 2 | covered | `packages/toolbelt/src/signature/signature.js:77` | SHA-256 for body hash, HMAC and Ed25519; truncated token MAC graded under V11.2.3 |
 | V11.4.4 | 2 | n.a. | — | no key is derived from a password; keys are random hex |
 | V11.5.1 | 2 | partial | `packages/auth/crypto.ts:133`, `packages/junction/src/core/litestone.ts:4478` | state, API keys, reset tokens 256-bit; session token UUIDv4 122 bits, grant cuid about 124 · [FJS-3199](../ISSUES.md#fjs-3199) |

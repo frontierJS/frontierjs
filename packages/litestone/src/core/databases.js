@@ -334,6 +334,63 @@ export function mappedDb(db, columnMap) {
   }
 }
 
+// ─── A tenant read of a @@tenant view ───────────────────────────────────────
+//
+// The view's tenant deny is a WHERE on its projection, and SQLite cannot push
+// one below a window function, a GROUP BY over a CTE or a self-join, so a
+// tenant read computed the view over every tenant's rows first — 122 s for the
+// smallest tenant of a 10M-row table (`FJS-3140`). Here the view is inlined
+// under CTEs that shadow each row-tenanted table with the reader's rows, so
+// `@@sql` reaches them by the tenant index (`FJS-D1149`). At the statement, for
+// the reason `wideDb` gives: the sites that read a view are an enumeration.
+//
+// Every shadow binds the tenant, so the text is one per statement whoever reads
+// and the value never enters it.
+/**
+ * @param {Stmt} stmt
+ * @param {unknown[]} lead
+ * @returns {Stmt}
+ */
+function leadStmt(stmt, lead) {
+  return {
+    get: (/** @type {any[]} */ ...a) => stmt.get(...lead, ...a),
+    all: (/** @type {any[]} */ ...a) => stmt.all(...lead, ...a),
+    run: (/** @type {any[]} */ ...a) => stmt.run(...lead, ...a),
+  }
+}
+
+/**
+ * @param {DbHandle} db
+ * @param {{ ctes: string, binds: number }} shadows  the CTE list, the view's last; `binds` placeholders, each the tenant
+ * @param {() => unknown} tenantOf  the reader's tenant, or null for a read that is not narrowed
+ * @returns {DbHandle}
+ */
+export function narrowedDb(db, shadows, tenantOf) {
+  /** @param {string} sql */
+  const narrow = (sql) => {
+    // An existing WITH takes the shadows at its head, since their binds have to
+    // come first in the text to come first in the arguments.
+    const head = /^\s*WITH\s+(RECURSIVE\s+)?/i.exec(sql)
+    if (head) return `WITH ${head[1] ?? ''}${shadows.ctes}, ${sql.slice(head[0].length)}`
+    return /^\s*SELECT\b/i.test(sql) ? `WITH ${shadows.ctes} ${sql}` : null
+  }
+  /** @param {string} sql @param {(sql: string) => Stmt} open */
+  const statement = (sql, open) => {
+    const tenant = tenantOf()
+    const text   = tenant == null ? null : narrow(sql)
+    return text ? leadStmt(open(text), Array(shadows.binds).fill(tenant)) : open(sql)
+  }
+  return {
+    query:   (/** @type {string} */ sql) => statement(sql, (s) => db.query(s)),
+    prepare: (/** @type {string} */ sql) => statement(sql, (s) => db.prepare(s)),
+    run:     (/** @type {string} */ sql, /** @type {any[]} */ ...params) => db.run(sql, ...params),
+    get $plain()    { return db.$plain ?? db },
+    get $raw()      { return db.$raw },
+    get closed()    { return db.closed },
+    get cacheSize() { return db.cacheSize },
+  }
+}
+
 // The plain handle behind a wide wrapper, for the resolvers that answer for a
 // model of their own.
 /** @param {DbHandle} db */

@@ -43,7 +43,7 @@
   export let required = undefined
   export let disabled = undefined  // undefined = ask the form; false overrides it
   export let layout   = 'stacked'  // 'stacked' | 'inline' | 'segmented'
-  export let onchange = undefined
+  export let onchange = undefined  // (value) => void
 
   // The enclosing <Form> and this field's rule, both undefined standing alone.
   // The group used to wrap itself in a Field only when a `label` prop was

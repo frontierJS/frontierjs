@@ -727,7 +727,10 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   `FJS-786`). The picker cache was the worst of them and not a race at all: it
   never asks again, so the second caller was offered rows their own row policy
   hides, by id and by label. The epoch is bumped on identity and on nothing else,
-  so a second render inside one session is still a hit.
+  so a second render inside one session is still a hit. **The kit's toast, alert
+  and palette stores are the same class in a package this one cannot import**:
+  the same `_identityChanged` dispatches `fjs:session-changed` on `document` and
+  they clear on it (`FJS-2606`, `FJS-D905`).
 - **`presence()` works, and what it CANNOT do is the half to know** (`FJS-811`).
   It bound five channel-suffixed event names junction has never emitted, so the
   module heard nothing for its whole life; frames arrive under their own names —

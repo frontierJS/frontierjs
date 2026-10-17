@@ -4269,8 +4269,9 @@ function expandTenancy(schema) {
     // `claim` rides the attribute so a reader does not have to recover it from
     // the expression tree. buildPolicyMap carries it through, and a system
     // context needs it to answer *is a tenant in scope at all* (FJS-519).
+    // `column` is what a tenant read of a view shadows this table by (FJS-D1149).
     model.attributes.push({
-      kind: 'deny', operations: ['read', 'update', 'delete', 'post-update'], generated: 'tenancy', claim, message,
+      kind: 'deny', operations: ['read', 'update', 'delete', 'post-update'], generated: 'tenancy', claim, column, message,
       expr: { type: 'or', left: noPrincipal, right: mismatch },
     })
     model.attributes.push({
@@ -6832,21 +6833,37 @@ function validate(schema) {
     // `cannot store REAL value in INTEGER column`, at runtime, naming no
     // schema line. The boundary already refuses a fraction a caller SENDS;
     // this is the same rule for the value the schema sends.
+    //
+    // A numeric bound on the same column compares the STORED integer, so
+    // `@scale(4) @lte(100)` caps a percentage at 0.01%. A nonzero bound under
+    // one whole unit is the line whose reading differs from the author's, and
+    // it is refused with the figure the column stores (`FJS-D1063`).
     for (const field of model.fields) {
       const scale = field.attributes.find(a => a.kind === 'scale' || a.kind === 'money')
-      const def   = field.attributes.find(a => a.kind === 'default')
-      const raw = def?.value?.kind === 'number' ? def.value.value : def?.value
-      if (!scale || typeof raw !== 'number' || Number.isInteger(raw)) continue
-      // The suggested value is in the CURRENCY's minor units, which for the yen
-      // is the yen: suggesting `raw * 100` there is advice that is wrong by a
-      // hundred. A per-row currency is not knowable here, so it keeps the
-      // two-place reading.
+      if (!scale) continue
+      // The figures are in the CURRENCY's minor units, which for the yen is the
+      // yen: a fixed 100 is advice that is wrong by a hundred. A per-row
+      // currency is not knowable here, so it keeps the two-place reading.
       let places = scale.places
       if (scale.kind === 'money') {
         try { places = scale.currency ? minorUnits(scale.currency) : 2 }
         catch { places = 2 }
       }
-      const minor  = Math.round(raw * 10 ** (places ?? 2))
+      const whole = 10 ** (places ?? 2)
+      for (const bound of field.attributes) {
+        if (!['gte', 'lte', 'gt', 'lt'].includes(bound.kind)) continue
+        const n = Number(bound.value)
+        if (!Number.isFinite(n) || n === 0 || Math.abs(n) >= whole) continue
+        errors.push(
+          `Model '${model.name}', field '${field.name}': @${bound.kind}(${n}) bounds ${n} minor units = ` +
+          `${Number((n / whole).toPrecision(12))} at ${places ?? 2} places — ${scale.kind === 'money' ? '@money' : '@scale'} ` +
+          `compares the stored integer, not the figure a reader sees. Write @${bound.kind}(${n * whole}) for ${n}`)
+      }
+
+      const def = field.attributes.find(a => a.kind === 'default')
+      const raw = def?.value?.kind === 'number' ? def.value.value : def?.value
+      if (typeof raw !== 'number' || Number.isInteger(raw)) continue
+      const minor  = Math.round(raw * whole)
       errors.push(
         `Model '${model.name}', field '${field.name}': @default(${raw}) is not a value this column can hold — ` +
         `${scale.kind === 'money' ? '@money' : `@scale(${places})`} stores a whole number of MINOR units in an ` +

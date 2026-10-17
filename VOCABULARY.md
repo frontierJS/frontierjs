@@ -218,6 +218,7 @@ before you meet it.
 | Base tier | open | UI | | the two shapes every Block and Inline term is built from — Chip, Surface. css says it is not a containment tier | Read from `packages/css/vocabulary.json` |
 | Layout tier | open | UI | | one arrangement each and no skin, composable onto any tier — Stack, Cluster, Center, Split, Container | Read from `packages/css/vocabulary.json`; across the ladder, not on it |
 | Detail | open | | | | |
+| session-changed | blessed | UI | | the `fjs:session-changed` event Sierra dispatches on `document` when the person at the browser changes (a token change, a support episode starting or ending) — what the kit's toast, alert and palette stores clear on | [`FJS-D905`](DECISIONS.md#fjs-d905). The one owner is `_identityChanged` in sierra's `resource/index.js` |
 | Portal | open | | | | |
 | Session | blessed | Auth | | a sign-in — what `/auth/*` establishes and a row of auth's `Session` model stores | [`FJS-D680`](DECISIONS.md#fjs-d680), [`FJS-D20`](DECISIONS.md#fjs-d20). The browser's `sessionStorage` is the ecosystem's word |
 | Account | blessed | Auth | | auth's `account` service — the signed-in user's own settings | [`FJS-D680`](DECISIONS.md#fjs-d680). An app's own `Account` model is its business-domain word, not this one |

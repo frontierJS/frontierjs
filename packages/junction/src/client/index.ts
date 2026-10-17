@@ -1725,11 +1725,16 @@ export class JunctionClient extends EventEmitter {
     // neither. The extent is carried only while the store answers the issued
     // question — a newer load in flight has a window of one page.
     let refetchQueued = false
+    let disposed = false
+    // Every listener this resource put on the client or the service, so a
+    // resource built for one view can be let go of with the view.
+    const offs: Array<() => void> = []
     const refetch = (delayMs = 0): void => {
-      if (refetchQueued || issuedQuery === null) return
+      if (disposed || refetchQueued || issuedQuery === null) return
       refetchQueued = true
       setTimeout(() => {
         refetchQueued = false
+        if (disposed) return
         const extent = issuedQuery === lastQuery && issuedParams === lastParams ? store.get().length : 0
         void answer(issuedQuery ?? {}, issuedParams, extent).catch(() => {})
       }, delayMs)
@@ -1748,7 +1753,7 @@ export class JunctionClient extends EventEmitter {
     // every client in the fleet querying in the same tick, which is `FJS-703`'s
     // shape one layer up. Up to 2s, which is short against a person noticing
     // and long against a herd.
-    this.on('reconnected', () => refetch(Math.random() * 2000))
+    offs.push(this.on('reconnected', () => refetch(Math.random() * 2000)))
 
     // ── Where in the list, and whether this list can say ────────────────────
     // Membership is only half the question (`FJS-011`); a row also has a
@@ -1896,12 +1901,12 @@ export class JunctionClient extends EventEmitter {
     // (see AUTO_EVENT_MAP server-side). Match those exactly.
     // Only where a row can be identified — see `const key` above.
     if (idField !== null) {
-      svc.on('created',  apply)
-      svc.on('patched',  apply)
-      svc.on('removed',  (raw: unknown) => {
+      offs.push(svc.on('created',  apply))
+      offs.push(svc.on('patched',  apply))
+      offs.push(svc.on('removed',  (raw: unknown) => {
         const record = unwrap(raw)
         drop(record, record?.[key])
-      })
+      }))
     }
 
     // ── A change with no record ────────────────────────────────────────────
@@ -1913,18 +1918,18 @@ export class JunctionClient extends EventEmitter {
     //
     // Not `stale`: a counter is for a gap this list knows the shape of. This is
     // *some unknown rows moved*, which a number on a banner cannot describe.
-    svc.on('changed', () => refetch())
+    offs.push(svc.on('changed', () => refetch()))
 
     // Custom method events (e.g. 'moved', 'archived') — treat as patches. The
     // server publishes them with the updated record, and a row can leave the
     // filter through one exactly as it can through a patch.
-    svc.on('*', (method: unknown, raw: unknown) => {
+    offs.push(svc.on('*', (method: unknown, raw: unknown) => {
       if (method === 'created' || method === 'patched' || method === 'removed') return
       // Handled above, and it carries a count rather than a record — applying
       // it would upsert the count object into the store as a row.
       if (method === 'changed') return
       apply(raw)
-    })
+    }))
 
     // load() keeps returning rows — the store holds records, not envelopes,
     // and a view subscribing to it wants something it can map over.
@@ -2270,7 +2275,13 @@ export class JunctionClient extends EventEmitter {
       return rows
     }
 
-    return { service: svc, store, load, stale, record, mutate, more: more_, hasMore, total: () => total }
+    const dispose = (): void => {
+      disposed = true
+      for (const off of offs.splice(0)) off()
+      if (tick !== null) { clearTimeout(tick); tick = null }
+    }
+
+    return { service: svc, store, load, stale, record, mutate, more: more_, hasMore, total: () => total, dispose }
   }
 
   // ── HTTP request ─────────────────────────────────────────────────────
@@ -3210,6 +3221,12 @@ export interface ResourceResult<T extends Record<string, unknown> = Record<strin
   more: () => Promise<T[]>
   /** Is there anything past the window? */
   hasMore: () => boolean
+  /**
+   * Stop listening. A resource made for one view — a list over its own filter —
+   * is let go of with the view, or its handlers stay on the client for the life
+   * of the tab. The store keeps what it holds and stops moving.
+   */
+  dispose: () => void
   /**
    * How many rows the query matches, as of the last `load()` and kept in step
    * with the store. Null before any answer, and when the service reported none.

@@ -174,6 +174,10 @@ export interface LitestoneWriteEvent {
   count?:  number
   /** The caller's filter, on a collection event. In-process only — see below. */
   where?:  unknown
+  /** An `update` row event: the row as it stood before the write, shaped like
+   *  `result`. In-process only, and absent when Litestone read none (a bulk
+   *  write, a cross-process one) -- absent means unknown, never public. */
+  before?: unknown
   /** Under row tenancy: each tenant the write's rows belong to, read along the
    *  parent for a model scoped through one. What a function channel routes a
    *  count by, and a row with no tenant column of its own (`FJS-1741`). */
@@ -5137,13 +5141,15 @@ export function announceDataWrites(
   const sendToChannel = (
     name: string, event: string, payload: unknown,
     mode: 'row' | 'gate' = 'row', tenants: readonly unknown[] | null = null,
+    narrowed: { before: object; removalsOnly?: boolean } | null = null,
   ): void => {
     const svc = app.services.get(name) as { channel?: unknown; model?: string | null } | undefined
     const manager = ('channels' in app ? app.channels : undefined) as {
       channel?:    (n: string) => { send?: (event: string, data: unknown) => void }
       sendGraded?: (
         targets: Target | Target[], event: string, payload: unknown,
-        src: { db: unknown; accessor: string; label?: string }, mode?: 'row' | 'gate'
+        src: { db: unknown; accessor: string; label?: string; before?: object; removalsOnly?: boolean },
+        mode?: 'row' | 'gate'
       ) => Promise<void>
       defaultAnnouncer?: unknown
     } | undefined
@@ -5195,9 +5201,11 @@ export function announceDataWrites(
         db:       db,
         accessor: serviceAccessor({ name, model: svc?.model }) ?? '',
         label:    name,
+        ...(narrowed ?? {}),
       }, mode).catch(() => { /* a dead socket is not a background job's problem */ })
       return
     }
+    if (narrowed?.removalsOnly) return
     for (const t of targets) {
       const ch = typeof t === 'string' ? manager?.channel?.(t) : t
       if (!ch?.send) continue
@@ -5376,12 +5384,21 @@ export function announceDataWrites(
     // every inner one — measured, three events for one nested create
     // (`FJS-682`). `announcedInCommitScope` is the same question asked of the
     // transaction rather than of the call.
+    //
+    // The removal an update owes is the one part of its announcement a covering
+    // call cannot make: only the tap holds the before-image, so it sends the
+    // removals itself and the call's frame (or the held one) goes without them
+    // (`FJS-1742`).
+    const before = e.event === 'update' && e.before && typeof e.before === 'object' ? e.before as object : null
     for (const name of servicesFor(e.model)) {
-      const announce = () => {
+      const announce = (withRemoval = false) => {
         app.events?.emit(`${name}:${past}`, row)
-        sendToChannel(name, past, row, 'row', e.tenants ?? null)
+        sendToChannel(name, past, row, 'row', e.tenants ?? null, withRemoval && before ? { before } : null)
       }
-      if (row !== null && row !== undefined && coveredByCall(name, row, announce)) continue
+      if (row !== null && row !== undefined && coveredByCall(name, row, () => announce())) {
+        if (before) sendToChannel(name, past, row, 'row', e.tenants ?? null, { before, removalsOnly: true })
+        continue
+      }
 
     // ── A write with no row to hand over ──────────────────────────────────
     // Two arrive here and they are the same problem: a bulk statement answers
@@ -5403,7 +5420,7 @@ export function announceDataWrites(
         continue
       }
 
-      announce()
+      announce(true)
     }
   })
 }

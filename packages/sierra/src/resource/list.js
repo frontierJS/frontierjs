@@ -46,6 +46,15 @@
  * never part of `query`, so a bar cannot see it or widen it — which is what
  * makes an embedded list scoped rather than pre-filtered.
  *
+ * ─── Whose rows these are ──────────────────────────────────────────────────
+ *
+ * A list stating no `where` and no `query` of its own IS the resource's store:
+ * every such list on a page shows one set of rows, which is what a route's list
+ * and a table beside it want. A list that states a filter keeps its own rows,
+ * answered by its own `load()` and moved by a push through the same matcher the
+ * store uses, so a page can hold a list per filter. `{ composed: true }` is
+ * for a service that answers more than the rows, and owns its rows for that.
+ *
  * ─── A composed list ───────────────────────────────────────────────────────
  *
  * `{ composed: true }` where the service's `find()` answers more than the rows —
@@ -74,6 +83,13 @@ const RECONNECT_JITTER_MS = 2000
 
 const isEmpty = (o) => !o || Object.keys(o).length === 0
 
+/**
+ * Does this list keep its own rows? One that states a filter of its own does
+ * (`FJS-D1165`); one that states none is the resource's store. A composed list
+ * has its own already.
+ */
+export const ownsRows = (opts) => opts?.composed !== true && (!isEmpty(opts?.where) || !isEmpty(opts?.query))
+
 // A key present with `undefined` removes it, so a caller can clear a directive
 // through the same merge that sets one.
 function overlay(base, top) {
@@ -87,7 +103,8 @@ function overlay(base, top) {
 
 /**
  * @param {object} resource  the resource this list reads — `load`, `more`, `hasMore`, `store`,
- *                           and for a composed list `find`, `on` and `onReconnected`
+ *                           `dispose` for rows of its own, and for a composed list `find`, `on`
+ *                           and `onReconnected`
  * @param {{ query?: object, directives?: object } | undefined} listQuery  the resource file's defaults
  * @param {object} [opts]
  * @param {'url'|'local'} [opts.state='url']
@@ -152,6 +169,7 @@ export function createList(resource, listQuery, opts = {}) {
         setTotal(resource.total?.() ?? null)
       }))
       onCleanup(unsubscribe)
+      if (resource.dispose) onCleanup(resource.dispose)
     }
     onCleanup(() => clearTimeout(timer))
     onCleanup(() => clearTimeout(reconnectTimer))

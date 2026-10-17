@@ -172,14 +172,18 @@ label, rules and error from the form; its callback carries the value back:
 </Form>
 ```
 
-The callbacks disagree:
+The callbacks fall in two shapes, sorted by what the control is: a control that
+IS a native element (`Input`, `Textarea`, `Select`, `CodeInput`) hands the DOM
+event, so `e.target.files` and `e.target.form` stay reachable; every composite
+hands its value, so `(v) => …` works on all of them. A handler written for one
+shape throws on the other (`e.target` is undefined on a bare boolean).
 
 | Component | Callback | Receives |
 |---|---|---|
 | `Input` · `Textarea` · `CodeInput` · `Select` | `oninput` (`onchange` on commit) | the DOM **event** |
 | `Checkbox` · `Switch` | `onchange` | `checked` |
 | `RadioGroup` · `Combobox` · `MultiSelect` | `onchange` | the value (an array for `multiple`) |
-| `NumberInput` · `Slider` | `oninput` (`onchange` at the end of the gesture — release, key, Enter, blur) | `{ value }`, or `{ start, end }` for a range |
+| `NumberInput` · `Slider` | `oninput` (`onchange` at the end of the gesture — release, key, Enter, blur) | the number (`null` for an emptied NumberInput), or `[start, end]` for a range |
 | `Thresholds` | `onchange` | the cuts, ascending — an array, also written back through `bind:values` |
 | `SignaturePad` | `onchange` | `{ paths, width, height }` once per stroke, `null` after Clear — also written back through `bind:value` |
 | `DateTimeInput` · `JsonInput` · `FileField` | `onvalue` | an ISO instant · a parsed document · a `File`, `null` to clear, `undefined` to keep |

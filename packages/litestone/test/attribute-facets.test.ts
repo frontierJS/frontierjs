@@ -318,3 +318,34 @@ describe('a @generated expression naming a @map field', () => {
     expect(row).toEqual({ sum: 7 })
   })
 })
+
+// FJS-2141 — a bound on a scaled column compares the STORED integer, so
+// `@scale(4) @lte(100)` caps a percentage at 0.01%. A bound under one whole
+// unit is the reading nobody intends; the refusal names the stored figure.
+describe('a bound under one whole unit of a scaled column', () => {
+  it('refuses @lte(100) at @scale(4) and writes the minor-unit figure', () => {
+    refuses(`model D { id Int @id\n  r Int @scale(4) @lte(100) }`, /@lte\(100\).*100 minor units = 0\.01 at 4 places.*@lte\(1000000\) for 100/s)
+  })
+
+  it('refuses each of the four bounds, and @money', () => {
+    for (const w of ['gte', 'lte', 'gt', 'lt'])
+      refuses(`model D { id Int @id\n  r Int @scale(2) @${w}(50) }`, new RegExp(`@${w}\\(50\\).*50 minor units = 0\\.5 at 2 places`, 's'))
+    refuses(`model D { id Int @id\n  p Int @money(USD) @lte(5) }`, /@lte\(5\).*5 minor units = 0\.05 at 2 places.*@lte\(500\) for 5/s)
+  })
+
+  it('accepts zero, a whole unit or more, and a column with no places', () => {
+    accepts(`model D { id Int @id\n  r Int @scale(4) @gt(0) @lte(1000000) }`)
+    accepts(`model D { id Int @id\n  p Int @money(USD) @gte(0) }`)
+    accepts(`model D { id Int @id\n  y Int @money(JPY) @gte(1) @lte(100) }`)
+    accepts(`model D { id Int @id\n  n Int @lte(100) }`)
+  })
+})
+
+describe('the message at the boundary of a scaled column', () => {
+  it('says the bound is in minor units', async () => {
+    const { validateField } = await import('../src/core/validate.js')
+    const errs = validateField('r', 20000001, [{ kind: 'scale', places: 4 }, { kind: 'lte', value: 1000000 }])
+    expect(errs[0].message).toBe('must be at most 1000000 minor units')
+    expect(validateField('n', 101, [{ kind: 'lte', value: 100 }])[0].message).toBe('must be at most 100')
+  })
+})

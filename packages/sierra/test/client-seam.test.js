@@ -356,6 +356,45 @@ describe('a live store when the person at the machine changes', () => {
   })
 })
 
+// ─── FJS-2606 — the kit's notifier stores are told ───────────────────────────
+
+describe('the session-changed event on document', () => {
+  // `@frontierjs/ui`'s toast, alert and palette stores are module singletons in
+  // a sibling package sierra cannot import, so the same `_identityChanged` that
+  // clears the resources announces on `document`, and the stores clear on it
+  // (`FJS-D905`).
+
+  async function booted() {
+    const J = await freshJunction()
+    const heard = []
+    const doc = new EventTarget()
+    doc.querySelectorAll = () => []
+    doc.addEventListener('fjs:session-changed', () => heard.push(1))
+    globalThis.document = doc
+    J.initJunction({ url: API })
+    return { J, heard }
+  }
+
+  test('a token change announces once', async () => {
+    const { J, heard } = await booted()
+    J.getClient().setToken('tok-A')
+    J.getClient().setToken(null)
+    expect(heard).toHaveLength(2)
+  })
+
+  test('a support episode announces too', async () => {
+    const { J, heard } = await booted()
+    J.getClient().emit('support:started', { subjectId: 'u2', endsAt: 'x' })
+    expect(heard).toHaveLength(1)
+  })
+
+  test('and an episode that was never running does not', async () => {
+    const { J, heard } = await booted()
+    J.getClient().emit('support:ended', { ended: false })
+    expect(heard).toEqual([])
+  })
+})
+
 // ─── FJS-2808 — a support episode changes who the token resolves to ───────────
 
 describe('a live store when a support episode starts or ends', () => {

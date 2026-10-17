@@ -73,7 +73,7 @@ import {
   buildSoftDeleteMap, buildHasTemplatesMap, buildEffectiveMap, buildCoFkMap, buildFtsMap, nowISO,
 } from './schema-maps.js'
 import {
-  wideDb, mappedDb, clockedDb, rawHandle, resolveAccessConfig, buildDbRegistry, buildModelDbMap,
+  wideDb, mappedDb, narrowedDb, clockedDb, rawHandle, resolveAccessConfig, buildDbRegistry, buildModelDbMap,
   jsonlFilePath,
 } from './databases.js'
 import {
@@ -102,6 +102,11 @@ export { ValidationError } from './validate.js'
 // Re-exported wholesale rather than by name so a class added to errors.js cannot
 // be missing here — this path is what 76 call sites import them from.
 export * from './errors.js'
+
+// Every `@@extensible` slot a pool has handed out, per (model, tenant, scope),
+// on the declaring table's database. Not on the declaring model, which would
+// gain rows the app never wrote (`FJS-D1145`).
+const EXT_SLOTS = quoteIdent('_litestone_ext_slots')
 
 // ─── ownKeys ──────────────────────────────────────────────────────────────────
 // Every client proxy answers ownKeys by concatenating the target's real keys
@@ -417,6 +422,7 @@ function authStamped(row, modelName, ctx) {
  * @property {Set<string>} fieldReadKeys        columns carrying a read predicate
  * @property {boolean} reachesFieldRead
  * @property {Set<string>} policiedAggregates   `@from` aggregates over a target with a read policy
+ * @property {{ claim: string, binds: number, ctes: string } | null} tenantShadows   what a tenant read of a `@@tenant` view inlines
  */
 
 // `shape` is a `Shape` (see `shapeFor` in `createClient`): every facet is
@@ -463,6 +469,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const _mapped = Object.keys(columnMap).length > 0
   const col = _mapped ? (name) => columnMap[name] ?? name : (name) => name
   if (_mapped) { readDb = mappedDb(readDb, columnMap); writeDb = mappedDb(writeDb, columnMap) }
+  // Outermost, so the text it rewrites is the one the table built. A system
+  // client with no tenant in scope reads every tenant's projection, as its
+  // policy does (FJS-519).
+  if (shape.tenantShadows) {
+    const { claim } = shape.tenantShadows
+    readDb = narrowedDb(readDb, shape.tenantShadows, () => ctx.auth?.[claim] ?? null)
+  }
   // The table's name as a fragment, quoted once here rather than at each of the
   // statements below that splice it.
   const T = ident(tableName)
@@ -2138,6 +2151,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // for an app that declares nothing and subscribes to nothing, which is what
   // these guards are for.
   const hasAudience = () => !!(emitter || ctx._eventListeners.size || ctx._crossProcess)
+  // The subset that can use a `before` image: a cross-process announcement
+  // stores ids and nothing else, so it is no reason to read the row first.
+  const hasLocalAudience = () => !!(emitter || ctx._eventListeners.size)
 
   function emitTransitionEvent(transitionResult, record) {
     if (!transitionResult || !hasAudience()) return
@@ -2260,12 +2276,17 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
   }
 
-  function fireRowEvent(event, operation, result, transition = null) {
+  // `before` is the row as it stood ahead of an update, shaped like `result`,
+  // for a subscriber that must tell who could read it then from who can now. It
+  // is absent where no image was read (a bulk write, a restore, a write that
+  // began before anything listened), and absent means unknown, never public.
+  function fireRowEvent(event, operation, result, transition = null, before = null) {
     if (!hasAudience()) return
     const tenants = result ? tenantsOf([result]) : null
     fireEvent(event, {
       model: modelName, operation, result, scope: 'row', count: 1,
       ...(transition ? { transition } : {}),
+      ...(before ? { before } : {}),
       ...(tenants ? { tenants } : {}),
       schema: shape.model,
     })
@@ -3389,12 +3410,21 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // on the old key's values (`FJS-1752`). The mirror is derived, so the
       // rebuild is raw and announces nothing — the same footing as the read
       // above.
-      // The predicate names the slot's generated column, which is the same
-      // json_extract: spelled over the mirror it plans on the tenant prefix
-      // alone and reads every row the tenant holds, inside the one writer
-      // (`FJS-3134`). The column reaches the slot index only where the slot
-      // LEADS it after the tenant and scope columns.
+      // The clear reads every row the tenant holds, inside the one writer,
+      // wherever the slot is not the index's leading column: SQLite recomputes
+      // the generated column from the row rather than reading it off the index
+      // (`FJS-3134`, `FJS-3141`). A slot this pool has never handed out never
+      // held a value, so the clear runs only for one in the record. Taken
+      // slots are recorded too, so a slot a raw insert stated is cleared when
+      // it is reused (`FJS-D1145`).
+      const owner = [model, _extTenantCol ? String(extTenant(data)) : '', pool.scope ? String(data[pool.scope] ?? '') : '']
+      const held  = slot && writeDb.query(`SELECT 1 FROM ${EXT_SLOTS} WHERE model = ? AND tenant = ? AND scope = ? AND slot = ?`)
+        .get(...owner, slot)
       if (slot) {
+        const record = writeDb.query(`INSERT OR IGNORE INTO ${EXT_SLOTS} (model, tenant, scope, slot) VALUES (?, ?, ?, ?)`)
+        for (const s of [...taken, slot]) record.run(...owner, s)
+      }
+      if (held) {
         const sql  = `UPDATE "${pool.table}" SET "${pool.mirror}" = json_remove("${pool.mirror}", ?) ` +
           `WHERE ${quoteIdent(slot)} IS NOT NULL`
         const only = [], vals = []
@@ -5991,7 +6021,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const final = row ? finalizeOne(row, ps) : null
       if (plan.announce) {
         const name = plan.transition?.transitionName ?? null
-        fireRowEvent(plan.announce.event, plan.announce.operation, final, name)
+        fireRowEvent(plan.announce.event, plan.announce.operation, final, name, plan.heard)
         emitTransitionEvent(plan.transition, row)
         if (plugins?.hasPlugins) await plugins.afterWrite(modelName, LOG_OP[plan.op], final, ctx)
         if (affected.length) await plugins.afterDelete(modelName, affected, ctx)
@@ -6605,10 +6635,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // Two snapshots of one row, and the trail needs the READ one. read()
       // parses Json to objects and coerces booleans, which is the row a
       // reviewer compares against the after.
-      const beforeRaw = tableHasLogWork || _postUpdatePolicy
+      const heard = hasLocalAudience()
+      const beforeRaw = tableHasLogWork || _postUpdatePolicy || heard
         ? readDb.query(selAll).get(...whereParams)
         : null
       const beforeRow = beforeRaw ? trailImage(beforeRaw, read(beforeRaw, { mode: 'single' })) : null
+      const heardRow  = heard && beforeRaw ? read(beforeRaw, { mode: 'single', hydrateFrom: true }) : null
 
       // ── Transition enforcement ────────────────────────────────────────────
       // Check before SQL: validates from-state, throws TransitionViolationError if invalid.
@@ -6691,7 +6723,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           batch: false, logs: tableHasLogWork, system,
           announce: _touchesRow ? { event: 'update', operation: 'update' } : null, result, bare: ownUnit,
           refuse: { where: callerWhere, transition: null, version, sealSelf: null, seal: null },
-          before: beforeRow, transition: _transResult,
+          before: beforeRow, heard: heardRow, transition: _transResult,
         }
       }
 
@@ -6713,7 +6745,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           version, sealSelf: _vSelf.frozen,
           seal: { sql: _vWhereSql0, params: _vWhereParams0, op: 'update' },
         },
-        before: beforeRow, transition: _transResult,
+        before: beforeRow, heard: heardRow, transition: _transResult,
         // The row the statement's own WHERE reaches, so a child written ahead
         // of it is written only for a row the policy, the move and the version
         // let the UPDATE touch.
@@ -10461,6 +10493,54 @@ function makeLockPrimitive(rawWriteDb) {
   })) keyedByModel(map, facet)
   keyedByModel(logMap.fields, 'logMap.fields', (k) => k.slice(0, k.indexOf('.')))
 
+  // What a tenant read of a `@@tenant` view inlines (`FJS-D1149`): each
+  // row-tenanted table on the view's database shadowed by the reader's rows,
+  // then the view as `@@sql` over them. A table scoped through a parent keeps
+  // the rows whose parent is in the parent's shadow; one naming no parent is
+  // kept, so a shadow is never narrower than the tenancy deny under it, which
+  // stays on the view as the backstop. A `@@materialized` view is a table, and
+  // its rows were computed when it was refreshed.
+  function tenantShadowsFor(name) {
+    const view  = schema.views.find(v => v.name === name)
+    const claim = view.attributes.find(a => a.kind === 'deny' && a.generated === 'tenancy')?.claim
+    if (!claim || view.materialized) return null
+    const dbOf  = (m) => modelDbMap[m] ?? 'main'
+    const table = (m) => quoteIdent(modelToTableName(schema.models.find(x => x.name === m), pluralizeTableNames))
+    const ctes  = []
+    let binds   = 0
+    const shadowed = new Set()
+    const tables   = schema.models.filter(m => !viewNames.has(m.name) && dbOf(m.name) === (view.db ?? 'main'))
+    for (const m of tables) {
+      const deny = m.attributes.find(a => a.kind === 'deny' && a.generated === 'tenancy' && a.column)
+      if (!deny) continue
+      const col = columnMapFor(m)[deny.column] ?? deny.column
+      ctes.push(`${table(m.name)} AS (SELECT * FROM main.${table(m.name)} WHERE ${quoteIdent(col)} = ?)`)
+      binds++
+      shadowed.add(m.name)
+    }
+    // Parent before child, since a CTE names only the ones before it.
+    for (let grew = true; grew;) {
+      grew = false
+      for (const m of tables) {
+        if (shadowed.has(m.name)) continue
+        const hops = m.attributes
+          .filter(a => a.generated === 'tenancy' && a.expr?.type === 'not' && a.expr.expr?.type === 'check')
+          .map(a => relationMap[m.name]?.[a.expr.expr.field])
+        if (!hops.length || !hops.every(r => r?.kind === 'belongsTo' && shadowed.has(r.targetModel))) continue
+        const own  = columnMapFor(m), at = (r) => columnMapFor(schema.models.find(x => x.name === r.targetModel))
+        const keep = hops.map(r =>
+          `(${r.foreignKeys.map(k => `"__t".${quoteIdent(own[k] ?? k)} IS NULL`).join(' OR ')} OR EXISTS (SELECT 1 FROM ${table(r.targetModel)} AS "__p" WHERE ` +
+          `${r.foreignKeys.map((k, i) => `"__p".${quoteIdent(at(r)[r.referencedKeys[i]] ?? r.referencedKeys[i])} = "__t".${quoteIdent(own[k] ?? k)}`).join(' AND ')}))`)
+        ctes.push(`${table(m.name)} AS (SELECT "__t".* FROM main.${table(m.name)} AS "__t" WHERE ${keep.join(' AND ')})`)
+        shadowed.add(m.name)
+        grew = true
+      }
+    }
+    if (!binds) return null
+    ctes.push(`${quoteIdent(name)} AS (SELECT * FROM (${view.sql.trim().replace(/;$/, '')}))`)
+    return Object.freeze({ claim, binds, ctes: ctes.join(', ') })
+  }
+
   /** @returns {Shape} */
   function shapeFor(model) {
     const name = model.name
@@ -10530,6 +10610,7 @@ function makeLockPrimitive(rawWriteDb) {
       fieldReadKeys:     every(fieldReadMap.own, name, 'fieldReadMap'),
       reachesFieldRead:  fieldReadMap.reaches.has(name),
       policiedAggregates,
+      tenantShadows:     isView ? tenantShadowsFor(name) : null,
     })
   }
   /** @type {Record<string, Shape>} */
@@ -10703,6 +10784,17 @@ function makeLockPrimitive(rawWriteDb) {
   const extDeclarers = new Set(schema.models
     .flatMap(m => m.attributes.filter(a => a.kind === 'extensible'))
     .map(a => a.declaredBy))
+  const poolDbs = new Set(schema.models
+    .flatMap(m => m.attributes.filter(a => a.kind === 'extensible' && a.max))
+    .map(a => modelDbMap[a.declaredBy] ?? 'main'))
+  for (const dbName of poolDbs)
+    dbRegistry[dbName]?.rawWriteDb?.run(`CREATE TABLE IF NOT EXISTS ${EXT_SLOTS} (
+      model TEXT NOT NULL,
+      tenant TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      slot TEXT NOT NULL,
+      PRIMARY KEY (model, tenant, scope, slot)
+    )`)
 
   // Warn about @computed fields with no extension
   for (const model of schema.models) {

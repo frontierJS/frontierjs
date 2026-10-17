@@ -150,7 +150,7 @@ import { runPhase, runAroundHooks, mergeHooks, hookContext, answered } from '@fr
 import { createMakeFromSchema as makeFromSchema } from '@frontierjs/toolbelt/jsonschema'
 import { mintId } from '@frontierjs/toolbelt/ids'
 import { jittered } from '@frontierjs/toolbelt/rank'
-import { createList } from './list.js'
+import { createList, ownsRows } from './list.js'
 import { liveRecord } from './record.js'
 import { pendingQueue, unreachable } from './pending.js'
 import { listCache, listKey } from './list-cache.js'
@@ -927,7 +927,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // operand back into the value the column holds, so the matcher is built here
   // and not in Junction, which holds no schema. Declared after the rules for
   // that reason; nothing can push before the first load in any case.
-  const junctionResource = client.resource(serviceName, idField, {
+  const liveOptions = {
     // The load's directives are folded back into the query: `$search`,
     // `$onlyDeleted`, `$onlyTemplates` and `$scope` change which rows are in
     // the list and ride only in the third argument, so without them the matcher
@@ -943,7 +943,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // from the service name, so two services over one model would otherwise be
     // two rows — the thing nodes exist to stop (`FJS-D138`).
     model,
-  })
+  }
+  const junctionResource = client.resource(serviceName, idField, liveOptions)
   const { store, stale } = junctionResource
 
   // ── @version — the revision this screen actually read ───────────────────────
@@ -1616,8 +1617,6 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // it is removed (`FJS-011`). A record the schema cannot judge — a `select`
   // that dropped the filtered column, a filter over a relation — reloads rather
   // than being guessed at.
-  let _loadIssued = 0
-
   /**
    * When the rows on screen were last answered by the SERVER, or null when they
    * are this load's own. A screen showing a list it could not refresh can say
@@ -1626,108 +1625,120 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    */
   let _cachedAt = null
 
-  async function load(query, directives) {
-    const stamp = ++_loadIssued
-    // Only a model that declared `@@sync` is kept on the device at all: putting
-    // rows a gate let this caller read onto disk outlives the session, so it is
-    // the app's word rather than the framework's default (`list-cache.js`).
-    const key = syncMode ? listKey(serviceName, query ?? {}, directives ?? null) : null
-    try {
-      const rows = await junctionResource.load(query ?? {}, directives)
-      if (stamp === _loadIssued) {
-        _rememberRows(rows)
-        _cachedAt = null
-        // Both, where the warm writes one or the other: skipping the slot
-        // needs the write-through to have LANDED (`FJS-D337`), and this one is
-        // not awaited — the rows are already in hand and the screen is not
-        // waiting on a disk — so the fact is not available here to skip on.
-        if (key) listCache().remember(key, rows).catch(() => {})
-        // And into the device's own tables, where a query engine can answer a
-        // question nobody asked before the outage (`FJS-D307`) — and, when this
-        // answer was the whole of its `where`, off them too (`FJS-2256`).
-        if (key && localDbConfigured()) {
-          const whole = answeredWhole({ data: rows, hasMore: junctionResource.hasMore?.() === true }, directives)
-            ? { where: query ?? {}, idField } : null
-          writeThrough(model, rows, whole).catch(() => {})
-        }
-      }
-      return rows
-    } catch (err) {
-      // Only silence, never a refusal. A 403 means this caller may not read
-      // these rows NOW, and answering it from a copy taken when they could is
-      // the one thing a cache here must never do.
-      if (!key || !unreachable(err)) throw err
+  // `load` and `more` over one live store. The resource's own pair is over the
+  // store every plain list shares; a list over a filter makes a pair of its
+  // own, with the stamp that goes with it — two stores answering one stamp
+  // would have each load supersede the other's versions.
+  function readerOn(live) {
+    let _loadIssued = 0
 
-      // SQL first, because it can answer a question this screen has never asked
-      // — a different filter, a different page, a different sort — where the
-      // cache below can only replay the exact one it was given.
-      //
-      // **An EMPTY local answer defers, and that is not the same rule.** `null`
-      // is *this device cannot answer*; `[]` is a table that has no rows for
-      // this question, which is what a device looks like before a write-through
-      // has landed — and on screen it is indistinguishable from a list that is
-      // genuinely empty. The cache underneath may hold the server's own answer
-      // to this exact question, so it is asked before an empty table is
-      // rendered as the answer.
-      const local = localDbConfigured()
-        ? await readLocal(model, query ?? {}, directives)
-        : null
-
-      if (local?.length) {
-        _sawRows(local)
+    async function load(query, directives) {
+      const stamp = ++_loadIssued
+      // Only a model that declared `@@sync` is kept on the device at all: putting
+      // rows a gate let this caller read onto disk outlives the session, so it is
+      // the app's word rather than the framework's default (`list-cache.js`).
+      const key = syncMode ? listKey(serviceName, query ?? {}, directives ?? null) : null
+      try {
+        const rows = await live.load(query ?? {}, directives)
         if (stamp === _loadIssued) {
-          junctionResource.store.set(local)
-          _cachedAt = Date.now()
+          _rememberRows(rows)
+          _cachedAt = null
+          // Both, where the warm writes one or the other: skipping the slot
+          // needs the write-through to have LANDED (`FJS-D337`), and this one is
+          // not awaited — the rows are already in hand and the screen is not
+          // waiting on a disk — so the fact is not available here to skip on.
+          if (key) listCache().remember(key, rows).catch(() => {})
+          // And into the device's own tables, where a query engine can answer a
+          // question nobody asked before the outage (`FJS-D307`) — and, when this
+          // answer was the whole of its `where`, off them too (`FJS-2256`).
+          if (key && localDbConfigured()) {
+            const whole = answeredWhole({ data: rows, hasMore: live.hasMore?.() === true }, directives)
+              ? { where: query ?? {}, idField } : null
+            writeThrough(model, rows, whole).catch(() => {})
+          }
         }
-        return local
-      }
+        return rows
+      } catch (err) {
+        // Only silence, never a refusal. A 403 means this caller may not read
+        // these rows NOW, and answering it from a copy taken when they could is
+        // the one thing a cache here must never do.
+        if (!key || !unreachable(err)) throw err
 
-      const hit = await listCache().recall(key)
-      if (!hit) {
-        // The device answered nothing and nothing remembers the question. An
-        // empty table is still a better answer than a throw when the model is
-        // one the device keeps at all.
-        if (local) return local
-        throw err
+        // SQL first, because it can answer a question this screen has never asked
+        // — a different filter, a different page, a different sort — where the
+        // cache below can only replay the exact one it was given.
+        //
+        // **An EMPTY local answer defers, and that is not the same rule.** `null`
+        // is *this device cannot answer*; `[]` is a table that has no rows for
+        // this question, which is what a device looks like before a write-through
+        // has landed — and on screen it is indistinguishable from a list that is
+        // genuinely empty. The cache underneath may hold the server's own answer
+        // to this exact question, so it is asked before an empty table is
+        // rendered as the answer.
+        const local = localDbConfigured()
+          ? await readLocal(model, query ?? {}, directives)
+          : null
+
+        if (local?.length) {
+          _sawRows(local)
+          if (stamp === _loadIssued) {
+            live.store.set(local)
+            _cachedAt = Date.now()
+          }
+          return local
+        }
+
+        const hit = await listCache().recall(key)
+        if (!hit) {
+          // The device answered nothing and nothing remembers the question. An
+          // empty table is still a better answer than a throw when the model is
+          // one the device keeps at all.
+          if (local) return local
+          throw err
+        }
+        _sawRows(hit.rows)
+        if (stamp === _loadIssued) {
+          // Into the same store the live layer writes, so the screen renders it
+          // the way it renders anything. A second path would be a second shape of
+          // "the rows this list holds".
+          live.store.set(hit.rows)
+          _cachedAt = hit.at
+        }
+        return hit.rows
       }
-      _sawRows(hit.rows)
-      if (stamp === _loadIssued) {
-        // Into the same store the live layer writes, so the screen renders it
-        // the way it renders anything. A second path would be a second shape of
-        // "the rows this list holds".
-        junctionResource.store.set(hit.rows)
-        _cachedAt = hit.at
-      }
-      return hit.rows
     }
+
+    /**
+     * Grow the window — the live list's answer to paging (`FJS-D145`).
+     *
+     *   await orders.load(page.query, page.directives)
+     *   // ... a "load more" button
+     *   await orders.more()
+     *
+     * A keyset scan resuming from the edge of what this list already holds, so
+     * it cannot skip a row or serve one twice the way an offset does under a
+     * list that is being written to — which is the case this framework is best
+     * at and was worst for. The cursor is minted by the server and handed back
+     * verbatim; nothing here constructs one.
+     *
+     * **Growing is not a chance to ask a different question**: the query and the
+     * directives are the last `load()`'s, because a cursor minted under one
+     * ordering names no position in another. A different filter or a different
+     * sort is a `load()`.
+     *
+     * Answers the rows it added — `[]` when there is nothing past the window.
+     * `hasMore()` is the same question asked before pressing.
+     */
+    async function more() {
+      const rows = await live.more()
+      _rememberRows(rows)
+      return rows
+    }
+
+    return { load, more }
   }
 
-  /**
-   * Grow the window — the live list's answer to paging (`FJS-D145`).
-   *
-   *   await orders.load(page.query, page.directives)
-   *   // ... a "load more" button
-   *   await orders.more()
-   *
-   * A keyset scan resuming from the edge of what this list already holds, so
-   * it cannot skip a row or serve one twice the way an offset does under a
-   * list that is being written to — which is the case this framework is best
-   * at and was worst for. The cursor is minted by the server and handed back
-   * verbatim; nothing here constructs one.
-   *
-   * **Growing is not a chance to ask a different question**: the query and the
-   * directives are the last `load()`'s, because a cursor minted under one
-   * ordering names no position in another. A different filter or a different
-   * sort is a `load()`.
-   *
-   * Answers the rows it added — `[]` when there is nothing past the window.
-   * `hasMore()` is the same question asked before pressing.
-   */
-  async function more() {
-    const rows = await junctionResource.more()
-    _rememberRows(rows)
-    return rows
-  }
+  const { load, more } = readerOn(junctionResource)
 
   /**
    * One row, live — the same nodes the list is a view over, filtered to one.
@@ -3110,8 +3121,12 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     _read.clear()
     _seen.clear()
     store.set([])
+    for (const live of _ownLives) live.store.set([])
     stale.reset?.()
   })
+
+  // The live stores of lists that state a filter, each a list's own.
+  const _ownLives = new Set()
 
   /**
    * This model as a list — the store, where its filters live, the load and its
@@ -3123,8 +3138,13 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * `get(id)`, since a directive over one row cannot hide a record.
    */
   function list(opts) {
+    const own = ownsRows(opts)
+    const live = own ? client.resource(serviceName, idField, liveOptions) : junctionResource
+    const { load: loadRows, more: moreRows } = own ? readerOn(live) : { load, more }
+    if (own) _ownLives.add(live)
     return createList({
-      store, load, more, hasMore: junctionResource.hasMore, total: junctionResource.total,
+      store: live.store, load: loadRows, more: moreRows, hasMore: live.hasMore, total: live.total,
+      dispose:  own ? () => { _ownLives.delete(live); live.dispose() } : undefined,
       find:     service.find,
       loaded:   (rows) => warnComposed('list', rows),
       on:       service.on,

@@ -22,6 +22,7 @@ import { createTestEnv } from '../src/testing.js'
 import { generateTypeScript } from '../src/tools/typegen.js'
 import { VIEW_REFUSED } from '../src/core/args.js'
 import { generateJsonSchema } from '../src/jsonschema.js'
+import { setEngine, clearEngine, currentEngine } from '../src/core/engine.js'
 import { levelPasses } from '@frontierjs/toolbelt/gate'
 
 const errs = (src: string) => parse(src).errors
@@ -598,5 +599,146 @@ model Order { id Int @id  amount Int @money(field: currency)  currency String  c
     const e = errs(view('revenue Int @unique'))
     expect(e.join('\n')).toContain('@unique')
     expect(e.join('\n')).toContain('view column')
+  })
+})
+
+// ─── a tenant read narrows the view's sources ────────────────────────────────
+//
+// `FJS-3140`, ruled `FJS-D1149`. The view's read deny is a WHERE on its
+// PROJECTION, and SQLite cannot push one below a window inside a CTE that a
+// GROUP BY reads, so a tenant reading a funnel computed every tenant's rows
+// first: 122 s for a 500,000-event tenant of a 10.5M-row table. EXPLAIN is of
+// the bytes SQLite was handed, captured at the engine, below every statement
+// wrapper the client applies.
+
+describe('a tenant read of a @@tenant view computes over the reader\'s rows only', () => {
+  const SCHEMA = `
+    database main { path ":memory:" }
+    tenancy { strategy row  column projectId  claim projectId }
+    model Event {
+      id         Int @id @default(autoincrement())
+      projectId  String
+      distinctId String
+      ts         Int
+      @@index([projectId, distinctId, ts])
+      @@gate(0)
+    }
+    model Person {
+      id        Int @id
+      projectId String
+      @@gate(0)
+    }
+    model Visit {
+      id       Int @id @default(autoincrement())
+      personId Int?
+      person   Person? @relation(fields: [personId], references: [id])
+      @@gate(0)
+    }
+    view firstSeen {
+      projectId  String
+      distinctId String
+      first      Int
+      hits       Int
+      @@sql("WITH w AS (SELECT projectId, distinctId, MIN(ts) OVER (PARTITION BY projectId, distinctId ORDER BY ts) AS first FROM event) SELECT projectId, distinctId, MIN(first) AS first, COUNT(*) AS hits FROM w GROUP BY projectId, distinctId")
+      @@gate(0)
+      @@tenant(column: "projectId")
+    }
+    view visitsPerProject {
+      projectId String
+      visits    Int
+      @@sql("SELECT p.projectId, COUNT(*) AS visits FROM visit v JOIN person p ON p.id = v.personId GROUP BY p.projectId")
+      @@gate(0)
+      @@tenant(column: "projectId")
+    }
+  `
+
+  async function spied(fn: (db: any, sent: string[], plan: (sql: string) => string) => Promise<void>) {
+    const before: any = currentEngine()
+    const sent: string[] = []
+    let prepareOn: ((sql: string) => any) | null = null
+    clearEngine()
+    setEngine({
+      name: 'spy', sync: true,
+      open(path: string, opts: any) {
+        const d = before.open(path, opts)
+        const query = d.query.bind(d), prepare = d.prepare.bind(d)
+        d.query   = (s: string) => { sent.push(s); return query(s) }
+        d.prepare = (s: string) => { sent.push(s); return prepare(s) }
+        prepareOn ??= prepare
+        return d
+      },
+    } as any)
+    try {
+      const db: any = await createClient({ schema: SCHEMA })
+      // The planner reads no bound value without STAT4, so any tenant will do.
+      const plan = (sql: string) => {
+        const params = Array(prepareOn!(sql).paramsCount).fill('p1')
+        return (prepareOn!('EXPLAIN QUERY PLAN ' + sql).all(...params) as any[]).map(r => r.detail).join(' | ')
+      }
+      await fn(db, sent, plan)
+    } finally { clearEngine(); setEngine(before) }
+  }
+
+  // Past the point SQLite is right to scan: four rows would make a scan the
+  // correct plan and the assertion meaningless.
+  async function seed(db: any) {
+    const sys = db.asSystem()
+    for (let i = 0; i < 400; i++)
+      await sys.event.create({ data: { projectId: i % 4 ? 'p2' : 'p1', distinctId: 'd' + (i % 9), ts: i } })
+    await sys.sql`ANALYZE`
+  }
+
+  const member = (db: any) => db.$setAuth({ id: 'u1', projectId: 'p1' })
+
+  test('EXPLAIN says SEARCH event by projectId, never a SCAN under the window', async () => {
+    await spied(async (db, sent, plan) => {
+      await seed(db)
+      sent.length = 0
+      expect((await member(db).firstSeen.findMany()).length).toBe(9)
+      const p = plan(sent.find(s => s.includes('firstSeen'))!)
+      expect(p).toMatch(/SEARCH (main\.)?event USING (COVERING )?INDEX \S+ \(projectId=\?/)
+      expect(p).not.toMatch(/SCAN (main\.)?event/)
+    })
+  })
+
+  test('count, aggregate and groupBy are narrowed too', async () => {
+    await spied(async (db, sent, plan) => {
+      await seed(db)
+      const t = member(db).firstSeen
+      for (const call of [() => t.count(), () => t.aggregate({ _max: { first: true } }), () => t.groupBy({ by: ['distinctId'], _count: true })]) {
+        sent.length = 0
+        await call()
+        expect(plan(sent.find(s => s.includes('firstSeen'))!)).not.toMatch(/SCAN (main\.)?event/)
+      }
+      expect(await t.count()).toBe(9)
+    })
+  })
+
+  test('the answer is the one asSystem() gives for that tenant, cell for cell', async () => {
+    await spied(async (db) => {
+      await seed(db)
+      const orderBy = { distinctId: 'asc' }
+      const mine = await member(db).firstSeen.findMany({ orderBy })
+      expect(mine).toEqual(await db.asSystem().firstSeen.findMany({ where: { projectId: 'p1' }, orderBy }))
+    })
+  })
+
+  test('asSystem() is not narrowed: it reads every tenant\'s projection', async () => {
+    await spied(async (db) => {
+      await seed(db)
+      expect(await db.asSystem().firstSeen.count()).toBe(18)
+    })
+  })
+
+  test('a table scoped through its parent is shadowed by the parent\'s shadow', async () => {
+    await spied(async (db, sent, plan) => {
+      const sys = db.asSystem()
+      for (let i = 0; i < 6; i++) await sys.person.create({ data: { id: i, projectId: i % 2 ? 'p2' : 'p1' } })
+      for (let i = 0; i < 60; i++) await sys.visit.create({ data: { personId: i % 6 } })
+      sent.length = 0
+      expect(await member(db).visitsPerProject.findMany()).toEqual([{ projectId: 'p1', visits: 30 }])
+      expect(sent.find(s => s.includes('visitsPerProject'))).toContain('"visit" AS (')
+      expect((await sys.visitsPerProject.findMany()).length).toBe(2)
+    })
   })
 })

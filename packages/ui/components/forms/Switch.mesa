@@ -35,7 +35,7 @@
   export let errors      = undefined
   export let tone        = ''
   export let labelSide   = 'right'  // 'left' | 'right'
-  export let onchange    = undefined
+  export let onchange    = undefined  // (checked: boolean) => void
 
   export var id = ''
   const switchId = id || uid('switch')

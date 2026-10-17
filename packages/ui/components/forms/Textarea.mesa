@@ -67,8 +67,8 @@
   // writing `oninput={…}` on a Textarea got no handler, no warning, and an
   // empty field at submit. Found filing a certificate through <Form> in
   // packages/basecamp (FJS-116).
-  export let oninput  = undefined
-  export let onchange = undefined
+  export let oninput  = undefined  // (event: Event) => void
+  export let onchange = undefined  // (event: Event) => void
   export let onblur   = undefined
   export let onfocus  = undefined
 </script>

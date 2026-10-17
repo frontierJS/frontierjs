@@ -54,8 +54,8 @@
   export let errors   = undefined
   export let badge    = undefined
   export let help     = undefined
-  export let oninput  = undefined   // ({ value }) => void — every value
-  export let onchange = undefined   // ({ value }) => void — the end of an edit
+  export let oninput  = undefined   // (value: number | null) => void — every value
+  export let onchange = undefined   // (value: number | null) => void — the end of an edit
 
   export var id = ''
   const inputId = id || uid('num')
@@ -147,14 +147,14 @@
 
   function commit() {
     typing = false
-    onchange?.({ value })
+    onchange?.(value)
   }
 
   function increment(multiplier = 1) {
     if (resolvedDisabled || readonly) return
     value    = clamp((Number(value) || 0) + step * multiplier)
     inputValue = toDisplay(value)
-    oninput?.({ value })
+    oninput?.(value)
     commit()
   }
 
@@ -162,7 +162,7 @@
     if (resolvedDisabled || readonly) return
     value    = clamp((Number(value) || 0) - step * multiplier)
     inputValue = toDisplay(value)
-    oninput?.({ value })
+    oninput?.(value)
     commit()
   }
 
@@ -173,7 +173,7 @@
     const v    = inputValue.trim() === '' ? null : fromDisplay(inputValue)
     value      = v
     typing     = true
-    oninput?.({ value })
+    oninput?.(value)
   }
 
   function handleBlur() {
@@ -181,7 +181,7 @@
     if (settled !== value) {
       value = settled
       typing = true
-      oninput?.({ value })
+      oninput?.(value)
     }
     // Snap display to canonical form on blur so e.g. "$1.5" becomes "$1.50"
     inputValue = toDisplay(value)
@@ -193,7 +193,7 @@
     if (e.key === 'ArrowDown') { e.preventDefault(); decrement(e.shiftKey ? 10 : 1) }
     if (e.key === 'Enter' && typing) {
       const settled = clamp(value)
-      if (settled !== value) { value = settled; oninput?.({ value }) }
+      if (settled !== value) { value = settled; oninput?.(value) }
       inputValue = toDisplay(value)
       commit()
     }

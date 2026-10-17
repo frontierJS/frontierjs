@@ -172,6 +172,12 @@ function _identityChanged() {
   // until their own load() resolves and indefinitely on any screen whose load()
   // never runs — sign-out is a goto(), not a reload (FJS-786).
   resetResourcesForIdentityChange()
+  // And the kit's notifier stores (toasts, alert, palette), which live in a
+  // package this one cannot import: a toast with a live Undo outlives a
+  // sign-out for the next person to press (`FJS-2606`). They listen for this.
+  if (typeof document !== 'undefined' && typeof CustomEvent !== 'undefined') {
+    document.dispatchEvent(new CustomEvent('fjs:session-changed'))
+  }
   // And the device's own tables, which outlive the tab and are the only one of
   // the three that survives a reload. Every row in them arrived in an answer
   // the PREVIOUS caller was given, which is exactly why they are read back

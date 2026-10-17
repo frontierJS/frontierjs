@@ -35,6 +35,19 @@ That refusal is most of the feature. Without it the same write is stopped by
 SQLite saying `cannot store REAL value in INTEGER column stock_line.weekly_demand`
 — true, about a physical column, and no help at all.
 
+**A bound is in minor units too.** `@gte`/`@lte`/`@gt`/`@lt` compare the stored
+integer, so `rate Int @scale(4) @lte(1000000)` caps at 100.0000 and the refusal
+reads `must be at most 1000000 minor units`. A nonzero bound under one whole unit
+(`@lte(100)` at 4 places is 0.01) is refused at parse, naming the figure to
+write, which is `@lte(1000000)` for 100:
+
+```lite
+model Coupon {
+  id   Int @id
+  rate Int @scale(4) @gt(0) @lte(1000000)
+}
+```
+
 At most **9 places**, and the range is bounded at both ends.
 
 ## The range — and it is not int64

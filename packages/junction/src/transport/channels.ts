@@ -297,6 +297,16 @@ export interface GradingSource {
   accessor: string
   /** For the refuse-all warning. The service name, where there is one. */
   label?:   string
+  /**
+   * An update's row as it stood BEFORE the write. A reader the new row refuses
+   * is told `removed` only if they could read this one, because that is the
+   * reader whose store holds the row (`FJS-1742`). Absent means unknown, and
+   * unknown sends no removal: a refusal to someone who never held the row is an
+   * id and a moment handed to a stranger.
+   */
+  before?:  object | null
+  /** Send the removals the before-image owes and nothing else; the admitted frames go out elsewhere. */
+  removalsOnly?: boolean
 }
 
 // A channel that grades to nobody is either a correct refusal or a wiring
@@ -514,10 +524,11 @@ export async function gradeRecipients(
   // **A removal is sent anyway.** Suppressing it strands the row in every store
   // that already holds it, with nothing that could ever correct it — worse than
   // never having graded. `gate` mode names no row, so there is nothing to ask.
-  if (mode === 'row' && !REMOVAL_EVENTS.has(event) && '$inWindow' in db &&
+  const removalsOnly = mode === 'row' && !!src.removalsOnly
+  if (mode === 'row' && !removalsOnly && !REMOVAL_EVENTS.has(event) && '$inWindow' in db &&
       typeof db.$inWindow === 'function' && !db.$inWindow(accessor, payload)) return []
 
-  if (mode === 'row' && db.$readGrading(accessor) === 'open') return null
+  if (mode === 'row' && db.$readGrading(accessor) === 'open') return removalsOnly ? [] : null
 
   const readLevel = mode === 'gate' ? readGateLevel(db, accessor) : null
   if (mode === 'gate' && (readLevel == null || readLevel <= 0)) return null
@@ -606,10 +617,21 @@ export async function gradeRecipients(
 
   // An update that narrows who may read a row is refused to the reader it took
   // the row from, and a refusal alone strands the row in their live store —
-  // share arrived live and revoke never did (`FJS-1425`). So a refused reader
-  // of an update is told `removed` with the id alone: an id they already held,
-  // or one of a row they never saw.
-  const removal = mode === 'row' ? removalFrameFor(db, accessor, event, payload) : null
+  // share arrived live and revoke never did (`FJS-1425`). So a reader the new
+  // row refuses is told `removed` with the id alone, if the row's before-image
+  // admitted them. One who could read neither image is told nothing, and so is
+  // everyone when no before-image was read (`FJS-1742`).
+  const before  = mode === 'row' ? src.before ?? null : null
+  const removal = before ? removalFrameFor(db, accessor, event, payload) : null
+  const readAsOf = async (row: unknown, who: unknown, key: unknown, claims: unknown): Promise<unknown> => {
+    let seen: unknown = await db.$readAs!(accessor, row, who)
+    if (!seen && !claims) for (const held of elsewhere.get(key) ?? []) {
+      try { seen = await db.$readAs!(accessor, row, { ...(who as object ?? {}), ...held }) }
+      catch { seen = null }
+      if (seen) break
+    }
+    return seen
+  }
   let admitted = 0
 
   const out: Cohort[] = []
@@ -641,22 +663,22 @@ export async function gradeRecipients(
       continue
     }
     let visible: unknown
-    try { visible = await db.$readAs(accessor, payload, who) }
+    try { visible = await readAsOf(payload, who, key, claims) }
     catch { continue }                      // undecidable: refuse, never widen
-    if (!visible && !claims) for (const held of elsewhere.get(key) ?? []) {
-      try { visible = await db.$readAs(accessor, payload, { ...(base as object ?? {}), ...held }) }
-      catch { visible = null }
-      if (visible) break
-    }
     if (!visible) {                         // the gate or a policy said no
-      if (removal) out.push({ conns, frame: removal })
+      if (removal) {
+        let held: unknown = null
+        try { held = await readAsOf(before, who, key, claims) } catch { /* undecidable: owed nothing */ }
+        if (held) out.push({ conns, frame: removal })
+      }
       continue
     }
+    if (removalsOnly) continue
     admitted++
     out.push({ conns, frame: encodeEventFrame(event, visible) })
   }
 
-  if (live > 0 && admitted === 0 && src.label)
+  if (live > 0 && admitted === 0 && !removalsOnly && src.label)
     warnRefusedAll(src.label, accessor, live, tenancyHint(db, claimsFor))
   return out
 }
@@ -988,7 +1010,12 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       }
       if (!targets.length) return
       const graded = await gradeRecipients(targets, event, payload, src, mode, claimsFor, channelsOf)
-      if (!graded) { for (const ch of targets) ch.send(event, payload); return }
+      if (!graded) {
+        // Ungraded means "no boundary to ask", which is a reason to send a row
+        // and none to send a removal nobody was shown to be owed.
+        if (!src.removalsOnly) for (const ch of targets) ch.send(event, payload)
+        return
+      }
       for (const { conns, frame } of graded)
         for (const conn of conns)
           if (conn.socket.readyState === 1) wsSend(conn.socket, frame)

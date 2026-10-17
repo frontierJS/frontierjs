@@ -17,8 +17,9 @@
   // Calls on `stepped`, read by the spec: oninput per value, onchange once at
   // the end of an edit (FJS-2471).
   window.tally = { input: 0, change: 0 }
-  const onin = () => { window.tally.input++ }
-  const onch = () => { window.tally.change++ }
+  window.got = {}
+  const onin = (v) => { window.tally.input++; window.got.input = v }
+  const onch = (v) => { window.tally.change++; window.got.change = v }
 </script>
 
 <NumberInput id="bounded" bind:value={bounded} min={10} max={99} />

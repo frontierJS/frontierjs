@@ -33,3 +33,8 @@ export const commandPalette = {
 }
 
 const _w = watchProxy(commandPalette)
+
+// An open palette was filled for one person; see toastStore.js.
+if (typeof document !== 'undefined') {
+  document.addEventListener('fjs:session-changed', () => commandPalette.hide())
+}

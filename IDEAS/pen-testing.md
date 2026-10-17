@@ -49,7 +49,8 @@ Done when: a gap sheet exists and each `THREATS.md` row cites at least one ASVS 
 Goal: built controls become graded rows.
 Done when: `fli check` passes with the new rows.
 
-- [ ] 1.1 B12 brute force against sign-in (auth throttles + bcrypt)
+- [x] 1.1 B12 brute force against sign-in (auth throttles + bcrypt)
+  - Also covers the second-factor and magic-link miss ceilings (`FJS-3185`). Cited from V6.3.1, V6.3.8, V6.5.1, V6.6.3 and V11.4.2 in `docs/ASVS.md`. The row's *Open* cell names `FJS-D1193`, `FJS-3198` and `FJS-3197`.
 - [ ] 1.2 B13 SSRF through a caller-supplied URL (`public-url.ts`)
 - [ ] 1.3 B14 oversized or flooding requests (body cap, rate limit)
 - [ ] 1.4 B15 error output as an oracle (production error shape)

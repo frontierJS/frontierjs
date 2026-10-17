@@ -83,8 +83,8 @@
   // through bind:value, so anything that has to react to typing itself — live
   // validation that may clear an error but never reveal one, a search-as-you-
   // type box, a character counter — could not be written against this input.
-  export let oninput   = undefined
-  export let onchange  = undefined
+  export let oninput   = undefined  // (event: Event) => void
+  export let onchange  = undefined  // (event: Event) => void
   export let onblur    = undefined
   export let onfocus   = undefined
   export let onkeydown = undefined

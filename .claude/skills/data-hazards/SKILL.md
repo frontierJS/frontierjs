@@ -73,6 +73,7 @@ Detail: `references/tenancy.md`
 - **Under `strategy database` four seams belong to the tenant path rather than the single-client path.**
 - **Tenancy is declared in the schema and there are two strategies.**
 - **A row scoped through a parent that names NO parent is `asSystem()`'s alone** (`FJS-D481`)
+- **A tenant read of a `@@tenant` view runs `@@sql` over the reader's rows only** (`FJS-D1149`)
 
 ## Migrations and release
 Detail: `references/migrations-and-release.md`

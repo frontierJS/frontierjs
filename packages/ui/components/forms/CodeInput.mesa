@@ -60,8 +60,8 @@
   export let badge  = undefined
   export let help   = undefined
 
-  export let oninput  = undefined
-  export let onchange = undefined
+  export let oninput  = undefined  // (event: Event) => void
+  export let onchange = undefined  // (event: Event) => void
   export let onblur   = undefined
   export let onfocus  = undefined
 

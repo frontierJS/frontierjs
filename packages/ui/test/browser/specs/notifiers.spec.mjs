@@ -225,4 +225,18 @@ export async function run(t) {
     'a detail string as the duration is refused')
   await t.evaluate(`window.alert_.hide(); return true;`)
   await t.eventually(`!!document.querySelector('.alert.raised')`, false, 'hide() takes it away')
+
+  // FJS-2606 / FJS-D905: sierra announces a change of person on `document`; a
+  // toast with a live Undo and a persistent alert belong to the last person.
+  await t.evaluate(`
+    window.toasts.success('Secret deleted', 0, { label: 'Undo', run() {} });
+    window.alert_.error('Card declined', 0);
+    return true;
+  `)
+  await t.eventually(`document.querySelectorAll('.toast-stack .toast').length`, 1, 'a toast is up')
+  await t.eventually(`!!document.querySelector('.alert.raised')`, true, 'and a persistent alert')
+  await t.evaluate(`document.dispatchEvent(new CustomEvent('fjs:session-changed')); return true;`)
+  await t.eventually(`document.querySelectorAll('.toast-stack .toast').length`, 0,
+    'a change of person empties the stack, Undo and all')
+  await t.eventually(`!!document.querySelector('.alert.raised')`, false, 'and hides the alert')
 }

@@ -46,3 +46,11 @@ export const alert = {
 
 const _w = watchProxy(alert)
 let _timer
+
+// A persistent alert is one person's; see toastStore.js.
+if (typeof document !== 'undefined') {
+  document.addEventListener('fjs:session-changed', () => {
+    alert.hide()
+    _w.message = ''
+  })
+}

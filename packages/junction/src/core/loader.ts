@@ -8,6 +8,7 @@
 // Also loads routes/ (`FJS-D626`): a file's path there is the URL it answers.
 
 import { join } from 'node:path'
+import { watch, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { ServiceDefinition, ServiceRegistry } from './service.ts'
 import { diagnostic }       from './diagnostics.ts'
 
@@ -114,10 +115,59 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
   }
 }
 
+// ─── A new service file under `bun --watch` (`FJS-D1121`) ───────────────
+// `bun --watch run api/index.ts` restarts on files already IMPORTED, and a new
+// service file is imported by nobody, so its name answered 404 until the
+// server was restarted by hand and nothing said so. This is the one place that
+// knows which files are services, so it is the one place that notices a new
+// one. Bun ignores an mtime-only touch; rewriting the entry with its own bytes
+// is what restarts.
+
+export interface ServiceWatchOptions {
+  dir:       string
+  /** Service files already loaded — an edit to one is bun's own restart. */
+  known:     string[]
+  /** Defaults to whether this process was started with `--watch` or `--hot`. */
+  watching?: boolean
+  entry?:    string | null
+  restart?:  () => void
+  say?:      (line: string) => void
+}
+
+export function watchForNewServices(opts: ServiceWatchOptions): { close(): void } | null {
+  const watching = opts.watching ?? (process.execArgv.includes('--watch') || process.execArgv.includes('--hot'))
+  if (!watching) return null
+
+  const entry = opts.entry ?? (typeof Bun !== 'undefined' ? Bun.main : null)
+  const restart = opts.restart ?? (() => { if (entry) writeFileSync(entry, readFileSync(entry)) })
+  const say = opts.say ?? ((line: string) => console.log(line))
+
+  const seen = new Set(opts.known)
+  let pending = false
+  let watcher: ReturnType<typeof watch>
+  try {
+    watcher = watch(opts.dir, { recursive: true }, (_event, filename) => {
+      if (!filename || !String(filename).endsWith('.service.ts')) return
+      const file = join(opts.dir, String(filename))
+      if (seen.has(file) || !existsSync(file)) return
+      seen.add(file)
+      if (pending) return
+      pending = true
+      say(`[Loader] new service file ${filename} — restarting to register it`)
+      // A save is often several events; let them land before the one restart.
+      setTimeout(restart, 50)
+    })
+  } catch {
+    return null   // directory gone — nothing to watch
+  }
+  watcher.unref?.()
+  return { close: () => watcher.close() }
+}
+
 // ─── Recurse into services/ looking for *.service.ts ─────────────────────
 // Bun.Glob handles recursion natively — no per-file stat() calls.
 
-async function findServiceFiles(dir: string): Promise<string[]> {
+export async function findServiceFiles(dir: string): Promise<string[]> {
   // Glob.scan() throws if the directory doesn't exist — we catch that below.
   const glob    = new Bun.Glob('**/*.service.ts')
   const results: string[] = []

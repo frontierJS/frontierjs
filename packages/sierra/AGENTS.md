@@ -120,7 +120,9 @@ The kit's components, their callbacks and what a `<Table>` needs are
 
 `list()` owns the store, the load, the re-run when the URL changes and the keyset
 window. `list({ state: 'local', where: { projectId } })` is an embedded list that
-writes nothing to the address bar. A list you wire by hand reads the store with
+writes nothing to the address bar. A list over a filter is its own: one stating
+`where` or `query` keeps its own rows, so a page holds a list per filter, and one
+stating neither is the resource's store. A list you wire by hand reads the store with
 `useStore(orders.store)` and re-runs on `$: page.query, page.directives, () => load()`.
 
 ```js

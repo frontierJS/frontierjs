@@ -660,11 +660,11 @@ describe('under tenancy { strategy row }', () => {
   })
 
   // A declaration runs inside the one writer, and the clear of the slot it
-  // takes is a statement over the tenant's whole table. Predicated on the
-  // mirror's JSON it read every row the workspace holds — 109 s on ten million
-  // events with nothing to clear (`FJS-3134`). The generated column is the same
-  // value and the composite index leads with it.
-  test('the clear of a slot it allocates seeks the slot index', async () => {
+  // takes is a statement over the tenant's whole table — 109 s on ten million
+  // events with nothing to clear (`FJS-3134`). Off the index's leading slot
+  // SQLite recomputes the generated column from every row (`FJS-3141`), so a
+  // slot that never held a value is not cleared at all.
+  const clears = async (run: (t: Awaited<ReturnType<typeof tenants>>) => Promise<unknown>) => {
     const original = currentEngine()
     const seen: string[] = []
     setEngine({ ...original, open: (path: string, opts: any) => {
@@ -677,15 +677,32 @@ describe('under tenancy { strategy row }', () => {
       return handle
     } })
     try {
-      const { db, a } = await tenants()
-      await a.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
-      expect(seen.length).toBe(1)
-      const params = seen[0].match(/\?/g)!.map(() => null)
-      const plan = (await db.asSystem().sql.read(`EXPLAIN QUERY PLAN ${seen[0]}`, params)).map((r: any) => r.detail).join(' | ')
-      expect(plan).toMatch(/workspaceId=\? AND t1>\?/)
+      const t = await tenants()
+      await run(t)
+      return { seen, db: t.db }
     } finally {
       setEngine(original)
     }
+  }
+
+  test('a first fill of the pool issues no clear', async () => {
+    const { seen } = await clears(async ({ a }) => {
+      for (const key of ['severity', 'customer'])
+        await a.customField.create({ data: { model: 'Issue', key, type: 'text' } })
+    })
+    expect(seen).toEqual([])
+  })
+
+  test('the clear of a reused slot seeks the slot index', async () => {
+    const { seen, db } = await clears(async ({ a }) => {
+      const sev = await a.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
+      await a.customField.delete({ where: { id: sev.id } })
+      await a.customField.create({ data: { model: 'Issue', key: 'customer', type: 'text' } })
+    })
+    expect(seen.length).toBe(1)
+    const params = seen[0].match(/\?/g)!.map(() => null)
+    const plan = (await db.asSystem().sql.read(`EXPLAIN QUERY PLAN ${seen[0]}`, params)).map((r: any) => r.detail).join(' | ')
+    expect(plan).toMatch(/workspaceId=\? AND t1>\?/)
   })
 
   test('one workspace filling its pool leaves the other its whole pool', async () => {

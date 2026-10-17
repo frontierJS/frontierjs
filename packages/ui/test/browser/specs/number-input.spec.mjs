@@ -85,4 +85,5 @@ export async function run(t) {
   await t.evaluate(`${box('stepped')}.focus(); return true;`)
   await t.press('ArrowUp')
   t.is(await tally(), '{"input":1,"change":1}', 'an arrow key is one input and one change')
+  t.is(JSON.stringify(await t.evaluate(`return window.got;`)), '{"input":8,"change":8}', 'both callbacks receive the bare number, not { value } (FJS-2491)')
 }

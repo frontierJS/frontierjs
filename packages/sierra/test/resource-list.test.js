@@ -49,6 +49,9 @@ let pageSize = null
 let stuckAt  = null
 let failAt   = null
 let many     = []
+// A server that honors a `status` filter, so two lists over one resource can be
+// told apart by the rows each was answered.
+let byStatus = false
 
 const original = globalThis.fetch
 globalThis.fetch = (async (url, init) => {
@@ -62,6 +65,7 @@ globalThis.fetch = (async (url, init) => {
   }
   let data = includes ? ROWS.map(r => ({ ...r, customer: { id: 9, name: 'Acme' } })) : ROWS
   if (extra) data = data.map(r => ({ ...r, ...extra }))
+  if (byStatus && u.searchParams.has('status')) data = data.filter(r => r.status === u.searchParams.get('status'))
   const one = u.pathname.match(/^\/invoices\/(\d+)$/)
   if (one) return json(data.find(r => r.id === Number(one[1])))
   if (pageSize) {
@@ -166,6 +170,7 @@ beforeEach(() => {
   delayMs = 0
   pageSize = stuckAt = failAt = null
   many = []
+  byStatus = false
 })
 
 afterEach(() => {
@@ -775,3 +780,87 @@ describe('a read that answered more than the row, on a view that is not composed
 })
 
 afterAll(() => { globalThis.fetch = original })
+
+// ─── A list over a filter owns its rows ─────────────────────────────────────
+
+// FJS-1444 / FJS-D1165: a list stating `where` or its own `query` is not the
+// resource's store, so a second one on the page cannot replace its rows.
+describe('a list over a filter owns its rows', () => {
+  const ids = (list) => list.rows.map(r => r.id)
+  const push = (row, event = 'patched') => client.service('invoices').emit(event, row)
+
+  test('two filtered lists of one resource each keep the rows they were asked', async () => {
+    await boot('/invoices/')
+    byStatus = true
+    const invoices = invoicesResource()
+    const open = track(invoices.list({ state: 'local', where: { status: 'open' } }))
+    const paid = track(invoices.list({ state: 'local', where: { status: 'paid' } }))
+    await settle()
+
+    expect(ids(open)).toEqual([2, 3])
+    expect(ids(paid)).toEqual([1])
+  })
+
+  test('so does a list stating its own `query`, beside one stating nothing', async () => {
+    await boot('/invoices/')
+    byStatus = true
+    const invoices = invoicesResource()
+    const everything = track(invoices.list({ state: 'local' }))
+    const paid       = track(invoices.list({ state: 'local', query: { status: 'paid' } }))
+    await settle()
+
+    expect(ids(everything)).toEqual([1, 2, 3])
+    expect(ids(paid)).toEqual([1])
+    // The list stating none IS the store, which the filtered one never wrote.
+    expect(invoices.store.get().map(r => r.id)).toEqual([1, 2, 3])
+  })
+
+  test('a reload of one leaves the other alone', async () => {
+    await boot('/invoices/')
+    byStatus = true
+    const invoices = invoicesResource()
+    const open = track(invoices.list({ state: 'local', where: { status: 'open' } }))
+    const paid = track(invoices.list({ state: 'local', where: { status: 'paid' } }))
+    await settle()
+
+    open.reload()
+    await settle()
+    expect(ids(open)).toEqual([2, 3])
+    expect(ids(paid)).toEqual([1])
+  })
+
+  test('a push is judged by each list over its own filter', async () => {
+    await boot('/invoices/')
+    byStatus = true
+    const invoices = invoicesResource()
+    const open = track(invoices.list({ state: 'local', where: { status: 'open' } }))
+    const paid = track(invoices.list({ state: 'local', where: { status: 'paid' } }))
+    await settle()
+
+    push({ id: 2, number: 'INV-2', status: 'paid', total: 200 })
+    await settle()
+    expect(ids(open)).toEqual([3])
+    expect(ids(paid).sort()).toEqual([1, 2])
+  })
+
+  test('destroy lets go of the pushes its own store listened for', async () => {
+    await boot('/invoices/')
+    byStatus = true
+    const invoices = invoicesResource()
+    const handlers = () => client.service('invoices')._handlers.get('patched').size
+    const before = handlers()
+
+    const paid = invoices.list({ state: 'local', where: { status: 'paid' } })
+    await settle()
+    expect(handlers()).toBe(before + 1)
+
+    paid.destroy()
+    expect(handlers()).toBe(before)
+
+    // A list over no filter of its own is the store the resource already had.
+    const plain = invoices.list({ state: 'local' })
+    await settle()
+    expect(handlers()).toBe(before)
+    plain.destroy()
+  })
+})

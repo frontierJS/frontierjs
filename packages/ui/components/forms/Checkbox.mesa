@@ -28,7 +28,7 @@
   export let required    = undefined
   export let tone        = ''
   export let error       = ''
-  export let onchange    = undefined
+  export let onchange    = undefined  // (checked: boolean) => void
   export let indeterminate = false
 
   export var id = ''

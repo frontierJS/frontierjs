@@ -357,6 +357,72 @@ describe('an update that takes a row out of a reader\'s set (FJS-1425)', () => {
   })
 })
 
+// ─── FJS-1742 ─────────────────────────────────────────────────────────────
+
+// A removal is owed to the reader who held the row BEFORE the write, and to no
+// one else: a socket that could read neither image learns an id and a moment
+// from it, which is an activity oracle across a workspace, a tenant or a site.
+describe('a removal goes only to a reader who could read the row before (FJS-1742)', () => {
+
+  test('a write to a row a reader never held tells that reader nothing', async () => {
+    const { db, port } = await mkApp()
+    const owner    = open(port, 'u5')
+    const stranger = open(port, 'u9')
+    const anon     = open(port)
+    expect(await ready(owner)).toBe(true)
+    expect(await ready(stranger)).toBe(true)
+    expect(await ready(anon)).toBe(true)
+
+    const row = await (db as any).asSystem().order.create({ data: { customerId: '5' } })
+    await settle()
+    await (db as any).asSystem().order.update({ where: { id: row.id }, data: { status: 'paid' } })
+    await settle()
+
+    expect(owner.events.map(e => e.event)).toEqual(['orders created', 'orders updated'])
+    expect(stranger.events).toEqual([])
+    expect(anon.events).toEqual([])
+  })
+
+  test('a narrowing reaches the reader it took the row from and no other', async () => {
+    const { db, port } = await mkApp()
+    const owner    = open(port, 'u5')
+    const next     = open(port, 'u6')
+    const stranger = open(port, 'u9')
+    for (const s of [owner, next, stranger]) expect(await ready(s)).toBe(true)
+
+    const row = await (db as any).asSystem().order.create({ data: { customerId: '5' } })
+    await settle()
+    await (db as any).asSystem().order.update({ where: { id: row.id }, data: { customerId: '6' } })
+    await settle()
+
+    expect(owner.events.map(e => e.event)).toEqual(['orders created', 'orders removed'])
+    expect(next.events.map(e => e.event)).toEqual(['orders updated'])
+    expect(stranger.events).toEqual([])
+  })
+
+  test('the same through the service: PATCH reaches the owner it narrowed from and not a stranger', async () => {
+    const { db, port } = await mkApp()
+    const owner    = open(port, 'u5')
+    const stranger = open(port, 'u9')
+    expect(await ready(owner)).toBe(true)
+    expect(await ready(stranger)).toBe(true)
+
+    const row = await (db as any).asSystem().order.create({ data: { customerId: '5' } })
+    await settle()
+    const res = await fetch(`http://localhost:${port}/orders/${row.id}`, {
+      method:  'PATCH',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer admin' },
+      body:    JSON.stringify({ customerId: '6' }),
+    })
+    expect(res.status).toBe(200)
+    await settle()
+
+    expect(owner.events.map(e => e.event)).toEqual(['orders created', 'orders removed'])
+    expect(owner.events[1].data).toEqual({ id: row.id })
+    expect(stranger.events).toEqual([])
+  })
+})
+
 // ─── FJS-2159 ─────────────────────────────────────────────────────────────
 
 describe('a write from a second process is graded like a local one (FJS-2159)', () => {

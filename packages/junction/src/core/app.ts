@@ -18,7 +18,7 @@ import type { TenantConfigOptions, TenantConfigStore } from './config-scope.ts'
 import { createEventBus }           from '../events/index.ts'
 import { createMemoryCache }        from '../cache/index.ts'
 import { createScheduler }          from '../scheduler/index.ts'
-import { autoloadServices, autoloadRoutes } from './loader.ts'
+import { autoloadServices, autoloadRoutes, watchForNewServices, findServiceFiles } from './loader.ts'
 import { resolveServicesDir, resolveRoutesDir, describeServicesDir, type ServicesDirResolution } from './services-dir.ts'
 import { checkAttachments, formatAttachmentRefusal, formatAttachmentSkips } from './attachments.ts'
 import { resolveBuildId } from './build-id.ts'
@@ -2110,6 +2110,7 @@ export function createApp(opts: AppOptions = {}): App {
             // duplicate name AND throws is two sentences and not four.
             report: (_key, finding) => _authoringFindings.push(finding),
           })
+          watchForNewServices({ dir: _servicesDir.dir, known: await findServiceFiles(_servicesDir.dir) })
         }
 
         const routesDir = declared === false ? null : resolveRoutesDir({

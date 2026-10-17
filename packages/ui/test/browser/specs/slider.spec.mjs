@@ -47,6 +47,7 @@ export async function run(t) {
   await t.press('ArrowRight')
   await t.eventually(volume, '10', 'ArrowRight steps once')
   t.is(JSON.stringify(await tally()), '{"input":1,"change":1}', 'a key press is one input and one change')
+  t.is(JSON.stringify(await t.evaluate(`return { input: window.got.input, change: window.got.change };`)), '{"input":10,"change":10}', 'both callbacks receive the bare number, not { value } (FJS-2491)')
 
   const dragFrom = await t.evaluate(xOf(10))
   await t.evaluate(`window.tally = { input: 0, change: 0 }; return true;`)
@@ -88,6 +89,7 @@ export async function run(t) {
   await t.eventually(range, '20,60', 'a press nearer the high end moves the high handle')
   await t.drag(at(40), at(40), { steps: 1 })
   await t.eventually(range, '40,60', 'and one nearer the low end moves the low one')
+  t.is(JSON.stringify(await t.evaluate(`return window.got.range;`)), '[40,60]', 'a range hands back [start, end] (FJS-2491)')
 
   await t.evaluate(`${handle(2)}.focus(); return true;`)
   await t.press('End')

@@ -174,6 +174,11 @@ export interface WriteEvent {
   // collection only — the caller's filter, as written
   where?:     unknown
   result?:    unknown
+  // update only, in-process only: the row as it stood ahead of the write, shaped
+  // like `result`. Read only while an `onEvent` listener or a `$tapEvents` tap
+  // exists, and absent where no image was read (a bulk write, a restore), which
+  // means unknown and never public.
+  before?:    unknown
   schema?:    unknown
   // transition only
   transition?: string

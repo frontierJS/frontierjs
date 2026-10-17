@@ -156,3 +156,9 @@ export const toasts = {
 }
 
 const _w = watchProxy(toasts)
+
+// A toast is one person's, Undo included. Sierra announces a change of person
+// on `document` -- this package cannot import it -- and the stack goes with them.
+if (typeof document !== 'undefined') {
+  document.addEventListener('fjs:session-changed', () => toasts.clear())
+}

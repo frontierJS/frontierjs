@@ -63,6 +63,7 @@ Detail: `references/sockets.md`
 - **A socket stays alive because the SERVER pings it, and an app calls nothing.**
 - **Never call `ws.send()` directly.**
 - **`app.ws` is the raw door: no `connected`, no `{type:'error'}`, a refused frame closes `1008`, and the path takes `apiPrefix`** (`FJS-D688`)
+- **A `removed` frame goes only to a reader the row's BEFORE-image admitted**, and a write with no before-image sends none (`FJS-1742`, `FJS-D1199`)
 
 ## Secrets and the log line
 Detail: `references/secrets-and-the-log-line.md`
@@ -78,6 +79,7 @@ Detail: `references/plugins-config-and-autoload.md`
 - **A plugin reads `junction.config.js` in `boot()`, never in `register()`.**
 - **A missing config DIRECTORY is not a missing config file.**
 - **Where an app's services are is PROBED, not derived**
+- **An `app.<slot>` no plugin installed THROWS on read; `'jobs' in app` is the presence test**
 
 ## The four snapshots
 Detail: `references/the-four-snapshots.md`

@@ -122,8 +122,8 @@
   // Native event callbacks. A <select> fires `input` as well as `change`, and
   // a caller validating as the user picks wants the same hook it uses on an
   // <Input> — see Input.mesa.
-  export let oninput  = undefined
-  export let onchange = undefined
+  export let oninput  = undefined  // (event: Event) => void
+  export let onchange = undefined  // (event: Event) => void
   export let onblur   = undefined
   export let onfocus  = undefined
 </script>

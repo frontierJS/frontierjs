@@ -56,7 +56,7 @@
   const resolvedRequired = stated(required, rule?.required)
   export let badge    = undefined
   export let help     = undefined
-  export let onchange = undefined
+  export let onchange = undefined  // (value) => void
   // The words in the box are this control's own state, so a caller that builds
   // rows from them read `oninput` off the input through `$attributes` — which
   // misses the ✕ and a pick, both of which change the box without an `input`

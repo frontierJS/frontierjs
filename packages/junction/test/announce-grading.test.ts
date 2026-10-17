@@ -92,9 +92,39 @@ describe('a broadcast is graded per recipient', () => {
 
     await publishOnce(manager, db)
 
-    // The row never reaches it. A patch refused to a reader is its removal, by id
-    // alone, since it may have held the row before the write (FJS-1425).
-    expect(anon.sent()).toEqual([{ type: 'event', event: 'orders removed', data: { id: 1 } }])
+    // The row never reaches it, and neither does an id: with no before-image
+    // there is nothing that says it ever held the row (FJS-1742).
+    expect(anon.sent()).toEqual([])
+  })
+
+  test('a patch refused to a reader is its removal only when the before-image admitted them (FJS-1425, FJS-1742)',
+    async () => {
+      const manager  = createChannelManager()
+      const held     = subscriber(manager, 'orders', { userId: 'u-was' })
+      const stranger = subscriber(manager, 'orders', null)
+      const now      = { ...ROW, userId: 'u-now' }
+      const { db }   = boundary((p, row) => (p?.userId === row.userId ? row : null))
+      const was      = { ...ROW, userId: 'u-was' }
+
+      await manager.sendGraded('orders', 'orders patched', now, { db, accessor: 'order', before: was })
+
+      expect(held.sent()).toEqual([{ type: 'event', event: 'orders removed', data: { id: 1 } }])
+      expect(stranger.sent()).toEqual([])
+    })
+
+  test('removalsOnly sends the removal and leaves the admitted frame to the announcement (FJS-1742)', async () => {
+    const manager = createChannelManager()
+    const held    = subscriber(manager, 'orders', { userId: 'u-was' })
+    const owner   = subscriber(manager, 'orders', { userId: 'u-now' })
+    const now     = { ...ROW, userId: 'u-now' }
+    const { db }  = boundary((p, row) => (p?.userId === row.userId ? row : null))
+
+    await manager.sendGraded('orders', 'orders patched', now, {
+      db, accessor: 'order', before: { ...ROW, userId: 'u-was' }, removalsOnly: true,
+    })
+
+    expect(held.sent()).toEqual([{ type: 'event', event: 'orders removed', data: { id: 1 } }])
+    expect(owner.sent()).toEqual([])
   })
 
   test('and the control — a connection it admits receives the row', async () => {
@@ -116,7 +146,7 @@ describe('a broadcast is graded per recipient', () => {
 
       await publishOnce(manager, db)
 
-      expect(anon.sent()).toEqual([{ type: 'event', event: 'orders removed', data: { id: 1 } }])
+      expect(anon.sent()).toEqual([])
       expect(staff.rows()).toEqual([ROW])
     })
 
@@ -329,7 +359,7 @@ describe('the cohort key is the principal value, not the object', () => {
 
     expect(asked.length).toBe(2)
     expect(staff.rows()).toEqual([ROW])
-    expect(buyer.rows()).toEqual([{ id: 1 }])
+    expect(buyer.rows()).toEqual([])
   })
 
   test('the key order a session was built in does not split a cohort', async () => {

@@ -1350,6 +1350,7 @@ the failure this is most likely to cause.
 06-swap        → stop old container, start new (migrations run in entrypoint)
 07-health      → poll deploy.api.health — rolls back to previous container on failure
 08-release-web → atomic symlink swap; Caddy reads the root per request
+08b-outpost    → enroll the API's box in the app's fleet (if outpost: true; --no-outpost skips)
 09-cleanup     → remove _replaced, prune images, release deploy lock
 ```
 
