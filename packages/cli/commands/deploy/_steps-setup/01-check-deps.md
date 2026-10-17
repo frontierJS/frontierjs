@@ -57,6 +57,21 @@ const deps = [
   { name: 'litestream', check: 'litestream version', install: litestreamInstall() },
 ]
 
+// fli on the box, for an operator who SSHes in (FJS-D1195), at THIS fli's
+// version: one a step behind the laptop answers a command the laptop's would
+// not. Only from npm, so an unpublished version is skipped and named rather
+// than replaced by whatever npm holds.
+const { fliVersion } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+const FLI = fliVersion()
+const published = FLI && await fetch(`https://registry.npmjs.org/@frontierjs%2Fcli/${FLI}`, { signal: AbortSignal.timeout(5000) })
+  .then(r => r.ok, () => null)
+if (published) {
+  deps.push({ name: `fli ${FLI}`, check: `fli --version | grep -qx ${FLI}`,
+              install: `BUN_INSTALL=/usr/local bun add -g @frontierjs/cli@${FLI}` })
+} else {
+  log.warn(`  fli ${FLI} — ${published === null ? 'npm did not answer' : 'not on npm'}, so the box gets no fli; publish @frontierjs/cli ${FLI} and run setup again`)
+}
+
 const missing = []
 
 for (const dep of deps) {

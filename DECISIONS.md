@@ -1414,6 +1414,22 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1196"></a>2026-10-17 · `FJS-D1196` — Q3 — What a peer is, as a row, on the app it calls — A **user that owns an API key**, the Phase 0 shape. No principal kind of its own in auth and no `Peer` model: *Peer* stays the word for the relationship (`FJS-D1188`). Phase 1 builds on that account, and 1.2's signed call resolves to it.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) Q3, through the question tool. **A** was picked over the paper's recommendation **B** (a principal minted by the credential door with no User row, the shape `signedRequest` already gives Outpost on Basecamp, `FJS-D475`) and **A with a side table** (Mattermost's `Bots` row beside a User row, which adds a model to auth). The precedent for A is the chat tools: Mattermost bots, Discord's `bot: true`, GitHub machine users. B's precedent is infrastructure: Kubernetes `ServiceAccount`, GCP service accounts, GitHub Apps. A keeps authorship. A row the peer writes has its author, and chat's `Post` → `Profile` needs no peer-to-author map. B's cost was exactly that map, since a `service` principal is never stamped into a User-typed column (`litestone/src/core/stamps.js`).
+
+The costs carried forward, all measured in plan 0.3. The account is a person's account: an email, a password and a verification step (item 4). Its reach is the owner's standing, narrowed only where the receiver declares `scope:` (item 1, `FJS-D916`). And its writes are filed as `user`. `actorTypeOf` reads `type`, and only `userType: 'service'` crosses `toDataPrincipal` (`FJS-2514`), and that value means *names no row*, so it cannot be reused for an account that does. Step 1.3 is where the kind lands.
+
+The nine: 1 origin — the credential lives once, as auth's `Credential` on the receiver; the dialer holds only the secret · 2 concept — no new noun · 3 complexity — the problem's · 4 predictability — graded like any user, by the same gate · 5 derived — standing from the account's own columns and the key's scopes · 6 owner — auth's key issue and `verifySession`; `bearerClaim` unchanged · 7 boundary — the dialer knows a secret and an endpoint, nothing of the receiver's account shape · 8 failure — a revoked key or a removed account refuses · 9 must stay true: an app's write is never filed as a person. What fails when it stops: **`none`** until 1.3 — today it IS filed as a person. § IV: none of the seven is in tension; both shapes have outside precedent and the tree's own is B. Tier: Register.
+
+*Lives in:* `IDEAS/app-peering.md` Q3 and Phase 1.
+
+### <a id="fjs-d1194"></a>2026-10-17 · `FJS-D1194` — Q4 — The ASVS level targeted — L2 throughout, L3 for the Authentication chapter and tenant isolation.
+
+Asked in [`IDEAS/pen-testing.md`](IDEAS/pen-testing.md) § Open questions. **A** was picked over **B** (L2 throughout), **C** (L1 for now).
+
+The paper's recommendation, taken as written: those two boundaries hold every other app's data.
+
 ### <a id="fjs-d1190"></a>2026-10-16 · `FJS-D1190` — App peering 0.1 — Phase 0's first message is a monitor going down, sent through a `chat` NotificationChannel kind in Basecamp that calls chat's own `POST /api/posts` with a bearer API key. The glue is on the dialer and chat is unchanged.
 
 Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) step 0.1, through the question tool. **Monitor down with the glue on the dialer** was picked as recommended over **receiver glue** (Basecamp's `webhook` kind unchanged and a raw route on chat translating it, which treats Basecamp as a third-party Provider, contrary to `FJS-D177`), **deploy finished** (no deploy-to-channel link exists, so the first step would be new Basecamp scope rather than a measurement) and **slack to Mattermost** (zero code, but it skips the chat app, so there is no peering to measure). A monitor is the one Basecamp event that already reaches a `NotificationChannel`. Built as one `ChannelKind` value and one row in `core/delivery.ts` `KINDS`, the one owner of how a channel is reached.
@@ -7535,6 +7551,18 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1193"></a>2026-10-17 · `FJS-D1193` — Q2 — Where rate-limit counters live — In-process, with the per-process limit documented.
+
+Asked in [`IDEAS/pen-testing.md`](IDEAS/pen-testing.md) § Open questions. **B** was picked over **A** (a SQLite table, as login challenges already use).
+
+owner keeps the counters in a process Map for now; a restart resetting the throttle and N processes allowing N times the attempts is accepted and written down, not fixed.
+
+### <a id="fjs-d1192"></a>2026-10-17 · `FJS-D1192` — Q1 — The default CSP — Strict (`default-src 'self'`) on by default; an app loosens it.
+
+Asked in [`IDEAS/pen-testing.md`](IDEAS/pen-testing.md) § Open questions. **A** was picked over **B** (opt-in, as today).
+
+The paper's recommendation, taken as written: Mesa has no inline-eval need we know of, and 2.3 measures that before the default lands.
 
 ### <a id="fjs-d1159"></a>2026-10-16 · `FJS-D1159` — Where a large upload belongs — Two primitives, one per owner, composed by the app. Junction: a route-level body contract, `app.put(path, handler, { body: 'stream' })`, that skips `parseBody` and hands the handler `req.body`, with `http.maxBodySize` setting Bun's `maxRequestBodySize`. Litestone: `FileStorage` gains a streaming entry — `fromStream(readable, { name, type })` over `provider.put(key, stream)` — that sniffs the head for `@accept`, hashes on the way, and writes the ref.
 
@@ -13944,6 +13972,24 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1197"></a>2026-10-17 · `FJS-D1197` — Whether Basecamp shows a machine's Caddy config — Yes, read-only: a Routes card on the server page, read live from the machine and never stored.
+
+Asked in chat, through the question tool. **Read-only** was picked over **with edit**, which would be a second way to write a route beside an App's Domain rows, and over **later**. Outpost answers a signed `POST /ingress` (`routes()` in `packages/outpost/src/ingress.js`). `servers.ingress` sets each route beside the rows that should explain it: a `fjs-<appId>` route is graded against that App's live Domains, a `fli-` route is `fli deploy`'s, and anything else was written by hand. A hostname no Domain names is flagged, an App that is gone is flagged, and a second Caddy http server is a warning, since a second one on :443 is the Caddyfile conflict.
+
+No adjudication in tension. **§ V's ninth question**: *the card shows what Caddy routes*. It holds by construction, because the card reads Caddy and nothing else. Only a scratch drive against a real Caddy has proved it: **unenforced**. Where it lives: `packages/outpost/src/ingress.js`, `servers.ingress`, `web/src/routes/servers/[id]/index.mesa`.
+
+### <a id="fjs-d1195"></a>2026-10-17 · `FJS-D1195` — Whether `fli deploy:setup` puts fli on the box — Yes, for an operator who SSHes in, from npm at the laptop's version, skipped and named when npm does not have that version.
+
+Asked in chat, through the question tool. **To run commands on the box** was picked over **so the box deploys itself**, which would reverse `FJS-D1187` (pushed, never pulled), and over **not needed**. Then **npm, pinned** was picked over **shipping the workspace copy** (a second install path beside npm) and **publishing first**. The pipeline still runs nothing through the box's fli: every step stays laptop-over-SSH.
+
+No adjudication in tension. **§ V's ninth question**: *the box's fli is the laptop's version*. The dependency check is `fli --version | grep -qx <version>`, so a box with a drifted fli reads as missing and setup offers to reinstall it. **Enforced at setup, unenforced between setups.** Where it lives: `packages/cli/commands/deploy/_steps-setup/01-check-deps.md`.
+
+### <a id="fjs-d1191"></a>2026-10-17 · `FJS-D1191` — How the box Basecamp runs on becomes a fleet machine — Both: a *Use this Basecamp server* button now, then `fli deploy` enrolling the box by default with `--no-outpost` to opt out.
+
+Asked in chat, through the question tool, after a first deploy of Basecamp left a Servers screen with nothing to place an app on. **Both, button first** was picked over **the button alone**, **`fli deploy` alone** and **SSH-to-self from the container**. The last reverses `FJS-D241`, and the precedent for it is Coolify's `localhost` server reached at `host.docker.internal`, which an OpenSSH package update broke ([coolify#7980](https://github.com/coollabsio/coolify/issues/7980)). Dokploy makes its own box the default target ([docs](https://docs.dokploy.com/docs/core/deployment-options)), and that is the shape `fli deploy` takes once enrolling is its default.
+
+**The Caddy half needed nothing.** `fli deploy` already leaves the `caddy-api` unit and writes into the `ingress` server Outpost writes to (`FJS-D598`), so only the Outpost is missing. **The button** (`web/src/routes/servers/index.mesa`) makes a Server row with the fixed slug `basecamp-host`, calls `issueEnrollment` and shows the command once. It sits in the empty list, moves to the header once any machine exists, and goes away at the row's first heartbeat. A second click re-issues the token for the same row. **`--no-outpost`** is owed. When it lands, find-or-create moves into one `servers` method that the button and `fli deploy` both call, so the slug is not written twice. **§ V's ninth question**: *one row per box*. **Unenforced**: only a scratch drive has proved it. Where it lives: the button, plus a `slug` filter on `servers.find`.
 
 ### <a id="fjs-d1187"></a>2026-10-17 · `FJS-D1187` — Where a deploy's source comes from — Pushed, never pulled: `02-ship` runs `git archive` of HEAD at the app's own directory, with `deploy/generated/` beside it, into `<path>/src` on every machine. The target holds no repository and no key to one, and `deploy:setup` neither clones nor installs git. Uncommitted changes are named and not shipped. The build stays on the target.
 

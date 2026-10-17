@@ -13,6 +13,7 @@ title: Servers
   import Table          from '@frontierjs/ui/components/display/Table.mesa'
   import Drawer         from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import Mono           from '@frontierjs/ui/components/display/Mono.mesa'
+  import CopyButton     from '@frontierjs/ui/components/display/CopyButton.mesa'
 
   $: session.workspaceId
   // The whole query lives in the URL, so both halves are watched: `query` is
@@ -133,6 +134,7 @@ title: Servers
 
   const off = servers.service.on('*', (method, row) => {
     if (READS.has(method) || !row?.id) return
+    if (row.id === self?.id) self = { ...self, ...row }
     const i = rows.findIndex(r => r.id === row.id)
     if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...row }, ...rows.slice(i + 1)]
   })
@@ -183,6 +185,53 @@ title: Servers
     }
   }
 
+  // ─── This Basecamp's own machine ─────────────────────────────────────
+  // The box Basecamp runs on is the first place an app can go, and `fli
+  // deploy` already left it the caddy-api unit Outpost writes routes into
+  // (FJS-D598). What it lacks is the Outpost, and this container cannot install
+  // one on its host without an SSH key it may not hold (FJS-D241) — so the
+  // button makes the row and the token, and the operator runs one command.
+  //
+  // Found again by its fixed slug, so a second click re-issues the token for
+  // the same row rather than adding a twin to the fleet.
+  const SELF_SLUG = 'basecamp-host'
+
+  let self       = null    // the row, once made
+  let selfCmd    = null    // the install command — shown once, the token is not answered twice
+  let selfWindow = 15
+  let selfError  = null
+  let enrolling  = false
+  let busySelf   = false
+
+  async function loadSelf() {
+    try {
+      self = (await servers.service.find({ slug: SELF_SLUG }, { limit: 1 })).data[0] ?? null
+    } catch { self = null }
+  }
+  loadSelf()
+  $: session.workspaceId, () => loadSelf()
+
+  // Offered until the machine has checked in once — a row whose command was
+  // never run is still a box that is not in the fleet.
+  $: offerSelf = !self?.lastHeartbeatAt
+
+  async function enrollSelf() {
+    selfError = null; selfCmd = null; enrolling = true; busySelf = true
+    try {
+      self ??= await servers.service.create({
+        name: 'Basecamp host', slug: SELF_SLUG, role: 'general', region: 'self',
+      })
+      const issued = await servers.service.invoke('issueEnrollment', self.id)
+      selfCmd    = issued.command
+      selfWindow = Math.round((issued.windowMs ?? 15 * 60_000) / 60_000)
+      load()
+    } catch (e) {
+      selfError = e.message
+    } finally {
+      busySelf = false
+    }
+  }
+
   const SERVER_COLUMNS = [
     { name: 'name',            label: 'Name',           sortable: true },
     { name: 'status',          label: 'Status',         sortable: true },
@@ -201,6 +250,9 @@ title: Servers
        decided by a dropdown four fields into the form, so a workspace with no
        cloud account could not tell provisioning existed at all. -->
   <div class="cluster">
+    {#if offerSelf && rows.length}
+      <Button variant="outlined" id="self-open" onclick={enrollSelf}>Use this Basecamp server</Button>
+    {/if}
     <Button variant="primary" href="/servers/provision/">Provision a machine</Button>
     <Button variant="outlined" href="/servers/import/">Import existing</Button>
     {#if accounts.length}
@@ -264,6 +316,30 @@ title: Servers
   </div>
 </Drawer>
 
+<Drawer open={enrolling} title="Use this Basecamp server" onclose={() => enrolling = false}>
+  <div class="stack" id="self-enroll">
+    {#if selfError}
+      <article class="alert danger" id="self-error"><div class="alert-content">{selfError}</div></article>
+    {:else if self?.lastHeartbeatAt}
+      <article class="alert success" id="self-online">
+        <div class="alert-content">Checked in. <a href={`/servers/${self.id}/`}>Open the machine</a> and place an app on it.</div>
+      </article>
+    {:else if selfCmd}
+      <p class="text-sm">
+        SSH into the box Basecamp runs on and run this within {selfWindow} minutes.
+        It is shown once; click again for a new one, which revokes this.
+      </p>
+      <pre class="code" id="self-command"><code>{selfCmd}</code></pre>
+      <div class="cluster">
+        <CopyButton text={selfCmd} label="Copy command" variant="outlined" />
+      </div>
+      <p class="text-sm text-muted">Waiting for its first check-in. This closes the loop by itself.</p>
+    {:else}
+      <p class="text-sm text-muted">{busySelf ? 'Making the row and its token…' : ''}</p>
+    {/if}
+  </div>
+</Drawer>
+
 {#if error}
   <article class="alert danger">
     <div class="alert-content">{error}</div>
@@ -302,6 +378,20 @@ title: Servers
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
 {:else if !rows.length}
+  {#if offerSelf && !status && !role && !search}
+    <article class="card stack" id="self-offer">
+      <h2 class="h4">Start with the machine Basecamp runs on</h2>
+      <p class="text-sm text-muted">
+        Apps can run beside Basecamp on its own box. One command installs the Outpost there,
+        and its Caddy already serves Basecamp, so app routes join it.
+      </p>
+      <div class="cluster">
+        <Button variant="primary" id="self-start" onclick={enrollSelf}>
+          Use this Basecamp server
+        </Button>
+      </div>
+    </article>
+  {/if}
   <article class="alert info">
     <div class="alert-content">
       No servers match. Clear the filters,

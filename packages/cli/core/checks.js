@@ -6071,11 +6071,12 @@ function seamListed({ root }) {
 // *Proved by* is the only part of it that can be wrong without anyone reading
 // it wrong: a renamed suite leaves the boundary reading as proved, and an audit
 // grading the table skips it. So a row naming no test, a path that is not in
-// the tree, or a path that is not a test is an error.
+// the tree, or a path that is not a test is an error. Where the table has an
+// *ASVS* column, a row citing no ASVS ID is one too: the standard is what the
+// table is graded against, and a row outside it is a row no gap sheet counts.
 //
-// Only *Proved by* is graded here. A dead path in *Enforced at* is
-// `doc-cites-dead`'s, and whether the named test really holds the promise is a
-// judgement no rule makes.
+// A dead path in *Enforced at* is `doc-cites-dead`'s. Whether the named test
+// really holds the promise, or the ID really names it, no rule decides.
 
 const THREATS_FILE = 'THREATS.md'
 
@@ -6084,15 +6085,24 @@ function threatRow({ root }) {
   if (!existsSync(file)) return { skipped: `no ${THREATS_FILE}` }
 
   const findings = []
-  let col = -1, rows = 0
+  let col = -1, asvs = -1, rows = 0
   readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
     if (!line.startsWith('|')) { col = -1; return }
     const cells = line.split('|').slice(1, -1).map(c => c.trim())
-    if (col === -1) { col = cells.findIndex(c => /^proved by$/i.test(c)); return }
+    if (col === -1) {
+      col  = cells.findIndex(c => /^proved by$/i.test(c))
+      asvs = cells.findIndex(c => /^asvs$/i.test(c))
+      return
+    }
     if (cells.every(c => /^:?-+:?$/.test(c))) return
     rows++
     const at    = { file, line: i + 1 }
     const label = cells[0] || `line ${i + 1}`
+    if (asvs !== -1 && !/\bV\d+(?:\.\d+){0,2}\b/.test(cells[asvs] ?? '')) {
+      findings.push({ ...at,
+        message: `row ${label} cites no ASVS ID in *ASVS*. Name the ASVS 5.0 chapter (\`V8\`) or ` +
+                 `requirement (\`V8.2.1\`) the promise answers to.` })
+    }
     const paths = [...(cells[col] ?? '').matchAll(/`([^`\s]+\/[^`\s]+)`/g)].map(m => m[1])
     if (!paths.some(p => kindOf(p) === 'test')) {
       findings.push({ ...at,

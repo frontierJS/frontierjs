@@ -153,14 +153,7 @@ async function stillThere(serverId: string) {
 
 async function enroll(): Promise<Machine> {
   // The row this laptop left behind, if the file went and the database did not.
-  // Paged rather than filtered: `servers.find` builds its own where-clause and
-  // honors no slug, so the row is found by walking the list.
-  let server: any = null
-  for (let offset = 0; !server; offset += 200) {
-    const page = (await call(`/servers?$limit=200&$offset=${offset}`, { token, workspace: workspace.id })).data
-    server = (page?.data ?? []).find((s: any) => s.slug === SLUG) ?? null
-    if (!page?.data?.length || offset + 200 >= (page.total ?? 0)) break
-  }
+  let server: any = (await call(`/servers?slug=${SLUG}&$limit=1`, { token, workspace: workspace.id })).data?.data?.[0] ?? null
 
   if (!server) {
     const made = await call('/servers', { token, workspace: workspace.id, body: {

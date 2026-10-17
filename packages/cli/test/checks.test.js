@@ -2191,6 +2191,19 @@ describe('threat-row', () => {
     expect(findings[2].message).toMatch(/which is not a test/)
   })
 
+  test('with an ASVS column, a row citing no ID is an error', () => {
+    const root = tree('threat-asvs', {
+      'THREATS.md': '| # | ASVS | Proved by |\n| --- | --- | --- |\n' +
+                    '| B1 | V8 | `pkg/test/a.test.js` |\n' +
+                    '| B2 | V4, V12.3.5 | `pkg/test/a.test.js` |\n' +
+                    '| B3 | Authorization | `pkg/test/a.test.js` |\n',
+      'pkg/test/a.test.js': '',
+    })
+    const { findings } = only(root, 'threat-row', { scope: 'repo' })
+    expect(findings.map(f => f.message.match(/^row (\S+)/)[1])).toEqual(['B3'])
+    expect(findings[0].message).toMatch(/cites no ASVS ID/)
+  })
+
   test('a tree with no THREATS.md skips rather than passes', () => {
     const root = tree('threat-none', { 'README.md': '' })
     expect(only(root, 'threat-row', { scope: 'repo' }).skipped.map(s => s.id ?? s)).toHaveLength(1)

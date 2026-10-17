@@ -230,7 +230,7 @@ export function publishRefusals({ dirty = [], drift = [], cycles = [], heldBack 
       note:     true,
       message:  `${heldBack.length} package(s) in this release are held back from the website: ${heldBack.map(h => h.name).join(', ')}`,
       because:  'the website names each package it does not describe with a reason, and a first release is what makes that reason stale',
-      fix:      'after publishing, delete the HELD_BACK entry in website/site/src/data/packages.js and describe the package in website/packages.js',
+      fix:      'after publishing, delete the HELD_BACK entry in website/site/content/data/packages.js and describe the package in website/packages.js',
       override: null,
       detail:   heldBack.map(h => `${h.name} — ${h.reason}`),
     })

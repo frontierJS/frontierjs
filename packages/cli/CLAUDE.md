@@ -992,7 +992,8 @@ test/     one file per module under core/, plus the deploy pipeline's own
   four exited 0 until it was.
 - **A deploy target has bun and no `node_modules`, and that is what decides how
   the journal is written.** `deploy:setup` installs docker, caddy, bun,
-  rsync and sqlite3; `02-ship` leaves the app's committed tree in `<path>/src`
+  rsync and sqlite3 (and fli at this fli's version, when npm has it — for an
+  operator, never for the pipeline); `02-ship` leaves the app's committed tree in `<path>/src`
   and the build happens inside Docker, so litestone is not there and cannot be imported there. Hence the
   committed DDL and a runner whose only import is `bun:sqlite` — and hence
   `packages/cli` still depending on no database. **Every rule lives in

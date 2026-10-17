@@ -56,7 +56,7 @@ and what it does.
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (89)
+### A service hook runs in front of the body (90)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -137,6 +137,7 @@ name, and is as unread as the body.
 | `servers.feed` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `servers.logEvent` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `servers.ingress` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `servers.reboot` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `servers.drain` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `servers.undrain` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -1116,8 +1117,8 @@ name when it declares none.
 
 ### `servers` · model `Server`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `localSshHosts`, `localSshProbe`, `heartbeat`
-- **custom methods** — `events`, `feed`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **custom methods** — `events`, `feed`, `logEvent`, `metrics`, `ingress`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `localSshHosts`, `localSshProbe`, `heartbeat`
 - **input** — `provision` takes `ServerProvision`
 - **input** — `provisionStep` takes `ServerProvisionStep`
 - **who may call** —
@@ -1126,6 +1127,7 @@ name when it declares none.
   - `feed` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `logEvent` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `metrics` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
+  - `ingress` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `reboot` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `drain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `undrain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`

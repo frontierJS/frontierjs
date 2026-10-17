@@ -151,12 +151,13 @@ Goal: a peer's call is graded and audited as that peer.
 Done when: chat's audit trail names Basecamp as an app, and a replayed request
 is refused.
 
-- [ ] 1.1 Hearing on Q3 — a user that owns a key, or a principal of its own kind.
-- [ ] 1.2 Signed calls: conduit's `hmac` on the dialer; `verifyRequest()` then
-  `bearerClaim()` on the receiver.
-- [ ] 1.3 The audit entry carries the actor's kind (Invariant 7's trail, one
-  more field). Chat's `Post` must be `@@trail`ed first, or nothing records the
-  write (0.3 item 2).
+- [x] 1.1 Hearing on Q3 — **a user that owns a key** (`FJS-D1196`).
+- [ ] 1.2 Signed calls: conduit's `hmac` on the dialer; on the receiver,
+  `signedRequest({ keyFor })` (`FJS-D475`) resolving to the peer's own account.
+- [ ] 1.3 The audit entry carries the actor's kind. Under `FJS-D1196` the
+  account is a User, so the kind is stated by that account and must not be
+  `service`, which means *names no row* (`stamps.js`). Chat's `Post` must be
+  `@@trail`ed first, or nothing records the write (0.3 item 2).
 
 ### Phase 2 — Basecamp is the trust root for its fleet
 
@@ -198,14 +199,40 @@ each side approves.
   over *federation*, *trust domain* and *network*.
 - ~~**Q2 — Which app is first.**~~ **Answered 2026-10-16 (`FJS-D1189`):
   `fjs-prototypes/chat`**, one message, Basecamp dialing.
-- **Q3 — What a peer is, as a row.**
-  - **A** — a user that owns an API key, with an actor kind on the audit entry.
-  - **B** — a principal kind of its own in auth.
-  - **Recommend A until Phase 0 says otherwise** — it is one field, not a noun.
-  - Phase 0's evidence: A works end to end. What it costs is items 1 and 4 of
-    0.3. The key's reach is set by the receiver's declared scopes, and the
-    account is a person's account, with an email, a password and a
-    verification step.
+- ~~**Q3 — What a peer is, as a row.**~~ **Answered 2026-10-17 (`FJS-D1196`):
+  A, a user that owns an API key**, over the recommended B. The hearing record:
+  - **What the tree already does.** Outpost → Basecamp is a machine calling an
+    FJS app, and it is B: `signedRequest({ keyFor })` (`FJS-D475`) turns a
+    signature into `{ userId: 'outpost:<id>', userType: 'service' }` with no
+    User row behind it. The actor kind on the audit entry is not a field to
+    add: `toDataPrincipal` carries `service` across (`FJS-2514`) and
+    `actorTypeOf` files it. A `service` principal is never stamped into a
+    User-typed column (`litestone/src/core/stamps.js`), and with no `role` it
+    grades CREATOR unless the app's `$levelOf` says otherwise. Outpost's reach
+    is a hand-written hook (`outpostScope`), which is the part not to copy.
+  - **Prior art.** Chat and collaboration tools use A, or A with a side table:
+    a Mattermost bot is a User row with a `Bots` row beside it, a fake
+    `@localhost` email and no password (`server/public/model/bot.go`). Discord
+    uses `bot: true` on the User object, and GitHub has machine users.
+    Infrastructure uses B: Kubernetes `ServiceAccount` (RBAC
+    `kind: ServiceAccount`), GCP service accounts, and GitHub Apps, which is
+    GitHub's recommended path. Where the two meet, the convergent shape is a
+    record the receiver owns, with permissions the receiver declares and the
+    kind in the audit entry.
+  - **A** — a user that owns an API key (Phase 0 as built; Mattermost, Discord).
+    Rows it writes can have an author. It costs a person's account (an email, a
+    password, a verification step) and borrows that account's standing. Marking
+    it as an app needs a kind on User that does not exist yet.
+  - **B** — a principal of its own, minted by the credential door (Outpost's
+    shape; Kubernetes, GCP, GitHub Apps). The audit kind already exists, and 1.2's
+    signed calls ARE this door. It costs authorship: a peer authors no row, so
+    a receiver whose models need an author (chat's `Post` → `Profile`) maps the
+    peer to one itself.
+  - **Recommend B** — it is the shape the tree already uses for a machine
+    calling an app. The two options also fail differently. A fails silently:
+    the app's write is filed as a person, which breaks the property § The nine
+    q9 holds, and nothing reports it. B fails loudly: a model that needs an
+    author refuses the write, or leaves the author null.
 - **Q4 — What Basecamp issues.** A shared secret per pair (n² secrets, simple),
   or a keypair per app with public keys distributed (n keys, Nebula's shape).
   The signature kit signs either way already, so this is a question of

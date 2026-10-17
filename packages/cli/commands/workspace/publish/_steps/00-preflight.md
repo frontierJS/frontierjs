@@ -24,7 +24,7 @@ const sorted = publishOrder(planned.map(p => ({ ...p, name: p.pkg.name })))
 // The website's list of packages it holds back, read where it lives. Absent
 // outside this workspace, where there is no site to fall behind.
 let heldBack = []
-const siteData = resolve($.config.wsRoot ?? '', 'website/site/src/data/packages.js')
+const siteData = resolve($.config.wsRoot ?? '', 'website/site/content/data/packages.js')
 if (existsSync(siteData)) {
   const { HELD_BACK = {} } = await import('file://' + siteData)
   heldBack = planned.filter(p => p.pkg.name in HELD_BACK).map(p => ({ name: p.pkg.name, reason: HELD_BACK[p.pkg.name] }))

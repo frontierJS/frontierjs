@@ -68,6 +68,7 @@ process's user, so the default is refuse and a route opts out rather than in.
 | `POST /static/health` | `{ app_id, digest }` → `{ healthy, digest }`, plus `reason` when it is not |
 | `POST /static/retire` | `{ app_id, slug }` → `{ retired }` — off the air, every release kept |
 | `POST /static/releases` | `{ app_id }` → `{ current, digests }` |
+| `POST /ingress` | `{}` → `{ caddy, listen, routes: [{ id, hosts, to }], servers }` — what Caddy's `ingress` server routes, whoever wrote it, each route reduced to its destinations; `servers` lists every other http server (a second one on :443 is a Caddyfile left running); `caddy: false` on a machine without one |
 | `POST /system/prune` | `{ targets, keep_images }` → `{ freed_bytes, removed, volumes, usage }` |
 | `POST /volumes/prune` | `{ names }` → `{ removed }` |
 | `DELETE /volumes/<name>` | → `{ removed }`, or 409 with the container holding it |

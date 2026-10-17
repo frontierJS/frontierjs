@@ -32,6 +32,7 @@ if (flag.production) {
 
 if (!server) {
   log.error('No server configured — set DEV_SERVER / STAGE_SERVER / PROD_SERVER in .env')
+  log.info('Use fli env:set DEV_SERVER kdev')
   return
 }
 

@@ -241,6 +241,10 @@ export function createOutpostServer(config, {
     }),
     'POST /static/releases': (body) => statics.releases({ appId: body.app_id }),
 
+    // A read, signed like every other route: the hostnames a machine serves
+    // are the fleet's map, and the static origin beside this is public.
+    'POST /ingress':       () => ingress.routes(),
+
     'POST /system/prune':  (body) => inspector.prune({ targets: body.targets, keepImages: body.keep_images })
       .then(async result => ({ ...result, usage: await inspector.disk() })),
     'POST /volumes/prune': (body) => inspector.pruneVolumes(body.names ?? []),

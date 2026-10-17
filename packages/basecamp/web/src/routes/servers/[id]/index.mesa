@@ -115,6 +115,31 @@ title: Server
   })
   $.onDestroy(offPosture)
 
+  // ─── Routes ──────────────────────────────────────────────────────────
+  // What this machine's Caddy routes, read from the machine when asked rather
+  // than kept here. Read-only: a route changes through its App's Domains, and
+  // a second way to write one is a second answer that drifts.
+  let ingress      = null
+  let ingressError = null
+
+  async function readRoutes() {
+    ingressError = null; busy = 'routes'
+    try {
+      ingress = await servers.service.invoke('ingress', server.id)
+    } catch (e) {
+      ingressError = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const OWNER = { outpost: 'Basecamp', fli: 'fli deploy', hand: 'by hand' }
+  const describeTarget = (t) =>
+      t.kind === 'proxy'    ? `→ ${t.dial}${t.host ? ` (Host ${t.host})` : ''}`
+    : t.kind === 'redirect' ? `${t.status ?? 308} → ${t.location}`
+    : t.kind === 'files'    ? `files ${t.root ?? ''}`.trim()
+    : `answers ${t.status}`
+
   const POSTURE_TONE = { true: 'success', false: 'danger', unknown: 'muted' }
 
   load()
@@ -521,6 +546,61 @@ title: Server
           {/each}
         </tbody>
       </table>
+    {/if}
+  </article>
+
+  <article class="card stack" id="server-routes">
+    <div class="cluster">
+      <h2 class="h4">Routes</h2>
+      <Button variant="outlined" id="routes-read" disabled={busy === 'routes'} onclick={readRoutes}>
+        {busy === 'routes' ? 'Reading…' : ingress ? 'Read again' : 'Read from the machine'}
+      </Button>
+    </div>
+    {#if ingressError}
+      <p class="text-sm" id="routes-error">{ingressError}</p>
+    {:else if !ingress}
+      <p class="text-sm text-muted">What this machine's Caddy sends where. Read live; nothing here is stored.</p>
+    {:else if !ingress.outpost}
+      <p class="text-sm text-muted">No Outpost has checked in from this machine, so there is nothing to ask.</p>
+    {:else if !ingress.caddy}
+      <p class="text-sm text-muted">The Outpost answered but Caddy did not: {ingress.said}</p>
+    {:else}
+      {#each ingress.servers as other}
+        <article class="alert warning" data-other-server={other.name}>
+          <div class="alert-content">
+            A second Caddy server, <code>{other.name}</code>, listens on {other.listen.join(', ') || 'no address'}
+            with {other.routes} route(s). Only <code>ingress</code> is Basecamp's and fli's; a second one on :443 is
+            usually a Caddyfile left running.
+          </div>
+        </article>
+      {/each}
+      {#if !ingress.routes.length}
+        <p class="text-sm text-muted">Caddy routes nothing here yet. A Domain on an app placed here adds a route.</p>
+      {:else}
+        <table class="table" id="routes-table">
+          <thead><tr><th>Hostnames</th><th>Sends to</th><th>Written by</th></tr></thead>
+          <tbody>
+            {#each ingress.routes as r}
+              <tr data-route={r.id ?? ''}>
+                <td>
+                  {#each r.hosts as h}
+                    <div><code>{h}</code>{#if r.stray?.includes(h)} <span class="badge warning" title="No Domain row names this hostname">no Domain</span>{/if}</div>
+                  {/each}
+                </td>
+                <td class="text-sm">
+                  {#each r.to as t}<div>{describeTarget(t)}</div>{/each}
+                </td>
+                <td class="text-sm">
+                  {#if r.app}<a href={`/apps/${r.app.id}/`}>{r.app.name}</a>
+                  {:else if r.owner === 'outpost'}<span class="badge warning">app gone</span>
+                  {:else}{OWNER[r.owner]}{/if}
+                  <div class="text-muted"><code>{r.id ?? 'no @id'}</code></div>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
     {/if}
   </article>
 

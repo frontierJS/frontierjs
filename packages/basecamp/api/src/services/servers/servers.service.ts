@@ -53,6 +53,7 @@ import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
 import { mintEnrollToken, cloudInit, installCommand, ENROLL_WINDOW_MS } from '../../providers/compute/enrollment.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { listSshHosts, probeSshHost } from '../../core/local-ssh.ts'
+import { outbound, outpostFor } from '../../providers/outpost.ts'
 
 /** The port an outpost listens on. `packages/cli/core/ports.js` — project 8
  *  (outpost), backend. Named once: it reaches a machine twice, in the cloud-init
@@ -163,6 +164,9 @@ export default createService({
     // stopped answering them. `surface.snapshot.md` is what caught it.
     'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
     'events', 'feed', 'logEvent', 'metrics',
+    // What the machine's Caddy routes, read live — never stored, because a
+    // copy here is a second answer to a question Caddy already holds.
+    { method: 'ingress', read: true },
     'reboot', 'drain', 'undrain',
     // `sync`, `catalog` and `reconcile` act on a machine or SPEND the
     // workspace's vendor token before any write, and a rate limit is per
@@ -199,11 +203,13 @@ export default createService({
   async find() {
     const status = $.query.status as string | undefined
     const role   = $.query.role   as string | undefined
+    const slug   = $.query.slug   as string | undefined
     const search = $.reserved.search as string | undefined
 
     const where: Record<string, unknown> = {}
     if (status) where.status = status
     if (role)   where.role   = role
+    if (slug)   where.slug   = slug
     if (search) where.name   = { contains: search }
 
     // `$orderBy` is honored rather than ignored: this list is sorted from the
@@ -296,6 +302,46 @@ export default createService({
       return tx.server.remove({ where: { id } })
     })
     return Array.isArray(removed) ? removed[0] : removed
+  },
+
+  // ── ingress — POST /servers/:id  X-Service-Method: ingress ────────
+  // The machine's Caddy routes beside the rows that should explain them. A
+  // route Outpost wrote is `fjs-<appId>` and is explained by that App's live
+  // Domain rows; a hostname it routes that no row names is left over from
+  // something done by hand or a Domain removed while the machine was away.
+  // `fli-` routes are `fli deploy`'s and no row here describes them.
+  async ingress() {
+    const id     = $.id as string
+    const server = await getScoped('server', 'Server') as { id: string, name: string }
+
+    const target = await outpostFor($.app, id)
+    if (!target) return { outpost: false, caddy: null, listen: [], servers: [], routes: [] }
+
+    const res = await outbound($.app).send<{
+      caddy: boolean, said?: string, listen: string[]
+      routes: { id: string | null, hosts: string[], to: Record<string, unknown>[] }[]
+      servers: { name: string, listen: string[], routes: number }[]
+    }>({ target, method: 'POST', path: '/ingress', body: {} })
+    if (res.error)
+      throw new BadRequest(`The outpost on '${server.name}' did not answer (${res.error.kind}): ${res.error.message}`)
+    const live = res.data!
+
+    const appIds = [...new Set(live.routes.map(r => /^fjs-(.+?)(-redirects)?$/.exec(r.id ?? '')?.[1]).filter(Boolean))] as string[]
+    const apps:    { id: string, name: string }[]        = appIds.length ? await db().app.findMany({ where: { id: { in: appIds } } }) : []
+    const domains: { appId: string, hostname: string }[] = appIds.length ? await db().domain.findMany({ where: { appId: { in: appIds } } }) : []
+
+    const routes = live.routes.map(r => {
+      const outpost = /^fjs-(.+?)(-redirects)?$/.exec(r.id ?? '')
+      if (!outpost) return { ...r, owner: r.id?.startsWith('fli-') ? 'fli' : 'hand', app: null, stray: [] }
+      const app   = apps.find(a => a.id === outpost[1]) ?? null
+      const named = new Set(domains.filter(d => d.appId === outpost[1]).map(d => d.hostname.toLowerCase()))
+      return {
+        ...r, owner: 'outpost',
+        app:   app ? { id: app.id, name: app.name } : null,
+        stray: r.hosts.filter(h => !named.has(h.toLowerCase())),
+      }
+    })
+    return { outpost: true, caddy: live.caddy, said: live.said ?? null, listen: live.listen, servers: live.servers, routes }
   },
 
   // ── events — POST /servers/:id  X-Service-Method: events ──────────

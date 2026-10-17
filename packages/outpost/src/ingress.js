@@ -73,6 +73,29 @@ const locationFor = (to) => {
   return url.pathname === '/' && !url.search && !url.hash ? `${url.origin}{http.request.uri}` : to
 }
 
+/** Where a route's handlers send a request, flattened through every subroute
+ *  and de-duplicated — a fli route nests its API proxy and its file server
+ *  three levels down, and a reader wants the destinations, not the tree. */
+export function targetsOf(handlers) {
+  const out = []
+  const walk = (list) => {
+    for (const h of list ?? []) {
+      if (h.handler === 'reverse_proxy')
+        for (const u of h.upstreams ?? []) out.push({ kind: 'proxy', dial: u.dial, host: h.headers?.request?.set?.Host?.[0] ?? null })
+      else if (h.handler === 'file_server') out.push({ kind: 'files', root: h.root ?? null })
+      else if (h.handler === 'static_response')
+        out.push(h.headers?.Location
+          ? { kind: 'redirect', status: h.status_code ?? null, location: h.headers.Location[0] }
+          : { kind: 'respond', status: h.status_code ?? 200 })
+      else if (h.handler === 'subroute')
+        for (const r of h.routes ?? []) walk(r.handle)
+    }
+  }
+  walk(handlers)
+  const seen = new Set()
+  return out.filter(t => { const k = JSON.stringify(t); return seen.has(k) ? false : seen.add(k) })
+}
+
 export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn = globalThis.fetch } = {}) {
   admin = admin.replace(/\/$/, '')
 
@@ -114,6 +137,40 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
   }
 
   return {
+    /**
+     * What the ingress server routes, as read off Caddy — every route, whoever
+     * wrote it (`fjs-` is this process, `fli-` is `fli deploy`, anything else
+     * is a hand edit), each reduced to its hostnames and where it sends them.
+     * `servers` names every OTHER http server in the config: a second one
+     * listening on :443 is the Caddyfile conflict, and it is invisible from
+     * the ingress server alone.
+     *
+     * A machine with no Caddy answers `caddy: false` rather than throwing, so
+     * a screen can say so instead of failing.
+     */
+    async routes() {
+      let reply
+      try {
+        reply = await caddy('GET', '/config/apps/http/servers/')
+      } catch (err) {
+        if (!err.unreachable) throw err
+        return { caddy: false, said: err.message, listen: [], routes: [], servers: [] }
+      }
+      const servers = reply.status < 300 ? (reply.data ?? {}) : {}
+      const live    = servers[SERVER]
+      return {
+        caddy:   true,
+        listen:  live?.listen ?? [],
+        routes:  (live?.routes ?? []).map(r => ({
+          id:    r['@id'] ?? null,
+          hosts: (r.match ?? []).flatMap(m => m.host ?? []),
+          to:    targetsOf(r.handle ?? []),
+        })),
+        servers: Object.entries(servers).filter(([name]) => name !== SERVER)
+          .map(([name, s]) => ({ name, listen: s.listen ?? [], routes: (s.routes ?? []).length })),
+      }
+    },
+
     /**
      * Route `hosts` to the app on `port`, replacing whatever route the app had.
      *
