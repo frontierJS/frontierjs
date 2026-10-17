@@ -27,8 +27,8 @@
 </div>
 
 <div id="variants">
-  <Button id="b-tone" variant="outlined" tone="danger">Delete</Button>
-  <Button id="b-ghost" variant="ghost">Ghost</Button>
+  <Button id="b-tone" treatment="outlined" tone="danger">Delete</Button>
+  <Button id="b-ghost" treatment="ghost">Ghost</Button>
   <Button id="b-square" square aria-label="Add">+</Button>
   <Button id="b-link" href="/somewhere/">Go</Button>
   <Button id="b-link-off" href="/somewhere/" disabled>Nowhere</Button>
@@ -42,7 +42,7 @@
 
 <Form {onsubmit}>
   <Button id="b-submit" type="submit">Submit</Button>
-  <Button id="b-cancel" variant="ghost">Cancel</Button>
+  <Button id="b-cancel" treatment="ghost">Cancel</Button>
 </Form>
 
 <div id="labels">

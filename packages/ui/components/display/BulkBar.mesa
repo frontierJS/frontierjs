@@ -29,7 +29,7 @@
     <span class="text-sm" role="status" data-bulk-count><strong>{selection.count}</strong> selected</span>
     <div class="cluster">
       <slot />
-      <Button {size} variant="ghost" data-bulk-clear onclick={() => selection.clear()}>Clear</Button>
+      <Button {size} treatment="ghost" data-bulk-clear onclick={() => selection.clear()}>Clear</Button>
     </div>
   </div>
 {/if}

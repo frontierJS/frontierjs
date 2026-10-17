@@ -629,6 +629,9 @@ core/
                 failure: `cognitive` is null, every other reading holds, and the
                 page says which of the three reasons it was — because *quiet*
                 and *nobody read this* must not draw the same tile
+  export-pairs.js  two `exports` keys reaching one file under two spellings —
+                `ws:exports` fails on one. A `.mesa` subpath keeps its extension
+                (tools recognise a component by it), every other is bare
   signatures.js what an app can CALL from a published package — `fli sig`.
                 One TypeScript program over every package's declared entry
                 points, each module's exports followed through the checker, so

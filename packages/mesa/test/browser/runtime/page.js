@@ -14,7 +14,7 @@
  * at all, which reads as "the click did nothing" — `mountBare` exists so a
  * spec can assert exactly that.
  */
-import { mount } from '@frontierjs/mesa/runtime.js'
+import { mount } from '@frontierjs/mesa/runtime'
 import { installProbes, captureWarnings } from '/mesa/test/browser/probes.js'
 
 const stage = document.getElementById('stage')

@@ -250,12 +250,12 @@ title: Servers
        cloud account could not tell provisioning existed at all. -->
   <div class="cluster">
     {#if offerSelf && rows.length}
-      <Button variant="outlined" id="self-open" onclick={enrollSelf}>Use this Basecamp server</Button>
+      <Button treatment="outlined" id="self-open" onclick={enrollSelf}>Use this Basecamp server</Button>
     {/if}
-    <Button variant="primary" href="/servers/provision/">Provision a machine</Button>
-    <Button variant="outlined" href="/servers/import/">Import existing</Button>
+    <Button tone="primary" href="/servers/provision/">Provision a machine</Button>
+    <Button treatment="outlined" href="/servers/import/">Import existing</Button>
     {#if accounts.length}
-      <Button variant="ghost" id="reconcile-open" onclick={() => sweeping = true}>Find orphans</Button>
+      <Button treatment="ghost" id="reconcile-open" onclick={() => sweeping = true}>Find orphans</Button>
     {/if}
   </div>
 </div>
@@ -270,7 +270,7 @@ title: Servers
             options={accounts.map(a => ({ value: a.id, label: `${a.name} (${a.providerKind})` }))}
             onchange={(e) => { accountId = e.target.value; sweep = null }} />
     <div class="cluster">
-      <Button variant="primary" id="reconcile-run" disabled={!accountId || busySweep} onclick={reconcile}>
+      <Button tone="primary" id="reconcile-run" disabled={!accountId || busySweep} onclick={reconcile}>
         {busySweep ? 'Asking…' : 'Compare'}
       </Button>
     </div>
@@ -330,7 +330,7 @@ title: Servers
       </p>
       <pre class="code" id="self-command"><code>{selfCmd}</code></pre>
       <div class="cluster">
-        <CopyButton text={selfCmd} label="Copy command" variant="outlined" />
+        <CopyButton text={selfCmd} label="Copy command" treatment="outlined" />
       </div>
       <p class="text-sm text-muted">Waiting for its first check-in. This closes the loop by itself.</p>
     {:else}
@@ -371,7 +371,7 @@ title: Servers
   <label class="visually-hidden" for="filter-search">Search</label>
   <Input id="filter-search" name="search" label="" style="--field-inline-size: 12rem"
          placeholder="name contains…" value={search} />
-  <Button variant="outlined" type="submit">Search</Button>
+  <Button treatment="outlined" type="submit">Search</Button>
 </form>
 
 {#if loading}
@@ -385,7 +385,7 @@ title: Servers
         and its Caddy already serves Basecamp, so app routes join it.
       </p>
       <div class="cluster">
-        <Button variant="primary" id="self-start" onclick={enrollSelf}>
+        <Button tone="primary" id="self-start" onclick={enrollSelf}>
           Use this Basecamp server
         </Button>
       </div>
@@ -413,7 +413,7 @@ title: Servers
         <td>{server.region}</td>
         <td><code>{server.ipAddress ?? '—'}</code></td>
         <td class="text-sm text-muted">{ago(server.lastHeartbeatAt)}</td>
-        <td><Button variant="ghost" href={`/servers/${server.id}/`}>Open</Button></td>
+        <td><Button treatment="ghost" href={`/servers/${server.id}/`}>Open</Button></td>
       </tr>
     {/snippet}
   </Table>

@@ -8,7 +8,7 @@
  *
  *   vite.config.js → sierra/build → postbuild/index.js
  *                  → postbuild/inject-theme.js → theme/index.js
- *                  → router/signals.js → @frontierjs/mesa/runtime.js
+ *                  → router/signals.js → @frontierjs/mesa/runtime
  *
  * dragged the client runtime into config resolution. That was harmless only
  * while signals.js happened to have no imports; the moment it imported the Mesa

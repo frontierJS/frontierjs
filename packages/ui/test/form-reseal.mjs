@@ -39,7 +39,7 @@ const FIELD_RULES = SIERRA + '/src/resource/field-rules.js'
 plugin({
   name: 'mesa',
   setup(b) {
-    b.onResolve({ filter: /^@frontierjs\/mesa\/runtime(\.js)?$/ }, () => ({ path: MESA + '/src/runtime.js' }))
+    b.onResolve({ filter: /^@frontierjs\/mesa\/runtime$/ }, () => ({ path: MESA + '/src/runtime.js' }))
     b.onResolve({ filter: /^@frontierjs\/ui\// }, (a) => ({
       path: UI + a.path.slice('@frontierjs/ui/'.length) + (/\.\w+$/.test(a.path) ? '' : '.js'),
     }))

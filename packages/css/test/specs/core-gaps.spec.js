@@ -534,3 +534,32 @@ test('segmented: radios stay under their labels and the checked segment is drawn
     'the segments touch'
   );
 });
+
+/* ── Navlink on a button ─────────────────────────────────────────────
+ *
+ * A sidebar row that opens a menu is a <button>, and a <button> arrives
+ * with a UA border, face and centered text. .navlink is the row's look,
+ * so it carries the reset rather than every host writing it (FJS-2110).
+ */
+
+test('navlink: a button.navlink is drawn as the same row an a.navlink is', function () {
+  var list = el(
+    '<ul class="navlist" style="inline-size:240px">' +
+      '<li><a class="navlink" href="#x">Home</a></li>' +
+      '<li><button type="button" class="navlink">Alerts</button></li>' +
+    '</ul>'
+  );
+  var a = list.querySelector('a.navlink');
+  var b = list.querySelector('button.navlink');
+
+  ['border-top-width', 'border-left-width'].forEach(function (p) {
+    assert.equal(style(b, p), '0px', 'button.navlink has a UA ' + p);
+  });
+  assert.equal(style(b, 'background-color'), style(a, 'background-color'), 'button.navlink keeps the UA button face');
+  assert.equal(style(b, 'font-family'), style(a, 'font-family'), 'button.navlink does not inherit the font');
+  assert.equal(style(b, 'text-align'), 'start', 'button.navlink centers its label');
+  assert.equal(b.getBoundingClientRect().width, a.getBoundingClientRect().width, 'button.navlink does not fill the row');
+  assert.equal(style(b, 'cursor'), 'pointer', 'button.navlink has no pointer cursor');
+
+  cleanup();
+});

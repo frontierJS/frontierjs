@@ -24,7 +24,7 @@ title: DNS & edge
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
   import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Skeleton   from '@frontierjs/ui/components/feedback/Skeleton.mesa'
@@ -191,7 +191,7 @@ title: DNS & edge
       >
         A domain is added on an app, where the certificate and the primary flag live with it.
         {#snippet action()}
-          <Button variant="outlined" href="/projects/">Open a project</Button>
+          <Button treatment="outlined" href="/projects/">Open a project</Button>
         {/snippet}
       </EmptyState>
     {:else}
@@ -221,11 +221,11 @@ title: DNS & edge
             <td>
               <span class="cluster">
                 {#if NEEDS_CERT.has(d.cert_status)}
-                  <Button variant="outlined" href={certHref(d)} aria-label={`Upload a certificate for ${d.hostname}`}>
+                  <Button treatment="outlined" href={certHref(d)} aria-label={`Upload a certificate for ${d.hostname}`}>
                     {d.cert_status === 'none' ? 'Add certificate' : 'Replace certificate'}
                   </Button>
                 {/if}
-                <Button variant="ghost" aria-label={`Edit ${d.hostname}`} onclick={() => editing = d}>Edit</Button>
+                <Button treatment="ghost" aria-label={`Edit ${d.hostname}`} onclick={() => editing = d}>Edit</Button>
               </span>
             </td>
           </tr>
@@ -255,7 +255,7 @@ title: DNS & edge
             <div class="cluster" id="edge-zones">
               {#each account.zones as z}
                 <Button
-                  variant={picked?.zoneId === z.id ? 'outlined' : 'ghost'}
+                  treatment={picked?.zoneId === z.id ? 'outlined' : 'ghost'}
                   aria-pressed={picked?.zoneId === z.id ? 'true' : 'false'}
                   onclick={() => readZone(account.id, z.id)}
                 >{z.name} <Pill tone={ZONE_TONE[z.status] ?? 'muted'}>{z.status}</Pill></Button>

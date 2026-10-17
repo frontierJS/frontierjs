@@ -69,7 +69,7 @@ async function getMesaRender() {
     // package is consumed from npm, where there is no sibling `../mesa/` — its
     // absence meant an installed consumer always hit the error below, however
     // correctly they had installed @frontierjs/mesa.
-    '@frontierjs/mesa/render-component.js',
+    '@frontierjs/mesa/render-component',
   ]
 
   // Collected rather than swallowed. `catch { continue }` reported "install

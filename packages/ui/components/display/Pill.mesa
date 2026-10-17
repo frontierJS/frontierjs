@@ -13,7 +13,6 @@
   import { tone as toTone, cx } from '../../utils.js'
 
   export let tone  = ''      // one of the 7 css tones; '' is muted
-  export let color = ''      // legacy alias for `tone`
   export let size  = ''      // '' | 'xs' | 'md'
   export let dot   = false   // show a leading status dot
   export let plan  = ''      // 'free'|'pro'|'business'|'enterprise' — overrides tone + children
@@ -28,7 +27,7 @@
 
   const resolvedPlan = plan ? planMap[plan] : null
   const planLabel    = resolvedPlan?.label ?? ''
-  const t            = resolvedPlan?.tone ?? toTone(color || tone)
+  const t            = resolvedPlan?.tone ?? toTone(tone)
 
   const sizeMap = { xs: 'var(--text-2xs)', sm: '', md: 'var(--text-sm)' }
   const fontSize = sizeMap[size] ?? ''

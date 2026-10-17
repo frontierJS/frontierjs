@@ -123,7 +123,7 @@ title: Dependencies
         {report.checkedAt ? `checked ${ago(report.checkedAt)}` : 'not all checked yet'}
       </span>
     {/if}
-    <Button variant="outlined" disabled={checking || !report?.project} onclick={checkNow}>
+    <Button treatment="outlined" disabled={checking || !report?.project} onclick={checkNow}>
       {checking ? 'Asking…' : 'Check now'}
     </Button>
   </span>
@@ -177,7 +177,7 @@ title: Dependencies
              oninput={(e) => search = e.target.value} />
       <span class="text-sm text-muted">{shown.length} of {scoped.length} packages</span>
       {#if status}
-        <Button variant="ghost" onclick={() => status = ''}>Show every status</Button>
+        <Button treatment="ghost" onclick={() => status = ''}>Show every status</Button>
       {/if}
     </div>
 

@@ -213,11 +213,19 @@ const publishable = packages.filter(p => !p.pkg.private)
 
 if (!publishable.length) { log.error('No publishable package in this workspace'); process.exitCode = 1; return }
 
+const { exportPairs, redundantOf } = await import(resolve(global.fliRoot, 'core/export-pairs.js'))
+
 const wsNames  = new Set(packages.map(p => p.pkg.name))
 const sections = []
 const problems = []
+let pairCount  = 0
 
 for (const { pkg, dir, folder } of publishable) {
+  for (const [a, b] of exportPairs(pkg.exports)) {
+    pairCount++
+    problems.push(`${pkg.name} — \`${a}\` and \`${b}\` are one subpath spelled twice; drop \`${redundantOf([a, b])}\``)
+  }
+
   const packed = packedFiles(dir)
 
   if (packed.error) {
@@ -238,6 +246,11 @@ for (const { pkg, dir, folder } of publishable) {
 }
 
 const body = render({ sections, problems, wsNames })
+
+if (pairCount) {
+  for (const p of problems.filter(p => p.includes('spelled twice'))) log.error(p)
+  process.exitCode = 1
+}
 
 if (flag.stdout) { echo(body); return }
 

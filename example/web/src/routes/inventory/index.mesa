@@ -43,7 +43,7 @@ title: Inventory
   import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
   import Textarea      from '@frontierjs/ui/components/forms/Textarea.mesa'
-  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore'
 
   $: (session.user, session.level)
 
@@ -297,7 +297,7 @@ title: Inventory
       <Input id="rc-note" name="note" label="Note"
              bind:value={rcNote} error={rcFields.note} />
 
-      <Button id="rc-submit" type="submit" variant="primary" disabled={rcBusy || !rcVariant} loading={rcBusy}>
+      <Button id="rc-submit" type="submit" tone="primary" disabled={rcBusy || !rcVariant} loading={rcBusy}>
         Receive
       </Button>
     </form>
@@ -319,7 +319,7 @@ title: Inventory
       <Textarea id="aj-note" name="note" label="Note" rows={2}
                 bind:value={ajNote} error={ajFields.note} />
 
-      <Button id="aj-submit" type="submit" variant="outlined" disabled={ajBusy || !ajVariant} loading={ajBusy}>
+      <Button id="aj-submit" type="submit" treatment="outlined" disabled={ajBusy || !ajVariant} loading={ajBusy}>
         Adjust
       </Button>
     </form>

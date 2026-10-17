@@ -46,10 +46,10 @@
          hint="Needed for either of these" autocomplete="current-password"
          value={password} oninput={e => password = e.target.value} />
   <div class="cluster">
-    <Button variant="outlined" id="beside-regenerate" disabled={!password}
+    <Button treatment="outlined" id="beside-regenerate" disabled={!password}
             data-confirm="Every recovery code you saved stops working."
             onclick={() => did('regenerate')}>New recovery codes</Button>
-    <Button variant="outlined" tone="danger" id="beside-off" disabled={!password}
+    <Button treatment="outlined" tone="danger" id="beside-off" disabled={!password}
             data-confirm="Signing in asks for your password only."
             data-confirm-title="Turn off two-step sign-in?" data-confirm-label="Turn off"
             onclick={() => did('off')}>Turn it off</Button>

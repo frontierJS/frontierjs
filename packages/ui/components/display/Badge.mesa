@@ -21,7 +21,6 @@
   import { tone as toTone, cx } from '../../utils.js'
 
   export let tone  = ''       // one of the 7 css tones; '' is muted
-  export let color = ''       // legacy alias for `tone`
   export let size  = ''       // '' | 'xs' | 'md' — '' is the package default
   export let float = false    // pin to the top-right of a positioned parent
 
@@ -29,7 +28,7 @@
   const sizeMap = { xs: 'var(--text-2xs)', sm: '', md: 'var(--text-sm)' }
   const fontSize = sizeMap[size] ?? ''
 
-  const t = toTone(color || tone)
+  const t = toTone(tone)
 </script>
 
 <!--

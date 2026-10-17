@@ -126,7 +126,7 @@ describe('the name the rename freed', () => {
 
     const DIR = process.cwd()
     const f = path.join(DIR, '_reserved_el.mjs')
-    writeFileSync(f, out.replace(/'@frontierjs\/mesa\/runtime\.js'/g,
+    writeFileSync(f, out.replace(/'@frontierjs\/mesa\/runtime'/g,
       `'${path.join(DIR, 'src/runtime.js')}'`))
     try {
       const C = (await import('file://' + f)).default

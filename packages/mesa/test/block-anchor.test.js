@@ -79,7 +79,7 @@ async function render(src, deps = {}) {
   const id = n
   const written = []
   const emit = async (source, name) => {
-    const js = (await compile(source)).replace(/'@frontierjs\/mesa\/runtime\.js'/g, `'./src/runtime.js'`)
+    const js = (await compile(source)).replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`)
     const file = path.join(process.cwd(), `${name}.mjs`)
     writeFileSync(file, js)
     written.push(file)

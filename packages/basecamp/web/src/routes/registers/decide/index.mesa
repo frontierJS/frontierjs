@@ -380,7 +380,7 @@ title: Decide
 
         {#if !explained[q.id]}
           <div class="cluster gap-sm">
-            <Button variant="outlined" id="decide-explain" disabled={explaining} onclick={() => explainIt(q)}>
+            <Button treatment="outlined" id="decide-explain" disabled={explaining} onclick={() => explainIt(q)}>
               {explaining ? 'Asking…' : '✦ Explain with Claude'}
             </Button>
             <span class="text-xs text-muted">read-only · keeps going if you swipe on</span>
@@ -409,7 +409,7 @@ title: Decide
                 <Button type="submit" size="sm" disabled={!follow.trim() || explaining}>Ask</Button>
               </form>
               {#if ex.state === 'error' && !ex.turns.some(t => t.text)}
-                <Button size="sm" variant="ghost" onclick={() => explainIt(q)}>Try again</Button>
+                <Button size="sm" treatment="ghost" onclick={() => explainIt(q)}>Try again</Button>
               {/if}
             {/if}
             {#if ex.cost}<span class="text-xs text-muted">${ex.cost.toFixed(2)}</span>{/if}
@@ -424,7 +424,7 @@ title: Decide
         <p class="text-sm text-muted">
           {queue.open ? `${queue.open} more ${queue.open === 1 ? 'question has' : 'questions have'} no lettered options yet — frame them from Registers first.` : 'Every open question has been ruled.'}
         </p>
-        <Button variant="outlined" href="/registers/">Back to Registers</Button>
+        <Button treatment="outlined" href="/registers/">Back to Registers</Button>
       </section>
     {/each}
 
@@ -445,7 +445,7 @@ title: Decide
       {#if pending}
         <div class="decide-undo" id="decide-undo">
           <span class="text-sm">Ruling <strong>{pending.pick}</strong> on {pending.q.question}</span>
-          <Button size="sm" variant="outlined" id="decide-undo-button" onclick={undo}>Undo</Button>
+          <Button size="sm" treatment="outlined" id="decide-undo-button" onclick={undo}>Undo</Button>
           <span class="decide-undo-fill" style:animation-duration={`${UNDO_MS}ms`}></span>
         </div>
       {/if}
@@ -459,15 +459,15 @@ title: Decide
             </label>
             <textarea class="field" rows="3" id="decide-why" value={why} oninput={(e) => why = e.target.value}></textarea>
             <div class="decide-actions">
-              <Button variant="ghost" onclick={() => asking = null}>Cancel</Button>
+              <Button treatment="ghost" onclick={() => asking = null}>Cancel</Button>
               <Button type="submit" disabled={!why.trim()}>Rule {asking.letter}</Button>
             </div>
           </form>
         {:else}
           <div class="decide-actions" id="decide-actions">
-            <Button variant="ghost" id="decide-skip" onclick={skip}>Skip</Button>
+            <Button treatment="ghost" id="decide-skip" onclick={skip}>Skip</Button>
             {#each current().options.filter(o => o.letter !== current().recommend?.letter) as o (o.letter)}
-              <Button variant="outlined" data-letter={o.letter} onclick={() => press(o.letter)}>{o.letter}</Button>
+              <Button treatment="outlined" data-letter={o.letter} onclick={() => press(o.letter)}>{o.letter}</Button>
             {/each}
             {#if current().recommend}
               <Button tone="success" id="decide-accept" data-letter={current().recommend.letter}

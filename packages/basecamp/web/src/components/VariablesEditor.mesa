@@ -109,8 +109,8 @@
                      type={v.secret ? 'password' : 'text'} autocomplete="off"
                      placeholder={v.secret ? 'New value' : ''}
                      oninput={(e) => editValue = e.target.value} />
-              <Button type="submit" variant="primary" disabled={busyId === v.id}>Save</Button>
-              <Button variant="ghost" onclick={() => editId = null}>Cancel</Button>
+              <Button type="submit" tone="primary" disabled={busyId === v.id}>Save</Button>
+              <Button treatment="ghost" onclick={() => editId = null}>Cancel</Button>
             </form>
           {:else if v.secret}
             <span class="text-muted">secret · set</span>
@@ -120,9 +120,9 @@
         </td>
         <td class="cluster">
           {#if editId !== v.id}
-            <Button variant="ghost" onclick={() => startEdit(v)}>{v.secret ? 'Replace' : 'Edit'}</Button>
+            <Button treatment="ghost" onclick={() => startEdit(v)}>{v.secret ? 'Replace' : 'Edit'}</Button>
           {/if}
-          <Button variant="ghost" tone="danger" disabled={busyId === v.id}
+          <Button treatment="ghost" tone="danger" disabled={busyId === v.id}
                   data-confirm={`${v.key} is removed; the next release runs without it.`}
                   data-confirm-title="Remove this variable?" data-confirm-label="Remove"
                   onclick={() => drop(v)}>Remove</Button>
@@ -143,6 +143,6 @@
   </div>
   <Checkbox id={`${idPrefix}-secret`} label="Secret — stored encrypted, never shown again" bind:checked={newSecret} />
   <div class="cluster">
-    <Button variant="primary" type="submit" disabled={busyId !== null}>Set variable</Button>
+    <Button tone="primary" type="submit" disabled={busyId !== null}>Set variable</Button>
   </div>
 </form>

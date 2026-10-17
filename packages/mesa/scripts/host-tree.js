@@ -23,9 +23,9 @@ import { compile } from '../src/compiler.js'
 
 const SRC = fileURLToPath(new URL('../src/', import.meta.url))
 const RUNTIME = {
-  "'@frontierjs/mesa/runtime.js'":          pathToFileURL(join(SRC, 'runtime.js')).href,
-  "'@frontierjs/mesa/runtime/terminal.js'": pathToFileURL(join(SRC, 'runtime-terminal.js')).href,
-  "'@frontierjs/mesa/runtime/native.js'":   pathToFileURL(join(SRC, 'runtime-native.js')).href,
+  "'@frontierjs/mesa/runtime'":          pathToFileURL(join(SRC, 'runtime.js')).href,
+  "'@frontierjs/mesa/runtime/terminal'": pathToFileURL(join(SRC, 'runtime-terminal.js')).href,
+  "'@frontierjs/mesa/runtime/native'":   pathToFileURL(join(SRC, 'runtime-native.js')).href,
 }
 
 /** Compile `entry` and its relative `.mesa` imports for `target`, children

@@ -136,7 +136,7 @@ title: Provision a machine
 
 <div class="section-header">
   <h1>Provision a machine</h1>
-  <Button variant="ghost" href="/servers/">Back to list</Button>
+  <Button treatment="ghost" href="/servers/">Back to list</Button>
 </div>
 
 <div class="container narrow">
@@ -242,11 +242,11 @@ title: Provision a machine
         <!-- Disabled until everything it costs money to get wrong is answered.
              There is no fallback act on this screen any more: the only thing
              this button can do is spend. -->
-        <Button variant="primary" type="submit"
+        <Button tone="primary" type="submit"
                 disabled={saving || !(accountId && draft.name && draft.region && size && image)}>
           {saving ? 'Provisioning…' : 'Provision machine'}
         </Button>
-        <Button variant="ghost" href="/servers/">Cancel</Button>
+        <Button treatment="ghost" href="/servers/">Cancel</Button>
       </div>
     </form>
   {/if}

@@ -19,7 +19,7 @@ title: Portal
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import StatCard   from '@frontierjs/ui/components/display/StatCard.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   $: session.workspaceId
 
@@ -115,7 +115,7 @@ title: Portal
   </div>
 
   <div class="cluster">
-    <Button variant="outlined" id="portal-check-all" disabled={busy !== null} onclick={checkAll}>
+    <Button treatment="outlined" id="portal-check-all" disabled={busy !== null} onclick={checkAll}>
       {busy === 'all' ? 'Checking…' : 'Check all'}
     </Button>
   </div>
@@ -133,13 +133,13 @@ title: Portal
           <dt>Checked</dt><dd class="text-sm text-muted">{clock(entry.checked_at, 'not checked')}</dd>
         </dl>
         <div class="cluster">
-          <Button variant="ghost" disabled={busy !== null} onclick={() => check(entry)}>
+          <Button treatment="ghost" disabled={busy !== null} onclick={() => check(entry)}>
             {busy === entry.id ? 'Checking…' : 'Check'}
           </Button>
           {#if entry.url}
             <!-- Somebody else's application, so a real navigation out of the SPA
                  and the pair rel/target that makes that safe. -->
-            <Button variant="ghost" href={entry.url} target="_blank" rel="noreferrer noopener">Open ↗</Button>
+            <Button treatment="ghost" href={entry.url} target="_blank" rel="noreferrer noopener">Open ↗</Button>
           {:else}
             <Badge tone="muted">no URL configured</Badge>
           {/if}

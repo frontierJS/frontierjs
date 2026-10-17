@@ -4760,7 +4760,7 @@ describe('seam-owner', () => {
     // them as the owner reports a dead path against prose that is correct.
     const root = tree('seam-lookalike', SEAMS([
       '- `generateJsonSchema(schema)` — consumed by sierra\'s `build/schema-plugin.js`',
-      '- `resource.options(field)` — said where the count is, in `@frontierjs/ui/utils.js`',
+      '- `resource.options(field)` — said where the count is, in `@frontierjs/ui/utils`',
       '- `appSrcDir(root)` — `@` is the surface\'s own src, so `@/api.js` differs per surface',
     ].join('\n')))
     expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])

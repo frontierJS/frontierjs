@@ -132,7 +132,7 @@
 
   padding:          var(--space-sm) var(--space-xl);
   font-size:        var(--text-md);
-  font-weight:      600;
+  font-weight:      var(--tab-font-weight);
   color:            var(--ink-soft);
   white-space:      nowrap;
   text-decoration:  none;

@@ -34,7 +34,7 @@ title: Channels
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
   import { page } from '@frontierjs/sierra/router'
   import { offerUndo } from '../../resources/Trash.mesa'
@@ -153,7 +153,7 @@ title: Channels
     } catch (e) {
       // Shown, not swallowed. A test that fails silently is the one failure
       // mode this whole screen exists to rule out.
-      said.update('error', `Test failed: ${e.message}`)
+      said.update('danger', `Test failed: ${e.message}`)
       error = e.message
     } finally {
       busy = null
@@ -246,7 +246,7 @@ title: Channels
 
 <div class="section-header">
   <h1>Notification channels</h1>
-  <Button variant="primary" id="new-channel" onclick={() => creating = !creating}>
+  <Button tone="primary" id="new-channel" onclick={() => creating = !creating}>
     {creating ? 'Cancel' : 'New channel'}
   </Button>
 </div>
@@ -288,7 +288,7 @@ title: Channels
                value={secret} oninput={(e) => secret = e.target.value} />
       {/if}
 
-      <Button type="submit" variant="primary">Create channel</Button>
+      <Button type="submit" tone="primary">Create channel</Button>
     </Form>
   </Card>
 {/if}
@@ -308,7 +308,7 @@ title: Channels
         <td><Pill>{KIND_LABEL[c.kind] ?? c.kind}</Pill></td>
         <td class="text-sm">
           {#if c.rule_count}
-            <Button variant="ghost" aria-expanded={!!rulesFor[c.id]} aria-label={`Rules delivering through ${c.name}`}
+            <Button treatment="ghost" aria-expanded={!!rulesFor[c.id]} aria-label={`Rules delivering through ${c.name}`}
                     onclick={() => showRules(c)}>{c.rule_count}</Button>
           {:else}
             0
@@ -324,13 +324,13 @@ title: Channels
         <td class="text-sm text-muted">{at(c.lastTestAt, 'never')}</td>
         <td>
           <div class="cluster">
-            <Button variant="ghost" disabled={busy === c.id}
+            <Button treatment="ghost" disabled={busy === c.id}
                     aria-label={`Send a test to ${c.name}`} onclick={() => test(c)}>Send test</Button>
-            <Button variant="ghost" disabled={busy === c.id}
+            <Button treatment="ghost" disabled={busy === c.id}
                     onclick={() => toggle(c)}>{c.isActive ? 'Pause' : 'Resume'}</Button>
-            <Button variant="ghost" disabled={busy === c.id}
+            <Button treatment="ghost" disabled={busy === c.id}
                     aria-label={`Edit ${c.name}`} onclick={() => startEdit(c)}>Edit</Button>
-            <Button variant="ghost" disabled={busy === c.id}
+            <Button treatment="ghost" disabled={busy === c.id}
                     aria-label={`Delete ${c.name}`}
                     data-confirm={`Alert rules that page through ${c.name} stop reaching it.`}
                     data-confirm-title="Delete this channel?" data-confirm-label="Delete"
@@ -372,8 +372,8 @@ title: Channels
                value={editing.secret} oninput={(e) => editing = { ...editing, secret: e.target.value }} />
       {/if}
       <div class="cluster">
-        <Button type="submit" variant="primary" id="channel-edit-save" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-        <Button variant="ghost" onclick={() => editing = null}>Cancel</Button>
+        <Button type="submit" tone="primary" id="channel-edit-save" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+        <Button treatment="ghost" onclick={() => editing = null}>Cancel</Button>
       </div>
     </form>
   {/if}

@@ -4258,10 +4258,10 @@ anything that changes at runtime.`,
 
 <Card title="Button" subtitle="variant · size · loading · disabled">
   <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-    <Button label="Primary"   variant="primary" />
-    <Button label="Secondary" variant="secondary" />
-    <Button label="Danger"    variant="danger" />
-    <Button label="Ghost"     variant="ghost" />
+    <Button label="Primary"   tone="primary" />
+    <Button label="Secondary" tone="secondary" />
+    <Button label="Danger"    tone="danger" />
+    <Button label="Ghost"     treatment="ghost" />
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
     <Button label="Small"  size="sm" />

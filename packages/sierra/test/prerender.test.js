@@ -371,7 +371,7 @@ describe('prerenderRoutes — two pages, one file (FJS-822)', () => {
       `export async function getStaticPaths() { return ${JSON.stringify(slugs.map(slug => ({ slug })))} }\n` +
       `export async function load({ params }) { return { slug: params.slug } }\n`)
 
-    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { renderComponent } = await import('@frontierjs/mesa/render-component')
     const { scan } = await import('../src/scanner/index.js')
     const tree = await scan('src/routes', { cwd: root })
     const warnings = []
@@ -409,7 +409,7 @@ describe('prerenderRoutes', () => {
   const REAL_RENDER_TIMEOUT = 30_000
 
   async function run(outDir) {
-    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { renderComponent } = await import('@frontierjs/mesa/render-component')
     const { scan } = await import('../src/scanner/index.js')
     const tree = await scan('src/routes', { cwd: ROOT })
     return prerenderRoutes({ tree, root: ROOT, outDir, renderComponent })
@@ -444,7 +444,7 @@ describe('prerenderRoutes', () => {
 
   test('document head, bodyEnd and bodyAttrs reach every page (FJS-1539)', async () => {
     const out = tmpDir('sierra-doc-')
-    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { renderComponent } = await import('@frontierjs/mesa/render-component')
     const { scan } = await import('../src/scanner/index.js')
     const tree = await scan('src/routes', { cwd: ROOT })
     await prerenderRoutes({
@@ -461,7 +461,7 @@ describe('prerenderRoutes', () => {
 
   test('document meta, links and jsonLd reach every page beside the page\'s own head()', async () => {
     const out = tmpDir('sierra-doc-tags-')
-    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { renderComponent } = await import('@frontierjs/mesa/render-component')
     const { scan } = await import('../src/scanner/index.js')
     const tree = await scan('src/routes', { cwd: ROOT })
     await prerenderRoutes({

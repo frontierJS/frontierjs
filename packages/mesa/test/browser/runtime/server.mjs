@@ -10,7 +10,7 @@
  *
  * ── Why a server and not a file:// page ───────────────────────────────
  *
- * Compiled output is ES modules and imports `@frontierjs/mesa/runtime.js`.
+ * Compiled output is ES modules and imports `@frontierjs/mesa/runtime`.
  * `file://` module resolution is subject to CORS, and rewriting the specifier
  * into something only this harness accepts would test a shape no app has. An
  * import map over HTTP resolves it exactly as an app does.
@@ -62,7 +62,7 @@ const TYPES = {
  */
 const IMPORT_MAP = {
   imports: {
-    '@frontierjs/mesa/runtime.js': '/mesa/src/runtime.js',
+    '@frontierjs/mesa/runtime': '/mesa/src/runtime.js',
     '@frontierjs/mesa/runtime':    '/mesa/src/runtime.js',
     '@frontierjs/mesa/browser':    '/mesa/src/browser/index.js',
     ...toolbeltImports,

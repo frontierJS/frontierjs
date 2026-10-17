@@ -139,7 +139,7 @@ export async function run(t) {
   // first timer running to remove the second message early.
   await t.evaluate(`
     window.__h2 = window.toasts.loading('Retrying…');
-    window.__h2.update('error', 'Failed', 400);
+    window.__h2.update('danger', 'Failed', 400);
     await new Promise(r => setTimeout(r, 150));
     window.__h2.update('success', 'Recovered');
     return true;

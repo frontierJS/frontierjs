@@ -14,7 +14,7 @@ import { watchProxy } from '@frontierjs/mesa/runtime'
 export const alert = {
   visible: false,
   message: '',
-  type: 'info',       // 'info' | 'success' | 'warning' | 'error'
+  type: 'info',       // a tone: 'info' | 'success' | 'warning' | 'danger'
   duration: 4000,     // ms — 0 means persistent until manually closed
 
   show(message, type = 'info', duration = 4000) {
@@ -39,7 +39,7 @@ export const alert = {
   },
 
   success(message, duration) { this.show(message, 'success', duration) },
-  error(message, duration)   { this.show(message, 'error', duration) },
+  error(message, duration)   { this.show(message, 'danger', duration) },
   warning(message, duration) { this.show(message, 'warning', duration) },
   info(message, duration)    { this.show(message, 'info', duration) },
 }

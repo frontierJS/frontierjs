@@ -31,7 +31,7 @@ title: Hub settings
   import Card     from '@frontierjs/ui/components/layout/Card.mesa'
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'
   import Switch   from '@frontierjs/ui/components/forms/Switch.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   let config    = null
   let draft     = {}
@@ -208,11 +208,11 @@ title: Hub settings
   </Card>
 
   <div class="cluster">
-    <Button variant="primary" id="save-settings" disabled={saving} onclick={save}>
+    <Button tone="primary" id="save-settings" disabled={saving} onclick={save}>
       {saving ? 'Saving…' : unset ? 'Create settings' : 'Save settings'}
     </Button>
     {#if !unset}
-      <Button variant="ghost" onclick={load}>Discard changes</Button>
+      <Button treatment="ghost" onclick={load}>Discard changes</Button>
     {/if}
   </div>
 {/if}

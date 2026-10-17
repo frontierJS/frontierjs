@@ -249,7 +249,7 @@
     {#if defaults || noteText}
       <div class="cluster gap-2xs">
         {#if defaults}
-          <Button variant="outlined" size="sm" disabled={resolvedDisabled} onclick={reset}>Reset</Button>
+          <Button treatment="outlined" size="sm" disabled={resolvedDisabled} onclick={reset}>Reset</Button>
         {/if}
         {#if noteText}
           <span class="fjs-th-note">{noteText}</span>

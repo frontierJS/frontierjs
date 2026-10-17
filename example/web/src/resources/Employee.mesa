@@ -48,5 +48,5 @@
   <!-- Both unconditionally — `slot=` inside an `{#if}` is default content and
        silently turns generation off (`FJS-607`). -->
   <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
-  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+  <Button slot="actions" treatment="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
 </Form>

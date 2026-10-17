@@ -37,7 +37,7 @@ title: New order
 
 <SectionHeader title="New order" level={1}>
   {#snippet action()}
-    <Button variant="ghost" href="/orders/">Back to list</Button>
+    <Button treatment="ghost" href="/orders/">Back to list</Button>
   {/snippet}
 </SectionHeader>
 

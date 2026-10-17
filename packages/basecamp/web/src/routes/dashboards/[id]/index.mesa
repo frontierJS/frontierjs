@@ -32,7 +32,7 @@ title: Dashboard
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Widget   from '../../../components/widgets/Widget.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
   import { offerUndo } from '../../../resources/Trash.mesa'
@@ -286,18 +286,18 @@ title: Dashboard
   <div class="section-header">
     <h1>{board.icon ?? ''} {board.name}</h1>
     <span class="cluster">
-      <Button variant="ghost" id="pin-board" disabled={busy === 'pin'}
+      <Button treatment="ghost" id="pin-board" disabled={busy === 'pin'}
               aria-pressed={board.isPinned ? 'true' : 'false'} onclick={togglePin}>
         {board.isPinned ? 'Unpin' : 'Pin to home'}
       </Button>
-      <Button variant="ghost" id="rename-board" onclick={() => renaming = true}>Rename</Button>
-      <Button variant="ghost" tone="danger" id="delete-board" disabled={busy === 'remove'}
+      <Button treatment="ghost" id="rename-board" onclick={() => renaming = true}>Rename</Button>
+      <Button treatment="ghost" tone="danger" id="delete-board" disabled={busy === 'remove'}
               data-confirm={`${board.name} and its widgets are deleted. What they showed is not.`}
               data-confirm-title="Delete this dashboard?" data-confirm-label="Delete"
               onclick={removeBoard}>Delete</Button>
-      <Button variant={editing ? 'outlined' : 'ghost'} id="edit-board"
+      <Button treatment={editing ? 'outlined' : 'ghost'} id="edit-board"
               onclick={() => editing = !editing}>{editing ? 'Done' : 'Edit layout'}</Button>
-      <Button variant="primary" id="add-widget" onclick={openPicker}>
+      <Button tone="primary" id="add-widget" onclick={openPicker}>
         {adding ? 'Cancel' : 'Add widget'}
       </Button>
     </span>
@@ -334,7 +334,7 @@ title: Dashboard
             <Card>
               <h3 class="h5">{spec.label}</h3>
               <p class="text-sm text-muted">{spec.description}</p>
-              <Button variant="outlined" onclick={() => choose(spec)}>Choose</Button>
+              <Button treatment="outlined" onclick={() => choose(spec)}>Choose</Button>
             </Card>
           {/each}
         </div>
@@ -371,15 +371,15 @@ title: Dashboard
 
         <div class="cluster" role="group" aria-label="Width">
           {#each [1, 2, 3] as n}
-            <Button variant={cols === n ? 'outlined' : 'ghost'} onclick={() => cols = n}>{n}/3</Button>
+            <Button treatment={cols === n ? 'outlined' : 'ghost'} onclick={() => cols = n}>{n}/3</Button>
           {/each}
         </div>
 
         <div class="cluster">
-          <Button variant="primary" id="confirm-widget" disabled={busy === 'add'} onclick={add}>
+          <Button tone="primary" id="confirm-widget" disabled={busy === 'add'} onclick={add}>
             Add to dashboard
           </Button>
-          <Button variant="ghost" onclick={() => chosen = null}>Back</Button>
+          <Button treatment="ghost" onclick={() => chosen = null}>Back</Button>
         </div>
       {/if}
     </Card>
@@ -408,7 +408,7 @@ title: Dashboard
                       placeholder={specFor(widget.kind)?.required ? 'Pick one' : 'Everything in this workspace'}
                       options={specFor(widget.kind)?.subject === 'server' ? serverOptions : appOptions}
                       onchange={(e) => repoint = { ...repoint, [widget.id]: e.target.value }} />
-              <Button variant="outlined" disabled={busy === widget.id || (specFor(widget.kind)?.required && !repoint[widget.id])}
+              <Button treatment="outlined" disabled={busy === widget.id || (specFor(widget.kind)?.required && !repoint[widget.id])}
                       onclick={() => repointWidget(widget)}>Re-point</Button>
             </div>
           {/if}

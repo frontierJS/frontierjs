@@ -50,7 +50,7 @@ title: Projects
 
 <div class="section-header">
   <h1>Projects</h1>
-  <Button variant="primary" href="/projects/create/">New project</Button>
+  <Button tone="primary" href="/projects/create/">New project</Button>
 </div>
 
 {#if error}
@@ -76,12 +76,12 @@ title: Projects
         <td><span class="pill">{project.status}</span></td>
         <td>
           <div class="cluster">
-            <Button variant="ghost" href={`/projects/${project.id}/`}>Open</Button>
+            <Button treatment="ghost" href={`/projects/${project.id}/`}>Open</Button>
             <!-- Not disabled by a permission check. The schema declares no
                  @@gate yet, so the client can only guess — and the server
                  refuses regardless. A button that lies about what will
                  happen is worse than one that reports the refusal. -->
-            <Button variant="ghost" tone="danger"
+            <Button treatment="ghost" tone="danger"
                     data-confirm={`${project.name} is deleted with every environment, app and job inside it.`}
                     data-confirm-title="Delete this project?" data-confirm-label="Delete project"
                     onclick={() => remove(project)}>Delete</Button>

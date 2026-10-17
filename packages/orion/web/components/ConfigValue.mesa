@@ -61,7 +61,7 @@
   <div class="split">
     <span class="text-sm text-muted">{expression ? 'Expression' : 'Value'}</span>
     <Button
-      variant="ghost"
+      treatment="ghost"
       size="xs"
       {disabled}
       id={'config-mode-' + field.name}

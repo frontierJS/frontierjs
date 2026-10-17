@@ -117,8 +117,8 @@ the package has no root entry.
 | a menu of actions | `@frontierjs/ui/components/overlay/DropdownMenu.mesa` with `@frontierjs/ui/components/overlay/DropdownItem.mesa`, `@frontierjs/ui/components/overlay/DropdownGroup.mesa`, `@frontierjs/ui/components/overlay/DropdownSeparator.mesa` |
 | content that must escape a scroll container · a description on hover and focus | `@frontierjs/ui/components/overlay/Popover.mesa` · `@frontierjs/ui/components/overlay/Tooltip.mesa` |
 | confirm a destructive click | `@frontierjs/ui/components/overlay/ConfirmProvider.mesa` once, then `data-confirm` on any element — the provider's document listener is what reads the attribute, so with none mounted the click runs unconfirmed; `@frontierjs/ui/components/overlay/ConfirmationPopover.mesa` when a component owns its trigger or cannot be sure a provider is mounted |
-| ⌘K | `@frontierjs/ui/components/overlay/CommandPalette.mesa` with `@frontierjs/ui/stores/commandPaletteStore.js` |
-| a transient message · a banner for the whole app | `@frontierjs/ui/components/feedback/Toaster.mesa` with `@frontierjs/ui/stores/toastStore.js` · `@frontierjs/ui/components/feedback/AlertProvider.mesa` with `@frontierjs/ui/stores/alertStore.js` |
+| ⌘K | `@frontierjs/ui/components/overlay/CommandPalette.mesa` with `@frontierjs/ui/stores/commandPaletteStore` |
+| a transient message · a banner for the whole app | `@frontierjs/ui/components/feedback/Toaster.mesa` with `@frontierjs/ui/stores/toastStore` · `@frontierjs/ui/components/feedback/AlertProvider.mesa` with `@frontierjs/ui/stores/alertStore` |
 | a message in the page flow, announced as it appears (`role="alert"`) | `@frontierjs/ui/components/feedback/Alert.mesa` |
 | work in flight | `@frontierjs/ui/components/feedback/Spinner.mesa` · `@frontierjs/ui/components/feedback/Skeleton.mesa` · `@frontierjs/ui/components/feedback/Progress.mesa` |
 
@@ -214,7 +214,7 @@ argument `{ props: (ctx) => ({ … }) }` adapts an existing component instead.
 **Put `name` on the element that emits input**, or dirty tracking cannot see it,
 and wrap it in `<Field name={name}>` for the label and error. A registered name
 replaces the kit's own. `registerDisplayComponent` and `registerFilterComponent`
-do the same for `<Cell>` and `<FilterBar>` — see `node_modules/@frontierjs/ui/controls.js`.
+do the same for `<Cell>` and `<FilterBar>` — see `@frontierjs/ui/controls`.
 
 ## Tables
 
@@ -336,6 +336,12 @@ declares `id` it names something else — a `Toast`'s identity, a `Tab` and
 `TabPanel` pairing, an `AccordionItem`, the control a `Label` or `Field` points
 at, a `Tooltip`'s own element — so address those with `data-*`.
 
+**A `Slider` takes its hue from `tone`, or from the data.** `tone` is one of the
+seven css tones and follows the theme. A hue that IS the data (an HSL slider
+accented in its own hue) is `--data-accent` on the slider or an ancestor, the
+custom-property name `fli check` lets a raw color sit in; it wins over `tone`:
+`<Slider style={`--data-accent: hsl(${h} 80% 50%)`} … />`.
+
 **Trailing content has three names**: `actions` on `Form` and `Table`, `action`
 on `SectionHeader` and `EmptyState`, `footer` on `Modal`, `Drawer` and `Card`.
 
@@ -348,7 +354,7 @@ library produces, and what this kit wants.
 
 | You will write | The kit wants |
 |---|---|
-| `<Button variant="destructive">`, `color="red"`, `size="icon"` | `tone="danger"` (with `variant="outlined"` for an outline), `square` plus an `aria-label` |
+| `<Button variant="destructive">`, `color="red"`, `size="icon"` | `tone="danger"` (with `treatment="outlined"` for an outline), `square` plus an `aria-label` |
 | `<Button on:click={save}>`, `onClick` | `onclick={save}` |
 | `<Button>Save</Button>` as a form's submit | `<Button type="submit">` — the kit's default `type` is `button` |
 | `<Dialog open onOpenChange>` | `<Modal bind:open title="…" onclose={…}>` |
@@ -357,7 +363,7 @@ library produces, and what this kit wants.
 | `${(order.total / 100).toFixed(2)}` | `<Cell value={order.total} column={c} />` |
 | `<FormControl><FormLabel/>`, react-hook-form, zod | `<Input name="email" />` inside `<Form resource={…}>` — rules and validation are the resource's |
 | `<Input bind:value={record.email} />` | `value={draft.email} oninput={…}`; `bind:` takes a top-level `let` |
-| `toast.success()` from a provider hook | `toasts.success()` from `@frontierjs/ui/stores/toastStore.js`, `<Toaster />` once |
+| `toast.success()` from a provider hook | `toasts.success()` from `@frontierjs/ui/stores/toastStore`, `<Toaster />` once |
 | `<Tabs value onValueChange>` with `TabsTrigger`/`TabsContent` | `<Tabs bind:activeId>` with `Tab id` and `TabPanel id` |
 | `onDelete={() => confirm('Sure?') && remove()}` | `data-confirm="Delete this order?"` under a mounted `ConfirmProvider` |
 | importing the kit's `tokens.css` | nothing — tokens are `@frontierjs/css`'s, and no component reads that file |

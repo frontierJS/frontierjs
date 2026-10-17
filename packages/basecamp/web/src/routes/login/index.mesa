@@ -133,8 +133,8 @@ title: Sign in
            required bind:value={code} />
 
     <div class="cluster">
-      <Button type="submit" variant="primary">Verify</Button>
-      <Button type="button" variant="ghost" id="code-cancel" onclick={startOver}>Start over</Button>
+      <Button type="submit" tone="primary">Verify</Button>
+      <Button type="button" treatment="ghost" id="code-cancel" onclick={startOver}>Start over</Button>
     </div>
   </Form>
   {:else}
@@ -150,7 +150,7 @@ title: Sign in
            required bind:value={password} />
 
     <div class="cluster">
-      <Button type="submit" variant="primary">Sign in</Button>
+      <Button type="submit" tone="primary">Sign in</Button>
       <a href="/reset-password/" class="text-sm" id="forgot-password">Forgot password?</a>
     </div>
   </Form>
@@ -160,7 +160,7 @@ title: Sign in
       {#each providers as name}
         <!-- signInWith LEAVES THE PAGE: the flow is a browser navigation, so
              nothing after it runs and there is no promise to await. -->
-        <Button type="button" variant="outlined" data-oauth={name}
+        <Button type="button" treatment="outlined" data-oauth={name}
                 onclick={() => getClient().auth.signInWith(name, { returnTo: landing() })}>
           Continue with {name}
         </Button>

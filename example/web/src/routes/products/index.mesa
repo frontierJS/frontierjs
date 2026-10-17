@@ -163,7 +163,7 @@ title: Products
     bind:end={high}
   />
 
-  <Button variant="ghost" id="f-clear" onclick={clearFilters}>Clear</Button>
+  <Button treatment="ghost" id="f-clear" onclick={clearFilters}>Clear</Button>
 </div>
 
 <Table {columns} rows={paged} {loading} striped hover compact={prefs.dense}>
@@ -209,7 +209,7 @@ title: Products
         >
           {rows().length ? 'Widen the price range or clear the brand.' : 'Seed the database and reload.'}
           {#snippet action()}
-            <Button variant="outlined" onclick={clearFilters}>Clear filters</Button>
+            <Button treatment="outlined" onclick={clearFilters}>Clear filters</Button>
           {/snippet}
         </EmptyState>
       </td>

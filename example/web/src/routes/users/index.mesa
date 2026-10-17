@@ -140,7 +140,7 @@ title: Users
   const standing = (u) =>
     u.role === 'admin' ? { tone: 'danger',  text: 'admin'   }
     : u.isStaff        ? { tone: 'info',    text: 'staff'   }
-    :                    { tone: 'neutral', text: 'shopper' }
+    :                    { tone: 'muted',   text: 'shopper' }
 
   // ── The write, and the silent half of it ─────────────────────────────────
   //
@@ -211,7 +211,7 @@ title: Users
            operation with no stored row to hide, so a shopper gets a 403 naming
            the model instead of a silent nothing. -->
       <Button id="u-add" onclick={openAdd} disabled={!isAdmin}>Add someone</Button>
-      <Button variant="outlined" onclick={reload} disabled={loading}>
+      <Button treatment="outlined" onclick={reload} disabled={loading}>
         {#if loading}<Spinner size="sm" label="Reloading" />{/if}
         Reload
       </Button>
@@ -261,7 +261,7 @@ title: Users
       </td>
       {#if canEdit}
         <td>
-          <Button variant="ghost" data-edit disabled={busy === u.id} onclick={() => open(u)}>Edit</Button>
+          <Button treatment="ghost" data-edit disabled={busy === u.id} onclick={() => open(u)}>Edit</Button>
         </td>
       {/if}
     </tr>
@@ -271,7 +271,7 @@ title: Users
 <div class="cluster" id="u-window" style="align-items: center; gap: .5rem">
   <span class="text-sm text-muted" data-shown>{rows().length} shown</span>
   {#if more}
-    <Button id="u-more" variant="outlined" disabled={growing} onclick={grow}>
+    <Button id="u-more" treatment="outlined" disabled={growing} onclick={grow}>
       {growing ? 'Loading…' : 'Load more'}
     </Button>
   {:else}

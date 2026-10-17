@@ -44,6 +44,11 @@ src/
                    --heading-letter-spacing exists, and it clears AA on
                    --surface-raised for all seven tones (danger had to move)
   utilities.css    the deliberately small escape hatch
+  print.css        the browser's own Print: hides Frame, Toolbar, Pagination and
+                   lets the Screen flow. Same layer as utilities so it undoes
+                   component rules; `print.spec.js` lifts the @media print
+                   rules onto the screen to measure them. A PDF rendered by
+                   headless Chrome is print-kit's print.css, not this
 vocabulary.js      THE OTHER HALF — two exports, one subject.
                    VOCAB: terms in 8 tiers, which element each is.
                    ANATOMY: which of them expect children, their named parts,

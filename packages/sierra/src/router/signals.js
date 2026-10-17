@@ -42,7 +42,7 @@
  * `test/no-module-signals.test.js` is what keeps it that way.
  */
 
-import { createSignal, createEffect } from '@frontierjs/mesa/runtime.js'
+import { createSignal, createEffect } from '@frontierjs/mesa/runtime'
 
 /**
  * Create a reactive signal.

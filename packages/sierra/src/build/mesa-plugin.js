@@ -67,7 +67,7 @@ export function findMesaFile(file, root) {
   } catch { /* not resolvable from the app root — the paths below still might */ }
 
   // Mesa's source moved under `src/` (2026-08-04). Its exports map hides that
-  // from `@frontierjs/mesa/runtime.js`, but these are filesystem paths, so they
+  // from `@frontierjs/mesa/runtime`, but these are filesystem paths, so they
   // have to name it. The flat variants stay as a fallback: `bun install` copies
   // a `workspace:*` dep rather than symlinking it, so a node_modules copy taken
   // before the move is still flat until someone reinstalls.
@@ -244,7 +244,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext, { holdHints: hold = 
     },
 
     // Resolve @frontierjs/mesa subpath imports with .js extensions.
-    // Mesa's compiler outputs `import * as $runtime from '@frontierjs/mesa/runtime.js'`
+    // Mesa's compiler outputs `import * as $runtime from '@frontierjs/mesa/runtime'`
     // (with .js suffix). We intercept these and return absolute file paths directly.
     //
     // We can't use this.resolve() with bare specifiers here — it doesn't re-enter
@@ -270,10 +270,10 @@ export function mesaPlugin(mesaOptions = {}, sierraContext, { holdHints: hold = 
       // is hoisted, or an app nested under the package that depends on it. It
       // survived because the apps exercised so far each happened to have their
       // own node_modules/@frontierjs.
-      if (id === '@frontierjs/mesa/runtime.js' || id === '@frontierjs/mesa/runtime') {
+      if (id === '@frontierjs/mesa/runtime') {
         return findMesaFile('runtime.js', root)
       }
-      if (id === '@frontierjs/mesa/compiler.js' || id === '@frontierjs/mesa/compiler') {
+      if (id === '@frontierjs/mesa/compiler') {
         return findMesaFile('compiler.js', root)
       }
     },
@@ -326,7 +326,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext, { holdHints: hold = 
       // The normal case: the app depends on @frontierjs/mesa, hoisted or not.
       try {
         const req = createRequire(resolve(root, 'package.json'))
-        candidates.push(req.resolve('@frontierjs/mesa/compiler.js'))
+        candidates.push(req.resolve('@frontierjs/mesa/compiler'))
       } catch {
         // Not resolvable from the app root — fall through to the paths below.
       }

@@ -1,4 +1,4 @@
-import { mount } from '@frontierjs/mesa/runtime.js'
+import { mount } from '@frontierjs/mesa/runtime'
 import App from './App.mesa'
 
 // mount() inserts AFTER its label, so the label has to be inside <body>: the

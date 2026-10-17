@@ -169,7 +169,7 @@ title: Activity
        primary control, and one press is fewer than open-pick-close. -->
   <div class="cluster" role="group" aria-label="Filter by kind" id="activity-kinds">
     {#each kinds as k}
-      <Button variant={kind === k ? 'outlined' : 'ghost'} onclick={() => kind = k}>{k}</Button>
+      <Button treatment={kind === k ? 'outlined' : 'ghost'} onclick={() => kind = k}>{k}</Button>
     {/each}
   </div>
 

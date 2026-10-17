@@ -6,7 +6,7 @@
  * (Invariant 11). The drive clicks real buttons, so this has to be right or
  * every spec reads as a broken plugin.
  */
-import { mount } from '@frontierjs/mesa/runtime.js'
+import { mount } from '@frontierjs/mesa/runtime'
 import App from './App.mesa'
 
 const host   = document.getElementById('app')

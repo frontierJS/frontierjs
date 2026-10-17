@@ -106,7 +106,7 @@ title: Home
 
 <div class="section-header">
   <h1>{current?.name ?? 'Basecamp'}</h1>
-  <Button variant="primary" href="/projects/create/">New project</Button>
+  <Button tone="primary" href="/projects/create/">New project</Button>
 </div>
 
 {#if error}

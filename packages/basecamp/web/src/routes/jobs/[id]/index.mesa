@@ -6,7 +6,7 @@ title: Job
   import { session }    from '../../../session.js'
   import Job, { jobs }  from '../../../resources/Job.mesa'
   import { at }         from '../../../datetime.js'
-  import { toasts }     from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }     from '@frontierjs/ui/stores/toastStore'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import Drawer   from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
@@ -116,7 +116,7 @@ title: Job
     <h1>{job.name}</h1>
     <div class="cluster">
       <span class="pill {TONE[job.status] ?? ''}" id="job-status">{job.status}</span>
-      <Button variant="ghost" href="/jobs/">All jobs</Button>
+      <Button treatment="ghost" href="/jobs/">All jobs</Button>
     </div>
   </div>
 
@@ -133,17 +133,17 @@ title: Job
   {/if}
 
   <div class="cluster" id="job-actions">
-    <Button variant="outlined" disabled={busy === 'trigger' || !startable} onclick={() => act('trigger')}>
+    <Button treatment="outlined" disabled={busy === 'trigger' || !startable} onclick={() => act('trigger')}>
       {busy === 'trigger' ? 'Queuing…' : 'Run now'}
     </Button>
     {#if cancellable}
-      <Button variant="ghost" tone="danger" disabled={busy === 'cancel'}
+      <Button treatment="ghost" tone="danger" disabled={busy === 'cancel'}
               data-confirm="It stops, and does not run again until somebody starts it."
               data-confirm-title="Cancel this job?" data-confirm-label="Cancel job"
               onclick={() => act('cancel')}>Cancel</Button>
     {/if}
-    <Button variant="outlined" id="job-edit" onclick={() => editing = true}>Edit</Button>
-    <Button variant="ghost" tone="danger" id="job-delete" disabled={busy === 'remove'}
+    <Button treatment="outlined" id="job-edit" onclick={() => editing = true}>Edit</Button>
+    <Button treatment="ghost" tone="danger" id="job-delete" disabled={busy === 'remove'}
             data-confirm="It is cancelled, taken off the schedule, and removed."
             data-confirm-title="Delete this job?" data-confirm-label="Delete"
             onclick={removeJob}>Delete</Button>

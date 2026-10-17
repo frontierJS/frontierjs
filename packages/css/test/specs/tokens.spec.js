@@ -286,3 +286,30 @@ test('tokens: system-ui is the floor of the default stack, behind every named fa
   assert.equal(faces.indexOf('system-ui'), faces.length - 2, 'system-ui first appears at ' + faces.indexOf('system-ui') + ' of ' + faces.length);
   assert.equal(faces[faces.length - 1], 'sans-serif');
 });
+
+test('tokens: a theme names only faces a platform carries', function () {
+  /*
+   * The package ships no @font-face (FJS-D879), so a theme naming a web face
+   * renders in it only on a machine that has it installed. FJS-2495: elite
+   * named Montserrat and IBM Plex Mono.
+   */
+  var platform = [
+    '-apple-system', 'blinkmacsystemfont', 'segoe ui variable text', 'segoe ui', 'roboto', 'noto sans',
+    'ubuntu', 'cantarell', 'helvetica neue', 'arial', 'system-ui', 'sans-serif', 'serif', 'monospace',
+    'ui-monospace', 'sfmono-regular', 'menlo', 'consolas', 'iowan old style', 'palatino linotype',
+    'palatino', 'georgia', 'times new roman'
+  ];
+  var offenders = [];
+  allRules().forEach(function (r) {
+    if (!/\.theme-/.test(r.selectorText || '') || !r.style) return;
+    ['--font-primary', '--font-display', '--font-mono'].forEach(function (prop) {
+      r.style.getPropertyValue(prop).split(',').forEach(function (f) {
+        var face = f.trim().replace(/^['"]|['"]$/g, '');
+        if (face && platform.indexOf(face.toLowerCase()) === -1) {
+          offenders.push(r.selectorText + ' ' + prop + ': ' + face);
+        }
+      });
+    });
+  });
+  assert.equal(offenders.length, 0, 'a theme names a face the package does not ship:\n        ' + offenders.join('\n        '));
+});

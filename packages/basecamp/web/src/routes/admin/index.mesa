@@ -14,7 +14,7 @@ title: Members
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Mono       from '@frontierjs/ui/components/display/Mono.mesa'
   import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   $: (session.workspaceId, session.user)
 
@@ -220,7 +220,7 @@ title: Members
     <Select id="invite-role" style="--field-inline-size: auto" placeholder=""
             options={grantable} value={inviteRole}
             onchange={(e) => inviteRole = e.target.value} />
-    <Button id="invite-send" variant="primary" disabled={inviting || !inviteEmail}
+    <Button id="invite-send" tone="primary" disabled={inviting || !inviteEmail}
             onclick={invite}>Send invitation</Button>
   </div>
 </Card>
@@ -242,8 +242,8 @@ title: Members
           </td>
           <td>
             <div class="cluster">
-              <Button variant="ghost" disabled={busy === row.id} onclick={() => resend(row)}>Resend</Button>
-              <Button variant="ghost" tone="danger" disabled={busy === row.id}
+              <Button treatment="ghost" disabled={busy === row.id} onclick={() => resend(row)}>Resend</Button>
+              <Button treatment="ghost" tone="danger" disabled={busy === row.id}
                       data-confirm={`The link sent to ${row.email} stops working.`}
                       data-confirm-title="Revoke this invitation?" data-confirm-label="Revoke"
                       onclick={() => revoke(row)}>Revoke</Button>
@@ -277,13 +277,13 @@ title: Members
           <td class="text-sm text-muted">{day(member.acceptedAt ?? member.createdAt)}</td>
           <td>
             {#if member.userId !== session.user?.userId && myRole === 'owner'}
-              <Button variant="ghost" disabled={busy === member.id} id={`hand-over-${member.id}`}
+              <Button treatment="ghost" disabled={busy === member.id} id={`hand-over-${member.id}`}
                       data-confirm={`${member.user?.displayName ?? member.user?.email ?? 'This person'} becomes the owner, and you become an admin.`}
                       data-confirm-title="Hand over ownership?" data-confirm-label="Hand over" data-confirm-tone="warning"
                       onclick={() => handOver(member)}>Hand over</Button>
             {/if}
             {#if member.userId !== session.user?.userId}
-              <Button variant="ghost" tone="danger" disabled={busy === member.id}
+              <Button treatment="ghost" tone="danger" disabled={busy === member.id}
                       data-confirm={`${member.user?.displayName ?? member.user?.email ?? 'This person'} loses access to this workspace.`}
                       data-confirm-title="Remove this member?" data-confirm-label="Remove"
                       onclick={() => remove(member)}>Remove</Button>

@@ -92,7 +92,7 @@
         Connecting…
       {:else}
         <span>Terminal closed — {reason}</span>
-        <Button size="xs" variant="outlined" onclick={connect}>Reconnect</Button>
+        <Button size="xs" treatment="outlined" onclick={connect}>Reconnect</Button>
       {/if}
     </p>
   {/if}

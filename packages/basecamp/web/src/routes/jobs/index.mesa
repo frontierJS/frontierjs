@@ -5,7 +5,7 @@ title: Jobs
   import { session } from '../../session.js'
   import Job, { jobs } from '../../resources/Job.mesa'
   import { at } from '../../datetime.js'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Drawer from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
@@ -90,7 +90,7 @@ title: Jobs
     <h1>Jobs</h1>
     <span class="text-sm text-muted">scheduled and one-shot work</span>
   </div>
-  <Button variant="primary" id="job-new" onclick={() => creating = true}>New job</Button>
+  <Button tone="primary" id="job-new" onclick={() => creating = true}>New job</Button>
 </div>
 
 <Drawer open={creating} title="New job" onclose={() => creating = false}>
@@ -130,10 +130,10 @@ title: Jobs
         </td>
         <td>
           <div class="cluster">
-            <Button variant="ghost" disabled={busy === job.id || !startable(job)} onclick={() => trigger(job)}>
+            <Button treatment="ghost" disabled={busy === job.id || !startable(job)} onclick={() => trigger(job)}>
               {busy === job.id ? 'Queuing…' : 'Run now'}
             </Button>
-            <Button variant="ghost" href={`/jobs/${job.id}/`}>Open</Button>
+            <Button treatment="ghost" href={`/jobs/${job.id}/`}>Open</Button>
           </div>
         </td>
       </tr>

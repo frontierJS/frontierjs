@@ -16,7 +16,6 @@
   export let id        = 0
   export let message   = ''
   export let tone      = 'info'
-  export let type      = ''      // legacy alias — 'error' → danger
   export let duration  = 3500    // ms — drives the drain animation
   export let ondismiss = undefined
   export let action    = null    // { label, run } — see toastStore.js
@@ -29,11 +28,11 @@
   }
 
   // `loading` is a STATE, not a tone: work in flight has no outcome yet, so
-  // there is nothing for a tone to say. It reaches here as the type the store
+  // there is nothing for a tone to say. It reaches here as the tone the store
   // wrote, and what it changes is the icon — a spinner rather than a verdict —
   // and, through `duration: 0`, the absence of a drain bar.
-  const isLoading = (type || tone) === 'loading'
-  const t    = isLoading ? '' : (toTone(type || tone) || 'info')
+  const isLoading = tone === 'loading'
+  const t    = isLoading ? '' : (toTone(tone) || 'info')
   const path = iconPathMap[t] ?? iconPathMap.info
 
   const toastAnim = $.entrance({

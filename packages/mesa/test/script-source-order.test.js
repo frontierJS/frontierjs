@@ -36,7 +36,7 @@ async function render(script, template = '') {
   const file = path.join(DIR, `_order_${n++}.mjs`)
   const src = `<script>\n${script}\n</script>${template}`
   const out = (await compileSource(src, { filename: 'T.mesa', css: false, dev: false })).result
-  writeFileSync(file, out.replace(/'@frontierjs\/mesa\/runtime\.js'/g,
+  writeFileSync(file, out.replace(/'@frontierjs\/mesa\/runtime'/g,
     `'${path.join(DIR, 'src/runtime.js')}'`))
   try {
     const C = (await import('file://' + file)).default

@@ -23,8 +23,7 @@ const UNO = /\bclass="[^"]*\b(?:bg-(?:gray|blue|red|green|yellow|white|slate)-\d
 
 const CASES = [
   // file,                              props,                       classes that must appear
-  ['components/forms/Button.mesa',      { variant: 'danger' },       ['btn', 'danger']],
-  ['components/forms/Button.mesa',      { variant: 'outlined' },     ['btn', 'outlined']],
+  ['components/forms/Button.mesa',      { tone: 'danger' },          ['btn', 'danger']],
   ['components/forms/Input.mesa',       { label: 'Email' },          ['field-group', 'field']],
   ['components/forms/Input.mesa',       { label: 'Email', error: 'Taken' }, ['field-group', 'danger']],
   // FJS-2517: no label and no name still draws its message and hint.
@@ -51,6 +50,9 @@ const CASES = [
   ['components/display/Breadcrumbs.mesa', { items: [{ label: 'Home' }] }, ['breadcrumb']],
   ['components/display/Table.mesa',     { columns: [{ name: 'a', label: 'A' }] }, ['table', 'table-wrap']],
   ['components/display/Kbd.mesa',       {},                          ['kbd']],
+  // A prerendered page draws a markdown column rendered, not as its source
+  // until hydration (FJS-3153, FJS-D821). The renderer's class is the assertion.
+  ['components/display/Cell.mesa',      { value: '**b**', column: { name: 'notes', display: 'markdown' } }, ['cell', 'fjs-markdown']],
   // auth's user.name is String?, so null is the value a signed-in user hands
   // over; a prop default covers undefined only, and a throw at setup takes the
   // whole mount down (FJS-2604). The person icon is the assertion.
@@ -175,6 +177,34 @@ const TRIGGER = `<script>
   if (problems.length) {
     console.error(`✗ CopyButton with a trigger snippet\n    ${problems.join('\n    ')}`)
     failed++
+  }
+}
+
+// ── A tone and a treatment are two props ────────────────────────────────────
+//
+// `FJS-2943`. Read off the CLASS list: an undeclared prop lands on the element
+// as an attribute, so `treatment="outlined"` matches a whole-html search while
+// the button is drawn a plain primary.
+{
+  const BUTTONS = [
+    ['forms/Button.mesa',      {},                                         'btn primary'],
+    ['forms/Button.mesa',      { tone: 'danger' },                         'btn danger'],
+    ['forms/Button.mesa',      { treatment: 'ghost' },                     'btn ghost'],
+    ['forms/Button.mesa',      { tone: 'danger', treatment: 'outlined' },  'btn danger outlined'],
+    ['display/CopyButton.mesa', { text: 'x', label: 'Copy' },              'btn ghost'],
+    ['display/CopyButton.mesa', { text: 'x', label: 'Copy', treatment: 'outlined' }, 'btn outlined'],
+  ]
+  for (const [file, data, want] of BUTTONS) {
+    const out = await renderComponent(readFileSync(join(ROOT, 'components', file), 'utf8'), {
+      data, cwd: ROOT, filename: `components/${file}`, styleTag: false,
+      tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+    })
+    const tag = out.html.match(/<(?:button|a)\b[^>]*>/)?.[0] ?? ''
+    const got = (tag.match(/class="([^"]*)"/)?.[1] ?? '').split(/\s+/).filter(Boolean).sort().join(' ')
+    if (got !== want.split(' ').sort().join(' ')) {
+      console.error(`✗ ${file} ${JSON.stringify(data)}\n    class "${got}", want "${want}"`)
+      failed++
+    }
   }
 }
 

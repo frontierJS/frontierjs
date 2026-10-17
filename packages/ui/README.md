@@ -71,28 +71,24 @@ Fill and text color are both derived from the tone's luminance, verified at
 zero WCAG AA failures across all 42 tone × theme combinations — so there is
 never a text color to pick.
 
-`utils.js` exports `tone(name)`, which maps the older prop spellings onto the
-seven: `error` → `danger`, `red` → `danger`, `green` → `success`, `gray` →
-`muted`, and so on. An unrecognized name resolves to `''` (untoned) rather
-than guessing, so a typo renders in the component's own default instead of
-silently wrong. Every component still accepts its previous `color=` / `type=`
-prop through that map.
+`utils.js` exports `tone(name)`, which answers one of the seven or `''`
+(untoned). A hue (`red`) or another kit's word (`error`) is not a tone, so a
+typo renders in the component's own default instead of silently wrong. The
+toast and alert stores write the tone: `toasts.error()` stores `danger`, and
+`said.update('danger', message)` settles a toast with it.
 
 ## Treatments
 
 Tones and treatments are different kinds of class in the css package, and they
-compose freely — which is why `variant` on Button takes either:
+compose freely, so Button takes each as its own prop:
 
 ```svelte
-<Button variant="outlined" tone="danger">Delete</Button>   <!-- red outline -->
-<Button variant="ghost">Cancel</Button>
-<Button variant="link">Learn more</Button>
+<Button treatment="outlined" tone="danger">Delete</Button>   <!-- red outline -->
+<Button treatment="ghost">Cancel</Button>
+<Button treatment="link">Learn more</Button>
 <Button tone="primary" loading>Saving</Button>
 <Button square aria-label="Delete"><IconTrash /></Button>
 ```
-
-The old six-value `variant` conflated the two, which is why `outline` and
-`danger` used to be mutually exclusive. Both spellings still work.
 
 ## What's in the box
 
@@ -466,13 +462,13 @@ Five suites, and the split matters:
 ## Toasts
 
 ```js
-import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+import { toasts } from '@frontierjs/ui/stores/toastStore'
 
 toasts.success('Saved')
 
 const said = toasts.loading('Sending…')
 try   { await send(); said.update('success', 'Sent') }
-catch (e) { said.update('error', e.message) }
+catch (e) { said.update('danger', e.message) }
 ```
 
 `loading()` answers `{ id, update(type, message, duration?), dismiss() }` and

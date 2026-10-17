@@ -20,7 +20,7 @@ title: Hub workspaces
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Input from '@frontierjs/ui/components/forms/Input.mesa'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
 
@@ -124,13 +124,13 @@ title: Hub workspaces
         <td class="text-sm text-muted">{day(w.createdAt)}</td>
         <td>
           {#if w.status === 'active'}
-            <Button variant="ghost" tone="danger" disabled={busy === w.id}
+            <Button treatment="ghost" tone="danger" disabled={busy === w.id}
                     aria-label={`Suspend ${w.name}`}
                     data-confirm={`Every member of ${w.name} is refused on their next request until it is reinstated.`}
                     data-confirm-title="Suspend this workspace?" data-confirm-label="Suspend"
                     onclick={() => setStatus(w, 'suspended')}>Suspend</Button>
           {:else}
-            <Button variant="ghost" disabled={busy === w.id}
+            <Button treatment="ghost" disabled={busy === w.id}
                     aria-label={`Reinstate ${w.name}`}
                     onclick={() => setStatus(w, 'active')}>Reinstate</Button>
           {/if}

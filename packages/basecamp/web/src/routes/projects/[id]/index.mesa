@@ -140,11 +140,11 @@ title: Project
   <div class="section-header">
     <h1>{project.name}</h1>
     <div class="cluster">
-      <Button variant="ghost" href="/projects/">All projects</Button>
-      <Button variant="outlined" onclick={() => editing = !editing}>
+      <Button treatment="ghost" href="/projects/">All projects</Button>
+      <Button treatment="outlined" onclick={() => editing = !editing}>
         {editing ? 'Cancel' : 'Edit'}
       </Button>
-      <Button variant="ghost" tone="danger"
+      <Button treatment="ghost" tone="danger"
               data-confirm={`${project.name} is deleted with every environment, app and job inside it. Trash brings all of it back.`}
               data-confirm-title="Delete this project?" data-confirm-label="Delete project"
               onclick={remove}>Delete</Button>
@@ -163,7 +163,7 @@ title: Project
         <Input label="Description" name="description" id="description"
                value={draft.description} oninput={(e) => draft.description = e.target.value} />
         <div class="cluster">
-          <Button variant="primary" type="submit">Save</Button>
+          <Button tone="primary" type="submit">Save</Button>
         </div>
       </form>
     </div>
@@ -181,7 +181,7 @@ title: Project
       <label class="visually-hidden" for="tier-select">Tier</label>
       <Select id="tier-select" style="--field-inline-size: auto"
               placeholder="" options={tiers} bind:value={newTier} />
-      <Button variant="outlined" onclick={addEnvironment} disabled={adding}>
+      <Button treatment="outlined" onclick={addEnvironment} disabled={adding}>
         {adding ? 'Adding…' : 'Add environment'}
       </Button>
     </div>
@@ -204,7 +204,7 @@ title: Project
           <td><a href={`/environments/${environment.id}/`}>{environment.name}</a></td>
           <td><span class="pill">{environment.tier}</span></td>
           <td>{environment.isProtected ? 'yes' : 'no'}</td>
-          <td><Button variant="ghost" href={`/environments/${environment.id}/`}>Open</Button></td>
+          <td><Button treatment="ghost" href={`/environments/${environment.id}/`}>Open</Button></td>
         </tr>
       {/snippet}
     </Table>

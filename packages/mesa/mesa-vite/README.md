@@ -50,7 +50,7 @@ not the installed one — and the answer is memoized per PLUGIN INSTANCE, so two
 
 ```js
 mesa({
-  compilerPath: require.resolve('@frontierjs/mesa/compiler.js'),
+  compilerPath: require.resolve('@frontierjs/mesa/compiler'),
 })
 ```
 
@@ -215,7 +215,7 @@ import is wrong.
 ## Mounting components
 
 ```js
-import { mount } from '@frontierjs/mesa/runtime.js'
+import { mount } from '@frontierjs/mesa/runtime'
 import App from './src/App.mesa'
 
 const app = mount(document.getElementById('app'), App, {

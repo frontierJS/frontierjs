@@ -10,7 +10,7 @@
  * `@frontierjs/css`'s harness writes one HTML file and opens it with
  * `file://`, which works because everything it tests is a stylesheet. This kit
  * is ES modules: `file://` module resolution is subject to CORS, and a compiled
- * component imports `@frontierjs/mesa/runtime.js`, `../../utils.js` and its
+ * component imports `@frontierjs/mesa/runtime`, `../../utils.js` and its
  * child components. Serving over HTTP with an import map means those specifiers
  * resolve exactly as they do in an app, rather than being rewritten into
  * something only this harness would accept.
@@ -88,7 +88,7 @@ const TYPES = {
 /*
  * The import map.
  *
- * A compiled component imports `@frontierjs/mesa/runtime.js`; two components
+ * A compiled component imports `@frontierjs/mesa/runtime`; two components
  * import `@frontierjs/ui/...` by its published name rather than relatively.
  * Both spellings of the runtime are mapped because the compiler's output and a
  * hand-written import do not have to agree about the extension.
@@ -99,7 +99,6 @@ const TYPES = {
  */
 const IMPORT_MAP = {
   imports: {
-    '@frontierjs/mesa/runtime.js':      '/@mesa/src/runtime.js',
     '@frontierjs/mesa/runtime':         '/@mesa/src/runtime.js',
     '@frontierjs/ui/':                  '/kit/',
     '@frontierjs/ui/controls':          '/kit/controls.js',

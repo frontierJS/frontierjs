@@ -82,7 +82,7 @@
   export let text             = ''      // text to copy
   export let label            = ''      // optional button label
   export let feedbackDuration = 2000    // ms to show ✓ before reverting
-  export let variant          = 'ghost' // 'ghost' | 'outlined' | 'link' | ''
+  export let treatment        = 'ghost' // 'ghost' | 'outlined' | 'link' | ''
   export let trigger          = null    // optional snippet(copied: boolean)
   export let oncopy           = undefined // (text) => void — callback after copy
 
@@ -102,7 +102,7 @@
 
 <button
   type="button"
-  class={cx('btn', variant, !label && !trigger && 'square', copied && 'success')}
+  class={cx('btn', treatment, !label && !trigger && 'square', copied && 'success')}
   {class}
   {...$attributes}
   aria-label={label || trigger ? null : (copied ? 'Copied' : 'Copy to clipboard')}

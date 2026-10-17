@@ -10,7 +10,7 @@ title: Environment
   import { at } from '../../../datetime.js'
   import Pill from '@frontierjs/ui/components/display/Pill.mesa'
   import { goto } from '@frontierjs/sierra/router'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import Drawer   from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import Select   from '@frontierjs/ui/components/forms/Select.mesa'
@@ -215,10 +215,10 @@ title: Environment
       {#if environment.isProtected}<span class="pill warning" id="env-protected">protected</span>{/if}
     </div>
     <div class="cluster">
-      <Button variant="outlined" id="env-edit" onclick={() => editing = true}>Edit</Button>
+      <Button treatment="outlined" id="env-edit" onclick={() => editing = true}>Edit</Button>
       <!-- Not disabled when protected: the service refuses it in a sentence
            that says what to do, and a dead button says nothing. -->
-      <Button variant="ghost" tone="danger" id="env-delete" disabled={removing}
+      <Button treatment="ghost" tone="danger" id="env-delete" disabled={removing}
               data-confirm={`${environment.name} is deleted with its ${appRows.length} app${appRows.length === 1 ? '' : 's'} and their jobs.`}
               data-confirm-title="Delete this environment?" data-confirm-label="Delete"
               onclick={removeEnvironment}>Delete</Button>
@@ -271,11 +271,11 @@ title: Environment
                the ordinary case, and one column could not hold both. -->
           <td><code>{app.domains?.find(d => d.isPrimary)?.hostname ?? '—'}</code></td>
           <td class="cluster">
-            <Button variant="outlined" disabled={deploying === app.id} onclick={() => deploy(app)}>
+            <Button treatment="outlined" disabled={deploying === app.id} onclick={() => deploy(app)}>
               {deploying === app.id ? 'Starting…' : 'Deploy'}
             </Button>
-            <Button variant="ghost" href={`/apps/${app.id}/`}>Open</Button>
-            <Button variant="ghost" tone="danger" disabled={deploying === app.id}
+            <Button treatment="ghost" href={`/apps/${app.id}/`}>Open</Button>
+            <Button treatment="ghost" tone="danger" disabled={deploying === app.id}
                     aria-label={`Delete ${app.name}`}
                     data-confirm={`${app.name} stops serving, and its releases, jobs and domains go with it.`}
                     data-confirm-title="Delete this app?" data-confirm-label="Delete"
@@ -300,7 +300,7 @@ title: Environment
               onchange={(e) => newApp.type = e.target.value} />
     </div>
     <div class="cluster">
-      <Button variant="primary" type="submit" disabled={adding}>
+      <Button tone="primary" type="submit" disabled={adding}>
         {adding ? 'Adding…' : 'Add app'}
       </Button>
     </div>

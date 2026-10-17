@@ -141,6 +141,29 @@
 }
 
 /*
+ * ── Pressed ─────────────────────────────────────────────────────
+ * A toggle button announces its state with aria-pressed, and that attribute
+ * is what draws it — the tone stays the button's own, so a toggle does not
+ * change what it means to say what it is.
+ *
+ *   <button class="btn" aria-pressed="true">Important</button>
+ *
+ * A filled button has a fill to push in: an inset shadow and a darker face.
+ * Outlined, ghost, link and glass have no fill, so they take a wash of their
+ * own ink over the surface instead. Written after the variants so their
+ * `box-shadow: none` and their hover cannot erase it.
+ */
+.btn[aria-pressed="true"] {
+  box-shadow: inset 0 2px 4px color-mix(in srgb, black 35%, transparent);
+  filter:     brightness(0.9);
+}
+.btn:is(.outlined, .ghost, .link, .glass)[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--btn-ink) 16%, var(--surface));
+  box-shadow: none;
+  filter:     none;
+}
+
+/*
  * ── Loading ─────────────────────────────────────────────────────
  * Hides the label with `color: transparent` rather than removing it, so
  * the button keeps its width (no layout jump) and screen readers still

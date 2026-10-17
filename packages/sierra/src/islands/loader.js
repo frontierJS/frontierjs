@@ -62,7 +62,7 @@
  * children. That is warned about rather than silently reinterpreted.
  */
 
-import { mount } from '@frontierjs/mesa/runtime.js'
+import { mount } from '@frontierjs/mesa/runtime'
 
 const OPEN   = 'mesa-island '
 const CLOSE  = '/mesa-island'

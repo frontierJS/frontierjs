@@ -47,5 +47,5 @@ anArrat: [12,2,4, "thisString"]
 
 <Form resource={users} bind:record={record} {method} {actions} {...$attributes}>
   <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
-  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+  <Button slot="actions" treatment="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
 </Form>

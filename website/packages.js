@@ -529,7 +529,7 @@ const PKGS = [
   rows:[
     { k:'Extend, don’t copy', v:'One line in your <code>tsconfig.json</code>',
       why:'A copied config is frozen at the moment it was written. A dependency moves when the framework does, which is the entire difference between a template and a package.',
-      code:'{ "extends": "@frontierjs/config/tsconfig.json" }',
+      code:'{ "extends": "@frontierjs/config/tsconfig" }',
       r:['a config pasted from a starter'] },
     { k:'No formatter', v:'Linter only, and the refusal is measured',
       why:'This house aligns columns and no formatter can express that. The code the scaffolder writes is aligned, so the first format run would rewrite the app the scaffold had just produced.',

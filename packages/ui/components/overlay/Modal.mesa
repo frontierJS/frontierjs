@@ -24,7 +24,7 @@
   //     <p>This action cannot be undone.</p>
   //     {#snippet footer()}
   //       <Button tone="danger" onclick={deleteItem}>Delete</Button>
-  //       <Button variant="ghost" onclick={() => open = false}>Cancel</Button>
+  //       <Button treatment="ghost" onclick={() => open = false}>Cancel</Button>
   //     {/snippet}
   //   </Modal>
 

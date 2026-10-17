@@ -97,7 +97,7 @@ const resource = ${service}
 
 <Form {resource} bind:record={record} {method} {actions} {class} {...$attributes}>
   <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
-  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+  <Button slot="actions" treatment="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
 </Form>
 `
 }

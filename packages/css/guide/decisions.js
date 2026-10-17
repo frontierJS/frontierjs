@@ -126,6 +126,7 @@ var QUESTIONS = {
     options: [
       { label: 'Content — a heading, prose, maybe actions', on: 'Card' },
       { label: 'One number and its label', hint: 'a metric, a stat', on: 'Tile' },
+      { label: 'A column of them', hint: 'a kanban lane, a status column', on: 'Lane' },
     ],
   },
 
@@ -457,6 +458,21 @@ var OUTCOMES = {
     instead: [
       { term: 'Card', when: 'there is prose in it' },
       { term: 'Facts', when: 'you have several label/value pairs rather than one headline number' },
+    ],
+  },
+
+  Lane: {
+    page: 'lanes',
+    lead: 'One column of a board, at a width of its own.',
+    markup: function (c) {
+      return '<section class="' + c + '" aria-labelledby="lane-todo">\n  <h3 class="lane-title" id="lane-todo">Todo</h3>\n  <article class="card">…</article>\n</section>'
+    },
+    tones: true,
+    treatments: ['raised', 'outlined'],
+    states: [],
+    instead: [
+      { term: 'Card', when: 'it is one unit of content rather than a column of them' },
+      { term: 'Pane', when: 'it is a major subdivision of a Screen, not one column of a board' },
     ],
   },
 

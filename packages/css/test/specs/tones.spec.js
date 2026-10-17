@@ -23,6 +23,7 @@ var TONES = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'dan
 var CONSUMERS = [
   { name: '.card', html: '<article class="card TONE">body</article>', prop: 'background-color' },
   { name: '.tile', html: '<article class="tile TONE">body</article>', prop: 'background-color' },
+  { name: '.lane', html: '<section class="lane TONE">body</section>', prop: 'background-color' },
   { name: '.alert', html: '<article class="alert TONE">body</article>', prop: 'background-color' },
   { name: '.toast', html: '<article class="toast TONE">body</article>', prop: 'background-color' },
   { name: '.popover', html: '<article class="popover TONE">body</article>', prop: 'background-color' },

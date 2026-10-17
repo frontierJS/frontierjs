@@ -41,6 +41,7 @@
   const whereLong = { name: 'where',  display: 'geo', geo: { lat: 'latitude', lng: 'longitude' } }
   const unknown  = { name: 'thing',   display: 'someday' }
   const doc      = { name: 'meta',    display: 'json' }
+  const prose    = { name: 'notes',   display: 'markdown' }
   const hours    = { name: 'hours',   display: 'number', rule: { type: 'number', 'x-unit': { symbol: 'h' } } }
   const tenths   = { name: 'hours',   display: 'scale', scale: 1, rule: { type: 'integer', 'x-unit': { symbol: 'h' } } }
 </script>
@@ -86,6 +87,9 @@
 
 <!-- a document column: the viewer is loaded on first use, not with the table -->
 <div id="json"><Cell value={{ a: 1, b: [2] }} column={doc} /></div>
+
+<!-- a markdown column: rendered once the renderer has loaded, escaped always -->
+<div id="markdown"><Cell value={'**bold** and [a link](https://x.test)\n\n<img src=x onerror=alert(1)>'} column={prose} /></div>
 
 <!-- a column the table could not place, and the reason riding with it -->
 <div id="unplaced"><Cell value={{ a: 1 }} column={unplaced} /></div>

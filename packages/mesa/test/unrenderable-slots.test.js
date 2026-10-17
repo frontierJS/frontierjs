@@ -33,7 +33,7 @@ async function run(childSrc, parentBody) {
   const compileTo = async (src, file) => {
     const ctx = await compileSource(src, { filename: file, dev: false })
     const js = ctx.result
-      .replace(/'@frontierjs\/mesa\/runtime\.js'/g, `'${path.join(DIR, 'src/runtime.js')}'`)
+      .replace(/'@frontierjs\/mesa\/runtime'/g, `'${path.join(DIR, 'src/runtime.js')}'`)
       .replace(/'\.\/Child\.mesa'/g, `'./_slot_Child${id}.mjs'`)
     const out = file.replace(/\.mesa$/, '.mjs')
     writeFileSync(out, js)

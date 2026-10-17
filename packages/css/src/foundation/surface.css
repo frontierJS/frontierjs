@@ -37,7 +37,7 @@
   inherits: false;
 }
 
-:where(.surface, .card, .tile, .alert, .toast, .dialog, .popover, .drawer, .band) {
+:where(.surface, .card, .tile, .lane, .alert, .toast, .dialog, .popover, .drawer, .band) {
   /*
    * The percentages are not here — they are the --tint-* ramp in tones.css,
    * so a toned Card and an app's own tinted element cannot drift apart.
@@ -94,6 +94,18 @@
     --surface-bg:     transparent;
     --_surface-border: transparent;
     box-shadow:       none;
+  }
+  /*
+   * A toned rule on the start edge only: the mark of a form being edited or
+   * a callout, said without recoloring the whole border. It reads the tone's
+   * hue straight (a rule is not text, so it skips --tone-ink's window) and
+   * falls back to the brand accent. Declared on the logical side so it
+   * follows direction, and after the others so `.raised`'s transparent
+   * border does not erase it.
+   */
+  &.edge {
+    border-inline-start: calc(var(--border-width) * 3) solid
+                         var(--bg-mix, var(--color-primary));
   }
   /*
    * The fill is the UNTONED ground made translucent. A 10% tint behind

@@ -8,7 +8,7 @@
 import { describe, test, expect } from 'vitest'
 import { matchRoute, normalizePath, buildUrl, parseQueryParams } from '../src/router/match.js'
 import { signal } from '../src/router/signals.js'
-import { flushSync } from '@frontierjs/mesa/runtime.js'
+import { flushSync } from '@frontierjs/mesa/runtime'
 
 // ─── Fixture tree ─────────────────────────────────────────────────────────────
 

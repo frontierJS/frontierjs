@@ -44,7 +44,7 @@ title: Flow
   import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
   import Textarea      from '@frontierjs/ui/components/forms/Textarea.mesa'
-  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore'
 
   import Select        from '@frontierjs/ui/components/forms/Select.mesa'
 
@@ -269,8 +269,8 @@ title: Flow
 
   <div class="cluster">
     <Button id="flow-run" disabled={busy || !mayChange || flow.status !== 'active' || !hasManual} onclick={runNow}>Run now</Button>
-    <Button variant="ghost" id="flow-dry" disabled={busy || !mayChange || flow.currentVersion == null} onclick={dryRun}>Dry run</Button>
-    <Button variant="ghost" id="flow-export" disabled={busy || flow.currentVersion == null} onclick={download}>Export</Button>
+    <Button treatment="ghost" id="flow-dry" disabled={busy || !mayChange || flow.currentVersion == null} onclick={dryRun}>Dry run</Button>
+    <Button treatment="ghost" id="flow-export" disabled={busy || flow.currentVersion == null} onclick={download}>Export</Button>
   </div>
 
   {#if dry}
@@ -292,7 +292,7 @@ title: Flow
       <Select id="flow-add-type" options={typeOptions} placeholder="Node type…" bind:value={adding} />
       <Button size="sm" id="flow-add-node" disabled={!adding} onclick={addNode}>Add node</Button>
       {#if current}
-        <Button size="sm" variant="ghost" id="flow-remove-node" onclick={() => removeNode(current.id)}>Remove {current.id}</Button>
+        <Button size="sm" treatment="ghost" id="flow-remove-node" onclick={() => removeNode(current.id)}>Remove {current.id}</Button>
       {/if}
     </div>
   {/if}
@@ -318,7 +318,7 @@ title: Flow
     <div class="cluster" id="flow-nodes">
       {#each nodeList as n (n.id)}
         <Button
-          variant={n.id === current?.id ? 'primary' : 'ghost'}
+          treatment={n.id === current?.id ? '' : 'ghost'}
           size="sm"
           id={'flow-node-' + n.id}
           data-node={n.id}

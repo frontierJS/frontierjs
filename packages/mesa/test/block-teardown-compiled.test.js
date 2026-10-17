@@ -33,7 +33,7 @@ async function render(src) {
   const ctx = await compileSource(src, { filename: `/T${n}.mesa`, dev: false })
   // The temp module is written to the package root (cwd), not beside this
   // file, so its runtime import is relative to the package root.
-  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime\.js'/g, `'./src/runtime.js'`)
+  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`)
   const file = path.join(process.cwd(), `_tmp_compiled_${n++}.mjs`)
   writeFileSync(file, js)
   let Comp

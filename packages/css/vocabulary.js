@@ -101,6 +101,7 @@ const VOCAB = [
     [
       ["Card", "<article>", "A bounded unit of content on a surface. Write it as an <a> or a <button> and it becomes interactive — cursor, a 1px lift and a tone-following border, no modifier. Its children flow down at Stack's gap, so a Card needs no .stack"],
       ["Tile", "<article>", "A compact metric or stat unit. Interactive as an <a>/<button>, like Card"],
+      ["Lane", "<section aria-labelledby>", "One column of a board — the vertical counterpart of a Bar. A Surface, so it takes a tone, at a width of its own (--lane-size); a row of them sits in .lanes and scrolls sideways rather than wrapping"],
       ["Item", "<li>", "A lightweight list entry"],
       ["Row", "<li> / <tr>", "A record entry with trailing actions", "list-row"],
       ["Feed", "<ol> + <li><article>", "A chronological stream, plotted on a connecting timeline. Each entry carries a dot and the line runs between them — a stream with no marker column is Item"],
@@ -183,7 +184,7 @@ const NOT_A_TERM = {
   /*
    * Treatments. Orthogonal, compose onto anything, name no component.
    */
-  treatment: ['raised', 'outlined', 'ghost', 'glass', 'bordered'],
+  treatment: ['raised', 'outlined', 'ghost', 'glass', 'bordered', 'edge'],
 
   /*
    * Density. The third axis, and the only one that INHERITS — a tone is a
@@ -202,7 +203,7 @@ const NOT_A_TERM = {
    */
   modifier: [
     'bottom', 'circle', 'compact', 'complete', 'disabled', 'divided', 'end',
-    'focusable', 'hover', 'menu', 'narrow', 'peek', 'pills', 'removable',
+    'flush', 'focusable', 'hover', 'menu', 'narrow', 'peek', 'pills', 'removable',
     'rail', 'segmented', 'square', 'start', 'stretch', 'striped', 'text', 'top', 'vertical', 'viewport',
     'wide', 'wrap',
   ],
@@ -212,7 +213,7 @@ const NOT_A_TERM = {
    * meaning of its own — `items` is where Items go. Naming both would double
    * the vocabulary to say one thing.
    */
-  container: ['avatars', 'items', 'rows', 'tiles'],
+  container: ['avatars', 'items', 'lanes', 'rows', 'tiles'],
 
   /*
    * Anatomy that happens to have no hyphen, so the rule above misses it.
@@ -357,6 +358,18 @@ const ANATOMY = {
       ['.tile-label', 'What is being measured'],
       ['.tile-value', 'The number, at display size'],
       ['.tile-delta', 'The change. Takes a tone, which is the only place the color is decided', 'optional'],
+    ],
+  },
+
+  Lane: {
+    markup: `<div class="lanes">
+  <section class="lane warning" aria-labelledby="lane-todo">
+    <h3 class="lane-title" id="lane-todo">Todo</h3>
+    <article class="card">Draft the brief</article>
+  </section>
+</div>`,
+    parts: [
+      ['.lane-title', 'The lane’s name. Labels the section for assistive tech'],
     ],
   },
 

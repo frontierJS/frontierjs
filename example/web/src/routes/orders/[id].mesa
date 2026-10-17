@@ -43,7 +43,7 @@ title: Order
   import TabPanel       from '@frontierjs/ui/components/layout/TabPanel.mesa'
   import Tabs           from '@frontierjs/ui/components/layout/Tabs.mesa'
   import Tooltip        from '@frontierjs/ui/components/overlay/Tooltip.mesa'
-  import { toasts }     from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }     from '@frontierjs/ui/stores/toastStore'
   // One owner of what a currency's decimals are — JPY has none, and every
   // hand-rolled toFixed(2) invents one (`FJS-440`). `fromMinor`/`toMinor` are
   // the same fact one step earlier: every money column here is `@money`, so
@@ -249,7 +249,7 @@ title: Order
       // 403 from the seed's own @gate(5) on the transition, asked through
       // transitions(row); 502 when the provider could not be reached, carrying
       // `retryable` so a shop knows whether to try again.
-      said.update('error', e.message)
+      said.update('danger', e.message)
     } finally {
       busy = null
       amount = null
@@ -282,7 +282,7 @@ title: Order
       said.update('success', `${move.name} → ${moved?.status ?? move.to}`)
     } catch (e) {
       // 403 from a per-move @gate, 409 from a move that is not legal from here.
-      said.update('error', e.message)
+      said.update('danger', e.message)
       error = e.message
     } finally {
       busy = null
@@ -332,7 +332,7 @@ title: Order
     {#snippet action()}
       <DropdownMenu>
         {#snippet trigger()}
-          <Button variant="outlined" id="order-actions">Actions</Button>
+          <Button treatment="outlined" id="order-actions">Actions</Button>
         {/snippet}
 
         <!--
@@ -511,7 +511,7 @@ title: Order
                 ? move.from + ' → ' + move.to
                 : 'needs level ' + move.gate + '; this session is ' + session.level}>
                 <Button
-                  variant="ghost"
+                  treatment="ghost"
                   tone={isTerminal(move) ? 'danger' : ''}
                   disabled={!move.allowed || busy !== null}
                   loading={busy === move.name}
@@ -600,7 +600,7 @@ title: Order
                 <div class="cluster">
                   <Button
                     tone="danger"
-                    variant="outlined"
+                    treatment="outlined"
                     data-refund={p.id}
                     disabled={busy !== null}
                     loading={busy === 'refund:' + p.id}
@@ -643,7 +643,7 @@ title: Order
 >
   {#snippet footer()}
     <div class="cluster">
-      <Button variant="ghost" onclick={() => confirm = null}>Keep it</Button>
+      <Button treatment="ghost" onclick={() => confirm = null}>Keep it</Button>
       <Button tone="danger" onclick={() => run(confirm)}>
         Yes, {confirm ? confirm.name : ''} it
       </Button>
@@ -693,7 +693,7 @@ title: Order
 >
   {#snippet footer()}
     <div class="cluster">
-      <Button variant="ghost" onclick={() => { refund = null; amount = null }}>Keep it</Button>
+      <Button treatment="ghost" onclick={() => { refund = null; amount = null }}>Keep it</Button>
       <Button tone="danger" id="refund-confirm" onclick={giveBack}>
         Refund {refund ? (amount === null || amount === '' ? money(leftOn(refund), refund.currency) : formatMoney(Number(amount), refund.currency ?? 'USD')) : ''}
       </Button>

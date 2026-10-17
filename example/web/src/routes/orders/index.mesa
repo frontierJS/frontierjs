@@ -248,7 +248,7 @@ title: Orders
            from /settings/ — a setting that changes nothing is decoration. -->
       <td>
         {#if prefs.quickView}
-          <Button variant="link" onclick={() => peek = order}><Mono>{order.reference}</Mono></Button>
+          <Button treatment="link" onclick={() => peek = order}><Mono>{order.reference}</Mono></Button>
         {:else}
           <a class="link" href={'/orders/' + order.id + '/'}><Mono>{order.reference}</Mono></a>
         {/if}
@@ -278,7 +278,7 @@ title: Orders
         <div class="cluster">
           {#each movesFor(order, session.level) as move}
             <Button
-              variant="ghost"
+              treatment="ghost"
               loading={busy === order.id + ':' + move.name}
               disabled={!move.allowed || !canMove || busy !== null}
               title={!canMove ? 'sign in to move an order'
@@ -294,7 +294,7 @@ title: Orders
       </td>
       <td>
         <div class="cluster">
-          <Button variant="ghost" onclick={() => peek = order}>View</Button>
+          <Button treatment="ghost" onclick={() => peek = order}>View</Button>
 
           <!--
             Delete asks first, and asks where the button is. Not a Modal: a
@@ -316,7 +316,7 @@ title: Orders
             onconfirm={() => remove(order.id)}
           >
             {#snippet trigger()}
-              <Button variant="ghost" tone="danger" disabled={!canDelete}>Delete</Button>
+              <Button treatment="ghost" tone="danger" disabled={!canDelete}>Delete</Button>
             {/snippet}
           </ConfirmationPopover>
         </div>
@@ -368,7 +368,7 @@ title: Orders
   {#snippet footer()}
     <div class="cluster">
       <Button href={peek ? '/orders/' + peek.id + '/' : '/orders/'}>Open the order</Button>
-      <Button variant="ghost" onclick={() => peek = null}>Close</Button>
+      <Button treatment="ghost" onclick={() => peek = null}>Close</Button>
     </div>
   {/snippet}
 

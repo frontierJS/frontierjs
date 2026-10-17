@@ -35,7 +35,7 @@ function execCompiled(compiledJs, userImports = {}) {
   let m
   while ((m = re.exec(compiledJs)) !== null) {
     const spec = m[1].trim(), src = m[2]
-    if (src === '@frontierjs/mesa/runtime.js') continue
+    if (src === '@frontierjs/mesa/runtime') continue
     const mock = userImports[src] || {}
     if (spec.startsWith('* as ')) {
       names.push(spec.slice(5).trim()); vals.push(mock)

@@ -154,7 +154,7 @@ title: Registry
           last push {ago(repo.lastPushedAt)} · mirrored {ago(repo.lastSeenAt)}
         </p>
 
-        <Button variant="outlined"
+        <Button treatment="outlined"
                 onclick={() => opened = opened === repo.repository ? null : repo.repository}>
           {opened === repo.repository ? 'Hide tags' : 'Tags'}
         </Button>

@@ -26,7 +26,7 @@ title: Volumes
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   $: session.workspaceId
   $: page.query
@@ -131,7 +131,7 @@ title: Volumes
 
 <div class="section-header">
   <h1>Volumes</h1>
-  <Button variant="outlined" id="prune-all" disabled={busy === 'prune'} onclick={prune}
+  <Button treatment="outlined" id="prune-all" disabled={busy === 'prune'} onclick={prune}
           data-confirm-title="Prune unused volumes?" data-confirm-label="Prune"
           data-confirm={server
             ? 'Every unused volume on this server is deleted from its disk.'
@@ -166,9 +166,9 @@ title: Volumes
 {/if}
 
 <div class="cluster" id="volume-filters">
-  <Button variant={filter === 'all'    ? 'primary' : 'ghost'} onclick={() => setFilter('all')}>All</Button>
-  <Button variant={filter === 'used'   ? 'primary' : 'ghost'} onclick={() => setFilter('used')}>In use</Button>
-  <Button variant={filter === 'unused' ? 'primary' : 'ghost'} onclick={() => setFilter('unused')}>Unused</Button>
+  <Button treatment={filter === 'all'    ? '' : 'ghost'} onclick={() => setFilter('all')}>All</Button>
+  <Button treatment={filter === 'used'   ? '' : 'ghost'} onclick={() => setFilter('used')}>In use</Button>
+  <Button treatment={filter === 'unused' ? '' : 'ghost'} onclick={() => setFilter('unused')}>Unused</Button>
 
   <label class="visually-hidden" for="filter-server">Server</label>
   <Select id="filter-server" value={server} placeholder="All servers"
@@ -215,7 +215,7 @@ title: Volumes
         {/if}
 
         <div class="cluster">
-          <Button variant="ghost" disabled={busy === v.id}
+          <Button treatment="ghost" disabled={busy === v.id}
                   aria-label={`Delete ${v.name}`}
                   data-confirm={`Deletes ${v.name} (${size(v.sizeBytes)}) from the disk on ${v.serverName ?? 'its server'}.`}
                   data-confirm-title="Delete this volume?" data-confirm-label="Delete"

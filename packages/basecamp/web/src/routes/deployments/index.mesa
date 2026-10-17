@@ -100,12 +100,12 @@ title: Deployments
         {#each cols as c}
           <td data-col={c.name}><Cell value={deployment[c.name]} column={c} record={deployment} /></td>
         {/each}
-        <td><Button variant="ghost" href={`/deployments/${deployment.id}/`}>Open</Button></td>
+        <td><Button treatment="ghost" href={`/deployments/${deployment.id}/`}>Open</Button></td>
       </tr>
     {/snippet}
   </Table>
   {#if list.hasMore}
-    <Button variant="ghost" id="deployment-more" onclick={list.more}>Load more</Button>
+    <Button treatment="ghost" id="deployment-more" onclick={list.more}>Load more</Button>
   {/if}
 {/if}
 

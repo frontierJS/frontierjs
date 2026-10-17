@@ -112,6 +112,7 @@
 
 /* Block-tier patterns */
 @import './patterns/bars.css'       layer(patterns);
+@import './patterns/lanes.css'      layer(patterns);
 @import './patterns/lists.css'      layer(patterns);
 @import './patterns/feed.css'       layer(patterns);
 @import './patterns/disclosure.css' layer(patterns);
@@ -127,6 +128,7 @@
  * A utility that cannot beat a component is not a utility.
  */
 @import './utilities.css' layer(utilities);
+@import './print.css'     layer(utilities);
 
 /*
  * Accessibility primitives — last layer on purpose.

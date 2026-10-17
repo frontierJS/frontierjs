@@ -32,7 +32,7 @@ title: Settings
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Switch        from '@frontierjs/ui/components/forms/Switch.mesa'
   import Textarea      from '@frontierjs/ui/components/forms/Textarea.mesa'
-  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore'
 
   $: session.level
 
@@ -259,7 +259,7 @@ title: Settings
   <h2 class="h4">Copy them out, read them back</h2>
 
   <div class="cluster">
-    <CopyButton text={asJson()} label="Copy as JSON" variant="outlined" />
+    <CopyButton text={asJson()} label="Copy as JSON" treatment="outlined" />
     <span class="text-sm text-muted">the whole of this browser's state, as one object</span>
   </div>
 

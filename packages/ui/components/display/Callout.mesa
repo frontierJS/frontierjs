@@ -22,14 +22,10 @@
   import { tone as toTone, cx } from '../../utils.js'
 
   export let tone  = ''      // one of the 7 css tones; '' is untoned
-  export let type  = ''      // legacy alias — 'tip' → success, 'note' → muted
   export let title = ''
   export let filled = false  // drop `outlined` for the solid Alert weight
 
-  // 'tip' and 'note' have no tone equivalent, so they are mapped here rather
-  // than in utils.js — they are this component's vocabulary, not the system's.
-  const LEGACY = { tip: 'success', note: 'muted' }
-  const t = toTone(LEGACY[type] ?? type ?? '') || toTone(tone)
+  const t = toTone(tone)
 
   const iconPathMap = {
     info:      'M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z',

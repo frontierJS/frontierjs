@@ -42,7 +42,7 @@ describe('terminal target', () => {
     const { result } = await terminal(COUNTER)
     expect(() => acorn.parse(result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
 
-    expect(result).toContain("import * as $$runtime from '@frontierjs/mesa/runtime.js';\nimport * as $$host from '@frontierjs/mesa/runtime/terminal.js';")
+    expect(result).toContain("import * as $$runtime from '@frontierjs/mesa/runtime';\nimport * as $$host from '@frontierjs/mesa/runtime/terminal';")
     expect(result).toContain("const $$el0 = $$host.element('div', { class: 'box' });")
     expect(result).toContain("$$host.append($$el1, $$host.text('Counter'));")
     expect(result).toContain('$$host.ifBlock($$m0, () => ($$runtime.get($$sig_count) > 2) ? 0 : 1, [')

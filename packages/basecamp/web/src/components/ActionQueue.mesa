@@ -58,15 +58,15 @@
             <span class="text-sm text-muted">{n.detail}</span>
           </span>
           {#if n.href}
-            <Button variant="ghost" onclick={() => goto(n.href)}>{n.action} →</Button>
+            <Button treatment="ghost" onclick={() => goto(n.href)}>{n.action} →</Button>
           {/if}
-          <Button variant="ghost" aria-label={`Dismiss: ${n.title}`} onclick={() => dismiss(n.id)}>Got it</Button>
+          <Button treatment="ghost" aria-label={`Dismiss: ${n.title}`} onclick={() => dismiss(n.id)}>Got it</Button>
         </li>
       {/each}
     </ul>
 
     {#if hidden > 0 || showAll}
-      <Button variant="ghost" id="notice-fold" onclick={() => showAll = !showAll}>
+      <Button treatment="ghost" id="notice-fold" onclick={() => showAll = !showAll}>
         {showAll ? 'Show less' : `Show ${hidden} more`}
       </Button>
     {/if}

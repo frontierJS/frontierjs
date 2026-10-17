@@ -118,6 +118,7 @@ const NAV = [
     group: 'Patterns',
     items: [
       { id: 'bar', label: 'Bar' },
+      { id: 'lanes', label: 'Lanes' },
       { id: 'sectionheader', label: 'Section header' },
       { id: 'divider', label: 'Divider label' },
       { id: 'items', label: 'Items' },
@@ -203,7 +204,7 @@ const THEMES = {
   forest:   { name: 'Forest',   description: 'Green primary, cool neutrals.' },
   midnight: { name: 'Midnight', description: 'Purple accent, deep contrast.' },
   dark:     { name: 'Dark',     description: 'Inverted neutrals, same brand colors.' },
-  elite:    { name: 'Elite',    description: 'Navy + lime, uppercase, sharp corners, Montserrat.' },
+  elite:    { name: 'Elite',    description: 'Navy + lime, uppercase, sharp corners.' },
   basecamp: { name: 'Basecamp', description: 'Deep blue-black, cool neutrals, six accent hues.' },
   notebook: { name: 'Notebook', description: 'Muted ink on warm paper.' },
   press:    { name: 'Press',    description: 'Newsprint: serif headlines, mono body, hard shadows.' },
@@ -3010,6 +3011,11 @@ function cardsPage() {
             one, where it is a default card that cost a blur.
           </li>
           <li>
+            <strong>Edge</strong> — a toned rule on the start edge only. A form
+            being edited, a callout; it takes the tone, or the brand accent
+            untoned, and composes with the others.
+          </li>
+          <li>
             <strong>Toned</strong> — communicate state through the surface
             itself. Alert banners, status panels, confirmation messages.
           </li>
@@ -5454,6 +5460,7 @@ function cheatSheetPage() {
         '--badge-letter-spacing'
       ]
     ],
+    ['tab', ['--tab-font-weight', '--tab-indicator-width', '--tab-accent']],
     [
       'surface contract',
       ['--surface-bg', '--_surface-color', '--_surface-border', '--card-radius']
@@ -8006,6 +8013,15 @@ function framePage() {
             </p>
           </article>
           <article class="card">
+            <strong><code>.screen.flush</code></strong>
+            <p>
+              The Screen without its padding, for a page that fills its cell edge
+              to edge — an editor, a reader, a canvas. Under
+              <code>.shell.viewport</code> the cell is one viewport tall, so a
+              child at <code>block-size: 100%</code> covers it.
+            </p>
+          </article>
+          <article class="card">
             <strong><code>.sidebar.rail</code></strong>
             <p>
               The Sidebar collapsed to its icons, <code>--rail-width</code> wide.
@@ -8592,6 +8608,48 @@ function iconsPage() {
 
 function patternNote(body) {
   return `<p class="sg-pattern-note">${body}</p>`;
+}
+
+function lanesPage() {
+  return `
+      ${pageHeader({
+        eyebrow: 'Patterns',
+        title: 'Lanes',
+        lead: 'One column of a board. A Surface at a width of its own, so it takes a tone and an app states no width.'
+      })}
+
+      ${section(
+        'A board is a row of Lanes',
+        `
+        <p>
+          <code>.lanes</code> holds the row and scrolls sideways; each
+          <code>.lane</code> is <code>--lane-size</code> wide
+          (<code>18rem</code> unset). Lanes do not shrink to fit and do not
+          wrap — a board that did either stops being one at the fifth column.
+          A tone colors the lane like any other Surface.
+        </p>
+        ${preview(`
+          <div class="lanes" style="width: 100%">
+            <section class="lane muted" aria-labelledby="lane-demo-todo">
+              <h3 class="lane-title" id="lane-demo-todo">Todo</h3>
+              <article class="card">Draft the brief</article>
+            </section>
+            <section class="lane warning" aria-labelledby="lane-demo-doing">
+              <h3 class="lane-title" id="lane-demo-doing">Doing</h3>
+              <article class="card">Review the schema</article>
+            </section>
+            <section class="lane success" aria-labelledby="lane-demo-done">
+              <h3 class="lane-title" id="lane-demo-done">Done</h3>
+              <article class="card">Ship the migration</article>
+            </section>
+          </div>`)}
+        ${code(`<div class="lanes" style="--lane-size: 20rem">
+  <section class="lane warning" aria-labelledby="lane-doing">
+    <h3 class="lane-title" id="lane-doing">Doing</h3>
+    <article class="card">Review the schema</article>
+  </section>
+</div>`)}`
+      )}`
 }
 
 function barPage() {
@@ -11757,6 +11815,7 @@ const PAGES = {
   code: codePage,
   // Patterns (Block tier)
   bar: barPage,
+  lanes: lanesPage,
   sectionheader: sectionHeaderPage,
   divider: dividerPage,
   items: itemsPage,

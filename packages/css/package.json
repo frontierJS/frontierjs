@@ -21,6 +21,7 @@
     ".": "./src/index.css",
     "./index.css": "./src/index.css",
     "./utilities.css": "./src/utilities.css",
+    "./print.css": "./src/print.css",
     "./foundation/*.css": "./src/foundation/*.css",
     "./themes/*.css": "./src/themes/*.css",
     "./components/*.css": "./src/components/*.css",

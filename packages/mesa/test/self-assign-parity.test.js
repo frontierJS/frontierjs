@@ -30,7 +30,7 @@ async function build(src) {
   const ctx = await compileSource(src, { filename: `/SA${n}.mesa`, dev: false })
   if (ctx.analysis?.errors?.length) throw new Error(ctx.analysis.errors[0])
   acorn.parse(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })
-  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime\.js'/g, `'./src/runtime.js'`)
+  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`)
   const file = path.join(process.cwd(), `_tmp_selfassign_${n++}.mjs`)
   writeFileSync(file, js)
   try { return (await import('file://' + file)).default }

@@ -65,7 +65,7 @@ export async function run(t) {
     const stage = document.getElementById('stage')
     const label = document.createComment('remount')
     stage.appendChild(label)
-    const { mount } = await import('@frontierjs/mesa/runtime.js')
+    const { mount } = await import('@frontierjs/mesa/runtime')
     window.__remount = mount(label, mod.default, { props: { rows: ['a', 'b'] }, root: stage })
     await new Promise((r) => setTimeout(r, 0))
     return true;

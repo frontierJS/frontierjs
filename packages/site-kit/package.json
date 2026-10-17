@@ -14,7 +14,6 @@
     "./check": "./check/run.js",
     "./check/schema/*": "./check/schema/*.js",
     "./blocks/*.mesa": "./src/blocks/*.mesa",
-    "./blocks/*": "./src/blocks/*.mesa",
     "./layouts/*.mesa": "./src/layouts/*.mesa",
     "./package.json": "./package.json"
   },

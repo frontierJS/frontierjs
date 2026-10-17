@@ -44,7 +44,7 @@ title: Plan
   import Skeleton      from '@frontierjs/ui/components/feedback/Skeleton.mesa'
   import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
-  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore'
 
   $: (page.params, session.level)
 

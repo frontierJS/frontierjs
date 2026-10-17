@@ -43,7 +43,7 @@ title: Invoice
   import Skeleton            from '@frontierjs/ui/components/feedback/Skeleton.mesa'
   import StatCard            from '@frontierjs/ui/components/display/StatCard.mesa'
   import Table               from '@frontierjs/ui/components/display/Table.mesa'
-  import { toasts }          from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore'
 
   $: (page.params, session.level)
 
@@ -158,7 +158,7 @@ title: Invoice
     {#snippet action()}
       <div class="cluster">
         {#if canSettle}
-          <Button id="id-settle" variant="outlined" disabled={busy} onclick={() => act('settle')}>
+          <Button id="id-settle" treatment="outlined" disabled={busy} onclick={() => act('settle')}>
             Mark paid
           </Button>
         {/if}
@@ -170,7 +170,7 @@ title: Invoice
             onconfirm={() => act(move.name)}
           >
             {#snippet trigger()}
-              <Button variant="ghost" tone="danger" data-move={move.name} disabled={busy}>{move.name}</Button>
+              <Button treatment="ghost" tone="danger" data-move={move.name} disabled={busy}>{move.name}</Button>
             {/snippet}
           </ConfirmationPopover>
         {/each}

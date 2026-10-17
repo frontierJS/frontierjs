@@ -75,8 +75,8 @@ title: Observability
       <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
     </dl>
     <div class="cluster">
-      <Button variant="ghost" href="/admin/adapters/">All adapters</Button>
-      <Button variant="ghost" href="/hub/">Runtime numbers</Button>
+      <Button treatment="ghost" href="/admin/adapters/">All adapters</Button>
+      <Button treatment="ghost" href="/hub/">Runtime numbers</Button>
     </div>
   </Card>
 

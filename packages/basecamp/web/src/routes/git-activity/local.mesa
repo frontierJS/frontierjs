@@ -104,8 +104,8 @@ title: Local repositories
 <div class="section-header">
   <h1>Local repositories</h1>
   <span class="cluster">
-    <Button variant="ghost" href="/workbench/">Workbench</Button>
-    <Button variant="ghost" href="/git-activity/">Git activity</Button>
+    <Button treatment="ghost" href="/workbench/">Workbench</Button>
+    <Button treatment="ghost" href="/git-activity/">Git activity</Button>
   </span>
 </div>
 
@@ -161,7 +161,7 @@ title: Local repositories
           {#snippet row(r)}
             <tr>
               <td>
-                <Button variant="ghost" size="xs" square
+                <Button treatment="ghost" size="xs" square
                         aria-label={pinned[r.path] ? `Unpin ${r.name} from the workbench` : `Pin ${r.name} to the workbench`}
                         aria-pressed={pinned[r.path] ? 'true' : 'false'}
                         onclick={() => togglePin(r)}>{pinned[r.path] ? '★' : '☆'}</Button>

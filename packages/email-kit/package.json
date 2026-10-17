@@ -13,9 +13,6 @@
     },
     "./components/*.mesa": {
       "import": "./components/*.mesa"
-    },
-    "./components/*": {
-      "import": "./components/*.mesa"
     }
   },
   "scripts": {

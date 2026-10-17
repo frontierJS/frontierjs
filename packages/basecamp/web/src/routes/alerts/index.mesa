@@ -25,7 +25,7 @@ title: Alerts
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import { page } from '@frontierjs/sierra/router'
 
   $: session.workspaceId
@@ -237,7 +237,7 @@ title: Alerts
 
 <div class="section-header">
   <h1>Alerts</h1>
-  <Button variant="primary" id="new-alert" onclick={() => creating = !creating}>
+  <Button tone="primary" id="new-alert" onclick={() => creating = !creating}>
     {creating ? 'Cancel' : 'New rule'}
   </Button>
 </div>
@@ -321,7 +321,7 @@ title: Alerts
             {#each delivery[rule.id] as link}
               <span class="cluster">
                 <Pill>{link.channel?.name ?? link.channelId}</Pill>
-                <Button variant="ghost" disabled={busy === rule.id}
+                <Button treatment="ghost" disabled={busy === rule.id}
                         aria-label={`Stop delivering ${rule.name} to ${link.channel?.name}`}
                         onclick={() => detach(rule, link.channelId)}>Remove</Button>
               </span>
@@ -340,7 +340,7 @@ title: Alerts
                       .filter(c => !(delivery[rule.id] ?? []).some(l => l.channelId === c.id))
                       .map(c => ({ value: c.id, label: c.name }))}
                     onchange={(e) => picked = { ...picked, [rule.id]: e.target.value }} />
-            <Button variant="outlined" disabled={busy === rule.id || !picked[rule.id]}
+            <Button treatment="outlined" disabled={busy === rule.id || !picked[rule.id]}
                     onclick={() => attach(rule)}>Attach</Button>
           </div>
         {/if}
@@ -354,13 +354,13 @@ title: Alerts
                   <span class="text-sm">{ev.message}</span>
                   <span class="text-sm text-muted">{at(ev.firedAt)}</span>
                   {#if !ev.acknowledgedAt && ev.status !== 'resolved'}
-                    <Button variant="ghost" disabled={busy === rule.id}
+                    <Button treatment="ghost" disabled={busy === rule.id}
                             onclick={() => acknowledge(rule, ev)}>Acknowledge</Button>
                   {:else if ev.acknowledgedAt}
                     <Badge tone="success">acknowledged</Badge>
                   {/if}
                   {#if ev.status !== 'resolved'}
-                    <Button variant="ghost" disabled={busy === rule.id}
+                    <Button treatment="ghost" disabled={busy === rule.id}
                             data-confirm="It closes now, whatever the metric says next; a new breach opens a new one."
                             data-confirm-title="Resolve this alert?" data-confirm-label="Resolve"
                             onclick={() => resolve(rule, ev)}>Resolve</Button>
@@ -374,24 +374,24 @@ title: Alerts
         {/if}
 
         <div class="cluster">
-          <Button variant="outlined" disabled={busy === rule.id}
+          <Button treatment="outlined" disabled={busy === rule.id}
                   onclick={() => showEvents(rule)}>History</Button>
-          <Button variant="ghost" disabled={busy === rule.id} aria-label={`Edit ${rule.name}`}
+          <Button treatment="ghost" disabled={busy === rule.id} aria-label={`Edit ${rule.name}`}
                   onclick={() => editing = editing === rule.id ? null : rule.id}>
             {editing === rule.id ? 'Close' : 'Edit'}
           </Button>
-          <Button variant="ghost" disabled={busy === rule.id} onclick={() => toggle(rule)}>
+          <Button treatment="ghost" disabled={busy === rule.id} onclick={() => toggle(rule)}>
             {rule.isActive ? 'Pause' : 'Resume'}
           </Button>
           <!-- Pause is until somebody resumes it; a snooze ends by itself, and
                a breach still holding then fires. -->
           {#if snoozed(rule)}
-            <Button variant="ghost" disabled={busy === rule.id} data-unsnooze={rule.id}
+            <Button treatment="ghost" disabled={busy === rule.id} data-unsnooze={rule.id}
                     onclick={() => unsnooze(rule)}>Unsnooze</Button>
           {:else}
             <DropdownMenu>
               {#snippet trigger()}
-                <Button variant="ghost" disabled={busy === rule.id} data-snooze={rule.id}
+                <Button treatment="ghost" disabled={busy === rule.id} data-snooze={rule.id}
                         aria-label={`Snooze ${rule.name}`}>Snooze</Button>
               {/snippet}
               {#each SNOOZES as s}
@@ -399,7 +399,7 @@ title: Alerts
               {/each}
             </DropdownMenu>
           {/if}
-          <Button variant="ghost" disabled={busy === rule.id}
+          <Button treatment="ghost" disabled={busy === rule.id}
                   data-confirm={`${rule.name} stops being evaluated and nobody is paged by it.`}
                   data-confirm-title="Delete this alert rule?" data-confirm-label="Delete"
                   onclick={() => remove(rule)}>Delete</Button>

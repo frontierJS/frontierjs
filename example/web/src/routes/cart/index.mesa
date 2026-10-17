@@ -191,7 +191,7 @@ title: Basket
       configured — <code>example/api/src/app.ts</code> wires conduit, and with none
       the send is a no-op rather than a crash.
     </p>
-    <Button variant="outlined" id="receipt-continue" onclick={() => { dismissReceipt(); goto('/products/') }}>
+    <Button treatment="outlined" id="receipt-continue" onclick={() => { dismissReceipt(); goto('/products/') }}>
       Keep shopping
     </Button>
   </Callout>
@@ -201,7 +201,7 @@ title: Basket
   >
     Pick a color and a size on any product page.
     {#snippet action()}
-      <Button variant="primary" id="basket-shop" onclick={() => goto('/products/')}>Browse products</Button>
+      <Button tone="primary" id="basket-shop" onclick={() => goto('/products/')}>Browse products</Button>
     {/snippet}
   </EmptyState>
 {:else}
@@ -245,7 +245,7 @@ title: Basket
              quantity it cannot use — one idea, one control. -->
         <div class="qty" role="group" aria-label={`Quantity for ${line.sku}`}>
           <Button
-            variant="ghost" square
+            treatment="ghost" square
             disabled={cart.busy}
             aria-label="One fewer"
             data-less={line.sku}
@@ -253,7 +253,7 @@ title: Basket
           >−</Button>
           <span class="count" data-qty={line.sku}>{line.quantity}</span>
           <Button
-            variant="ghost" square
+            treatment="ghost" square
             disabled={cart.busy || line.quantity >= line.available}
             aria-label="One more"
             data-more={line.sku}
@@ -273,7 +273,7 @@ title: Basket
         </div>
 
         <Button
-          variant="ghost"
+          treatment="ghost"
           disabled={cart.busy}
           data-remove={line.sku}
           onclick={() => remove(line.id)}
@@ -377,7 +377,7 @@ title: Basket
           <Mono id="applied-code">{cart.discountCode}</Mono>
           <span class="text-sm text-muted">{cart.discountLabel}</span>
         </span>
-        <Button variant="ghost" id="remove-discount" disabled={cart.busy} onclick={removeDiscount}>
+        <Button treatment="ghost" id="remove-discount" disabled={cart.busy} onclick={removeDiscount}>
           Remove
         </Button>
       </div>
@@ -431,12 +431,12 @@ title: Basket
       <Button
         id="co-submit"
         type="submit"
-        variant="primary"
+        tone="primary"
         disabled={cart.busy}
         loading={cart.busy}
       >Place order — {money(cart.total)}</Button>
 
-      <Button variant="ghost" id="co-abandon" disabled={cart.busy} onclick={clear}>
+      <Button treatment="ghost" id="co-abandon" disabled={cart.busy} onclick={clear}>
         Empty basket
       </Button>
     </div>

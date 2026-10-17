@@ -113,7 +113,7 @@
       <p class="text-sm">{picked.name}</p>
       <p class="text-xs text-muted">{formatBytes(picked.size)} — not saved yet</p>
     </div>
-    <Button variant="ghost" size="sm" onclick={keepExisting} data-file-undo>Undo</Button>
+    <Button treatment="ghost" size="sm" onclick={keepExisting} data-file-undo>Undo</Button>
   </div>
 {:else if existing}
   <div class="file-field-current">
@@ -122,7 +122,7 @@
       <p class="text-sm text-muted">Stored — choose a file to replace it</p>
     </div>
     {#if canClear}
-      <Button variant="ghost" size="sm" tone="danger" onclick={clear} data-file-clear>Remove</Button>
+      <Button treatment="ghost" size="sm" tone="danger" onclick={clear} data-file-clear>Remove</Button>
     {/if}
   </div>
 {/if}

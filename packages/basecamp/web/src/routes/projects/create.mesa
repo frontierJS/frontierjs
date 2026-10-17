@@ -62,7 +62,7 @@ title: New project
 
 <div class="section-header">
   <h1>New project</h1>
-  <Button variant="ghost" href="/projects/">Back to list</Button>
+  <Button treatment="ghost" href="/projects/">Back to list</Button>
 </div>
 
 <div class="container narrow">
@@ -85,10 +85,10 @@ title: New project
            value={draft.description} oninput={(e) => draft.description = e.target.value} />
 
     <div class="cluster">
-      <Button variant="primary" type="submit" disabled={saving}>
+      <Button tone="primary" type="submit" disabled={saving}>
         {saving ? 'Creating…' : 'Create project'}
       </Button>
-      <Button variant="ghost" href="/projects/">Cancel</Button>
+      <Button treatment="ghost" href="/projects/">Cancel</Button>
     </div>
   </form>
 </div>

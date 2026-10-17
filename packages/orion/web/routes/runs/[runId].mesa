@@ -24,7 +24,7 @@ title: Run
   import Skeleton      from '@frontierjs/ui/components/feedback/Skeleton.mesa'
   import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
-  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore'
 
   $: (page.params, session.level)
 
@@ -97,7 +97,7 @@ title: Run
       <div class="cluster">
         <Pill tone={TONE[run.status] ?? 'muted'} id="run-status" data-status={run.status}>{run.status}</Pill>
         {#if run.status === 'waiting'}
-          <Button variant="ghost" id="run-cancel" disabled={busy} onclick={cancel}>Cancel</Button>
+          <Button treatment="ghost" id="run-cancel" disabled={busy} onclick={cancel}>Cancel</Button>
         {/if}
       </div>
     {/snippet}

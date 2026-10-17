@@ -14,7 +14,7 @@
  *   - JS target: compiled module map ready for bundling or serving
  *
  * Usage:
- *   import { renderComponent } from '@frontierjs/mesa/render-component.js'
+ *   import { renderComponent } from '@frontierjs/mesa/render-component'
  *
  *   // Email
  *   const result = await renderComponent(source, {
@@ -85,7 +85,7 @@ function findMesaDir() {
     // failed for every caller — the resolution then fell through to the cwd
     // search below, which finds mesa only when the process was started from
     // inside it. From any other package the last resort applies, temp modules
-    // land in the OS temp dir, and every `import '@frontierjs/mesa/runtime.js'`
+    // land in the OS temp dir, and every `import '@frontierjs/mesa/runtime'`
     // inside them fails to resolve. That is exactly what the comment above this
     // function says must not happen; it stopped being true when the sources
     // moved into src/, and the only symptom was somebody else's test suite.
@@ -121,7 +121,7 @@ function findMesaDir() {
   console.warn(
     '[Mesa renderComponent] could not locate the @frontierjs/mesa package directory; ' +
     'temp render modules will be written to the OS temp dir, where ' +
-    "`import '@frontierjs/mesa/runtime.js'` cannot resolve. Pass options.tmpDir to " +
+    "`import '@frontierjs/mesa/runtime'` cannot resolve. Pass options.tmpDir to " +
     'a directory inside your project to fix this.'
   )
   return import('os').then(os => os.tmpdir()).catch(() => '/tmp')
@@ -269,10 +269,7 @@ function isMesaSpecifier(spec) {
 // every RULE 19 guard is off — `{@attach}` runs, `$.onMount` runs, and `island()`
 // emits no markers at all. The specifier is rewritten to this file's own sibling
 // so the two halves cannot be two files.
-const RUNTIME_SPECIFIERS = new Set([
-  '@frontierjs/mesa/runtime.js',
-  '@frontierjs/mesa/runtime',
-])
+const RUNTIME_SPECIFIERS = new Set(['@frontierjs/mesa/runtime'])
 
 let _runtimePath
 function runtimePath() {

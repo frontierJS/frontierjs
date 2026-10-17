@@ -76,7 +76,7 @@ title: Adapters
           <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
         </dl>
         <div class="cluster">
-          <Button variant="ghost" disabled={busy === entry.id} onclick={() => ping(entry)}>
+          <Button treatment="ghost" disabled={busy === entry.id} onclick={() => ping(entry)}>
             {busy === entry.id ? 'Checking…' : 'Check now'}
           </Button>
         </div>
@@ -103,7 +103,7 @@ title: Adapters
           {#if entry.configured}<dt>Adapter</dt><dd>{entry.adapter}</dd>{/if}
         </dl>
         <div class="cluster">
-          <Button variant="ghost" disabled={busy === entry.id} onclick={() => ping(entry)}>
+          <Button treatment="ghost" disabled={busy === entry.id} onclick={() => ping(entry)}>
             {busy === entry.id ? 'Checking…' : 'Check now'}
           </Button>
         </div>

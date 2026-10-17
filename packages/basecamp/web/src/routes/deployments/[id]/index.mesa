@@ -7,7 +7,7 @@ title: Deployment
   import { session }      from '../../../session.js'
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
   import { clock, at }    from '../../../datetime.js'
-  import { toasts }       from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }       from '@frontierjs/ui/stores/toastStore'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
 
@@ -141,23 +141,23 @@ title: Deployment
     <div class="cluster">
       <span class="pill {DEPLOY_TONE[deployment.status] ?? ''}" id="deploy-status">{deployment.status}</span>
       {#if cancelIt}
-        <Button variant="ghost" tone="danger" disabled={!cancelIt.allowed}
+        <Button treatment="ghost" tone="danger" disabled={!cancelIt.allowed}
                 data-confirm="The release stops at the step it is on."
                 data-confirm-title="Cancel this deployment?" data-confirm-label="Cancel deployment"
                 onclick={cancel}>Cancel</Button>
       {/if}
       {#if canRetry}
-        <Button variant="ghost" id="deploy-again" disabled={busy}
+        <Button treatment="ghost" id="deploy-again" disabled={busy}
                 title="Ships the app as it is now" onclick={deployAgain}>Deploy again</Button>
       {/if}
       {#if rollbackIt}
-        <Button variant="ghost" tone="warning" id="deploy-rollback"
+        <Button treatment="ghost" tone="warning" id="deploy-rollback"
                 disabled={!rollbackIt.allowed}
                 data-confirm="A new release of the previous build replaces what is live now."
                 data-confirm-title="Roll back?" data-confirm-label="Roll back" data-confirm-tone="warning"
                 onclick={rollback}>Roll back</Button>
       {/if}
-      <Button variant="ghost" href="/deployments/">All deployments</Button>
+      <Button treatment="ghost" href="/deployments/">All deployments</Button>
     </div>
   </div>
 

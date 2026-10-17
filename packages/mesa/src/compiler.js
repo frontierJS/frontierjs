@@ -10295,7 +10295,7 @@ export async function compile(source, config = {}) {
       throw new Error(
         `'$.${reached}' is not available in <script module> — '$' is the component ` +
         `instance's door and a module block runs once, outside any instance. ` +
-        `Import what you need from '@frontierjs/mesa/runtime.js' instead.`
+        `Import what you need from '@frontierjs/mesa/runtime' instead.`
       )
     }
   }
@@ -10726,7 +10726,7 @@ export async function compile(source, config = {}) {
       w.write(true, `  throw new Error(${JSON.stringify(ctx.targetRefusal)});`)
       w.write(true, '}')
     }) : xNode('root', (w) => {
-      w.write(true, `import * as $$runtime from '@frontierjs/mesa/runtime.js';`)
+      w.write(true, `import * as $$runtime from '@frontierjs/mesa/runtime';`)
       if (TARGETS[config.target])
         w.write(true, `import * as $$host from '${TARGETS[config.target].runtime}';`)
       w.add(ctx.module.top)

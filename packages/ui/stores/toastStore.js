@@ -3,14 +3,14 @@
 // Toaster.mesa watches toasts.items via $: and renders the list.
 //
 // Usage anywhere:
-//   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+//   import { toasts } from '@frontierjs/ui/stores/toastStore'
 //   toasts.add('File saved', 'success')
 //
 // A long action holds a HANDLE and settles it when it knows the answer:
 //
 //   const t = toasts.loading('Sending…')
 //   try   { await send(); t.update('success', 'Sent') }
-//   catch (e) { t.update('error', e.message) }
+//   catch (e) { t.update('danger', e.message) }
 //
 // A toast may carry ONE action — a button beside the message that runs and
 // then dismisses the toast. It is the Undo a delete offers:
@@ -150,7 +150,7 @@ export const toasts = {
   },
 
   success(message, duration, action) { return this.add(message, 'success', duration, action) },
-  error(message, duration, action)   { return this.add(message, 'error',   duration, action) },
+  error(message, duration, action)   { return this.add(message, 'danger',  duration, action) },
   warning(message, duration, action) { return this.add(message, 'warning', duration, action) },
   info(message, duration, action)    { return this.add(message, 'info',    duration, action) },
 }

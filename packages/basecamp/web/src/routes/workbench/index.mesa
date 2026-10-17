@@ -1164,7 +1164,7 @@ title: Workbench
   <h1>Workbench</h1>
   <span class="cluster">
     {#if spentToday() > 0}<span class="text-sm text-muted" id="workbench-today">today {money(spentToday())}</span>{/if}
-    <Button variant="ghost" href="/git-activity/local/">Local repos</Button>
+    <Button treatment="ghost" href="/git-activity/local/">Local repos</Button>
   </span>
 </div>
 
@@ -1189,7 +1189,7 @@ title: Workbench
         <article class="alert success" id="workbench-notice">
           <div class="alert-content cluster">
             <span>{notice}</span>
-            <Button size="xs" variant="ghost" aria-label="Dismiss" onclick={() => notice = null}>×</Button>
+            <Button size="xs" treatment="ghost" aria-label="Dismiss" onclick={() => notice = null}>×</Button>
           </div>
         </article>
       {/if}
@@ -1201,9 +1201,9 @@ title: Workbench
       {:else if loaded}
       <div class="cluster workbench-bar">
         <span class="cluster">
-          <Button size="sm" variant="outlined" id="workbench-slim" onclick={toggleSlim} aria-pressed={slim ? 'true' : 'false'}
+          <Button size="sm" treatment="outlined" id="workbench-slim" onclick={toggleSlim} aria-pressed={slim ? 'true' : 'false'}
                   title="Slim: every pane shrinks to its header; click a pane's header to flip just that one">{slim ? 'Full' : 'Slim'}</Button>
-          <Button size="xs" variant={arranging ? 'primary' : 'outlined'} id="workbench-layout" onclick={() => arrange()} aria-pressed={arranging ? 'true' : 'false'}
+          <Button size="xs" treatment={arranging ? '' : 'outlined'} id="workbench-layout" onclick={() => arrange()} aria-pressed={arranging ? 'true' : 'false'}
                   title={arranging ? 'Back to the panes (Alt+L)' : 'Fold the panes to cards and arrange the grid: drag a tile into a box, or start a chat in one (Alt+L)'}>{arranging ? 'Done' : 'Layout'}</Button>
         </span>
       </div>
@@ -1218,7 +1218,7 @@ title: Workbench
               <strong class="workbench-tile-name">{p.from ? '↳ ' : ''}{p.name}</strong>
               {#if needsYou(status[p.id])}<Badge tone="warning" class="workbench-needs">needs you</Badge>
               {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
-              <Button size="xs" variant="ghost" onclick={() => dock(p)} aria-label={`Move ${p.name} to the dock`} title="To the dock — a run there keeps going">⇥</Button>
+              <Button size="xs" treatment="ghost" onclick={() => dock(p)} aria-label={`Move ${p.name} to the dock`} title="To the dock — a run there keeps going">⇥</Button>
             </span>
             <span class="text-sm text-muted workbench-now">{doing(p.id)}</span>
           </div>
@@ -1236,16 +1236,16 @@ title: Workbench
               </h2>
               <span class="cluster">
                 {#if needsYou(status[p.id])}
-                  <Button size="xs" variant="outlined" tone="warning" class="workbench-needs" onclick={() => toQuestion(p)}
+                  <Button size="xs" treatment="outlined" tone="warning" class="workbench-needs" onclick={() => toQuestion(p)}
                           title={asksOf(p.id)}>needs you · {status[p.id].questions.length}</Button>
                 {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
                 {#if status[p.id]?.queued}<Badge tone="info">{status[p.id].queued} queued</Badge>{/if}
                 {#if staged().length > 1}
-                  <Button size="xs" variant="ghost" onclick={() => toggleZoom(p.id)} aria-pressed={zoomed() === p.id ? 'true' : 'false'}
+                  <Button size="xs" treatment="ghost" onclick={() => toggleZoom(p.id)} aria-pressed={zoomed() === p.id ? 'true' : 'false'}
                           aria-label={zoomed() === p.id ? 'Show every pane' : `Zoom ${p.name} to the whole stage`}
                           title={zoomed() === p.id ? 'Every pane (Alt+Z)' : 'The whole stage — the other panes wait in the dock (Alt+Z)'}>{zoomed() === p.id ? '⊟' : '⊞'}</Button>
                 {/if}
-                <Button size="xs" variant="ghost" onclick={() => dock(p)}
+                <Button size="xs" treatment="ghost" onclick={() => dock(p)}
                         aria-label={`Move ${p.name} to the dock`} title="To the dock — a run there keeps going">⇥</Button>
               </span>
             </div>
@@ -1254,7 +1254,7 @@ title: Workbench
               <Callout tone="warning" class="workbench-gone" title="Folder is gone">
                 <p class="text-sm"><code>{p.path}</code> is no longer there, so nothing runs here.
                   {p.from ? 'Archive the branch to forget it.' : 'Unpin it, or pin the checkout where it went.'}</p>
-                {#if p.from}<Button size="xs" variant="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>{/if}
+                {#if p.from}<Button size="xs" treatment="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>{/if}
               </Callout>
             {/if}
 
@@ -1294,7 +1294,7 @@ title: Workbench
                 {#if !r.ports.length}<span class="text-info">{r.name} starting…</span>{/if}
               {/each}
               {#if !p.missing && appsOf(p.id).length && !servingApps(p.id).length}
-                <Button size="xs" variant="ghost" class="workbench-start-app" onclick={() => startApp(p)}
+                <Button size="xs" treatment="ghost" class="workbench-start-app" onclick={() => startApp(p)}
                         title={appsOf(p.id).length === 1 ? `fli dev in ${p.name}, left running on this machine` : 'Choose which app to start'}>▶ Start app</Button>
               {/if}
               <span class="text-muted workbench-now" aria-live="polite">
@@ -1483,15 +1483,15 @@ title: Workbench
                                 <a href={`http://localhost:${s.port}`} target="_blank" rel="noopener">{s.label} :{s.port} ↗</a>
                               {/each}
                               <Badge tone="info">{runOf(p.id, row.id).stopped ? 'stopping…' : 'running'}</Badge>
-                              <Button size="xs" variant="outlined" tone="danger" onclick={() => haltRow(p, row)}>Stop</Button>
+                              <Button size="xs" treatment="outlined" tone="danger" onclick={() => haltRow(p, row)}>Stop</Button>
                             {:else}
                               {#if runOf(p.id, row.id)}
                                 <span class={ended(runOf(p.id, row.id)).tone}>{ended(runOf(p.id, row.id)).text}</span>
                               {/if}
-                              <Button size="xs" variant={row.kind === 'app' ? 'primary' : 'outlined'} onclick={() => startRow(p, row)}
+                              <Button size="xs" treatment={row.kind === 'app' ? '' : 'outlined'} onclick={() => startRow(p, row)}
                                       disabled={starting[rowKey(p.id, row.id)]}>{row.kind === 'app' ? '▶ Start' : 'Run'}</Button>
                               {#if runOf(p.id, row.id)}
-                                <Button size="xs" variant="ghost" aria-label={`Forget ${row.name}'s last run`} title="Forget this run and its output"
+                                <Button size="xs" treatment="ghost" aria-label={`Forget ${row.name}'s last run`} title="Forget this run and its output"
                                         onclick={() => haltRow(p, row)}>×</Button>
                               {/if}
                             {/if}
@@ -1525,7 +1525,7 @@ title: Workbench
                       <Button type="submit" disabled={!draftOf(p).goal.trim() || building[p.id] || status[p.id]?.state === 'working'}
                               title={status[p.id]?.state === 'working' ? 'A chat here is working — one run at a time in a checkout' : null}>Build plan</Button>
                       {#if p.plan}
-                        <Button variant="ghost" onclick={() => setDraft(p, { open: false })}>Cancel</Button>
+                        <Button treatment="ghost" onclick={() => setDraft(p, { open: false })}>Cancel</Button>
                       {/if}
                     </div>
                   </form>
@@ -1539,15 +1539,15 @@ title: Workbench
                     {/if}
                     {#if parsedOf(p.id)?.title}<strong>{markdownText(parsedOf(p.id).title)}</strong>{/if}
                     <span class="cluster workbench-runrow-end">
-                      <Button size="xs" variant="ghost" onclick={() => openFiling(p, 'issue')}
+                      <Button size="xs" treatment="ghost" onclick={() => openFiling(p, 'issue')}
                               title="A defect, as a row in this checkout's ISSUES.md">File issue</Button>
-                      <Button size="xs" variant="ghost" onclick={() => openFiling(p, 'question')}
+                      <Button size="xs" treatment="ghost" onclick={() => openFiling(p, 'question')}
                               title="A question for a ruling, in § Needs a decision of this checkout's ISSUES.md">Ask question</Button>
-                      <Button size="xs" variant="ghost" onclick={() => setDraft(p, { open: true })}
+                      <Button size="xs" treatment="ghost" onclick={() => setDraft(p, { open: true })}
                               title="Write a new plan; this one stays on the pin">New plan</Button>
-                      <Button size="xs" variant="ghost" onclick={() => setOpening(p, { path: '' })}
+                      <Button size="xs" treatment="ghost" onclick={() => setOpening(p, { path: '' })}
                               title="Show a plan already written in this checkout">Open plan</Button>
-                      <Button size="xs" variant="ghost" onclick={() => closePlan(p)} disabled={status[p.id]?.state === 'working'}
+                      <Button size="xs" treatment="ghost" onclick={() => closePlan(p)} disabled={status[p.id]?.state === 'working'}
                               title={status[p.id]?.state === 'working' ? 'A chat here is working — close it once it stops' : `Forget ${p.plan} here; the file stays`}>Close plan</Button>
                     </span>
                   </div>
@@ -1556,7 +1556,7 @@ title: Workbench
                       <Input label="Path in the checkout" name="open-path" value={openingOf(p).path} placeholder="IDEAS/<slug>.md or PLAN.md"
                              oninput={(e) => setOpening(p, { path: e.target.value })} />
                       <Button type="submit" disabled={!openingOf(p).path.trim()}>Open</Button>
-                      <Button variant="ghost" onclick={() => setOpening(p, null)}>Cancel</Button>
+                      <Button treatment="ghost" onclick={() => setOpening(p, null)}>Cancel</Button>
                     </form>
                   {/if}
                   {#if filingOf(p)}
@@ -1578,7 +1578,7 @@ title: Workbench
                                 oninput={(e) => setFiling(p, { detail: e.target.value })} />
                       <div class="cluster">
                         <Button type="submit" disabled={!fileReady(filingOf(p))}>{filingOf(p).kind === 'question' ? 'Ask' : 'File'}</Button>
-                        <Button variant="ghost" onclick={() => closeFiling(p)}>Cancel</Button>
+                        <Button treatment="ghost" onclick={() => closeFiling(p)}>Cancel</Button>
                       </div>
                     </form>
                   {/if}
@@ -1601,7 +1601,7 @@ title: Workbench
                             {#if q.state === 'decidable'}
                               {#each q.options as o}
                                 <div class="cluster">
-                                  <Button size="xs" variant={rulingOf(p)?.question === q.id && rulingOf(p).pick === o.letter ? 'primary' : 'outlined'}
+                                  <Button size="xs" treatment={rulingOf(p)?.question === q.id && rulingOf(p).pick === o.letter ? '' : 'outlined'}
                                           data-pick={o.letter} onclick={() => openRuling(p, q, o.letter)}
                                           disabled={status[p.id]?.state === 'working'}
                                           title={status[p.id]?.state === 'working' ? 'A chat here is working — answer once it stops' : `Rule ${o.letter}`}>{o.letter}</Button>
@@ -1619,7 +1619,7 @@ title: Workbench
                                             oninput={(e) => setRuling(p, { why: e.target.value })} />
                                   <div class="cluster">
                                     <Button type="submit" disabled={!ruleReady(q, rulingOf(p)) || status[p.id]?.state === 'working'}>Rule {rulingOf(p).pick}</Button>
-                                    <Button variant="ghost" onclick={() => closeRuling(p)}>Cancel</Button>
+                                    <Button treatment="ghost" onclick={() => closeRuling(p)}>Cancel</Button>
                                   </div>
                                 </form>
                               {/if}
@@ -1651,7 +1651,7 @@ title: Workbench
                                   <span class="cluster workbench-runrow-end">
                                     <Button size="xs" onclick={() => go(p)} disabled={going[p.id] || status[p.id]?.state === 'working'}
                                             title={status[p.id]?.state === 'working' ? 'A chat here is working — Go starts the next step once it is done' : `Run ${st.id} in the shown chat`}>Go</Button>
-                                    <Button size="xs" variant="outlined" onclick={() => go(p, 'next')} disabled={going[p.id] || status[p.id]?.state === 'working' || !!parsedOf(p.id).blocking?.length}
+                                    <Button size="xs" treatment="outlined" onclick={() => go(p, 'next')} disabled={going[p.id] || status[p.id]?.state === 'working' || !!parsedOf(p.id).blocking?.length}
                                             title={status[p.id]?.state === 'working' ? 'A chat here is working — Next starts the next step once it is done' : parsedOf(p.id).blocking?.length ? `Rule the open question before Next: ${parsedOf(p.id).blocking[0].question}` : `Run ${st.id} in a new chat, handed the plan and the last reply`}>Next</Button>
                                   </span>
                                 {/if}
@@ -1673,7 +1673,7 @@ title: Workbench
                               {#if leftOpen(p, st)}
                                 <div class="cluster workbench-step-open">
                                   <span class="text-warning">The run ended and the box is still open.</span>
-                                  <Button size="xs" variant="outlined" onclick={() => tick(p, st)} disabled={ticking[p.id] === st.id}
+                                  <Button size="xs" treatment="outlined" onclick={() => tick(p, st)} disabled={ticking[p.id] === st.id}
                                           title={`Mark ${st.id} done in ${p.plan}`}>Tick</Button>
                                 </div>
                               {/if}
@@ -1720,7 +1720,7 @@ title: Workbench
                 {/if}
                 {#if reviewReply(p.id)}
                   <div class="workbench-md"><Markdown text={reviewReply(p.id)} headingBase={3} /></div>
-                  <div><Button size="xs" variant="outlined" onclick={() => useReview(p)}>Use as message</Button></div>
+                  <div><Button size="xs" treatment="outlined" onclick={() => useReview(p)}>Use as message</Button></div>
                 {/if}
                 {#each (transcripts[p.id].review.items ?? []).filter(it => it.kind === 'error') as it}
                   <div class="text-danger">{it.text}</div>
@@ -1746,9 +1746,9 @@ title: Workbench
                               hint="One glob per line, over the files git ignores here — a worktree has none of them. A dev database is yours to add or to seed." />
                   {/if}
                   <div class="cluster">
-                    <Button type="submit" variant="outlined">Save</Button>
+                    <Button type="submit" treatment="outlined">Save</Button>
                     {#if !p.from}
-                      <Button variant="ghost" tone="danger" onclick={() => unpin(p)}
+                      <Button treatment="ghost" tone="danger" onclick={() => unpin(p)}
                               disabled={branchesOf(p).length > 0}
                               title={branchesOf(p).length ? 'Archive its branches first' : `Unpin ${p.name}`}>Unpin</Button>
                     {/if}
@@ -1763,7 +1763,7 @@ title: Workbench
                   <div class="cluster">
                     <code>{c.path}:{c.line}</code>
                     <span>{c.text}</span>
-                    <Button size="xs" variant="ghost" aria-label="Remove this comment" onclick={() => dropComment(p, i)}>×</Button>
+                    <Button size="xs" treatment="ghost" aria-label="Remove this comment" onclick={() => dropComment(p, i)}>×</Button>
                   </div>
                 {/each}
               </div>
@@ -1783,23 +1783,23 @@ title: Workbench
                   {status[p.id]?.state === 'working' && !elsewhere(p.id) ? 'Queue' : 'Send'}
                 </Button>
                 {#if status[p.id]?.state === 'working' && !elsewhere(p.id)}
-                  <Button variant="outlined" tone="danger" onclick={() => stop(p)}>Stop</Button>
+                  <Button treatment="outlined" tone="danger" onclick={() => stop(p)}>Stop</Button>
                 {/if}
-                <Button variant="ghost" onclick={() => fresh(p)} disabled={blank(p.id)}
+                <Button treatment="ghost" onclick={() => fresh(p)} disabled={blank(p.id)}
                         title="Another chat in this checkout, in a tab below this one">New chat</Button>
                 {#if status[p.id]?.state !== 'working'}
                   {#if p.checkable}
-                    <Button variant="ghost" onclick={() => check(p)}
+                    <Button treatment="ghost" onclick={() => check(p)}
                             disabled={status[p.id]?.checks?.state === 'running'}>Check</Button>
                   {/if}
-                  <Button variant="ghost" onclick={() => review(p)}
+                  <Button treatment="ghost" onclick={() => review(p)}
                           disabled={status[p.id]?.review?.state === 'working'}>Review</Button>
                   {#if p.from}
-                    <Button variant="outlined" onclick={() => land(p)}
+                    <Button treatment="outlined" onclick={() => land(p)}
                             title={`Apply this branch's work to ${parentOf(p)?.name ?? 'its parent'}'s tree, uncommitted`}>Land</Button>
-                    <Button variant="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>
+                    <Button treatment="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>
                   {:else}
-                    <Button variant="ghost" onclick={() => fork(p)}
+                    <Button treatment="ghost" onclick={() => fork(p)}
                             title="A branch in a worktree of its own, with this chat forked into it">Fork</Button>
                   {/if}
                 {/if}
@@ -1840,13 +1840,13 @@ title: Workbench
                           options={startable().map(p => ({ value: p.id, label: `${p.from ? '↳ ' : ''}${p.name}` }))} />
                   <div class="cluster">
                     <Button size="sm" type="submit">Start</Button>
-                    <Button size="sm" variant="ghost" onclick={() => asking = null}>Cancel</Button>
+                    <Button size="sm" treatment="ghost" onclick={() => asking = null}>Cancel</Button>
                   </div>
                 </form>
               {:else}
                 <div class="stack text-sm workbench-slot-pick">
                   <span class="text-muted">Every pinned checkout is on the stage. Pin another from the dock.</span>
-                  <Button size="sm" variant="ghost" onclick={() => asking = null}>Cancel</Button>
+                  <Button size="sm" treatment="ghost" onclick={() => asking = null}>Cancel</Button>
                 </div>
               {/if}
             {:else}
@@ -1861,7 +1861,7 @@ title: Workbench
 
     <aside class="workbench-dock" aria-label="Docked chats">
       {#if waiting().length}
-        <Button size="sm" variant="outlined" tone={needsYou(status[waiting()[0].id]) ? 'warning' : 'success'} id="workbench-next" onclick={() => openWaiting(waiting()[0])}
+        <Button size="sm" treatment="outlined" tone={needsYou(status[waiting()[0].id]) ? 'warning' : 'success'} id="workbench-next" onclick={() => openWaiting(waiting()[0])}
                 title="A plan's open question first, then the oldest finished chat nobody has looked at (Alt+J)">Next waiting · {waiting().length}</Button>
       {/if}
       {#each docked() as p (p.id)}
@@ -1884,9 +1884,9 @@ title: Workbench
             <div class="cluster text-sm workbench-gone">
               <span class="text-danger">Folder is gone</span>
               {#if p.from}
-                <Button size="xs" variant="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>
+                <Button size="xs" treatment="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>
               {:else}
-                <Button size="xs" variant="ghost" tone="danger" onclick={() => unpin(p)}
+                <Button size="xs" treatment="ghost" tone="danger" onclick={() => unpin(p)}
                         disabled={branchesOf(p).length > 0}>Unpin</Button>
               {/if}
             </div>

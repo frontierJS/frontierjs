@@ -79,11 +79,11 @@ title: Appliance
     </dl>
 
     <div class="cluster">
-      <Button variant="outlined" id="appliance-recheck" disabled={busy} onclick={recheck}>
+      <Button treatment="outlined" id="appliance-recheck" disabled={busy} onclick={recheck}>
         {busy ? 'Checking…' : 'Check again'}
       </Button>
       {#if entry.url}
-        <Button variant="ghost" href={entry.url} target="_blank" rel="noreferrer noopener">Open ↗</Button>
+        <Button treatment="ghost" href={entry.url} target="_blank" rel="noreferrer noopener">Open ↗</Button>
       {/if}
     </div>
   </Card>

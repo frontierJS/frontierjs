@@ -72,7 +72,7 @@ title: Sign in
       <Input id="si-password" type="password" bind:value={password} autocomplete="current-password" required />
     </Field>
     <Button type="submit" id="si-submit" disabled={busy}>Sign in</Button>
-    <Button variant="ghost" type="button" id="si-forgot" onclick={() => { forgot = true; resetEmail = email }}>
+    <Button treatment="ghost" type="button" id="si-forgot" onclick={() => { forgot = true; resetEmail = email }}>
       Forgot your password?
     </Button>
   </form>

@@ -9,7 +9,7 @@
   // Usage:
   //   <DropdownMenu>
   //     {#snippet trigger()}
-  //       <Button variant="ghost" icon><IconDots /></Button>
+  //       <Button treatment="ghost" square><IconDots /></Button>
   //     {/snippet}
   //     <DropdownGroup heading="Actions">
   //       <DropdownItem onclick={handleEdit}>

@@ -500,7 +500,7 @@ describe('prerenderRoutes — the read set comes from load()', () => {
   }
 
   async function run(root, db) {
-    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { renderComponent } = await import('@frontierjs/mesa/render-component')
     const { scan } = await import('../src/scanner/index.js')
     const tree = await scan('src/routes', { cwd: root })
     return prerenderRoutes({
@@ -545,7 +545,7 @@ describe('prerenderRoutes — the read set comes from load()', () => {
   test('no schema stands the whole check down', async () => {
     // A Sierra app with no .lite file has no gates, so there is nothing to
     // prove and nothing to refuse.
-    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { renderComponent } = await import('@frontierjs/mesa/render-component')
     const { scan } = await import('../src/scanner/index.js')
     const root = scaffold('product')
     const tree = await scan('src/routes', { cwd: root })
@@ -579,7 +579,7 @@ describe('prerenderRoutes — a companion that will not import', () => {
    * it could not read as UNKNOWN, which is the case it exists to refuse.
    */
   test('is refused, and the refusal carries the module\'s own error', async () => {
-    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { renderComponent } = await import('@frontierjs/mesa/render-component')
     const { scan } = await import('../src/scanner/index.js')
 
     const root = tmpDir('sierra-broken-')
@@ -602,7 +602,7 @@ describe('prerenderRoutes — a companion that will not import', () => {
   }, RENDER_TIMEOUT)
 
   test('and the cause is in the message, not only the fact', async () => {
-    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { renderComponent } = await import('@frontierjs/mesa/render-component')
     const { scan } = await import('../src/scanner/index.js')
 
     const root = tmpDir('sierra-broken-cause-')

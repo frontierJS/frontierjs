@@ -113,6 +113,52 @@ test('overlay: .raised, .outlined and .ghost all do something on a .btn', functi
   });
 });
 
+test('edge: a toned rule on the start edge of a surface, and only that edge', function () {
+  /*
+   * FJS-2688. An editing form or a callout marked by an accent rule on its
+   * start edge could only be said as a full border or a tint, so an app
+   * wrote the rule by hand in a color of its own.
+   */
+  ['card', 'surface', 'alert', 'tile'].forEach(function (base) {
+    var n = el('<div class="' + base + ' edge danger">x</div>');
+    var other = el('<div class="' + base + ' edge success">x</div>');
+    var start = parseFloat(style(n, 'border-inline-start-width'));
+    var end = parseFloat(style(n, 'border-inline-end-width'));
+    assert.ok(start > end, '.' + base + '.edge draws no heavier rule on its start edge (' + start + 'px vs ' + end + 'px)');
+    assert.notEqual(
+      style(n, 'border-inline-start-color'),
+      style(other, 'border-inline-start-color'),
+      '.' + base + '.edge does not take the tone'
+    );
+    cleanup();
+  });
+
+  var plain = el('<div class="card edge">x</div>');
+  var primary = el('<div class="card edge primary">x</div>');
+  assert.equal(
+    style(plain, 'border-inline-start-color'),
+    style(primary, 'border-inline-start-color'),
+    'an untoned edge is not the brand accent'
+  );
+  cleanup();
+
+  var raised = el('<div class="card edge raised">x</div>');
+  assert.ok(
+    parseFloat(style(raised, 'border-inline-start-width')) > 0 &&
+      style(raised, 'border-inline-start-color') !== 'rgba(0, 0, 0, 0)',
+    '.raised erases the edge'
+  );
+  cleanup();
+
+  var rtl = el('<div dir="rtl"><div class="card edge">x</div></div>');
+  var rc = rtl.firstChild;
+  assert.ok(
+    parseFloat(style(rc, 'border-right-width')) > parseFloat(style(rc, 'border-left-width')),
+    'the edge does not follow the writing direction'
+  );
+  cleanup();
+});
+
 test('busy: aria-busy draws the button spinner, and nothing else does', function () {
   /*
    * The attribute that announces the state is the one that draws it, so a
@@ -131,6 +177,29 @@ test('busy: aria-busy draws the button spinner, and nothing else does', function
   assert.notOk(spins('<button class="btn loading">Save</button>'), 'a class draws a spinner nothing announces');
   assert.notOk(spins('<button class="btn" aria-busy="false">Save</button>'), 'aria-busy="false" still spins');
   assert.notOk(spins('<div class="card" aria-busy="true"></div>'), 'a busy region of skeletons got a spinner');
+});
+
+test('pressed: aria-pressed="true" draws on every treatment, "false" draws nothing', function () {
+  /*
+   * A toggle button announces its state with aria-pressed, so that
+   * attribute is what draws it — an app that had to show the state with a
+   * tone changed what the button MEANS to say what it IS. Every treatment
+   * has to show it: an outlined, ghost or link button has no fill to
+   * darken, so the pressed look cannot be only a filter.
+   */
+  function look(html) {
+    var n = el(html);
+    var s = style(n, 'background-color') + '|' + style(n, 'box-shadow') + '|' + style(n, 'border-top-color');
+    cleanup();
+    return s;
+  }
+  ['', ' primary', ' outlined', ' ghost', ' link', ' glass', ' outlined danger', ' ghost info'].forEach(function (cls) {
+    var rest = look('<button class="btn' + cls + '">Mine</button>');
+    var on = look('<button class="btn' + cls + '" aria-pressed="true">Mine</button>');
+    var off = look('<button class="btn' + cls + '" aria-pressed="false">Mine</button>');
+    assert.notEqual(on, rest, '.btn' + cls + ' with aria-pressed="true" looks like one without');
+    assert.equal(off, rest, '.btn' + cls + ' with aria-pressed="false" is drawn as pressed');
+  });
 });
 
 test('overlay: a ghost button reads its tone', function () {

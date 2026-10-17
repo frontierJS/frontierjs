@@ -42,7 +42,7 @@ title: Stocktake
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Select        from '@frontierjs/ui/components/forms/Select.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
-  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore'
 
   $: (session.user, session.level)
 

@@ -15,12 +15,11 @@
   import { tone as toTone, cx } from '../../utils.js'
 
   export let tone     = ''
-  export let color    = ''       // legacy alias for `tone`
   export let readonly = false    // hide dismiss button
   export let label    = ''       // accessible name for the dismiss button
   export let onremove = undefined
 
-  const t = toTone(color || tone)
+  const t = toTone(tone)
 </script>
 
 <span class={cx('pill', t, !readonly && 'removable')} {class} {...$attributes}>

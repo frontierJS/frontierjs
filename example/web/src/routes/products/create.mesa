@@ -29,7 +29,7 @@ title: New product
 
 <SectionHeader title="New product" level={1}>
   {#snippet action()}
-    <Button variant="ghost" href="/products/">Back to list</Button>
+    <Button treatment="ghost" href="/products/">Back to list</Button>
   {/snippet}
 </SectionHeader>
 

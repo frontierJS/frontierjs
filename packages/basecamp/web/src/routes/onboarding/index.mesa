@@ -84,7 +84,7 @@ title: Getting started
         <span class="step-label">{step.title}</span>
         <span class="step-hint">{step.detail}</span>
         {#if !step.done && step.href}
-          <Button variant={next?.id === step.id ? 'primary' : 'ghost'} href={step.href}>Do this</Button>
+          <Button treatment={next?.id === step.id ? '' : 'ghost'} href={step.href}>Do this</Button>
         {/if}
       </li>
     {/each}

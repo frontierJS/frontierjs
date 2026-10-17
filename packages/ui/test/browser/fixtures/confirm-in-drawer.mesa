@@ -27,7 +27,7 @@
   <ConfirmationPopover title="Archive board?" confirmLabel="Archive"
                        onconfirm={() => did('archive')}>
     {#snippet trigger()}
-      <Button id="archive" variant="ghost">Archive board</Button>
+      <Button id="archive" treatment="ghost">Archive board</Button>
     {/snippet}
   </ConfirmationPopover>
 </Drawer>

@@ -87,7 +87,7 @@ src/
                          out as a row). A color or display it cannot lower
                          comes back by line
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
-  runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal.js:
+  runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal:
                          `$$host`, a cell tree over @opentui/core (optional peer,
                          pinned exact while 0.x — FJS-D698). Bun only. Events
                          dispatch as a browser's (capture, target, bubble) and
@@ -97,7 +97,7 @@ src/
                          (`createRenderer`, `createHeadlessRenderer`) — its own
                          engine import would be a second copy — and a strip
                          under the page that does not scroll (`footerOf`)
-  runtime-native.js    — the native runtime, @frontierjs/mesa/runtime/native.js:
+  runtime-native.js    — the native runtime, @frontierjs/mesa/runtime/native:
                          `$$host` over Lynx's Element PAPI, the main-thread
                          globals, so no engine import and no peer. The one file
                          that names Lynx. Pointer and mouse events are made from

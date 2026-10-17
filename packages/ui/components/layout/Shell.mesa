@@ -173,7 +173,10 @@
 {/snippet}
 
 {#snippet sectionBar()}
-  {#if title}<strong>{title}</strong>{/if}
+  <!-- The page's heading: an app whose frame carried it writes none of its
+       own, so a <strong> here leaves a screen reader's heading list empty.
+       .h5 holds the size a bar title needs; .h6 would uppercase it. -->
+  {#if title}<h1 class="h5">{title}</h1>{/if}
   {#if section?.tabs?.length || section?.action}
     <nav class="cluster" aria-label="Section">
       {#each section.tabs ?? [] as tab}

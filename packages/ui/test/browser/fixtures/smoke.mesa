@@ -10,5 +10,5 @@
   let clicks = 0
 </script>
 
-<Button variant="danger" onclick={() => clicks++}>Delete</Button>
+<Button tone="danger" onclick={() => clicks++}>Delete</Button>
 <output id="clicks">{clicks}</output>

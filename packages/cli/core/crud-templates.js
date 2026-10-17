@@ -93,7 +93,7 @@ function moveScript(o, error) {
 
 const moveButtons = (indent, row, busy) => `{#each movesOf(${row}) as t (t.name)}
 ${indent}  <Button
-${indent}    variant="outlined"
+${indent}    treatment="outlined"
 ${indent}    size="sm"
 ${indent}    data-move={t.name}
 ${indent}    disabled={!t.allowed || ${busy}}
@@ -182,7 +182,7 @@ export function listPage(o) {
                              onconfirm={() => remove(record[idField])}>
           {#snippet trigger()}
             <Button
-              variant="ghost"
+              treatment="ghost"
               tone="danger"
               size="sm"
               disabled={${o.gate ? '!canDelete || ' : ''}busy === record[idField]}
@@ -304,7 +304,7 @@ ${moveScript(o, 'error')}${gateState}${removeFn}${SC}
     <tr>
       {#each cols as c}<td><Cell value={cellOf(record, c.name)} column={c} {record} /></td>{/each}
       <td class="cluster">
-        <Button variant="link" href={'${o.basePath}' + record[idField] + '/'}>Open</Button>
+        <Button treatment="link" href={'${o.basePath}' + record[idField] + '/'}>Open</Button>
         ${moveButtons('        ', 'record', 'moving === record[idField]')}${rowDelete}
       </td>
     </tr>
@@ -314,7 +314,7 @@ ${moveScript(o, 'error')}${gateState}${removeFn}${SC}
 <!-- A keyset window: rows written while somebody reads are neither skipped
      nor served twice, which an offset cannot promise. -->
 {#if list.hasMore}
-  <Button variant="ghost" onclick={list.more}>Load more</Button>
+  <Button treatment="ghost" onclick={list.more}>Load more</Button>
 {/if}
 
 {#if omitted.length}
@@ -366,7 +366,7 @@ ${SC}
 <div class="container narrow">
 <SectionHeader title="${o.heading}" level={1}>
   {#snippet action()}
-    <Button variant="ghost" href="${o.basePath}">${o.backLabel}</Button>
+    <Button treatment="ghost" href="${o.basePath}">${o.backLabel}</Button>
   {/snippet}
 </SectionHeader>
 
@@ -420,7 +420,7 @@ export function editPage(o) {
         markup: `{#if record && children.length}
   <p class="cluster">
     {#each children as c}
-      <Button variant="link" href={c.href}>{c.field}</Button>
+      <Button treatment="link" href={c.href}>{c.field}</Button>
     {/each}
   </p>
 {/if}
@@ -521,7 +521,7 @@ ${SC}
 <div class="container narrow">
 <SectionHeader title={nameOf(record) ?? '${o.heading} ' + id} level={1}>
   {#snippet action()}
-    <Button variant="ghost" href="${o.basePath}">${o.backLabel}</Button>
+    <Button treatment="ghost" href="${o.basePath}">${o.backLabel}</Button>
   {/snippet}
 </SectionHeader>
 
@@ -560,7 +560,7 @@ ${kids.markup}{#if record}
       <ConfirmationPopover title={'Delete ' + (nameOf(record) ?? id) + '?'}
                            confirmLabel="${o.deleteLabel}" onconfirm={remove}>
         {#snippet trigger()}
-          <Button tone="danger" variant="outlined" loading={deleting}>${o.deleteLabel}</Button>
+          <Button tone="danger" treatment="outlined" loading={deleting}>${o.deleteLabel}</Button>
         {/snippet}
       </ConfirmationPopover>
     {/snippet}

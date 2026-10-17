@@ -1636,7 +1636,7 @@
         while ((m = re.exec(js)) !== null) {
           const spec = m[1].trim(),
             src = m[2]
-          if (src === '@frontierjs/mesa/runtime.js') continue
+          if (src === '@frontierjs/mesa/runtime') continue
           const mock = userImports[src] || {}
           if (spec.startsWith('* as ')) {
             // import * as Foo from '...'
@@ -1765,7 +1765,7 @@
           let m
           while ((m = re.exec(ctx.result)) !== null) {
             const spec = m[1]
-            if (spec === '@frontierjs/mesa/runtime.js') continue
+            if (spec === '@frontierjs/mesa/runtime') continue
             deps[spec] = await loadUiModule(uiSpecToUrl(spec, url))
           }
           return { default: execCompiled(ctx.result, deps) }
@@ -3389,10 +3389,10 @@
           const runtimeUrl = URL.createObjectURL(runtimeBlob)
 
           // 3. Patch the compiled output:
-          //    • swap '@frontierjs/mesa/runtime.js' import for the runtime blob URL
+          //    • swap '@frontierjs/mesa/runtime' import for the runtime blob URL
           //    • replace `export default ` with `const __MesaComponent = `
           const patchedJS = compiledJS
-            .replace(/from\s+'@frontierjs\/mesa\/runtime\.js'/, `from '${runtimeUrl}'`)
+            .replace(/from\s+'@frontierjs\/mesa\/runtime'/, `from '${runtimeUrl}'`)
             .replace(/^export default\s+/m, 'const __MesaComponent = ')
 
           // 4. Build the full self-contained HTML.

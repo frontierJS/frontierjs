@@ -30,7 +30,7 @@ title: Disk cleanup
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Sparkline  from '@frontierjs/ui/components/display/Sparkline.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
@@ -155,7 +155,7 @@ title: Disk cleanup
 
 <div class="section-header">
   <h1>Disk cleanup</h1>
-  <Button variant="primary" id="sweep-fleet" disabled={busy === 'fleet' || !picked.length}
+  <Button tone="primary" id="sweep-fleet" disabled={busy === 'fleet' || !picked.length}
           data-confirm="The selected cleanups run on every server in the fleet. What they delete does not come back."
           data-confirm-title="Sweep the whole fleet?" data-confirm-label="Sweep"
           onclick={() => sweep(null)}>Sweep the fleet</Button>
@@ -288,7 +288,7 @@ title: Disk cleanup
           {:else}
             <span class="text-sm text-muted">never swept</span>
           {/if}
-          <Button variant="outlined" disabled={busy === s.serverId || !picked.length}
+          <Button treatment="outlined" disabled={busy === s.serverId || !picked.length}
                   aria-label={`Clean ${s.serverName}`}
                   data-confirm={`The selected cleanups run on ${s.serverName}. What they delete does not come back.`}
                   data-confirm-title="Clean this server?" data-confirm-label="Clean"

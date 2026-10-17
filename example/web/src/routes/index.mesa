@@ -153,7 +153,7 @@ title: Home
     <p class="text-sm text-muted">
       A list with a delete button the schema decides whether to offer. <code>@@gate</code> wants level 5, so <code>can('delete', level)</code> is asked before it renders.
     </p>
-    <div class="cluster"><Button variant="outlined" href="/orders/">Open the list</Button></div>
+    <div class="cluster"><Button treatment="outlined" href="/orders/">Open the list</Button></div>
   </Card>
 
   <Card class="stack">
@@ -161,7 +161,7 @@ title: Home
     <p class="text-sm text-muted">
       A form generated entirely from the schema — no field list, no types, no enum values and no mention of the customers service in the component.
     </p>
-    <div class="cluster"><Button variant="outlined" href="/orders/create/">Open the form</Button></div>
+    <div class="cluster"><Button treatment="outlined" href="/orders/create/">Open the form</Button></div>
   </Card>
 
   <Card class="stack">
@@ -169,7 +169,7 @@ title: Home
     <p class="text-sm text-muted">
       The <code>notes</code> column exists only for an admin. Field-level <code>@allow</code> strips it from everyone else's response, with no service code saying so.
     </p>
-    <div class="cluster"><Button variant="outlined" href="/customers/">Watch a column appear</Button></div>
+    <div class="cluster"><Button treatment="outlined" href="/customers/">Watch a column appear</Button></div>
   </Card>
 </div>
 

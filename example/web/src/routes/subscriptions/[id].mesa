@@ -40,7 +40,7 @@ title: Subscription
   import StatCard            from '@frontierjs/ui/components/display/StatCard.mesa'
   import Steps               from '@frontierjs/ui/components/display/Steps.mesa'
   import Table               from '@frontierjs/ui/components/display/Table.mesa'
-  import { toasts }          from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore'
 
   $: (page.params, session.level)
 
@@ -281,10 +281,10 @@ title: Subscription
     {#snippet action()}
       <div class="cluster">
         {#each moves as move}
-          <Button variant="outlined" data-move={move.name} disabled={busy}>{move.name}</Button>
+          <Button treatment="outlined" data-move={move.name} disabled={busy}>{move.name}</Button>
         {/each}
         {#if canStop(sub) && sub.cancelAtPeriodEnd}
-          <Button variant="outlined" data-resume="1" disabled={busy} onclick={() => setRenewal(true)}>
+          <Button treatment="outlined" data-resume="1" disabled={busy} onclick={() => setRenewal(true)}>
             Resume
           </Button>
         {:else if canStop(sub)}
@@ -295,7 +295,7 @@ title: Subscription
             onconfirm={() => setRenewal(false)}
           >
             {#snippet trigger()}
-              <Button variant="outlined" tone="danger" data-stop="1" disabled={busy}>Stop renewing</Button>
+              <Button treatment="outlined" tone="danger" data-stop="1" disabled={busy}>Stop renewing</Button>
             {/snippet}
           </ConfirmationPopover>
         {/if}
@@ -381,7 +381,7 @@ title: Subscription
       <NumberInput id="cp-seats" name="quantity" label="Seats" min={1}
                    bind:value={toSeats} error={fields.quantity} />
 
-      <Button id="cp-submit" type="submit" variant="primary" disabled={busy} loading={busy}>
+      <Button id="cp-submit" type="submit" tone="primary" disabled={busy} loading={busy}>
         Change
       </Button>
     </form>

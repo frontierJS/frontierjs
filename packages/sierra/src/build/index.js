@@ -496,7 +496,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
       // is the unit of control, and this target is what opts the build into
       // acting on it. An 'spa' build ignores the frontmatter exactly as before.
       if ((config.target ?? 'spa') === 'static') {
-        const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+        const { renderComponent } = await import('@frontierjs/mesa/render-component')
 
         // Static safety (FJS-081): a prerendered page is public, so the build
         // has to be able to say what data went into it. The schema came from

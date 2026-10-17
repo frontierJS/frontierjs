@@ -294,7 +294,7 @@ test('layers: every composite is actually enrolled in its base', function () {
 
   var LINEAGES = {
     'chip.css': ['.btn', '.pill', '.badge', '.pagination-link', '.tooltip', '.avatar', '.step-marker'],
-    'surface.css': ['.card', '.tile', '.alert', '.toast', '.dialog', '.popover', '.drawer', '.band'],
+    'surface.css': ['.card', '.tile', '.lane', '.alert', '.toast', '.dialog', '.popover', '.drawer', '.band'],
   };
 
   Object.keys(LINEAGES).forEach(function (file) {

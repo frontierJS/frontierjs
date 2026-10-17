@@ -81,5 +81,5 @@
     on its own. Cancel does not, and must not: you abandon a save while it runs.
   -->
   <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
-  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+  <Button slot="actions" treatment="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
 </Form>

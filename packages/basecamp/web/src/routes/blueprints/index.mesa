@@ -46,7 +46,7 @@ title: Blueprints
   import Checkbox   from '@frontierjs/ui/components/forms/Checkbox.mesa'
   import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
@@ -296,7 +296,7 @@ title: Blueprints
   <span class="cluster">
     <span class="text-sm text-muted">Pre-configured applications. The same catalog in every workspace.</span>
     {#if isAdmin}
-      <Button variant="primary" id="new-blueprint" onclick={() => authoring = 'new'}>New blueprint</Button>
+      <Button tone="primary" id="new-blueprint" onclick={() => authoring = 'new'}>New blueprint</Button>
     {/if}
   </span>
 </div>
@@ -350,9 +350,9 @@ title: Blueprints
       {/each}
 
       <div class="cluster">
-        <Button variant="primary" id="deploy-save" disabled={sending || !deployForm.environmentId}
+        <Button tone="primary" id="deploy-save" disabled={sending || !deployForm.environmentId}
                 onclick={deploy}>{deployForm.serverId ? 'Create and release' : 'Create app'}</Button>
-        <Button variant="ghost" onclick={() => deploying = null}>Cancel</Button>
+        <Button treatment="ghost" onclick={() => deploying = null}>Cancel</Button>
       </div>
     </div>
   {/if}
@@ -416,14 +416,14 @@ title: Blueprints
         </div>
 
         <div class="cluster">
-          <Button variant="outlined" onclick={() => open(bp)}>
+          <Button treatment="outlined" onclick={() => open(bp)}>
             {selected?.id === bp.id ? 'Hide details' : 'Details'}
           </Button>
           {#if session.workspaceId && !bp.deprecatedAt}
-            <Button variant="primary" aria-label={`Deploy ${bp.name}`} onclick={() => openDeploy(bp)}>Deploy</Button>
+            <Button tone="primary" aria-label={`Deploy ${bp.name}`} onclick={() => openDeploy(bp)}>Deploy</Button>
           {/if}
           {#if session.user?.isSystemAdmin && !bp.deprecatedAt}
-            <Button variant="ghost" aria-label={`Withdraw ${bp.name}`}
+            <Button treatment="ghost" aria-label={`Withdraw ${bp.name}`}
                     data-confirm={`${bp.name} is no longer offered to any workspace. There is no button to bring it back.`}
                     data-confirm-title="Withdraw this blueprint?" data-confirm-label="Withdraw"
                     onclick={() => withdraw(bp)}>Withdraw</Button>
@@ -440,12 +440,12 @@ title: Blueprints
       <h2 class="h4">{selected.name} {selected.version}</h2>
       <span class="cluster">
         {#if isAdmin}
-          <Button variant="outlined" id="blueprint-edit" onclick={() => authoring = rowOf(selected)}>Edit</Button>
+          <Button treatment="outlined" id="blueprint-edit" onclick={() => authoring = rowOf(selected)}>Edit</Button>
           {#if !params}
-            <Button variant="outlined" id="blueprint-params-edit" onclick={editParams}>Edit parameters</Button>
+            <Button treatment="outlined" id="blueprint-params-edit" onclick={editParams}>Edit parameters</Button>
           {/if}
         {/if}
-        <Button variant="ghost" onclick={() => { params = null; watchSelected(null) }}>Close</Button>
+        <Button treatment="ghost" onclick={() => { params = null; watchSelected(null) }}>Close</Button>
       </span>
     </div>
 
@@ -485,16 +485,16 @@ title: Blueprints
               <Select id={`param-generate-${i}`} label="" aria-label="Generate a value" value={p.generate}
                       placeholder="Typed by a person" options={generators}
                       onchange={(e) => setParam(i, 'generate', e.target.value)} />
-              <Button variant="ghost" aria-label={`Move parameter ${i + 1} up`} disabled={i === 0} onclick={() => moveParam(i, -1)}>↑</Button>
-              <Button variant="ghost" aria-label={`Move parameter ${i + 1} down`} disabled={i === params.length - 1} onclick={() => moveParam(i, 1)}>↓</Button>
-              <Button variant="ghost" aria-label={`Remove parameter ${i + 1}`} onclick={() => dropParam(i)}>Remove</Button>
+              <Button treatment="ghost" aria-label={`Move parameter ${i + 1} up`} disabled={i === 0} onclick={() => moveParam(i, -1)}>↑</Button>
+              <Button treatment="ghost" aria-label={`Move parameter ${i + 1} down`} disabled={i === params.length - 1} onclick={() => moveParam(i, 1)}>↓</Button>
+              <Button treatment="ghost" aria-label={`Remove parameter ${i + 1}`} onclick={() => dropParam(i)}>Remove</Button>
             </div>
           </fieldset>
         {/each}
         <div class="cluster">
-          <Button variant="outlined" id="param-add" onclick={addParam}>Add parameter</Button>
-          <Button variant="primary" id="params-save" disabled={savingParams} onclick={saveParams}>Save parameters</Button>
-          <Button variant="ghost" onclick={() => params = null}>Cancel</Button>
+          <Button treatment="outlined" id="param-add" onclick={addParam}>Add parameter</Button>
+          <Button tone="primary" id="params-save" disabled={savingParams} onclick={saveParams}>Save parameters</Button>
+          <Button treatment="ghost" onclick={() => params = null}>Cancel</Button>
         </div>
       </div>
     {:else if !selected.params.length}

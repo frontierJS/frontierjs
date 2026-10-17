@@ -31,7 +31,7 @@ title: Recipes
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
   import { page } from '@frontierjs/sierra/router'
   import { offerUndo } from '../../resources/Trash.mesa'
@@ -206,7 +206,7 @@ title: Recipes
 
 <div class="section-header">
   <h1>Recipes</h1>
-  <Button variant="primary" id="new-recipe" onclick={() => creating = !creating}>
+  <Button tone="primary" id="new-recipe" onclick={() => creating = !creating}>
     {creating ? 'Cancel' : 'New recipe'}
   </Button>
 </div>
@@ -239,7 +239,7 @@ title: Recipes
       <Input name="timeoutSeconds" id="timeoutSeconds" type="number" min="5" max="3600"
              hint="A run still going after this is stopped and recorded as timed out"
              value={draft.timeoutSeconds} oninput={(e) => write('timeoutSeconds', Number(e.target.value))} />
-      <Button type="submit" variant="primary">Save recipe</Button>
+      <Button type="submit" tone="primary">Save recipe</Button>
     </Form>
   </Card>
 {/if}
@@ -280,16 +280,16 @@ title: Recipes
         {/if}
 
         <div class="cluster">
-          <Button variant="primary" disabled={busy === recipe.id}
+          <Button tone="primary" disabled={busy === recipe.id}
                   aria-label={`Run ${recipe.name}`}
                   data-confirm={target
                     ? `${recipe.name} runs on the chosen server.`
                     : `${recipe.name} runs on EVERY server in this workspace — no server is picked.`}
                   data-confirm-title="Run this recipe?" data-confirm-label="Run" data-confirm-tone="warning"
                   onclick={() => run(recipe)}>Run</Button>
-          <Button variant="outlined" disabled={busy === recipe.id}
+          <Button treatment="outlined" disabled={busy === recipe.id}
                   onclick={() => open(recipe)}>Script and history</Button>
-          <Button variant="ghost" disabled={busy === recipe.id}
+          <Button treatment="ghost" disabled={busy === recipe.id}
                   aria-label={`Delete ${recipe.name}`}
                   data-confirm={`${recipe.name} and its run history are deleted.`}
                   data-confirm-title="Delete this recipe?" data-confirm-label="Delete"
@@ -305,8 +305,8 @@ title: Recipes
     <div class="section-header">
       <h2 class="h4">{selected.name}</h2>
       <div class="cluster">
-        <Button variant="outlined" id="recipe-edit" onclick={() => editing = true}>Edit</Button>
-        <Button variant="ghost" onclick={() => watchSelected(null)}>Close</Button>
+        <Button treatment="outlined" id="recipe-edit" onclick={() => editing = true}>Edit</Button>
+        <Button treatment="ghost" onclick={() => watchSelected(null)}>Close</Button>
       </div>
     </div>
 
@@ -348,7 +348,7 @@ title: Recipes
         {/snippet}
       </Table>
       {#if !allRuns && (selected.runs ?? []).length >= 50}
-        <Button variant="ghost" id="recipe-older" disabled={busy === 'runs'} onclick={olderRuns}>Show older runs</Button>
+        <Button treatment="ghost" id="recipe-older" disabled={busy === 'runs'} onclick={olderRuns}>Show older runs</Button>
       {/if}
     {/if}
   </Card>

@@ -10,50 +10,26 @@
     ".": {
       "import": "./src/compiler.js"
     },
-    "./runtime.js": {
-      "import": "./src/runtime.js"
-    },
     "./runtime": {
       "import": "./src/runtime.js"
-    },
-    "./runtime/terminal.js": {
-      "import": "./src/runtime-terminal.js"
     },
     "./runtime/terminal": {
       "import": "./src/runtime-terminal.js"
     },
-    "./runtime/native.js": {
-      "import": "./src/runtime-native.js"
-    },
     "./runtime/native": {
       "import": "./src/runtime-native.js"
-    },
-    "./compiler.js": {
-      "import": "./src/compiler.js"
     },
     "./compiler": {
       "import": "./src/compiler.js"
     },
-    "./compiler-md.js": {
-      "import": "./src/compiler-md.js"
-    },
     "./compiler-md": {
       "import": "./src/compiler-md.js"
-    },
-    "./render.js": {
-      "import": "./src/render.js"
     },
     "./render": {
       "import": "./src/render.js"
     },
-    "./css-inliner.js": {
-      "import": "./src/css-inliner.js"
-    },
     "./css-inliner": {
       "import": "./src/css-inliner.js"
-    },
-    "./render-component.js": {
-      "import": "./src/render-component.js"
     },
     "./render-component": {
       "import": "./src/render-component.js"

@@ -77,7 +77,7 @@ throwaway binary:
    embedded files, and hashed names need a map from URL to embedded file. A second
    static source, in `static.ts`.
 7. **Runtime `.mesa` render** (`mesa/src/render-component.js`) — writes a temp module
-   that imports `@frontierjs/mesa/runtime.js` by package name, so email templates
+   that imports `@frontierjs/mesa/runtime` by package name, so email templates
    break at send time, not boot. Precompile them at build time.
 
 **Not reached, so not known:** native addons (`sqlite-vec` is loaded lazily through

@@ -23,7 +23,6 @@
   export let showLabel     = false    // show "42%" beside the bar
   export let size          = 'md'     // 'xs' | 'sm' | 'md' | 'lg'
   export let tone          = ''       // '' uses the primary fill
-  export let color         = ''       // legacy alias for `tone`
 
   const pct = Math.min(100, Math.max(0, (value / max) * 100))
 
@@ -31,7 +30,7 @@
   const sizeMap = { xs: '0.25rem', sm: '0.375rem', md: '0.5rem', lg: '1rem' }
 
   const height = sizeMap[size] ?? sizeMap.md
-  const t      = toTone(color || tone)
+  const t      = toTone(tone)
 </script>
 
 <div class="stack" style:gap="0.375rem" {class} {...$attributes}>
