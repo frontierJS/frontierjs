@@ -20,6 +20,9 @@
  * Needs Chrome on PATH or $FJS_CHROME. Refuses port 7690 if it answers.
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

@@ -36,6 +36,9 @@
  * a display nor the developer's own app data is touched.
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, spawnSync }                                  from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }                                            from 'node:os'

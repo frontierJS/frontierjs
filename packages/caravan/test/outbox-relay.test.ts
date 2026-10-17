@@ -260,12 +260,12 @@ describe('what /metrics is told', () => {
     const metrics = () =>
       (app as unknown as { _metricsSources: Map<string, () => unknown> })
         ._metricsSources.get('outbox')!() as
-          { pending: number; dead: number; delivered: number; failed: number
-            lastPassAt: string | null }
+          { pending: number; dead: number; held: number; delivered: number
+            failed: number; lastPassAt: string | null }
 
     // boot() runs one pass before the first tick, so the numbers exist already.
     expect(metrics()).toEqual({
-      pending: 0, dead: 0, delivered: 0, failed: 0, lastPassAt: expect.any(String),
+      pending: 0, dead: 0, held: 0, delivered: 0, failed: 0, lastPassAt: expect.any(String),
     })
 
     await owe(db)

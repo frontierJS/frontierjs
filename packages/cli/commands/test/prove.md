@@ -42,6 +42,13 @@ about this change. It runs anyway when the change touches the drive's own file,
 because that change is the fix the row waits on. A prove whose every ✗ carries
 `open:` is finished; a second run prints the same tags.
 
+**A drive that declares what it holds waits for it.** A script's
+`export const holds = ['ports', 'db']` names the checkout's port block and its
+dev database; a second `fli prove` in the same tree queues behind the first
+rather than failing on a port the first one started. A linked worktree has both
+of its own, so a lane never waits. A drive declaring nothing holds nothing, and
+a server some other process started is still refused above.
+
 A target that is a test FILE is listed, not run — the runner differs per
 package. The package's own suite is still first; this is what runs after it.
 
@@ -54,6 +61,7 @@ const { prove, knownFailures, brokenDrives } = await import(resolve(global.fliRo
 const { readRegisters }          = await import(resolve(global.fliRoot, 'core/registers.js'))
 const children                   = await import(resolve(global.fliRoot, 'core/children.js'))
 const { isPortInUse }            = await import(resolve(global.fliRoot, 'core/ports.js'))
+const { treeHold }               = await import(resolve(global.fliRoot, 'core/guard.js'))
 
 // Relative to where the caller stands; git takes an absolute pathspec.
 const paths = (arg.paths?.trim() || '').split(/\s+/).filter(Boolean).map(p => resolve(process.cwd(), p))
@@ -96,6 +104,7 @@ const skip = t => {
 
 const out = await prove({
   proofs, rows, procs, skip,
+  hold:      treeHold(root),
   answering: port => isPortInUse(port, '0.0.0.0'),
   say:       line => echo(chalk.dim(line)),
 })

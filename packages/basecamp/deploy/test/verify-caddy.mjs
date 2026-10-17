@@ -23,6 +23,9 @@
 //   A fetch has to say `redirect: 'manual'` or it follows the provider redirect
 //   and reports the provider's page.
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

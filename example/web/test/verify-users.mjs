@@ -63,6 +63,10 @@
  * an admin two lines earlier. Every negative case below runs BEFORE any
  * positive one touches the same row, and the row is restored at the end.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'

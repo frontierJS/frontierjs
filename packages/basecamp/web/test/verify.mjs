@@ -31,6 +31,9 @@
  * Exits non-zero and prints what differed if any assertion fails.
  */
 
+// What `fli prove` queues on: this checkout's ports and its dev database.
+export const holds = ['ports', 'db']
+
 import { signRequest } from '@frontierjs/toolbelt/signature'
 import { createOutpostServer } from '@frontierjs/outpost/server'
 import { createStaticServer }  from '@frontierjs/outpost/serve'

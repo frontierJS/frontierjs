@@ -443,8 +443,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 83 files |
-| exports | `./components/*` | `components/*.mesa` | 83 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 86 files |
+| exports | `./components/*` | `components/*.mesa` | 86 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

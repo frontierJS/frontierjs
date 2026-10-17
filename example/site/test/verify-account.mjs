@@ -28,6 +28,10 @@
  * Run under BUN for the same reason `verify:site` is: it reads the app's own
  * TypeScript modules.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'

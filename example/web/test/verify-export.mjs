@@ -22,6 +22,10 @@
  *     code. Every refusal asserted here is one that happens before it, which is
  *     what the route's first-row hold exists to guarantee.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

@@ -19,6 +19,7 @@
   "allow": {
     "service-as-system:api/src/services/edge/edge.service.ts": "syncStep's caller-less branch (the `domain:dns` job a machine moving enqueues, `pushAppsOn`) has no principal to read the Domain through, and the Domain's own row names the workspace it then pins into $.locals.workspaceId. A caller's branch reads through db(), scoped to ws().",
     "test-port-literal:web/test/verify-screens.mjs": "8443 and 8080 are the `port` column of a Domain and an App the drive types into a form -- data a container publishes, never a port the drive binds or reaches.",
+    "test-port-literal:web/test/verify-provision.mjs": "8000 is the fallback in the fixture checkout's vite.config.js, the scaffold's own `FLI_PORT_FE ?? 8000` written to disk as text; `fli dev` hands that checkout FLI_PORT_FE, and the drive never binds or reaches 8000.",
     "test-port-literal:api/test/compute.test.ts": "outpostPort 8180 and the basecampUrl 'http://localhost:8120' are inputs to the pure cloudInit and installCommand; nothing connects to either.",
     "test-port-literal:api/test/workbench.test.ts": "PORT: 8120 is the value the test hands a run and then asserts never reaches the child (call.port is null).",
     "test-port-literal:api/test/verify-dns.mjs": "7129 is the App.port of an nginx container the drive records and never starts.",

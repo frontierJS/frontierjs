@@ -200,7 +200,7 @@ needs building first.
 | 15  | `conduit-slack`                      | Still ops-shaped, still under the line for maintenance — but Transit (58 references) and `data-layer-v1.md` X6 want report delivery to a channel, and the signing-secret and Block Kit rules are real. Promote when a second app asks |
 | 16  | `conduit-plausible`                  | A read of a site's stats. Kobami's analytics check already does it from a script over every client site, and Transit holds 536 references. One bearer key, one GET, paged — fails test two on its own, passes it as the reference *read-only, rate-limited report source* that `data-layer-v1.md` names |
 | 17  | `conduit-tax`, `conduit-shipping`    | Unchanged from rows 7–8. Still the only two that stop `example/` from teaching invented rates, and still no port needs either |
-| —   | Basecamp (37signals)                 | Argued in full below; vertical. Kobami's own need (the daily check, the support flow) is real and is `@kobami/conduit-basecamp`, a third-party connector by the same rule as Service Autopilot |
+| —   | Basecamp (37signals)                 | Argued in full below; vertical. Kobami's own need (the daily check, the support flow) is real and is `@frontierjs/conduit-37signals`, a prototype in `../conduit-connectors/` like its siblings, promoted or not by the same later call (`FJS-D1181`); plan `conduit-37signals.md` |
 
 ### The order
 
@@ -253,6 +253,7 @@ that names a fixture names one wired to `FIXTURE_URL` and never run.
 | push | B | new (APNs + FCM); APNs 403 is a refusal predicate (`FJS-D941`); the FCM exchange is a send through its own target | 23 | — | APNs h2 unmeasured |
 | gmail | B | new; per-user OAuth over `per_caller` | 41 | — | after oidc; batch endpoint waits on `FJS-2700` |
 | mattermost | C | new; the mirror app's connector (`mirror-apps.md` 2.1–2.3): two bearer targets, service and `per_caller` user, the `mirror` claim (`FJS-D1125`), the backfill reads, the outgoing-webhook and slash-command Dialects (`FJS-D899`) with `respond()`, the socket as a `broker` target with a `FrameDialect` (`FJS-D1127`); `pending_post_id` the one key, in the body | 40 | — | `MirrorClaim` type moves into conduit at 2.4; webhook `Authorization: Token` and the socket's header-vs-challenge auth unverified on a real server; socket resume not built |
+| 37signals | C | new; `conduit-37signals.md` 2.1–2.2: `basecampTargets()` → `{ api, token }`, the account as the address's path, `translate`, the reads (`walk` by `Link` with one `ETag` per page, `recording` typed or by its envelope); Kobami's scrubbed fixtures in `test/fixtures/` | 26 | 0.2's bodies, GET only | its plan's Phase 2.3 onward |
 | anthropic | C | new | 22 | — | nothing; streams through `conduit.stream()` (`FJS-D934`) |
 | openai | C | new, protocol connector; streams | 23 | Ollama, llama.cpp **unproved** | a local model server |
 | twilio | C | new; the built-in Basic signer (`FJS-D933`) | 12 | — | nothing |
@@ -291,6 +292,107 @@ relative imports (s3 → litestone's `sigv4.js`, tax → conduit-stripe) into
 workspace dependencies and adds each package's row to the root `CLAUDE.md`
 Packages table with ring `batteries`. `alongside/conduit-connectors.md` is the
 lane.
+
+## Basecamp onto conduit-digitalocean + conduit-hetzner
+
+Audited 2026-10-16 by running both sides: the prototype drive 11/11 and
+basecamp `api/test/compute.test.ts` 106/106. Basecamp's `digitalocean.ts` and
+`hetzner.ts` are byte-identical to extraction commit `6ad199f2`, so the logic
+has not drifted. What the move changes is the seam:
+
+- **Send shape.** Basecamp's `AccountSend` answers `{ data, status, error }`
+  with the vendor's refusal pre-parsed into `data`; the connector takes raw
+  `ConduitResult` and reads `error.raw` itself. `sendVia` in
+  `compute/accounts.ts` carries the spend guard (`ALLOW_CLOUD_SPEND`, stand-in
+  address), which stays basecamp's — edge's Cloudflare connector sends through
+  it too.
+- **Mark vs tags.** The connector takes and answers `tags: string[]`;
+  `MachineMark`, `markTags`, `selectorTag` and `markedServer` stay in basecamp
+  as the adapter.
+- **Errors.** `DigitalOceanError { kind, id, rateLimitReset }` replaces plain
+  strings; `compute.test.ts` matches `/400/` and `/refused the create/`.
+- **Sink.** Basecamp's has module-level state that `compute.test.ts` imports
+  in-process (`CREATED`, `resetSink`, `sinkBoot`), `DO_SINK_BOOT_MS` (which
+  `verify-provision.mjs` sets to 4000), `DO_SINK_TOKEN`, a logged refusal and
+  port 8122. The connector's has per-instance state and fault arms, and none
+  of those.
+
+Defects in the prototype, found by the audit:
+
+- It imports `@frontierjs/toolbelt/units` and declares no toolbelt dependency;
+  it resolves only through `link.sh`.
+- Its drive imports the workspace's `lib/drive.ts`, where the promoted shape
+  is `@frontierjs/conduit/testing`.
+- A 2xx create with no droplet id throws `kind: 'refused'`. The vendor
+  accepted it and the machine may exist. `translate()` also drops conduit's
+  `error.indeterminate`, so a lost create reads as a plain `timeout`.
+  Basecamp drops it today too, and gets away with it because
+  `fleet:reconcile` sweeps by tag.
+
+Shared by both, and not closed by the move: no real account has been called,
+and no list walks `links.pages.next`, so a fleet past 200 droplets has a
+reconcile sweep that misses every orphan after the first page.
+
+### Phase 0 — Route
+
+Goal: the owner rules whether these two enter `packages/`.
+Done when: Q1 is ruled.
+
+- [ ] 0.1 Q1 — promote both into `packages/`, or keep basecamp's copy. A
+  `link:` dependency on the sibling workspace does not work: `vendor.js`
+  packs workspace dependencies only, so the image build cannot reach it.
+  **Recommend both together** — one `sendVia` split serves both, and DO alone
+  leaves `AccountSend` half-migrated.
+
+### Phase 1 — The prototypes, in the sibling workspace
+
+Goal: each connector carries what basecamp's copy carries today.
+Done when: both drives green after `./link.sh`, with the new rows.
+
+- [ ] 1.1 Declare `@frontierjs/toolbelt` as peer and dev dependency.
+- [ ] 1.2 Drive onto `@frontierjs/conduit/testing`; the `test` script is the drive.
+- [ ] 1.3 A 2xx with no id is its own `DoFailure` kind, and `DoFailure` carries
+  `indeterminate`; drive rows updated.
+- [ ] 1.4 Sink options for boot delay and token, a reset that clears droplets
+  and the id counter, an in-process `created`/`boot` handle, a logged refusal.
+- [ ] 1.5 The same pass over conduit-hetzner.
+
+### Phase 2 — Promote
+
+Goal: both are workspace packages.
+Done when: `fli check` reports no `connector-contract` finding and the
+snapshots phase is clean.
+
+- [ ] 2.1 Move both into `packages/`, using the postmark recipe: package and
+  tsconfig shape, root `CLAUDE.md` rows (ring `batteries`), `DRIVES.md` both
+  tables, a `docs/TESTING.md` row, then `fli ws:exports`, `fli ws:deps`,
+  `fli ws:atlas` and `--as=report`.
+
+### Phase 3 — Basecamp speaks through them
+
+Goal: basecamp's compute connectors are adapters over the packages.
+Done when: `bun run test` and `bun run verify:provision` green in basecamp.
+
+- [ ] 3.1 `workspace:*` dependencies on both.
+- [ ] 3.2 Split `sendVia`: a guarded raw send, with `AccountSend` built on it for edge.
+- [ ] 3.3 `digitalocean.ts` becomes the `ComputeConnector` adapter — mark to
+  tags, tags to `serverId`, `DigitalOceanError` to basecamp's sentences.
+- [ ] 3.4 Delete `digitalocean-sink.ts`; `verify-provision.mjs` starts the
+  package's sink on 8122 with a 4000 ms boot.
+- [ ] 3.5 `compute.test.ts`: canned sends answer `ConduitResult`, the sink
+  imports move to its handle, the three message matches move.
+- [ ] 3.6 3.3–3.5 for Hetzner.
+- [ ] 3.7 `bun run image` builds with the new dependencies packed.
+- [ ] 3.8 The table row above says promoted; the sibling copies are deleted.
+
+### Phase 4 — A real account
+
+Goal: the sink's reading of the vendor docs is checked once against the vendor.
+Done when: one droplet made, enrolled and destroyed on a real DO account.
+
+- [ ] 4.1 Smallest size, `ALLOW_CLOUD_SPEND=1`, the owner's key: catalog,
+  create, poll, enroll, destroy; diff the answers against the sink.
+- [ ] 4.2 Walk `links.pages.next` on `list`, so `marked` sees past 200.
 
 ---
 
@@ -388,6 +490,8 @@ A hook is per project, so the app installs one per bucket, installs another when
 project appears, and reconciles hooks deleted on Basecamp's side.
 
 ### What is still unbuilt
+
+**Planned 2026-10-16 in `conduit-37signals.md`**, which also records what the API gained since (Agents, the event feed).
 
 Mechanism is done. What an app would still need: **the credential leg's OAuth
 kind** — `getFor(ref, who)` carries the principal (`FJS-D848`) and an answer its

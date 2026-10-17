@@ -49,6 +49,9 @@
  * never points it at `db/`.
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { Database }         from 'bun:sqlite'
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync, mkdirSync, rmdirSync, cpSync, readFileSync, readdirSync } from 'node:fs'

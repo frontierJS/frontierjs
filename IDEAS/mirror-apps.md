@@ -74,9 +74,10 @@ below that neither ruling reached.
    the per-person credential and is why it is the right test.
 4. **A Provider's commercial terms are a Data fact.** A history cap means
    the mirror's window is the Provider's and not the app's, and a row that
-   leaves it is `missingSince`, never deleted. That is `FJS-D843`'s
-   `absent:` with a second shape — Mattermost's cap, ELA's window, Transit's
-   cursor. **`missingSince` is for content, never for a grant** (`FJS-D1155`):
+   leaves it is `missingSince`, never deleted. Which rows have left is decided
+   by a complete read of a scope, and the scope is the sync's code, so no
+   schema word declares it (`FJS-D1180`). **`missingSince` is for content,
+   never for a grant** (`FJS-D1155`):
    a row whose loss is a loss of access — a membership — is deleted when the
    Provider drops it, since a stale one keeps showing a removed person the room.
 5. **The exit is a drive, or the claim is prose.** Remove the connector:
@@ -275,10 +276,15 @@ Done when: a message posted from the phone appears in `fli dev:tui`, and one typ
 ### Phase 4 — The exit
 
 Goal: the claim in rule 5 is gradable.
-Done when: `verify:mirror-exit` is in `DRIVES.md` and green, and `absent:` has its second caller.
+Done when: `verify:mirror-exit` is in `DRIVES.md` and green, and `absent:` is ruled.
 
-- [ ] 4.1 The drive: connector removed, app boots, each surface lists
-- [ ] 4.2 File the `absent:` ruling `FJS-D843` waits for, with ELA's window and Mattermost's cap as the two shapes
+- [x] 4.1 The drive: connector removed, app boots, each surface lists
+  - **A probe first**, on a copy of the owner's real mirror (108 channels, 5148 posts): deleting `@@mirror` broke three things the word had derived — the key lost its `@unique` (14 relations stopped resolving), `missingSince` would drop with its values (refused as data loss), and the foreign keys came back, which 242 replies whose root is past the first backfill's 200-post window violate (the rebuild was refused). **Three owner picks, through the question tool:** `@relation(..., enforced: false)` is author-writable, what `@@mirror` already set internally (`FJS-D1177`); `litestone mirror exit` rewrites the schema in place with the derivation written out — key `@unique`, `missingSince` last, `enforced: false` on each Provider-keyed relation, and `@system`, `@immutable`, `@local` dropped — so no table changes (`FJS-D1178`); the drive lives in `fjs-prototypes/chat` with a row in each `DRIVES.md` table (`FJS-D1179`).
+  - Built. **litestone:** the `enforced` argument and its three refusals, `src/mirror-exit.js` and the `mirror exit` command, refusing a derivation it has no rule for; catalog, `modeling.md`, `cli.md`, both snapshots. **cli:** `proof-target` skips a `../` row whose sibling is absent, since CI checks this repo out alone. **chat:** `tests/verify-mirror-exit.mjs` (`bun run verify:mirror-exit`), on a temp copy with its own key and every `CHAT_*` stripped, because `bun run` loads `.env` and it names the live server. It fills the mirror through the stand-in with a root, 200 posts and a reply before anyone links, so the orphan is made the way the real server made it. Then it cuts the connector's three files, its wiring in `app.ts` and `api/index.ts` and its dependency, checks with `rg` that the vendor's name is gone, runs `litestone mirror exit` and has `migrate dry-run` report no change. It boots with nothing behind it and checks that alice and bob list the same external ids from all six services, that bob still cannot read alice's private room, and that the reply still names its root. Vite and Chrome sign alice in and list her rooms and a room's posts with no page errors, and the `fli dev:tui` shell signs her in and lists her rooms. Ports are `portFor()`'s (the first literals, 7180, were outpost's).
+  - Proof: the drive green, 34 rows. Negative control: with the exit not writing `enforced: false`, it fails exactly on *the exit changes no table*. litestone 7600; `test/system-column.test.ts` 38, each new case failing with its change undone; cli `audit-guards` + `proofs` 40; chat `fli check` keeps one warning, which was already there.
+  - **Filed:** `FJS-3170`. After the exit nothing mints the key, so the app lists everything and can create nothing. **Not graded:** any write after the exit, and `/account/`, which still calls the removed `chat.connect`. **Unenforced, recorded as `none` in `FJS-D1179`:** CI never runs the drive.
+- [x] 4.2 File the `absent:` ruling `FJS-D843` waits for, with ELA's window and Mattermost's cap as the two shapes
+  - **The second shape did not exist.** Team Edition has no history cap (0.2), and chat never stamps `missingSince`: Mattermost states a deletion as its own `deletedAt`, and the one place chat infers absence, a person's memberships, deletes (`FJS-D1155`). ELA's day board and chat's membership list share only *a complete read is authoritative over its scope*, and the scope is code. **Owner's pick, through the question tool:** `absent:` withdrawn (`FJS-D1180`, amending `FJS-D843`), over keeping it waiting and over `absent: stamp | delete`. Precedent: Nango's deletion detection and Fivetran's re-sync both keep it in code.
 
 ---
 

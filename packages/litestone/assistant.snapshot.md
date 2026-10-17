@@ -731,11 +731,11 @@ rank String @rank(scope: stateId)
 
 **Reach another row**
 
-#### `@relation` (["name",] fields: [...], references: [...][, onDelete][, onUpdate])
+#### `@relation` (["name",] fields: [...], references: [...][, onDelete][, onUpdate][, enforced: false])
 
 tier: **essential** · legal in: on a model's field, on a trait's field · also called: fk, has many, belongs to
 
-A foreign key. The scalar column and the relation field are separate declarations; `fields` names the former and `references` the target's key.
+A foreign key. The scalar column and the relation field are separate declarations; `fields` names the former and `references` the target's key. `enforced: false` keeps the relation and emits no constraint, for a reference whose parent may never land — what `@@mirror` derives on a Provider's ids.
 
 ```lite
 author User @relation(fields: [authorId], references: [id])

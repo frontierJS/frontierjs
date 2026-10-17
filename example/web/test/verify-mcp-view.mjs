@@ -34,6 +34,10 @@
  * the views first, which is most of the run. The seed resets the shared
  * example database.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'

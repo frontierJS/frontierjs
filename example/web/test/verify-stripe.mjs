@@ -29,6 +29,9 @@
  * structure back.
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { createHmac } from 'node:crypto'
 import { portFor } from '@frontierjs/cli/core/ports.js'
 import { results, report } from './lib/report.mjs'

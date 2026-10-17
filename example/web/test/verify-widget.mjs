@@ -27,6 +27,10 @@
  * that read it. Both halves are asserted: that it works, and that it works
  * exactly once.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'

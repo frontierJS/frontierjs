@@ -36,6 +36,9 @@
  *     app this run made, and removed by that name.
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, spawnSync }                                   from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }                                             from 'node:os'

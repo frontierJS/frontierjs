@@ -23,6 +23,10 @@
  * A wrong policy here is an EMPTY SCREEN and not an error, so the negative
  * cases below (a stranger's token, no token) assert 404 rather than a message.
  */
+
+// What `fli prove` queues on: this checkout's ports and its dev database.
+export const holds = ['ports', 'db']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

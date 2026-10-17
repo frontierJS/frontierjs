@@ -296,6 +296,16 @@ describe('the readers repo-map shares', () => {
     expect(driveRows(root)).toEqual([{ where: 'shop', script: 'verify:live', run: 'node test/live.mjs' }])
   })
 
+  test('a drive holds what its script declares, read as text and never run', () => {
+    // A bare top-level throw is what importing a drive would hit; the read must not.
+    write('shop/test/live.mjs', "export const holds = ['ports', 'db']\nthrow new Error('ran')\n")
+    const row = runnables(root).find(r => r.id === 'drive:shop/verify:live')
+    expect(row.holds).toEqual(['ports', 'db'])
+
+    write('shop/test/live.mjs', "// export const holds = ['ports']\nconsole.log('no declaration')\n")
+    expect(runnables(root).find(r => r.id === 'drive:shop/verify:live').holds).toEqual([])
+  })
+
   test('readCommands reads the name a person types and the port a flag declares', () => {
     const dir = join(REPO, 'packages', 'cli', 'commands')
     const cmds = readCommands(dir, REPO, [])

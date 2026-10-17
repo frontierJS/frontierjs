@@ -46,6 +46,9 @@
  * Fixtures are minted per run (`FJS-530`, `FJS-546`) and swept in a `finally`.
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'

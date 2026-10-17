@@ -41,6 +41,9 @@
  *   bun run verify:geo
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { db } from '../../api/src/core/db.ts'
 import { distance } from '@frontierjs/toolbelt/geo'
 import { parseLength } from '@frontierjs/toolbelt/units'

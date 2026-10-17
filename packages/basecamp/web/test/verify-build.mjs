@@ -32,6 +32,9 @@
  * Needs Chrome on PATH (or $FJS_CHROME).
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'

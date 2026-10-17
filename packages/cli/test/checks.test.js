@@ -131,7 +131,10 @@ const CLEAN = {
   // — a rule that only ever skips is the failure this file exists to prevent —
   // and its absence of findings is the shape an app is meant to be in: import
   // the file, declare nothing twice.
-  'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*', '@acme/skin': '*' } }),
+  // `verify:leads` is there so `drive-holds` RUNS over the clean tree, and the
+  // drive declares the port block it asks for.
+  'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*', '@acme/skin': '*' },
+                                   scripts: { 'verify:leads': 'bun web/test/verify-leads.mjs' } }),
   // A dependency that ships CSS, so `css-token-undefined` RUNS on the clean tree
   // rather than skipping. The token below is the one the clean page reads.
   'node_modules/@acme/skin/package.json':
@@ -202,7 +205,8 @@ const CLEAN = {
   // A browser drive, so `drive-opens-chrome` RUNS over the clean tree rather
   // than skipping — a rule that only ever skips is what this file exists to
   // catch — and finds nothing, because the driver opens the browser.
-  'web/test/verify-leads.mjs':          "import { openChrome } from '@frontierjs/mesa/drive'\nconst browser = await openChrome()\n",
+  'web/test/verify-leads.mjs':          "export const holds = ['ports']\nimport { openChrome } from '@frontierjs/mesa/drive'\n" +
+                                        "const UI = await portFor(import.meta.url, 'fe')\nconst browser = await openChrome()\n",
   'web/src/resources/Lead.mesa':        resource('leads'),
   'web/src/resources/Account.mesa':     resource('accounts'),
   // The third surface. It is in the clean app because every rule must RUN
@@ -1434,6 +1438,59 @@ describe('the silent config hazards', () => {
     })
     const { findings } = only(root, 'test-port-literal')
     expect(findings.map(f => [f.line, f.message.match(/port (\d+)/)?.[1]])).toEqual([[4, '8120'], [5, '8121'], [6, '8122']])
+  })
+
+  // The env: port and env: shared db rows: a drive `fli prove` cannot queue
+  // because it never said what it binds.
+  test('a drive reaching its port block or db/ undeclared is an error, read one import deep', () => {
+    const root = tree('drive-holds', {
+      'package.json': JSON.stringify({ name: 'app', scripts: {
+        'verify':        'node web/test/verify.mjs',
+        'verify:held':   'bun web/test/verify-held.mjs',
+        'verify:direct': 'bun web/test/verify-direct.mjs',
+        'verify:prose':  'bun web/test/verify-prose.mjs',
+      } }),
+      'web/test/lib/preflight.mjs': "export const API = await portFor(import.meta.url, 'be', { env: 'dev' })\n",
+      'web/test/verify.mjs':        "import { API } from './lib/preflight.mjs'\n",
+      'web/test/verify-held.mjs':
+        "export const holds = ['ports', 'db']\nimport { API } from './lib/preflight.mjs'\nopen('../../db/shop.db')\n",
+      'web/test/verify-direct.mjs':
+        "const reg = new Database(new URL('../../db/registry.db', import.meta.url).pathname)\n",
+      'web/test/verify-prose.mjs':
+        "// reads db/shop.db and portFor(\nassert(ok, 'the row is in db/app.db')\n",
+    })
+    const { findings } = only(root, 'drive-holds')
+    expect(findings.map(f => [relative(root, f.file), f.line, f.message.match(/holds = \[[^\]]*\]/)[0]])).toEqual([
+      ['web/test/verify.mjs',        1, "holds = ['ports']"],
+      ['web/test/verify-direct.mjs', 1, "holds = ['db']"],
+    ])
+    expect(findings[0].message).toMatch(/web\/test\/lib\/preflight\.mjs:1/)
+  })
+
+  test('a held name outside the closed set is an error at the declaration', () => {
+    const root = tree('drive-holds-name', {
+      'package.json': JSON.stringify({ name: 'app', scripts: { 'verify': 'bun test/verify.mjs' } }),
+      'test/verify.mjs': "// header\nexport const holds = ['ports', 'chrome']\n",
+    })
+    const { findings } = only(root, 'drive-holds')
+    expect(findings.map(f => f.line)).toEqual([2])
+    expect(findings[0].message).toMatch(/"chrome"/)
+  })
+
+  test('in the repo run a nested app\'s drives are left to its own run', () => {
+    const drive = "import { P } from './p.mjs'\n"
+    const root = tree('drive-holds-repo', {
+      'packages/store/package.json':      JSON.stringify({ name: 'store', scripts: { 'verify:studio': 'bun test/verify.mjs' } }),
+      'packages/store/test/verify.mjs':   drive,
+      'packages/store/test/p.mjs':        "export const P = process.env.FLI_PORT_API\n",
+      'packages/fleet/db/schema.lite':    'model Server { id Integer @id }\n',
+      'packages/fleet/package.json':      JSON.stringify({ name: 'fleet', scripts: { 'verify': 'bun web/test/verify.mjs' } }),
+      'packages/fleet/web/test/verify.mjs': drive,
+      'packages/fleet/web/test/p.mjs':    "export const P = await portFor(import.meta.url, 'be')\n",
+    })
+    expect(only(root, 'drive-holds', { scope: 'repo' }).findings.map(f => relative(root, f.file)))
+      .toEqual(['packages/store/test/verify.mjs'])
+    expect(only(join(root, 'packages/fleet'), 'drive-holds').findings).toHaveLength(1)
   })
 
   test('a port literal is excused by an allowance keyed to the file, with its reason', () => {

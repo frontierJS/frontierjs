@@ -27,6 +27,9 @@
 //   Backgrounding a server from a tool call is unreliable; this spawns, polls
 //   until each answers, asserts, and kills.
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn } from 'node:child_process'
 import { rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'

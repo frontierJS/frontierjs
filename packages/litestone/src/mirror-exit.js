@@ -23,6 +23,9 @@ import { resolve } from 'node:path'
 import { parse, parseFile, inlineImports, resolveImportSpecifier } from './core/parser.js'
 import { _closingParen, _commentAt } from './mutate.js'
 
+// Written out: `unique`. Dropped with the word: `system`, `immutable`.
+const EXIT_KNOWS = new Set(['unique', 'system', 'immutable'])
+
 /**
  * The schema at `filePath` with every `@@mirror` replaced by what it derived.
  * Returns `{ text, models }` — `models` names each model it rewrote. Throws when
@@ -43,6 +46,15 @@ export function mirrorExit(filePath) {
         if (new RegExp(`^\\s*${name}\\s`).test(lines[i])) return i
       }
       throw new Error(`model ${model.name}: no line declares field '${name}'`)
+    }
+
+    // Each derived attribute is written out or dropped by a decision made
+    // here, so one `expandMirror` gains later is refused rather than lost.
+    for (const field of model.fields) {
+      const unknown = field.generated === 'mirror' && field.name !== 'missingSince'
+        ? `the column '${field.name}'`
+        : field.attributes.filter(a => a.generated === 'mirror' && !EXIT_KNOWS.has(a.kind)).map(a => `@${a.kind}`)[0]
+      if (unknown) throw new Error(`model ${model.name}: @@mirror derives ${unknown}, which mirrorExit has no rule for — say in src/mirror-exit.js whether it survives the exit`)
     }
 
     const key = model.attributes.find(a => a.kind === 'mirror').key

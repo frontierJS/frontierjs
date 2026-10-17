@@ -17,6 +17,10 @@
  *     for a broken image and the element is in the DOM either way, so every
  *     image assertion below reads naturalWidth and never querySelector alone.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

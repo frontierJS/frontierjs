@@ -719,7 +719,7 @@ export function outpostCredential(app: OutpostDeps & { hostKey?: string | null }
         }
         return {
           secret:  app.hostKey,
-          session: { userId: OUTPOST_HOST_PRINCIPAL, userType: 'service', authMethod: 'outpost', workspaceId: null },
+          session: { userId: OUTPOST_HOST_PRINCIPAL, userType: 'service', authMethod: 'outpost' },
         }
       }
       const serverId = Object.values(OUTPOST_ENDPOINTS).map(e => e.fromRequest(req)).find(Boolean) ?? null

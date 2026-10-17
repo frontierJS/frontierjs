@@ -28,6 +28,9 @@
  *   - SIGTERM, then SIGKILL after a grace, or the next run reports on this one.
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn }                  from 'node:child_process'
 import { mkdtempSync, rmSync }    from 'node:fs'
 import { tmpdir }                 from 'node:os'

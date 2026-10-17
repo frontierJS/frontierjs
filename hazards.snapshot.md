@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 172**.
+Graded: **13 of 173**.
 
 ## data — 3 of 60
 
@@ -232,7 +232,7 @@ Graded: **13 of 172**.
 | Nothing here mocks a module, and the reason is a design rule. | **none** |
 | A test may not name a port, and the reason is the runner. | `test-port-literal` |
 
-## ui — 4 of 51
+## ui — 4 of 52
 
 ### Routes, prerender and static
 
@@ -294,6 +294,7 @@ Graded: **13 of 172**.
 | A `type="number"` or `"range"` input binds a NUMBER, and an empty box binds `undefined`. | **none** |
 | In a `.md` file `{…}` interpolates a bare path only; anything else stays literal text, with no error. | **none** |
 | A compiled component called directly instead of through `mount()` renders and never answers a click. | **none** |
+| A prop a component does not declare is not an error: it is the component's `$attributes`, spread onto its root element | **none** |
 | A parent sends a prop only when ITS value changed, so re-sending the same value does not reset a child's own edit | **none** |
 | A component reaches the DOM through nodes it owns. | **none** |
 

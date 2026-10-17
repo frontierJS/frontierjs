@@ -740,6 +740,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `haven.md` — Haven: a place in the terminal anyone with `fli` installed can walk into; one hosted FJS app, `web/` lowered to the terminal, sprites probed
 - `mesa-kit-primitives.md` — the primitives the Mesa kit keeps re-writing
 - `mirror-apps.md` — a mirror app: an FJS app whose truth lives in a Provider, on purpose; Mattermost as the test case
+- `conduit-37signals.md` — Basecamp over conduit for Kobami, built in halves: send first, then the event feed; Mattermost's Phase 2 as the shape
 - `no-port-app.md` — the app with no port: vendor-hosted and never-deployed as release artifact kinds
 - `on-page-editing.md` — the ask panel's next four moves, ranked by what on-page editors love; § Prompt economy is what a pick sends the model
 - `oracle-reasoning.md` — how it should reason

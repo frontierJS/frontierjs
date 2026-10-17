@@ -361,6 +361,14 @@ export interface Credential {
    * only difference is which columns are null.
    */
   totpLastStep?: number | null
+  /**
+   * OAuth only — true when the provider was attached to an account that
+   * already existed, which the mailbox vouched for before the provider did.
+   * `providerOnly` and the reset refusal count only an unmarked `oauth:*`
+   * row: an account a provider MADE has nothing but the provider securing it,
+   * and one the mailbox made keeps the mailbox as a way in (`FJS-D1011`).
+   */
+  linked?: boolean | null
   createdAt: string
 }
 
@@ -385,6 +393,14 @@ export interface CredentialCreate {
    * only difference is which columns are null.
    */
   totpLastStep?: number | null
+  /**
+   * OAuth only — true when the provider was attached to an account that
+   * already existed, which the mailbox vouched for before the provider did.
+   * `providerOnly` and the reset refusal count only an unmarked `oauth:*`
+   * row: an account a provider MADE has nothing but the provider securing it,
+   * and one the mailbox made keeps the mailbox as a way in (`FJS-D1011`).
+   */
+  linked?: boolean | null
 }
 
 export interface CredentialUpdate {
@@ -398,6 +414,7 @@ export interface CredentialUpdate {
   tokenExpiresAt?: string | null
   scope?: string | null
   totpLastStep?: number | null
+  linked?: boolean | null
 }
 
 export interface CredentialWhere extends WhereBase {
@@ -411,6 +428,7 @@ export interface CredentialWhere extends WhereBase {
   tokenExpiresAt?: string | WhereOp<string> | null
   scope?: string | WhereOp<string> | null
   totpLastStep?: number | WhereOp<number> | null
+  linked?: boolean | WhereOp<boolean> | null
   createdAt?: string | WhereOp<string> | null
   AND?: CredentialWhere[]
   OR?:  CredentialWhere[]

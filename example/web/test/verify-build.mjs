@@ -6,6 +6,10 @@
  * stopped here, because a server left running from a previous build serves that
  * build — the failure then looks like a code change that did not take.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

@@ -28,6 +28,9 @@
 // The shell runs with a throwaway XDG_DATA_HOME, so the developer's own app
 // data — their session included — is never touched.
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, spawnSync }                                  from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }                                            from 'node:os'

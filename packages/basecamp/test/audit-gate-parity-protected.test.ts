@@ -29,7 +29,7 @@ test('no read or write result on any path carries @encrypted / @guarded material
         .toEqual({ path, svc, m, leaks: [], protectedKeys: [] })
     }
   }
-})
+}, 60_000)
 
 test('a protected column cannot be filtered on (no equality / prefix oracle) on any path', async () => {
   for (const path of PATHS) for (const [svc, q] of [

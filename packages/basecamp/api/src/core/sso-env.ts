@@ -19,7 +19,7 @@ export interface SsoProvider {
   }
 }
 
-type Source = Record<string, string | undefined>
+type Source = Record<string, unknown>
 
 // The variables a provider needs, all of them. `oidc` has no endpoints of its
 // own, so it names three more.

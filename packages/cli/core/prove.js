@@ -45,8 +45,11 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-const TAIL   = 30
-const POLLMS = 250
+import { HOLDS } from './runnables.js'
+
+const TAIL     = 30
+const POLLMS   = 250
+const HOLDPOLL = 1000
 
 /**
  * Run every target the proof rows name, in order.
@@ -57,10 +60,11 @@ const POLLMS = 250
  * @param {object}   o.procs      `{ startRow, stopRow, childOf, outputOf }` from `children.js`
  * @param {Function} o.answering  `port → Promise<boolean>`
  * @param {Function} [o.skip]     `target → string[] | null` — the open rows a drive is skipped on
+ * @param {Function} [o.hold]     `resource → { ok, release } | { ok: false, by }` — `treeHold(root)`
  * @param {Function} [o.say]      one progress line
  * @returns {Promise<{ ran: object[], skipped: object[], read: object[], gone: object[] }>}
  */
-export async function prove({ proofs, rows, procs, answering, skip = () => null, say = () => {}, bootMs = 60_000, runMs = 600_000, sleep = ms => new Promise(r => setTimeout(r, ms)) }) {
+export async function prove({ proofs, rows, procs, answering, skip = () => null, hold = () => ({ ok: true, release() {} }), say = () => {}, bootMs = 60_000, runMs = 600_000, holdMs = 600_000, sleep = ms => new Promise(r => setTimeout(r, ms)) }) {
   const byId = new Map(rows.map(r => [r.id, r]))
   const seen = new Set()
   const out  = { ran: [], skipped: [], read: [], gone: [] }
@@ -86,7 +90,7 @@ export async function prove({ proofs, rows, procs, answering, skip = () => null,
       const row   = { id: t.id ?? `script:${t.dir}/${t.name}`, name: t.name, dir: t.dir, kind: drive?.kind ?? 'script', argv }
 
       say(`▸ ${t.dir}: ${t.command}`)
-      out.ran.push(await one(row, drive?.needs ?? [], { byId, procs, answering, say, bootMs, runMs, sleep }))
+      out.ran.push(await one(row, drive?.needs ?? [], drive?.holds ?? [], { byId, procs, answering, hold, say, bootMs, runMs, holdMs, sleep }))
     }
   }
   return out
@@ -123,10 +127,15 @@ export function brokenDrives(issues, name) {
 
 const rx = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-async function one(row, needs, ctx) {
+async function one(row, needs, holds, ctx) {
   const t0      = Date.now()
   const started = []
   const result  = (ok, extra) => ({ name: row.name, dir: row.dir, command: row.argv.join(' '), ok, ms: Date.now() - t0, ...extra })
+
+  const unknown = holds.filter(h => !HOLDS.includes(h))
+  if (unknown.length) return result(false, { reason: `${row.name} declares holds \`${unknown.join('`, `')}\`, which is no resource (${HOLDS.join(', ')})` })
+  const held = await takeHolds(holds, ctx)
+  if (held.reason) return result(false, { reason: held.reason })
 
   try {
     for (const need of needs) {
@@ -159,7 +168,27 @@ async function one(row, needs, ctx) {
       const port = ctx.byId.get(id)?.port
       for (let waited = 0; typeof port === 'number' && waited < 10_000 && await ctx.answering(port); waited += POLLMS) await ctx.sleep(POLLMS)
     }
+    for (const h of held.taken.reverse()) h.release()
   }
+}
+
+// In `HOLDS` order always, so two runs each waiting on a second resource while
+// holding a first cannot be waiting on each other.
+async function takeHolds(names, ctx) {
+  const taken = []
+  for (const name of HOLDS.filter(h => names.includes(h))) {
+    for (let waited = 0, told = false; ; waited += HOLDPOLL) {
+      const got = ctx.hold(name)
+      if (got.ok) { taken.push(got); break }
+      if (waited >= ctx.holdMs) {
+        for (const h of taken.reverse()) h.release()
+        return { taken: [], reason: `${name} still held by pid ${got.by ?? '?'} after ${ctx.holdMs / 1000}s — another fli prove in this tree` }
+      }
+      if (!told) { ctx.say(`  waiting on ${name} — held by pid ${got.by ?? '?'}, another fli prove in this tree`); told = true }
+      await ctx.sleep(HOLDPOLL)
+    }
+  }
+  return { taken }
 }
 
 async function boot(nrow, ctx) {

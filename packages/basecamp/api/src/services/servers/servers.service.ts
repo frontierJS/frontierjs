@@ -1095,8 +1095,10 @@ export default createService({
     // or that moves address without going unreachable in between — never
     // transitions, so it was never registered, and every outbound call to it
     // failed as `target_not_found` while the server screen showed it healthy.
+    const conduit = $.app.conduit
+    if (!conduit) throw new BadRequest('Outbound delivery is not configured on this server — no conduit plugin')
     const target = `outpost:${id}`
-    const known  = await $.app.conduit.resolve(target).catch(() => null)
+    const known  = await conduit.resolve(target).catch(() => null)
 
     // WHICH key this app signs TO the machine with, and it is the same
     // question `core/hooks.ts` answers for the inbound half. A machine that
@@ -1124,12 +1126,12 @@ export default createService({
     if (data.outpost_url && !pinnable) {
       // A target already held is taken away too: one registered before the
       // machine lost its pin would go on carrying commands in the clear.
-      if (known) await $.app.conduit?.deregister(target)
+      if (known) await conduit.deregister(target)
       $.app.logger.warn('conduit: outpost not registered — no https URL or no enrolled certificate', {
         server_id: id, url: data.outpost_url, has_cert: !!server.outpostCert })
     } else if (pinnable && (known?.address !== data.outpost_url || known?.pinned_cert !== server.outpostCert
                             || known?.resilience?.deadline_ms !== DEPLOY_TIMEOUT_MS)) {
-      await $.app.conduit.register({
+      await conduit.register({
         id:            target,
         kind:          'outpost',
         protocol:      'http',
@@ -1153,7 +1155,7 @@ export default createService({
       $.app.logger.info('conduit: outpost registered', { server_id: id, url: data.outpost_url })
     } else if (known) {
       // Touch last_seen_at on every other heartbeat (non-critical).
-      $.app.conduit.register({ ...known, last_seen_at: Date.now() }).catch(() => {})
+      conduit.register({ ...known, last_seen_at: Date.now() }).catch(() => {})
     }
 
     return updated

@@ -33,6 +33,10 @@
  * The trap this shape has: every route is under `/api`, so `/mcp` is a 404 and
  * reads exactly like a plugin that did not mount.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

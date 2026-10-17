@@ -2554,7 +2554,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">164 rows · 271 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">165 rows · 272 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>a migration, db/migrations/, or a column whose KIND of time changed</td>
       <td>example: verify:migrate — the only thing that reads the committed files, since autoMigrate means nothing else ever does</td>
@@ -2903,6 +2903,10 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>an alert rule being EVALUATED — basecamp/api/src/core/alerting.ts, alert-evaluate.job.ts, AlertRule's three condition columns</td>
       <td>packages/basecamp: bun run test — the only place a threshold is compared to a series at all, and the only test here that runs a fan-out through a REAL conduit into a REAL HTTP receiver, because a fake one agrees with a body built wrong. Every not-fired row is PAIRED with the same series one value over the line: a fix that fired nothing satisfies any test asking only about the refusals. The row that must stay is a series that STOPPED does not resolve — a scrape that died and a value that came back inside its threshold draw the same flat line, so an evaluator that resolves on no-data closes the incident an outage just opened</td>
       <td><span class="tally"><b>packages/basecamp</b>bun run test</span></td>
+    </tr><tr data-row>
+      <td>@@mirror's derivation (expandMirror in parser.js), litestone mirror exit (src/mirror-exit.js), or a relation's enforced: false</td>
+      <td>../fjs-prototypes/chat: verify:mirror-exit — the only place a mirror is filled by a sync, cut loose and booted again; litestone's test/system-column.test.ts holds the DDL-equality half without a Provider</td>
+      <td><span class="tally"><b>../fjs-prototypes/chat</b>verify:mirror-exit</span></td>
     </tr><tr data-row>
       <td>conduit · notifications · email-kit</td>
       <td>example: verify:notify</td>

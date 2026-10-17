@@ -33,6 +33,9 @@
  * is a machine talking to a machine, so it costs nothing against the limiter.
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { execFileSync }  from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

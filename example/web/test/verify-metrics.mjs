@@ -19,6 +19,9 @@
 // naive implementation too, which is the shape that lets this class of bug live
 // for a year.
 
+// What `fli prove` queues on: this checkout's dev database.
+export const holds = ['db']
+
 import { spawnSync } from 'node:child_process'
 
 const HOUR   = 3_600_000

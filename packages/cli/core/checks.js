@@ -49,7 +49,7 @@ import { parseFrontmatter }                from '@frontierjs/toolbelt/frontmatte
 // importing each other is a cycle. Re-exported because it is part of this
 // module's surface and its callers should not have to care.
 export { findApps } from './runnables.js'
-import { runnables, findApps }    from './runnables.js'
+import { runnables, findApps, driveRows, driveScripts, declaredHolds, HOLDS } from './runnables.js'
 import { appSchemaViews, appSchemaModels, shippedSchemas } from './app-schema.js'
 import { binCommand }                 from './snapshots.js'
 import { DRIVES_FILE, readProofs, resolveRun, reachable, rottedPaths, packageDirs } from './proofs.js'
@@ -96,6 +96,8 @@ export const RULES = [
   { id: 'test-port-literal',   scope: 'app',  severity: 'error', invariant: null,
     hazard: 'api: A test may not name a port',
     title: 'a test asks for its port with portFor(), never a literal' },
+  { id: 'drive-holds',          scope: 'both', severity: 'error', invariant: null,
+    title: 'a drive that reaches its checkout\'s ports or dev database declares it in holds' },
   { id: 'body-tag-in-comment',  scope: 'app',  severity: 'error', invariant: null,
     hazard: 'ui: Vite injects the built',
     title: 'the body tag is never written inside a comment' },
@@ -983,6 +985,74 @@ const CHECKS = {
           break
         }
       })
+    }
+    return { findings }
+  },
+
+  // `fli prove` queues two proves in one tree on what each drive declares it
+  // holds, so a drive that binds the checkout's port block or opens its dev
+  // database without saying so runs beside the other and collides — the
+  // `env: port` and `env: shared db` rows. Read as text, one hop deep: the
+  // drive and each module it imports by relative path, because the example
+  // drives reach their ports through `lib/preflight.mjs`. `ports` is read off
+  // `portFor(` or `FLI_PORT_`, `db` off a path literal under `db/` naming a
+  // `.db` file. A drive reaching the dev database only through the API it
+  // drives is held by `ports` already.
+  //
+  // Scope `both`, and a nested app's drives are left to that app's own run,
+  // as `drive-opens-chrome` does.
+  'drive-holds': ({ root }) => {
+    const apps = findApps(root).filter(a => a !== root)
+    const rows = driveRows(root).filter(d => {
+      const dir = join(root, d.where)
+      return !apps.some(a => !relative(a, dir).startsWith('..'))
+    })
+    if (!rows.length) return { skipped: 'no verify script' }
+    const findings = []
+    for (const d of rows) {
+      const scripts = driveScripts(root, d).filter(existsSync)
+      if (!scripts.length) continue
+      const held = new Set()
+      for (const path of scripts) {
+        const src  = readFileSync(path, 'utf8')
+        const decl = declaredHolds(src)
+        for (const name of decl?.names ?? []) {
+          held.add(name)
+          if (HOLDS.includes(name)) continue
+          findings.push({
+            file: path,
+            line: lineOf(src, decl.index),
+            message: `\`${d.script}\` declares it holds "${name}", which is not one of ${HOLDS.join(', ')}. ` +
+                     '`fli prove` fails the drive on it rather than holding nothing.',
+          })
+        }
+      }
+      const binds = {}
+      for (const path of scripts) {
+        const code = readCode(path)
+        const read = [[path, code]]
+        for (const m of code.matchAll(/\bimport\s+(?:[^'";]*?\sfrom\s+)?['"](\.{1,2}\/[^'"]+)['"]/g)) {
+          const dep = resolve(dirname(path), m[1])
+          if (existsSync(dep)) read.push([dep, readCode(dep)])
+        }
+        for (const [file, text] of read) {
+          for (const [name, re] of [['ports', DRIVE_BINDS_PORTS], ['db', DRIVE_BINDS_DB]]) {
+            const m = re.exec(text)
+            if (m && !binds[name]) binds[name] = { file, line: lineOf(text, m.index) }
+          }
+        }
+      }
+      for (const [name, at] of Object.entries(binds)) {
+        if (held.has(name)) continue
+        const where = at.file === scripts[0] ? `line ${at.line}` : `${relative(root, at.file)}:${at.line}`
+        findings.push({
+          file: scripts[0],
+          line: at.file === scripts[0] ? at.line : 1,
+          message: `\`${d.script}\` ${name === 'ports' ? "reaches this checkout's port block" : 'opens a database under db/'} ` +
+                   `(${where}) and does not declare it, so a second \`fli prove\` in this tree runs beside it ` +
+                   `and collides. Add \`export const holds = [${[...held, name].filter(n => HOLDS.includes(n)).map(n => `'${n}'`).join(', ')}]\`.`,
+        })
+      }
     }
     return { findings }
   },
@@ -2912,6 +2982,9 @@ const CHECKS = {
       }
       for (const t of targets) {
         if (t.kind !== 'unknown') continue
+        // A sibling checkout (`../fjs-prototypes/chat`) is graded where it is
+        // present; CI checks out this repository alone (FJS-D1179).
+        if (t.where.startsWith('../') && t.dir === null) continue
         findings.push({
           file: join(root, DRIVES_FILE), line: p.line,
           message: `the proof table sends a change in "${p.changed}" to \`${t.where}\`: ` +
@@ -5535,6 +5608,12 @@ console.log(JSON.stringify(out))
 `
 
 const lineOf = (text, index) => text.slice(0, index).split('\n').length
+
+// What `drive-holds` reads as binding a resource: the port block is asked for,
+// the database is a path literal with no space in it, so a sentence naming
+// `db/app.db` in an assertion message is not one.
+const DRIVE_BINDS_PORTS = /\bportFor\s*\(|\bFLI_PORT_/
+const DRIVE_BINDS_DB    = /(['"`])[^'"`\s]*\bdb\/[^'"`\s]*\.db\b[^'"`\s]*\1/
 
 // Every script under a directory whose name `dirs` matches, a nested app left
 // to that app's own run.

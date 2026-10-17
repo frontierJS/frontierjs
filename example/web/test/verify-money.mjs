@@ -38,6 +38,10 @@
  * under a run prefix and swept at the start, which also exercises the half of
  * `discounts` a shopper may never reach.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

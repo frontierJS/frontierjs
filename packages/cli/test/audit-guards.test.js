@@ -72,6 +72,26 @@ test('proof-target reports a Run cell that resolves to no target at all', () => 
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
+test('proof-target grades a sibling checkout only where it is present', () => {
+  const table = (script) => ({
+    'ws/package.json': '{ "name": "ws", "scripts": {} }',
+    'ws/DRIVES.md': [
+      '## Which drive proves a change', '',
+      '| Changed | Run |', '| --- | --- |',
+      `| \`src/mirror-exit.js\` | \`../app\`: \`${script}\` |`,
+      '',
+    ].join('\n'),
+  })
+  const absent = tree(table('verify:exit'))
+  const present = tree({ ...table('verify:gone'), 'app/package.json': '{ "name": "app", "scripts": { "verify:exit": "true" } }' })
+  try {
+    expect(runChecks({ root: join(absent, 'ws'), scope: 'repo', only: ['proof-target'] }).findings).toEqual([])
+    const { findings } = runChecks({ root: join(present, 'ws'), scope: 'repo', only: ['proof-target'] })
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/declares no such script/)
+  } finally { for (const r of [absent, present]) rmSync(r, { recursive: true, force: true }) }
+})
+
 test('command-resolves finds a typescript hoisted to a parent node_modules', () => {
   const real = join(import.meta.dir, '..', '..', '..', 'node_modules', 'typescript')
   if (!existsSync(real)) return

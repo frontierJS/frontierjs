@@ -1582,9 +1582,9 @@ one ingress, a poll, and a sync that is a machine. Mattermost adds the two
 ELA never needed: a WebSocket the app dials and must hold open, which neither
 Target nor Receiver names (`mirror-apps.md` Q4), and a human's message that
 must be posted as that human, so the app keeps a credential per user with no
-SSO to lean on (Team Edition dropped it in v11). Its history cap is the
-Provider's window rather than the app's, which is the second caller
-`FJS-D843`'s `absent:` waits for. And it is the first mirror app built to be
+SSO to lean on (Team Edition dropped it in v11). It was taken for
+`FJS-D843`'s second `absent:` caller, and Team Edition has no history cap, so
+the word was withdrawn instead (`FJS-D1180`). And it is the first mirror app built to be
 left: the phone is Mattermost's until the mobile surface exists, so the exit
 is part of the design rather than a wish.
 

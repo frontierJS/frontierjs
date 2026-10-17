@@ -43,6 +43,10 @@
  * than sleeping once — a fixed sleep is a flake that only shows up on a loaded
  * machine, which is the machine CI runs on.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

@@ -29,6 +29,9 @@
  *   - Runs under bun: the seed and the workspace lookup reach `bun:sqlite`.
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync }       from 'node:child_process'
 import { mkdtempSync, rmSync }       from 'node:fs'
 import { tmpdir }                    from 'node:os'

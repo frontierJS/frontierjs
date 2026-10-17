@@ -313,7 +313,8 @@ describe('over this repo', () => {
     const bad  = []
     for (const p of readProofs(REPO)) {
       for (const t of resolveRun(p.run, { root: REPO, rows })) {
-        if (t.kind === 'unknown') bad.push(`DRIVES.md:${p.line} ${t.where}: ${t.name}`)
+        // A sibling checkout is graded where it is present (FJS-D1179).
+        if (t.kind === 'unknown' && !(t.where.startsWith('../') && t.dir === null)) bad.push(`DRIVES.md:${p.line} ${t.where}: ${t.name}`)
       }
     }
     expect(bad).toEqual([])

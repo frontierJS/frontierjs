@@ -52,6 +52,10 @@
  * every run of the letter s with a space. `Basket (1 item)` comes back as
  * `Ba ket (1 item)` and reads exactly like a rendering bug in the component.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'

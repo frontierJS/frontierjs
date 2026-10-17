@@ -42,6 +42,9 @@
 //   Backgrounding a server from a tool call is unreliable; this spawns, polls
 //   until each answers, asserts, and kills.
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'

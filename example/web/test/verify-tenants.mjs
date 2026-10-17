@@ -30,6 +30,9 @@
  * The API must be up (`bun run api`).
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { createLitestoneAuth } from '@frontierjs/auth'
 import { shops, DEFAULT_SHOP } from '../../api/src/core/db.ts'
 import { requireServers, PORTS } from './lib/preflight.mjs'

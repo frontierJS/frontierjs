@@ -49,16 +49,18 @@ function runner(app: App) {
 
   async function executeJob(job: Job): Promise<string> {
     if (!job.command) throw new Error('Job has no command configured')
+    const conduit = app.conduit
+    if (!conduit) throw new Error('Outbound delivery is not configured on this server — no conduit plugin')
 
     const serverId    = job.appId ? await resolveServer(job.appId) : null
     const outpostTarget = serverId ? `outpost:${serverId}` : null
 
     // No outpost — try local:basecamp sidecar target
     if (!outpostTarget) {
-      const local = await app.conduit.resolve('local:basecamp')
+      const local = await conduit.resolve('local:basecamp')
       if (!local) throw new Error('No server assigned and no local target registered')
 
-      const result = await app.conduit.send<{ exit_code: number; stdout: string; stderr: string }>({
+      const result = await conduit.send<{ exit_code: number; stdout: string; stderr: string }>({
         target: 'local:basecamp',
         method: 'POST',
         path:   '/exec',
@@ -70,7 +72,7 @@ function runner(app: App) {
       return result.data?.stdout ?? ''
     }
 
-    const result = await app.conduit.send<{ exit_code: number; stdout: string; stderr: string }>({
+    const result = await conduit.send<{ exit_code: number; stdout: string; stderr: string }>({
       target:     outpostTarget,
       method:     'POST',
       path:       '/exec',

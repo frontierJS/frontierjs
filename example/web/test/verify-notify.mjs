@@ -46,6 +46,9 @@ const SINK = process.env.MAIL_SINK_URL ?? `http://localhost:${PORTS.mail}`
 const RUN  = Date.now().toString(36).slice(-6).toUpperCase()
 const REF  = `ORD-N${RUN}`
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 

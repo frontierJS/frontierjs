@@ -31,6 +31,9 @@
 //  · Never start an evaluated expression with `return` on its own line: ASI
 //    makes it `return;` and the assertion reads back `undefined`.
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { requireServers, PORTS } from './lib/preflight.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 

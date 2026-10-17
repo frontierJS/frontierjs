@@ -23,6 +23,9 @@
  * wrap: `return { hint: … }`.
  */
 
+// What `fli prove` queues on: this checkout's ports and its dev database.
+export const holds = ['ports', 'db']
+
 import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'

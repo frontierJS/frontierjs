@@ -60,6 +60,9 @@
  * count is a delta rather than an absolute.
  */
 
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn }         from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { createClient }  from '@frontierjs/litestone'

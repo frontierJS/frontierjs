@@ -6,8 +6,12 @@
 // start nothing, or a stale server from another tree passes it (`FJS-740`).
 
 import { describe, test, expect } from 'bun:test'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { prove, knownFailures, brokenDrives } from '../core/prove.js'
+import { treeHold } from '../core/guard.js'
 
 const API  = { id: 'surface:example/api', name: 'api', dir: 'example', kind: 'surface', port: 8110, argv: ['bun', 'run', 'api'] }
 const SEED = { id: 'task:example/db:seed', name: 'db:seed', dir: 'example', kind: 'task', port: null, argv: ['bun', 'run', 'db:seed'] }
@@ -138,6 +142,134 @@ describe('prove', () => {
 
     expect(w.log).toEqual(['start test:widgets', 'stop test:widgets'])
     expect(out.ran[0]).toMatchObject({ ok: true, command: 'bun run test:widgets' })
+  })
+})
+
+describe('holds', () => {
+  const held = (name, holds) => ({ ...drive(name), holds })
+
+  // `busy` resources answer held by a pid until `free` is called, as a peer's prove would.
+  function table(busy = []) {
+    const log  = []
+    const busyNow = new Set(busy)
+    return {
+      log, free: name => busyNow.delete(name),
+      hold(name) {
+        if (busyNow.has(name)) { log.push(`wait ${name}`); return { ok: false, by: 4242 } }
+        log.push(`take ${name}`)
+        return { ok: true, release: () => log.push(`release ${name}`) }
+      },
+    }
+  }
+
+  const go = (w, t, d, extra = {}) => prove({ proofs: [{ targets: [target(d)] }], rows: [d], procs: w.procs, answering: w.answering, sleep: async () => {}, hold: t.hold, ...extra })
+
+  test('takes what the drive holds in the table order, and releases after it stops', async () => {
+    const d = held('verify:pay', ['db', 'ports'])
+    const w = world()
+    const t = table()
+    const out = await go(w, t, d)
+
+    expect(out.ran[0].ok).toBe(true)
+    expect(t.log).toEqual(['take ports', 'take db', 'release db', 'release ports'])
+  })
+
+  test('a drive holding nothing asks for nothing', async () => {
+    const w = world()
+    const t = table()
+    await go(w, t, drive('verify:cart'))
+    expect(t.log).toEqual([])
+  })
+
+  test('waits while another run holds the resource, says so once, and then runs', async () => {
+    const d = held('verify:pay', ['ports'])
+    const w = world()
+    const t = table(['ports'])
+    const said = []
+    let polls = 0
+    const out = await go(w, t, d, { say: l => said.push(l), sleep: async () => { if (++polls === 3) t.free('ports') } })
+
+    expect(out.ran[0].ok).toBe(true)
+    expect(t.log.filter(l => l === 'wait ports')).toHaveLength(3)
+    expect(said.filter(l => l.includes('waiting on ports'))).toHaveLength(1)
+    expect(said.find(l => l.includes('waiting on ports'))).toContain('4242')
+    expect(w.log).toEqual(['start verify:pay', 'stop verify:pay'])
+  })
+
+  test('a hold never freed fails the drive by name and starts nothing', async () => {
+    const d = held('verify:pay', ['db'])
+    const w = world()
+    const t = table(['db'])
+    const out = await go(w, t, d, { holdMs: 3000 })
+
+    expect(out.ran[0].ok).toBe(false)
+    expect(out.ran[0].reason).toContain('db still held by pid 4242')
+    expect(w.log).toEqual([])
+  })
+
+  test('a second resource that cannot be taken gives back the first', async () => {
+    const d = held('verify:pay', ['ports', 'db'])
+    const w = world()
+    const t = table(['db'])
+    const out = await go(w, t, d, { holdMs: 1000 })
+
+    expect(out.ran[0].ok).toBe(false)
+    expect(t.log).toContain('release ports')
+    expect(t.log.at(-1)).toBe('release ports')
+  })
+
+  test('a resource the table does not name fails the drive rather than holding nothing', async () => {
+    const d = held('verify:pay', ['port'])
+    const w = world()
+    const t = table()
+    const out = await go(w, t, d)
+
+    expect(out.ran[0].reason).toContain('`port`')
+    expect(out.ran[0].reason).toContain('ports, db')
+    expect(t.log).toEqual([])
+    expect(w.log).toEqual([])
+  })
+
+  test('a failed drive still releases', async () => {
+    const d = held('verify:pay', ['ports'])
+    const w = world({ codes: { [d.id]: 1 } })
+    const t = table()
+    const out = await go(w, t, d)
+
+    expect(out.ran[0].ok).toBe(false)
+    expect(t.log.at(-1)).toBe('release ports')
+  })
+})
+
+describe('treeHold', () => {
+  test('one checkout holds a resource once, another checkout and another resource are free, and release gives it back', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fli-holds-'))
+    try {
+      const a = treeHold('/tmp/tree-a', dir)
+      const b = treeHold('/tmp/tree-b', dir)
+
+      const first = a('ports')
+      expect(first.ok).toBe(true)
+      // Held by this very process, which is alive, so a second asker is refused naming it.
+      expect(a('ports')).toEqual({ ok: false, by: process.pid })
+      expect(a('db').ok).toBe(true)
+      expect(b('ports').ok).toBe(true)
+
+      first.release()
+      expect(a('ports').ok).toBe(true)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  test('a hold left by a process that died is taken over', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fli-holds-'))
+    try {
+      const hold = treeHold('/tmp/tree-a', dir)
+      hold('ports')
+      // Rewrite the guard as a pid nothing is running.
+      const [file] = readdirSync(dir)
+      writeFileSync(join(dir, file), '2147483646')
+      expect(hold('ports').ok).toBe(true)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
 

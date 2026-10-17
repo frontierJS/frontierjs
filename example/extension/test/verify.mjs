@@ -30,6 +30,10 @@
  * tab. `Target.createTarget` at the extension URL is browser-initiated and is
  * how a person opening the popup reaches it.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'

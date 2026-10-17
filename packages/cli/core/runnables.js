@@ -326,6 +326,35 @@ export function driveRows(root) {
   return out.sort((a, b) => (a.where + a.script).localeCompare(b.where + b.script))
 }
 
+/** What a drive may declare it holds. `ports` is the checkout's port block, `db` its dev database. */
+export const HOLDS = ['ports', 'db']
+
+/** The script files a drive's run line names. A line may run several (`verify:studio`). */
+export function driveScripts(root, d) {
+  return [...d.run.matchAll(/\b(?:bun|node)\s+(?:run\s+)?([\w./-]+\.(?:mjs|js|ts))/g)]
+    .map(m => join(root, d.where, m[1]))
+}
+
+/**
+ * `export const holds = ['ports', 'db']` in one script's source, read as TEXT:
+ * a drive runs when imported, so importing one to read a constant would run
+ * it. `null` where the script declares nothing.
+ */
+export function declaredHolds(src) {
+  const decl = src?.match(/^export const holds\s*=\s*\[([^\]]*)\]/m)
+  if (!decl) return null
+  return { names: [...decl[1].matchAll(/['"]([^'"]+)['"]/g)].map(m => m[1]), index: decl.index }
+}
+
+/** The union over a drive's scripts; an absent file holds nothing. */
+function holdsOf(root, d) {
+  const held = new Set()
+  for (const path of driveScripts(root, d)) {
+    for (const name of declaredHolds(read(path))?.names ?? []) held.add(name)
+  }
+  return [...held]
+}
+
 function drives(root) {
   return driveRows(root).map(d => ({
     kind:   'drive',
@@ -343,6 +372,7 @@ function drives(root) {
     // §7 — a drive's preamble is prose and an exit-1 string today. Empty is
     // honest; a guess here would be a third copy of it.
     needs:  [],
+    holds:  holdsOf(root, d),
     source: `${d.where}/package.json`,
   }))
 }

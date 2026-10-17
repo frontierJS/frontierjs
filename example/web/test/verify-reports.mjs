@@ -26,6 +26,10 @@
  * from a probe (CDP omits `value`, so it reads back as `undefined`), and never
  * start an evaluated expression with `return` on its own line.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'

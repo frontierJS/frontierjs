@@ -29,6 +29,10 @@
  * and would sit on the shelf for twenty minutes, which the drives that run
  * after it would read as a stock shortage.
  */
+
+// What `fli prove` queues on: this checkout's ports and its dev database.
+export const holds = ['ports', 'db']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

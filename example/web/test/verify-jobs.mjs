@@ -17,6 +17,9 @@
  * browser drives.
  */
 
+// What `fli prove` queues on: this checkout's ports and its dev database.
+export const holds = ['ports', 'db']
+
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { requireServers, PORTS } from './lib/preflight.mjs'

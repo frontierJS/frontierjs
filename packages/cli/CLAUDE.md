@@ -357,7 +357,10 @@ core/
                 in order, the drive, then the stop — behind `fli prove`. It owns
                 the ORDER only: spawning is `children.js`'s and every process is
                 injected. A server port that already answers fails the drive
-                rather than being reused (`FJS-740`)
+                rather than being reused (`FJS-740`). A drive's `holds` (`ports`,
+                `db`) are taken first through `guard.js`'s `treeHold` and waited
+                for, so two proves in one tree queue. `drive-holds` in
+                `checks.js` grades the declaration against what the drive reads
   intent.js     what a person asked, resolved against the app's schema — a
                 CANDIDATE (a claim, facts in plain words) in, a verdict with a
                 citation out; `fli intent` is its first caller. Pure over the

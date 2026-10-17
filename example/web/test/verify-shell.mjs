@@ -25,6 +25,10 @@
  * So the drive asks, with the network down, for something under `/api` and
  * requires it to FAIL — the worker must not be in that path at all.
  */
+
+// What `fli prove` queues on: this checkout's ports.
+export const holds = ['ports']
+
 import { spawn, execFileSync } from 'node:child_process'
 import { writeFileSync, rmSync } from 'node:fs'
 import { dirname, join }       from 'node:path'
