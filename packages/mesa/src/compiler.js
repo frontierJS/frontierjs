@@ -3448,7 +3448,7 @@ export function analyzeScript(raw, ast) {
    * What a pattern's names read from. An init that is not a plain path is bound
    * once to a synthetic var of its own, because pasting it into each member
    * read ran `f()` once per name and the names came from different results —
-   * two list handles from one `r.list()`, two subscriptions from `useStore()`
+   * two list handles from one `r.list()`, two subscriptions from `useTether()`
    * with `unsubscribe` freeing only the second (`FJS-2138`).
    */
   const patternSource = (init, extra, node) => {
@@ -4096,8 +4096,8 @@ export function analyzeScript(raw, ast) {
     if (!vars[root]) reactiveSet.add(root)  // only add imports, not local lets
   })
   // A call to a binding THIS SCRIPT holds is a second door reactivity comes
-  // through, and it is invisible to the closure below. `useStore` hands back a
-  // getter, so `const rows = useStore(s).get` is a plain function and
+  // through, and it is invisible to the closure below. `useTether` hands back a
+  // getter, so `const rows = useTether(s).get` is a plain function and
   // `Math.max(...rows().map(f))` reads a signal inside the call — which the
   // blanket promotion covered by accident, through runtime auto-tracking, and
   // which the narrowing dropped: `example`'s catalog computed its price
@@ -4154,7 +4154,7 @@ export function analyzeScript(raw, ast) {
   // reader to the service.
   //
   // Every name a call's result was bound to, then, including through a pattern:
-  // `const { get: rows } = useStore(s)` is the same fact one destructure along.
+  // `const { get: rows } = useTether(s)` is the same fact one destructure along.
   const opaqueValues = new Set()
   // Whether the initializer's VALUE is a call's result — not whether a call
   // appears somewhere inside it. A blanket walk marks `const shown = (v) =>
@@ -4169,7 +4169,7 @@ export function analyzeScript(raw, ast) {
       case 'ConditionalExpression': return yieldsCall(n.consequent) || yieldsCall(n.alternate)
       case 'LogicalExpression':     return yieldsCall(n.left) || yieldsCall(n.right)
       case 'SequenceExpression':    return yieldsCall(n.expressions[n.expressions.length - 1])
-      // `useStore(s).get` — the destructured half of the same fact.
+      // `useTether(s).get` — the destructured half of the same fact.
       case 'MemberExpression':      return yieldsCall(n.object)
       default: return false
     }
@@ -9342,7 +9342,7 @@ export function emitScript(ctx) {
 
     // The hook works by REPLACING the binding — `fn = (...args) => { … }` — so
     // the name has to be assignable. A `const` (very often a destructured one,
-    // `const { get: rows } = useStore(store)`) compiled fine and threw
+    // `const { get: rows } = useTether(tether)`) compiled fine and threw
     // `Assignment to constant variable` on mount, before anything rendered.
     // Say so at compile time instead.
     const target = ctx.analysis?.vars?.[fnName]

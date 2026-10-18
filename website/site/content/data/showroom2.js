@@ -456,7 +456,7 @@ hooks: { around: {...}, before: {...}, after: {...}, error: {...} }
       "src/routes/leads/index.mesa  14 lines   the UI",
       "",
       "# derived, unwritten:",
-      "#   migrations + indexes + audit log",
+      "#   migrations + indexes + audit trail",
       "#   row policies compiled into SQL",
       "#   five REST endpoints + pagination",
       "#   400s from the field rules",

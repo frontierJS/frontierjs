@@ -297,7 +297,7 @@ describe('resource().more()', () => {
 
     const added = await r.more()
     expect(added.map((x: any) => x.id)).toEqual([3, 4])
-    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3, 4])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 2, 3, 4])
     expect(r.hasMore()).toBe(false)
     m.restore()
   })
@@ -346,13 +346,13 @@ describe('resource().more()', () => {
     await Promise.all([growing, reload])
 
     // The window is the reload's, and the superseded slice is not in it.
-    expect(r.store.get().map((x: any) => x.id)).toEqual([7])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([7])
     m.restore()
   })
 
   test('a row already in the window is not duplicated by growing it', async () => {
     // The server resumes from the edge, but a row can arrive on the socket in
-    // the meantime — the store is keyed by id either way.
+    // the meantime — the tether is keyed by id either way.
     const m = mockPages([
       { data: [{ id: 1 }, { id: 2 }], endCursor: 'c1', hasMore: true },
       { data: [{ id: 2 }, { id: 3 }], endCursor: 'c2', hasMore: false },
@@ -360,7 +360,7 @@ describe('resource().more()', () => {
     const r = client().resource('items', 'id', { model: 'Item' })
     await r.load({}, { limit: 2 })
     await r.more()
-    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 2, 3])
     m.restore()
   })
 })
@@ -421,7 +421,7 @@ describe('an unrecognized $ directive', () => {
 
 // ─── A refetch keeps the window ───────────────────────────────────────────────
 //
-// `FJS-2612`. A push the store cannot judge — a `changed`, a relation filter,
+// `FJS-2612`. A push the tether cannot judge — a `changed`, a relation filter,
 // a reconnect — refetches, and the refetch re-asked the load's own directives,
 // whose limit is ONE page. A kanban grown to 1,154 cards held 100 after one
 // drag. The window is what only a change of filter or order resets
@@ -457,14 +457,14 @@ describe('a refetch keeps the grown window (FJS-2612)', () => {
     await r.load({}, { orderBy: 'id' })
     await r.more()
     await r.more()
-    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 2, 3, 4, 5, 6])
 
     const seen: number[] = []
-    r.store.subscribe((rows: unknown[]) => seen.push(rows.length))
+    r.tether.subscribe((rows: unknown[]) => seen.push(rows.length))
     r.service._receive('changed', { count: 1 })
     await settle()
 
-    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 2, 3, 4, 5, 6])
     // Swapped once, at the end: a screen never reads the first page mid-re-page.
     expect(seen.filter(n => n < 6)).toEqual([])
     // And it still grows from the edge the refetch landed on.
@@ -485,7 +485,7 @@ describe('a refetch keeps the grown window (FJS-2612)', () => {
       c._noteConnected({}); c._noteDisconnected(); c._noteConnected({})
     } finally { Math.random = random }
     await settle()
-    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3, 4])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 2, 3, 4])
     m.restore()
   })
 
@@ -497,7 +497,7 @@ describe('a refetch keeps the grown window (FJS-2612)', () => {
     r.service._receive('changed', { count: 1 })
     await settle()
     expect(m.asked.length - before).toBe(1)
-    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 2])
     m.restore()
   })
 })
@@ -520,12 +520,12 @@ describe('a refetch keeps the grown window, against a real app (FJS-2612)', () =
       const r: any = c.resource('items', 'id', { model: 'Item' })
       await r.load({}, { orderBy: 'id' })
       await r.more()
-      expect(r.store.get()).toHaveLength(20)
+      expect(r.tether.get()).toHaveLength(20)
 
       r.service._receive('changed', { count: 1 })
       await new Promise(res => setTimeout(res, 200))
 
-      expect(r.store.get().map((x: any) => x.id)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1))
+      expect(r.tether.get().map((x: any) => x.id)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1))
       expect((await r.more()).map((x: any) => x.id)).toEqual([21, 22, 23, 24, 25])
       c.disconnect?.()
     } finally {
@@ -554,11 +554,11 @@ describe('a drained window takes a created row (FJS-2617)', () => {
     expect(r.hasMore()).toBe(false)
 
     r.service._receive('created', { id: 9 })
-    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 3, 5, 7, 9])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 3, 5, 7, 9])
     expect(r.hasMore()).toBe(false)
 
     r.service._receive('created', { id: 2 })
-    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3, 5, 7, 9])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 2, 3, 5, 7, 9])
     expect(r.hasMore()).toBe(false)
     expect(await r.more()).toEqual([])
     m.restore()
@@ -574,7 +574,7 @@ describe('a drained window takes a created row (FJS-2617)', () => {
     await r.more()
 
     r.service._receive('created', { id: 2 })
-    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3, 5])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 2, 3, 5])
     expect(r.hasMore()).toBe(false)
     m.restore()
   })
@@ -587,7 +587,7 @@ describe('a drained window takes a created row (FJS-2617)', () => {
     await r.load({}, { limit: 2, orderBy: 'id' })
 
     r.service._receive('created', { id: 2 })
-    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 2])
     expect(r.hasMore()).toBe(true)
     m.restore()
   })
@@ -601,7 +601,7 @@ describe('a drained window takes a created row (FJS-2617)', () => {
     await r.load({}, { limit: 2, orderBy: 'id' })
 
     r.service._receive('created', { id: 2 })
-    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2])
+    expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 2])
     globalThis.fetch = original
   })
 })

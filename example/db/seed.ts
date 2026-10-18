@@ -5,7 +5,7 @@
 // A SCRIPT, not a module: nothing imports it, so it runs on being run and needs
 // no `import.meta.main` guard. It used to be awaited from app.ts at module
 // scope, which meant every import of the app seeded the database — including
-// `junction surface`, whose whole job is to describe the app without acting on
+// `junction app`, whose whole job is to describe the app without acting on
 // it.
 //
 // Everything here goes through asSystem(): seeding is not a request and has no

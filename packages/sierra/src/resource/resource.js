@@ -91,22 +91,22 @@
  *     res.data                     // the rows
  *     res.total                    // total matching, for a pager
  *
- *   The stores hand you rows directly, because a view wants something it can
+ *   The tethers hand you rows directly, because a view wants something it can
  *   map over and pagination metadata has no place in a record list:
  *
- *     load(query, directives)      → the rows (and sets store to the rows)
- *     store.get()                  → the rows
+ *     load(query, directives)      → the rows (and sets tether to the rows)
+ *     tether.get()                 → the rows
  *     createStore(svc).find(...)   → returns the raw result; store.get() is rows
  *
- *   `stale` is the third thing beside them — how many changes the live store
+ *   `stale` is the third thing beside them — how many changes the tether
  *   could not place on its own, `0` when the list is as current as a push can
  *   make it. A push can say whether a row is in the query and where it sorts;
  *   it cannot say which row from page 2 slides up when one leaves page 1. Show
  *   it and offer a reload; `load()` clears it:
  *
- *     const { get } = useStore(orders.stale)   // same shape as a store
+ *     const { get } = useTether(orders.stale)   // same shape as a tether
  *
- *   Reach for `load()`/`store` when you are rendering a list, and for
+ *   Reach for `load()`/`tether` when you are rendering a list, and for
  *   `service.find()` when you need the count alongside it.
  *
  * Hook registration:
@@ -194,8 +194,8 @@ const APPEND_REFUSES = new Set(['patch', 'remove', 'restore'])
  * left exactly as the hooks produced it.
  */
 // The methods whose answer is the row as it now stands. `remove` answers the
-// row it took away, which is not a value the node should hold.
-const NODE_WRITES = new Set(['create', 'patch', 'update'])
+// row it took away, which is not a value the entry should hold.
+const ENTRY_WRITES = new Set(['create', 'patch', 'update'])
 
 function _heldData(data, policy, versionOf) {
   if (policy !== 'server' || !versionOf) return data
@@ -477,7 +477,7 @@ const READ_CACHE_MAX = 200
 // wrong side of that line and all three are read before anything asks the
 // server again:
 //
-//   the live store  — a mounted list renders the previous person's rows until
+//   the tether  — a mounted list renders the previous person's rows until
 //                     their own `load()` resolves, and a layout that loads once
 //                     and outlives navigations makes that window arbitrarily long
 //   `_read`         — `version(id)` answers a revision the current caller never
@@ -505,7 +505,7 @@ const _liveResources = new Set()
 
 /**
  * Drop everything every live resource is holding on behalf of the previous
- * principal — the live store, the remembered revisions, the cached picker
+ * principal — the tether, the remembered revisions, the cached picker
  * lists, and the ids this resource has read.
  *
  * Called on a token change or a support episode starting or ending. Not on a reconnect and not on
@@ -550,18 +550,18 @@ function refuseOtherShapes(serviceName, opts, extra) {
  *   createResource('leads', { model, schema, idField, hooks, ... })
  *
  * The one call shape; every option is optional. `idField: null` says these
- * rows have NO identity, which is what a `view` is: the store holds the list
+ * rows have NO identity, which is what a `view` is: the tether holds the list
  * as it arrives rather than keying rows by a column that does not exist
  * (`FJS-998`).
  *
- * Returns { service, store, make, load, save, fields, relations, gate, can,
+ * Returns { service, tether, make, load, save, fields, relations, gate, can,
  *           transitions, commitments, validate, normalize, coerce, fieldErrors, context,
  *           hooks }
  *   service  — pass-through of the Junction client: find() gives the list
  *              envelope, single-record methods give the record. See "Return
  *              shapes" in the module header.
- *   store    — holds ROWS, never an envelope. Subscribe for renders.
- *   load     — populates store and resolves to the rows.
+ *   tether    — holds ROWS, never an envelope. Subscribe for renders.
+ *   load     — populates tether and resolves to the rows.
  *   make     — schema-seeded factory for a blank record.
  *   save     — write a record: create when the model's id field is absent,
  *              patch when it is present. The one owner of that decision — see
@@ -914,8 +914,8 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // its `source` so a caller can say the answer was guessed.
   const labelInfo = labelFieldInfo(fields, idField, modelDef?.['x-label-field'])
 
-  // Junction resource — wires WS push events → store automatically, scoped to
-  // the query the store's last load() ran with. `fields` is what turns a wire
+  // Junction resource — wires WS push events → tether automatically, scoped to
+  // the query the tether's last load() ran with. `fields` is what turns a wire
   // operand back into the value the column holds, so the matcher is built here
   // and not in Junction, which holds no schema. Declared after the rules for
   // that reason; nothing can push before the first load in any case.
@@ -933,21 +933,21 @@ export function createResource(serviceName, opts = {}, ...extra) {
       : {}),
     // Which MODEL these rows are. Junction holds no schema and cannot derive it
     // from the service name, so two services over one model would otherwise be
-    // two rows — the thing nodes exist to stop (`FJS-D138`).
+    // two rows — the thing entries exist to stop (`FJS-D138`).
     model,
   }
   const junctionResource = client.resource(serviceName, idField, liveOptions)
-  const { store, stale } = junctionResource
+  const { tether, stale } = junctionResource
 
   // ── @version — the revision this screen actually read ───────────────────────
   // Litestone refuses a patch on a `@version` model unless it carries the
   // version that was read, so the client has to hand back the one it was given.
-  // Kept per record rather than read off `store` because a form usually loads a
-  // single record with get(), which does not populate the list store at all.
+  // Kept per record rather than read off `tether` because a form usually loads a
+  // single record with get(), which does not populate the list tether at all.
   //
   // Recorded from READS this resource performed: every call result, and a load
-  // that was not superseded. Never from the store, and that is the whole of the
-  // rule. A WS push reaches the store as an upsert and moves the number while
+  // that was not superseded. Never from the tether, and that is the whole of the
+  // rule. A WS push reaches the tether as an upsert and moves the number while
   // moving nothing the person is looking at, so a patch from a screen holding a
   // draft carried a revision nobody there had read and won the race the column
   // exists to lose — the other writer's change erased, with the guard in place
@@ -974,10 +974,10 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // (`FJS-1309`). So the cap bounds what no screen shows — a `find()` into a
   // plain array — and what is on screen costs one entry per row on screen.
   const _read = new Map()
-  const _nodeKey = model ?? serviceName
+  const _entryKey = model ?? serviceName
 
   function _held(id) {
-    return !!client?.nodes?.peek(_nodeKey, id)?.held
+    return !!client?.entries?.peek(_entryKey, id)?.held
   }
 
   function _remember(id, row) {
@@ -998,10 +998,10 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // would drop it from the patch's diff and the merge's `base`.
   function _sighted(id, row) {
     if (!versionOf || id == null || _read.has(id)) return
-    const seen = client?.nodes?.peek(_nodeKey, id)?.committed?.() ?? row
+    const seen = client?.entries?.peek(_entryKey, id)?.committed?.() ?? row
     if (seen && Number.isInteger(seen[versionOf])) _remember(id, seen)
   }
-  if (versionOf) store.subscribe(list => { for (const row of list) _sighted(row?.[idField], row) })
+  if (versionOf) tether.subscribe(list => { for (const row of list) _sighted(row?.[idField], row) })
 
   // The revision this resource last READ for a row, or null.
   function _readVersion(id) {
@@ -1038,18 +1038,18 @@ export function createResource(serviceName, opts = {}, ...extra) {
     for (const row of rows) if (row?.[idField] != null) _seen.add(row[idField])
   }
 
-  // The row a write was ANSWERED with goes into its node, so the writer's own
+  // The row a write was ANSWERED with goes into its entry, so the writer's own
   // screen moves on the answer and the broadcast only confirms it. Without it a
   // graded refusal, `channel: false`, a write-only model or a write over HTTP
   // while the socket is down answered 200 to a screen that never changed
   // (`FJS-1317`). An answer older than the row already held is a broadcast that
   // overtook it on the wire, and writing it would roll the row back.
-  function _writeNode(row) {
-    if (!client?.nodes || idField === null || !row || typeof row !== 'object' || row[idField] == null) return
+  function _writeEntry(row) {
+    if (!client?.entries || idField === null || !row || typeof row !== 'object' || row[idField] == null) return
     const key  = model ?? serviceName
-    const held = versionOf ? client.nodes.peek(key, row[idField])?.committed() : null
+    const held = versionOf ? client.entries.peek(key, row[idField])?.committed() : null
     if (held?.[versionOf] != null && row[versionOf] != null && held[versionOf] > row[versionOf]) return
-    client.nodes.write(key, row, idField)
+    client.entries.write(key, row, idField)
   }
 
   function _rememberRows(result) {
@@ -1448,7 +1448,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
       // because here is the only place that knows the difference.
       if (method !== 'find' && method !== 'get') committed = true
 
-      // A removed row leaves the device as it leaves the store. Left for the
+      // A removed row leaves the device as it leaves the tether. Left for the
       // next whole answer, it answered every offline read until one came — and
       // a list paged past its first window never brings one (`FJS-2256`).
       if (method === 'remove' && syncMode && localDbConfigured()) {
@@ -1460,7 +1460,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
       // Record before the after-hooks, so a hook that reads the version off the
       // resource sees the one that just came back rather than the previous read.
       _rememberRows(ctx.result)
-      if (NODE_WRITES.has(method)) _writeNode(ctx.result)
+      if (ENTRY_WRITES.has(method)) _writeEntry(ctx.result)
 
       // after
       await runPhase(_hooks, 'after', method, ctx)
@@ -1593,18 +1593,18 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // context — metadata for hooks and components
   const context = { model, service: serviceName, idField }
 
-  // load() — HTTP find + populates store.
+  // load() — HTTP find + populates tether.
   //
   // Its rows count as a read by this screen, so their versions are recorded —
   // but only when the load was not superseded, which is the same stamp junction
-  // applies to the store itself (`FJS-082`): a slower first request still
+  // applies to the tether itself (`FJS-082`): a slower first request still
   // returns its rows to the caller that awaited them and must not leave their
   // versions behind as current. The stamp is repeated here rather than read off
-  // junction because a store notification carries no provenance — a set() from
+  // junction because a tether notification carries no provenance — a set() from
   // a winning load and an upsert() from a WS push arrive as the same event, and
   // only one of the two is something this screen read.
   //
-  // The query becomes the store's filter for as long as those rows are in it: a
+  // The query becomes the tether's filter for as long as those rows are in it: a
   // pushed record outside it is not added, and one a patch has just moved out of
   // it is removed (`FJS-011`). A record the schema cannot judge — a `select`
   // that dropped the filtered column, a filter over a relation — reloads rather
@@ -1617,9 +1617,9 @@ export function createResource(serviceName, opts = {}, ...extra) {
    */
   let _cachedAt = null
 
-  // `load` and `more` over one live store. The resource's own pair is over the
-  // store every plain list shares; a list over a filter makes a pair of its
-  // own, with the stamp that goes with it — two stores answering one stamp
+  // `load` and `more` over one tether. The resource's own pair is over the
+  // tether every plain list shares; a list over a filter makes a pair of its
+  // own, with the stamp that goes with it — two tethers answering one stamp
   // would have each load supersede the other's versions.
   function readerOn(live) {
     let _loadIssued = 0
@@ -1674,7 +1674,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
         if (local?.length) {
           _sawRows(local)
           if (stamp === _loadIssued) {
-            live.store.set(local)
+            live.tether.set(local)
             _cachedAt = Date.now()
           }
           return local
@@ -1690,10 +1690,10 @@ export function createResource(serviceName, opts = {}, ...extra) {
         }
         _sawRows(hit.rows)
         if (stamp === _loadIssued) {
-          // Into the same store the live layer writes, so the screen renders it
+          // Into the same tether the live layer writes, so the screen renders it
           // the way it renders anything. A second path would be a second shape of
           // "the rows this list holds".
-          live.store.set(hit.rows)
+          live.tether.set(hit.rows)
           _cachedAt = hit.at
         }
         return hit.rows
@@ -1733,7 +1733,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
   const { load, more } = readerOn(junctionResource)
 
   /**
-   * One row, live — the same nodes the list is a view over, filtered to one.
+   * One row, live — the same entries the list is a view over, filtered to one.
    *
    * `service.get(id)` answers a plain object no announcement can reach, which
    * is why every detail screen went stale the moment somebody else wrote the
@@ -1750,20 +1750,20 @@ export function createResource(serviceName, opts = {}, ...extra) {
    * *when nothing has read this row yet*.
    *
    * **A push does not move the remembered version**, and that is the whole of
-   * why the node and the view are separate things. `FJS-341` was a live store
+   * why the entry and the view are separate things. `FJS-341` was a tether
    * answering with a revision nobody on the screen had read, which won the race
    * `@version` exists to lose. The value on screen moves; what this screen has
    * READ does not.
    *
    * **`{ composed: true }` where this service's `get()` answers more than the
-   * row** — an `include:`, a count assembled per call, a child list. A node
+   * row** — an `include:`, a count assembled per call, a child list. An entry
    * holds one shape and a push carries the row alone, so watching one there
    * drops the children at the first announcement (`FJS-533`); declaring it
-   * makes the node the trigger and re-runs this read instead.
+   * makes the entry the trigger and re-runs this read instead.
    */
   function record(id, opts = {}) {
     const composed = opts.composed === true
-    // A node another view already holds is not read again, so what it shows
+    // An entry another view already holds is not read again, so what it shows
     // is this screen's first sight of the row.
     _sighted(id, null)
     return liveRecord(junctionResource.record(id, {
@@ -1801,7 +1801,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
     const rows = await readLocal(model, { ...query, [idField]: id }, { limit: 1 })
     if (!rows?.length) return null
     // A held edit of it carries this version, as one of a row the offline
-    // list showed does through the store (`FJS-1299`).
+    // list showed does through the tether (`FJS-1299`).
     _sawRows(rows)
     _sighted(rows[0][idField], rows[0])
     return rows[0]
@@ -2338,7 +2338,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // One related resource per (model, service), for the life of this one.
   //
   // `createResource` is not a cheap call and it is not a pure one: it makes a
-  // junction resource, which makes a Store, binds it to the node registry,
+  // junction resource, which makes a Tether, binds it to the entry registry,
   // opens the socket and registers a `reconnected` listener that nothing can remove
   // — junction's `resource()` hands back no dispose. So a picker that built one
   // per render left a listener per render behind it, and after a single
@@ -3030,7 +3030,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
         `move(id, { field: ${_ranks.map(r => `'${r.field}'`).join(' | ')}, … })`
       : `[${serviceName}] move() needs a @rank column, and ${model ?? serviceName} declares none.`)
 
-    const held  = store.get() ?? []
+    const held  = tether.get() ?? []
     const rowOf = (k) => held.find(r => r?.[idField] === k) ?? _read.get(k) ?? null
     const row   = rowOf(id)
     if (!row) throw new Error(`[${serviceName}] move(${JSON.stringify(id)}) — this resource holds no such row, ` +
@@ -3078,7 +3078,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
    *   await orders.mutate(id, { status: 'paid' },
    *     () => orders.service.invoke('pay', id))
    *
-   * The overlay sits on the row's NODE, so every view of that row moves at
+   * The overlay sits on the row's ENTRY, so every view of that row moves at
    * once — this list, a second list with another filter, a detail screen open
    * on it — and an intent that moves a sort key re-places the row in an
    * ordered list. What is stored is the intent and never the value it
@@ -3115,21 +3115,21 @@ export function createResource(serviceName, opts = {}, ...extra) {
     _options.clear()
     _read.clear()
     _seen.clear()
-    store.set([])
-    for (const live of _ownLives) live.store.set([])
+    tether.set([])
+    for (const live of _ownLives) live.tether.set([])
     stale.reset?.()
   })
 
-  // The live stores of lists that state a filter, each a list's own.
+  // The tethers of lists that state a filter, each a list's own.
   const _ownLives = new Set()
 
   /**
-   * This model as a list — the store, where its filters live, the load and its
+   * This model as a list — the tether, where its filters live, the load and its
    * re-run, and the window. `listQuery` is what it starts on; see `list.js`.
    *
    * `listQuery` reaches this and nothing else. A bare `find()` or `load()` never
    * reads it, because a default FILTER reaching every read would narrow pickers,
-   * jobs and live stores with nothing saying so — where `detailQuery` may reach
+   * jobs and tethers with nothing saying so — where `detailQuery` may reach
    * `get(id)`, since a directive over one row cannot hide a record.
    */
   function list(opts) {
@@ -3138,7 +3138,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
     const { load: loadRows, more: moreRows } = own ? readerOn(live) : { load, more }
     if (own) _ownLives.add(live)
     return createList({
-      store: live.store, load: loadRows, more: moreRows, hasMore: live.hasMore, total: live.total,
+      tether: live.tether, load: loadRows, more: moreRows, hasMore: live.hasMore, total: live.total,
       dispose:  own ? () => { _ownLives.delete(live); live.dispose() } : undefined,
       find:     service.find,
       loaded:   (rows) => warnComposed('list', rows),
@@ -3152,7 +3152,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // Registered here rather than at the top because it needs `service.find`,
   // which is built above — and it is `find` rather than `load` on purpose: a
   // warm runs under a question nobody is looking at, and `load` writes the
-  // store the screen is rendering (`offline.js`). A relayed page declares
+  // tether the screen is rendering (`offline.js`). A relayed page declares
   // nothing and says nothing: the file is right for the app's own page, and
   // `syncMode` is null here for a model that DID declare `@@sync`, so the
   // warning below would blame its schema.
@@ -3187,7 +3187,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
   }
 
   return {
-    service, store, stale, make, load, save, move, record, mutate, aggregate, list,
+    service, tether, stale, make, load, save, move, record, mutate, aggregate, list,
     more, hasMore: junctionResource.hasMore, total: junctionResource.total,
     /**
      * When the server last answered the rows on screen, or null when the last
@@ -3214,7 +3214,7 @@ function _emptyResource(name) {
       remove: noop, restore: noop, upsert: noop,
       on: () => {}, call: noop, getOptions: noop,
     },
-    store:   { get: () => [], subscribe: fn => { fn([]); return () => {} }, set: () => {}, upsert: () => {}, place: () => {}, remove: () => {} },
+    tether:   { get: () => [], subscribe: fn => { fn([]); return () => {} }, set: () => {}, upsert: () => {}, place: () => {}, remove: () => {} },
     stale:   { get: () => 0, subscribe: fn => { fn(0); return () => {} }, bump: () => {}, reset: () => {} },
     make:    (spec) => Object.assign({}, spec),
     load:    async () => [],

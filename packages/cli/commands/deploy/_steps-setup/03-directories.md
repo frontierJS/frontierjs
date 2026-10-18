@@ -8,12 +8,13 @@ if ($.config.abort) return
 
 const { host, serverPath } = $.config
 const machine = machineFor($, host, serverPath)
+const { dbDir, envFile } = apiFiles($.config.deployConf, serverPath)
 
 log.info(`Creating directory structure at ${serverPath}...`)
 
 const dirs = [
   serverPath,
-  `${serverPath}/db`,
+  dbDir,
   `${serverPath}/releases`,
 ].join(' ')
 
@@ -23,7 +24,6 @@ machine.run(`mkdir -p ${dirs}`)
 // directory, so that directory belongs to the same uid (FJS-D1120). sudo for a
 // login that is not root; a box where the login already owns uid 1000 needs none.
 const { IMAGE_USER } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
-const dbDir = $.config.deployConf?.db?.path ?? `${serverPath}/db`
 machine.run(`chown ${IMAGE_USER.uid}:${IMAGE_USER.gid} ${dbDir} 2>/dev/null || sudo chown ${IMAGE_USER.uid}:${IMAGE_USER.gid} ${dbDir}`)
 
 // ─── The env file, seeded once ────────────────────────────────────────────────
@@ -33,7 +33,6 @@ machine.run(`chown ${IMAGE_USER.uid}:${IMAGE_USER.gid} ${dbDir} 2>/dev/null || s
 // let a stale laptop file replace production secrets in silence.
 const { existsSync } = await import('fs')
 const { resolve } = await import('path')
-const envFile  = $.config.deployConf?.api?.env ?? `${serverPath}/.env.production`
 const localEnv = resolve($.paths.root, '.env.production')
 const present  = machine.capture(`[ -f ${envFile} ] && echo yes || echo no`).trim() === 'yes'
 

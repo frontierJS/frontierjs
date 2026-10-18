@@ -163,7 +163,7 @@ const recordTracking = defineMethod('TrackingUpdate', async ctx => {
  *
  * A rule like "that customer is no longer on file" belongs in this file and is
  * deliberately not in it. An app's before-hook runs AHEAD of the derived
- * `gateAuth` (`surface.snapshot.md` prints the chain), so a read here happens
+ * `gateAuth` (`app.snapshot.md` prints the chain), so a read here happens
  * for a caller nothing has authenticated yet — measured, and a working
  * existence oracle for the customer table. `FJS-403` is that ordering; until it
  * is settled these rules judge only the payload the caller sent them, which is
@@ -265,7 +265,7 @@ export default createService({
   // The whole surface, stated — because declaring one method's input is also
   // declaring the list, and a service that named only `recordTracking` would
   // answer 405 to everything else. It is not a trap you fall into quietly:
-  // surface.snapshot.md carries this list and CI fails a stale one, so a verb
+  // app.snapshot.md carries this list and CI fails a stale one, so a verb
   // that stopped being answered is a diff before it is a bug.
   //
   // recordTracking's `defineMethod` names its payload's `type` in

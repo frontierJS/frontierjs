@@ -36,7 +36,7 @@ export default createService({
   paginate: { default: 20, max: 200 },
 
   // Declaring `methods:` narrows the surface — anything absent answers 405 —
-  // so this list is the committed `surface.snapshot.md` verbatim plus the two
+  // so this list is the committed `app.snapshot.md` verbatim plus the two
   // below it. `restore` is in it because `Customer` soft-deletes and the
   // customers screen has a button for it; leaving it out is a dead button
   // that reports a routing failure as a permissions one.

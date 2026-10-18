@@ -6,7 +6,7 @@
   // lines are the messages store the scene loaded. A row is a `<pre>`:
   // outside one the terminal drops a wrapped row's leading space, and the row
   // lands a cell left of the one above it with a hole in its ground.
-  import { useStore } from '@frontierjs/sierra/resource'
+  import { useTether } from '@frontierjs/sierra/resource'
   import { messages } from '@/resources/Message.mesa'
   import { bubbles, BUBBLE, TAIL } from '@/lib/scene/crowd.js'
   import { at, tint } from '#cell'
@@ -19,7 +19,7 @@
   export let hushed = null
   export let nicks = {}
 
-  const { get: lines, unsubscribe } = useStore(messages.store)
+  const { get: lines, unsubscribe } = useTether(messages.tether)
   $.onDestroy(unsubscribe)
 
   // Bumped when the freshest line on screen turns old, so it is drawn again.

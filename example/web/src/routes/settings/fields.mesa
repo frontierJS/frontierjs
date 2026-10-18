@@ -37,7 +37,7 @@ title: Customer fields
 
   async function load() {
     await customFields.load({}, { orderBy: 'id' })
-    defs = customFields.store.get()
+    defs = customFields.tether.get()
   }
 
   async function declare() {

@@ -31,7 +31,7 @@ emit from a person's words — `claim`, and facts carrying a `kind` and plain
 words — and this command refuses one that names an identifier.
 
 It reads the app's own `db/schema.lite` through the litestone the APP has
-installed, and the committed `surface`, `routes` and `notifications` snapshots.
+installed, and the committed `app`, `routes` and `notifications` snapshots.
 What a screen shows is not indexed, so a UI fact reports that half as
 `unverified` rather than guessing.
 
@@ -56,23 +56,23 @@ if (!existsSync(schemaPath)) { log.error(`no db/schema.lite in ${root}`); return
 const parsed = parseFile(schemaPath)
 if (!parsed.valid) { log.error(`db/schema.lite does not parse: ${parsed.errors?.[0]?.message ?? 'unknown error'}`); return }
 
-const { surfaceFile } = await import(resolve(global.fliRoot, 'core/app-entry.js'))
+const { appSnapshotFile } = await import(resolve(global.fliRoot, 'core/app-entry.js'))
 const { buildIndex, recognize } = await import(resolve(global.fliRoot, 'core/intent.js'))
 
 // A snapshot that is absent is read as empty and SAID, because an index missing
-// the surface answers "no such method" about methods that exist.
+// the app snapshot answers "no such method" about methods that exist.
 const readFirst = (name, dirs) => {
   for (const d of dirs) { const p = join(root, d, name); if (existsSync(p)) return readFileSync(p, 'utf8') }
   return null
 }
-const surfacePath   = surfaceFile(root)
-const surface       = surfacePath && existsSync(surfacePath) ? readFileSync(surfacePath, 'utf8') : null
+const appPath       = appSnapshotFile(root)
+const app           = appPath && existsSync(appPath) ? readFileSync(appPath, 'utf8') : null
 const routes        = readFirst('routes.snapshot.md', ['web', '.'])
 const notifications = readFirst('notifications.snapshot.md', ['api', '.'])
-const missing = [['surface.snapshot.md', surface], ['routes.snapshot.md', routes], ['notifications.snapshot.md', notifications]]
+const missing = [['app.snapshot.md', app], ['routes.snapshot.md', routes], ['notifications.snapshot.md', notifications]]
   .filter(([, v]) => v == null).map(([n]) => n)
 
-const index  = buildIndex({ schema: parsed.schema, surface: surface ?? '', routes: routes ?? '', notifications: notifications ?? '' })
+const index  = buildIndex({ schema: parsed.schema, app: app ?? '', routes: routes ?? '', notifications: notifications ?? '' })
 const answer = recognize(index, candidate)
 
 if (flag.json) { console.log(JSON.stringify({ ...answer, missing }, null, 2)); return }

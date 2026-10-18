@@ -1921,12 +1921,21 @@ this is the gap a surface painted in cells has, not mesa's.
   tavern `/`, `/kitchen/`, `/upstairs/`, `/ask` and round, Shift+Tab back,
   the mark's ground in the stream, the kitchen `/tavern/`, `/menu /bump`,
   `/heard`; no drive kept (no new tests while experimenting).
-- [ ] 19.3 Enter walks. **Ruled 2026-10-18 (owner): animated** — a step per
-  `FIND_MS` along `pathBeside`, the `f`-walk's mode in `HomeRow.mesa` with a
-  cell for its goal rather than a member, so any key stops it the same way and
-  every other screen sees each step. A door's walk ends ON the door, which is
-  the door taken; any other stop's ends beside it, in its reach. A stop no
-  floor reaches is named and refused (`nobody can reach /board from here`).
+- [x] 19.3 Enter walks. **Ruled 2026-10-18 (owner): animated** — a step per
+  `WALK_MS` (`paths.js`, `f`'s pace too) along `pathTo(stage, from, ok)`, the
+  nearest cell `ok` accepts, re-planned from where the figure stands at each
+  step; the `walk` mode, which `f`'s walk now is too (the `find` mode
+  renamed), so any key stops it and a bolt landing on this figure does. A step
+  is `Scene.mesa`'s `stepTo`, the one an arrow takes, so the walk's last step
+  onto a door is the door taken; any other stop's ends inside its reach, and
+  the stop stays marked while it is walked to. Beside a door is a step from
+  its cell, never a diagonal, for Tab's nearest too. A stop no floor reaches
+  is named and refused (`nobody can reach /board from here`) with the stop
+  still named. Probed in a pty, two members in the tavern: Enter on `/ask`
+  steps at once and on to where `/ask` answers, drawn there on the other
+  screen; Esc partway stops it; Enter on `/kitchen/` walks through the door;
+  in the kitchen Enter on `/heard` ends where `/heard` answers. The refusal
+  has no scene to try it in; no drive kept (no new tests while experimenting).
 - [ ] 19.4 The stops list. **Ruled 2026-10-18 (owner): yes.** `/stops` (no
   reach) opens a pane over the art listing the scene's stops, numbered in
   Tab's order with their words and how far each is walked; a number walks

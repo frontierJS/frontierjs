@@ -10,7 +10,7 @@ Set up a complete audit trail that records every write, captures before/after im
 - Before/after images on single-row writes
 - Actor attribution (who made the change)
 - Custom metadata (request ID, IP address)
-- Query API on the audit log
+- Query API on the audit trail
 - Retention-based pruning
 
 ---
@@ -159,7 +159,7 @@ if (!Array.isArray(entry.records)) throw new Error(`records is ${typeof entry.re
 
 ---
 
-## Querying the audit log
+## Querying the audit trail
 
 ```js
 const db = await createClient({ path: './schema.lite', db: './app.db' })

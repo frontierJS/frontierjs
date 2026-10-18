@@ -7,9 +7,9 @@
 //   latest — one machine's newest report, graded for staleness on read
 //   fleet  — every machine in the workspace, worst first, and the vulnerable
 //            dependency count; what /security/ draws
-//   host   — the installation's own host, hub only; what /hub/security/ draws.
-//            Its report is a `report` naming no machine, signed with the host
-//            key (`hostReportKey`, FJS-D944)
+//   host   — the box this Basecamp runs on, hub only; what /hub/security/ draws.
+//            It is the `basecamp-host` fleet row, graded with the `hub.*`
+//            controls beside its own (FJS-D1241)
 //
 // The Outpost reports facts and `core/posture.ts` grades them (IDEAS/server-posture.md
 // § Outpost reads, Basecamp grades). **A failing control never refuses a
@@ -23,11 +23,12 @@ import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { requireSystemAdmin, sessionScope, workspaceChannel } from '../../core/hooks.ts'
 import { db, ws }   from '../../core/resource.ts'
-import { declaredFor, gradeHostPosture, gradePosture, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../core/posture.ts'
+import { declaredFor, gradeHub, gradePosture, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../core/posture.ts'
 import type { Control, PostureReadings } from '../../core/posture.ts'
 import { notifyPeople, workspaceMembers } from '../../core/notify.ts'
 import { statusOf } from '../../core/dependencies.ts'
 import { keyScope } from '../api-keys/scopes.ts'
+import { HOST_SLUG } from '../../core/host-machine.ts'
 
 // ─── The outpost's wire contract ───────────────────────────────────────────
 // `inspector.posture()` in packages/outpost, snake_case and relayed as-is.
@@ -132,25 +133,6 @@ async function lastBackupAt(): Promise<string | null> {
   return row?.finishedAt ?? null
 }
 
-/**
- * The installation's own host: graded, kept with a null `serverId`, and acted
- * on by nothing here. It has no Server row, so there is no ServerEvent,
- * metric label or workspace to notify.
- */
-async function ingestHost(data: ReportData) {
-  const now      = Date.now()
-  const at       = typeof data.at === 'string' && Number.isFinite(Date.parse(data.at)) ? data.at : new Date(now).toISOString()
-  const readings = data.readings && typeof data.readings === 'object' ? data.readings : null
-  const controls = gradeHostPosture(readings, { lastBackupAt: await lastBackupAt() }, { at, now })
-  const failing  = controls.filter(c => c.ok === false).length
-  const unknown  = controls.filter(c => c.ok === 'unknown').length
-  const row = await sys().serverPosture.create({ data: {
-    serverId: null, at, readings: readings ?? {}, controls, failing, unknown,
-  } })
-  $.dispatch = false
-  return { id: row.id, at, failing, unknown }
-}
-
 async function scopedServer(id: string) {
   const server = await db().server.findFirst({ where: { id } })
   if (!server) throw new NotFound(`Server '${id}' not found`)
@@ -167,17 +149,15 @@ export default createService({
   // rather than the box. `report` is the outpost's — no session, HMAC at the
   // transport, so it states gate 0 (`FJS-826`).
   // `check` is thirty process spawns on the machine, so not a viewer's button.
-  // `host` reads through asSystem() behind requireSystemAdmin, since its rows
-  // have no workspace to be scoped to.
+  // `host` reads through asSystem() behind requireSystemAdmin, since a system
+  // admin need not be a member of the workspace the host row is in.
   methods: ['latest', 'fleet', 'host', { method: 'check', gate: LEVELS.USER }, { method: 'report', gate: 0 }],
 
   // ── report — POST /posture  X-Service-Method: report ──────────────
-  // No `server_id` is the installation's own host; `outpostScope` has already
-  // refused that shape from anything but the host key.
   async report() {
     const data     = $.data as ReportData
     const serverId = data?.server_id
-    if (!serverId) return ingestHost(data ?? {})
+    if (!serverId) throw new BadRequest('A posture report names its server_id')
 
     // asSystem(): an outpost holds no session. `outpostScope` has already
     // matched the signature to this server_id.
@@ -235,24 +215,24 @@ export default createService({
   },
 
   // ── host — POST /posture  X-Service-Method: host ──────────────────
-  // The installation's own host, what /hub/security/ draws. Staleness is
-  // graded on read as `view` does, and `hub.backup-recent` is graded afresh:
-  // it reads the Backup rows, which move between reports.
+  // The box this Basecamp runs on, what /hub/security/ draws: the
+  // `basecamp-host` row's own grade, staleness on read as `view` does, and the
+  // `hub.*` controls graded from the same report. With no host row there is
+  // nothing reading the box, and `enrolled: false` says so.
   async host() {
     $.dispatch = false   // read-shaped
-    const now  = Date.now()
-    const last = await lastBackupAt()
-    const row  = await sys().serverPosture.findFirst({ where: { serverId: null }, orderBy: { at: 'desc' } })
-    const fresh = gradeHostPosture(null, { lastBackupAt: last }, { at: now, now })
-      .find(c => c.id === 'hub.backup-recent') as Control
-
-    const stale    = row ? now - Date.parse(row.at) > 2 * POSTURE_INTERVAL_MS : false
-    const stored   = row ? (row.controls as Control[]) : gradeHostPosture(null, { lastBackupAt: last }, { at: now, now })
-    const controls = stored.map(c => c.id === 'hub.backup-recent' ? fresh
-      : stale ? { ...c, ok: 'unknown' as const, message: `Stale — last said: ${c.message}` }
-      : c)
+    const now    = Date.now()
+    const server = await sys().server.findFirst({ where: { slug: HOST_SLUG } })
+    const row    = server
+      ? await sys().serverPosture.findFirst({ where: { serverId: server.id }, orderBy: { at: 'desc' } })
+      : null
+    const hub = gradeHub(row?.readings ?? null, { lastBackupAt: await lastBackupAt() }, { at: row?.at ?? now, now })
+    const machine  = server ? view(server, row) : null
+    const controls = [...hub, ...(machine?.controls ?? [])]
     return {
-      reported: !!row, stale, at: row?.at ?? null, controls,
+      enrolled: !!server,
+      serverId: server?.id ?? null, serverName: server?.name ?? null,
+      reported: !!row, stale: machine?.stale ?? false, at: row?.at ?? null, controls,
       failing:  controls.filter(c => c.ok === false).length,
       unknown:  controls.filter(c => c.ok === 'unknown').length,
       readings: row?.readings ?? null,

@@ -8,7 +8,7 @@
  *
  * The assertion this file is really for is the second one: **a push moves the
  * value and does not move the version this screen has READ.** `FJS-341` was a
- * live store answering a patch with a revision nobody on the screen had read,
+ * tether answering a patch with a revision nobody on the screen had read,
  * which won the race `@version` exists to lose — measured in basecamp, the
  * other writer's change erased with the guard in place and no error anywhere.
  * Making the row live is exactly the change that could bring it back.
@@ -137,7 +137,7 @@ describe('resource.record(id)', () => {
     expect(calls.length).toBe(before)
 
     client.service('orders')._receive('patched', { id: 1, status: 'paid', version: 4 })
-    expect(orders.store.get()[0].status).toBe('paid')
+    expect(orders.tether.get()[0].status).toBe('paid')
     expect(row.get().status).toBe('paid')
   })
 
@@ -157,10 +157,10 @@ describe('resource.record(id)', () => {
     const gate = new Promise((_, rej) => { refuse = rej })
     const done = orders.mutate(1, { status: 'paid' }, () => gate)
 
-    expect(orders.store.get()[0].status).toBe('paid')
+    expect(orders.tether.get()[0].status).toBe('paid')
     refuse(new Error('403'))
     await expect(done).rejects.toThrow('403')
-    expect(orders.store.get()[0].status).toBe('pending')
+    expect(orders.tether.get()[0].status).toBe('pending')
   })
 
   test('the optimistic value is not committed as the version this screen read', async () => {
@@ -173,7 +173,7 @@ describe('resource.record(id)', () => {
     let release
     const gate = new Promise(res => { release = res })
     const done = orders.mutate(1, { status: 'paid', version: 99 }, () => gate)
-    expect(orders.store.get()[0]?.status ?? orders.record(1).get().status).toBe('paid')
+    expect(orders.tether.get()[0]?.status ?? orders.record(1).get().status).toBe('paid')
     expect(orders.version(1)).toBe(3)
 
     release({ id: 1, status: 'paid', version: 4 })
@@ -198,7 +198,7 @@ describe('resource.record(id)', () => {
 
     await orders.save({ id: 1, status: 'paid' }, { mode: 'patch' })
 
-    expect(orders.store.get()[0]).toEqual({ id: 1, status: 'paid', version: 4 })
+    expect(orders.tether.get()[0]).toEqual({ id: 1, status: 'paid', version: 4 })
     expect(row.get()).toEqual({ id: 1, status: 'paid', version: 4 })
     expect(orders.version(1)).toBe(4)
   })
@@ -210,14 +210,14 @@ describe('resource.record(id)', () => {
     const done = orders.save({ id: 1, status: 'paid' }, { mode: 'patch' })
     client.service('orders')._receive('patched', { id: 1, status: 'shipped', version: 5 })
     await done
-    expect(orders.store.get()[0]).toEqual({ id: 1, status: 'shipped', version: 5 })
+    expect(orders.tether.get()[0]).toEqual({ id: 1, status: 'shipped', version: 5 })
   })
 
   test('an answer with no id writes no row', async () => {
     const orders = createResource('orders', { model: 'Order' })
     await orders.load()
     await orders.save({ status: 'new' })   // the mock answers {}
-    expect(orders.store.get()).toEqual([{ id: 1, status: 'pending', version: 3 }])
+    expect(orders.tether.get()).toEqual([{ id: 1, status: 'pending', version: 3 }])
   })
 
   test('a resource with no client answers a view that is simply empty', async () => {

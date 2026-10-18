@@ -96,7 +96,7 @@ export function indexShapeFor(model) {
   )
   const idName     = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? null
   const indexAttrs = model.attributes.filter(a => a.kind === 'index')
-  // With an `@id` the index can upsert by it; without one — an audit log — the
+  // With an `@id` the index can upsert by it; without one — an audit trail — the
   // offset is the key, since every appended line is at a distinct byte.
   const indexedFieldNames = idName
     ? [...new Set([idName, ...indexAttrs.flatMap(a => a.fields)])]

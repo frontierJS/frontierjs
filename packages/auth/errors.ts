@@ -1,16 +1,15 @@
 // errors.ts
 // Named error types for the data layer.
 //
-// auth.ts used to throw plain `new Error('Invalid credentials')`. Junction's
-// toFrameworkError() only honors its own FrameworkError subclasses, so every
-// one of those reached the client as a **500 GeneralError** — a mistyped
-// password was indistinguishable from a broken server, and Sierra's browser
-// client (which keys off 401 to clear a stale token) never saw its signal.
+// A plain `new Error('Invalid credentials')` reaches the client as a **500
+// GeneralError** — a mistyped password indistinguishable from a broken
+// server, and Sierra's browser client (which keys off 401 to clear a stale
+// token) never sees its signal.
 //
-// These types exist so the data layer can say precisely what went wrong
-// WITHOUT importing HTTP semantics — auth.ts's header comment promises it
-// "never touches HTTP — that is the plugin's job". plugin.ts owns the
-// error → status mapping, in one place (see toHttpError there).
+// These types let the data layer say precisely what went wrong WITHOUT
+// importing HTTP semantics: each carries a numeric `status`, and Junction's
+// toFrameworkError() is what reads it (Invariant 4). Nothing in this package
+// maps an error to a status — not plugin.ts either.
 //
 // They are exported from the package barrel so a consumer calling
 // createLitestoneAuth() directly — with no Junction anywhere — can still

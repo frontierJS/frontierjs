@@ -118,12 +118,12 @@ title: Orders
 The kit's components, their callbacks and what a `<Table>` needs are
 `node_modules/@frontierjs/ui/AGENTS.md`.
 
-`list()` owns the store, the load, the re-run when the URL changes and the keyset
+`list()` owns the tether, the load, the re-run when the URL changes and the keyset
 window. `list({ state: 'local', where: { projectId } })` is an embedded list that
 writes nothing to the address bar. A list over a filter is its own: one stating
 `where` or `query` keeps its own rows, so a page holds a list per filter, and one
-stating neither is the resource's store. A list you wire by hand reads the store with
-`useStore(orders.store)` and re-runs on `$: page.query, page.directives, () => load()`.
+stating neither is the resource's tether. A list you wire by hand reads the tether with
+`useTether(orders.tether)` and re-runs on `$: page.query, page.directives, () => load()`.
 
 ```js
 // src/routes/blog/[slug].meta.js
@@ -370,7 +370,7 @@ Everything above is loud. These are not.
   copied `page.params` at setup keeps the old value.
 
 - **`service.get(id)` answers a plain object nothing updates.** A write from
-  another tab, a job or a webhook reaches the store and never that variable. If
+  another tab, a job or a webhook reaches the tether and never that variable. If
   the service's `get()` returns more than the row, a plain `record(id)` drops the
   extra keys at the first push — declare `{ composed: true }`.
 
@@ -378,7 +378,7 @@ Everything above is loud. These are not.
   does not reject for either, so a spinner keyed on `order == null` spins
   forever. Key it on `row.loaded`; `row.error()` says which.
 
-- **A patch can take a row OUT of a live list.** A store means the query that
+- **A patch can take a row OUT of a live list.** A tether means the query that
   filled it, so a row edited out of the filter is removed. Past the first page a
   pushed row is not inserted — it is counted on `orders.stale` for a
   *3 new — refresh* affordance.
@@ -404,7 +404,7 @@ Everything above is loud. These are not.
 4. Filters travel as `page.query`, directives as `page.directives`; no `$`-key
    is hand-built into an object.
 5. A kept row is `record(id)`, released with its component; a list is `list()` or a
-   watched store.
+   watched tether.
 6. Money is rendered through the declaration, never as the integer.
 7. A `site/` route declaring `render: static` has `db:` in its surface config, a
    `getStaticPaths` if it is dynamic, a `select:` on every read of a gated model,

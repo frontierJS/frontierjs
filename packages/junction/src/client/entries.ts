@@ -1,8 +1,8 @@
-// ─── Nodes ────────────────────────────────────────────────────────────────────
-// One node per row, keyed by MODEL and id — the synced truth for that row, and
+// ─── Entries ──────────────────────────────────────────────────────────────────
+// One entry per row, keyed by MODEL and id — the synced truth for that row, and
 // the thing every view of it points at (`FJS-D138`).
 //
-// Before this, a store was per-`resource()` call and held whole rows: two
+// Before this, a tether was per-`resource()` call and held whole rows: two
 // `createResource('orders')` in two route files were two copies kept in step
 // only because both happened to subscribe to the same service, and a row read
 // with `service.get(id)` was a plain object no announcement could reach at all
@@ -16,34 +16,34 @@
 //     one row. Junction holds no schema, so the model name is passed in — the
 //     same reason `ResourceOptions.match` is passed in.
 //
-//   • A node holds the SYNCED truth and nothing else. It is not where an
+//   • An entry holds the SYNCED truth and nothing else. It is not where an
 //     optimistic value lives and it is emphatically not where a draft lives:
-//     `FJS-341` was a live store moving a `@version` nobody had read, and the
+//     `FJS-341` was a tether moving a `@version` nobody had read, and the
 //     fix was keeping the copies apart. A view remembers what it read.
 //
 //   • Lifetime is a TTL, not a reference count the application maintains.
 //     Apollo and Relay both ship retain/release and it is the most-complained-
-//     about part of either. A held node never expires; a released one lingers
+//     about part of either. A held entry never expires; a released one lingers
 //     for `ttlMs`, which is what makes list → detail → back warm rather than a
 //     refetch.
 
-/** What a caller may do with a node: read it now, or watch it. */
-export interface NodeView<T = Record<string, unknown>> {
+/** What a caller may do with an entry: read it now, or watch it. */
+export interface EntryView<T = Record<string, unknown>> {
   /** The row as last synced, or `null` if nothing has been written yet. */
   get(): T | null
   /** Watch it. Emits the current value immediately. Returns unsubscribe. */
   subscribe(fn: (value: T | null) => void): () => void
 }
 
-export class Node<T extends Record<string, unknown> = Record<string, unknown>>
-  implements NodeView<T> {
+export class Entry<T extends Record<string, unknown> = Record<string, unknown>>
+  implements EntryView<T> {
   readonly model: string
   readonly id:    unknown
 
   private _value:   T | null = null
   private _subs:    Set<(v: T | null) => void> = new Set()
   private _holds    = 0
-  private _registry: NodeRegistry
+  private _registry: EntryRegistry
 
   // Submitted mutations that have not come back yet, oldest first. Each one is
   // the INTENT — a partial, or `null` for a removal — never the value it
@@ -52,7 +52,7 @@ export class Node<T extends Record<string, unknown> = Record<string, unknown>>
   private _overlays: Map<number, Partial<T> | null> = new Map()
   private _overlaySeq = 0
   // The folded view. Cached so repeated reads answer the same object — a Mesa
-  // signal compares what it is handed, and `Store._replace` tells its own
+  // signal compares what it is handed, and `Tether._replace` tells its own
   // materialized rows apart from incoming ones by reference.
   private _view: T | null = null
   private _viewFresh = false
@@ -60,7 +60,7 @@ export class Node<T extends Record<string, unknown> = Record<string, unknown>>
   /** When the last hold went away — the clock the TTL is read against. */
   _releasedAt: number | null = null
 
-  constructor(registry: NodeRegistry, model: string, id: unknown) {
+  constructor(registry: EntryRegistry, model: string, id: unknown) {
     this._registry = registry
     this.model = model
     this.id = id
@@ -149,7 +149,7 @@ export class Node<T extends Record<string, unknown> = Record<string, unknown>>
   }
 
   /**
-   * Claim this node. While anything holds it, the TTL does not run.
+   * Claim this entry. While anything holds it, the TTL does not run.
    * Returns the release — call it once.
    */
   hold(): () => void {
@@ -169,7 +169,7 @@ export class Node<T extends Record<string, unknown> = Record<string, unknown>>
   /**
    * The synced truth moved. Called by the registry, never by a view.
    *
-   * The SAME object is not a change. A push writes the node once on arrival —
+   * The SAME object is not a change. A push writes the entry once on arrival —
    * so a view of the row hears about it whether or not any list holds it — and
    * the list it lands in then writes it back through as part of assembling
    * itself. Without this a watcher heard every push twice.
@@ -185,9 +185,9 @@ export class Node<T extends Record<string, unknown> = Record<string, unknown>>
 }
 
 /**
- * What the registry needs of a node to expire it.
+ * What the registry needs of an entry to expire it.
  *
- * Structural rather than `Node<T>` because a generic class cannot hand `this`
+ * Structural rather than `Entry<T>` because a generic class cannot hand `this`
  * to a method typed on the erased instantiation — and widening it to `any` in
  * a package whose typecheck baseline is zero is the wrong trade.
  */
@@ -198,8 +198,8 @@ interface Expirable {
   _releasedAt:    number | null
 }
 
-export interface NodeRegistryOptions {
-  /** How long a released node lingers, ms. Default 30_000. `0` drops it at once. */
+export interface EntryRegistryOptions {
+  /** How long a released entry lingers, ms. Default 30_000. `0` drops it at once. */
   ttlMs?: number
 }
 
@@ -208,61 +208,61 @@ export interface NodeRegistryOptions {
  *
  * An id arrives as a number from the wire and as a STRING from a URL, and a
  * detail screen is reached by a URL — so `record(page.params.id)` and the list
- * that already holds `{ id: 5 }` would otherwise be two nodes, and the push
+ * that already holds `{ id: 5 }` would otherwise be two entries, and the push
  * announcing that row would move exactly one of them. Identity, not filtering:
  * a table cannot hold both `5` and `'5'`, which is what makes this safe here
  * and wrong in a query string (`FJS-D125`).
  */
-export function nodeKey(id: unknown): string {
+export function entryKey(id: unknown): string {
   return typeof id === 'string' ? id : String(id)
 }
 
-export class NodeRegistry {
-  private _models: Map<string, Map<string, Node>> = new Map()
+export class EntryRegistry {
+  private _models: Map<string, Map<string, Entry>> = new Map()
   private _ttl:    number
   private _timer:  ReturnType<typeof setInterval> | null = null
 
-  constructor(opts: NodeRegistryOptions = {}) {
+  constructor(opts: EntryRegistryOptions = {}) {
     this._ttl = opts.ttlMs ?? 30_000
   }
 
-  /** Get the node for this row, creating it if this is the first view to ask. */
-  node<T extends Record<string, unknown> = Record<string, unknown>>(
+  /** Get the entry for this row, creating it if this is the first view to ask. */
+  entry<T extends Record<string, unknown> = Record<string, unknown>>(
     model: string,
     id: unknown
-  ): Node<T> {
+  ): Entry<T> {
     let rows = this._models.get(model)
     if (!rows) { rows = new Map(); this._models.set(model, rows) }
-    const key = nodeKey(id)
+    const key = entryKey(id)
     let n = rows.get(key)
-    if (!n) { n = new Node(this, model, id); rows.set(key, n) }
-    return n as Node<T>
+    if (!n) { n = new Entry(this, model, id); rows.set(key, n) }
+    return n as Entry<T>
   }
 
-  /** Is there a node for this row already? Never creates one. */
-  peek(model: string, id: unknown): Node | undefined {
-    return this._models.get(model)?.get(nodeKey(id))
+  /** Is there an entry for this row already? Never creates one. */
+  peek(model: string, id: unknown): Entry | undefined {
+    return this._models.get(model)?.get(entryKey(id))
   }
 
   /**
    * The synced truth for a row moved — from a load, a call result or a push.
    *
-   * A record with no id cannot be a node: `findIndex` on `undefined` matches
+   * A record with no id cannot be an entry: `findIndex` on `undefined` matches
    * nothing, which is how an id-less payload used to be appended as a phantom
-   * row (`FJS-020`). Answers the node it wrote, or `null` if it refused.
+   * row (`FJS-020`). Answers the entry it wrote, or `null` if it refused.
    */
   write<T extends Record<string, unknown> = Record<string, unknown>>(
     model: string,
     record: T,
     idField = 'id'
-  ): Node<T> | null {
+  ): Entry<T> | null {
     if (record == null || (record as Record<string, unknown>)[idField] == null) return null
-    const n = this.node<T>(model, record[idField])
+    const n = this.entry<T>(model, record[idField])
     n._write(record)
     return n
   }
 
-  /** How many nodes exist right now. For tests and for the devtools panel. */
+  /** How many entries exist right now. For tests and for the devtools panel. */
   get size(): number {
     let n = 0
     for (const rows of this._models.values()) n += rows.size
@@ -275,18 +275,18 @@ export class NodeRegistry {
     this._stopSweeping()
   }
 
-  /** A node's last hold went away. */
-  _released(node: Expirable): void {
-    if (this._ttl <= 0) { this._drop(node); return }
-    node._releasedAt = Date.now()
+  /** An entry's last hold went away. */
+  _released(entry: Expirable): void {
+    if (this._ttl <= 0) { this._drop(entry); return }
+    entry._releasedAt = Date.now()
     this._startSweeping()
   }
 
-  private _drop(node: Expirable): void {
-    const rows = this._models.get(node.model)
+  private _drop(entry: Expirable): void {
+    const rows = this._models.get(entry.model)
     if (!rows) return
-    rows.delete(nodeKey(node.id))
-    if (rows.size === 0) this._models.delete(node.model)
+    rows.delete(entryKey(entry.id))
+    if (rows.size === 0) this._models.delete(entry.model)
   }
 
   /**
@@ -298,10 +298,10 @@ export class NodeRegistry {
   sweep(now: number = Date.now()): number {
     let dropped = 0
     for (const rows of [...this._models.values()]) {
-      for (const node of [...rows.values()]) {
-        if (node.held || node._releasedAt === null) continue
-        if (now - node._releasedAt < this._ttl) continue
-        this._drop(node)
+      for (const entry of [...rows.values()]) {
+        if (entry.held || entry._releasedAt === null) continue
+        if (now - entry._releasedAt < this._ttl) continue
+        this._drop(entry)
         dropped++
       }
     }
@@ -311,7 +311,7 @@ export class NodeRegistry {
 
   // The timer is armed on the first release and cleared the moment the registry
   // empties, because a live interval in a test suite is a run that never exits;
-  // `unref` covers the same failure under node, where it exists.
+  // `unref` covers the same failure under Node, where it exists.
   private _startSweeping(): void {
     if (this._timer) return
     const every = Math.max(1_000, Math.floor(this._ttl / 2))

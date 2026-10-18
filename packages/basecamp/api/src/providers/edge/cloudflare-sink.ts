@@ -39,11 +39,14 @@ const PAGE_CAP = 2
  *  failure a status check alone reads as an empty zone. */
 export const BROKEN_ZONE = 'zone-broken'
 
+/** The account every zone here is in. */
+export const SINK_ACCOUNT = 'acct-sink'
+
 const ZONES = [
-  { id: 'zone-example', name: 'example.test', status: 'active'  },
-  { id: 'zone-shop',    name: 'shop.test',    status: 'active'  },
-  { id: 'zone-pending', name: 'pending.test', status: 'pending' },
-  { id: BROKEN_ZONE,    name: 'broken.test',  status: 'active'  },
+  { id: 'zone-example', name: 'example.test', status: 'active',  account: { id: SINK_ACCOUNT } },
+  { id: 'zone-shop',    name: 'shop.test',    status: 'active',  account: { id: SINK_ACCOUNT } },
+  { id: 'zone-pending', name: 'pending.test', status: 'pending', account: { id: SINK_ACCOUNT } },
+  { id: BROKEN_ZONE,    name: 'broken.test',  status: 'active',  account: { id: SINK_ACCOUNT } },
 ]
 
 /** Records per zone. Three kinds on purpose: one this app will own (the mark in

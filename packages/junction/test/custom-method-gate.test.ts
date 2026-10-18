@@ -453,7 +453,7 @@ describe('a declared gate is a level, and is refused otherwise', () => {
 
 // ─── what the register says about it ──────────────────────────────────────────
 //
-// `surface.snapshot.md` prints who may call each custom method, and a reader
+// `app.snapshot.md` prints who may call each custom method, and a reader
 // acts on that line — it is how `invoices.settle` was found reachable by every
 // signed-in shopper while writing through `asSystem()`. So the grade is asserted
 // against the GATE'S OWN ANSWER for the same caller, method by method. A test
@@ -464,8 +464,8 @@ describe('the surface reports the grade the gate enforces', () => {
 
   test('each grade agrees with what a caller is actually answered', async () => {
     const s = await shop()
-    const { describeSurface } = await import('../src/core/app-model.ts')
-    const grades = Object.fromEntries(describeSurface(s.app).services
+    const { describeApp } = await import('../src/core/app-model.ts')
+    const grades = Object.fromEntries(describeApp(s.app).services
       .map(svc => [svc.name, svc.methodGrades]))
 
     // A floor above 0 is presence alone: the shopper reaches the body.

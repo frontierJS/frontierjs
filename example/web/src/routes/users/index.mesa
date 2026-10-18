@@ -52,7 +52,7 @@ title: Users
   // the boundary disagree, which is the case an affordance can never cover.
   import User, { users } from '@/resources/User.mesa'
   import { prefs }       from '@/stores/prefs.js'
-  import { session, useStore } from '@frontierjs/sierra/resource'
+  import { session, useTether } from '@frontierjs/sierra/resource'
 
   import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Avatar         from '@frontierjs/ui/components/display/Avatar.mesa'
@@ -65,7 +65,7 @@ title: Users
   import Switch         from '@frontierjs/ui/components/forms/Switch.mesa'
   import Table          from '@frontierjs/ui/components/display/Table.mesa'
 
-  const { get: rows, unsubscribe } = useStore(users.store)
+  const { get: rows, unsubscribe } = useTether(users.tether)
   $.onDestroy(unsubscribe)
 
   $: (session.level, session.user, prefs.dense)

@@ -163,7 +163,7 @@ export function boundingBox(center, metres) {
  * Is the point inside any of the boxes `boundingBox` returned?
  *
  * The same prefilter, evaluated in JS — which is what the browser half needs so
- * that a live store grades an arriving row without a round trip.
+ * that a tether grades an arriving row without a round trip.
  *
  * @param {{lat:number,lng:number}} p
  * @param {ReturnType<typeof boundingBox>} boxes

@@ -306,7 +306,7 @@ with its proof target attached.
 | Fact | Realm | Lookup |
 | --- | --- | --- |
 | a button, top of the order screen | UI | the route table |
-| something must cancel | API | `surface.snapshot.md` — does `orders.cancel` exist? |
+| something must cancel | API | `app.snapshot.md` — does `orders.cancel` exist? |
 | is `shipped → cancelled` a legal move? | Data | `@@transitions` |
 | who may make it? | Data | the move's `@gate` |
 
@@ -380,7 +380,7 @@ is a measurement pointed at the seed, and nothing else here produces one.
 wrong answer: `Invoice`'s `settle` move is `@system`, so the seed says a person
 cannot mark an invoice paid — and `invoices.settle` is the staff button for a
 hand-reconciled bank transfer, running that move through `asSystem()`.
-`surface.snapshot.md` lists the method and not who may call it. `@frontierjs/mcp`'s
+`app.snapshot.md` lists the method and not who may call it. `@frontierjs/mcp`'s
 `move-system` verdict reads the same two facts the same wrong way, so this is one
 gap with two readers waiting on it rather than a resolver bug.
 
@@ -509,11 +509,11 @@ the customer-facing word can be loose while the verdict stays precise.
   declaration. A screen index moves ahead of the Data work.
 - ~~**How often does a request classify as a subtype?**~~ **1 in 60.** Not a
   dependency.
-- ~~**Who may call a custom method?**~~ **Answered 2026-10-09 (`FJS-D436`): FJS-D436 already answers this: a custom method's grade is `customMethodGrade`, which `example/api/surface.snapshot.md` now prints per method (`invoices.settle` — any signed-in caller, floor read gate 1) and which `@frontierjs/mcp` imports under `FJS-D258`'s amendment, so both readers use one owner.** The surface register names a method and not its
+- ~~**Who may call a custom method?**~~ **Answered 2026-10-09 (`FJS-D436`): FJS-D436 already answers this: a custom method's grade is `customMethodGrade`, which `example/api/app.snapshot.md` now prints per method (`invoices.settle` — any signed-in caller, floor read gate 1) and which `@frontierjs/mcp` imports under `FJS-D258`'s amendment, so both readers use one owner.** The surface register names a method and not its
   grade, and run 1's one wrong answer lived there. Whether that belongs in
-  `surface.snapshot.md` or in what `@frontierjs/mcp` projects is the same question
+  `app.snapshot.md` or in what `@frontierjs/mcp` projects is the same question
   for both readers.
-  - **Recommend A** — FJS-D436 already answers this: a custom method's grade is `customMethodGrade`, which `example/api/surface.snapshot.md` now prints per method (`invoices.settle` — any signed-in caller, floor read gate 1) and which `@frontierjs/mcp` imports under `FJS-D258`'s amendment, so both readers use one owner.
+  - **Recommend A** — FJS-D436 already answers this: a custom method's grade is `customMethodGrade`, which `example/api/app.snapshot.md` now prints per method (`invoices.settle` — any signed-in caller, floor read gate 1) and which `@frontierjs/mcp` imports under `FJS-D258`'s amendment, so both readers use one owner.
 - ~~**Where does the request register live?**~~ **Answered 2026-10-09 (`FJS-D728`): A — In the app: a model in the app's own `db/schema.lite`, keyed by the identifier each request resolved to, as `FJS-D14` rules for an intake.** An app's own model, or a hosted thing one
   tier up that reads many apps' registers. The second is a product; the first is a
   weekend.

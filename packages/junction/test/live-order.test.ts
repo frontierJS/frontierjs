@@ -1,7 +1,7 @@
 /**
  * test/live-order.test.ts — a pushed row has a POSITION, and a page has an end
  *
- * `FJS-011` made the store answer *is this row in the query*. This is the other
+ * `FJS-011` made the tether answer *is this row in the query*. This is the other
  * half (`FJS-270`): where the row goes, and what to do when the list cannot say.
  *
  *   • ordered list  → sorted insertion, and a patch that moves a sort key moves
@@ -20,7 +20,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
-import { createJunctionClient, Store, type QueryDirectives } from '../src/client/index.ts'
+import { createJunctionClient, Tether, type QueryDirectives } from '../src/client/index.ts'
 import { RESERVED_PARAMS, DIRECTIVE_PARAMS } from '@frontierjs/toolbelt/directives'
 import { normalizeOrderBy, comparatorFor, compareValues } from '@frontierjs/toolbelt/query'
 
@@ -124,14 +124,14 @@ describe('comparatorFor', () => {
   })
 })
 
-// ─── Store.place ──────────────────────────────────────────────────────────────
+// ─── Tether.place ─────────────────────────────────────────────────────────────
 
-describe('Store.place', () => {
+describe('Tether.place', () => {
   const byId = (a: Record<string, unknown>, b: Record<string, unknown>) =>
     (a.id as number) - (b.id as number)
 
   it('inserts at its sorted position, not at the end', () => {
-    const s = new Store([{ id: 1 }, { id: 3 }])
+    const s = new Tether([{ id: 1 }, { id: 3 }])
     s.place({ id: 2 }, 'id', byId)
     expect(s.get().map(r => r.id)).toEqual([1, 2, 3])
   })
@@ -139,14 +139,14 @@ describe('Store.place', () => {
   it('MOVES a row whose sort key changed', () => {
     const byN = (a: Record<string, unknown>, b: Record<string, unknown>) =>
       (a.n as number) - (b.n as number)
-    const s = new Store([{ id: 1, n: 1 }, { id: 2, n: 2 }, { id: 3, n: 3 }])
+    const s = new Tether([{ id: 1, n: 1 }, { id: 2, n: 2 }, { id: 3, n: 3 }])
     s.place({ id: 2, n: 9 }, 'id', byN)
     expect(s.get().map(r => r.id)).toEqual([1, 3, 2])
     expect(s.get()).toHaveLength(3)   // moved, not duplicated
   })
 
   it('trims the tail when told to, in one notification', () => {
-    const s = new Store([{ id: 2 }, { id: 3 }])
+    const s = new Tether([{ id: 2 }, { id: 3 }])
     const seen: number[] = []
     s.subscribe(rows => seen.push(rows.length))
     s.place({ id: 1 }, 'id', byId, 2)
@@ -155,7 +155,7 @@ describe('Store.place', () => {
   })
 
   it('refuses a record with no id, like upsert', () => {
-    const s = new Store<Record<string, unknown>>([{ id: 1 }])
+    const s = new Tether<Record<string, unknown>>([{ id: 1 }])
     s.place({ name: 'x' }, 'id', byId)
     expect(s.get()).toEqual([{ id: 1 }])
   })
@@ -178,78 +178,78 @@ const client = () => createJunctionClient({ url: 'http://localhost:3000' })
 describe('a live list keeps its order', () => {
   it('a created row lands where it sorts, not at the bottom', async () => {
     const { restore } = mockList([{ id: 3, n: 3 }, { id: 1, n: 1 }], { limit: 20, offset: 0, total: 2 })
-    const { service, store, load } = client().resource('items')
+    const { service, tether, load } = client().resource('items')
     await load({}, { orderBy: '-n' })
     restore()
 
     service._receive('created', { id: 2, n: 2 })
-    expect(store.get().map(r => r.n)).toEqual([3, 2, 1])
+    expect(tether.get().map(r => r.n)).toEqual([3, 2, 1])
   })
 
   it('a patch that changes the sort key moves the row', async () => {
     const { restore } = mockList([{ id: 1, n: 1 }, { id: 2, n: 2 }], { limit: 20, offset: 0, total: 2 })
-    const { service, store, load } = client().resource('items')
+    const { service, tether, load } = client().resource('items')
     await load({}, { orderBy: 'n' })
     restore()
 
     service._receive('patched', { id: 1, n: 9 })
-    expect(store.get().map(r => r.id)).toEqual([2, 1])
+    expect(tether.get().map(r => r.id)).toEqual([2, 1])
   })
 
   it('with no orderBy the row is appended and nothing is reordered', async () => {
     const { restore } = mockList([{ id: 3 }, { id: 1 }], { limit: 20, offset: 0, total: 2 })
-    const { service, store, load } = client().resource('items')
+    const { service, tether, load } = client().resource('items')
     await load()
     restore()
 
     service._receive('created', { id: 2 })
-    expect(store.get().map(r => r.id)).toEqual([3, 1, 2])
+    expect(tether.get().map(r => r.id)).toEqual([3, 1, 2])
   })
 })
 
 describe('a live list keeps its page', () => {
   it('the first page stays its own length, and the overflow row is page 2', async () => {
     const { restore } = mockList([{ id: 1, n: 1 }, { id: 2, n: 2 }], { limit: 2, offset: 0, total: 5 })
-    const { service, store, load, stale } = client().resource('items')
+    const { service, tether, load, stale } = client().resource('items')
     await load({}, { orderBy: 'n' })
     restore()
 
     service._receive('created', { id: 0, n: 0 })
-    expect(store.get().map(r => r.n)).toEqual([0, 1])
+    expect(tether.get().map(r => r.n)).toEqual([0, 1])
     // Not stale: the first `limit` rows in order IS page 1, exactly.
     expect(stale.get()).toBe(0)
   })
 
   it('past page 1 a new row is refused and counted, not guessed at', async () => {
     const { restore } = mockList([{ id: 5, n: 5 }, { id: 6, n: 6 }], { limit: 2, offset: 4, total: 9 })
-    const { service, store, load, stale } = client().resource('items')
+    const { service, tether, load, stale } = client().resource('items')
     await load({}, { orderBy: 'n', limit: 2, offset: 4 })
     restore()
 
     service._receive('created', { id: 0, n: 0 })
-    expect(store.get().map(r => r.n)).toEqual([5, 6])
+    expect(tether.get().map(r => r.n)).toEqual([5, 6])
     expect(stale.get()).toBe(1)
   })
 
   it('a row already on a later page is still updated in place', async () => {
     const { restore } = mockList([{ id: 5, n: 5 }, { id: 6, n: 6 }], { limit: 2, offset: 4, total: 9 })
-    const { service, store, load, stale } = client().resource('items')
+    const { service, tether, load, stale } = client().resource('items')
     await load({}, { orderBy: 'n', limit: 2, offset: 4 })
     restore()
 
     service._receive('patched', { id: 5, n: 5, name: 'edited' })
-    expect(store.get()[0]).toEqual({ id: 5, n: 5, name: 'edited' })
+    expect(tether.get()[0]).toEqual({ id: 5, n: 5, name: 'edited' })
     expect(stale.get()).toBe(0)
   })
 
   it('a removal from a list with more rows behind it leaves a gap only the server can fill', async () => {
     const { restore } = mockList([{ id: 1 }, { id: 2 }], { limit: 2, offset: 0, total: 7 })
-    const { service, store, load, stale } = client().resource('items')
+    const { service, tether, load, stale } = client().resource('items')
     await load()
     restore()
 
     service._receive('removed', { id: 1 })
-    expect(store.get().map(r => r.id)).toEqual([2])
+    expect(tether.get().map(r => r.id)).toEqual([2])
     expect(stale.get()).toBe(1)
   })
 
@@ -275,12 +275,12 @@ describe('a live list keeps its page', () => {
     // the same answer there. `stale` is what the view renders as *1 new —
     // refresh*, and a reload gets the server's own answer.
     const { restore } = mockList([{ id: 1 }, { id: 2 }], { limit: 2, offset: 0, total: 2 })
-    const { service, store, load, stale } = client().resource('items')
+    const { service, tether, load, stale } = client().resource('items')
     await load()
     restore()
 
     service._receive('created', { id: 3 })
-    expect(store.get().map(r => r.id)).toEqual([1, 2])
+    expect(tether.get().map(r => r.id)).toEqual([1, 2])
     expect(stale.get()).toBe(1)
   })
 
@@ -289,12 +289,12 @@ describe('a live list keeps its page', () => {
     // row already on the page takes `apply`'s `present` branch and never
     // reaches the bound. Without this a full unordered list would freeze.
     const { restore } = mockList([{ id: 1, n: 'a' }, { id: 2, n: 'b' }], { limit: 2, offset: 0, total: 2 })
-    const { service, store, load, stale } = client().resource('items')
+    const { service, tether, load, stale } = client().resource('items')
     await load()
     restore()
 
     service._receive('updated', { id: 2, n: 'B' })
-    expect(store.get().map(r => r.n)).toEqual(['a', 'B'])
+    expect(tether.get().map(r => r.n)).toEqual(['a', 'B'])
     expect(stale.get()).toBe(0)
   })
 
@@ -302,12 +302,12 @@ describe('a live list keeps its page', () => {
     // The other pair, and the case the old reading was really about: appending
     // here pushes nothing off, so the row somebody just made appears.
     const { restore } = mockList([{ id: 1 }], { limit: 20, offset: 0, total: 1 })
-    const { service, store, load, stale } = client().resource('items')
+    const { service, tether, load, stale } = client().resource('items')
     await load()
     restore()
 
     service._receive('created', { id: 2 })
-    expect(store.get().map(r => r.id)).toEqual([1, 2])
+    expect(tether.get().map(r => r.id)).toEqual([1, 2])
     expect(stale.get()).toBe(0)
   })
 
@@ -323,7 +323,7 @@ describe('a live list keeps its page', () => {
     restore()
   })
 
-  it('subscribers hear the count, in the shape a store has', async () => {
+  it('subscribers hear the count, in the shape a tether has', async () => {
     const { restore } = mockList([{ id: 1 }], { limit: 1, offset: 0, total: 4 })
     const { service, load, stale } = client().resource('items')
     await load()

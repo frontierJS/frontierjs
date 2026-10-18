@@ -6,7 +6,7 @@
   // reaches the oldest line loaded. The keys are verbs on `$context.commands`
   // and the open pane is its mode, so the shell does not leave the route on
   // the Esc and the terminal's page does not scroll under the pane.
-  import { useStore } from '@frontierjs/sierra/resource'
+  import { useTether } from '@frontierjs/sierra/resource'
   import { messages } from '@/resources/Message.mesa'
   import { at } from '#cell'
   import { clip } from '@/lib/scene/cells.js'
@@ -20,7 +20,7 @@
   var verbs = $context.commands
   const ROWS = box.h - 1
 
-  const { get: lines, unsubscribe } = useStore(messages.store)
+  const { get: lines, unsubscribe } = useTether(messages.tether)
   $.onDestroy(unsubscribe)
 
   let open = false

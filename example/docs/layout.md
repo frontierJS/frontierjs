@@ -14,7 +14,7 @@ example/
 │   ├── config/             ← junction.config.js — caravan, and where the services are
 │   └── src/
 │       ├── app.ts          ← createApp, auth plugin (+ its three services), caravan, channels.
-│       │                     Exported unstarted, so `junction surface` can import it
+│       │                     Exported unstarted, so `junction app` can import it
 │       ├── core/db.ts      ← client + GatePlugin + autoMigrate; appends auth's
 │       │                     schema fragments rather than pasting a copy
 │       ├── core/gate.ts    ← the ONE place a session becomes a number

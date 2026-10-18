@@ -2,7 +2,7 @@
 // tools/app-module.ts
 // Reading a BUILT Junction app off a module, for the tools that snapshot one.
 //
-// `junction surface` and `junction jobs` both answer a question no source scan
+// `junction app` and `junction jobs` both answer a question no source scan
 // can: what did this app turn out to be once every plugin registered, every
 // hook compiled and every route mounted. Both therefore need the same awkward
 // half — find the app or its factory, refuse an ambiguous module, run the
@@ -179,7 +179,7 @@ async function build(value: unknown, label: string): Promise<App> {
 
 export function checkSnapshot(outPath: string, body: string, command: string, subject: string): never | void {
   if (!existsSync(outPath))
-    fatal(`No snapshot at ${rel(outPath)} — run \`junction surface\` and commit it.`)
+    fatal(`No snapshot at ${rel(outPath)} — run \`${command}\` and commit it.`)
 
   const committed = readFileSync(outPath, 'utf8')
   if (committed === body) {

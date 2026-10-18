@@ -19,8 +19,8 @@
 
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 // Junction by relative path — `bun install` resolves workspace:* to a copy, so a
-// package-name import would test yesterday's Store.
-import { Store } from '../../junction/src/client/index.ts'
+// package-name import would test yesterday's Tether.
+import { Tether } from '../../junction/src/client/index.ts'
 
 // The fake service records what actually went over the wire, which is the only
 // thing worth asserting here: the version is not a property of the resource, it
@@ -70,18 +70,18 @@ vi.mock('@frontierjs/sierra/resource', () => ({
       },
       on: () => {},
     }),
-    // Junction's REAL Store, not a stub with a no-op set(): a push has to reach
-    // the store the way one really does, since what this file asserts is that
+    // Junction's REAL Tether, not a stub with a no-op set(): a push has to reach
+    // the tether the way one really does, since what this file asserts is that
     // it moves the rows and does NOT move the version this tab holds.
-    // load() mirrors junction's — read rows, write them to the store.
+    // load() mirrors junction's — read rows, write them to the tether.
     resource: () => {
-      const store = new Store()
+      const tether = new Tether()
       return {
-        store,
+        tether,
         load: async () => {
           const list = [...rows.values()]
           if (loadDelay) await new Promise(res => setTimeout(res, loadDelay))
-          store.set(list)
+          tether.set(list)
           return list
         },
       }
@@ -170,16 +170,16 @@ describe('the version rides the patch', () => {
     expect(lastPatch()).toEqual({ note: 'b', version: 4 })
   })
 
-  // A second tab's patch arrives as a WS upsert into the store. It moves the
+  // A second tab's patch arrives as a WS upsert into the tether. It moves the
   // rows and it must NOT move the version this tab carries: nothing on this
   // screen has read the pushed revision, and answering with it is what erased a
   // concurrent write (`FJS-341`).
-  test('a push into the store does not move the version this tab holds', async () => {
+  test('a push into the tether does not move the version this tab holds', async () => {
     const r = createResource('orders', { model: 'Order' })
     await r.load()
     expect(r.version(1)).toBe(3)
-    r.store.upsert({ id: 1, note: 'edited elsewhere', version: 4 })
-    expect(r.store.get().find(row => row.id === 1).note).toBe('edited elsewhere')
+    r.tether.upsert({ id: 1, note: 'edited elsewhere', version: 4 })
+    expect(r.tether.get().find(row => row.id === 1).note).toBe('edited elsewhere')
     expect(r.version(1)).toBe(3)
     await r.service.patch(1, { note: 'mine' })
     expect(lastPatch().version).toBe(3)
@@ -197,12 +197,12 @@ describe('the version rides the patch', () => {
     await r.load()
 
     // What the form is holding: the row as this tab read it, at version 3.
-    const draft = { ...r.store.get().find(row => row.id === 1) }
+    const draft = { ...r.tether.get().find(row => row.id === 1) }
 
     // The other tab writes. The change reaches this one as a push, and the
     // draft on screen does not move with it.
     rows.set(1, { id: 1, note: 'theirs', version: 4 })
-    r.store.upsert({ id: 1, note: 'theirs', version: 4 })
+    r.tether.upsert({ id: 1, note: 'theirs', version: 4 })
     expect(draft.note).toBe('first')
 
     await expect(r.service.patch(1, { note: `${draft.note} + mine` }))
@@ -217,7 +217,7 @@ describe('the version rides the patch', () => {
     const r = createResource('orders', { model: 'Order' })
     await r.load()
     rows.set(1, { id: 1, note: 'theirs', version: 4 })
-    r.store.upsert({ id: 1, note: 'theirs', version: 4 })
+    r.tether.upsert({ id: 1, note: 'theirs', version: 4 })
     await r.service.patch(1, { note: 'mine', version: 4 })
     expect(rows.get(1).note).toBe('mine')
   })

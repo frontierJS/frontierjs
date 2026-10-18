@@ -241,7 +241,7 @@ Three things this settled, all of them convention rather than feature:
   and the home screen cannot disagree about what needs attention, and the
   thresholds are readable in one place. Same reason `field-rules.js` is written
   that way.
-- **The shell subscribes; it does not poll.** A resource store is a module
+- **The shell subscribes; it does not poll.** A resource's tether is a module
   singleton fed by the WebSocket, so the shell loads servers/deployments/jobs
   once per *workspace* and a server reporting pressure reaches the notice bar
   with nothing asking again. The home screen's queue subscribes to the same
@@ -1416,7 +1416,7 @@ the one screen whose whole audience is somebody who has just arrived.
 
 - `docs/ADAPTERS.md` — the debt § Phase 14 left: what each of the four adapters
   costs to wire, the decisions already made, and what goes red when one is
-- `surface.snapshot.md` — the API contract the screens are written against
+- `app.snapshot.md` — the API contract the screens are written against
 - `docs/VISION.md` — what Basecamp is meant to be
 - `../../ISSUES.md` — `FJS-031`, `FJS-032`, `FJS-085` (`FJS-007`, the missing
   `@@gate`, closed 2026-08-10)

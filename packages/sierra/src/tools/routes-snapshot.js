@@ -1,7 +1,7 @@
 // tools/routes-snapshot.js — the route table as a committed file
 //
 // The UI realm's snapshot, beside the Data realm's (`litestone access`,
-// `litestone ddl`) and the API realm's (`junction surface`).
+// `litestone ddl`) and the API realm's (`junction app`).
 //
 // A Sierra route table is a NAMING CONVENTION over a file tree: a rename moves a
 // URL, a `_module.mesa` appearing one directory up rewraps every page under it,

@@ -122,7 +122,13 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           the push is the lock (`FJS-D1246`). services/drafts/ is its surface and
           takes no workspace: the caller's own `AppEditor` row is read first and
           the App through asSystem() after it; what may be written is
-          site-kit's `editable` (`formOf`, `applyEdit`), never a list here
+          site-kit's `editable` (`formOf`, `applyEdit`), never a list here.
+          core/site-preview.ts is a draft's preview: it BUILDS NOTHING — the
+          `site:preview` job sends `/site/preview` to the App's placement,
+          where Outpost builds in throwaway containers (`FJS-D1251`), with
+          the workspace's Cloudflare account and the account id off its zone
+          (`FJS-D1252`); each draft's last preview is a file beside the clone,
+          and a save during a build is the same run's next round
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
           core/runtime.ts is the ONE reader of how a container starts —
@@ -381,7 +387,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   patch is `changesNothing(patch)` and not `!Object.keys(patch).length`, because
   the version rides on every one and would otherwise turn an untouched form into
   a write that bumps it. And a screen holding a DRAFT pins the version in the
-  draft: `createResource` fills one in from what the store holds, the store is
+  draft: `createResource` fills one in from what the tether holds, the tether is
   live, and a push moves the remembered version while the draft sits still —
   which erases the other person's write with the guard in place and nothing
   said. `<Form record={row}>` is already right; the hand-rolled editors are not
@@ -527,12 +533,12 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   removed plus one added, so it costs a `removedSnapshots` allowance, and that
   is a separate change from the one that unblocked it. Generate all three from
   the package root as their headers still say.
-- **`API_PATHS` is DERIVED from `surface.snapshot.md` — do not add a path to it.**
+- **`API_PATHS` is DERIVED from `app.snapshot.md` — do not add a path to it.**
   It was a hand-kept copy of the service registry and went stale six times;
   three of those were paths this app's source names nowhere, because a plugin
   registered them (`connections` is junction's channels, `account`/`sessions`
   are auth's, `conduit-targets` is conduit's). It is parsed now, off the file
-  `junction surface` writes and CI already reruns with `--check`, so a service
+  `junction app` writes and CI already reruns with `--check`, so a service
   reaches both proxies by regenerating the snapshot. The failure it removes is
   silent and asymmetric: a signed-in browser makes every service call as a frame
   on `/ws`, so a missing HTTP path is invisible until something *unauthenticated*

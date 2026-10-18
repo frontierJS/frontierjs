@@ -28,7 +28,7 @@ if (error) {
   $.config.abort = true
   return
 }
-if (!paths) log.warn('No surface.snapshot.md — only /api/ and /ws are routed to the API. Run `junction surface` to route what the API mounts.')
+if (!paths) log.warn('No app.snapshot.md — only /api/ and /ws are routed to the API. Run `junction app` to route what the API mounts.')
 
 // ─── Show what will be routed ─────────────────────────────────────────────────
 echo('')

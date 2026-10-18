@@ -68,7 +68,7 @@ generates, asked of a process instead of a directory.*
 ## What already exists, and it is the larger half
 
 **The declared side is generated and CI-gated already.** `access.snapshot.md`,
-`principal.snapshot.md`, `surface.snapshot.md`, `release.snapshot.md`,
+`principal.snapshot.md`, `app.snapshot.md`, `release.snapshot.md`,
 `jsonschema.snapshot.md`, `ddl.snapshot.sql` and `invariants.snapshot.md` are
 each written by a named command and rechecked by the `snapshots` phase. So this
 is not *build a model of the app*; the model is committed. What is missing is a

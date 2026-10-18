@@ -434,8 +434,8 @@ missed the index it had just declared, with nothing anywhere reporting it.
     also the unique half's spelling, and a uniqueness constraint has no read-side
     scope to name, so B would split one predicate slot across two spellings. C is
     two names for one predicate.
-- ~~Does `introspect`'s column parse survive a predicate containing
-  parentheses?~~ **Answered, and it did not.** `indexOf('(')` found the bracket
+- ~~**Does `introspect`'s column parse survive a predicate containing
+  parentheses?**~~ **Answered, and it did not.** `indexOf('(')` found the bracket
   inside a QUOTED table name before it found the column list, and the corpus's
   **47 expression indexes** broke the same function for a second reason. Both are
   `FJS-586`, closed: the parse steps over the table name, counts depth, and an

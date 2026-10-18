@@ -426,7 +426,7 @@ model Hold {
   })
 })
 
-// A live store holding a Hold drops it at `expiresAt` by its own clock, since
+// A tether holding a Hold drops it at `expiresAt` by its own clock, since
 // the transition is the clock and no frame announces it (`FJS-1274`). It can
 // only do that if the schema tells it which column is the edge.
 describe('x-effective — the window reaches the client', () => {

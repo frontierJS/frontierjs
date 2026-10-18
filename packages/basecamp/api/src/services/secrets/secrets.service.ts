@@ -16,7 +16,7 @@
 // mattered would be the one somebody forgot to write.
 //
 // Verified in the Data realm rebuild by planting an SSH key through the real
-// client: 0 occurrences in `strings bc.db`, 0 in the audit log.
+// client: 0 occurrences in `strings bc.db`, 0 in the audit trail.
 
 import { createService, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'

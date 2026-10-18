@@ -436,11 +436,11 @@ export default defineNotification<Order>({
 
 The UI half is a resource file whose data half is `<script module>`, per Invariant 18 — `web/src/resources/Notification.mesa`. `examples/Notification.mesa` is the one this package ships to copy:
 
-- `notifications` — `createResource('notifications', { model: 'Notification' })`; `.store` is the live list, `.service` the client
+- `notifications` — `createResource('notifications', { model: 'Notification' })`; `.tether` is the live list, `.service` the client
 - `isUnread(n)` — what the bell counts and the list styles
 - `markRead(id)` — `service.patch(id, { readAt })`
 
-Real-time needs no code, given two things on the server: the `channels()` plugin, and a connection joined to `notifications:user:<id>`. The inApp driver pushes `notifications created` there, and the client routes a frame to a store only as `<service> <verb>` — which is why the app mounts the list as the `notifications` service.
+Real-time needs no code, given two things on the server: the `channels()` plugin, and a connection joined to `notifications:user:<id>`. The inApp driver pushes `notifications created` there, and the client routes a frame to a tether only as `<service> <verb>` — which is why the app mounts the list as the `notifications` service.
 
 ---
 

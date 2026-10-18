@@ -87,7 +87,7 @@ export default createService({
     //
     // Under a backdate this MOVES an end date backwards, and the row keeps no
     // trace of what it used to say. That is the second axis missing, said as
-    // a write: the audit log holds the previous value and nothing can join
+    // a write: the audit trail holds the previous value and nothing can join
     // against it (`api/src/domain/payroll` § Bitemporality).
     if (open.length === 1) {
       await db.payWindow.update({ where: { id: open[0].id }, data: { effectiveTo: at } })

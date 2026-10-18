@@ -516,7 +516,7 @@ closed twice and left open sixteen times in the same codebase.
 ```
 @syntax(sql)                     semantic — the text is in this syntax: md, sql, js, html… (no validation)
 @hardDelete                      on relation field: hard-delete children in @@softDelete(cascade)
-@trail(dbName)                     field-level audit log to a trail database
+@trail(dbName)                     field-level audit trail to a trail database
 ```
 
 ## `@minItems` / `@maxItems` on a relation — how many children
@@ -1000,8 +1000,8 @@ moment, so a `@from` over every row reads it the way it is read.
 **What neither reaches is a broadcast that nothing triggers.** `$inWindow` is
 asked at the fan-out, so a frame about an expired row is not sent — except a
 removal, which is sent anyway, because suppressing it strands the row in every
-store already holding it. A row that expires with no write behind it announces
-nothing at all, and no store learns it fell out ([`FJS-1274`](../../../ISSUES_ARCHIVE.md#fjs-1274)).
+tether already holding it. A row that expires with no write behind it announces
+nothing at all, and no tether learns it fell out ([`FJS-1274`](../../../ISSUES_ARCHIVE.md#fjs-1274)).
 
 ### The commitment
 
@@ -1163,11 +1163,11 @@ columns (`@createdBy`, `@default(auth().field)`) are held out of the
 ```
 See [access-control.md](./access-control.md).
 
-### Audit logging
+### Audit trail
 ```
 @@trail(dbName)                    log all writes to a trail database
 ```
-See [audit-logging.md](./audit-logging.md).
+See [trail.md](./trail.md).
 
 ## Enums
 

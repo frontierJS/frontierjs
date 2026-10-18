@@ -6,7 +6,7 @@
 // session becomes a number). This file only assembles them.
 //
 // It EXPORTS a configured app and never starts one. `api/index.ts` is the entry
-// that calls start(); keeping the two apart is what lets `junction surface` and
+// that calls start(); keeping the two apart is what lets `junction app` and
 // `junction jobs` import this file to describe the app without taking the port
 // the dev server is already on.
 
@@ -700,7 +700,7 @@ app.conduit.receive({
 // Exported unstarted. `api/index.ts` is what a runner is pointed at, and the
 // only thing that binds a port or a listener.
 
-// One default export and no named `app`: `junction surface` refuses a module
+// One default export and no named `app`: `junction app` refuses a module
 // exporting more than one candidate rather than guessing which is the app.
 export default app
 export { PORT }

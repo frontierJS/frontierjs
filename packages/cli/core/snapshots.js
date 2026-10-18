@@ -242,7 +242,7 @@ function binEntry(manifestPath, pkgName, bin) {
 //
 // The snapshots an APP's own layout calls for and does not have yet. Discovery
 // reads a header, and an app `fli new` just wrote has no headers to read — so
-// `project:map` and `app:atlas`, which read `surface.snapshot.md`, refused a
+// `project:map` and `app:atlas`, which read `app.snapshot.md`, refused a
 // fresh app while naming a command nobody had typed.
 //
 // A row is only the FIRST command. Once written, the file's own header is the
@@ -287,7 +287,7 @@ export function expectedSnapshots(root) {
   if (entry) {
     const app = ['--app', entry]
     rows.push(
-      { file: 'surface.snapshot.md',   dirs: ['.', 'api'], argv: ['junction', 'surface', ...app] },
+      { file: 'app.snapshot.md',       dirs: ['.', 'api'], argv: ['junction', 'app', ...app] },
       { file: 'jobs.snapshot.md',      dirs: ['.', 'api'], argv: ['junction', 'jobs', ...app] },
       { file: 'principal.snapshot.md', dirs: ['.', 'api'], argv: ['junction', 'principal', ...app] },
     )

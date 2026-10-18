@@ -332,7 +332,7 @@ here", and only the second sends anyone looking. Search for it if you ran
 SELECT id FROM vault WHERE blob IS NOT NULL;   -- then read each back through the client
 ```
 
-## Audit log reads lag writes within a session
+## Audit trail reads lag writes within a session
 
 The trail **defers one event-loop tick**: `fireLog()` schedules with `setImmediate`, so a read in the same tick as the write returns 0 rows and the `.jsonl` file may not exist yet. Yield once — `await new Promise(r => setImmediate(r))` — and every entry is there. There is no timed buffer to wait out.
 

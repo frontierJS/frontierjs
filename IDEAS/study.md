@@ -82,17 +82,17 @@ shell and the pane is severable in Haven; Sierra never learns Claude.
 
 ## Open questions
 
-- **Q1 — the noun. Ruled 2026-10-17 (owner): the study.** A room noun: the
+- ~~**Q1 — the noun.**~~ **Answered 2026-10-17 (owner): the study.** A room noun: the
   place beside the town where work happens. "Mode" already meant NORMAL/typing
   (`Mode.mesa`), and "desk" and "bench" were taken. Haven's files are
   `Study.mesa` and `lib/study/`, and the tabs persist to
   `~/.fli/haven/study.json`. Sierra's slot stays the generic `side`, because
   Sierra never learns what Haven puts in it.
-- **Q2 — the command. Ruled 2026-10-17 (owner): `/work` and a key.** `/work`
+- ~~**Q2 — the command.**~~ **Answered 2026-10-17 (owner): `/work` and a key.** `/work`
   in Haven's command line, and a key that toggles the study from anywhere,
   chosen in 1.1 beside the focus key.
 
----
+## Plan
 
 ### Phase 0 — Probe the three unknowns
 

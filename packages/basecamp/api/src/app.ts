@@ -2,7 +2,7 @@
 // Basecamp application bootstrap — the construction site.
 //
 // It BUILDS an app and never starts one; api/index.ts is the entry that calls
-// start(). `junction surface` and `junction jobs` import this file to describe
+// start(). `junction app` and `junction jobs` import this file to describe
 // the app, and a describe that binds a port fights the dev server (`FJS-D128`).
 
 import {
@@ -42,7 +42,7 @@ import { accountMail }         from './core/account-mail.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
 import { notifications }  from '@frontierjs/notifications'
-import { basecampAuditLog, basecampAuditPreImage, hostReportKey, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
+import { basecampAuditLog, basecampAuditPreImage, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
 import { agentGuard, apiKeyGuard, apiKeyUsage, narrowForAgent } from './services/api-keys/scopes.ts'
@@ -214,7 +214,7 @@ export async function buildBasecampApp(
     // services/, jobs/, notifications/ beside this file, ../config above (`FJS-D1080`).
     root: import.meta.url,
     config, auth, db, logger,
-    credentials: [outpostCredential({ db, logger, hostKey: hostReportKey(env.ENCRYPTION_KEY) })],
+    credentials: [outpostCredential({ db, logger })],
     principal: membershipClaim({
       tenantFrom:  workspaceOrKeys,
       model:       'workspaceMember',

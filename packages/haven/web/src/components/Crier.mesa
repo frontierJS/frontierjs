@@ -8,7 +8,7 @@
   //
   // Placed by the square's route, inside the scene's slot, since the crier
   // speaks in the square alone.
-  import { useStore } from '@frontierjs/sierra/resource'
+  import { useTether } from '@frontierjs/sierra/resource'
   import { members }  from '@/resources/Member.mesa'
   import { messages } from '@/resources/Message.mesa'
   import { cells, clip } from '@/lib/scene/cells.js'
@@ -19,7 +19,7 @@
   let view = scene.view
   $.onDestroy(scene.subscribe(() => { view = scene.view }))
 
-  const { get: lines, unsubscribe } = useStore(messages.store)
+  const { get: lines, unsubscribe } = useTether(messages.tether)
   $.onDestroy(unsubscribe)
 
   let names = {}

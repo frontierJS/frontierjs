@@ -4318,7 +4318,7 @@ function expandTenancy(schema) {
 
     // jsonl and trail models have no policy engine to deny with, so a scope
     // generated onto one reads as enforcement and is not. A trail row is the
-    // audit log's own and passes; a jsonl model naming a tenant is refused,
+    // audit trail's own and passes; a jsonl model naming a tenant is refused,
     // since skipping it let every tenant read and write the file (FJS-1920).
     const dbName = model.attributes.find(a => a.kind === 'db')?.name
     const driver = dbName ? drivers[dbName] : 'sqlite'
@@ -6394,7 +6394,7 @@ function validate(schema) {
 
       // Warn if no trail database exists — @trail won't be synthesized
       if (!logTargets.size)
-        warnings.push(`Model '${model.name}', field '${field.name}': @secret has no trail database declared — audit logging will not be active. Add a 'database audit { model AuditTrail }' block to enable it.`)
+        warnings.push(`Model '${model.name}', field '${field.name}': @secret has no trail database declared — the audit trail will not be active. Add a 'database audit { model AuditTrail }' block to enable it.`)
     }
   }
 

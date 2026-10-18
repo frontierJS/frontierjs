@@ -24,7 +24,7 @@
 // so the day they start crossing, this file says so rather than staying quiet.
 //
 // The sharp edge asserted below: an object entry narrows the service exactly as
-// a string does. It is not silent — `surface.snapshot.md` carries the
+// a string does. It is not silent — `app.snapshot.md` carries the
 // policy-applied method list and the `snapshots` CI phase fails a stale one —
 // but a service that gains its first `methods:` to turn validation on loses
 // every verb it did not name, and `narrowing is not free` is the test saying so.
@@ -33,7 +33,7 @@ import { describe, test, expect } from 'bun:test'
 import { createClient }           from '../../litestone/src/index.js'
 import { createApp }              from '../src/core/app.ts'
 import { collectMethodInputs, collectMethodOutputs, methodEntryName, buildService, defineMethod } from '../src/core/service.ts'
-import { describeSurface }    from '../src/core/app-model.ts'
+import { describeApp }        from '../src/core/app-model.ts'
 import { generateOpenAPI }    from '../src/plugins/openapi/index.ts'
 
 const SCHEMA = `
@@ -283,7 +283,7 @@ describe('an object entry narrows, exactly as a name does', () => {
     await expect(app.service('orders').find({})).rejects.toThrow()
   })
 
-  test('describe() reports the declaration, so surface.snapshot.md can diff it', async () => {
+  test('describe() reports the declaration, so app.snapshot.md can diff it', async () => {
     const { app } = await mkApp(['find', { method: 'pay', input: 'PayOrder' }])
     const d = (app.services.get('orders') as { describe(): { methods: string[]; inputs: Record<string,string> } }).describe()
     expect(d.methods.sort()).toEqual(['find', 'pay'])
@@ -313,7 +313,7 @@ describe('a declared output is reported', () => {
       .toThrow(/\.output must name a `type`/)
   })
 
-  test('describe() and the surface carry it, and so does the OpenAPI answer', async () => {
+  test('describe() and the app description carry it, and so does the OpenAPI answer', async () => {
     const db  = await createClient({ db: ':memory:', schema: SEARCH })
     const app = createApp({ db: db as never })
     app.services.register(buildService({
@@ -324,8 +324,8 @@ describe('a declared output is reported', () => {
     await app._startForTest()
 
     expect(app.services.get('orders')!.describe().outputs).toEqual({ search: 'SearchResult' })
-    const surface = describeSurface(app)
-    expect(surface.services.find(s => s.name === 'orders')!.outputs).toEqual({ search: 'SearchResult' })
+    const desc = describeApp(app)
+    expect(desc.services.find(s => s.name === 'orders')!.outputs).toEqual({ search: 'SearchResult' })
 
     const { generateJsonSchema } = await import('../../litestone/src/index.js')
     const defs = (generateJsonSchema((db as any).$schema, { mode: 'create' }) as any).$defs

@@ -2353,7 +2353,7 @@ export function stripReadOnly(fields, data, opts = {}) {
 // `@frontierjs/toolbelt/match` owns it; this is the re-export, so every
 // caller here is unchanged.
 //
-// It moved because there are two live stores and only one of them asked.
+// It moved because there are two tethers and only one of them asked.
 // jetty's upserted whatever its channel delivered, so a row that had LEFT the
 // list went straight back into it (`FJS-493`) — and jetty may not import
 // sierra, while a hand copy is what `FJS-059` already paid for once.

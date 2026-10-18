@@ -6,7 +6,7 @@ title: Orders
   import { prefs } from '@/stores/prefs.js'
   import { day, today, calendarZone } from '@/datetime.js'
   import { plainDateIn, addToDate, startOfDay } from '@frontierjs/toolbelt/datetime'
-  import { session, useStore } from '@frontierjs/sierra/resource'
+  import { session, useTether } from '@frontierjs/sierra/resource'
   import { page } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -38,7 +38,7 @@ title: Orders
     { name: 'actions',    label: 'Actions' },
   ]
 
-  const { get: rows, unsubscribe } = useStore(orders.store)
+  const { get: rows, unsubscribe } = useTether(orders.tether)
   $.onDestroy(unsubscribe)
 
   $: (session.level, prefs.dense, prefs.quickView, prefs.currency)
@@ -49,7 +49,7 @@ title: Orders
   //
   // This asked for no ordering at all, so a shop past the 20-row page showed
   // the twenty OLDEST — and an order somebody had just placed was on page two
-  // of the screen the create form sends them to (`FJS-558`). The live store is
+  // of the screen the create form sends them to (`FJS-558`). The tether is
   // right to leave it out: past page 1 nothing in a browser can know whether a
   // pushed row belongs on an earlier page, so it counts on `resource.stale`
   // instead, and the only symptom is an absence.
@@ -190,7 +190,7 @@ title: Orders
       // nothing. Until 2026-08-06 this line was `await orders.load()`, and that
       // refetch was the only reason the page looked right — an action announced
       // nothing at all, and a second tab went stale in silence.
-      if (row?.id) orders.store.upsert(row)
+      if (row?.id) orders.tether.upsert(row)
     } catch (e) {
       // 409 Conflict — the row moved, or the move was never legal from here.
       // 403 Forbidden — the move is gated above this session.

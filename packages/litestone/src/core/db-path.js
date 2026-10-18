@@ -43,7 +43,7 @@ export function schemaAnchor(schemaFilePath) {
  * contract and not an accident: basecamp's seed test runs the seeder in a
  * scratch directory with `cwd: dir`, redirecting `database main` by env var and
  * `database audit` — which has no env var — by the CWD alone. Under an
- * unconditional anchor that audit log went back to the shared `db/audit/` and
+ * unconditional anchor that audit trail went back to the shared `db/audit/` and
  * the suite failed with SQLITE_BUSY. basecamp's own `core/db.ts` documents
  * depending on it.
  *

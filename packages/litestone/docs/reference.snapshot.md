@@ -715,7 +715,7 @@ model Example {
 
 - **`category`** — `contact` · `device` · `location` · `government` · `financial` · `employment` · `communication` · `demographic` · `health` · `genetic` · `biometric` · `characteristic` · `criminal`
 - **Also typed** — `pii` · `gdpr` · `personal data`
-- **Deeper** — [audit-logging.md](audit-logging.md)
+- **Deeper** — [trail.md](trail.md)
 - **See also** — [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@omit`](#omit-field)
 
 #### `@secret` `[(rotate: …)]` <a id="secret-field"></a>
@@ -838,7 +838,7 @@ model Example {
 ```
 
 - **Also typed** — `audit` · `history`
-- **Deeper** — [audit-logging.md](audit-logging.md)
+- **Deeper** — [trail.md](trail.md)
 - **See also** — [`@@trail`](#trail-model) · [`database`](#database-declaration)
 
 ### Clean a value on write
@@ -1891,7 +1891,7 @@ model Example {
 
 - **`kind`** — `child`
 - **Also typed** — `data subject`
-- **Deeper** — [audit-logging.md](audit-logging.md)
+- **Deeper** — [trail.md](trail.md)
 - **See also** — [`@personal`](#personal-field) · [`@@auth`](#auth-model)
 
 #### `@@trail` `(<database>[, reads: false][, writes: false])` <a id="trail-model"></a>
@@ -1910,7 +1910,7 @@ model Example {
 }
 ```
 
-- **Deeper** — [audit-logging.md](audit-logging.md)
+- **Deeper** — [trail.md](trail.md)
 - **See also** — [`@trail`](#trail-field) · [`database`](#database-declaration) · [`@@anonymous`](#anonymous-model)
 
 #### `@@mirror` `(key: <field>)` <a id="mirror-model"></a>
@@ -1943,7 +1943,7 @@ model Example {
 ```
 
 - **Also typed** — `unattributed` · `ballot` · `survey` · `confidential`
-- **Deeper** — [audit-logging.md](audit-logging.md)
+- **Deeper** — [trail.md](trail.md)
 - **See also** — [`@@trail`](#trail-model) · [`@@createdBy`](#createdby-model) · [`@date`](#date-field)
 
 #### `@@db` `(<database>)` <a id="db-model"></a>

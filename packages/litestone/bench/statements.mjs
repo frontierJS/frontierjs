@@ -126,7 +126,7 @@ async function request(kind, fn) {
   bucket = kind
   requests++
   try { await fn() } catch (e) { failed++; if (flag('--why')) console.log(`  ${kind}\t${String(e?.message).split('\n')[0]}`) }
-  // The audit logger writes on setImmediate, and its statements belong to the
+  // The audit trail writes on setImmediate, and its statements belong to the
   // write that caused them rather than to the next request.
   await new Promise(r => setImmediate(r))
   await new Promise(r => setImmediate(r))

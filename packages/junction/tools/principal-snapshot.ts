@@ -10,7 +10,7 @@
 // artefact byte-identical, CI green, and every read answering somebody else's
 // rows (`FJS-514`).
 //
-// Read off a BUILT app, like `junction surface` and `junction jobs`, and for
+// Read off a BUILT app, like `junction app` and `junction jobs`, and for
 // the same reason: a resolver is wired in application code and no file tree can
 // answer which one an app ended up with.
 //
@@ -364,7 +364,7 @@ if (import.meta.main) {
     console.log(`  ${realm?.scoped.length ?? 0} scoped · ${realm?.delegated.length ?? 0} delegated · ${realm?.exempt.length ?? 0} exempt`)
   }
 
-  // Same reason as `junction surface`: an app built for description holds a
+  // Same reason as `junction app`: an app built for description holds a
   // database and a poller nobody asked to stop.
   await stopApp(app)
   process.exit(0)

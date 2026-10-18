@@ -588,7 +588,7 @@ try {
     createdAt: stamp(age),
   })
 
-  if (!existsSync(AUDIT)) throw new Error(`no audit log at ${AUDIT} — has anything been written?`)
+  if (!existsSync(AUDIT)) throw new Error(`no audit trail at ${AUDIT} — has anything been written?`)
   // 200 days is comfortably past the declared 90 and comfortably short of a
   // clock-skew argument. The fresh one carries today's date and the same marker.
   const trail = readFileSync(AUDIT, 'utf8')

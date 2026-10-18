@@ -35,7 +35,7 @@ const sierra = createSierraViteConfig(sierraConfig)
 // the same one: the container is served behind a reverse proxy that has to make
 // this identical decision, and a second copy would be the same bug one layer
 // down. That file no longer holds a list — it derives one from
-// `surface.snapshot.md`, so a service added to the API reaches this proxy
+// `app.snapshot.md`, so a service added to the API reaches this proxy
 // without anybody remembering to come here.
 const proxy = Object.fromEntries(API_PATHS.map(path => [path, {
   target:       API,

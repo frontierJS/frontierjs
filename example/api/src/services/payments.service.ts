@@ -615,7 +615,7 @@ export default createService({
   // seller's screens, the two verbs, and nothing else — no `create`, no
   // `patch`, no `remove`. A payment is not a row a person makes, and 405 is
   // a better answer than a 403 from a gate the caller could not have known
-  // about. surface.snapshot.md carries this list and CI fails a stale one.
+  // about. app.snapshot.md carries this list and CI fails a stale one.
   // `start` states gate 0: a hosted checkout is reached by a shopper with no
   // session at all and the payment CODE is the credential (`FJS-497`), so the
   // read-gate floor a custom method otherwise takes (`FJS-826`) would refuse

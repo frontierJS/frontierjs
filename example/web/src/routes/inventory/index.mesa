@@ -26,7 +26,7 @@ title: Inventory
   // and that is all it is. The server refuses regardless (Invariant 6).
   import { movements }       from '../../resources/InventoryMovement.mesa'
   import { productVariants } from '../../resources/ProductVariant.mesa'
-  import { session, toFieldErrors, useStore } from '@frontierjs/sierra/resource'
+  import { session, toFieldErrors, useTether } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -59,7 +59,7 @@ title: Inventory
   // like every other list in this app. The LEVELS do not and cannot: they are
   // not rows of any table, so there is nothing for a store to hold or for a
   // channel to push. They are re-asked after every write on this screen.
-  const { get: ledger, unsubscribe: offLedger } = useStore(movements.store)
+  const { get: ledger, unsubscribe: offLedger } = useTether(movements.tether)
   $.onDestroy(offLedger)
 
   let levels      = []
@@ -155,7 +155,7 @@ title: Inventory
   // field and worded by the seed, so every sentence under a box below is
   // written once, in the schema, and this file does not know the rule exists.
 
-  const { get: variantRows, unsubscribe: offVariants } = useStore(productVariants.store)
+  const { get: variantRows, unsubscribe: offVariants } = useTether(productVariants.tether)
   $.onDestroy(offVariants)
   productVariants.load({}, { limit: 500, orderBy: 'sku' }).catch(() => {})
 

@@ -31,7 +31,7 @@ siteName: Kitchen sink
   import { groups } from '@/lib/nav.js'
 
   import { notifications, isUnread } from '../resources/Notification.mesa'
-  import { useStore } from '@frontierjs/sierra/resource'
+  import { useTether } from '@frontierjs/sierra/resource'
 
   $: (session.oauthError, session.oauthMessage)
 
@@ -39,7 +39,7 @@ siteName: Kitchen sink
   // fed by the same WS events every other table uses — the inApp driver
   // publishes to `notifications:user:<id>`, api/src/app.ts joins a signed-in
   // connection to it, and nothing here polls.
-  const { get: notes, unsubscribe: unsubNotes } = useStore(notifications.store)
+  const { get: notes, unsubscribe: unsubNotes } = useTether(notifications.tether)
   $.onDestroy(unsubNotes)
 
   // Reload on sign-in and sign-out, not once at mount: the list is scoped to

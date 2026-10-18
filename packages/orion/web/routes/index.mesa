@@ -4,7 +4,7 @@ title: Automations
 <script>
   // Every flow this caller can read, and a way to start one.
   import Flow, { flows } from '../resources/Flow.mesa'
-  import { session, useStore } from '@frontierjs/sierra/resource'
+  import { session, useTether } from '@frontierjs/sierra/resource'
   import { page, goto } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -24,7 +24,7 @@ title: Automations
   // A tone per status, never a color (Invariant 13).
   const TONE = { draft: 'muted', active: 'success', paused: 'warning', archived: 'muted' }
 
-  const { get: rows, unsubscribe } = useStore(flows.store)
+  const { get: rows, unsubscribe } = useTether(flows.tether)
   $.onDestroy(unsubscribe)
   $: (session.level)
 

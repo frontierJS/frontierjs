@@ -124,7 +124,7 @@ title: Plan
     toasts.success(`Now ${money(result.price)} for new subscribers`)
     draft = planVersions.make()
 
-    // Re-read the plan, and this is the one thing on this page a live store
+    // Re-read the plan, and this is the one thing on this page a tether
     // cannot do for it. `currentPrice` is `@from(PlanVersion, …)` — it moves
     // when a CHILD row is written, and what was written here is a
     // `PlanVersion`. Nothing announces that the plan changed, because as a row

@@ -57,7 +57,7 @@ set.
 `FJS-D454`). Audience as a word is held `open` (`FJS-D636`).
 
 **Retention — shipped, per database, not per field.** `database audit {
-retention 90d }` (`docs/audit-logging.md:13`), swept by `db.asSystem().$retain()`
+retention 90d }` (`docs/trail.md:13`), swept by `db.asSystem().$retain()`
 (`src/core/client.js:9003`), which an app schedules as a job (`FJS-521`;
 `FJS-1480` is the new app that ships no such job).
 

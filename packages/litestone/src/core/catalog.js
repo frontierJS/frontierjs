@@ -1621,7 +1621,7 @@ export const DOCS = {
   'field:guarded': 'encryption.md',
   'field:encrypted': 'encryption.md',
   'field:hashed': 'encryption.md',
-  'field:personal': 'audit-logging.md',
+  'field:personal': 'trail.md',
   'field:secret': 'encryption.md',
 
   // stamp
@@ -1637,7 +1637,7 @@ export const DOCS = {
   'field:point': 'geo.md',
   'field:vector': 'vectors.md',
   'field:keepVersions': 'file-storage.md',
-  'field:trail': 'audit-logging.md',
+  'field:trail': 'trail.md',
 
   // transform
   'field:trim': 'schema.md',
@@ -1709,9 +1709,9 @@ export const DOCS = {
   'move:seals': 'modeling.md',
   'move:stamps': 'schema.md',
   'model:auth': 'access-control.md',
-  'model:person': 'audit-logging.md',
-  'model:trail': 'audit-logging.md',
-  'model:anonymous': 'audit-logging.md',
+  'model:person': 'trail.md',
+  'model:trail': 'trail.md',
+  'model:anonymous': 'trail.md',
   'model:db': 'multi-database.md',
   'model:trait': 'traits.md',
   'model:createdBy': 'schema.md',

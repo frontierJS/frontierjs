@@ -6,7 +6,7 @@ dated: 2026-10-17
 
 # Idea — owner editing: a site's owner changes their own words
 
-**Status: PROPOSED. 1.1 and 1.2 are built. Q1–Q12 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1249`).** Do not cite this file as describing
+**Status: PROPOSED. 1.1–1.3 are built. Q1–Q15 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1252`).** Do not cite this file as describing
 behavior — see `VERIFYING.md`.
 
 A site's owner (a Kobami client, or whoever runs frontierjs.com) opens their
@@ -231,6 +231,50 @@ Basecamp itself lists drafts and history and holds the grants.
     after.
   - **Recommend A** — an owner edits a value, never YAML, and the writer sits
     beside site-kit's rule.
+- ~~**Q13 — What code an owner's body may carry (1.3, `FJS-3283`).**~~ **Answered 2026-10-18 (`FJS-D1250`): A — the body's code is the developer's: the leading `<script>`, every `{…}` and every tag with its attributes in the new body must already be in the old one, and a link may not use the `javascript:` scheme. An owner edits text and may delete; adding code or markup is refused by name.** Today
+  `applyEdit` passes a body with a leading `<script>` or a `{…}` expression,
+  and `compileMd` runs both wherever the draft is built. Mintlify's MDX
+  (CVE-2025-67843) and next-mdx-remote (CVE-2026-0969, now `blockJS` by
+  default) were this hole.
+  - **A** — the body's code is the developer's: the leading `<script>`, every
+    `{…}` and every tag with its attributes in the new body must already be in
+    the old one, and a link may not use the `javascript:` scheme. An owner
+    edits text and may delete; adding code or markup is refused by name.
+  - **B** — plain markdown only: a file whose body holds any script,
+    expression or tag is not editable in the form at all.
+  - **C** — leave the body open and rely on where the build runs (Q14).
+  - **Recommend A** — `FJS-D1226` already makes code the developer's, so this
+    closes a hole in that ruling rather than adding one. B shuts out Luminous
+    Heart's 186 raw-HTML lines. C still ships the script to every visitor of
+    the preview, which holds a write session (`FJS-D1225`), and of production.
+- ~~**Q14 — Where a draft's preview builds (1.3).**~~ **Answered 2026-10-18 (`FJS-D1251`): A — on a fleet machine through Outpost, in a throwaway container, as a `git` App already is (`outpost/src/server.js` `POST /build`): basecamp sends the commit, the machine clones, installs, builds and uploads.** A build runs the repository's
+  own code: `bun install`'s scripts, `site.js`, the preset and every `.mesa`.
+  - **A** — on a fleet machine through Outpost, in a throwaway container,
+    as a `git` App already is (`outpost/src/server.js` `POST /build`):
+    basecamp sends the commit, the machine clones, installs, builds and
+    uploads.
+  - **B** — on basecamp's host: a worktree from the bare clone, `bun install`
+    and `site-kit build --preview` as a child process with a scrubbed
+    environment.
+  - **C** — the repository's own CI builds it, as Decap reads a host's
+    commit status for its preview link ([Decap](https://decapcms.org/docs/deploy-preview-links/));
+    basecamp only reads the status.
+  - **Recommend A** — the tree's precedent is that basecamp never builds a
+    repository; the machine does. B runs a site's dependencies on the box
+    holding `ENCRYPTION_KEY` (`FJS-2714`), where a scrubbed env does not hide
+    the parent's `/proc/<pid>/environ` from the same user. CloudCannon builds
+    in its own isolated container too
+    ([CloudCannon](https://cloudcannon.com/documentation/articles/what-is-a-site-build/)).
+    C contradicts `FJS-D1228` and needs a CI per host.
+- ~~**Q15 — Which credential uploads the preview (1.3).**~~ **Answered 2026-10-18 (`FJS-D1252`): A — the workspace's Cloudflare edge account (the `provider_key` Secret `services/edge/` already reads), handed to wrangler as `CLOUDFLARE_API_TOKEN` for the one run. The token then needs Workers Scripts edit beside DNS.**
+  - **A** — the workspace's Cloudflare edge account (the `provider_key`
+    Secret `services/edge/` already reads), handed to wrangler as
+    `CLOUDFLARE_API_TOKEN` for the one run. The token then needs Workers
+    Scripts edit beside DNS.
+  - **B** — deferred like `FJS-D1247`: whatever wrangler login the building
+    host holds, with the account as its own step.
+  - **Recommend A** — basecamp already holds the Cloudflare account
+    (`FJS-D921`), so it is no new noun; B is 0.3's expired login again.
 
 ## The plan
 
@@ -387,8 +431,45 @@ preview link shows it, Publish ships it, and the commit carries their name.
   - Left: photos (Phase 3), and lists, maps and folded values, which show
     read-only. The image has no git (1.3 needs it there too). A client
     landing on `/` meets the members' overview and its refusals.
-- [ ] 1.3 A preview of the draft: `build --preview` on the branch, then
+- [x] 1.3 A preview of the draft: `build --preview` on the branch, then
   `deploy --preview` aliased by the branch.
+  **Built 2026-10-18.** First `FJS-D1250` (Q13, `FJS-3283`): `applyEdit`
+  refuses a body holding a `<script>` block, a `{…}` or a tag with its
+  attributes more often than the old body did, and any `javascript:` link,
+  naming the piece. Then the build (Q14): Outpost's `POST /site/preview` makes
+  a fresh checkout of the draft's branch, runs `bun install --frozen-lockfile`
+  at its root and `site-kit build --preview` then `deploy --preview <slug>` at
+  `source.path`, each in a `docker run --rm` as Outpost's own user, and
+  removes the checkout. It answers the commit it built and the aliased URL.
+  The token (Q15) reaches only the upload's container, named by `-e` and
+  valued in the docker client's environment, never argv. Basecamp's
+  `core/site-preview.ts` picks the workspace's Cloudflare account (the one its
+  ingress zone names, else its only one), reads the account id off that zone,
+  sends the build to the App's placement, and keeps each draft's last preview
+  in `<SITES_DIR>/<appId>.previews.json`. The `site:preview` job is
+  dispatched by `drafts.open`, by a save that changed a file, and by
+  `drafts.preview` (Build again). A save during a build is picked up by the
+  same run's next round. `/sites/[id]/` shows the state, the link and the
+  refusal, and polls while a build is on its way.
+  - Proved by outpost's `test/outpost.test.js` § a site preview (10), site-kit's
+    `test/content.mjs` (10 code cases), and basecamp's `api/test/drafts.test.ts`
+    § a draft's preview (no account, no placement and a stub machine each
+    refused by name; the account and token chosen).
+  - Proved end to end by a scratch drive, 15/15 (not committed): a real API
+    on a temp database, the real Outpost enrolled by `dev:outpost`, real
+    Docker, and a bare clone of this repo as Harbor Spa's remote at
+    `website/site`. Lee opened a draft and saved while it built. The run went
+    round again and ended on the saved commit, refused only by Cloudflare
+    itself (the account id was the sink's). The token was in no log, and the
+    checkout was gone. In Chrome as Lee, the card showed the refusal, Build
+    again queued a build, and the screen polled until it settled.
+  - Left: a real upload, which needs 0.3's token. The basecamp image still has
+    no git (`FJS-3280`); the build no longer needs it there, but the checkout
+    does.
+  - **Found: frontierjs.com has no markdown under `content/`.** Every route
+    in `website/site` is `.mesa`, so an owner can edit nothing on it, and this
+    phase's *Done when* cannot be met there as written. The drive added an
+    `.md` page to its scratch remote.
 - [ ] 1.4 Publish: merge, build, deploy, record. A failed build, a conflict,
   or undeployed commits (Q5) each refuse by name.
 - [ ] 1.5 History: each publish lists the files and the author, and Revert

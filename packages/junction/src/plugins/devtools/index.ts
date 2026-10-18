@@ -335,7 +335,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
     // The server binds in ready(), not register(). `ready-hooks` is a
     // `needsHost` start phase, so a boot without a port — `_startForTest()`,
     // and every snapshot generator through it — skips this entirely. It used to
-    // bind in register(), which meant `junction surface` opened a real listener
+    // bind in register(), which meant `junction app` opened a real listener
     // on 5503 as a side effect of describing an app, and would have thrown
     // outright had anything else held the port (`FJS-419`).
     ready(app: import('../../core/app.ts').App): void {

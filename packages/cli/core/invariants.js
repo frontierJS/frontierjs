@@ -80,7 +80,7 @@ export const ENFORCERS = {
                 'against a real Litestone client' }],
 
   7: [{ kind: 'test', at: 'packages/litestone/test/litestone.test.ts',
-        covers: '§ audit log redaction — `@secret`, `@encrypted` and `@guarded` log as `[redacted]` and ' +
+        covers: '§ audit trail redaction — `@secret`, `@encrypted` and `@guarded` log as `[redacted]` and ' +
                 '`@personal` as `[personal]` in a field entry and in a `before`/`after` snapshot, and no ' +
                 '`@hashed` digest reaches any entry' }],
 

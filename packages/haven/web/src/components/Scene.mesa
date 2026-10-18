@@ -346,7 +346,7 @@
     for (const s of blast.struck ?? []) {
       stun = { ...stun, [s.id]: t + STUN_MS }
       if (me != null && String(s.id) === String(me)) {
-        commands.close('find')
+        commands.close('walk')
         x = s.to.x
         y = s.to.y
         here.updateMeta(meta())
@@ -422,13 +422,17 @@
     // A diagonal is a step either way round, or a figure slips through a
     // wall's corner and between two pieces touching at theirs.
     const squeezed = step[0] && step[1] && !(stands(nx, y) && stands(x, ny))
-    const door = !squeezed && stage.doorAt(nx, ny, Date.now())
-    if (door) { goto(door.to, { from: page.pathname, x: nx, y: ny }); return }
-    if (squeezed || !stands(nx, ny) || stage.pacerOn(nx, ny, Date.now())) {
-      if (turned !== facing) { facing = turned; here.updateMeta(meta()) }
-      return
-    }
+    if (!squeezed && stepTo(nx, ny)) return
+    if (turned !== facing) { facing = turned; here.updateMeta(meta()) }
+  }
+
+  /** A step as a key takes it: onto a door is through it; false where it is refused. */
+  function stepTo(nx, ny) {
+    const door = stage.doorAt(nx, ny, Date.now())
+    if (door) { goto(door.to, { from: page.pathname, x: nx, y: ny }); return true }
+    if (!stands(nx, ny) || stage.pacerOn(nx, ny, Date.now())) return false
     moveTo(nx, ny)
+    return true
   }
 
   async function command(line) {
@@ -473,7 +477,7 @@
     <History {room} {nicks} box={PANE} {askNicks} />
     <Sitting {stage} {here} {x} {y} {spawn} tell={(text) => { note = text }} />
     <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} />
-    <Stops {stage} {view} {draft} {where} tell={(text) => { note = text }} />
+    <Stops {stage} {view} {draft} {where} {stepTo} tell={(text) => { note = text }} />
     <Whisper {room} {here} />
     <Dice {room} />
     <Fishing {room} {stage} {here} {view} tell={(text) => { note = text }} />

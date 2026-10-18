@@ -52,8 +52,8 @@ $.config.api        = api
 $.config.sides      = distinctHosts([api, web].filter(Boolean))
 $.config.hosts      = $.config.sides
 $.config.appId      = deployConf.app_id ?? deployConf.path.split('/').pop()
-$.config.dbDir      = deployConf.db?.path ?? `${api.path}/db`
-$.config.envFile    = deployConf.api?.env ?? `${api.path}/.env.production`
+$.config.dbDir      = apiFiles(deployConf, api.path).dbDir
+$.config.envFile    = apiFiles(deployConf, api.path).envFile
 $.config.startTime  = Date.now()
 
 log.info(`Retiring ${$.config.appId} from ${target}`)

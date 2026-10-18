@@ -20,7 +20,7 @@ title: Audit trail
   // rows were missing, which reads exactly like a trail that only has 50.
   import { session } from '../../../session.js'
   import { audit } from '../../../resources/AuditEvent.mesa'
-  import { useStore } from '@frontierjs/sierra/resource'
+  import { useTether } from '@frontierjs/sierra/resource'
   import { at } from '../../../datetime.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
@@ -28,7 +28,7 @@ title: Audit trail
 
   $: session.workspaceId
 
-  const { get: rows, unsubscribe } = useStore(audit.store)
+  const { get: rows, unsubscribe } = useTether(audit.tether)
 
   let error   = null
   let loading = true

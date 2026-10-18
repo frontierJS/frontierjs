@@ -24,7 +24,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
     service: () => _proxy,
     resource: (name, idField) => ({
       service: _proxy,
-      store: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
+      tether: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
       load: (query, params) => {
         _calls.push(['load', query, params])
         return Promise.resolve([])

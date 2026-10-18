@@ -75,7 +75,7 @@ It is the only place that scheme is written down.
   `createResource(name, { app: harborApp() })`. `harborApp()` is a Junction
   client created with `relay`, so each call leaves as the `service_call` frame
   the socket would have carried, `service:call` hands it to Harbor, and Harbor's
-  own client makes it with `forward()`. The live store, query matching, `stale`
+  own client makes it with `forward()`. The tether, query matching, `stale`
   and the patch baseline are therefore sierra's and junction's, with nothing
   here to reload. Three things are not obvious. **A service's channel is joined
   on its first call, BEFORE the call leaves**, so a push between the answer and
@@ -102,7 +102,7 @@ It is the only place that scheme is written down.
   event name is carried the whole way** — adapter → `channel-registry.fanOut` →
   `channel:event` → `PagePort.subscribe` handler as `meta.event` →
   `client.receive()`, which splits it as the socket's own handler does. Drop it
-  at any hop and nothing reaches the store at all.
+  at any hop and nothing reaches the tether at all.
 - **The real adapter is `junction-adapter.js`, and `default-adapter.js` is still
   a placeholder.** `createJunctionAdapter` (`@frontierjs/jetty/junction`) wraps
   `@frontierjs/junction/client`, so there is one implementation of the

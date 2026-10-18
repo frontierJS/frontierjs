@@ -110,6 +110,13 @@ export function applyEdit(source, { body, values = {} } = {}) {
     head = head.slice(0, start) + lines.join('\n') + head.slice(start + block.length)
   }
 
+  if (body !== undefined) {
+    const added = codeAdded(oldBody, body)
+    if (added) return { refused: `${added} is code or markup, so it is the developer's — an owner edits the words around it` }
+    const link = SCRIPT_LINK.exec(body)
+    if (link) return { refused: `a link to ${link[1]}… runs script, so it is refused` }
+  }
+
   const text = head + (body === undefined ? oldBody : body)
   let after
   try {
@@ -121,6 +128,45 @@ export function applyEdit(source, { body, values = {} } = {}) {
   const moved = [...new Set([...Object.keys(expected), ...Object.keys(after)])].filter((k) => !same(expected[k], after[k]))
   if (moved.length) return { refused: `the edit would also change ${moved.join(', ')}` }
   return { text }
+}
+
+// ─── the body's code (FJS-D1250) ──────────────────────────────────────────
+
+// Mesa compiles a `.md` body's leading <script> as the route's script and every
+// {…} as an expression, and a build runs both: an owner who could add one would
+// run code wherever the draft builds and in every visitor's browser. A tag
+// carries attributes (`onclick`, an `href`), so it is code too. The owner's
+// body may hold only the code the old one held, as many times or fewer.
+const SCRIPT_BLOCK = /<script\b[^>]*>[\s\S]*?<\/script\s*>/gi
+const TAG          = /<[A-Za-z][\w-]*(?=[\s/>])[^>]*>/g
+
+// A markdown link, a reference definition or an autolink to a script scheme.
+const SCRIPT_LINK  = /(?:\]\(\s*<?|^\s*\[[^\]]+\]:\s*<?|<)((?:java|vb)script:)/im
+
+/** Each piece of code in a markdown body, in order. */
+function codeOf(body) {
+  const out = []
+  const rest = String(body).replace(SCRIPT_BLOCK, (m) => { out.push(m); return ' ' })
+  for (const m of rest.matchAll(TAG)) out.push(m[0])
+  let depth = 0, start = -1
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === '{') { if (depth++ === 0) start = i }
+    else if (rest[i] === '}' && depth > 0 && --depth === 0) out.push(rest.slice(start, i + 1))
+  }
+  if (depth > 0) out.push(rest.slice(start))
+  return out
+}
+
+/** The first piece of code `after` holds more often than `before`, or null. */
+function codeAdded(before, after) {
+  const held = new Map()
+  for (const c of codeOf(before)) held.set(c, (held.get(c) ?? 0) + 1)
+  for (const c of codeOf(after)) {
+    const n = held.get(c) ?? 0
+    if (!n) return c.length > 60 ? `${c.slice(0, 57)}…` : c
+    held.set(c, n - 1)
+  }
+  return null
 }
 
 const isScalar = (v) => v === null || ['string', 'number', 'boolean'].includes(typeof v)

@@ -28,10 +28,10 @@ drawing. So the app is built, asked what it answers, and the answer is written
 to a file you commit:
 
 ```console
-junction surface --app api/src/app.ts
+junction app --app api/src/app.ts
 ```
 
-That file is `surface.snapshot.md`, and it is graded in CI, so a method that
+That file is `app.snapshot.md`, and it is graded in CI, so a method that
 quietly stops being served is a diff on a branch rather than a 405 in
 production. It is written below, and then the viewer is asked what it can see.
 
@@ -43,7 +43,7 @@ $.config.__step = 5
 if (!needs($, ['appDir'], { from: '01-app' })) return
 
 const app  = $.config.appDir
-const snap = join(app, 'surface.snapshot.md')
+const snap = join(app, 'app.snapshot.md')
 
 // The app's OWN junction, out of its node_modules — never a global one, and
 // never `bunx`, which would reach the network for a package that is installed
@@ -51,14 +51,14 @@ const snap = join(app, 'surface.snapshot.md')
 // the app refuses to build without ENCRYPTION_KEY.
 if (!await must($, probe.command({
   bin:      join(app, 'node_modules', '.bin', 'junction'),
-  args:     ['surface', '--app', 'api/src/app.ts'],
+  args:     ['app', '--app', 'api/src/app.ts'],
   cwd:      app,
-  needle:   /surface\.snapshot\.md/,
+  needle:   /app\.snapshot\.md/,
   describe: 'the snapshot is written',
-  name:     'junction surface',
+  name:     'junction app',
 }), {
   likely:    'the app could not be built — the tail is above, and it is the same failure `bun run start` would give',
-  reproduce: `cd ${app} && bunx junction surface --app api/src/app.ts`,
+  reproduce: `cd ${app} && bunx junction app --app api/src/app.ts`,
 })) return
 
 if (!await must($, probe.fileContains({

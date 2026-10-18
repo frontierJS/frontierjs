@@ -56,7 +56,7 @@ describe('a tool writing its document to a pipe', () => {
 
   // The app's shutdown logs on stdout; a snapshot tool that stops it outside
   // `quietly` ends its document with two [App] Shutting down lines.
-  it.each(['surface', 'jobs', 'notifications', 'principal'])('junction %s --stdout ends at the document', tool => {
+  it.each(['app', 'jobs', 'notifications', 'principal'])('junction %s --stdout ends at the document', tool => {
     const dir = mkdtempSync(join(tmpdir(), 'junction-stdout-'))
     try {
       writeFileSync(join(dir, 'app.ts'), APP)

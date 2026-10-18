@@ -3,7 +3,7 @@
 // The question every other artefact in this repo cannot ask.
 //
 // `db/access.snapshot.md` is the access surface you HAVE, `db/ddl.snapshot.sql`
-// the DDL you emit, `surface.snapshot.md` the API you answer. All of them are
+// the DDL you emit, `app.snapshot.md` the API you answer. All of them are
 // derived from the seed, so a word absent from the seed is absent from every one
 // of them — and nobody has ever got an error for never having heard of `@@fts`,
 // `trait` or `@@transitions`. They write the application without them, at a cost

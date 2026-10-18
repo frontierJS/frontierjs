@@ -21,7 +21,7 @@ wire, a schema keyword, a header — has no declaration anywhere, so its owner i
 MINTED and the question asked of that file is whether it contains the string at all. That is a
 weaker claim, and it is the one a file can answer.
 
-**10 of those checks are marked weak** and the mark is the point: asking whether
+**9 of those checks are marked weak** and the mark is the point: asking whether
 junction contains the string `log` proves nothing, where `x-fjs-build` is nearly a proof. A row
 that claimed the strong check while holding the weak one would be worse than no row.
 
@@ -153,7 +153,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |
 | `tokenStorage` | `packages/junction/src/client/index.ts` | mentioned | — |
-| `client.nodes` / `resource.record(id)` | `packages/junction/src/client/nodes.ts` | mentions `nodes` — weak | — |
+| `client.entries` / `resource.record(id)` | `packages/junction/src/client/entries.ts` | mentioned | — |
 | `matchesQuery(fields, record, query)` | `packages/toolbelt/src/match/match.js` | yes | 1 |
 | `$after` / `endCursor` / `resource.more()` | `packages/toolbelt/src/directives/directives.js` | mentioned | — |
 | `comparatorFor(orderBy)` | `packages/toolbelt/src/query/query.js` | yes | 2 |
@@ -162,7 +162,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
 | `*.mount.js` | `packages/sierra/src/scanner/walk.js` | mentions `mount` — weak | — |
-| `page.query` / `page.directives` | `packages/sierra/src/router/page-fields.js` | mentions `query` — weak | — |
+| `page.query` / `page.directives` | `packages/sierra/src/router/index.js` | mentions `query` — weak | — |
 | `watchProxy()` / `createSignal()` / `createRoot(fn)` | `packages/mesa/src/runtime.js` | yes | — |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 13 |
 | `renderComponent(src, opts)` | `packages/mesa/src/render-component.js` | yes | — |

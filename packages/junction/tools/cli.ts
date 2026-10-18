@@ -14,7 +14,7 @@ const [cmd, ...rest] = Bun.argv.slice(2)
 
 const TOOLS: Record<string, string> = {
   repl:    'repl.ts',
-  surface: 'surface.ts',
+  app:     'app.ts',
   errors:  'errors-snapshot.ts',
   jobs:    'jobs-snapshot.ts',
   principal: 'principal-snapshot.ts',
@@ -26,10 +26,10 @@ const TOOLS: Record<string, string> = {
 const target = TOOLS[cmd ?? '']
 
 if (!target) {
-  console.log('Usage: junction <repl|surface|errors|jobs|principal|notifications|atlas|call> [args]')
+  console.log('Usage: junction <repl|app|errors|jobs|principal|notifications|atlas|call> [args]')
   console.log()
   console.log('  repl [--url U]    interactive REPL against a running app (or --host/--port/--https)')
-  console.log('  surface --app <m> write the API surface snapshot  (--check in CI)')
+  console.log('  app --app <m>     write the app snapshot — services, routes, plugins  (--check in CI)')
   console.log('  errors            write the error boundary snapshot  (--check in CI)')
   console.log('  jobs --app <m>    write the jobs snapshot — what runs with no caller (--check in CI)')
   console.log('  principal --app <m>  write the principal snapshot — who a caller becomes (--check in CI)')

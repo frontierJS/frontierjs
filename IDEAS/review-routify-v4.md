@@ -79,7 +79,7 @@ reintroduces the waterfall the proposal opens by naming.
 
 **Prop drilling dissolves in the store, not in the compiler.** `createResource`
 is module-level, so a nested component imports it directly; under it,
-`junction/src/client/nodes.ts` keys a `NodeRegistry` by **model + id**, not by
+`junction/src/client/entries.ts` keys an `EntryRegistry` by **model + id**, not by
 service and not by component, so two components ten levels apart reading order
 `1024` hold one node. This is the cheaper cut and it should be priced before any
 compiler pass: after a per-row store, how much drilling is left?
@@ -166,7 +166,7 @@ Recorded because a comparison that only scores the other side is worthless.
 
 - **Island props are baked into the marker**, as JSON inside an HTML comment.
   So on `site/` the drilling complaint has teeth that it does not have on
-  `web/`: the build has to serialize a seed down the tree, and the node registry
+  `web/`: the build has to serialize a seed down the tree, and the entry registry
   cannot reach it because there is no client store at build time. Two different
   problems wearing one name, and only one of them is solved here.
 - **No per-request SSR at all.** Not a gap by accident — `FJS-543` is why a

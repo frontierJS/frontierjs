@@ -1,6 +1,6 @@
 ---
 name: bridge-index
-description: The named cross-package handoffs — who owns each translation between litestone, junction, sierra and the browser client. Use before grepping for a seam, or before adding to one — a gate copy, an error mapper, the result envelope, a directive, a schema keyword, a broadcast, a live store.
+description: The named cross-package handoffs — who owns each translation between litestone, junction, sierra and the browser client. Use before grepping for a seam, or before adding to one — a gate copy, an error mapper, the result envelope, a directive, a schema keyword, a broadcast, a tether.
 ---
 
 # Bridge index — the named cross-package handoffs
@@ -20,11 +20,11 @@ Detail: `references/data-api.md`
 - `validateInput(type)` — the same 400 for a method no model describes, through `methods: [{ method, input }]` — `junction/src/core/litestone.ts`
 - `customMethodGrade(method, declared, levels)` — what grades a custom method: `declared` · `floor` · `unchecked` — `junction/src/core/litestone.ts`
 - `needsBackfill` — the middle step of an expand/contract split, found in the app's source by `fli release:check` — `cli/core/backfills.js`
-- `sessionGateLevel(user)` — a session → the 0–7 scale, via `toolbelt/gate`'s `gradeStanding` — `junction/src/core/litestone.ts`
+- `sessionGateLevel(user)` — a session → the 0–7 scale with the shipped `gradeStanding`; the default `getLevel`, so a caller's level is asked of `db.$levelOf` — `junction/src/core/litestone.ts`
 - `toDataPrincipal(user)` — a session → the principal `auth()` reads (`userId` → `id`) — `junction/src/core/litestone.ts`
 - `bearerClaim({ from, model, column, claims, key, subject, session })` / `BEARER` / `bearerOf(ctx, model)` — the resolver for a caller with no session who still owns rows; `ctx.locals[BEARER]` is the first grant resolved in the app's stated order and `bearerOf` reads any; a session beside the grant is a 400 before the grant is read unless `session: 'merge'` (`FJS-D832`) — `junction/src/core/litestone.ts`
 - `bearerClaim(...).mint(db, data)` / `.mintOnCreate()` / `.redeem(db)` — a grant minted by the caller's own create (the digest named in `system:`, `FJS-D819`) and a link redeemed for the httpOnly cookie `from: cookie()` reads (`FJS-D340`); the one place the key, purpose, model and column are stated — `junction/src/core/litestone.ts`
-- `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` — the one reading of `tenancy { }` — `litestone/src/core/tenancy.js`
+- `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` — the one reading of `tenancy { }` — `litestone/src/core/tenancy.js`, `litestone/src/tenant.js` (the registry)
 - `accessorCandidates()` — `model Post` ⇄ service `posts` ⇄ `db.post` — `junction/src/core/litestone.ts`
 - `db.$checkWhere(accessor, where)` — is this a valid filter key; throws — `litestone/src/core/client.js`
 - `db.$checkOrderBy(accessor, orderBy)` — is this a sortable key, with the reason when it is not; throws — `litestone/src/core/client.js`
@@ -112,9 +112,9 @@ Detail: `references/api-ui.md`
 - `resource.move(id, { after, before, into })` — a drag as one patch; the key minted on the device with `toolbelt/rank`, the one minter litestone uses too — `sierra/src/resource/resource.js`
 - `client.auth.*` — the browser half of `@frontierjs/auth` — `junction/src/client/index.ts`
 - `signIn` → `completeSignIn(code)` — a session or a challenge; the client holds the ticket — `junction/src/client/index.ts`
-- `client.auth.providers()` + `OAUTH_ERRORS` / `session.oauthMessage` — which providers exist, and what an OAuth error means — `junction/src/client/index.ts`
+- `client.auth.providers()` + `OAUTH_ERRORS` / `session.oauthMessage` — which providers exist, and what an OAuth error means — `junction/src/client/index.ts`, `sierra/src/resource/session.js` (`OAUTH_ERRORS`)
 - `tokenStorage` on the client + `session` in sierra — one owner for the token, one shape for the session — `junction/src/client/index.ts`
-- `client.nodes` / `resource.record(id)` — one node per row keyed by model; a list is a view — `junction/src/client/nodes.ts`
+- `client.entries` / `resource.record(id)` — one entry per row keyed by model; a list is a view — `junction/src/client/entries.ts`
 - `matchesQuery(fields, record, query)` — is a pushed record still in this list — `toolbelt/src/match/match.js`
 - `$after` / `endCursor` / `resource.more()` — a live list grows a keyset window — `toolbelt/src/directives/directives.js`
 - `comparatorFor(orderBy)` — the one reading of `orderBy` and `select` — `toolbelt/src/query/query.js`
@@ -122,7 +122,7 @@ Detail: `references/api-ui.md`
 **UI**
 Detail: `references/ui.md`
 - `*.mount.js` — a package's routes, mounted by one file — `sierra/src/scanner/walk.js`
-- `page.query` / `page.directives` — the URL split exactly as the bridge splits a request — `sierra/src/router/page-fields.js`
+- `page.query` / `page.directives` — the URL split exactly as the bridge splits a request — `sierra/src/router/index.js`
 - `watchProxy()` / `createSignal()` / `createRoot(fn)` — the reactive seam and lifetime ownership — `mesa/src/runtime.js`
 - `mount(label, Component, {props, root})` — page entry; registers the delegation root — `mesa/src/runtime.js`
 - `renderComponent(src, opts)` — UI → HTML at build time — `mesa/src/render-component.js`

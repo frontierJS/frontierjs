@@ -22,7 +22,7 @@ import { createStatic }           from '../src/static.js'
 import { createStaticServer }     from '../src/serve.js'
 import { readConfig }             from '../src/config.js'
 import { ensureCert }             from '../src/cert.js'
-import { mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync } from 'node:fs'
+import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
 
@@ -172,6 +172,104 @@ describe('what the machine is asked to do', () => {
     expect(argv.findIndex(c => c.startsWith('docker run'))).toBeGreaterThan(at('docker stop -t 10 fjs-app-1_replaced'))
     expect(argv.lastIndexOf('docker rm -f fjs-app-1_replaced')).toBeGreaterThan(argv.findIndex(c => c.startsWith('docker run')))
     expect(argv).not.toContain('docker rm -f fjs-app-1')
+  })
+
+  // A draft's review build (FJS-D1251): the repository's code runs in
+  // throwaway containers, and the token reaches only the upload's.
+  describe('a site preview', () => {
+    const SITE = { kind: 'git', repo: 'https://git.test/acme/site.git', path: 'site' }
+    const BODY = { app_id: 'app-1', source: SITE, branch: 'draft/spring', alias: 'spring',
+      cloudflare: { token: 'cf-secret-token', account_id: 'acct-1' } }
+    const UPLOAD = 'Worker Version ID: v1\nVersion Preview URL: https://0a1b2c3d-harbor.kobami.workers.dev\n'
+      + 'Version Preview Alias URL: https://spring-harbor.kobami.workers.dev\n'
+    const serverFor = (answers = {}) => {
+      const fake = fakeRunner({ 'git -C': { stdout: 'c0ffee\n' }, 'docker run --rm': { stdout: UPLOAD }, ...answers })
+      const envs = []
+      const run = async (argv, opts) => {
+        if (opts?.env) envs.push({ argv: argv.join(' '), env: opts.env })
+        return fake.run(argv)
+      }
+      const workDir = mkdtempSync(join(tmpdir(), 'outpost-preview-'))
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+      })
+      return { server, workDir, envs, argv: () => fake.calls.map(c => c.join(' ')) }
+    }
+
+    test('installs, builds and uploads in three containers, and answers the aliased URL and the commit', async () => {
+      const { server, workDir, argv } = serverFor()
+      const res = await send(server, 'POST', '/site/preview', BODY)
+      const body = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(body).toEqual({ commit_sha: 'c0ffee', url: 'https://spring-harbor.kobami.workers.dev',
+        version_url: 'https://0a1b2c3d-harbor.kobami.workers.dev' })
+      const runs = argv().filter(c => c.startsWith('docker run --rm'))
+      expect(runs.map(c => c.split(' oven/bun:1.4.2 ')[1])).toEqual([
+        'bun install --frozen-lockfile', 'bun x site-kit build . --preview', 'bun x site-kit deploy . --preview spring',
+      ])
+      expect(runs[0]).toContain('-w /src ')
+      expect(runs[1]).toContain('-w /src/site ')
+      expect(runs.every(c => c.includes(`--mount type=bind,source=${workDir}/app-1.preview,target=/src`))).toBe(true)
+      expect(argv().some(c => c.includes(`fetch --quiet --depth 1 -- ${SITE.repo} +refs/heads/draft/spring:refs/heads/preview`))).toBe(true)
+      expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.preview`)
+      expect(existsSync(`${workDir}/app-1.preview-cache`)).toBe(true)
+    })
+
+    test('the token reaches the upload alone, through the environment and in no argv', async () => {
+      const { server, envs, argv } = serverFor()
+      await send(server, 'POST', '/site/preview', BODY)
+
+      expect(envs).toHaveLength(1)
+      expect(envs[0].argv).toContain('-e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ACCOUNT_ID')
+      expect(envs[0].argv).toContain('site-kit deploy')
+      expect(envs[0].env).toEqual({ CLOUDFLARE_API_TOKEN: 'cf-secret-token', CLOUDFLARE_ACCOUNT_ID: 'acct-1' })
+      expect(argv().some(c => c.includes('cf-secret-token'))).toBe(false)
+    })
+
+    test('a failed build is the machine\'s words, uploads nothing, and removes the checkout', async () => {
+      const { server, workDir, envs, argv } = serverFor({ 'docker run --rm': { exitCode: 1, stderr: 'site-kit build: no content/routes\n' } })
+      const res = await send(server, 'POST', '/site/preview', BODY)
+
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('no content/routes')
+      expect(envs).toEqual([])
+      expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.preview`)
+    })
+
+    test('a refused upload is wrangler\'s reason, not its footer', async () => {
+      const said = '\u001b[31m✘ [ERROR] A request to the Cloudflare API (/accounts/acct-1/workers/services/harbor) failed.\n\n'
+        + '  Authentication failed (status: 400) [code: 9106]\n\nIf you think this is a bug, please open an issue\n🪵  Logs were written\n'
+      const fake = fakeRunner({ 'git -C': { stdout: 'c0ffee\n' } })
+      const run = async (argv) => argv.includes('deploy') ? { exitCode: 1, stdout: '', stderr: said } : fake.run(argv)
+      const docker = createDocker({ run, workDir: mkdtempSync(join(tmpdir(), 'outpost-preview-')) })
+      const server = createOutpostServer(CONFIG, { docker, inspector: createInspector({ run }), log: { warn() {}, error() {} } })
+
+      const res = await send(server, 'POST', '/site/preview', BODY)
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toBe('the upload failed: A request to the Cloudflare API '
+        + '(/accounts/acct-1/workers/services/harbor) failed. Authentication failed (status: 400) [code: 9106]')
+    })
+
+    test('an upload that names no aliased URL is refused', async () => {
+      const { server } = serverFor({ 'docker run --rm': { stdout: 'Uploaded harbor\n' } })
+      const res = await send(server, 'POST', '/site/preview', BODY)
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('named no preview URL aliased spring')
+    })
+
+    test.each([
+      ['a branch shaped like an option', { branch: '--upload-pack=x' }],
+      ['a branch with ..', { branch: 'draft/../main' }],
+      ['an alias that is not a label', { alias: 'Spring Sale' }],
+      ['a source path outside the checkout', { source: { ...SITE, path: '../etc' } }],
+      ['no token', { cloudflare: { account_id: 'acct-1' } }],
+    ])('%s is refused before anything runs', async (_, over) => {
+      const { server, argv } = serverFor()
+      const res = await send(server, 'POST', '/site/preview', { ...BODY, ...over })
+      expect(res.status).toBe(500)
+      expect(argv().some(c => c.startsWith('git ') || c.startsWith('docker '))).toBe(false)
+    })
   })
 
   // A build of its own, so a failing one is a red "Build image" step and the

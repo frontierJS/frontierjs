@@ -37,7 +37,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
     callHeaders: () => ({}),
     resource: () => ({
       service: _proxy,
-      store: {
+      tether: {
         get: () => _store,
         subscribe: (fn) => { fn(_store); return () => {} },
         set: (rows) => { _store = rows },
@@ -117,7 +117,7 @@ describe('a syncable model', () => {
     expect(typeof sheets.cachedAt()).toBe('number')
   })
 
-  test('the rows go into the same store the live layer writes', async () => {
+  test('the rows go into the same tether the live layer writes', async () => {
     const sheets = createResource('sheets', { model: 'Sheet' })
     await sheets.load({}, null)
     _store = []

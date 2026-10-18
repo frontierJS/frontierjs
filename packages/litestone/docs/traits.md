@@ -278,4 +278,4 @@ Order does not matter. Extends are collected across the whole import tree and ap
 
 - [schema.md](./schema.md) — full schema language reference
 - [access-control.md](./access-control.md) — `@@allow` / `@@deny` policies
-- [audit-logging.md](./audit-logging.md) — `@@trail` for audit trails
+- [trail.md](./trail.md) — `@@trail` for audit trails

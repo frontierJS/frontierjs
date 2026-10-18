@@ -185,7 +185,7 @@ t('backdate.andItAnswersTheNewRate',                     nowAtMarch.rate === 4_2
 
 // **Where the previous belief actually is.** The row was overwritten in place:
 // `effectiveTo` said null and now says March, and nothing on it records that.
-// What holds the old value is the audit log — `@@trail(audit)`, a `logger`
+// What holds the old value is the audit trail — `@@trail(audit)`, a `trail`
 // database — so the second axis is not absent, it is a FILE.
 //
 // That is the distinction worth pinning. *What did we believe about March* is

@@ -1,6 +1,6 @@
 // test/client.test.ts
 // JunctionClient test suite — Bun test runner.
-// Tests cover: URL normalization, Store, ServiceProxy, resource(),
+// Tests cover: URL normalization, Tether, ServiceProxy, resource(),
 // _hasFiles / _toFormData, and WS routing logic.
 //
 // No real network calls — _request is intercepted via fetch mock.
@@ -11,7 +11,7 @@ import {
   createJunctionClient,
   ResultShapeError,
   ServiceProxy,
-  Store,
+  Tether,
 } from '../src/client/index.ts'
 import { stubbable }           from './helpers.ts'
 
@@ -329,22 +329,22 @@ describe('ServiceProxy CRUD routing', () => {
 
 })
 
-// ─── Store ────────────────────────────────────────────────────────────────────
+// ─── Tether ───────────────────────────────────────────────────────────────────
 
-describe('Store', () => {
+describe('Tether', () => {
 
   it('starts empty by default', () => {
-    const s = new Store()
+    const s = new Tether()
     expect(s.get()).toEqual([])
   })
 
   it('accepts initial data', () => {
-    const s = new Store([{ id: '1', name: 'Alice' }])
+    const s = new Tether([{ id: '1', name: 'Alice' }])
     expect(s.get()).toHaveLength(1)
   })
 
   it('subscribe() emits current value immediately', () => {
-    const s    = new Store([{ id: '1' }])
+    const s    = new Tether([{ id: '1' }])
     const seen: unknown[][] = []
     s.subscribe(v => seen.push(v))
     expect(seen).toHaveLength(1)
@@ -352,7 +352,7 @@ describe('Store', () => {
   })
 
   it('subscribe() emits on set()', () => {
-    const s    = new Store<{ id: string }>()
+    const s    = new Tether<{ id: string }>()
     const seen: unknown[][] = []
     s.subscribe(v => seen.push([...v]))
     s.set([{ id: '1' }, { id: '2' }])
@@ -361,7 +361,7 @@ describe('Store', () => {
   })
 
   it('unsubscribe stops receiving updates', () => {
-    const s   = new Store<{ id: string }>()
+    const s   = new Tether<{ id: string }>()
     const seen: unknown[][] = []
     const unsub = s.subscribe(v => seen.push([...v]))
     unsub()
@@ -370,14 +370,14 @@ describe('Store', () => {
   })
 
   it('upsert() adds new record', () => {
-    const s = new Store<{ id: string; name: string }>()
+    const s = new Tether<{ id: string; name: string }>()
     s.upsert({ id: '1', name: 'Alice' })
     expect(s.get()).toHaveLength(1)
     expect(s.get()[0].name).toBe('Alice')
   })
 
   it('upsert() updates existing record by id', () => {
-    const s = new Store([{ id: '1', name: 'Alice' }])
+    const s = new Tether([{ id: '1', name: 'Alice' }])
     s.upsert({ id: '1', name: 'Alicia' })
     expect(s.get()).toHaveLength(1)
     expect(s.get()[0].name).toBe('Alicia')
@@ -387,7 +387,7 @@ describe('Store', () => {
     // `findIndex` on undefined matches nothing, so this used to be pushed on as
     // a new row: a heartbeat answering { ok, server_id, status } put junk in
     // every subscriber's list, silently (FJS-020).
-    const s = new Store([{ id: '1', name: 'Alice' }])
+    const s = new Tether([{ id: '1', name: 'Alice' }])
     const warn = console.warn
     const said: string[] = []
     console.warn = (...a: unknown[]) => { said.push(a.join(' ')) }
@@ -399,26 +399,26 @@ describe('Store', () => {
   })
 
   it('upsert() with custom idField', () => {
-    const s = new Store([{ uid: 'abc', name: 'Alice' }])
+    const s = new Tether([{ uid: 'abc', name: 'Alice' }])
     s.upsert({ uid: 'abc', name: 'Alicia' }, 'uid')
     expect(s.get()).toHaveLength(1)
     expect(s.get()[0].name).toBe('Alicia')
   })
 
   it('remove() removes record by id', () => {
-    const s = new Store([{ id: '1' }, { id: '2' }, { id: '3' }])
+    const s = new Tether([{ id: '1' }, { id: '2' }, { id: '3' }])
     s.remove('2')
     expect(s.get().map(r => r.id)).toEqual(['1', '3'])
   })
 
   it('remove() is a no-op when id not found', () => {
-    const s = new Store([{ id: '1' }])
+    const s = new Tether([{ id: '1' }])
     s.remove('999')
     expect(s.get()).toHaveLength(1)
   })
 
   it('notifies multiple subscribers', () => {
-    const s    = new Store<{ id: string }>()
+    const s    = new Tether<{ id: string }>()
     const a: number[] = []
     const b: number[] = []
     s.subscribe(v => a.push(v.length))
@@ -502,25 +502,25 @@ describe('ServiceProxy.find() — shape', () => {
 
 describe('client.resource()', () => {
 
-  it('returns { service, store, load }', () => {
+  it('returns { service, tether, load }', () => {
     const c = makeClient()
     const r = c.resource('items')
     expect(r.service).toBeInstanceOf(ServiceProxy)
-    expect(r.store).toBeInstanceOf(Store)
+    expect(r.tether).toBeInstanceOf(Tether)
     expect(typeof r.load).toBe('function')
   })
 
-  it('store starts empty', () => {
+  it('tether starts empty', () => {
     const c = makeClient()
-    expect(c.resource('items').store.get()).toEqual([])
+    expect(c.resource('items').tether.get()).toEqual([])
   })
 
-  it('load() populates the store from the server', async () => {
+  it('load() populates the tether from the server', async () => {
     const { restore } = mockFetch({ total: 2, limit: 20, skip: 0, data: [{ id: '1' }, { id: '2' }] })
     const c = makeClient()
-    const { store, load } = c.resource('items')
+    const { tether, load } = c.resource('items')
     await load()
-    expect(store.get()).toHaveLength(2)
+    expect(tether.get()).toHaveLength(2)
     restore()
   })
 
@@ -534,34 +534,34 @@ describe('client.resource()', () => {
     restore()
   })
 
-  it('WS created event upserts into store', () => {
+  it('WS created event upserts into tether', () => {
     const c = makeClient()
-    const { service, store } = c.resource('items')
-    store.set([{ id: '1', name: 'Alice' }])
+    const { service, tether } = c.resource('items')
+    tether.set([{ id: '1', name: 'Alice' }])
     // Simulate a WS push event
     service._receive('created', { id: '2', name: 'Bob' })
-    expect(store.get()).toHaveLength(2)
+    expect(tether.get()).toHaveLength(2)
   })
 
-  it('WS patched event updates existing record in store', () => {
+  it('WS patched event updates existing record in tether', () => {
     const c = makeClient()
-    const { service, store } = c.resource('items')
-    store.set([{ id: '1', name: 'Alice' }])
+    const { service, tether } = c.resource('items')
+    tether.set([{ id: '1', name: 'Alice' }])
     service._receive('patched', { id: '1', name: 'Alicia' })
-    expect(store.get()).toHaveLength(1)
-    expect(store.get()[0].name).toBe('Alicia')
+    expect(tether.get()).toHaveLength(1)
+    expect(tether.get()[0].name).toBe('Alicia')
   })
 
-  it('WS removed event removes record from store', () => {
+  it('WS removed event removes record from tether', () => {
     const c = makeClient()
-    const { service, store } = c.resource('items')
-    store.set([{ id: '1' }, { id: '2' }])
+    const { service, tether } = c.resource('items')
+    tether.set([{ id: '1' }, { id: '2' }])
     service._receive('removed', { id: '1' })
-    expect(store.get()).toHaveLength(1)
-    expect(store.get()[0].id).toBe('2')
+    expect(tether.get()).toHaveLength(1)
+    expect(tether.get()[0].id).toBe('2')
   })
 
-  // ── the store is scoped to the query that filled it (FJS-011) ─────────────
+  // ── the tether is scoped to the query that filled it (FJS-011) ─────────────
   // Without `match` every event applies, which is what put a row outside the
   // filter in the list and — the one that reads as an update rather than as
   // junk — kept a row that had just left it.
@@ -580,41 +580,41 @@ describe('client.resource()', () => {
   }
 
   it('a created row outside the query is not added', async () => {
-    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    const { service, tether, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
     await ready
     service._receive('created', { id: '2', status: 'draft' })
-    expect(store.get()).toEqual([{ id: '1', status: 'active' }])
+    expect(tether.get()).toEqual([{ id: '1', status: 'active' }])
   })
 
   it('a created row inside the query is added', async () => {
-    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    const { service, tether, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
     await ready
     service._receive('created', { id: '2', status: 'active' })
-    expect(store.get()).toHaveLength(2)
+    expect(tether.get()).toHaveLength(2)
   })
 
   it('a patch that moves a row out of the query removes it', async () => {
-    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    const { service, tether, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
     await ready
     service._receive('patched', { id: '1', status: 'archived' })
-    expect(store.get()).toEqual([])
+    expect(tether.get()).toEqual([])
   })
 
   it('a custom method event leaves by the same door', async () => {
-    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    const { service, tether, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
     await ready
     service._receive('archived', { id: '1', status: 'archived' })
-    expect(store.get()).toEqual([])
+    expect(tether.get()).toEqual([])
   })
 
-  it('nothing is filtered before a load — the store has no query to mean', () => {
-    const { service, store } = makeClient().resource('items', 'id', { match: matchStatus })
+  it('nothing is filtered before a load — the tether has no query to mean', () => {
+    const { service, tether } = makeClient().resource('items', 'id', { match: matchStatus })
     service._receive('created', { id: '2', status: 'draft' })
-    expect(store.get()).toHaveLength(1)
+    expect(tether.get()).toHaveLength(1)
   })
 
   it('an undecidable record reloads instead of being guessed at', async () => {
-    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    const { service, tether, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
     await ready
 
     const { restore } = mockFetch({
@@ -623,15 +623,15 @@ describe('client.resource()', () => {
     })
     // No `status` on the record — a projected push the matcher cannot judge.
     service._receive('patched', { id: '3', name: 'Bob' })
-    expect(store.get()).toHaveLength(1)          // not applied on the strength of a guess
+    expect(tether.get()).toHaveLength(1)          // not applied on the strength of a guess
 
     await new Promise((r) => setTimeout(r, 5))
-    expect(store.get()).toHaveLength(2)          // the server answered instead
+    expect(tether.get()).toHaveLength(2)          // the server answered instead
     restore()
   })
 
   it('a burst of undecidable pushes is one reload', async () => {
-    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    const { service, tether, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
     await ready
 
     let calls = 0
@@ -648,27 +648,27 @@ describe('client.resource()', () => {
     await new Promise((r) => setTimeout(r, 5))
 
     expect(calls).toBe(1)
-    expect(store.get()).toHaveLength(1)
+    expect(tether.get()).toHaveLength(1)
     globalThis.fetch = original
   })
 
   it('with no match every event applies, as before', async () => {
     const { restore } = mockFetch({ kind: 'list', object: 'items', data: [{ id: '1', status: 'active' }], total: 1 })
-    const { service, store, load } = makeClient().resource('items')
+    const { service, tether, load } = makeClient().resource('items')
     await load({ status: 'active' })
     restore()
     service._receive('created', { id: '2', status: 'draft' })
-    expect(store.get()).toHaveLength(2)
+    expect(tether.get()).toHaveLength(2)
   })
 
   // ── `changed` — a push that names no row (FJS-307) ─────────────────────────
   // Every other event carries a record. `changed` is what the server sends for
   // a write that could not build one — a bulk statement, or a `select: false`
-  // write — and it carries a count instead. The store's only honest answer is
+  // write — and it carries a count instead. The tether's only honest answer is
   // the one it already gives an undecidable record: ask the server again.
 
   it('a changed event reloads the list', async () => {
-    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    const { service, tether, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
     await ready
 
     const { restore } = mockFetch({
@@ -676,31 +676,31 @@ describe('client.resource()', () => {
       data: [{ id: '1', status: 'active' }, { id: '9', status: 'active' }],
     })
     service._receive('changed', { model: 'Item', operation: 'createMany', count: 4 })
-    expect(store.get()).toHaveLength(1)          // nothing applied from a count
+    expect(tether.get()).toHaveLength(1)          // nothing applied from a count
 
     await new Promise((r) => setTimeout(r, 5))
-    expect(store.get()).toHaveLength(2)          // the server answered instead
+    expect(tether.get()).toHaveLength(2)          // the server answered instead
     restore()
   })
 
   // The payload is a count, not a record. Reaching the catch-all handler would
-  // upsert `{model, operation, count}` into the store as if it were a row.
-  it('the count never lands in the store as a row', async () => {
-    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+  // upsert `{model, operation, count}` into the tether as if it were a row.
+  it('the count never lands in the tether as a row', async () => {
+    const { service, tether, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
     await ready
     const { restore } = mockFetch({ kind: 'list', object: 'items', data: [{ id: '1', status: 'active' }], total: 1 })
 
     service._receive('changed', { model: 'Item', operation: 'deleteMany', count: 12 })
     await new Promise((r) => setTimeout(r, 5))
 
-    expect(store.get()).toEqual([{ id: '1', status: 'active' }])
+    expect(tether.get()).toEqual([{ id: '1', status: 'active' }])
     restore()
   })
 
   // Same coalescing every other reload gets: a job doing three bulk writes is
   // one question, not three.
   it('a burst of changed events is one reload', async () => {
-    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    const { service, tether, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
     await ready
 
     let calls = 0
@@ -718,30 +718,30 @@ describe('client.resource()', () => {
     await new Promise((r) => setTimeout(r, 5))
 
     expect(calls).toBe(1)
-    expect(store.get()).toHaveLength(1)
+    expect(tether.get()).toHaveLength(1)
     globalThis.fetch = original
   })
 
-  // The store has no query to re-ask with, so there is nothing to reload — and
+  // The tether has no query to re-ask with, so there is nothing to reload — and
   // an invented `load({})` would fetch a list nobody asked for.
   it('a changed event before the first load does nothing', async () => {
     let calls = 0
     const original = globalThis.fetch
     globalThis.fetch = (async () => { calls++; return new Response('[]', { status: 200 }) }) as unknown as typeof fetch
 
-    const { service, store } = makeClient().resource('items', 'id', { match: matchStatus })
+    const { service, tether } = makeClient().resource('items', 'id', { match: matchStatus })
     service._receive('changed', { model: 'Item', operation: 'createMany', count: 3 })
     await new Promise((r) => setTimeout(r, 5))
 
     expect(calls).toBe(0)
-    expect(store.get()).toEqual([])
+    expect(tether.get()).toEqual([])
     globalThis.fetch = original
   })
 
   // ── load() staleness (FJS-082) ────────────────────────────────────────────
-  // The store is shared; the returned rows belong to one caller. A load that
+  // The tether is shared; the returned rows belong to one caller. A load that
   // has been superseded may still answer its own caller and may NOT write the
-  // store, whichever order the two responses arrive in.
+  // tether, whichever order the two responses arrive in.
 
   // Answers each request with the rows it was configured with, after the delay
   // it was configured with — the only way to make the earlier request the
@@ -765,28 +765,28 @@ describe('client.resource()', () => {
       { delay: 30, rows: [{ id: 'ac' }] },     // typed `ac`  — slower
       { delay: 1,  rows: [{ id: 'acme' }] },   // typed `acme` — lands first
     ])
-    const { store, load } = makeClient().resource('items')
+    const { tether, load } = makeClient().resource('items')
     const [stale, fresh] = await Promise.all([load({ q: 'ac' }), load({ q: 'acme' })])
 
-    expect(store.get()).toEqual([{ id: 'acme' }])
+    expect(tether.get()).toEqual([{ id: 'acme' }])
     // Each caller still gets what it asked for — the request is not cancelled.
     expect(stale).toEqual([{ id: 'ac' }])
     expect(fresh).toEqual([{ id: 'acme' }])
     restore()
   })
 
-  it('the newest load still writes the store when it lands last', async () => {
+  it('the newest load still writes the tether when it lands last', async () => {
     const { restore } = mockSlowFetch([
       { delay: 1,  rows: [{ id: 'ac' }] },
       { delay: 30, rows: [{ id: 'acme' }] },
     ])
-    const { store, load } = makeClient().resource('items')
+    const { tether, load } = makeClient().resource('items')
     await Promise.all([load({ q: 'ac' }), load({ q: 'acme' })])
-    expect(store.get()).toEqual([{ id: 'acme' }])
+    expect(tether.get()).toEqual([{ id: 'acme' }])
     restore()
   })
 
-  it('stamps are per resource() call — two stores do not supersede each other', async () => {
+  it('stamps are per resource() call — two tethers do not supersede each other', async () => {
     const { restore } = mockSlowFetch([
       { delay: 20, rows: [{ id: 'a' }] },
       { delay: 1,  rows: [{ id: 'b' }] },
@@ -795,13 +795,13 @@ describe('client.resource()', () => {
     const one = c.resource('items')
     const two = c.resource('items')
     await Promise.all([one.load(), two.load()])
-    expect(one.store.get()).toEqual([{ id: 'a' }])
-    expect(two.store.get()).toEqual([{ id: 'b' }])
+    expect(one.tether.get()).toEqual([{ id: 'a' }])
+    expect(two.tether.get()).toEqual([{ id: 'b' }])
     restore()
   })
 
-  // A refetch is the store asking its question again, and while a newer load
-  // is in flight the store's question is the newer one. Re-asking the query of
+  // A refetch is the tether asking its question again, and while a newer load
+  // is in flight the tether's question is the newer one. Re-asking the query of
   // the last load that ANSWERED issued the superseded one as the newest load,
   // so it won: a search page moving to a new run held the old run's rows, and
   // judged every push after against the old run (`FJS-1419`).
@@ -818,7 +818,7 @@ describe('client.resource()', () => {
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       )
     }
-    const { service, store, load } = makeClient().resource('items')
+    const { service, tether, load } = makeClient().resource('items')
     await load({ runId: 'old' })
 
     const moving = load({ runId: 'new' })
@@ -828,7 +828,7 @@ describe('client.resource()', () => {
     await new Promise((r) => setTimeout(r, 40))
 
     expect(asked).toEqual(['old', 'new', 'new'])
-    expect(store.get()).toEqual([{ id: 'new' }])
+    expect(tether.get()).toEqual([{ id: 'new' }])
     globalThis.fetch = original
   })
 

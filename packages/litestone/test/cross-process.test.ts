@@ -100,7 +100,7 @@ describe('a second process is heard', () => {
     //
     // Deliberately not asserted: WHICH version of the row arrives. A re-read
     // answers the row as it is now, so a create delivered after a later update
-    // carries the later title — correct for a live store, and timing-dependent,
+    // carries the later title — correct for a tether, and timing-dependent,
     // so pinning a value here would be pinning the scheduler.
     const { db, file, schema, heard } = await openDeclared()
     await inAnotherProcess('', schema, `
@@ -171,7 +171,7 @@ describe('a second process is heard', () => {
     // Each delivery awaits a read, so firing them off in parallel lets a later
     // event's read finish first — and a subscriber that sees a create after the
     // remove that undid it holds a row that is gone. Order is the one thing a
-    // live store cannot repair for itself.
+    // tether cannot repair for itself.
     const { db, schema, heard } = await openDeclared()
     await inAnotherProcess('', schema, `
       const row = await sys.post.create({ data: { title: 'x' } })

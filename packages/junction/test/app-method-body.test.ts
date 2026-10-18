@@ -1,6 +1,6 @@
-// test/surface-method-body.test.ts
+// test/app-method-body.test.ts
 //
-// `junction surface` records what a custom method's BODY is beside the floor
+// `junction app` records what a custom method's BODY is beside the floor
 // that grades the caller (`FJS-1794`).
 //
 // The grade says who may call; it cannot say whether the body then writes as the
@@ -13,8 +13,8 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { createService, buildBase } from '../src/core/service.ts'
-import { describeSurface } from '../src/core/app-model.ts'
-import { renderSurfaceSnapshot } from '../tools/surface.ts'
+import { describeApp } from '../src/core/app-model.ts'
+import { renderAppSnapshot } from '../tools/app.ts'
 import { $ } from '../index.ts'
 
 const SCHEMA = `
@@ -34,7 +34,7 @@ model Todo {
 
 let app: any
 let out: string
-let surface: ReturnType<typeof describeSurface>
+let desc: ReturnType<typeof describeApp>
 
 beforeAll(async () => {
   const db = await createClient({ databases: ':memory:', schema: SCHEMA })
@@ -59,13 +59,13 @@ beforeAll(async () => {
   }))
 
   await app.start()
-  surface = describeSurface(app)
-  out = renderSurfaceSnapshot(surface)
+  desc = describeApp(app)
+  out = renderAppSnapshot(desc)
 })
 
 afterAll(async () => { await app?.stop() })
 
-const svc = (name: string) => surface.services.find(s => s.name === name)!
+const svc = (name: string) => desc.services.find(s => s.name === name)!
 
 describe('a custom method\'s body, read beside its grade', () => {
 

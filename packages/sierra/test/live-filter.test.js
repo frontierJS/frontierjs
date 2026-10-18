@@ -5,11 +5,11 @@
  * built over the model it resolved?
  *
  * `matchesQuery` itself is `@frontierjs/toolbelt/match` and is asserted there,
- * in `test/specs/match.spec.js` — it moved because there are two live stores
+ * in `test/specs/match.spec.js` — it moved because there are two tethers
  * and they had one implementation between them (`FJS-493`). Restating its 31
  * cases here would be two owners again by another route.
  *
- * What only this side can answer is the wiring. Junction owns the store and
+ * What only this side can answer is the wiring. Junction owns the tether and
  * holds no schema; Sierra owns the schema and hands the decision down. A
  * resource that quietly stopped passing one would go back to leaking in
  * silence, and nothing else looks.
@@ -28,7 +28,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
     resource: (name, idField, opts) => {
       _given.opts = opts
       return {
-        store: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
+        tether: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
         stale: { get: () => 3, subscribe: (fn) => { fn(3); return () => {} } },
         load:  async () => [],
       }
@@ -90,11 +90,11 @@ describe('createResource hands the matcher to Junction', () => {
     expect(match(row, { status: 'active' }, { limit: 20, orderBy: 'id', onlyDeleted: false, search: '', scope: [] })).toBe(true)
   })
 
-  test('`stale` comes through, in the shape useStore takes', async () => {
+  test('`stale` comes through, in the shape useTether takes', async () => {
     const { createResource } = await import('../src/resource/resource.js')
     const leads = createResource('leads')
     // A live list can place a row and cannot fill a gap paging left; the count
-    // is how a view offers the reload. Same `{ get, subscribe }` as a store, so
+    // is how a view offers the reload. Same `{ get, subscribe }` as a tether, so
     // it bridges to a signal unchanged.
     expect(leads.stale.get()).toBe(3)
     const seen = []

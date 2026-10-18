@@ -82,7 +82,7 @@ if (!requiredKeys.length && !appliedKeys.length) {
 }
 
 // ─── Read server env file ─────────────────────────────────────────────────────
-const envFile   = deployConf.api?.env ?? `${serverPath}/.env.production`
+const { envFile } = apiFiles(deployConf, serverPath)
 let serverEnv = ''
 try {
   serverEnv = machineFor($, host, serverPath).capture(`cat ${envFile} 2>/dev/null || echo ''`)

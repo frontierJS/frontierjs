@@ -1,10 +1,13 @@
 // src/paths.js — walking a stage by its floor: the flood fill the door-reach
 // check runs, and the shortest walk to a figure that `f` takes (`IDEAS/haven.md`
-// 9.6), and how far each stop Tab names is walked (Phase 19). Pure, so it is
-// a bun test. Steps are the four a figure takes, never a diagonal, so the walk
+// 9.6), and how far each stop Tab names is walked and the walk there (Phase
+// 19). Pure, so it is a bun test. Steps are the four a figure takes, never a diagonal, so the walk
 // drawn is the walk a key would have made.
 
 export const STEPS = [[0, 1], [0, -1], [1, 0], [-1, 0]]
+
+// A walk's pace, `f`'s and Enter's: 120 ms a step is under the room's 10 moves a second.
+export const WALK_MS = 120
 
 const key = (x, y) => `${x},${y}`
 
@@ -41,6 +44,18 @@ function walkTo(cells, to) {
   const out = []
   for (let c = cells.get(to); c?.prev != null; c = cells.get(c.prev)) out.unshift({ x: c.x, y: c.y })
   return out
+}
+
+/**
+ * The shortest walk from `from` to a cell `ok(x, y)` accepts, as the cells
+ * stepped onto in order — empty when `from` is one, null when none can be
+ * reached. The flood is breadth first, so the first cell it holds that `ok`
+ * accepts is a nearest.
+ */
+export function pathTo(stage, from, ok) {
+  const cells = flood(stage, from)
+  for (const [k, c] of cells) if (ok(c.x, c.y)) return walkTo(cells, k)
+  return null
 }
 
 /**

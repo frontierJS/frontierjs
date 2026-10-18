@@ -549,7 +549,7 @@ if (flag.remote) {
         }
 
         // .env.production
-        const envFile = deployConf.api?.env ?? `${path}/.env.production`
+        const { envFile } = apiFiles(deployConf, path)
         const envExists = ask(`[ -f "${envFile}" ] && echo ok`)
         if (envExists === 'ok') {
           renderCheck(`${envFile} exists`, 'pass')
@@ -588,7 +588,7 @@ if (flag.remote) {
         // /db is bound over this directory and the container runs as the image's
         // user, so a directory owned by anyone else fails the first migration.
         const { IMAGE_USER } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
-        const dbDir  = deployConf.db?.path ?? `${path}/db`
+        const { dbDir } = apiFiles(deployConf, path)
         const dbOwner = ask(`stat -c %u ${dbDir} 2>/dev/null`)
         if (dbOwner === String(IMAGE_USER.uid)) {
           renderCheck(`${dbDir} owned by uid ${IMAGE_USER.uid}`, 'pass')

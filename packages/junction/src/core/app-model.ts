@@ -21,7 +21,7 @@ import type { PrincipalRealm, CustomMethodGrade }                               
 import type { App }                      from './app.ts'
 import type { HookMap }                  from './hooks.ts'
 
-// ─── the surface ──────────────────────────────────────────────────────────────
+// ─── the app, described ──────────────────────────────────────────────────────
 
 /**
  * `derived` is a `@@transitions` move no author wrote: only the Data boundary
@@ -32,7 +32,7 @@ import type { HookMap }                  from './hooks.ts'
  */
 export type MethodBody = 'derived' | 'elevated' | 'scoped'
 
-export interface SurfaceService {
+export interface AppServiceDescription {
   name:          string
   // Older spellings this service still answers to. A kebab FILENAME derives a
   // camel service name now (`FJS-570`), and the filename's own spelling stays
@@ -63,15 +63,15 @@ export interface SurfaceService {
   hooks:         Record<string, Record<string, string[]>>
 }
 
-export interface Surface {
+export interface AppDescription {
   prefix:    string
   plugins:   string[]
   appHooks:  Record<string, Record<string, string[]>>
-  services:  SurfaceService[]
+  services:  AppServiceDescription[]
   routes:    { method: string; path: string; kind: string }[]
 }
 
-export function describeSurface(app: App): Surface {
+export function describeApp(app: App): AppDescription {
   const cfg = app.config as Record<string, unknown>
 
   // The gate reads `@@gate` off the client a call runs with. Under
@@ -182,7 +182,7 @@ export interface InProcessTimer {
   expr: string
 }
 
-export interface JobsSurface {
+export interface JobsDescription {
   durable:   DurableJob[]
   timers:    InProcessTimer[]
   /** Absent means the app installed no queue at all — a different fact from an empty one. */
@@ -193,7 +193,7 @@ export interface JobsSurface {
 // imported. An app with no queue is a legitimate app and must not fail here;
 // what it must not do is render the same as an app whose queue is empty, which
 // is why `hasQueue` is a field rather than an inference from `durable.length`.
-export function describeJobs(app: App): JobsSurface {
+export function describeJobs(app: App): JobsDescription {
   const jobs = ('jobs' in app ? app.jobs : undefined) as { registrations?: () => DurableJob[] } | undefined
   const hasQueue = typeof jobs?.registrations === 'function'
 
@@ -214,7 +214,7 @@ export interface DeclaredNotification {
   transports: string[]
 }
 
-export interface NotificationsSurface {
+export interface NotificationsDescription {
   declared: DeclaredNotification[]
   /** Absent means the plugin was never configured — not the same as configured
    *  and empty, and the reason this is a field rather than `declared.length`. */
@@ -223,7 +223,7 @@ export interface NotificationsSurface {
 
 type NotificationRegistry = ReadonlyMap<string, { type?: string; transports?: readonly string[] }>
 
-export function describeNotifications(app: App): NotificationsSurface {
+export function describeNotifications(app: App): NotificationsDescription {
   const reg = (app as { notifications?: NotificationRegistry }).notifications
   const installed = !!reg && typeof reg.forEach === 'function'
 
@@ -249,10 +249,10 @@ export function describeNotifications(app: App): NotificationsSurface {
 // ─── the composed model ───────────────────────────────────────────────────────
 
 export interface AppModel {
-  surface:       Surface
+  app:           AppDescription
   principal:     PrincipalRealm | null
-  jobs:          JobsSurface
-  notifications: NotificationsSurface
+  jobs:          JobsDescription
+  notifications: NotificationsDescription
 }
 
 /**
@@ -264,7 +264,7 @@ export interface AppModel {
  */
 export function describeAppModel(app: App): AppModel {
   return {
-    surface:       describeSurface(app),
+    app:           describeApp(app),
     principal:     describePrincipalRealm(app, (app as unknown as { db?: unknown }).db),
     jobs:          describeJobs(app),
     notifications: describeNotifications(app),
@@ -281,7 +281,7 @@ export interface RouteManifest {
    * or the app registered itself.
    *
    * The distinction is the useful half: the service routes are derivable from
-   * the service list, and the raw ones are the surface nothing else describes.
+   * the service list, and the raw ones are what nothing else describes.
    */
   kind:     'service' | 'raw'
   /** Present on a service route — which service answers it. */
@@ -298,7 +298,7 @@ export interface HookManifest {
 /**
  * Every path the router will answer, by method.
  *
- * The surface is emergent — services auto-mount, plugins register their own —
+ * The route table is emergent — services auto-mount, plugins register their own —
  * and `hasRoute()` is a MATCHING question, not an existence one: every app
  * registers `GET /{service}`, which matches almost anything. So "what is
  * actually mounted" had no cheap answer and a route in the wrong place was
@@ -327,8 +327,8 @@ export function buildRoutes(app: App): RouteManifest[] {
 /**
  * A hook chain as the names that will run, in order.
  *
- * Exported because `tools/surface.ts` and the manifest plugin render the same thing into the committed
- * surface snapshot — a second spelling of "a hook is its function name, and
+ * Exported because `tools/app.ts` and the manifest plugin render the same thing into the committed
+ * app snapshot — a second spelling of "a hook is its function name, and
  * anonymous means you cannot tell which one" would drift from this one silently.
  */
 export function serializeHookMap(map: HookMap = {}): HookManifest {

@@ -14,7 +14,7 @@
 //   • Mailer stub — IMail implementation, no external service
 //   • OpenAPI + Scalar UI at /api/docs
 //   • Health + metrics endpoints
-//   • App-level hooks for announce + audit logging
+//   • App-level hooks for announce + error logging
 //   • Standard middleware (CORS, correlation IDs, request logger)
 //
 // The point of this file is to be a "show me what Junction looks like" demo
@@ -359,7 +359,7 @@ app.services.register(
 )
 
 // ─── App-level hooks ──────────────────────────────────────────────────────
-// Audit log on every error; one place to centralize observability.
+// Log every error; one place to centralize observability.
 
 app.hooks({
   error: {

@@ -18,7 +18,7 @@ title: Subscriptions
   import Subscription, { subscriptions } from '@/resources/Subscription.mesa'
   import { prefs } from '@/stores/prefs.js'
   import { day } from '@/datetime.js'
-  import { session, useStore } from '@frontierjs/sierra/resource'
+  import { session, useTether } from '@frontierjs/sierra/resource'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 
@@ -46,7 +46,7 @@ title: Subscriptions
   // vanishing.
   const TONE = { trialing: 'info', active: 'success', pastDue: 'warning', cancelled: 'muted' }
 
-  const { get: rows, unsubscribe } = useStore(subscriptions.store)
+  const { get: rows, unsubscribe } = useTether(subscriptions.tether)
   $.onDestroy(unsubscribe)
 
   $: (session.level, prefs.dense, prefs.currency)

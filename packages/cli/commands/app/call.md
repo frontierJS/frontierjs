@@ -30,7 +30,7 @@ flags:
     defaultValue: ''
   app:
     type: string
-    description: The app module — without it, the one the committed surface.snapshot.md names
+    description: The app module — without it, the one the committed app.snapshot.md names
     defaultValue: ''
   export:
     type: string
@@ -109,7 +109,7 @@ process was owed.
 `--app` names the module, resolved from where you run the command, and the call
 runs from the app root, which is where a scaffolded app's own scripts run.
 Without it, the entry and its flags come from the header of the committed
-`surface.snapshot.md` and run from that file's directory, the way the
+`app.snapshot.md` and run from that file's directory, the way the
 `snapshots` CI phase reruns it. Neither is found by guessing a path, because a
 guess that is wrong describes an app nobody serves.
 

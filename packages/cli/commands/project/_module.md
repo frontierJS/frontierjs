@@ -58,7 +58,7 @@ const scanFiles = (dir, ...exts) => {
   return out.sort()
 }
 
-// ─── the committed API surface ────────────────────────────────────────────────
+// ─── the committed app snapshot ───────────────────────────────────────────────
 //
 // `core/app-entry.js` owns it — where the snapshot is, what wrote it, what it
 // says, and the sentence to print when there is none. It lived here AND there
@@ -350,16 +350,16 @@ const buildProjectMap = async ($, { layer = '', atlas = true, log } = {}) => {
   let packages = []
   if (want('api')) packages = extractServerMeta(root).packages
 
-  // Read off the committed surface snapshot, never scanned from service source —
+  // Read off the committed app snapshot, never scanned from service source —
   // what a service ANSWERS is decided at construction and is not a fact about
   // how a file reads (FJS-254).
   let services = []
-  let surface  = null
+  let snapshot = null
   if (want('api')) {
-    const { readApiSurface, surfaceMissingHint } = await appEntryModule()
-    surface = readApiSurface(root)
-    if (surface) services = surface.services
-    else note('warn', surfaceMissingHint(root))
+    const { readAppSnapshot, appSnapshotMissingHint } = await appEntryModule()
+    snapshot = readAppSnapshot(root)
+    if (snapshot) services = snapshot.services
+    else note('warn', appSnapshotMissingHint(root))
   }
 
   let resources = []
@@ -398,17 +398,17 @@ const buildProjectMap = async ($, { layer = '', atlas = true, log } = {}) => {
   map.atlas = atlasPart
   map.env   = buildEnvHealth($)
 
-  // The rest of what the surface knows and nothing else here does: the hooks
+  // The rest of what the app snapshot knows and nothing else here does: the hooks
   // that run around EVERY call, the paths the router actually mounted, and the
   // plugins in configure order. `packages` above is a signal scan over the API
   // tree and answers a different question — is this dependency present — so the
   // two are both carried rather than merged.
-  if (surface) map.surface = {
-    file:        surface.file,
-    generatedBy: surface.generatedBy,
-    appHooks:    surface.appHooks,
-    routes:      surface.routes,
-    plugins:     surface.plugins,
+  if (snapshot) map.app = {
+    file:        snapshot.file,
+    generatedBy: snapshot.generatedBy,
+    appHooks:    snapshot.appHooks,
+    routes:      snapshot.routes,
+    plugins:     snapshot.plugins,
   }
   return { map }
 }

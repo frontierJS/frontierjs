@@ -372,35 +372,26 @@ compiler contract, its implementation is not.
 
 ## Open questions
 
-- **Q1** — The home. **Ruled `FJS-D1097`: A, `@frontierjs/mesa/browser`** —
+- ~~**Q1 — The home.**~~ **Answered 2026-10-16 (`FJS-D1097`): A, `@frontierjs/mesa/browser`** —
   priced in § Where it lives; B is refused with its trigger named, C with its
   cost.
-- **Q2** — Does #1 namespace by an app prefix from `sierra.config.js`, or by
-  origin only? **Ruled `FJS-D1097`: a `prefix` key in sierra config**,
+- ~~**Q2 — Does #1 namespace by an app prefix from `sierra.config.js`, or by origin only?**~~ **Answered 2026-10-16 (`FJS-D1097`): a `prefix` key in sierra config**,
   defaulting to the app's `package.json` name — two apps on one dev origin
   (`FJS-740`'s world) otherwise read each other's preferences, and
   `shop_theme` / `shop_token` show the prefix being typed by hand today.
-- **Q3** — Where do breakpoints live? **Ruled `FJS-D1099`: a `breakpoints`
+- ~~**Q3 — Where do breakpoints live?**~~ **Answered 2026-10-16 (`FJS-D1099`): a `breakpoints`
   table in css's `vocabulary.js`** — the scale was a `tokens.css` comment, now
   data; `breakpoint(name)` reads it and the vocabulary spec grades every
   literal `@media` width in css `src/` against it (Invariant 13).
-- **Q4** — Is #10 this plan's Phase 5 or `homestead.md`'s? **Ruled
-  `FJS-D1099`: split** — the service worker is homestead's (release state),
+- ~~**Q4 — Is #10 this plan's Phase 5 or `homestead.md`'s?**~~ **Answered 2026-10-16 (`FJS-D1099`): split** — the service worker is homestead's (release state),
   and this plan stops at the subscription half that hands a token to the
   notifications package.
-- **Q5** — Does `fli check` grade a hand-rolled `localStorage` or
-  `addEventListener('keydown')` once the kit exists? **Ruled `FJS-D1099`:
-  `warn`, scope `app`, only in an app that imports `@frontierjs/mesa/browser`**
+- ~~**Q5 — Does `fli check` grade a hand-rolled `localStorage` or `addEventListener('keydown')` once the kit exists?**~~ **Answered 2026-10-16 (`FJS-D1099`): `warn`, scope `app`, only in an app that imports `@frontierjs/mesa/browser`**
   — the shape of `css-raw-literal`.
-- **Q6** — The terminal host. A clock, a hotkey, a persisted value, focus and
-  size each mean something in haven and `fli dev:tui`. Lift them behind
-  `$$host` now, or keep the kit browser-only and throw on a terminal?
-  **Ruled `FJS-D1097`: throw now, lift when a terminal app asks** — the names
+- ~~**Q6 — The terminal host. A clock, a hotkey, a persisted value, focus and size each mean something in haven and `fli dev:tui`. Lift them behind `$$host` now, or keep the kit browser-only and throw on a terminal?**~~ **Answered 2026-10-16 (`FJS-D1097`): throw now, lift when a terminal app asks** — the names
   already port, and a storage or focus seam in `host/targets.js` with no
   consumer is a seam nothing tests.
-- **Q7** — The `Result` shape for an action: `{ ok, via, reason }` returned,
-  or a throw for `unsupported` and a plain value otherwise? **Ruled
-  `FJS-D1097`: return** — a share button that cannot share must still copy, and the caller
+- ~~**Q7 — The `Result` shape for an action: `{ ok, via, reason }` returned, or a throw for `unsupported` and a plain value otherwise?**~~ **Answered 2026-10-16 (`FJS-D1097`): return** — a share button that cannot share must still copy, and the caller
   reads `via` to say *copied* rather than *shared*; a throw makes every
   caller write the fallback branch the kit exists to own.
 

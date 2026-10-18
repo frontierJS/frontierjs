@@ -10,6 +10,10 @@ title: Site
   // when its field does. A key that is not a field (a locked one, a list, a
   // value over several lines) is shown and never sent, and the server refuses
   // one anyway — this screen is the affordance, site-kit's rule is the check.
+  //
+  // Opening a draft and each save queue its preview (1.3), built on the
+  // site's machine; the list answers each draft's last one, and this screen
+  // reads the list again while one is on its way.
   import { page } from '@frontierjs/sierra/router'
   import { drafts } from '../../../resources/Draft.mesa'
   import { ago } from '../../../datetime.js'
@@ -68,6 +72,7 @@ title: Site
   async function pick(name) {
     draft = name; path = null; form = null
     await attempt('files', async () => { files = (await call('files', { draft })).files })
+    if (onItsWay(list?.find(d => d.name === name)?.preview)) watch(name)
   }
 
   async function edit(p) {
@@ -75,6 +80,35 @@ title: Site
     await attempt('read', async () => {
       form = await call('read', { draft, path })
       body = form.body; values = {}; message = ''
+    })
+  }
+
+  const PREVIEW = {
+    queued:   ['muted',   'Queued'],
+    building: ['warning', 'Building'],
+    ready:    ['success', 'Ready'],
+    failed:   ['danger',  'Failed'],
+  }
+  const onItsWay = (p) => p?.state === 'queued' || p?.state === 'building'
+
+  $: current = list && draft ? list.find(d => d.name === draft) ?? null : null
+
+  // While the picked draft's preview is on its way, every four seconds; a
+  // build takes minutes, so this gives up after twenty minutes.
+  async function watch(name) {
+    for (let i = 0; i < 300 && draft === name; i++) {
+      await new Promise(r => setTimeout(r, 4000))
+      if (draft !== name) return
+      list = (await call('list')).drafts
+      if (!onItsWay(list.find(d => d.name === name)?.preview)) return
+    }
+  }
+
+  async function rebuild() {
+    await attempt('preview', async () => {
+      await call('preview', { draft })
+      list = (await call('list')).drafts
+      watch(draft)
     })
   }
 
@@ -92,6 +126,7 @@ title: Site
       list = (await call('list')).drafts
       await edit(path)
       notice = saved.changed ? `Saved to ${draft} as ${saved.commit.slice(0, 7)}` : 'Nothing had changed'
+      if (saved.changed) watch(draft)
     })
   }
 
@@ -133,6 +168,31 @@ title: Site
           </ul>
         {/if}
       </Card>
+
+      {#if current}
+        <Card title="Preview">
+          <div class="stack" id="draft-preview">
+            {#if !current.preview}
+              <p class="text-sm text-muted">No preview has been built for this draft yet.</p>
+            {:else}
+              <div class="cluster">
+                <Pill tone={PREVIEW[current.preview.state][0]} id="preview-state">{PREVIEW[current.preview.state][1]}</Pill>
+                <span class="text-sm text-muted">{current.preview.commit.slice(0, 7)} · {ago(current.preview.at)}</span>
+              </div>
+              {#if current.preview.url}
+                <a href={current.preview.url} target="_blank" rel="noopener" id="preview-link">
+                  {current.preview.built === current.head ? 'Open the preview' : 'Open the preview of an earlier save'}
+                </a>
+              {/if}
+              {#if current.preview.state === 'failed'}
+                <p class="text-sm" id="preview-error">{current.preview.error}</p>
+              {/if}
+            {/if}
+            <Button size="sm" treatment="ghost" id="preview-rebuild"
+                    disabled={onItsWay(current.preview) || busy === 'preview'} onclick={rebuild}>Build again</Button>
+          </div>
+        </Card>
+      {/if}
 
       {#if files}
         <Card title="Pages">

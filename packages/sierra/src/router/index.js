@@ -667,7 +667,7 @@ const MAX_REDIRECTS = 10
 // last one to FINISH used to commit rather than the last one STARTED: a slow
 // load() from a route the reader had already left overwrote the page they were
 // on and pushed its own URL into the address bar. The same stamp createResource
-// applies to its own loads (`FJS-082`) and junction's store applies to a push.
+// applies to its own loads (`FJS-082`) and junction's tether applies to a push.
 let _navSeq = 0
 
 /**

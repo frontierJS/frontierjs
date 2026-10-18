@@ -1,5 +1,5 @@
 // core/app-entry.js
-// The committed API surface: where it is, what wrote it, and what it says.
+// The committed app snapshot: where it is, what wrote it, and what it says.
 //
 // Two commands ask different questions of one file and neither is the other's
 // subset (`FJS-D240`). `project:map` PARSES it — the services, the hook chain,
@@ -31,16 +31,16 @@ import { spawnSync }                from 'node:child_process'
 
 import { resolveGenerator, expectedSnapshots } from './snapshots.js'
 
-export const SURFACE_FILE = 'surface.snapshot.md'
+export const APP_SNAPSHOT = 'app.snapshot.md'
 
 // In order. A snapshot belongs in the surface it describes, so `api/` is the
 // answer and is looked for first; the app root stays a candidate because an app
 // whose isolation is by cwd keeps them there. First hit wins.
-export const SURFACE_DIRS = ['api', '.']
+export const APP_SNAPSHOT_DIRS = ['api', '.']
 
-export function surfaceFile(root) {
-  for (const dir of SURFACE_DIRS) {
-    const file = resolve(root, dir, SURFACE_FILE)
+export function appSnapshotFile(root) {
+  for (const dir of APP_SNAPSHOT_DIRS) {
+    const file = resolve(root, dir, APP_SNAPSHOT)
     if (existsSync(file)) return file
   }
   return null
@@ -68,19 +68,19 @@ const ALLOWED_BIN = 'junction'
  * absent file and must not read as one.
  *
  * With no snapshot the entry comes off the app's layout instead -- the row that
- * seeds `surface.snapshot.md` -- run from the app root, where `.env` is. A fresh
+ * seeds `app.snapshot.md` -- run from the app root, where `.env` is. A fresh
  * app has no header to read, and refusing it sent the first agent to cat the
  * schema and every service. `file` is null then; null overall means no app module.
  */
 export function appEntry(root) {
-  const file = surfaceFile(root)
+  const file = appSnapshotFile(root)
   if (!file) {
-    const seed = expectedSnapshots(root).find(r => r.file === SURFACE_FILE)
+    const seed = expectedSnapshots(root).find(r => r.file === APP_SNAPSHOT)
     return seed ? { file: null, dir: root, args: seed.argv.slice(2) } : null
   }
 
   const command = generatedBy(file)
-  if (!command) throw new Error(`${file} names no generator in its header — regenerate it with \`junction surface --app <entry>\``)
+  if (!command) throw new Error(`${file} names no generator in its header — regenerate it with \`junction app --app <entry>\``)
 
   const argv = command.split(/\s+/).filter(Boolean)
   if (argv[0] !== ALLOWED_BIN) {
@@ -91,12 +91,12 @@ export function appEntry(root) {
 }
 
 /** The one sentence every caller says when there is no snapshot. */
-export const surfaceMissingHint = (root) =>
-  `no ${SURFACE_FILE} under ${root} (looked in ${SURFACE_DIRS.join(', ')}) — run ` +
-  '`junction surface --app <entry>` from the API surface to write one. ' +
+export const appSnapshotMissingHint = (root) =>
+  `no ${APP_SNAPSHOT} under ${root} (looked in ${APP_SNAPSHOT_DIRS.join(', ')}) — run ` +
+  '`junction app --app <entry>` from the API surface to write one. ' +
   'Services are read off a built app, never scanned (FJS-254).'
 
-// ─── readApiSurface ───────────────────────────────────────────────────────────
+// ─── readAppSnapshot ───────────────────────────────────────────────────────────
 //
 // What the API answers, READ off the committed snapshot rather than re-derived
 // from service source.
@@ -111,7 +111,7 @@ export const surfaceMissingHint = (root) =>
 // added by a plugin or by `app.hooks()` appears in no service file at all — so
 // the scan drew a confident picture with nothing able to contradict it.
 //
-// `junction surface` writes the snapshot off a BUILT app and the `snapshots` CI
+// `junction app` writes the snapshot off a BUILT app and the `snapshots` CI
 // phase fails a stale one, so what is read here is current or CI is red.
 //
 // **Absent means absent.** No snapshot returns null and the callers say so,
@@ -126,8 +126,8 @@ const backticked = (text) => [...text.matchAll(/`([^`]+)`/g)].map(m => m[1])
 const HOOK_ROW = /^\|\s*(before|after|around|error)\s*\|\s*`([^`]+)`\s*\|\s*(.*?)\s*\|\s*$/
 
 /** The whole snapshot parsed, or null when there is none. */
-export function readApiSurface(root) {
-  const file = surfaceFile(root)
+export function readAppSnapshot(root) {
+  const file = appSnapshotFile(root)
   if (!file) return null
 
   const lines = readFileSync(file, 'utf8').split('\n')
@@ -232,7 +232,7 @@ export function readAppAtlas(root, { run: runner = spawnSync } = {}) {
   } catch (err) {
     return { entry: null, error: err.message }
   }
-  if (!entry) return { entry: null, error: surfaceMissingHint(root) }
+  if (!entry) return { entry: null, error: appSnapshotMissingHint(root) }
 
   // Resolved the way the app's own imports resolve it, never with `bunx`, which
   // on a machine with no install fetches a stranger's `junction` (FJS-1571).
@@ -267,7 +267,7 @@ export function readAppAtlas(root, { run: runner = spawnSync } = {}) {
 //
 // `fli call` names the app the same way `app:atlas` does — the snapshot header —
 // and one more: a module typed with `--app`. Most apps `fli new` scaffolds have
-// no surface snapshot, and those are the ones a person calls by hand, so a
+// no app snapshot, and those are the ones a person calls by hand, so a
 // snapshot-only lookup refused almost everyone it was for. A typed path is the
 // caller's word, not a guess, which is why it is allowed where a probe is not.
 //
@@ -293,7 +293,7 @@ export function callArgv(root, { app, exportName, words = [], as, tenant, cwd = 
     let entry
     try { entry = appEntry(root) } catch (err) { return { error: err.message } }
     if (!entry) {
-      return { error: `name the app module with --app (a scaffolded app's is api/src/app.ts), or commit a ${SURFACE_FILE} whose header names it — ${surfaceMissingHint(root)}` }
+      return { error: `name the app module with --app (a scaffolded app's is api/src/app.ts), or commit a ${APP_SNAPSHOT} whose header names it — ${appSnapshotMissingHint(root)}` }
     }
     base = entry
   }

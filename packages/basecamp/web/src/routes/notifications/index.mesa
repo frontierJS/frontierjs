@@ -9,7 +9,7 @@ title: Notifications
   // `@@tenant(none)` and scoped by its recipient — so switching workspace does
   // not change this screen and nothing here reloads on it.
   import { goto }    from '@frontierjs/sierra/router'
-  import { useStore } from '@frontierjs/sierra/resource'
+  import { useTether } from '@frontierjs/sierra/resource'
   import {
     notifications, loadInbox, isUnread, titleOf, bodyOf, actionOf,
     markRead, markUnread, markAllRead, INBOX,
@@ -22,7 +22,7 @@ title: Notifications
   import Table      from '@frontierjs/ui/components/display/Table.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
 
-  const { get: notes, unsubscribe } = useStore(notifications.store)
+  const { get: notes, unsubscribe } = useTether(notifications.tether)
   $.onDestroy(unsubscribe)
 
   let error   = null

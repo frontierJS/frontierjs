@@ -157,7 +157,7 @@ export default createService({
   methods: [
     // `update` and `restore` are the BASE's, written nowhere in this file — a
     // `methods:` list is the whole surface, so leaving them out silently
-    // stopped answering them. `surface.snapshot.md` is what caught it.
+    // stopped answering them. `app.snapshot.md` is what caught it.
     'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
     'events', 'feed', 'logEvent', 'metrics',
     // What the machine's Caddy routes, read live — never stored, because a

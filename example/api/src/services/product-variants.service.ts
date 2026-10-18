@@ -176,7 +176,7 @@ export default createService({
 
   // Declaring one custom method declares the whole surface, so the CRUD verbs
   // are restated here — a service that named only `availability` would answer
-  // 405 to every other verb. surface.snapshot.md carries this list and CI
+  // 405 to every other verb. app.snapshot.md carries this list and CI
   // fails a stale one, so a verb that stopped being answered is a diff before
   // it is a bug.
   methods: [

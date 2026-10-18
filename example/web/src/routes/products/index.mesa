@@ -19,7 +19,7 @@ title: Products
   import { productImages } from '@/resources/ProductImage.mesa'
   import { prefs }   from '@/stores/prefs.js'
   import { money }   from '@/lib/money.js'
-  import { session, useStore } from '@frontierjs/sierra/resource'
+  import { session, useTether } from '@frontierjs/sierra/resource'
   import { goto }     from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -33,8 +33,8 @@ title: Products
   import Slider        from '@frontierjs/ui/components/forms/Slider.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
-  const { get: rows,   unsubscribe: offP } = useStore(products.store)
-  const { get: images, unsubscribe: offI } = useStore(productImages.store)
+  const { get: rows,   unsubscribe: offP } = useTether(products.tether)
+  const { get: images, unsubscribe: offI } = useTether(productImages.tether)
   $.onDestroy(() => { offP(); offI() })
 
   $: (session.level, prefs.perPage, prefs.dense, prefs.currency)

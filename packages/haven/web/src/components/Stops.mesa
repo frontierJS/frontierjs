@@ -1,21 +1,28 @@
 <script>
   // Stops.mesa — Tab and Shift+Tab over the scene's stops (`IDEAS/haven.md`
-  // 19.2), the way a browser moves focus over a page's controls. The stops are
+  // 19.2), and Enter walking to one (19.3), the way a browser moves focus over a page's controls. The stops are
   // `commands.stops(stage.marks)`, read at the first press, so a verb an actor
   // added since is one. Standing in a stop's reach is that stop focused, and
   // the first press moves past it; standing in none, it names the nearest by
   // the walk, as `f` finds a member, since by the crow the nearest may be
   // through a wall.
   //
-  // A named stop is the registry's mode: Tab and Shift+Tab are its keys, and
+  // A named stop is the registry's mode: Tab, Shift+Tab and Enter its keys, and
   // any other key lets it go — Esc taken, an arrow let through to step, a
   // letter to the line — as the `f` walk does. Shift alone is a browser's
   // keydown and lets nothing go. The scene is one `<pre>` and its stops are
   // cells, so a Tab here is prevented on both targets or a browser would move
   // focus off the line. A partial `/word` is Tab's to complete, which
   // `Scene.mesa` asks before any verb.
+  //
+  // Enter walks there a step a `WALK_MS` in the `walk` mode, `f`'s
+  // (`HomeRow.mesa`), so any key stops it and a bolt landing here does too,
+  // the stop still marked. Each step is re-planned from where the figure stands and taken by
+  // `stepTo`, as an arrow's is, so every screen sees it and nothing crosses
+  // a wall or finds a hidden door. A door's walk ends on the door, which is the
+  // door taken; a verb's ends inside its reach.
   import { reaches } from '@/lib/hash/commands.js'
-  import { walked } from '@/lib/scene/paths.js'
+  import { walked, pathTo, STEPS, WALK_MS } from '@/lib/scene/paths.js'
   import { at, tint } from '#cell'
 
   export let stage
@@ -24,24 +31,38 @@
   export let draft
   // Where this figure stands, `{ x, y }`, asked afresh at each press.
   export let where
+  // A step as an arrow takes it; false where it is refused.
+  export let stepTo
   export let tell
 
   var verbs = $context.commands
   const MODE   = 'stops'
+  const WALK   = 'walk'
   const MARK   = { ink: '#000000', ground: '#5fd7ff' }
   const ALONE  = new Set(['Shift', 'Control', 'Alt', 'Meta'])
   let named = null   // { list, i } while a stop is named
+  let going = null   // the stop walked to
+  var walking = null
+
+  $.onDestroy(() => clearInterval(walking))
 
   const away = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))
 
-  /** The steps to stand where `stop` answers — beside a door, within a verb's reach. */
-  function distance(floor, stop) {
-    let best = Infinity
-    for (const r of stop.reaches) {
-      const within = Math.max(r.within, stop.to ? 1 : 0)
-      for (const c of floor) if (c.n < best && away(c, r) <= within) best = c.n
-    }
-    return best
+  /** Whether standing on `x, y` answers `stop`: a step from a door's cell, within a verb's reach. */
+  const answers = (stop, x, y) => stop.reaches.some((r) => stop.to
+    ? Math.abs(x - r.x) + Math.abs(y - r.y) === 1
+    : away({ x, y }, r) <= r.within)
+
+  /** The steps to stand where `stop` answers; `floor` is `walked()`'s, nearest first. */
+  const distance = (floor, stop) => floor.find((c) => answers(stop, c.x, c.y))?.n ?? Infinity
+
+  /** The cells stepped onto to reach `stop` from `me`, a door's own cell last; null when none can. */
+  function route(stop, me) {
+    const path = pathTo(stage, me, (x, y) => answers(stop, x, y))
+    if (!path || !stop.to) return path
+    const end = path.at(-1) ?? me
+    const door = stop.reaches.find((r) => STEPS.some(([dx, dy]) => end.x + dx === r.x && end.y + dy === r.y))
+    return [...path, { x: door.x, y: door.y }]
   }
 
   /** Where the first press lands: past the stop stood in, else the nearest walked. */
@@ -68,8 +89,38 @@
     say()
   }
 
-  /** The cells a named stop marks on the art: each reach's own cell, in the view. */
-  const marked = (shown, v) => !shown ? [] : shown.list[shown.i].reaches
+  /** One step toward `going`, from where the figure stands now; the walk ends there or where none is left. */
+  function stepToward() {
+    const stop = going
+    const path = route(stop, where())
+    if (path?.length) {
+      // The door is a navigation, and a tick before the scene unmounts would take it twice.
+      if (stop.to && path.length === 1) verbs.close(WALK)
+      stepTo(path[0].x, path[0].y)
+      return
+    }
+    verbs.close(WALK)
+    if (!path) tell(`nobody can reach ${stop.name} from here`)
+  }
+
+  function walk(e) {
+    e.preventDefault?.()
+    const stop = named.list[named.i]
+    const path = route(stop, where())
+    if (!path) { tell(`nobody can reach ${stop.name} from here`); return }
+    if (!path.length) { verbs.close(MODE); tell(`you are at ${stop.name}`); return }
+    const close = verbs.open({
+      name: WALK,
+      take: (k) => { close(); return k.key === 'Escape' },
+      closed: () => { clearInterval(walking); walking = null; going = null; tell('') },
+    })
+    going = stop
+    tell(`→ ${stop.name}`)
+    walking = setInterval(stepToward, WALK_MS)
+  }
+
+  /** The cells a stop marks on the art: each reach's own cell, in the view. */
+  const marked = (stop, v) => !stop ? [] : stop.reaches
     .filter((r) => r.x >= v.x && r.y >= v.y && r.x < v.x + v.w && r.y < v.y + v.h)
     .map((r) => ({ key: `${r.x},${r.y}`, x: r.x - v.x, y: r.y - v.y, ch: stage.look(r.x, r.y, Date.now()).ch }))
 
@@ -83,7 +134,7 @@
       named = { list, i: first(list, event?.shiftKey ? -1 : 1) }
       const close = verbs.open({
         name: MODE,
-        keys: { Tab: move },
+        keys: { Tab: move, Enter: walk },
         take: (e) => {
           if (ALONE.has(e.key)) return false
           close()
@@ -97,6 +148,6 @@
   }))
 </script>
 
-{#each marked(named, view) as c (c.key)}
+{#each marked(going ?? (named && named.list[named.i]), view) as c (c.key)}
   <p {@attach at(c.x, c.y, 9)} {@attach tint(MARK.ink, MARK.ground)}>{c.ch}</p>
 {/each}

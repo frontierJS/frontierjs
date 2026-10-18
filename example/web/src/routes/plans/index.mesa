@@ -15,7 +15,7 @@ title: Plans
   // a different table.
   import Plan, { plans } from '@/resources/Plan.mesa'
   import { prefs } from '@/stores/prefs.js'
-  import { session, useStore } from '@frontierjs/sierra/resource'
+  import { session, useTether } from '@frontierjs/sierra/resource'
   import { page, goto } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 
@@ -37,7 +37,7 @@ title: Plans
     { name: 'actions',      label: '' },
   ]
 
-  const { get: rows, unsubscribe } = useStore(plans.store)
+  const { get: rows, unsubscribe } = useTether(plans.tether)
   $.onDestroy(unsubscribe)
 
   $: (session.level, prefs.dense, prefs.currency)

@@ -1910,7 +1910,7 @@ export function createApp(opts: AppOptions = {}): App {
     // principal with no claim seeing an empty version of every screen.
     //
     // Installed only when the schema DECLARES row tenancy. A hook that no-ops
-    // is not free: it is a line in every app's `surface.snapshot.md` and a
+    // is not free: it is a line in every app's `app.snapshot.md` and a
     // frame in every stack trace, for a question most apps never ask. Probed
     // inside a try because reading an unknown property off a Litestone client
     // throws rather than answering undefined.

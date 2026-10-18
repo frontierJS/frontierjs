@@ -485,6 +485,28 @@ was written to apply.
   - **D** — A dedicated `install:basecamp`.
   - **Recommend A** — nothing is added and the refusal already names the command.
     D restates setup and deploy for one app.
+- ~~**FJS-D1253 — Who creates the machine Basecamp itself runs on?**~~ **Answered 2026-10-18 (`FJS-D1253`): A — `fli` creates it from a vendor token, with the same cloud-init script `enrollment.ts` serves (one install script, `FJS-758`), then runs ring 0 on it. Laravel Forge's front door.** Ring 0 assumes
+  the box exists, so zero-to-live has a vendor console step before any command.
+  Basecamp already creates machines (`providers/compute/`, the cloud-init
+  `enrollment.ts` serves), but Basecamp does not exist yet at ring 0.
+  - **A** — `fli` creates it from a vendor token, with the same cloud-init script
+    `enrollment.ts` serves (one install script, `FJS-758`), then runs ring 0 on it.
+    Laravel Forge's front door.
+  - **B** — The operator makes the box by hand, then `fli deploy`. Smallest; the
+    manual step stays.
+  - **C** — A `curl | sh` installer run on a box that exists (Coolify, Dokploy).
+    Needs Basecamp published as an image, which ring 0 does not have.
+  - **Recommend A** — the compute connectors and the install script exist, and it
+    makes zero-to-live one command; C waits on ring 0's distribution question.
+- ~~**FJS-D1254 — Who writes Basecamp's own DNS record at ring 0?**~~ **Answered 2026-10-18 (`FJS-D1254`): A — `fli` takes a Cloudflare token, writes Basecamp's own record, then stores the same token as the first workspace's edge `Secret`, so it is pasted once and Basecamp owns DNS from then on.** `07-report` tells
+  the operator to point DNS by hand, and the Cloudflare token is a workspace
+  account (`FJS-D558`), which does not exist before Basecamp does.
+  - **A** — `fli` takes a Cloudflare token, writes Basecamp's own record, then
+    stores the same token as the first workspace's edge `Secret`, so it is pasted
+    once and Basecamp owns DNS from then on.
+  - **B** — By hand once; Basecamp manages every app record after. No token in `fli`.
+  - **Recommend A** — the operator pastes the token once and no record is written
+    by hand.
 
 ---
 

@@ -21,7 +21,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
     }),
     resource: () => ({
       service: {},
-      store: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
+      tether: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
       load: () => Promise.resolve([]),
     }),
   }),

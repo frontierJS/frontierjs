@@ -51,7 +51,7 @@ await mine.user.findMany({
 
 In most stacks, your data model is described in five places — an ORM schema, a validator library, TypeScript types, middleware for access control, JSON Schema for API consumers — and they drift.
 
-Litestone collapses that to one `.lite` file. Row-level policies, traits, typed JSON, soft delete with cascade, encryption, audit logs, multi-database routing, full-text search — all declared in the schema, enforced at runtime, and reflected in generated types.
+Litestone collapses that to one `.lite` file. Row-level policies, traits, typed JSON, soft delete with cascade, encryption, audit trails, multi-database routing, full-text search — all declared in the schema, enforced at runtime, and reflected in generated types.
 
 The runtime is implementation detail in service of the declarative model. SQLite is the target so the database is a single file you can back up, replicate, ship in a container, or run in a Bun script. Bun is the runtime because its native SQLite driver removes the C++/WASM hop other ORMs need.
 
@@ -117,7 +117,7 @@ The comparison is organized around what you can **declare** in the schema and wh
 | **Auto attribution** (`@default(auth().id)`, `@updatedBy`) | ✓ | ✗ | ✗ | partial ⁶ |
 | **Per-scope sequences** (`@sequence(scope: tenantId)`) | ✓ | ✗ | ✗ | ✗ |
 | **File storage lifecycle** (S3/R2 upload + cleanup paired with row writes) | ✓ | ✗ | ✗ | ✗ |
-| **Audit log per write** (`@@trail(audit)` with full diff) | ✓ | ✗ | ✗ | ✗ |
+| **Audit trail per write** (`@@trail(audit)` with full diff) | ✓ | ✗ | ✗ | ✗ |
 | **Encryption key rotation** (`$rotateKey`) | ✓ | ✗ | ✗ | ✗ |
 
 ### Querying — how you read the data back
@@ -364,7 +364,7 @@ model User {
 @secret(rotate: false)           the same but excluded from key rotation — and therefore
                                  unreadable after one. $rotateKey refuses while one exists
 @allow('read'|'write'|'all', expr)   field-level conditional visibility
-@trail(dbName)                     field-level audit log to a trail database
+@trail(dbName)                     field-level audit trail to a trail database
 @keepVersions                    on File? / File[]: skip old S3 object cleanup on update
 @accept("mime/type")             on File / File[]: validate content type before upload
 @syntax(sql)                     the text is in this syntax — md, sql, js, html… (picks the editor; no validation)
@@ -416,7 +416,7 @@ model User {
                                  for as `where: { $scope: 'name' }`. See below
 @@transitions(field, ...)        a state machine on an enum field, enforced at the Data
                                  boundary. `name:` optional, `@gate(N)` per move. See below
-@@trail(dbName)                    model-level audit log: every write fires a log entry
+@@trail(dbName)                    model-level audit trail: every write fires a log entry
 @@auth                           marks model as the auth subject
 @@createdBy                      sugar: adds createdById @createdBy + a createdBy relation
                                  to the @@auth model. @@createdBy(owner) renames the pair
@@ -433,7 +433,7 @@ model User {
 
 ## Multi-database
 
-Route models to separate SQLite files, JSONL logs, or auto-schema audit loggers:
+Route models to separate SQLite files, JSONL logs, or auto-schema audit trails:
 
 ```lite
 database main      { path env("MAIN_DB", "./app.db") }
@@ -471,7 +471,7 @@ await db.asSystem().auditTrail.findMany({ where: { model: 'User' } })  // → au
 **Drivers:**
 - `sqlite` (default) — standard SQLite file with full ORM support
 - `jsonl` — append-only log files, one `.jsonl` per model, `findMany` supported
-- `trail` — auto-schema audit log, receives `@trail` / `@@trail` entries; queries via `db.asSystem().auditTrail` — the trail is readable in a system context only
+- `trail` — auto-schema audit trail, receives `@trail` / `@@trail` entries; queries via `db.asSystem().auditTrail` — the trail is readable in a system context only
 
 ---
 

@@ -61,7 +61,7 @@ Covered: **19 of 19**.
 
 | Kind | What | Covers |
 | --- | --- | --- |
-| test | `packages/litestone/test/litestone.test.ts` | § audit log redaction — `@secret`, `@encrypted` and `@guarded` log as `[redacted]` and `@personal` as `[personal]` in a field entry and in a `before`/`after` snapshot, and no `@hashed` digest reaches any entry |
+| test | `packages/litestone/test/litestone.test.ts` | § audit trail redaction — `@secret`, `@encrypted` and `@guarded` log as `[redacted]` and `@personal` as `[personal]` in a field entry and in a `before`/`after` snapshot, and no `@hashed` digest reaches any entry |
 
 ### 8. Caller-supplied names never enter a SQL pattern
 

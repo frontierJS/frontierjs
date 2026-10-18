@@ -97,9 +97,9 @@ Supports: `create`, `createMany`, `findMany`, `findFirst`, `findUnique` (and the
 
 ### trail
 
-Auto-managed audit log that receives `@trail` and `@@trail` write entries. Auto-creates `<dbName>Trail` model with a structured log entry schema. Queryable through the standard ORM API.
+Auto-managed audit trail that receives `@trail` and `@@trail` write entries. Auto-creates `<dbName>Trail` model with a structured log entry schema. Queryable through the standard ORM API.
 
-See [audit-logging.md](audit-logging.md) for full details.
+See [trail.md](trail.md) for full details.
 
 ## @@external — tables you don't own
 

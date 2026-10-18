@@ -578,7 +578,7 @@ t('rail.theShortcutDoesNotFireIntoAField', await probe(`
 // ─── switching the open database ──────────────────────────────────────────
 //
 // `example` is `tenancy { strategy database }`: the base file holds the
-// registry and a shared audit log, and every shop's rows live in a file of its
+// registry and a shared audit trail, and every shop's rows live in a file of its
 // own. Opening one re-points every data endpoint on the SERVER — and the client
 // kept the snapshot it took at boot, so the sidebar went on showing 44 tables
 // at zero, the header went on showing the base file's size, and the diagram's
@@ -650,7 +650,7 @@ t('tenant.aLateOverviewLoadDoesNotOverwriteTheDatabaseNowOpen', await probe(`
 
 // The base database is not EMPTY, and that is the thing that makes an
 // unselected tenant so confusing: a `logger` database is shared across every
-// tenant, so the audit log has rows while all 43 other tables read zero. It is
+// tenant, so the audit trail has rows while all 43 other tables read zero. It is
 // the shape of *why are all the tables empty except that one*.
 t('tenant.theSharedLogIsWhyTheBaseLooksAlmostEmpty',
   { some: beforeOpen.nonZero > 0, notMany: beforeOpen.nonZero < 5 },

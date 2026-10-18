@@ -5,11 +5,11 @@
  * cache must survive everything else (`FJS-786`).
  *
  * A Resource is created once, at import, in a resource file's `<script module>`
- * (Invariant 18), so its live store, its `_versions` map and its `_options`
+ * (Invariant 18), so its tether, its `_versions` map and its `_options`
  * picker cache live for the life of the TAB, while the principal is a thing
  * that changes inside it. Measured against a real stack before the fix:
  *
- *   the store   — after signOut and signIn as somebody else, and before any
+ *   the tether   — after signOut and signIn as somebody else, and before any
  *                 load, it still held `[{ body: 'u1 private', ownerId: 'u1' }]`
  *   `_versions` — `version(1)` answered a revision the new caller never read
  *   `_options`  — with `@@allow("read", ownerId == auth().id)` on `Customer`,
@@ -51,7 +51,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
       _resourceCalls++
       return {
         service: _proxy,
-        store: {
+        tether: {
           get: () => _storeRows,
           subscribe: (fn) => { fn(_storeRows); return () => {} },
           set: (rows) => { _storeRows = rows },
@@ -138,14 +138,14 @@ describe('the identity epoch', () => {
     expect(_finds).toBe(asked + 1)
   })
 
-  test('the live store does not render the previous person’s rows', async () => {
+  test('the tether does not render the previous person’s rows', async () => {
     ROWS = [{ id: 1, body: 'u1 private', version: 1 }]
     const notes = createResource('notes', { model: 'Note' })
     await notes.load({})
-    expect(notes.store.get()).toHaveLength(1)
+    expect(notes.tether.get()).toHaveLength(1)
 
     resetResourcesForIdentityChange()
-    expect(notes.store.get()).toEqual([])
+    expect(notes.tether.get()).toEqual([])
   })
 
   test('version() does not answer a revision the current caller never read', async () => {
@@ -170,12 +170,12 @@ describe('the identity epoch', () => {
     await notes.options('customerId')
     await customers.load({})
     const asked = _finds
-    expect(customers.store.get()).toHaveLength(1)
+    expect(customers.tether.get()).toHaveLength(1)
 
     resetResourcesForIdentityChange()
 
-    expect(customers.store.get()).toEqual([])
-    expect(notes.store.get()).toEqual([])
+    expect(customers.tether.get()).toEqual([])
+    expect(notes.tether.get()).toEqual([])
     ROWS = [{ id: 2, name: 'Bob-of-u2' }]
     expect((await notes.options('customerId')).options).toEqual([{ value: 2, label: 'Bob-of-u2' }])
     expect(_finds).toBe(asked + 1)
@@ -184,7 +184,7 @@ describe('the identity epoch', () => {
 
 describe('options() does not build a resource it is about to throw away', () => {
   test('N cached renders construct exactly one related resource', async () => {
-    // `createResource` is not a pure call: it makes a Store, binds it to the
+    // `createResource` is not a pure call: it makes a Tether, binds it to the
     // node registry, opens the socket and registers a `reconnected` listener that
     // nothing can remove. Built above the cache check, a picker left one per
     // render behind it — measured against a real stack at 501 listeners and

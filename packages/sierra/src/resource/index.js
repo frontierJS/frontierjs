@@ -4,7 +4,7 @@
  * Initialized by virtual:sierra at boot.
  * Exposes a plain `status` object for use in components — see below.
  *
- * import { status, session, signIn, signOut, useStore } from 'sierra/resource'
+ * import { status, session, signIn, signOut, useTether } from 'sierra/resource'
  */
 
 import { beforeNavigate, goto } from '../router/index.js'
@@ -73,7 +73,7 @@ export { pendingQueue } from './pending.js'
 export { offlineStatus } from './offline.js'
 import { clearLocalDb } from './local-db.js'
 
-// The live stores' half of a token change — see _identityChanged below.
+// The tethers' half of a token change — see _identityChanged below.
 import { resetResourcesForIdentityChange } from './resource.js'
 
 // ─── Module-level refs (set by initJunction) ──────────────────────────────────
@@ -165,8 +165,8 @@ export function getClient() {
  *  now — in either direction (`FJS-041`). */
 function _identityChanged() {
   invalidatePrefetch()
-  // And the same for every live store, for the same reason one layer over: a
-  // Resource is created once at import (Invariant 18), so its store lives for
+  // And the same for every tether, for the same reason one layer over: a
+  // Resource is created once at import (Invariant 18), so its tether lives for
   // the tab and any component still mounted keeps rendering it. On a shared
   // machine that is the previous person's rows on the next person's screen,
   // until their own load() resolves and indefinitely on any screen whose load()
@@ -197,25 +197,25 @@ function _identityChanged() {
   if (!token) _client?.disconnect()
 }
 
-// ─── Store bridge ─────────────────────────────────────────────────────────────
+// ─── Tether bridge ────────────────────────────────────────────────────────────
 
 /**
- * Wrap a Junction Store<T> as a Mesa-reactive signal.
+ * Wrap a Junction Tether<T> as a Mesa-reactive signal.
  * Call this once per component instance (in the <script> block, not in
  * a reactive computation) so the subscription is created only once.
  *
  * Returns an unsubscribe function — pass it to onDestroy() to avoid leaks:
  *
- *   const { get, unsubscribe } = useStore(leadsStore)
+ *   const { get, unsubscribe } = useTether(leadsTether)
  *   onDestroy(unsubscribe)
  *
  * @template T
- * @param {{ get(): T, subscribe(fn: (v: T) => void): () => void }} store
+ * @param {{ get(): T, subscribe(fn: (v: T) => void): () => void }} tether
  * @returns {{ get: () => T, value: T, unsubscribe: () => void }}
  */
-export function useStore(store) {
-  const [read, write] = createSignal(store.get())
-  const unsubscribe = store.subscribe(v => write(v))
+export function useTether(tether) {
+  const [read, write] = createSignal(tether.get())
+  const unsubscribe = tether.subscribe(v => write(v))
   return {
     get: read,
     get value() { return read() },
@@ -601,7 +601,7 @@ export function initJunction(config) {
  * forwards to the other app as whoever the server decides — the token for the
  * other app stays on the server — and a `url` on any other origin is refused:
  * it would hand that origin this page's session. The socket is `url` + `/ws`,
- * so the forward bridges that path too, or every live store stays still.
+ * so the forward bridges that path too, or every tether stays still.
  *
  * @param {object} opts
  * @param {string} opts.url  where the other app is reached, on this page's API

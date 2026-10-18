@@ -24,7 +24,7 @@ import { loadViewer }             from './viewer-page.js'
 
 const { buildModel, collectIssues } = loadViewer(['buildModel', 'collectIssues'])
 
-// A service exactly as `surface.snapshot.md` reports one: gateAuth in AROUND,
+// A service exactly as `app.snapshot.md` reports one: gateAuth in AROUND,
 // never in before. Copied from the shape a real snapshot parses to.
 const svc = (name, methods, extra = {}) => ({
   name, model: name, methods, customMethods: [], channel: null,
@@ -34,7 +34,7 @@ const svc = (name, methods, extra = {}) => ({
 })
 
 const mapWith = (defs, services = [], resources = []) => ({
-  meta: { root: '/x' }, schema: { $defs: defs }, services, resources, surface: { file: 's.md', routes: [], plugins: [], appHooks: {} },
+  meta: { root: '/x' }, schema: { $defs: defs }, services, resources, app: { file: 's.md', routes: [], plugins: [], appHooks: {} },
 })
 
 const model = (over = {}) => ({ type: 'object', 'x-litestone-kind': 'model', properties: { id: { type: 'integer' } }, ...over })
@@ -44,7 +44,7 @@ const view_ = ()          => ({ type: 'object', 'x-litestone-kind': 'view',  pro
 const issuesFor = (map) => collectIssues({
   services:  map.services,
   resources: map.resources,
-  surface:   map.surface,
+  app:       map.app,
   models:    buildModel(map).models,
   env:       null,
   packages:  [],
@@ -61,9 +61,9 @@ describe('collectIssues — the gateAuth check that could only be wrong', () => 
 
   // The pair: something must still be findable, or the assertion above is
   // satisfied by a function that returns nothing.
-  test('but a real finding still fires — no surface at all is an error', () => {
-    const found = collectIssues({ services: [], resources: [], surface: null, models: [], env: null, packages: [] })
-    expect(found.some(i => i.severity === 'error' && /surface\.snapshot\.md/.test(i.msg))).toBe(true)
+  test('but a real finding still fires — no app snapshot at all is an error', () => {
+    const found = collectIssues({ services: [], resources: [], app: null, models: [], env: null, packages: [] })
+    expect(found.some(i => i.severity === 'error' && /app\.snapshot\.md/.test(i.msg))).toBe(true)
   })
 })
 

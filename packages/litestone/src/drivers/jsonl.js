@@ -224,7 +224,7 @@ function extractWhereFields(where) {
 // lexicographically ('10' < '9'). Keep these keys in step with SCALARS.
 // `Any` maps to SQLite's ANY, which STRICT tables support for exactly this
 // case: a column whose values are identifiers of whatever type the host app
-// uses. The audit log's `actorId` is one — an Int id in one app, a uuid String
+// uses. The audit trail's `actorId` is one — an Int id in one app, a uuid String
 // in another (which is what @frontierjs/auth issues) — and a STRICT INTEGER
 // column threw `cannot store TEXT value in INTEGER column` on the first write
 // with a known actor. See makeAuditModel() in core/client.js.
@@ -267,13 +267,13 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     !f.attributes.some(a => a.kind === 'computed' || a.kind === 'transient')
   )
 
-  // @id field name — optional for JSONL models (audit logs, event streams don't need one)
+  // @id field name — optional for JSONL models (audit trails, event streams don't need one)
   const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))
   const _idName  = idField?.name ?? null   // null = no @id declared
 
   // @@index attributes and the set of indexed field names.
   // When @id is present it's included so the index can do INSERT OR REPLACE (upsert by id).
-  // When @id is absent (e.g. audit log), indexed fields come purely from @@index attrs —
+  // When @id is absent (e.g. audit trail), indexed fields come purely from @@index attrs —
   // _offset is the primary key in that case since every appended line has a unique offset.
   // The index's shape is `jsonl-index.js`'s, because compaction rewrites every
   // row of it and the two may not disagree about what a row is.

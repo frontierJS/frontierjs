@@ -56,11 +56,11 @@ and not here. Read the section for a path before changing code under it.
   takes `apply`'s `present` branch and never reaches the bound, and a page that
   is not yet full still appends. Trimming instead would drop a server row chosen
   at random, which is worse than not showing it.
-- **`resource().load()` writes the store only if it is still the newest load.**
+- **`resource().load()` writes the tether only if it is still the newest load.**
   Stamped when issued (`FJS-082`); an overtaken load still RETURNS its rows to
   the caller that awaited them, and its request is not cancelled. Code reading
   the return value of a load it may have superseded is reading stale rows on
-  purpose — the store is what is current.
+  purpose — the tether is what is current.
 
 ## `src/transport/channels.ts` · `presence.ts` — sockets, presence and the broadcast
 
@@ -184,12 +184,12 @@ and not here. Read the section for a path before changing code under it.
   `announceDataWrites` used to drop every event whose `result` was null, which is
   a bulk statement answering `{count}` and a `select: false` write, both — so a
   job doing `createMany` left every tab stale (`FJS-307`). One event name for all
-  three operations, since the receiving store's only honest answer is the same
+  three operations, since the receiving tether's only honest answer is the same
   for each; the operation is in the payload. **The caller's `where` goes on the
   bus and never on a channel** — the bus is in-process, a channel is every
   subscribed browser, and a filter is made of the caller's own values. The
-  browser store reloads on it and the `*` catch-all skips the name, or the count
-  object lands in the store as a row.
+  browser tether reloads on it and the `*` catch-all skips the name, or the count
+  object lands in the tether as a row.
 
 ## `src/transport/http.ts` · `router.ts` · `body.ts` · `static.ts` · `middleware.ts` · `bridge.ts` — HTTP
 

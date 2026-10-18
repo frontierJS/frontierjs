@@ -97,8 +97,8 @@ model Account {
 // Demonstrates:
 //   @@allow / @@deny   — row-level access policy
 //   @allow('read')     — field-level: salary only visible to admins
-//   @secret            — encrypted + guarded + audit logged (via @trail(audit))
-//   @@trail(audit)       — model-level audit log: create/update/delete
+//   @secret            — encrypted + guarded + recorded in the audit trail (via @trail(audit))
+//   @@trail(audit)       — model-level audit trail: create/update/delete
 
 model User {
   id          Int   @id
@@ -263,7 +263,7 @@ model ApiRequest {
   @@db(logs)
 }
 
-// ─── Audit log — trail database ─────────────────────────────────────────────
+// ─── Audit trail — trail database ─────────────────────────────────────────────
 // AuditTrail carries the unified log shape (references/AuditTrail.lite).
 // User model writes here via @secret (expands to @trail(audit)) and @@trail(audit).
 // Query via: db.auditTrail.findMany({ where: { model: 'User' } })

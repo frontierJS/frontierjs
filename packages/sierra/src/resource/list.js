@@ -1,7 +1,7 @@
 /**
  * sierra/resource/list — `resource.list()`, the layer above a table.
  *
- * A list is five wirings that every page restated: subscribe to the store,
+ * A list is five wirings that every page restated: subscribe to the tether,
  * decide where the filters live, send them to `load()`, re-run on a change, and
  * grow the window. This is those five, once. It owns no markup — `<Table>` and
  * `<FilterBar>` stay presentational and take what this hands them.
@@ -48,22 +48,22 @@
  *
  * ─── Whose rows these are ──────────────────────────────────────────────────
  *
- * A list stating no `where` and no `query` of its own IS the resource's store:
+ * A list stating no `where` and no `query` of its own IS the resource's tether:
  * every such list on a page shows one set of rows, which is what a route's list
  * and a table beside it want. A list that states a filter keeps its own rows,
  * answered by its own `load()` and moved by a push through the same matcher the
- * store uses, so a page can hold a list per filter. `{ composed: true }` is
+ * tether uses, so a page can hold a list per filter. `{ composed: true }` is
  * for a service that answers more than the rows, and owns its rows for that.
  *
  * ─── A composed list ───────────────────────────────────────────────────────
  *
  * `{ composed: true }` where the service's `find()` answers more than the rows —
  * an `include:`, a per-row count. It is `record(id, { composed: true })` for a
- * list, and for the same reason (`FJS-533`): the store holds one row per node
- * and a push carries the row alone, so a store-backed list drops every
+ * list, and for the same reason (`FJS-533`): the tether holds one row per entry
+ * and a push carries the row alone, so a tether-backed list drops every
  * relation cell at the first announcement.
  *
- * So these rows are this list's own and never enter the store — a node holding
+ * So these rows are this list's own and never enter the tether — an entry holding
  * one screen's includes would hand them to every other list over the model. An
  * announcement on the service, or a reconnect, is the TRIGGER and the whole
  * window is read again, one request per burst. Growing the window therefore
@@ -78,14 +78,14 @@ import { unreachable } from './pending.js'
 const SEARCH_DEBOUNCE_MS = 300
 
 // A deploy drops every socket at once, so an unjittered re-read on reconnect is
-// every client querying in the same tick. The same bound junction's store uses.
+// every client querying in the same tick. The same bound junction's tether uses.
 const RECONNECT_JITTER_MS = 2000
 
 const isEmpty = (o) => !o || Object.keys(o).length === 0
 
 /**
  * Does this list keep its own rows? One that states a filter of its own does
- * (`FJS-D1165`); one that states none is the resource's store. A composed list
+ * (`FJS-D1165`); one that states none is the resource's tether. A composed list
  * has its own already.
  */
 export const ownsRows = (opts) => opts?.composed !== true && (!isEmpty(opts?.where) || !isEmpty(opts?.query))
@@ -102,7 +102,7 @@ function overlay(base, top) {
 }
 
 /**
- * @param {object} resource  the resource this list reads — `load`, `more`, `hasMore`, `store`,
+ * @param {object} resource  the resource this list reads — `load`, `more`, `hasMore`, `tether`,
  *                           `dispose` for rows of its own, and for a composed list `find`, `on`
  *                           and `onReconnected`
  * @param {{ query?: object, directives?: object } | undefined} listQuery  the resource file's defaults
@@ -138,7 +138,7 @@ export function createList(resource, listQuery, opts = {}) {
 
   // ─── State ──────────────────────────────────────────────────────────────
 
-  const [rows,      setRows]      = createSignal(composed ? [] : resource.store.get())
+  const [rows,      setRows]      = createSignal(composed ? [] : resource.tether.get())
   const [loading,   setLoading]   = createSignal(false)
   const [error,     setError]     = createSignal(null)
   const [more,      setMore]      = createSignal(false)
@@ -152,7 +152,7 @@ export function createList(resource, listQuery, opts = {}) {
   const route = state === 'url' ? page.route : null
 
   // Inside an effect so a component that forgets `destroy` still releases the
-  // store: the effect is owned by whatever scope created the list, and its
+  // tether: the effect is owned by whatever scope created the list, and its
   // cleanups run when that scope is torn down. Nothing in the body is read
   // reactively, so it never re-runs.
   const release = createEffect(() => {
@@ -163,7 +163,7 @@ export function createList(resource, listQuery, opts = {}) {
         reconnectTimer = setTimeout(announced, Math.random() * RECONNECT_JITTER_MS)
       }))
     } else {
-      const unsubscribe = untrack(() => resource.store.subscribe((next) => {
+      const unsubscribe = untrack(() => resource.tether.subscribe((next) => {
         setRows(next)
         setMore(resource.hasMore())
         setTotal(resource.total?.() ?? null)

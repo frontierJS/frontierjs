@@ -617,7 +617,7 @@ export async function gradeRecipients(
   }
 
   // An update that narrows who may read a row is refused to the reader it took
-  // the row from, and a refusal alone strands the row in their live store —
+  // the row from, and a refusal alone strands the row in their tether —
   // share arrived live and revoke never did (`FJS-1425`). So a reader the new
   // row refuses is told `removed` with the id alone, if the row's before-image
   // admitted them. One who could read neither image is told nothing, and so is

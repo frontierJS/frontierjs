@@ -9,7 +9,7 @@ title: Trash
   // only once whatever holds it is live, so every Restore here can succeed.
   // Refusals are the row's own service's: a viewer's press is a 403 in words.
   import { goto }     from '@frontierjs/sierra/router'
-  import { useStore } from '@frontierjs/sierra/resource'
+  import { useTether } from '@frontierjs/sierra/resource'
   import { session }  from '../../session.js'
   import { trash, loadTrash, restoreItem } from '../../resources/Trash.mesa'
   import { at, ago } from '../../datetime.js'
@@ -20,7 +20,7 @@ title: Trash
   import Table      from '@frontierjs/ui/components/display/Table.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
 
-  const { get: items, unsubscribe } = useStore(trash.store)
+  const { get: items, unsubscribe } = useTether(trash.tether)
   $.onDestroy(unsubscribe)
 
   let error   = null

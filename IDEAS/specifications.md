@@ -33,7 +33,7 @@ single owner, and a single owner is the thing a specification needs to point
 at.** Toolbelt's own purpose is "facts with many possible answers that must have
 one". Most of the bridge index is a list of translations with exactly one owner
 each. The committed snapshots (`errors.snapshot.md`, `jsonschema.snapshot.md`,
-`surface.snapshot.md`) and the vectors (`datetime-vectors.json`, the policy oracle
+`app.snapshot.md`) and the vectors (`datetime-vectors.json`, the policy oracle
 between `compileSql` and `evalJs`, `verifyTransportParity`) are test vectors
 that nobody has pulled out of the implementation yet.
 
@@ -198,7 +198,7 @@ The rule that the origin is the row and never the caller.
 **Would state:** the entry shape. The actor is whoever asked, including through
 deferred work. A correlation id joins the entry to the request. Redaction
 follows entry 5.
-**Held today:** `packages/litestone/docs/audit-logging.md`.
+**Held today:** `packages/litestone/docs/trail.md`.
 
 #### 10. Schema evolution
 
@@ -217,7 +217,7 @@ may address a record or the collection. A method's input names a declared type.
 Declaring methods narrows the surface. The introspection document says what a
 service is.
 **Held today:** `svc.describe()` → `ServiceDescription` · `collectCustomMethods` ·
-`validateInput` · `surface.snapshot.md` · `IDEAS/declared-method-contract.md`
+`validateInput` · `app.snapshot.md` · `IDEAS/declared-method-contract.md`
 (`FJS-D02`, `FJS-D07`).
 **Neighbor:** OpenAPI, which Junction already generates. The spec is the part
 OpenAPI has no field for: who may call, and what a call announces.
@@ -346,7 +346,7 @@ answered true, false, or `null` (*ask the server*). One node per row keyed by
 model, with a list as a view over nodes. Composed reads where the node is the
 trigger rather than the value. **A push moves the value and never the
 remembered version.** A mutation stored as intent.
-**Held today:** `@frontierjs/toolbelt/match` · `packages/junction/src/client/nodes.ts`
+**Held today:** `@frontierjs/toolbelt/match` · `packages/junction/src/client/entries.ts`
 (`FJS-D138`, `FJS-D161`) · `IDEAS/live-queries.md`.
 
 ### Integration and machines

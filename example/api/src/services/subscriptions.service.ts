@@ -135,7 +135,7 @@ export default createService({
   },
 
   // Stated whole, because declaring one method declares the list — a service
-  // that named only `cancel` would answer 405 to `find`. `surface.snapshot.md`
+  // that named only `cancel` would answer 405 to `find`. `app.snapshot.md`
   // carries this and CI fails a stale one.
   //
   // `input:` names the `type` in db/schema.lite, so the payload is validated

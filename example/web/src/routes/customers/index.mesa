@@ -27,7 +27,7 @@ title: Customers
   // one table.
   import Customer, {customers}   from '@/resources/Customer.mesa'
   import { prefs } from '@/stores/prefs.js'
-  import { session, useStore } from '@frontierjs/sierra/resource'
+  import { session, useTether } from '@frontierjs/sierra/resource'
 
   import Alert                from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Avatar               from '@frontierjs/ui/components/display/Avatar.mesa'
@@ -42,7 +42,7 @@ title: Customers
   import Switch               from '@frontierjs/ui/components/forms/Switch.mesa'
   import Table                from '@frontierjs/ui/components/display/Table.mesa'
 
-  const { get: rows, unsubscribe } = useStore(customers.store)
+  const { get: rows, unsubscribe } = useTether(customers.tether)
   $.onDestroy(unsubscribe)
 
   $: (session.level, session.user, prefs.dense)

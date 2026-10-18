@@ -41,8 +41,8 @@ export interface PostureReadings {
   privileged?:   { name: string; privileged: boolean; docker_sock: boolean }[] | null
   files?:        { path: string; mode: string; owner: string; group: string }[] | null
   cert?:         { expires_at: string } | null
-  // The installation's own host only: the files its report-only Outpost was
-  // told hold the database and ENCRYPTION_KEY, each null when unreadable.
+  // The box a Basecamp runs on only: the files `fli deploy` told its Outpost
+  // hold the database and ENCRYPTION_KEY, each null when unreadable.
   host_files?:   { db: FileStat | null; env: FileStat | null } | null
 }
 
@@ -345,10 +345,7 @@ export function gradePosture(
   })
 }
 
-// ─── the installation's own host ──────────────────────────────────────────
-
-/** A host with no command listener has no command-port certificate to expire. */
-const NOT_ON_HOST = new Set(['outpost.cert-expiry'])
+// ─── the box a Basecamp runs on ───────────────────────────────────────────
 
 // The default `backupCron` is daily, so two days is one missed run and a grace.
 const BACKUP_MAX_AGE_DAYS = 2
@@ -358,7 +355,7 @@ const BACKUP_MAX_AGE_DAYS = 2
 const worldAccess = (mode: string) => (Number.parseInt(mode, 8) & 0o007) !== 0
 
 function fileControl(what: string, stat: FileStat | null | undefined): Grade {
-  if (!stat) return unknown(`The ${what} could not be read — is its path in the host Outpost's config?`)
+  if (!stat) return unknown(`The ${what} could not be read — fli deploy writes its path into this box's Outpost config`)
   if (!/^[0-7]{3,4}$/.test(stat.mode)) return unknown(`Unreadable mode for ${stat.path}: ${stat.mode}`)
   return worldAccess(stat.mode)
     ? { ok: false, message: `${stat.path} is mode ${stat.mode} — readable outside ${stat.owner}:${stat.group}` }
@@ -380,28 +377,26 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: 
 
 export const HUB_CONTROL_IDS = HUB_CONTROLS.map(c => c.id)
 
-/** What the installation's own host should look like. */
+/** What the box a Basecamp runs on should look like, beyond any fleet machine. */
 export interface HostDeclared {
   /** `finishedAt` of the newest successful Backup; null when none has. */
   lastBackupAt: string | null
 }
 
 /**
- * Grade the installation's own host: the machine controls it can answer, read
- * against nothing placed on it (only the edge and sshd should listen), then the
- * `hub.*` controls only it has. `hub.backup-recent` reads rows, never the
+ * The `hub.*` controls, graded from the host row's newest report. The fleet
+ * controls are that row's own (`gradePosture`), so these are only what the box
+ * holding `ENCRYPTION_KEY` adds. `hub.backup-recent` reads rows, never the
  * report, so it is graded whether or not the report is stale.
  */
-export function gradeHostPosture(
+export function gradeHub(
   readings: PostureReadings | null | undefined,
   host: HostDeclared,
   { at, now, intervalMs = POSTURE_INTERVAL_MS }: { at: string | number; now: number; intervalMs?: number },
 ): Control[] {
-  const declared: Declared = { expectedPorts: [22, 80, 443], exposedPorts: [], sshKeys: null }
-  const machine = gradePosture(readings, declared, { at, now, intervalMs }).filter(c => !NOT_ON_HOST.has(c.id))
-  const taken   = typeof at === 'number' ? at : Date.parse(at)
-  const stale   = !Number.isFinite(taken) || now - taken > 2 * intervalMs
-  const hub     = HUB_CONTROLS.map(({ id, group, severity, grade }) => {
+  const taken = typeof at === 'number' ? at : Date.parse(at)
+  const stale = !Number.isFinite(taken) || now - taken > 2 * intervalMs
+  return HUB_CONTROLS.map(({ id, group, severity, grade }) => {
     if (id !== 'hub.backup-recent' && (stale || !readings))
       return { id, group, severity, ok: 'unknown' as const, message: stale ? 'The last report is stale' : 'No report' }
     let g: Grade
@@ -409,7 +404,6 @@ export function gradeHostPosture(
     catch { g = unknown('The reading was not in the shape the grader expects') }
     return { id, group, severity, ...g }
   })
-  return [...hub, ...machine]
 }
 
 /** How a graded report sorts: failing high first, then any failing, then unknown. */

@@ -43,6 +43,11 @@ that belong to the static half — `OUTPOST_STATIC_DIR`, `OUTPOST_STATIC_PORT`
 which a `/deploy` naming `hosts` pushes its route to. A machine with no Caddy
 deploys an app with no hostname as before.
 
+On the box a Basecamp runs on, `fli deploy` also writes `OUTPOST_HOST_DB_PATH`
+and `OUTPOST_HOST_ENV_PATH`: the database directory and the file holding
+`ENCRYPTION_KEY`. `posture()` then stats both into `host_files`, which
+`/hub/security/` grades. No other machine sets them.
+
 `OUTPOST_PUBLIC_URL` is stated rather than derived, because this process cannot
 see the address the world reaches it at. It must be `https`, and the process
 refuses to start otherwise: Basecamp registers no target for a plain-http one. It is what the heartbeat registers as
@@ -73,6 +78,7 @@ process's user, so the default is refuse and a route opts out rather than in.
 | `POST /pull` | `{ image }` → `{ digest }` |
 | `POST /deploy` | `{ deployment_id, app_id, image, digest, source, config }` → `{ containerId, digest, commit_sha }`; `config` is `port`, `containerPort`, `volumePath`, `cpuLimit` (`--cpus`), `memLimitMb` (`--memory`), `env` and `logs` |
 | `POST /stop` | `{ app_id }` → `{ stopped, unrouted }` |
+| `POST /site/preview` | `{ app_id, source, branch, alias, cloudflare: { token, account_id } }` → `{ commit_sha, url, version_url }`; the branch's head installed, built with `site-kit build --preview` and uploaded as a Worker version aliased `alias`, each step in a throwaway container, the checkout removed after; `commit_sha` is what was built, which may be newer than the caller saw |
 | `POST /route` | `{ app_id, hosts, port? }` → `{ hosts, port, rebind }`; the app's Caddy route replaced, or removed for no hosts, dialing the port the running container published. `rebind` is a sentence when the bind no longer matches, which only the next `/deploy` changes. A stated `port` is for an app with NO container — a preview's dev server on this machine — and is refused beside one |
 | `POST /health-check` | `{ app_id, port, path }` → `{ healthy }`, plus `reason` when it is not; with a `path`, running is not enough — `127.0.0.1:<port><path>` must answer 2xx |
 | `POST /exec` | `{ command, timeout_s }` or `{ step }` → `{ exit_code, stdout, stderr }` |

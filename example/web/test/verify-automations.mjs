@@ -24,7 +24,7 @@
  * **Who drafts is a pair too.** Sam drafts a flow and Robin is refused one, since
  * the shop narrows orion's USER(4) create to staff (`FJS-1169`). Alex then
  * activates Sam's flow and watches its run arrive on the open runs screen — a
- * run on somebody ELSE's flow, which reaches an administrator's live store only
+ * run on somebody ELSE's flow, which reaches an administrator's tether only
  * because the row policy reads the level (`FJS-1170`, `FJS-D296`).
  *
  *   bun run verify:automations
@@ -438,7 +438,7 @@ try {
   // ─── a write elsewhere in the shop starts a run ───────────────────────────
   //
   // The runs screen is open BEFORE the customer is created, so the run arriving
-  // on it is the live store and not a reload.
+  // on it is the tether and not a reload.
 
   await go('/automations/runs/')
   t('runs.theScreenRenders', await until(`document.querySelector('table')`), true)

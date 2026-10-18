@@ -233,7 +233,7 @@ describe('what the generators write', () => {
       lists++
       expect(source, `${what} does not use list()`).toMatch(/const list = \w+\.list\(/)
       expect(source, `${what} still wires a load by hand`).not.toMatch(/\$:\s*page\.query/)
-      expect(source, `${what} still subscribes to the store by hand`).not.toContain('useStore(')
+      expect(source, `${what} still subscribes to the tether by hand`).not.toContain('useTether(')
       expect(source, `${what} never offers more rows`).toContain('{#if list.hasMore}')
     }
     expect(lists, 'no generated page renders a table at all').toBeGreaterThan(0)

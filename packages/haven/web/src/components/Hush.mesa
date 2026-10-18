@@ -3,14 +3,14 @@
   // line of this member's is named in presence as `hushed`, so every screen
   // stops drawing it (`crowd.js`); a line said afterward is a bubble again.
   // Draws nothing.
-  import { useStore } from '@frontierjs/sierra/resource'
+  import { useTether } from '@frontierjs/sierra/resource'
   import { messages } from '@/resources/Message.mesa'
 
   export let here
   export let hush
 
   var verbs = $context.commands
-  const { get: lines, unsubscribe } = useStore(messages.store)
+  const { get: lines, unsubscribe } = useTether(messages.tether)
   $.onDestroy(unsubscribe)
 
   function clear() {

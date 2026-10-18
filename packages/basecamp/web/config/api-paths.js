@@ -1,5 +1,5 @@
 // web/config/api-paths.js
-// The paths the API answers — DERIVED from `surface.snapshot.md`, not listed.
+// The paths the API answers — DERIVED from `app.snapshot.md`, not listed.
 //
 // Basecamp mounts services at /{service} with no prefix, so an API path and a
 // UI path are the SAME URL: GET /projects is both the service and the page.
@@ -30,8 +30,8 @@
 // calls a service — `invitations.preview` was the first thing in the app that
 // ever did, and it rendered `HTTP 404` on a screen a stranger opens.
 //
-// `junction surface` already reads every mounted path off the BUILT app, and
-// `surface.snapshot.md` is already committed and already gated by CI's
+// `junction app` already reads every mounted path off the BUILT app, and
+// `app.snapshot.md` is already committed and already gated by CI's
 // `snapshots` phase. So the list is parsed out of it: adding a service and
 // regenerating the snapshot — which CI forces — updates the proxy, and there is
 // nothing left to remember. The durable fix is still an apiPrefix, and this
@@ -45,8 +45,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const SNAPSHOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'surface.snapshot.md')
-const REGEN    = 'junction surface --app api/src/app.ts'
+const SNAPSHOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'app.snapshot.md')
+const REGEN    = 'junction app --app api/src/app.ts'
 
 function readSnapshot() {
   try {
@@ -83,7 +83,7 @@ function derive(md) {
   // `26 services · 27 routes · 9 plugins · prefix (none)`
   const prefix = md.match(/·\s*prefix\s+(\S+)/)?.[1]
   if (!prefix) throw new Error(
-    `[api-paths] no summary line in surface.snapshot.md — junction's output shape ` +
+    `[api-paths] no summary line in app.snapshot.md — junction's output shape ` +
     `changed and this parse is stale. Regenerate and reconcile:\n  ${REGEN}`
   )
 
@@ -105,7 +105,7 @@ function derive(md) {
   const paths = [...new Set([...services, ...raw])].sort()
 
   if (!paths.length) throw new Error(
-    `[api-paths] surface.snapshot.md named no services and no routes. It is either ` +
+    `[api-paths] app.snapshot.md named no services and no routes. It is either ` +
     `empty or junction's output shape changed:\n  ${REGEN}`
   )
   return paths

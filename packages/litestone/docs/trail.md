@@ -1,6 +1,6 @@
-# Audit Logging
+# Audit Trail
 
-Litestone provides field-level and model-level audit logging via the `trail` database driver. Every write produces a structured log entry with before/after images, actor attribution, and optional custom metadata.
+Litestone provides a field-level and model-level audit trail via the `trail` database driver. Every write produces a structured log entry with before/after images, actor attribution, and optional custom metadata.
 
 ## Setup
 

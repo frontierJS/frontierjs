@@ -148,7 +148,7 @@ src/
                          device machinery off, as `connectApp()` does — and
                          a `@@sync(field)` save still carries the row it read
                          (plan 3.6). A view opens NO socket — a host
-                         relays results, never a push — so its store is its
+                         relays results, never a push — so its tether is its
                          own calls' answers and `resource.stale` stays 0.
                          `toolAnswer()` throws a refusal as HTTP does —
                          `code` the status, `data` the plugin's
@@ -293,7 +293,7 @@ src/
                          `offlineQuery`, warmed at boot and on every `connect`
                          (`FJS-D307`). Writes through `find` and never `load`,
                          because a warm runs under a question nobody is looking
-                         at and `load` sets the store the screen is rendering.
+                         at and `load` sets the tether the screen is rendering.
                          Keyed by `listKey`, the cache's own function: a second
                          derivation would fill a slot nothing reads and say
                          nothing until the outage. **The same rows go into the
@@ -530,7 +530,7 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   takes a record, that one takes a payload.
 - **Neither the baseline nor the `@version` moves on a push.** Both are recorded
   off a call result and off a `load()` that was not superseded, never off the
-  store: a WS push arrives as an upsert without passing through a call result, so
+  tether: a WS push arrives as an upsert without passing through a call result, so
   a save from a screen holding a DRAFT would carry a revision nobody there had
   read and win the race optimistic locking exists to lose — measured in basecamp,
   the other person's write erased, the guard in place, no error anywhere
@@ -585,7 +585,7 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   otherwise re-ask the server on every one under it. Search params used to be
   merged into `params`, so `?id=99` on `/orders/7/` answered 99 to
   `page.params.id` (`FJS-083`).
-- **A live store now means the query that filled it.** `matchesQuery(fields,
+- **A tether now means the query that filled it.** `matchesQuery(fields,
   record, query)` decides whether a pushed record is still in the list `load()`
   asked for; junction takes it as `resource(name, idField, { match })`. So a
   patch that moves a row out of the filter REMOVES it — there is no other event
@@ -594,7 +594,7 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   column, a filter over a relation, `$search`, `$raw`) reloads rather than
   guessing. **A `changed` push is that same answer arrived at from the other
   end** — a bulk write or a `select: false` write announces a count and no row
-  (`FJS-307`), so there is nothing for the matcher to judge and the store
+  (`FJS-307`), so there is nothing for the matcher to judge and the tether
   reloads. Sierra needs no wiring for it; `client.resource()` owns it. Its
   operators are the server's and its null semantics are SQL's, not JavaScript's,
   which is the whole reason it lives in the leaf module.
@@ -750,7 +750,7 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   on: whether that is a banner, a prompt or a silent reload is the app's answer
   (`FJS-812`).
 - **Nothing a resource holds may outlive the person it was read for.** A Resource
-  is created once at import (Invariant 18), so its live store, its read baselines
+  is created once at import (Invariant 18), so its tether, its read baselines
   and its picker lists live for the TAB while the principal is a thing that changes
   inside it. A token change in either direction clears all three, and so does a
   support episode starting or ending (same token, different principal —

@@ -76,7 +76,7 @@ async function walk(send: AccountSend, path: string): Promise<Row[]> {
 }
 
 function toZone(z: Row): EdgeZone {
-  return { id: str(z.id), name: str(z.name), status: str(z.status) }
+  return { id: str(z.id), name: str(z.name), status: str(z.status), account: str((z.account as Row | undefined)?.id) || null }
 }
 
 /** The mark as a comment. The fleet alone is `basecamp`; a Domain's is

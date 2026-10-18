@@ -13087,7 +13087,7 @@ function makeLockPrimitive(rawWriteDb) {
   // `db.asSystem()` and `db.$setAuth(u).asSystem()` are different proxies and
   // the second one keeps `u`. It used to be one root-level memo handed out by
   // every scoped client, which discarded the principal — so the composition
-  // this file documented for audit logging did not work, and a tenant claim
+  // this file documented for the audit trail did not work, and a tenant claim
   // could not survive into a system read at all (FJS-519).
   //
   // Identity-free is still the DEFAULT and is still correct: `db.asSystem()`
@@ -13550,7 +13550,7 @@ function makeLockPrimitive(rawWriteDb) {
         // Serialized, in arrival order. Each delivery re-reads its row, so
         // firing them off in parallel lets a later event's read finish first
         // and a subscriber sees a create after the remove that undid it —
-        // measured, and the order is the one thing a live store cannot repair.
+        // measured, and the order is the one thing a tether cannot repair.
         onEvent: (e) => { foreignChain = foreignChain.then(() => deliverForeignEvent(e)).catch(() => {}) },
         // Retention took the rows this subscriber had not read, so what changed
         // cannot be said — only that something did. One `changed` per model in

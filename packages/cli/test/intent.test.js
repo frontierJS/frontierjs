@@ -15,7 +15,7 @@ import { describe, test, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseFile } from '../../litestone/src/core/parser.js'
-import { buildIndex, recognize, checkCandidate, resolve, menu, parseSurface, parseRoutes, parseNotifications } from '../core/intent.js'
+import { buildIndex, recognize, checkCandidate, resolve, menu, parseApp, parseRoutes, parseNotifications } from '../core/intent.js'
 
 const EXAMPLE = join(import.meta.dir, '..', '..', '..', 'example')
 const read = (p) => readFileSync(join(EXAMPLE, p), 'utf8')
@@ -23,7 +23,7 @@ const read = (p) => readFileSync(join(EXAMPLE, p), 'utf8')
 const parsed = parseFile(join(EXAMPLE, 'db', 'schema.lite'))
 const index  = buildIndex({
   schema:        parsed.schema,
-  surface:       read('api/surface.snapshot.md'),
+  app:           read('api/app.snapshot.md'),
   routes:        read('web/routes.snapshot.md'),
   notifications: read('api/notifications.snapshot.md'),
 })
@@ -32,7 +32,7 @@ const ask = (claim, ...facts) => recognize(index, { claim, facts })
 
 describe('the index is the committed artefacts', () => {
   test('the snapshots parse into what they state', () => {
-    const invoices = parseSurface(read('api/surface.snapshot.md')).find(s => s.name === 'invoices')
+    const invoices = parseApp(read('api/app.snapshot.md')).find(s => s.name === 'invoices')
     expect(invoices).toMatchObject({ model: 'Invoice', custom: ['settle', 'void'] })
     expect(parseRoutes(read('web/routes.snapshot.md')).some(r => r.path === '/invoices/')).toBe(true)
     expect(parseNotifications(read('api/notifications.snapshot.md')).map(n => n.type)).toContain('OrderPaid')
@@ -93,7 +93,7 @@ describe('run 1, row by row', () => {
     expect(a22.identity).toBe(b17.identity)
   })
 
-  test('A24 — mark invoices paid: the seed alone says no, and the surface says a person can', () => {
+  test('A24 — mark invoices paid: the seed alone says no, and the app snapshot says a person can', () => {
     const r = ask('question', { kind: 'move', about: 'invoice', to: 'paid' })
     expect(r.verdict).toBe('you can do this')
     expect(r.facts[0].target).toBe('invoices.settle')

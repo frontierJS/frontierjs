@@ -34,7 +34,7 @@ title: Host security
   const state = (ok) => ok === true ? 'passing' : ok === false ? 'failing' : 'unknown'
 </script>
 
-<p class="text-muted">The machine this installation runs on, reported by the Outpost <code>fli deploy</code> installs beside it with no command listener.</p>
+<p class="text-muted">The machine this installation runs on, reported by the fleet Outpost <code>fli deploy</code> enrolls it with, and graded with the controls only this box has.</p>
 
 {#if error}
   <p class="alert danger" role="alert">{error}</p>
@@ -44,12 +44,14 @@ title: Host security
   <p class="text-muted">Loading…</p>
 {:else if host}
   <article class="card stack" id="host-summary">
-    {#if !host.reported}
-      <p><Badge tone="muted">never reported</Badge> No host Outpost has reported. It is installed by <code>fli deploy</code>; until it reports, only the backup control can be graded.</p>
+    {#if !host.enrolled}
+      <p><Badge tone="muted">not enrolled</Badge> This box is not a fleet machine, so nothing reads it. <code>fli deploy</code> enrolls it when the deploy block says <code>outpost: true</code> and the installation has one workspace; otherwise use <em>Use this Basecamp server</em> on the Servers page. Until then only the backup control can be graded.</p>
+    {:else if !host.reported}
+      <p><Badge tone="muted">never reported</Badge> <a href={`/servers/${host.serverId}/`}>{host.serverName}</a> has not reported its posture yet; until it does, only the backup control can be graded.</p>
     {:else if host.stale}
       <p><Badge tone="warning">stale</Badge> The last report was {ago(host.at)} — more than twice the six-hour interval.</p>
     {:else}
-      <p>Reported {ago(host.at)} · <strong>{host.failing}</strong> failing · {host.unknown} unknown</p>
+      <p><a href={`/servers/${host.serverId}/`}>{host.serverName}</a> reported {ago(host.at)} · <strong>{host.failing}</strong> failing · {host.unknown} unknown</p>
     {/if}
     <p class="text-sm text-muted">Fixes to this machine go through ring 0, never from this screen: run <code>fli deploy --production</code> from the checkout that installed Basecamp.</p>
   </article>

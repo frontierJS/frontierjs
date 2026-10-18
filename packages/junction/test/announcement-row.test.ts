@@ -2,7 +2,7 @@
 //
 // A custom method may answer whatever it likes. The same value is also what
 // gets ANNOUNCED, and a subscriber has nowhere to put anything that is not a
-// row: the browser's store upserts by id and replaces wholesale, so an id-less
+// row: the browser's tether upserts by id and replaces wholesale, so an id-less
 // payload is appended as a phantom row and a partial one replaces the record,
 // losing every field it omitted. Both silent, in every open tab.
 //

@@ -6,7 +6,7 @@ The full entries behind this section of the `api-hazards` skill's index.
 
 | Snapshot | Command | Holds | The silence it breaks |
 | --- | --- | --- | --- |
-| `surface.snapshot.md` | `junction surface` | methods after the policy, custom methods as `collectCustomMethods` resolved them, the hook chain in RUN order with the derived hooks leading it, every mounted path with `apiPrefix` applied, plugins in configure order | a 405 in production for a verb a `methods:` list stopped naming |
+| `app.snapshot.md` | `junction app` | methods after the policy, custom methods as `collectCustomMethods` resolved them, the hook chain in RUN order with the derived hooks leading it, every mounted path with `apiPrefix` applied, plugins in configure order | a 405 in production for a verb a `methods:` list stopped naming |
 | `jobs.snapshot.md` | `junction jobs` | every registered handler's declaration — queue, cron, zone, attempts, retry delay — and every `app.scheduler` timer, expression as written | a schedule that stops being registered is *nothing happening* (`FJS-327`, `FJS-328`) |
 | `notifications.snapshot.md` | `junction notifications` | every declared type and the transports it can format for | a type that stops being registered THROWS at send time, usually inside a job, hours after the deploy |
 | `principal.snapshot.md` | `junction principal` | tenancy · resolver · claims · standing · what the rules reach · the three refusals · per-tenant configuration | a resolver emitting the WRONG tenant leaves every other artifact byte-identical and CI green (`FJS-514`) |

@@ -40,7 +40,7 @@ if ($.config.__devtoolsAdded) {
   log.info('')
 }
 
-log.info('  surface.snapshot.md       what this app answers — commit it; CI grades it')
+log.info('  app.snapshot.md           what this app answers — commit it; CI grades it')
 log.info('')
 log.info('  fli tutor:access          next — the gate and the row policy, watched refusing somebody')
 log.info('')

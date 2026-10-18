@@ -2811,7 +2811,7 @@ export async function announcementPayload(
   // record. Suppressing would have stopped a live screen updating with nothing
   // but a server-side line to say why — the same silent failure this exists to
   // remove. The phantom-row half is closed on the client instead, where
-  // `Store.upsert` refuses a record with no id.
+  // `Tether.upsert` refuses a record with no id.
   warnOnce(named,
     `[Junction] ${named}() announced something that is not a ${accessor} row — missing ${shown}` +
     `${id == null ? ', and carries no id to re-read one by' : ', and no row answered to that id'}. ` +
@@ -3264,7 +3264,7 @@ function customGateFloor(levels: Record<GateOp, number>): number {
 
 /**
  * What stands between a caller and one custom method, as `gateAuthAround`
- * decides it. `surface.snapshot.md` renders this rather than restating the
+ * decides it. `app.snapshot.md` renders this rather than restating the
  * rule, so the register and the refusal cannot disagree.
  *
  *   declared   a `methods: [{ method, gate }]` level — the caller's standing is
@@ -3442,7 +3442,7 @@ export function gateAuthAround(
 ) {
   // Aliased before the returned function shadows the name. Keeping the name is
   // not cosmetic: DERIVED_HOOKS, the telemetry waterfall and every committed
-  // surface.snapshot.md read a hook by it.
+  // app.snapshot.md read a hook by it.
   const make   = gateAuth
   const checks = new Map<GateOp, (ctx: ServiceContext) => void>()
 
@@ -4867,7 +4867,7 @@ export function declaredCallHeaders(app: unknown, config?: { http?: unknown }): 
 // which model. So a resolver that emits the wrong tenant leaves every artefact
 // byte-identical and every read answering somebody else's rows (`FJS-514`).
 //
-// Read off a BUILT app for the same reason `junction surface` is: a resolver is
+// Read off a BUILT app for the same reason `junction app` is: a resolver is
 // wired in application code and no file tree can answer which one an app ended
 // up with.
 //

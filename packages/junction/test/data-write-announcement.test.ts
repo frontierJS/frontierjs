@@ -539,7 +539,7 @@ describe('the model → service index (FJS-464)', () => {
 //
 // It announces under the MOVE's name, which is what `callService` announces
 // when the same transition goes through the owning service — one event name
-// however the move was made, and the browser store's custom-method branch
+// however the move was made, and the browser tether's custom-method branch
 // already merges it as a patch.
 
 describe('a transition announces (FJS-463)', () => {
@@ -583,7 +583,7 @@ describe('a transition announces (FJS-463)', () => {
     // `orders updated` beside it. A transition fires both event kinds and they
     // are one write.
     expect(frames.map(f => f.event)).toEqual(['orders created', 'orders pay'])
-    // The ROW, so a store can merge it — not a summary a subscriber has to
+    // The ROW, so a tether can merge it — not a summary a subscriber has to
     // re-read the server to act on.
     expect(frames[1]!.data).toMatchObject({ id: 1, status: 'paid' })
   })

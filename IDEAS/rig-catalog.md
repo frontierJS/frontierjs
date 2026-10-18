@@ -38,7 +38,7 @@ done
 | Notifications: in-app record, WS event, email | notifications (the reference rig) |
 | Automations | orion (rig) |
 | Uploads and attachments | litestone `attachments` |
-| Audit log | litestone trail |
+| Audit trail | litestone trail |
 | Outbound webhooks, inbound events | junction batteries; inbound is the Receiver (`FJS-D681`) |
 
 A stressor that rebuilt any of these (basecamp `AuditEvent`, saas-starter

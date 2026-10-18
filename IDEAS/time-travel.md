@@ -41,7 +41,7 @@ not the UI.
 ## What already exists to build on
 
 `@@log(audit)` on a model writes a structured entry for every write, through a
-logger database declared in the schema (`packages/litestone/docs/audit-logging.md`):
+logger database declared in the schema (`packages/litestone/docs/trail.md`):
 
 ```js
 { operation: 'update', model: 'widget', records: [7],
@@ -69,7 +69,7 @@ constraint to keep, not to work around.
 
 ## The idea
 
-**A checkpoint is a name for a database state, and the audit log is the narrative
+**A checkpoint is a name for a database state, and the audit trail is the narrative
 between two of them.**
 
 ```
@@ -350,7 +350,7 @@ hatch is that the snapshot is a file — pipe it wherever you already send files
 
 ## See also
 
-- `packages/litestone/docs/audit-logging.md` — the trail this is built on
+- `packages/litestone/docs/trail.md` — the trail this is built on
 - `packages/litestone/src/core/client.js` — `emitLogs` and its call sites, one per
   write path
 - `ISSUES.md` § Closed `FJS-074` — the bulk-write audit gap

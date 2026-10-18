@@ -9,7 +9,7 @@
 //
 //   • the browser client's push `unwrap` (`src/client/index.ts`, resource wiring)
 //     — `kind === 'single'` with no `object`/`errors`, so a pushed row with those
-//     two columns reaches the store as its `data` column instead of itself
+//     two columns reaches the tether as its `data` column instead of itself
 //   • `rowsOf` in `@frontierjs/mcp`'s `src/client/run.ts` — `kind === 'list'`
 //     with an array `data`
 //   • `rowsOf` in `example/file-upload.ts` — `'kind' in r && 'data' in r`
@@ -51,21 +51,21 @@ describe('the browser client asks the owner when a push arrives', () => {
     return page
   }
 
-  test('control: a pushed row with ordinary columns lands in the store as itself', async () => {
+  test('control: a pushed row with ordinary columns lands in the tether as itself', async () => {
     const page = pageClient([{ id: 1, kind: 'note', data: 'hello', status: 'paid' }])
-    const { store, load } = page.resource('messages')
+    const { tether, load } = page.resource('messages')
     await load()
     const pushed = { id: 2, kind: 'note', data: 'again', status: 'paid' }
     page.receive({ type: 'event', event: 'messages created', data: pushed })
-    expect(store.get().find((r: any) => r.id === 2)).toEqual(pushed)
+    expect(tether.get().find((r: any) => r.id === 2)).toEqual(pushed)
   })
 
-  test('a pushed row whose kind column reads "single" lands in the store as itself', async () => {
+  test('a pushed row whose kind column reads "single" lands in the tether as itself', async () => {
     const page = pageClient([{ id: 1, kind: 'note', data: 'hello', status: 'paid' }])
-    const { store, load } = page.resource('messages')
+    const { tether, load } = page.resource('messages')
     await load()
     page.receive({ type: 'event', event: 'messages created', data: ROW_LIKE_AN_ENVELOPE })
-    expect(store.get().find((r: any) => r.id === 2)).toEqual(ROW_LIKE_AN_ENVELOPE)
+    expect(tether.get().find((r: any) => r.id === 2)).toEqual(ROW_LIKE_AN_ENVELOPE)
   })
 })
 

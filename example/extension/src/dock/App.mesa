@@ -36,7 +36,7 @@
   // asked for — so the store REMOVES it rather than upserting it into a list it
   // has left (`FJS-493`). This used to re-filter on the way out, which was the
   // screen making a decision the store could not.
-  queue.store.subscribe(rows => { orders = rows ?? [] })
+  queue.tether.subscribe(rows => { orders = rows ?? [] })
 
   // Paid and not yet shipped: what a person standing at the bench is for.
   const load = () => guard(() => queue.load({ status: 'paid' }, { orderBy: 'createdAt' }))

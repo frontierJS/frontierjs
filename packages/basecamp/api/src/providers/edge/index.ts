@@ -27,6 +27,8 @@ export interface EdgeZone {
   id:     string
   name:   string
   status: string
+  /** The vendor account the zone is in — where a Worker beside it is uploaded. */
+  account: string | null
 }
 
 /**

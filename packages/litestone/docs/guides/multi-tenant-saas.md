@@ -1,6 +1,6 @@
 # Guide: Multi-Tenant SaaS App
 
-Build a complete multi-tenant application where each customer gets an isolated SQLite database, with per-tenant encryption and shared audit logging.
+Build a complete multi-tenant application where each customer gets an isolated SQLite database, with per-tenant encryption and a shared audit trail.
 
 ---
 
@@ -11,7 +11,7 @@ A SaaS app with:
 - Shared schema across all tenants
 - Per-tenant encryption keys
 - Row-level policies scoped to the caller
-- A global audit log (not per-tenant)
+- A global audit trail (not per-tenant)
 
 ---
 
@@ -202,9 +202,9 @@ await tenants.migrate()
 
 ---
 
-## Audit log queries
+## Audit trail queries
 
-The audit log is shared across all tenants — the trail database is declared
+The audit trail is shared across all tenants — the trail database is declared
 outside the `tenancy` block, so every tenant's client appends to the same
 file. Query it via `asSystem()` on any tenant's client:
 

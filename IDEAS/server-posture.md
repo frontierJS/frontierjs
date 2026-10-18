@@ -196,13 +196,14 @@ reads that box ([`FJS-2714`](../ISSUES.md#fjs-2714)). It is also the box with
 fleet. The API runs in a container, which cannot see the host's `sshd -T` or its
 nftables ruleset, so the readings must come from outside the container.
 
-**The same readings, run in a report-only mode.** `fli deploy` installs the Outpost
-on the host with its command listener **off**: `report.js` posts `posture` to the
-API over loopback on its clock and nothing listens. That is one implementation of
-the readings and no second command port on the control plane. The rows are
-`ServerPosture` with **`serverId` null**: a null means *the installation's own host*,
-which only the hub reads. That is `AuditEvent`'s null-workspace reading
-(`FJS-D141`) applied to the same kind of row.
+**The host's fleet Outpost carries the readings** ([`FJS-D1241`](../DECISIONS.md#fjs-d1241)).
+`fli deploy` enrolls the box as the `basecamp-host` Server row (`FJS-D1191`), and
+`08b-outpost` writes `OUTPOST_HOST_DB_PATH` and `OUTPOST_HOST_ENV_PATH` into its
+`outpost.env` on every deploy, restarting the Outpost only when a line changed.
+Its posture report then carries `host_files` beside the fleet readings. One reader
+per box. The cost is that the hub's reading depends on that row, so under
+`--no-outpost`, or before the installation has exactly one workspace, nothing
+reads the box and `/hub/security/` says so.
 
 **Some controls only the host has:** `hub.backup-recent` (the newest `Backup`
 row, graded on age, in process) · `hub.db-mode` and `hub.env-mode` (the database
@@ -223,9 +224,9 @@ through ring 0. The screen shows the `fli deploy` command to run.
 
 **`/hub/security/`** shows the host's controls under the same grading and states as
 `/security/`, behind `isSystemAdmin` like every other `/hub/` screen. It is a second
-route, not a section of `/security/` ([`FJS-D924`](../DECISIONS.md#fjs-d924)), and
-the readings leave the box through the report-only Outpost
-([`FJS-D925`](../DECISIONS.md#fjs-d925)).
+route, not a section of `/security/` ([`FJS-D924`](../DECISIONS.md#fjs-d924)). It
+draws the `basecamp-host` row's own grade with the `hub.*` controls, graded on read
+from the same report, ahead of it.
 
 ### Harden at install, each step paired with a control
 
@@ -387,18 +388,25 @@ ships it that way — that is worth knowing too), and it sorts to the top of
 ### Phase 2 — Basecamp's own host
 
 Goal: the box holding `ENCRYPTION_KEY` is graded ([`FJS-2714`](../ISSUES.md#fjs-2714)).
-Done when: the `bun run image:up` stack shows its host's readings on
-`/hub/security/`, and `hub.backup-recent` fails on a stack with no backup.
+Done when: `/hub/security/` draws the `basecamp-host` row's report with the `hub.*`
+controls beside its fleet ones and `hub.backup-recent` fails on an installation
+with no backup (`api/test/posture.test.ts`), and a `fli deploy` with
+`outpost: true` shows a real box's `hub.db-mode` and `hub.env-mode` graded. The
+`bun run image:up` stack runs no Outpost, so it cannot be the proof.
 
-- [x] 2.1 The Outpost's report-only mode: the command listener off, `posture`
-  posted over loopback (`FJS-D925`). `OUTPOST_HOST_KEY` selects it, signed with
-  `hostReportKey` (`FJS-D944`).
-- [ ] 2.2 Fold the host readings into the fleet Outpost (`FJS-D1241`): `08b-outpost`
+- [x] 2.1 ~~The Outpost's report-only mode~~ — built, then deleted by 2.2 (`FJS-D1241`).
+- [x] 2.2 Fold the host readings into the fleet Outpost (`FJS-D1241`): `08b-outpost`
   passes `OUTPOST_HOST_DB_PATH`/`OUTPOST_HOST_ENV_PATH` into the `basecamp-host`
   install, `/hub/security/` grades that row with the `hub.*` controls, and 2.1's
   report-only mode, `hostReportKey`, the `outpost-host` principal and 2.3's
   nullable `serverId` are deleted.
-- [x] 2.3 `ServerPosture` rows with `serverId` null, read by the hub alone.
+  - The paths are written into `/etc/basecamp/outpost.env` after the install AND
+    on a box enrolled before, since an enrolled box never reruns `install.sh`.
+  - The real-box half of *Done when* waits on `@frontierjs/outpost` 0.1.3 being
+    published and `OUTPOST_VERSION` in `enrollment.ts` moving to it: until then a
+    host runs 0.1.2, which reads no `host_files`, and the two file controls stay
+    `unknown`.
+- [x] 2.3 ~~`ServerPosture` rows with `serverId` null~~ — built, then deleted by 2.2.
 - [x] 2.4 `hub.backup-recent`, `hub.db-mode` and `hub.env-mode`.
 - [x] 2.5 `/hub/security/` behind `isSystemAdmin` (`FJS-D924`), refusing *Harden*
   and the patch run and showing the `fli deploy` command instead.
@@ -446,6 +454,8 @@ Done when: the phase-1 box after *Harden* grades clean, and the outside probe ag
   `installScript()`, and no marker is without a control.
 - [ ] 4.8 The *Harden* action through the Outpost, showing findings before and
   after, never automatic.
+  - The `basecamp-host` row is a fleet machine now (`FJS-D1241`), so the action
+    refuses that row by `HOST_SLUG` or it acts on the plane through ring 2.
 
 ### Phase 5 — The patch run
 

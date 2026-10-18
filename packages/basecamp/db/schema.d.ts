@@ -3844,7 +3844,7 @@ export interface DiskUsageRelations {
 
 export interface ServerPosture {
   id: string
-  serverId?: string | null
+  serverId: string
   at: string
   readings: unknown
   controls: unknown
@@ -3855,7 +3855,7 @@ export interface ServerPosture {
 
 export interface ServerPostureCreate {
   id?: string
-  serverId?: string | null
+  serverId: string
   at: string | Date
   readings?: unknown
   controls?: unknown
@@ -3865,7 +3865,7 @@ export interface ServerPostureCreate {
 
 export interface ServerPostureUpdate {
   id?: string
-  serverId?: string | null
+  serverId?: string
   at?: string | Date
   readings?: unknown
   controls?: unknown

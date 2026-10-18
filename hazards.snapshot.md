@@ -254,14 +254,14 @@ Graded: **13 of 181**.
 | `renderComponent` reuses a compiled tree, so `<script module>` state is shared across every render in the process. | **none** |
 | In a sidebar or rail the Shell draws the nav twice, and the drawer's copy is mounted while it is closed. | **none** |
 
-### Live stores and records
+### Tethers and records
 
 | Hazard | Graded by |
 | --- | --- |
-| A node is the synced truth for a row; a view remembers what it READ. | **none** |
+| An entry is the synced truth for a row; a view remembers what it READ. | **none** |
 | A comparison between two independent `record()` views has THREE states, and drawing two of them is a screen that lies. | **none** |
 | A `@from` column moves when a CHILD row is written, and nothing announces the parent. | **none** |
-| A live store holds what its last `load(query)` asked for, so a patch can take a row OUT of it. | **none** |
+| A tether holds what its last `load(query)` asked for, so a patch can take a row OUT of it. | **none** |
 | `@version` is the revision a screen READ, and a push does not move it. | **none** |
 | A watched record empties itself on its own delete, before the handler's next line. | **none** |
 

@@ -24,7 +24,7 @@
  *
  * ── Which paths are the API's ─────────────────────────────────────────────
  *
- * Read off the app's committed `surface.snapshot.md` (`apiPaths`), never
+ * Read off the app's committed `app.snapshot.md` (`apiPaths`), never
  * assumed: an app with no `apiPrefix` mounts `/projects`, which is also a page,
  * and a route hard-coded to `/api/*` hands every one of its calls the SPA.
  * Unprefixed, the two are told apart by `Accept` — a navigation asks for
@@ -157,20 +157,20 @@ const apiRoute = (apiPort, paths = null) => ({
 })
 
 /**
- * The paths the API mounted, as first segments, off `readApiSurface`'s parse:
+ * The paths the API mounted, as first segments, off `readAppSnapshot`'s parse:
  * `{ prefix, roots }`, or null with no snapshot. `/{service}` is every service
  * at once and is expanded to their names; `/` (static routes) and `/*` (the
  * CORS preflight) would take the whole origin and are left out.
  */
-export function apiPaths(surface) {
-  if (!surface) return null
+export function apiPaths(snapshot) {
+  if (!snapshot) return null
   const roots = new Set()
-  for (const { path } of surface.routes) {
+  for (const { path } of snapshot.routes) {
     if (path === '/' || path === '/*') continue
-    if (path.startsWith('/{')) for (const s of surface.services) roots.add(`/${s.name}`)
+    if (path.startsWith('/{')) for (const s of snapshot.services) roots.add(`/${s.name}`)
     else roots.add('/' + path.split('/')[1])
   }
-  return roots.size ? { prefix: surface.prefix, roots: [...roots].sort() } : null
+  return roots.size ? { prefix: snapshot.prefix, roots: [...roots].sort() } : null
 }
 
 // A provider sign-in is a NAVIGATION to an API redirect (`/auth/oauth/<p>` and

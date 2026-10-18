@@ -2,7 +2,7 @@
 //
 // An extension page cannot keep a socket: MV3 puts the connection in the
 // service worker, and the page reaches it over a port. Such a page still needs
-// the whole client — `resource()`'s live store, its matching, `stale`, the
+// the whole client — `resource()`'s tether, its matching, `stale`, the
 // nodes — because that is what a Resource is built on, and a second copy of it
 // for the page is the fork `FJS-D650` removed. So the page's client RELAYS:
 // each call goes out as the frame the socket would have carried, the holder
@@ -99,20 +99,20 @@ describe('a relayed call is the call the holder would have made', () => {
   })
 })
 
-describe('a push reaches the relayed client\'s live store', () => {
+describe('a push reaches the relayed client\'s tether', () => {
 
-  test('an event the holder hears lands in the page\'s resource store', async () => {
+  test('an event the holder hears lands in the page\'s resource tether', async () => {
     rows.length = 0
     rows.push({ id: 1, status: 'paid' })
     const { page, close } = await pair({ socket: true })
 
-    const { store, load } = page.resource('items')
+    const { tether, load } = page.resource('items')
     await load()
-    expect(store.get().map((r: any) => r.id)).toEqual([1])
+    expect(tether.get().map((r: any) => r.id)).toEqual([1])
 
     app.channel(ROOM).send('items created', { id: 2, status: 'paid' })
-    for (let i = 0; i < 50 && store.get().length < 2; i++) await new Promise(r => setTimeout(r, 20))
-    expect(store.get().map((r: any) => r.id)).toEqual([1, 2])
+    for (let i = 0; i < 50 && tether.get().length < 2; i++) await new Promise(r => setTimeout(r, 20))
+    expect(tether.get().map((r: any) => r.id)).toEqual([1, 2])
     close()
   })
 

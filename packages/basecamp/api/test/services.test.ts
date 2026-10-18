@@ -1274,14 +1274,14 @@ describe('a handler declares who it runs as', () => {
 // ─── The proxy in front of it ────────────────────────────────────────────────
 // `web/config/api-paths.js` decides what the dev proxy and the deploy's Caddy
 // config send to the API. It used to be a hand-kept list and went stale six
-// times; it now parses `surface.snapshot.md`. That moves the failure rather
+// times; it now parses `app.snapshot.md`. That moves the failure rather
 // than removing it — a change to junction's output shape would leave the parse
 // finding fewer paths and saying nothing, which is the same silence one layer
 // along (`FJS-375`).
 //
 // So the derivation is graded against the RUNNING app rather than against the
 // file it read. The snapshot itself is CI's job (the `snapshots` phase reruns
-// `junction surface --check`); what this asks is whether the parse of it still
+// `junction app --check`); what this asks is whether the parse of it still
 // answers what the router actually mounted.
 describe('the proxy path list is what the app mounts', () => {
   test('every mounted service and raw route is proxied, and the shell is not', async () => {
@@ -3018,7 +3018,7 @@ describe('a bad appliance id names itself, and a refusal is not logged as a faul
 
 // ─── FJS-1087: custom methods whose caller the floor did not grade ───────────
 //
-// `surface.snapshot.md` lists 110 methods here that only check presence. Read
+// `app.snapshot.md` lists 110 methods here that only check presence. Read
 // one by one, three reached past that: a roster read through `asSystem()` for
 // any id, conduit's cross-workspace registry behind `authenticate` alone, and
 // two writers of a protected environment that skipped the check `patch` makes.

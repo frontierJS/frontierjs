@@ -196,7 +196,7 @@ describe('a computed member names a variable (FJS-D212)', () => {
 /*
  * The half the closure cannot see (FJS-D212, amended).
  *
- * `useStore` hands back a getter, so a const holding one is an ordinary
+ * `useTether` hands back a getter, so a const holding one is an ordinary
  * function and a const CALLING it reads a signal inside the call — a
  * dependency with no name for the closure to walk. Blanket promotion covered
  * this by accident through runtime auto-tracking; the narrowing dropped it and

@@ -138,7 +138,7 @@ phase already makes for a different reason.
 3. **The behavioural surface.** Did a default move, a hook order change, a
    thrown class change status? Undecidable in general — but **not undecidable
    here**, because four of the surfaces are already committed and diffable:
-   `surface.snapshot.md` (routes, hook order, plugins), `principal.snapshot.md`,
+   `app.snapshot.md` (routes, hook order, plugins), `principal.snapshot.md`,
    `errors.snapshot.md` (what a thrown value becomes), `access.snapshot.md`.
    Those are behavioural facts under version control. No other framework has
    them and this one has never diffed them across a release.

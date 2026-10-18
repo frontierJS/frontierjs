@@ -178,6 +178,28 @@ try {
     check('a file with no front matter takes a body and refuses a key',
       applyEdit('Just prose.\n', { body: 'More prose.\n' }).text === 'More prose.\n'
         && /no front matter/.test(applyEdit('Just prose.\n', { values: { title: 'x' } }).refused ?? ''))
+
+    // FJS-D1250: the body's code is the developer's, and a build runs it.
+    const coded = '<script>\nconst n = 3\n</script>\n\nWe open {n} days. <a href="/book" class="cta">Book</a>\n\n<Image source="/a.jpg" />\n'
+    const body = (b) => applyEdit(coded, { body: b })
+    check('an owner rewrites the words around the code, and may delete a piece of it',
+      body(coded.replace('We open', 'Open').replace('Book</a>', 'Book now</a>')).text !== undefined
+        && body(coded.replace('<Image source="/a.jpg" />\n', '')).text !== undefined,
+      body(coded.replace('We open', 'Open')).refused)
+    const codeRefused = (label, b, pattern) => {
+      const out = body(b)
+      check(label, pattern.test(out.refused ?? ''), out.refused ?? out.text)
+    }
+    codeRefused('a second script block is refused', coded + '<script>fetch("/x")</script>\n', /<script>fetch.*developer's/)
+    codeRefused('a changed script block is refused', coded.replace('const n = 3', 'const n = process.env.HOME'), /<script>/)
+    codeRefused('a new expression is refused', coded + '{process.exit()}\n', /\{process\.exit\(\)\} is code/)
+    codeRefused('an expression used once more than before is refused', coded + 'Still {n}.\n', /\{n\} is code/)
+    codeRefused('a new attribute on a held tag is refused', coded.replace('class="cta"', 'class="cta" onclick="x()"'), /onclick/)
+    codeRefused('a component tag is refused', coded + '<Button text="Go" />\n', /<Button/)
+    codeRefused('a markdown link to javascript: is refused', coded + '[tap](javascript:alert(1))\n', /javascript:/)
+    codeRefused('a reference link to javascript: is refused', coded + '[tap]\n\n[tap]: javascript:alert(1)\n', /javascript:/)
+    check('prose with no code reads as none, and an autolink is not a tag',
+      applyEdit('Plain.\n', { body: 'See <https://example.com> for 2 < 3.\n' }).text !== undefined)
   }
 
   // ─── a content/ with no content/routes (FJS-2546) ─────────────────────────

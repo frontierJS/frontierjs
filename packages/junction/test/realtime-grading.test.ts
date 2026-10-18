@@ -489,7 +489,7 @@ describe('a write from a second process is graded like a local one (FJS-2159)', 
 
 // A read policy that crosses a relation makes a Page's readers depend on rows
 // of Share, and a Block's on its Page through check(): a revoked share writes
-// no page, so a frame graded against the written row reaches no page store.
+// no page, so a frame graded against the written row reaches no page tether.
 const REACH_SCHEMA = `
   model Page {
     id     Int     @id @default(autoincrement())
@@ -566,7 +566,7 @@ describe('a write that changes who may read OTHER rows (FJS-1738)', () => {
 
     // The Share row is gus's own, so it arrives graded; what it decided — the
     // page and, through check(page), its blocks — arrives as a count-only
-    // changed, which is what a live store re-reads on. Tag's read reaches no
+    // changed, which is what a tether re-reads on. Tag's read reaches no
     // Share and hears nothing.
     expect(gus.events.map(e => e.event).sort()).toEqual(['blocks changed', 'pages changed', 'shares removed'])
     const changed = gus.events.find(e => e.event === 'pages changed')

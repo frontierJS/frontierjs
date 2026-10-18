@@ -8,9 +8,7 @@
  * a network.
  *
  * It refuses to start without a server id, a secret and a control-plane URL —
- * see `config.js` for why each of the three has no safe default. The one
- * exception is the installation's own host, which `OUTPOST_HOST_KEY` makes a
- * posture timer and nothing else: no listener, no Server row.
+ * see `config.js` for why each of the three has no safe default.
  */
 
 import { readConfig }            from './config.js'
@@ -21,18 +19,9 @@ import { createStaticServer }         from './serve.js'
 
 const config    = readConfig()
 
-// The installation's own host: posture over loopback and no listener at all,
-// so the control plane gains no second command port (`FJS-D925`).
-function reportHost(config) {
-  const reporter = createReporter(config, { inspector: createInspector({ hostFiles: config.hostFiles }) })
-  const stop     = reporter.start()
-  console.log(`outpost ${config.version} · host, report-only → ${config.basecampUrl}`)
-  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { stop(); process.exit(0) })
-}
-
 function serveMachine(config) {
   const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir })
-  const inspector = createInspector()
+  const inspector = createInspector({ hostFiles: config.hostFiles })
   const outpost   = createOutpostServer(config, { docker, inspector })
   const reporter  = createReporter(config, { inspector })
 
@@ -75,5 +64,4 @@ function serveMachine(config) {
   }
 }
 
-if (config.host) reportHost(config)
-else serveMachine(config)
+serveMachine(config)

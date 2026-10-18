@@ -16,7 +16,7 @@
 // a job file registers itself by being autoloaded, a plugin registers timers of
 // its own, and `schedule()` can be called from anywhere.
 //
-// So it is read off a BUILT app, like `junction surface`, and for the same
+// So it is read off a BUILT app, like `junction app`, and for the same
 // reason: what is registered is not what is written down.
 //
 // TWO REGISTRIES, kept apart on the page, because they are not the same promise
@@ -39,11 +39,11 @@ import { dirname, relative, resolve } from 'node:path'
 
 import { flag, getFlag, rel, fatal, loadApp, checkSnapshot, writeOut, stopApp } from './app-module.ts'
 import { describeJobs }                                      from '../src/core/app-model.ts'
-import type { JobsSurface }                                  from '../src/core/app-model.ts'
+import type { JobsDescription }                              from '../src/core/app-model.ts'
 
 // ─── rendering ────────────────────────────────────────────────────────────────
 
-export function renderJobsSnapshot(s: JobsSurface, meta: { source: string; command: string }): string {
+export function renderJobsSnapshot(s: JobsDescription, meta: { source: string; command: string }): string {
   const out: string[] = []
 
   out.push('# Jobs snapshot')
@@ -141,7 +141,7 @@ if (import.meta.main) {
   const app         = await loadApp(appPath, exportName)
   const surface     = describeJobs(app)
 
-  // Beside the CWD for the same reason `junction surface` is: an app resolves
+  // Beside the CWD for the same reason `junction app` is: an app resolves
   // its queue database and its jobs directory against the cwd its own scripts
   // use, and CI reruns this from the snapshot's own directory.
   const outPath = getFlag('out')
@@ -164,7 +164,7 @@ if (import.meta.main) {
     console.log(`  ${surface.durable.length} durable · ${surface.timers.length} in-process timer(s)`)
   }
 
-  // Same reason as `junction surface`: an app built for description is holding a
+  // Same reason as `junction app`: an app built for description is holding a
   // database and a poller nobody asked to stop, and a tool that never exits
   // fails CI as a timeout rather than as an answer.
   await stopApp(app)

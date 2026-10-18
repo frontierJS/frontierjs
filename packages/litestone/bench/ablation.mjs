@@ -17,7 +17,7 @@
 //   • A case that throws is a FAILURE and the exit code says so. `gate-getlevel`
 //     in audit-bench.mjs died on a wrong accessor and was skipped for three
 //     weeks, because a skipped row and a quiet row read the same.
-//   • The audit logger writes on setImmediate, and a loop that only awaits
+//   • The audit trail writes on setImmediate, and a loop that only awaits
 //     resolved promises never yields to it — every timed loop ends by awaiting
 //     one macrotask, or @@trail would be measured without its write.
 //   • A read policy narrows WHICH rows come back, and materializing a row is

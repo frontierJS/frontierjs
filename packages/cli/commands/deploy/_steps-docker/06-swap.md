@@ -21,8 +21,8 @@ const { container, replaced } = swapContainer($, {
   container: apiContainer(appId, deployConf),
   image:     $.config.imageAddress ?? imageTag,
   apiPort,
-  dbPath:  deployConf.db?.path ?? `${serverPath}/db`,
-  envFile: deployConf.api?.env ?? `${serverPath}/.env.production`,
+  dbPath:  apiFiles(deployConf, serverPath).dbDir,
+  envFile: apiFiles(deployConf, serverPath).envFile,
   // The same value `03-build-web` stamped into the bundle, so one deploy is one
   // build on both sides of the wire — the server states it, the browser compares.
   build:   $.config.commit,

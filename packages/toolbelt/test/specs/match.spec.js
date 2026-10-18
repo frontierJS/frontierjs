@@ -3,7 +3,7 @@
  *
  * `matchesQuery` — does a pushed record belong in the list a query filled?
  *
- * A live store filled by `load(query)` holds "the rows matching that query", so
+ * A tether filled by `load(query)` holds "the rows matching that query", so
  * an event about a row is only an update to that list if the row is still in it
  * (`FJS-011`). The answers are three: in, out, and *cannot be decided from this
  * record* — the one that keeps the guessing out.
@@ -14,7 +14,7 @@
  * does not match a NULL column, `NOT IN` does. Reading them as JavaScript gives
  * the wrong answer for both.
  *
- * Lives here rather than in sierra because there are two live stores and they
+ * Lives here rather than in sierra because there are two tethers and they
  * had one implementation between them (`FJS-493`). What stays in sierra is the
  * SEAM — that `createResource` actually hands this down to junction, built over
  * the model it resolved — which is a fact about sierra's wiring and not about

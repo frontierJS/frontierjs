@@ -9,7 +9,7 @@
 // client here RELAYS (`@frontierjs/junction/client`'s `relay`): each call goes
 // to Harbor as the frame the socket would have carried, Harbor's own client
 // makes it with `forward()`, and pushes come back through `receive()`. That is
-// what lets the page run sierra's Resource itself — the live store, matching,
+// what lets the page run sierra's Resource itself — the tether, matching,
 // `stale`, the patch baseline — rather than a copy of it that drifts
 // (`FJS-D650`). Anything only HTTP can carry is refused by the client by name.
 //

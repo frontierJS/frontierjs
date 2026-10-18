@@ -21,7 +21,7 @@
 //
 //   SYSADMIN (7) is a real human — a super-admin account in your user table.
 //   Your getLevel() function can return 7 when user.isSystemAdmin is true.
-//   They go through normal auth ($setAuth), appear in audit logs, and can be
+//   They go through normal auth ($setAuth), appear in audit trails, and can be
 //   revoked by removing isSystemAdmin from their account.
 //
 //   SYSTEM (8) is for background jobs, migrations, and internal processes.

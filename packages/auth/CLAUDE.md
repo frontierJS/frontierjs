@@ -313,7 +313,7 @@ index.ts     public API
   into the principal `auth()` reads. Absent ≠ null: an app with no verification
   flow must not grade down.
 - **Ids are uuids, not ints, and that now includes the machinery's own.** The
-  audit log's `actorId` is `Any` for exactly this reason; a STRICT INTEGER column
+  audit trail's `actorId` is `Any` for exactly this reason; a STRICT INTEGER column
   throws on the first audited write. The deciding one inside `auth.lite` is
   `Credential.id`: `connections()` hands it to the browser and `removeConnection`
   takes it back, so a sequential integer is enumerable and publishes how many

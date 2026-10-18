@@ -9,11 +9,11 @@
 //      'posts created'. The client's created/patched/removed listeners never
 //      fired; its '*' fallback caught the traffic and upserted it. create and
 //      patch therefore looked correct, and every REMOVE became an upsert — the
-//      deleted record was put back into the store and stayed on screen.
+//      deleted record was put back into the tether and stayed on screen.
 //
-//   2. resource() promised "the store wires up to real-time WS events
+//   2. resource() promised "the tether wires up to real-time WS events
 //      automatically" and never opened the socket, so in a fresh client none
-//      of the above fired at all and the store simply went stale in silence.
+//      of the above fired at all and the tether simply went stale in silence.
 //
 // Neither is visible from the server side, and neither breaks a request. Both
 // were found by driving the real client against a real server.

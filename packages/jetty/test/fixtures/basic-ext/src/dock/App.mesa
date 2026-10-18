@@ -38,7 +38,7 @@
     },
   })
 
-  leadsResource.store.subscribe((rows) => { leads = [...(rows ?? [])] })
+  leadsResource.tether.subscribe((rows) => { leads = [...(rows ?? [])] })
 
   if (harbor) {
     harbor.on('session', (p) => {

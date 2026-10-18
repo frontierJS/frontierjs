@@ -457,7 +457,7 @@ describe('Secret.data protection', () => {
 
 // ─── Audit trail ─────────────────────────────────────────────────────────────
 
-describe('audit logging', () => {
+describe('audit trail', () => {
   test('records that a secret was written without recording the secret', async () => {
     const auditDir = scratchDir('audit')
 

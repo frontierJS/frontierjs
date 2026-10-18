@@ -645,7 +645,7 @@ const ATTR_DOCS: Record<string, string> = {
     'Row-level deny policy — always wins over `@@allow`.\n\n```\n@@deny(\'delete\', status == \'published\')\n@@deny(\'update\', status == \'archived\', "Archived posts cannot be edited")\n```\n\nOptional third argument is a custom error message.',
 
   '@@trail':
-    'Model-level audit log — fires a log entry for every `create`, `update`, and `delete` on this model.\n\n```\nmodel User {\n  @@trail(audit)\n}\n```\n\nRequires a `database` block with `driver trail`.',
+    'Model-level audit trail — fires a log entry for every `create`, `update`, and `delete` on this model.\n\n```\nmodel User {\n  @@trail(audit)\n}\n```\n\nRequires a `database` block with `driver trail`.',
 
   '@@external':
     'Marks this model\'s table as managed outside Litestone (e.g. a view, a FTS virtual table, or a table from another tool). Litestone will not emit DDL or run migrations for it, but it is fully queryable.\n\n```\nmodel search_index {\n  id    Int @id\n  body  String\n  @@external\n}\n```',

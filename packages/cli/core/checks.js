@@ -1602,7 +1602,7 @@ const CHECKS = {
   //
   // What the split buys is not tidiness. An entry that STARTS the app and a
   // module that ASSEMBLES it are two files, so the assembling one can be
-  // imported without binding a port — which is what `junction surface --app`
+  // imported without binding a port — which is what `junction app --app`
   // and `junction jobs --app` need, and what an `import.meta.main` guard is
   // standing in for wherever the two are one file.
   //

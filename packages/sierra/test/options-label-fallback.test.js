@@ -36,7 +36,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
       find: async (...args) => { CALLS.push({ name, args }); return { data: ROWS[name] ?? [], total: (ROWS[name] ?? []).length } },
     }),
     resource: () => ({
-      store: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
+      tether: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
       load: async () => [],
     }),
   }),

@@ -1,7 +1,7 @@
 // Audit 2.2 finding -- a graded broadcast is refused to EVERY recipient on every
 // model whose read gate is above VISITOR(1). channels({ claims }) answers
 // { workspaceId } and not the standing, so $readAs grades each socket at level 1.
-// Nothing leaks (it fails closed); no live store of servers / variables / secrets
+// Nothing leaks (it fails closed); no tether of servers / variables / secrets
 // ever updates. These FAIL until the channel claim carries the member's standing.
 import { test, expect, beforeAll, afterAll } from 'bun:test'
 import { build, http, type Fixture } from './audit-parity-harness.ts'

@@ -21,7 +21,7 @@
 //   3. GENERATE the reverse-proxy config from web/config/api-paths.js. The API
 //      and the SPA share an origin and are told apart by `Accept`; a hand-kept
 //      second copy of that list is the bug the file's own header describes.
-//      That file derives its paths from `surface.snapshot.md`, so this image is
+//      That file derives its paths from `app.snapshot.md`, so this image is
 //      built against what the API actually mounts rather than against a list.
 //
 // Everything it writes lands in deploy/generated/, which is git-ignored. The

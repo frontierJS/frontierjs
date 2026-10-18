@@ -1845,7 +1845,7 @@ export async function truncate(db, modelName) {
 // Deliberately raw: rows are read and written through the write connection, not
 // the ORM. That keeps `@encrypted`/`@secret` columns as the exact ciphertext they
 // already are (a round trip through the ORM would re-encrypt them), and skips
-// gates, policies, hooks and audit logging — a restore is not an application write.
+// gates, policies, hooks and the audit trail — a restore is not an application write.
 //
 // NOT a substitute for a transaction: it does not isolate concurrent work. It is a
 // point-in-time copy of every table in every SQLite database the client holds.

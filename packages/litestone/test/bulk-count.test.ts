@@ -8,7 +8,7 @@
 // count here was wrong before FJS-320 and the two loudest cases are ordinary:
 // an `@@fts` model answered 17 for one updated row, and the `updatedAt`
 // trigger — which most models carry — doubled the count on every model that
-// has the column. Junction hands this number to the browser and a live store's
+// has the column. Junction hands this number to the browser and a tether's
 // `changed` event carries it, so a caller comparing it against what they asked
 // for saw a write that touched rows it never named.
 //

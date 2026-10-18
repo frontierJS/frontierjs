@@ -15,6 +15,10 @@
 //   GET  /drafts  files  { appId, draft } — the markdown an owner may edit on it
 //   GET  /drafts  read   { appId, draft, path } — one file as a form, with the blob a save names
 //   POST /drafts  save   { appId, draft, path, blob, body?, values?, message? } — one commit, pushed
+//   POST /drafts  preview { appId, draft } — build its preview again
+//
+// Opening a draft and every save that changes a file queue its preview
+// (`core/site-preview.ts`), and `list` answers each draft's last one.
 //
 // What an owner may write is site-kit's rule (`FJS-D1226`), asked here by
 // path and again of the file the edit produces.
@@ -27,6 +31,8 @@ import { isGit } from '../../core/app-source.ts'
 import {
   CheckoutError, StaleDraft, draftFiles, listDrafts, openDraft, readDraftFile, saveDraftFile, type GitSite,
 } from '../../core/site-checkout.ts'
+import { markPreview, previewStatuses } from '../../core/site-preview.ts'
+import { dispatchPreview } from '../../jobs/site-preview.job.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 const sys = (): any => $.db.asSystem()
@@ -65,6 +71,12 @@ async function checkout<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Queue the draft's preview, and say so unless a build is already on it. */
+async function queuePreview(appId: string, draft: string, head: string): Promise<void> {
+  await dispatchPreview($.app, appId, draft)
+  if (previewStatuses(appId)[draft]?.state !== 'building') markPreview(appId, draft, { state: 'queued', commit: head })
+}
+
 function editablePath(): string {
   const path = arg('path')
   const refused = pathRefusal(path) ?? (path.endsWith('.md') ? null : `${path} is a photo, and photos are not edited here yet`)
@@ -85,6 +97,7 @@ export default createService({
     { method: 'read',  read: true, gate: LEVELS.VISITOR },
     { method: 'open',  gate: LEVELS.VISITOR },
     { method: 'save',  gate: LEVELS.VISITOR },
+    { method: 'preview', gate: LEVELS.VISITOR },
   ],
 
   async sites() {
@@ -103,12 +116,25 @@ export default createService({
 
   async list() {
     const site = await grantedSite()
-    return { drafts: await checkout(() => listDrafts(site)) }
+    const previews = previewStatuses(site.id)
+    const drafts = await checkout(() => listDrafts(site))
+    return { drafts: drafts.map(d => ({ ...d, preview: previews[d.name] ?? null })) }
   },
 
   async open() {
-    const site = await grantedSite()
-    return checkout(() => openDraft(site, ($.data as { name?: unknown } | undefined)?.name))
+    const site   = await grantedSite()
+    const opened = await checkout(() => openDraft(site, ($.data as { name?: unknown } | undefined)?.name))
+    await queuePreview(site.id, opened.name, opened.head)
+    return opened
+  },
+
+  async preview() {
+    const site  = await grantedSite()
+    const draft = arg('draft')
+    const found = (await checkout(() => listDrafts(site))).find(d => d.name === draft)
+    if (!found) throw new NotFound(`no draft named ${draft} — it may have been published or deleted`)
+    await queuePreview(site.id, found.name, found.head)
+    return { draft: found.name, preview: previewStatuses(site.id)[found.name] ?? null }
   },
 
   async files() {
@@ -149,7 +175,9 @@ export default createService({
     const message = typeof data.message === 'string' && data.message.trim() ? data.message.trim() : `Edit ${path}`
     const saved = await checkout(() => saveDraftFile(site, draft, { path, blob: file.blob, text: edit.text, message },
       { name: user?.name || user?.email, email: user?.email }))
-    return { path, ...saved, changed: saved.blob !== file.blob }
+    const changed = saved.blob !== file.blob
+    if (changed) await queuePreview(site.id, draft, saved.commit)
+    return { path, ...saved, changed }
   },
 
   hooks: {

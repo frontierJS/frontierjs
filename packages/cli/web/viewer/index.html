@@ -430,7 +430,7 @@ function buildModel(map) {
   const defs      = map.schema?.$defs ?? {}
   const services  = map.services  ?? []
   const resources = map.resources ?? []
-  const surface   = map.surface   ?? null
+  const app       = map.app       ?? null
 
   // A definition STATES its kind. Filtering on shape (`type === 'object'`) is
   // true of a `type` declaration and a view as well, so eleven payload shapes
@@ -496,13 +496,13 @@ function buildModel(map) {
     generatedAt: map.meta?.generatedAt ?? null,
     models,
     enums:      enumEntries.map(([name, d]) => ({ name, values: d.enum })),
-    services, resources, surface, relations, channels, nouns, packages,
+    services, resources, app, relations, channels, nouns, packages,
     migrations: map.migrations ?? [],
     env:        map.env ?? null,
     atlas:      map.atlas ?? { skipped: true },
     access:     map.access ?? null,
     machines:   buildMachines(defs, services, map.access),
-    issues:     collectIssues({ services, resources, surface, models, env: map.env, packages }),
+    issues:     collectIssues({ services, resources, app, models, env: map.env, packages }),
   }
 }
 
@@ -609,13 +609,13 @@ function fieldType(prop) {
 // data cannot support is not made: the old viewer flagged a missing
 // `authenticate` hook on every service in the framework, which is a hook this
 // framework does not use — `gateAuth` is the derived one and it is always there.
-function collectIssues({ services, resources, surface, models, env, packages }) {
+function collectIssues({ services, resources, app, models, env, packages }) {
   const out = []
 
-  if (!surface) out.push({
+  if (!app) out.push({
     severity: 'error',
-    msg:      'No surface.snapshot.md — services, routes and plugins cannot be read',
-    ref:      'run `junction surface --app <entry>` at the project root',
+    msg:      'No app.snapshot.md — services, routes and plugins cannot be read',
+    ref:      'run `junction app --app <entry>` at the project root',
   })
 
   // There is deliberately NO per-service gateAuth check. One lived here and was
@@ -876,7 +876,7 @@ function select(kind, id, nounIdx) {
 // ─── Detail ───────────────────────────────────────────────────────────────────
 //
 // What a hook point IS comes from the reference; what runs there comes from
-// the surface snapshot. The two are drawn apart and labeled, because one is
+// the app snapshot. The two are drawn apart and labeled, because one is
 // true of FrontierJS and the other is true of this project only.
 function renderDetail() {
   const slot = $('detail')
@@ -913,7 +913,7 @@ function nodeDetail(id, close) {
           <section class="stack gap-sm">
             <div class="bar">
               <h3 class="h6">What runs here in this project</h3>
-              <span class="text-xs text-muted">read from ${esc(MODEL.surface?.file ?? 'the surface snapshot')}</span>
+              <span class="text-xs text-muted">read from ${esc(MODEL.app?.file ?? 'the app snapshot')}</span>
             </div>
             ${live.rows.length ? `
               <div class="table-wrap"><table class="table"><thead>
@@ -964,7 +964,7 @@ function liveHooksFor(id) {
   if (!phase) return null
 
   if (id.startsWith('app-')) {
-    const hooks = MODEL.surface?.appHooks?.[phase] ?? {}
+    const hooks = MODEL.app?.appHooks?.[phase] ?? {}
     return {
       head: 'app',
       rows: Object.entries(hooks).map(([m, fns]) => ({ owner: 'app', phase: `${phase}.${m}`, fns })),
@@ -1787,10 +1787,10 @@ function schemaPanel() {
 
 function servicesPanel() {
   if (!MODEL.services.length)
-    return empty('No services', 'No surface.snapshot.md — run `junction surface --app <entry>` at the project root.')
+    return empty('No services', 'No app.snapshot.md — run `junction app --app <entry>` at the project root.')
 
   return `
-    <p class="text-xs text-muted">Read off <code>${esc(MODEL.surface?.file ?? '')}</code>, written by <code>${esc(MODEL.surface?.generatedBy ?? '')}</code>.</p>
+    <p class="text-xs text-muted">Read off <code>${esc(MODEL.app?.file ?? '')}</code>, written by <code>${esc(MODEL.app?.generatedBy ?? '')}</code>.</p>
     ${table(['service', 'model', 'methods', 'custom', 'channel', 'resource'], MODEL.services.map(s => [
       `<code>${esc(s.name)}</code>`,
       // The snapshot names a model only where the service declares one, and the
@@ -1812,8 +1812,8 @@ function servicesPanel() {
 }
 
 function routesPanel() {
-  const routes = MODEL.surface?.routes ?? []
-  if (!routes.length) return empty('No routes', 'The surface snapshot lists none — or there is no snapshot to read.')
+  const routes = MODEL.app?.routes ?? []
+  if (!routes.length) return empty('No routes', 'The app snapshot lists none — or there is no snapshot to read.')
 
   return table(['method', 'path', 'kind'], routes.map(r => [
     `<span class="badge">${esc(r.method)}</span>`, `<code>${esc(r.path)}</code>`, esc(r.kind),
@@ -1821,14 +1821,14 @@ function routesPanel() {
 }
 
 function pluginsPanel() {
-  const plugins  = MODEL.surface?.plugins ?? []
-  const appHooks = MODEL.surface?.appHooks ?? {}
+  const plugins  = MODEL.app?.plugins ?? []
+  const appHooks = MODEL.app?.appHooks ?? {}
   const rows = Object.entries(appHooks).flatMap(([phase, byMethod]) =>
     Object.entries(byMethod).map(([m, fns]) => [
       esc(phase), `<code>${esc(m)}</code>`, fns.map(f => `<code>${esc(f)}</code>`).join(' → '),
     ]))
 
-  if (!plugins.length && !rows.length) return empty('Nothing registered', 'No surface snapshot to read plugins or app hooks from.')
+  if (!plugins.length && !rows.length) return empty('Nothing registered', 'No app snapshot to read plugins or app hooks from.')
 
   return `
     <section class="stack gap-sm">

@@ -35,7 +35,7 @@ enough that somebody actually reads it on the commit that matters.
 | `db/access.snapshot.md` | gates, row policies, protected fields, transition gates | a gate that moved — enforced below the API, so nothing sees it until production refuses someone |
 | `db/ddl.snapshot.sql` | emitted `CREATE TABLE`/index/trigger/view per database | a renamed column — every hand-written statement binds to these names, and the app's own tests go through the client that changed with the emitter |
 | `db/jsonschema.snapshot.md` | `$defs`, enum values, per model gate/relations/transitions, per field type + default + keywords + `x-messages`, and what CREATE accepts | a keyword that stops being emitted — three packages read this document and none of them break, a form just stops validating |
-| `surface.snapshot.md` | services, policy-applied methods, actions, channels, hook chains in RUN order, mounted routes with prefix, plugins in configure order | an option key that stopped being an action; a hook reordered; a route moved by `apiPrefix` |
+| `app.snapshot.md` | services, policy-applied methods, actions, channels, hook chains in RUN order, mounted routes with prefix, plugins in configure order | an option key that stopped being an action; a hook reordered; a route moved by `apiPrefix` |
 | `errors.snapshot.md` | every branch of `toFrameworkError`, executed, including Litestone's real classes constructed | a class that gains or lacks a `status` — nothing above the boundary reads anything but the result |
 | `routes.snapshot.md` | URL, file, resolved layout, params, merged meta; `publishes:` first on a static target | a rename that moved a URL somebody published; a `_module.mesa` that rewrapped every page under it |
 | `exports.snapshot.md` | per publishable package: what the tarball contains, whether every declared entry point is inside it, peer ranges | `FJS-251` — an entry point `files:` does not publish, invisible from inside a repo where siblings resolve to `packages/<name>/` |
@@ -55,7 +55,7 @@ worked case: `extractServiceMeta` was deleted rather than kept as a fallback, an
 `fli project:map` reports no services at all where there is no snapshot.
 
 **2. Executed where executing is possible.** `errors.snapshot.md` throws real
-values through the real boundary; `surface.snapshot.md` reads a BUILT app rather
+values through the real boundary; `app.snapshot.md` reads a BUILT app rather
 than source text. A table written from the source says what someone believes.
 
 **3. Human-readable, at a granularity that does not churn.** `exports` records

@@ -22,6 +22,25 @@ import { validRelativePath }       from './static.js'
  *  identity and Basecamp refuses to record it, so this refuses to report it. */
 const DIGEST = /^sha256:[0-9a-f]{64}$/
 
+// A preview's branch and alias reach git and wrangler as arguments, so each is
+// graded before either runs: no leading dash, no `..`, nothing a refspec reads.
+const BRANCH = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]{1,200}$/
+const ALIAS  = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+
+/** Wrangler's `[ERROR]` lines, each with the line that says why. */
+function uploadErrors(said) {
+  const lines = said.split('\n').map(l => l.trim())
+  const out = []
+  lines.forEach((l, i) => {
+    const m = /\[ERROR\]\s*(.*)/.exec(l)
+    if (m) out.push([m[1], lines.slice(i + 1).find(Boolean)].filter(Boolean).join(' '))
+  })
+  return out.join(' · ') || lines.filter(Boolean).slice(-3).join(' ')
+}
+
+// What a site preview builds in: bun, and the `node` wrangler is run under.
+const PREVIEW_IMAGE = 'oven/bun:1.4.2'
+
 // The most lines `POST /logs` will read off a container in one answer. A cap
 // rather than a default, because the caller is on another machine and the cost
 // of an unbounded read is paid here.
@@ -32,8 +51,8 @@ export function isDigest(value) {
 }
 
 /** The default runner: Bun's own spawn, argv only, never a shell. */
-export async function spawnRun(argv, { timeoutMs = 600_000, cwd } = {}) {
-  const proc = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe', cwd })
+export async function spawnRun(argv, { timeoutMs = 600_000, cwd, env } = {}) {
+  const proc = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe', cwd, ...(env ? { env: { ...process.env, ...env } } : {}) })
 
   // A command with no bound is a queue that stalls forever on one wedged pull
   // — the same failure caravan names for a job with no timeout. So 0, null and
@@ -335,6 +354,68 @@ export function createDocker({
       const sha = (await git(['-C', dir, 'rev-parse', 'HEAD'])).trim()
       await docker(['build', '-t', image, source.path != null ? `${dir}/${source.path}` : dir], { timeoutMs: 1_800_000 })
       return { digest: await digestOf(image), commitSha: sha }
+    },
+
+    /**
+     * A static site's branch built as a review build and uploaded as a version
+     * of its Worker (`FJS-D1251`, `FJS-D1221`). The branch is an owner's
+     * draft, so what runs is the repository's code at whatever its head is:
+     * the install, the build and the upload each run in a throwaway container,
+     * never in this process, and the checkout is removed after.
+     *
+     * The token reaches only the upload's container, named by `-e` and
+     * valued in the docker client's environment, never in argv, which every
+     * user on the machine can read off `ps`.
+     * The answer names the commit built, because the branch may have moved
+     * since the caller looked and the caller decides whether to go again.
+     */
+    async sitePreview({ appId, source, branch, alias, token, accountId }) {
+      if (source?.kind !== 'git' || !source.repo) throw new Error('a preview needs a git source with a repo')
+      if (source.path != null) {
+        const bad = validRelativePath(source.path)
+        if (bad) throw new Error(`source path: ${bad}`)
+      }
+      if (!BRANCH.test(branch ?? '')) throw new Error(`branch: ${JSON.stringify(branch)} is not a branch name`)
+      if (!ALIAS.test(alias ?? '')) throw new Error(`alias: ${JSON.stringify(alias)} is not a lowercase label`)
+      if (!token || !accountId) throw new Error('a preview upload needs the Cloudflare token and account id')
+
+      const dir  = `${workDir}/${appId}.preview`
+      const cache = `${dir}-cache`
+      const site  = source.path != null ? `/src/${source.path}` : '/src'
+      // The container's user is this process's, so the checkout it writes is
+      // one this process can remove, and HOME is somewhere that user can write.
+      const user  = `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`
+      const box   = (extra) => ['run', '--rm', '--user', user, '-e', 'HOME=/tmp',
+        '-e', 'BUN_INSTALL_CACHE_DIR=/cache', '--mount', `type=bind,source=${cache},target=/cache`,
+        '--mount', `type=bind,source=${dir},target=/src`, ...extra, PREVIEW_IMAGE]
+
+      await run(['rm', '-rf', dir])
+      // The install cache outlives the checkout, one per site, so one site's
+      // install scripts never write what another's install reads.
+      await mkdir(cache, { recursive: true })
+      try {
+        await git(['init', '--quiet', dir])
+        await git(['-C', dir, '-c', 'core.hooksPath=/dev/null', 'fetch', '--quiet', '--depth', '1', '--', source.repo, `+refs/heads/${branch}:refs/heads/preview`])
+        await git(['-C', dir, '-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', 'preview'])
+        const commit = (await git(['-C', dir, 'rev-parse', 'HEAD'])).trim()
+
+        await docker([...box(['-w', '/src']), 'bun', 'install', '--frozen-lockfile'], { timeoutMs: 900_000 })
+        await docker([...box(['-w', site]), 'bun', 'x', 'site-kit', 'build', '.', '--preview'], { timeoutMs: 900_000 })
+
+        // Run directly rather than through `docker()`, whose last three lines
+        // of a failed wrangler are its bug-report footer and never the reason.
+        const up = await run(['docker', ...box(['-w', site, '-e', 'CLOUDFLARE_API_TOKEN', '-e', 'CLOUDFLARE_ACCOUNT_ID']),
+          'bun', 'x', 'site-kit', 'deploy', '.', '--preview', alias],
+          { timeoutMs: 600_000, env: { CLOUDFLARE_API_TOKEN: token, CLOUDFLARE_ACCOUNT_ID: accountId } })
+        const said = stripVTControlCharacters(`${up.stdout ?? ''}\n${up.stderr ?? ''}`)
+        if (up.exitCode !== 0) throw new Error(`the upload failed: ${uploadErrors(said)}`)
+        const urls = [...said.matchAll(/https:\/\/[^\s'"]+\.workers\.dev\b/g)].map(m => m[0])
+        const aliased = urls.find(u => u.startsWith(`https://${alias}-`)) ?? null
+        if (!aliased) throw new Error(`the upload named no preview URL aliased ${alias}: ${said.trim().split('\n').slice(-3).join(' ')}`)
+        return { commit, url: aliased, versionUrl: urls.find(u => u !== aliased) ?? null }
+      } finally {
+        await run(['rm', '-rf', dir])
+      }
     },
 
     /**
@@ -893,7 +974,7 @@ function readCert(r) {
  * byte counts. They are wire contracts, not model fields.
  */
 
-/** `hostFiles` is the installation's own host only (`config.js` § readHostConfig). */
+/** `hostFiles` is the box a Basecamp runs on only (`config.js` § hostFiles). */
 export function createInspector({ run = spawnRun, hostFiles = null } = {}) {
   const json = async (argv) => {
     const { exitCode, stdout } = await run(argv)

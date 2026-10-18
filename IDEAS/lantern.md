@@ -37,7 +37,7 @@ Measured, not read off a status file.
 | A viewer | `packages/junction/src/plugins/devtools/` | its own server on 5503, a **200-entry in-memory ring**, a `redact` list, the jobs panel, `/api/state`, `/api/health`. Refuses to bind under `NODE_ENV=production` with no `auth` |
 | Policy source text | `policyExprToString`, `packages/litestone/src/core/policy.js` | round-trips an `@@allow`/`@@deny` AST back to the syntax it was written in. Already feeds `db/access.snapshot.md` |
 | Policy debug | `plog`, same file | `console.log` behind `policyDebug: true \| 'verbose'` — the only channel a denial has today, and it is stdout |
-| The declared surface, committed | `access.snapshot.md` · `principal.snapshot.md` · `surface.snapshot.md` | gates, predicates, protected fields, transition gates; who a caller becomes and off which request |
+| The declared surface, committed | `access.snapshot.md` · `principal.snapshot.md` · `app.snapshot.md` | gates, predicates, protected fields, transition gates; who a caller becomes and off which request |
 
 That last row is the reason this is worth building here rather than buying. **The
 static half of the answer is already generated and already gated by CI.** What is

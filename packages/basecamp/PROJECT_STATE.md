@@ -2,7 +2,7 @@
 
 Last reviewed by running: **2026-08-24**.
 
-> **Picking up this app?** `surface.snapshot.md` is the API contract. Run `bun run verify` before
+> **Picking up this app?** `app.snapshot.md` is the API contract. Run `bun run verify` before
 > changing anything — it drives all three realms in a real browser.
 
 Basecamp is an **FJS application, not a library** — fleet operations: provision

@@ -192,8 +192,8 @@ describe('the Stop hook verdict', () => {
   test('a stale snapshot is the session\'s when it edited the snapshot\'s package, and nobody\'s at the root', () => {
     const snap = subject => ({ check: 'snapshots', subject, ok: false, message: `${subject} is stale` })
     const at = (edited, s) => stopVerdict({ state: {}, head: 'h1', fingerprint: 'f1', edited, report: report(snap(s)) }).block
-    expect(at(['packages/a/src/x.js'], 'packages/a/surface.snapshot.md')).toBe(true)
-    expect(at(['packages/b/src/x.js'], 'packages/a/surface.snapshot.md')).toBe(false)
+    expect(at(['packages/a/src/x.js'], 'packages/a/app.snapshot.md')).toBe(true)
+    expect(at(['packages/b/src/x.js'], 'packages/a/app.snapshot.md')).toBe(false)
     expect(at(['ISSUES.md'],           'repo-atlas.snapshot.html')).toBe(false)
     // A new module is never the session's for sharing its package.
     expect(stopVerdict({ state: {}, head: 'h1', fingerprint: 'f1', edited: ['packages/a/core/x.js'], report: report(item('packages/a/core/y.js')) }).block).toBe(false)

@@ -20,13 +20,6 @@ const DEFAULT_PORT = 8180
 const DEFAULT_STATIC_PORT = 8181
 
 export function readConfig(env = process.env) {
-  // The installation's own host (`FJS-D925`): `fli deploy` writes the host key
-  // and no server id, and this Outpost reports posture over loopback with no
-  // listener. It names no Server row, holds no command key and no certificate,
-  // and a config naming a machine as well is refused, since one process
-  // reporting as both would sign a fleet report with the host key.
-  if (env.OUTPOST_HOST_KEY) return readHostConfig(env)
-
   const missing = []
   const need = name => {
     const value = env[name]
@@ -90,6 +83,12 @@ export function readConfig(env = process.env) {
     /** Caddy's admin API — `ingress.js`. Loopback-only by Caddy's default, and
      *  nothing else on the machine speaks to it. */
     caddyAdmin:  env.OUTPOST_CADDY_ADMIN ?? 'http://127.0.0.1:2019',
+    /** The box a Basecamp runs on only, written by `fli deploy` (`FJS-D1241`):
+     *  the database directory and the file holding `ENCRYPTION_KEY`, which
+     *  `hub.db-mode` and `hub.env-mode` grade. Null on every other machine. */
+    hostFiles:   env.OUTPOST_HOST_DB_PATH || env.OUTPOST_HOST_ENV_PATH
+                   ? { db: env.OUTPOST_HOST_DB_PATH || null, env: env.OUTPOST_HOST_ENV_PATH || null }
+                   : null,
   }
 
   if (missing.length) {
@@ -107,27 +106,4 @@ export function readConfig(env = process.env) {
   if (!/^https:\/\//i.test(config.publicUrl))
     throw new Error(`outpost: OUTPOST_PUBLIC_URL must be https, got '${config.publicUrl}'`)
   return config
-}
-
-/**
- * The report-only host Outpost. `secret` is the host key — an HMAC Basecamp
- * derives from `ENCRYPTION_KEY` (`FJS-D944`), never the key itself — and the
- * two paths are what `hub.db-mode` and `hub.env-mode` grade: the database
- * volume and the file holding `ENCRYPTION_KEY`, as `fli deploy` laid them out.
- */
-function readHostConfig(env) {
-  if (env.OUTPOST_SERVER_ID)
-    throw new Error('outpost: OUTPOST_HOST_KEY and OUTPOST_SERVER_ID are both set — the host Outpost names no machine')
-  const basecampUrl = env.BASECAMP_URL?.replace(/\/$/, '')
-  if (!basecampUrl)
-    throw new Error('outpost: BASECAMP_URL must be set — where the API answers on this host, e.g. http://127.0.0.1:8120')
-  return {
-    host:        true,
-    serverId:    null,
-    secret:      env.OUTPOST_HOST_KEY,
-    basecampUrl,
-    postureMs:   Number(env.OUTPOST_POSTURE_MS ?? 21_600_000),
-    version:     env.OUTPOST_VERSION ?? '0.1.0',
-    hostFiles:   { db: env.OUTPOST_HOST_DB_PATH || null, env: env.OUTPOST_HOST_ENV_PATH || null },
-  }
 }

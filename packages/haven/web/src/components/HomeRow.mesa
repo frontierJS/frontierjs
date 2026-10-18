@@ -13,16 +13,17 @@
   // `PENDING_MS` passes, on its own timer, since no key may come.
   //
   // `f` and a letter walks to the nearest member in the light whose nick
-  // starts with it, a step a `FIND_MS`, re-planned toward where they stand now.
-  // The walk is a mode too, so any key stops it — Esc taken, an arrow let go to
-  // step — and so does a bolt landing on this figure (`commands.close`). `s`
+  // starts with it, a step a `WALK_MS`, re-planned toward where they stand now.
+  // The walk is the `walk` mode, as Enter's to a stop is (`Stops.mesa`), so
+  // any key stops it — Esc taken, an arrow let go to step — and so does a
+  // bolt landing on this figure (`commands.close`). `s`
   // and a character draws this figure as it for `SHAPE_MS`; the timer is this
   // component's, so a door, which mounts the scene again, ends it. A bolt is
   // the server's answer (`rooms.bolt`); `Scene.mesa` draws the room's `bolt`
   // event. Draws nothing.
   import { rooms } from '@/resources/Room.mesa'
   import { createHomeRow, PENDING_MS } from '@/lib/home/home-row.js'
-  import { findByNick, pathBeside } from '@/lib/scene/paths.js'
+  import { findByNick, pathBeside, WALK_MS } from '@/lib/scene/paths.js'
   import { cellOf } from '@/lib/scene/crowd.js'
   import { SHAPE_MS } from '../../../api/src/shape.ts'
 
@@ -48,9 +49,7 @@
   var shapeTimer = null
   var walking    = null
   var waiting    = null   // the operator's mode's close
-  // 120 ms a step is under the room's 10 moves a second.
-  const FIND_MS = 120
-  const WALK = 'find'
+  const WALK = 'walk'
 
   $.onDestroy(() => {
     clearTimeout(dueTimer)
@@ -89,7 +88,7 @@
       take: (e) => { close(); return e.key === 'Escape' },
       closed: () => { clearInterval(walking); walking = null },
     })
-    walking = setInterval(() => stepToward(found.figure.id), FIND_MS)
+    walking = setInterval(() => stepToward(found.figure.id), WALK_MS)
   }
 
   function shapeshift(ch) {

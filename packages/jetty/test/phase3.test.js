@@ -2,7 +2,7 @@
 //
 // A page holds no connection: MV3 keeps it in the service worker. So the page's
 // Junction client RELAYS (`harborApp()`), and sierra's own Resource runs on top
-// of it — the live store, query matching, the patch baseline — rather than a
+// of it — the tether, query matching, the patch baseline — rather than a
 // copy of it that drifted (`FJS-D650`, `FJS-2024`).
 //
 // The first group is the whole chain and nothing in it is a fake: a PagePort,
@@ -195,18 +195,18 @@ group('a Resource over Harbor, against a real Junction app')
   const loaded = await orders.load({ status: 'paid' })
   if (loaded.map(r => r.id).join() === '1,2') ok('load() relays through Harbor and answers the rows')
   else bad('load() rows', JSON.stringify(loaded))
-  if (orders.store.get().map(r => r.id).join() === '1,2') ok('…and the store holds them')
-  else bad('store after load', JSON.stringify(orders.store.get()))
+  if (orders.tether.get().map(r => r.id).join() === '1,2') ok('…and the tether holds them')
+  else bad('tether after load', JSON.stringify(orders.tether.get()))
 
-  // A push the server sends, graded by the query this store answers.
+  // A push the server sends, graded by the query this tether answers.
   rows[2].status = 'paid'
   app.channel(ROOM).send('orders patched', { ...rows[2] })
-  if (await settle(() => orders.store.get().some(r => r.id === 3))) ok('a push that enters the filter lands in the page store')
-  else bad('push into the filter never arrived', JSON.stringify(orders.store.get()))
+  if (await settle(() => orders.tether.get().some(r => r.id === 3))) ok('a push that enters the filter lands in the page tether')
+  else bad('push into the filter never arrived', JSON.stringify(orders.tether.get()))
 
   app.channel(ROOM).send('orders patched', { ...rows[0], status: 'shipped' })
-  if (await settle(() => !orders.store.get().some(r => r.id === 1))) ok('a push that LEAVES the filter removes the row (FJS-493)')
-  else bad('row that left the filter stayed', JSON.stringify(orders.store.get()))
+  if (await settle(() => !orders.tether.get().some(r => r.id === 1))) ok('a push that LEAVES the filter removes the row (FJS-493)')
+  else bad('row that left the filter stayed', JSON.stringify(orders.tether.get()))
 
   // save() sends what changed against the row this screen read (FJS-2024) —
   // the key travels too, since it addresses the write. `status` did not

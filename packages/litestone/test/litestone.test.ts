@@ -35,7 +35,7 @@ import { tempDir }                    from '../src/tmp-dirs.js'
 
 // Everything this suite writes lives under ONE directory, and tempDir() reaps
 // the previous runs' on the way in — a test here can delete neither its own
-// (the audit logger flushes after the awaited call) nor at exit (that handler
+// (the audit trail flushes after the awaited call) nor at exit (that handler
 // does not fire under `bun test`). One root means one prefix to sweep, so a
 // test added later cannot leak a prefix nobody listed: use tmpSub(), never
 // mkdtempSync(tmpdir()). See ../src/tmp-dirs.js.
@@ -7450,7 +7450,7 @@ describe('onLog callback', () => {
   })
 })
 
-// ─── 19b-ii. Audit log redaction of protected fields ─────────────────────────
+// ─── 19b-ii. Audit trail redaction of protected fields ─────────────────────────
 // The audit trail records THAT a protected field was written — by whom, to
 // which rows, when — never what it holds. Logging the plaintext would defeat
 // the @encrypted it sits beside: the row is ciphertext while the log file next
@@ -7460,7 +7460,7 @@ describe('onLog callback', () => {
 // @encrypted + @guarded + @trail(<first trail db>) — so merely DECLARING a
 // trail database is enough to start logging every @secret field.
 
-describe('audit log redaction', () => {
+describe('audit trail redaction', () => {
   const ENC_KEY = 'a'.repeat(64)
 
   const REDACT_SCHEMA = `
@@ -28014,7 +28014,7 @@ model Thing { id Int @id  name String }
     // The compat guarantee, asserted rather than assumed. basecamp's seed test
     // runs the seeder in a scratch directory with `cwd: dir`: `database main` is
     // redirected by env var and `database audit` — which has no env var — by the
-    // CWD alone. Anchoring unconditionally sent that audit log back to the real
+    // CWD alone. Anchoring unconditionally sent that audit trail back to the real
     // shared db/audit/ and the suite failed with SQLITE_BUSY. So opting in is
     // the caller's decision and this is what they get when they do not.
     const { root, schemaPath } = appTree()

@@ -132,7 +132,7 @@ describe('what the narrowing leaves alone', () => {
 
   it('but the value a call handed back is one', async () => {
     const ctx = await compile(
-      `<script>\n  import { useStore } from './j.js'\n  const { get: rows } = useStore('s')\n  const list = useStore('t').view\n  const plain = { a: 1 }\n</script>\n<p>{rows()}{list.x}{plain.a}</p>`,
+      `<script>\n  import { useTether } from './j.js'\n  const { get: rows } = useTether('s')\n  const list = useTether('t').view\n  const plain = { a: 1 }\n</script>\n<p>{rows()}{list.x}{plain.a}</p>`,
       { debug: false, css: false }
     )
     expect(ctx.analysis.opaqueValues).toContain('rows')

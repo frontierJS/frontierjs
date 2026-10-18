@@ -147,14 +147,14 @@ describe('the generated types reach the browser client', () => {
       const client = createJunctionClient({ url: 'http://localhost:3400' })
 
       export async function run() {
-        const { store, service, load } = client.resource('posts')
+        const { tether, service, load } = client.resource('posts')
 
-        store.subscribe(rows => {
+        tether.subscribe(rows => {
           const first: string | undefined = rows[0]?.title
           void first
         })
 
-        // The proxy a resource hands back is the same row as its store — it
+        // The proxy a resource hands back is the same row as its tether — it
         // used to be a bare ServiceProxy, so destructuring one dropped the type
         // the caller had just asked for.
         const made: boolean = (await service.create({ title: 'x' })).published

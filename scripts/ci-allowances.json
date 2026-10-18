@@ -54,6 +54,8 @@
     "example/jobs.snapshot.md": "Moved to example/api/jobs.snapshot.md, with the other three. See example/surface.snapshot.md above.",
     "example/principal.snapshot.md": "Moved to example/api/principal.snapshot.md, with the other three. See example/surface.snapshot.md above.",
     "example/notifications.snapshot.md": "Moved to example/api/notifications.snapshot.md, with the other three. See example/surface.snapshot.md above.",
+    "example/api/surface.snapshot.md": "Renamed to example/api/app.snapshot.md, written by `junction app` (FJS-D868). Surface names the directory only (FJS-D678), so the file describing what an app answers took the app's name, beside jobs, notifications and principal.",
+    "packages/basecamp/surface.snapshot.md": "Renamed to packages/basecamp/app.snapshot.md, with example's. See example/api/surface.snapshot.md above.",
     "repo-map.snapshot.html": "Renamed to repo-report.snapshot.html when `ws:map` and `ws:atlas` became one command (FJS-D223). They were never two things — one `collect()`, and repo-atlas.js reads no files at all — so the split was a rendering choice wearing a command's clothes, and the presentation is `--as` now. Same generator, same bytes bar its own header line, which names `fli ws:atlas --as=report`."
   },
   "//knownPublishedSchemas": "registry phase — a PUBLISHED package whose exported `.lite` the current parser refuses, keyed by name@version so the entry goes stale the moment a corrected copy is published. An app installing that package cannot boot while the tree stays green, because an app in this workspace resolves the package to its own directory and never reads the published bytes. Each entry says why it is still there; the fix is always to publish, never to widen this.",

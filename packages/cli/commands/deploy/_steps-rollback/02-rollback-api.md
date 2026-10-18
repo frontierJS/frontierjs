@@ -9,8 +9,7 @@ if ($.config.abort) return
 
 const { host, serverPath, appId, deployConf } = $.config
 const apiPort  = deployConf.api?.port ?? 3000
-const dbPath   = deployConf.db?.path  ?? `${serverPath}/db`
-const envFile  = deployConf.api?.env  ?? `${serverPath}/.env.production`
+const { dbDir: dbPath, envFile } = apiFiles(deployConf, serverPath)
 const container = apiContainer(appId, deployConf)
 const replaced  = `${container}_replaced`
 const machine   = machineFor($, host, serverPath)

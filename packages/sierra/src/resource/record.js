@@ -64,7 +64,7 @@ export function liveRecord(view) {
       /** The first read has FINISHED, whatever it found. Tracked. */
       get loaded() { return loaded() },
       error:   () => (failure(), view.error()),
-      // A read that succeeds over an unchanged row moves no node, so nothing
+      // A read that succeeds over an unchanged row moves no entry, so nothing
       // emits and a cleared failure would otherwise stay on screen.
       refresh: () => view.refresh().finally(() => setFailure(view.error())),
       release: dispose,

@@ -31,7 +31,7 @@ title: People
   import { payWindows } from '@/resources/PayWindow.mesa'
   import { prefs } from '@/stores/prefs.js'
   import { day, today } from '@/datetime.js'
-  import { session, useStore } from '@frontierjs/sierra/resource'
+  import { session, useTether } from '@frontierjs/sierra/resource'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 
@@ -51,7 +51,7 @@ title: People
     { name: 'actions',   label: '' },
   ]
 
-  const { get: rows, unsubscribe } = useStore(employees.store)
+  const { get: rows, unsubscribe } = useTether(employees.tether)
   $.onDestroy(unsubscribe)
 
   $: (session.level, prefs.dense, prefs.currency)

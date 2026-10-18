@@ -28,6 +28,9 @@ import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
 import { grantsFor }              from '../src/core/capabilities.ts'
 import { env as appEnv }          from '../src/core/env.ts'
+import { cloudflareFor, previewStatuses } from '../src/core/site-preview.ts'
+import { registerAccount }        from '../src/providers/compute/accounts.ts'
+import { startCfSink, SINK_ACCOUNT } from '../src/providers/edge/cloudflare-sink.ts'
 
 let env: any, editor: any, admin: any, stranger: any, site: any, tmp: string, remote: string
 const uniq = () => Math.random().toString(36).slice(2, 8)
@@ -87,7 +90,8 @@ beforeAll(async () => {
   stranger = session({ userId: s.id })
 })
 
-afterAll(() => rmSync(tmp, { recursive: true, force: true }))
+const sink = startCfSink(0)
+afterAll(() => { sink.stop(); rmSync(tmp, { recursive: true, force: true }) })
 
 const drafts = (who: any) => env.as(who).service('drafts')
 const refusal = (p: Promise<unknown>) => p.then(() => null, (e: any) => e)
@@ -138,6 +142,7 @@ describe('drafts', () => {
     expect([devFile.code, devFile.message]).toEqual([400, expect.stringMatching(/developer's/)])
     expect((await save({ values: { tone: 'danger' } })).message).toMatch(/tone decides what the block is/)
     expect((await save({ blob: '0'.repeat(40), body: 'x' })).code).toBe(409)
+    expect((await save({ body: 'We open at nine.\n<script>fetch("/x")</script>\n' })).message).toMatch(/<script>.*developer's/)
     expect(head()).toBe(before)
 
     // Someone else saved since this form was read.
@@ -145,5 +150,61 @@ describe('drafts', () => {
       appId: site.id, draft: 'spring-hours', path: 'content/routes/index.md', blob: form.blob, body: 'Closed Mondays.\n' })
     expect((await save({ body: 'Open Sundays.\n' })).code).toBe(409)
     expect(git(remote, 'show', 'draft/spring-hours:site/content/routes/index.md')).toMatch(/Closed Mondays\.$/)
+  })
+})
+
+// ─── The preview (1.3, FJS-D1251, FJS-D1252) ─────────────────────────────
+// Opening a draft queues its build, run as the app. The machine half is
+// outpost's own suite and the dev drive; here, what basecamp decides before a
+// command leaves: which account uploads, which machine builds, and that every
+// refusal lands on the status in words.
+
+describe('a draft\'s preview', () => {
+  const settled = async (draft: string) => {
+    for (let i = 0; i < 200; i++) {
+      const s = previewStatuses(site.id)[draft]
+      if (s && (s.state === 'failed' || s.state === 'ready')) return s
+      await Bun.sleep(25)
+    }
+    throw new Error(`the preview of ${draft} never settled: ${JSON.stringify(previewStatuses(site.id)[draft])}`)
+  }
+  const opened = async (name: string) => (await drafts(editor).call('open', undefined, { appId: site.id, name })).name
+
+  test('a workspace with no Cloudflare account is refused by name, on the status the list answers', async () => {
+    const draft = await opened('No account')
+    expect((await settled(draft)).error).toMatch(/holds no Cloudflare account/)
+    const listed = await drafts(editor).call('list', undefined, { appId: site.id })
+    expect(listed.drafts.find((d: any) => d.name === draft).preview.state).toBe('failed')
+  })
+
+  test('with the account, the App\'s placement is the builder, and the stub machine is said to have built nothing', async () => {
+    const sys = env.system as any
+    const secret = await sys.secret.create({ data: {
+      workspaceId: site.workspaceId, name: 'cf', kind: 'provider_key', providerKind: 'cloudflare', data: JSON.stringify({ token: 'cfat_devtoken' }) } })
+    await registerAccount(env.app, secret, { address: `http://localhost:${sink.port}/client/v4` })
+    // The only account is the one, and its id is read off a zone it opens.
+    expect(await cloudflareFor(env.app, site.workspaceId)).toEqual({ token: 'cfat_devtoken', accountId: SINK_ACCOUNT })
+
+    const unplaced = await opened('Unplaced')
+    expect((await settled(unplaced)).error).toMatch(/not placed on any server/)
+
+    let box = await sys.server.create({ data: { workspaceId: site.workspaceId, name: `box-${uniq()}`, slug: `box-${uniq()}` } })
+    box = await sys.server.transition(box.id, 'checkIn')
+    await sys.appServer.create({ data: { appId: site.id, serverId: box.id, replicaIndex: 0 } })
+    process.env.BASECAMP_STUB_OUTPOST = '1'
+    try {
+      const stubbed = await opened('Stubbed')
+      const status = await settled(stubbed)
+      expect(status.error).toBe('stub executor — no /site/preview was issued')
+      expect(status.commit).toBe(git(remote, 'rev-parse', 'draft/stubbed'))
+    } finally {
+      delete process.env.BASECAMP_STUB_OUTPOST
+    }
+  })
+
+  test('preview builds again on request, and only for an editor of the site', async () => {
+    expect((await refusal(drafts(admin).call('preview', undefined, { appId: site.id, draft: 'no-account' }))).code).toBe(404)
+    const again = await drafts(editor).call('preview', undefined, { appId: site.id, draft: 'no-account' })
+    expect(again.preview.state).toMatch(/queued|building|failed/)
   })
 })

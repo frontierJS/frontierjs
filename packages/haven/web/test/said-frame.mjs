@@ -66,7 +66,7 @@ for (const [i, { body, dx, dy, me = spawn }] of JSON.parse(process.argv[2]).entr
   const here = { get: () => ({ self: { userId: 1 }, others: [them] }) }
   const by = them.meta.y - view.y - 2
   const before = rowCells(t, by)
-  messages.store.set([{ id: i + 1, memberId: 2, roomId: 1, body }])
+  messages.tether.set([{ id: i + 1, memberId: 2, roomId: 1, body }])
   const m = tui.mount(Bubbles, { renderer: t.renderer, props: { here, x: me.x, y: me.y, view, spawn } })
   await settle(t)
   const after = rowCells(t, by)

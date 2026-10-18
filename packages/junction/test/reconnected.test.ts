@@ -7,7 +7,7 @@
 //
 // There is no sequence number and this deliberately does not add one — see the
 // comment at the `reconnected` emit. A reconnect reloads, which is the same answer
-// this store already gives `changed` and an undecidable record: *some unknown
+// this tether already gives `changed` and an undecidable record: *some unknown
 // rows moved*, and nothing in a browser can know which.
 
 import { describe, it, expect } from 'bun:test'
@@ -77,21 +77,21 @@ describe('a live list reloads across a reconnect', () => {
     let rows: unknown[] = [{ id: 1, n: 1 }]
     const m = mockList(() => rows)
     const c: any = client()
-    const { store, load } = c.resource('items')
+    const { tether, load } = c.resource('items')
     await load({}, {})
-    expect(store.get().map((r: any) => r.id)).toEqual([1])
+    expect(tether.get().map((r: any) => r.id)).toEqual([1])
 
     rows = [{ id: 1, n: 1 }, { id: 2, n: 2 }]
     c._noteConnected({})       // first connection — no reconnected
-    expect(store.get().length).toBe(1)
+    expect(tether.get().length).toBe(1)
 
     c._noteDisconnected()
     c._noteConnected({})       // this one emits reconnected
 
     // Jittered up to 2s, so the assertion waits rather than assuming a tick.
     const deadline = Date.now() + 4000
-    while (Date.now() < deadline && store.get().length < 2) await new Promise(r => setTimeout(r, 25))
-    expect(store.get().map((r: any) => r.id)).toEqual([1, 2])
+    while (Date.now() < deadline && tether.get().length < 2) await new Promise(r => setTimeout(r, 25))
+    expect(tether.get().map((r: any) => r.id)).toEqual([1, 2])
     m.restore()
   })
 

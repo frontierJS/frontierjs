@@ -26,7 +26,7 @@ title: Payroll
   import { payRates } from '@/resources/PayRate.mesa'
   import { prefs } from '@/stores/prefs.js'
   import { day, span } from '@/datetime.js'
-  import { session, useStore } from '@frontierjs/sierra/resource'
+  import { session, useTether } from '@frontierjs/sierra/resource'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 
@@ -59,7 +59,7 @@ title: Payroll
   // rather than vanishing.
   const TONE = { draft: 'muted', calculated: 'info', approved: 'warning', paid: 'success' }
 
-  const { get: rows, unsubscribe } = useStore(payRuns.store)
+  const { get: rows, unsubscribe } = useTether(payRuns.tether)
   $.onDestroy(unsubscribe)
 
   $: (session.level, prefs.dense, prefs.currency)

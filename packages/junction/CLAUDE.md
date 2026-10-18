@@ -280,7 +280,7 @@ src/
     middleware.ts · body.ts · health.ts · static.ts · types.ts
   client/
     index.ts — the browser client: WS first, HTTP fallback, client.auth, resource()
-    nodes.ts — one node per row, keyed by model (FJS-D138)
+    entries.ts — one entry per row, keyed by model (FJS-D138)
   auth/ — types.ts (IAuth, SessionVerifier) · credentials.ts (signedRequest)
   plugins/
     manifest/index.ts · openapi/index.ts · devtools/index.ts · devtools/admin.html

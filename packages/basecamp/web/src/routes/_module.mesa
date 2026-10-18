@@ -3,7 +3,7 @@ siteName: Basecamp
 ---
 <script>
   import { page, goto, isActive } from '@frontierjs/sierra/router'
-  import { status, useStore } from '@frontierjs/sierra/resource'
+  import { status, useTether } from '@frontierjs/sierra/resource'
   import { session, signOut, switchWorkspace } from '../session.js'
 
   import Badge          from '@frontierjs/ui/components/display/Badge.mesa'
@@ -40,9 +40,9 @@ siteName: Basecamp
   // is a module singleton fed by the same WebSocket events the screens use, so
   // a server going unreachable reaches the notice bar without this file asking
   // again. load() runs once per workspace, not once per navigation.
-  const { get: srv,  unsubscribe: unsubSrv }  = useStore(servers.store)
-  const { get: dep,  unsubscribe: unsubDep }  = useStore(deployments.store)
-  const { get: jbs,  unsubscribe: unsubJbs }  = useStore(jobs.store)
+  const { get: srv,  unsubscribe: unsubSrv }  = useTether(servers.tether)
+  const { get: dep,  unsubscribe: unsubDep }  = useTether(deployments.tether)
+  const { get: jbs,  unsubscribe: unsubJbs }  = useTether(jobs.tether)
   $.onDestroy(() => { unsubSrv(); unsubDep(); unsubJbs() })
 
   // Failures are swallowed on purpose: the shell is not the screen that owns
@@ -69,7 +69,7 @@ siteName: Basecamp
   // Per PERSON, not per workspace: the rows are scoped by their recipient, so
   // this reloads on sign-in and never on a workspace switch. New rows arrive as
   // pushed frames on the person's own channel; nothing here polls.
-  const { get: inbox, unsubscribe: unsubInbox } = useStore(notifications.store)
+  const { get: inbox, unsubscribe: unsubInbox } = useTether(notifications.tether)
   $.onDestroy(unsubInbox)
 
   function loadBell() {

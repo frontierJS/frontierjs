@@ -98,7 +98,7 @@ const db = await createClient({
     user:  (ctx) => ({ tenantId: ctx.auth?.tenantId }),
   },
 
-  // Audit log enrichment
+  // Audit trail enrichment
   // `ctx` is the client's, so `ctx.auth` is the principal; where the request
   // came from (ip, userAgent, correlationId) is `logContext`'s, not this
   onLog: (entry, ctx) => ({

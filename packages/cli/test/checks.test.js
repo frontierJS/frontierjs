@@ -4779,7 +4779,7 @@ describe('doc-examples-run', () => {
   })
 
   test('a generated snapshot page is not docs', () => {
-    expect(check(pkg('snapshot', { 'docs/surface.snapshot.md': README })).findings).toEqual([])
+    expect(check(pkg('snapshot', { 'docs/app.snapshot.md': README })).findings).toEqual([])
   })
 })
 

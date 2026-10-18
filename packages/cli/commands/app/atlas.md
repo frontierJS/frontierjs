@@ -27,7 +27,7 @@ it once through `describeAppModel`, and prints the model; nothing here re-derive
 a fact those four registers already own, and nothing is committed — a fifth file
 derived from four gated ones would be a second origin.
 
-The entry module comes out of the committed `surface.snapshot.md`'s own header,
+The entry module comes out of the committed `app.snapshot.md`'s own header,
 which names the generator and the flags it ran with — the same line the
 `snapshots` CI phase reruns, from the same directory. So an app that boots from
 its root, or names an `--export`, is read correctly rather than guessed at. A
@@ -60,14 +60,14 @@ if (flag.json) {
 
 // ─── the report ───────────────────────────────────────────────────────────────
 
-const { surface, principal, jobs, notifications } = model
+const { app, principal, jobs, notifications } = model
 
 // There is deliberately NO per-service *what graded it* column. `gateAuth` is a
 // DERIVED around hook that every registered service gets unconditionally, so the
 // column could only ever say the same word — a check that can only pass is not a
 // check. Where the question has an answer that varies is the raw routes, which
 // run below the pipeline entirely, and that is the section it is asked in.
-const rawRoutes = surface.routes.filter(r => r.kind === 'raw')
+const rawRoutes = app.routes.filter(r => r.kind === 'raw')
 
 const rule = (label) => {
   echo('')
@@ -98,7 +98,7 @@ echo(`  read off ${entry.args.join(' ')} under ${entry.dir}`)
 // ── reached by a caller ──
 rule('Reached by a caller')
 
-const svcRows = surface.services.map(s => [
+const svcRows = app.services.map(s => [
   s.name,
   s.model ?? '—',
   (s.methods ?? []).join(', ') || '—',
@@ -108,9 +108,9 @@ for (const [name, model_, methods] of svcRows) {
   echo(`  ${name.padEnd(w0)}  ${model_.padEnd(w1)}  ${methods}`)
 }
 echo('')
-log.info(`${surface.services.length} service(s) · ${surface.routes.length} mounted route(s) ` +
-         `(${rawRoutes.length} raw, ${surface.routes.length - rawRoutes.length} auto-mounted) · ` +
-         `${surface.plugins.length} plugin(s)`)
+log.info(`${app.services.length} service(s) · ${app.routes.length} mounted route(s) ` +
+         `(${rawRoutes.length} raw, ${app.routes.length - rawRoutes.length} auto-mounted) · ` +
+         `${app.plugins.length} plugin(s)`)
 
 // ── reached by a clock ──
 rule('Reached by a clock, or by a dispatch with no caller')

@@ -27,7 +27,7 @@ import { WS_PROTOCOL, WS_BEARER, WS_TOKEN_SAFE, CREDENTIAL_HEADER, CREDENTIAL_CH
 // it is precisely how the two ends drifted before. `orderBy` is the same story
 // one field along: the client places a pushed row in a list it cannot re-query,
 // so it must read the caller's `-createdAt` the way the server compiles it.
-import { NodeRegistry, nodeKey, type NodeView } from './nodes.ts'
+import { EntryRegistry, entryKey, type EntryView } from './entries.ts'
 import { encodeQueryString } from '@frontierjs/toolbelt/query'
 import { directiveParams as toDirectiveParams } from '@frontierjs/toolbelt/directives'
 import { isListResult, isServiceResult, wrapResult, ResultShapeError, type ListResult, type ServiceResult } from '../core/envelope.ts'
@@ -159,13 +159,13 @@ export interface JunctionClientOptions {
   // meaning "nobody is signed in". Anything deciding whether to ask the server
   // who the caller is has to read this instead — see `hasCredential`.
   cookieAuth?: boolean
-  // How long a row's node lingers after the last view lets go of it, ms.
+  // How long a row's entry lingers after the last view lets go of it, ms.
   // Default 30_000; `0` drops it the moment nothing holds it.
   //
   // A TTL rather than a reference count the application maintains: Apollo and
   // Relay both ship retain/release and it is the most-complained-about part of
   // either. It is also what makes list -> detail -> back warm (`FJS-D138`).
-  nodeTtlMs?: number
+  entryTtlMs?: number
   // Hand every service call to whoever holds the connection instead of
   // opening one — for a context that cannot keep a socket, like an extension
   // page whose connection lives in its service worker. The holder makes each
@@ -1410,13 +1410,13 @@ export class JunctionClient extends EventEmitter {
   private _presenceApi: PresenceClient | null = null
 
   /**
-   * One node per row, keyed by model — the synced truth every view points at.
+   * One entry per row, keyed by model — the synced truth every view points at.
    *
    * Public because it is the answer to *is this the same row*: two resources
    * over one model share these, a record view is a subscription to one, and
    * the devtools panel counts them. Views write through it; nothing else does.
    */
-  readonly nodes: NodeRegistry
+  readonly entries: EntryRegistry
 
   private _ws: WebSocket | null = null
   _wsReady: boolean = false
@@ -1437,7 +1437,7 @@ export class JunctionClient extends EventEmitter {
     // Normalize to http(s):// so HTTP requests always work.
     // Callers may pass ws:// or wss:// — convert those too.
     this._url = raw.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://')
-    this.nodes = new NodeRegistry({ ttlMs: opts.nodeTtlMs })
+    this.entries = new EntryRegistry({ ttlMs: opts.entryTtlMs })
     this._timeout = opts.timeout ?? 30_000
     this._reconnectDelay = opts.reconnectDelay ?? 1_000
     this._reconnectMax = opts.reconnectMax ?? 30_000
@@ -1613,20 +1613,20 @@ export class JunctionClient extends EventEmitter {
   }
 
   // ── Resource ─────────────────────────────────────────────────────────
-  // Convenience wrapper that returns a service proxy, a reactive Store,
-  // and a load() function together. The store wires up to real-time WS
+  // Convenience wrapper that returns a service proxy, a reactive Tether,
+  // and a load() function together. The tether wires up to real-time WS
   // events automatically — created → upsert, patched → upsert, removed → remove.
   //
-  // The store is scoped to the query its last load() ran with: given a `match`
+  // The tether is scoped to the query its last load() ran with: given a `match`
   // (see ResourceOptions) a record outside that query is not added, and one that
   // has just left it is removed. Without a match every event applies, which is
   // the old behavior and still what a caller passing nothing gets.
   //
   // Usage:
-  //   const { service, store, load } = client.resource('leads')
+  //   const { service, tether, load } = client.resource('leads')
   //   await load()                          // populate from server
-  //   store.subscribe(leads => render(leads))
-  //   await service.create({ name: 'Acme' }) // store updates via WS
+  //   tether.subscribe(leads => render(leads))
+  //   await service.create({ name: 'Acme' }) // tether updates via WS
 
   resource<K extends KnownService>(
     name: K,
@@ -1644,29 +1644,29 @@ export class JunctionClient extends EventEmitter {
     opts: ResourceOptions<T> = {}
   ): ResourceResult<T> {
     const svc = this.service<T>(name)
-    const store = new Store<T>()
+    const tether = new Tether<T>()
 
     // Which rows these are. Two services over one model are one row, so the
-    // model is what the nodes are keyed by — the service name only when the
+    // model is what the entries are keyed by — the service name only when the
     // caller did not say, which is junction used on its own (`FJS-D138`).
     const model    = opts.model ?? name
-    const registry = this.nodes
+    const registry = this.entries
     // `idField: null` says these rows have no identity, which is a PROJECTION —
-    // a `view` declares columns and no key, so there is nothing to key a node
-    // by. An unbound store holds the list as it arrives, which is the whole of
+    // a `view` declares columns and no key, so there is nothing to key an entry
+    // by. An unbound tether holds the list as it arrives, which is the whole of
     // what such a resource can offer: no per-row push, no dedupe, no placement.
     //
-    // Declared rather than sniffed. Bound, the store drops every row that
+    // Declared rather than sniffed. Bound, the tether drops every row that
     // carries no id — correctly, because a `select` that omitted the key is a
     // row it cannot place — so a projection went in as three rows and came out
     // as none, with `load()` answering 3 (`FJS-998`).
-    if (idField !== null) store.bind({ registry, model, idField })
+    if (idField !== null) tether.bind({ registry, model, idField })
 
-    // Open the socket. Everything below wires push events into the store, and
+    // Open the socket. Everything below wires push events into the tether, and
     // none of it fires unless the socket exists — resource() promised "the
-    // store wires up to real-time WS events automatically" while leaving
+    // tether wires up to real-time WS events automatically" while leaving
     // connect() to the caller, and the usage example above never calls it. The
-    // result was a store that populated once via load() and then went stale
+    // result was a tether that populated once via load() and then went stale
     // in silence, with no error to notice.
     //
     // connect() is idempotent (returns early if the socket is open or opening),
@@ -1685,7 +1685,7 @@ export class JunctionClient extends EventEmitter {
     // thing here as anywhere.
     const key = idField ?? ''
 
-    // Wire WS push events → store mutations.
+    // Wire WS push events → tether mutations.
     // A push carries the record (events are about one row), but normalize
     // anyway so a server that sends an envelope still works. The old version
     // took `.data` off ANY object that had it — including a record with a
@@ -1695,8 +1695,8 @@ export class JunctionClient extends EventEmitter {
         ? raw.data as T
         : raw as T
 
-    // ── The query the store means ──────────────────────────────────────────
-    // A push is an announcement about a ROW; the store is the answer to a
+    // ── The query the tether means ──────────────────────────────────────────
+    // A push is an announcement about a ROW; the tether is the answer to a
     // QUERY. Applying every event to it unconditionally is what put a draft in
     // a list loaded `{ status: 'active' }`, and — worse, because it looks like
     // an update — left a row that had just been patched OUT of the filter
@@ -1707,15 +1707,15 @@ export class JunctionClient extends EventEmitter {
     // filter names a relation — and the only honest response to that is to ask
     // the server the same question again.
     //
-    // Set with the rows rather than when the load is issued, so the store's
+    // Set with the rows rather than when the load is issued, so the tether's
     // contents and the query they answer move together: a superseded load must
     // not leave its query behind any more than it leaves its rows.
     let lastQuery: Record<string, unknown> | null = null
     let lastParams: QueryDirectives = {}
-    // A REFETCH asks the query the store is moving to, which is the newest one
+    // A REFETCH asks the query the tether is moving to, which is the newest one
     // issued rather than the newest one answered. Re-asking the answered query
     // while a newer load was in flight made the superseded question the newest
-    // load, so it won the store (`FJS-1419`).
+    // load, so it won the tether (`FJS-1419`).
     let issuedQuery: Record<string, unknown> | null = null
     let issuedParams: QueryDirectives = {}
 
@@ -1734,7 +1734,7 @@ export class JunctionClient extends EventEmitter {
     // It re-asks the WINDOW, not the load's first page (`FJS-2612`): a list
     // `more()` had grown to 1,154 rows held 100 after one undecidable push. Only
     // a change of filter or order resets a window (`FJS-D145`), and a refetch is
-    // neither. The extent is carried only while the store answers the issued
+    // neither. The extent is carried only while the tether answers the issued
     // question — a newer load in flight has a window of one page.
     let refetchQueued = false
     let disposed = false
@@ -1747,7 +1747,7 @@ export class JunctionClient extends EventEmitter {
       setTimeout(() => {
         refetchQueued = false
         if (disposed) return
-        const extent = issuedQuery === lastQuery && issuedParams === lastParams ? store.get().length : 0
+        const extent = issuedQuery === lastQuery && issuedParams === lastParams ? tether.get().length : 0
         void answer(issuedQuery ?? {}, issuedParams, extent).catch(() => {})
       }, delayMs)
     }
@@ -1755,7 +1755,7 @@ export class JunctionClient extends EventEmitter {
     // ── A reconnect reloads, and it is JITTERED ────────────────────────────
     // The server queues nothing for an absent socket, so a list that was live
     // across a drop is missing whatever happened in the window and has no way
-    // to learn what (`FJS-701`). `refetch` is the same answer this store
+    // to learn what (`FJS-701`). `refetch` is the same answer this tether
     // already gives `changed` and an undecidable record — *some unknown rows
     // moved* — and it is the only sound one, since nothing here knows what it
     // did not receive.
@@ -1801,7 +1801,7 @@ export class JunctionClient extends EventEmitter {
       comparatorFor(lastParams.orderBy as Parameters<typeof comparatorFor>[0]) as ((a: T, b: T) => number) | null
 
     // `total` is the query's row count as of the last load, kept in step with
-    // the store so `hasMore()` keeps meaning what it meant then. Two of the
+    // the tether so `hasMore()` keeps meaning what it meant then. Two of the
     // adjustments are exact — a row that left the query, a row that entered it
     // — and one is not: a row arriving into page 1 may be new to the query or
     // may have moved up from page 2, and nothing here can tell. It counts as
@@ -1811,7 +1811,7 @@ export class JunctionClient extends EventEmitter {
     // The keyset path runs no COUNT, so `total` is null there and the server's
     // own answer is the only one — it fetched one row past the window and knows.
     const hasMore = (): boolean =>
-      total === null ? more : total > offset + store.get().length
+      total === null ? more : total > offset + tether.get().length
 
     // A window that holds the query's last row has no page 2 for an overflow
     // row to move to (`FJS-2617`). Trimming one there lost it for good, and
@@ -1819,7 +1819,7 @@ export class JunctionClient extends EventEmitter {
     // load-everything loop then spun on resolved promises. An ordered window
     // there grows by the row instead; an unordered one keeps `FJS-D466`'s bound.
     const holdsEnd = (): boolean =>
-      total !== null ? total <= offset + store.get().length : ended
+      total !== null ? total <= offset + tether.get().length : ended
 
     const insert = (record: T): void => {
       const atEnd = holdsEnd()
@@ -1846,22 +1846,22 @@ export class JunctionClient extends EventEmitter {
         // one still applies at any page size; and a page that is not yet full
         // still appends, so the row the caller just created shows on the
         // ordinary short list.
-        if (limit !== null && store.get().length >= limit) { stale.bump(); return }
-        store.upsert(record, key)
+        if (limit !== null && tether.get().length >= limit) { stale.bump(); return }
+        tether.upsert(record, key)
         return
       }
 
       // Sorted insertion, and the overflow row genuinely moved to the next
       // page — page 1 of an ordered list IS its first `limit` rows.
       if (limit !== null && atEnd) limit++
-      store.place(record, key, cmp, limit ?? undefined)
+      tether.place(record, key, cmp, limit ?? undefined)
     }
 
     const drop = (record: T | null, id: unknown): void => {
-      const had = store.get().length
-      store.remove(id, key)
+      const had = tether.get().length
+      tether.remove(id, key)
 
-      if (store.get().length === had) {
+      if (tether.get().length === had) {
         // Not one of this page's rows. Page 1's contents do not depend on a row
         // further down the query, but a later page's window does — every row
         // behind it shifts by one.
@@ -1881,7 +1881,7 @@ export class JunctionClient extends EventEmitter {
     const apply = (raw: unknown): void => {
       const record = unwrap(raw)
 
-      // The node first, and the list afterwards. A row this list has never
+      // The entry first, and the list afterwards. A row this list has never
       // held is still a row somebody else is looking at — a detail screen, a
       // second list with a different filter — and the announcement is the only
       // thing that will ever tell them. Doing this inside the membership
@@ -1897,13 +1897,13 @@ export class JunctionClient extends EventEmitter {
       }
       if (answer !== true) { refetch(); return }
 
-      const present = store.get().some((r) => r[key] === record?.[key])
+      const present = tether.get().some((r) => r[key] === record?.[key])
       // A row already on this page is this page's row whatever the paging says;
       // reposition it, since the patch may have moved its sort key.
       if (present) {
         const cmp = orderOf()
-        if (cmp) store.place(record, key, cmp)
-        else store.upsert(record, key)
+        if (cmp) tether.place(record, key, cmp)
+        else tether.upsert(record, key)
         return
       }
       insert(record)
@@ -1938,28 +1938,28 @@ export class JunctionClient extends EventEmitter {
     offs.push(svc.on('*', (method: unknown, raw: unknown) => {
       if (method === 'created' || method === 'patched' || method === 'removed') return
       // Handled above, and it carries a count rather than a record — applying
-      // it would upsert the count object into the store as a row.
+      // it would upsert the count object into the tether as a row.
       if (method === 'changed') return
       apply(raw)
     }))
 
-    // load() keeps returning rows — the store holds records, not envelopes,
+    // load() keeps returning rows — the tether holds records, not envelopes,
     // and a view subscribing to it wants something it can map over.
     // Pagination metadata is reachable via service.find() when a caller needs it.
     //
     // A load is stamped when it is ISSUED, and only the newest stamp may write
-    // the store. Without that, two overlapping loads landed in arrival order: a
+    // the tether. Without that, two overlapping loads landed in arrival order: a
     // search box typed `ac` then `acme` showed the results for `ac` whenever the
     // first request was the slower one, and stayed wrong until the next
     // keystroke, with nothing thrown and nothing logged (`FJS-082`).
     //
     // The superseded request is not cancelled — its caller awaited those rows
-    // and still receives them. Only the SHARED store has an ordering problem.
+    // and still receives them. Only the SHARED tether has an ordering problem.
     let issued = 0
     // `extent` is how many rows the answer must reach before it replaces the
-    // store. It is walked by cursor rather than asked as one `$limit`, because
+    // tether. It is walked by cursor rather than asked as one `$limit`, because
     // the server clamps a limit to its `paginate.max` and a window past it
-    // would come back one page long. The store is set once, at the end, so a
+    // would come back one page long. The tether is set once, at the end, so a
     // screen never reads the first page of a window it is re-asking.
     const answer = async (
       query: Record<string, unknown>,
@@ -1992,7 +1992,7 @@ export class JunctionClient extends EventEmitter {
         endCursor = typeof res.endCursor === 'string' ? res.endCursor : null
         more      = res.hasMore === true
         ended     = res.hasMore === false
-        store.set(rows)
+        tether.set(rows)
         // This answer is current by definition; whatever the list could not
         // account for before it has just been accounted for.
         stale.reset()
@@ -2020,7 +2020,7 @@ export class JunctionClient extends EventEmitter {
       const now = Date.now()
       let soonest = Infinity
       const lapsed: T[] = []
-      for (const row of store.get()) {
+      for (const row of tether.get()) {
         const at = until(row, lastParams)
         if (at == null) continue
         if (at <= now) lapsed.push(row)
@@ -2039,32 +2039,32 @@ export class JunctionClient extends EventEmitter {
         tick = setTimeout(regrade, Math.min(soonest - now, 2 ** 31 - 1))
       }
     }
-    if (opts.until) store.subscribe(regrade)
+    if (opts.until) tether.subscribe(regrade)
 
     // ── One row, live ──────────────────────────────────────────────────────
-    // A view of ONE, over the same nodes the list is a view of. It is sugar
+    // A view of ONE, over the same entries the list is a view of. It is sugar
     // rather than a second mechanism, which is the shape Meteor's cursors,
     // Convex and Zero all arrived at — and it is what makes a detail screen
     // live at all (`FJS-518`).
     //
-    // The fetch happens when the node is cold and only then, so a caller
+    // The fetch happens when the entry is cold and only then, so a caller
     // coming from a list it has already loaded pays nothing. `ready` is the
     // first read for anyone who has to wait for it — a form reading the
     // `@version` it is about to send back, above all.
     const record = (id: unknown, ropts: RecordOptions<T> = {}): RecordResult<T> => {
-      const node = registry.node<T>(model, id)
+      const entry = registry.entry<T>(model, id)
 
       // What `load` answers is the row PLUS what hangs off it — an `include:`,
-      // a `withWidgets()`, a count assembled per call. The node holds ONE shape
-      // and a push carries the row alone, so the node cannot be the value here:
+      // a `withWidgets()`, a count assembled per call. The entry holds ONE shape
+      // and a push carries the row alone, so the entry cannot be the value here:
       // adopting a push would drop the children silently, which is what four of
       // basecamp's five composed reads did when this was first adopted
-      // (`FJS-533`). In composed mode the node is the TRIGGER — it says the row
+      // (`FJS-533`). In composed mode the entry is the TRIGGER — it says the row
       // moved — and the answer is read again.
       const composed = ropts.composed === true
 
-      // *Gone* is this view's own state and never the node's. Clearing the
-      // shared node would shorten every list holding the row before that list
+      // *Gone* is this view's own state and never the entry's. Clearing the
+      // shared entry would shorten every list holding the row before that list
       // ran its own removal accounting — and two resources over one service
       // share a proxy, so the handlers run in registration order and whichever
       // is second reads a list the first has already changed. A list owns its
@@ -2081,7 +2081,7 @@ export class JunctionClient extends EventEmitter {
       let running: Promise<T | null> | null = null
       let dirty = false
 
-      const value = (): T | null => (gone ? null : composed ? own : node.get())
+      const value = (): T | null => (gone ? null : composed ? own : entry.get())
 
       // WHY there is no row, beside the row (`FJS-D695`). `null` from `get()` is
       // one answer for a 403 and a 404, and a screen that cannot tell them apart
@@ -2122,7 +2122,7 @@ export class JunctionClient extends EventEmitter {
             } while (dirty)
           } catch (e) {
             // A refused or missing row is not a crash: this answers whatever it
-            // last knew, exactly as the node-backed path does, and says why.
+            // last knew, exactly as the entry-backed path does, and says why.
             fail(e)
             refusedAsGone(e, own != null)
           } finally {
@@ -2134,7 +2134,7 @@ export class JunctionClient extends EventEmitter {
         return running
       }
 
-      const offNode = node.watch((v) => {
+      const offEntry = entry.watch((v) => {
         if (gone) return
         // The row moved. In composed mode the pushed row is the row and not the
         // shape this screen is showing, so it is a signal to read again; a
@@ -2143,10 +2143,10 @@ export class JunctionClient extends EventEmitter {
         emit(v)
       })
       const offGone = svc.on('removed', (raw: unknown) => {
-        // The same key the node is filed under: this view may have been asked
+        // The same key the entry is filed under: this view may have been asked
         // for by a URL, where the id is a string, about a row whose id is a
         // number.
-        if (nodeKey(unwrap(raw)?.[key]) !== nodeKey(id)) return
+        if (entryKey(unwrap(raw)?.[key]) !== entryKey(id)) return
         gone = true
         failure = { status: 404, code: 'NotFound' }
         emit(null)
@@ -2185,7 +2185,7 @@ export class JunctionClient extends EventEmitter {
           // with `error()` saying why. Subscribers hear it too, since a push
           // cannot.
           fail(e)
-          refusedAsGone(e, node.get() != null)
+          refusedAsGone(e, entry.get() != null)
           if (!wasGone) emit(value())
           return null
         }
@@ -2193,9 +2193,9 @@ export class JunctionClient extends EventEmitter {
 
       return {
         id,
-        // A composed read always runs: a node another view filled holds the row
+        // A composed read always runs: an entry another view filled holds the row
         // alone, which is not what this view answers.
-        ready:     !composed && node.get() != null ? Promise.resolve(node.get()) : fetch(),
+        ready:     !composed && entry.get() != null ? Promise.resolve(entry.get()) : fetch(),
         get:       value,
         error:     () => failure,
         subscribe: (fn) => {
@@ -2206,7 +2206,7 @@ export class JunctionClient extends EventEmitter {
         refresh:   fetch,
         // `watch` is itself the hold, so letting it go is what starts the TTL.
         release:   () => {
-          offNode(); offGone(); offChanged(); offReconnected()
+          offEntry(); offGone(); offChanged(); offReconnected()
           if (reread) clearTimeout(reread)
           reread = null
           subs.clear()
@@ -2215,7 +2215,7 @@ export class JunctionClient extends EventEmitter {
     }
 
     // ── A write that shows before it lands ─────────────────────────────────
-    // The overlay sits on the row's node, so every view of that row moves at
+    // The overlay sits on the row's entry, so every view of that row moves at
     // once — a list, a detail screen, a second list with a different filter —
     // and an intent that changes a sort key re-places the row in an ordered
     // list with nothing taught about it.
@@ -2234,7 +2234,7 @@ export class JunctionClient extends EventEmitter {
       intent: Partial<T> | null,
       run: () => Promise<T | null>
     ): Promise<T | null> => {
-      const handle = registry.node<T>(model, id).overlay(intent)
+      const handle = registry.entry<T>(model, id).overlay(intent)
       try {
         const row = await run()
         handle.settle(row ?? null)
@@ -2282,7 +2282,7 @@ export class JunctionClient extends EventEmitter {
       // guards page 1 does not now cut off what was just fetched.
       if (rows.length) {
         if (limit !== null) limit += rows.length
-        store.set([...store.get(), ...rows])
+        tether.set([...tether.get(), ...rows])
       }
       return rows
     }
@@ -2293,7 +2293,7 @@ export class JunctionClient extends EventEmitter {
       if (tick !== null) { clearTimeout(tick); tick = null }
     }
 
-    return { service: svc, store, load, stale, record, mutate, more: more_, hasMore, total: () => total, dispose }
+    return { service: svc, tether, load, stale, record, mutate, more: more_, hasMore, total: () => total, dispose }
   }
 
   // ── HTTP request ─────────────────────────────────────────────────────
@@ -2866,48 +2866,48 @@ function buildQueryString(
   return encodeQueryString(merged)
 }
 
-// ─── Store<T> ─────────────────────────────────────────────────────────────
-// A minimal observable array store. Holds the current list of records and
+// ─── Tether<T> ────────────────────────────────────────────────────────────
+// The rows one query answers, kept in sync by pushes. Holds the current list and
 // notifies subscribers on every change.
 //
 // Compatible with any reactive system:
-//   Svelte:  leadsStore.subscribe(v => leads = v)  /  useStore(leadsStore)
-//   Plain:   leadsStore.subscribe(list => render(list))
+//   Svelte:  leadsTether.subscribe(v => leads = v)  /  useTether(leadsTether)
+//   Plain:   leadsTether.subscribe(list => render(list))
 
-export interface StoreBinding {
-  registry: NodeRegistry
+export interface TetherBinding {
+  registry: EntryRegistry
   model:    string
   idField:  string
 }
 
 /**
- * An ordered list, and — once bound — a VIEW over nodes rather than a copy of
+ * An ordered list, and — once bound — a VIEW over entries rather than a copy of
  * rows (`FJS-D138`).
  *
  * Bound, the list holds ids and the values come from the registry, so a row
  * this list has never heard about being patched somewhere else still reaches
  * it, and two views of one row cannot disagree. `get()` still answers
  * materialized rows, which is why no screen changed when this landed:
- * `useStore` is the one bridge from here to a Mesa signal.
+ * `useTether` is the one bridge from here to a Mesa signal.
  *
  * UNBOUND it is what it always was — rows, held here, no registry — and that
- * is not a compatibility shim: a `Store` is constructible on its own and the
+ * is not a compatibility shim: a `Tether` is constructible on its own and the
  * standalone behavior is what the membership and placement rules were written
  * and tested against.
  */
-export class Store<T extends Record<string, unknown> = Record<string, unknown>> {
+export class Tether<T extends Record<string, unknown> = Record<string, unknown>> {
   private _rows: T[]
   private _ids:  unknown[] = []
-  private _bind: StoreBinding | null = null
+  private _bind: TetherBinding | null = null
   private _subs: Set<(data: T[]) => void> = new Set()
 
-  // Held so a node written by ANOTHER view refreshes this list. Released as
-  // soon as an id leaves, which is what lets the node's TTL start running.
+  // Held so an entry written by ANOTHER view refreshes this list. Released as
+  // soon as an id leaves, which is what lets the entry's TTL start running.
   private _watches: Map<unknown, () => void> = new Map()
   // Materialized rows, rebuilt on demand. Cached so repeated get() calls answer
   // the same array — a Mesa signal compares what it is handed.
   private _cache: T[] | null = null
-  // A node write during _replace would otherwise re-enter notify while the list
+  // An entry write during _replace would otherwise re-enter notify while the list
   // is still being assembled.
   private _syncing = false
 
@@ -2919,7 +2919,7 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
    * Point this list at a registry. Everything it already holds is written
    * through, so binding after a load is not a data loss.
    */
-  bind(binding: StoreBinding): void {
+  bind(binding: TetherBinding): void {
     if (this._bind) return
     this._bind = binding
     const rows = this._rows
@@ -2959,7 +2959,7 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
    * so an id-less payload used to be appended as a phantom row — a heartbeat
    * answering `{ ok, server_id, status }` put junk in every subscriber's list
    * and nothing said so (`FJS-020`). The server now announces the row instead,
-   * but this is the last line before a store: a payload from `channel.send()`
+   * but this is the last line before a tether: a payload from `channel.send()`
    * never passed through that check at all.
    */
   upsert(record: T, idField = 'id'): void {
@@ -3004,7 +3004,7 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
   // ── The one write ──────────────────────────────────────────────────────────
   // Every mutator above works on a materialized array and hands the result
   // here, so the membership and placement rules are the same lines they were
-  // before nodes existed and only the ends changed.
+  // before entries existed and only the ends changed.
   private _replace(rows: T[], notify = true): void {
     if (!this._bind) {
       this._rows = rows
@@ -3032,12 +3032,12 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
         if (keep.has(row[idField])) continue
         // Only rows that came from OUTSIDE become truth. Every mutator here
         // works on a materialized array, so most of what arrives is this
-        // store's own view of a node — and once a node carries an unconfirmed
+        // tether's own view of an entry — and once an entry carries an unconfirmed
         // mutation, writing that view back would commit the optimistic value as
-        // if the server had sent it. Reference is the test: a node answers the
+        // if the server had sent it. Reference is the test: an entry answers the
         // same folded object until something changes it.
-        const node = registry.node(model, row[idField])
-        if (node.get() !== row) node._write(row)
+        const entry = registry.entry(model, row[idField])
+        if (entry.get() !== row) entry._write(row)
         ids.push(row[idField])
         keep.add(row[idField])
       }
@@ -3048,7 +3048,7 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
       }
       for (const id of keep) {
         if (this._watches.has(id)) continue
-        this._watches.set(id, registry.node(model, id).watch(() => this._nodeMoved()))
+        this._watches.set(id, registry.entry(model, id).watch(() => this._entryMoved()))
       }
       this._ids  = ids
       this._cache = null
@@ -3058,7 +3058,7 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
     if (notify) this._notify()
   }
 
-  private _nodeMoved(): void {
+  private _entryMoved(): void {
     this._cache = null
     if (this._syncing) return
     this._notify()
@@ -3072,7 +3072,7 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
 
 /**
  * Said once per model, and only for the shape that is a wiring mistake rather
- * than a partial read: a bound store handed a set where NOT ONE row carries the
+ * than a partial read: a bound tether handed a set where NOT ONE row carries the
  * key. It renders as an empty screen while `load()` answers a count, which is
  * the failure mode with no error attached to it (`FJS-998`).
  */
@@ -3082,7 +3082,7 @@ function _warnKeyless(model: string, idField: string, count: number): void {
   _keylessWarned.add(model)
   console.warn(
     `[junction] resource '${model}' received ${count} row(s) and none carries '${idField}', ` +
-    `so the store kept none of them. A projection (a \`view\`) declares no key — ` +
+    `so the tether kept none of them. A projection (a \`view\`) declares no key — ` +
     `pass idField: null to hold it as a plain list.`)
 }
 
@@ -3106,11 +3106,11 @@ function _warnNoId(idField: string): void {
 // that is quietly wrong past the fold, which is the failure the whole live path
 // exists to avoid, so the count is surfaced instead and a view renders it:
 //
-//   const { store, stale, load } = client.resource('orders')
+//   const { tether, stale, load } = client.resource('orders')
 //   stale.subscribe(n => { banner.hidden = n === 0; banner.textContent = `${n} new — refresh` })
 //   refresh.onclick = () => load(query, params)   // clears it
 //
-// Same `{ get, subscribe }` shape as Store, so anything that bridges one to a
+// Same `{ get, subscribe }` shape as Tether, so anything that bridges one to a
 // UI signal bridges this one unchanged.
 
 export class Stale {
@@ -3146,7 +3146,7 @@ export interface ResourceOptions<T extends Record<string, unknown> = Record<stri
    * Does this pushed record belong in what the last `load()` asked for?
    *
    * `true` → upsert, `false` → take it out of the list, `null` → cannot be
-   * decided from the record alone, so the store reloads instead of guessing.
+   * decided from the record alone, so the tether reloads instead of guessing.
    * Without one every event is applied, which is the pre-`FJS-011` behavior.
    *
    * Sierra supplies `matchesQuery(fields, …)` from the model's own schema; this
@@ -3159,7 +3159,7 @@ export interface ResourceOptions<T extends Record<string, unknown> = Record<stri
   ) => boolean | null
 
   /**
-   * Which MODEL these rows are, so two services over one model share nodes.
+   * Which MODEL these rows are, so two services over one model share entries.
    *
    * Junction holds no schema, so it cannot derive this — the same reason
    * `match` is passed in. Absent, the service name is used, which keeps a
@@ -3170,7 +3170,7 @@ export interface ResourceOptions<T extends Record<string, unknown> = Record<stri
 
   /**
    * When does this record leave the query by the clock alone — epoch ms, or
-   * `null` for never? The store drops it then, since no frame will (`FJS-1274`).
+   * `null` for never? The tether drops it then, since no frame will (`FJS-1274`).
    *
    * Sierra supplies `leavesAt(x-effective, …)` from the model's own schema, for
    * `match`'s reason: this package holds no schema.
@@ -3179,11 +3179,11 @@ export interface ResourceOptions<T extends Record<string, unknown> = Record<stri
 }
 
 export interface ResourceResult<T extends Record<string, unknown> = Record<string, unknown>> {
-  /** ServiceProxy for CRUD calls — the same row the store holds */
+  /** ServiceProxy for CRUD calls — the same row the tether holds */
   service: ServiceProxy<T>
-  /** Reactive store — auto-synced via real-time WS events */
-  store: Store<T>
-  /** Fetch current list from the server and populate the store */
+  /** Reactive tether — auto-synced via real-time WS events */
+  tether: Tether<T>
+  /** Fetch current list from the server and populate the tether */
   load: (query?: Record<string, unknown>, params?: QueryDirectives) => Promise<T[]>
   /**
    * Changes the list could not account for on its own — a row that may belong
@@ -3196,7 +3196,7 @@ export interface ResourceResult<T extends Record<string, unknown> = Record<strin
    *
    * `service.get(id)` answers a plain object no announcement can reach, which
    * is why every detail screen in this repo went stale the moment somebody
-   * else wrote the row (`FJS-518`). This subscribes to the row's node instead,
+   * else wrote the row (`FJS-518`). This subscribes to the row's entry instead,
    * fetching it if nothing has read it yet, so a push moves the screen.
    *
    *   const row = orders.record(id)
@@ -3204,7 +3204,7 @@ export interface ResourceResult<T extends Record<string, unknown> = Record<strin
    *   await row.ready          // the first read, if you need to wait for it
    *
    * `service.get(id)` stays raw and stays dead, exactly as `service.find()`
-   * stays raw and does not touch the store.
+   * stays raw and does not touch the tether.
    */
   record: (id: unknown, opts?: RecordOptions<T>) => RecordResult<T>
   /**
@@ -3236,12 +3236,12 @@ export interface ResourceResult<T extends Record<string, unknown> = Record<strin
   /**
    * Stop listening. A resource made for one view — a list over its own filter —
    * is let go of with the view, or its handlers stay on the client for the life
-   * of the tab. The store keeps what it holds and stops moving.
+   * of the tab. The tether keeps what it holds and stops moving.
    */
   dispose: () => void
   /**
    * How many rows the query matches, as of the last `load()` and kept in step
-   * with the store. Null before any answer, and when the service reported none.
+   * with the tether. Null before any answer, and when the service reported none.
    */
   total: () => number | null
 }
@@ -3253,20 +3253,20 @@ export interface RecordOptions<T extends Record<string, unknown> = Record<string
    * Sierra passes its own `_call('get', id)` so the resource's hooks, its
    * coercion and the `@version` it must hand back on the next patch all come
    * from the same place a `load()` gets them. Junction keeps the rule about
-   * WHEN to read — a row a list already put in the node is not read again.
+   * WHEN to read — a row a list already put in the entry is not read again.
    */
   load?: () => Promise<T | null>
 
   /**
    * What `load` answers is the row plus what hangs off it, not the row.
    *
-   * A store node holds ONE shape and a push carries the row alone, so a view
-   * that adopted the node would drop an `include:`, a `withWidgets()` or a
+   * An entry holds ONE shape and a push carries the row alone, so a view
+   * that adopted the entry would drop an `include:`, a `withWidgets()` or a
    * per-call count at the first announcement, silently (`FJS-533`). Declaring
-   * it makes the node the TRIGGER instead: the row moved, so the composed
+   * it makes the entry the TRIGGER instead: the row moved, so the composed
    * answer is read again, coalesced per burst.
    *
-   * The composed row is deliberately NOT written to the node — every list over
+   * The composed row is deliberately NOT written to the entry — every list over
    * that model is a view of it, and one screen's children are not the shape a
    * list asked for. The cost is a request per announcement, which is what the
    * screens that hand-rolled this were already paying.
@@ -3281,7 +3281,7 @@ export interface RecordError {
 }
 
 export interface RecordResult<T extends Record<string, unknown> = Record<string, unknown>>
-  extends NodeView<T> {
+  extends EntryView<T> {
   /** The id this view is of. */
   id: unknown
   /** The first read — resolves with the row, or `null` if it could not be had. `error()` says why. */
@@ -3294,7 +3294,7 @@ export interface RecordResult<T extends Record<string, unknown> = Record<string,
   error: () => RecordError | null
   /** Ask the server again. */
   refresh: () => Promise<T | null>
-  /** Stop watching. The node lingers for the client's TTL, then goes. */
+  /** Stop watching. The entry lingers for the client's TTL, then goes. */
   release: () => void
 }
 

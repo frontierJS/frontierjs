@@ -18,7 +18,7 @@ echo('')
 // `ssh` line is advice that fails when taken.
 const there = (cmd) => (machineFor($, host, serverPath).local ? cmd : `ssh ${host} "${cmd}"`)
 
-const envFile = $.config.deployConf?.api?.env ?? `${serverPath}/.env.production`
+const { envFile } = apiFiles($.config.deployConf, serverPath)
 echo($.config.envSeeded
   ? `1. Your local .env.production was copied up — the server's copy is the one that counts now:`
   : `1. Populate production env vars on the server (or put them in a local .env.production and set up a fresh box):`)

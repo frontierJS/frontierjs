@@ -468,7 +468,7 @@ export async function getStaticPaths() {        // static builds only
 ```js
 import {
   status, session, signIn, signOut, getClient, whenReady,
-  createResource, createStore, useStore, paletteSource,
+  createResource, createStore, useTether, paletteSource,
 } from '@frontierjs/sierra/resource'
 ```
 
@@ -542,9 +542,9 @@ around:enter → before → [network call] → after → around:exit
                            error
 ```
 
-Returns `{ service, store, stale, make, load, save, fields, relations, gate, can, validate, normalize, coerce, context, hooks }`.
+Returns `{ service, tether, stale, make, load, save, fields, relations, gate, can, validate, normalize, coerce, context, hooks }`.
 
-**A Resource is the model's whole client-side surface** (`FJS-D114`) — the store, the
+**A Resource is the model's whole client-side surface** (`FJS-D114`) — the tether, the
 verbs, the reads it is asked for, and its default form. Three of those are worth naming:
 
 ```js
@@ -598,23 +598,23 @@ const res = await leads.service.find({}, { limit: 20 })
 res.data     // the rows
 res.total    // total matching — for a pager
 
-await leads.load()        // → the rows, and populates leads.store
-leads.store.get()         // → the rows
+await leads.load()        // → the rows, and populates leads.tether
+leads.tether.get()        // → the rows
 ```
 
-**The store is live, and it means the query that filled it.** A pushed row outside
+**The tether is live, and it means the query that filled it.** A pushed row outside
 that query is not added, one a patch moved out of it is removed, and where `orderBy`
 says so the row is placed rather than appended. Two things a browser cannot answer:
 whether a new row belongs on an earlier page, and which row slides up when one leaves
-a full one. Neither is guessed at — they are counted on `stale`, which has a store's
+a full one. Neither is guessed at — they are counted on `stale`, which has a tether's
 shape and is cleared by `load()`:
 
 ```js
-const { get } = useStore(orders.stale)   // 0 = as current as a push can make it
+const { get } = useTether(orders.stale)   // 0 = as current as a push can make it
 // render `${get()} new — refresh`, and call load() again on the click
 ```
 
-Reach for `load()`/`store` when rendering a list, and `service.find()` when you need the
+Reach for `load()`/`tether` when rendering a list, and `service.find()` when you need the
 count alongside it. `ctx.query` is filters (goes over the wire), `ctx.directives` is
 `{ limit, offset, orderBy, select }` (also the wire, and the same word `page.directives`
 uses), and `ctx.locals` is per-call scratch that never leaves the browser — how `before`
@@ -1408,7 +1408,7 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 | `.../router` | navigation, `page`, guards, `RouterView`, `ChainRenderer` |
 | `.../router/internals` | chain resolution — used by `RouterView`, not public |
 | `.../scanner` | `scan`, `scanAndWrite`, `buildTree`, `classify`, frontmatter parsing |
-| `.../resource` | client wiring, `status`, auth, `createResource`, `createStore`, `useStore`, `buildFieldRules`, `buildRelations`, `buildGate`, `canAtLevel`, `validateAgainstFields`, `normalizeBlanks`, `coerceToSchema`, `resolveRef` |
+| `.../resource` | client wiring, `status`, auth, `createResource`, `createStore`, `useTether`, `buildFieldRules`, `buildRelations`, `buildGate`, `canAtLevel`, `validateAgainstFields`, `normalizeBlanks`, `coerceToSchema`, `resolveRef` |
 | `.../field-rules` | the Schema → UI projection alone — `controlFor`, `formFieldList`, `buildFieldRules`, `toFieldErrors`; imports no client |
 | `.../fetch` | `sierraFetch`, `configureFetch` |
 | `.../theme` | `theme`, `setTheme`, `toggleTheme`, `setScheme`, `initTheme` |

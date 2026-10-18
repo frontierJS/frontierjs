@@ -6,7 +6,7 @@
  * event — so a store that applies every announcement it receives keeps rows the
  * query no longer admits, updated in place and quietly wrong.
  *
- * One definition, because there are two live stores and they had one between
+ * One definition, because there are two tethers and they had one between
  * them: sierra's, which asked this, and jetty's, which upserted whatever
  * arrived (`FJS-493`). jetty may not import sierra — the dependency direction
  * forbids it — and a hand copy is what `FJS-059` already paid for once, so the

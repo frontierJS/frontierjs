@@ -34,7 +34,7 @@
    *  driver makes outside a call — so the answer is applied here. */
   async function mark(n, body) {
     const row = await notifications.service.patch(n.id, body)
-    if (row?.id) notifications.store.upsert(row)
+    if (row?.id) notifications.tether.upsert(row)
     return row
   }
   export const markRead   = (n) => mark(n, {})

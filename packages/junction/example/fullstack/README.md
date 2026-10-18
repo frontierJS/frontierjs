@@ -38,8 +38,8 @@ The browser file names the service and nothing else — no field list, no URL, n
 subscription code:
 
 ```js
-const { service, store, load } = client.resource('posts')
-store.subscribe(render)
+const { service, tether, load } = client.resource('posts')
+tether.subscribe(render)
 await load()
 ```
 

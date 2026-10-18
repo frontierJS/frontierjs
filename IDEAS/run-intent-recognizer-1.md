@@ -22,7 +22,7 @@ that answered:
 
 | Tier | Artefact | Committed and gated? |
 | --- | --- | --- |
-| **S** | `db/schema.lite` (including its `///` prose), `access.snapshot.md`, `surface.snapshot.md`, `jobs.snapshot.md`, `notifications.snapshot.md` | yes |
+| **S** | `db/schema.lite` (including its `///` prose), `access.snapshot.md`, `app.snapshot.md`, `jobs.snapshot.md`, `notifications.snapshot.md` | yes |
 | **U** | a `.mesa` file under `web/`, `site/`, `widgets/` or `extension/` | no index |
 | **src** | a service or domain module under `api/src/` | no index |
 | **R** | a row in a live database | not an artefact at all |
@@ -111,7 +111,7 @@ needed change reaches.
 | B7 | best-selling candles | `OrderLine` has sku and quantity; no view | S | Data | **needs us** — a `view` |
 | B8 | split pay basis mid-period; period dates on the payslip | `payAsAtMany(…, at)` reads one window per run; `Payslip.periodStart` exists | src | API | **needs us** / UI only |
 | B9 | extension scanner spinning | nothing in `extension/` scans | U | none | premise corrected |
-| B10 | filter orders by who created them | the audit log holds it; `@@createdBy` is a word the language has | S | Data | **needs us** — one declaration |
+| B10 | filter orders by who created them | the audit trail holds it; `@@createdBy` is a word the language has | S | Data | **needs us** — one declaration |
 | B11 | one login across two shops | people per shop | S | none | **declined by design** |
 | B12 | tax labels in the revenue export; refunds subtracted? | view columns are `status, orders, total`; refunded is its own row | S | none | **exists** · premise corrected |
 | B13 | three card-failed emails for one failure | `notifications.snapshot.md` declares no dunning message; neither job nor `billing.ts` sends one | R | none | **incident** — not this app's email |
@@ -155,7 +155,7 @@ work — a notification the app does not declare is not an email the app sent.
 **3. The seed answered one message wrongly and nothing said so.** A24: `settle` is
 `@system` in `@@transitions`, so a person cannot mark an invoice paid — except that
 `invoices.settle` is the staff button for a hand-reconciled transfer, running the
-same move through `asSystem()`. `surface.snapshot.md` lists `settle` and not who may
+same move through `asSystem()`. `app.snapshot.md` lists `settle` and not who may
 call it. This is the record's ninth question answered by a real case: a service
 method wrapping a `@system` move is an affordance no committed artefact grades,
 and `@frontierjs/mcp`'s `move-system` verdict would make the same mistake.

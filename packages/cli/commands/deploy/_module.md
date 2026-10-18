@@ -23,6 +23,14 @@ const { EDGE_HOPS } = await import(new URL('file://' + global.fliRoot + '/core/e
 // Nine hand-written copies is how the name came to ignore the port tier.
 const apiContainer = (appId, deployConf) => apiContainerName(appId, deployConf?.api?.port)
 
+// The API's database directory and env file on the target. The swap mounts
+// them, setup creates them, and the box's Outpost grades their modes, so a
+// default restated in one step would grade a different path from the one mounted.
+const apiFiles = (deployConf, serverPath) => ({
+  dbDir:   deployConf?.db?.path ?? `${serverPath}/db`,
+  envFile: deployConf?.api?.env ?? `${serverPath}/.env.production`,
+})
+
 // Where the API container sees the target's database directory. The only path
 // inside a container that outlives a swap: a database anywhere else is in the
 // container's own layer and the next deploy starts an empty one (FJS-1095).
@@ -712,8 +720,8 @@ fi`
 // CSP, and a page whose hash is missing has its theme and service worker refused.
 const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge, html = '' }) => {
   const { edgeRoutes, apiPaths, inlineScriptHashes, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
-  const { readApiSurface } = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
-  const paths   = apiPaths(readApiSurface(root))
+  const { readAppSnapshot } = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
+  const paths   = apiPaths(readAppSnapshot(root))
   const scripts = inlineScriptHashes(html)
   try { return { routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, paths, scripts }), paths } }
   catch (e) { if (e instanceof EdgeError) return { error: e.message }; throw e }
@@ -1273,7 +1281,7 @@ export default {
 
 `api.domain` gives the API its own origin — `api.myapp.com` beside `web.domain`. Unset, the
 web domain proxies the API's paths and `/ws` and the page and the API share an origin. The
-paths are read off `surface.snapshot.md`; with no `apiPrefix`, a request asking for HTML is
+paths are read off `app.snapshot.md`; with no `apiPrefix`, a request asking for HTML is
 served the page and anything else the API. Every deploy rewrites the routes when they moved.
 
 ```

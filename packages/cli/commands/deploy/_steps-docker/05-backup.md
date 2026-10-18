@@ -10,7 +10,7 @@ if ($.config.abort) return
 
 const { appId, deployConf } = $.config
 const { host, path: serverPath } = $.config.api
-const dbPath    = deployConf.db?.path    ?? `${serverPath}/db`
+const dbPath    = apiFiles(deployConf, serverPath).dbDir
 const backupDir = deployConf.db?.backups ?? `${dbPath}/backups`
 const container = apiContainer(appId, deployConf)
 

@@ -422,7 +422,7 @@ const off = app.events.onAny((event, data) => {
   logger.info('event', { event, data })
 })
 
-// Useful for audit logs, metrics, and webhook fan-out
+// Useful for audit trails, metrics, and webhook fan-out
 ```
 
 **`IEventBus.stats()`** — how many are listening, and to what. `hasListeners()`
@@ -2075,38 +2075,38 @@ posts.on('publish', (post) => updateRow(post))
 Reads never announce. A method that only reads says so with `ctx.dispatch =
 false`, which suppresses the broadcast to browsers and the in-process bus alike.
 
-**`resource()`** — convenience wrapper that combines a service proxy, a reactive `Store`, and a `load()` function. The store stays in sync with real-time events automatically:
+**`resource()`** — convenience wrapper that combines a service proxy, a reactive `Tether`, and a `load()` function. The tether stays in sync with real-time events automatically:
 
 ```typescript
-const { service, store, load } = client.resource('posts')
+const { service, tether, load } = client.resource('posts')
 
 // Initial fetch from server — load(query?, params?)
 await load({ status: 'active' })
 
 // Subscribe to changes — emits immediately with current value
-store.subscribe(posts => render(posts))
+tether.subscribe(posts => render(posts))
 
-// Mutations update the store via WS events
-await service.create({ title: 'New post' })  // store auto-updates on 'created' event
+// Mutations update the tether via WS events
+await service.create({ title: 'New post' })  // tether auto-updates on 'created' event
 ```
 
-**`Store<T>`** is framework-agnostic. Works with Svelte, Mesa, or plain JS:
+**`Tether<T>`** is framework-agnostic. Works with Svelte, Mesa, or plain JS:
 
 ```typescript
 // Svelte
 const posts = writable([])
-store.subscribe(v => posts.set(v))
+tether.subscribe(v => posts.set(v))
 
 // Mesa
-const posts = useStore(store)   // reactive binding
+const posts = useTether(tether)   // reactive binding
 
 // Plain JS
-store.subscribe(list => document.querySelector('#count').textContent = list.length)
+tether.subscribe(list => document.querySelector('#count').textContent = list.length)
 
 // Direct manipulation
-store.upsert({ id: 1, title: 'Updated' })   // upsert by id
-store.remove(1)                              // remove by id
-store.set([])                                // replace all
+tether.upsert({ id: 1, title: 'Updated' })   // upsert by id
+tether.remove(1)                              // remove by id
+tether.set([])                                // replace all
 ```
 
 **URL normalization** — pass `http://`, `https://`, `ws://`, or `wss://` — the client normalizes to `http(s)://` for requests and converts back to `ws(s)://` for the WebSocket connection:
@@ -2116,7 +2116,7 @@ createJunctionClient({ url: 'ws://localhost:3000' })   // works fine
 createJunctionClient({ url: 'wss://api.example.com' }) // works fine
 ```
 
-**`relay`**: a client whose connection is somebody else's. Some contexts cannot keep a socket. An extension page is one, because MV3 keeps the connection in the service worker. Such a page still needs the whole client, since `resource()`'s live store is what a Resource is built on. A relayed client hands each call to `relay` as the frame the socket would have carried. The client that holds the connection makes it with `forward()` and hands each push back through `receive()`:
+**`relay`**: a client whose connection is somebody else's. Some contexts cannot keep a socket. An extension page is one, because MV3 keeps the connection in the service worker. Such a page still needs the whole client, since `resource()`'s tether is what a Resource is built on. A relayed client hands each call to `relay` as the frame the socket would have carried. The client that holds the connection makes it with `forward()` and hands each push back through `receive()`:
 
 ```typescript
 // the page

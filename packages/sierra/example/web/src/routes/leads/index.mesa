@@ -4,9 +4,9 @@ title: Leads
 <script>
   import { leads } from '../../resources/Lead.mesa'
   import { session } from '../../session.js'
-  import { useStore } from '@frontierjs/sierra/resource'
+  import { useTether } from '@frontierjs/sierra/resource'
 
-  const { get: rows, unsubscribe } = useStore(leads.store)
+  const { get: rows, unsubscribe } = useTether(leads.tether)
   $.onDestroy(unsubscribe)
 
   $: session.level

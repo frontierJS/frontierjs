@@ -1,7 +1,7 @@
 /**
  * test/resource-list.test.js — `resource.list()`, driven by a real navigation
  *
- * A list is five wirings a page used to restate: the store, where the filters
+ * A list is five wirings a page used to restate: the tether, where the filters
  * live, the load, its re-run, and the window. Every claim here is about one of
  * those going wrong in SILENCE, which is the only way they go wrong: a list that
  * forgot to re-run shows the previous rows, a default filter that reached every
@@ -136,7 +136,7 @@ function installWindowMock(initial) {
   globalThis.MutationObserver = class { observe() {} disconnect() {} }
 }
 
-// A load is a fetch and a store write, several microtasks deep.
+// A load is a fetch and a tether write, several microtasks deep.
 const settle = async () => {
   for (let i = 0; i < 5; i++) { flushSync(); await new Promise(r => setTimeout(r, 0)) }
   flushSync()
@@ -572,7 +572,7 @@ describe('composed: the rows carry what a push does not', () => {
   const push = (event = 'patched') =>
     client.service('invoices').emit(event, { id: 2, number: 'INV-2', status: 'paid', total: 200 })
 
-  test('a push re-reads the window and the relation survives it; a store-backed list loses it', async () => {
+  test('a push re-reads the window and the relation survives it; a tether-backed list loses it', async () => {
     await boot('/invoices/')
     includes = true
 
@@ -595,20 +595,20 @@ describe('composed: the rows carry what a push does not', () => {
     expect(list.rows.find(r => r.id === 2).customer).toEqual({ id: 9, name: 'Acme' })
   })
 
-  test('its rows never enter the store, so another list over the model is not handed them', async () => {
+  test('its rows never enter the tether, so another list over the model is not handed them', async () => {
     await boot('/invoices/')
     includes = true
     const invoices = invoicesResource()
     const list = track(invoices.list({ state: 'local', composed: true }))
     await settle()
     expect(list.rows).toHaveLength(3)
-    expect(invoices.store.get()).toEqual([])
+    expect(invoices.tether.get()).toEqual([])
 
     track(invoices.list({ state: 'local' }))
     await settle()
-    expect(invoices.store.get()).toHaveLength(3)
+    expect(invoices.tether.get()).toHaveLength(3)
 
-    // Nor does it START on the store's rows: those carry no relation, and would
+    // Nor does it START on the tether's rows: those carry no relation, and would
     // show until the first read answered.
     expect(track(invoices.list({ state: 'local', composed: true })).rows).toEqual([])
   })
@@ -664,7 +664,7 @@ describe('composed: the rows carry what a push does not', () => {
     expect(last().get('$limit')).toBe(null)
   })
 
-  test('a reconnect re-reads; a list that is not composed leaves that to the store', async () => {
+  test('a reconnect re-reads; a list that is not composed leaves that to the tether', async () => {
     await boot('/invoices/')
     vi.spyOn(Math, 'random').mockReturnValue(0)
     const list = track(invoicesResource().list({ state: 'local', composed: true }))
@@ -784,7 +784,7 @@ afterAll(() => { globalThis.fetch = original })
 // ─── A list over a filter owns its rows ─────────────────────────────────────
 
 // FJS-1444 / FJS-D1165: a list stating `where` or its own `query` is not the
-// resource's store, so a second one on the page cannot replace its rows.
+// resource's tether, so a second one on the page cannot replace its rows.
 describe('a list over a filter owns its rows', () => {
   const ids = (list) => list.rows.map(r => r.id)
   const push = (row, event = 'patched') => client.service('invoices').emit(event, row)
@@ -811,8 +811,8 @@ describe('a list over a filter owns its rows', () => {
 
     expect(ids(everything)).toEqual([1, 2, 3])
     expect(ids(paid)).toEqual([1])
-    // The list stating none IS the store, which the filtered one never wrote.
-    expect(invoices.store.get().map(r => r.id)).toEqual([1, 2, 3])
+    // The list stating none IS the tether, which the filtered one never wrote.
+    expect(invoices.tether.get().map(r => r.id)).toEqual([1, 2, 3])
   })
 
   test('a reload of one leaves the other alone', async () => {
@@ -843,7 +843,7 @@ describe('a list over a filter owns its rows', () => {
     expect(ids(paid).sort()).toEqual([1, 2])
   })
 
-  test('destroy lets go of the pushes its own store listened for', async () => {
+  test('destroy lets go of the pushes its own tether listened for', async () => {
     await boot('/invoices/')
     byStatus = true
     const invoices = invoicesResource()
@@ -857,7 +857,7 @@ describe('a list over a filter owns its rows', () => {
     paid.destroy()
     expect(handlers()).toBe(before)
 
-    // A list over no filter of its own is the store the resource already had.
+    // A list over no filter of its own is the tether the resource already had.
     const plain = invoices.list({ state: 'local' })
     await settle()
     expect(handlers()).toBe(before)

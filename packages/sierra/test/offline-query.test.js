@@ -12,7 +12,7 @@
  * different until somebody is in a basement. The cases that matter are
  * therefore always *warmed, then offline, then read*, and never *the warm ran*.
  *
- * The other half is what a warm may touch. `resource.load()` writes the store
+ * The other half is what a warm may touch. `resource.load()` writes the tether
  * the screen is rendering; a warm runs in the background under a question
  * nobody is looking at, so going through `load()` would swap a visible list.
  *
@@ -67,7 +67,7 @@ function makeClient({ connected = true } = {}) {
     service: () => _proxy,
     resource: () => ({
       service: _proxy,
-      store: (() => {
+      tether: (() => {
         let rows = []
         const subs = new Set()
         return {
@@ -77,7 +77,7 @@ function makeClient({ connected = true } = {}) {
         }
       })(),
       stale: { get: () => 0, subscribe: (fn) => { fn(0); return () => {} }, reset: () => {} },
-      load: function (q, d) { return _proxy.find(q, d).then(r => { const rows = r?.data ?? []; this.store.set(rows); return rows }) },
+      load: function (q, d) { return _proxy.find(q, d).then(r => { const rows = r?.data ?? []; this.tether.set(rows); return rows }) },
     }),
   }
 }
@@ -207,20 +207,20 @@ describe('a screen nobody opened still has its rows', () => {
 // ─── what a warm may touch ────────────────────────────────────────────────
 
 describe('a warm runs behind a screen, so it may not move one', () => {
-  // `load()` writes the store the screen renders. A warm runs under a question
+  // `load()` writes the tether the screen renders. A warm runs under a question
   // nobody is looking at, so routing it through `load()` would swap a visible
   // list for rows the person did not ask for — the feature breaking the screen
   // it exists to protect.
-  test('the store the screen is showing is not touched', async () => {
+  test('the tether the screen is showing is not touched', async () => {
     const r = sheets({ offlineQuery: OPEN })
     await r.load({ closedAt: { not: null } })
-    const showing = r.store.get().map(x => x.id)
+    const showing = r.tether.get().map(x => x.id)
 
     _proxy.find = () => Promise.resolve({ data: [{ id: 'OTHER', name: 'warmed' }], total: 1 })
     await warmOffline()
 
-    expect(r.store.get().map(x => x.id)).toEqual(showing)
-    expect(r.store.get().some(x => x.id === 'OTHER')).toBe(false)
+    expect(r.tether.get().map(x => x.id)).toEqual(showing)
+    expect(r.tether.get().some(x => x.id === 'OTHER')).toBe(false)
   })
 })
 

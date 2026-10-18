@@ -308,7 +308,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | ID | L | Grade | Where | Note |
 | --- | --- | --- | --- | --- |
 | V14.1.1 | 2 | partial | `packages/litestone/src/core/personal.js`, `packages/litestone/src/access.js:413` | closed `@personal` categories and protection attributes; parse warns on unmarked personal names; no data map generator · [FJS-3213](../ISSUES.md#fjs-3213) |
-| V14.1.2 | 2 | partial | `packages/litestone/docs/encryption.md`, `packages/litestone/docs/audit-logging.md`, `packages/litestone/src/core/catalog.js` | each attribute's regime documented; no per-level requirement set (integrity, retention, logging) |
+| V14.1.2 | 2 | partial | `packages/litestone/docs/encryption.md`, `packages/litestone/docs/trail.md`, `packages/litestone/src/core/catalog.js` | each attribute's regime documented; no per-level requirement set (integrity, retention, logging) |
 | V14.2.1 | 1 | partial | `packages/junction/src/client/index.ts:181`, `packages/cli/commands/project/new.md:1140` | session rides header or WS subprotocol; reset, verify and magic-link tokens ride the query string |
 | V14.2.2 | 2 | covered | `packages/junction/src/core/service.ts:37`, `packages/junction/src/transport/http.ts:1014`, `packages/junction/test/cache-conformance.test.ts` | service cache opt-in, keyed per user and tenant; authenticated reads `private` |
 | V14.2.3 | 2 | partial | `packages/sierra/src/analytics/index.js:112`, `packages/sierra/src/analytics/tag.js:25` | analytics opt-in, pathname only from `track`; vendor tag's own auto-pageview still reads the full URL · [FJS-3205](../ISSUES.md#fjs-3205) |
@@ -339,7 +339,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 
 | ID | L | Grade | Where | Note |
 | --- | --- | --- | --- | --- |
-| V16.1.1 | 2 | partial | `packages/litestone/docs/audit-logging.md`, `packages/cli/commands/project/new.md:1266` | audit trail documented with declared 90d retention; no inventory covering request and app logs |
+| V16.1.1 | 2 | partial | `packages/litestone/docs/trail.md`, `packages/cli/commands/project/new.md:1266` | audit trail documented with declared 90d retention; no inventory covering request and app logs |
 | V16.2.1 | 2 | partial | `packages/junction/src/transport/middleware.ts:367`, `packages/litestone/src/core/audit-log.js` | request line has time, ip, path, status, correlation id but no user; trail carries actor |
 | V16.2.2 | 2 | covered | `packages/junction/src/core/logger.ts:200` | every timestamp `toISOString()` UTC; clock sync is the host's |
 | V16.2.3 | 2 | partial | `packages/junction/src/core/logger.ts:250` | stdout and the declared audit database only, but no inventory to check against |

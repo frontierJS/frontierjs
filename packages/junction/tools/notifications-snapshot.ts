@@ -12,7 +12,7 @@
 // file that registers itself by being autoloaded, the type it answers to comes
 // from that file's NAME, and the directory it is found in is probed unless the
 // app declares one. So this is read off a BUILT app, like `junction jobs` and
-// `junction surface`, and for the same reason: what is registered is not what
+// `junction app`, and for the same reason: what is registered is not what
 // is written down.
 //
 // `app.notifications` is duck-typed and never imported. @frontierjs/notifications
@@ -37,12 +37,12 @@ import { dirname, relative, resolve } from 'node:path'
 
 import { flag, getFlag, rel, fatal, loadApp, checkSnapshot, writeOut, stopApp } from './app-module.ts'
 import { describeNotifications }                             from '../src/core/app-model.ts'
-import type { NotificationsSurface }                         from '../src/core/app-model.ts'
+import type { NotificationsDescription }                     from '../src/core/app-model.ts'
 
 // ─── rendering ────────────────────────────────────────────────────────────────
 
 export function renderNotificationsSnapshot(
-  s: NotificationsSurface,
+  s: NotificationsDescription,
   meta: { source: string; command: string },
 ): string {
   const out: string[] = []

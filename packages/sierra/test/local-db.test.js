@@ -157,12 +157,12 @@ beforeEach(async () => {
     service: () => _proxy,
     resource: () => ({
       service: _proxy,
-      store: (() => {
+      tether: (() => {
         let rows = []
         return { get: () => rows, set: (n) => { rows = n }, subscribe: (fn) => { fn(rows); return () => {} } }
       })(),
       stale: { get: () => 0, subscribe: (fn) => { fn(0); return () => {} }, reset: () => {} },
-      load: function (q, d) { return _proxy.find(q, d).then(r => { const rows = r?.data ?? []; this.store.set(rows); return rows }) },
+      load: function (q, d) { return _proxy.find(q, d).then(r => { const rows = r?.data ?? []; this.tether.set(rows); return rows }) },
       hasMore: () => _hasMore,
     }),
   }
@@ -364,7 +364,7 @@ describe('a load that cannot reach the server', () => {
 
     const rows = await r.load({ closedAt: null }, { limit: 5 })
     expect(rows.map(x => x.id)).toEqual(['FROM-SQL'])
-    expect(r.store.get().map(x => x.id)).toEqual(['FROM-SQL'])
+    expect(r.tether.get().map(x => x.id)).toEqual(['FROM-SQL'])
     expect(r.cachedAt()).toBeTypeOf('number')
   })
 
@@ -407,7 +407,7 @@ describe('a load that cannot reach the server', () => {
     _proxy.find = offline
 
     await expect(r.load({}, { search: 'tachyon' })).rejects.toThrow(/Failed to fetch/)
-    expect(r.store.get()).toEqual([])
+    expect(r.tether.get()).toEqual([])
     expect(r.cachedAt()).toBeNull()
   })
 

@@ -98,7 +98,7 @@ export async function sendInApp(
 
 /**
  * The frame a new notification is pushed as. The browser client routes a frame
- * to a service's live store only when its name is `<service> <verb>`, split on
+ * to a service's tether only when its name is `<service> <verb>`, split on
  * the space; `notification:created` was one word to it, so every bell stayed
  * at its first load and nothing said why (FJS-1573). The service half is the
  * name an app mounts the in-app list under — `notifications`, which is also the

@@ -62,6 +62,15 @@ export function createOutpostServer(config, {
       })
       return { digest: built.digest, commit_sha: built.commitSha }
     },
+    // A static site's branch as a review build, uploaded as a Worker version
+    // and never deployed; nothing on this machine serves it afterwards.
+    'POST /site/preview': async (body) => {
+      const built = await docker.sitePreview({
+        appId: body.app_id, source: body.source, branch: body.branch, alias: body.alias,
+        token: body.cloudflare?.token, accountId: body.cloudflare?.account_id,
+      })
+      return { commit_sha: built.commit, url: built.url, version_url: built.versionUrl }
+    },
     // The route goes with the container: left behind, Caddy answers the app's
     // hostnames with a 502 from a port nothing holds. A redeploy's own stop
     // takes it too, and its `/deploy` puts it back.

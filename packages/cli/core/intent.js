@@ -24,7 +24,7 @@
 //
 // The parsed seed (litestone's `parseFile(...).schema`, handed in — this package
 // takes no dependency on litestone) and the TEXT of three committed snapshots:
-// `surface.snapshot.md`, `routes.snapshot.md`, `notifications.snapshot.md`. All
+// `app.snapshot.md`, `routes.snapshot.md`, `notifications.snapshot.md`. All
 // four are regenerated and CI-gated, which is the whole argument for resolving
 // against them rather than against documentation.
 //
@@ -119,8 +119,8 @@ const phrase = (text) => terms(text).join(' ')
 
 // ─── the snapshots ────────────────────────────────────────────────────────────
 
-/** `surface.snapshot.md` → services, each with its model, methods and grades. */
-export function parseSurface(text = '') {
+/** `app.snapshot.md` → services, each with its model, methods and grades. */
+export function parseApp(text = '') {
   const services = []
   let cur = null
   for (const line of text.split('\n')) {
@@ -171,9 +171,9 @@ const gateOf = (model) => {
  * list: a word the seed does not use is a miss here, and a miss is the
  * measurement run 2 exists to take.
  */
-export function buildIndex({ schema, surface = '', routes = '', notifications = '' }) {
+export function buildIndex({ schema, app = '', routes = '', notifications = '' }) {
   const models = schema?.models ?? []
-  const services = parseSurface(surface)
+  const services = parseApp(app)
   const entries = []
   const add = (entry, texts) => {
     const phrases = [...new Set(texts.filter(Boolean).map(phrase).filter(Boolean))]
@@ -409,11 +409,11 @@ export function judgeFact(index, fact, claim) {
 
       const cite = `db/schema.lite · ${model.name} @@transitions ${move.name}`
       // A `@system` move is not a person's to ask for — unless a service method
-      // makes it on a caller's behalf, which only the surface can say. Reading
+      // makes it on a caller's behalf, which only the app snapshot can say. Reading
       // the seed alone here was run 1's one wrong answer (A24, `invoices.settle`).
       if (move.move.system) {
         const method = index.entries.find(e => e.type === 'method' && e.model === model.name && e.name === move.name)
-        if (method) return { verdict: 'you can do this', depth: 'none', fact, target: method.id, cite: `surface.snapshot.md · ${method.id}`,
+        if (method) return { verdict: 'you can do this', depth: 'none', fact, target: method.id, cite: `app.snapshot.md · ${method.id}`,
           why: `the move is the application's, and ${method.id} makes it for a person`, grade: method.grade }
         return { verdict: 'declined by design', depth: 'none', fact, target: move.id, cite, why: `${move.name} is @system — the application makes it, a person does not`, prose: prose(model) }
       }
@@ -449,7 +449,7 @@ export function judgeFact(index, fact, claim) {
     case 'method': {
       const hit = lookup(fact.words, within('method'))
       if (hit.status === 'ambiguous') return unhomed(fact, `"${fact.words}" matches more than one method`, hit.matches)
-      if (hit.status === 'resolved') return { verdict: 'exists', depth: 'none', fact, target: hit.match.id, cite: `surface.snapshot.md · ${hit.match.id}`, grade: hit.match.grade }
+      if (hit.status === 'resolved') return { verdict: 'exists', depth: 'none', fact, target: hit.match.id, cite: `app.snapshot.md · ${hit.match.id}`, grade: hit.match.grade }
       return miss(fact, model ? `among ${model.name}'s methods` : 'among the methods')
     }
 

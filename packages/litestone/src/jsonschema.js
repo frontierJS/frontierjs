@@ -892,7 +892,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   if (versionField) result['x-version'] = versionField.name
 
   // ── x-effective ────────────────────────────────────────────────────────────
-  // The window, as the Data boundary reads it. A live store needs it because a
+  // The window, as the Data boundary reads it. A tether needs it because a
   // row leaving an imposed window is a move of the CLOCK, which emits no frame,
   // so the store holding the row is the only thing that can drop it (`FJS-1274`).
   const win = buildEffectiveMap({ models: [model] })[model.name]

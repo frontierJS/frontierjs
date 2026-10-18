@@ -4,11 +4,11 @@ title: Runs
 <script>
   // Every run this caller can read, newest first, and how the last hour went.
   //
-  // The list is the resource's live store, so a run a trigger starts appears and
+  // The list is the resource's tether, so a run a trigger starts appears and
   // moves through its statuses with nothing refreshing. The counts are the
   // `runs.metrics` method over the same rows, asked again when the filter moves.
   import { runs } from '../../resources/Run.mesa'
-  import { session, useStore } from '@frontierjs/sierra/resource'
+  import { session, useTether } from '@frontierjs/sierra/resource'
   import { page, goto } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -29,7 +29,7 @@ title: Runs
     { name: 'error',     label: '' },
   ]
 
-  const { get: rows, unsubscribe } = useStore(runs.store)
+  const { get: rows, unsubscribe } = useTether(runs.tether)
   $.onDestroy(unsubscribe)
   $: (session.level, page.query.status)
 

@@ -23,7 +23,7 @@ title: Reports
   // moves when an order does without anything here subscribing to orders.
   import { revenue } from '@/resources/Revenue.mesa'
   import { prefs } from '@/stores/prefs.js'
-  import { session, useStore } from '@frontierjs/sierra/resource'
+  import { session, useTether } from '@frontierjs/sierra/resource'
   import { money } from '../../lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -39,7 +39,7 @@ title: Reports
     { name: 'total',  label: 'Taken',  align: 'right' },
   ]
 
-  const { get: rows, unsubscribe } = useStore(revenue.store)
+  const { get: rows, unsubscribe } = useTether(revenue.tether)
   $.onDestroy(unsubscribe)
 
   $: (session.level, prefs.dense, prefs.currency)

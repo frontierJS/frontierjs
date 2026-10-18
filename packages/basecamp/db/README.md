@@ -273,7 +273,7 @@ without one — `Encryption key must be 32 bytes (got 16). Use a 32-byte (64 hex
 char) key.` It fails closed, which is what we want, but the API pass has to add
 `ENCRYPTION_KEY` to `env.ts` and pass it through.
 
-## Audit logging
+## Audit trail
 
 ```lite
 import "@frontierjs/litestone/references/AuditTrail.lite"

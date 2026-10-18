@@ -282,7 +282,7 @@ describe('mcpApp — the page client, relayed', () => {
     expect(calls.at(-1)).toEqual({ method: 'tools/call', params: { name: 'orders_patch', arguments: { id: 1, data: { total: 6 } } } })
   })
 
-  test('opens no socket: the store is what this view\'s own calls answered', async () => {
+  test('opens no socket: the tether is what this view\'s own calls answered', async () => {
     const opened = vi.fn()
     vi.stubGlobal('WebSocket', class { constructor() { opened() } })
     const { client } = mcpApp({ host })

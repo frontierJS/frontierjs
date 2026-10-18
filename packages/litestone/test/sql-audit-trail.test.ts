@@ -187,7 +187,7 @@ describe('the parser says which mistake was made', () => {
 
 // ─── every write path files an entry ──────────────────────────────────────────
 //
-// The completeness claim lived in `docs/audit-logging.md` and in nothing else
+// The completeness claim lived in `docs/trail.md` and in nothing else
 // (`FJS-1042`). `emitLogs` has eighteen hand-placed call sites against
 // `fireEvent`'s three, so *does this verb log* is restated per verb the way
 // `verbs-rules.test.ts`'s rules are — and announce got the enumeration this

@@ -211,7 +211,7 @@ console.log(`  ✓  apiRequests (logs):    ${logCount} appended`)
 const errors = await sys.apiRequest.findMany({ where: { status: { gte: 400 } } })
 console.log(`       errors (status >= 400): ${errors.length} — "${errors[0]?.error}"`)
 
-// ─── Audit logger — seed some traceable writes + reads ───────────────────────
+// ─── Audit trail — seed some traceable writes + reads ───────────────────────
 // The audit database is auto-populated by any model with @@trail(audit) or @trail(audit).
 // Users has @@trail(audit) (create/update/delete) and apiKey has @secret → @trail(audit).
 // createMany bypasses emitLogs, so we do a few targeted single-row ops here.

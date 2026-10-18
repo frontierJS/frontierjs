@@ -14,16 +14,16 @@
 
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 // Junction by relative path — `bun install` resolves workspace:* to a copy.
-import { Store } from '../../junction/src/client/index.ts'
-import { NodeRegistry } from '../../junction/src/client/nodes.ts'
+import { Tether } from '../../junction/src/client/index.ts'
+import { EntryRegistry } from '../../junction/src/client/entries.ts'
 
 const calls = []
 const rows = new Map()
-let registry = new NodeRegistry()
+let registry = new EntryRegistry()
 
 vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
-    get nodes() { return registry },
+    get entries() { return registry },
     service: () => ({
       get:   async (id) => { calls.push(['get', id]); return rows.get(id) ?? null },
       find:  async () => ({ data: [...rows.values()] }),
@@ -35,19 +35,19 @@ vi.mock('@frontierjs/sierra/resource', () => ({
       },
       on: () => {},
     }),
-    // Junction's real Store, bound to the real registry, so a list HOLDS the
-    // nodes of the rows it shows — which is what eviction asks about.
+    // Junction's real Tether, bound to the real registry, so a list HOLDS the
+    // entries of the rows it shows — which is what eviction asks about.
     resource: (_name, idField, { model }) => {
-      const store = new Store()
-      store.bind({ registry, model, idField })
+      const tether = new Tether()
+      tether.bind({ registry, model, idField })
       return {
-        store,
+        tether,
         stale: { reset() {} },
-        load: async () => { const list = [...rows.values()]; store.set(list); return list },
-        // Junction's rule about WHEN to read: a row a node already holds is not
+        load: async () => { const list = [...rows.values()]; tether.set(list); return list },
+        // Junction's rule about WHEN to read: a row an entry already holds is not
         // read again.
         record: (id, { load }) => {
-          const release = registry.node(model, id).hold()
+          const release = registry.entry(model, id).hold()
           const held = registry.peek(model, id)?.get()
           const ready = held != null ? Promise.resolve(held) : load()
           const get   = () => registry.peek(model, id)?.get() ?? null
@@ -80,7 +80,7 @@ const DEFS = generateJsonSchema(schema, { mode: 'update' }).$defs
 
 beforeEach(() => {
   registerSchemas(DEFS, ['Issue'])
-  registry = new NodeRegistry()
+  registry = new EntryRegistry()
   calls.length = 0
   rows.clear()
   // One Linear board: five columns of 60.
@@ -111,7 +111,7 @@ describe('the first sight of a row in a held view is its read', () => {
     const r = createResource('issues', { model: 'Issue' })
     await r.load()
     rows.set(301, { id: 301, title: 'filed by Léa', version: 1 })
-    r.store.upsert(rows.get(301))
+    r.tether.upsert(rows.get(301))
     expect(r.version(301)).toBe(1)
     await r.service.patch(301, { title: 'dragged by Ana' })
     expect(lastPatch()).toEqual({ title: 'dragged by Ana', version: 1 })
@@ -120,14 +120,14 @@ describe('the first sight of a row in a held view is its read', () => {
   test('a push after the read still does not move it', async () => {
     const r = createResource('issues', { model: 'Issue' })
     await r.load()
-    r.store.upsert({ id: 1, title: 'edited elsewhere', version: 4 })
+    r.tether.upsert({ id: 1, title: 'edited elsewhere', version: 4 })
     expect(r.version(1)).toBe(3)
   })
 
-  test('record() over a node another view already holds remembers what it shows', async () => {
+  test('record() over an entry another view already holds remembers what it shows', async () => {
     const r = createResource('issues', { model: 'Issue' })
     registry.write('Issue', { id: 400, title: 'sub-issue', version: 2 })
-    const release = registry.node('Issue', 400).hold()
+    const release = registry.entry('Issue', 400).hold()
     const view = r.record(400)
     await view.ready
     expect(calls.some(c => c[0] === 'get')).toBe(false)

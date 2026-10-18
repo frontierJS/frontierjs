@@ -1707,7 +1707,7 @@ export type MethodSelection = MethodEntry[] | 'readOnly'
  * exactly as `'pay'` does, and that is the sharp edge: a service declaring no
  * `methods:` answers every verb, so adding one object entry to turn validation
  * on narrows it to that entry alone. Name the whole surface. The failure is not
- * left to production — `surface.snapshot.md` carries the policy-applied method
+ * left to production — `app.snapshot.md` carries the policy-applied method
  * list per service and the `snapshots` CI phase fails a stale one, so the
  * verbs that stopped being answered are a diff.
  */
