@@ -1,43 +1,17 @@
 // test/base-service-options.test.ts
 //
-// buildBase used to destructure only { model, db, paginate, allowBulk }
-// and return the seven CRUD methods, dropping everything else. That made the
-// documented service shape silently wrong:
-//
-//   export default buildBase({
-//     name:  'leads',
-//     model: 'lead',
-//     hooks: { before: { create: [authenticate] } },
-//   })
-//
-// It type-checked. The loader registered it — deriving the name from the
-// filename — and it served requests. With no hooks. For `authenticate` that is
-// an authorization hole that produces no error, no warning, and a service that
-// looks correct in review.
-//
-// Only the spread form worked:
-//
-//   export default { ...buildBase({ model: 'lead' }), hooks: {...} }
-//
-// because the loader reads hooks off the object you export, via
-// buildService({ name: deriveName(filename), ...service }).
-//
-// Both forms work now. These tests pin that, and pin the things that must NOT
-// leak onto the service alongside it.
+// buildBase is buildService's CRUD layer and nothing more: the generated
+// methods, the merged hook map and the metadata buildService reads. It is not a
+// service definition, so an option it was handed (a name, a channel, a custom
+// method) never rides its return (FJS-2995, FJS-D1079).
 
 import { describe, test, expect } from 'bun:test'
 import { buildBase, requiredScope, scopeRefusal, buildService } from '../src/core/service.ts'
-import type { ServiceContext } from '../src/core/context.ts'
 
 const authenticate = () => {}
 const CRUD = ['find', 'get', 'create', 'update', 'patch', 'remove', 'restore'] as const
 
 describe('buildBase — option pass-through', () => {
-
-  test('carries name through', () => {
-    const svc = buildBase({ name: 'leads', model: 'lead' })
-    expect(svc.name).toBe('leads')
-  })
 
   test('carries hooks through', () => {
     const svc = buildBase({
@@ -60,78 +34,37 @@ describe('buildBase — option pass-through', () => {
     for (const m of CRUD) expect(typeof (svc as Record<string, unknown>)[m]).toBe('function')
   })
 
-  test('carries custom methods through', () => {
-    const summary = async (_ctx: ServiceContext) => ({ ok: true })
-    const svc = buildBase({ model: 'lead', summary })
-    expect((svc as Record<string, unknown>).summary).toBe(summary)
-  })
 
-  test('carries scope through to what createService grades', () => {
+  test('scope declared on a definition reaches what the built service grades', () => {
     // Dropped, it fails closed: every scoped key refused at every method.
-    const built = buildService({ name: 'leads', ...buildBase({ model: 'lead', scope: 'crm' }) })
+    const built = buildService({ name: 'leads', model: 'lead', scope: 'crm' })
     expect(requiredScope(built, 'find')).toBe('crm')
     expect(scopeRefusal(built, 'find', { scopes: ['crm'] })).toBeNull()
   })
 })
 
-describe('buildBase — what must not leak', () => {
-
-  test('omitting name adds no name key', () => {
-    // An explicit `name: undefined` would override the loader's
-    // filename-derived name with nothing.
-    const svc = buildBase({ model: 'lead' })
-    expect('name' in svc).toBe(false)
-  })
+describe('buildBase — the hook map', () => {
 
   test('omitting hooks still yields the derived hook layer, as data not a function', () => {
-    // Originally asserted `'hooks' in svc === false`. A model service now
-    // ALWAYS carries the derived gateAuth + autoValidate layer, so the key is
-    // always present — that layer is the point, and omitting `hooks:` must not
-    // opt out of it. What still matters is the loader's branch:
-    // `typeof service.hooks !== 'function'` distinguishes a HookMap (config to
-    // merge) from a built service's `.hooks(map)` registration method.
     const svc = buildBase({ model: 'lead' })
     expect(typeof svc.hooks).not.toBe('function')
     expect(svc.hooks?.before?.create?.length).toBeGreaterThan(0)
   })
-
-  test('reserved options are not exposed as service methods', () => {
-    const svc = buildBase({
-      model:     'lead',
-      db:        () => ({}),
-      allowBulk: true,
-      paginate:  { default: 5, max: 10 },
-    }) as Record<string, unknown>
-
-    // The invariant that matters: no config key may become CALLABLE. `db` is a
-    // function, so without the reserved-key check it would be picked up as a
-    // custom method and served over HTTP. (allowBulk is deliberately carried
-    // through as a value — createService and the loader read it back off the
-    // base — so assert on callability, not on absence.)
-    expect(typeof svc.db).not.toBe('function')
-    expect(typeof svc.allowBulk).not.toBe('function')
-    expect(typeof svc.paginate).not.toBe('function')
-  })
-
-  test('non-function options are not treated as methods', () => {
-    const svc = buildBase({
-      model: 'lead',
-      label: 'not a method',
-    }) as Record<string, unknown>
-    expect(typeof svc.label).not.toBe('function')
-  })
 })
 
-describe('buildBase — the spread form still works', () => {
+describe('buildBase — returns only what buildService reads', () => {
 
-  test('spread values win over anything the base returned', () => {
-    const svc = {
-      ...buildBase({ name: 'ignored', model: 'lead' }),
-      name:  'leads',
-      hooks: { before: { find: [authenticate] } },
-    }
-    expect(svc.name).toBe('leads')
-    expect(svc.hooks.before.find).toHaveLength(1)
-    for (const m of CRUD) expect(typeof (svc as Record<string, unknown>)[m]).toBe('function')
+  test('an option it was handed does not ride the return — only the CRUD, hooks and _meta do', () => {
+    const svc = buildBase({
+      name:       'leads',
+      model:      'lead',
+      paginate:   { default: 5, max: 10 },
+      allowBulk:  true,
+      bulkMax:    50,
+      idField:    'uid',
+      softDelete: 'deleted_at',
+    })
+    expect(Object.keys(svc).sort()).toEqual(
+      [...CRUD, 'aggregate', 'declaredFields', 'hooks', '_meta'].sort())
   })
 })

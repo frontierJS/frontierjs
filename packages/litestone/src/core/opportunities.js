@@ -219,6 +219,7 @@ export const OPPORTUNITIES = [
                 'the Data boundary, the JSON Schema carries the keyword, and a generated form gets ' +
                 'the right input type before anyone submits it.',
     run(schema) {
+      const PATTERN_VALIDATORS = ['regex', 'startsWith', 'endsWith', 'contains']
       const BY_NAME = [
         { re: /^(email|emailAddress|contactEmail)$/i, attr: 'email', word: '@email' },
         { re: /^(url|website|homepage|link|href)$/i,  attr: 'url',   word: '@url'   },
@@ -229,7 +230,8 @@ export const OPPORTUNITIES = [
         for (const f of model.fields ?? []) {
           if (scalarOf(f) !== 'String') continue
           const hit = BY_NAME.find(b => b.re.test(f.name))
-          if (!hit || has(f, hit.attr)) continue
+          // A pattern is the column's validator even when it is not the named one.
+          if (!hit || has(f, hit.attr) || PATTERN_VALIDATORS.some(k => has(f, k))) continue
           out.push({ model: model.name, field: f.name, word: hit.word,
             message: `${model.name}.${f.name} is an unvalidated String. @${hit.attr} refuses a bad ` +
               `value at the write and gives the generated form the right control.` })
@@ -285,7 +287,7 @@ export const OPPORTUNITIES = [
         const extensible = new Set((model.attributes ?? [])
           .filter(a => a.kind === 'extensible').map(a => a.column))
         for (const f of model.fields ?? []) {
-          if (scalarOf(f) !== 'Json' || has(f, 'type')) continue
+          if (scalarOf(f) !== 'Json' || has(f, 'type') || has(f, 'point')) continue
           if (f.generated || extensible.has(f.name)) continue
           out.push({ model: model.name, field: f.name,
             message: `${model.name}.${f.name} is an undescribed Json column. \`type\` names its ` +

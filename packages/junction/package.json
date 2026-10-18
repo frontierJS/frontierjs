@@ -1,7 +1,7 @@
 {
   "name": "@frontierjs/junction",
   "version": "0.1.8",
-  "description": "A pragmatic, batteries-included Bun framework",
+  "description": "The API realm of FrontierJS — services, the hook pipeline and HTTP/WS transport over a Litestone schema, on Bun",
   "type": "module",
   "main": "./index.ts",
   "exports": {

@@ -8,7 +8,7 @@
  */
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -25,7 +25,7 @@ beforeAll(() => {
   mkdirSync(join(ROOT, '.fli-tmp'), { recursive: true })
   dir = mkdtempSync(join(ROOT, '.fli-tmp', 'migrate-label-'))
   mkdirSync(join(dir, 'db'), { recursive: true })
-  writeFileSync(join(dir, 'db', 'schema.lite'), 'model Note {\n  id Int @id\n}\n')
+  writeFileSync(join(dir, 'db', 'schema.lite'), 'database main { path env("DATABASE_URL", "./db/app.db") }\nmodel Note {\n  id Int @id\n}\n')
   global.projectRoot = dir
   buildRegistry()
 })
@@ -71,5 +71,22 @@ describe('db:migrate --create-only reports what was written', () => {
     const second = await real()
     expect(second).not.toContain('Migration file created')
     expect(second).toContain('No migration file written')
+  })
+})
+
+// FJS-1304: the JSON Schema `db:migrate` regenerates is the one `db:push` and
+// `db:jsonschema` write, `<db>/.json/schema.json`, never a second copy beside
+// the .lite.
+describe('db:migrate JSON Schema', () => {
+  test('is written to the derived path, not beside the .lite', async () => {
+    const cwd = process.cwd()
+    process.chdir(dir)
+    try {
+      const emit = () => Promise.resolve()
+      const cmd = await Command({ file, arg: [], flag: {}, emit })
+      await cmd()
+    } finally { process.chdir(cwd) }
+    expect(existsSync(join(dir, 'db', '.json', 'schema.json'))).toBe(true)
+    expect(existsSync(join(dir, 'db', 'schema.json'))).toBe(false)
   })
 })

@@ -97,7 +97,11 @@ log.info('Creating and applying the migration...')
 $.exec({ command: `${ls} migrate dev${named} --schema ${schema}${withOps}` })
 log.success('Migration created and applied')
 
+// The derived path `db:push` and `db:jsonschema` write. With no `--out` the
+// document lands beside the .lite, and an app then holds two copies of it
+// that disagree (FJS-1304).
 log.info('Regenerating JSON Schema...')
-$.exec({ command: `${ls} jsonschema --schema ${schema}` })
+const { jsonSchemaPath } = await import(path.resolve(global.fliRoot, 'core/derived-paths.js'))
+$.exec({ command: `${ls} jsonschema --schema ${schema} --out ${jsonSchemaPath(path.dirname(schema))}` })
 log.success('JSON Schema updated')
 ```

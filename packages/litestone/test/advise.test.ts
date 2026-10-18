@@ -1171,3 +1171,29 @@ describe('rule: allow-needs-bearer-claim-under-gate', () => {
     expect(rule(model('0.4', `@@allow(read, senderContactId == auth().contactId)`))).toEqual([])
   })
 })
+
+// FJS-3063 — an @@deny fires on UNKNOWN, so a compare that reads a column which can
+// be NULL refuses every row where it is. Measured: `lastCheckOk == false` on a
+// never-probed (null) component refuses the update.
+describe('rule: deny-reads-nullable-column', () => {
+  const model = (deny: string) => `
+    model Component { id Int @id  name String  lastCheckOk Boolean?  attempts Int
+      ${deny} }`
+  const rule = (src: string) => findings(src, 'deny-reads-nullable-column')
+
+  test('fires on a compare against a nullable column with no null branch', () => {
+    const f = rule(model(`@@deny(update, lastCheckOk == false)`))
+    expect(f.length).toBe(1)
+    expect(f[0].model).toBe('Component')
+    expect(f[0].message).toContain('lastCheckOk')
+    expect(rule(model(`@@deny(update, !(lastCheckOk == true))`)).length).toBe(1)
+  })
+
+  test('is quiet once the rule says what null does, or the column is required', () => {
+    expect(rule(model(`@@deny(update, lastCheckOk != null && lastCheckOk == false)`))).toEqual([])
+    expect(rule(model(`@@deny(update, lastCheckOk == null || lastCheckOk == false)`))).toEqual([])
+    expect(rule(model(`@@deny(update, lastCheckOk == null)`))).toEqual([])
+    expect(rule(model(`@@deny(update, attempts > 3)`))).toEqual([])
+    expect(rule(model(`@@allow(update, lastCheckOk == false)`))).toEqual([])
+  })
+})

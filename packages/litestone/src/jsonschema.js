@@ -1190,6 +1190,7 @@ function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audienc
   if (type.name === 'Json' && typeAttr && typeDefs && typeDefs[typeAttr.name]) {
     // strict: false → loose schema (allow extras); strict (default) → tight.
     typeSchema = { '$ref': `#/$defs/${typeAttr.name}` }
+    if (typeAttr.array) typeSchema = { type: 'array', items: typeSchema }
   } else {
     // Base type schema
     typeSchema = typeToJsonSchema(type, schema, enumDefs, inlineEnums, fileDef)

@@ -163,6 +163,19 @@ describe('parser', () => {
     expect(r.errors.some((e: string) => e.includes("'@missingFn' is neither a field attribute nor a function"))).toBe(true)
   })
 
+  // @slug(name) with no `function slug` declared is the one refusal a reader
+  // reaches by following the catalog's arity, so it names the working spelling (FJS-3048).
+  test('@slug(field) without a slug function names the bare spelling', () => {
+    const r = parse(`
+      model T { id Int @id
+        name String
+        slug String @slug(name) }
+    `)
+    const msg = r.errors.find((e: string) => e.includes("'@slug'")) ?? ''
+    expect(msg).toContain('function slug')
+    expect(msg).toContain('@default(name) @slug')
+  })
+
   // A typo'd validator with a literal argument is not a function call, and the
   // grammar error 'Expected IDENT' hid which attribute was the problem (FJS-2949).
   test('a misspelled attribute with literal arguments names the attribute', () => {
@@ -16682,9 +16695,9 @@ describe('generateTypeScript', () => {
 
   test('emits TableClient<TRow, TCreate, TUpdate, TWhere>', () => {
     const dts = generateTypeScript(schema)
-    expect(dts).toContain('export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string>')
+    expect(dts).toContain('export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}>')
     expect(dts).toContain('findMany<')
-    expect(dts).toContain('createMany(')
+    expect(dts).toContain('createMany<')
     expect(dts).toContain('findManyCursor(')
   })
 
@@ -16718,13 +16731,12 @@ describe('generateTypeScript', () => {
       model Plain { id Int @id }
     `)
     const dts = generateTypeScript(withSys, { audience: 'system' })
-    for (const call of ['create', 'update', 'updateMany', 'upsert'])
-      expect(dts.match(new RegExp(`  ${call}[<(].*system\\?: TSys\\[\\]`))).not.toBeNull()
-    expect(dts).toContain('createMany(args: { data: TCreate[]; system?: TSys[] })')
-    expect(dts).toContain("ComponentRelations, never, 'lastCheckOk' | 'token' | '@@gate'>")
+    for (const call of ['create', 'createMany', 'update', 'updateMany', 'upsert', 'upsertMany'])
+      expect(dts.match(new RegExp(`  ${call}<.*K extends TSys = never>.*system\\?: K\\[\\]`))).not.toBeNull()
+    expect(dts).toContain("ComponentRelations, never, 'lastCheckOk' | 'token' | '@@gate', ComponentSystem>")
     expect(dts).toContain('PlainRelations, never, never>')
     // the client audience cannot see a @guarded column, so cannot lift it
-    expect(generateTypeScript(withSys)).toContain("ComponentRelations, never, 'lastCheckOk' | '@@gate'>")
+    expect(generateTypeScript(withSys)).toContain("ComponentRelations, never, 'lastCheckOk' | '@@gate', ComponentSystem>")
   })
 
   // FJS-3107
@@ -20612,6 +20624,29 @@ describe('type declarations', () => {
     expect(ts).toContain('  lat: number')
   })
 
+  // FJS-3107: the client binds a Date at write (create, update, where), so the
+  // input types say so; a read still returns the stored ISO string.
+  test('typegen accepts a Date wherever a DateTime is written, and reads a string', async () => {
+    const { generateTypeScript } = await import('../src/tools/typegen.js')
+    const r = parse(`
+      model Check {
+        id           Int       @id
+        scheduledFor DateTime
+        polledAt     DateTime?
+        marks        DateTime[]
+      }
+    `)
+    const ts = generateTypeScript(r.schema!)
+    const body = (name: string) => ts.match(new RegExp(`export interface ${name}( extends \\w+)? \\{[^}]*\\}`))![0]
+    expect(body('Check')).toMatch(/scheduledFor:\s*string\n/)
+    expect(body('Check')).toMatch(/polledAt\?:\s*string \| null\n/)
+    expect(body('CheckCreate')).toMatch(/scheduledFor:\s*string \| Date\n/)
+    expect(body('CheckCreate')).toMatch(/polledAt\?:\s*string \| Date \| null\n/)
+    expect(body('CheckCreate')).toMatch(/marks:\s*\(string \| Date\)\[\]/)
+    expect(body('CheckUpdate')).toMatch(/scheduledFor\?:\s*string \| Date\n/)
+    expect(body('CheckWhere')).toMatch(/scheduledFor\?:\s*string \| Date \| WhereOp<string \| Date> \| null\n/)
+  })
+
   test('typegen references typed JSON fields by interface name', async () => {
     const { generateTypeScript } = await import('../src/tools/typegen.js')
     const r = parse(`
@@ -22147,6 +22182,24 @@ describe('doc comments — generateJsonSchema', () => {
   test('a trailing and a leading doc comment on one field join', () => {
     const { schema } = parse(`model T {\n  id Int @id\n  /// Lead.\n  v String /// Trail.\n}`)
     expect(schema.models[0].fields[1].comments).toEqual(['Lead.', 'Trail.'])
+  })
+
+  // FJS-3045 — a `///` on its own line documents what follows, so one before `}` is refused by name
+  test('a doc comment with nothing after it names itself, in every block', () => {
+    const blocks = {
+      model:  'model A {\n  id Int @id\n  /// last\n}',
+      after:  'model A {\n  id Int @id\n  @@index([id])\n  /// last\n}',
+      view:   'view V {\n  id Int\n  /// last\n}',
+      enum:   'enum E {\n  A\n  /// last\n}',
+      type:   'type T {\n  a Int\n  /// last\n}',
+      trait:  'trait T {\n  a Int\n  /// last\n}',
+      extend: 'model A {\n  id Int @id\n}\nextend model A {\n  b Int?\n  /// last\n}',
+    }
+    for (const [kind, text] of Object.entries(blocks)) {
+      const { valid, errors } = parse(text)
+      expect(valid, kind).toBe(false)
+      expect(String(errors[0].message ?? errors[0]), kind).toContain('/// doc comment documents the member BELOW it')
+    }
   })
 
   test('field without doc comment has no "description"', () => {

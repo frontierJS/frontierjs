@@ -514,6 +514,12 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
       if (existing.status !== row.status) {
         await sys.sql`UPDATE "order" SET status = ${row.status} WHERE id = ${existing.id}`
       }
+      // A `pending` fixture is on the abandon clock (`@@commitment(abandon,
+      // on: createdAt + 14d)`), so one older than a week is re-dated: reset to
+      // `pending` with its first `createdAt`, the commitment cancels it again.
+      if (row.status === 'pending' && Date.parse(existing.createdAt) < Date.now() - 7 * 864e5) {
+        await sys.sql`UPDATE "order" SET createdAt = ${new Date().toISOString()} WHERE id = ${existing.id}`
+      }
       // Lines arrived after these orders did, so a database seeded before them
       // has orders with nothing in them. Backfilled rather than left, because
       // an itemization that is empty for the three rows every screen was built

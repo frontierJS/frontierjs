@@ -128,6 +128,7 @@ export const dt = createDatetime({ timeZone: 'America/Denver', now: Date.now })
 
 dt.format(order.createdAt, 'DDDD, MMMM D [at] h:mm aa')   // 'Saturday, July 4 at 10:05 AM'
 dt.relativeToNow(order.createdAt)                          // '2 hours ago'
+dt.dayHeaderNow(message.sentAt)                            // 'Today' · 'Yesterday' · 'Thursday' · 'Jun 27' · 'Dec 31, 2025'
 dt.fromWall({ year: 2026, month: 11, day: 1, hour: 1, minute: 30 }, { disambiguation: 'reject' })
 // RangeError: datetime: 2026-11-01T01:30:00 in America/Denver happens twice — the clock went back. …
 ```
@@ -276,8 +277,10 @@ should ever see one.
 string or a WebSocket frame, and Sierra's router, off a URL's search string.
 Same grammar, two realms, which is why the table is here rather than in either.
 A `$` key the table does not name never reaches the filters: `splitParams`
-drops every `$` key, and `unknownDirectives(params)` names the ones it did not
-recognize, so a boundary can refuse them by name (`FJS-D237`).
+drops every `$` key but `COMBINATORS` (`$or`, `$and`, `$not` — filters written
+with a `$`, left in `query` for the where grammar), and `unknownDirectives(params)`
+names the ones it did not recognize, so a boundary can refuse them by name
+(`FJS-D237`, `FJS-D910`).
 
 Both directions: `parseDirectives` reads the `$` names into the structured
 form, and `directiveParams` writes that form back out as `$` names, so a
@@ -286,6 +289,20 @@ client building a URL uses the same table the boundary reads it with.
 Value shapes are deliberately not fixed: over HTTP everything is a string, and a
 caller that has already parsed a URL passes numbers and booleans. Both are read,
 and absent stays absent — *nothing was asked* is not *the defaults*.
+
+---
+
+## `docfences` — the fenced blocks of a markdown page
+
+```js
+import { docFences, isRunnable } from '@frontierjs/toolbelt/docfences'
+
+docFences('```lite\nmodel A { id Int }\n```\n```js throws\ndb.a.create()\n```\n')
+// → [{ lang: 'lite', line: 1, body: 'model A { id Int }', schema: null, … },
+//    { lang: 'js', line: 4, words: Set { 'throws' }, schema: 'model A { id Int }', … }]
+```
+
+One reader for litestone's doc-example runner, `fli check`'s `doc-examples-run` and the doc audit. `schema` is the nearest preceding non-`fragment` ```` ```lite ```` block; `fragment`, `throws` and `failing` on the info string are the contract, and `isRunnable` is a runnable tag not marked `fragment`. A package supplies its own prelude, since what a block runs under is the package's.
 
 ---
 

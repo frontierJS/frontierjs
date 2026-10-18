@@ -40,6 +40,7 @@ import { execFileSync }  from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { signRequest }   from '@frontierjs/toolbelt/signature'
+import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { results, report } from './lib/report.mjs'
 import { PORTS } from './lib/preflight.mjs'
@@ -115,7 +116,7 @@ async function postWebhook(body) {
 // would need a session at level 5 and would put this drive on the limiter for
 // facts that are not about the transport.
 const { db } = await import(join(ROOT, 'api/src/core/db.ts'))
-const { chargeInvoice, issueInvoice, periodLines, startSubscription } = await import(join(ROOT, 'api/src/domain/billing'))
+const { chargeInvoice, issueInvoice, periodLines, startSubscription, RETRY_DAYS } = await import(join(ROOT, 'api/src/domain/billing'))
 const sys = db.asSystem()
 
 const RUN = String(Date.now()).slice(-6)
@@ -334,6 +335,65 @@ let refB = null
   t('soft.leavesTheSubscriptionAlone', after.status === 'active')
   t('soft.paymentIsFailed',
     (await sys.payment.findFirst({ where: { id: pay.id } })).status === 'failed')
+}
+
+// ─── 4b. A soft decline is presented again (`FJS-610`) ────────────────────
+//
+// A decline is a returned ANSWER, so caravan's retry ladder never sees it:
+// the re-presentment is the failure path's own dispatch, `RETRY_DAYS` after
+// each soft decline, keyed by the attempt so the invoice-id reuse of `FJS-609`
+// cannot swallow it. jobs.db outlives the shop's db, so a retry left pending by
+// an earlier run under this invoice id holds the same key -- cleared first.
+
+{
+  const keyOf = (invoiceId, n) => occurrenceKey('collect', String(invoiceId), String(n))
+  const queued = (invoiceId, n) => app.jobs.list({ status: 'pending', limit: 500 })
+    .filter(j => j.unique_key === keyOf(invoiceId, n))
+  const clear = async (invoiceId) => {
+    for (let n = 1; n <= 6; n++) for (const j of queued(invoiceId, n)) await app.jobs.cancel(j.id)
+  }
+  const fail = async (invoice, n, code) => {
+    const pay = await sys.payment.create({ data: {
+      providerRef: `pi_ret${RUN}${invoice.id}n${n}`, invoiceId: invoice.id, amount: invoice.total,
+      currency: 'USD', status: 'pending',
+    } })
+    return postWebhook({ id: `evt_ret_${RUN}${invoice.id}n${n}`, type: 'payment.failed',
+      data: { paymentRef: pay.providerRef, reason: 'Insufficient funds', declineCode: code } })
+  }
+  const DAY = 86_400_000
+
+  // The first soft decline: one retry, a day out.
+  const { invoice: a } = await freshSubscription('R1')
+  await clear(a.id)
+  const t0 = Date.now()
+  await fail(a, 1, 'insufficient_funds')
+  const first = queued(a.id, 1)
+  t('retry.firstSoftDeclineQueuesOne', first.length === 1)
+  t('retry.itWaitsTheLadderDay',
+    Math.abs((first[0]?.run_at ?? 0) - (t0 + RETRY_DAYS[0] * DAY)) < 60_000)
+
+  // The second one climbs the ladder: the attempt is counted from the invoice's
+  // failed payments, so there is no column to keep in step.
+  await fail(a, 2, 'insufficient_funds')
+  const second = queued(a.id, 2)
+  t('retry.secondClimbsTheLadder',
+    second.length === 1 && Math.abs(second[0].run_at - (Date.now() + RETRY_DAYS[1] * DAY)) < 60_000)
+
+  await clear(a.id)
+
+  // A hard decline is an answer re-presenting cannot change.
+  const { invoice: h } = await freshSubscription('R2')
+  await clear(h.id)
+  await fail(h, 1, 'stolen_card')
+  t('retry.hardDeclineQueuesNothing', queued(h.id, 1).length === 0)
+
+  // The ladder ends: past the last rung there is no more asking, and the
+  // dunning clock decides the rest.
+  const { invoice: z } = await freshSubscription('R3')
+  await clear(z.id)
+  for (let n = 1; n <= RETRY_DAYS.length + 1; n++) await fail(z, n, 'insufficient_funds')
+  t('retry.theLadderEnds', queued(z.id, RETRY_DAYS.length + 1).length === 0)
+  await clear(z.id)
 }
 
 {
@@ -609,6 +669,11 @@ const expected = {
   'soft.recorded': true,
   'soft.leavesTheSubscriptionAlone': true,
   'soft.paymentIsFailed': true,
+  'retry.firstSoftDeclineQueuesOne': true,
+  'retry.itWaitsTheLadderDay': true,
+  'retry.secondClimbsTheLadder': true,
+  'retry.hardDeclineQueuesNothing': true,
+  'retry.theLadderEnds': true,
   'hard.recorded': true,
   'hard.lapsesAtOnce': true,
   'hard.invoiceStillOwed': true,

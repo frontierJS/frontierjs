@@ -1,0 +1,12 @@
+<script>
+  // Its only control paints after the route has mounted, as a list does once
+  // its load lands (FJS-3165).
+  let ready = false
+  let pressed = 0
+  setTimeout(() => ready = true, 500)
+</script>
+
+<p>Pressed: {pressed}</p>
+{#if ready}
+  <button type="button" onclick={() => pressed++}>Late</button>
+{/if}

@@ -2100,9 +2100,7 @@ export interface ApiKeyCreate {
   id?: string
   workspaceId: string
   userId: string
-  credentialId?: string | null
   name: string
-  tokenHint: string
   scopes?: string[]
   expiresAt?: string | Date | null
   revokedAt?: string | Date | null
@@ -2117,9 +2115,7 @@ export interface ApiKeyUpdate {
   id?: string
   workspaceId?: string
   userId?: string
-  credentialId?: string | null
   name?: string
-  tokenHint?: string
   scopes?: string[]
   expiresAt?: string | Date | null
   revokedAt?: string | Date | null
@@ -2128,6 +2124,11 @@ export interface ApiKeyUpdate {
   usageDate?: string | null
   usesOnDate?: number
   createdBy?: string | null
+}
+
+export interface ApiKeySystem {
+  credentialId?: string | null
+  tokenHint?: string
 }
 
 export interface ApiKeyWhere extends WhereBase {
@@ -2811,7 +2812,6 @@ export interface AppCreate {
   name: string
   slug: string
   type?: AppType
-  status?: AppStatus
   source?: unknown
   port?: number | null
   containerPort?: number | null
@@ -2820,7 +2820,6 @@ export interface AppCreate {
   cpuLimit?: number | null
   memLimitMb?: number | null
   exposesPort?: boolean
-  blueprintId?: string | null
 }
 
 export interface AppUpdate {
@@ -2830,7 +2829,6 @@ export interface AppUpdate {
   name?: string
   slug?: string
   type?: AppType
-  status?: AppStatus
   source?: unknown
   port?: number | null
   containerPort?: number | null
@@ -2839,6 +2837,10 @@ export interface AppUpdate {
   cpuLimit?: number | null
   memLimitMb?: number | null
   exposesPort?: boolean
+}
+
+export interface AppSystem {
+  status?: AppStatus
   blueprintId?: string | null
 }
 
@@ -3484,9 +3486,6 @@ export interface JobCreate {
   triggerConfig?: unknown
   timeoutSeconds?: number
   retryLimit?: number
-  retryCount?: number
-  lastRunAt?: string | Date | null
-  lastRunStatus?: string | null
 }
 
 export interface JobUpdate {
@@ -3503,6 +3502,9 @@ export interface JobUpdate {
   triggerConfig?: unknown
   timeoutSeconds?: number
   retryLimit?: number
+}
+
+export interface JobSystem {
   retryCount?: number
   lastRunAt?: string | Date | null
   lastRunStatus?: string | null
@@ -4210,7 +4212,6 @@ export interface AlertRuleCreate {
   threshold: number
   forMinutes?: number
   isActive?: boolean
-  snoozedUntil?: string | Date | null
 }
 
 export interface AlertRuleUpdate {
@@ -4224,8 +4225,11 @@ export interface AlertRuleUpdate {
   threshold?: number
   forMinutes?: number
   isActive?: boolean
-  snoozedUntil?: string | Date | null
   version: number
+}
+
+export interface AlertRuleSystem {
+  snoozedUntil?: string | Date | null
 }
 
 export interface AlertRuleWhere extends WhereBase {
@@ -4421,10 +4425,6 @@ export interface MonitorCreate {
   resendEvery?: number
   tags?: unknown
   status?: MonitorStatus
-  failStreak?: number
-  lastCheckedAt?: string | Date | null
-  nextCheckAt?: string | Date | null
-  lastLatencyMs?: number | null
 }
 
 export interface MonitorUpdate {
@@ -4447,6 +4447,9 @@ export interface MonitorUpdate {
   resendEvery?: number
   tags?: unknown
   status?: MonitorStatus
+}
+
+export interface MonitorSystem {
   failStreak?: number
   lastCheckedAt?: string | Date | null
   nextCheckAt?: string | Date | null
@@ -5108,17 +5111,15 @@ export interface DependencyCreate {
   id?: string
   workspaceId: string
   name: string
-  latest?: string | null
-  deprecated?: string | null
-  advisories?: unknown
-  checkedAt?: string | Date | null
-  checkError?: string | null
 }
 
 export interface DependencyUpdate {
   id?: string
   workspaceId?: string
   name?: string
+}
+
+export interface DependencySystem {
   latest?: string | null
   deprecated?: string | null
   advisories?: unknown
@@ -5672,6 +5673,9 @@ export interface CursorResult<T> {
 type __Off = false | null | undefined
 type __Flat<T> = { [K in keyof T]: T[K] }
 
+/** The `@system` columns a write may carry in its data: the ones its `system` names. */
+type __SystemData<TSys, K> = NoInfer<Pick<TSys, Extract<K, keyof TSys>>>
+
 /** What `include` may name: a relation, or `_count`. A relation takes `true` or its own read options. */
 export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | __RelOptions } & { _count?: boolean | Record<string, unknown> }
 /** What `select` may name: a column or a relation, `true` or an options object. */
@@ -5699,7 +5703,7 @@ type __Narrow<T, O> = [O] extends [{ select: infer NS }] ? __Rows<T, NS> : T
 type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__SelectedColumns<E, NS>>[] : __Flat<__SelectedColumns<T, NS>>
 type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>
 
-export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string> {
+export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}> {
   findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>
   findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S> | null>
   findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S> | null>
@@ -5709,12 +5713,12 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove ex
   /** The cursor of a row already taken, for the ordering it was scanned in; `null` where the row lacks a sort key. Throws where the ordering is not total. */
   cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null
   count(args?: { where?: TWhere }): Promise<number>
-  create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { data: TCreate; system?: TSys[]; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S>>
-  createMany(args: { data: TCreate[]; system?: TSys[] }): Promise<{ count: number }>
-  update<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { where: TWhere; data: TUpdate; system?: TSys[]; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S> | null>
-  updateMany(args: { where?: TWhere; data: TUpdate; system?: TSys[] }): Promise<{ count: number }>
-  upsert<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { where: TWhere; create: TCreate; update: TUpdate; system?: TSys[]; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S>>
-  upsertMany(args: { data: TCreate[]; conflictTarget?: string[]; update?: string[] }): Promise<{ count: number }>
+  create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
+  createMany<K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; system?: K[] }): Promise<{ count: number }>
+  update<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; data: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S> | null>
+  updateMany<K extends TSys = never>(args: { where?: TWhere; data: TUpdate & __SystemData<TSysData, K>; system?: K[] }): Promise<{ count: number }>
+  upsert<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; create: TCreate & __SystemData<TSysData, K>; update: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
+  upsertMany<K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; conflictTarget?: string[]; update?: string[]; system?: K[] }): Promise<{ count: number }>
   remove(args: { where: TWhere }): Promise<TRow | null>
   removeMany(args?: { where?: TWhere }): Promise<{ count: number }>
   restore(args: { where: TWhere }): Promise<{ count: number }>
@@ -5823,7 +5827,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, '@@gate'>
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, '@@gate'>
-  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'tokenHint' | '@@gate'>
+  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'tokenHint' | '@@gate', ApiKeySystem>
   readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'enrollTokenHash' | 'status' | '@@gate'>
   readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, '@@gate'>
   readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>
@@ -5832,7 +5836,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate'>
   readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations, never, '@@gate'>
   readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate'>
-  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'blueprintId' | '@@gate'>
+  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'blueprintId' | '@@gate', AppSystem>
   readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, '@@gate'>
   readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, '@@gate'>
   readonly appEditor: TableClient<AppEditor, AppEditorCreate, AppEditorUpdate, AppEditorWhere, AppEditorRelations, never, '@@gate'>
@@ -5841,7 +5845,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations, never, '@@gate'>
   readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'status' | '@@gate'>
   readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate'>
-  readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations, 'start' | 'idle' | 'fail' | 'cancel', 'retryCount' | 'lastRunAt' | 'lastRunStatus' | 'status' | '@@gate'>
+  readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations, 'start' | 'idle' | 'fail' | 'cancel', 'retryCount' | 'lastRunAt' | 'lastRunStatus' | 'status' | '@@gate', JobSystem>
   readonly jobRun: TableClient<JobRun, JobRunCreate, JobRunUpdate, JobRunWhere, JobRunRelations, never, '@@gate'>
   readonly recipe: TableClient<Recipe, RecipeCreate, RecipeUpdate, RecipeWhere, RecipeRelations, never, '@@gate'>
   readonly recipeRun: TableClient<RecipeRun, RecipeRunCreate, RecipeRunUpdate, RecipeRunWhere, RecipeRunRelations, never, '@@gate'>
@@ -5851,10 +5855,10 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly featureFlag: TableClient<FeatureFlag, FeatureFlagCreate, FeatureFlagUpdate, FeatureFlagWhere, FeatureFlagRelations, never, '@@gate'>
   readonly flagOverride: TableClient<FlagOverride, FlagOverrideCreate, FlagOverrideUpdate, FlagOverrideWhere, FlagOverrideRelations, never, '@@gate'>
   readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations, never, '@@gate'>
-  readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate'>
+  readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate', AlertRuleSystem>
   readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere, AlertRuleChannelRelations, never, '@@gate'>
   readonly alertEvent: TableClient<AlertEvent, AlertEventCreate, AlertEventUpdate, AlertEventWhere, AlertEventRelations, never, '@@gate'>
-  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume', 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'status' | '@@gate'>
+  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume', 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'status' | '@@gate', MonitorSystem>
   readonly monitorCheck: TableClient<MonitorCheck, MonitorCheckCreate, MonitorCheckUpdate, MonitorCheckWhere, MonitorCheckRelations, never, '@@gate'>
   readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere, MonitorEventRelations, never, '@@gate'>
   readonly monitorChannel: TableClient<MonitorChannel, MonitorChannelCreate, MonitorChannelUpdate, MonitorChannelWhere, MonitorChannelRelations, never, '@@gate'>
@@ -5864,7 +5868,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly blueprint: TableClient<Blueprint, BlueprintCreate, BlueprintUpdate, BlueprintWhere, BlueprintRelations, never, '@@gate'>
   readonly blueprintParam: TableClient<BlueprintParam, BlueprintParamCreate, BlueprintParamUpdate, BlueprintParamWhere, BlueprintParamRelations, never, '@@gate'>
   readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere, RegistryImageRelations, never, '@@gate'>
-  readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecated' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate'>
+  readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecated' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem>
   readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations, never, '@@gate'>
   readonly backup: TableClient<Backup, BackupCreate, BackupUpdate, BackupWhere, BackupRelations, never, '@@gate'>
   readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, '@@gate'>

@@ -12,7 +12,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
-import { createService, buildBase } from '../src/core/service.ts'
+import { createService } from '../src/core/service.ts'
 import { describeApp } from '../src/core/app-model.ts'
 import { renderAppSnapshot } from '../tools/app.ts'
 import { $ } from '../index.ts'
@@ -46,9 +46,7 @@ beforeAll(async () => {
   } as never)
 
   // The generated shape: no body, the moves are derived.
-  app.services.register(createService({
-    name: 'todos', ...(buildBase({ channel: 'todos' }) as unknown as Record<string, unknown>),
-  } as never))
+  app.services.register(createService({ name: 'todos', channel: 'todos' }))
 
   app.services.register(createService({
     name: 'desk', model: 'Todo',

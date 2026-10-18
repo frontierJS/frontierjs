@@ -324,9 +324,14 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   let focusStep = 0
   renderer.keyInput.on('keypress', (k) => {
     focusStep = 0
+    // A route whose controls paint after its mount (a list once its load
+    // lands) had nothing to focus when it opened. The first key that is not
+    // a way out takes the first control, so Enter presses it without a Tab.
+    const adopted = shown && !renderer.currentFocusedRenderable && !k.ctrl && !k.meta && !k.option
+      && k.name !== 'tab' && k.name !== 'escape' && tui.focusNext()
     const arrow = VIM[k.name]
     if (!arrow || mode().mode !== 'normal' || k.ctrl || k.meta || k.option || k.shift) return
-    focusStep = FOCUS[k.name] ?? 0
+    focusStep = adopted ? 0 : FOCUS[k.name] ?? 0
     ;[k.name, k.sequence] = arrow
   })
   const [zoom, setZoom] = createSignal(false)
@@ -367,6 +372,9 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     try {
       const Route = (await import(byId.get(node.id).file)).default
       screen = tui.mount(Route, { renderer, props: { data: page.data } })
+      // Nothing may take focus yet, and the line must not keep the last
+      // route's INSERT; a focus that does land sets it from the control.
+      setMode({ mode: 'normal', field: false })
       tui.focusNext()
     } catch (e) {
       showList(`${page.pathname} failed: ${e.message}`)

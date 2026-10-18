@@ -131,11 +131,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./island` | `src/island/index.js` | yes |
 | exports | `./audit` | `src/audit/index.js` | yes |
 | exports | `./junction` | `src/junction/junction-adapter.js` | yes |
-| bin | `jetty-build-ext` | `bin/build-ext.js` | yes |
-| bin | `jetty-dev-ext` | `bin/dev-ext.js` | yes |
-| bin | `jetty-info` | `bin/info.js` | yes |
-| bin | `jetty-audit` | `bin/audit.js` | yes |
-| bin | `jetty-manifest` | `bin/manifest.js` | yes |
+| bin | `jetty` | `bin/jetty.js` | yes |
 | main | `main` | `src/index.js` | yes |
 
 - peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0` · `@frontierjs/sierra`: `^0.1.0`
@@ -385,6 +381,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./gate (default)` | `src/gate/gate.js` | yes |
 | exports | `./geo (types)` | `src/geo/geo.d.ts` | yes |
 | exports | `./geo (default)` | `src/geo/geo.js` | yes |
+| exports | `./docfences` | `src/docfences/docfences.js` | yes |
 | exports | `./frontmatter` | `src/frontmatter/frontmatter.js` | yes |
 | exports | `./glow` | `src/glow/glow.js` | yes |
 | exports | `./history` | `src/history/history.js` | yes |

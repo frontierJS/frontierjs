@@ -66,6 +66,8 @@ export function resolveWall(fields: WallFields, timeZone: string): number[]
 export function fromWall(fields: WallFields, timeZone: string, options?: { disambiguation?: Disambiguation }): number
 export function format(instant: InstantInput, pattern: string, options: FormatOptions): string
 export function relative(instant: InstantInput, now: InstantInput, options?: RelativeOptions): string
+/** 'Today' / 'Yesterday' / 'Tomorrow', a weekday for the five days before yesterday, else 'Jun 27' or 'Dec 31, 2025' — calendar days in `timeZone`. */
+export function dayHeader(instant: InstantInput, now: InstantInput, options: FormatOptions): string
 export function plainDateIn(instant: InstantInput, timeZone: string): PlainDate
 export function addToDate(date: PlainDate, duration: DateDuration): PlainDate
 export function daysBetween(from: PlainDate, to: PlainDate): number
@@ -91,6 +93,8 @@ export interface Datetime {
   fromWall(fields: WallFields, options?: { disambiguation?: Disambiguation; timeZone?: string }): number
   relative(instant: InstantInput, now: InstantInput, options?: RelativeOptions): string
   relativeToNow(instant: InstantInput, options?: RelativeOptions): string
+  dayHeader(instant: InstantInput, now: InstantInput, options?: Partial<FormatOptions>): string
+  dayHeaderNow(instant: InstantInput, options?: Partial<FormatOptions>): string
   plainDateIn(instant: InstantInput, timeZone?: string): PlainDate
   startOfDay(date: PlainDate, timeZone?: string): number
   /** The day `now()` falls on in the instance's zone, or the one given. */

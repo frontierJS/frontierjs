@@ -9,7 +9,7 @@
  */
 
 import {
-  DIRECTIVE_PARAMS, DIRECTIVE_SCHEMAS, TRANSPORT_PARAMS, RESERVED_PARAMS,
+  DIRECTIVE_PARAMS, DIRECTIVE_SCHEMAS, TRANSPORT_PARAMS, RESERVED_PARAMS, COMBINATORS,
   parseDirectives, directiveParams, splitParams, unknownDirectives, invalidDirectives, listedDirectives, transportFlags,
   orderByPair, orderByValue,
 } from '../../src/directives/directives.js'
@@ -443,4 +443,23 @@ test('directives: $recursive travels as a structure and the kit does not grade i
   assert.deepEqual(directiveParams({ recursive: { direction: 'ancestors' } }), { $recursive: { direction: 'ancestors' } })
   assert.deepEqual(unknownDirectives({ $recursive: true }), [])
   assert.deepEqual(parseDirectives({ $recursive: { depth: 2 } }), { recursive: { depth: 2 } }, 'the Data boundary refuses a key it does not hold')
+})
+
+// ─── Combinators (FJS-D910, FJS-2213) ─────────────────────────────────────────
+
+test('directives: $or/$and/$not are filters written with a $, not directives', function () {
+  assert.deepEqual([...COMBINATORS], ['$or', '$and', '$not'])
+  for (const key of COMBINATORS) assert.ok(!RESERVED_PARAMS.has(key), key + ' is a filter, not reserved')
+  const params = { $or: [{ name: 'a' }], $and: [{ x: 1 }], $not: { y: 2 }, $nope: '1', keep: '2' }
+  assert.deepEqual(unknownDirectives(params), ['$nope'])
+  const { query, directives } = splitParams(params)
+  assert.deepEqual(query, { $or: [{ name: 'a' }], $and: [{ x: 1 }], $not: { y: 2 }, keep: '2' })
+  assert.equal(Object.keys(directives).length, 0)
+})
+
+test('directives: a URL spelling of $or reaches the filters whole', function () {
+  const { query } = splitParams(parseQueryString('$or[][name]=a&$not[name]=b'))
+  assert.deepEqual(unknownDirectives(parseQueryString('$or[][name]=a&$not[name]=b')), [])
+  assert.deepEqual(query.$not, { name: 'b' })
+  assert.ok(Array.isArray(query.$or))
 })

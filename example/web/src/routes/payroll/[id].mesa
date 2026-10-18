@@ -69,7 +69,7 @@ title: Pay run
     { name: 'gross',      label: 'Gross',      align: 'right' },
     { name: 'deductions', label: 'Deductions', align: 'right' },
     { name: 'net',        label: 'Net',        align: 'right' },
-    { name: 'sent',       label: 'Sent' },
+    { name: 'sent',       label: 'Marked sent' },
   ]
 
   const lineColumns = [

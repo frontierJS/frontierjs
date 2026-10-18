@@ -68,11 +68,8 @@ const BUILTIN_LOCALS = new Set([
   // so a top-level declaration of one lands in the same scope and wins. Two of
   // them break and neither says so: `function __anchor(){}` throws at mount
   // with `anchor.before is not a function`, and `const __prev = 9` renders
-  // `[object Object]` because the callback's parameter shadows it. `__block`
-  // is here for the same reason even though the cases probed survived it —
-  // it is threaded into every `track()` call, and a shape that does reach it
-  // would fail the same silent way.
-  '__anchor', '__props', '__block', '__prev',
+  // `[object Object]` because the callback's parameter shadows it.
+  '__anchor', '__props', '__prev',
 ])
 
 /**
@@ -7380,11 +7377,11 @@ export function makeComponent(node, option = {}) {
 
       const propsObj = buildPropsObj(n.allProps, n.hasSpreads ? n.spreadProps : [])
 
-      // Call: ComponentFn(anchor, props, null)
-      // As an island: $$runtime.island(anchor, ComponentFn, props, null, meta)
+      // Call: ComponentFn(anchor, props)
+      // As an island: $$runtime.island(anchor, ComponentFn, props, meta)
       const open  = n.island ? `$$runtime.island(${n.anchorName}, ${n.componentName}, ` : `${n.componentName}(${n.anchorName}, `
       const close = n.island ? `, ${JSON.stringify(n.island)});` : ');'
-      w.writeLine(`${open}${propsObj}, null${close}`)
+      w.writeLine(`${open}${propsObj}${close}`)
 
       // Register anchor so pushProps, bindProp and bind:this can find the
       // child's registry. bind:this needs it too — the exported interface is
@@ -8569,7 +8566,7 @@ export function emitScript(ctx) {
     if (!paths?.length) return
     // Standalone signal per watched path — always-notify equality
     const pathDecls = paths.map(({ sigVar, dotPath }) =>
-      `const ${sigVar} = $$runtime.track(undefined, void 0, void 0, __block, true);\nconst $fire_${v.name}_${sigVar} = () => $$runtime.set(${sigVar}, undefined);`
+      `const ${sigVar} = $$runtime.track(undefined, void 0, void 0, true);\nconst $fire_${v.name}_${sigVar} = () => $$runtime.set(${sigVar}, undefined);`
     ).join('\n')
     out.push(xNode.raw(pathDecls))
 
@@ -8637,7 +8634,7 @@ export function emitScript(ctx) {
       const defaultExpr = v.initRaw ? rewriteExpr(v.initRaw, ctx.accessors) : 'undefined'
       mod.head.push(
         xNode.raw(
-          `const ${sigR} = $$runtime.track($$option.props?.${v.name} !== undefined ? $$option.props.${v.name} : ${defaultExpr}, void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`
+          `const ${sigR} = $$runtime.track($$option.props?.${v.name} !== undefined ? $$option.props.${v.name} : ${defaultExpr});\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`
         )
       )
     } else {
@@ -8645,7 +8642,7 @@ export function emitScript(ctx) {
       // The deferred default is pushed in step 5 after all vars/memos are emitted.
       mod.head.push(
         xNode.raw(
-          `const ${sigR} = $$runtime.track($$option.props?.${v.name}, void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`
+          `const ${sigR} = $$runtime.track($$option.props?.${v.name});\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`
         )
       )
       deferredPropDefaults[v.name] = { sigR, sigW, initRaw: v.initRaw }
@@ -8682,7 +8679,7 @@ export function emitScript(ctx) {
     if (defaultNeedsDeferring(v, ctx)) {
       mod.head.push(
         xNode.raw(
-          `const ${sigR} = $$runtime.track($$option.props?.${v.name}, void 0, void 0, __block);`
+          `const ${sigR} = $$runtime.track($$option.props?.${v.name});`
         )
       )
       deferredPropDefaults[v.name] = { sigR, sigW: null, initRaw: v.initRaw }
@@ -8690,7 +8687,7 @@ export function emitScript(ctx) {
     const defaultExpr = v.initRaw ? rewriteExpr(v.initRaw, ctx.accessors) : 'undefined'
     mod.head.push(
       xNode.raw(
-        `const ${sigR} = $$runtime.track($$option.props?.${v.name} !== undefined ? $$option.props.${v.name} : ${defaultExpr}, void 0, void 0, __block);`
+        `const ${sigR} = $$runtime.track($$option.props?.${v.name} !== undefined ? $$option.props.${v.name} : ${defaultExpr});`
       )
     )
     }
@@ -8864,7 +8861,7 @@ export function emitScript(ctx) {
       // the key a component resolves to cannot change for its lifetime.
       mod.code.push(xNode.raw(
         `const $$ctxg_${v.name} = $$ctxRead('${v.contextKey}');\n` +
-        `const ${v.name} = $$runtime.trackDerived(() => ($$ctxg_${v.name} ? $$ctxg_${v.name}() : undefined), void 0, void 0, __block);`
+        `const ${v.name} = $$runtime.trackDerived(() => ($$ctxg_${v.name} ? $$ctxg_${v.name}() : undefined));`
       ))
       if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${v.name}, '${v.name}', 'derived-context');`))
       ctx.accessors[v.name] = `$$runtime.get(${v.name})`
@@ -8873,7 +8870,7 @@ export function emitScript(ctx) {
       // The result is stored as a signal so template bindings re-run when it resolves.
       const sigR = `$$sig_${v.name}`,
         sigW = `$$set_${v.name}`
-      mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(undefined, void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
+      mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(undefined);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
       ctx.accessors[v.name] = `$$runtime.get(${sigR})`
       const stateVar = `$$async_${v.name}`
       mod.code.push(xNode.raw(`const ${stateVar} = $$runtime.makeAsyncState();`))
@@ -8906,7 +8903,7 @@ export function emitScript(ctx) {
       // Result is also a signal so the template updates when the fetch completes.
       const sigR = `$$sig_${v.name}`,
         sigW = `$$set_${v.name}`
-      mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(undefined, void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
+      mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(undefined);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
       ctx.accessors[v.name] = `$$runtime.get(${sigR})`
       const stateVar = `$$async_${v.name}`
       mod.code.push(xNode.raw(`const ${stateVar} = $$runtime.makeAsyncState();`))
@@ -8939,7 +8936,7 @@ export function emitScript(ctx) {
         v.initNode ? rewriteAssignments(init, v.initNode, ctx) : init,
         { ...ctx.accessors, [v.name]: `$$runtime.get(${v.name})`, [WATCHED_CALLS]: watchedCalls }
       )
-      mod.code.push(xNode.raw(`const ${v.name} = $$runtime.trackDerived(() => (${rewrittenInit}), void 0, void 0, __block);`))
+      mod.code.push(xNode.raw(`const ${v.name} = $$runtime.trackDerived(() => (${rewrittenInit}));`))
       if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${v.name}, '${v.name}', 'derived');`))
       ctx.accessors[v.name] = `$$runtime.get(${v.name})`
     } else if (v.kind === 'const') {
@@ -8981,7 +8978,7 @@ export function emitScript(ctx) {
         // overridden. The lookup is hoisted for the reason in the const branch.
         mod.code.push(xNode.raw(
           `const $$ctxg_${v.name} = $$ctxRead('${v.contextKey}');\n` +
-          `const ${sigR} = $$runtime.trackDerived(() => ($$ctxg_${v.name} ? $$ctxg_${v.name}() : undefined), void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`
+          `const ${sigR} = $$runtime.trackDerived(() => ($$ctxg_${v.name} ? $$ctxg_${v.name}() : undefined));\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`
         ))
         if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'let-context');`))
       } else if (v.isWritableDerived) {
@@ -8996,7 +8993,7 @@ export function emitScript(ctx) {
       } else {
         // Plain let — snapshot at init, independent thereafter.
         const rewrittenInit = rewriteExpr(init, ctx.accessors)
-        mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(${rewrittenInit}, void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
+        mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(${rewrittenInit});\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
         if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'let');`))
       }
 
@@ -10738,7 +10735,7 @@ export async function compile(source, config = {}) {
         w.write(true, '')
       }
       // Named function export
-      w.write(true, `export default function ${_compName}(__anchor, __props, __block) {`)
+      w.write(true, `export default function ${_compName}(__anchor, __props) {`)
       w.indent++
       // In dev builds, pass component name + file so __dev can track instances.
       const _escFilename = (_filename ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")

@@ -21,7 +21,7 @@
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { partsIn, resolveWall, fromWall, format, relative, createDatetime, plainDateIn, addToDate, daysBetween, startOfDay, dueAt, offsetSpans } from '../../src/datetime/datetime.js'
+import { partsIn, resolveWall, fromWall, format, relative, dayHeader, createDatetime, plainDateIn, addToDate, daysBetween, startOfDay, dueAt, offsetSpans } from '../../src/datetime/datetime.js'
 
 const here   = dirname(fileURLToPath(import.meta.url))
 const VECTORS = JSON.parse(readFileSync(join(here, '..', 'fixtures', 'datetime-vectors.json'), 'utf8'))
@@ -207,6 +207,15 @@ test('datetime: a string with no zone is refused, and told where to go', functio
   assert.throws(() => partsIn(NaN, 'UTC'), /not an instant/)
 })
 
+test('datetime: an impossible date or time is refused, never rolled forward', function () {
+  assert.throws(() => partsIn('2026-02-30T00:00:00Z', 'UTC'), /not an instant/)
+  assert.throws(() => partsIn('2026-02-29T00:00:00Z', 'UTC'), /not an instant/)
+  assert.throws(() => partsIn('2026-13-01T00:00:00Z', 'UTC'), /not an instant/)
+  assert.throws(() => partsIn('2026-01-01T24:00:00Z', 'UTC'), /not an instant/)
+  assert.throws(() => partsIn('2026-01-01T00:60:00Z', 'UTC'), /not an instant/)
+  assert.equal(partsIn('2028-02-29T23:59:59Z', 'UTC').day, 29)
+})
+
 test('datetime: the zone is required and an unknown one is named', function () {
   assert.throws(() => format(JULY_4, 'YYYY'), /timeZone is required/)
   assert.throws(() => partsIn(JULY_4, 'Mars/Olympus'), /unknown time zone "Mars\/Olympus"/)
@@ -216,6 +225,16 @@ test('datetime: partsIn — weekday is ISO and offset is minutes east', function
   const p = partsIn(JULY_4, 'America/Denver')
   assert.deepEqual(p, { year: 2026, month: 7, day: 4, hour: 10, minute: 5, second: 3, millisecond: 0, weekday: 6, offset: -360 })
   assert.equal(partsIn(JULY_4, 'Asia/Kathmandu').offset, 345)
+})
+
+test('datetime: partsIn before 1 CE counts years astronomically, as the ISO string does', function () {
+  const bc = Date.parse('-000001-06-01T00:00:00Z')
+  const p  = partsIn(bc, 'UTC')
+  assert.deepEqual([p.year, p.month, p.day, p.offset], [-1, 6, 1, 0])
+  assert.equal(partsIn(Date.parse('0000-06-01T00:00:00Z'), 'UTC').year, 0)
+  assert.equal(partsIn(Date.parse('0001-06-01T00:00:00Z'), 'UTC').year, 1)
+  assert.equal(partsIn(bc, 'America/Denver').year, -1)
+  assert.ok(Math.abs(partsIn(bc, 'America/Denver').offset) < 1000, 'local mean time, not a year of minutes')
 })
 
 test('datetime: fromWall refuses an impossible calendar date rather than rolling it over', function () {
@@ -337,6 +356,53 @@ test('relative: narrow is what basecamp wrote by hand', function () {
 test('relative: now is required and a bad style is named', function () {
   assert.throws(() => relative(NOW), /needs now.*createDatetime/)
   assert.throws(() => ago(H, { style: 'tiny' }), /style "tiny"/)
+})
+
+/* ── dayHeader ──────────────────────────────────────────────────────── */
+
+// FJS-2008: NOW is Saturday 4 July 2026, 06:00 in Denver and already Sunday 00:00 in Auckland.
+const header = (iso, options) => dayHeader(iso, NOW, { timeZone: 'America/Denver', ...options })
+
+test('dayHeader: today, yesterday, a weekday inside the week, then a date', function () {
+  assert.equal(header('2026-07-04T08:00:00Z'), 'Today')
+  assert.equal(header('2026-07-03T08:00:00Z'), 'Yesterday')
+  assert.equal(header('2026-07-02T08:00:00Z'), 'Thursday')
+  assert.equal(header('2026-06-28T08:00:00Z'), 'Sunday')
+  assert.equal(header('2026-06-27T08:00:00Z'), 'Jun 27', 'a week back is Saturday again, so it is a date')
+  assert.equal(header('2025-12-31T20:00:00Z'), 'Dec 31, 2025')
+  assert.equal(header('2026-07-05T20:00:00Z'), 'Tomorrow')
+  assert.equal(header('2026-07-06T20:00:00Z'), 'Jul 6', 'ahead of tomorrow is a date, never a weekday that names a past day')
+})
+
+test('dayHeader: the day is the zone\'s, not the UTC date', function () {
+  // 2026-07-04T03:00Z is still 3 July in Denver and already 4 July in UTC.
+  assert.equal(header('2026-07-04T03:00:00Z'), 'Yesterday')
+  assert.equal(dayHeader('2026-07-04T03:00:00Z', NOW, { timeZone: 'UTC' }), 'Today')
+  assert.equal(dayHeader(NOW, NOW, { timeZone: 'Pacific/Auckland' }), 'Today')
+  assert.equal(dayHeader('2026-07-05T12:00:00Z', NOW, { timeZone: 'Pacific/Auckland' }), 'Tomorrow')
+})
+
+test('dayHeader: two instants share a header exactly when they share a day', function () {
+  const keys = new Set()
+  for (let i = 0; i < 40; i++) keys.add(header(NOW - i * 6 * H))
+  assert.equal(keys.size, 11, '40 six-hour steps cover ten days and a day')
+  assert.equal(header('2026-07-03T06:00:00Z'), header('2026-07-04T05:59:00Z'))
+})
+
+test('dayHeader: locale names the words, zone and now are required', function () {
+  assert.equal(header('2026-07-03T08:00:00Z', { locale: 'es' }), 'Ayer')
+  assert.equal(header('2026-07-02T08:00:00Z', { locale: 'es' }), 'Jueves')
+  assert.throws(() => dayHeader(NOW, NOW), /timeZone is required/)
+  assert.throws(() => dayHeader(NOW, undefined, { timeZone: 'UTC' }), /needs now.*createDatetime/)
+})
+
+test('createDatetime: dayHeaderNow reads the clock and the zone it was handed', function () {
+  let clock = NOW
+  const dt = createDatetime({ timeZone: 'America/Denver', now: () => clock })
+  assert.equal(dt.dayHeaderNow('2026-07-03T08:00:00Z'), 'Yesterday')
+  clock += 2 * D
+  assert.equal(dt.dayHeaderNow('2026-07-03T08:00:00Z'), 'Friday')
+  assert.equal(dt.dayHeader('2026-07-03T08:00:00Z', NOW, { timeZone: 'UTC' }), 'Yesterday')
 })
 
 /* ── createDatetime ─────────────────────────────────────────────────── */

@@ -300,6 +300,8 @@ function makeGitignore() {
     'db/*.db-shm',
     'db/*.db-wal',
     'db/backups/',
+    // The JSON Schema `db:push`, `db:migrate` and `db:jsonschema` derive.
+    'db/.json/',
     '.DS_Store',
     'dist/',
     '.fli-tmp/',
@@ -465,8 +467,8 @@ fli scaffold ModelName --fields "name:string email:email"
 # Generate a CRUD admin UI from schema.lite
 fli admin:generate
 
-# Validate cross-realm integrity
-fli validate
+# Check services, resources and the schema against each other
+fli check
 
 # Pre-flight checks before deploying
 fli deploy:doctor

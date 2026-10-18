@@ -52,6 +52,12 @@ export const DUNNING_DAYS = 21
  *  before anybody has had a chance to fix it. Stamped as `graceDays`. */
 export const GRACE_DAYS = 3
 
+/** Days to wait before presenting an invoice again, after its 1st, 2nd, … soft
+ *  decline (`FJS-D907`). Four re-presentments and then the dunning clock decides:
+ *  a shop that asks daily for three weeks is a shop the card networks notice.
+ *  Not stamped on the invoice -- editing it moves retries not yet queued. */
+export const RETRY_DAYS = [1, 3, 5, 7]
+
 /** Move a period boundary on by one billing interval — a plain date in, a plain
  *  date out, and no zone anywhere.
  *

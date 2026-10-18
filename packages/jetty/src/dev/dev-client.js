@@ -42,12 +42,12 @@ const RECONNECT_BASE_MS = 1000
 // That module carries no `import.meta` for the same reason (`FJS-030`).
 
 if (typeof globalThis !== 'undefined' && !globalThis.__jettyMesa) {
-  const _registry = new Map()  // id → Set<{hmrMark,anchor,props,block,fn}>
+  const _registry = new Map()  // id → Set<{hmrMark,anchor,props,fn}>
 
   globalThis.__jettyMesa = {
-    register(id, hmrMark, anchor, props, block, fn) {
+    register(id, hmrMark, anchor, props, fn) {
       if (!_registry.has(id)) _registry.set(id, new Set())
-      const entry = { hmrMark, anchor, props, block, fn }
+      const entry = { hmrMark, anchor, props, fn }
       _registry.get(id).add(entry)
       return () => {
         const set = _registry.get(id)

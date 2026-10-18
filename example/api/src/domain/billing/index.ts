@@ -20,5 +20,5 @@ export {
   // taking the money, and what the provider's answer means
   chargeInvoice, declineKind,
   // the deadlines a subscription is graded against
-  TERMS_DAYS, GRACE_DAYS, DUNNING_DAYS,
+  TERMS_DAYS, GRACE_DAYS, DUNNING_DAYS, RETRY_DAYS,
 } from './billing.ts'

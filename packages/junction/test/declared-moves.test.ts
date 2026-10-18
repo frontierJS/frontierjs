@@ -16,7 +16,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
-import { buildService, buildBase } from '../src/core/service.ts'
+import { buildService } from '../src/core/service.ts'
 import { $ } from '../index.ts'
 
 const SCHEMA = `
@@ -61,10 +61,8 @@ beforeAll(async () => {
               http: { ...defaultConfig.http, drainTimeout: 50 } },
   } as never)
 
-  // The generated shape, exactly: a one-line base the loader names and wraps.
-  app.services.register(buildService({
-    name: 'todos', ...(buildBase({ channel: 'todos' }) as unknown as Record<string, unknown>),
-  } as never))
+  // The generated shape: no body, the moves are derived.
+  app.services.register(buildService({ name: 'todos', channel: 'todos' }))
 
   // An author's own `complete` beside the moves. It wins.
   app.services.register(buildService({

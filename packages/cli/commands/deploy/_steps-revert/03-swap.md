@@ -19,6 +19,7 @@ const { container, replaced } = swapContainer($, {
   dbPath:  apiFiles(deployConf, serverPath).dbDir,
   envFile: apiFiles(deployConf, serverPath).envFile,
   deployConf,
+  corsOrigins: derivedOrigins($, deployConf),
   configuration: $.config.revertConfiguration,
   log,
 })

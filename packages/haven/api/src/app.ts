@@ -54,6 +54,8 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   const app = createApp({
     db,
     auth,
+    // Stated, not probed: under a test runner the entry file is the test.
+    // services/ beside this file, ../config above it (`FJS-D1080`).
     root:       import.meta.url,
     principal:  standing(db),
     config: {

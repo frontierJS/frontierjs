@@ -435,7 +435,8 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
    *  below rather than being treated as non-printable. */
   async function key(k, opts = {}) {
     const { code = k.length === 1 ? `Key${k.toUpperCase()}` : k, keyCode = 0, modifiers = 0, text } = opts
-    const printable = k.length === 1 && modifiers === 0
+    // Code points, not units: an emoji is two units and would read as a key name.
+    const printable = [...k].length === 1 && modifiers === 0
     const chars = text ?? (printable ? k : null)
     const base = {
       key: k, code, windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode, modifiers,

@@ -353,8 +353,8 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   slot code. Content snippets are wrapped in `$$runtime.content()`, which is how
   `unclaimedContent` tells dropped content from a function prop and how
   `restProps` keeps it off `$attributes`. A prop written beside content of its
-  name is the override (`contentFallback`). The component's third parameter,
-  `__block`, is now always `null`.
+  name is the override (`contentFallback`). A component takes `(__anchor, __props)`
+  and nothing else (`FJS-3149`).
 - **`<slot>` takes no attribute but `name`.** A slot carries content IN and
   never a value out; there is no `let:` to read one with. Refused at compile
   time (VISION RULE 35b, `FJS-304`). A hole the child must PARAMETERIZE is a

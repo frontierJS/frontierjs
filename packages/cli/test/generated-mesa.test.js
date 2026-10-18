@@ -451,13 +451,3 @@ describe('make:component / make:resource text', async () => {
     expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
   })
 })
-
-// FJS-3004: fli validate repeated make:*'s old text.
-describe('validate text', async () => {
-  const { readFileSync } = await import('node:fs')
-
-  test('it does not say Sierra has no @/ alias', () => {
-    const src = readFileSync(resolve(HERE, '../commands/fli/validate.md'), 'utf8')
-    expect(src).not.toMatch(/(?:no|resolves no)\s+`?@\/`?\s+alias/)
-  })
-})

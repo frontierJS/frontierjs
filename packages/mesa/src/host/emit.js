@@ -574,7 +574,7 @@ export function buildHost(ctx, t) {
     const obj = n.spreads.length
       ? `Object.assign({}, ${n.spreads.map((e) => `(${e.code})`).join(', ')}, ${literal})`
       : literal
-    line(ind, `${n.call}(${m}, ${obj}, null);`)
+    line(ind, `${n.call}(${m}, ${obj});`)
     // The child's registry is found by its anchor, so every call below needs
     // it registered first; the order is the DOM path's.
     const live = n.spreads.length || n.props.some((p) => typeof p.value === 'object')

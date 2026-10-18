@@ -12,7 +12,7 @@
 // no error at any point.
 
 import { describe, test, expect } from 'bun:test'
-import { buildBase, collectCustomMethods, customMethodNames, allowedMethodNames, callService, buildService } from '../src/core/service.ts'
+import { collectCustomMethods, customMethodNames, allowedMethodNames, callService, buildService } from '../src/core/service.ts'
 import { resultData } from '../src/core/envelope.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { manifest as manifestPlugin } from '../src/plugins/manifest/index.ts'
@@ -144,25 +144,6 @@ describe('the action table', () => {
   test('collectCustomMethods is callable on a bare object — the one parse step', () => {
     expect(Object.keys(collectCustomMethods({ reboot: noop, name: 'x' }, 'things'))).toEqual(['reboot'])
     expect(Object.keys(collectCustomMethods({ reboot: noop }, 'things', ['find', 'reboot']))).toEqual(['reboot'])
-  })
-})
-
-// ─── the loader's spread ──────────────────────────────────────────────────
-
-describe('a base reached through the loader keeps its custom methods', () => {
-
-  test('the table survives the spread + re-wrap', () => {
-    const base = buildBase({ model: 'thing', reboot: noop } as never)
-    const svc  = buildService({ name: 'things', ...(base as object) } as never)
-    expect(customMethodNames(svc)).toEqual(['reboot'])
-  })
-
-  test('and the action is still callable', async () => {
-    const base = buildBase({ model: 'thing', reboot: noop } as never)
-    const svc  = buildService({ name: 'things', ...(base as object) } as never)
-    const c    = ctx({ service: 'things', method: 'reboot' })
-    await callService(svc, c)
-    expect(resultData(c.result)).toEqual({ ok: true })
   })
 })
 

@@ -35,7 +35,7 @@ import * as $$runtime from '@frontierjs/mesa/runtime';
 // Template factory — cloned once per mount via cloneNode(true)
 var $$tpl0 = $$runtime.template(`<p> </p>`, 0);
 
-export default function Counter(__anchor, __props, __block) {
+export default function Counter(__anchor, __props) {
   // In dev builds: $$runtime.push_component('Counter', 'Counter.mesa')
   // In prod: $$runtime.push_component()
   $$runtime.push_component();
@@ -43,7 +43,7 @@ export default function Counter(__anchor, __props, __block) {
   $$runtime.unclaimedContent(__props, [/* declared props */], 'Counter');
 
   // Reactive signals (let → track, const → createMemo, export let → makeExternalProperty)
-  const $$sig_count = $$runtime.track(0, void 0, void 0, __block);
+  const $$sig_count = $$runtime.track(0);
   const $$set_count = (v) => $$runtime.set($$sig_count, ...);
 
   {
@@ -2169,9 +2169,9 @@ then a key; a call is a call.
 | `$` | the door — this component instance |
 | `$:` | the reactive label. A JavaScript label, in a namespace of its own; it shares only the character |
 | `$$` | the compiler's own locals. Never authored, never read |
-| `__` | the calling convention — `__anchor`, `__props`, `__block` are the component function's parameters and `__prev` is the render callback's |
+| `__` | the calling convention — `__anchor` and `__props` are the component function's parameters and `__prev` is the render callback's |
 
-All four `__` names are RESERVED: declaring one at the top level of a script is a
+All three `__` names are RESERVED: declaring one at the top level of a script is a
 compile error, because it lands in the same scope and wins (`FJS-482`).
 
 **So is the whole `$$` PREFIX, and it is a prefix rather than a list because a

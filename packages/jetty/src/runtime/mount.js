@@ -22,7 +22,7 @@
 // a real Mesa component.
 //
 // Mesa's compiled component shape:
-//   export default function Component(__anchor, __props, __block) { ... }
+//   export default function Component(__anchor, __props) { ... }
 //
 // Mesa's mount API:
 //   mount(labelNode, component, { props, root }) — labelNode is a DOM node,
@@ -51,8 +51,8 @@ async function loadRuntime() {
 
 /**
  * Mount an app into a DOM root. Auto-detects shape:
- *   - Real Mesa component (length === 3, takes anchor/props/block) → use Mesa mount
- *   - Stub function (length < 3, takes root/props) → call directly
+ *   - Real Mesa component (length === 2, takes anchor/props) → use Mesa mount
+ *   - Stub function (length < 2, takes root) → call directly
  *
  * @param {Element|ShadowRoot} root — DOM container receiving the component
  * @param {Function|Object|string} app — compiled Mesa component or stub-shape app
@@ -67,12 +67,13 @@ export async function mount(root, app, props = {}) {
 
   const runtime = await loadRuntime()
 
-  // Real Mesa component — compiled output is fn(anchor, props, block) with arity 3.
-  if (runtime && typeof app === 'function' && app.length === 3 && typeof runtime.mount === 'function') {
+  // A compiled component is fn(anchor, props). A stub takes the root alone, so
+  // a stub that also reads props is mistaken for a component here.
+  if (runtime && typeof app === 'function' && app.length === 2 && typeof runtime.mount === 'function') {
     return mountWithMesa(root, app, props, runtime)
   }
 
-  // Stub fallback — function(root, props) or function(root) shape, or .render method.
+  // Stub fallback — function(root) shape, or .render method.
   return mountStub(root, app, props)
 }
 

@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createClient, parse, generateDDL, splitStatements } from '../../litestone/src/index.js'
 import { createLogger } from '../src/core/logger.ts'
-import { buildBase, buildService } from '../src/core/service.ts'
+import { buildService } from '../src/core/service.ts'
 import { gateAuth, autoValidate, liftReservedQuery, resetReservedQueryChecks, withLitestoneDb } from '../src/core/litestone.ts'
 import { toFrameworkError } from '../src/core/errors.ts'
 import { splitParams } from '@frontierjs/toolbelt/directives'
@@ -69,12 +69,12 @@ describe('accessor resolution against a real Litestone client', () => {
     expect(out.data).toHaveLength(1)
   })
 
-  test('model omitted — the whole service file is buildBase({})', async () => {
+  test('model omitted — the whole service file is createService({})', async () => {
     const db = await mkDb()
     await db.asSystem().post!.create({ data: { id: 1, title: 'Hi' } })
 
-    // Exactly what the autoloader builds from services/posts.service.ts.
-    const svc = buildService({ name: 'posts', ...(buildBase({}) as object) } as never)
+    // What the autoloader builds from services/posts.service.ts.
+    const svc = buildService({ name: 'posts' })
     const out = await svc.find(ctx(db)) as { data: unknown[] }
     expect(out.data).toHaveLength(1)
   })

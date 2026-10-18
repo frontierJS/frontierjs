@@ -1,7 +1,7 @@
 {
   "name": "@frontierjs/css",
   "version": "0.16.5",
-  "description": "FrontierJS CSS — a minimal, composable, semantics-first design system for Svelte/Vite/UnoCSS apps",
+  "description": "FrontierJS CSS — a minimal, composable, semantics-first design system in plain CSS, the styling language of a FrontierJS app",
   "type": "module",
   "scripts": {
     "demo": "bun demo/serve.js",

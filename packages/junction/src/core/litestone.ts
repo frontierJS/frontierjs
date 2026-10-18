@@ -32,14 +32,17 @@ import type { HookMap } from './hooks.ts'
 import { NotFound, BadRequest, BadGateway, Unauthorized, Forbidden, FrameworkError } from './errors.ts'
 import type { AppDb, MirrorForward } from './app.ts'
 import { fieldError } from './field-errors.ts'
+import { CRUD_METHODS } from './methods.ts'
 import type { ServiceContext, ServiceContextLocals, QueryDirectives } from './context.ts'
 import { clampPagination } from './directives.ts'
+import { columnsUnmoved } from './write-narrowing.ts'
 import { coveredWrite, freezeUser, requestMeta, currentCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, list, resultData, isServiceResult, type BulkFailure } from './envelope.ts'
 import type { TransportContext } from '../transport/types.ts'
 import { generateCuid } from '@frontierjs/toolbelt/ids'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
+import { COMBINATORS } from '@frontierjs/toolbelt/directives'
 import { gradeStanding, levelPasses } from '@frontierjs/toolbelt/gate'
 import type { GradableUser } from '@frontierjs/toolbelt/gate'
 import { normalizeOrderBy, normalizeSelect, type SortParam, type SelectParam, type OrderBy } from '@frontierjs/toolbelt/query'
@@ -255,7 +258,7 @@ function recursiveOf(v: unknown): ParsedQuery['recursive'] {
   )
 }
 
-const WHERE_COMBINATORS = new Set(['$or', '$and', '$not'])
+const WHERE_COMBINATORS = new Set<string>(COMBINATORS)
 
 /**
  * Filters + directives → a Litestone query.
@@ -1165,7 +1168,31 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       where, ...(q.withDeleted ? { withDeleted: true } : {}), ...templateArgs(q),
     })
     if (readable == null) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
-    throw new Forbidden(`${modelLabel(ctx)} with ${idField}=${ctx.id} is not one you may ${verb}`)
+    const authored = await authoredRefusal(ctx, readable as Record<string, unknown>, verb === 'remove' ? 'delete' : 'update')
+    throw new Forbidden(authored ?? `${modelLabel(ctx)} with ${idField}=${ctx.id} is not one you may ${verb}`)
+  }
+
+  /**
+   * The sentence the schema wrote for the policy that refused this caller's
+   * write to a row they can already read (`FJS-3129`). Litestone's update
+   * answers a bare null for it, so the reason is asked of `$checkWrite` against
+   * the stored row. Absent where the rule carries no message, where the verdict
+   * is `ok` (the write was refused for another reason), or where the client
+   * cannot answer — the caller then gets the generic refusal.
+   */
+  async function authoredRefusal(
+    ctx: ServiceContext, row: Record<string, unknown>, op: 'update' | 'delete',
+  ): Promise<string | undefined> {
+    const db = ctx.locals['__litestoneScopedDb'] as LitestoneClientApi | undefined
+    if (!db || !('$checkWrite' in db)) return undefined
+    const accessor = accessorIfModel(db, model ?? ctx.service)
+    if (!accessor) return undefined
+    try {
+      const v = await db.$checkWrite!(accessor, op, row, op === 'update' && ctx.data && !Array.isArray(ctx.data) ? ctx.data as Record<string, unknown> : null)
+      return v.ok ? undefined : v.message
+    } catch {
+      return undefined
+    }
   }
 
   /**
@@ -2785,6 +2812,11 @@ export async function announcementPayload(
   const id = (payload as Record<string, unknown> | null)?.[idField] ?? ctx.id
   const named = `${ctx.service}.${ctx.method}`
   const shown = missing.slice(0, 6).join(', ') + (missing.length > 6 ? `, +${missing.length - 6} more` : '')
+  // An undeclared custom method is treated as a write, so a READ trips this
+  // warning too and neither fix below is right for it.
+  const readHint = (CRUD_METHODS as readonly string[]).includes(ctx.method as string)
+    ? ''
+    : ` If it only reads, declare it: methods: [{ method: '${ctx.method}', read: true }].`
 
   if (id != null) {
     try {
@@ -2795,7 +2827,7 @@ export async function announcementPayload(
           `[Junction] ${named}() answered ${keys.size} of ${columns.size} columns — missing ${shown}. ` +
           `The announcement carries the row instead, re-read by ${idField}; the CALLER still gets the ` +
           `partial row, and a page assigning it over the record it renders loses those fields. Answer the ` +
-          `whole row, or state the payload with ctx.dispatch.`)
+          `whole row, or state the payload with ctx.dispatch.${readHint}`)
         return row
       }
     } catch {
@@ -2816,7 +2848,7 @@ export async function announcementPayload(
     `[Junction] ${named}() announced something that is not a ${accessor} row — missing ${shown}` +
     `${id == null ? ', and carries no id to re-read one by' : ', and no row answered to that id'}. ` +
     `Subscribers can use it as a signal but cannot merge it into a record. Answer the row, or say what ` +
-    `you mean with ctx.dispatch = <value> (which silences this), or ctx.dispatch = false to announce nothing.`)
+    `you mean with ctx.dispatch = <value> (which silences this), or ctx.dispatch = false to announce nothing.${readHint}`)
   return payload
 }
 
@@ -5392,12 +5424,14 @@ export function announceDataWrites(
   let dependents: Map<string, Set<string>> | null = null
   let dependentsAt: number | undefined
   const modelOf = new Map<string, string>()
+  const readColumnsOf = new Map<string, Set<string>>()
 
   const dependentsOf = (model: string): string[] => {
     if (!dependents || dependentsAt !== app.services.version) {
       dependents   = new Map()
       dependentsAt = app.services.version
       modelOf.clear()
+      readColumnsOf.clear()
       for (const name of app.services.list()) {
         const svc      = app.services.get(name) as { model?: string | null } | undefined
         const accessor = serviceAccessor({ name, model: svc?.model })
@@ -5417,16 +5451,33 @@ export function announceDataWrites(
           return []
         }
         const spellings = new Set(accessorCandidates(accessor).map(c => c.toLowerCase()))
+        // The columns of each reached model a read verdict reads, so a write
+        // that touches none of them regrades nothing (`FJS-3127`). A client
+        // predating the probe answers none, and then every write regrades.
+        let columns: Record<string, string[]> = {}
+        try {
+          const fn = (db as Record<string, ((a: string) => Record<string, string[]>) | undefined>).$readColumns
+          if (typeof fn === 'function')
+            for (const candidate of accessorCandidates(accessor)) {
+              const answer = fn(candidate)
+              if (Object.keys(answer).length) { columns = answer; break }
+            }
+        } catch { /* an unknown name */ }
+        const readBy = Object.fromEntries(Object.entries(columns).map(([m, c]) => [m.toLowerCase(), c]))
         // `$fromReach` joins `$readReach` as a reason to re-read: an `@from`
         // count moves when a CHILD is written and the parent row never does, so
         // no frame names it (`FJS-2632`). A model reading its own table through
         // an `@from` is announced by its own write already, so only the others.
+        // A value computed off a child's columns is not narrowed: every write
+        // to that child regrades.
+        const fromReached = new Set(reachBy('$fromReach').map(m => m.toLowerCase()))
         for (const reached of [...reachBy('$readReach'), ...reachBy('$fromReach')]) {
           const key = reached.toLowerCase()
           if (spellings.has(key)) { modelOf.set(name, reached); continue }
           let set = dependents.get(key)
           if (!set) dependents.set(key, set = new Set())
           set.add(name)
+          if (!fromReached.has(key) && readBy[key]) readColumnsOf.set(`${name}\0${key}`, new Set(readBy[key]))
         }
       }
     }
@@ -5446,8 +5497,19 @@ export function announceDataWrites(
   }
 
   let pending: Map<string, Set<unknown>> | null = null
+  // Whether an update left every column the dependent's read reads of the
+  // written model as it was; an event without both rows (a bulk write, a
+  // cross-process one) says nothing.
+  const leavesGradeAlone = (name: string, e: LitestoneWriteEvent): boolean => {
+    if (e.event !== 'update' || e.scope !== 'row') return false
+    const read = readColumnsOf.get(`${name}\0${e.model.toLowerCase()}`)
+    if (!read) return false
+    const tenant = tenantColumn()
+    return columnsUnmoved(tenant ? [...read, tenant] : read, e.before, e.result)
+  }
+
   const regrade = (e: LitestoneWriteEvent): void => {
-    const names = dependentsOf(e.model)
+    const names = dependentsOf(e.model).filter(name => !leavesGradeAlone(name, e))
     if (!names.length) return
     if (!pending) {
       pending = new Map()

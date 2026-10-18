@@ -285,6 +285,29 @@ group('CLI smoke')
   }
 }
 
+// FJS-2989: one bin, `jetty <command>`; `fli` is the command a person types.
+group('One bin')
+{
+  const { readFileSync } = await import('node:fs')
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
+  const names = Object.keys(pkg.bin ?? {})
+  if (names.length === 1 && names[0] === 'jetty') ok('package.json declares exactly one bin: jetty')
+  else bad('package.json declares more than the one bin', names.join(', '))
+
+  const fixtureRoot = resolve('test/fixtures/basic-ext')
+  const info = spawnSync(process.execPath, ['bin/jetty.js', 'info', `--root=${fixtureRoot}`], { encoding: 'utf8' })
+  if (info.status === 0 && info.stdout.includes('Phase 0 Smoke Ext')) ok('jetty info dispatches to the info command')
+  else bad('jetty info did not dispatch', info.stderr)
+
+  const manifest = spawnSync(process.execPath, ['bin/jetty.js', 'manifest', `--root=${fixtureRoot}`], { encoding: 'utf8' })
+  if (manifest.status === 0 && JSON.parse(manifest.stdout).manifest_version === 3) ok('jetty manifest dispatches to the manifest command')
+  else bad('jetty manifest did not dispatch', manifest.stderr)
+
+  const unknown = spawnSync(process.execPath, ['bin/jetty.js', 'nope'], { encoding: 'utf8' })
+  if (unknown.status !== 0 && unknown.stderr.includes('build') && unknown.stderr.includes('manifest')) ok('an unknown command exits non-zero and lists the commands')
+  else bad('an unknown command was not refused with the list', unknown.stderr)
+}
+
 // --- summary ---
 
 console.log('')

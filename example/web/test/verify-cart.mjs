@@ -31,6 +31,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PORTS } from './lib/preflight.mjs'
+import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -114,6 +115,7 @@ if (!await waitFor(UI, 'web'))                    { stopAll(); process.exit(1) }
 const browser = await openChrome({ windowSize: '1400,1000' }).catch((e) => {
   console.error(e.message); stopAll(); process.exit(1)
 })
+watchReloads(browser)
 const { cmd } = browser
 // Asked as an EXPRESSION that answers a value; the driver evaluates a body.
 const evaluate = (expr) => browser.evaluate(`return (${expr})`)

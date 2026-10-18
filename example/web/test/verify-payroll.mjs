@@ -57,6 +57,7 @@ import { db } from '../../api/src/core/db.ts'
 import { sweepPayroll } from './payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
+import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { SESSION_MODULE } from './lib/session.mjs'
 
@@ -157,6 +158,7 @@ for (const want of ['employees', 'payRuns', 'payslips', 'journalEntries']) {
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
 const browser = await openChrome().catch((e) => { console.error(e.message); stopAll(); process.exit(1) })
+const reload = watchReloads(browser)
 const { cmd, evaluate } = browser
 
 // The driver's own `errors` promote only a [Mesa] warning; this drive fails on
@@ -169,9 +171,11 @@ browser.on('Runtime.consoleAPICalled', (p) => {
 })
 /** Navigate and wait for the shell — the SPA boots once and routes after. */
 async function go(path) {
-  await evaluate(`window.__nav = ${JSON.stringify(path)}; location.href = ${JSON.stringify(UI + path)}`)
-    .catch(() => {})
-  await cmd('Page.navigate', { url: UI + path })
+  await reload.during(async () => {
+    await evaluate(`window.__nav = ${JSON.stringify(path)}; location.href = ${JSON.stringify(UI + path)}`)
+      .catch(() => {})
+    await cmd('Page.navigate', { url: UI + path })
+  })
   await evaluate(`
     const t0 = Date.now();
     while (Date.now() - t0 < 20000) {
@@ -630,8 +634,18 @@ t('pay.approvingMovesIt', await evaluate(`
 `))
 
 await click(`[data-reference="${RREF}"] [data-act="pay"]`)
-// The confirmation is a one-way door — a payslip that has gone out cannot be
-// un-sent — so it asks where the button is.
+// The confirmation is a one-way door, so it asks where the button is. It says
+// *marked sent* and not *go out*: the send job stamps `sentAt` and emails
+// nobody (FJS-1127), so a copy promising delivery would be a false one.
+t('pay.confirmationDoesNotPromiseDelivery', await evaluate(`
+  const t0 = Date.now();
+  while (Date.now() - t0 < 8000) {
+    const txt = document.body.textContent ?? '';
+    if (/pay this run/i.test(txt)) return /marked sent/i.test(txt) && !/go out|gone out|un-sent/i.test(txt);
+    await new Promise(r => setTimeout(r, 60));
+  }
+  return false;
+`))
 await evaluate(`
   const t0 = Date.now();
   while (Date.now() - t0 < 8000) {

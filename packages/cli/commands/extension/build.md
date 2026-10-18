@@ -29,5 +29,5 @@ check by hand once it is loaded.
 ```js
 const cliArgs = [`--root=${$.paths.extension}`, `--browser=${flag.browser || 'chrome'}`]
 if (flag.verbose) cliArgs.push('--verbose')
-$.exec({ command: `bunx jetty-build-ext ${cliArgs.join(' ')}`, dry: flag.dry })
+$.exec({ command: `bunx jetty build ${cliArgs.join(' ')}`, dry: flag.dry })
 ```

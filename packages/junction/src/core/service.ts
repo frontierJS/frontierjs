@@ -30,7 +30,7 @@ import { AUTO_EVENT_MAP, isAnnounceHook } from './events.ts'
 import {
   createLitestoneBase, autoValidate, validateInput, gateAuthAround, autoFilter, autoSort, liftReservedQuery,
   watchFilterReads, markDerived, isDerivedHook, isCrudGatedMethod,
-  jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload, declaredTransitionMethods,
+  jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload, declaredTransitionMethods, accessorCandidates,
 } from './litestone.ts'
 
 // ─── Service-level cache ──────────────────────────────────────────────────
@@ -243,6 +243,8 @@ export interface ServiceDescription {
   methodClaims: Record<string, string[]>
   /** The custom methods declared `read: true`, whose answer is never kept or announced (`FJS-D505`). */
   readMethods: string[]
+  /** The model each method declared it answers, where not the service's own (`FJS-D914`). */
+  answers: Record<string, string>
   /** The scope each method requires of a key issued with scopes; a method absent refuses one (`FJS-D916`). */
   scopes: Record<string, string | false>
   /** The merged hook declaration — what ran, not how it was resolved. */
@@ -346,6 +348,8 @@ export interface Service {
   _methodClaims?: Record<string, string[]>
   /** The custom methods DECLARED `read: true` in `methods:`. Read through `isReadMethod`. */
   _readMethods?: string[]
+  /** The model each custom method DECLARED it answers, keyed by name. Read through `answerAccessor`. */
+  _answers?: Record<string, string>
   /** The `scope:` declarations, as written. Read through `requiredScope`. */
   _scope?: ScopeDeclaration
 
@@ -896,6 +900,15 @@ async function _callService(
   const durable  = methodSucceeded && (owned ? owned.committed : true)
   const announce = durable && eventName
 
+  // The model the announced row belongs to: the one the method declared it
+  // answers, else the service's own (`FJS-D914`). The completeness check, the
+  // re-read and the per-recipient grade all read this one answer.
+  const answered = service._answers?.[method as string]
+  const announcedAccessor = answered ?? serviceAccessor(service)
+  const announcedIdField  = answered
+    ? answeredKey(ctx, answered)
+    : (service as { idField?: string }).idField ?? 'id'
+
   const doAnnounce = async () => {
     const past = eventName as string
 
@@ -913,12 +926,8 @@ async function _callService(
       // about that. Skipped when the app stated the payload itself; ctx.dispatch
       // is a declaration of what to send, and second-guessing it would make the
       // switch mean two things.
-      const accessor = serviceAccessor(service)
-      if (ctx.dispatch === undefined && accessor !== null) {
-        payload = await announcementPayload(
-          ctx, payload, accessor,
-          (service as { idField?: string }).idField ?? 'id'
-        )
+      if (ctx.dispatch === undefined && announcedAccessor !== null) {
+        payload = await announcementPayload(ctx, payload, announcedAccessor, announcedIdField)
       }
 
       // null means announce nothing — and it has to skip the fan-out WITHOUT
@@ -933,7 +942,7 @@ async function _callService(
 
         for (const row of rows) {
           events?.emit(`${service.name}:${past}`, row)
-          await announceToChannels(service, ctx, `${service.name} ${past}`, row)
+          await announceToChannels(service, ctx, `${service.name} ${past}`, row, answered)
         }
       }
     }
@@ -943,7 +952,9 @@ async function _callService(
   // name the tap may stay quiet about. A call that announces nothing covers
   // nothing: a method that wrote and then threw left durable rows no payload
   // carries.
-  const covered = announce ? announcedIds(ctx, (service as { idField?: string }).idField ?? 'id') : new Set<string>()
+  // A row of another model covers nothing here: its id is that model's, and
+  // would silence this service's own row of the same number.
+  const covered = announce && !answered ? announcedIds(ctx, announcedIdField) : new Set<string>()
   try {
     if (announce) {
       if (scope) {
@@ -1099,28 +1110,11 @@ export interface BaseServiceOptions {
    */
   name?:     string
 
-  /** Channel(s) to broadcast mutations to. See ServiceDefinition.channel. */
-  channel?:  ChannelDeclaration
-
-  /** See ServiceDefinition.transactional. */
-  transactional?: TransactionalDeclaration
-
-  /**
-   * Narrow what this service answers — `['find','get']`, or `'readOnly'`.
-   *
-   * Same key and same meaning as on the definition; carried through and
-   * resolved there, against the custom methods that exist. Declaring it here used to
-   * do NOTHING — the option was neither read nor forwarded, so an append-only
-   * service written with this factory answered every verb and the only symptom
-   * was a write that worked.
-   */
-  methods?:  MethodSelection
   /**
    * Per-method levels, already read off a `methods:` list.
    *
-   * `buildService` passes these rather than its own `methods:`, because the
-   * base carries none of the custom functions and would refuse every name it
-   * was handed. Absent, the base reads its own `methods:`.
+   * `buildService` reads them off `methods:` and hands over the levels, since
+   * the base owns no custom function and would refuse every name it was given.
    */
   methodGates?: Record<string, number>
   /** Per-method required claims, read off a `methods:` list the same way. */
@@ -1192,9 +1186,6 @@ export interface BaseServiceOptions {
    * happens to run first.
    */
   schema?:   import('./litestone.ts').LitestoneJsonSchema
-
-  /** Custom service methods — any extra function-valued option. */
-  [method: string]: ServiceDefinitionValue
 }
 
 /**
@@ -1695,6 +1686,16 @@ export interface MethodDeclaration {
    * have cost.
    */
   read?: boolean
+  /**
+   * The model whose row this method answers, when it is not the service's own
+   * (`FJS-D914`). `messages.promote()` answers the Task a message became; the
+   * announcement's completeness check, its re-read and its per-recipient grade
+   * then use Task's columns, key and policy rather than Message's. Without it
+   * the answer is judged against the service's model: a Task row is "missing"
+   * Message's columns and re-read as a Message by the task's id.
+   * A model name, checked against the schema at boot.
+   */
+  answers?: string
 }
 
 export type MethodEntry  = string | MethodDeclaration
@@ -1797,6 +1798,32 @@ export function collectReadMethods(
         `[Junction] service '${serviceName}': ${name} declares read, but ${name} is a CRUD verb, ` +
         `whose name already says whether it reads. read: is for a custom method.`)
     if (entry.read) out.push(name)
+  }
+  return out
+}
+
+/** The `answers:` each `methods:` entry declares, keyed by method name. */
+export function collectMethodAnswers(
+  declared:    MethodSelection | undefined,
+  serviceName: string,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!declared || declared === 'readOnly') return out
+
+  for (const entry of declared) {
+    if (typeof entry === 'string' || entry?.answers === undefined) continue
+    const name = methodEntryName(entry, serviceName)
+    const answers = entry.answers
+    if (typeof answers !== 'string' || !answers.trim())
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares answers ${JSON.stringify(answers)}, ` +
+        `which is not a model name.`)
+    // A CRUD verb answers the service's own model by definition.
+    if (CRUD_METHOD_SET.has(name))
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares answers, but ${name} is a CRUD verb, ` +
+        `which answers the service's own model. answers: is for a custom method.`)
+    out[name] = answers
   }
   return out
 }
@@ -2082,14 +2109,16 @@ export function scanCustomMethods(obj: object): string[] {
 }
 
 /**
- * What `buildBase` hands back — a service DEFINITION carrying the CRUD
- * methods, on its way into `buildService`, not a built `Service`. A built
- * service's `hooks` is the registration METHOD, a definition's is the MAP.
+ * What `buildBase` hands back — the generated CRUD, the merged hook map and
+ * the metadata `buildService` reads, and nothing else. It is not a service
+ * definition: a file exports `createService(def)`, never a spread of this.
  */
 export type BaseServiceDefinition =
-  ServiceDefinition &
   Required<Pick<ServiceDefinition,
-    'find' | 'get' | 'aggregate' | 'create' | 'update' | 'patch' | 'remove' | 'restore' | 'hooks'>>
+    'find' | 'get' | 'aggregate' | 'create' | 'update' | 'patch' | 'remove' | 'restore' | 'declaredFields' | 'hooks'>> & {
+    _meta:     { softDelete: string | null; cache: boolean; idField: string }
+    _schemas?: { create: unknown; patch: unknown }
+  }
 
 export function buildBase(
   opts: BaseServiceOptions
@@ -2106,7 +2135,7 @@ export function buildBase(
   //     it unless a request-scoped client is already there (withLitestoneDb
   //     always wins).
 
-  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, channel, methods, scope, methodGates, methodClaims, transactional } = opts
+  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, methodGates, methodClaims } = opts
 
   const base = model === null ? overNoModel(name) : createLitestoneBase({
     model,
@@ -2150,35 +2179,6 @@ export function buildBase(
       ctx.locals.db = adaptPlainClient(source) as typeof ctx.locals.db
     }
     return fn(ctx)
-  }
-
-  // Custom methods — declared by `methods:` when it is there, scanned for when it is
-  // not. One parse step; everything downstream reads the table.
-  // No findings from here: `methods:` rides the definition into buildService,
-  // which grades the same list under the service's real name — a name this
-  // call often does not know yet — and re-grades it once the model's moves are
-  // known (`FJS-1255`). Reporting here too said every typo twice, once of a
-  // service called 'service', and said a declared move was missing when it was
-  // not.
-  const customMethods = collectCustomMethods(opts, name ?? model ?? 'service', methods)
-
-  // A CRUD method the definition WROTE wins over the generated one.
-  //
-  // `collectCustomMethods` collects the non-CRUD names by construction, so an
-  // `async get(ctx)` written beside `model:` used to be dropped on the floor:
-  // the generated row-by-id answered instead, the author's implementation was
-  // never called, and nothing anywhere said so. The failure is a service that
-  // returns a plausible wrong shape — the raw row rather than the basket the
-  // author assembled — which is the worst possible way for it to go.
-  //
-  // Wrapped in `withDb` like the generated ones, and the derived hooks are
-  // untouched: `gateAuth` wraps every method and `autoFilter` is attached by
-  // METHOD NAME, so an override keeps the model's `@@gate` and the filter check
-  // it would have had.
-  const overrides: Record<string, Method> = {}
-  for (const verb of CRUD_METHODS) {
-    const fn = (opts as unknown as Record<string, unknown>)[verb]
-    if (typeof fn === 'function') overrides[verb] = withDb(fn as Method)
   }
 
   // Schema validation, derived rather than declared.
@@ -2227,9 +2227,9 @@ export function buildBase(
 
   // The per-method levels a `methods:` list declares. The floor `gateAuthAround`
   // derives needs no declaration; this is only what sits above it.
-  const levels = methodGates ?? collectMethodGates(methods, name ?? model ?? 'service')
+  const levels = methodGates ?? {}
   refuseModelCrudGates(levels, model, name ?? model ?? 'service')
-  const claims = methodClaims ?? collectMethodClaims(methods, name ?? model ?? 'service')
+  const claims = methodClaims ?? {}
   const gateHook = markDerived(gateAuthAround(model, levels, claims))
 
   // Over no model the gate is the whole derived layer: every other hook here
@@ -2259,9 +2259,8 @@ export function buildBase(
     },
   }
 
-  // A hook map reaching here may ALREADY carry this layer: a base returns the
-  // merged map, not the caller's, and a definition built from one carries it. Appending unconditionally then ran the gate
-  // and the validator twice on every request to every autoloaded service
+  // A hook map reaching here may already carry this layer. Appending
+  // unconditionally ran the gate and the validator twice on every request
   // (`FJS-231`). Skip a derived hook whose name is already present among the
   // MARKED hooks — a user hook of the same name is not one of ours and does not
   // suppress it.
@@ -2340,57 +2339,7 @@ export function buildBase(
     remove:  withDb(base.remove),
     restore: withDb(base.restore as Method),
     declaredFields: withDb(base.declaredFields as Method),
-    ...overrides,
-    // They land twice on purpose: as own keys, which is how a spread carries
-    // them and how a caller reaches `svc.reboot`, and as the table, which is
-    // what buildService reads instead of re-scanning a shape that by then
-    // includes CRUD, `_meta` and every other runtime key.
-    ...customMethods,
-    _customMethods: customMethods,
-    ...(name    !== undefined ? { name }    : {}),
-    ...(channel !== undefined ? { channel } : {}),
-    // A key dropped here is undeclared to anything reading this object as a
-    // definition.
-    //
-    // `model` is the one with a silent consequence rather than a loud one.
-    // buildService substitutes `def.model ?? def.name`, so a service that
-    // declared `model: 'Payment'` in its own file reported `model: 'payments'`
-    // on the way out — and CRUD still worked, because the accessor is resolved
-    // per call from the service name through accessorCandidates(). What broke
-    // is everything that reads `svc.model` expecting an answer about the
-    // MODEL: `announceDataWrites` builds its model → service index from it,
-    // and never matched (FJS-464). The four beside it are the same
-    // silence with smaller consequences (FJS-462).
-    //
-    // `idField` and `softDelete` reach `_meta` below, which is read by the
-    // devtools and manifest plugins — so they were reported correctly and
-    // ENFORCED as undefined, which is the worst of both.
-    //
-    // `db` is the one option deliberately NOT carried, and the reason is a
-    // rule rather than an oversight: it is a FUNCTION, and no config key may
-    // land on this object as a callable own key. `db` is reserved in
-    // SERVICE_OPTION_KEYS so the custom-method scan skips it, and that is
-    // exactly one check away from serving an app's database handle over HTTP.
-    // `test/base-service-options.test.ts` pins it.
-    ...(model      !== undefined ? { model }      : {}),
-    ...(paginate   !== undefined ? { paginate }   : {}),
-    ...(idField    !== undefined ? { idField }    : {}),
-    ...(softDelete !== undefined ? { softDelete } : {}),
-    // Carried through, not resolved here: buildService is where the allow-list
-    // is validated against the custom methods that exist, and a dropped
-    // `methods: 'readOnly'` is an audit trail that accepts writes.
-    ...(methods !== undefined ? { methods } : {}),
-    // Same reason again, failing closed: a dropped `scope:` refuses every
-    // scoped key at every method of the service (FJS-D916).
-    ...(scope !== undefined ? { scope } : {}),
-    // Same reason as `methods` above: buildService is where the around hook is
-    // installed, so a base that drops this declares a transaction nobody opens.
-    ...(transactional !== undefined ? { transactional } : {}),
     hooks: mergedHooks,
-    ...(cache      !== undefined ? { cache }      : {}),
-    ...(allowBulk  !== undefined ? { allowBulk }  : {}),
-    ...(bulkMax    !== undefined ? { bulkMax }    : {}),
-    // Consumed by the openapi plugin, which prefers an explicit schema.
     ...(explicitSchemas ? { _schemas: explicitSchemas } : {}),
     // Consumed by the devtools/manifest plugins, which read service metadata.
     _meta: {
@@ -2742,11 +2691,12 @@ export function buildService(def: ServiceDefinition): Service {
     softDelete: def.softDelete as string | undefined,
     schema:     def.schema     as import('./litestone.ts').LitestoneJsonSchema | undefined,
     hooks:      def.hooks,
+    cache:      def.cache,
     // The GATES only, never the methods list: the base carries none of the
     // custom functions, so handing it `methods:` makes it refuse every name the
     // outer definition owns. What it needs is the levels, for the hook it
     // builds — without them the declaration parsed, was reported, and enforced
-    // nothing, which is the shape of the defect it exists to fix.
+    // nothing.
     methodGates: declaredGates,
     methodClaims: declaredClaims,
   })
@@ -2758,7 +2708,7 @@ export function buildService(def: ServiceDefinition): Service {
   // owners on a single spelling. The COLUMN collision is checked on first use
   // instead — there is no client here to ask.
   const reservedQuery: readonly string[] = Object.freeze([...new Set(
-    ((def.reservedQuery ?? (base as { reservedQuery?: readonly string[] }).reservedQuery ?? []) as readonly string[])
+    ((def.reservedQuery ?? []) as readonly string[])
       .map(k => {
         if (typeof k !== 'string' || !k.trim())
           throw new Error(`createService(${def.name ?? '?'}): reservedQuery takes non-empty strings`)
@@ -2907,8 +2857,8 @@ export function buildService(def: ServiceDefinition): Service {
     ...(def.channel !== undefined ? { channel: def.channel as ChannelDeclaration } : {}),
     // Same reason: declared, honored internally, but previously not carried
     // onto the built service, so anything reading it back saw undefined.
-    allowBulk: def.allowBulk ?? (base as { allowBulk?: boolean }).allowBulk ?? false,
-    bulkMax:   def.bulkMax   ?? (base as { bulkMax?: number }).bulkMax   ?? 1000,
+    allowBulk: def.allowBulk ?? false,
+    bulkMax:   def.bulkMax   ?? 1000,
     ...(def.model === null ? {} : { paginate: def.paginate ?? { default: 20, max: 100 } }),
     ...(reservedQuery.length ? { reservedQuery } : {}),
 
@@ -2968,7 +2918,8 @@ export function buildService(def: ServiceDefinition): Service {
         methodGates:   { ...(service._methodGates ?? {}) },
         methodClaims:  Object.fromEntries(Object.entries(service._methodClaims ?? {}).map(([k, v]) => [k, [...v]])),
         readMethods:   [...(service._readMethods ?? [])],
-        scopes:        Object.fromEntries(allowedMethodNames(service)
+        answers:       { ...(service._answers ?? {}) },
+        scopes:       Object.fromEntries(allowedMethodNames(service)
           .map(m => [m, requiredScope(service, m)] as const)
           .filter((e): e is readonly [string, string | false] => e[1] !== undefined)),
         channel:    describeChannel(service.channel as ChannelDeclaration | undefined),
@@ -3093,6 +3044,7 @@ export function buildService(def: ServiceDefinition): Service {
   ;(service as Service)._methodGates = declaredGates
   ;(service as Service)._methodClaims = declaredClaims
   ;(service as Service)._readMethods = declaredReads
+  ;(service as Service)._answers = collectMethodAnswers(def.methods, defName ?? '(unnamed)')
   ;(service as Service)._scope = collectMethodScopes(def.methods, def.scope, defName ?? '(unnamed)')
   resolveTable({})
 
@@ -3238,6 +3190,23 @@ export function serviceAccessor(service: { name: string; model?: string | null }
 }
 
 /**
+ * The key column of the model a method declared it answers, `id` where the
+ * client cannot say or the key is a tuple (a tuple names no single row to
+ * re-read by).
+ */
+function answeredKey(ctx: ServiceContext, accessor: string): string {
+  const db = ctx.locals?.db as { $primaryKey?: (a: string) => string[] } | undefined
+  if (typeof db?.$primaryKey !== 'function') return 'id'
+  for (const candidate of accessorCandidates(accessor)) {
+    try {
+      const key = db.$primaryKey(candidate)
+      if (key.length) return key.length === 1 ? key[0]! : 'id'
+    } catch { /* not this spelling */ }
+  }
+  return 'id'
+}
+
+/**
  * The CRUD half of a service over no model: each verb it did not write is a
  * 405 naming why, rather than a lookup of a model by the service's name.
  */
@@ -3280,17 +3249,18 @@ function overNoModel(name: string | undefined) {
  * default included.
  */
 async function announceToChannels(
-  service: Service,
-  ctx:     ServiceContext,
-  event:   string,
-  payload: unknown
+  service:  Service,
+  ctx:      ServiceContext,
+  event:    string,
+  payload:  unknown,
+  accessor?: string
 ): Promise<void> {
   const decl = service.channel as ChannelDeclaration | undefined
   if (decl === false) return
 
   const manager = ctx.locals.__channels as {
     channel:  (name: string) => unknown
-    announce: (event: string, data: unknown, ctx: ServiceContext, fn: (d: unknown, c: ServiceContext) => unknown) => Promise<void>
+    announce: (event: string, data: unknown, ctx: ServiceContext, fn: (d: unknown, c: ServiceContext) => unknown, accessor?: string) => Promise<void>
     defaultAnnouncer?: ((data: unknown, ctx: ServiceContext) => unknown) | null
   } | undefined
   if (!manager) return
@@ -3305,7 +3275,7 @@ async function announceToChannels(
     : target
 
   try {
-    await manager.announce(event, payload, ctx, resolve as never)
+    await manager.announce(event, payload, ctx, resolve as never, accessor)
   } catch {
     // A broadcast failure must not fail the write. The record is already
     // committed; a dead socket is not the caller's problem.

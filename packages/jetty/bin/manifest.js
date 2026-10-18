@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// jetty-manifest — print the manifest.json that would be emitted, without
+// jetty manifest — print the manifest.json that would be emitted, without
 // running the actual Vite build.
 //
 // Usage:
-//   jetty-manifest --root=. [--browser=chrome|firefox|both]
+//   jetty manifest --root=. [--browser=chrome|firefox|both]
 //
 // Useful for: CI checks ("did this PR change the manifest?"), debugging,
 // pre-commit hooks.
@@ -32,7 +32,7 @@ try {
     console.log(JSON.stringify(manifest, null, 2))
   }
 } catch (e) {
-  console.error('✗ jetty-manifest failed:', e.message)
+  console.error('✗ jetty manifest failed:', e.message)
   process.exit(1)
 }
 

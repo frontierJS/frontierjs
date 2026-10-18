@@ -44,6 +44,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { portFor } from '@frontierjs/cli/core/ports.js'
 import { PORTS } from './lib/preflight.mjs'
+import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 
@@ -220,6 +221,7 @@ servers.push(hostPage)
 const browser = await openChrome({ windowSize: '1000,900' }).catch((e) => {
   console.error(e.message); stopAll(); process.exit(1)
 })
+watchReloads(browser)
 const { cmd } = browser
 
 // Every request, by frame. The frame is same-SITE with the host page

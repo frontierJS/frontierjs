@@ -26,7 +26,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { createApp, health, defaultConfig } from '../index.ts'
 import { manifest } from '../src/plugins/manifest/index.ts'
-import { buildBase, buildService, callService } from '../src/core/service.ts'
+import { buildService } from '../src/core/service.ts'
 
 const PORT = 3389
 let app: any
@@ -288,61 +288,3 @@ describe('methods: what the app advertises matches what it answers', () => {
   })
 })
 
-// ─── The other factory ────────────────────────────────────────────────────
-//
-// `methods` was read by createService and NOT by buildBase, which
-// neither consumed nor forwarded it. So the same declaration that makes an
-// audit trail append-only through one factory did nothing at all through the
-// other, and the only symptom was a write that succeeded.
-//
-// buildBase is the minimal service file the loader is built around —
-// `export function createPostsService() { return buildBase({}) }` — so
-// this was the more likely of the two to be written. Found 2026-08-06 in
-// example/, declaring `methods: ['find','get','patch']` on a notifications
-// service and getting a create that reached the model's gate.
-
-describe('methods: declared on buildBase', () => {
-  const make = buildService
-
-  const built = () => make({
-    // Exactly what the loader does with a bare base object.
-    name: 'notes',
-    ...(buildBase({
-      model:   'note',
-      methods: ['find', 'get', 'patch'],
-      db:      () => ({ note: {} }),
-    }) as unknown as Record<string, unknown>),
-  } as never)
-
-  it('carries the allow-list through to the built service', () => {
-    expect([...(built() as { _methods: Set<string> })._methods].sort())
-      .toEqual(['find', 'get', 'patch'])
-  })
-
-  it('refuses a method the list omits', async () => {
-    const svc = built()
-    const ctx = {
-      service: 'notes', method: 'create', data: { a: 1 },
-      params: {}, query: {}, directives: {}, auth: {}, caller: {},
-      locals: {}, app: {}, result: null, error: null,
-    } as never
-
-    await expect(callService(svc as never, ctx)).rejects.toThrow(/does not offer 'create'/)
-  })
-
-  it("'readOnly' works through this factory too", () => {
-    const svc = make({
-      name: 'audit',
-      ...(buildBase({ model: 'auditEvent', methods: 'readOnly', db: () => ({}) }) as unknown as Record<string, unknown>),
-    } as never)
-    expect([...(svc as { _methods: Set<string> })._methods].sort()).toEqual(['aggregate', 'find', 'get'])
-  })
-
-  it('absent still means everything', () => {
-    const svc = make({
-      name: 'notes',
-      ...(buildBase({ model: 'note', db: () => ({}) }) as unknown as Record<string, unknown>),
-    } as never)
-    expect((svc as { _methods: Set<string> | null })._methods).toBe(null)
-  })
-})

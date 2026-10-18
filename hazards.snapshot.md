@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 181**.
+Graded: **13 of 182**.
 
-## data — 3 of 62
+## data — 3 of 63
 
 ### Schema and parse
 
@@ -66,6 +66,7 @@ Graded: **13 of 181**.
 | A move asked for BY NAME is not the same question as an update carrying the column | **none** |
 | A row that stops counting at a date and is also MOVED at that date has two answers until the move fires, and the date is the one to read | `commitment-swept` |
 | `asSystem()` holds the machine, and a row starts at its `@default` | **none** |
+| A machine only some rows enter needs a state that means "none", not a nullable column | **none** |
 | A `@@commitment`'s fire is graded as `createApp({ system })`, so the model's read policy must admit that principal by name | **none** |
 | `@zoned` is read by `due()` alone — a window over the same day is still read in the call's zone | **none** |
 | What a `@seals` commitment's move owes is written in `before`; a write its from-state contends with, in `after` | **none** |

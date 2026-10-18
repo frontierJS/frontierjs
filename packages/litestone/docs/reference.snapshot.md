@@ -884,7 +884,7 @@ model Example {
 
 #### `@slug` `[(<field>…)]` <a id="slug-field"></a>
 
-Slugify this field on write. The parenthesized form is not a second transform — it is a call to a `function slug` the schema declares, and without that declaration it is refused by name.
+Slugify this field on write. The parenthesized form is not a second transform and its argument is not a source field to stamp from — it is a call to a `function slug` the schema declares (a stored generated column), refused by name without that declaration. To stamp a slug from another field, write `@default(<field>) @slug`.
 
 ```lite
 model Example {
@@ -1319,7 +1319,7 @@ model Example {
 
 #### `@unit` `(<symbol>)` <a id="unit-field"></a>
 
-What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Five dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, ratio % (@unit(%) -- quoted @unit("%") parses too). mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.
+What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Six dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, pixel px (an image's width and height), ratio % (@unit(%) -- quoted @unit("%") parses too). mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.
 
 ```lite
 model Example {
@@ -2194,7 +2194,7 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 
 ### `fts-over-a-column-search-cannot-read` — a @@fts index names a column whose stored text is not the value
 
-*error*. FTS5 indexes what the COLUMN HOLDS. For @encrypted that is a ciphertext and for @hashed a digest, so no query can ever match one — the index builds, the search runs and returns nothing. A @guarded column is the other half: it matches, and then read() strips it from every result, so callers can search text they may never see and highlight/snippet render it.
+*error*. FTS5 indexes what the COLUMN HOLDS. For @encrypted that is a ciphertext and for @hashed a digest, so no query can ever match one — the index builds, the search runs and returns nothing. A Json column is the serialized document, keys included, so a key name matches every row holding it. A @guarded column is the other half: it matches, and then read() strips it from every result, so callers can search text they may never see and highlight/snippet render it.
 
 ### `validator-on-a-column-no-caller-writes` — a validator on a column no caller can write never runs
 
@@ -2291,3 +2291,7 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `allow-needs-bearer-claim-under-gate` — an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass
 
 *warn*. A bare `claim` (one no row supplies) is carried by a principal the app mints for a link or widget holder, and that principal grades at STRANGER(0). When every @@allow for an operation reads only such claims and the gate for that operation is above 0, the gate refuses the one caller who could satisfy the rule, and whoever passes the gate carries no claim and fails it. The rule never holds and nothing else says so. Lower the gate to 0 and let the rule decide, or add a branch the gated callers can satisfy.
+
+### `deny-reads-nullable-column` — an @@deny compares a column that can be NULL, and a NULL row is refused
+
+*warn*. SQL compares with three values and a `@@deny` fires on TRUE and on UNKNOWN alike, so `@@deny('update', ok == false)` over an optional `ok` refuses every row where `ok` is NULL, not only the ones where it is false. `x == null` is the one compare that answers a boolean. Say what NULL does: `ok != null && ok == false` to let a NULL row through, or `ok == null || ok == false` to refuse it on purpose.

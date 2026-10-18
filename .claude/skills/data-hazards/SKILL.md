@@ -57,6 +57,7 @@ Detail: `references/transitions.md`
 - **A move asked for BY NAME is not the same question as an update carrying the column** (`FJS-611`)
 - **A row that stops counting at a date and is also MOVED at that date has two answers until the move fires, and the date is the one to read** (`FJS-D353`)
 - **`asSystem()` holds the machine, and a row starts at its `@default`** (`FJS-D502`, `FJS-D470`)
+- **A machine only some rows enter needs a state that means "none", not a nullable column** (`FJS-3047`)
 - **A `@@commitment`'s fire is graded as `createApp({ system })`, so the model's read policy must admit that principal by name** (`FJS-2231`)
 - **`@zoned` is read by `due()` alone — a window over the same day is still read in the call's zone** (`FJS-2170`)
 - **What a `@seals` commitment's move owes is written in `before`; a write its from-state contends with, in `after`** (`FJS-2163`)

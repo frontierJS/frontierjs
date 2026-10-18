@@ -12,7 +12,7 @@ import { hookContext } from '@frontierjs/toolbelt/hooks'
 import { DEV_ENV, formatDevLine } from '@frontierjs/toolbelt/devline'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
-import { declaredCallHeaders, checkPrincipalSetting, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, dataRealmFacts, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS } from './litestone.ts'
+import { declaredCallHeaders, checkPrincipalSetting, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, dataRealmFacts, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS, accessorIfModel } from './litestone.ts'
 import { configFor, createTenantConfigStore } from './config-scope.ts'
 import type { TenantConfigOptions, TenantConfigStore } from './config-scope.ts'
 import { createEventBus }           from '../events/index.ts'
@@ -392,8 +392,8 @@ export interface App {
   //   // Deliberately as nobody. Absent is not null:
   //   await app.service('audit').create({ action: 'x' }, { auth: { user: null } })
   //
-  //   // Deliberately as someone else:
-  //   await app.service('servers').call('reboot', serverId, { auth: { user: SYSTEM } })
+  //   // As the app itself (createApp({ system })):
+  //   await app.runAs(null, () => app.service('servers').call('reboot', serverId))
   service: (name: string) => ServiceCaller
 
   /**
@@ -468,8 +468,7 @@ export interface App {
    * The seam deferred work runs through. A job, a retry or a scheduled sweep
    * executes long after the request that asked for it, and until it opens a
    * scope it has no principal at all — which is STRANGER(0), refused by the
-   * model's own `@@gate`, and the reason every job used to carry a hand-written
-   * `{ auth: { user: SYSTEM } }`.
+   * model's own `@@gate`.
    *
    *   a userId → re-resolved through `auth.sessionFor()`. Deliberately not a
    *              stored snapshot: a caller demoted between asking and running
@@ -897,7 +896,8 @@ export interface ServiceCaller {
   aggregate(spec?: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
   get(id: string | number, opts?: CallOptions): Promise<unknown>
   get(query: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
-  create(data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  /** An array is the bulk form and answers the list envelope; a service refuses it without `allowBulk`. */
+  create(data: Record<string, unknown> | Record<string, unknown>[], opts?: CallOptions): Promise<unknown>
   patch(id: string | number, data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
   patch(query: Record<string, unknown>, data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
   update(id: string | number, data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
@@ -915,7 +915,7 @@ export interface ServiceCaller {
   _find(query?: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
   _get(id: string | number, opts?: CallOptions): Promise<unknown>
   _get(query: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
-  _create(data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  _create(data: Record<string, unknown> | Record<string, unknown>[], opts?: CallOptions): Promise<unknown>
   _patch(id: string | number, data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
   _patch(query: Record<string, unknown>, data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
   _remove(id: string | number, opts?: CallOptions): Promise<unknown>
@@ -1228,7 +1228,7 @@ export function createApp(opts: AppOptions = {}): App {
       function makeCtx(
         method: ServiceMethod,
         id:     string | number | null,
-        data:   Record<string, unknown> | null,
+        data:   Record<string, unknown> | Record<string, unknown>[] | null,
         query:  Record<string, unknown> = {},
         opts:   CallOptions = {}
       ): ServiceContext {
@@ -1313,7 +1313,7 @@ export function createApp(opts: AppOptions = {}): App {
           }
           return call(() => makeCtx('get', idOrQuery, null, {}, opts))
         },
-        create(data: Record<string, unknown>, opts?: CallOptions) {
+        create(data: Record<string, unknown> | Record<string, unknown>[], opts?: CallOptions) {
           return call(() => makeCtx('create', null, data, {}, opts))
         },
         patch(idOrQuery: string | number | Record<string, unknown>, data: Record<string, unknown>, opts?: CallOptions) {
@@ -1370,7 +1370,7 @@ export function createApp(opts: AppOptions = {}): App {
           const ctx = makeCtx('get', idOrQuery, null, {}, opts)
           return svc._get(ctx)
         },
-        async _create(data: Record<string, unknown>, opts?: CallOptions) {
+        async _create(data: Record<string, unknown> | Record<string, unknown>[], opts?: CallOptions) {
           const svc = services.get(name)
           if (!svc) throw new NotFound(`Service '${name}' not found`)
           const ctx = makeCtx('create', null, data, {}, opts)
@@ -2102,6 +2102,18 @@ export function createApp(opts: AppOptions = {}): App {
           for (const f of (svc as { _authoringFindings?: string[] })._authoringFindings ?? [])
             _authoringFindings.push(f)
         }
+        // An `answers:` naming a model the schema lacks would grade every
+        // announcement of that method against nothing. Asked only where there
+        // is a client to ask; a tenanted app has none until a tenant opens.
+        if (app.db) {
+          for (const svc of services.values()) {
+            const s = svc as { name?: string; _answers?: Record<string, string> }
+            for (const [method, model] of Object.entries(s._answers ?? {}))
+              if (accessorIfModel(app.db, model) === null)
+                _authoringFindings.push(
+                  `service '${s.name}': ${method} declares answers '${model}', which is not a model in this schema.`)
+          }
+        }
         // A schema that owes a transition at a time, with nothing installed to
         // keep the clock, owes it forever and nothing says so. A tenanted app
         // has no `app.db`, so its registry's parsed schema is asked instead —
@@ -2417,6 +2429,41 @@ function applyConfiguredCors(app: App, config: AppConfig): void {
   }))
 }
 
+// ─── Derived origins ──────────────────────────────────────────────────────
+/**
+ * Join the origins `fli deploy` derived (`FJS_CORS_ORIGINS`, comma-separated:
+ * the web domain plus a wrapped shell's schemes) onto what the app declared
+ * (`FJS-D912`). Union, never replacement: a declared list keeps its own
+ * entries, and a declared '*' or predicate stays as written, because a wildcard
+ * already admits what the deploy would add. csrf gains them only where it has a
+ * list of its own; without one it borrows cors', which already carries them.
+ */
+function withDerivedOrigins(config: AppConfig, env: string | undefined): AppConfig {
+  const derived = (env ?? '').split(',').map(o => o.trim()).filter(Boolean)
+  if (!derived.length) return config
+
+  const http = (config.http ?? {}) as Record<string, unknown>
+  const join = (declared: unknown): unknown => {
+    if (typeof declared === 'function') return declared
+    const have = Array.isArray(declared) ? declared as string[] : typeof declared === 'string' ? [declared] : []
+    if (have.includes('*')) return declared
+    return [...new Set([...have, ...derived])]
+  }
+
+  const cors = (http.cors ?? {}) as Record<string, unknown>
+  const csrf = http.csrf
+  const csrfOwn = typeof csrf === 'object' && csrf !== null && Array.isArray((csrf as Record<string, unknown>).origins)
+
+  return {
+    ...config,
+    http: {
+      ...http,
+      cors: { ...cors, origins: join(cors.origins) },
+      ...(csrfOwn ? { csrf: { ...(csrf as object), origins: join((csrf as Record<string, unknown>).origins) } } : {}),
+    },
+  } as AppConfig
+}
+
 // ─── Declared middleware ──────────────────────────────────────────────────
 /**
  * Install every middleware `config.http` declares, in the one order that works.
@@ -2433,7 +2480,8 @@ function applyConfiguredCors(app: App, config: AppConfig): void {
  * other four are off unless declared: a logger nobody asked for writes a line
  * per request, and a CSRF guard nobody asked for refuses live traffic.
  */
-function applyConfiguredMiddleware(app: App, config: AppConfig): void {
+function applyConfiguredMiddleware(app: App, written: AppConfig): void {
+  const config = withDerivedOrigins(written, process.env.FJS_CORS_ORIGINS)
   const http = (config.http ?? {}) as Record<string, unknown>
 
   if (http.helmet !== false) helmet()(app)

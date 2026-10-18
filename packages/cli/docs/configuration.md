@@ -31,7 +31,7 @@ DEV_SERVER, DEV_SERVER_PATH
 STAGE_SERVER, STAGE_SERVER_PATH
 PROD_SERVER, PROD_SERVER_PATH
 
-# CapRover (caprover:* commands)
+# CapRover (env:pull --from caprover)
 DEV_CAPTAIN, CAPROVER_URL, CAPROVER_TOKEN
 ```
 

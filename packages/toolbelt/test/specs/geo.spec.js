@@ -134,7 +134,7 @@ test('geo: a radius is stated with its unit, and the kit that owns quantities pa
   assert.equal(parseLength('5mi'), 8046.72)
   assert.equal(parseLength('800m'), 800)
   assert.equal(parseLength('1.5km'), 1500)
-  assert.equal(parseLength(250), 250, 'a bare number is metres')
+  assert.throws(() => parseLength(250), /number and a unit/, 'a bare number is refused (FJS-3119)')
   assert.throws(() => parseLength('5'), /number and a unit/)
   assert.throws(() => parseLength('5 parsecs'), /unknown unit/)
   assert.throws(() => parseLength('0mi'), /greater than zero/)

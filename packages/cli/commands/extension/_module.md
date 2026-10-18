@@ -18,5 +18,5 @@ An app may have this surface and no `web/` at all.
 | `fli extension:build` | → `extension/dist/chrome/` (and `dist/firefox/` with `--browser both`) |
 | `fli extension:audit` | permissions declared vs. `chrome.*` actually called, both directions |
 
-These wrap jetty's own `jetty-*` binaries with `--root` pointed at the surface,
+These wrap jetty's own `jetty` bin with `--root` pointed at the surface,
 so the build an app runs and the build jetty tests are one program.

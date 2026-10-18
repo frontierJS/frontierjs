@@ -487,6 +487,13 @@ describe('swapContainer', () => {
     expect(drive({ deployConf: {} }).runCmd).toContain(`--env FJS_TRUST_PROXY=${EDGE_HOPS}`)
   })
 
+  test('the derived cross-origin list reaches the container, and a same-origin app gets none (FJS-2655)', () => {
+    const origins = ['https://app.example.com', 'tauri://localhost']
+    expect(drive({ deployConf: {}, corsOrigins: origins }).runCmd)
+      .toContain(`--env FJS_CORS_ORIGINS='${origins.join(',')}'`)
+    expect(drive({ deployConf: {} }).runCmd).not.toContain('FJS_CORS_ORIGINS')
+  })
+
   test('PORT is forced after the env file, so .env.production cannot move it', () => {
     const { runCmd } = drive({ deployConf: {} })
 

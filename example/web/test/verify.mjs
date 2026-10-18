@@ -28,6 +28,7 @@ export const holds = ['ports', 'db']
 
 import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
+import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const UI     = process.env.UI_URL  ?? `http://localhost:${PORTS.ui}`
@@ -69,6 +70,7 @@ await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
 const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
+const reload = watchReloads(browser)
 const { cmd, evaluate } = browser
 
 // The driver's own `errors` promote only a [Mesa] warning; this drive fails on
@@ -79,6 +81,7 @@ browser.on('Runtime.exceptionThrown', (p) =>
 browser.on('Runtime.consoleAPICalled', (p) => {
   if (['error', 'warning'].includes(p.type)) consoleErrors.push(p.type + ': ' + p.args.map(a => a.value ?? a.description ?? '').join(' '))
 })
+
 async function goto(path) {
   await cmd('Page.navigate', { url: UI + path })
   await evaluate(`
@@ -568,6 +571,26 @@ try {
     return rows;
   `))
   t('form.referenceMaxLength', await evaluate(`return document.querySelector('[name="reference"]').maxLength`))
+  // Settings → Note template (FJS-1126). The prefs store reads localStorage at
+  // import, so a full navigation is what picks the stored value up; the form is
+  // then reloaded clean for the steps below.
+  await evaluate(`
+    const p = JSON.parse(localStorage.getItem('shop_prefs') ?? '{}');
+    localStorage.setItem('shop_prefs', JSON.stringify({ ...p, noteTemplate: 'Gift wrap please' }));
+    return true;
+  `)
+  await goto('/orders/create/')
+  t('form.noteTemplate', await evaluate(`
+    await waitFor(() => document.querySelector('[name="note"]'));
+    return document.querySelector('[name="note"]').value;
+  `))
+  await evaluate(`
+    const p = JSON.parse(localStorage.getItem('shop_prefs') ?? '{}');
+    localStorage.setItem('shop_prefs', JSON.stringify({ ...p, noteTemplate: '' }));
+    return true;
+  `)
+  await goto('/orders/create/')
+  await evaluate(`return await waitFor(() => document.querySelector('[name="reference"]'))`)
   t('form.totalBox', await evaluate(`
     const el = document.querySelector('[name="total"]');
     return [el.type, el.inputMode, el.dataset.currency].join('/');
@@ -1352,6 +1375,7 @@ try {
 
   t('consoleErrors', consoleErrors)
 } catch (e) {
+  await reload.settle()
   console.error('\nThe drive threw:', e.message)
   console.error('collected so far:', JSON.stringify(got, null, 2))
   console.error('console errors:', consoleErrors)
@@ -1468,6 +1492,7 @@ const expected = {
   'form.noStatusControl':   true,
   'form.customerOptions':   ['Acme Corp', 'Globex'],
   'form.referenceMaxLength': 20,      // @length(3, 20)
+  'form.noteTemplate':      'Gift wrap please',
   // `@money(USD)` gets the kit's money box: text, so `1,200` is read rather
   // than blanked, in the column's own currency. `@gte(0)` is judged on the
   // stored cents by validate() and the Data boundary, not by a native `min`.

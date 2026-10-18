@@ -39,6 +39,7 @@ import { tmpdir }                                      from 'node:os'
 import { join, resolve }                               from 'node:path'
 import { fileURLToPath }                               from 'node:url'
 
+import { docFences }    from '@frontierjs/toolbelt/docfences'
 import { parse }        from '../src/core/parser.js'
 import { createClient } from '../src/index.js'
 import * as litestone   from '../src/index.js'
@@ -59,24 +60,8 @@ function corpus() {
 type Block = { file: string, line: number, lang: string, words: Set<string>, body: string, schema: string | null }
 
 /** Every fenced block, with the schema in scope for a code block. */
-function blocksOf(file: string): Block[] {
-  const lines = readFileSync(join(PKG, file), 'utf8').split('\n')
-  const out: Block[] = []
-  let schema: string | null = null
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^```(\w+)\s*(.*)$/)
-    if (!m) continue
-    const [, lang, info] = m
-    const words = new Set(info.split(/\s+/).filter(Boolean))
-    let j = i + 1
-    while (j < lines.length && !lines[j].startsWith('```')) j++
-    const body = lines.slice(i + 1, j).join('\n')
-    out.push({ file, line: i + 1, lang, words, body, schema })
-    if (lang === 'lite' && !words.has('fragment')) schema = body
-    i = j
-  }
-  return out
-}
+const blocksOf = (file: string): Block[] =>
+  docFences(readFileSync(join(PKG, file), 'utf8')).map(f => ({ ...f, file }))
 
 const EXPORTS = new Set(Object.keys(litestone))
 

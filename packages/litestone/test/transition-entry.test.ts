@@ -110,6 +110,22 @@ describe('a machine without an entry', () => {
       }`)
     expect(errors.join('\n')).toMatch(/@@transitions\(status\).*no @default/)
   })
+
+  // FJS-3047: a nullable column is the machine only some rows enter; null is
+  // not a state a from-list can name, so the way out is a state that says "none".
+  test('on a nullable enum, the refusal names the none state', () => {
+    const { errors } = parse(`
+      enum S { none  a  b }
+      model M {
+        id     Int @id
+        status S?
+        @@transitions(status, go: a -> b)
+      }`)
+    const msg = errors.join('\n')
+    expect(msg).toMatch(/@@transitions\(status\).*no @default/)
+    expect(msg).toMatch(/nullable/)
+    expect(msg).toMatch(/none/)
+  })
 })
 
 // ─── a Factory asked for a state further along ───────────────────────────────

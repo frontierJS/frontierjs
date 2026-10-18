@@ -323,11 +323,11 @@ export function redeemHandoff(code) {
   })
 }
 
-/** The code in `#h=…`, if this navigation carries one. Read and then erased by
- *  the caller — see the note in `redeemHandoff`. */
-export function handoffCodeFromUrl() {
-  const hash = String(location.hash ?? '').replace(/^#/, '')
-  return new URLSearchParams(hash).get('h')
+/** The code in a fragment's `#h=…`, if it carries one. Takes the fragment —
+ *  `page.hash` in a route — because `location` is not there in the terminal.
+ *  Read and then erased by the caller — see the note in `redeemHandoff`. */
+export function handoffCodeFromHash(hash) {
+  return new URLSearchParams(String(hash ?? '').replace(/^#/, '')).get('h')
 }
 
 export function add(variantId, quantity = 1) {

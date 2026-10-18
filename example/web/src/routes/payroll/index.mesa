@@ -161,7 +161,7 @@ title: Payroll
           {#if r.status === 'approved'}
             <ConfirmationPopover
               title="Pay this run?"
-              message="It posts one journal for the whole run and queues every payslip to go out. A payslip that has gone out cannot be un-sent."
+              message="It posts one journal for the whole run and queues every payslip to be marked sent. Nothing is emailed from this example, and a payslip marked sent is not marked again."
               confirmLabel="Pay it"
               onconfirm={() => pay(r)}
             >

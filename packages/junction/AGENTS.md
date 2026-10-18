@@ -222,7 +222,7 @@ app.service('posts').find({ status: 'open' }, { directives: { limit: 10 } })
 app.service('posts').get(id)
 app.service('posts').patch(id, { title })
 app.service('orders').call('pay', id, data)
-app.service('orders').call('pay', id, data, { auth: { user: SYSTEM } })
+app.runAs(null, () => app.service('orders').call('pay', id, data))   // as the app: createApp({ system })
 ```
 
 **A call that names no `auth` inherits the principal in scope**, at any depth,
@@ -411,6 +411,9 @@ Everything above is loud. These are not.
   report — is declared `{ method: 'search', read: true }` in `methods:`, which
   announces nothing and keeps no answer under an `Idempotency-Key` (`FJS-D505`).
   A WRITE whose answer is not a row — a credential — sets `$.dispatch = false`.
+  A write whose answer is ANOTHER model's row (`messages.promote()` answers the
+  Task) declares `{ method: 'promote', answers: 'Task' }`: the announcement is
+  checked, re-read and graded against Task, not the service's model (`FJS-D914`).
   A write inside a declared read still happens, and a keyed retry runs it again.
 
 - **A header a caller varies per call must be listed in

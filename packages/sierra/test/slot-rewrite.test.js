@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { rewriteLayoutSlots, rewriteMesaSlots } from '../src/build/slot-rewrite.js'
+import { compileSource } from '../../mesa/src/compiler.js'
 
 // ── rewriteMesaSlots (page side) ──────────────────────────────────────────────
 
@@ -70,7 +71,7 @@ describe('rewriteLayoutSlots', () => {
     const out = rewriteLayoutSlots(src)
     expect(out).toContain('__slot_sidebar')
     expect(out).toContain('{@render __slot_sidebar()}')
-    expect(out).toContain('{@render children?.()}')
+    expect(out).toContain('<slot />')
   })
 
   it('rewrites <slot name="X">fallback</slot> with fallback content', () => {
@@ -136,115 +137,38 @@ describe('rewriteLayoutSlots', () => {
     const src = `<div><p>No slots here</p></div>`
     expect(rewriteLayoutSlots(src)).toBe(src)
   })
-
-  it('rewrites default <slot /> to children render', () => {
-    const src = `
-<script>import { page } from '@frontierjs/sierra/router'</script>
-<main><slot /></main>`
-    const out = rewriteLayoutSlots(src)
-    expect(out).toContain('{@render children?.()}')
-    expect(out).not.toContain('<slot />')
-  })
 })
 
-// ── default slot must declare the prop it renders ────────────────────────────
+// ── the default slot is Mesa's ───────────────────────────────────────────────
 //
-// `<slot />` expands to {@render children?.()}. Nothing declared `children`, so
-// the Mesa compiler emitted a reference to $$snippet_children and the layout
-// threw "ReferenceError: $$snippet_children is not defined" at mount — a blank
-// page, with the build reporting success.
-//
-// The test above this block passed the whole time: it asserted the rewritten
-// STRING contained {@render children?.()}, which was true. Nothing ever ran it.
+// Mesa lowers `<slot />` and `<slot>fallback</slot>` itself, declaring the
+// `children` prop it reads (`FJS-D668`), so a second rewrite here was a second
+// owner of the same translation (`FJS-3149`). Only the NAMED half stays: it
+// reads `page.slots`, which Mesa knows nothing about.
 
-describe('rewriteLayoutSlots — default slot prop declaration', () => {
+describe('rewriteLayoutSlots — the default slot is left to Mesa', () => {
+  const ROUTER = `import { page } from '@frontierjs/sierra/router'`
 
-  it('declares children when <slot /> is used with an existing script', () => {
-    const out = rewriteLayoutSlots(`
-<script>
-  import { page } from '@frontierjs/sierra/router'
-</script>
-<div><slot /></div>`)
-
-    expect(out).toContain('export let children = null')
-    expect(out).toContain('{@render children?.()}')
+  it('leaves <slot /> and <slot>fallback</slot> in the source', () => {
+    const plain = `<main><slot /></main>`
+    expect(rewriteLayoutSlots(plain)).toBe(plain)
+    const withFallback = `<script>\n  ${ROUTER}\n</script>\n<main><slot>nothing here</slot></main>`
+    expect(rewriteLayoutSlots(withFallback)).toBe(withFallback)
   })
 
-  it('declares children for <slot>fallback</slot> too', () => {
-    const out = rewriteLayoutSlots(`
-<script>
-  let x = 1
-</script>
-<div><slot>nothing here</slot></div>`)
-
-    expect(out).toContain('export let children = null')
+  it('rewrites the named slot beside it and still leaves the default one', () => {
+    const out = rewriteLayoutSlots(`<script>\n  ${ROUTER}\n</script>\n<div><slot name="sidebar" /><slot /></div>`)
+    expect(out).toContain('__slot_sidebar')
+    expect(out).toContain('<slot />')
+    expect(out).not.toContain('children')
   })
 
-  it('creates a script block for a layout that has none', () => {
+  it('declares no children prop: Mesa declares the one it reads', async () => {
     const out = rewriteLayoutSlots(`<main><slot /></main>`)
-
-    expect(out).toContain('<script>')
-    expect(out).toContain('export let children = null')
-    expect(out).toContain('{@render children?.()}')
-  })
-
-  it('does not double-declare when the author already did', () => {
-    const out = rewriteLayoutSlots(`
-<script>
-  export let children = null
-</script>
-<div><slot /></div>`)
-
-    expect(out.match(/export\s+let\s+children/g)).toHaveLength(1)
-  })
-
-  it('declares children alongside named slot locals when both are used', () => {
-    const out = rewriteLayoutSlots(`
-<script>
-  import { page } from '@frontierjs/sierra/router'
-</script>
-<div><slot name="sidebar" /><slot /></div>`)
-
-    expect(out).toContain('export let children = null')
-    expect(out).toContain('__slot_sidebar')
-  })
-
-  it('does not declare children when only named slots are used', () => {
-    // A phantom `children` prop on a layout that never renders it would be
-    // dead surface area, and would change what the component accepts.
-    const out = rewriteLayoutSlots(`
-<script>
-  import { page } from '@frontierjs/sierra/router'
-</script>
-<div><slot name="sidebar" /></div>`)
-
     expect(out).not.toContain('export let children')
-    expect(out).toContain('__slot_sidebar')
-  })
-
-  it('never injects into <script module>', () => {
-    // An export there is a module export, not a prop declaration.
-    const out = rewriteLayoutSlots(`
-<script module>
-  export const prerender = true
-</script>
-<script>
-  let x = 1
-</script>
-<div><slot /></div>`)
-
-    const moduleBlock = out.slice(out.indexOf('<script module>'), out.indexOf('</script>'))
-    expect(moduleBlock).not.toContain('export let children')
-    expect(out).toContain('export let children = null')
-  })
-
-  it('leaves a layout with no slots completely untouched', () => {
-    const src = `
-<script>
-  let x = 1
-</script>
-<div>no slots here</div>`
-    expect(rewriteLayoutSlots(src)).toBe(src)
+    const ctx = await compileSource(out, { filename: 'Layout.mesa', dev: false, css: false })
+    expect(ctx.analysis.errors).toEqual([])
+    expect(ctx.result).toContain('children')
   })
 })
 
@@ -293,7 +217,7 @@ describe('a slot name that is not a bare identifier', () => {
   })
 
   it('a default slot carries no name and is untouched', () => {
-    expect(rewriteLayoutSlots('<div><slot /></div>')).toContain('{@render children?.()}')
-    expect(rewriteLayoutSlots('<div><slot>fallback</slot></div>')).toContain('{@render children?.()}')
+    expect(rewriteLayoutSlots('<div><slot /></div>')).toBe('<div><slot /></div>')
+    expect(rewriteLayoutSlots('<div><slot>fallback</slot></div>')).toBe('<div><slot>fallback</slot></div>')
   })
 })

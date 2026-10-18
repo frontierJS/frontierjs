@@ -33,6 +33,7 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs'
 import { join, dirname, relative, resolve, sep }           from 'path'
 
+import { docFences }     from '@frontierjs/toolbelt/docfences'
 import { readRegisters } from './registers.js'
 
 // ─── the corpus ───────────────────────────────────────────────────────────────
@@ -133,10 +134,7 @@ function inlineSpans(text) {
 
 /** Fenced blocks carrying one of `langs`, joined with their offsets kept. */
 function fences(text, langs) {
-  const out = []
-  for (const m of text.matchAll(/```([A-Za-z0-9_-]*)[^\n]*\n([\s\S]*?)```/g))
-    if (langs.includes(m[1].toLowerCase())) out.push({ body: m[2], index: m.index })
-  return out
+  return docFences(text).filter(f => langs.includes(f.lang)).map(f => ({ body: f.body, index: f.index }))
 }
 
 // ─── doc-word-unknown ─────────────────────────────────────────────────────────

@@ -2178,6 +2178,7 @@ function _fieldValue(schema, ownerName, field, seq, rng, { fkFields = new Set(),
       // survived `mutate` for want of a verdict.
       const pt = attrs.find(a => a.kind === 'point')
       if (pt) return { [pt.lat]: 40 + (seq % 40) / 10, [pt.lng]: -75 - (seq % 40) / 10 }
+      if (typeAttr?.array) return []
       return typeAttr ? _typeValue(schema, typeAttr.name, seq, rng, depth) : {}
     }
 

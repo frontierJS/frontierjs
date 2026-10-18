@@ -73,7 +73,7 @@ describe('injectHMR', () => {
 
   test('the default export becomes the wrapper, and the original is kept', async () => {
     const js = await wrapped()
-    expect(js).toContain('function __mesaOrigFn(__anchor, __props, __block)')
+    expect(js).toContain('function __mesaOrigFn(__anchor, __props)')
     expect(js).toContain('export default function __mesaHMRWrap(')
     expect(js).toContain('export { __mesaOrigFn }')
     // Exactly one default export, and it is the wrapper — the compiler's own

@@ -104,6 +104,8 @@ export interface ServiceTypes {
 
 The accessor on the client type is camelCase: `readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere>`.
 
+A `@system` column is left out of `UserCreate` and `UserUpdate` and sits in `UserSystem`, which the model's `TableClient` takes as a sixth parameter: a write names the column in `data` only where `system: ['col']` names it too, so the write the runtime would refuse does not typecheck.
+
 A `Bytes` column is emitted as `Uint8Array`, which is what the client hands back on every runtime; a `Buffer` is one, but a row read is not a `Buffer`.
 
 `--augment=junction` appends `declare module '@frontierjs/junction/client' { interface ServiceTypes extends GeneratedServiceTypes {} }`, written only when asked for because a module augmentation names a package an app may not have installed. A schema with `type` declarations also gets `export interface SeedTypes { TrackingUpdate: TrackingUpdate }`, and with `--augment=junction` `declare module '@frontierjs/junction' { interface SeedTypes extends GeneratedSeedTypes {} }`: a method's `input:` is then checked against those names, and `defineMethod('TrackingUpdate', ctx => …)` types `ctx.data` as the interface. With `--audience=system` it also appends `declare module '@frontierjs/junction' { interface AppDb extends GeneratedLitestoneClient {} }`, which is what types `app.db`, `$.db` and `ctx.locals.db` in a service as the generated client.

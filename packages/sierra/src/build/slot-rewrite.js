@@ -81,7 +81,7 @@ export function rewriteMesaSlots(source, file = null) {
 }
 
 /**
- * Rewrite <slot name="X">fallback</slot> and <slot /> in LAYOUT files.
+ * Rewrite <slot name="X">fallback</slot> in LAYOUT files.
  *
  * <slot name="sidebar">fallback</slot>
  *   → {#if page.slots.sidebar}{@render page.slots.sidebar()}{:else}fallback{/if}
@@ -89,8 +89,8 @@ export function rewriteMesaSlots(source, file = null) {
  * <slot name="sidebar" />  (no fallback)
  *   → {#if page.slots.sidebar}{@render page.slots.sidebar()}{/if}
  *
- * <slot />  (default slot — children)
- *   → {@render children?.()}
+ * The default slot is not rewritten: Mesa lowers `<slot />` and declares the
+ * `children` prop it reads, so a second translation here would be a second owner.
  */
 export function rewriteLayoutSlots(source, file = null) {
   assertSlotNames(source, 'slot', file)
@@ -99,29 +99,9 @@ export function rewriteLayoutSlots(source, file = null) {
   const namedWithFallback = /<slot\s+name="([a-zA-Z_$][a-zA-Z0-9_$]*)"\s*>([\s\S]*?)<\/slot>/g
   // Named slot self-closing: <slot name="X" />
   const namedSelfClose = /<slot\s+name="([a-zA-Z_$][a-zA-Z0-9_$]*)"\s*\/>/g
-  // Default slot self-closing: <slot />
-  const defaultSelfClose = /<slot\s*\/>/g
-  // Default slot with fallback: <slot>fallback</slot>
-  const defaultWithFallback = /<slot\s*>([\s\S]*?)<\/slot>/g
 
   const foundNames = []
-  // Tracked separately from foundNames: the default slot renders `children`,
-  // a prop, while named slots render `__slot_X`, a local let. They need
-  // different declarations injected, and a layout may use either or both.
-  let hasDefaultSlot = false
-
-  // Check if any slots exist
-  let hasSlots = false
-  const testSrc = source
-  if (namedWithFallback.test(testSrc)) hasSlots = true
-  namedWithFallback.lastIndex = 0
-  if (!hasSlots && namedSelfClose.test(testSrc)) hasSlots = true
-  namedSelfClose.lastIndex = 0
-  if (!hasSlots && defaultSelfClose.test(testSrc)) hasSlots = true
-  defaultSelfClose.lastIndex = 0
-  if (!hasSlots && defaultWithFallback.test(testSrc)) hasSlots = true
-  defaultWithFallback.lastIndex = 0
-
+  const hasSlots = new RegExp(namedWithFallback.source).test(source) || new RegExp(namedSelfClose.source).test(source)
   if (!hasSlots) return source
 
   let rewritten = source
@@ -142,18 +122,6 @@ export function rewriteLayoutSlots(source, file = null) {
     return `{#if __slot_${name}}{@render __slot_${name}()}{/if}`
   })
 
-  // Default slot with fallback
-  rewritten = rewritten.replace(defaultWithFallback, (_, fallback) => {
-    hasDefaultSlot = true
-    return `{@render children?.()}`
-  })
-
-  // Default slot self-closing
-  rewritten = rewritten.replace(defaultSelfClose, () => {
-    hasDefaultSlot = true
-    return `{@render children?.()}`
-  })
-
   // Also rewrite $slots.X in the template.
   // $slots.X → __slot_X (the local let variable, safe for {#if} and {@render})
   rewritten = rewritten.replace(/\$slots\.([a-zA-Z_$][a-zA-Z0-9_$]*)/g, (_, name) => {
@@ -162,44 +130,7 @@ export function rewriteLayoutSlots(source, file = null) {
   })
 
   // Inject the `page` import + local slot variables for each named slot
-  rewritten = _injectSlotVars(rewritten, foundNames)
-
-  // Declare the prop the default slot renders. Without this, `<slot />` expands
-  // to {@render children?.()} against an undeclared binding: the Mesa compiler
-  // emits a reference to $$snippet_children, and the layout throws
-  // "ReferenceError: $$snippet_children is not defined" at mount — taking the
-  // whole page down to a blank screen, with nothing failing at build time.
-  //
-  // _injectSlotVars can't do this: it returns early when there are no NAMED
-  // slots, which is exactly the plain `<slot />` case.
-  if (hasDefaultSlot) rewritten = _injectChildrenProp(rewritten)
-
-  return rewritten
-}
-
-/**
- * Ensure the layout declares `children`, the prop `{@render children?.()}` reads.
- *
- * No-ops when the author already declared it, so hand-written layouts that use
- * `{@render children?.()}` directly — the form Sierra's own fixtures use — are
- * left untouched.
- */
-function _injectChildrenProp(source) {
-  // Already declared, in any of the forms the compiler accepts.
-  if (/\bexport\s+let\s+children\b/.test(source)) return source
-
-  const decl = '  export let children = null'
-
-  // Prefer the instance script. `(?!\s+module)` keeps this out of <script module>,
-  // where an export would be a module export rather than a prop declaration.
-  const instanceScriptRe = /(<script(?!\s+module)[^>]*>)/
-  if (instanceScriptRe.test(source)) {
-    return source.replace(instanceScriptRe, `$1\n${decl}`)
-  }
-
-  // A layout with markup only and no script block at all — still a valid
-  // layout, and the most likely shape for a plain `<slot />` wrapper.
-  return `<script>\n${decl}\n</script>\n${source}`
+  return _injectSlotVars(rewritten, foundNames)
 }
 
 /**

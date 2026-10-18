@@ -1,0 +1,9 @@
+<script>
+  let word = ''
+</script>
+
+<button type="button" aria-label="Close"><svg aria-hidden="true" viewBox="0 0 10 10"><path d="M0 0L10 10" /></svg></button>
+<button type="button" aria-label="Ignored">Save</button>
+<button type="button" aria-label="Maybe">{word}</button>
+<button type="button" onclick={() => word = 'Now'}>Fill</button>
+<a href="/home" aria-label="Home"><svg aria-hidden="true" viewBox="0 0 10 10"><path d="M0 0L10 10" /></svg></a>

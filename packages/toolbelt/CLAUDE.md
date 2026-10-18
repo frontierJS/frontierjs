@@ -7,7 +7,7 @@ framework import, no mutation of its arguments. The rule is the package's
 license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
+**One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
 `/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/mailbox`, `/markdown`, `/match`, `/mime`,
 `/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sigv4`, `/sse`, `/textedit`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
@@ -105,6 +105,14 @@ src/query/           what a query STRING means — types, structure, and the way
                      `comparatorFor`): the server compiles it, the live list
                      places a pushed row by it, and `<Table>` sorts its own
                      rows by it (`FJS-D672`)
+src/docfences/       the fenced blocks of a markdown page and the contract on
+                     their info string (`fragment`, `throws`, `failing`), with
+                     the schema in scope for each. Litestone's doc-example
+                     runner, `fli check`'s `doc-examples-run` and the doc audit
+                     each had a fence regex and disagreed on indentation, `~~~`
+                     and what closes a block (`FJS-D909`, `FJS-2331`). A
+                     fence closes on the same character at least as long, so
+                     a four-backtick block can show a three-backtick one
 src/frontmatter/     what a `---` block MEANS — a declared YAML subset
                      (`FJS-D549`): block maps and lists, `|`/`>`, flow, quotes,
                      YAML 1.2 core scalars (a date stays a string). Anchors,
@@ -352,7 +360,8 @@ license.
   A day's window is `[startOfDay(d), startOfDay(d + 1 day))`.
 - **`relative` is ELAPSED time.** 30 hours ago is `1 day ago` even across two
   midnights, and a month is an average month. A calendar answer (*yesterday*)
-  needs a zone and is a different function.
+  needs a zone and is a different function: `dayHeader`, whose weekday window
+  is the past five days only, so one header is one day.
 
 - **`/query`'s number rule is one line and it is the whole design.** A string is
   a number only if `String(Number(v)) === v`. Every trap of the obvious

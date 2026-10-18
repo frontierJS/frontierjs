@@ -215,11 +215,7 @@
       "name": "@frontierjs/jetty",
       "version": "0.0.6",
       "bin": {
-        "jetty-build-ext": "./bin/build-ext.js",
-        "jetty-dev-ext": "./bin/dev-ext.js",
-        "jetty-info": "./bin/info.js",
-        "jetty-audit": "./bin/audit.js",
-        "jetty-manifest": "./bin/manifest.js",
+        "jetty": "./bin/jetty.js",
       },
       "dependencies": {
         "@frontierjs/toolbelt": "workspace:*",

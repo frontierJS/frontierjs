@@ -519,3 +519,28 @@ describe('a filtered bulk restore', () => {
     expect(out).toMatchObject({ id: 1, title: 't1' })
   })
 })
+
+describe('an in-process caller sends the bulk form the type names', () => {
+
+  // FJS-3102: the array allowBulk admits over HTTP was a type error from a job
+  // or another service, and the caller cast through unknown to reach it.
+  test('app.service(x).create takes an array and answers the list envelope', async () => {
+    const app = await createTestApp({
+      services: [buildService({
+        name:      'things',
+        allowBulk: true,
+        create: async (ctx) => {
+          const rows = ctx.data as Record<string, unknown>[]
+          return { data: rows, total: rows.length, errors: [] }
+        },
+      })],
+    })
+
+    const rows: Record<string, unknown>[] = [{ t: 1 }, { t: 2 }]
+    const out = await app.service('things').create(rows) as { data: unknown[] }
+    expect(out.data).toHaveLength(2)
+
+    const raw = await app.service('things')._create(rows) as { data: unknown[] }
+    expect(raw.data).toHaveLength(2)
+  })
+})

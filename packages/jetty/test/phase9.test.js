@@ -53,7 +53,7 @@ group('injectJettyHMR against real compiler output')
   if (out && out.includes('__jettyMesa.register(')) ok('a delegating component gets its HMR registration')
   else if (out) bad('a delegating component gets its HMR registration', 'Step 2 did not match — HMR is silently dead for it')
 
-  if (out && /function __mesaOrigFn\(__anchor, __props, __block\)/.test(out)) ok('the original function is renamed for the wrapper')
+  if (out && /function __mesaOrigFn\(__anchor, __props\)/.test(out)) ok('the original function is renamed for the wrapper')
   else bad('the original function is renamed for the wrapper', 'Step 1 did not match')
 
   if (out && out.includes('export default function __mesaJettyHMRWrap')) ok('the wrapper becomes the default export')

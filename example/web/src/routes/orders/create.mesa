@@ -22,8 +22,9 @@ title: New order
   import { orders }   from '@/resources/Order.mesa'
   import { goto } from '@frontierjs/sierra/router'
   import { session } from '@frontierjs/sierra/resource'
+  import { prefs } from '@/stores/prefs.js'
 
-  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Alert        from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
 
@@ -33,6 +34,10 @@ title: New order
   // so a snapshot is what it is. Read straight in the template it is still a
   // one-time read, only silently.
   var createLevel = orders.gate.create
+
+  // Settings → Note template, prefilled into the note. With none set the form
+  // makes its own blank, so `note` stays NULL rather than becoming ''.
+  var seed = prefs.noteTemplate ? orders.make({ note: prefs.noteTemplate }) : undefined
 </script>
 
 <SectionHeader title="New order" level={1}>
@@ -52,6 +57,7 @@ title: New order
 <Order
   class="card"
   style="max-width: 32rem"
+  record={seed}
   method="create"
   submitLabel="Create order"
   cancelHref="/orders/"

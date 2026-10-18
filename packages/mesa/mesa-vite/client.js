@@ -30,7 +30,7 @@ export const _registry = new Map()   // id → Set<entry>
 /**
  * Drop entries whose anchor has left the document.
  *
- * An entry retains a detached anchor, the marker, the props and the block for
+ * An entry retains a detached anchor, the marker and the props for
  * the life of the tab, and until this the only thing that removed one was a
  * swap — which runs only when that file is edited. Every route change, every
  * `{#if}` that tears a component down and every list re-render added one that
@@ -43,13 +43,13 @@ function prune(set, id) {
   if (!set.size) _registry.delete(id)
 }
 
-export function __mesa_register(id, hmrMark, anchor, props, block, fn) {
+export function __mesa_register(id, hmrMark, anchor, props, fn) {
   if (!_registry.has(id)) _registry.set(id, new Set())
   const set = _registry.get(id)
   // On the way in, so a component that mounts and unmounts repeatedly — a route
   // the developer keeps navigating back to — cannot accumulate.
   prune(set, id)
-  const entry = { hmrMark, anchor, props, block, fn }
+  const entry = { hmrMark, anchor, props, fn }
   _registry.set(id, set)
   set.add(entry)
   return () => {

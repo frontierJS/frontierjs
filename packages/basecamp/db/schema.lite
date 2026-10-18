@@ -682,14 +682,15 @@ model User {
   // R.C.U.D. Read and update are VISITOR(1) for Notification's reason:
   // standing in a workspace says nothing about a row that belongs to none, and
   // at USER(4), which is DEVELOPER on this ladder, a viewer could not read or
-  // edit their own profile. The policies are what confine it. Your own row at
-  // any standing; everyone's at 4, which is what the gate said before and what
-  // an app's screens listing its people need. Update is your own row only, and
-  // the field policies above keep the columns a person may not write about
+  // edit their own profile. The policies are what confine it, and both are
+  // your own row only: this model spans workspaces, so a level earned in one
+  // is no standing over a person who is in another, and a roster reads its
+  // people through the membership (`workspaces.members`, asSystem()). The
+  // field policies above keep the columns a person may not write about
   // themselves. Create is SYSTEM: registration, setup, an accepted invitation
   // and the hub's bots all write through asSystem(), which passes all of it.
   @@gate(1.8.1.5)
-  @@allow(read,   id == auth().id || auth().level >= 4)
+  @@allow(read,   id == auth().id)
   @@allow(update, id == auth().id)
   @@softDelete
   @@trail(audit)
