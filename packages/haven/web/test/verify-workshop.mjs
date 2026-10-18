@@ -42,6 +42,7 @@ import { stageOf } from './stage.mjs'
 import { follow } from '../src/lib/scene/stage.js'
 import { BENCH_WIDTH } from '../src/pieces/bench.js'
 import { QUIET_MS, readWorkers } from '../src/lib/hash/workers.js'
+import { SPIN } from '../src/lib/working.js'
 
 const WEB      = join(import.meta.dir, '..')
 const REPO     = join(WEB, '../../..')
@@ -154,13 +155,15 @@ check(await walk(square, route(square, square.spawn, workshopDoor),
 
 // ─── the benches ──────────────────────────────────────────────────────
 
+// A working session spins, so any of its frames is one.
+const cooking = (g) => SPIN.includes(g)
 const seat  = (bench, i) => ({ x: bench.x + 2 + 2 * i, y: bench.y + 1 })
 const [s0, s1] = [seat(nearest, 0), seat(nearest, 1)]
 const COUNT = '(! 2 here)'
-check(await until(() => at(s0.x, s0.y) === '✻' && at(s1.x, s1.y) === '✻' && at(s1.x + 2, s1.y, COUNT.length) === COUNT),
+check(await until(() => cooking(at(s0.x, s0.y)) && cooking(at(s1.x, s1.y)) && at(s1.x + 2, s1.y, COUNT.length) === COUNT),
   `two sessions in ${nearest.piece.bench} are two workers at its bench with its count, on Sam's screen from the door`, term.screen())
 const f0 = seat(far, 0)
-check(at(f0.x, f0.y) === '✻' && at(f0.x + 2, f0.y) !== '(', `the one at ${far.piece.bench} stands alone with no count`, term.screen())
+check(cooking(at(f0.x, f0.y)) && at(f0.x + 2, f0.y) !== '(', `the one at ${far.piece.bench} stands alone with no count`, term.screen())
 
 const beside = { x: s0.x - 1, y: s0.y }
 check(await walk(workshop, route(workshop, inside, beside)), 'Sam walks to stand beside the first worker', term.screen())
@@ -182,7 +185,7 @@ const frame = await new Promise((resolve) => {
 const anaAt = (x, y, width = 1) => cellOf(frame.framed, x, y, width, workshop)
 check(frame.code === 0 && anaAt(beside.x, beside.y) === 'S' && frame.framed.includes('The workshop · 2 here'),
   "Ana's frame of the workshop is the same room: Sam's figure where he stands", frame.framed + frame.err)
-check(!frame.framed.includes('✻') && !frame.framed.includes('(!') && !frame.framed.includes('aaaa') && anaAt(nearest.x + nearest.piece.art.indexOf(` ${nearest.piece.bench} `) + 1, nearest.y, nearest.piece.bench.length) === nearest.piece.bench,
+check(!SPIN.slice(1).some((g) => frame.framed.includes(g)) && !frame.framed.includes('(!') && !frame.framed.includes('aaaa') && anaAt(nearest.x + nearest.piece.art.indexOf(` ${nearest.piece.bench} `) + 1, nearest.y, nearest.piece.bench.length) === nearest.piece.bench,
   "and none of Sam's workers, their count or the reading — the bench itself is drawn", frame.framed)
 
 // ─── a session moves, a session goes quiet ───────────────────────────
@@ -190,13 +193,13 @@ check(!frame.framed.includes('✻') && !frame.framed.includes('(!') && !frame.fr
 const moved = benches.find((b) => b !== nearest && b !== far && onFirst(b))
 hookEdit('cccc-far', fileOf(moved.piece.bench))
 const m0 = seat(moved, 0)
-check(await until(() => at(m0.x, m0.y) === '✻' && blank(at(f0.x, f0.y))),
+check(await until(() => cooking(at(m0.x, m0.y)) && blank(at(f0.x, f0.y))),
   `a session that edits in ${moved.piece.bench} next walks from its bench to that one`, term.screen())
 
 writeFileSync(join(WORKERS, 'bbbb-two.json'), JSON.stringify({
   session: 'bbbb-two', bench: nearest.piece.bench, file: fileOf(nearest.piece.bench), at: new Date(Date.now() - QUIET_MS - 1000).toISOString(),
 }) + '\n')
-check(await until(() => blank(at(s1.x, s1.y)) && at(s0.x, s0.y) === '✻' && !term.screen().includes(COUNT)),
+check(await until(() => blank(at(s1.x, s1.y)) && cooking(at(s0.x, s0.y)) && !term.screen().includes(COUNT)),
   'a session quiet past QUIET_MS leaves its bench, and the count goes with it', term.screen())
 
 // ─── a hand raised, then last words ──────────────────────────────────

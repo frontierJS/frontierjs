@@ -66,7 +66,7 @@ const TOGGLE_SIDE = '\\'
 const OTHER_PANE  = 'o'
 // A page narrower than PAGE_COLUMNS clips a scene, so where the side would
 // leave it fewer, an open side shows one pane at a time.
-const SIDE_SHARE   = 0.4
+const SIDE_SHARE   = 0.3
 const PAGE_COLUMNS = 120
 const MODE  = new URL('./Mode.mesa', import.meta.url).pathname
 const NO_LOWERING = / has no terminal lowering$/

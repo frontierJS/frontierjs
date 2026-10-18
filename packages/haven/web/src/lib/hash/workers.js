@@ -7,8 +7,9 @@
 // the hook in `.claude/hooks/haven-worker.mjs` on each event Claude Code
 // hands it, through `recordWorker()` — so the shape has one owner, this file.
 // An edit seats the session at its bench; a permission prompt raises its
-// hand; a stop leaves its last words; anything else means it is working
-// again. Every field read is in the hook's documented input — Claude's
+// hand; a stop leaves its last words; a tool started is held open until its
+// answer, so a session between two tools is the model writing and one inside
+// a tool is waiting on it; anything else means it is working again. Every field read is in the hook's documented input — Claude's
 // transcripts say the same and were not used: their shape is Claude Code's
 // to change.
 //
@@ -68,10 +69,14 @@ function readOne(file) {
   try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return null }
 }
 
+/** A tool's own name: an MCP tool's is the last part of `mcp__<server>__<tool>`. */
+const toolName = (name) => String(name ?? '').split('__').pop() || 'tool'
+
 /**
  * Record one hook event for this session. `input` is the hook's stdin:
  * `session_id`, `hook_event_name` (a `PostToolUse` when absent), and per
- * event `tool_input.file_path` (`notebook_path` for a notebook),
+ * event `tool_name`, `tool_use_id`, `agent_id` (inside a subagent only),
+ * `tool_input.file_path` (`notebook_path` for a notebook),
  * `notification_type` and `message`, `last_assistant_message`, `cwd`, and on
  * every event `transcript_path`.
  *
@@ -79,13 +84,20 @@ function readOne(file) {
  *   any hand or last words: it is working.
  * - A Notification in ASKS raises its hand; any other notification is
  *   ignored, since an `idle_prompt` after a stop would wipe the last words.
- * - A Stop leaves its last words.
+ * - A PreToolUse on the main thread opens `tool`, and the PostToolUse of
+ *   the same `tool_use_id` closes it. A subagent's tools open nothing, since
+ *   its `Agent` call is the one open. The hook runs `async`, so a Post can
+ *   land before its own Pre: `done` keeps the last id closed and that Pre
+ *   opens nothing.
+ * - A Stop leaves its last words and closes any tool.
  * - SessionEnd removes the file.
  * - Anything else — another tool, a prompt submitted — lowers the hand and
- *   drops the words of an existing worker: the prompt was answered.
+ *   drops the words of an existing worker: the prompt was answered. A prompt
+ *   submitted closes any tool too.
  *
  * A session that has edited nothing yet is seated where it was started, so a
- * hand raised before the first edit is still drawn. Outside `root`, nothing.
+ * hand raised or a tool opened before the first edit is still drawn. Outside
+ * `root`, nothing.
  */
 export function recordWorker(input, { root, dir = WORKERS_DIR, now = Date.now() } = {}) {
   const session = String(input?.session_id ?? '').replace(/[^\w-]/g, '')
@@ -110,14 +122,29 @@ export function recordWorker(input, { root, dir = WORKERS_DIR, now = Date.now() 
   const edited = event === 'PostToolUse' && path ? benchOf(path, root) : null
   // Where it was started is the bench a file in its working directory would be at.
   const started = () => (was ? working : { session, bench: benchOf(join(input.cwd || root, '.session'), root), file: '', at: '' })
+  const id = String(input.tool_use_id ?? '')
+  const main = !input.agent_id
+  let tool = was?.tool ?? null
+  let done = was?.done ?? null
+  if (event === 'PreToolUse' && main && id && id !== done) tool = { name: toolName(input.tool_name), id, at }
+  if (event === 'PostToolUse' && main && id) {
+    done = id
+    if (tool?.id === id) tool = null
+  }
+  if (event === 'Stop' || event === 'UserPromptSubmit') tool = null
 
   let worker
   if (edited) worker = { session, bench: edited, file: relative(root, path), at, seen: at }
   else if (event === 'Notification') worker = { ...started(), seen: at, asking: { why: String(input.message || input.notification_type), at } }
   else if (event === 'Stop') worker = { ...started(), seen: at, said: { text: lastWords(input.last_assistant_message), at } }
+  else if (event === 'PreToolUse' && main) worker = { ...started(), seen: at }
   else if (was) worker = { ...working, seen: at }
   if (!worker?.bench) return null
   if (transcript) worker.transcript = transcript
+  delete worker.tool
+  delete worker.done
+  if (tool) worker.tool = tool
+  if (done) worker.done = done
 
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   writeFileSync(file, JSON.stringify(worker) + '\n')
@@ -154,9 +181,10 @@ const stamped = (o, key) => (o && typeof o === 'object' && o[key] ? { [key]: Str
 
 /**
  * Every session heard from within QUIET_MS, or asking, oldest session id
- * first: `{ session, bench, file, transcript, at, seen, asking, said }` —
+ * first: `{ session, bench, file, transcript, at, seen, tool, asking, said }` —
  * `transcript` the path Claude Code writes the session to, or null, `at` the
- * last edit (null before one), `seen` the last event, `asking` `{ why, at, heard }`
+ * last edit (null before one), `seen` the last event, `tool` `{ name, at }`
+ * while a tool it started has not answered, else null, `asking` `{ why, at, heard }`
  * and `said` `{ text, at, bumped }` or null, `heard` and `bumped` whether
  * `closeOut` has closed that moment. An unreadable file is no worker.
  */
@@ -174,7 +202,8 @@ export function readWorkers({ dir = WORKERS_DIR, now = Date.now() } = {}) {
     const closed = readOne(join(closedDir(dir), name)) ?? {}
     if (asking) asking.heard = Date.parse(closed.asking) === asking.at
     if (said) said.bumped = Date.parse(closed.said) === said.at
-    out.push({ session: String(w.session), bench: String(w.bench), file: String(w.file ?? ''), transcript: typeof w.transcript === 'string' ? w.transcript : null, at: w.at ? Date.parse(w.at) : null, seen, asking, said })
+    const tool = w.tool?.name ? { name: String(w.tool.name), at: Date.parse(w.tool.at) } : null
+    out.push({ session: String(w.session), bench: String(w.bench), file: String(w.file ?? ''), transcript: typeof w.transcript === 'string' ? w.transcript : null, at: w.at ? Date.parse(w.at) : null, seen, tool, asking, said })
   }
   return out
 }

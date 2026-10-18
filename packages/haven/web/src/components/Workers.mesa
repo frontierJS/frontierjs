@@ -8,7 +8,9 @@
   //
   // A session stopped on a permission prompt or a question is `?`, and its
   // bench says so: it is waiting on you, and nothing else on this machine
-  // shows that until you tab to it. A session that has stopped is `✓`.
+  // shows that until you tab to it. A session that has stopped is `✓`; one
+  // working spins while the model writes and holds `⚙` inside a tool
+  // (`lib/working.js`), the same glyphs the kitchen's cooks wear.
   //
   // Standing beside a worker reads it: what it asks, else its last words,
   // else the file it last touched, and how long ago. No key does this,
@@ -21,6 +23,7 @@
   import { at } from '#cell'
   import { studyTabs } from '#study'
   import { readWorkers } from '#workers'
+  import { stateOf, spinAt, TOOL } from '@/lib/working.js'
 
   const scene = $context.scene
   const POLL_MS = 1000
@@ -35,13 +38,14 @@
   $.onDestroy(scene.subscribe(() => { view = scene.view; me = scene.seer }))
   $.onDestroy(scene.task('workers', (ms) => { workers = readWorkers({ now: ms }); tabs = studyTabs(); now = ms }, { every: POLL_MS }))
 
-  const glyph = (w) => (w.asking ? '?' : w.said ? '✓' : '✻')
+  const glyph = (w, now) => ({ asking: '?', said: '✓', tool: TOOL }[stateOf(w)] ?? spinAt(now))
 
   /** What standing beside a worker reads. */
   function reading(w, now, tabs) {
     const s = tabs.has(w.session) ? `[${tabs.get(w.session)}] ${w.session.slice(0, 4)}` : w.session.slice(0, 4)
     if (w.asking) return `${s} asks: ${w.asking.why} · ${ago(now - w.asking.at)}`
     if (w.said) return `${s} done: ${w.said.text} · ${ago(now - w.said.at)}`
+    if (w.tool) return `${s} in ${w.tool.name} · ${ago(now - w.tool.at)}`
     return w.file ? `${s} ${w.file} · ${ago(now - w.at)}` : `${s} working · ${ago(now - w.seen)}`
   }
 
@@ -61,7 +65,7 @@
       here.slice(0, SEATS).forEach((w, i) => {
         const f = { w, ...b.spot(`slot-${i}`) }
         figures.push(f)
-        out.push({ key: `w:${w.session}`, x: f.x, y: f.y, text: glyph(w), layer: 11 })
+        out.push({ key: `w:${w.session}`, x: f.x, y: f.y, text: glyph(w, now), layer: 11 })
       })
       const asks = here.filter((w) => w.asking).length
       const says = [here.length > 1 && `! ${here.length} here`, asks && `? ${asks} waiting on you`].filter(Boolean)

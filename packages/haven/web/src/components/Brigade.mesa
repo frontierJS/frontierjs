@@ -5,7 +5,9 @@
   // tells them:
   //
   // - a session working or asking is a TICKET on the rail, oldest session
-  //   first, and a cook behind the line at its package's STATION; a session
+  //   first, its cook under it and its package's STATION on the line; the
+  //   cook spins while the model writes and holds `⚙` inside a tool, the
+  //   ticket's foot naming the tool and its age (`lib/working.js`); a session
   //   stopped on a prompt flashes CHEF! on its ticket and under its station,
   //   since it waits on you and nothing else shows that until you tab to it;
   //   its head fills amber, then red, as the wait passes each of `WAIT`;
@@ -50,13 +52,14 @@
   import { LEDGER } from '@/lib/hash/ledger.data.js'
   import { TICKET, rail, line, board, pass, lamps, bell } from '@/pieces/kitchen.js'
   import { markOf, MARKS } from '@/lib/marks.js'
+  import { stateOf, spinAt, TOOL } from '@/lib/working.js'
   import { BUBBLE, picked } from '@/lib/scene/crowd.js'
   import { bubble } from '@/lib/games/booth.js'
   import { cells } from '@/lib/scene/cells.js'
 
   const scene = $context.scene
   const POLL_MS = 1000
-  // The cooks a station has room for before its `+N`.
+  // The cooks a station reads out to a figure standing in front of it.
   const SEATS = 3
   // A plate, `(a3f2)`, and the space after it.
   const PLATE = 8
@@ -69,6 +72,9 @@
 
   const INK = {
     paper: '#e7e5e4',
+    // A cook writing, and one waiting on a tool.
+    cook:  '#fb923c',
+    tool:  '#7dd3fc',
     chef:  ['#ef4444', '#fca5a5'],
     // Fresh, late, over; a CHEF! ticket's head is filled late and over, `[ink, ground]`.
     plate: ['#4ade80', '#fbbf24', '#ef4444'],
@@ -266,9 +272,19 @@
     const inner = TICKET.w - 2
     const waited = now - (w.asking?.at ?? w.seen)
     const head = `${id(w)}${ago(waited).padStart(inner - 4)}`
-    const foot = w.asking?.heard ? 'HEARD' : w.asking ? (Math.floor(now / POLL_MS) % 2 ? 'CHEF!' : '  CHEF!') : base(w.file) || 'firing…'
+    const foot = w.asking?.heard ? 'HEARD' : w.asking ? (Math.floor(now / POLL_MS) % 2 ? 'CHEF!' : '  CHEF!')
+      : w.tool ? `${fit(`${TOOL} ${w.tool.name}`, inner - 4)}${ago(now - w.tool.at).padStart(4)}`
+      : base(w.file) || 'firing…'
     const rows = [`.${'-'.repeat(inner)}.`, `|${fit(head, inner)}|`, `|${fit(`${markOf(w.bench).glyph} ${w.bench}`, inner)}|`, `|${fit(foot, inner)}|`, `'${'-'.repeat(inner)}'`]
     return { rows, color: w.asking ? asked(w, now) : INK.paper, head: w.asking ? INK.head[late(waited)] : null }
+  }
+
+  /** A cook's glyph and ink: `?` asking, `⚙` inside a tool, else the spinner. */
+  function cook(w, now) {
+    const s = stateOf(w)
+    if (s === 'asking') return { text: '?', color: asked(w, now) }
+    if (s === 'tool') return { text: TOOL, color: INK.tool }
+    return { text: spinAt(now), color: INK.cook }
   }
 
   /** What standing beside a cook or a plate reads. */
@@ -276,6 +292,7 @@
     const who = `${id(w)} ${markOf(w.bench).glyph} ${w.bench}`
     if (w.asking) return `${who} asks: ${w.asking.why} · ${ago(now - w.asking.at)} ago`
     if (w.said) return `${who} plated: ${w.said.text} · ${ago(now - w.said.at)} ago`
+    if (w.tool) return `${who} in ${w.tool.name} · ${ago(now - w.tool.at)}${w.file ? ` · on ${w.file}` : ''}`
     return w.file ? `${who} on ${w.file} · ${ago(now - w.at)} ago` : `${who} firing · ${ago(now - w.seen)} ago`
   }
 
@@ -361,6 +378,7 @@
         out.push({ key: `t:${w.session}:${r}`, x, y: RAIL.y + 1 + r, text, color, ground, layer: 11 })
       })
       out.push(inked(`tm:${w.session}`, w.bench, x + 1, RAIL.y + 3))
+      out.push({ key: `c:${w.session}`, x: x + Math.floor(TICKET.w / 2), y: RAIL.y + 1 + TICKET.h, layer: 11, ...cook(w, now) })
     })
     if (over) {
       const x = RAIL.x + 1 + (TICKETS - 1) * (TICKET.w + TICKET.gap)
@@ -378,11 +396,6 @@
       const lx = s.x + Math.floor((s.w - label.length) / 2)
       out.push({ key: `s:${s.name}`, x: lx, y: LINE.y, text: label, color: INK.chalk, ground: INK.tag, layer: 11 })
       out.push({ ...inked(`sm:${s.name}`, s.name, lx + 2, LINE.y), ground: INK.tag })
-      const shown = s.cooks.slice(0, SEATS)
-      const mid = s.x + Math.floor(s.w / 2)
-      const left = mid - (shown.length - 1)
-      shown.forEach((w, i) => out.push({ key: `c:${w.session}`, x: left + 2 * i, y: LINE.y - 1, text: w.asking ? '?' : '✻', color: w.asking ? asked(w, now) : INK.paper, layer: 11 }))
-      if (s.cooks.length > SEATS) out.push({ key: `c+:${s.name}`, x: left + 2 * SEATS, y: LINE.y - 1, text: `+${s.cooks.length - SEATS}`, color: INK.paper, layer: 11 })
       const asks = s.cooks.filter((w) => w.asking)
       const unheard = asks.find((w) => !w.asking.heard)
       const says = [s.cooks.length > 1 && `! ${s.cooks.length} here`, asks.length && (unheard ? 'CHEF!' : 'HEARD')].filter(Boolean).join(' · ')

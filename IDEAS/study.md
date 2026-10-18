@@ -6,7 +6,7 @@ dated: 2026-10-17
 
 # Idea — the study: Claude sessions in tabs, split beside Haven
 
-**Status: PROPOSED.** Dated 2026-10-17. Phase 0, Phase 1, 2.1–2.3 and Phase 3 are built. Do not
+**Status: PROPOSED.** Dated 2026-10-17. Every phase is built. Do not
 cite this file as describing behavior — see `VERIFYING.md`. Work the plan from
 the first open box.
 
@@ -42,7 +42,7 @@ checkout. A hosted Haven with strangers on it never mounts it.
   `--permission-mode manual`, since under `auto` the CLI asks the host
   nothing (2.3).
 - **Narrow terminals zoom.** The scene is about 120 columns, so a split wants
-  about 200; under that, an open side shows one pane full width and Ctrl+O
+  about 172 (the side takes 30%); under that, an open side shows one pane full width and Ctrl+O
   swaps them (3.1).
 - **Each tab is already a figure.** `.claude/hooks/haven-worker.mjs` records
   every Claude session on this machine, so a tab's session stands at its
@@ -166,7 +166,7 @@ streamed answer, and focus moves between the panes and back.
     mounts on the first Ctrl+\\ and stays mounted while hidden, so a tab's
     process outlives a hide.
   - Mesa owns the layout (`sideOf`, `paneOf`, `focusPane`): page and side are
-    a row above the footer, with the side 40% wide. Tab stays inside the pane
+    a row above the footer, with the side 30% wide. Tab stays inside the pane
     that holds focus, and Ctrl+O returns to the node last focused there. A
     key at a node in the side never reaches the window, so the scene's
     window listener cannot walk on it. Focus events still cross, so the mode
@@ -414,7 +414,8 @@ resumed from `study.json`.
     command is shown whole or marked cut. What fails: none while
     experimenting. Adjudication: familiarity vs precision, and the familiar
     digits won, since y/n ate a letter. Tier: Assessment.
-- [ ] 2.4 An image in a line. **Proposed, not ruled.** Probed 2026-10-17:
+- [x] 2.4 An image in a line. **Ruled 2026-10-17 (owner): a path the line names
+  and the clipboard, both.** Probed 2026-10-17:
   **the stream takes an image.** A user line whose `content` is a block
   array, `[{ type: 'image', source: { type: 'base64', media_type:
   'image/png', data } }, { type: 'text', text }]`, was answered correctly
@@ -432,6 +433,52 @@ resumed from `study.json`.
     image/png` on Wayland, `pngpaste` or `osascript` on macOS. The key must
     be one opentui's textarea and the shell leave free, and a terminal's own
     Ctrl+Shift+V pastes text only.
+  - **Built.** `lib/study/images.js`: `imagesOf(text, { cwd, pasted })` is
+    the blocks a line carries — each `[Image #n]` still in it whose picture
+    was pasted, then each token naming an existing image file (bare,
+    quoted, its spaces escaped, or a `file://` URL, as terminals paste a
+    dragged file; a trailing period dropped). A path stays in the text as
+    typed, so a line about `a.png` still names it. The type is read off the
+    first bytes, never the extension, and an image over 5 MB encoded or not
+    a PNG, JPEG, GIF or WebP refuses the send naming the file, the line
+    kept. `clipboardImage()` reads `wl-paste`, `xclip` or `pngpaste`, the
+    first whose session runs, in two seconds at most. `session.send(text,
+    images)` writes `[...images, { type: 'text', text }]`, and a `you` row
+    says `+ N images`.
+  - **Ctrl+V** puts `[Image #n]` in the line, Claude Code's own spelling,
+    and deleting it drops the picture. opentui's input and the shell bind
+    nothing to it. What cannot be sent is a red row over the input, cleared
+    by the next key. A read-along pastes nothing.
+  - Run (scratch probe, not committed): the shell's `--side` in a 200×40
+    pty on a private Xvfb display, its clipboard holding a PNG, a HOME of
+    its own and a stub `claude` logging stdin. Ctrl+V drew `[Image #1]`;
+    sent, the stub got an image block (`image/png`) then the text with the
+    tag, and the row read `+ 1 image`; a path sent an image with the path
+    kept; a fake `.jpg` was refused in red, nothing sent, the line kept; a
+    tag deleted sent a plain string; a text clipboard said so, and the next
+    key cleared it. 12/12. Through `startSession`, Haiku named a blue PNG
+    the line named "Blue" with no tool call ($0.008). Haven's suite 681
+    pass, 4 fail (the editor's four, failing before); typecheck clean.
+  - **Not probed:** Wayland and macOS (no `wl-paste` or `pngpaste` here),
+    and a real X owner refusing `image/png` — `xclip` as owner answers every
+    target with its text, so that probe read "not a PNG" where a browser's
+    clipboard reads "holds no image".
+  - The nine, answered before the code: (1) the line sent is the one
+    source — a pasted picture goes while its tag is in it, a path image
+    because the line names it; (2) no new noun, *image* is the stream's
+    block and `[Image #n]` Claude Code's; (3) the problem's: a terminal
+    pastes text, and every desktop has its own clipboard reader; (4) two
+    rules, a token naming an image file is that image and Ctrl+V tags one;
+    (5) the type is derived from the bytes, which images go from the line;
+    (6) `session.js` stays the one writer of a line, and `images.js` owns
+    line to blocks and the clipboard, no owner in the tree before it;
+    (7) `imagesOf` and `clipboardImage` throw naming what failed;
+    (8) a file that cannot go refuses the send rather than dropping the
+    picture, a clipboard with none is a red row; (9) must stay true: no
+    image goes that the line sent does not name, and a read-along sends
+    none. What fails: none while experimenting. Adjudication: familiarity
+    vs precision, Claude Code's shape and words kept since they fit.
+    Tier: Assessment.
 
 ### Phase 3 — Fit
 
@@ -441,8 +488,8 @@ is pointed out in the workshop.
 
 - [x] 3.1 Zoom under the split width
   - Sierra's `paneKeys`: where the page would keep fewer than `PAGE_COLUMNS`
-    (120) beside the side's `SIDE_SHARE` (0.4, handed to `sideOf` rather
-    than left to its default, so the threshold, 200, is derived from it) an
+    (120) beside the side's `SIDE_SHARE` (0.3, handed to `sideOf` rather
+    than left to its default, so the threshold, 172, is derived from it) an
     open side is ZOOMED, as tmux's prefix z.
     The pane holding focus is drawn full width (`pageOf(r).visible`, and the
     side's `flexGrow` so its share takes the row alone), and Ctrl+O swaps.
@@ -484,6 +531,18 @@ is pointed out in the workshop.
     pane on screen. What fails: none while experimenting. Adjudication:
     familiarity vs precision, and tmux's shape and word both fit. Tier:
     Assessment.
+  - **The share is 0.3, so the split draws from 172 columns.** At 0.4 it
+    wanted 200, wider than a laptop; 120 / 0.7 is 171.4. Run in tmux through
+    this tree's `fli haven`, Ctrl+\ to open the study: started at 172 the
+    split drew, at 171 the study took the row alone; resized live to 220 and
+    172 the split held, and to 140 it zoomed. Sierra's suite (2332) clean.
+    The nine, answered late, after the edit: (1) the share is stated once and
+    the threshold still derived from it; (2) no noun; (3) the problem's;
+    (4) Ctrl+O and Ctrl+\ unchanged; (5) 172 is nowhere written in code;
+    (6) `paneKeys` still the one writer; (7) a value, no option; (8) under
+    172 it zooms, as before; (9) must stay true: the scene keeps 120 columns
+    beside the side; what fails: none. No adjudication in tension. Tier:
+    Assessment.
 - [x] 3.2 A tab names its figure; the figure names its tab
   - **The figure names its tab.** Standing beside a
     workshop figure whose session is a study tab reads it out with the tab's
@@ -498,7 +557,7 @@ is pointed out in the workshop.
     `haiku · idle · at junction · $0.04`: `Study.mesa` reads `#workers`
     each second in the tick it already ran, the session's `bench` keyed by
     the tab's `reads`, else its session id, else the id it resumes. Not the
-    bar: a bench per tab would not fit 40% of a terminal. A tab with no
+    bar: a bench per tab would not fit 30% of a terminal. A tab with no
     session yet, or one quiet past `QUIET_MS`, names none. `#study`'s
     `studyCwd()` is now the one place the cwd is worked out, and
     `Study.mesa` and `studyTabs()` both read it.

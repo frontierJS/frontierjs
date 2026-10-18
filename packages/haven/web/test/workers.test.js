@@ -38,7 +38,7 @@ test('an edit seats its session at the bench, and a later one moves it', () => {
   expect(edit('abc-123', '/repo/packages/mesa/src/x.js', t)).toEqual({ session: 'abc-123', bench: 'mesa', file: 'packages/mesa/src/x.js', at: '2026-10-14T12:00:00.000Z', seen: '2026-10-14T12:00:00.000Z' })
   expect(readWorkers({ dir, now: t }).map((w) => w.bench)).toEqual(['mesa'])
   edit('abc-123', '/repo/packages/sierra/src/y.js', t + 1000)
-  expect(readWorkers({ dir, now: t + 1000 })).toEqual([{ session: 'abc-123', bench: 'sierra', file: 'packages/sierra/src/y.js', transcript: null, at: t + 1000, seen: t + 1000, asking: null, said: null }])
+  expect(readWorkers({ dir, now: t + 1000 })).toEqual([{ session: 'abc-123', bench: 'sierra', file: 'packages/sierra/src/y.js', transcript: null, at: t + 1000, seen: t + 1000, tool: null, asking: null, said: null }])
 })
 
 test('an edit outside the repo moves nothing, so the session stays at its bench and file', () => {
