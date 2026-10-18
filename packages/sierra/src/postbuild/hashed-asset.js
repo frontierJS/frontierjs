@@ -1,11 +1,13 @@
 /**
  * hashed-asset.js — is this filename content-addressed?
  *
- * One question, two servers. `site/serve.js` and `widget/serve.js` give
- * different cache answers for everything else — a site's HTML revalidates, a
- * widget's entry is `max-age=300` because a host page's `<script src>` is
- * written once and can never be updated — but *may this be cached forever* is
- * the same question in both, and it was the same regex written twice.
+ * One question, three readers: `site/serve.js`, `widget/serve.js`, and the
+ * `_headers` the build writes for a host (`headers.js`), which is why it sits
+ * in postbuild/ — the build may not import the servers' `serve/`. The two
+ * servers give different answers for everything else — a site's HTML
+ * revalidates, a widget's entry is `max-age=300` because a host page's
+ * `<script src>` is written once — but *may this be cached forever* is the same
+ * question in all three.
  *
  * Both copies read the hash as containing no hyphen. It is base64url, so it
  * may: `island-CatalogList-C_TQPJ-f.js` is a name Vite emitted in this repo's

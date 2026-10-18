@@ -31,7 +31,8 @@ src/
                          `api/`, and only `fli mcp:build` knows where it is
     routes-snapshot.js   the committed routes.snapshot.md
     tui.js               `@frontierjs/sierra/tui`, what `fli dev:tui` runs —
-                         under BUN, from the web root: --list, --frame, --api
+                         under BUN, from the web root: --list, --frame, --api,
+                         --side
 
   terminal/              — the terminal target of `web/` (`FJS-D809`): the same
                            routes, compiled with `target: 'terminal'`
@@ -51,14 +52,22 @@ src/
                          keys' mode (`FJS-D987`): a text field is INSERT, Esc
                          is NORMAL, where `i` types again. shell.js renames
                          h/j/k/l to the arrows in NORMAL before any mount sees
-                         the key; a j/k the page does not prevent moves focus
+                         the key; a j/k the page does not prevent moves focus.
+                         Ctrl+P is the jump: a `<dialog>` over any screen,
+                         the listed routes ranked by toolbelt's `rank`, its
+                         field INSERT and its keys stopped there (a scene
+                         walks on window keys); from a route it `goto`s, so
+                         Esc comes back. `side` (`--side`) is a component in
+                         mesa's `sideOf`, mounted on the first Ctrl+\ and
+                         kept while hidden; Ctrl+O crosses, and a page's own
+                         command shows it through mesa's `sideToggle()`,
+                         which the shell fills. Both keys are
+                         taken before any mount, since a field binds most Ctrl
+                         letters, and in the side Esc and h/j/k/l are its own
     Mode.mesa            the mode line, mounted in mesa's `footerOf` so a page
                          taller than the screen does not scroll it away
 
   serve/                 — what the two static servers share
-    hashed-asset.js      is this filename content-addressed? The only answer
-                         both servers give the same way — every other cache
-                         answer they give is deliberately different
     http-answers.js      what HTTP itself requires of any origin handing back
                          bytes — a wrong verb, a range, an encoding — shared by
                          site/serve.js and widget/serve.js, which answer almost
@@ -87,6 +96,12 @@ src/
                          `files` map and judges headers by the PUBLISHED name;
                          `test/site-compile.test.js` asserts the binary answers
                          what the directory does
+    cloudflare.js        the Cloudflare adapter, the one file naming Cloudflare:
+                         `.sierra/wrangler.json` derived from `siteUrl` and the
+                         build (`FJS-D1213`), and `.sierra/worker.js` when there
+                         are functions — `run_worker_first` lists their paths
+                         only, since Workers otherwise serves a same-path page
+                         before the script. Reads a finished build
 
   widget/                — the `widgets/` surface's runtime and its origin
     index.js             the embed runtime: a custom element (and a selector,
@@ -297,7 +312,17 @@ src/
                            manifest.js: can a browser INSTALL the build, and
                            functions.js: the host-function directory → one entry
                            (`.sierra/functions.js`), its routes, and the
-                           handler a host mounts (`FJS-D919`),
+                           requestFrom/sendResponse, the node-to-web bridge (`FJS-D919`),
+                           function-handler.js: the handler a host mounts,
+                           importing NOTHING, because the Worker bundles it,
+                           headers.js: `cacheFor`, the site's cache rule, which
+                           serveSite sends and a static build writes as
+                           `_headers`; each rule after `/*` detaches before it
+                           states, since Cloudflare joins two matches with a
+                           comma. `headerUnder` reads it as Cloudflare does,
+                           hashed-asset.js: is this name content-addressed —
+                           the one answer both servers and `_headers` share,
+                           here because the build may not import `serve/`,
                            offline-shell.js: sw.js + a precache list derived
                            from what this build emitted (`offline: true`).
                            Sierra writes that one because only the build knows

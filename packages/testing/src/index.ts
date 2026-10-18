@@ -36,6 +36,8 @@
 // pipeline with no port bound. A second copy would be one more thing to drift.
 
 import { createTestEnv as createDataEnv } from '@frontierjs/litestone/testing'
+import type { TestEnv, TestEnvOptions }   from '@frontierjs/litestone/testing'
+import type { RegisteredClient }          from '@frontierjs/litestone'
 import { request }                        from '@frontierjs/junction/testing'
 import { verifyTransportParity }          from './parity.ts'
 import type { ParityOptions, ParityMismatch } from './parity.ts'
@@ -52,19 +54,9 @@ export type { ParityCall, ParityPrincipal, ParityMismatch, ParityOptions } from 
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
-/** What an `api` factory is handed — the same tools `setup`/`arrange` get. */
-export interface ApiFactoryTools {
-  /** The unscoped Litestone client. Pass this to `createApp({ db })`. */
-  db:        unknown
-  /** `db.asSystem()`. */
-  system:    unknown
-  factories: Record<string, unknown>
-  schema:    unknown
-  /** The main database file, for an app that wants a path rather than a client. */
-  path:      string
-  /** The throwaway directory holding this env's databases. */
-  dir:       string
-}
+/** What an `api` factory is handed. Pass `db`, the unscoped client, to `createApp({ db })`. */
+export type ApiFactoryTools<TClient = RegisteredClient> =
+  Pick<TestEnv<TClient>, 'db' | 'system' | 'factories' | 'schema' | 'path' | 'dir'>
 
 /** One announcement, exactly as `callService` put it on the bus. */
 export interface Announcement {
@@ -82,15 +74,16 @@ export interface BoundCaller {
   service(name: string): ReturnType<App['service']>
 }
 
-export interface ApiTestEnvOptions extends Record<string, unknown> {
-  schema:      string
-  migrations?: string | string[]
-  /**
-   * The Junction app under test — an already-built one, or a factory handed the
-   * Data-realm tools. A factory is the usual shape, because an app is built over
-   * a client and the client does not exist until this call.
-   */
-  api?: App | ((tools: ApiFactoryTools) => App | Promise<App>)
+/**
+ * The Junction app under test — an already-built one, or a factory handed the
+ * Data-realm tools. A factory is the usual shape, because an app is built over
+ * a client and the client does not exist until `createTestEnv` is called.
+ */
+export type ApiOption<TClient = RegisteredClient> =
+  App | ((tools: ApiFactoryTools<TClient>) => App | Promise<App>)
+
+export interface ApiTestEnvOptions<TClient = RegisteredClient> extends TestEnvOptions {
+  api?: ApiOption<TClient>
   /**
    * Bind a real port and serve. Off by default — `env.as()` and `env.http` both
    * reach the whole pipeline without one, and a bound port is the only thing in
@@ -101,6 +94,36 @@ export interface ApiTestEnvOptions extends Record<string, unknown> {
    * browser was told about in advance.
    */
   listen?: boolean | number
+}
+
+/**
+ * Litestone's env plus the mounted app. `close()` is async here and sync on the
+ * Data-realm env, because it stops the app first.
+ */
+export interface ApiTestEnv<TClient = RegisteredClient> extends Omit<TestEnv<TClient>, 'close'> {
+  app: App
+  /** A service caller bound to a principal — the full request path, no socket. */
+  as(user: unknown): BoundCaller
+  /** A caller with no principal. STRANGER(0), which is what a job or a stray fetch is. */
+  service(name: string): ReturnType<App['service']>
+  /**
+   * Junction's own HTTP helper against this app, unchanged. Auth is the app's
+   * to issue: `env.http.get('/leads').auth(token)`.
+   */
+  http: ReturnType<typeof request>
+  /** The bound origin, or null without `listen`. `http://127.0.0.1:<port>`. */
+  url:  string | null
+  port: number | null
+  /**
+   * HTTP and WS answering the same call the same way, over a real socket.
+   * Needs `listen: true`, and needs the app to `configure(channels())` —
+   * without it the client falls back to HTTP and compares HTTP against HTTP.
+   */
+  verifyTransportParity(opts?: ParityOptions): Promise<ParityMismatch[]>
+  /** Everything `callService` announced since the current act began. */
+  announced(event?: string): Announcement[]
+  clearAnnounced(): void
+  close(): Promise<void>
 }
 
 // ─── binding the principal ────────────────────────────────────────────────────
@@ -119,10 +142,19 @@ export interface ApiTestEnvOptions extends Record<string, unknown> {
 
 // ─── createTestEnv ────────────────────────────────────────────────────────────
 
-export async function createTestEnv(opts: ApiTestEnvOptions): Promise<Record<string, unknown>> {
+// Without `api` the answer is Litestone's env unchanged, so the overload says so.
+export async function createTestEnv<TClient = RegisteredClient>(
+  opts: ApiTestEnvOptions<TClient> & { api: ApiOption<TClient> },
+): Promise<ApiTestEnv<TClient>>
+export async function createTestEnv<TClient = RegisteredClient>(
+  opts: TestEnvOptions & { api?: undefined },
+): Promise<TestEnv<TClient>>
+export async function createTestEnv<TClient = RegisteredClient>(
+  opts: ApiTestEnvOptions<TClient>,
+): Promise<TestEnv<TClient> | ApiTestEnv<TClient>> {
   const { api, listen, ...dataOpts } = opts
 
-  const base = await createDataEnv(dataOpts as { schema: string }) as Record<string, any>
+  const base = await createDataEnv<TClient>(dataOpts as TestEnvOptions)
 
   if (!api) return base
 
@@ -209,32 +241,16 @@ export async function createTestEnv(opts: ApiTestEnvOptions): Promise<Record<str
     },
   })
 
-  return {
+  const env: ApiTestEnv<TClient> = {
     ...base,
 
     app,
-
-    /** A service caller bound to a principal — the full request path, no socket. */
     as: callerFor,
-
-    /** A caller with no principal. STRANGER(0), which is what a job or a stray fetch is. */
     service: (name: string) => callerFor(null).service(name),
-
-    /**
-     * Junction's own HTTP helper against this app, unchanged. Auth is the app's
-     * to issue: `env.http.get('/leads').auth(token)`.
-     */
     http: request(app),
-
-    /** The bound origin, or null without `listen`. `http://127.0.0.1:<port>`. */
     url,
     port,
 
-    /**
-     * HTTP and WS answering the same call the same way, over a real socket.
-     * Needs `listen: true`, and needs the app to `configure(channels())` —
-     * without it the client falls back to HTTP and compares HTTP against HTTP.
-     */
     verifyTransportParity: (parityOpts: ParityOptions = {}): Promise<ParityMismatch[]> => {
       if (!url) throw new Error(
         'verifyTransportParity: this env has no port. Pass `listen: true` to createTestEnv. ' +
@@ -242,22 +258,21 @@ export async function createTestEnv(opts: ApiTestEnvOptions): Promise<Record<str
         'cannot stand in for one of them.'
       )
       return verifyTransportParity(
-        { app, url, db: base.db, system: base.system, schema: base.schema },
+        { app, url, db: base.db, system: base.system, schema: base.schema } as Parameters<typeof verifyTransportParity>[0],
         parityOpts,
       )
     },
 
-    /** Everything `callService` announced since the current act began. */
     announced: (event?: string) =>
       event ? announcements.filter(a => a.event === event) : [...announcements],
 
     clearAnnounced: () => { announcements.length = 0 },
 
     phases: (phaseOpts: { as?: unknown } = {}) => {
-      const t = base.phases(phaseOpts) as Record<string, any>
+      const t = base.phases(phaseOpts)
       return {
         ...t,
-        act: (fn: (as: unknown) => unknown) => {
+        act: <T>(fn: (as: TClient) => T | Promise<T>) => {
           // The act boundary IS the announcement window. Arrange writes through
           // `asSystem()`, below the boundary, and announces nothing — but an
           // arrange that goes through a service does, and that is not what the
@@ -279,6 +294,7 @@ export async function createTestEnv(opts: ApiTestEnvOptions): Promise<Record<str
       base.close()
     },
   }
+  return env
 }
 
 // ─── session ──────────────────────────────────────────────────────────────────

@@ -27,6 +27,7 @@
 // sits between the figures' layer (10, 11) and the speech bubbles' (12),
 // which a canopy must not hide.
 import { BloomEffect, FrameBufferRenderable, RGBA } from '@opentui/core'
+import { pageOf } from '@frontierjs/mesa/runtime/terminal.js'
 import { INK as INK_HEX, viewFor } from './stage.js'
 import { at } from './cell.js'
 
@@ -114,15 +115,19 @@ export const paint = (stage) => (box) => {
   // editor paints one stage into more than one.
   const stop = stage.task(box, draw, { phase: 'paint' })
 
-  // The renderer's size rather than `process.stdout`'s: `--frame` and a test
-  // render headless with no tty, at the 100×30 that is VIEW.
-  const ctx = box.ctx
-  const fit = () => stage.fit(viewFor(ctx.width, ctx.height))
+  // The page's columns, not the terminal's: a side beside it takes the rest,
+  // and a view as wide as the terminal walks the figure under the side. Its
+  // rows are still the renderer's, since `viewFor` counts the mode line under
+  // the page. Never `process.stdout`'s: `--frame` and a test render headless
+  // with no tty, at the 100×30 that is VIEW.
+  const ctx  = box.ctx
+  const page = pageOf(ctx)
+  const fit  = () => stage.fit(viewFor(page.width || ctx.width, ctx.height))
   fit()
-  ctx.on('resize', fit)
+  page.on('resize', fit)
 
   return () => {
-    ctx.off('resize', fit)
+    page.off('resize', fit)
     stop()
     release()
   }

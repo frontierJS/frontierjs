@@ -15,7 +15,7 @@
 // holds the pid of the loop started, and a pid that is gone is no loop. Two
 // loops in one tree both pick its top row (`scripts/fix-loop.mjs`).
 import { execFile, spawn } from 'node:child_process'
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -126,6 +126,69 @@ export function startLoop(plan, { root, file = LOCK_FILE, log = LOG_FILE, now = 
   const lock = { on: planName(plan), ...plan, pid: child.pid, at: new Date(now).toISOString(), from }
   writeFileSync(file, JSON.stringify(lock) + '\n')
   return lock
+}
+
+export const MENU_FILE = join(homedir(), '.fli', 'haven', 'menu.json')
+
+/**
+ * The kitchen's menus (`IDEAS/haven.md` 18.2): a session of work, picked at
+ * the pass by `/menu`, written as the flags `scripts/fix-loop.mjs` already
+ * takes and nothing else, so a menu is never a second place a loop's settings
+ * live. The loop imports `readMenu` for its starting settings, and only when its
+ * own command line names no rows. Each `flags(arg)` answers what is kept.
+ */
+export const MENUS = {
+  expedite: { label: 'expedite', flags: () => ({}) },
+  station:  { label: 'station night', flags: (pkg) => ({ pkg }) },
+  prep:     { label: 'prep list', flags: (lanes) => ({ sev: 'S3,S4', lanes: lanes == null ? 3 : Number(lanes) }) },
+  chef:     { label: "chef's table", flags: () => ({}) },
+}
+
+/** A menu's flags as the loop's command line spells them: `--sev S3,S4 --lanes 3`. */
+export const flagsLine = (flags) => Object.entries(flags).map(([k, v]) => `--${k} ${v}`).join(' ')
+
+/** The menu kept on this machine, `{ menu, flags, at }`; none, or one this Haven does not name, is null. */
+export function readMenu({ file = MENU_FILE } = {}) {
+  try {
+    const kept = JSON.parse(readFileSync(file, 'utf8'))
+    return MENUS[kept.menu] ? kept : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Keep a menu for this machine and answer it, or throw naming what is wrong.
+ * `arg` is the one word after the menu's name: a package for a station night,
+ * a lane count for a prep list. The checks are the loop's own (`loopArgv`,
+ * fix-loop's `--lanes`), since the loop reads these flags unchecked by anyone else.
+ */
+export function setMenu(name, arg, { file = MENU_FILE, now = Date.now() } = {}) {
+  const menu = Object.hasOwn(MENUS, name) ? MENUS[name] : null
+  if (!menu) throw new Error(`no menu called ${name}`)
+  const flags = menu.flags(arg)
+  if ('pkg' in flags && !(typeof flags.pkg === 'string' && /^\w[\w-]*$/.test(flags.pkg))) throw new Error(`not a package name: ${flags.pkg}`)
+  if ('lanes' in flags && !(Number.isInteger(flags.lanes) && flags.lanes >= 1 && flags.lanes <= 5)) throw new Error(`a prep list runs 1–5 lanes, not ${arg}`)
+  const kept = { menu: name, flags, at: new Date(now).toISOString() }
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
+  writeFileSync(file, JSON.stringify(kept) + '\n')
+  return kept
+}
+
+/** Take the menu down, so a bare loop runs on its own defaults again. */
+export function clearMenu({ file = MENU_FILE } = {}) {
+  rmSync(file, { force: true })
+}
+
+/** The questions waiting on the owner that have options to pick between, as `fli decisions --json` lists them. */
+export function rulings({ root, signal } = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath, [join(root, FLI), 'decisions', '--json'], { cwd: root, signal, timeout: 60_000, maxBuffer: 16 << 20 }, (err, out) => {
+      if (err) return reject(err)
+      try { resolve(JSON.parse(out).filter((q) => q.state === 'decidable')) }
+      catch (e) { reject(new Error(`fli decisions printed no list: ${e.message}`)) }
+    })
+  })
 }
 
 /**

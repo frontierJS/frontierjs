@@ -216,7 +216,9 @@ function reapOrphanedProfiles() {
  *
  *  A launch that fails THROWS, with a sentence naming the fix. It never exits
  *  the process: the caller may be a long-lived one (fli, a lesson) for which
- *  no Chrome is a skip. */
+ *  no Chrome is a skip.
+ *
+ *  @param {{ windowSize?: string, bootstrap?: string, profile?: string, args?: string[] }} [options] */
 export async function openChrome({ windowSize = '1280,900', bootstrap, profile: kept, args = [] } = {}) {
   const owned = args.find((a) => /^--(remote-debugging-port|user-data-dir)\b/.test(a))
   if (owned) throw new Error(`openChrome: ${owned.split('=')[0]} is the driver's own flag — the attach and the profile sweep depend on it`)
@@ -287,17 +289,35 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   // renderer down with it leaves every renderer-bound call unanswered, and an
   // unbounded one is a drive that sits silent forever — a renderer crash filed
   // as a hang (`FJS-1179`). The message says which.
+  //
+  // A browser that is GONE answers nothing either, and waiting out the bound
+  // for it held a cancelled run 30s per call in flight (`FJS-3249`): once the
+  // socket closes, every pending call and every later one is refused at once.
+  let gone = null
   function send(method, params = {}, sessionId) {
+    if (gone) return Promise.reject(new Error(`${method}: ${gone}`))
     const id = nextId++
     browser.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
     return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject })
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         if (!pending.delete(id)) return
         reject(new Error(`${method} did not answer in 30s — the renderer is gone or wedged`))
       }, 30000)
+      pending.set(id, { method, timer, resolve, reject })
     })
   }
+
+  function refuseAll(why) {
+    if (gone) return
+    gone = why
+    for (const { method, timer, reject } of pending.values()) {
+      clearTimeout(timer)
+      reject(new Error(`${method}: ${why}`))
+    }
+    pending.clear()
+  }
+  //X browser.addEventListener('close', () => refuseAll('Chrome closed before answering'))
+  //X chrome.once('exit', () => refuseAll('Chrome exited before answering'))
 
   const errors = []
   const listeners = new Map()
@@ -317,8 +337,9 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   browser.addEventListener('message', (ev) => {
     const msg = JSON.parse(ev.data)
     if (msg.id && pending.has(msg.id)) {
-      const { resolve, reject } = pending.get(msg.id)
+      const { timer, resolve, reject } = pending.get(msg.id)
       pending.delete(msg.id)
+      clearTimeout(timer)
       msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)
       return
     }

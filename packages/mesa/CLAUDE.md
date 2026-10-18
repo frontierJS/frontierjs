@@ -95,8 +95,14 @@ src/
                          reached there throws on a terminal (FJS-2242). Also the
                          one place another package gets a renderer from
                          (`createRenderer`, `createHeadlessRenderer`) — its own
-                         engine import would be a second copy — and a strip
-                         under the page that does not scroll (`footerOf`)
+                         engine import would be a second copy — the page
+                         (`pageOf`), a strip under it that does not scroll (`footerOf`),
+                         and a pane at its right (`sideOf`): Tab stays in the
+                         pane holding focus, `focusPane` crosses, and a key in
+                         the side never reaches the window a scene walks on.
+                         Whoever fills the side hands its show-and-hide to
+                         `setSideToggle`, and a page reads it with
+                         `sideToggle()` — null where there is no side
   runtime-native.js    — the native runtime, @frontierjs/mesa/runtime/native.js:
                          `$$host` over Lynx's Element PAPI, the main-thread
                          globals, so no engine import and no peer. The one file

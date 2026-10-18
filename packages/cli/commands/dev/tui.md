@@ -7,6 +7,7 @@ examples:
   - fli dev:tui --list
   - fli dev:tui --frame /reports/
   - fli dev:tui --api http://localhost:8110
+  - fli dev:tui --side src/Pane.mesa
 flags:
   list:
     char: l
@@ -22,6 +23,11 @@ flags:
     char: a
     type: string
     description: The API origin, when it is not the one config.junction.url names
+    defaultValue: ''
+  side:
+    char: s
+    type: string
+    description: A .mesa component, relative to web/, in a pane at the right — Ctrl+\ shows it, Ctrl+O moves between
     defaultValue: ''
 ---
 
@@ -49,6 +55,7 @@ const extra = [
   flag.list  ? '--list' : '',
   flag.frame ? `--frame ${flag.frame}` : '',
   flag.api   ? `--api ${flag.api}` : '',
+  flag.side  ? `--side ${flag.side}` : '',
 ].filter(Boolean).join(' ')
 
 $.exec({ command: `bun ${shell} ${extra}`.trim(), cwd: $.paths.web, dry: flag.dry })

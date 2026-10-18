@@ -46,6 +46,10 @@ registry bun is pointed at, which is how it is rehearsed before a publish. A
 machine with no checkout walks into the hosted Haven, `haven.knightly.dev`,
 unless `--api` names another.
 
+From a checkout the study rides beside the scene: `Ctrl+\` or `/work` shows
+it, Ctrl+O moves between them, and it runs Claude in the checkout
+(`IDEAS/study.md`). An installed Haven has none.
+
 ```js
 const { join, resolve, sep } = await import('node:path')
 const { existsSync, mkdirSync, writeFileSync } = await import('node:fs')
@@ -60,7 +64,7 @@ const HAVEN_PACKAGE = '@frontierjs/haven'
 // serves the same hostname; a change to one is a change to the other.
 const HOSTED = 'https://haven.knightly.dev'
 
-const signInOf = (haven) => join(haven, 'web', 'src', 'sign-in.js')
+const signInOf = (haven) => join(haven, 'web', 'src', 'lib', 'session', 'sign-in.js')
 
 // Under node_modules a sibling is whatever an install left beside fli, never
 // the version the server runs, so only a checkout's sibling counts.
@@ -137,7 +141,13 @@ try {
   return
 }
 
-const shellArgs = ['--api', api, ...(flag.frame ? ['--frame', flag.frame] : [])]
+// The study runs Claude with tools in the checkout, so only the developer's
+// own build is handed it (`IDEAS/study.md`); an installed Haven never is.
+const shellArgs = [
+  '--api', api,
+  ...(flag.frame ? ['--frame', flag.frame] : []),
+  ...(checkout ? ['--side', 'src/components/Study.mesa'] : []),
+]
 // The token reaches the shell as HAVEN_TOKEN: a terminal has no storage a
 // client could restore a session from (`web/src/lib/session/walk-in.js`).
 $.exec({ command: `bun ${JSON.stringify(shell)}`, args: shellArgs, cwd: web, env: { ...process.env, HAVEN_TOKEN: walker.token } })

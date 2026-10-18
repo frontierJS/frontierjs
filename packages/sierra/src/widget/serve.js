@@ -25,7 +25,7 @@ import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
-import { isHashedAsset } from '../serve/hashed-asset.js'
+import { isHashedAsset } from '../postbuild/hashed-asset.js'
 import { relativePathFor, withinRoot } from '../serve/served-path.js'
 import { bodyAnswer, methodAnswer, ALLOWED_METHODS } from '../serve/http-answers.js'
 

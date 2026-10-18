@@ -1,0 +1,173 @@
+<script>
+  // Study.mesa — the study (`IDEAS/study.md` 1.3, 2.1): Claude sessions in
+  // tabs beside the scene, in Sierra's side pane (`--side`, Ctrl+\ shows it,
+  // Ctrl+O crosses). A tab bar, the shown tab's status line, its newest rows
+  // that fit, and a line to type in; Enter sends it. PageUp and PageDown read
+  // back and forward, Ctrl+J and Ctrl+K show the next and the last tab, and
+  // `/new [model]` and `/close` are the study's own words (`tabs.js`).
+  //
+  // The tabs are kept in `study.json` (`kept.js`) on every change, and a kept
+  // tab's session reopens by `--resume` at its next line. What it said before
+  // the restart is not drawn: the transcript is Claude's, and nothing reads it
+  // yet (study.md 3.3).
+  //
+  // A tab's session starts at its first line, in the checkout this Haven sits
+  // in, on the model the tab names, and one that ended (a crash, a missing
+  // binary) is resumed by the next line with what it said kept above.
+  // Terminal only: `session.js` spawns.
+  //
+  // The terminal scrolls nothing but the page, so the pane windows its own
+  // rows (`rows.js`) to the size of the box it was mounted in, and again on
+  // that box's `resize`. Not Mesa's `sideOf`, which makes a side where there
+  // is none. Blank rows under the newest keep the input on the bottom.
+  import { tint } from '#cell'
+  import { checkout } from '#ledger'
+  import { TONES } from '@/lib/home/answer.js'
+  import { clip } from '@/lib/scene/cells.js'
+  import { keptOf, readStudy, writeStudy } from '@/lib/study/kept.js'
+  import { startSession } from '@/lib/study/session.js'
+  import { rowsOf, windowOf, wrapped } from '@/lib/study/rows.js'
+  import { cycled, modelOf, studyLine, tabBar } from '@/lib/study/tabs.js'
+
+  const cwd = checkout() ?? process.cwd()
+
+  // `earlier` is the messages of a session that ended, kept above the next;
+  // `top` the first row shown while reading back, null following the newest;
+  // `resume` the session id a kept tab reopens, until its process starts.
+  const tabOf = (model = null, resume = null) => ({ model, resume, session: null, off: null, earlier: [], top: null, since: 0 })
+  const kept = readStudy(cwd)
+
+  let root
+  let w     = 40
+  let h     = 20
+  let draft = ''
+  // A tab is held in place and `tabs` assigned again, since its session's
+  // state arrives on the session's own subscription.
+  let tabs  = kept ? kept.tabs.map((t) => tabOf(t.model, t.sessionId)) : [tabOf()]
+  let at    = kept?.at ?? 0
+  let now   = Date.now()
+  // Written only when what is kept changed: a session's state arrives once an event.
+  let wrote = JSON.stringify(kept ?? {})
+  function keep() {
+    const next = keptOf(tabs, at)
+    const text = JSON.stringify(next)
+    if (text === wrote) return
+    wrote = text
+    try { writeStudy(cwd, next) } catch {}
+  }
+  const changed = () => { tabs = [...tabs]; keep() }
+
+  var box = null
+  // Before its first layout the box reads 0 wide.
+  const fit = () => { w = box.width || Math.floor(root.ctx.width * 0.4); h = box.height || root.ctx.height - 1 }
+  $.onMount(() => {
+    box = root.parent
+    fit()
+    box.on('resize', fit)
+  })
+  $.onDestroy(() => box?.off('resize', fit))
+
+  const tick = setInterval(() => { if (tabs.some((t) => t.session?.state.status === 'working')) now = Date.now() }, 1000)
+  tick.unref?.()
+  $.onDestroy(() => {
+    clearInterval(tick)
+    for (const t of tabs) { t.off?.(); t.session?.end() }
+  })
+
+  const hint = (model, resume) => wrapped(`${resume ? `Session ${resume.slice(0, 8)} reopens at your next line. ` : ''}Claude in ${cwd}${model ? ` on ${model}` : ''}. Enter sends a line, PageUp reads back, Ctrl+J and Ctrl+K the next and last tab, /new [model] opens one, /close ends this one, Ctrl+O is the scene.`, w - 1)
+    .map((text) => ({ text, ink: TONES.muted }))
+
+  // Each reads `tabs[at]` itself: a tab is the same object after a change,
+  // so a value derived from a derived tab would be judged unchanged and stop.
+  $: state = tabs[at].session?.state ?? null
+  $: said  = [...tabs[at].earlier, ...(state?.messages ?? [])]
+  $: all   = said.length ? rowsOf(said, w - 1) : hint(tabs[at].model, tabs[at].resume)
+  $: room  = Math.max(1, h - 3)
+  $: shown = windowOf(all, room, tabs[at].top)
+  $: pad   = Math.max(0, room - shown.rows.length)
+  $: bar   = clip(tabBar(tabs, at), w)
+  $: head  = clip(' ' + [
+    modelOf(tabs[at], state),
+    state?.status === 'working' ? `working ${Math.max(0, Math.round((now - tabs[at].since) / 1000))}s`
+      : state?.exit ? 'ended' : 'idle',
+    state ? `$${state.cost.toFixed(2)}` : null,
+    shown.below ? `${shown.below} newer ↓` : null,
+  ].filter(Boolean).join(' · '), w)
+
+  function close() {
+    const t = tabs[at]
+    t.off?.()
+    // A turn under way is stopped rather than left to finish where no tab shows it.
+    if (t.session?.state.status === 'working') t.session.kill()
+    else t.session?.end()
+    const rest = tabs.filter((x) => x !== t)
+    tabs = rest.length ? rest : [tabOf()]
+    at = Math.min(at, tabs.length - 1)
+    keep()
+  }
+
+  function send() {
+    const text = draft.trim()
+    if (!text) return
+    const asked = studyLine(text)
+    if ('new' in asked) {
+      tabs = [...tabs, tabOf(asked.new)]
+      at = tabs.length - 1
+      draft = ''
+      keep()
+      return
+    }
+    if (asked.close) { close(); draft = ''; return }
+    const t = tabs[at]
+    if (!t.session || t.session.state.exit) {
+      const resume = t.session?.state.sessionId ?? t.resume ?? undefined
+      if (t.session) t.earlier = [...t.earlier, ...t.session.state.messages]
+      t.off?.()
+      t.session = startSession({ cwd, resume, model: t.model ?? undefined })
+      t.off = t.session.subscribe(changed)
+    }
+    if (!t.session.send(text)) return changed()
+    draft = ''
+    t.top = null
+    t.since = now = Date.now()
+    changed()
+  }
+
+  const step = () => Math.max(1, room - 1)
+  function keydown(e) {
+    // `code`, the key's name: a legacy terminal's Ctrl+K is a control byte.
+    if (e.ctrlKey && (e.code === 'j' || e.code === 'k')) {
+      // Before the field sees it: an input submits on a line feed and deletes to its end on Ctrl+K.
+      e.preventDefault()
+      at = cycled(at, tabs.length, e.code === 'j' ? 1 : -1)
+      keep()
+    } else if (e.key === 'PageUp') {
+      e.preventDefault()
+      tabs[at].top = Math.max(0, shown.start - step())
+      changed()
+    } else if (e.key === 'PageDown') {
+      e.preventDefault()
+      const next = shown.start + step()
+      tabs[at].top = next >= all.length - room ? null : next
+      changed()
+    }
+  }
+</script>
+
+<div bind:this={root}>
+  <pre class="line" {@attach tint(TONES.info)}>{bar}</pre>
+  <pre class="line" {@attach tint(TONES.muted)}>{head}</pre>
+  {#each shown.rows as row, i (`${shown.start + i}:${row.ink}:${row.text}`)}
+    <pre class="line" {@attach tint(row.ink)}> {row.text}</pre>
+  {/each}
+  {#each { length: pad } as _, i (i)}
+    <pre class="line">{' '}</pre>
+  {/each}
+  <form onsubmit|preventDefault={send}>
+    <input bind:value={draft} onkeydown={keydown} placeholder="ask Claude, Enter sends" />
+  </form>
+</div>
+
+<style>
+  .line { margin: 0; font: inherit; line-height: inherit; white-space: pre; overflow: hidden }
+</style>

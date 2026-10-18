@@ -5,7 +5,9 @@
  * prevented, for a key that types a character or Enter and with no Ctrl
  * held, and bubbles to the form. Preventing it keeps the character out of the
  * field, and preventing it on Enter keeps the form from submitting, as both
- * are a keypress's default in a browser. Then the kit's shape: `<Input>`
+ * are a keypress's default in a browser. A Ctrl letter is its letter, as a
+ * browser's is, and Ctrl+J, a line feed on the wire, is `j` with Ctrl rather
+ * than a typed newline. Then the kit's shape: `<Input>`
  * forwards `onkeydown={onkeydown}` and four more whose props its caller
  * mostly leaves unset, and an unset handler is skipped, as `addEvent` skips
  * it on the DOM path, rather than stored and called.
@@ -34,6 +36,14 @@ export async function run(t) {
   await t.enter()
   frame = await t.frame()
   t.expectFrame(frame, ['submits 1 held 0'], 'a prevented keypress on Enter submits nothing')
+
+  await t.press('\n')
+  frame = await t.frame()
+  t.expectFrame(frame, ['down C-j'], 'Ctrl+J, the byte the engine calls linefeed, is j with Ctrl')
+
+  await t.press('k', { ctrl: true })
+  frame = await t.frame()
+  t.expectFrame(frame, ['down C-k'], 'a Ctrl letter is its letter, not the control byte the terminal sends')
 
   await t.tab()                    // o
   await t.type('ok')

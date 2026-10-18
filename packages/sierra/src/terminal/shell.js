@@ -7,6 +7,7 @@
  *   runTerminalShell({ root })                   interactive, on this TTY
  *   runTerminalShell({ root, list: true })       each route and whether it lowers, printed
  *   runTerminalShell({ root, frame: '/x/7/' })   one path's frame, printed, no TTY
+ *   runTerminalShell({ root, side: file })       interactive, with `file` in a pane beside it
  *
  * The boot is `virtual:sierra`'s, minus what has no terminal meaning: the
  * Junction client from `config.junction`, the schemas from the app's `.lite`
@@ -20,6 +21,13 @@
  * its own params change, as `ChainRenderer` keys it. Opening a route from the
  * list starts a fresh History, so Esc walks back through what was opened from
  * there and then returns to the list.
+ *
+ * A side pane is a `.mesa` component in a split at the right, mounted the
+ * first time Ctrl+\ shows it and kept while hidden. Ctrl+O moves focus
+ * between the panes. Both keys are taken before any mount sees them, since a
+ * field binds most Ctrl letters. A page's own command shows and hides it
+ * through Mesa's `sideToggle()`, as Ctrl+\ does. In the side the mode line says so, and
+ * h/j/k/l and Esc are the side's own: Esc going back is the page's.
  *
  * Not here yet, each named where a route would need it: layouts (a route
  * mounts without its `_module.mesa`) and `autoImport` (a configured one is
@@ -45,7 +53,7 @@ import { pathToFileURL } from 'node:url'
 import { scan } from '../scanner/index.js'
 import { resolveSchemaPath, generateSchemas } from '../build/schema-plugin.js'
 import {
-  initRouter, createMemoryHistory, afterNavigate, beforeNavigate, back, followLink, page,
+  initRouter, createMemoryHistory, afterNavigate, beforeNavigate, back, followLink, goto, page,
 } from '../router/index.js'
 import { matchRoute, normalizePath } from '../router/match.js'
 import { remountKey } from '../router/internals.js'
@@ -53,6 +61,9 @@ import { createSignal, flushSync } from '@frontierjs/mesa/runtime'
 import { installTerminalLoader } from './loader.js'
 
 const SHELL = new URL('./Shell.mesa', import.meta.url).pathname
+// Ctrl+\ is a split in VS Code, and o is tmux's next pane.
+const TOGGLE_SIDE = '\\'
+const OTHER_PANE  = 'o'
 const MODE  = new URL('./Mode.mesa', import.meta.url).pathname
 const NO_LOWERING = / has no terminal lowering$/
 
@@ -122,16 +133,55 @@ const screenKey = (node, params) =>
   `${node.id} ${remountKey({ meta: node.meta, ownParams: node.params }, params) ?? ''}`
 
 /**
+ * The side pane's two keys, on `renderer` ahead of every mount. The pane is
+ * hidden until the first Ctrl+\, which mounts `file` there.
+ */
+function paneKeys(tui, renderer, file, setMode, say) {
+  const box = tui.sideOf(renderer)
+  box.visible = false
+  let mounted = null
+  // Focus arriving sets the mode, through Shell.mesa's focusin; a pane with
+  // nothing to focus leaves none, so a hidden side keeps no keys.
+  const into = (pane) => {
+    if (tui.focusPane(renderer, pane)) return
+    renderer.currentFocusedRenderable?.blur()
+    setMode({ mode: 'normal', field: false })
+  }
+  const toggle = async () => {
+    if (box.visible) { box.visible = false; return into('page') }
+    try {
+      mounted ??= tui.mount((await import(file)).default, { renderer, parent: box })
+    } catch (e) {
+      say(`${file} failed: ${e.message}`)
+      return
+    }
+    box.visible = true
+    flushSync()
+    into('side')
+  }
+  tui.setSideToggle(renderer, toggle)
+  renderer.keyInput.on('keypress', (k) => {
+    if (!k.ctrl || k.meta || k.option) return
+    if (k.name === TOGGLE_SIDE) { k.preventDefault(); toggle() }
+    else if (k.name === OTHER_PANE && box.visible) {
+      k.preventDefault()
+      into(tui.paneOf(renderer) === 'side' ? 'page' : 'side')
+    }
+  })
+}
+
+/**
  * @param {object} o
  * @param {string}  o.root       the web surface — the directory holding `src/` and `config/`
  * @param {string}  [o.apiUrl]   the API origin; `config.junction.url` otherwise
  * @param {boolean} [o.list]     print each route and its first blocker, and return
  * @param {string}  [o.frame]    print the frame at this path, and return
  * @param {number}  [o.settle]   ms a `frame` waits for the route's first loads
+ * @param {string}  [o.side]     a `.mesa` file for the side pane
  * @param {(line: string) => void} [o.print]
  * @returns {Promise<number>}    an exit code
  */
-export async function runTerminalShell({ root, apiUrl, list = false, frame = null, settle = 1500, print = console.log }) {
+export async function runTerminalShell({ root, apiUrl, list = false, frame = null, settle = 1500, side = null, print = console.log }) {
   const { config, loader, tree } = await boot(root, apiUrl)
   const routes = await routeList(root, tree, loader)
   const open = routes.filter((r) => !r.refused)
@@ -207,7 +257,8 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   // the runtime makes a keydown of it, which is why this listener goes on
   // before the first mount takes the renderer's keys; added after, a route
   // would read a letter. A j or k the page leaves alone moves focus, below.
-  const [mode, setMode] = createSignal({ mode: 'normal', field: false })
+  const [mode, setPageMode] = createSignal({ mode: 'normal', field: false })
+  const setMode = (m) => setPageMode(tui.paneOf(renderer) === 'side' ? { mode: 'side', field: m.field } : m)
   const VIM = { h: ['left', '\x1b[D'], j: ['down', '\x1b[B'], k: ['up', '\x1b[A'], l: ['right', '\x1b[C'] }
   const FOCUS = { j: 1, k: -1 }
   let focusStep = 0
@@ -218,6 +269,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     focusStep = FOCUS[k.name] ?? 0
     ;[k.name, k.sequence] = arrow
   })
+  if (side) paneKeys(tui, renderer, side, setMode, (note) => set({ note }))
 
   const listed = {
     routes:   open.filter((r) => !r.params.length),
@@ -226,7 +278,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   }
   const [state, write] = createSignal({ app, note: '', ...listed })
   const set = (fields) => write({ ...state(), ...fields })
-  const where = () => `${page.pathname}${page.search} · Esc goes back`
+  const where = () => `${page.pathname}${page.search} · Esc goes back · Ctrl+P jumps`
 
   let screen = null
   let shown = null      // the screenKey of the route on screen, null on the list
@@ -273,10 +325,21 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     else set({ note: `${path} did not open` })
   }
 
+  // A jump from a route goes through the History it is on, so Esc comes back
+  // to where it was made; from the list it opens as the list does.
+  const jump = (path) => {
+    if (!history) return openPath(path)
+    const refused = why(path)
+    if (refused) set({ note: refused })
+    else goto(path)
+  }
+
   tui.mount(Mode,{ renderer, parent: tui.footerOf(renderer), props: { mode } })
   tui.mount(Shell, { renderer, props: {
     state,
+    paths:  listed.routes.map((r) => r.path),
     onopen: openPath,
+    onjump: jump,
     onmove: (step) => step > 0 ? tui.focusNext() : tui.focusPrev(),
     onmode: setMode,
   } })
@@ -293,7 +356,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   // An Escape the page prevented was the page's: a confirm panel closing
   // must not also leave the route.
   renderer.keyInput.on('keypress', (k) => {
-    if (k.name !== 'escape' || !shown || k.defaultPrevented) return
+    if (k.name !== 'escape' || !shown || k.defaultPrevented || tui.paneOf(renderer) === 'side') return
     if ((history?.state?.index ?? 0) > 0) back()
     else showList()
   })

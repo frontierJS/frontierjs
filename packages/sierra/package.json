@@ -26,6 +26,7 @@
     "./mcp": "./src/mcp/index.js",
     "./site/serve": "./src/site/serve.js",
     "./site/compile": "./src/site/compile.js",
+    "./site/cloudflare": "./src/site/cloudflare.js",
     "./check": "./src/build/mesa-check.js",
     "./tui": "./src/tools/tui.js"
   },

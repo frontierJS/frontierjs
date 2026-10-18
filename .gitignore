@@ -23,6 +23,8 @@ out/
 routes.build.js
 # site-kit's route table, generated into the site directory.
 .sierra/
+# site-kit shots: the accepted before-shots and the diff pairs (FJS-2265).
+.site-kit/
 
 # TypeScript
 *.tsbuildinfo

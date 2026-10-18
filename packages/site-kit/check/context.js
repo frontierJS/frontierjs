@@ -112,7 +112,7 @@ const pathOf = (loc) => {
 }
 
 // NOTE: Build output that isn't a page
-const NOT_PAGES = new Set(['assets', 'media', 'theme', 'g', 'cdn-cgi'])
+export const NOT_PAGES = new Set(['assets', 'media', 'theme', 'g', 'cdn-cgi'])
 
 async function loadLive(ctx) {
   const notes = []

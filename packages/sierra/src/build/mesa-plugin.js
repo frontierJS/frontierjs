@@ -216,8 +216,10 @@ export const inspectOn = (mesaOptions = {}) => mesaOptions.inspect !== false
  * @param {boolean} [build.holdHints] — a static build: reactivity hints wait for
  *   the prune step, which knows which modules a published script contains
  *   (`FJS-D629`). Dev never holds, since a dev server renders in the browser.
+ * @param {boolean} [build.preview] — a review build stamps `data-fjs-loc` as dev
+ *   does, for the pins that anchor to it (`FJS-D838`)
  */
-export function mesaPlugin(mesaOptions = {}, sierraContext, { holdHints: hold = false } = {}) {
+export function mesaPlugin(mesaOptions = {}, sierraContext, { holdHints: hold = false, preview = false } = {}) {
   // Click-to-source. `inspect: false` turns off the injection AND the attribute
   // the compiler would stamp — the client is its only reader.
   const inspect    = mesaOptions.inspect ?? true
@@ -448,7 +450,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext, { holdHints: hold = 
           filename: id,
           dev: isDev,
           warning: (w) => direct.push(typeof w === 'string' ? w : (w.message ?? String(w))),
-          loc: isDev && inspectOn(mesaOptions),
+          loc: preview || (isDev && inspectOn(mesaOptions)),
           locRoot: root,
           // Not dev-only: a compile error names its line through this map too,
           // and a build without it named a line short by the frontmatter.

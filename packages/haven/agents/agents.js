@@ -43,6 +43,7 @@ import { parseArgs } from 'node:util'
 import { machineKeys, signIn } from '../web/src/lib/session/sign-in.js'
 import { checkout, fileRow, LOCK_FILE, LOG_FILE, loopOutput, loopReport, MAX_ROWS, planName, readyRows, running, startLoop } from '../web/src/lib/hash/taskmaster.js'
 import { layoutWorkshop } from '../web/src/pieces/workshop.js'
+import { CLAUDE_ENV } from '../web/src/lib/study/session.js'
 import { LEDGER } from '../web/src/lib/hash/ledger.data.js'
 import { facingOf } from '../api/src/facing.ts'
 import { parseRoll } from '../api/src/dice.ts'
@@ -67,9 +68,9 @@ export const AGENTS = [
   { name: 'Pike',    nick: 'pike',    soul: 'pike.md',    home: { x: 28, y: 14 }, room: 'tavern' },
 ]
 
+export { CLAUDE_ENV }
 export const SOULS_DIR = join(import.meta.dir, 'souls')
 export const KEYS_DIR  = join(homedir(), '.fli', 'haven', 'agents')
-export const CLAUDE_ENV = 'HAVEN_AGENTS_CLAUDE'
 
 /** A Message body's own limit (`db/schema.lite`). */
 export const MAX_LINE = 280

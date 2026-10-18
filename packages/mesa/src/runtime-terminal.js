@@ -1146,8 +1146,12 @@ const DOM_KEY = {
   pageup: 'PageUp', pagedown: 'PageDown',
 }
 
-const keyFields = (k) => ({
-  key:      DOM_KEY[k.name] ?? (k.sequence?.length === 1 ? k.sequence : k.name),
+// Without the kitty protocol a Ctrl letter is a control byte, so its sequence
+// is no letter: `e.key` is the name, as a browser's is `k` for Ctrl+K. Ctrl+J
+// is 0x0A, which the engine names `linefeed`; read as a sequence it was a
+// typed newline, and a handler for Ctrl+J never matched.
+const keyFields = (k) => k.name === 'linefeed' ? keyFields({ ...k, name: 'j', ctrl: true }) : ({
+  key:      DOM_KEY[k.name] ?? (k.sequence?.length === 1 && k.sequence >= ' ' ? k.sequence : k.name),
   code:     k.name,
   shiftKey: !!k.shift, ctrlKey: !!k.ctrl, altKey: !!(k.option || k.meta), metaKey: !!k.meta,
   raw:      k,
@@ -1192,6 +1196,8 @@ function fire(node, e, phase) {
   }
 }
 
+const KEY_EVENTS = new Set(['keydown', 'keypress'])
+
 /**
  * Deliver `type` at `target` the way a browser does: capture listeners from
  * the root down, every listener on the target, then the bubble listeners back
@@ -1202,7 +1208,8 @@ function fire(node, e, phase) {
 function dispatch(target, type, extra = {}) {
   const path = []
   for (let n = up(target); n; n = up(n)) path.push(n)
-  if (_renderer && (path.at(-1) ?? target) === _renderer.root) path.push(windowOf(_renderer))
+  const sideKey = KEY_EVENTS.has(type) && [target, ...path].some((n) => n.__pane === 'side')
+  if (_renderer && !sideKey && (path.at(-1) ?? target) === _renderer.root) path.push(windowOf(_renderer))
   let stopped = false
   const e = {
     type, target, currentTarget: null, isTrusted: true, defaultPrevented: false,
@@ -1257,6 +1264,9 @@ function focusSource(node) {
  * the shell going back a screen — hears it.
  */
 function onKey(r, k) {
+  // Taken by a listener the host put on before the first mount: a shell's key
+  // that moves between panes is not the page's.
+  if (k.defaultPrevented) return
   const focused = r.currentFocusedRenderable
   const target = focused?.__focusSource && !focused.isDestroyed ? focused : windowOf(r)
   const fields = keyFields(k)
@@ -1355,6 +1365,13 @@ function documentOf(r) {
   return doc
 }
 
+/**
+ * The page: the box every mount without a `parent` goes in, and the pane a
+ * side narrows. Its `resize` is the one to fit to — the renderer's misses
+ * a side opening, and before the first layout its width reads 0.
+ */
+export const pageOf = (r) => documentOf(r)
+
 const footers = new WeakMap()
 
 /**
@@ -1373,6 +1390,84 @@ export function footerOf(r) {
   r.root.add(foot)
   footers.set(r, foot)
   return foot
+}
+
+const sides = new WeakMap()
+
+/**
+ * A pane at the right of the page, for `mount(C, { parent })`: the page and
+ * the side are a row above the footer, and the page takes what the side
+ * leaves. Hidden (`visible = false`), the side gives its columns back.
+ *
+ * Each is a PANE. Tab and `focusNext` stay inside the pane holding focus, and
+ * `focusPane` moves between them. A key at a node in the side does not reach
+ * the window, where a page's scene walks on every key; focus events still do,
+ * so a mode line follows focus across.
+ */
+export function sideOf(r, { width = '40%' } = {}) {
+  let side = sides.get(r)
+  if (side && !side.isDestroyed) return side
+  const doc = documentOf(r)
+  const row = new BoxRenderable(r, { width: '100%', flexGrow: 1, flexShrink: 1, flexDirection: 'row' })
+  r.root.insertBefore(row, doc)
+  row.add(doc)
+  doc.width = 'auto'
+  doc.height = '100%'
+  doc.flexGrow = 1
+  doc.flexShrink = 1
+  side = new BoxRenderable(r, { width, height: '100%', flexShrink: 0, flexDirection: 'column' })
+  row.add(side)
+  side.__pane = 'side'
+  doc.__pane = 'page'
+  sides.set(r, side)
+  const last = { page: null, side: null }
+  panes.set(r, last)
+  r.on('focused_renderable', (node) => {
+    const pane = node && paneOf(r, node)
+    if (pane) last[pane] = node
+  })
+  return side
+}
+
+const toggles = new WeakMap()
+
+/** How the side is shown and hidden, said by whoever fills it — the fill is
+ *  theirs, mounted the first time it shows, so Mesa cannot show it alone. */
+export function setSideToggle(r, fn) { toggles.set(r, fn) }
+
+/** The side's show-and-hide, or null where nobody fills a side, so a page's
+ *  command can be offered only where it works. */
+export function sideToggle(r = _renderer) { return (r && toggles.get(r)) ?? null }
+
+const panes = new WeakMap()
+
+/** The pane `node` is in — `'page'` or `'side'` — or null where the renderer
+ *  has no side; `node` is what holds focus when not given. */
+export function paneOf(r, node = r.currentFocusedRenderable) {
+  if (!panes.has(r)) return null
+  for (let n = node; n; n = up(n)) if (n.__pane) return n.__pane
+  return 'page'
+}
+
+/** Focus `pane`: the node last focused there, else its first control.
+ *  Answers the node, or null when the pane holds nothing to focus. */
+export function focusPane(r, pane) {
+  const last = panes.get(r)
+  if (!last) return null
+  const box = pane === 'side' ? sides.get(r) : documentOf(r)
+  const was = last[pane]
+  const next = was && !was.isDestroyed && within(was, box) && focusables(box).includes(was) ? was : focusables(box)[0]
+  next?.focus()
+  return next ?? null
+}
+
+/** Where focus cycles: the top modal, else the pane holding focus. */
+function cycleScope(r) {
+  const modal = topModal(r)
+  if (modal) return modal
+  const pane = paneOf(r)
+  if (!pane) return r.root
+  return pane === 'side' ? sides.get(r) : documentOf(r)
 }
 
 /** `node` is in the page's flow: a modal dialog in the top layer is not,
@@ -1888,7 +1983,7 @@ function focusables(node, out = []) {
 
 function cycle(step) {
   const r = needRenderer('focusNext')
-  const list = focusables(topModal(r) ?? r.root)
+  const list = focusables(cycleScope(r))
   if (!list.length) return null
   const at = list.indexOf(r.currentFocusedRenderable)
   const next = list[(at + step + list.length) % list.length]

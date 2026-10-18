@@ -11,6 +11,7 @@
  *
  * Conditional:
  *   3b. functions    — the host-function entry (when config.functions names a directory)
+ *   3c. headers      — _headers from the site's cache rule (static)
  *   5. llms          — generate llms.txt (when config.llms is true or 'auto')
  *   6. speculation   — hover-prerender Speculation Rules on every page (static)
  *   7. deferJS       — defer script tags in index.html
@@ -25,6 +26,7 @@ import { move404, NOT_FOUND_URL } from './move-404.js'
 import { writeRobots } from './robots.js'
 import { generateRedirects } from './redirects.js'
 import { generateFunctions } from './functions.js'
+import { generateHeaders } from './headers.js'
 import { generateSitemap } from './sitemap.js'
 import { generateLlms } from './llms.js'
 import { injectSpeculationRules } from './speculation.js'
@@ -39,6 +41,8 @@ import { writeOfflineShell } from './offline-shell.js'
 // A config plugin's closeBundle that rewrites pages asks the same walk the
 // steps here do, rather than keeping a second idea of what a page is.
 export { htmlFiles } from './html-files.js'
+// A drive serves with serveSite and has no host to ask what `_headers` sends.
+export { headerUnder } from './headers.js'
 
 /**
  * Run the full post-build pipeline.
@@ -94,6 +98,10 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
   // 3b. Host functions
   const rFunctions = await generateFunctions(config, root)
   if (rFunctions) results.push(rFunctions)
+
+  // 3c. _headers, static only: `cacheFor` is the site origin's rule, and an
+  // SPA's origin (junction's static files) answers with its own.
+  if (prerenderedUrls) results.push(await generateHeaders(outDir, { preview: config.preview === true }))
 
   // What each page DECLARED about itself. Built once here and handed to every
   // step that needs it: `generateSitemap` reads `sitemap: { priority,

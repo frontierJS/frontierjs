@@ -5,11 +5,19 @@
 //   site-kit build <dir> [--binary]              prerendered into <dir>/dist, what ships;
 //                                                --binary then compiles it into <dir>/bin/site
 //   site-kit preview <dir> [--port N] [--host]   serves <dir>/dist as a static host would
+//   site-kit deploy <dir> [--dry]                ships <dir>/dist, as the last build wrote it, to
+//                                                a Cloudflare Worker named for siteUrl's host;
+//                                                --dry bundles and stops short of uploading
 //   site-kit check <dir> [--source] [--live] [--url U] [--only a,b] [--offline] [--json] [--all]
 //                                                what is broken or unfinished before it ships:
 //                                                content/, and dist/ when there is one; exits 1
 //                                                on an error. Any other --flag reaches the
 //                                                preset's rules (ksite reads --launch).
+//   site-kit shots <dir> [--accept] [--only /a/,/b/]
+//                                                an exact before/after pixel diff of the built
+//                                                site at 390/768/960/1024/1280/1536: --accept
+//                                                saves the shots, a plain run compares them;
+//                                                exits 1 on any difference (FJS-2265)
 //   site-kit fetch <dir> <url|sitemap> [--from U] [--config F] [--select S] [--prefix P]
 //                  [--strip P] [--limit N] [--delay ms] [--timeout ms] [--retry]
 //                  [--user-agent UA] [--meta-only] [--no-images] [--dry]
@@ -22,7 +30,7 @@
 // running runtime, and a companion may use what only Bun has.
 
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 
 const args = process.argv.slice(2)
 const flag = (name) => {
@@ -35,9 +43,10 @@ const [cmd, dir, target] = args.filter((a, i) => !a.startsWith('--') && !VALUED.
 const port   = flag('port') ? Number(flag('port')) : undefined
 const lan    = args.includes('--host')
 const binary = args.includes('--binary')
+const dry    = args.includes('--dry')
 
-const USAGE = 'usage: site-kit <dev|build|preview|check|fetch> <dir> [--port N] [--host] [--binary]'
-if (!dir || !['dev', 'build', 'preview', 'check', 'fetch'].includes(cmd)) {
+const USAGE = 'usage: site-kit <dev|build|preview|deploy|check|shots|fetch> <dir> [--port N] [--host] [--binary] [--dry]'
+if (!dir || !['dev', 'build', 'preview', 'deploy', 'check', 'shots', 'fetch'].includes(cmd)) {
   console.error(USAGE)
   process.exit(2)
 }
@@ -92,6 +101,29 @@ if (cmd === 'fetch') {
     console.error(`site-kit fetch: ${e.message}`)
     process.exit(2)
   }
+} else if (cmd === 'shots') {
+  const { takeShots } = await import('../src/shots.js')
+  const accept = args.includes('--accept')
+  try {
+    const r = await takeShots({
+      root, accept, only: flag('only')?.split(',').filter(Boolean),
+      log: (m) => console.log(`  · ${m}`),
+    })
+    const where = `${dir}/.site-kit/shots`
+    if (accept) console.log(`\n  ✓ ${r.taken} shot(s) kept in ${where}/before\n`)
+    else {
+      for (const c of r.changed) console.log(`  ✗ ${c.page} at ${c.width}px differs`)
+      for (const m of r.missing) console.log(`  ✗ ${m.page} at ${m.width}px has no accepted shot — run --accept before the change`)
+      if (r.changed.length) console.log(`\n  both PNGs of each are in ${where}/diff`)
+      console.log(r.changed.length || r.missing.length
+        ? `\n  ${r.changed.length} differ, ${r.missing.length} unaccepted of ${r.taken}\n`
+        : `\n  ✓ ${r.taken} shot(s) identical to the accepted ones\n`)
+      process.exitCode = r.changed.length || r.missing.length ? 1 : 0
+    }
+  } catch (e) {
+    console.error(`site-kit shots: ${e.message}`)
+    process.exit(2)
+  }
 } else if (cmd === 'check') {
   const { runCheck } = await import('../check/run.js')
   const { printCheck } = await import('../check/print.js')
@@ -123,6 +155,30 @@ if (cmd === 'fetch') {
     functions: await functionsEntry(), env: process.env,
   })
   console.log(`\n  ·  serving ${dir}/dist at ${server.url}\n`)
+} else if (cmd === 'deploy') {
+  // What ships is the dist the last build wrote, so a deploy after `test` ships
+  // the build the drive just passed rather than a second one it never saw.
+  const { resolveSite } = await import('../config/vite.js')
+  const { writeCloudflare } = await import('@frontierjs/sierra/site/cloudflare')
+  let made
+  try {
+    made = await writeCloudflare({ root, config: (await resolveSite({ root })).sierra })
+  } catch (e) {
+    console.error(`site-kit deploy: ${e.message}`)
+    process.exit(1)
+  }
+  let wrangler
+  try {
+    wrangler = resolve(dirname(Bun.resolveSync('wrangler/package.json', root)), 'bin/wrangler.js')
+  } catch {
+    console.error(`site-kit deploy: wrangler does not resolve from ${root}; the site installs it`)
+    process.exit(1)
+  }
+  console.log(`\n  ·  ${dir}/dist → Worker ${made.wrangler.name} at ${made.wrangler.routes[0].pattern}\n`)
+  const run = Bun.spawnSync(['node', wrangler, 'deploy', '-c', made.config, ...(dry ? ['--dry-run'] : [])], {
+    cwd: root, stdio: ['inherit', 'inherit', 'inherit'],
+  })
+  process.exitCode = run.exitCode
 } else {
   // The site's vite, which is a peer: Vite finds a preset's preprocessors
   // (ksite's sass) beside its own copy. A bare import from a linked site-kit

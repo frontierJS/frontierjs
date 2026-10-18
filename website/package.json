@@ -13,7 +13,7 @@
     "clean": "rm -rf site/dist",
     "test": "node ../scripts/tmp-run.mjs 'bun run build && bun run verify'",
     "typecheck": "node ../scripts/typecheck.mjs",
-    "deploy": "bun run test && wrangler deploy -c wrangler.jsonc"
+    "deploy": "bun run test && site-kit deploy site"
   },
   "dependencies": {
     "@frontierjs/css": "workspace:*",

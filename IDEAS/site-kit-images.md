@@ -184,8 +184,8 @@ same run fetched 75%, 86% and 87% less; the gap is `Image`'s default
   `width: auto` on its gallery, so those images reserve nothing before load
   whatever their attributes say. That is the client's stylesheet.
 - **An immutable cache header for variants** (`FJS-2755`), by moving them
-  under the rule that already exists. A host sees it once `_headers` is
-  emitted from that rule (`site-hosting.md` step 2).
+  under the rule that already exists, which a static build also writes as
+  `_headers` (`site-hosting.md` step 2).
 
 **Still open:**
 - **Art direction**, under `FJS-D607` as above.

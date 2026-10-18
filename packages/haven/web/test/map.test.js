@@ -52,11 +52,11 @@ test('the square is the middle: the woods west of it, the road east, the docks u
   expect(docks.x + 1 + Math.floor(back.x / SCALE.x)).toBe(square.x + 1 + Math.floor(here.x / SCALE.x))
 })
 
-test('a hidden door is not on the map: the tavern keeps its square and stairs doors, and the rug glyph stays where the hole is', () => {
+test('a hidden door is not on the map: the tavern keeps its square, stairs and kitchen doors, and the rug glyph stays where the hole is', () => {
   const { stage } = stages.get('tavern')
   const hole = stage.doors.find((d) => d.hidden)
   const snap = snapOf('tavern')
-  expect(snap.doors.map((d) => d.to).sort()).toEqual(['/', '/upstairs/'])
+  expect(snap.doors.map((d) => d.to).sort()).toEqual(['/', '/kitchen/', '/upstairs/'])
   expect(snap.rows[Math.floor(hole.y / SCALE.y)][Math.floor(hole.x / SCALE.x)]).not.toBe(DOOR.ch)
 })
 

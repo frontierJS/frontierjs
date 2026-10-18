@@ -4265,6 +4265,35 @@ describe('deploy-image-needs', () => {
     expect(skipped).toHaveLength(1)
   })
 
+  test('an API importing mesa/drive needs a Chrome as print-kit does', () => {
+    const drives = "import { openChrome } from '@frontierjs/mesa/drive'\nexport const open = () => openChrome()\n"
+    const root = tree('din-drive', { 'deploy/Dockerfile': SLIM, 'api/src/runs.ts': drives })
+    const { findings } = only(root, 'deploy-image-needs')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/mesa\/drive.*no Chrome/)
+    expect(only(tree('din-drive-ok', { 'deploy/Dockerfile': CHROME, 'api/src/runs.ts': drives }),
+      'deploy-image-needs').findings).toEqual([])
+  })
+
+  test('playwright in dependencies is off the road, whatever the image installs (FJS-3113)', () => {
+    // page-performer's tests service: a pinned browser build no reading here knows.
+    const root = tree('din-playwright', {
+      'package.json': JSON.stringify({ dependencies: { playwright: '1.62.1' } }), 'deploy/Dockerfile': CHROME,
+    })
+    const { findings } = only(root, 'deploy-image-needs')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/playwright.*FJS-D1214/)
+  })
+
+  test('playwright as a devDependency drives only tests and asks nothing', () => {
+    const root = tree('din-playwright-dev', {
+      'package.json': JSON.stringify({ devDependencies: { playwright: '1.62.1' } }), 'deploy/Dockerfile': SLIM,
+    })
+    const { findings, skipped } = only(root, 'deploy-image-needs')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+
   test('no Dockerfile is skipped — not deployed this way', () => {
     const { findings, skipped } = only(tree('din-nodocker', { 'package.json': PRINTS }), 'deploy-image-needs')
     expect(findings).toEqual([])

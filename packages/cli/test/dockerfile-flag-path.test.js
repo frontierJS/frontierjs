@@ -17,10 +17,10 @@
 // changed the image would be a different change wearing this one's name.
 
 import { describe, test, expect, afterAll } from 'bun:test'
-import { execFileSync } from 'child_process'
-import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs'
-import { homedir } from 'os'
+import { execFileSync, spawnSync } from 'child_process'
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync } from 'fs'
 import { join } from 'path'
+import { pickWorkBase, daemonCanRead, workBaseCandidates } from '../core/docker-context.js'
 
 const LOCAL = readFileSync(new URL('../commands/deploy/local.md', import.meta.url), 'utf8')
 
@@ -61,13 +61,19 @@ describe('the shipped command passes an absolute -f', () => {
 })
 
 describe.skipIf(!hasDocker)('a real docker, from a cwd that is not the app root', () => {
-  const root = join(homedir(), `fli-dockerfile-flag-${process.pid}`)
+  // A confined daemon cannot read a private /tmp, and that failure (`path ...
+  // not found`) is a DIFFERENT one that would mask this test entirely — so the
+  // base is one the daemon was asked about, never home itself (FJS-3247).
+  const base = hasDocker
+    ? pickWorkBase(workBaseCandidates(), (dir) => {
+        try { mkdirSync(dir, { recursive: true }) } catch { return false }
+        return daemonCanRead(dir, { mkdtempSync, writeFileSync, rmSync, spawnSync, join })
+      }).base
+    : workBaseCandidates()[0]
+  const root = mkdtempSync(join(base, 'fli-dockerfile-flag-'))
   const app = join(root, 'app')
   const elsewhere = join(root, 'elsewhere')
 
-  // Under the user's home rather than tmpdir: a confined daemon cannot read a
-  // private /tmp, and that failure (`path ... not found`) is a DIFFERENT one
-  // that would mask this test entirely.
   const build = (cwd, dashF, tag) => {
     try {
       const out = execFileSync('docker', ['build', '-q', '-t', tag, '-f', dashF, app],

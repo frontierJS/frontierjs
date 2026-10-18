@@ -100,8 +100,8 @@ COPY web/src ./web/src
 FROM oven/bun:1-slim
 WORKDIR /app
 ${needs.chrome ? `
-# @frontierjs/print-kit drives a headless Chrome, and printerPlugin() refuses
-# to boot without one.
+# ${needs.chrome} drives a headless Chrome, and its first launch fails
+# without one.
 ${CHROME_RUN}
 ` : ''}
 COPY --from=base /app .
@@ -246,7 +246,7 @@ if (existsSync(dockerfilePath)) {
     writeFileSync(dockerfilePath, makeDockerfile(appId, needs), 'utf8')
   }
   log.success(`Created: deploy/Dockerfile`)
-  if (needs.chrome) log.info('  with Chromium: the app depends on @frontierjs/print-kit')
+  if (needs.chrome) log.info(`  with Chromium: the app uses ${needs.chrome}`)
   if (needs.webSrc) log.info('  with web/src: the API reads a template from it')
   created.push(dockerfilePath)
 }

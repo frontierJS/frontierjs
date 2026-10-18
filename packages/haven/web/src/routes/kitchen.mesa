@@ -1,0 +1,11 @@
+<script>
+  // The kitchen — through the door in the tavern's east wall. The Claude
+  // sessions on this machine are its brigade, read from `#workers`.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Brigade from '@/components/Brigade.mesa'
+  import Kitchen from '@/scenes/Kitchen.mesa'
+</script>
+
+<WalkIn slug="kitchen">
+  <Kitchen><Brigade /></Kitchen>
+</WalkIn>

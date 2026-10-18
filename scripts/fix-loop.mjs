@@ -3,6 +3,7 @@
 // Work down the open register, one row per headless session
 //
 //   bun run fix:loop                       # up to 5 rows
+//                                          #   (naming no rows, it takes Haven's /menu)
 //   bun run fix:loop -- --rows 10 --pkg sierra
 //   bun run fix:loop -- --sev S3,S4        # only these severities
 //   bun run fix:loop -- --budget 3 --dry-run
@@ -92,6 +93,11 @@ import { LANES_DIR, LINKED, openLane, syncLane, applyPatch, lanePatch, harvest }
 // Not `LADDER`: frame-loop shares that one and stays on Opus.
 const FIX_LADDER = [{ model: 'sonnet', effort: 'high' }, { model: 'opus', effort: 'high' }]
 
+// Haven's kitchen menu (`/menu` at the pass, IDEAS/haven.md 18.2): a bare run's
+// starting settings, kept per machine so a loop started with no terminal open
+// reads it. Haven owns the file and its shape; a tree without Haven has none.
+const MENU = await import(pathToFileURL(join(ROOT, 'packages', 'haven', 'web', 'src', 'lib', 'hash', 'taskmaster.js')).href).catch(() => null)
+
 const OUTLINE = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'outline.js')).href).catch(() => null)
 
 // The realm catalog a package's hazards are filed under. An app crosses all three.
@@ -102,7 +108,10 @@ const REALMS = {
   example: ['data', 'api', 'ui'], basecamp: ['data', 'api', 'ui'],
 }
 
-const args       = parseArgs(process.argv.slice(2))
+const given      = parseArgs(process.argv.slice(2))
+// A command line naming its rows (the taskmaster's --pkg, a mod's --ids) is never mixed with the menu: its --sev would filter rows somebody named.
+const menu       = given.ids || given.pkg || given.sev || given.trial || given.help ? null : MENU?.readMenu() ?? null
+const args       = { ...menu?.flags, ...given }
 const budget     = Number(args.budget ?? 5)
 const permission = args['permission-mode'] ?? 'auto'
 const dryRun     = Boolean(args['dry-run'])
@@ -114,6 +123,7 @@ const trial      = args.trial ? String(args.trial) : null
 const LOG        = join(LOG_DIR, trial ? `fix-trial-${trial}.jsonl` : 'fix-loop.jsonl')
 
 if (args.help) { printHelp(import.meta.url); process.exit(0) }
+if (menu) console.log(`[fix-loop] menu: ${menu.menu} ${MENU.flagsLine(menu.flags) || '(no flags)'} — ${MENU.MENU_FILE}`)
 // Without a lane a trial session edits the main tree, and the first model's fix is the second model's starting point.
 if (trial && !(/^[\w-]+$/.test(trial) && lanes)) { console.error('[fix-loop] --trial takes a name of letters, digits, - and _, and needs --lanes'); process.exit(1) }
 // A lane is a linked worktree and ports.js has five port blocks for those.

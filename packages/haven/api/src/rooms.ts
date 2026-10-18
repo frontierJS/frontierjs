@@ -49,6 +49,7 @@ export const ROOMS = [
   { slug: 'docks',  name: 'The docks' },
   { slug: 'island', name: 'The island' },
   { slug: 'workshop', name: 'The workshop' },
+  { slug: 'kitchen',  name: 'The kitchen' },
   { slug: 'townhall', name: 'The town hall' },
   { slug: 'cellar', name: 'The cellar' },
   { slug: 'glade',  name: 'The glade' },

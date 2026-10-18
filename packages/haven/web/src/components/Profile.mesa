@@ -55,15 +55,17 @@
   $.onMount(() => { snap = coarse(stage, route) })
 
   const ITEM_NAMES = Object.keys(ITEMS)
-  const rows = (width, x, y) => hud({
-    w: width, nick: nicks[here.get().self?.userId] ?? '…', glyph, room: room.name, way: WAY[facing] ?? '—',
+  const rows = (w, x, y) => hud({
+    w, nick: nicks[here.get().self?.userId] ?? '…', glyph, room: room.name, way: WAY[facing] ?? '—',
     items: ITEM_NAMES.filter((i) => i in held), held, mini: snap.rows, at: { x: Math.floor(x / SCALE.x), y: Math.floor(y / SCALE.y) },
   })
 
-  // The stage's size is set by `#paint` after this mounts, so it is read again
-  // on every change of the stage, as `Scene.mesa` reads its view.
+  // The stage's size is set by `#paint` after this mounts and again when a
+  // side opens beside the page, so it is read again on every change of the
+  // stage, as `Scene.mesa` reads its view.
   let spare = stage.size.h - stage.view.h
-  $.onDestroy(stage.subscribe(() => { spare = stage.size.h - stage.view.h }))
+  let width = stage.size.w
+  $.onDestroy(stage.subscribe(() => { spare = stage.size.h - stage.view.h; width = stage.size.w }))
 
   async function list() {
     await load()
@@ -75,7 +77,7 @@
 </script>
 
 {#if FOOT && spare >= HEIGHT}
-  {#each rows(stage.size.w, x, y) as row, i (i)}
+  {#each rows(width, x, y) as row, i (i)}
     <pre>{row}</pre>
   {/each}
 {/if}

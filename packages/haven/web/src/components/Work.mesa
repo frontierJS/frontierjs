@@ -1,0 +1,12 @@
+<script>
+  // Work.mesa — `/work`: shows and hides the study beside the scene, as
+  // Ctrl+\ does (`IDEAS/study.md` 1.4). The side is the shell's, so where it
+  // was started with none — an installed Haven, a browser — there is no
+  // `/work`. Draws nothing.
+  import { sideToggle } from '#study'
+
+  var verbs = $context.commands
+  const toggle = sideToggle()
+
+  if (toggle) $.onDestroy(verbs.add({ word: 'work', help: '/work — the study, beside the scene (Ctrl+\\)', run: () => { toggle(); return '' } }))
+</script>

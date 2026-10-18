@@ -574,10 +574,13 @@ core/
                 to disagree with an app that worked. It also answers the CLASH,
                 which `start()` refuses by name
   deploy-image.js  what an API image needs beyond api/ and db/ — a Chrome
-                when the app depends on print-kit, web/src when the API reads a
-                template from it (`FJS-2269`). `make:deploy` writes the lines
-                and `fli check`'s `deploy-image-needs` grades a Dockerfile
-                written before the need, so the two read one answer
+                when the app depends on print-kit or its API imports mesa/drive,
+                web/src when the API reads a template from it (`FJS-2269`).
+                `make:deploy` writes the lines and `fli check`'s
+                `deploy-image-needs` grades a Dockerfile written before the
+                need, so the two read one answer. Those two are the only roads to
+                a browser (`FJS-D1214`): a playwright or puppeteer dependency is
+                named as off them, never read as a third kind of Chrome
   argv.js       the command line into `{ _, ...flags }`, read before the command
                 is known, so a value's type is how it LOOKS and getConfig
                 coerces toward the declaration after. `BOOL_ARGV` never takes a

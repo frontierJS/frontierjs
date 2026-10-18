@@ -40,6 +40,10 @@
     "#sound": {
       "browser": "./web/src/lib/band/sound.browser.js",
       "default": "./web/src/lib/band/sound.js"
+    },
+    "#study": {
+      "browser": "./web/src/lib/study/study.browser.js",
+      "default": "./web/src/lib/study/study.js"
     }
   },
   "license": "MIT",

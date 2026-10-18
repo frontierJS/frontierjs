@@ -20,10 +20,14 @@ export const BENCH_WIDTH = 23
  * width (`width`).
  * The name is painted `n`, which the workshop's palette makes a light, so a
  * bench is read from the door; `bench` is what `Workers.mesa` finds it by.
+ * A `count` (its open issues) is written after the name, `site-kit (3)`; the
+ * spaces either side give way first, since `frontierjs-vscode (1)` fills a
+ * bench to its brackets.
  */
-export function namedBench(name, width = BENCH_WIDTH) {
-  const label = ` ${name} `
-  if (label.length > width - 2) throw new Error(`namedBench: "${name}" is longer than a bench`)
+export function namedBench(name, width = BENCH_WIDTH, count = null) {
+  const text = count == null ? name : `${name} (${count})`
+  const label = text.length + 2 > width - 2 ? text : ` ${text} `
+  if (label.length > width - 2) throw new Error(`namedBench: "${text}" is longer than a bench`)
   const left = Math.floor((width - 2 - label.length) / 2)
   const right = width - 2 - label.length - left
   const art = `[${'='.repeat(left)}${label}${'='.repeat(right)}]`

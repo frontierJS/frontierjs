@@ -9,12 +9,13 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll, vi } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, utimesSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { serveSite } from '../src/site/serve.js'
 import { generateRedirects, parseRedirects } from '../src/postbuild/redirects.js'
+import { generateHeaders, headerUnder, REVALIDATE } from '../src/postbuild/headers.js'
 
 let DIR
 let server
@@ -155,6 +156,70 @@ describe('the cache answer', () => {
     const html  = (await get('/')).headers.get('cache-control')
     const asset = (await get('/assets/style-99887766.css')).headers.get('cache-control')
     expect(html).not.toBe(asset)
+  })
+})
+
+describe('_headers, the cache rule as a host reads it', () => {
+  // A host serving the files itself answers from `_headers`, never from
+  // serveSite, so a drive passes on whatever the file says. Every file asked
+  // both ways is the claim that they agree.
+  let text
+  beforeAll(async () => {
+    await generateHeaders(DIR)
+    text = readFileSync(join(DIR, '_headers'), 'utf8')
+  })
+
+  test('every file gets the answer serveSite sends', async () => {
+    const paths = [...Object.keys(FILES).map(f => '/' + f), '/no-such-page/']
+    const differ = []
+    for (const p of paths) {
+      const served = (await get(p)).headers.get('cache-control')
+      const host   = headerUnder(text, p, 'Cache-Control')
+      if (served !== host) differ.push(`${p}: served ${served}, host ${host}`)
+    }
+    expect(differ).toEqual([])
+  })
+
+  test('an unhashed name under assets/ is its own rule, after the splat', () => {
+    expect(text).toContain('/assets/my-file-name.js\n  ! Cache-Control\n')
+    expect(text.indexOf('/assets/*')).toBeLessThan(text.indexOf('/assets/my-file-name.js'))
+  })
+
+  test('a rule that did not detach would send both values joined', () => {
+    // How Cloudflare reads two matches, asked of `wrangler dev`.
+    const joined = '/*\n  Cache-Control: a\n/assets/*\n  Cache-Control: b\n'
+    expect(headerUnder(joined, '/assets/x-AbCd1234.js', 'cache-control')).toBe('a, b')
+  })
+
+  test("the app's own file follows Sierra's rules verbatim", async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sierra-headers-'))
+    writeFileSync(join(root, '_headers'), '/*\n  X-Frame-Options: DENY\n')
+    expect(await generateHeaders(root)).toBe("_headers (1 rule from the cache rule, then the app's)")
+    const out = readFileSync(join(root, '_headers'), 'utf8')
+    expect(headerUnder(out, '/', 'X-Frame-Options')).toBe('DENY')
+    expect(headerUnder(out, '/', 'Cache-Control')).toBe(REVALIDATE)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  test('a preview build tells every path noindex, and a production build tells none', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sierra-headers-'))
+    mkdirSync(join(root, 'assets'))
+    writeFileSync(join(root, 'assets', 'index-A1b2C3d4.js'), '')
+    expect(headerUnder(text, '/', 'X-Robots-Tag')).toBe(null)
+    expect(await generateHeaders(root, { preview: true })).toBe('_headers (2 rules from the cache rule, noindex)')
+    const out = readFileSync(join(root, '_headers'), 'utf8')
+    for (const p of ['/', '/about/', '/assets/index-A1b2C3d4.js']) expect(headerUnder(out, p, 'X-Robots-Tag')).toBe('noindex')
+    expect(headerUnder(out, '/assets/index-A1b2C3d4.js', 'Cache-Control')).toBe('public, max-age=31536000, immutable')
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  test("past Cloudflare's rule limit the build refuses, naming the files", async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sierra-headers-'))
+    mkdirSync(join(root, 'assets'))
+    writeFileSync(join(root, 'assets', 'index-A1b2C3d4.js'), '')
+    for (let i = 0; i < 100; i++) writeFileSync(join(root, 'assets', `logo${i}.png`), '')
+    await expect(generateHeaders(root)).rejects.toThrow(/100 unhashed files under assets\/ make 102 rules/)
+    rmSync(root, { recursive: true, force: true })
   })
 })
 

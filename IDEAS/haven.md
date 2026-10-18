@@ -1773,6 +1773,62 @@ scene that wants one has it.
   art is a `pieces/` piece's, naming the import. Until then nothing stops
   17.1's duplicates from growing back.
 
+### Phase 18 — The kitchen
+
+Goal: the kitchen (`Brigade.mesa`, through the tavern's east wall) is where a
+session of work is chosen and watched, not only watched.
+Done when: a menu picked at the pass sets what the 86 board lists and what the
+fix-loop is handed, and a CHEF! ticket opens in the study (`IDEAS/study.md`
+3.3).
+
+- [x] 18.1 Set dressing and a bell you can see: `pieces/kitchen.js` gains the
+  range behind the cooks (gas flames, a light of 1), sink, stockpot, prep
+  block, produce bins, walk-in, mop, plates and the service bell at the pass's
+  end; the bell is drawn jumping (`\ô/`) for `RUNG_MS` on a CHEF! (red) or an
+  ORDER UP (gold), sounded or muted.
+  - Run in a pty against a test API with three sessions seated through the
+    real hook and `HAVEN_MUSIC=off`: walk-in drew the tickets, cooks and board
+    with no jump; a Notification jumped it red and it went down; a Stop put a
+    plate on the pass and jumped it gold.
+- [x] 18.2 The menu. **Ruled 2026-10-17 (owner): all four**, each feeding a
+  knob the loop already has and turning the 86 board into its list:
+  - **Expedite** — the register worst first, S1/S2 at the head (`fli next`'s
+    order, the Taskmaster's pitch).
+  - **Station night** — one package cleared deep (`--pkg`), one cook per
+    station so no `! N here`.
+  - **Prep list** — S3/S4 papercuts in parallel on a cheap rung (`--sev
+    S3,S4 --lanes N`).
+  - **Chef's table** — no code: the waiting rulings (`fli decisions`), one at
+    a time, which unblocks what the loop set aside.
+  - **Ruled 2026-10-17 (owner):** the verb is `/menu`, reached only at the
+    pass (as the Taskmaster's `/yes` is); the choice is kept per machine
+    beside `workers/`, as 18.4's close-outs are, so the loop reads it with
+    no terminal open.
+  - Built: `~/.fli/haven/menu.json` holds `{ menu, flags }`, the flags the
+    loop already takes (`MENUS` in `#taskmaster`); `scripts/fix-loop.mjs`
+    reads it as starting settings only when its command line names no
+    `--ids`/`--pkg`/`--sev`/`--trial`, and prints `[fix-loop] menu: …`. So
+    the Taskmaster's `/yes` (`--pkg`) and a mod's task (`--ids`) ignore the
+    menu, and the chef's table keeps no flags: a bare loop under it runs the
+    register's own order. `/menu station` with no package takes the ledger's
+    most open; `/menu off` takes the menu down.
+  - Run in a pty (scratch probe, not committed) against a test API and a
+    fake root: `/menu` at the door answered by nobody; at the pass each of
+    the four turned the board (title and rows), the file kept in HOME, a bad
+    lane count and an unknown menu refused, a file written by another
+    terminal turned the board within the poll, `off` back to the ledger.
+    `fix-loop --dry-run` under a kept prep list took S3/S4 rows only, under
+    a station night only `cli`, and with `--pkg mesa` ignored the menu.
+- [ ] 18.3 Timers (owner note, 2026-10-17): how long a chef has waited and
+  how long an order has sat ready, on the ticket and the plate. A CHEF!
+  ticket's head already counts from `asking.at`; a plate shows no age, only
+  its reading does. A wait past some threshold should look worse.
+- [ ] 18.4 Closing an order out (owner note, 2026-10-17): a verb at the pass
+  acknowledges a plate and it leaves. Today a plate stays until the session's
+  next event or `QUIET_MS`. Keyed `session:said.at`, so the session's next
+  stop plates again; kept per machine beside `workers/`, as the workers are.
+  A CHEF! can be marked seen, but only its own host answers it (study 3.3).
+
 ### Phase 10 — Hosted
 
 Goal: Haven answers at a public address, so a stranger needs no `--api`.

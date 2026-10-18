@@ -16,7 +16,8 @@
 import { statSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { functionHandler, functionRoutes, requestFrom, sendResponse } from '../postbuild/functions.js'
+import { functionHandler } from '../postbuild/function-handler.js'
+import { functionRoutes, requestFrom, sendResponse } from '../postbuild/functions.js'
 import { importFresh } from '../scanner/import-fresh.js'
 
 // absolute file → the mtime it was last imported at, and the module that produced

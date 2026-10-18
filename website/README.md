@@ -178,9 +178,11 @@ Five framework defects came out of doing it — `FJS-500`, `FJS-501`, `FJS-508`,
 `FJS-509` and `FJS-515` in the root `ISSUES.md`. The first is the one worth
 reading: a prerendered page did not escape its own text.
 
-**Deploy is `bun run deploy`** — the build and the drive, then `wrangler deploy`
-of `site/dist/` as an assets-only Cloudflare Worker on frontierjs.com
-(`wrangler.jsonc`). A failing drive stops it before the upload.
+**Deploy is `bun run deploy`** — the build and the drive, then `site-kit deploy
+site`, which ships the `site/dist/` the drive just passed as an assets-only
+Cloudflare Worker named `frontierjs-com`, on frontierjs.com. The site writes no
+wrangler config: Sierra's adapter derives `site/.sierra/wrangler.json` from
+`siteUrl` and the build (`FJS-D1213`). A failing drive stops it before the upload.
 Wrangler signs in once with `wrangler login`, or reads `CLOUDFLARE_API_TOKEN`.
 `www.frontierjs.com` is a redirect rule on the zone, not a second route. The
 build writes `sitemap.xml` and `robots.txt` against `siteUrl` in

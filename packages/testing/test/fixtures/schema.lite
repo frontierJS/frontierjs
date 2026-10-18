@@ -1,10 +1,14 @@
-// A small vertical: one gated model, one row policy, one enum.
+// A small vertical: two gated models, one row policy.
 // Small enough to read in full; every rule here is asserted by a test.
 
 model Account {
   id    Int    @id
   name  String
   leads Lead[]
+
+  // A Lead's foreign key is read through the caller, and an ungated model is
+  // SYSTEM-only (FJS-D1206), so a member's create would name no Account.
+  @@gate(2.7.7.7)
 }
 
 model Lead {

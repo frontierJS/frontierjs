@@ -53,6 +53,9 @@
 // answers *no warnings found* — so a missing build input cannot be mistaken for
 // this.
 
+import { tmpdir, homedir } from 'os'
+import { join }            from 'path'
+
 // ─── the probe ───────────────────────────────────────────────────────────────
 // Run on the builder, with the build context as the cwd. `sh`, not bash: the
 // script travels on stdin to `sh -s` (core/machine.js), so a remote builder's
@@ -151,6 +154,12 @@ export function contextRefusal(probe, { host, dockerfile, contextPath }) {
 // Six call sites resolved `FJS_CI_WORKDIR || tmpdir()` by hand, which is a
 // default restated six times and an operator holding a flag for a condition the
 // machine can measure.
+
+/** Where a build context may go, most preferred first: the OS temp dir, then
+ *  one named scratch directory under home for a snap daemon that cannot read
+ *  /tmp. Named, so a run killed before its cleanup leaves its directory there
+ *  rather than loose in home. */
+export const workBaseCandidates = () => [tmpdir(), join(homedir(), 'fjs-ci-work')]
 
 /** The Dockerfile a probe builds. `scratch` pulls nothing, so this needs no
  *  network and no image — the only question asked is whether the daemon can

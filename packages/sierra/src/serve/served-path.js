@@ -1,7 +1,7 @@
 /**
  * served-path.js — what file does this URL name, and is it inside the root?
  *
- * One question, two servers — the same reason `hashed-asset.js` is here.
+ * One question, two servers.
  * `site/serve.js` and `widget/serve.js` publish different things to different
  * audiences and give different cache answers, but *what may this request
  * reach* is one question in both, and it was written twice with a hole in each

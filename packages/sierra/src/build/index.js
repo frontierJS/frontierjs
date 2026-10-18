@@ -49,6 +49,9 @@ import { beginBuildImports, importAppModule } from './app-import.js'
  *   under, as `prefix:key`. Default: the name in the nearest package.json above
  *   the Vite root; `''` stores keys bare.
  * @property {'always'|'never'|'preserve'} [trailingSlash='always']
+ * @property {boolean} [preview] — a review build, `static` target only: every
+ *   element is stamped `data-fjs-loc` as in dev, and `_headers` tells crawlers
+ *   `noindex` (`FJS-D838`). The Cloudflare adapter ships one only as a preview.
  * @property {'spa'|'static'} [render='spa']
  * @property {string} [outDir='dist/client']
  * @property {{ dir?: string, outDir?: string, prefix?: string, minify?: boolean }} [widgets]
@@ -122,6 +125,10 @@ export function createSierraViteConfig(config = {}) {
     plugins: userPlugins = [],
     mesa: mesaOptions = {},
   } = config
+  if (config.preview && target !== 'static') {
+    throw new Error(`[Sierra] preview: a review build is a static site's, and this target is ${target}`)
+  }
+  const preview = config.preview === true
 
   // Shared state between plugins
   /** @type {SierraContext} */
@@ -161,7 +168,7 @@ export function createSierraViteConfig(config = {}) {
       // resolves `@` there exactly as it does in the main build.
       appAliasPlugin(),
       envFlagsPlugin(),
-      mesaPlugin({ ...mesaOptions, routesDir }, sierraContext, { holdHints: target === 'static' }),
+      mesaPlugin({ ...mesaOptions, routesDir }, sierraContext, { holdHints: target === 'static', preview }),
     ]))
   }
 
@@ -193,7 +200,7 @@ export function createSierraViteConfig(config = {}) {
   // DEV/PROD follow the mode, not an ambient NODE_ENV (FJS-1232).
   sierraPlugins.push(envFlagsPlugin())
 
-  sierraPlugins.push(mesaPlugin({ ...mesaOptions, routesDir }, sierraContext, { holdHints: target === 'static' }))
+  sierraPlugins.push(mesaPlugin({ ...mesaOptions, routesDir }, sierraContext, { holdHints: target === 'static', preview }))
   // Dev only, when the app has @frontierjs/cli: shift+alt-click asks Claude.
   if (inspectOn(mesaOptions)) sierraPlugins.push(askPlugin({ tokenKey: config.junction?.tokenKey }))
 
@@ -538,7 +545,12 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           // `import.meta.glob` becomes the static imports it stands for.
           transformSource: (source, file) =>
             expandGlobs(prepareForCompile(source, file, sierraContext.autoImportMap) ?? '', file, root),
+          // The prerender compiles outside the plugin, so it is told where a
+          // stamped path is relative to; left out, a page names the builder's
+          // home directory where the island beside it names `content/…`.
           compileOptions: {
+            loc: config.preview === true,
+            locRoot: root,
             ...(config.mesa ?? {}),
             ...(sierraContext.markdownLayouts ? { layouts: sierraContext.markdownLayouts } : {}),
           },

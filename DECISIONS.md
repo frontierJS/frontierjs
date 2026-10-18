@@ -27,6 +27,10 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1219"></a>2026-10-17 · `FJS-D1219` — Are `createTestEnv` in `@frontierjs/litestone/testing` and in `@frontierjs/testing` two things under one name (`FJS-2966`) — One thing at two layers, and the name stays. `@frontierjs/testing`'s takes litestone's options plus `api` and `listen`, and without `api` it answers litestone's env unchanged; its overloads state that (`TestEnv<TClient>` without `api`, `ApiTestEnv<TClient>` with it, `FJS-2484`), so an import from the wrong package is a type error on `app`/`as`/`http` rather than a silently partial env. Its local declaration overrides the `export *` of litestone's by ES semantics, so the package exports one `createTestEnv`.
+
+Asked in chat. **A** was picked over **B** (rename testing's, e.g. `createAppTestEnv`: one name per thing strictly, at the cost of a coined noun and every consumer in basecamp, haven and the linked fjs-prototypes moved) and **C** (leave it to `IDEAS/lockdown.md` step 3.13 with the other five collisions). Precedent: `@testing-library/react` exports a `fireEvent` that wraps `@testing-library/dom`'s under the same name and re-exports the rest of DTL (react-testing-library `src/fire-event.js`). `FJS-2966` keeps its other five collisions.
+
 ### <a id="fjs-d1094"></a>2026-10-17 · `FJS-D1094` — Do the `@@transitions` move words `@system` and `@gate(N)` keep their spelling with the overload documented once, or take move words of their own — Keep the spelling and document the overload once: the reference states the move word as the same fact at move grain (a floor on the act; the app's write), each move entry says so in its first sentence, and the *Move words* lead stops apologizing. Zero parser change, and knowing the column's word predicts the move's. A test that `explain @system` and `explain @gate` name both grains keeps it said.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a move word of its own for one or both: e.g. `@engine` for the app's move and `@needs(N)` for the floor. Cost: two new nouns beside two that already mean the same thing, a rename across the parser, the catalog, the reference, the VS Code grammar and every schema that spells a move; and the column's `@system` and the move's `@engine` become two spellings of "the application owns this"), **C** (rename only `@system` on a move (the one whose move meaning is the narrower, "decided by the app on the call"): `@gate(N)` already composes with it as the same floor. Smaller reach than B, but a half-split — one word shared and one not).
@@ -1437,6 +1441,12 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1114"></a>2026-10-17 · `FJS-D1114` — How does a host's isolation/ladder test stay green when a rig adds models — The pin becomes a floor by convention: the host asserts `arrayContaining` of the models it owns plus `failed(report) === []`, and the tutor/scaffold template teaches that shape. Zero framework code.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the report marks where a model came from, `imported: true` on each entry whose model arrives through an `import`/`extend`, and the host pins the non-imported graded list; a new field on a report three verifiers share), **C** (the installer owns the line: `fli add` rewrites the pin's list, `fli remove` reverses it; makes the installer edit a host's test file, which `RIGS.md` R1 does not list and which breaks the moment the host reformats the line).
+
+The paper's recommendation, taken as written: the exact pin was only ever a drift tripwire, and `failed(report)` already fails a model that is not crossed; a floor over the owned models keeps the tripwire for what the host controls. Cost accepted: a host model that drops out of grading (a gate removed) is no longer caught by the pin, though `failed()` and the schema still cover it. Unblocks `FJS-2759`.
 
 ### <a id="fjs-d1206"></a>2026-10-17 · `FJS-D1206` — Q11 — What a model or model-less method with no access declaration allows (`FJS-3193`, ASVS V8.2.1) — Deny by default, reads included. A model with no gate and no policy refuses every operation below the system principal, and a written `@@gate("0.…")` is how a model says public, so no new word is needed. A model-less custom method with no `gate:` refuses below system, and `gate: 0` (the spelling `warnFloorRefusal` already prints, `packages/junction/src/core/litestone.ts:3342`) says open. This amends `FJS-D516`'s "an ungated model reads at 0". It is ZenStack (no `allow` means deny, [policy-handler.ts](https://github.com/zenstackhq/zenstack-v3/blob/dev/packages/plugins/policy/src/policy-handler.ts)), PocketBase (a `null` rule is superusers only), Payload (`defaultAccess` requires a logged-in user), Amplify Gen 2 ("deny-by-default"), Hasura (no permissions until added), Directus and Firestore production mode.
 
@@ -14217,6 +14227,38 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1220"></a>2026-10-18 · `FJS-D1220` — Anything the tree states as a rule can be a tip; `fli tip` has no audience filter and no marker.
+**Supersedes** [`FJS-D1215`](#fjs-d1215) and [`FJS-D1217`](#fjs-d1217), ruled the same day.
+
+Asked in [`IDEAS/tip-of-the-day.md`](IDEAS/tip-of-the-day.md) § Open questions, as Q6. Under D1215 and D1217 every hazard bullet was out of the corpus, and the gate-versus-allow rule was one of them, which is the first thing an app developer runs into. The owner reversed both rulings rather than adding a marker: hazard bullets, invariants, `blessed` vocabulary and the Packages table's bold sentences are all tips, with no `app`/`framework` tag. `FJS-D1216` (a generated `tips.snapshot.json`) and `FJS-D1218` (tips only on request) stand.
+*Lives in:* `IDEAS/tip-of-the-day.md`.
+
+### <a id="fjs-d1218"></a>2026-10-18 · `FJS-D1218` — Q4 — Does `fli dev` print a tip when it starts — No; tips only on request.
+
+Asked in [`IDEAS/tip-of-the-day.md`](IDEAS/tip-of-the-day.md) § Open questions. **B** was picked over **A** (yes, one line every start, switched off with `FLI_NO_TIPS=1` (Homebrew's shape)), **C** (yes, on the first `fli dev` of the day only, with no flag: the seen state already knows the date).
+
+owner's pick: a tip appears only when someone asks for one.
+
+### <a id="fjs-d1217"></a>2026-10-18 · `FJS-D1217` — Q3 — How is a tip marked fit for an app developer — No marker: invariants and the Packages table count as `app` by default, everything else as `framework`.
+**Status:** superseded-by [`FJS-D1220`](#fjs-d1220) — reversed the same day: anything can be a tip.
+
+Asked in [`IDEAS/tip-of-the-day.md`](IDEAS/tip-of-the-day.md) § Open questions. **C** was picked over **A** (a marker on the source line, such as `<!-- tip:app -->` after the bullet; a block-level HTML comment is stripped before an agent reads it), **B** (an allowlist of keys inside `ws:tips`).
+
+The paper's recommendation, taken as written: for Phase 0, then A if C proves too coarse.
+
+### <a id="fjs-d1216"></a>2026-10-18 · `FJS-D1216` — Q2 — How does the corpus reach an installed cli — A generated `packages/cli/tips.snapshot.json`, written by `fli ws:tips` and failed when stale by CI's `snapshots` phase.
+
+Asked in [`IDEAS/tip-of-the-day.md`](IDEAS/tip-of-the-day.md) § Open questions. **A** was picked over **B** (tips written by hand into `packages/cli/tips/`).
+
+The paper's recommendation, taken as written: A generated copy is the pattern `exports.snapshot.md` and `hazards.snapshot.md` already follow, and B is the second corpus that § *The question* rules out.
+
+### <a id="fjs-d1215"></a>2026-10-18 · `FJS-D1215` — Q1 — Who is it for — App developers only; the corpus is a curated subset.
+**Status:** superseded-by [`FJS-D1220`](#fjs-d1220) — reversed the same day: anything can be a tip.
+
+Asked in [`IDEAS/tip-of-the-day.md`](IDEAS/tip-of-the-day.md) § Open questions. **A** was picked over **B** (both audiences, each tip tagged `app` or `framework`, with the tag chosen by where `fli tip` runs (this workspace or an app)).
+
+owner's pick: fli tip is for people building apps, and contributors already have the realm hazard skills.
+
 ### <a id="fjs-d1205"></a>2026-10-17 · `FJS-D1205` — Q5 — The CSP on the SPA document `fli deploy` serves (`FJS-3190`, step 2.5) — B: `nosniff`, `Referrer-Policy`, `X-Frame-Options` and `frame-ancestors`, plus a strict CSP whose `script-src 'self'` carries a `sha256-` hash of each inline script, read from the built `index.html` at deploy and written into the Caddy route. This is SvelteKit's `kit.csp` hash mode for prerendered pages, Astro's `security.csp`, and nuxt-security for SSG.
 
 Asked in [`IDEAS/pen-testing.md`](IDEAS/pen-testing.md) § Open questions. **B** was picked over **A** (send the headers that need no CSP now (`nosniff`, `Referrer-Policy`, `X-Frame-Options` plus `frame-ancestors`), and add the script CSP when 2.3 lands the default), **C** (move both scripts into files so plain `script-src 'self'` holds. The cost is a blocking request before first paint for the theme script).
@@ -17306,6 +17348,22 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d1213"></a>2026-10-18 · `FJS-D1213` — Does a site state anything a deploy cannot derive — Nothing: the Worker's name is `siteUrl`'s host with dots as dashes (`frontierjs.com` → `frontierjs-com`), the adapter writes `.sierra/wrangler.json`, `website/wrangler.jsonc` is deleted, and a deploy with no `siteUrl`, or whose host makes a name past Cloudflare's 63 characters, is refused by name rather than truncated.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Open questions. **A** was picked over **B** (A, plus an optional `host: { name }` in `site.js` for a name that must differ), **C** (`packages/basecamp`'s App row names it, as Vercel and Netlify keep a linked id, and the deploy asks basecamp), **D** (`host: { name, domain }` in `site.js`, as first asked).
+
+The paper's recommendation, taken as written: a site-kit site has exactly one `siteUrl`, so the name derived from it is unique per site and the site writes no key. B is an option no site needs, since keeping the name `frontierjs-site` is preservation. C makes a deploy depend on basecamp being up. D states the domain twice. The cost is that a domain change deploys a new Worker rather than renaming the old one. Deriving the name from the domain has no precedent found: Cloudflare's own adapters (SvelteKit, Astro, OpenNext) have the user write `name`, and Vercel and Netlify keep the id in a linked state file.
+
+### <a id="fjs-d1214"></a>2026-10-17 · `FJS-D1214` — An app drives a headless browser through `@frontierjs/print-kit` for a document and `@frontierjs/mesa/drive` for anything else, and through nothing beside them. A Playwright or Puppeteer runtime dependency is named by `fli check` as off the road rather than read as a third kind of Chrome.
+
+Asked in [`FJS-3113`](ISSUES.md#fjs-3113): page-performer's API depends on playwright, `deploy-image-needs` read only print-kit, so the check said the API needed nothing beyond `api/` and `db/` and the image `make:deploy` wrote had no browser. **B** was picked over **A** (widen the reading to playwright, playwright-core, puppeteer — and the image to each one's pinned browser build, `bunx playwright install --with-deps chromium`, beside Debian's chromium that `CHROME_RUN` installs).
+
+The headless Chromium already has an owner: `mesa/drive` launches it (`findChrome`, `$FJS_CHROME`) and print-kit is a worker over it. A reads every driver an app might pick and installs a browser per driver, which is a second owner for one process with its own binary and its own version. B keeps the one reading complete by making the set of drivers closed. The reading grows by the half it was missing: an API that imports `mesa/drive` needs a Chrome as print-kit does. A playwright or puppeteer entry in `devDependencies` asks nothing, because the image installs `--production` and only tests drive it.
+
+The nine, answered before the edit: 1 origin — *does this image need a Chrome* stays `core/deploy-image.js`, read by `make:deploy` and the rule · 2 concept — no noun; both owners exist · 3 complexity — the problem's: a container's system packages must match the browser its driver launches · 4 predictability — every app that drives a browser gets the same binary, found the same way · 5 derived — the need is read from `dependencies` and API imports, never declared · 6 owner — `mesa/drive`, where `bridge-index` would look; A was the second owner · 7 boundary — the finding names the package and both roads, tested in `test/checks.test.js` · 8 failure — a warning, as the rule is: an image built FROM one that holds a browser is correct and invisible here · 9 silence — an API that drives a browser runs in an image that holds one; `deploy-image-needs` reds a playwright/puppeteer dependency and a `mesa/drive` import with no Chrome. Still silent: a driver outside the four names (selenium-webdriver) or a Chrome spawned by hand — none. *Paved road vs. the workaround* (§ IV): `mesa/drive` is the road, and the finding is the instrumentation that counts who leaves it. Tier: Register; the rule is its Map.
+
+*Lives in:* `packages/cli/core/deploy-image.js` · `packages/cli/core/checks.js` (`deploy-image-needs`). *Resolves:* `FJS-3113`. *Enforced by:* `deploy-image-needs`, on an app with a Dockerfile.
 
 ### <a id="fjs-d1185"></a>2026-10-17 · `FJS-D1185` — Q1 — Whether conduit-digitalocean and conduit-hetzner enter `packages/` and basecamp moves onto them — Every connector stays in the sibling workspace for now, and basecamp keeps its own copy. A `link:` dependency on the sibling is not a third option: `vendor.js` packs workspace dependencies only, so the image build cannot reach it.
 

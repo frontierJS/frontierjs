@@ -3,7 +3,8 @@
   // its furniture only on the screen whose `HAVEN_HOME` board names 'vlad'.
   import WalkIn from '@/components/WalkIn.mesa'
   import HomeBoard from '@/components/HomeBoard.mesa'
+  import Desk from '@/components/Desk.mesa'
   import Vlad from '@/scenes/Vlad.mesa'
 </script>
 
-<WalkIn slug="vlad"><Vlad><HomeBoard /></Vlad></WalkIn>
+<WalkIn slug="vlad"><Vlad><HomeBoard /><Desk /></Vlad></WalkIn>

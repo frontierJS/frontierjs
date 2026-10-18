@@ -351,6 +351,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./mcp` | `src/mcp/index.js` | yes |
 | exports | `./site/serve` | `src/site/serve.js` | yes |
 | exports | `./site/compile` | `src/site/compile.js` | yes |
+| exports | `./site/cloudflare` | `src/site/cloudflare.js` | yes |
 | exports | `./check` | `src/build/mesa-check.js` | yes |
 | exports | `./tui` | `src/tools/tui.js` | yes |
 | bin | `sierra` | `src/tools/cli.js` | yes |

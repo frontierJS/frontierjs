@@ -54,11 +54,11 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync,
          copyFileSync, rmSync, mkdtempSync, readdirSync, cpSync } from 'node:fs'
 import { join, dirname, resolve }                      from 'node:path'
 import { fileURLToPath }                               from 'node:url'
-import { tmpdir, homedir }                             from 'node:os'
+import { tmpdir }                                      from 'node:os'
 import { randomBytes }                                 from 'node:crypto'
 
 import { vendorWorkspacePackages }                     from '../packages/cli/core/vendor.js'
-import { pickWorkBase, daemonCanRead }                 from '../packages/cli/core/docker-context.js'
+import { pickWorkBase, daemonCanRead, workBaseCandidates } from '../packages/cli/core/docker-context.js'
 import { apiContainerName }                            from '../packages/cli/core/ports.js'
 import { pointAtLocalServer }                          from '../packages/cli/core/tutor.js'
 import { DEFAULT_PAGE, guardProbeScript, queueScript, queueVerdict, queueStateLine, jobsVolumeVerdict } from '../packages/cli/core/pause.js'
@@ -158,8 +158,7 @@ export function ciWorkBase(log = () => {}) {
   if (_workBase) return _workBase
   if (process.env.FJS_CI_WORKDIR) return (_workBase = process.env.FJS_CI_WORKDIR)
 
-  const fallback = join(homedir(), 'fjs-ci-work')
-  const picked   = pickWorkBase([tmpdir(), fallback],
+  const picked   = pickWorkBase(workBaseCandidates(),
     (dir) => {
       try { mkdirSync(dir, { recursive: true }) } catch { return false }
       return daemonCanRead(dir, { mkdtempSync, writeFileSync, rmSync, spawnSync, join })

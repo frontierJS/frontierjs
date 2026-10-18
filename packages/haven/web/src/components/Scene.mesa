@@ -32,7 +32,7 @@
   // is `$context.commands` (`commands.js`), the one registry: the actors in
   // this scene add their verbs to it — `Whisper` the `/w`, `Dice` the `/roll`, `Fishing` the `/fish`, `Mod` the `/ban`,
   // `WorldMap` the `/map`, `Season` the `/season`, `Weather` the `/weather`, `Hush` the `/hush`, `Emotes` the `/wave`,
-  // `/sit` and `/dance`, `Pets` the `/pet`, `History` the PageUp and
+  // `/sit` and `/dance`, `Pets` the `/pet`, `Work` the `/work`, `History` the PageUp and
   // PageDown, and whatever a route places (`Taskmaster`, `Ledger`) — and
   // this file reads it for the
   // line, Tab, the hints and the keys. The bubbles, the nameplates and the
@@ -116,6 +116,7 @@
   import Profile         from '@/components/Profile.mesa'
   import Emotes          from '@/components/Emotes.mesa'
   import Pets            from '@/components/Pets.mesa'
+  import Work            from '@/components/Work.mesa'
   import { at, tint }    from '#cell'
   import { paint }       from '#paint'
 
@@ -474,6 +475,7 @@
     <Hush {here} hush={(id) => { hushed = id; here.updateMeta(meta()) }} />
     <Emotes {stage} {here} {x} {y} {view} {spawn} {emote} {moveTo} emoteTo={(e) => { emote = e; here.updateMeta(meta()) }} />
     <Pets {stage} {here} {x} {y} {view} {spawn} {facing} {ink} {pet} petTo={(p) => { pet = worn.pet = p; here.updateMeta(meta()) }} />
+    <Work />
   {/if}
 </div>
 {#if here}

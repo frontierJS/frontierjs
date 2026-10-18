@@ -121,7 +121,8 @@
 
   /** A key after an operator; a late `d`'s bolt runs, and the key that outran it is asked again. */
   function take(e) {
-    const r = row.key(e.key)
+    // A Ctrl letter reads as its letter, so `d` then Ctrl+K would fire upward.
+    const r = e.ctrlKey || e.altKey || e.metaKey ? null : row.key(e.key)
     if (r === null) { settle(); return false }
     e.preventDefault?.()
     act(r)

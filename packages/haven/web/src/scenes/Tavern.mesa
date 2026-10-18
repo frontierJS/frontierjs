@@ -2,7 +2,8 @@
   // Tavern.mesa — the tavern: the bar and its shelves across the whole back
   // wall, the hearth with a rug before it where the cat paces, tables,
   // barrels, the stairs up to the band's loft (`scenes/Upstairs.mesa`, a door
-  // on the top step), and the door back out to the square in the bottom wall.
+  // on the top step), the kitchen's door in the east wall, and the door back
+  // out to the square in the bottom wall.
   // The rug has a hidden door in it, the way down to the cellar
   // (`IDEAS/haven.md` 6.5): stepping on that cell is the only sign of it. The
   // picture this draws is `tavern.frame.txt`, which `scenes.test.js` pins.
@@ -103,6 +104,7 @@ sssssssssssssssssssssssssss
   <Piece of={hearthRug} x={65} y={14} />
   <Piece of={mat}     x={43} y={24} />
   <Door  x={75} y={15} to="/cellar/" hidden />
+  <Door  x={95} y={13} to="/kitchen/" />
   <Piece of={table}   x={9}  y={14} />
   <Piece of={table}   x={29} y={14} />
   <Piece of={table}   x={49} y={16} />

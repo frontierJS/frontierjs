@@ -6,7 +6,7 @@ dated: 2026-10-12
 
 # Idea — a site is files, and a host is an adapter
 
-**Status: PROPOSED. Nothing in § The plan is built.** Do not cite this file as
+**Status: PROPOSED. Steps 1, 3 and 4 of § The plan are built, each saying what it leaves.** Do not cite this file as
 describing behavior — see `VERIFYING.md`.
 
 Cloudflare Pages is deprecated in favor of Workers. The move is the moment to
@@ -35,7 +35,7 @@ Read 2026-10-12.
   `_headers` ([`FJS-2717`](../ISSUES.md#fjs-2717), closed). It answers the
   exact-path rules Sierra emits and refuses any other shape at start.
 - **The cache rule lives only in `serveSite`'s `cacheFor`.** Nothing tells a
-  host that HTML revalidates and a hashed asset is immutable.
+  host that HTML revalidates and a hashed asset is immutable. (Step 2 since.)
 - **Host functions are what still holds ksite on Pages**
   ([`FJS-1540`](../ISSUES.md#fjs-1540)): a same-origin Plausible proxy and a
   `sendBeacon` lead fallback written to Cloudflare KV.
@@ -141,23 +141,30 @@ candidate host for that file's option A.
    - **Recommend A** — the credentials, the DNS and the deploy record are
      already there, and C puts auth and writes on the edge, which this file
      exists to keep dumb.
-4. **Where a site states what cannot be derived** — the Worker's name and the
-   domain.
-   - **A** — a `host:` key in `content/settings/site.js`. Plain data, so
-     `FJS-1544` holds; it reaches the browser, and holds nothing secret.
-   - **B** — a `wrangler.jsonc` keeping only `name` and `routes`, completed by
-     the adapter into `.sierra/wrangler.json`.
-   - **C** — `packages/basecamp`'s App and Domain rows, and the deploy asks
-     basecamp.
-   - **Recommend A** — the domain is host-neutral and the settings file is the
-     site's one file of its own; B keeps a Cloudflare file in every site, and C
-     makes a deploy depend on basecamp being up.
-   - **The domain is already stated.** `siteUrl` in `site.js` names it
-     (`https://frontierjs.com`), and the adapter's `routes` can derive from
-     it. That leaves only the Worker's name, which can derive from the
-     domain too. Re-ask the question as *does anything remain*. Also,
-     `site.js` is now only the Sierra config, since the site's own settings
-     moved to `site.md` (site-kit Phase 3 step 3).
+4. ~~**Does a site state anything a deploy cannot derive?**~~ **Answered 2026-10-18 (`FJS-D1213`): A — nothing: the Worker's name is `siteUrl`'s host with dots as dashes (`frontierjs.com` → `frontierjs-com`), the adapter writes `.sierra/wrangler.json`, `website/wrangler.jsonc` is deleted, and a deploy with no `siteUrl`, or whose host makes a name past Cloudflare's 63 characters, is refused by name rather than truncated.** Every key of
+   `website/wrangler.jsonc` has a source but one: `assets.*` from
+   `trailingSlash`, `404.html` and the outDir; `routes` from the host in
+   `siteUrl`; `compatibility_date` an adapter constant; the account the
+   deployer's environment; the www redirect a zone rule. Only `name` has none.
+   - **A** — nothing: the Worker's name is `siteUrl`'s host with dots as dashes
+     (`frontierjs.com` → `frontierjs-com`), the adapter writes
+     `.sierra/wrangler.json`, `website/wrangler.jsonc` is deleted, and a deploy
+     with no `siteUrl`, or whose host makes a name past Cloudflare's 63
+     characters, is refused by name rather than truncated.
+   - **B** — A, plus an optional `host: { name }` in `site.js` for a name that
+     must differ.
+   - **C** — `packages/basecamp`'s App row names it, as Vercel and Netlify keep
+     a linked id, and the deploy asks basecamp.
+   - **D** — `host: { name, domain }` in `site.js`, as first asked.
+   - **Recommend A** — a site-kit site has exactly one `siteUrl`, so the name
+     derived from it is unique per site and the site writes no key. B is an
+     option no site needs, since keeping the name `frontierjs-site` is
+     preservation. C makes a deploy depend on basecamp being up. D states the
+     domain twice. The cost is that a domain change deploys a new Worker
+     rather than renaming the old one. Deriving the name from the domain has no
+     precedent found: Cloudflare's own adapters (SvelteKit, Astro, OpenNext)
+     have the user write `name`, and Vercel and Netlify keep the id in a
+     linked state file.
 
 ## The plan
 
@@ -166,18 +173,37 @@ Each step adds its case to the website's `verify` drive before it is done.
 1. ~~**`serveSite` honors `_redirects`** and refuses to serve `_redirects` and
    `_headers` (`FJS-2717`).~~ Done. The website has no redirect route, so the
    case is `packages/sierra/test/site-serve.test.js`.
-2. **`_headers` from `cacheFor`.** Check with a real deploy that Workers
-   assets applies it before anything depends on it.
+2. ~~**`_headers` from `cacheFor`.**~~ Done: `postbuild/headers.js` owns
+   `cacheFor` and writes `/*` revalidated, `/assets/*` immutable, and an exact
+   rule per unhashed file under `assets/`, every rule after the first
+   detaching first, because Cloudflare applies every match and joins two
+   values with a comma. Static builds only, the app's own `_headers` after.
+   Proved by `test/site-serve.test.js` and the website drive's `host.headers`,
+   which ask every file of both `serveSite` and `headerUnder`, and by hand
+   under `wrangler dev` on the website's build. Left: the first real deploy
+   confirms it on Cloudflare's edge. `serveSite` sends only the cache rule,
+   so an app's own `_headers` lines are not applied in a drive.
 3. ~~**Host functions** (question 1): bundled to one entry, mounted by
    `serveSite`; ksite's two move. Closes `FJS-1540`.~~ Done for the entry and
    the mount (`functions:` config key, `.sierra/functions.js`,
    `test/site-functions.test.js`). The Vite dev mount and the compiled-binary
    mount are done (`FJS-2775`). Left: the Plausible proxy derived from
    `analytics:` (`FJS-2893`), and the bundling the adapter does in step 4.
-4. **The Cloudflare adapter**: the Worker entry (functions first, then
-   `env.ASSETS.fetch`) and the generated wrangler config; `site-kit deploy`.
-   `website/wrangler.jsonc` shrinks to what question 4 leaves, and ksite
-   leaves Pages here.
+4. ~~**The Cloudflare adapter**: the Worker entry (functions first, then
+   `env.ASSETS.fetch`) and the generated wrangler config; `site-kit deploy`.~~
+   Done for frontierjs.com: `site/cloudflare.js` writes `.sierra/wrangler.json`
+   and, with functions, `.sierra/worker.js`, whose handler is
+   `postbuild/function-handler.js` (no `node:` import, so wrangler bundles it
+   without `nodejs_compat`). `run_worker_first` lists the function paths only,
+   so a page never wakes the script and a function still beats a page at its
+   path. `site-kit deploy <dir> [--dry]` ships the dist the last build wrote,
+   not a rebuild, so `bun run deploy` ships what the drive passed.
+   `website/wrangler.jsonc` is deleted (question 4). Proved by
+   `test/site-functions.test.js`, the website drive's `host.worker`, and by
+   hand under `wrangler dev`. Left: ksite leaves Pages, which waits on its
+   Plausible proxy (`FJS-2893`). The first real deploy of frontierjs.com
+   creates the Worker `frontierjs-com`, so frontierjs.com's custom domain
+   moves off `frontierjs-site`, which is then deleted by hand.
 5. **Preview deploys** of `site-kit build --preview` through the same adapter.
 6. **Owner editing** gets its own idea file, as `on-page-editing.md` § *Not in
    this file* already says.

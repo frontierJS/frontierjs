@@ -435,6 +435,41 @@ const head = async (p) => {
 t('serve.root',   (await head('/')).status, (s) => s === 200)
 t('serve.missing', (await head('/no-such-page/')).status, (s) => s === 404)
 
+// ─── the host ─────────────────────────────────────────────────────────────
+// `site-kit deploy` hands wrangler only what the adapter derives from this
+// build. A Worker that lost `force-trailing-slash` serves /mcp at /mcp, where
+// every relative link resolves one level up, and one that lost the 404 page
+// answers a bare 404 — neither shows in a drive that serves with serveSite.
+const { resolveSite }    = await import('@frontierjs/site-kit/vite')
+const { wranglerConfig } = await import('@frontierjs/sierra/site/cloudflare')
+const worker = wranglerConfig({ root: SITE, config: (await resolveSite({ root: SITE })).sierra })
+t('host.worker', {
+  name:      worker.name === 'frontierjs-com',
+  domain:    worker.routes[0].pattern === 'frontierjs.com',
+  directory: worker.assets.directory === '../dist',
+  slash:     worker.assets.html_handling === 'force-trailing-slash',
+  notFound:  worker.assets.not_found_handling === '404-page',
+  noScript:  !('main' in worker),
+})
+
+// The host answers from `_headers` and this drive from serveSite, so a cache
+// answer they disagree on is a site that passes here and serves a stale chunk,
+// or revalidates every hashed one, on Cloudflare.
+const { headerUnder } = await import('@frontierjs/sierra/postbuild')
+const headersFile = readFileSync(join(DIST, '_headers'), 'utf8')
+const shipped = (function all(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? all(join(dir, e.name)) : ['/' + relative(DIST, join(dir, e.name))])
+})(DIST).filter((p) => p !== '/_headers' && p !== '/_redirects')
+const disagree = []
+for (const p of [...shipped, '/no-such-page/']) {
+  const served = (await head(p)).cache
+  const host   = headerUnder(headersFile, p, 'Cache-Control')
+  if (served !== host) disagree.push(`${p}: served ${served}, host ${host}`)
+}
+t('host.headers', disagree, none)
+t('host.headersImmutable', shipped.filter((p) => headerUnder(headersFile, p, 'Cache-Control')?.includes('immutable')).length, counted)
+
 // ─── CDP ──────────────────────────────────────────────────────────────────
 const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
 const { cmd, evaluate } = browser

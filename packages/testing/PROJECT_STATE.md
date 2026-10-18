@@ -23,7 +23,7 @@ framework package — sitting above Junction is the whole of why it exists.
 
 | | |
 |---|---|
-| Tests | **23 pass, 0 fail**, 53 `expect()` calls, 2 files (`bun run test`) — verified |
+| Tests | **34 pass, 0 fail**, 79 `expect()` calls, 3 files (`bun run test`) — verified 2026-10-17 |
 | Typecheck | **clean, no baseline** (`bun run typecheck`) — verified |
 | Published | `0.1.4` on npm, the version the tree carries (`npm view @frontierjs/testing version`) — verified |
 | Its one consumer | `packages/basecamp/api/test/services.test.ts` — **71 pass, 0 fail**, 200 `expect()` calls (`cd packages/basecamp && bun test api/test/services.test.ts`) — verified |
@@ -50,9 +50,9 @@ a live socket) are only exercised against a real app.
   guards — an empty call list, and a socket that never connected — are reported
   rows rather than silent passes, and they are the only defence against a green
   parity run over nothing. Both are tested here.
-- **No `ISSUES.md` row names this package** — verified by grep over the open
-  sections. That is not the same as no open work, which is what the two points
-  above are.
+- **Open rows naming it:** `FJS-2759` (the floor-shaped pin `FJS-D1114` ruled,
+  in maidtech and the tutor template) and `FJS-1563` (a `drive` export owning
+  the dev-server lifecycle; the Chrome half is `@frontierjs/mesa/drive`).
 
 ## Picking it up next
 

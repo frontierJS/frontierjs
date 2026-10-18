@@ -11,7 +11,7 @@
 //   source: 'core' | 'user' | 'project'
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { readFileSync, statSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from 'fs'
+import { readFileSync, readdirSync, statSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from 'fs'
 import { resolve, dirname, basename, join } from 'path'
 import { homedir } from 'os'
 import { createHash } from 'crypto'
@@ -70,6 +70,25 @@ function writeCache(path, files) {
     const tmp = `${path}.${process.pid}`
     writeFileSync(tmp, JSON.stringify({ v: CACHE_VERSION, files }))
     renameSync(tmp, path)
+  } catch {}
+  pruneCache(dirname(path))
+}
+
+// The key changes with XDG_CONFIG_HOME and the project root, so every suite
+// that points either at a fresh temp dir writes a file nobody reads again —
+// one per run, ~190K each, without end (FJS-3246). The newest CACHE_KEEP
+// survive; an evicted one costs a single ordinary parse.
+export const CACHE_KEEP = 32
+
+export function pruneCache(dir, keep = CACHE_KEEP) {
+  try {
+    const names = readdirSync(dir).filter((f) => f.startsWith('registry-'))
+    if (names.length <= keep) return
+    const aged = names.map((f) => {
+      try { return [f, statSync(join(dir, f)).mtimeMs] } catch { return [f, 0] }
+    })
+    aged.sort((a, b) => b[1] - a[1])
+    for (const [f] of aged.slice(keep)) try { unlinkSync(join(dir, f)) } catch {}
   } catch {}
 }
 

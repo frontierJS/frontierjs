@@ -1,0 +1,135 @@
+<script>
+  // Desk.mesa — a question asked at a home's desk, answered over the room.
+  // `/ask what is overdue?` within reach of the chair hands the question to
+  // `#errand`'s `askDesk`, a `claude -p` on this machine that may only read
+  // Basecamp, and draws what comes back: blocks the model chose from
+  // `lib/home/answer.js`'s list, laid out as rows there. The pane is the
+  // registry's `desk` mode, so the arrows and PageUp/PageDown scroll it and
+  // Esc puts it away, stopping a question still being answered.
+  //
+  // It answers only in the home this machine's board names (`HomeBoard.mesa`'s
+  // rule), so a visitor's `/ask` runs nothing, and the answer is drawn on this
+  // screen only and never sent. A route places it, never the scene file.
+  import { at, tint } from '#cell'
+  import { askDesk, deskReport, homeBoard } from '#errand'
+  import { spotsOf } from '@/pieces/index.js'
+  import { clip } from '@/lib/scene/cells.js'
+  import { TONES, answerRows, wrap } from '@/lib/home/answer.js'
+
+  const scene = $context.scene
+  var verbs = $context.commands
+  const REACH = 4
+  const PANE  = { x: 2, y: 1, w: 93, h: 24 }
+  const INNER = PANE.w - 4
+  const ROOM  = PANE.h - 3
+
+  const desk  = scene.marks.find((m) => m.kind === 'piece' && m.piece.name === 'desk') ?? null
+  const chair = desk ? spotsOf(desk.piece, 'seat').map((s) => desk.spot(s.name))[0] : null
+
+  let board  = null
+  let dark   = ''
+  let view   = scene.view
+  let reply  = null   // null, { asking, at } while the model works, { question, answer, cost, ms }, or { question, failed }
+  let offset = 0
+  let now    = Date.now()
+  var close  = null
+  var stop   = null
+  $.onDestroy(scene.subscribe(() => { view = scene.view }))
+
+  let gone = false
+  $.onDestroy(() => { gone = true; stop?.abort() })
+  homeBoard()
+    .then((b) => { if (!gone) board = b })
+    .catch((e) => { if (!gone) dark = e.message })
+
+  $.onDestroy(scene.task('desk-clock', () => { if (reply?.asking) now = Date.now() }, { every: 1000 }))
+
+  $: mine  = !!board && board.home === scene.slug
+  $: body  = reply?.answer ? answerRows(reply.answer, INNER) : []
+  $: last  = Math.max(0, body.length - ROOM)
+
+  const scroll = (by) => (e) => { e.preventDefault?.(); offset = Math.min(last, Math.max(0, offset + by)) }
+
+  function open() {
+    close ??= verbs.open({
+      name: 'desk',
+      keys: {
+        ArrowUp:   scroll(-1),
+        ArrowDown: scroll(1),
+        PageUp:    scroll(-ROOM),
+        PageDown:  scroll(ROOM),
+      },
+      closed: () => { stop?.abort(); stop = null; reply = null; close = null },
+    })
+  }
+
+  const refused = () => dark ? `the desk is dark: ${dark}` : board ? 'this desk answers only the member whose home it is' : 'the desk has no Basecamp on this machine (HAVEN_HOME)'
+
+  /** Open the pane on `label` and draw what `job(signal)` answers; a newer job, or Esc, wins. */
+  async function show(label, job) {
+    stop?.abort()
+    const mineStop = stop = new AbortController()
+    open()
+    reply = { asking: label, at: Date.now() }
+    now = reply.at
+    offset = 0
+    try {
+      const said = await job(mineStop.signal)
+      if (stop !== mineStop) return ''
+      reply = said ? { question: label, ...said } : { question: label, failed: 'a desk in a browser asks nobody -- walk in with fli haven' }
+    } catch (e) {
+      if (stop === mineStop && e.name !== 'AbortError') reply = { question: label, failed: e.message }
+    }
+    if (stop === mineStop) stop = null
+    return ''
+  }
+
+  function ask({ args }) {
+    if (!args) return 'ask the desk something -- /ask what is overdue this week?'
+    if (!mine) return refused()
+    return show(args, (signal) => askDesk(args, { signal }))
+  }
+
+  // A report is the same pane with no model: `#errand`'s `deskReport` runs this
+  // machine's `HAVEN_REPORTS`, and a bare `/report` draws its menu.
+  function report({ args }) {
+    if (!mine) return refused()
+    const name = (args ?? '').trim()
+    return show(name ? `report ${name}` : 'reports', (signal) => deskReport(name, { signal }))
+  }
+
+  if (chair) {
+    const reach = { x: chair.x, y: chair.y, within: REACH }
+    $.onDestroy(verbs.add({ word: 'ask', help: '/ask <question>', reach, run: ask }))
+    $.onDestroy(verbs.add({ word: 'report', help: '/report [name]', reach, run: report }))
+  }
+
+  const muted = (text) => [{ x: 0, text, color: TONES.muted }]
+
+  $: title = reply ? clip(`— the desk — ${reply.answer?.title || reply.question || reply.asking} `, PANE.w - 2) : ''
+  $: rows  = !reply ? []
+    : reply.asking ? [muted(`"${clip(reply.asking, INNER - 40)}" -- reading Basecamp… ${Math.round((now - reply.at) / 1000)}s`)]
+    : reply.failed ? wrap(`the desk could not answer: ${reply.failed}`, INNER).map((t) => [{ x: 0, text: t, color: TONES.danger }])
+    : body.slice(offset, offset + ROOM)
+  $: foot  = !reply || reply.asking || reply.failed ? 'Esc puts it away'
+    : [`${Math.round(reply.ms / 1000)}s`, reply.cost == null ? 'no model' : `$${reply.cost.toFixed(2)}`,...(last ? [`rows ${offset + 1}–${Math.min(body.length, offset + ROOM)} of ${body.length}, ↑↓ PgUp PgDn`] : []), 'Esc'].join(' · ')
+  $: frame = `${offset}:${reply?.at ?? reply?.ms ?? 0}:${rows.length}:${view.x}:${view.y}`
+</script>
+
+{#if reply}
+  <div class="surface desk" {@attach at(PANE.x - view.x, PANE.y - view.y, 14, [PANE.w, PANE.h])}>
+    <pre class="line" {@attach at(1, 0, 1)} {@attach tint('#fde68a')}>{title}</pre>
+    {#key frame}
+      {#each rows as row, r (r)}
+        {#each row as s, i (i)}
+          <pre class="line" {@attach at(2 + s.x, 2 + r, 1)} {@attach tint(s.color)}>{s.text}</pre>
+        {/each}
+      {/each}
+    {/key}
+    <pre class="line" {@attach at(1, PANE.h - 1, 1)} {@attach tint(TONES.muted)}>{foot}</pre>
+  </div>
+{/if}
+
+<style>
+  .line { margin: 0; font: inherit; line-height: inherit; white-space: pre; overflow: hidden }
+</style>

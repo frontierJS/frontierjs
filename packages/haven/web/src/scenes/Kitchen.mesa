@@ -1,0 +1,61 @@
+<script>
+  // Kitchen.mesa — the kitchen, through the door in the tavern's east wall:
+  // the ticket rail across the back wall, the range and the line under it,
+  // the 86 board on the left wall, the pass under its heat lamps with the
+  // service bell at its end, the sink, stockpot, prep block and produce bins
+  // between them, the walk-in on the east wall, and the door back to the
+  // tavern in the bottom wall. The Claude sessions on this machine are its brigade
+  // (`components/Brigade.mesa`), placed by the route and never by this file,
+  // as the workshop's workers are: the picture is pinned
+  // (`kitchen.frame.txt`), and the sessions differ per machine.
+  import Scene from '@/components/Scene.mesa'
+  import { INDOORS } from '@/lib/scene/stage.js'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { frame } from '@/pieces/frame.js'
+  import { rail, line, board, pass, lamps, range, sink, stockpot, prep, bin, walkIn, mop, plates, bell } from '@/pieces/kitchen.js'
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    s: { fg: '#9ca3af' },
+    S: { fg: '#57534e' },
+    b: { fg: '#3f6212' },
+    Y: { fg: ['#f97316', '#fb923c', '#ea580c', '#fdba74'], chars: 'vVvv', ms: 260, flicker: true, light: 3 },
+    F: { fg: ['#3b82f6', '#60a5fa', '#f97316', '#3b82f6'], chars: '@*@o', ms: 180, flicker: true, light: 1 },
+    a: { fg: ['#d6d3d1', '#a8a29e', '#e7e5e4'], chars: "'`,.", ms: 420, flicker: true },
+    k: { fg: '#c2410c' },
+    u: { fg: '#854d0e' },
+    q: { fg: ['#38bdf8', '#7dd3fc'], chars: '~≈', ms: 900, flicker: true },
+    i: { fg: '#bae6fd' },
+    r: { fg: '#ef4444' },
+    n: { fg: '#fef3c7' },
+    v: { fg: '#4ade80' },
+    o: { fg: '#fb923c' },
+    B: { fg: '#facc15' },
+  }
+
+  const tomatoes = bin('r')
+  const greens   = bin('v')
+</script>
+
+<Scene slug="kitchen" layers={INDOORS} palette={PALETTE} spawn={{ x: 8, y: 24 }}>
+  <Piece of={frame} />
+  <Door  x={8} y={25} to="/tavern/" />
+  <Piece of={rail}  x={3}  y={2} />
+  <Piece of={line}  x={4}  y={10} />
+  <Piece of={board} x={3}  y={13} />
+  <Piece of={lamps} x={32} y={19} />
+  <Piece of={pass}  x={32} y={21} />
+  <Piece of={range} x={4}  y={8} />
+  <Piece of={sink}     x={28} y={15} />
+  <Piece of={stockpot} x={37} y={14} />
+  <Piece of={prep}     x={46} y={15} />
+  <Piece of={tomatoes} x={72} y={15} />
+  <Piece of={greens}   x={80} y={15} />
+  <Piece of={walkIn}   x={93} y={12} />
+  <Piece of={plates}   x={27} y={20} />
+  <Piece of={bell}     x={90} y={20} />
+  <Piece of={mop}      x={3}  y={22} />
+  <slot />
+</Scene>

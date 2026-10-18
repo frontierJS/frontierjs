@@ -42,6 +42,7 @@ export const SCENES = [
   { name: 'Docks',  slug: 'docks',  path: '/docks/' },
   { name: 'Island', slug: 'island', path: '/island/' },
   { name: 'Workshop', slug: 'workshop', path: '/workshop/' },
+  { name: 'Kitchen',  slug: 'kitchen',  path: '/kitchen/' },
   { name: 'TownHall', slug: 'townhall', path: '/townhall/' },
   { name: 'Cellar', slug: 'cellar', path: '/cellar/' },
   { name: 'Glade',  slug: 'glade',  path: '/glade/' },

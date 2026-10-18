@@ -265,8 +265,8 @@ file by file, is `fjs-prototypes/ksite/PLAN.md` § Phase 4, step 2.
    page the same apart from asset hashes, and a byte-identical stylesheet.
    Four of the six dependencies are framework peers, named only because the
    published versions are older than the workspace's (Phase 5). The deploy
-   files (`wrangler.jsonc`, `worker/`, the Plausible proxy) are not written
-   yet, and belong to `site-hosting.md` step 4 and `FJS-2775`.
+   files are `site-kit deploy`'s (`site-hosting.md` step 4); the Plausible
+   proxy is `FJS-2893`.
 2. [x] Grade the ten `KSITE-CHANGES.md` rows against site-kit: fixed in the
    engine, moot, or still needed. One still needed in an engine file is the
    FJS-1494 case.

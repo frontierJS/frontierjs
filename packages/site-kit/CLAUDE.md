@@ -21,7 +21,7 @@ it is the outcome this package exists to prevent.
 ## Layout
 
 A site is a directory holding `content/` and nothing else; `site-kit
-dev|build|preview|check <dir>` runs it. The site directory stays the Vite root, so
+dev|build|preview|deploy|check <dir>` runs it. The site directory stays the Vite root, so
 `dist/` lands beside `content/` and Sierra's root-relative paths keep meaning
 what they mean in any app.
 
@@ -33,6 +33,10 @@ what they mean in any app.
   (`@frontierjs/sierra/site/compile`) for `<dir>/bin/site`; `fli site:build
   --binary` cannot, because it runs the `config/vite.config.js` a site-kit site
   has none of (FJS-2756).
+  `deploy [--dry]` ships the dist the last build wrote, never a rebuild, through
+  Sierra's Cloudflare adapter (`@frontierjs/sierra/site/cloudflare`) and the
+  SITE's wrangler, run under node; `--dry` is wrangler's `--dry-run`, which
+  bundles the Worker and uploads nothing.
 - `config/vite.js` — `resolveSite({ root })`, the site as one object: its
   settings, its `site.js`, its preset and the Sierra config the three compose;
   and `siteKit({ root, port, host, site? })`, the whole Vite + Sierra config
@@ -181,6 +185,12 @@ what they mean in any app.
   the command exits 1 and `--json` parses. `bun`, for `Bun.YAML`.
 - `test/images.mjs` — the image step over a `dist/` it draws, with the real
   `Bun.Image`, so `bun test/images.mjs` and never `node`.
+- `src/shots.js` — `site-kit shots <dir> [--accept]` (`FJS-2265`): the built
+  site in Chrome over `@frontierjs/mesa/drive` at 390/768/960/1024/1280/1536,
+  every page. `--accept` saves PNGs to `<dir>/.site-kit/shots/before/`
+  (gitignored; nothing is committed as a baseline); a plain run compares bytes
+  by hash and writes both PNGs of a difference to `.site-kit/shots/diff/`,
+  exit 1. `test/shots.mjs` proves a #F0F4F8 → white stripe is seen.
 - `test/fetch.mjs` — `site-kit fetch` against a site it serves: a sitemap
   index, the image swap and download, `--prefix`/`--strip`, and a bad config
   refused.
@@ -193,7 +203,8 @@ that consumes it. A change to the preset seam is proved by ksite as well:
 `baseline/playwright.port.config.ts`. Those baselines use Playwright's
 default color threshold, which passes a page whose light stripe went white,
 so a change to what a block emits also needs an exact pixel diff of the
-build before against the build after. A linked workspace never puts a file
+build before against the build after: `site-kit build <dir> && site-kit
+shots <dir> --accept` before the change, `build` and `shots <dir>` after. A linked workspace never puts a file
 under `node_modules/`, so a defect that only a published engine has
 (`FJS-1552`, `FJS-2842`) shows only from a registry install:
 `bun run proof:upgrade` in `fjs-prototypes/ksite` publishes site-kit, ksite

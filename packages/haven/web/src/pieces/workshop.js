@@ -58,7 +58,7 @@ export function layoutWorkshop(ledger) {
     const rows = Math.max(...row.map(rowsOf))
     const line = y + rows
     row.forEach((name, col) => {
-      benches.push({ name, bench: namedBench(name), ledger: ledgerBlock(name, ledger[name], rowsOf(name)), x: MARGIN + col * pitch, y: line })
+      benches.push({ name, bench: namedBench(name, BENCH_WIDTH, total(ledger[name])), ledger: ledgerBlock(name, ledger[name], rowsOf(name)), x: MARGIN + col * pitch, y: line })
     })
     y = line + BELOW
   }

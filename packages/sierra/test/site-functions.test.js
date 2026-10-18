@@ -10,7 +10,7 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -196,5 +196,105 @@ describe('a compiled site runs the functions', () => {
   test('the pages still answer', async () => {
     expect(await (await fetch(`${bin.url}/`)).text()).toBe('fn root')
     expect(await (await fetch(`${bin.url}/ping/`)).text()).toBe('pong')
+  })
+})
+
+// ─── the Cloudflare adapter ────────────────────────────────────────────────────
+//
+// What workerd itself answers is not run here; the Worker below is called with
+// an ASSETS binding standing in for Cloudflare's, so what this proves is the
+// adapter's half — the order, and which env a function sees.
+
+describe('the Cloudflare adapter', () => {
+  let CF
+  let adapter
+
+  beforeAll(async () => {
+    adapter = await import('../src/site/cloudflare.js')
+    CF = mkdtempSync(join(tmpdir(), 'sierra-cf-'))
+    const put = (rel, body) => {
+      mkdirSync(join(CF, rel, '..'), { recursive: true })
+      writeFileSync(join(CF, rel), body)
+    }
+    put('dist/index.html', '<h1>home</h1>')
+    put('dist/404.html', '<h1>not found</h1>')
+    put('functions/api/event.js', `export default (request, env) => new Response(JSON.stringify({ key: env.KEY, assets: typeof env.ASSETS }))`)
+    await writeFunctionsEntry({ root: CF, dir: 'functions' })
+  })
+
+  afterAll(() => rmSync(CF, { recursive: true, force: true }))
+
+  test('the Worker is named for siteUrl\'s host', () => {
+    expect(adapter.workerName('https://frontierjs.com')).toBe('frontierjs-com')
+    expect(adapter.workerName('https://www.Example.co.uk/')).toBe('www-example-co-uk')
+  })
+
+  test('no siteUrl, a siteUrl with a path, and a name past 63 characters are refused by name', () => {
+    expect(() => adapter.workerName(undefined)).toThrow(/no siteUrl/)
+    expect(() => adapter.workerName('https://example.com/blog')).toThrow(/has a path/)
+    expect(() => adapter.workerName(`https://${'a'.repeat(60)}.com`)).toThrow(/past Cloudflare's 63/)
+  })
+
+  test('an assets-only site gets no script, and every assets key is derived', () => {
+    const w = adapter.wranglerConfig({ root: CF, config: { siteUrl: 'https://frontierjs.com' } })
+    expect(w).toEqual({
+      name: 'frontierjs-com',
+      compatibility_date: adapter.COMPATIBILITY_DATE,
+      assets: { directory: '../dist', html_handling: 'force-trailing-slash', not_found_handling: '404-page' },
+      routes: [{ pattern: 'frontierjs.com', custom_domain: true }],
+      preview_urls: true,
+    })
+  })
+
+  test('a preview alias is the branch spelled as wrangler spells it, refused rather than truncated', () => {
+    expect(adapter.previewAlias('frontierjs-com', 'feat/Site_Hosting')).toBe('feat-site-hosting')
+    expect(() => adapter.previewAlias('frontierjs-com', undefined)).toThrow(/HEAD names none/)
+    expect(() => adapter.previewAlias('frontierjs-com', '2026-round')).toThrow(/starts with a letter/)
+    expect(() => adapter.previewAlias('frontierjs-com', 'a'.repeat(50))).toThrow(/past Cloudflare's 63/)
+  })
+
+  test('a deploy refuses a preview build, and a preview refuses a production build', async () => {
+    const both = mkdtempSync(join(tmpdir(), 'sierra-cf-kind-'))
+    const config = { siteUrl: 'https://a.dev' }
+    try {
+      mkdirSync(join(both, 'dist', 'about'), { recursive: true })
+      writeFileSync(join(both, 'dist', 'index.html'), '<h1>home</h1>')
+      writeFileSync(join(both, 'dist', 'about', 'index.html'), '<h1>about</h1>')
+      await expect(adapter.writeCloudflare({ root: both, config, preview: true })).rejects.toThrow(/dist is a production build/)
+      writeFileSync(join(both, 'dist', 'about', 'index.html'), '<h1 data-fjs-loc="content/routes/about.md:1:1">about</h1>')
+      await expect(adapter.writeCloudflare({ root: both, config })).rejects.toThrow(/dist\/about\/index\.html is a preview build's/)
+      expect((await adapter.writeCloudflare({ root: both, config, preview: true })).wrangler.name).toBe('a-dev')
+    } finally { rmSync(both, { recursive: true, force: true }) }
+  })
+
+  test('a build with no 404.html gets no 404 page, and a missing build is refused', () => {
+    const bare = mkdtempSync(join(tmpdir(), 'sierra-cf-bare-'))
+    try {
+      expect(() => adapter.wranglerConfig({ root: bare, config: { siteUrl: 'https://a.dev' } })).toThrow(/no build at dist/)
+      mkdirSync(join(bare, 'dist'))
+      const w = adapter.wranglerConfig({ root: bare, config: { siteUrl: 'https://a.dev', trailingSlash: 'never' } })
+      expect(w.assets).toMatchObject({ html_handling: 'drop-trailing-slash', not_found_handling: 'none' })
+    } finally { rmSync(bare, { recursive: true, force: true }) }
+  })
+
+  test('with functions, the script runs first on their paths only', async () => {
+    const { wrangler, worker } = await adapter.writeCloudflare({ root: CF, config: { siteUrl: 'https://fn.dev', functions: 'functions' } })
+    expect(wrangler.main).toBe('worker.js')
+    expect(wrangler.assets).toMatchObject({ binding: 'ASSETS', run_worker_first: ['/api/event', '/api/event/'] })
+    expect(existsSync(worker)).toBe(true)
+  })
+
+  // The Worker bundles this file. Any import in it is a bundle wrangler refuses
+  // without nodejs_compat, and nothing under vitest would notice.
+  test('the handler the Worker bundles imports nothing', () => {
+    const src = readFileSync(join(import.meta.dirname, '../src/postbuild/function-handler.js'), 'utf8')
+    expect(src).not.toMatch(/^\s*import\b|\bimport\s*\(|\brequire\s*\(/m)
+  })
+
+  test('the Worker answers a function, with strings only, and hands every other path to ASSETS', async () => {
+    const { default: entry } = await import(join(CF, adapter.WORKER_ENTRY))
+    const env = { KEY: 'cf-secret', ASSETS: { fetch: () => new Response('from assets') } }
+    expect(await (await entry.fetch(new Request('https://fn.dev/api/event/'), env)).json()).toEqual({ key: 'cf-secret', assets: 'undefined' })
+    expect(await (await entry.fetch(new Request('https://fn.dev/about/'), env)).text()).toBe('from assets')
   })
 })

@@ -15,7 +15,8 @@
  *   • **A cache answer per file kind.** An HTML file's URL is permanent and its
  *     content is a build artefact, so it must be revalidated; a hashed asset is
  *     immutable. Getting this backwards is a site that serves last week's page
- *     to anyone who visited last week, which is invisible locally.
+ *     to anyone who visited last week, which is invisible locally. The rule is
+ *     `postbuild/headers.js`'s, which the build also writes as `_headers`.
  *   • **A 404 that is a page.** A static host serves `404.html` when it has one.
  *     Emitting one and never serving it is the same as not having one.
  *   • **`_redirects` is configuration, not a file.** A redirect route emits no
@@ -36,24 +37,18 @@ import { readFile, stat } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { isHashedAsset } from '../serve/hashed-asset.js'
 import { relativePathFor, withinRoot } from '../serve/served-path.js'
 import { bodyAnswer, methodAnswer } from '../serve/http-answers.js'
 import { parseRedirects, redirectKey } from '../postbuild/redirects.js'
-import { functionHandler, requestFrom, sendResponse } from '../postbuild/functions.js'
+import { cacheFor, REVALIDATE } from '../postbuild/headers.js'
+import { functionHandler } from '../postbuild/function-handler.js'
+import { requestFrom, sendResponse } from '../postbuild/functions.js'
 
 import { contentTypeFor } from '@frontierjs/toolbelt/mime'
 
 // The type table is `@frontierjs/toolbelt/mime` (`FJS-1186`). This file is the
 // reason the row exists: it gained `.avif` in the pass that added `.wasm` to
 // `widget/serve.js` and never gained `.wasm` itself.
-
-function cacheFor(path) {
-  if (isHashedAsset(path)) return 'public, max-age=31536000, immutable'
-  // Everything else, HTML included: the URL is permanent and the bytes behind
-  // it change on every build, so the only safe answer is revalidate.
-  return 'public, max-age=0, must-revalidate'
-}
 
 // The host reads these and never publishes them.
 const HOST_CONFIG = new Set(['_redirects', '_headers'])
@@ -266,7 +261,7 @@ export async function serveSite({
         ...headers,
         'Content-Type':   'text/html; charset=utf-8',
         'Content-Length': body.length,
-        'Cache-Control':  'public, max-age=0, must-revalidate',
+        'Cache-Control':  REVALIDATE,
       })
       res.end(req.method === 'HEAD' ? undefined : body)
       return

@@ -5,11 +5,13 @@
 //   bun tui.js --list                  each route and the first thing that stops it lowering
 //   bun tui.js --frame /reports/       one route's frame, printed, no TTY needed
 //   bun tui.js --api http://host:8110  the API origin, when it is not config.junction.url
+//   bun tui.js --side src/Pane.mesa    a component in a pane at the right, Ctrl+\ shows it
 //
 // Run it from the WEB ROOT, as `sierra routes` is. Bun, never node: the loader
 // is a Bun plugin and the terminal engine runs on Bun's FFI. `fli dev:tui` is
 // the usual way in.
 
+import { resolve } from 'node:path'
 import { runTerminalShell } from '../terminal/shell.js'
 
 const argv = process.argv.slice(2)
@@ -26,6 +28,7 @@ try {
     apiUrl: getFlag('api'),
     list:   argv.includes('--list'),
     frame:  getFlag('frame'),
+    side:   getFlag('side') && resolve(getFlag('side')),
   })
   process.exit(code)
 } catch (e) {

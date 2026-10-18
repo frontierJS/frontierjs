@@ -1,0 +1,335 @@
+<script>
+  // Brigade.mesa — the kitchen's brigade: the Claude sessions working on this
+  // machine (`#workers`), read every second and drawn over `Kitchen.mesa`.
+  // The same sessions the workshop seats at benches, told the way a kitchen
+  // tells them:
+  //
+  // - a session working or asking is a TICKET on the rail, oldest session
+  //   first, and a cook behind the line at its package's STATION; a session
+  //   stopped on a prompt flashes CHEF! on its ticket and under its station,
+  //   since it waits on you and nothing else shows that until you tab to it;
+  // - two cooks at one station are about to edit one package in a shared
+  //   tree, and the station says so (`! N here`);
+  // - a session that has stopped is a PLATE on the pass, and ORDER UP flashes
+  //   over the heat lamps while one waits;
+  // - the 86 board is the ledger's open issues, the most first — until a menu
+  //   is up, and then it is that menu's list: the rows the loop would be
+  //   handed under its flags, worst first, or for the chef's table the
+  //   rulings waiting on you.
+  //
+  // `/menu` picks the menu (`MENUS` in `#taskmaster`), only standing at the
+  // pass, as the Taskmaster's `/yes` only works beside him. It is kept on
+  // this machine, and read again every second, so a menu picked in another
+  // terminal turns this board too. Only a checkout takes one.
+  //
+  // A new CHEF! rings a double bell and a new plate one bright strike
+  // (`bell.js` through `#sound`), never what was already up at walk-in, and
+  // not at all under `HAVEN_MUSIC=off` or `/music` off; `/volume` sets them.
+  // The service bell on the pass jumps for `RUNG_MS` whether it sounds or
+  // not, so a muted kitchen still shows it.
+  // The player is started at the first bell, so a quiet kitchen spawns none.
+  //
+  // Standing in front of a station reads its cooks, and in front of a plate
+  // reads its last words. Drawn on this screen only and never sent, as the
+  // workshop's workers are; a route places it, never the scene file.
+  import { at, tint } from '#cell'
+  import { readWorkers } from '#workers'
+  import { checkout, readMenu, setMenu, clearMenu, readyRows, rulings, running, MENUS, flagsLine } from '#taskmaster'
+  import { stream } from '#sound'
+  import { listening } from '@/lib/band/band.js'
+  import { createBells, RATE } from '@/lib/band/bell.js'
+  import { LEDGER } from '@/lib/hash/ledger.data.js'
+  import { TICKET, rail, line, board, pass, lamps, bell } from '@/pieces/kitchen.js'
+
+  const scene = $context.scene
+  const POLL_MS = 1000
+  // The cooks a station has room for before its `+N`.
+  const SEATS = 3
+  // A plate, `(a3f2)`, and the space after it.
+  const PLATE = 8
+  // How long the service bell is drawn jumping after it rings.
+  const RUNG_MS = 2000
+
+  const INK = {
+    paper: '#e7e5e4',
+    chef:  ['#ef4444', '#fca5a5'],
+    plate: '#4ade80',
+    order: ['#fbbf24', '#f97316'],
+    chalk: '#e5e7eb',
+    hot:   '#f97316',
+    dim:   '#78716c',
+    // Under a label on the counter: a space with no ground shows the counter's `=` through it.
+    tag:   '#1c1917',
+  }
+
+  /** Where a fitting stands and how big its art is. */
+  function box(piece) {
+    const m = scene.placed(piece)[0]
+    const rows = piece.art.split('\n')
+    return { x: m.x, y: m.y, w: rows[0].length, h: rows.length }
+  }
+  const RAIL  = box(rail)
+  const LINE  = box(line)
+  const BOARD = box(board)
+  const PASS  = box(pass)
+  const LAMPS = box(lamps)
+  const BELL  = box(bell)
+  const TICKETS = Math.floor((RAIL.w + TICKET.gap) / (TICKET.w + TICKET.gap))
+
+  let workers = readWorkers()
+  let now  = Date.now()
+  let view = scene.view
+  let me   = scene.seer
+  $.onDestroy(scene.subscribe(() => { view = scene.view; me = scene.seer }))
+
+  // ─── the bells ─────────────────────────────────────────────────────────────
+
+  const bells = createBells()
+  let stop = null
+  let gone = false
+  let rung = null
+  $.onDestroy(() => { gone = true; stop?.() })
+
+  function ring(kind) {
+    if (gone) return
+    rung = { kind, at: now }
+    if (!listening.heard) return
+    stop ??= stream((from, n) => bells.samples(from, n), { rate: RATE, gain: () => listening.volume / 100 })
+    if (stop) bells.ring(kind)
+  }
+
+  // Keyed by the moment, so a session that stops, is prompted and stops
+  // again between two reads still rings. Held in a closure: a top-level `let`
+  // is a signal, and a Set read through one is not the Set.
+  const listen = (() => {
+    let asked = null
+    let plated = null
+    return (ws) => {
+      const a = new Set(ws.filter((w) => w.asking).map((w) => `${w.session}:${w.asking.at}`))
+      const p = new Set(ws.filter((w) => w.said && !w.asking).map((w) => `${w.session}:${w.said.at}`))
+      if (asked) {
+        if ([...a].some((k) => !asked.has(k))) ring('chef')
+        else if ([...p].some((k) => !plated.has(k))) ring('order')
+      }
+      asked = a
+      plated = p
+    }
+  })()
+  listen(workers)
+
+  // ─── the menu ──────────────────────────────────────────────────────────────
+
+  var verbs = $context.commands
+  const root = checkout()
+  // How near the pass a `/menu` reaches, and how far apart along it; the reaches meet.
+  const MENU_REACH = 3
+  const HELP = '/menu [expedite | station [pkg] | prep [lanes] | chef | off]'
+
+  let menu = root ? readMenu() : null
+  let list = null     // under a menu, the board's rows `{ key, text, hot }`; null while they are read
+  let loop = running()
+  const ctl = new AbortController()
+  $.onDestroy(() => ctl.abort())
+
+  /** Read the board's list for a menu; a read overtaken by a newer menu is dropped. */
+  const order = (() => {
+    let asked = 0
+    return (m) => {
+      const n = ++asked
+      list = null
+      if (!m) return
+      const f = m.flags
+      const read = m.menu === 'chef'
+        ? rulings({ root, signal: ctl.signal }).then((qs) => qs.map((q) => ({ key: q.id, text: q.question, hot: false })))
+        : readyRows({ root, signal: ctl.signal }).then((rows) => rows
+          .filter((r) => (!f.pkg || r.pkg.includes(f.pkg)) && (!f.sev || f.sev.split(',').includes(r.severity)))
+          .map((r) => ({ key: r.id, text: `${r.id} ${r.severity} ${r.pkg[0]}`, hot: r.severity === 'S1' || r.severity === 'S2' })))
+      read
+        .then((rows) => { if (n === asked) list = rows })
+        .catch((e) => { if (n === asked && !ctl.signal.aborted) list = [{ key: 'tripped', text: e.message, hot: true }] })
+    }
+  })()
+  order(menu)
+
+  const said = (m) => {
+    const flags = flagsLine(m.flags)
+    return `${MENUS[m.menu].label}${flags ? ` (${flags})` : m.menu === 'chef' ? ' — no code, the rulings waiting on you' : ' — the register worst first'}`
+  }
+
+  function pick({ args }) {
+    const [word, arg] = args.split(/\s+/).filter(Boolean)
+    if (!word) return `${menu ? `on the menu: ${said(menu)}` : 'nothing on the menu'} · ${HELP}`
+    if (word === 'off') {
+      clearMenu()
+      menu = null
+      order(null)
+      return 'the menu is down — the board is the ledger again'
+    }
+    try {
+      menu = setMenu(word, word === 'station' ? arg ?? eightySix(LEDGER)[0]?.name : arg)
+    } catch (e) { return `${e.message} · ${HELP}` }
+    order(menu)
+    return `on the menu: ${said(menu)}`
+  }
+
+  if (root) {
+    for (let x = PASS.x + MENU_REACH; x < PASS.x + PASS.w; x += 2 * MENU_REACH) {
+      $.onDestroy(verbs.add({ word: 'menu', help: HELP, reach: { x, y: PASS.y + 1, within: MENU_REACH }, run: pick }))
+    }
+  }
+
+  $.onDestroy(scene.task('brigade', (ms) => {
+    workers = readWorkers({ now: ms })
+    now = ms
+    if (rung && now - rung.at >= RUNG_MS) rung = null
+    listen(workers)
+    if (!root) return
+    // Another terminal's `/menu`, or a loop that ended and so changed the register.
+    const m = readMenu()
+    const l = running()
+    if ((m?.at ?? null) !== (menu?.at ?? null)) { menu = m; order(m) }
+    else if (loop && !l) order(menu)
+    loop = l
+  }, { every: POLL_MS }))
+
+  const id  = (w) => w.session.slice(0, 4)
+  const ago = (ms) => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))}s` : `${Math.round(ms / 60_000)}m`)
+  const fit = (s, n) => String(s).slice(0, n).padEnd(n)
+  const base = (file) => file.split('/').pop()
+  const flash = (pair, now) => pair[Math.floor(now / POLL_MS) % 2]
+
+  /** A ticket's five rows, in the ticket's ink. */
+  function ticket(w, now) {
+    const inner = TICKET.w - 2
+    const age = ago(now - (w.asking?.at ?? w.seen))
+    const head = `${id(w)}${age.padStart(inner - 4)}`
+    const foot = w.asking ? (Math.floor(now / POLL_MS) % 2 ? 'CHEF!' : '  CHEF!') : base(w.file) || 'firing…'
+    const rows = [`.${'-'.repeat(inner)}.`, `|${fit(head, inner)}|`, `|${fit(w.bench, inner)}|`, `|${fit(foot, inner)}|`, `'${'-'.repeat(inner)}'`]
+    return { rows, color: w.asking ? flash(INK.chef, now) : INK.paper }
+  }
+
+  /** What standing beside a cook or a plate reads. */
+  function reading(w, now) {
+    if (w.asking) return `${id(w)} asks: ${w.asking.why} · ${ago(now - w.asking.at)} ago`
+    if (w.said) return `${id(w)} plated: ${w.said.text} · ${ago(now - w.said.at)} ago`
+    return w.file ? `${id(w)} on ${w.file} · ${ago(now - w.at)} ago` : `${id(w)} firing · ${ago(now - w.seen)} ago`
+  }
+
+  /** The stations along the line, one per package being cooked, each `{ name, x, w, cooks }`. */
+  function stations(cooking) {
+    const names = [...new Set(cooking.map((w) => w.bench))].sort()
+    if (!names.length) return []
+    const room = LINE.w - 2
+    const w = Math.min(22, Math.floor(room / names.length))
+    const x0 = LINE.x + 1 + Math.floor((room - w * names.length) / 2)
+    return names.map((name, i) => {
+      const here = cooking.filter((c) => c.bench === name)
+      // One asking stands first, so a full station never hides it.
+      return { name, x: x0 + i * w, w, cooks: [...here.filter((c) => c.asking), ...here.filter((c) => !c.asking)] }
+    })
+  }
+
+  /** The board's rows: the packages with the most open issues, and whether any is S1 or S2. */
+  function eightySix(ledger) {
+    const rows = Object.entries(ledger)
+      .map(([name, c]) => ({ name, n: c.S1 + c.S2 + c.S3 + c.S4, hot: c.S1 + c.S2 > 0 }))
+      .filter((r) => r.n > 0)
+      .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name))
+    return rows.slice(0, BOARD.h - 3)
+  }
+
+  /** Everything drawn, in stage cells, then cut to the view. */
+  function placed(ws, v, me, now, rung, menu, list) {
+    const out = []
+    if (rung) out.push({ key: 'bell', x: BELL.x - 1, y: BELL.y, text: '\\ô/', color: rung.kind === 'chef' ? INK.chef[0] : INK.order[0], layer: 11 })
+    const cooking = ws.filter((w) => w.asking || !w.said)
+    const plated  = ws.filter((w) => w.said && !w.asking)
+
+    // ─── the rail ───────────────────────────────────────────
+    const over = cooking.length > TICKETS
+    const hung = over ? cooking.slice(0, TICKETS - 1) : cooking
+    hung.forEach((w, i) => {
+      const t = ticket(w, now)
+      const x = RAIL.x + 1 + i * (TICKET.w + TICKET.gap)
+      t.rows.forEach((text, r) => out.push({ key: `t:${w.session}:${r}`, x, y: RAIL.y + 1 + r, text, color: t.color, layer: 11 }))
+    })
+    if (over) {
+      const x = RAIL.x + 1 + (TICKETS - 1) * (TICKET.w + TICKET.gap)
+      out.push({ key: 't:more', x, y: RAIL.y + 3, text: `+${cooking.length - hung.length} more`, color: INK.paper, layer: 11 })
+    }
+
+    // ─── the line ───────────────────────────────────────────
+    const line = stations(cooking)
+    if (!line.length) {
+      const text = '| no tickets |'
+      out.push({ key: 'quiet', x: LINE.x + Math.floor((LINE.w - text.length) / 2), y: LINE.y, text, color: INK.dim, ground: INK.tag, layer: 11 })
+    }
+    for (const s of line) {
+      const label = `| ${s.name.slice(0, s.w - 6)} |`
+      out.push({ key: `s:${s.name}`, x: s.x + Math.floor((s.w - label.length) / 2), y: LINE.y, text: label, color: INK.chalk, ground: INK.tag, layer: 11 })
+      const shown = s.cooks.slice(0, SEATS)
+      const mid = s.x + Math.floor(s.w / 2)
+      const left = mid - (shown.length - 1)
+      shown.forEach((w, i) => out.push({ key: `c:${w.session}`, x: left + 2 * i, y: LINE.y - 1, text: w.asking ? '?' : '✻', color: w.asking ? flash(INK.chef, now) : INK.paper, layer: 11 }))
+      if (s.cooks.length > SEATS) out.push({ key: `c+:${s.name}`, x: left + 2 * SEATS, y: LINE.y - 1, text: `+${s.cooks.length - SEATS}`, color: INK.paper, layer: 11 })
+      const asks = s.cooks.some((w) => w.asking)
+      const says = [s.cooks.length > 1 && `! ${s.cooks.length} here`, asks && 'CHEF!'].filter(Boolean).join(' · ')
+      if (says) out.push({ key: `n:${s.name}`, x: s.x + 1, y: LINE.y + 1, text: says.slice(0, s.w - 1), color: asks ? flash(INK.chef, now) : INK.hot, layer: 11 })
+    }
+
+    // ─── the pass ───────────────────────────────────────────
+    const slots = Math.floor((PASS.w - 2) / PLATE)
+    const plates = plated.slice(0, slots).map((w, i) => ({ w, x: PASS.x + 2 + i * PLATE }))
+    for (const p of plates) out.push({ key: `p:${p.w.session}`, x: p.x, y: PASS.y - 1, text: `(${id(p.w)})`, color: INK.plate, layer: 11 })
+    if (plates.length) {
+      const text = Math.floor(now / POLL_MS) % 2 ? '* ORDER UP *' : '· ORDER UP ·'
+      out.push({ key: 'order', x: PASS.x + Math.floor((PASS.w - text.length) / 2), y: LAMPS.y - 1, text, color: flash(INK.order, now), layer: 11 })
+    }
+
+    // ─── the 86 board ───────────────────────────────────────
+    const inner = BOARD.w - 4
+    const title = !menu ? '86 BOARD' : menu.menu === 'station' ? `86 · ${menu.flags.pkg}` : `86 · ${MENUS[menu.menu].label.toUpperCase()}`
+    out.push({ key: 'b:title', x: BOARD.x + 2, y: BOARD.y + 1, text: fit(title, inner), color: INK.chalk, layer: 11 })
+    const chalked = !menu
+      ? eightySix(LEDGER).map((r) => {
+        const n = String(r.n)
+        return { key: r.name, text: `${fit(r.name, inner - n.length - 1)} ${n}`, hot: r.hot }
+      })
+      : !list ? [{ key: 'reading', text: '…', hot: false }]
+      : !list.length ? [{ key: 'none', text: menu.menu === 'chef' ? 'no rulings waiting' : 'nothing ready', hot: false }]
+      : list.length > BOARD.h - 3 ? [...list.slice(0, BOARD.h - 4), { key: 'more', text: `+${list.length - (BOARD.h - 4)} more`, hot: false }]
+      : list
+    chalked.slice(0, BOARD.h - 3).forEach((r, i) => {
+      out.push({ key: `b:${r.key}`, x: BOARD.x + 2, y: BOARD.y + 2 + i, text: fit(r.text, inner), color: r.hot ? INK.hot : INK.chalk, layer: 11 })
+    })
+
+    // ─── what the chef reads ────────────────────────────────
+    if (me) {
+      const atLine = me.y > LINE.y && me.y <= LINE.y + 3 && line.find((s) => me.x >= s.x && me.x < s.x + s.w)
+      const atPass = me.y > PASS.y && me.y <= PASS.y + 2 && plates.find((p) => Math.abs(p.x + 3 - me.x) <= 3)
+      const read = atLine ? atLine.cooks.slice(0, SEATS) : atPass ? [atPass.w] : []
+      read.forEach((w, i) => out.push({ key: `r:${w.session}`, x: me.x, y: me.y + 1 + i, text: reading(w, now), layer: 12, surface: true }))
+    }
+
+    // A line is kept inside the view, as a bubble is; anything else off it is not drawn.
+    return out
+      .filter((o) => o.y >= v.y && o.y < v.y + v.h && (o.surface || (o.x >= v.x && o.x < v.x + v.w)))
+      .map((o) => {
+        const text = o.text.slice(0, v.w)
+        return { ...o, text, x: Math.max(0, Math.min(o.x - v.x, v.w - text.length)), y: o.y - v.y }
+      })
+  }
+</script>
+
+{#each placed(workers, view, me, now, rung, menu, list) as o (o.key)}
+  {#if o.surface}
+    <p class="surface" {@attach at(o.x, o.y, o.layer)}>{o.text}</p>
+  {:else}
+    <pre class="line" {@attach at(o.x, o.y, o.layer)} {@attach tint(o.color, o.ground)}>{o.text}</pre>
+  {/if}
+{/each}
+
+<style>
+  /* A ticket's padding and the board's columns are spaces; outside a pre the terminal collapses them. */
+  .line { margin: 0; font: inherit; line-height: inherit; white-space: pre; overflow: hidden }
+</style>

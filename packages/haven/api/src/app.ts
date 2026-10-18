@@ -54,9 +54,7 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   const app = createApp({
     db,
     auth,
-    // Stated, not probed: under a test runner the entry file is the test.
-    autoload:   new URL('./services', import.meta.url).pathname,
-    configPath: new URL('../config', import.meta.url).pathname,
+    root:       import.meta.url,
     principal:  standing(db),
     config: {
       ...(opts.port !== undefined ? { port: opts.port } : {}),

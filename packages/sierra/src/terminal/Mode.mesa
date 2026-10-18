@@ -2,7 +2,14 @@
   // Mode.mesa — the shell's mode line, mounted in the footer under the page so
   // a long page does not scroll it away. `mode` is a signal's read, as
   // Shell.mesa's `state` is.
-  export let mode  // () => { mode: 'normal' | 'insert', field }
+  // In the side pane its keys are the pane's own, so the line names the way out.
+  export let mode  // () => { mode: 'normal' | 'insert' | 'side', field }
+
+  const LINE = {
+    side:   () => '-- SIDE --  Ctrl+O back to the page, Ctrl+\\ hides',
+    insert: () => '-- INSERT --  Esc stops typing',
+    normal: (m) => m.field ? '-- NORMAL --  i types' : '-- NORMAL --',
+  }
 </script>
 
-<p>{mode().mode === 'insert' ? '-- INSERT --  Esc stops typing' : mode().field ? '-- NORMAL --  i types' : '-- NORMAL --'}</p>
+<p>{LINE[mode().mode](mode())}</p>

@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { buildRegistry, uniqueCommands } from '../core/registry.js'
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'fs'
+import { buildRegistry, uniqueCommands, pruneCache } from '../core/registry.js'
+import { mkdirSync, writeFileSync, rmSync, mkdtempSync, readdirSync, utimesSync } from 'fs'
 import { resolve, dirname, join } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
@@ -287,5 +287,29 @@ describe('registry cache', () => {
     } finally {
       delete process.env.FLI_NO_CACHE
     }
+  })
+})
+
+// One file per (install, user dir, project) and the suite mints a new one each
+// run, so a cache that only ever writes grows without end (FJS-3246).
+describe('registry cache — pruning', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fli-cache-prune-'))
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+  test('the newest files survive and the oldest go', () => {
+    for (let i = 0; i < 6; i++) {
+      const f = join(dir, `registry-${i}.json`)
+      writeFileSync(f, '{}')
+      utimesSync(f, 1000 + i, 1000 + i)
+    }
+    writeFileSync(join(dir, 'unrelated.json'), '{}')
+    pruneCache(dir, 4)
+    expect(readdirSync(dir).sort()).toEqual(
+      ['registry-2.json', 'registry-3.json', 'registry-4.json', 'registry-5.json', 'unrelated.json'])
+  })
+
+  test('at or under the limit, nothing is removed', () => {
+    pruneCache(dir, 4)
+    expect(readdirSync(dir).length).toBe(5)
   })
 })

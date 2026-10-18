@@ -3,6 +3,7 @@
   let presses = 0
   let heard = 0
   let last = '-'
+  let down = '-'
   let value = ''
   let submits = 0
   let held = 0
@@ -15,10 +16,11 @@
 
 <p>downs {downs} presses {presses} heard {heard} last {last}</p>
 <p>value {value} submits {submits} held {held} other {other}</p>
+<p>down {down}</p>
 <form onsubmit|preventDefault={() => submits++} onkeypress={() => heard++}>
   <input name="a" onkeydown={() => downs++} onkeypress={press} oninput={(e) => value = e.target.value} />
 </form>
-<form onsubmit|preventDefault={() => held++}>
+<form onsubmit|preventDefault={() => held++} onkeydown={(e) => down = (e.ctrlKey ? 'C-' : '') + e.key}>
   <input name="h" onkeypress={holdEnter} />
 </form>
 <input name="o" onkeydown={unset} onkeypress={unset} onfocus={unset} onblur={unset} onchange={unset} oninput={(e) => other = e.target.value} />
