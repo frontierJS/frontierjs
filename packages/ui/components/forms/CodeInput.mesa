@@ -31,12 +31,14 @@
   //     `overflow: auto`, so a horizontal scrollbar appears on both at the same
   //     width and takes the same height from each. The textarea scrolls
   //     sideways and the paint is moved to match.
+  //   - `maxRows` bounds the shared box, so it scrolls vertically and the layers
+  //     move as one; bounding either layer would scroll them apart.
   //
   // Usage:
   //   <CodeInput name="body" language="md" value={row.body} oninput={e => row.body = e.target.value} />
   //   <CodeInput name="query" language="sql" numbered />
   //
-  // bind:this exposes: focus()
+  // bind:this exposes: focus(), insert(text)
 
   import Field    from './Field.mesa'
   import { glowLine, glowLanguage, glowOpen } from '@frontierjs/toolbelt/glow'
@@ -46,6 +48,7 @@
   export let language    = ''       // glow language — 'js', 'sql', 'md', 'json', …; '' guesses
   export let numbered    = false    // line numbers in a gutter
   export let rows        = 6        // the height at rest; the box grows past it
+  export let maxRows     = undefined  // the ceiling; past it the box scrolls. Unset = no ceiling
   export let placeholder = ''
   export let disabled    = undefined  // undefined = ask the form; false overrides it
   export let required    = undefined
@@ -79,6 +82,22 @@
   let el
   let paint
   export function focus() { return $.focus(el) }
+
+  // Replaces the selection, or inserts at the caret, and leaves the caret after
+  // the text. A textarea keeps its selection while blurred, so a menu outside
+  // the box can call this after taking focus. execCommand keeps the browser's
+  // undo stack and fires the real `input`; setRangeText does neither, so the
+  // event is sent by hand.
+  export function insert(text) {
+    if (!el || readonly || resolvedDisabled) return false
+    $.focus(el)
+    const typed = typeof document !== 'undefined' && document.execCommand?.('insertText', false, text)
+    if (!typed) {
+      el.setRangeText(text, el.selectionStart, el.selectionEnd, 'end')
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    return true
+  }
 
   $: source    = value ?? ''
   $: paintable = source.endsWith('\n') ? source + ' ' : source
@@ -220,7 +239,7 @@
 </script>
 
 {#snippet control()}
-  <div class="fjs-code-input" class:numbered>
+  <div class="fjs-code-input" class:numbered class:bounded={maxRows} style:--code-max-rows={maxRows || undefined}>
     <pre bind:this={paint} class="code fjs-code-input-layer fjs-code-input-paint" aria-hidden="true">{@html firstPaint}</pre>
     <textarea
       bind:this={el}
@@ -278,6 +297,16 @@
     display:               grid;
     /* minmax(0, …) or one long line widens the track past the page. */
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The ceiling sits on the box both layers share, not on the textarea: the
+     textarea is as tall as the whole text, so the box is what scrolls and the
+     paint moves with it. The caret scrolls the nearest scroller into view. */
+  .bounded {
+    max-block-size: calc(var(--code-max-rows) * var(--text-sm) * var(--leading-relaxed)
+                       + 2 * var(--space-xl) + 2 * var(--border-width));
+    overflow-x:     hidden;
+    overflow-y:     auto;
   }
 
   /* The metrics, for both layers at once. Nothing below may restate one. */
@@ -359,6 +388,11 @@
     border-color:   var(--ring, var(--color-primary));
     outline:        var(--ring-width) var(--ring-style) var(--ring, var(--color-primary));
     outline-offset: var(--ring-offset);
+  }
+
+  /* An outline outside the paint would be clipped by the bounded scroller. */
+  .fjs-code-input.bounded:has(> .fjs-code-input-text:focus) > .fjs-code-input-paint {
+    outline-offset: calc(var(--ring-width) * -1);
   }
 
   .fjs-code-input:has(> .fjs-code-input-text[aria-invalid="true"]) > .fjs-code-input-paint {

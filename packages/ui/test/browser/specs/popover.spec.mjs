@@ -52,6 +52,16 @@ export async function run(t) {
   t.is(await t.evaluate(`return document.querySelectorAll('body > .popover').length;`), 0,
     'clicking away closes it')
 
+  // A click-away that lands on another field is that field's focus to keep.
+  // Closing restored focus to the trigger after the press had moved it, so the
+  // person clicked into a box and was sent back to a button (`FJS-2894`).
+  await t.clickAt('#stage #pop-trigger')
+  await t.evaluate(`return await waitVisible('body > .popover');`)
+  await t.clickAt('#outside-input')
+  await t.evaluate(`await waitFor(() => !document.querySelector('body > .popover')); return true;`)
+  t.ok(await t.evaluate(`return document.activeElement === document.querySelector('#outside-input');`),
+    'clicking away onto a field closes it and leaves focus on that field')
+
   // A second open, then Escape — a separate path through the same close, and
   // the one that proves the window listener survived the first close.
   await t.clickAt('#stage #pop-trigger')

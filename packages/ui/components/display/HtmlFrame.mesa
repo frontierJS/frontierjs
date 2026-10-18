@@ -1,0 +1,55 @@
+<script>
+  // HtmlFrame.mesa
+  // HTML somebody else wrote, drawn as a page of its own: an email body an
+  // account authored, a template filled with a sample client, a pasted
+  // fragment before it is saved.
+  //
+  // Markdown can be safe by never emitting a tag it did not write. HTML cannot
+  // — the point of showing it is to see its own tags — so the isolation is the
+  // browser's instead: an <iframe sandbox=""> with no token granted. No script
+  // runs (inline handlers included), the document gets an opaque origin so it
+  // can read nothing of this page, and it may not open a window, submit a form
+  // or navigate the top page. A shadow root is none of that: it scopes CSS, and
+  // the markup inside still runs as this page.
+  //
+  // No prop loosens the sandbox: a preview that needs a script is the app
+  // running the text, not a preview of it.
+  //
+  // Usage:
+  //   <HtmlFrame html={template.body} title="Email preview" />
+  //   <HtmlFrame html={filled} height="32rem" />
+  //
+  // `title` is the frame's accessible name — an iframe without one is announced
+  // by its URL, which here is nothing. `height` is any CSS length: a sandboxed
+  // frame cannot report its content's height to the page, so the box is fixed
+  // and the document scrolls inside it.
+
+  export let html   = ''
+  export let title  = 'Preview'
+  export let height = '24rem'
+</script>
+
+<!-- `srcdoc` is written here and never through {...$attributes}: mesa refuses
+     it in a spread, because the keys of a spread come from the caller. -->
+<iframe
+  class="fjs-html-frame"
+  {class}
+  {title}
+  sandbox=""
+  referrerpolicy="no-referrer"
+  srcdoc={html ?? ''}
+  style:block-size={height}
+  {...$attributes}
+></iframe>
+
+<style>
+  /* A document of its own has its own background; the border is what says
+     where the page ends and the preview begins. */
+  .fjs-html-frame {
+    display:          block;
+    inline-size:      100%;
+    border:           var(--border-width) solid var(--rule-strong);
+    border-radius:    var(--radius-md);
+    background-color: white;
+  }
+</style>

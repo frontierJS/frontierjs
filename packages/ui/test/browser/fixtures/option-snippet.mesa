@@ -1,0 +1,59 @@
+<script>
+  // option-snippet.mesa — a picture or a second line per option in the three
+  // pickers that draw their own rows (`FJS-2673`).
+  //
+  // Each option carries a field the kit never heard of (`glyph`, `price`), so
+  // the snippet reaching it proves it is handed the caller's own object.
+  import RadioGroup  from '../../../components/forms/RadioGroup.mesa'
+  import Combobox    from '../../../components/forms/Combobox.mesa'
+  import MultiSelect from '../../../components/forms/MultiSelect.mesa'
+
+  const SETS = [
+    { value: 'stars', label: 'Stars', glyph: '★' },
+    { value: 'faces', label: 'Faces', glyph: '☺' },
+  ]
+  const CATALOG = [
+    { value: 1, label: 'Mowing',   price: '$45.00', description: 'Per week' },
+    { value: 2, label: 'Aeration', price: '$80.00', description: 'Per year' },
+  ]
+
+  // Each list block is tall enough to hold its own open panel, which would
+  // otherwise cover the next block's input and take the press.
+  let scale = 'stars'
+  let offer = null
+</script>
+
+<div id="radio">
+  <RadioGroup label="Scale" bind:value={scale} items={SETS}>
+    {#snippet option(item)}<i class="glyph">{item.glyph}</i> {item.label}{/snippet}
+  </RadioGroup>
+</div>
+
+<div id="radio-segmented">
+  <RadioGroup aria-label="Scale" layout="segmented" bind:value={scale} items={SETS}>
+    {#snippet option(item)}<i class="glyph">{item.glyph}</i> {item.label}{/snippet}
+  </RadioGroup>
+</div>
+
+<div id="combo-snippet" style="min-block-size: 15rem">
+  <Combobox label="" aria-label="Offer" options={CATALOG} bind:value={offer}>
+    {#snippet option(o)}<b class="name">{o.label}</b> <i class="price">{o.price}</i>{/snippet}
+  </Combobox>
+</div>
+
+<div id="combo-plain" style="min-block-size: 15rem">
+  <Combobox label="" aria-label="Plain offer" options={CATALOG} value={null} />
+</div>
+
+<div id="multi-snippet" style="min-block-size: 15rem">
+  <MultiSelect label="" aria-label="Offers" multiple options={CATALOG} value={[]}>
+    {#snippet option(o)}<b class="name">{o.label}</b> <i class="price">{o.price}</i>{/snippet}
+  </MultiSelect>
+</div>
+
+<div id="multi-plain" style="min-block-size: 15rem">
+  <MultiSelect label="" aria-label="Plain offers" multiple options={CATALOG} value={[]} />
+</div>
+
+<output id="scale">{scale}</output>
+<output id="offer">{offer}</output>

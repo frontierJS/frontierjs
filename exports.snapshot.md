@@ -97,7 +97,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./foundation/*.css` | `src/foundation/*.css` | 6 files |
 | exports | `./themes/*.css` | `src/themes/*.css` | 12 files |
 | exports | `./components/*.css` | `src/components/*.css` | 20 files |
-| exports | `./patterns/*.css` | `src/patterns/*.css` | 10 files |
+| exports | `./patterns/*.css` | `src/patterns/*.css` | 11 files |
 | exports | `./a11y/*.css` | `src/a11y/*.css` | 2 files |
 | exports | `./bundle.css` | `dist/frontier.css` | yes |
 | exports | `./bundle.min.css` | `dist/frontier.min.css` | yes |
@@ -417,7 +417,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/ui`
 
-`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `drag.js` `nav.js` `package.json` `selection.js` `stores/` `utils.js`
+`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `drag.js` `nav.js` `package.json` `rowlist.js` `selection.js` `stores/` `utils.js`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -426,9 +426,10 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./drag` | `drag.js` | yes |
 | exports | `./nav` | `nav.js` | yes |
 | exports | `./selection` | `selection.js` | yes |
+| exports | `./rowlist` | `rowlist.js` | yes |
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 86 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 89 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

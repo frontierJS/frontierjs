@@ -19,10 +19,10 @@
   // the rest. Without the caption they sit at the top in an order that is
   // neither alphabetical nor the set's, which reads as a broken sort.
   //
-  // bind:this exposes: focus()
+  // bind:this exposes: focus(), showPicker()
 
   import Field from './Field.mesa'
-  import { humanize, uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote, lockedBy, splitRecent, RECENT_GROUP, REST_GROUP } from '../../utils.js'
+  import { cx, humanize, uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote, lockedBy, splitRecent, RECENT_GROUP, REST_GROUP } from '../../utils.js'
 
   export let value       = null
   export let options     = []          // flat or grouped (see above)
@@ -46,6 +46,8 @@
   export var id = ''
   const selectId  = id || uid('select')
   const autoLabel = humanize(name)
+  // Field takes `class` on its wrapper; with none drawn it goes on the select.
+  const wrapped   = !!(label || (name && autoLabel))
 
   const form = $context.form
 
@@ -119,6 +121,15 @@
 
   let el
   export function focus() { return $.focus(el) }
+  // Opens the list from the press that called it, as the native method does:
+  // outside a user gesture the browser refuses with NotAllowedError. Focus goes
+  // first so the keyboard drives the open list; a host with no showPicker
+  // (a terminal) is left with the focus alone.
+  export function showPicker() {
+    const focused = $.focus(el)
+    el?.showPicker?.()
+    return focused
+  }
   // Native event callbacks. A <select> fires `input` as well as `change`, and
   // a caller validating as the user picks wants the same hook it uses on an
   // <Input> — see Input.mesa.
@@ -132,7 +143,7 @@
   <select
     bind:this={el}
     bind:value={value}
-    class="field"
+    class={cx('field', !wrapped && $class)}
     id={selectId}
     name={name || undefined}
     disabled={resolvedDisabled}
@@ -195,7 +206,7 @@
   </select>
 {/snippet}
 
-{#if label || (name && autoLabel)}
+{#if wrapped}
   <!--
     label and required go down UNRESOLVED where the caller stated nothing:
     Field reads the same rule off the same <Form> and resolves them once. This

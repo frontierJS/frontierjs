@@ -4,7 +4,9 @@
   // keyboard navigation, min/max constraints, and new-value creation.
   //
   // OPTIONS shape:
-  //   string | number | { value, label, disabled? }
+  //   string | number | { value, label, description?, disabled? }
+  // A row draws its description under the label; an `option` snippet draws
+  // the row's whole content from the option object instead.
   //
   // USAGE — basic multiple:
   //   <MultiSelect bind:value={tags} options={['React', 'Vue', 'Svelte']} multiple />
@@ -35,6 +37,9 @@
   export let allowNew     = false        // allow creating new values by typing
   export let clearable    = true         // show clear-all × when selections exist
   export let closeOnSelect = !multiple  // auto-close after single selection
+  // Draws a dropdown row's content in place of its label and description,
+  // handed the caller's own option object. The chips stay plain text.
+  export let option       = null         // snippet (option) — one row's content
 
   // Field integration
   export let name     = ''
@@ -127,6 +132,8 @@
       value:       coerce(opt.value),
       textContent: opt.label ?? opt.textContent ?? String(opt.value),
       disabled:    opt.disabled ?? false,
+      description: opt.description ?? '',
+      raw:         opt,
     }
   }
 
@@ -603,7 +610,16 @@
                   between the pieces renders INSIDE the word — "Lovelace"
                   matched at "Love" comes out as "Love lace".
                 -->
-                <span style:flex="1">{#each segments(opt.textContent, marksOf.get(opt) ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
+                <span style:flex="1">
+                  {#if option}
+                    {@render option(opt.raw)}
+                  {:else}
+                    <span>{#each segments(opt.textContent, marksOf.get(opt) ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
+                    {#if opt.description}
+                      <span class="field-hint" style:display="block">{opt.description}</span>
+                    {/if}
+                  {/if}
+                </span>
                 {#if isSelected}
                   <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/>

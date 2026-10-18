@@ -19,6 +19,16 @@
     { id: 'theme',      group: 'Settings', label: 'Switch theme',     icon: '◐',  kbd: '⌘ T',                          action: () => { ran = 'theme';      runs++ } },
   ]
 
+  // `throwing` appends a command whose action throws, for the close-anyway
+  // path; `kitShrink(n)` swaps `items` for the first n commands under a cursor
+  // that has already moved (`FJS-2894`). Both leave the default list alone.
+  export let throwing = false
+
+  const BOOM = { id: 'boom', group: 'Settings', label: 'Explode', icon: '✖', action: () => { ran = 'boom'; runs++; throw new Error('boom') } }
+
+  let list = throwing ? [...COMMANDS, BOOM] : COMMANDS
+  window.kitShrink = (n) => { list = COMMANDS.slice(0, n) }
+
   // The store outlives a fixture, so a run must not inherit the previous one.
   commandPalette.hide()
   window.commandPalette = commandPalette
@@ -34,7 +44,7 @@
 <button type="button" id="open-palette" onclick={() => commandPalette.show()}>Open</button>
 
 {#if commandPalette.open}
-  <CommandPalette items={COMMANDS} onclose={() => commandPalette.hide()} />
+  <CommandPalette items={list}onclose={() => commandPalette.hide()} />
 {/if}
 
 <output id="ran">{ran}</output>

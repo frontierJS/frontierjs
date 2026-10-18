@@ -183,6 +183,16 @@ export async function run(t) {
   await t.eventually(`document.querySelectorAll('[role=menu]').length`, 0,
     'a click outside closes it')
 
+  // A click-away onto a field is that field's focus to keep (`FJS-2894`); onto
+  // bare page it hands focus back to the trigger.
+  await t.clickAt('#dd-trigger')
+  await t.evaluate(`return await waitVisible('[role=menu]');`)
+  await t.clickAt('#dd-outside-input')
+  await t.eventually(`document.querySelectorAll('[role=menu]').length`, 0,
+    'a click on another field closes it')
+  t.ok(await t.evaluate(`return document.activeElement === document.querySelector('#dd-outside-input');`),
+    'and focus stays on that field rather than returning to the trigger')
+
   // Closing a closed menu still hands focus to its trigger, so every click
   // on the page would pull focus to one.
   await t.clickAt('#stage')

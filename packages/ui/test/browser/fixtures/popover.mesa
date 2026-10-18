@@ -19,3 +19,4 @@
 </div>
 
 <button type="button" id="outside">Elsewhere</button>
+<input type="text" id="outside-input" aria-label="Elsewhere field">

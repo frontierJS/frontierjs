@@ -19,7 +19,15 @@
   // More lines than one chunk of the paint holds, so an edit can cross a seam.
   const many = Array.from({ length: 150 }, (_, i) => 'line ' + i).join('\n')
 
+  const long = Array.from({ length: 65 }, (_, i) => 'row ' + i).join('\n')
+
   window.__value = undefined
+
+  // The Merge fields menu of a template editor: a button outside the box that
+  // asks it to insert, so focus has already left the textarea when it does.
+  let merge
+  let mergeValue = 'Dear , see you soon.'
+  window.__insert = (text) => merge.insert(text)
 </script>
 
 <div style="inline-size: 480px">
@@ -35,5 +43,14 @@
 
   <CodeInput id="many" language="js" numbered value={many} />
 
+  <CodeInput id="bounded" language="js" numbered rows={4} maxRows={8} value={long} />
+  <button id="below" type="button">below the box</button>
+
+  <CodeInput id="short" rows={4} maxRows={8} value={'one\ntwo'} />
+
   <CodeInput name="body" label="Body" language="md" value="# Title" />
+
+  <CodeInput id="merge" bind:this={merge} language="html" value={mergeValue} oninput={e => mergeValue = e.target.value} />
+  <button id="merge-btn" type="button" onclick={() => merge.insert('{contact.first_name}')}>Merge</button>
+  <output id="merge-out">{mergeValue}</output>
 </div>

@@ -244,6 +244,62 @@ const TRIGGER = `<script>
   }
 }
 
+// ── A caller's class lands on the outermost element Input draws ─────────────
+//
+// `FJS-1138`. Field takes `class` on its wrapper, so an Input with no label, no
+// name, no hint and no message drew no wrapper and dropped the class.
+{
+  const HOST = (attrs) => `<script>
+  import Input from './forms/Input.mesa'
+</script>
+<Input ${attrs} class="mine" />`
+  const CLASS_ON = [
+    ['bare',          '',                  /^<input\b[^>]*class="[^"]*\bmine\b/],
+    ['reveal addon',  'type="password"',   /^<div\b[^>]*class="[^"]*\bfield-row\b[^"]*\bmine\b/],
+    ['named',         'name="a"',          /^<div\b[^>]*class="[^"]*\bfield-group\b[^"]*\bmine\b/],
+    ['labeled',       'label="L"',         /^<div\b[^>]*class="[^"]*\bfield-group\b[^"]*\bmine\b/],
+  ]
+  for (const [label, attrs, want] of CLASS_ON) {
+    const out = await renderComponent(HOST(attrs), {
+      data: {}, cwd: ROOT, filename: 'components/Host.mesa', styleTag: false,
+      tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+    })
+    const html = out.html.trim()
+    if (!want.test(html) || (html.match(/\bmine\b/g) ?? []).length !== 1) {
+      console.error(`✗ Input class (${label})\n    class "mine" must land once, on the outermost element: ${html.slice(0, 160)}`)
+      failed++
+    }
+  }
+
+  // `FJS-3255`. Textarea and Select wrap in a Field the same way, so the same
+  // bare case drew the control with `class="field"` alone.
+  const CLASS_ON_CONTROL = [
+    ['Textarea', 'textarea', 'Textarea'],
+    ['Select',   'select',   'Select'],
+  ]
+  for (const [comp, tag] of CLASS_ON_CONTROL) {
+    for (const [label, attrs, want] of [
+      ['bare',    '',           new RegExp(`^<${tag}\\b[^>]*class="[^"]*\\bmine\\b`)],
+      ['named',   'name="a"',   /^<div\b[^>]*class="[^"]*\bfield-group\b[^"]*\bmine\b/],
+      ['labeled', 'label="L"',  /^<div\b[^>]*class="[^"]*\bfield-group\b[^"]*\bmine\b/],
+    ]) {
+      const src = `<script>
+  import ${comp} from './forms/${comp}.mesa'
+</script>
+<${comp} ${attrs} class="mine" />`
+      const out = await renderComponent(src, {
+        data: {}, cwd: ROOT, filename: 'components/Host.mesa', styleTag: false,
+        tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+      })
+      const html = out.html.trim()
+      if (!want.test(html) || (html.match(/\bmine\b/g) ?? []).length !== 1) {
+        console.error(`✗ ${comp} class (${label})\n    class "mine" must land once, on the outermost element: ${html.slice(0, 160)}`)
+        failed++
+      }
+    }
+  }
+}
+
 const passed = CASES.length - failed
 console.log(`${passed}/${CASES.length} render cases carry the @frontierjs/css vocabulary`)
 if (failed) process.exit(1)

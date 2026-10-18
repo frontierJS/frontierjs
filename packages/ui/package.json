@@ -9,6 +9,7 @@
     "./drag": "./drag.js",
     "./nav": "./nav.js",
     "./selection": "./selection.js",
+    "./rowlist": "./rowlist.js",
     "./controls": "./controls.js",
     "./stores/*": "./stores/*.js",
     "./components/*.mesa": "./components/*.mesa"
@@ -42,6 +43,7 @@
     "dnd.js",
     "drag.js",
     "nav.js",
+    "rowlist.js",
     "selection.js",
     "utils.js",
     "README.md",

@@ -1,0 +1,30 @@
+<script>
+  // rowlist.mesa — an inbox: rows with a button and a text box inside, a
+  // button before and after the list for Tab, and a log of what the keys did.
+  // `kitDrop(id)` removes a row and `kitAdd()` appends one, the way a keyed
+  // {#each} does when the data changes.
+  import { rowlist } from '@frontierjs/ui/rowlist'
+
+  let items = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]
+  let log   = []
+  let next  = 5
+
+  window.kitDrop = (id) => { items = items.filter((i) => i.id !== id) }
+  window.kitAdd  = () => { items = [...items, { id: next++ }] }
+  window.kitLog  = () => log.join(',')
+</script>
+
+<button type="button" id="before">Before</button>
+<ul id="list" {@attach rowlist(() => ({
+  onopen:   (row) => { log = [...log, 'open:' + row.dataset.id] },
+  onselect: (row) => { log = [...log, 'pick:' + row.dataset.id] },
+}))}>
+  {#each items as it (it.id)}
+    <li data-row data-id={it.id} id={'r' + it.id} aria-disabled={it.id === 3 ? 'true' : undefined}>
+      Row {it.id}
+      <button type="button" id={'b' + it.id} onclick={() => { log = [...log, 'btn:' + it.id] }}>Act</button>
+      <input type="text" id={'i' + it.id} aria-label={'Note ' + it.id}>
+    </li>
+  {/each}
+</ul>
+<button type="button" id="after">After</button>

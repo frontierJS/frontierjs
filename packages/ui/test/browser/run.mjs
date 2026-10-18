@@ -132,6 +132,16 @@ if (serveOnly) {
           })
         })
       },
+      /** Move the real pointer to a selector's center, or `{x, y}`, in one
+       *  step — what `pointerover`/`pointerout` are written against. */
+      hover: async (to) => {
+        const p = typeof to !== 'string' ? to : await browser.evaluate(`
+          const r = document.querySelector(${JSON.stringify(to)})?.getBoundingClientRect();
+          if (!r) throw new Error('hover: no element for ' + ${JSON.stringify(to)});
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        `)
+        await browser.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: 'none', buttons: 0 })
+      },
       drag: async (from, to, { steps = 12, release = true, press = true } = {}) => {
         const at = async (p) => typeof p !== 'string' ? p : browser.evaluate(`
           const r = document.querySelector(${JSON.stringify(p)})?.getBoundingClientRect();

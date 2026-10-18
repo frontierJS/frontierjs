@@ -1,0 +1,36 @@
+<script>
+  // template-preview.mesa — the fixture for TemplatePreview.
+  //
+  // One catalog feeds every channel. `contact.name` declares an example and
+  // `quote.note` a default, so the preview shows the catalog's example where a
+  // record is absent and a default where a record has no value. The email body
+  // carries a script and a value with markup: the first must not run and the
+  // second must be escaped.
+  import TemplatePreview from '../../../components/display/TemplatePreview.mesa'
+  import { mergeFields } from '@frontierjs/toolbelt/fill'
+
+  window.__heard = []
+  window.addEventListener('message', (e) => window.__heard.push(String(e.data)))
+
+  const fields = mergeFields([
+    { key: 'contact.name', label: 'Name', type: 'text', example: 'Ada <b>Lovelace</b>' },
+    { key: 'quote.note',   label: 'Note', type: 'text', example: 'ex', default: 'No note' },
+  ])
+
+  const body = '<p>Dear {contact.name}</p><p>{quote.note}</p>'
+    + '<script>parent.postMessage("script", "*")</' + 'script>'
+  const record = { contact: { name: 'Grace' }, quote: { note: '' } }
+  const long = 'x'.repeat(161)
+  const ext  = '['.repeat(81)
+  // A hole in an attribute string is mesa's own interpolation, so the templates are values.
+  const subject = 'Hi {contact.name}'
+  const plain   = 'Plain {contact.name}'
+  const smsBody = 'Hi {contact.name}'
+</script>
+
+<TemplatePreview id="email" channel="email" {fields} subject={subject} {body} text={plain} />
+<TemplatePreview id="record" channel="page" {fields} {body} data={record} />
+<TemplatePreview id="sms" channel="sms" {fields} body={smsBody} />
+<TemplatePreview id="sms-long" channel="sms" body={long} />
+<TemplatePreview id="sms-unicode" channel="sms" body="héllo ☺" />
+<TemplatePreview id="sms-ext" channel="sms" body={ext} />
