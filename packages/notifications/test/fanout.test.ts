@@ -25,10 +25,10 @@ import {
   NotificationRecipientError,
   NotificationTransportNotImplementedError,
 } from '../errors.ts'
-import { notificationsPlugin } from '../plugin.ts'
+import { notifications } from '../plugin.ts'
 import { defineNotification } from '../define.ts'
 import { createTestApp } from '@frontierjs/junction'
-import { mailerPlugin } from '@frontierjs/junction/mail'
+import { mail as mailPlugin } from '@frontierjs/junction/mail'
 import { makeApp, type Harness } from './harness.ts'
 import type { InAppMessage, MailMessage, Recipient, Transport } from '../types.ts'
 
@@ -226,7 +226,7 @@ describe('failure paths', () => {
       .catch((e: Error) => e)
 
     expect(err).toBeInstanceOf(NotificationDriverNotFoundError)
-    expect((err as Error).message).toContain('mailerPlugin')
+    expect((err as Error).message).toContain('mail({ mailer })')
   })
 
   test('an email with no address anywhere is refused eagerly', async () => {
@@ -244,7 +244,7 @@ describe('failure paths', () => {
   test('a failing email does not stop the in-app record — transports are isolated', async () => {
     const iso = await makeApp({ noMailer: true })
     const down = async () => { throw new Error('SMTP down') }
-    iso.app.configure(mailerPlugin({ send: down, batch: down }))
+    iso.app.configure(mailPlugin({ mailer: { send: down, batch: down } }))
     const before = (await iso.rows()).length
 
     await expect(iso.app.notify({ id: 'u11', email: 'q@r.test' }, new Welcome(['inApp', 'email'])))
@@ -325,7 +325,7 @@ describe('transport drivers', () => {
   // built-in path to configure, so accepting it registers nothing.
   test('a plain config object under any other transport is refused at construction', () => {
     const build = (transports: Record<string, unknown>) => () =>
-      notificationsPlugin({ db: null, transports: transports as never })
+      notifications({ db: null, transports: transports as never })
 
     expect(build({ sms: { provider: 'twilio' } })).toThrow(/transports\.sms has no send\(\)/)
     expect(build({ inApp: {} })).toThrow(/transports\.inApp has no send\(\)/)
@@ -378,46 +378,46 @@ describe('composes with @frontierjs/auth user ids', () => {
 // ─── declared ordering ────────────────────────────────────────────────────
 
 describe('the mailer dependency is declared, not just documented', () => {
-  // "mailerPlugin must be configured before notificationsPlugin" used to live
+  // "mail must be configured before notifications" used to live
   // only in an examples comment; getting it wrong surfaced as a failed send
   // long after startup. The plugin now declares requires: ['mailer'] when the
   // email transport is configured, and Junction refuses to boot without it.
   const opts = { db: {}, transports: { email: { mailer: 'default' } } } as never
 
   test('declares requires: ["mailer"] when the email transport is configured', () => {
-    expect((notificationsPlugin(opts) as { requires?: string[] }).requires).toEqual(['mailer'])
+    expect((notifications(opts) as { requires?: string[] }).requires).toEqual(['mailer'])
   })
 
   test('does NOT require a mailer for in-app only', () => {
-    expect((notificationsPlugin({ db: {} } as never) as { requires?: string[] }).requires)
+    expect((notifications({ db: {} } as never) as { requires?: string[] }).requires)
       .toBeUndefined()
   })
 
   test('does NOT require a mailer when a custom email driver is supplied', () => {
     const driver = { transport: 'email', send: async () => {} }
-    const p = notificationsPlugin({ db: {}, transports: { email: driver } } as never)
+    const p = notifications({ db: {}, transports: { email: driver } } as never)
     expect((p as { requires?: string[] }).requires).toBeUndefined()
   })
 
   test('startup fails when the mailer is missing', async () => {
     const app: any = await createTestApp()
-    app.configure(notificationsPlugin(opts))
+    app.configure(notifications(opts))
 
     await expect(app._startForTest()).rejects.toThrow(/requires "mailer"/)
   })
 
   test('startup fails when the mailer is configured AFTER notifications', async () => {
     const app: any = await createTestApp()
-    app.configure(notificationsPlugin(opts))
-    app.configure(mailerPlugin({ send: async () => {} } as never))
+    app.configure(notifications(opts))
+    app.configure(mailPlugin({ mailer: { send: async () => {} } as never }))
 
     await expect(app._startForTest()).rejects.toThrow(/configured AFTER it/)
   })
 
   test('startup succeeds when the mailer comes first', async () => {
     const app: any = await createTestApp()
-    app.configure(mailerPlugin({ send: async () => {} } as never))
-    app.configure(notificationsPlugin(opts))
+    app.configure(mailPlugin({ mailer: { send: async () => {} } as never }))
+    app.configure(notifications(opts))
 
     await expect(app._startForTest()).resolves.toBeUndefined()
   })
@@ -509,7 +509,7 @@ describe('plugin lifecycle', () => {
     // mailer it should have installed is actually there.
     const app: any = await createTestApp()
     app.configure({ name: 'mailer', register() { /* installs nothing */ } })
-    app.configure(notificationsPlugin({ db: {}, transports: { email: { mailer: 'default' } } } as never))
+    app.configure(notifications({ db: {}, transports: { email: { mailer: 'default' } } } as never))
 
     await expect(app._startForTest()).rejects.toThrow(/app\.mail is not set/)
   })
@@ -518,7 +518,7 @@ describe('plugin lifecycle', () => {
     const closed: string[] = []
     const a = { transport: 'a', send: async () => {}, shutdown: () => { closed.push('a') } }
     const b = { transport: 'b', send: async () => {}, shutdown: async () => { closed.push('b') } }
-    const plugin = notificationsPlugin({ db: {}, transports: { a, b } } as never)
+    const plugin = notifications({ db: {}, transports: { a, b } } as never)
     plugin.register({} as never)
 
     await plugin.shutdown()
@@ -529,7 +529,7 @@ describe('plugin lifecycle', () => {
     const closed: string[] = []
     const bad  = { transport: 'bad',  send: async () => {}, shutdown: () => { throw new Error('stuck') } }
     const good = { transport: 'good', send: async () => {}, shutdown: () => { closed.push('good') } }
-    const plugin = notificationsPlugin({ db: {}, transports: { bad, good } } as never)
+    const plugin = notifications({ db: {}, transports: { bad, good } } as never)
     plugin.register({} as never)
 
     await expect(plugin.shutdown()).resolves.toBeUndefined()
@@ -537,7 +537,7 @@ describe('plugin lifecycle', () => {
   })
 
   test('a driver with no shutdown() is skipped, not called', async () => {
-    const plugin = notificationsPlugin({ db: {}, transports: { x: { transport: 'x', send: async () => {} } } } as never)
+    const plugin = notifications({ db: {}, transports: { x: { transport: 'x', send: async () => {} } } } as never)
     plugin.register({} as never)
     await expect(plugin.shutdown()).resolves.toBeUndefined()
   })
@@ -549,12 +549,12 @@ describe('plugin state', () => {
   test('notify() on an app the plugin never configured names the missing plugin', async () => {
     const { notify } = await import('../notify.ts')
     await expect(notify({ id: 'u' }, new Welcome(['inApp']), {} as never))
-      .rejects.toThrow(/notificationsPlugin/)
+      .rejects.toThrow(/notifications\(\{ db \}\)/)
   })
 
   test('state does not enumerate onto the app surface', () => {
     const app: Record<string, unknown> = {}
-    notificationsPlugin({ db: {} } as never).register(app as never)
+    notifications({ db: {} } as never).register(app as never)
 
     // `_db` and `_drivers` used to sit here in plain sight, and a JSON of the
     // app carried the whole Litestone client with it.

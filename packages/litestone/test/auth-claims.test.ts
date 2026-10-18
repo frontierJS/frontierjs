@@ -99,6 +99,7 @@ model Note {
   id      Int    @id @default(autoincrement())
   ownerId Int
   secret  String @allow('read', ${expr})
+  @@gate(0)
 }`
 
   test('a typo is refused where the same typo in @@allow already was', async () => {

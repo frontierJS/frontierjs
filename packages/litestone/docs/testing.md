@@ -6,6 +6,9 @@ Every example on this page runs against one schema, which is the `./schema.lite`
 a block opens. `Lead` is gated and carries a `@guarded` column, `Note` has a row
 policy, `Order` a state machine, `Node` a required self-reference, and `Message`
 two relations to one parent — each is the shape a section below exists for.
+A schema that declares any access rule leaves a model with no `@@gate` and no
+`@@allow` to `asSystem()` alone, so the open tables say `@@gate(0)` and `Node`
+stays undeclared: its example reaches it through `env.system`.
 
 ```lite
 model Account {
@@ -13,6 +16,8 @@ model Account {
   name  String
   users User[]
   leads Lead[]
+
+  @@gate(0)
 }
 
 model User {
@@ -29,6 +34,8 @@ model User {
   updatedAt DateTime  @updatedAt
 
   @@auth
+
+  @@gate(0)
 }
 
 model Post {
@@ -37,12 +44,16 @@ model Post {
   authorId Int
   author   User   @relation(fields: [authorId], references: [id])
   tags     Tag[]
+
+  @@gate(0)
 }
 
 model Tag {
   id    Int    @id
   name  String @unique
   posts Post[]
+
+  @@gate(0)
 }
 
 model Message {
@@ -52,6 +63,8 @@ model Message {
   receiverId Int
   sender     User   @relation("sent", fields: [senderId], references: [id])
   receiver   User   @relation("received", fields: [receiverId], references: [id])
+
+  @@gate(0)
 }
 
 model Lead {
@@ -71,6 +84,8 @@ model Order {
   status OrderStatus @default(draft)
 
   @@transitions(status, pay: draft -> paid, ship: paid -> shipped)
+
+  @@gate(0)
 }
 
 model Note {
@@ -97,6 +112,8 @@ model Country {
   id   Int    @id
   code String @unique
   name String
+
+  @@gate(0)
 }
 ```
 
@@ -144,8 +161,10 @@ await t.assert(read => expect(read.lead.count()).resolves.toBe(0))
 
 // Mutate the schema, run the ORIGINAL's checks against the mutant's database.
 // A mutant nothing notices is a hole in the SUITE, and it names itself.
+// Each mutant costs a database, so `kinds` narrows the run.
 const { score, survived } = await mutationScore({
   schema: schemaText, build: (text) => createTestEnv({ schema: text }),
+  kinds:  ['gate-lower', 'guarded-drop'],
 })
 env.seal()
 env.reset()
@@ -791,10 +810,10 @@ consulted before the cycle check:
 import { createTestEnv } from '@frontierjs/litestone/testing'
 
 const env = await createTestEnv({ schema: './schema.lite', autoFactories: true })
-const { factories, db } = env
+const { factories, system } = env
 
-const root  = await db.node.create({ data: { name: 'root', parentId: 1 } })
-const child = await factories.node.withParents({ pins: { Node: root } }).createOne()
+const root  = await system.node.create({ data: { name: 'root', parentId: 1 } })
+const child = await factories.node.usingDb(system).withParents({ pins: { Node: root } }).createOne()
 ```
 
 ### has() — hasMany children
@@ -1366,6 +1385,7 @@ const schema = readFileSync('./schema.lite', 'utf8')
 const r = await mutationScore({
   schema,
   build: (text) => createTestEnv({ schema: text }),
+  kinds:  ['gate-lower', 'guarded-drop', 'validator-widen'],   // each mutant costs a database
 })
 // { total, graded, killed, byParser, score, survived, refused, errored }
 ```

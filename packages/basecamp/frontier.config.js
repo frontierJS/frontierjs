@@ -42,7 +42,7 @@ export default {
       port: 8120,
 
       // No apiPrefix in this app, so health is at the bare path. It matters more
-      // than it looks: `healthPlugin()` registers through `app.get()`, which is
+      // than it looks: `health()` registers through `app.get()`, which is
       // the one owner of apiPrefix, so an app that grows a prefix moves this
       // too — and a wrong path here does not fail loudly. The deploy polls a 404
       // for twenty seconds and then rolls back an API that was running.

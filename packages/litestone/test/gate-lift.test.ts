@@ -224,10 +224,12 @@ describe('an entry that lifts nothing is refused by name', () => {
     await expect(db.$setAuth(USER).invoice.findMany({ where: { token: 'by-hand' } })).rejects.toThrow()
   })
 
-  it('the gate, on a model with none', async () => {
+  it('the gate, on a model with none, is the SYSTEM-only default and lifting it reaches the model', async () => {
     const db = await client()
-    await expect(db.$setAuth(USER).plain.create({ data: { label: 'x' }, system: ['@@gate'] }))
-      .rejects.toThrow(/declares no @@gate/)
+    await expect(db.$setAuth(USER).plain.create({ data: { label: 'x' } }))
+      .rejects.toThrow(/declares no @@gate and no @@allow\/@@deny/)
+    const row = await db.$setAuth(USER).plain.create({ data: { label: 'x' }, system: ['@@gate'] })
+    expect(row.label).toBe('x')
   })
 })
 

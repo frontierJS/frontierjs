@@ -36,7 +36,7 @@ in, whatever the row policies say, because the Data boundary never sees who
 asked. Each row below is either meant — a read-shaped method, a scoped write —
 or wants `methods: [{ method, gate }]`.
 
-### Nothing in front of the body but the floor (9)
+### Nothing in front of the body but the floor (8)
 
 The list to read first: only the method body stands between a signed-in caller
 and what it does.
@@ -51,7 +51,6 @@ and what it does.
 | `invoices.settle` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `invoices.void` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `paymentMethods.startSetup` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `shopfront.settings` | **nothing at the API boundary** — the model declares no `@@gate` |
 
 ### A service hook runs in front of the body (21)
 
@@ -841,7 +840,7 @@ name when it declares none.
 - **methods** — `settings`
 - **custom methods** — `settings`
 - **who may call** —
-  - `settings` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `settings` — anyone, a stranger included — declared `gate: 0`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

@@ -70,7 +70,7 @@ const wiringHint = `
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath }    from 'node:url'
 import { outbox }           from '@frontierjs/junction/outbox'
-import { createCaravan }    from '@frontierjs/caravan'
+import { caravan }    from '@frontierjs/caravan'
 import { env }              from './core/env.ts'
 
 // Beside the main database. A deploy mounts only the directory DATABASE_URL
@@ -79,7 +79,7 @@ import { env }              from './core/env.ts'
 const appRoot = fileURLToPath(new URL('../../', import.meta.url))
 const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), 'jobs.db')
 
-app.configure(createCaravan({ db: jobsDb }))  // the outbox needs a queue
+app.configure(caravan({ db: jobsDb }))  // the outbox needs a queue
 app.configure(outbox())
 
 // Then, in a service that declares \`transactional:\`

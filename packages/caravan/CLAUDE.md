@@ -9,7 +9,7 @@
 
 ```
 src/
-  index.ts     createCaravan() — the public surface, queue + admin routes
+  index.ts     caravan() — the public surface, queue + admin routes
   db.ts        the jobs database: schema, claim/complete/fail, migration on open
   worker.ts    the worker loop
   cron.ts      recurring declarations

@@ -1,10 +1,10 @@
 // @frontierjs/mcp — an MCP surface for a FrontierJS app, derived from the seed.
 //
-// Two halves. `mcpPlugin()` mounts the endpoint inside the API that is already
+// Two halves. `mcp()` mounts the endpoint inside the API that is already
 // running; `projectTools()` is what it serves — the tool list one standing may
 // see, and what graded each answer.
 
-export { mcpPlugin }      from './src/plugin.ts'
+export { mcp }      from './src/plugin.ts'
 export type { McpOptions } from './src/plugin.ts'
 
 export { projectTools, resolveModel, schemaViews } from './src/projection.ts'

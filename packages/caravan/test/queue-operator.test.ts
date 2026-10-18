@@ -21,7 +21,7 @@ import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createTestApp, createStubAuth, createApp, defaultConfig, request } from '@frontierjs/junction'
 import { createClient, GatePlugin } from '../../litestone/src/index.js'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 import { openDb, buildStatements, aggregateStats } from '../src/db.ts'
 import type { CaravanInstance } from '../src/types.ts'
 
@@ -34,8 +34,8 @@ function tmpPath(): string {
   return p
 }
 
-function queueAt(path: string, opts: Parameters<typeof createCaravan>[0] = {}): CaravanInstance {
-  const c = createCaravan({
+function queueAt(path: string, opts: Parameters<typeof caravan>[0] = {}): CaravanInstance {
+  const c = caravan({
     db: path, pollInterval: 15, cleanupAfter: 0,
     queues: { mail: { concurrency: 2 }, reports: { concurrency: 2 } },
     ...opts,
@@ -433,7 +433,7 @@ describe('the operator routes', () => {
 
   async function appWith() {
     const app = await createTestApp({ users })
-    app.configure(createCaravan({ db: ':memory:', pollInterval: 10, admin: true, queues: { mail: {} } }))
+    app.configure(caravan({ db: ':memory:', pollInterval: 10, admin: true, queues: { mail: {} } }))
     return app
   }
 
@@ -517,7 +517,7 @@ model Thing {
       db, auth,
       config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 50 } },
     } as never)
-    app.configure(createCaravan({ db: ':memory:', pollInterval: 10, admin: true, queues: { mail: {} } }))
+    app.configure(caravan({ db: ':memory:', pollInterval: 10, admin: true, queues: { mail: {} } }))
     return app
   }
 
@@ -603,7 +603,7 @@ describe('purge', () => {
 
   it('is refused below ADMINISTRATOR over HTTP, and answers the count to an administrator', async () => {
     const app = await createTestApp({ users: [{ id: 'ops', isAdmin: true }, { id: 'staff', role: 'user' }] })
-    app.configure(createCaravan({ db: ':memory:', pollInterval: 10, admin: true, queues: { mail: {} } }))
+    app.configure(caravan({ db: ':memory:', pollInterval: 10, admin: true, queues: { mail: {} } }))
     const jobs = (app as { jobs?: unknown }).jobs as CaravanInstance
     jobs.queue('mail').pause()
     await jobs.dispatch('x', {}, { queue: 'mail' })

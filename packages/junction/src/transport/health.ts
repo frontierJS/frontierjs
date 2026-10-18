@@ -16,8 +16,8 @@
 //
 // Both are registered as a plugin:
 //
-//   app.configure(healthPlugin())
-//   app.configure(healthPlugin({ path: '/_internal', token: process.env.METRICS_TOKEN }))
+//   app.configure(health())
+//   app.configure(health({ path: '/_internal', token: process.env.METRICS_TOKEN }))
 //
 // Auth: pass a static bearer token or a custom check function. With neither,
 // both endpoints are public — except under NODE_ENV=production, where /metrics
@@ -170,7 +170,7 @@ function timedCheck(fn: () => boolean | Promise<boolean>, timeoutMs: number): Pr
  * App-declared last so a name it states wins — the plugin registered its check
  * without knowing what the app knows about the same resource.
  *
- * It takes no `checks` argument: `healthPlugin({ checks })` puts them on the
+ * It takes no `checks` argument: `health({ checks })` puts them on the
  * APP, so every reader answers the same set. Held in the plugin's closure they
  * were invisible to the devtools console, which answers readiness on its own
  * port and therefore reported a healthy app while `/health` was still deciding
@@ -385,7 +385,7 @@ export function wantsPrometheus(accept: string | undefined): boolean {
 
 // ─── Plugin factory ───────────────────────────────────────────────────────
 
-export function healthPlugin(opts: HealthPluginOptions = {}) {
+export function health(opts: HealthPluginOptions = {}) {
 
   const prefix       = opts.path ?? ''
   const startedAt    = Date.now()
@@ -468,7 +468,7 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
       if (process.env.NODE_ENV === 'production' && !opts.token && !opts.authFn) {
         console.warn(
           `[Junction health] NODE_ENV=production and no \`token\` or \`authFn\` — ${prefix}/metrics NOT served. ` +
-          `Pass healthPlugin({ token }) or plugins: { health: { token } } to scrape it.`
+          `Pass health({ token }) or plugins: { health: { token } } to scrape it.`
         )
         return
       }

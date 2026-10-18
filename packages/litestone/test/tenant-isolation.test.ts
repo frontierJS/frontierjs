@@ -196,6 +196,7 @@ describe('verifyTenantIsolation', () => {
     const holed = CLEAN
       .replace('tenancy { strategy row  column workspaceId  claim workspaceId }', '')
       .replace('@@tenant(none)', '')
+      .replace(/model (Board|Widget) \{/g, 'model $1 {\n    @@gate(0)')
 
     const env      = await createTestEnv({ schema: holed })
     const withRule = await createTestEnv({ schema: CLEAN })

@@ -292,7 +292,7 @@ class AlertRuleFactory extends Factory {
   model = 'AlertRule'
   definition() {
     const seq = uid()
-    // EVERY metricName here is a series `metricsPlugin` really writes, so a
+    // EVERY metricName here is a series `metrics` really writes, so a
     // seeded fleet has rules the evaluator can actually read. The three that
     // were here named `disk.used_percent`, `mem.used_percent` and
     // `outpost.heartbeat` — none of which anything has ever written — and

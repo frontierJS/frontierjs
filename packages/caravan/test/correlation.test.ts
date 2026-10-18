@@ -15,7 +15,7 @@
 // host reports.
 
 import { describe, it, expect, afterEach } from 'bun:test'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 import type { CaravanInstance } from '../src/types.ts'
 
 const queues: CaravanInstance[] = []
@@ -23,7 +23,7 @@ afterEach(async () => { for (const q of queues.splice(0)) await q.stop() })
 
 /** A queue whose host reports `id` as the request in scope. */
 function queueWith(id: string | null | undefined) {
-  const q = createCaravan({ db: ':memory:', pollInterval: 20 })
+  const q = caravan({ db: ':memory:', pollInterval: 20 })
   queues.push(q)
   // The host is the app, given at register() — the same seam Junction uses.
   q.register({ correlationId: () => id ?? null } as never)
@@ -54,7 +54,7 @@ describe('a dispatch records the request it came from', () => {
   })
 
   it('records nothing when there is no request — standalone Caravan', async () => {
-    const q: any = createCaravan({ db: ':memory:', pollInterval: 20 })
+    const q: any = caravan({ db: ':memory:', pollInterval: 20 })
     queues.push(q)
     const id = await q.dispatch('work', {})
     expect(q.find(id)!.correlation_id).toBe(null)
@@ -75,7 +75,7 @@ describe('the handler is told', () => {
   })
 
   it('…and is null for a job nobody requested — the control', async () => {
-    const q: any = createCaravan({ db: ':memory:', pollInterval: 20 })
+    const q: any = caravan({ db: ':memory:', pollInterval: 20 })
     queues.push(q)
     let seen: unknown = 'unset'
     q.handle('work', async (ctx: any) => { seen = ctx.correlationId })

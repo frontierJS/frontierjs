@@ -9,15 +9,15 @@
 // most stalls will happen on jobs nobody thought to bound.
 
 import { describe, it, expect, afterEach } from 'bun:test'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 import type { CaravanInstance } from '../src/types.ts'
 
 const made: CaravanInstance[] = []
-function makeQueue(opts: Parameters<typeof createCaravan>[0] = {}): CaravanInstance {
+function makeQueue(opts: Parameters<typeof caravan>[0] = {}): CaravanInstance {
   // A short drain deliberately: two tests here leave a job running on purpose,
   // and the default 30s is the very cost `FJS-295` names — one stuck handler
   // and every shutdown waits its full deadline.
-  const q = createCaravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100, ...opts })
+  const q = caravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100, ...opts })
   made.push(q)
   return q
 }

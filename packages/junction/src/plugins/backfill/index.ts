@@ -1,5 +1,5 @@
 // plugins/backfill/index.ts
-// backfills() — the engine that makes a declared backfill run.
+// backfill() — the engine that makes a declared backfill run.
 //
 // A backfill is a cursor over one table, and every property that makes it safe
 // comes from a piece that already exists: the row in `db/backfill.lite` is the
@@ -44,7 +44,7 @@ export interface BackfillPluginOptions {
   autoStart?: boolean
 }
 
-/** `app.backfills`. Present only when `app.configure(backfills(...))` installed it. */
+/** `app.backfills`. Present only when `app.configure(backfill(...))` installed it. */
 export interface BackfillApi {
   /** Every backfill this database knows about, with how far each got. */
   status(): Promise<BackfillRow[]>
@@ -59,21 +59,21 @@ export interface BackfillApi {
   declared(): BackfillDefinition[]
 }
 
-export function backfills(defs: BackfillDefinition[] = [], opts: BackfillPluginOptions = {}): Plugin {
+export function backfill(defs: BackfillDefinition[] = [], opts: BackfillPluginOptions = {}): Plugin {
   const intervalMs = opts.intervalMs ?? 60_000
   const queue      = opts.queue      ?? 'default'
   const autoStart  = opts.autoStart  ?? true
 
   for (const d of defs)
     if (!isBackfillDefinition(d)) throw new Error(
-      '[Junction] backfills(): every entry must come from defineBackfill() — ' +
+      '[Junction] backfill(): every entry must come from defineBackfill() — ' +
       `got ${d === null ? 'null' : typeof d}`)
 
   const byName = new Map(defs.map(d => [d.name, d]))
   if (byName.size !== defs.length) {
     const seen = new Set<string>()
     const dupe = defs.find(d => seen.size === seen.add(d.name).size)
-    throw new Error(`[Junction] backfills(): two definitions named '${dupe?.name}' — a name is a row's primary key`)
+    throw new Error(`[Junction] backfill(): two definitions named '${dupe?.name}' — a name is a row's primary key`)
   }
 
   let timer:   ReturnType<typeof setInterval> | null = null
@@ -134,8 +134,8 @@ export function backfills(defs: BackfillDefinition[] = [], opts: BackfillPluginO
       // rows, and the first sign of it would be a job failing in production.
       if (!hasBackfillModel(app.db))
         throw new Error(
-          `[Junction] backfills(): this schema declares no ${BACKFILL_MODEL}. ` +
-          `Run 'fli backfill:install' to import db/backfill.lite, or drop app.configure(backfills(...)).`
+          `[Junction] backfill(): this schema declares no ${BACKFILL_MODEL}. ` +
+          `Run 'fli backfill:install' to import db/backfill.lite, or drop app.configure(backfill(...)).`
         )
 
       // One handler for every backfill: the chunk it runs is named in the

@@ -368,7 +368,7 @@ if (health.clash) {
   renderCheck(`${healthPath} route`, 'pass', health.sources.map(s => s.file).join(', '))
 } else {
   renderCheck(`${healthPath} route`, 'warn',
-    `nothing declares it — not plugins.health in junction.config.js, not healthPlugin() in the ` +
+    `nothing declares it — not plugins.health in junction.config.js, not health() in the ` +
     `api source, and no literal "${healthPath}". Auto-rollback needs a 200 here`)
   warn()
 }

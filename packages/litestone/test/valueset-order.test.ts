@@ -36,11 +36,13 @@ model Swatch {
   note      String?  @transient
   @@label(name)
   @@scope(current, retired == false)
+  @@gate(0)
 }
 model Product {
   id     Int     @id
   color  String? @values(Swatches)
   accent String? @values(Swatches)
+  @@gate(0)
 }
 `
 

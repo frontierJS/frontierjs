@@ -33,6 +33,7 @@ database main { path "./app.db" }
 model Post {
   id    Int    @id @default(autoincrement())
   title String
+  @@gate(0)
   @@db(main)
 }
 

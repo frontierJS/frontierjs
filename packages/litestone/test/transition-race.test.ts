@@ -32,6 +32,7 @@ model Run {
     cancel:    draft      -> cancelled,
     approve:   calculated -> approved @gate(5),
     pay:       approved   -> paid @system)
+  @@gate(0)
 }
 enum RunState { draft calculated cancelled approved paid }
 `

@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { describe, it, expect } from 'bun:test'
-import { createTestApp, request, testCtx, circuitBreaker, callService, Unavailable, healthPlugin, correlationId, type TestApp } from '../index.ts'
+import { createTestApp, request, testCtx, circuitBreaker, callService, Unavailable, health, correlationId, type TestApp } from '../index.ts'
 import { buildService } from '../src/core/service.ts'
 
 import users from './services/users.service.ts'
@@ -302,13 +302,13 @@ describe('Circuit breaker (prices service)', () => {
 
 // ─── Health plugin ────────────────────────────────────────────────────────
 
-describe('healthPlugin', () => {
+describe('health', () => {
 
   it('GET /health returns 200 ok', async () => {
     const app = await createTestApp({
       services: [buildService({ name: 'ping', find: async () => [] })],
     })
-    app.configure(healthPlugin())
+    app.configure(health())
     const res = await request(app).get('/health')
     expect(res.status).toBe(200)
     expect((res.body as Record<string, unknown>).status).toBe('ok')
@@ -318,7 +318,7 @@ describe('healthPlugin', () => {
     const app = await createTestApp({
       services: [buildService({ name: 'ping', find: async () => [] })],
     })
-    app.configure(healthPlugin({
+    app.configure(health({
       checks: { downstream: async () => { throw new Error('connection refused') } },
     }))
     const res = await request(app).get('/health')
@@ -330,7 +330,7 @@ describe('healthPlugin', () => {
     const app = await createTestApp({
       services: [buildService({ name: 'ping', find: async () => [] })],
     })
-    app.configure(healthPlugin())
+    app.configure(health())
     const res  = await request(app).get('/metrics')
     const body = res.body as Record<string, unknown>
     expect(res.status).toBe(200)

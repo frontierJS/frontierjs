@@ -905,7 +905,7 @@ The guard awaits the boot restore and then checks credential *presence*, not val
 validity is the server's job. A trailing `*` is a **segment boundary**: `'/blog/*'` covers
 `/blog/` and everything under it and does not cover `/blogadmin`.
 
-**`cookieAuth` must match the server.** `createAuthPlugin(auth, { cookieAuth: true })` on
+**`cookieAuth` must match the server.** `auth(auth, { cookieAuth: true })` on
 the API has a twin here, because the browser cannot see the server's source and there is
 nothing to derive it from. Left off against a cookie-mode server, the client answers
 "signed out" for a signed-in caller: no boot restore, no socket, and a sign-out that never

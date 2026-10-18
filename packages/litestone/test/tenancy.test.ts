@@ -41,6 +41,7 @@ model Plan {
   id   Int    @id
   code String
   @@tenant(none)
+  @@gate(0)
 }
 `
 

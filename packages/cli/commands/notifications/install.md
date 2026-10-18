@@ -58,15 +58,15 @@ const retargetDb = (source, db) =>
 const MARK = '// ─── Notifications — installed by fli notifications:install ─'
 
 const wiringHint = `
-  import { mailerPlugin }        from '@frontierjs/junction/mail'
-  import { notificationsPlugin } from '@frontierjs/notifications'
+  import { mail }        from '@frontierjs/junction/mail'
+  import { notifications } from '@frontierjs/notifications'
 
   // The mailer FIRST — the plugin declares requires: ['mailer'] when its email
   // transport uses one, so the wrong order is refused at startup rather than at
   // the first send.
-  app.configure(mailerPlugin(createSmtpMailer({ ... })))
+  app.configure(mail(createSmtpMailer({ ... })))
 
-  app.configure(notificationsPlugin({
+  app.configure(notifications({
     db,
     transports: { email: { mailer: 'default' } },
   }))

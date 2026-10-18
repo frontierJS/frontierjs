@@ -34,6 +34,7 @@ model User {
   notes  String? @allow('write', auth().role == 'admin')  // read-only unless admin
 
   @@auth
+  @@gate(0)                                              // public; the field rules above narrow it
 }
 
 model Post {

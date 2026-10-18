@@ -84,6 +84,8 @@ model CustomField {
   type  CustomFieldType
   slot  String?         @system   // the allocator's column, required once max: is declared
   @@unique([model, key])
+
+  @@gate(0)
 }
 
 model Customer {
@@ -91,6 +93,8 @@ model Customer {
   fields Json @default("{}")
 
   @@extensible(fields, declaredBy: CustomField, max: { text: 8, number: 4 })
+
+  @@gate(0)
 }
 ```
 

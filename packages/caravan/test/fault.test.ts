@@ -6,7 +6,7 @@
 // stop, one layer up. `FJS-D655` rules that caravan reads the fault.
 
 import { describe, it, expect, afterEach } from 'bun:test'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 import type { CaravanInstance } from '../src/types.ts'
 
 const made: CaravanInstance[] = []
@@ -19,7 +19,7 @@ const SETTLE = 500
 
 describe('a fault that is not retryable', () => {
   it('stops the job after one attempt', async () => {
-    const q = createCaravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100 })
+    const q = caravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100 })
     made.push(q)
     q.handle('charge', async () => {
       throw Object.assign(new Error('upstream 500 on an unkeyed POST'), { retryable: false })
@@ -34,7 +34,7 @@ describe('a fault that is not retryable', () => {
 
   // The pair `FJS-D201` asks for: a retryable fault still climbs the ladder.
   it('a retryable one still retries', async () => {
-    const q = createCaravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100 })
+    const q = caravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100 })
     made.push(q)
     q.handle('fetch', async () => {
       throw Object.assign(new Error('upstream 503'), { retryable: true })
@@ -52,7 +52,7 @@ describe('a fault that is not retryable', () => {
 // job rethrowing a rate-limit is not back before the provider said it could be.
 describe('a fault that names retryAfterMs', () => {
   const run = async (thrown: Record<string, unknown>) => {
-    const q = createCaravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100 })
+    const q = caravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100 })
     made.push(q)
     q.handle('limited', async () => {
       throw Object.assign(new Error('429'), thrown)
@@ -78,7 +78,7 @@ describe('a fault that names retryAfterMs', () => {
   })
 
   it('does not shorten a ladder step longer than it', async () => {
-    const q = createCaravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100 })
+    const q = caravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100 })
     made.push(q)
     q.handle('slow', async () => {
       throw Object.assign(new Error('429'), { retryAfterMs: 5 })

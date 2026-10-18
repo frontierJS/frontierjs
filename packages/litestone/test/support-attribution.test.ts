@@ -24,7 +24,7 @@ const tick = () => new Promise((r) => setImmediate(r))
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
   database audit { path "${dir}/audit/" driver trail }
-  model Thing { id String @id @default(uuid())  name String  @@trail(audit) }
+  model Thing { id String @id @default(uuid())  name String  @@gate(0)  @@trail(audit) }
 `
 
 const PRINCIPAL = { id: 'subject-1', type: 'user' }
@@ -127,7 +127,7 @@ describe('a trail the app declared itself keeps only what it declared', () => {
           createdAt DateTime @default(now())
           @@db(audit)
         }
-        model Thing { id String @id @default(uuid())  name String  @@trail(audit) }
+        model Thing { id String @id @default(uuid())  name String  @@gate(0)  @@trail(audit) }
       `
       const db: any = await createClient({ schema, resolveFrom: dir })
       db.$logContext(() => ({ operatorId: 'operator-9', episodeId: 'sess-7' }))

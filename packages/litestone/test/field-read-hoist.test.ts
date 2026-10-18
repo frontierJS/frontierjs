@@ -19,6 +19,7 @@ model Doc {
   ownerId Int
   title   String
   secret  String @allow('read', ${pred})
+  @@gate(0)
 }
 `
 const seed = async (db: any) => db.asSystem().doc.createMany({ data: [
@@ -91,6 +92,7 @@ model Doc {
   ownerId Int
   title   String
   secret  String @allow('read', auth().isAdmin) @allow('read', ownerId == auth().id)
+  @@gate(0)
 }` })
     await seed(db)
     const rows = await db.$setAuth({ id: 1, isAdmin: false }).doc.findMany({})

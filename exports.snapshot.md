@@ -415,6 +415,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./sigv4 (default)` | `src/sigv4/sigv4.js` | yes |
 | exports | `./sse (types)` | `src/sse/sse.d.ts` | yes |
 | exports | `./sse (default)` | `src/sse/sse.js` | yes |
+| exports | `./textedit` | `src/textedit/textedit.js` | yes |
 | exports | `./trace (types)` | `src/trace/trace.d.ts` | yes |
 | exports | `./trace (default)` | `src/trace/trace.js` | yes |
 | exports | `./units` | `src/units/units.js` | yes |

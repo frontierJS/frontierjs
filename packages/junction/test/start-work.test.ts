@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from 'bun:test'
 import { createTestApp } from '../src/testing/index.ts'
-import { metricsPlugin } from '../src/plugins/metrics/index.ts'
+import { metrics } from '../src/plugins/metrics/index.ts'
 import { createService } from '../src/core/service.ts'
 import type { App } from '../src/core/app.ts'
 
@@ -133,12 +133,12 @@ describe('app.scheduler holds its jobs until start-work', () => {
 describe('the metrics store starts its timers in work()', () => {
   it('none under _startOnce(), two under _startForTest()', async () => {
     const once = await createTestApp()
-    once.configure(metricsPlugin())
+    once.configure(metrics())
     const underOnce = await intervalsDuring(() => once._startOnce())
     await once.stop()
 
     const test = await createTestApp()
-    test.configure(metricsPlugin())
+    test.configure(metrics())
     const underTest = await intervalsDuring(() => test._startForTest())
     await test.stop()
 

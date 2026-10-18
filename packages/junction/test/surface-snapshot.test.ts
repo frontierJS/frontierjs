@@ -11,7 +11,7 @@
 // so the assertions below are about provenance and ordering, not formatting.
 
 import { describe, expect, it } from 'bun:test'
-import { createApp, healthPlugin, defaultConfig } from '../index.ts'
+import { createApp, health, defaultConfig } from '../index.ts'
 import { buildService } from '../src/core/service.ts'
 import { renderSurfaceSnapshot } from '../tools/surface.ts'
 import { describeSurface }      from '../src/core/app-model.ts'
@@ -27,7 +27,7 @@ async function buildApp() {
     },
   })
 
-  app.configure(healthPlugin())
+  app.configure(health())
 
   // Named hooks, because the snapshot reports a hook by its function name and
   // an app that uses arrows gets `anonymous` — true, and the reason a chain

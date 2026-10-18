@@ -35,9 +35,9 @@ const here     = new URL('.', import.meta.url).pathname
 // The app is a separate process on purpose: devtools binds its own Bun server,
 // and a drive that imported it would hold the port for the life of the runner.
 const APP = `
-import { createApp, createService, healthPlugin, defaultConfig } from '${join(here, '../../index.ts')}'
+import { createApp, createService, health, defaultConfig } from '${join(here, '../../index.ts')}'
 import { devtools } from '${join(here, '../../src/plugins/devtools/index.ts')}'
-import { createCaravan, defineJob } from '${join(here, '../../../caravan/src/index.ts')}'
+import { caravan, defineJob } from '${join(here, '../../../caravan/src/index.ts')}'
 
 // Fails its first attempt and succeeds on the next, so a retry driven from the
 // panel has an observable outcome. A handler that always throws re-fails inside
@@ -52,10 +52,10 @@ const sweep = defineJob({ name: 'nightly-sweep', cron: '0 3 * * *', handler: asy
 const app = createApp({ config: { port: ${APP_PORT},
   http: { ...defaultConfig.http, drainTimeout: 200 } } })
 
-const queue = createCaravan({ db: '${join(dir, 'jobs.db')}', pollInterval: 50 })
+const queue = caravan({ db: '${join(dir, 'jobs.db')}', pollInterval: 50 })
 queue.handle(boom); queue.handle(sweep)
 app.configure(queue)
-app.configure(healthPlugin())
+app.configure(health())
 app.configure(devtools())   // no port: 5503 is the assigned slot
 app.services.register(createService({ name: 'things', async find() { return [] } }))
 await app.start()

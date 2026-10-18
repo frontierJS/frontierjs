@@ -3,8 +3,9 @@
   // tabs beside the scene, in Sierra's side pane (`--side`, Ctrl+\ shows it,
   // Ctrl+O crosses). A tab bar, the shown tab's status line, its newest rows
   // that fit, and a line to type in; Enter sends it. PageUp and PageDown read
-  // back and forward, Ctrl+J and Ctrl+K show the next and the last tab, and
-  // `/new [model]` and `/close` are the study's own words (`tabs.js`).
+  // back and forward, Ctrl+J and Ctrl+K show the next and the last tab, Ctrl+N opens
+  // one on the default model, and `/new [model]` and `/close` are the study's
+  // own words (`tabs.js`).
   //
   // A call the owner's settings do not allow waits on a panel over the input
   // (`askRows`): on an empty line `1` allows it, `2` allows it and keeps what
@@ -101,8 +102,10 @@
   }))
 
   var box = null
-  // Before its first layout the box reads 0 wide.
-  const fit = () => { w = box.width || Math.floor(root.ctx.width * 0.4); h = box.height || root.ctx.height - 1 }
+  // Before its first layout the box reads 0 wide. A side border takes a column
+  // of its width, read off the box so Mesa's rule can move without this.
+  const ruled = (b) => b === true ? 2 : Array.isArray(b) ? b.filter((s) => s === 'left' || s === 'right').length : 0
+  const fit = () => { w = (box.width || Math.floor(root.ctx.width * 0.3)) - ruled(box.border); h = box.height || root.ctx.height - 1 }
   $.onMount(() => {
     box = root.parent
     fit()
@@ -164,17 +167,17 @@
     keep()
   }
 
+  function open(model) {
+    tabs = [...tabs, tabOf(model)]
+    at = tabs.length - 1
+    keep()
+  }
+
   function send() {
     const text = draft.trim()
     if (!text) return
     const asked = studyLine(text)
-    if ('new' in asked) {
-      tabs = [...tabs, tabOf(asked.new)]
-      at = tabs.length - 1
-      draft = ''
-      keep()
-      return
-    }
+    if ('new' in asked) { open(asked.new); draft = ''; return }
     if (asked.close) { close(); draft = ''; return }
     const t = tabs[at]
     if (t.reads) return
@@ -219,6 +222,10 @@
       e.preventDefault()
       at = cycled(at, tabs.length, e.code === 'j' ? 1 : -1)
       keep()
+    } else if (e.ctrlKey && e.code === 'n') {
+      // The draft stays in the field, where it can be sent from the new tab.
+      e.preventDefault()
+      open(null)
     } else if (e.ctrlKey && e.code === 'v') {
       e.preventDefault()
       paste()

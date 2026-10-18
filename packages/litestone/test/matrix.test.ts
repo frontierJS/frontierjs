@@ -90,6 +90,8 @@ model Cell {
   tmp   String?  @transient
   comp  String?  @computed
   gen   String   @generated("upper(text)")
+
+  @@gate(0)
 }
 `
 

@@ -38,7 +38,7 @@ export type Verdict =
  * Does one value cross the line?
  *
  * Four operators and no fifth. The fifth anybody reaches for is *stale*, and
- * staleness is already a series: `metricsPlugin` writes `up` on every pass, so
+ * staleness is already a series: `metrics` writes `up` on every pass, so
  * `up < 1` is the staleness rule and needs no operator that ignores its own
  * threshold.
  */

@@ -8,9 +8,9 @@ description: A mailer that is one method, and the plugin that reads it
 Two plugins, in this order:
 
 ```text
-app.configure(mailerPlugin(createOutboxMailer(join(import.meta.dir, '..', '..', 'db', 'outbox.jsonl'))))
+app.configure(mail({ mailer: createOutboxMailer(join(import.meta.dir, '..', '..', 'db', 'outbox.jsonl')) }))
 
-app.configure(notificationsPlugin({
+app.configure(notifications({
   db,
   transports: { email: { mailer: 'default' } },
 }))
@@ -86,30 +86,30 @@ let src = readFileSync(appTs, 'utf8')
 
 const MAILER = [
   '// ─── Notifications ────────────────────────────────────────────────────────',
-  '// The mailer comes FIRST. notificationsPlugin declares requires: [mailer]',
+  '// The mailer comes FIRST. notifications declares requires: [mailer]',
   '// when its email transport uses one, so the wrong order is refused at',
   '// startup rather than at the first send.',
-  "app.configure(mailerPlugin(createOutboxMailer(join(import.meta.dir, '..', '..', 'db', 'outbox.jsonl'))))",
+  "app.configure(mail({ mailer: createOutboxMailer(join(import.meta.dir, '..', '..', 'db', 'outbox.jsonl')) }))",
   '',
-  'app.configure(notificationsPlugin({',
+  'app.configure(notifications({',
   '  db,',
   "  transports: { email: { mailer: 'default' } },",
   '}))',
 ].join('\n')
 
-if (!/^app\.configure\(mailerPlugin\(/m.test(src)) {
+if (!/^app\.configure\(mail\(/m.test(src)) {
   // `fli new --with notifications` configures the plugin with email off, so the
   // app either has that block, to be replaced with its comment saying so, or no
   // plugin at all, to be added after channels. Matched rather than compared, the
   // same way tutor:jobs finds its anchor: an app that has narrowed the channels
   // callback down is still the same place.
-  const SCAFFOLDED = src.match(/(?:\/\/ ─── Notifications[^\n]*\n(?:\/\/[^\n]*\n)*)?app\.configure\(notificationsPlugin\(\{\s*db\s*\}\)\)/)?.[0]
+  const SCAFFOLDED = src.match(/(?:\/\/ ─── Notifications[^\n]*\n(?:\/\/[^\n]*\n)*)?app\.configure\(notifications\(\{\s*db\s*\}\)\)/)?.[0]
   const CONFIGURE  = SCAFFOLDED ? null
                    : (src.match(/app\.configure\(channels\(\([\s\S]*?\n\}\)\)/)
                    ?? src.match(/app\.configure\(channels\(\)\)/))?.[0]
   const imports    = [...src.matchAll(/^import .*$/gm)]
 
-  if ((!SCAFFOLDED && (!CONFIGURE || src.includes('notificationsPlugin'))) || imports.length === 0) {
+  if ((!SCAFFOLDED && (!CONFIGURE || src.includes('notifications('))) || imports.length === 0) {
     await must($, {
       ok:    false,
       name:  'api/src/app.ts has the place this step edits',
@@ -124,8 +124,8 @@ if (!/^app\.configure\(mailerPlugin\(/m.test(src)) {
 
   const wanted = [
     [/\bimport\s*\{[^}]*\bjoin\b[^}]*\}\s*from\s*'node:path'/, "import { join }                from 'node:path'"],
-    [/\bimport\s*\{[^}]*\bmailerPlugin\b/,                     "import { mailerPlugin }        from '@frontierjs/junction/mail'"],
-    [/\bimport\s*\{[^}]*\bnotificationsPlugin\b/,                 "import { notificationsPlugin } from '@frontierjs/notifications'"],
+    [/\bimport\s*\{[^}]*\bmail\b[^}]*\}\s*from\s*'@frontierjs\/junction\/mail'/, "import { mail }                from '@frontierjs/junction/mail'"],
+    [/\bimport\s*\{[^}]*\bnotifications\b[^}]*\}\s*from\s*'@frontierjs\/notifications'/, "import { notifications }       from '@frontierjs/notifications'"],
     [/\bimport\s*\{[^}]*\bdb\b[^}]*\}\s*from\s*'\.\/core\/db/,    "import { db }                  from './core/db.ts'"],
     [/\bimport\s*\{[^}]*\bcreateOutboxMailer\b/,               "import { createOutboxMailer }  from './core/outbox-mailer.ts'"],
   ].filter(([seen]) => !seen.test(src)).map(([, line]) => line)

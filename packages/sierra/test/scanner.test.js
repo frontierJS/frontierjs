@@ -494,3 +494,28 @@ describe('_module.mesa frontmatter inheritance', () => {
     expect(tree.meta.siteName).toBe('My App')
   })
 })
+
+describe('a _module.md with no body (FJS-D1240)', () => {
+  it('is a pass-through: its front matter cascades and the pages beneath render unwrapped', async () => {
+    const cwd = await makeTmpFixture({
+      'src/routes/_module.mesa': '<slot />',
+      'src/routes/thank-you/_module.md': '---\nrobots: noindex,nofollow\n---\n',
+      'src/routes/thank-you/index.md': '---\ntitle: Thanks\n---\n\nThank you.',
+    })
+    const files = ['src/routes/_module.mesa', 'src/routes/thank-you/_module.md', 'src/routes/thank-you/index.md']
+    const tree = await buildTree(files, 'src/routes', { cwd })
+    const page = tree.children.find(n => n.id === 'thank-you')
+    expect(page.meta.robots).toBe('noindex,nofollow')
+    expect(page.layout).toBe('src/routes/_module.mesa')
+  })
+
+  it('refuses one with a body and no <slot /> by name', async () => {
+    const cwd = await makeTmpFixture({
+      'src/routes/thank-you/_module.md': '---\nrobots: noindex\n---\n\n# Thanks',
+      'src/routes/thank-you/index.md': 'Thank you.',
+    })
+    const files = ['src/routes/thank-you/_module.md', 'src/routes/thank-you/index.md']
+    await expect(buildTree(files, 'src/routes', { cwd }))
+      .rejects.toMatchObject({ code: 'SIERRA_LAYOUT_NO_SLOT', message: expect.stringContaining('src/routes/thank-you/_module.md') })
+  })
+})

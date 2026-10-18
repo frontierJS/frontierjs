@@ -16,7 +16,7 @@
 import { describe, test, expect } from 'bun:test'
 
 import { createClient }  from '../../litestone/src/index.js'
-import { backfills }     from '../src/plugins/backfill/index.ts'
+import { backfill }      from '../src/plugins/backfill/index.ts'
 import { defineBackfill, BACKFILL_JOB } from '../src/plugins/backfill/engine.ts'
 
 const BACKFILL = await Bun.file(new URL('../db/backfill.lite', import.meta.url)).text()
@@ -77,7 +77,7 @@ async function mkApp(defs: any[], opts: any = {}) {
     claim: (k: string, v: unknown) => { claimed[k] = v },
     registerMetricsSource: (k: string, fn: () => unknown) => { metrics[k] = fn },
   }
-  const plugin = backfills(defs, { autoStart: true, intervalMs: 10_000, ...opts })
+  const plugin = backfill(defs, { autoStart: true, intervalMs: 10_000, ...opts })
   plugin.register!(app)
   return { app, db, rec, plugin, api: () => claimed.backfills as any, metrics }
 }
@@ -94,16 +94,16 @@ const seed = async (db: any, n: number) => {
 
 // ─── construction ────────────────────────────────────────────────────────────
 
-describe('backfills()', () => {
+describe('backfill()', () => {
   test('refuses anything that did not come from defineBackfill', () => {
-    expect(() => backfills([{ name: 'x', model: 'Order', field: 'y' } as never]))
+    expect(() => backfill([{ name: 'x', model: 'Order', field: 'y' } as never]))
       .toThrow(/must come from defineBackfill/)
   })
 
   // A name is a row's primary key, so two definitions sharing one are two
   // backfills writing each other's position.
   test('refuses two definitions with one name', () => {
-    expect(() => backfills([ship(), ship()])).toThrow(/two definitions named 'ship'/)
+    expect(() => backfill([ship(), ship()])).toThrow(/two definitions named 'ship'/)
   })
 
   test('claims app.backfills and contributes a metrics source', async () => {
@@ -126,7 +126,7 @@ describe('boot', () => {
       databases: ':memory:',
       schema: 'database main { path "./a.db" }\nmodel Order { id Int @id @default(autoincrement())\n shippedAt DateTime?\n @@db(main) }',
     }) as any
-    const plugin = backfills([ship()])
+    const plugin = backfill([ship()])
     plugin.register!({ db, claim() {} } as never)
     await expect(plugin.boot!({ db, jobs: { handle() {} } } as never))
       .rejects.toThrow(/declares no BackfillRun.*fli backfill:install/s)

@@ -752,7 +752,7 @@ Three smaller ones worth knowing while playing:
   those straight to the element. I assumed the trap and wrote `focusout`; both
   work.
 
-- **Login is rate-limited** by `createAuthPlugin`'s defaults (10 per 15
+- **Login is rate-limited** by `auth`'s defaults (10 per 15
   minutes); `api/src/app.ts` raises it to 100 here so a burst of drives doesn't
   read as "broken app". Run `bun run verify` often enough in a quarter hour and
   sign-in still starts answering 429 — that is the limiter working, not a bug.

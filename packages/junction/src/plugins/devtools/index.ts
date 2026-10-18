@@ -438,7 +438,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
           }
 
           // Readiness — the built-in probe, plugin-registered checks, and
-          // whatever the app declared through healthPlugin({ checks }). The
+          // whatever the app declared through health({ checks }). The
           // last of those is the plugin's own option and unreachable from
           // here, so what this shows is every check with a registered owner.
           if (url.pathname === '/api/health')

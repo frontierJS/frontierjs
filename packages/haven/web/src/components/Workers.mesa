@@ -13,17 +13,23 @@
   // (`lib/working.js`), the same glyphs the kitchen's cooks wear.
   //
   // Standing beside a worker reads it: what it asks, else its last words,
-  // else the file it last touched, and how long ago. No key does this,
+  // else the file it last touched, and how long ago — a bubble as a member's
+  // line is, under the worker or over it where the view has no room below,
+  // the session, task, verb and age each in their own ink as the kitchen's
+  // are (`crowd.js`'s `picked`). No key does this,
   // because the line input holds the keys and a letter pressed beside a
   // worker would be typed into the line. A session that is one of the
   // study's tabs reads out with its number in the study's bar, `[2]`.
   //
   // A route places this (`routes/workshop.mesa`) and never the scene file:
   // the scene's picture is pinned, and the directory differs per machine.
-  import { at } from '#cell'
+  import { at, tint } from '#cell'
   import { studyTabs } from '#study'
   import { readWorkers } from '#workers'
-  import { stateOf, spinAt, TOOL } from '@/lib/working.js'
+  import { stateOf, spinAt, TASK, TOOL } from '@/lib/working.js'
+  import { BUBBLE, picked } from '@/lib/scene/crowd.js'
+  import { bubble } from '@/lib/games/booth.js'
+  import { cells } from '@/lib/scene/cells.js'
 
   const scene = $context.scene
   const POLL_MS = 1000
@@ -49,9 +55,18 @@
     return w.file ? `${s} ${w.file} · ${ago(now - w.at)}` : `${s} working · ${ago(now - w.seen)}`
   }
 
+  // The kitchen's: a task in an order's amber, a raised hand red, last words a plate's green.
+  const PICKS = [
+    [/(?<=^\()(?:\[\d+\] )?\S+/g, BUBBLE.nick],
+    [TASK, '#fbbf24'],
+    [/\basks:/g, '#ef4444'],
+    [/\bdone:/g, '#4ade80'],
+    [/\d+[sm] ago/g, BUBBLE.old],
+  ]
+
   const ago = (ms) => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))}s ago` : `${Math.round(ms / 60_000)}m ago`)
 
-  /** What is drawn, in the view's cells: a figure per worker, a count over a crowded bench, and the worker beside `me` read out. */
+  /** What is drawn, in the view's cells: a figure per worker, a count over a crowded bench, and the worker beside `me` read out in a bubble. */
   function placed(ws, v, me, now, tabs) {
     const benches = new Map(scene.marks.filter((m) => m.kind === 'piece' && m.piece.bench).map((m) => [m.piece.bench, m]))
     const byBench = new Map()
@@ -73,24 +88,31 @@
         out.push({ key: `n:${name}`, ...b.spot(`slot-${Math.min(here.length, SEATS)}`), text: `(${says.join(' · ')})`, layer: 12, surface: true })
       }
     }
-    const near = me && figures.find((f) => Math.abs(f.x - me.x) <= 1 && Math.abs(f.y - me.y) <= 1)
-    if (near) {
-      const text = reading(near.w, now, tabs)
-      out.push({ key: 'read', x: near.x, y: near.y + 1, text, layer: 12, surface: true })
-    }
     // A figure off the view is not drawn; a line is kept inside it, as a bubble is.
-    return out
+    const drawn = out
       .filter((o) => o.y >= v.y && o.y < v.y + v.h && (o.surface || (o.x >= v.x && o.x < v.x + v.w)))
       .map((o) => {
         const text = o.text.slice(0, v.w)
         return { ...o, text, x: Math.max(0, Math.min(o.x - v.x, v.w - text.length)), y: o.y - v.y }
       })
+    const near = me && figures.find((f) => Math.abs(f.x - me.x) <= 1 && Math.abs(f.y - me.y) <= 1)
+    if (!near) return drawn
+    const rows = bubble(reading(near.w, now, tabs), Math.min(BUBBLE.w, v.w), { gap: '', most: BUBBLE.rows })
+    const fx = near.x - v.x
+    const fy = near.y - v.y
+    const x = Math.max(0, Math.min(fx, v.w - cells(rows[0])))
+    const y = fy + 1 + rows.length <= v.h ? fy + 1 : Math.max(0, fy - rows.length)
+    rows.forEach((text, i) => drawn.push({ key: `r:${i}`, x, y: y + i, text, color: BUBBLE.ink, ground: BUBBLE.ground, layer: 12, surface: true }))
+    for (const s of picked(rows, PICKS)) {
+      drawn.push({ key: `rp:${s.dy}:${s.dx}`, x: x + s.dx, y: y + s.dy, text: s.text, color: s.ink, ground: BUBBLE.ground, layer: 13, surface: true })
+    }
+    return drawn
   }
 </script>
 
 {#each placed(workers, view, me, now, tabs) as o (o.key)}
   {#if o.surface}
-    <p class="surface" {@attach at(o.x, o.y, o.layer)}>{o.text}</p>
+    <pre class="surface" {@attach at(o.x, o.y, o.layer)} {@attach tint(o.color, o.ground)}>{o.text}</pre>
   {:else}
     <p {@attach at(o.x, o.y, o.layer)}>{o.text}</p>
   {/if}

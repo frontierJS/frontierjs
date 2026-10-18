@@ -21,6 +21,7 @@ const SCHEMA = `
     name   String
     apiKey String? @secret
     @@db(main)
+    @@gate(0)
     @@trail(audit)
   }
 `

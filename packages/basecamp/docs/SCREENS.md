@@ -989,7 +989,7 @@ impersonator may not do.
 **Hub settings and backups** are the two sysadmin screens left, and both need a
 model that does not exist.
 
-**`/metrics` is unauthenticated** — `healthPlugin` was configured with no token,
+**`/metrics` is unauthenticated** — `health` was configured with no token,
 so the service registry and every action name is world-readable. Not exploited
 by anything here and not changed in this phase, because the drives and any
 external probe read it; worth a decision rather than a quiet edit.

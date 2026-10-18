@@ -15,6 +15,7 @@
 
 import { existsSync, readFileSync } from 'fs'
 import { resolve }                  from 'path'
+import { importedAs }               from './utils.js'
 
 // The composition root first: `fli new` configures plugins in `api/src/app.ts`
 // and the layout calls that file the assembly. `api/index.*` is the ENTRY and
@@ -41,7 +42,7 @@ const read = (abs) => { try { return readFileSync(abs, 'utf8') } catch { return 
 
 // ─── resolveHealthPath ───────────────────────────────────────────────────────
 //
-// `healthPlugin()` registers through `app.get()`, which is the one owner of
+// `health()` registers through `app.get()`, which is the one owner of
 // apiPrefix — so an app with a prefix serves health at `{prefix}/health` and
 // NOTHING a caller writes through the shortcuts can answer at a bare `/health`.
 //
@@ -69,7 +70,7 @@ export function resolveHealthPath(root) {
 // finds rather than the doctor.
 //
 // Returns { declared, sources: [{ how, file }], clash }.
-//   how: 'plugin-call'   — app.configure(healthPlugin()) in the API source
+//   how: 'plugin-call'   — app.configure(health()) in the API source
 //        'config'        — plugins: { health: … } in junction.config
 //        'route-literal' — the configured path written out as a string
 export function declaresHealth(root, healthPath = '/health') {
@@ -86,8 +87,9 @@ export function declaresHealth(root, healthPath = '/health') {
 
   for (const c of present(root, CODE_FILES)) {
     const src = read(c.abs)
-    if (servesPlugin && /healthPlugin\s*\(/.test(src)) sources.push({ how: 'plugin-call', file: c.rel })
-    else if (literal.test(src))                        sources.push({ how: 'route-literal', file: c.rel })
+    const plugin = importedAs(src, 'health', '@frontierjs/junction')
+    if (servesPlugin && plugin && new RegExp(`\\b${plugin}\\s*\\(`).test(src)) sources.push({ how: 'plugin-call', file: c.rel })
+    else if (literal.test(src))                                                    sources.push({ how: 'route-literal', file: c.rel })
   }
 
   if (servesPlugin) {

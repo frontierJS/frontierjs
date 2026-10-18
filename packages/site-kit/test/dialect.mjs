@@ -91,6 +91,37 @@ Beyond the doors.
     JSON.stringify(dialect.remarkPlugins[0][1].words.get(PAGE).map((w) => w.word)) === JSON.stringify(['duo', 'prose']))
 }
 
+// ── A preview stamps each wrapper with its divider's line (FJS-3275) ────────
+{
+  const dialect = siteDialect()
+  const ctx = await compileMd(`Intro.
+
+====|.duo
+
+First band.
+
+===|.featured
+
+An article.
+
+====
+
+Second band.
+`, { filename: PAGE, loc: true, remarkPlugins: dialect.remarkPlugins, rehypePlugins: dialect.rehypePlugins })
+  const html = ctx.markdownHTML
+  const locOf = (re) => re.exec(html)?.[1]
+  check('a preamble band is stamped with its first line',
+    locOf(/<section data-fjs-loc="(\d+):\d+" class="band">/) === '1', html)
+  check('a band is stamped with its ==== line',
+    locOf(/<section data-fjs-loc="(\d+):\d+" class="band duo">/) === '3', html)
+  check('the band opened by a bare ==== is stamped with that line',
+    [...html.matchAll(/<section data-fjs-loc="(\d+):\d+"/g)].map((m) => m[1]).join() === '1,3,11', html)
+  check('an article is stamped with its === line',
+    locOf(/<article data-fjs-loc="(\d+):\d+" class="featured">/) === '7', html)
+  check('the article taking what came before its === is stamped with that content',
+    locOf(/<article data-fjs-loc="(\d+):\d+">\s*<p[^>]*>First band/) === '5', html)
+}
+
 // ── === with no ==== ─────────────────────────────────────────────────────────
 {
   const html = await compile('<p>image</p>\n\n===|.featured\n\n# Title\n')

@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-52 services · 40 routes · 18 plugins · prefix (none)
+53 services · 40 routes · 18 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -287,6 +287,22 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 | before | `take` | `validateInput` |
+
+### `app-editors` · model `AppEditor`
+
+- **methods** — `find`, `get`, `create`, `patch`, `remove`
+- **broadcasts on** — `(computed)`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `create` | `siteFromGit` → `autoValidate` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
 
 ### `apps` · model `App`
 

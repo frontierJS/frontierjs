@@ -184,12 +184,12 @@ const serverHint = `
 // ─── Add to api/src/app.ts ──────────────────────────────────────────────────
 
 import { auth, db }         from './auth.ts'
-import { createAuthPlugin } from '@frontierjs/auth'
+import { auth } from '@frontierjs/auth'
 import { withLitestoneDb }  from '@frontierjs/junction'
 
 const app = createApp({ auth })
 
-app.configure(createAuthPlugin(auth, {
+app.configure(auth(auth, {
   prefix:    '/auth',
   cookieAuth: false,
 }))

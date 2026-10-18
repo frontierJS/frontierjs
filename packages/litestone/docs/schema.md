@@ -1304,6 +1304,8 @@ model Order {
     ship:   paid            -> shipped,
     refund: paid            -> refunded @gate(5),
     cancel: [pending, paid] -> cancelled)
+
+  @@gate(0)
 }
 ```
 

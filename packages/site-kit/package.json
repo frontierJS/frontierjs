@@ -11,6 +11,7 @@
     "./vite": "./config/vite.js",
     "./collection": "./src/collection.js",
     "./tel": "./src/tel.js",
+    "./editable": "./src/editable.js",
     "./check": "./check/run.js",
     "./check/schema/*": "./check/schema/*.js",
     "./blocks/*.mesa": "./src/blocks/*.mesa",

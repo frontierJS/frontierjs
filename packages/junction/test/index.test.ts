@@ -2510,7 +2510,7 @@ describe('Bidirectional WS service calls', () => {
 
 import { authenticate, requireRole, circuitBreaker } from '../src/core/hooks.ts'
 import { correlationId }                from '../src/transport/middleware.ts'
-import { healthPlugin }                 from '../src/transport/health.ts'
+import { health }                 from '../src/transport/health.ts'
 import { Forbidden, Unavailable } from '../src/core/errors.ts'
 
 // ─── authenticate / requireRole use proper FrameworkError subclasses ──────
@@ -3962,13 +3962,13 @@ describe('app.ws() routing', () => {
 
 // ─── /health and /metrics endpoints ──────────────────────────────────────
 
-describe('healthPlugin', () => {
+describe('health', () => {
 
   async function makeApp(opts = {}) {
     const app = await createTestApp({
       services: [buildService({ name: 'noop', find: async () => [] })],
     })
-    app.configure(healthPlugin(opts))
+    app.configure(health(opts))
     return app
   }
 
@@ -3994,7 +3994,7 @@ describe('healthPlugin', () => {
     const app = await createTestApp({
       services: [buildService({ name: 'noop', find: async () => [] })]
     })
-    app.configure(healthPlugin({
+    app.configure(health({
       checks: {
         downstream: async () => { throw new Error('connection refused') }
       }
@@ -4087,7 +4087,7 @@ describe('healthPlugin', () => {
     const app = await createTestApp({
       services: [buildService({ name: 'noop', find: async () => [] })]
     })
-    app.configure(healthPlugin({ path: '/_internal' }))
+    app.configure(health({ path: '/_internal' }))
     const res = await request(app).get('/_internal/health')
     expect(res.status).toBe(200)
     // Default path should 404
@@ -4099,7 +4099,7 @@ describe('healthPlugin', () => {
     const app = await createTestApp({
       services: [buildService({ name: 'noop', find: async () => [] })]
     })
-    app.configure(healthPlugin({
+    app.configure(health({
       authFn: (ctx) => ctx.headers['x-internal'] === 'yes'
     }))
     const allowed = await request(app).get('/health').set('x-internal', 'yes')
@@ -4698,7 +4698,7 @@ describe('_metricsSources', () => {
 
   it('registered provider appears in GET /metrics', async () => {
     const app = await createTestApp()
-    app.configure(healthPlugin())
+    app.configure(health())
     app._metricsSources.set('myplugin', () => ({ widgets: 7, active: true }))
     const res = await request(app).get('/metrics')
     expect(res.status).toBe(200)
@@ -4708,7 +4708,7 @@ describe('_metricsSources', () => {
 
   it('multiple providers all appear in /metrics', async () => {
     const app = await createTestApp()
-    app.configure(healthPlugin())
+    app.configure(health())
     app._metricsSources.set('jobs',    () => ({ pending: 3 }))
     app._metricsSources.set('conduit', () => ({ targets: { total: 2 } }))
     const res = await request(app).get('/metrics')
@@ -4719,7 +4719,7 @@ describe('_metricsSources', () => {
 
   it('a provider that throws does not crash /metrics', async () => {
     const app = await createTestApp()
-    app.configure(healthPlugin())
+    app.configure(health())
     app._metricsSources.set('broken', () => { throw new Error('provider error') })
     app._metricsSources.set('fine',   () => ({ ok: true }))
     const res = await request(app).get('/metrics')
@@ -4732,7 +4732,7 @@ describe('_metricsSources', () => {
 
   it('provider result is merged at top level of metrics response', async () => {
     const app = await createTestApp()
-    app.configure(healthPlugin())
+    app.configure(health())
     app._metricsSources.set('caravan', () => ({
       queues: { default: { pending: 1, running: 0, dead: 0 } },
       total:  { pending: 1, running: 0, dead: 0 },

@@ -98,7 +98,7 @@ export function stubFor({ model, field }) {
     `  fill:  (row) => /* the value for this row */ null,`,
     `})`,
     ``,
-    `// app.configure(backfills([${camel(name)}]))`,
+    `// app.configure(backfill([${camel(name)}]))`,
   ]
 }
 

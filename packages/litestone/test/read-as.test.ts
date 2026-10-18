@@ -33,6 +33,13 @@ model Order {
 model Product {
   id   Int    @id @default(autoincrement())
   name String
+  @@gate(0)
+}
+
+// Declares nothing in a schema that declares access: system-only (FJS-D1206).
+model Bare {
+  id   Int    @id @default(autoincrement())
+  name String
 }
 
 // Gated but unpoliced: the gate alone is a reason to grade.
@@ -62,6 +69,7 @@ model Lead {
   id   Int    @id @default(autoincrement())
   name String
   @@capabilities(all)
+  @@gate(0)
 }
 
 // The grid without \`(all)\`: writes and moves only, so read stays open.
@@ -69,6 +77,7 @@ model Memo {
   id   Int    @id @default(autoincrement())
   body String
   @@capabilities
+  @@gate(0)
 }
 `
 
@@ -159,7 +168,7 @@ describe('what of the row they may see', () => {
 })
 
 describe('$readGrading — when the whole pass can be skipped', () => {
-  test('a model with no gate, no policy and no field rule is open', async () => {
+  test('a model gated at 0 with no policy and no field rule is open', async () => {
     const db = await client()
     expect(db.$readGrading('product')).toBe('open')
   })
@@ -189,6 +198,13 @@ describe('$readGrading — when the whole pass can be skipped', () => {
     const db = await client()
     expect(db.$readGrading('nope')).toBe('graded')
     expect(await db.$readAs('nope', ROW, staff)).toBeNull()
+  })
+
+  test('a model that declares no access in a schema that does is graded, and answers no one', async () => {
+    const db = await client()
+    expect(db.$readGrading('bare')).toBe('graded')
+    expect(await db.$readAs('bare', { id: 1, name: 'x' }, null)).toBeNull()
+    expect(await db.$readAs('bare', { id: 1, name: 'x' }, staff)).toBeNull()
   })
 
   test('an open model still answers the row unchanged', async () => {

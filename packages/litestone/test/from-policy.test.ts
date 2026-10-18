@@ -42,6 +42,7 @@ model Tag {
   id       Int    @id
   parentId Int
   parent   Parent @relation(fields: [parentId], references: [id])
+  @@gate(0)
 }
 `
 

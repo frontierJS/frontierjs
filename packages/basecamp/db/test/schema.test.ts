@@ -308,7 +308,7 @@ describe('generated migration', () => {
     expect(readFileSync(join(dir, files[0]), 'utf8')).toContain(generateDDLForDatabase(r.schema, 'audit'))
   })
 
-  test('applies to a fresh database — 68 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 69 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -353,8 +353,8 @@ describe('generated migration', () => {
     // an environment's and an app's variables out of two Json columns. 62 with
     // `Dependency` and `DependencyUse`, the dependency mirror. 63 with
     // `ServerPosture`. 67 with the four monitor tables (`FJS-1557`). 68 with
-    // `AppBackup`.
-    expect(tables.length).toBe(68)
+    // `AppBackup`. 69 with `AppEditor` (`FJS-D1230`).
+    expect(tables.length).toBe(69)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {
@@ -890,6 +890,92 @@ describe('WorkspaceMember.role — nobody grades themselves', () => {
     // No workspaceId on the principal: the switcher is asked before one is chosen.
     const rows = await db.$setAuth({ id: 'u1', userId: 'u1' }).workspaceMember.findMany({})
     expect(rows.map((r: any) => r.workspaceId).sort()).toEqual([ws.id, other.id].sort())
+    db.$close()
+  })
+})
+
+// ─── AppEditor — a grant held by somebody who is no member (FJS-D1230) ──────
+//
+// The row carries no workspaceId; its policy reads the App's through the
+// relation. A policy FILTERS, so each refusal is asserted as an empty read or
+// a write that did not land, paired with the call that does.
+
+describe('AppEditor — an editor reads their own grants, an admin writes them', () => {
+
+  /** Two workspaces with an app each, an editor 'e1' who is a member of
+   *  neither, and a grant on workspace A's app. */
+  async function twoSites(sys: any) {
+    const a = await seedWorkspace(sys)
+    const b = await sys.workspace.create({ data: {
+      accountId: a.accountId, ownerId: a.ownerId,
+      name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
+    } })
+    const site = async (ws: any, tag: string) => {
+      const project     = await sys.project.create({ data: { workspaceId: ws.id, name: tag, slug: tag } })
+      const environment = await sys.environment.create({ data: {
+        workspaceId: ws.id, projectId: project.id, name: 'prod', slug: 'prod' } })
+      return sys.app.create({ data: { workspaceId: ws.id, environmentId: environment.id, name: 'site', slug: 'site',
+        type: 'static', source: { kind: 'git', repo: `git@example.com:${tag}.git` } } })
+    }
+    const appA = await site(a, 'a')
+    const appB = await site(b, 'b')
+    for (const id of ['u1', 'u2', 'e1'])
+      await sys.user.create({ data: { id, email: `${id}-${Math.random().toString(36).slice(2, 8)}@x.co`, accountId: a.accountId } })
+    const grant = await sys.appEditor.create({ data: { appId: appA.id, userId: 'e1' } })
+    return { a, b, appA, appB, grant }
+  }
+
+  test('the editor reads their grant with no workspace on the principal; nobody else does', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { grant } = await twoSites(sys)
+
+    const editor   = await db.$setAuth({ id: 'e1', userId: 'e1' }).appEditor.findMany({})
+    const stranger = await db.$setAuth({ id: 'u1', userId: 'u1' }).appEditor.findMany({})
+    expect(editor.map((r: any) => r.id)).toEqual([grant.id])
+    expect(stranger).toEqual([])
+    db.$close()
+  })
+
+  test('a member reads the grants on their workspace\'s apps and not another\'s', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, b, grant } = await twoSites(sys)
+
+    expect((await db.$setAuth(as('viewer', { workspaceId: a.id })).appEditor.findMany({})).map((r: any) => r.id))
+      .toEqual([grant.id])
+    expect(await db.$setAuth(as('viewer', { workspaceId: b.id })).appEditor.findMany({})).toEqual([])
+    db.$close()
+  })
+
+  test('an admin adds an editor to their own workspace\'s app and not to another\'s', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, b, appA } = await twoSites(sys)
+
+    const mine = await db.$setAuth(as('admin', { workspaceId: a.id })).appEditor.create({
+      data: { appId: appA.id, userId: 'u1', role: 'publish' } })
+    expect(mine.role).toBe('publish')
+
+    // Refused twice over: App's tenancy hides appA from workspace B, so the
+    // reference names no App, and the create policy denies it besides.
+    const crossing = db.$setAuth(as('admin', { workspaceId: b.id }))
+      .appEditor.create({ data: { appId: appA.id, userId: 'u2' } })
+    await expect(crossing).rejects.toThrow()
+    expect(await sys.appEditor.count({ where: { appId: appA.id } })).toBe(2)
+    db.$close()
+  })
+
+  test('below admin a grant is not written, and an editor cannot raise their own', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, appA, grant } = await twoSites(sys)
+
+    await expect(db.$setAuth(as('developer', { workspaceId: a.id }))
+      .appEditor.create({ data: { appId: appA.id, userId: 'u1' } })).rejects.toThrow()
+    await db.$setAuth({ id: 'e1', userId: 'e1' }).appEditor
+      .update({ where: { id: grant.id }, data: { role: 'publish' } }).catch(() => {})
+    expect((await sys.appEditor.findUnique({ where: { id: grant.id } })).role).toBe('edit')
     db.$close()
   })
 })

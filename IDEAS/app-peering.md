@@ -55,7 +55,7 @@ over plain HTTPS between public hosts.
 | a signed call | `signRequest()` / `verifyRequest()`, `@frontierjs/toolbelt/signature` — a `secret` or a `privateKey`, a timestamp and a nonce | no bearer replay; the scheme is ours. Outpost already signs what it reports to Basecamp (`packages/outpost/src/report.js`) |
 | a verified credential becoming a principal | `bearerClaim()` / `toDataPrincipal()` (`bridge-index`) | the one owner of that translation (Invariant 4) |
 | Basecamp as a fleet's trust root | Outpost enrollment, the pinned certificate of `FJS-D557` | Basecamp already mints an identity at enrollment and pins it |
-| an outside caller graded per standing | `mcpPlugin()`, `FJS-D258` | the gate as the permission model for a non-person |
+| an outside caller graded per standing | `mcp()`, `FJS-D258` | the gate as the permission model for a non-person |
 
 ---
 

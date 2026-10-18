@@ -25,7 +25,7 @@ import { commitments, defineCommitment, fireCommitment, COMMITMENT_FIRE_JOB } fr
 import { outbox }        from '../../junction/src/plugins/outbox/index.ts'
 import type { CommitmentSpec } from '../../junction/src/plugins/commitments/index.ts'
 import type { App }      from '../../junction/index.ts'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 import { auditDatabase } from './audit-trail-model.ts'
 
 const SCHEMA = `
@@ -71,7 +71,7 @@ async function bootApp(schema = SCHEMA, { plugin = true, timeZone, hooks, relay 
   const app = await createTestApp({ system })
   app.db = db
 
-  const queue = createCaravan({ db: ':memory:', pollInterval: 10 })
+  const queue = caravan({ db: ':memory:', pollInterval: 10 })
   app.configure(queue)
   // A cron that never fires inside a test: every sweep below is driven by hand,
   // so a tick landing mid-assertion cannot move a count.
@@ -104,7 +104,7 @@ async function until(what: string, ok: () => boolean | Promise<boolean>, ms = 3_
 
 const metrics = (app: App) => (app as any)._metricsSources.get('commitments')()
 
-const fires = (queue: ReturnType<typeof createCaravan>) =>
+const fires = (queue: ReturnType<typeof caravan>) =>
   queue.list({ limit: 500 }).filter(j => j.name === COMMITMENT_FIRE_JOB)
 
 // ─── the sweep and the fire ───────────────────────────────────────────────────
@@ -684,7 +684,7 @@ ${SCHEMA.replace('database main { path "./app.db" }', '').replace('  @@db(main)\
   closers.push(() => registry.close?.())
 
   const app = createApp({ tenants: registry }) as any
-  const queue = createCaravan({ db: ':memory:', pollInterval: 10 })
+  const queue = caravan({ db: ':memory:', pollInterval: 10 })
   app.configure(queue)
   if (plugin) app.configure(commitments({ cron: '0 0 1 1 *' }))
   closers.push(() => queue.stop())
@@ -727,7 +727,7 @@ ${SCHEMA.replace('database main { path "./app.db" }', '').replace('  @@db(main)\
     const db: any = await createClient({ db: ':memory:', schema })
     closers.push(() => db.$close())
     const app = createApp({ db, system: { userId: 'system', role: 'system' } as any }) as any
-    const queue = createCaravan({ db: ':memory:', pollInterval: 10 })
+    const queue = caravan({ db: ':memory:', pollInterval: 10 })
     app.configure(queue)
     app.configure(commitments({ cron: '0 0 1 1 *' }))
     closers.push(() => queue.stop())
@@ -767,7 +767,7 @@ extend model OutboxMessage { @@tenant(none) }
     const db: any = await createClient({ db: ':memory:', schema })
     closers.push(() => db.$close())
     const app = createApp({ db, system: { userId: 'system', role: 'system' } as any }) as any
-    const queue = createCaravan({ db: ':memory:', pollInterval: 10 })
+    const queue = caravan({ db: ':memory:', pollInterval: 10 })
     app.configure(queue)
     app.configure(outbox())
     app.configure(commitments({ cron: '0 0 1 1 *', hooks: {

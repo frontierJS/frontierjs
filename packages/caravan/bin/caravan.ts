@@ -39,7 +39,7 @@
 import { Database }   from 'bun:sqlite'
 import { existsSync, readdirSync, readlinkSync } from 'node:fs'
 import { resolve }    from 'node:path'
-import { createCaravan }                                  from '../src/index.ts'
+import { caravan as caravanPlugin }                                  from '../src/index.ts'
 import { DEFAULT_DB_PATH, DEFAULT_LEASE_MS, EVERY_QUEUE } from '../src/db.ts'
 import type { PauseRow }                                  from '../src/db.ts'
 
@@ -164,7 +164,7 @@ let liveInstances: number
 
 // ─── the verb ─────────────────────────────────────────────────────────────────
 
-const caravan = createCaravan({ db, cleanupAfter: 0 })
+const caravan = caravanPlugin({ db, cleanupAfter: 0 })
 const base    = { db, source, exists: true, caravan: true, liveInstances }
 
 try {

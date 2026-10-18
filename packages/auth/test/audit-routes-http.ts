@@ -11,7 +11,7 @@
 // `127.0.0.1` here.
 
 import { createTestApp } from '@frontierjs/junction'
-import { createAuthPlugin } from '../plugin.ts'
+import { auth as authPlugin } from '../plugin.ts'
 import type { AuthPluginOptions } from '../types.ts'
 
 export interface RawResponse {
@@ -22,10 +22,11 @@ export interface RawResponse {
   text:       string
 }
 
-export async function appWith(auth: any, plugin: AuthPluginOptions = {}, config: Record<string, unknown> = {}) {
+export async function appWith(auth: any, plugin: Omit<AuthPluginOptions, 'auth'> = {}, config: Record<string, unknown> = {}) {
   const app: any = await createTestApp({ auth, config })
   app.setAuth(auth)
-  app.configure(createAuthPlugin(auth, {
+  app.configure(authPlugin({
+    auth,
     loginRateLimit:         { max: 10_000, window: '15 minutes' },
     registerRateLimit:      { max: 10_000, window: '15 minutes' },
     passwordResetRateLimit: { max: 10_000, window: '15 minutes' },

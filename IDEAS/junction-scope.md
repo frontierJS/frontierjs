@@ -51,7 +51,7 @@ adapter; transport is 7,030 and the client 3,336. The rest:
 
 | Battery | Lines | Imported by the core? | Known to the core by name? | Outside callers |
 | --- | --- | --- | --- | --- |
-| mail: `mail/` | 1,224 | type only — `IMail` in `app.ts` | `app.mail`, `mailerPlugin` | notifications 19, basecamp 9, example 4 |
+| mail: `mail/` | 1,224 | type only — `IMail` in `app.ts` | `app.mail`, `mail` | notifications 19, basecamp 9, example 4 |
 | email tiers: `plugins/email/` | 642 | no | no | none; the `./email` subpath is imported only by junction |
 | scheduler: `scheduler/` | 395 | **yes** — `createApp` constructs it ([app.ts:997](../packages/junction/src/core/app.ts#L997)); `app-model` describes it; webhooks ticks on it | `app.scheduler` | basecamp 2, caravan 1; `fli check` grades its use |
 | cache: `cache/` | 386 | **yes** — `createApp` constructs it; `service.ts` for `createService({ cache })`; `idempotency.ts` for the replay store | `app.cache` | none |
@@ -271,7 +271,7 @@ so, and until it is written the next one lands wherever its author stood.
 
 - ~~**FJS-D645 — Does the edge test's allow-list carry `plugins/declared.ts`?**~~ **Answered 2026-10-08 (`FJS-D645`): A — Yes. The installer is `plugins/declared.ts`, the core names that one module, and that module names the batteries. The allow-list has a row for it citing `FJS-D256`.** Found building `FJS-D639`, which says the allow-list names *two* ruled exceptions. Building it needed a third: `config.plugins` (`FJS-D256`) installs manifest, openapi and devtools from the start phase, and every `fli new` app declares `manifest: true`. Built as **A**, pending this ruling.
   - **A** — Yes. The installer is `plugins/declared.ts`, the core names that one module, and that module names the batteries. The allow-list has a row for it citing `FJS-D256`.
-  - **B** — No. `config.plugins` declares only `health`, which is on an axis. The batteries are configured by hand, and `fli new` writes `app.configure(manifestPlugin())`.
+  - **B** — No. `config.plugins` declares only `health`, which is on an axis. The batteries are configured by hand, and `fli new` writes `app.configure(manifest())`.
   - **C** — No. Each battery registers its own declared key when its subpath is imported, so the core holds a registry and no import.
   - **Recommend A** — it keeps `FJS-D256` and costs one row that names its ruling. B reopens `FJS-D256` and edits every scaffolded app. C makes a config key work only if something else happened to import the battery, so the key would fail silently.
 

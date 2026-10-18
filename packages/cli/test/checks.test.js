@@ -174,7 +174,7 @@ const CLEAN = {
   // clean tree rather than skipping — a rule that only ever skips is the failure
   // this file exists to prevent — and finds nothing, because no model here
   // derives a service name auth registers.
-  'api/src/core/auth.ts':               "import { createAuthPlugin } from '@frontierjs/auth'\nexport const plugin = createAuthPlugin(auth)\n",
+  'api/src/core/auth.ts':               "import { auth as authRoutes } from '@frontierjs/auth'\nexport const plugin = authRoutes({ auth })\n",
   'web/index.html':                     '<!doctype html>\n<body><div id="app"></div></body>\n',
   'web/config/vite.config.js':          'export default { server: { port: 8010, strictPort: true } }\n',
   // A `const` local read, so `detail-read-dead` RUNS over the clean tree rather
@@ -2430,7 +2430,7 @@ describe('call-header-declared', () => {
 
 describe('auth-service-collision', () => {
   const plugin = (opts = '') =>
-    `import { createAuthPlugin } from '@frontierjs/auth'\nexport const plugin = createAuthPlugin(auth${opts})\n`
+    `import { auth as authRoutes } from '@frontierjs/auth'\nexport const plugin = authRoutes({ auth${opts} })\n`
   const SCHEMA3 = SCHEMA + 'model Connection { id Int @id }\n'
   const at = (name, authSrc, schema = SCHEMA3, extra = {}) =>
     tree(name, { ...CLEAN, 'db/schema.lite': schema, 'api/src/core/auth.ts': authSrc, ...extra })
@@ -2443,17 +2443,17 @@ describe('auth-service-collision', () => {
   })
 
   test('switching auth\'s service off is the answer', () => {
-    const root = at('asc-off', plugin(', { services: { connections: false } }'))
+    const root = at('asc-off', plugin(', services: { connections: false }'))
     expect(only(root, 'auth-service-collision').findings).toEqual([])
   })
 
   test('renaming auth\'s service is the answer', () => {
-    const root = at('asc-rename', plugin(", { services: { connections: 'linkedProviders' } }"))
+    const root = at('asc-rename', plugin(", services: { connections: 'linkedProviders' }"))
     expect(only(root, 'auth-service-collision').findings).toEqual([])
   })
 
   test('services: false registers none, so nothing collides', () => {
-    expect(only(at('asc-none', plugin(', { services: false }')), 'auth-service-collision').findings).toEqual([])
+    expect(only(at('asc-none', plugin(', services: false')), 'auth-service-collision').findings).toEqual([])
   })
 
   test('a model auth ships itself is the service over it, not a collision', () => {
@@ -2475,7 +2475,7 @@ describe('auth-service-collision', () => {
 
   test('an app that does not install the auth plugin is judged on nothing', () => {
     const root = at('asc-no-auth', 'export const x = 1\n')
-    expect(only(root, 'auth-service-collision').skipped[0].why).toMatch(/createAuthPlugin/)
+    expect(only(root, 'auth-service-collision').skipped[0].why).toMatch(/auth\(\) from/)
   })
 })
 
@@ -3068,7 +3068,7 @@ describe('scheduler-dispatch', () => {
 describe('battery-raw-secret', () => {
   test('a literal apiKey in a mailer constructor is a warning', () => {
     const root = tree('brs-literal', api(
-      "app.configure(mailerPlugin(createResendMailer({ apiKey: 're_live_x', from: 'a@b.test' })))\n"))
+      "app.configure(mail({ mailer: createResendMailer({ apiKey: 're_live_x', from: 'a@b.test' }) }))\n"))
     const { findings } = only(root, 'battery-raw-secret')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/apiKeyRef/)

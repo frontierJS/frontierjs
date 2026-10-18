@@ -43,14 +43,14 @@ export async function applyConfiguredPlugins(app: App, config: AppConfig, config
   // Imported on demand: an app declaring none would otherwise still load
   // openapi's reference page and devtools' second server.
   if (declared.health) {
-    const { healthPlugin } = await import('../transport/health.ts')
-    app.configure(healthPlugin(opts('health')))
+    const { health } = await import('../transport/health.ts')
+    app.configure(health(opts('health')))
   }
   // `db` is derived rather than declared: the manifest wants the client the app
   // was built with, and there is exactly one.
   if (declared.manifest) {
-    const { manifestPlugin } = await import('./manifest/index.ts')
-    app.configure(manifestPlugin({ ...opts('manifest'), ...(app.db ? { db: app.db } : {}) }))
+    const { manifest } = await import('./manifest/index.ts')
+    app.configure(manifest({ ...opts('manifest'), ...(app.db ? { db: app.db } : {}) }))
   }
   if (declared.openapi) {
     const { openapi } = await import('./openapi/index.ts')

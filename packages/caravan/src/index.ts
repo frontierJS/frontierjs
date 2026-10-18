@@ -2,13 +2,13 @@
 // @frontierjs/caravan — SQLite-backed job queue for Bun.
 //
 // Standalone usage:
-//   const queue = createCaravan({ queues: { email: { concurrency: 1 } } })
+//   const queue = caravan({ queues: { email: { concurrency: 1 } } })
 //   queue.handle('send-email', async (ctx) => { ... })
 //   await queue.start()
 //   await queue.dispatch('send-email', { to: 'alice@example.com' })
 //
 // As a Junction plugin, loading `jobs/` beside `createApp({ root })`:
-//   app.configure(createCaravan())
+//   app.configure(caravan())
 //   await app.jobs.dispatch('send-email', { to: 'alice@example.com' })
 //
 // A handler then reaches the app as `ctx.app` and runs as whoever dispatched
@@ -53,7 +53,7 @@ declare module '@frontierjs/junction' {
   interface AppJobs extends CaravanInstance {}
 }
 
-// ─── createCaravan ────────────────────────────────────────────────────────────
+// ─── caravan ────────────────────────────────────────────────────────────
 
 // ─── What a payload may be (FJS-D480) ────────────────────────────────────────
 // A payload is a receipt — ids and scalars — stored as JSON and handed to the
@@ -108,7 +108,7 @@ function encodePayload(name: string, data: unknown): string {
   return encoded
 }
 
-export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
+export function caravan(opts: CaravanOptions = {}): CaravanInstance {
   // Every option is held in a `let` and read at the moment it is first needed.
   // register() may still change it: the caravan section of junction.config.js
   // does not exist until an app hands it over, and opening the database and
@@ -358,7 +358,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   // ── junction.config.js ────────────────────────────────────────────────────
   //
   // Read at boot(), never at register(): register() runs the moment
-  // `app.configure(createCaravan(...))` is called and junction does not load
+  // `app.configure(caravan(...))` is called and junction does not load
   // junction.config.js until `start()`, so anything read there is the config as
   // it was BEFORE the file — which is to say, without it (`FJS-416`).
 
@@ -396,7 +396,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         if (openedPath && openedPath !== dbPath) {
           console.warn(
             `[Caravan] jobs database was already opened at '${openedPath}', so the configured '${dbPath}' is not in use — ` +
-            `something dispatched or read the queue before app.configure(createCaravan(…))`
+            `something dispatched or read the queue before app.configure(caravan(…))`
           )
           dbPath = openedPath
         }

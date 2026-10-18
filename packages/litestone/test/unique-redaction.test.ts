@@ -17,6 +17,7 @@ const SCHEMA = `
     pin     String? @hashed
     code    String? @encrypted(deterministic: true) @unique
     @@unique([siteId, pin], nullsDistinct: true)
+    @@gate(0)
   }
 
   model Soft {
@@ -24,6 +25,7 @@ const SCHEMA = `
     pin       String    @hashed @unique
     deletedAt DateTime?
     @@softDelete
+    @@gate(0)
   }
 `
 

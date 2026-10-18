@@ -19,8 +19,9 @@ export const TARGETS = {
     isInline:  terminal.isInline,
     inputKind: terminal.inputKind,
     // A terminal paints no CSS, so a `class:` reaches it only when it names
-    // a surface or a see-through variant, as the `class` attribute does (`opaque`).
-    paintsClass: (name) => terminal.SURFACES.includes(name) || terminal.SEE_THROUGH.includes(name),
+    // a surface, a see-through variant or glass, as the `class` attribute does
+    // (`opaque`, `frosted`).
+    paintsClass: (name) => terminal.SURFACES.includes(name) || terminal.SEE_THROUGH.includes(name) || name === terminal.GLASS,
     // No stylesheet: `style`, `style:` and the scoped rules are inert.
     paintsCss:   false,
     cssOffense:  () => null,

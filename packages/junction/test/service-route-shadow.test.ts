@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'bun:test'
 import { createTestApp } from '../src/testing/index.ts'
 import { createService } from '../src/core/service.ts'
-import { healthPlugin, collectMetrics } from '../src/transport/health.ts'
+import { health, collectMetrics } from '../src/transport/health.ts'
 import { channels } from '../src/transport/channels.ts'
 
 const mk = (name: string) => createService({ name, find: async () => [] })
@@ -17,7 +17,7 @@ describe('a service shadowed by a fixed route is refused at start, naming both',
 
   it('`health` beside the health plugin', async () => {
     const app = await createTestApp({ services: [mk('health')] })
-    app.configure(healthPlugin())
+    app.configure(health())
     await expect(app._startForTest()).rejects.toThrow(/Service 'health'.*GET \/health/s)
   })
 
@@ -29,19 +29,19 @@ describe('a service shadowed by a fixed route is refused at start, naming both',
 
   it('honors apiPrefix', async () => {
     const app = await createTestApp({ services: [mk('health')], config: { apiPrefix: '/api' } })
-    app.configure(healthPlugin())
+    app.configure(health())
     await expect(app._startForTest()).rejects.toThrow(/Service 'health'.*GET \/api\/health/s)
   })
 
   it('a service beside the health plugin under another name boots', async () => {
     const app = await createTestApp({ services: [mk('widgets')] })
-    app.configure(healthPlugin())
+    app.configure(health())
     await app._startForTest()
   })
 
   it('a health plugin mounted at a custom path leaves a `health` service alone', async () => {
     const app = await createTestApp({ services: [mk('health')] })
-    app.configure(healthPlugin({ path: '/_internal' }))
+    app.configure(health({ path: '/_internal' }))
     await app._startForTest()
   })
 })

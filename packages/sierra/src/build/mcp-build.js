@@ -15,9 +15,9 @@
  * ── Where a view COMES FROM ───────────────────────────────────────────────
  * `src/resources/<Model>.mesa` — the file Invariant 18 already requires, named
  * for its model (Invariant 19), one Resource per file. Nothing new is written
- * in the app; a model with no resource file has no view, and `mcpPlugin()`
+ * in the app; a model with no resource file has no view, and `mcp()`
  * answers text for it, which is not wrong. The output is `<Model>.html`, the
- * name `mcpPlugin({ ui: { root } })` reads a document by (`FJS-D955`).
+ * name `mcp({ ui: { root } })` reads a document by (`FJS-D955`).
  *
  * ── Where it LANDS ────────────────────────────────────────────────────────
  * `api/dist/mcp/` — the surface that SHIPS it, never `web/dist/`: the API image
@@ -410,7 +410,7 @@ export async function buildViews(opts) {
           root,
           configFile: false,          // do not re-read the app's config and recurse
           // Vite copies `public/` into every outDir, library build or not, and
-          // a favicon beside the views is a file `mcpPlugin()` would read as one.
+          // a favicon beside the views is a file `mcp()` would read as one.
           publicDir: false,
           logLevel: 'warn',
           plugins: [localDbPlugin({}, {}), ...plugins, viewDocumentPlugin({ name: resource.name, htmlClass })],
@@ -438,7 +438,7 @@ export async function buildViews(opts) {
             `${generated ? ', generated form' : ''})`)
       } catch (err) {
         // A failed build can leave the document from the LAST run in place,
-        // and `mcpPlugin()` serves whatever the directory holds. An absent
+        // and `mcp()` serves whatever the directory holds. An absent
         // file is a model with no view; a stale one is a screen that lies.
         await rm(resolve(outAbs, `${resource.name}.html`), { force: true }).catch(() => {})
         throw err
@@ -507,7 +507,7 @@ async function loadParseHTML(root) {
  *
  * The widget build REPORTS its strays and keeps them, because a host page has
  * that script's URL pasted into it. Nothing outside this directory names a
- * view: `mcpPlugin()` lists what the directory holds, so a document left
+ * view: `mcp()` lists what the directory holds, so a document left
  * behind by a deleted resource file would keep being offered to every agent
  * as that model's screen, forever, with nothing to say so. The directory is
  * this loop's own, and it is made to agree with `src/resources/`.
@@ -519,7 +519,7 @@ async function pruneUnbuilt(outAbs, built, log) {
   const stale = names.filter(n => n.endsWith('.html') && !claimed.has(n)).sort()
   for (const n of stale) await rm(join(outAbs, n), { force: true }).catch(() => {})
   if (stale.length) {
-    log(`removed ${stale.join(', ')} — built by no resource file in this surface, and mcpPlugin() would have served them`)
+    log(`removed ${stale.join(', ')} — built by no resource file in this surface, and mcp() would have served them`)
   }
 }
 

@@ -46,7 +46,7 @@ at the package root, which is what `files:` publishes.
 |---|---|
 | Tests | **54 pass, 0 fail**, 3 files (`bun run test`) |
 | Typecheck | **clean, 0 errors, no baseline** |
-| Public exports | `Notification`, `notificationsPlugin`, `inApp`, `mail`, four error classes, + types |
+| Public exports | `Notification`, `notifications`, `inApp`, `mail`, four error classes, + types |
 | Plugin seam | `register()` claims `app.notify`; `boot()` checks the mailer; `shutdown()` closes drivers |
 | Drive | `example`: `bun run verify:notify` — mail at a real server, plus the in-app rows each caller can and cannot see |
 

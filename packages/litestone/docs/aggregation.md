@@ -12,12 +12,16 @@ model Order {
   ref       String?
   placedAt  DateTime @default(now())
   createdAt DateTime @default(now())
+
+  @@gate(0)
 }
 
 model Post {
   id        Int      @id
   status    String   @default("draft")
   createdAt DateTime @default(now())
+
+  @@gate(0)
 }
 
 model Person {

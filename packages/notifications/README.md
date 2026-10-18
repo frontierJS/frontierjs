@@ -86,16 +86,16 @@ which is why the check asks.
 
 ```typescript
 // api/server.ts
-import { notificationsPlugin } from '@frontierjs/notifications'
+import { notifications } from '@frontierjs/notifications'
 
-// mailerPlugin must be configured before notificationsPlugin if the email transport is used
-app.configure(mailerPlugin(createResendMailer({
+// mail must be configured before notifications if the email transport is used
+app.configure(mail({ mailer: createResendMailer({
   credentials: { get: ref => process.env[ref] },   // or a Conduit resolver
   apiKeyRef:   'RESEND_API_KEY',
   from,
-})))
+}) }))
 
-app.configure(notificationsPlugin({
+app.configure(notifications({
   db,
   transports: {
     email: { mailer: 'default' },
@@ -378,7 +378,7 @@ UI reads `type` to decide how to render. `title` and `body` are generic fallback
 
 ## email transport
 
-Delegates to `app.mail.send()`. Requires `mailerPlugin` to be configured before `notificationsPlugin`. The address resolves as `message.to` (explicit override) → `recipient.email`; missing both is refused before delivery.
+Delegates to `app.mail.send()`. Requires `mail` to be configured before `notifications`. The address resolves as `message.to` (explicit override) → `recipient.email`; missing both is refused before delivery.
 
 The builder's `lines` are rendered to text and HTML here — `MailMessage` is this package's authoring shape, and no mailer understands it. `.html()` / `.text()` override either half, which is how an `@frontierjs/email-kit` template supplies the HTML and the builder still writes the plain-text alternative.
 
@@ -412,7 +412,7 @@ export class SlackDriver implements NotificationDriver {
 }
 
 // api/server.ts
-app.configure(notificationsPlugin({
+app.configure(notifications({
   db,
   transports: {
     slack: new SlackDriver({ webhookUrl: process.env.SLACK_WEBHOOK! })

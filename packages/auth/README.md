@@ -76,7 +76,7 @@ export const auth = createLitestoneAuth(db, {
 ```typescript
 // api/src/server.ts
 import { auth, db }         from './auth.ts'
-import { createAuthPlugin } from '@frontierjs/auth'
+import { auth as authPlugin } from '@frontierjs/auth'
 import { createApp }        from '@frontierjs/junction'
 
 // `db` on createApp installs withLitestoneDb for you — it is an around hook,
@@ -88,7 +88,7 @@ const app = createApp({ auth, db })
 // Mounts /auth/* and registers the account / sessions / api-keys services. Its
 // work() phase starts the hourly sweep of expired sessions, verifications,
 // OAuth flows and login challenges; `auth.cleanup.sweepNow()` runs it on demand.
-app.configure(createAuthPlugin(auth))
+app.configure(authPlugin({ auth }))
 
 await app.start()
 ```
@@ -166,7 +166,8 @@ Rename or drop any of them with `services`, and add a `level` resolver to
 have `account.me` answer the caller's gate level:
 
 ```ts
-app.configure(createAuthPlugin(auth, {
+app.configure(authPlugin({
+  auth,
   services: { apiKeys: false, level: myGateLevel },
 }))
 ```

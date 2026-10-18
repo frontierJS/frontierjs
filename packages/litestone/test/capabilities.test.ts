@@ -762,6 +762,7 @@ describe('a capability literal inside a predicate', () => {
         id Int @id @default(autoincrement())
         n  String
         h  String? @allow('read', 'S.update' in auth().capabilities)
+        @@gate(0)
       }` })
     await db.asSystem().s.create({ data: { n: 'a', h: 'secret' } })
     const holder = db.$setAuth({ id: 1, capabilities: ['S.update'] })
@@ -1086,6 +1087,7 @@ describe('a @system column the application names is not the caller\'s edit', () 
       vars        String    @default("[]") @capability
       respondedAt DateTime? @system
       s           S         @default(a)
+      @@gate(0)
       @@capabilities
       @@transitions(s, ask: a -> b)
     }`

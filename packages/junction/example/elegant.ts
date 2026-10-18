@@ -11,7 +11,7 @@
 //   • 401s from the model's @@gate     (read public, write user, delete admin)
 //   • Pagination + result envelope     ($limit/$offset, { object, data, total })
 //   • Live WebSocket events            (announce hook → 'leads' channel)
-//   • /health and /metrics             (healthPlugin)
+//   • /health and /metrics             (health)
 //
 // ─── Try ──────────────────────────────────────────────────────────────────
 //
@@ -35,7 +35,7 @@
 //   curl -X POST http://localhost:3200/api/leads \
 //     -H 'x-service-method: getStats'                            # custom method
 
-import { createApp, createService, announce, channels, healthPlugin } from '../index.ts'
+import { createApp, createService, announce, channels, health } from '../index.ts'
 import type { App, IAuth, ServiceContext } from '../index.ts'
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
 import type { LitestoneClient, TableClient } from '@frontierjs/litestone'
@@ -113,7 +113,7 @@ const app = createApp({
   config: { name: 'leads-demo', port: 3200, apiPrefix: '/api' },
 })
 
-app.configure(healthPlugin())
+app.configure(health())
 app.configure(channels((a: App) => {
   // Braces, not an expression body: a connection handler returns nothing, and
   // `join()` answers the channel.

@@ -60,9 +60,9 @@ in this file.
 parallel, and names `example/api/src/app.ts` as canonical. It looks like this:
 
 ```ts
-import { createCaravan }        from '@frontierjs/caravan'
+import { caravan }        from '@frontierjs/caravan'
 import { conduit }              from '@frontierjs/conduit'
-import { notificationsPlugin }  from '@frontierjs/notifications'
+import { notifications }  from '@frontierjs/notifications'
 ```
 
 The root `package.json` does it too, in JSON:

@@ -1100,6 +1100,20 @@ CREATE TABLE IF NOT EXISTS "domain" (
 CREATE INDEX IF NOT EXISTS "idx_domain_appId" ON "domain" ("appId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_domain_deletedAt" ON "domain" ("deletedAt") WHERE "deletedAt" IS NULL;
 
+CREATE TABLE IF NOT EXISTS "app_editor" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "appId" TEXT NOT NULL,
+  "userId" TEXT NOT NULL,
+  "role" TEXT NOT NULL DEFAULT 'edit',
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("role" IN ('edit', 'publish')),
+  UNIQUE ("appId", "userId"),
+  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_app_editor_userId" ON "app_editor" ("userId");
+
 CREATE TABLE IF NOT EXISTS "app_server" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "appId" TEXT NOT NULL,

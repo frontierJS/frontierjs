@@ -13,7 +13,7 @@ auth.ts      the IAuth implementation — sessions, login, verification
 oauth.ts     the OAuth flow engine — the URL, the code-for-token trade, the
              normalized identity. No HTTP, no database, no session — plugin.ts
              owns the routes and auth.ts decides who the identity is
-plugin.ts    createAuthPlugin() — mounts /auth/*, declares the cookie mode,
+plugin.ts    auth() — mounts /auth/*, declares the cookie mode,
              and registers the three services at boot()
 services.ts  account / sessions / api-keys — the half that is NOT a route
 tenancy.ts   what the app's tenancy block says about a person — the claim,

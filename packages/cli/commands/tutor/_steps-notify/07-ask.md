@@ -46,7 +46,7 @@ if (!src.includes('/notification-types')) {
       got:   'a file that has been changed under the lesson',
     }, {
       likely:    'add the route by hand — the prose above is the whole of it',
-      reproduce: `grep -n notificationsPlugin ${appTs}`,
+      reproduce: `grep -n notifications ${appTs}`,
     })
     return
   }

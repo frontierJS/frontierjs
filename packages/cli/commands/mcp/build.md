@@ -19,14 +19,14 @@ runs the loop from `web/`.
 
 The output directory is supplied here and nowhere else: fli is the one thing
 that knows where `api/` is, and `sierra mcp` refuses a relative `--out`. A
-document no resource file built is removed, since `mcpPlugin()` serves
+document no resource file built is removed, since `mcp()` serves
 whatever the directory holds.
 
 ```js
-// The views are read by mcpPlugin() inside the API. With no api/ surface the
+// The views are read by mcp() inside the API. With no api/ surface the
 // build would create an api/dist/ that nothing serves.
 if (!existsSync($.paths.api)) {
-  log.error(`No api/ surface at ${$.paths.api} — the views are served by mcpPlugin() inside the API, so there is nothing to build them for.`)
+  log.error(`No api/ surface at ${$.paths.api} — the views are served by mcp() inside the API, so there is nothing to build them for.`)
   process.exit(1)
 }
 

@@ -61,6 +61,7 @@
 import { LitestonePlugin, AccessDeniedError } from '../core/plugin.js'
 import { collectNestedOps, collectIncludedModels } from './reach.js'
 import { gatedFromFields } from '../core/from-gate.js'
+import { schemaDeclaresAccessRules } from '../core/schema-maps.js'
 
 // ─── Level constants ──────────────────────────────────────────────────────────
 
@@ -139,16 +140,19 @@ export function validateGate(gate, modelName) {
 // A model declaring neither a gate nor a row policy is SYSTEM on every
 // operation: open, it took anonymous creates, updates and deletes, and nothing
 // said so but `access.snapshot.md` (`FJS-D1206`). `@@gate(0)` says public.
+// Only in a schema declaring some access rule (`FJS-D1212`): a GatePlugin
+// installed by hand on a plain schema, as `env.atLevel()` does, leaves it open.
 const UNDECLARED = Object.freeze({ read: 8, create: 8, update: 8, delete: 8, undeclared: true })
 
 function buildAccessMap(schema) {
   const map = {}
+  const closed = schemaDeclaresAccessRules(schema)
   // Views are in the walk because a view is a read path onto rows a model
   // guards: leaving them out is a gate that stops at the projection.
   for (const model of [...schema.models, ...(schema.views ?? [])]) {
     const gateAttr = model.attributes?.find(a => a.kind === 'gate')
     if (!gateAttr) {
-      if (!model.attributes?.some(a => a.kind === 'allow' || a.kind === 'deny')) map[model.name] = UNDECLARED
+      if (closed && !model.attributes?.some(a => a.kind === 'allow' || a.kind === 'deny')) map[model.name] = UNDECLARED
       continue
     }
     const gate = parseGateString(gateAttr.value)

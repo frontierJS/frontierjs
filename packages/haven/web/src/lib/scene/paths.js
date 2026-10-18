@@ -1,7 +1,8 @@
 // src/paths.js — walking a stage by its floor: the flood fill the door-reach
 // check runs, and the shortest walk to a figure that `f` takes (`IDEAS/haven.md`
-// 9.6). Pure, so it is a bun test. Steps are the four a figure takes, never a
-// diagonal, so the walk drawn is the walk a key would have made.
+// 9.6), and how far each stop Tab names is walked (Phase 19). Pure, so it is
+// a bun test. Steps are the four a figure takes, never a diagonal, so the walk
+// drawn is the walk a key would have made.
 
 export const STEPS = [[0, 1], [0, -1], [1, 0], [-1, 0]]
 
@@ -12,16 +13,22 @@ export function reach(stage, from) {
   return new Set(flood(stage, from).keys())
 }
 
-/** Each reached cell's `{ x, y, prev }`, `prev` the key of the cell it was entered from. */
+/** Every floor cell a figure at `from` can walk to, as `{ x, y, n }`, `n` the steps there. */
+export function walked(stage, from) {
+  return [...flood(stage, from).values()].map(({ x, y, n }) => ({ x, y, n }))
+}
+
+/** Each reached cell's `{ x, y, prev, n }`, `prev` the key of the cell it was entered from. */
 function flood(stage, from) {
-  const cells = new Map([[key(from.x, from.y), { x: from.x, y: from.y, prev: null }]])
+  const cells = new Map([[key(from.x, from.y), { x: from.x, y: from.y, prev: null, n: 0 }]])
   const queue = [from]
   for (let i = 0; i < queue.length; i++) {
     const { x, y } = queue[i]
+    const n = cells.get(key(x, y)).n + 1
     for (const [dx, dy] of STEPS) {
       const k = key(x + dx, y + dy)
       if (!cells.has(k) && stage.walkable(x + dx, y + dy)) {
-        cells.set(k, { x: x + dx, y: y + dy, prev: key(x, y) })
+        cells.set(k, { x: x + dx, y: y + dy, prev: key(x, y), n })
         queue.push({ x: x + dx, y: y + dy })
       }
     }

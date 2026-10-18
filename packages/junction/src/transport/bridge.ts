@@ -4,7 +4,7 @@
 // Nothing below the bridge touches the service layer.
 
 import type { TransportContext } from './types.ts'
-import { toFrameworkError, FrameworkError, BadRequest, sanitizeError, type ErrorMapperHost } from '../core/errors.ts'
+import { toFrameworkError, FrameworkError, BadRequest, MethodNotAllowed, sanitizeError, type ErrorMapperHost } from '../core/errors.ts'
 import { accessorCandidates } from '../core/litestone.ts'
 import { omitBy } from '@frontierjs/toolbelt/redact'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
@@ -86,6 +86,13 @@ export const bridge = {
     const rawHeaderMethod = (raw.headers?.['x-service-method'] ?? '').trim()
     const headerLower     = rawHeaderMethod.toLowerCase()
     let serviceMethod: AnyMethod = METHOD_MAP[httpMethod] ?? 'find'
+
+    // A verb that names `find` is one proxies, logs and csrf() treat as a read,
+    // so a method addressed by header is refused there rather than run.
+    if (rawHeaderMethod && serviceMethod === 'find')
+      throw new MethodNotAllowed(
+        `X-Service-Method addresses a method by POST (or PUT for restore), not ${httpMethod}: ` +
+        `a ${httpMethod} is treated as a read and must not run '${rawHeaderMethod}'.`)
 
     if (rawHeaderMethod && !CRUD_METHOD_BLOCK.has(headerLower)) {
       serviceMethod = HEADER_BUILTINS.has(headerLower) ? headerLower : rawHeaderMethod

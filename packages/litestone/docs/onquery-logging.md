@@ -14,12 +14,16 @@ model User {
   id     Int    @id
   email  String @unique
   status String @default("active")
+
+  @@gate(0)
 }
 
 model Order {
   id    Int   @id
   total Float
   @@trail(audit)
+
+  @@gate(0)
 }
 ```
 

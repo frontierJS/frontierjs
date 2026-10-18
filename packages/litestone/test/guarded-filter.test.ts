@@ -29,6 +29,7 @@ model User {
   ssn   String? @guarded
   token String? @secret
   posts Post[]
+  @@gate(0)
 }
 
 model Post {
@@ -36,11 +37,13 @@ model Post {
   title    String
   authorId Int
   author   User   @relation(fields: [authorId], references: [id])
+  @@gate(0)
 }
 
 model Plain {
   id   Int    @id
   name String
+  @@gate(0)
 }
 `
 
@@ -162,6 +165,7 @@ describe('@guarded — what must keep working', () => {
         id   Int     @id
         meta Json    @type(Meta)
         ssn  String? @guarded
+        @@gate(0)
       }
     ` })
     await db.asSystem().doc.create({ data: { id: 1, meta: { ssn: 'not-the-column' }, ssn: 'real' } })
@@ -208,6 +212,7 @@ describe('@guarded — a credential lookup is a system read', () => {
       id    Int    @id
       email String
       token String @unique @guarded
+      @@gate(0)
     }
   `
 

@@ -171,6 +171,7 @@ model Task {
   dueAt DateTime?
   note  String?   @allow('read', dueAt != null && dueAt < now() + 2d)
   @@scope(soon, dueAt > now() && dueAt < now() + 2d)
+  @@gate(0)
 }` })
     const sys = db.asSystem()
     await sys.task.create({ data: { id: 1, dueAt: at(24),     note: 'a' } })
@@ -231,6 +232,7 @@ model Owner {
   userId    String?
   ref       String   @map("reference")
   editorIds String[]
+  @@gate(0)
 }
 model Doc {
   id      String @id
@@ -602,7 +604,8 @@ model Doc {
 describe('a belongsTo field read through a claim', () => {
   const SCHEMA = `
 model User { id Int @id
-  @@auth }
+  @@auth
+  @@gate(0) }
 model Doc {
   id      Int  @id
   ownerId Int

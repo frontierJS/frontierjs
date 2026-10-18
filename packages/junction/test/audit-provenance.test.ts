@@ -30,7 +30,7 @@ import { auditDatabase } from './audit-trail-model.ts'
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
   ${auditDatabase(dir)}
-  model Order { id Int @id  status String  @@trail(audit) }
+  model Order { id Int @id  status String  @@trail(audit)  @@gate(0) }
 `
 
 // fireLog defers one tick, so anything after one yield sees the row. There is no timer.

@@ -50,7 +50,7 @@ src/
                          loader; `state` is a signal's read, since a prop's `$:`
                          watch is local and would not hear the shell. Also the
                          keys' mode (`FJS-D987`): a text field is INSERT, Esc
-                         is NORMAL, where `i` types again. shell.js renames
+                         is NORMAL, where `i` or `a` types again. shell.js renames
                          h/j/k/l to the arrows in NORMAL before any mount sees
                          the key; a j/k the page does not prevent moves focus.
                          Ctrl+P is the jump: a `<dialog>` over any screen,
@@ -723,7 +723,7 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   and cannot leave a person looking at a signed-in UI with no session.
 - **`junction.cookieAuth` is declared on both sides or the app is signed out.**
   The browser cannot see the server's source and there is nothing to derive it
-  from, so `createAuthPlugin(auth, { cookieAuth: true })` has a twin in
+  from, so `auth(auth, { cookieAuth: true })` has a twin in
   `sierra.config.js`. Left off, the client answers `hasCredential === !!token`,
   which is false for a signed-in cookie-mode caller: no boot restore, no socket,
   and a sign-out that never reaches the server while telling the person it did
@@ -830,12 +830,14 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   indexes. It sends **no CORS**, deliberately — this origin serves documents a
   browser navigates to, and the API is what a page's islands call. That is the
   opposite of `widget/serve.js`, whose whole job is the cross-origin case.
-- **The build refuses five shapes it used to emit, each naming its file.** A
+- **The build refuses six shapes it used to emit, each naming its file.** A
   `getStaticPaths()` param that is empty, a path, `.`/`..` or carrying a NUL, and
   two entries that fill one output file; a `<slot name>` that is not an identifier;
   two route files mapping to one URL; a frontmatter alias bomb (10,000 values,
   counted by a walk that aborts at the budget — 205 MB in 1576 ms became a refusal
-  in 5 ms); and a widget tag that is not a legal custom element name. They are
+  in 5 ms); a widget tag that is not a legal custom element name; and a
+  `_module.md` with a body and no `<slot />` — one with NO body is a pass-through,
+  its frontmatter cascading and its pages unwrapped (`layoutRole`, `FJS-D1240`). They are
   refusals rather than warnings for one reason: every one of them BUILT, and what
   shipped was a page silently overwritten, a component that renders as nothing, or
   a script nobody notices is missing.

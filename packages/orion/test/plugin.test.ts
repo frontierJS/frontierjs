@@ -23,9 +23,9 @@ import { join } from "node:path"
 import { createTestEnv } from "../../litestone/src/testing.js"
 import { channels, createApp, createService, createStubAuth, request } from "../../junction/index.ts"
 import { AIRegistry } from "../../junction/src/ai/index.ts"
-import { mailerPlugin } from "../../junction/src/mail/index.ts"
-import { notificationsPlugin } from "../../notifications/plugin.ts"
-import { createCaravan } from "../../caravan/src/index"
+import { mail } from "../../junction/src/mail/index.ts"
+import { notifications } from "../../notifications/plugin.ts"
+import { caravan } from "../../caravan/src/index"
 import { orion } from "../src/plugin"
 import type { Runner } from "../src/runner"
 import { KEY, chain, activeFlow, wait } from "./fixtures/host"
@@ -71,11 +71,11 @@ beforeAll(async () => {
   app.services.register(createService({ name: "leads",    model: "Lead",    db: env.db }))
   app.services.register(createService({ name: "invoices", model: "Invoice", db: env.db }))
   app.services.register(createService({ name: "memos",    model: "Memo",    db: env.db }))
-  app.configure(createCaravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
+  app.configure(caravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
   app.configure(channels())
   const send = async (m: any) => { mailed.push({ to: m.to, subject: m.subject }); return { id: String(mailed.length), message: "captured" } }
-  app.configure(mailerPlugin({ send, batch: (ms: any[]) => Promise.all(ms.map(send)) } as never))
-  app.configure(notificationsPlugin({ db: env.db }))
+  app.configure(mail({ mailer: { send, batch: (ms: any[]) => Promise.all(ms.map(send)) } as never }))
+  app.configure(notifications({ db: env.db }))
   // An app's own job, which records who it ran as.
   app.jobs.handle("leads.touch", async (job: any) => {
     touched.push({ id: job.id, actorId: job.actorId, principal: app.principal()?.userId ?? null, data: job.data })

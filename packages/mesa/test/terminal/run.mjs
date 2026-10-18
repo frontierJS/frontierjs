@@ -100,6 +100,7 @@ function makeT(rows, tmp) {
     type:  async (text) => { await need().setup.mockInput.typeText(text); await settle() },
     tab:   async (modifiers) => { need().setup.mockInput.pressTab(modifiers); await settle() },
     enter: async () => { need().setup.mockInput.pressEnter(); await settle() },
+    paste: async (text) => { await need().setup.mockInput.pasteBracketedText(text); await settle() },
     /** Escape alone. The parser holds a lone ESC to see whether a sequence
      *  follows it — measured from 25 ms to past 60 — so a `press` that settles
      *  at once reads the frame before the key has arrived. This waits for the

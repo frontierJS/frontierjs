@@ -98,9 +98,10 @@ wants:
 (`content/`); the editor writes it, publish is a commit, the commit builds,
 and the build goes out through the adapter. Nothing editable runs at the edge.
 **The live preview can render in the browser** for a markdown route, because
-`FJS-D821` made the prerender and the browser run one render function. A
-`.mesa` route needs the compiler in the page, which is measured before it is
-claimed. A hosted Vite dev server per site is the heavier answer and buys only
+Mesa's `compileMd` runs there (`owner-editing.md` 0.2 measured 18–30 ms per
+compile in Chrome, with a 187 KB gzipped bundle). A `.mesa` route also needs
+every module it imports, as a module the page can load, which today only a
+Vite dev server provides. A hosted Vite dev server per site is the heavier answer and buys only
 the ask panel, which is a developer's tool.
 
 *Basecamp* in `anchored-feedback.md`'s option B is the Basecamp product, where

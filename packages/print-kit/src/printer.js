@@ -223,7 +223,7 @@ export function createPrinter({ windowSize = '1280,900', find = findChrome } = {
 /** The printer as a junction plugin, without importing junction: the app
  *  claims it as `app.printer`. With no Chrome on the machine the app refuses
  *  to boot, by name — not at the first send, hours later, to a recipient. */
-export function printerPlugin(/** @type {Parameters<typeof createPrinter>[0]} */ opts) {
+export function printer(/** @type {Parameters<typeof createPrinter>[0]} */ opts) {
   const printer = createPrinter(opts)
   return {
     name: 'printer',

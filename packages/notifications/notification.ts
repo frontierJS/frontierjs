@@ -81,7 +81,7 @@ export abstract class Notification {
 
   /**
    * Format this notification for the 'email' transport.
-   * Required if via() returns 'email'. Requires mailerPlugin to be configured.
+   * Required if via() returns 'email'. Requires mail to be configured.
    */
   toEmail?(recipient: Recipient): MailMessage
 

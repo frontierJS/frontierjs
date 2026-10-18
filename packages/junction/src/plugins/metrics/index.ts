@@ -88,7 +88,7 @@ export function flatten(node: unknown, prefix = '', out: Array<[string, number]>
   return out
 }
 
-export function metricsPlugin(opts: MetricsPluginOptions = {}) {
+export function metrics(opts: MetricsPluginOptions = {}) {
   const scrapeMs   = opts.scrapeMs       ?? 60_000
   const rollupMs   = opts.rollupMs       ?? HOUR
   const retentionMs= opts.rawRetentionMs ?? 48 * HOUR

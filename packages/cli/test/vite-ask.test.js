@@ -17,7 +17,7 @@ import { ASK_EFFORT, EDIT_KINDS, editEffort, EDIT_MAX_HTML, PANEL_EFFORTS, EDIT_
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 import { markerPath } from '../core/preview.js'
-import { admitCaller, askPlugin, createLedger, dirtyPaths, lineDiff, locateText, readAdmit, readImages, sameOrigin, submission, undoEdits } from '../core/vite-ask.js'
+import { admitCaller, askPlugin, createLedger, dirtyPaths, lineDiff, readAdmit, readImages, sameOrigin, submission, undoEdits } from '../core/vite-ask.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'fli-vite-ask-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -216,82 +216,6 @@ describe('shareBudget', () => {
     expect(shareBudget([10, 20], 4000)).toEqual([10, 20])
     const cut = shareBudget([3999, 3999, 3999], 4000)
     expect(cut.reduce((a, b) => a + b)).toBeLessThanOrEqual(4000)
-  })
-
-})
-
-describe('locateText', () => {
-
-  const MESA = [
-    '<script>',
-    "  const title = 'Hello'",   // the words inside an expression are not text
-    '</script>',
-    '',
-    '<section title="Hello">',
-    '  <h1 id="t">Hello',
-    '    world</h1>',
-    '  <p>Hello <em>there</em></p>',
-    '  <h2>{title}</h2>',
-    '  <ul><li>Item</li><li>Item</li></ul>',
-    '  <h3>Items</h3>',
-    '</section>',
-  ].join('\n')
-  const at = (o) => locateText(MESA, { ext: 'mesa', next: 'Changed', ...o })
-  const swap = (src, r, next) => src.slice(0, r.start) + next + src.slice(r.end)
-
-  test('the element\'s text, wrapped across lines, is found once inside its own tags', () => {
-    const r = at({ line: 6, col: 3, tag: 'h1', old: 'Hello world' })
-    expect(r.why).toBeUndefined()
-    expect(swap(MESA, r, 'Changed')).toContain('<h1 id="t">Changed</h1>')
-    expect(MESA.slice(r.from, r.to)).toBe('<h1 id="t">Hello\n    world</h1>')
-  })
-
-  test('not in an attribute, not in an expression, not in a script', () => {
-    // "Hello" is in the section's title attribute and the script too; only the
-    // text runs of the region count.
-    const r = at({ line: 5, col: 1, tag: 'section', old: 'Hello world' })
-    expect(r.why).toBeUndefined()
-  })
-
-  test('interpolated text is refused rather than guessed', () => {
-    expect(at({ line: 9, col: 3, tag: 'h2', old: 'Hello' }).why).toMatch(/interpolated/)
-  })
-
-  test('text split by inline markup is refused', () => {
-    expect(at({ line: 8, col: 3, tag: 'p', old: 'Hello there' }).why).toMatch(/interpolated, or split/)
-  })
-
-  test('twice in the region is refused, and a word inside a longer one is not a hit', () => {
-    expect(at({ line: 10, col: 3, tag: 'ul', old: 'Item' }).why).toMatch(/2 times/)
-    const r = at({ line: 11, col: 3, tag: 'h3', old: 'Items' })
-    expect(swap(MESA, r, 'X')).toContain('<h3>X</h3>')
-    expect(at({ line: 10, col: 7, tag: 'li', old: 'Item' }).why).toBeUndefined()
-  })
-
-  test('new text carrying an expression is the model\'s job; HTML\'s three are written as entities', () => {
-    expect(at({ line: 6, col: 3, tag: 'h1', old: 'Hello world', next: 'a {b}' }).why).toMatch(/markup/)
-    const r = at({ line: 6, col: 3, tag: 'h1', old: 'Hello world', next: 'Fish & <chips>' })
-    expect(swap(MESA, r, r.text)).toContain('<h1 id="t">Fish &amp; &lt;chips&gt;</h1>')
-  })
-
-  test('text the source wrote as an entity is found by the character the page shows', () => {
-    const src = '<p>Before &amp; after &mdash; done</p>\n'
-    const r = locateText(src, { ext: 'mesa', line: 1, col: 1, tag: 'p', old: 'Before & after — done', next: 'Later' })
-    expect(swap(src, r, r.text)).toBe('<p>Later</p>\n')
-  })
-
-  test('a loc the source no longer matches is refused', () => {
-    expect(at({ line: 99, col: 1, tag: 'h1', old: 'Hello' }).why).toMatch(/changed since/)
-    expect(at({ line: 4, col: 1, tag: 'h1', old: 'Hello' }).why).toMatch(/not where/)
-  })
-
-  test('Markdown: the body is searched, never the frontmatter, and emphasis is not plain text', () => {
-    const MD = '---\ntitle: The heading\n---\n\n# The heading\n\nSome *para* text.\n'
-    const r = locateText(MD, { ext: 'md', line: 1, col: 1, tag: 'h1', old: 'The heading', next: 'New heading' })
-    expect(swap(MD, r, 'New heading')).toBe('---\ntitle: The heading\n---\n\n# New heading\n\nSome *para* text.\n')
-    expect(locateText(MD, { ext: 'md', line: 1, col: 1, tag: 'p', old: 'Some para text.', next: 'x' }).why).toMatch(/split/)
-    expect(locateText(MD, { ext: 'md', line: 1, col: 1, tag: 'h1', old: 'The heading', next: '*bold*' }).why).toMatch(/markup/)
-    expect(locateText(MD, { ext: 'md', line: 1, col: 1, tag: 'h1', old: 'The heading', next: 'a <b>' }).why).toMatch(/markup/)
   })
 
 })

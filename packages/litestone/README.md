@@ -447,6 +447,8 @@ model PageView {
   duration  Int
   createdAt DateTime @default(now())
   @@db(analytics)
+
+  @@gate(0)
 }
 
 model ApiRequest {
@@ -800,6 +802,10 @@ Reserved: `SYSTEM=8` (asSystem() only)  `LOCKED=9` (impassable — not even asSy
 without gates — a declared-but-unenforced gate is fail-open. Installing your own
 replaces the default; installing none does not disable it.
 
+**Once a schema declares any access rule, a model with no `@@gate` and no
+`@@allow`/`@@deny` is system-only on every operation**, reads included.
+`@@gate(0)` says a model is public; a schema with no access rule at all is a plain ORM.
+
 **A `@@gate` refuses and a `@@allow` filters**, which is why a wrong policy is an
 empty screen rather than an error. A gate throws naming the model and the level;
 a policy compiles silently into the WHERE. Any read that legitimately crosses a
@@ -872,6 +878,8 @@ model Order {
     ship:   paid            -> shipped,
     refund: paid            -> refunded @gate(5),
     cancel: [pending, paid] -> cancelled)
+
+  @@gate(0)
 }
 ```
 
@@ -1041,6 +1049,8 @@ model User {
   email  String  @encrypted(deterministic: true)   // equality WHERE works; still ciphertext, so it re-keys
   pwHash String  @hashed                           // one-way — matchable, never readable
   apiKey String? @secret                           // @encrypted + @guarded + @trail(audit)
+
+  @@gate(0)
 }
 ```
 
@@ -2001,14 +2011,14 @@ import {
 The schema the examples below run against:
 
 ```lite
-model Account { id Int @id  name String  leads Lead[]  users User[] }
+model Account { id Int @id  name String  leads Lead[]  users User[]  @@gate(0) }
 model Lead    { id Int @id  email String @email  score Int @gte(0) @lte(100)  loadId String?
-                accountId Int  account Account @relation(fields: [accountId], references: [id]) }
+                accountId Int  account Account @relation(fields: [accountId], references: [id])  @@gate(0) }
 model User    { id Int @id  email String @email  role String @default("member")
-                accountId Int  account Account @relation(fields: [accountId], references: [id])  posts Post[] }
+                accountId Int  account Account @relation(fields: [accountId], references: [id])  posts Post[]  @@gate(0) }
 model Post    { id Int @id  title String @length(3, 80)  authorId Int  author User @relation(fields: [authorId], references: [id])
                 tags Tag[]  @@gate(1.3.4.6) }
-model Tag     { id Int @id  name String  posts Post[] }
+model Tag     { id Int @id  name String  posts Post[]  @@gate(0) }
 ```
 
 ### createTestEnv — the environment

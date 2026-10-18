@@ -390,6 +390,16 @@
         </ol>
       </nav>
 
+      <!-- The routed body is already this page's Screen, so a Screen of its own
+           (flush, a div) is what holds the Aside beside the Pane here. -->
+      <div class="screen flush">
+      <aside class="aside" aria-label="Invoice summary">
+        <button class="btn ghost square aside-toggle" id="aside-toggle" aria-label="Hide summary" aria-expanded="true"></button>
+        <dl class="facts">
+          <dt>Customer</dt><dd>Acme Corporation</dd>
+          <dt>Total</dt><dd>$4,280.00</dd>
+        </dl>
+      </aside>
       <section class="pane" aria-labelledby="h-invoice">
         <div class="section-header">
           <h2 id="h-invoice" class="h4">INV-1042 <span class="badge success">Paid</span></h2>
@@ -489,6 +499,7 @@
           </article>
         </div>
       </section>
+      </div>
     </div>
 
     <!-- ══ Customers ══════════════════════════════════════════════ -->

@@ -24,8 +24,8 @@
 // directions. That is the pair of tests below that matter.
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { createApp, healthPlugin, defaultConfig } from '../index.ts'
-import { manifestPlugin } from '../src/plugins/manifest/index.ts'
+import { createApp, health, defaultConfig } from '../index.ts'
+import { manifest } from '../src/plugins/manifest/index.ts'
 import { buildBase, buildService, callService } from '../src/core/service.ts'
 
 const PORT = 3389
@@ -38,8 +38,8 @@ beforeAll(async () => {
       http: { ...defaultConfig.http, drainTimeout: 200 },
     },
   })
-  app.configure(healthPlugin())
-  app.configure(manifestPlugin({ devOnly: false }))
+  app.configure(health())
+  app.configure(manifest({ devOnly: false }))
 
   // The Basecamp case: an append-only trail.
   app.services.register(buildService({
@@ -155,6 +155,17 @@ describe('methods: custom methods are in the same list', () => {
   it('allows a listed action', async () => {
     const res = await post('/tickets/t1', {}, { 'X-Service-Method': 'approve' })
     expect(res.status).toBe(200)
+  })
+
+  it('refuses an action addressed on a safe verb (FJS-3203)', async () => {
+    // csrf() inspects mutating verbs only, and proxies and logs treat a GET as
+    // a read, so a state-changing method must not be reachable on one.
+    for (const method of ['GET', 'HEAD']) {
+      const res = await fetch(`http://localhost:${PORT}/tickets/t1`, {
+        method, headers: { 'X-Service-Method': 'approve' },
+      })
+      expect(res.status).toBe(405)
+    }
   })
 
   it('refuses an action the list omits, though the method exists', async () => {

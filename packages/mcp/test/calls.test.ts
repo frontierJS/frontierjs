@@ -16,7 +16,7 @@ import { join } from 'node:path'
 import { createClient }  from '@frontierjs/litestone'
 import { createApp, createService, $ } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
-import { mcpPlugin } from '../src/plugin.ts'
+import { mcp } from '../src/plugin.ts'
 import { auditDatabase } from './audit-trail-model.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'mcp-calls-'))
@@ -44,7 +44,7 @@ beforeAll(async () => {
     refund: async () => ($.db as unknown as Orders).order.transition(Number($.id), 'refund'),
     methods: ['find', 'get', 'create', 'patch', 'refund'],
   }))
-  app.configure(mcpPlugin({ name: 'shop' }))
+  app.configure(mcp({ name: 'shop' }))
   await app.start()
   base = `http://localhost:${app.http.port}/mcp`
 

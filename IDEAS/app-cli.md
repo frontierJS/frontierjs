@@ -34,7 +34,7 @@ basecamp wrote by hand.
 **The projection that decides what a caller may call is shipped, and a CLI is that
 projection spoken to a human.** `@frontierjs/mcp`'s `projectTools` answers, per
 standing, which service methods are offered, each with its argument schema and the
-rule that graded it. `mcpPlugin()` serves it over HTTP inside the running API.
+rule that graded it. `mcp()` serves it over HTTP inside the running API.
 
 | basecamp-cli | Already here | What it lacks |
 | --- | --- | --- |
@@ -49,7 +49,7 @@ rule that graded it. `mcpPlugin()` serves it over HTTP inside the running API.
 | `code` + `retryable` | `toFrameworkError`, `retryable` in the schema | a mapping to exit codes |
 | breadcrumbs | `transitionsAt()` (legal next moves), `buildRelations()` (where a row points) | a place to compute them (§ 3) |
 | `--help --agent` | the tool's input schema, verbatim | nothing |
-| `mcp` | `mcpPlugin()` — HTTP, mounted, not stdio, and `plugin.ts` says why | nothing |
+| `mcp` | `mcp()` — HTTP, mounted, not stdio, and `plugin.ts` says why | nothing |
 | `doctor` | `/health` | nothing |
 | table columns | `labelFieldInfo` | the model `$def` alongside the tool, or a column hint on it |
 

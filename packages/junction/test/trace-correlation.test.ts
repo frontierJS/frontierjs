@@ -27,7 +27,7 @@ const PARENT = `00-${TRACE}-00f067aa0ba902b7-01`
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
   ${auditDatabase(dir)}
-  model Order { id Int @id  status String  @@trail(audit) }
+  model Order { id Int @id  status String  @@trail(audit)  @@gate(0) }
 `
 
 const lines: LogEntry[] = []

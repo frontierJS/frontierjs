@@ -16,7 +16,7 @@ import { createClient, autoMigrate } from '@frontierjs/litestone'
 import { FileStorage }   from '@frontierjs/litestone/storage'
 import { createApp, createService } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
-import { mcpPlugin } from '../src/plugin.ts'
+import { mcp } from '../src/plugin.ts'
 
 const dir     = mkdtempSync(join(tmpdir(), 'mcp-file-'))
 const storage = join(dir, 'storage')
@@ -49,7 +49,7 @@ beforeAll(async () => {
     logLevel: 'silent',
   }) as never
   app.services.register(createService({ name: 'photos', model: 'Photo', methods: ['find', 'get', 'create'] }))
-  app.configure(mcpPlugin({ name: 'photos' }))
+  app.configure(mcp({ name: 'photos' }))
   await app.start()
   base = `http://localhost:${app.http.port}/mcp`
 })

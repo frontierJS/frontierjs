@@ -58,6 +58,7 @@
     "@frontierjs/notifications": "workspace:*",
     "@frontierjs/orion": "workspace:*",
     "@frontierjs/sierra": "workspace:*",
+    "@frontierjs/site-kit": "workspace:*",
     "@frontierjs/toolbelt": "workspace:*",
     "@frontierjs/ui": "workspace:*",
     "@xterm/addon-fit": "0.11.0",

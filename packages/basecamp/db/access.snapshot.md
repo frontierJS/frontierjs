@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-69 models · 1 view · 70 gated · 0 unrestricted
-54 with row policies · 19 with protected fields · 35 declared moves · 15 @system · 0 @seals
+70 models · 1 view · 71 gated · 0 unrestricted
+55 with row policies · 19 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
 ## Gates
@@ -28,6 +28,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `ApiKey` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `App` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `AppBackup` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `AppEditor` | 1 VISITOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `AppNetwork` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AppServer` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AuditEvent` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
@@ -155,6 +156,13 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
+
+### `AppEditor`
+
+- allow **read** — `userId == auth().id || app.workspaceId == auth().workspaceId`
+- allow **create** — `app.workspaceId == auth().workspaceId`
+- allow **update** — `app.workspaceId == auth().workspaceId`
+- allow **delete** — `app.workspaceId == auth().workspaceId`
 
 ### `AppNetwork`
 

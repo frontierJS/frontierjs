@@ -295,7 +295,7 @@ are where that reading is kept. The pure half moved with it (`core/metrics.ts`),
 because an app that has the models and not the reset rule writes its own.
 
 **And the jobs became a plugin.** Two `*.job.ts` files per app is the same
-duplication one layer up, so `metricsPlugin()` owns both clocks, following the
+duplication one layer up, so `metrics()` owns both clocks, following the
 outbox relay next door. It claims `app.metrics` — `scrapeNow`, `rollupNow`,
 `stats` — because both passes are things an operator asks for by hand, and
 because that is what lets a drive exercise the SHIPPED pass instead of a copy of

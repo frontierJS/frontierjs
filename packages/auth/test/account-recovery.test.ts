@@ -11,7 +11,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'
-import { createAuthPlugin } from '../plugin.ts'
+import { auth } from '../plugin.ts'
 import { makeAuth, type Harness, TEST_KEY } from './harness.ts'
 import { totp, TOTP_STEP_SEC } from '../totp.ts'
 
@@ -33,7 +33,7 @@ beforeAll(async () => {
   h = await makeAuth({ encryptionKey: TEST_KEY, totpDrift: 10 })
   app = await createTestApp({ auth: h.auth as any })
   app.setAuth(h.auth as any)
-  app.configure(createAuthPlugin(h.auth, { ...rateLimits, services: { level: levelOf } }))
+  app.configure(auth({ auth: h.auth, ...rateLimits, services: { level: levelOf } }))
 })
 afterAll(() => h.cleanup())
 
@@ -136,7 +136,7 @@ describe('the floor needs the app\'s own grading', () => {
   test('with no `level` resolver every call is refused, naming the option', async () => {
     const bare = await createTestApp({ auth: h.auth as any })
     bare.setAuth(h.auth as any)
-    bare.configure(createAuthPlugin(h.auth, { ...rateLimits, services: {} }))
+    bare.configure(auth({ auth: h.auth, ...rateLimits, services: {} }))
 
     const op = await person('sysadmin', false)
     const u  = await person('user')
@@ -155,7 +155,7 @@ describe('`standingLevel` — a grader for acting on somebody else', () => {
   function appWith(services: Record<string, unknown>) {
     return createTestApp({ auth: h.auth as any }).then(a => {
       a.setAuth(h.auth as any)
-      a.configure(createAuthPlugin(h.auth, { ...rateLimits, services }))
+      a.configure(auth({ auth: h.auth, ...rateLimits, services }))
       return a
     })
   }

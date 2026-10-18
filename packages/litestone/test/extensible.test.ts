@@ -38,6 +38,7 @@ const DECL = `
     slot  String?
     @@unique([model, key])
     @@unique([model, slot], nullsDistinct: true)
+    @@gate(0)
   }`
 
 const SCHEMA = `${DECL}

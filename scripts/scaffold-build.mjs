@@ -1142,7 +1142,7 @@ function dockerLogs(container) {
 // claim under test is that the client and the server agree about it, and a
 // literal on this side would only ever agree with itself.
 //
-// `/manifest` is not asked. manifestPlugin is devOnly and the container runs
+// `/manifest` is not asked. manifest is devOnly and the container runs
 // NODE_ENV=production, so the duplicate derived hooks of FJS-231 stay a
 // working-tree question that no deployed app can answer.
 //
@@ -1604,15 +1604,15 @@ export function pauseQueueCycle({ keep = false, verbose = false, log = console.l
   try {
     mkdirSync(join(work, 'app'), { recursive: true })
     mkdirSync(data, { recursive: true })
-    writeFileSync(join(work, 'app', 'worker.ts'), `import { createCaravan } from '@frontierjs/caravan'
-const jobs = createCaravan({ db: '/data/jobs.db', pollInterval: 50, cleanupAfter: 0, queues: { mail: { concurrency: 1 } } })
+    writeFileSync(join(work, 'app', 'worker.ts'), `import { caravan } from '@frontierjs/caravan'
+const jobs = caravan({ db: '/data/jobs.db', pollInterval: 50, cleanupAfter: 0, queues: { mail: { concurrency: 1 } } })
 jobs.handle('send', async ({ data }: { data: { n: number } }) => { await Bun.write('/data/ran-' + data.n, 'x') }, { queue: 'mail' })
 await jobs.start()
 await Bun.write('/data/ready', 'x')
 setInterval(() => {}, 1 << 30)
 `)
-    writeFileSync(join(work, 'app', 'dispatch.ts'), `import { createCaravan } from '@frontierjs/caravan'
-const jobs = createCaravan({ db: '/data/jobs.db' })
+    writeFileSync(join(work, 'app', 'dispatch.ts'), `import { caravan } from '@frontierjs/caravan'
+const jobs = caravan({ db: '/data/jobs.db' })
 await jobs.dispatch('send', { n: Number(process.argv[2]) }, { queue: 'mail' })
 await jobs.stop()
 `)

@@ -66,7 +66,7 @@ const BOT_ROLES = ['viewer', 'billing', 'developer', 'admin']
 
 /** Uptime is measured from when this service was registered, which is during
  *  start()'s autoload — within milliseconds of the process. Not read from
- *  healthPlugin: it keeps its own `startedAt` in a closure and exposes it
+ *  health: it keeps its own `startedAt` in a closure and exposes it
  *  nowhere, so asking it would mean parsing /health's own answer. */
 const STARTED_AT = Date.now()
 

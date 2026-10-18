@@ -16,7 +16,7 @@
 // re-exporting it, because two import paths to one function is the thing the
 // arrangement is trying to stop.
 
-import { describePrincipalRealm, customMethodGrade, gateLevels, isCrudGatedMethod, isDeclaredMove, TENANT_REGISTRY } from './litestone.ts'
+import { describePrincipalRealm, customMethodGrade, methodGateBasis, isCrudGatedMethod, isDeclaredMove, TENANT_REGISTRY } from './litestone.ts'
 import type { PrincipalRealm, CustomMethodGrade }                                 from './litestone.ts'
 import type { App }                      from './app.ts'
 import type { HookMap }                  from './hooks.ts'
@@ -148,7 +148,7 @@ function gradeCustomMethods(
   const gated   = (around.all ?? []).includes('gateAuth')
   // `d.model` is already `serviceAccessor`'s answer, so `null` is no model and
   // never the name again.
-  const levels  = !gated || d.model === null ? null : client ? gateLevels(client, d.model) : undefined
+  const levels  = !gated ? null : client ? methodGateBasis(client, d.model) : d.model === null ? null : undefined
   const declared = d.methodGates ?? {}
 
   const out: Record<string, CustomMethodGrade> = {}

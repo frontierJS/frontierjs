@@ -55,12 +55,12 @@
 
 import { resolve, dirname, join, relative, sep } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { appSrcDir } from './app-alias-plugin.js'
 import { explainModuleInitFailure } from './warnings.js'
 import { importAppModule }           from './app-import.js'
-import { ROUTE_EXTENSIONS }          from '../scanner/classify.js'
+import { ROUTE_EXTENSIONS, layoutRole } from '../scanner/classify.js'
 import {
   installSchemas, createReadRecorder, checkRoute, formatReport,
 } from './static-safety.js'
@@ -84,7 +84,8 @@ function flatten(node) {
  *
  * A layout is `_module` in any route extension, as the scanner classifies it:
  * looking for `_module.mesa` alone rendered a `_module.md` site's pages with no
- * shell at all, while dev wrapped them (FJS-1902).
+ * shell at all, while dev wrapped them (FJS-1902). A pass-through `_module.md`
+ * is skipped here as the scanner skips it, or the page renders empty.
  */
 export function layoutChainFor(routeFile, routesDirAbs) {
   const chain = []
@@ -93,7 +94,7 @@ export function layoutChainFor(routeFile, routesDirAbs) {
 
   while (dir.startsWith(stop)) {
     const candidate = [...ROUTE_EXTENSIONS].map(ext => join(dir, '_module' + ext)).find(existsSync)
-    if (candidate) chain.unshift(candidate)
+    if (candidate && layoutRole(candidate, readFileSync(candidate, 'utf8')) === 'layout') chain.unshift(candidate)
     if (dir === stop) break
     dir = dirname(dir)
   }

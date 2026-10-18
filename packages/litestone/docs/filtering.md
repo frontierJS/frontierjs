@@ -15,12 +15,16 @@ model Lead {
   attachment String?
   tags       String[]
   deletedAt  DateTime?
+
+  @@gate(0)
 }
 
 model Author {
   id    Int    @id
   name  String
   posts Post[]
+
+  @@gate(0)
 }
 
 model Post {
@@ -32,6 +36,8 @@ model Post {
   comp      String   @computed
   authorId  Int?
   author    Author?  @relation(fields: [authorId], references: [id])
+
+  @@gate(0)
 }
 
 type Addr {
@@ -42,6 +48,8 @@ type Addr {
 model Place {
   id   Int  @id
   addr Json @type(Addr)
+
+  @@gate(0)
 }
 
 model User {
@@ -52,6 +60,8 @@ model User {
 
   @@softDelete
   @@auth
+
+  @@gate(0)
 }
 
 model Doc {
@@ -72,17 +82,23 @@ model Product {
   id    Int    @id
   price Float
   state String
+
+  @@gate(0)
 }
 
 model Order {
   id     Int    @id
   status String
   meta   Json?
+
+  @@gate(0)
 }
 
 model Subscription {
   id        Int      @id
   createdAt DateTime @default(now())
+
+  @@gate(0)
 }
 
 model Task {
@@ -90,17 +106,23 @@ model Task {
   dueAt       DateTime?
   startedAt   DateTime?
   completedAt DateTime?
+
+  @@gate(0)
 }
 
 model Issue {
   id     Int          @id
   labels IssueLabel[]
+
+  @@gate(0)
 }
 
 model Label {
   id     Int          @id
   name   String
   issues IssueLabel[]
+
+  @@gate(0)
 }
 
 model IssueLabel {
@@ -109,6 +131,8 @@ model IssueLabel {
   issue   Issue @relation(fields: [issueId], references: [id])
   labelId Int
   label   Label @relation(fields: [labelId], references: [id])
+
+  @@gate(0)
 }
 ```
 

@@ -1,7 +1,7 @@
 // cleanup.ts
 // Scheduled jobs that prune expired sessions and verifications.
 //
-// createLitestoneAuth builds one as `auth.cleanup`, and createAuthPlugin starts
+// createLitestoneAuth builds one as `auth.cleanup`, and auth starts
 // it from work() and stops it at shutdown, so a one-shot boot (junction call,
 // the snapshot tools) runs no sweep and an app writes no plugin for it.
 // `auth.cleanup.sweepNow()` drains the tables on demand.

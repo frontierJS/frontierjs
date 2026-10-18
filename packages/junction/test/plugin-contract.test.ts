@@ -6,8 +6,8 @@
 // All three closed gaps that had surfaced repeatedly:
 //   • register() was typed `void | Promise<void>` while configure() never
 //     awaited it — the type advertised the opposite of the contract.
-//   • There was no depends/after/priority anywhere, so "mailerPlugin must be
-//     configured before notificationsPlugin" could only live in prose.
+//   • There was no depends/after/priority anywhere, so "mail must be
+//     configured before notifications" could only live in prose.
 //   • Plugins claimed app.<name> by plain assignment, so two claiming one name
 //     was a silent last-write-wins and the loser stopped working.
 
@@ -220,7 +220,7 @@ describe('an app.<slot> no plugin claimed', () => {
 
   it('throws on read, naming the plugin that installs it', async () => {
     const app = await createTestApp()
-    expect(() => app.jobs).toThrow(/app\.jobs is not configured.*createCaravan/s)
+    expect(() => app.jobs).toThrow(/app\.jobs is not configured.*caravan/s)
     expect(() => app.conduit).toThrow(/app\.conduit is not configured.*conduit\(\)/s)
     expect(() => app.channel).toThrow(/app\.channel is not configured.*channels\(\)/s)
   })
@@ -239,13 +239,13 @@ describe('an app.<slot> no plugin claimed', () => {
 describe('battery slots go through app.claim', () => {
   const mailer = { async send() { return { id: '1', message: 'sent' } }, async batch() { return [] } }
 
-  it('mailerPlugin refuses a prior app.mail and leaves it in place', async () => {
-    const { mailerPlugin } = await import('../src/mail/index.ts')
+  it('mail refuses a prior app.mail and leaves it in place', async () => {
+    const { mail } = await import('../src/mail/index.ts')
     const app = await createTestApp()
     const prior = { send: () => {} }
     app.claim('mail', prior)
 
-    expect(() => app.configure(mailerPlugin(mailer as never))).toThrow(/'mail'.*already claimed/s)
+    expect(() => app.configure(mail({ mailer: mailer as never }))).toThrow(/'mail'.*already claimed/s)
     expect(app.mail).toBe(prior as never)
   })
 

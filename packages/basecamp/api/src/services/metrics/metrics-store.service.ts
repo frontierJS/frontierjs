@@ -3,9 +3,9 @@
 // Mounted at /metrics-store. Custom methods dispatch on X-Service-Method:
 //   read
 //
-// NOT `/metrics`: that path is `healthPlugin`'s and answers what is true NOW,
+// NOT `/metrics`: that path is `health`'s and answers what is true NOW,
 // as a scrape target. This service answers what WAS true, out of the rows
-// `metricsPlugin` kept. Two questions, two surfaces, and naming them the same
+// `metrics` kept. Two questions, two surfaces, and naming them the same
 // thing would be the one confusion this whole feature exists to remove.
 //
 // ─── Why this exists at all ───────────────────────────────────────────────
@@ -38,7 +38,7 @@ import { keyScope } from '../api-keys/scopes.ts'
 import { callerOrder, pickedByCaller } from '../../core/resource.ts'
 
 const HOUR = 3_600_000
-/** What `metricsPlugin` keeps at raw resolution. Anything older has an hour row
+/** What `metrics` keeps at raw resolution. Anything older has an hour row
  *  covering it, so a query reaching past this is answered from the fold. */
 const RAW_WINDOW_MS = 48 * HOUR
 const MAX_POINTS    = 5_000

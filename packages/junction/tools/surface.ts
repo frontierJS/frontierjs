@@ -56,6 +56,8 @@ const PHASES = ['around', 'before', 'validated', 'after', 'error'] as const
 function gradeSentence(g: CustomMethodGrade): string {
   if (g.source === 'unchecked')
     return '**nothing at the API boundary** — the model declares no `@@gate`'
+  if (g.source === 'system')
+    return 'the app itself only — no model and no `gate:`; `gate: 0` opens it'
   if (g.source === 'declared')
     return g.level === 0 ? 'anyone, a stranger included — declared `gate: 0`'
                          : `standing ${g.level} or above — declared \`gate: ${g.level}\``

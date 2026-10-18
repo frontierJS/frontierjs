@@ -25,7 +25,7 @@ import { parse } from '@frontierjs/litestone/parser'
 import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
 import { createApp, createService, $ } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
-import { mcpPlugin } from '../src/plugin.ts'
+import { mcp } from '../src/plugin.ts'
 import type { McpOptions } from '../src/plugin.ts'
 import { projectTools, schemaViews } from '../src/projection.ts'
 import type { ServiceShape } from '../src/projection.ts'
@@ -113,7 +113,7 @@ beforeAll(async () => {
     hooks: { before: { find: [(c: { transport: string }) => { seenTransport = c.transport }] } },
   }))
 
-  app.configure(mcpPlugin({ name: 'shop', ui: { root: VIEWS }, narrow: (t, u) => narrowBy ? narrowBy(t, u) : true }))
+  app.configure(mcp({ name: 'shop', ui: { root: VIEWS }, narrow: (t, u) => narrowBy ? narrowBy(t, u) : true }))
   await app.start()
   // `apiPrefix` defaults to empty, and `app.post` applies whatever it is — so
   // the path here is the plugin's own, with no prefix of this test's invention.
@@ -248,7 +248,7 @@ describe('a @system move is offered only where a method lifts it (FJS-1925)', ()
       lapse: async () => ($.db as unknown as Lapsing).order.transition(Number($.id), 'lapse', { system: true }),
       methods: ['get', 'lapse'],
     }))
-    own.configure(mcpPlugin({ name: 'shop' }))
+    own.configure(mcp({ name: 'shop' }))
     await own.start()
     url   = `http://localhost:${own.http.port}/mcp`
     store = (db as unknown as { asSystem(): typeof store }).asSystem()
@@ -823,7 +823,7 @@ describe('a declared ui.root that cannot be read refuses the boot (FJS-D955)', (
       config:   { port: 0, database: { url: '', log: false } },
       logLevel: 'silent',
     }) as never as { configure(p: unknown): void; start(): Promise<void>; stop?(): Promise<void> }
-    own.configure(mcpPlugin({ ui: { root } }))
+    own.configure(mcp({ ui: { root } }))
     try { await own.start(); await own.stop?.(); return null }
     catch (err) { return (err as Error).message }
   }

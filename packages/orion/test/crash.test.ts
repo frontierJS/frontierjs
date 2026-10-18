@@ -23,7 +23,7 @@ import { join } from "node:path"
 import type { Subprocess } from "bun"
 
 import { createTestEnv } from "../../litestone/src/testing.js"
-import { createCaravan } from "../../caravan/src/index"
+import { caravan } from "../../caravan/src/index"
 import { litestoneHost } from "../src/tenancy"
 import { createRunner } from "../src/runner"
 import { SCHEMA, KEY, registryFor, ranIn, chain, count, hang, activeFlow } from "./fixtures/host"
@@ -70,7 +70,7 @@ describe("a process killed mid-stage", () => {
     writeFileSync(join(dir, "hang"), "")
 
     // The trigger's side: a queue that is never started, only dispatched into.
-    const intake = createCaravan({ db: jobsPath })
+    const intake = caravan({ db: jobsPath })
     const runId  = await createRunner({ host: litestoneHost({ db: env.db }), jobs: intake, registry: registryFor(dir) }).start(flowId, {})
 
     const first = worker()
@@ -113,7 +113,7 @@ describe("a sync webhook run whose process is killed", () => {
     const runId     = version.runs[0].id as string
 
     // Here and not in a worker: this sweep's instance runs what it dispatches.
-    const jobs  = createCaravan({ db: jobsPath, pollInterval: 20, heartbeat: 100, lease: 1_000, cleanupAfter: 0 })
+    const jobs  = caravan({ db: jobsPath, pollInterval: 20, heartbeat: 100, lease: 1_000, cleanupAfter: 0 })
     const local = createRunner({ host: litestoneHost({ db: env.db }), jobs, registry: registryFor(dir), lostAfter })
     local.register()
 

@@ -39,8 +39,8 @@ checkout. A hosted Haven with strangers on it never mounts it.
   so a session cannot stall unseen. Tabs persist to `~/.fli/haven/study.json`.
 - **A permission prompt is a confirm panel in the pane**, answered over the
   same stdio stream (0.2 found the CLI asks its host there). A tab runs
-  `--permission-mode manual`, since under `auto` the CLI asks the host
-  nothing (2.3).
+  `--permission-mode auto`, the owner's default, under which the CLI asks the
+  host nothing (2.3), so the panel shows only for a tab started `manual`.
 - **Narrow terminals zoom.** The scene is about 120 columns, so a split wants
   about 172 (the side takes 30%); under that, an open side shows one pane full width and Ctrl+O
   swaps them (3.1).
@@ -657,4 +657,51 @@ is pointed out in the workshop.
     and a read-along can never start a process; (9) must stay true: the
     study never drives a session it did not start. What fails: none while
     experimenting, though that rule is the one worth a test first.
+    Adjudication: none in tension. Tier: Assessment.
+- [x] 3.4 The split's edge moves, and a rule marks it
+  - **Alt+= widens the side by five columns and Alt+- narrows it** (`+` and
+    `_` too), from either pane, as far as leaves each pane 20 (`EDGE_COLUMNS`
+    in `shell.js`). Alt and not Ctrl, since opentui's field binds Ctrl+- to
+    undo and Alt+arrows to a word. A legacy terminal sends Alt+= as `ESC =`,
+    which opentui names `''` with no `meta`, so `paneKeys` reads the
+    sequence; under kitty it is `=` with `meta`. Zoomed there is no edge, and
+    the keys do nothing. The width is held in columns once set, kept across
+    a hide and a terminal resize; it is not written to `study.json`.
+  - **Zoom stays the terminal's call, made at the share.** A side widened
+    past what leaves the page `PAGE_COLUMNS` clips the scene, which is the
+    person's choice; a terminal narrower than 172 still zooms.
+  - **Mesa's `sideOf` draws a rule down the side's left edge**, one of its
+    columns, since two panes on one ground read as one screen. `Study.mesa`
+    sizes its rows to the box less the columns its `border` names, read off
+    the box rather than restated.
+  - Run in tmux through this tree's `fli haven`, 220 columns, Ctrl+\: the
+    rule at column 155 (the side 66); Alt+= three times put it at 140,
+    Alt+- once at 145, nothing typed into the study's field; twenty Alt+-
+    stopped at a 20-column side, forty-five Alt+= at a 20-column page;
+    Ctrl+O to the page and the keys moved it from there; resized to 160 it
+    zoomed, back to 220 the split came back at the width set. Mesa's
+    terminal drive (430) is green; Sierra's suite is 2332 with
+    `attachment-lazy.test.js` timing out under the full run and passing alone.
+  - The nine, answered late, after the code: (1) failed first: `Study.mesa`
+    subtracted a literal 1 for Mesa's rule, a second origin that would clip a
+    column unseen when the rule moved; it now reads the box's `border`. The
+    step and the edge are stated once, in `shell.js`; (2) no noun; (3) the
+    problem's; (4) Ctrl+\ and Ctrl+O keep their meanings; (5) the width is
+    derived from the share until a key sets it; (6) `paneKeys` is still the
+    one writer of both panes' size and visibility, and the rule is `sideOf`'s;
+    (7) two keys, no option; (8) a resize below the share's width zooms, and
+    a set width is clamped to the terminal; (9) must stay true: a key the
+    shell takes never reaches the field; what fails: none while
+    experimenting. Adjudication: none in tension. Tier: Assessment.
+  - **Ctrl+N opens a tab on the default model**, `/new` with no word, and
+    leaves the draft in the field to send from it. It is the field's key,
+    like Ctrl+J and Ctrl+K, so from the page it does nothing. Run in the same
+    tmux: two Ctrl+N gave tabs 3 and 4, the second with `draft kept` still
+    in the field. The nine, answered late, after the code: (1) one opener,
+    `open()`, which `/new` now calls too; (2) no noun; (3) the problem's;
+    (4) a new-tab key where terminals and browsers put one, scoped like its
+    siblings; (5) the default is `tabOf(null)`, what `/new` already gives;
+    (6) `keydown` still owns the study's keys; (7) none crossed; (8) nothing
+    destructive, a stray tab closes with `/close`; (9) must stay true: Ctrl+N
+    never reaches the field; what fails: none while experimenting.
     Adjudication: none in tension. Tier: Assessment.

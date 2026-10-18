@@ -227,8 +227,9 @@ describe('a method may declare a level above the floor', () => {
   test('a declaration is graded on a service over no model, where there is no floor', async () => {
     // The declaration used to be read only once a model had answered with a
     // gate, so `gate: 5` here parsed, reached the surface, and a stranger ran
-    // the body (`FJS-1087`). The undeclared `ping` beside it is the control:
-    // with no model there is still no floor, so it stays open to everyone.
+    // the body (`FJS-1087`). The undeclared `ping` beside it has no floor to
+    // derive, so in a schema that grades access it is SYSTEM-only (`FJS-D1206`):
+    // every wire caller is refused, and the app calling itself still runs it.
     const s = await shop()
 
     const stranger = await s.call('nobody', 'reports', 'payroll')
@@ -243,11 +244,20 @@ describe('a method may declare a level above the floor', () => {
     expect(entitled.status).toBe(200)
     expect(entitled.ran).toEqual(['payroll'])
 
-    for (const who of ['nobody', 'shopper', 'staff']) {
+    for (const [who, status] of [['nobody', 401], ['shopper', 403], ['staff', 403]] as const) {
       const out = await s.call(who, 'reports', 'ping')
-      expect(`${who}: ${out.status}`).toBe(`${who}: 200`)
-      expect(out.ran).toEqual(['ping'])
+      expect(`${who}: ${out.status}`).toBe(`${who}: ${status}`)
+      expect(out.ran).toEqual([])
     }
+
+    const svc: any = (s.app as any).service('reports')
+    s.ran.length = 0
+    await svc.call('ping', 1, {}, { auth: { user: null } })
+    expect(s.ran).toEqual(['ping'])
+
+    s.ran.length = 0
+    await expect(svc.call('ping', 1, {}, { auth: { user: AS.staff } })).rejects.toThrow(/requires level 8/)
+    expect(s.ran).toEqual([])
 
     await s.close()
   })
@@ -473,11 +483,12 @@ describe('the surface reports the grade the gate enforces', () => {
     expect((await s.call('nobody', 'variants', 'availability')).status).toBe(200)
 
     // No model: a declaration is graded, and the undeclared method beside it is
-    // checked by nothing.
+    // SYSTEM-only, since the schema grades access (`FJS-D1206`).
     expect(grades.reports.payroll).toEqual({ source: 'declared', level: 5, graded: true })
     expect((await s.call('shopper', 'reports', 'payroll')).status).toBe(403)
-    expect(grades.reports.ping).toEqual({ source: 'unchecked', level: null, graded: false })
-    expect((await s.call('nobody', 'reports', 'ping')).status).toBe(200)
+    expect(grades.reports.ping).toEqual({ source: 'system', level: 8, graded: true })
+    expect((await s.call('nobody', 'reports', 'ping')).status).toBe(401)
+    expect((await s.call('staff',  'reports', 'ping')).status).toBe(403)
 
     // CRUD verbs are graded by operation and are not a custom method's row.
     expect('find' in grades.orders).toBe(false)
@@ -500,6 +511,23 @@ describe('customMethodGrade', () => {
     const { customMethodGrade } = await import('../src/core/litestone.ts')
     expect(customMethodGrade('graph', { graph: 5 }, null)).toEqual({ source: 'declared',  level: 5,    graded: true })
     expect(customMethodGrade('graph', {},           null)).toEqual({ source: 'unchecked', level: null, graded: false })
+  })
+
+  test('over no model in a schema that grades access, an undeclared method is SYSTEM-only (FJS-D1206)', async () => {
+    const { customMethodGrade } = await import('../src/core/litestone.ts')
+    expect(customMethodGrade('graph', { graph: 0 }, 'system')).toEqual({ source: 'declared', level: 0, graded: true })
+    expect(customMethodGrade('graph', {},           'system')).toEqual({ source: 'system',   level: 8, graded: true })
+  })
+
+  test('a schema declaring no access rule stays a plain app: the model-less method is unchecked (FJS-D1212)', async () => {
+    const { methodGateBasis } = await import('../src/core/litestone.ts')
+    const plain: any = await createClient({ databases: ':memory:', schema: 'model Note {\n  id Int @id\n}\n' })
+    const graded: any = await createClient({ databases: ':memory:', schema: SCHEMA })
+    expect(methodGateBasis(plain,  null)).toBeNull()
+    expect(methodGateBasis(graded, null)).toBe('system')
+    expect(methodGateBasis(graded, 'reports')).toBe('system')
+    expect(methodGateBasis(graded, 'orders')).toEqual({ read: 1, create: 4, update: 4, delete: 5 })
+    plain.$close(); graded.$close()
   })
 
   test('a describer holding no schema reports the declaration and does not guess the floor', async () => {

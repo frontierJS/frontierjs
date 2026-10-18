@@ -1,6 +1,6 @@
 // Regression tests for the elegance-audit fixes (2026-08-01):
 //   1. @@gate is enforced by default (FrontierGateGetLevel) when declared;
-//      ungated models stay completely open; a user GatePlugin overrides.
+//      ungated models are SYSTEM-only (FJS-D1206); a user GatePlugin overrides.
 //   2. Unknown where-fields: WARN on reads (once), ERROR on writes.
 //      take/skip rejected with a limit/offset pointer.
 //      Unknown data keys silently stripped (mass-assignment protection).
@@ -54,11 +54,13 @@ describe('default gate enforcement', () => {
     expect(row.name).toBe('Acme')
   })
 
-  it('leaves models WITHOUT @@gate completely open', async () => {
+  it('leaves models WITHOUT @@gate to SYSTEM once the schema gates any (FJS-D1206)', async () => {
     const db = await fresh()
-    const row = await db.note.create({ data: { body: 'hi' } })   // anonymous, ungated
+    await expect(db.note.create({ data: { body: 'hi' } })).rejects.toThrow(/requires SYSTEM access/)
+    await expect(db.$setAuth(VERIFIED).note.findMany()).rejects.toThrow(/declares no @@gate/)
+    const row = await db.asSystem().note.create({ data: { body: 'hi' } })
     expect(row.body).toBe('hi')
-    expect(await db.note.findMany()).toHaveLength(1)
+    expect(await db.asSystem().note.findMany()).toHaveLength(1)
   })
 
   it('a user-supplied GatePlugin overrides the default resolver', async () => {

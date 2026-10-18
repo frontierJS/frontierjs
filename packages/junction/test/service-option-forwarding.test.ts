@@ -96,7 +96,7 @@ describe('createService → buildBase option forwarding', () => {
       softDelete: 'deleted_at', idField: 'ref',
     }) as unknown as Record<string, Record<string, unknown>>
 
-    // manifestPlugin reads svc._meta. It was built by the base and dropped on
+    // manifest reads svc._meta. It was built by the base and dropped on
     // the way out, so every createService service reported the defaults.
     expect(svc._meta).toBeDefined()
     expect(svc._meta.softDelete).toBe('deleted_at')

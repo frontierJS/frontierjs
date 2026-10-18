@@ -24,7 +24,7 @@ import { join } from "node:path"
 import { GatePlugin } from "../../litestone/src/index.js"
 import { createTestEnv } from "../../testing/src/index.ts"
 import { channels, createApp, createStubAuth, request, sessionGateLevel, toDataPrincipal } from "../../junction/index.ts"
-import { createCaravan } from "../../caravan/src/index"
+import { caravan } from "../../caravan/src/index"
 import { orion } from "../src/plugin"
 import type { Runner } from "../src/runner"
 import { KEY, chain, count, wait, registryFor } from "./fixtures/host"
@@ -58,7 +58,7 @@ beforeAll(async () => {
           { id: "u-manager", role: "manager" },
         ] }),
       })
-      built.configure(createCaravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
+      built.configure(caravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
       built.configure(channels())
       built.configure(orion({ plugins: [suiteNodes()] }))
       return built

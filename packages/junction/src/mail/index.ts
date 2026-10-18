@@ -392,18 +392,18 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
 import { warnEffectInDrain } from '../core/context.ts'
 
 // Usage:
-//   import { mailerPlugin, createResendMailer } from '@frontierjs/junction/mail'
+//   import { mail, createResendMailer } from '@frontierjs/junction/mail'
 //
-//   app.configure(mailerPlugin(createResendMailer({
+//   app.configure(mail({ mailer: createResendMailer({
 //     credentials: { get: ref => process.env[ref] },   // or a Conduit resolver
 //     apiKeyRef:   'RESEND_API_KEY',
 //     from:        'Elite Lawn Care <noreply@elitelawncare.com>',
-//   })))
+//   }) }))
 //
 //   // Then anywhere in hooks or services:
 //   await ctx.app.mail?.send({ to, subject, html })
 
-export function mailerPlugin(mailer: IMail): import('../core/app.ts').Plugin {
+export function mail({ mailer }: { mailer: IMail }): import('../core/app.ts').Plugin {
   return {
     name: 'mailer',
     register(app: import('../core/app.ts').App): void {

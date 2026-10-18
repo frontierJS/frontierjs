@@ -4,7 +4,7 @@
  * test/mcp-relay.test.js — the view's client: a call leaves as `tools/call`.
  *
  * `mcpApp()` (`src/mcp/index.js`) installs the page's client with a relay,
- * and the relay turns each call into the arguments the app's `mcpPlugin()`
+ * and the relay turns each call into the arguments the app's `mcp()`
  * dispatches through `invoke()`. That table is the one thing restated across
  * the two packages, so it is asserted here verb by verb; the host's half of
  * the wire is `src/mcp/host.js`, asserted against a stand-in parent window,

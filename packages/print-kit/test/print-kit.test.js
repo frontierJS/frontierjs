@@ -3,7 +3,7 @@
 // a real Chrome.
 
 import { describe, expect, test } from 'bun:test'
-import { pageRules, printDocument, printerPlugin } from '../index.js'
+import { pageRules, printDocument, printer } from '../index.js'
 
 describe('the document', () => {
   test('a margin box holds data as a string it cannot leave', () => {
@@ -33,7 +33,7 @@ describe('the document', () => {
 describe('the plugin', () => {
   test('is claimed as app.printer, and refuses to boot with no Chrome', async () => {
     const claimed = {}
-    const plugin = printerPlugin({ find: () => null })
+    const plugin = printer({ find: () => null })
     plugin.register({ claim: (name, value) => { claimed[name] = value } })
     expect(typeof claimed.printer.pdf).toBe('function')
     expect(() => plugin.boot()).toThrow(/no Chrome on this machine/)

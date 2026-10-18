@@ -172,6 +172,6 @@ describe('stubFor', () => {
     const text = stubFor({ model: 'Order', field: 'shippedAt' }).join('\n')
     expect(text).toContain("name:  'order-shipped-at'")
     expect(text).toContain("from '@frontierjs/junction/backfill'")
-    expect(text).toContain('backfills([orderShippedAt])')
+    expect(text).toContain('backfill([orderShippedAt])')
   })
 })

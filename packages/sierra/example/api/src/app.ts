@@ -12,7 +12,7 @@
 import { join }         from 'node:path'
 
 import {
-  createApp, channels, healthPlugin, sessionGateLevel,
+  createApp, channels, health, sessionGateLevel,
   type App, type IAuth,
 } from '@frontierjs/junction'
 
@@ -94,7 +94,7 @@ const app = createApp({
   config: { name: 'sierra-example', port: PORT, apiPrefix: '/api' },
 })
 
-app.configure(healthPlugin())
+app.configure(health())
 app.configure(channels((a: App) => {
   a.channels.on('connection', (_session, conn) => { a.channel('leads').join(conn) })
 }))

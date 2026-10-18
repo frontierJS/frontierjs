@@ -10,8 +10,35 @@
  */
 
 import { basename, extname } from 'path'
+import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 
 export const ROUTE_EXTENSIONS = new Set(['.mesa', '.md'])
+
+/**
+ * Whether a `_module` file wraps the routes beneath it (`FJS-D1240`).
+ *
+ * A `_module.md` holding front matter and nothing else is data for its
+ * directory: the front matter cascades and the pages render unwrapped. Read as
+ * a layout, it has no `<slot />`, so every page beneath it shipped an empty
+ * `<main>` on a green build. One with a body and no slot is that same empty
+ * page, and is refused by name rather than guessed at.
+ *
+ * @param {string} file   — the path named in a refusal
+ * @param {string} source — the file's contents
+ * @returns {'layout' | 'pass-through'}
+ */
+export function layoutRole(file, source) {
+  if (extname(file) !== '.md') return 'layout'
+  const { body } = splitFrontmatter(source)
+  if (body.trim() === '') return 'pass-through'
+  if (/<slot[\s/>]|\{@render\s+children\b/.test(body)) return 'layout'
+  const err = new Error(
+    `${file}: a _module.md with a body wraps every page beneath it, and this one has no <slot /> ` +
+    'to put the page in, so each would render empty. Add <slot />, or delete the body to keep only the front matter.'
+  )
+  err.code = 'SIERRA_LAYOUT_NO_SLOT'
+  throw err
+}
 
 /**
  * @param {string} relativePath — path relative to routesDir, e.g. 'leads/[leadId].mesa'

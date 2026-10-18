@@ -92,6 +92,9 @@ const NOT_SEEDED: Record<string, string> = {
   // probed it and nothing has changed its state.
   monitor_check: 'a probe that was never made',
   monitor_event: 'a state change that never happened',
+  // An editor is only allowed on a static site built from git, and no seeded
+  // app is one.
+  app_editor: 'a site editor, and no seeded app is a site built from git',
 
   // Orion. The flow itself IS seeded — an operator authors it, and an
   // automations screen with no flow on it reads as a feature that was never
@@ -115,11 +118,11 @@ const NOT_SEEDED: Record<string, string> = {
   invitation:   'an offer nobody has made — accepting one is the flow, not a row to look at',
   server_event: 'written by the outpost, which is not running in a seeded fleet',
 
-  // Readings are produced by a RUNNING process, not by a seeder. `metricsPlugin`
+  // Readings are produced by a RUNNING process, not by a seeder. `metrics`
   // takes one on boot and one a minute after; a seeded reading would be a
   // measurement of nothing, and the fold has by definition never run on a
   // database that is one second old (FJS-956).
-  metric_series: 'written by metricsPlugin, which a seed run does not start',
+  metric_series: 'written by metrics, which a seed run does not start',
   metric_point:  'a reading of a process that was not running',
   metric_hour:   'a fold of readings that do not exist yet',
 

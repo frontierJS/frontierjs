@@ -6,7 +6,7 @@
 //
 //   · an app that depends on @frontierjs/print-kit, or whose API imports
 //     @frontierjs/mesa/drive, needs a Chrome, or the first launch fails —
-//     printerPlugin() loudly at boot, but only once the container is already
+//     printer() loudly at boot, but only once the container is already
 //     swapped in;
 //   · an app whose API reads a template out of web/src (a .mesa document the
 //     browser also draws) needs web/src in the image, and .dockerignore drops

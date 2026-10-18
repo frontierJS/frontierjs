@@ -35,7 +35,7 @@ model Doc {
 const LOGGED = `
 database main  { path env("MAIN_DB", "./main.db") }
 database audit { path "./audit/" driver trail }
-model Item { id Int @id @default(autoincrement())  name String  n Int  @@db(main) @@trail(audit) }`
+model Item { id Int @id @default(autoincrement())  name String  n Int  @@db(main) @@gate(0) @@trail(audit) }`
 
 type Plan = {
   verb: string, op: string, returning: boolean, batch: boolean,

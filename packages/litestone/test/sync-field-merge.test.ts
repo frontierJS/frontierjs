@@ -30,12 +30,14 @@ model Doc {
   locked  String? @encrypted
   version Int     @version
   @@sync(field)
+  @@gate(0)
 }
 model Plain {
   id      Int    @id
   title   String
   version Int    @version
   @@sync(refuse)
+  @@gate(0)
 }
 `
 

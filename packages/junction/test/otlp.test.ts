@@ -28,8 +28,8 @@ const PARENT = '00f067aa0ba902b7'
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
   ${auditDatabase(dir)}
-  model Order { id Int @id  status String  @@trail(audit) }
-  model Note  { id Int @id  body   String }
+  model Order { id Int @id  status String  @@trail(audit)  @@gate(0) }
+  model Note  { id Int @id  body   String  @@gate(0) }
 `
 
 type Received = { path: string, body: any }

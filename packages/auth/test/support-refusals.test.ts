@@ -16,7 +16,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'
-import { createAuthPlugin } from '../plugin.ts'
+import { auth } from '../plugin.ts'
 import { makeAuth, type Harness, TEST_KEY } from './harness.ts'
 
 let h: Harness
@@ -43,7 +43,8 @@ beforeAll(async () => {
 
   app = await createTestApp({ auth: h.auth as any })
   app.setAuth(h.auth as any)
-  app.configure(createAuthPlugin(h.auth, {
+  app.configure(auth({
+    auth: h.auth,
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
     canStartSupport:   () => allow,
@@ -52,7 +53,8 @@ beforeAll(async () => {
 
   ungraded = await createTestApp({ auth: h.auth as any })
   ungraded.setAuth(h.auth as any)
-  ungraded.configure(createAuthPlugin(h.auth, {
+  ungraded.configure(auth({
+    auth: h.auth,
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
     canStartSupport:   () => true,
@@ -60,7 +62,8 @@ beforeAll(async () => {
 
   bare = await createTestApp({ auth: h.auth as any })
   bare.setAuth(h.auth as any)
-  bare.configure(createAuthPlugin(h.auth, {
+  bare.configure(auth({
+    auth: h.auth,
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
   }))

@@ -26,7 +26,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import { CronScheduler, isFixedTime } from '../src/cron.ts'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 import type { CaravanInstance } from '../src/types.ts'
 
 const NY = 'America/New_York'
@@ -231,7 +231,7 @@ async function instancesOver(
 ): Promise<number> {
   const dir = mkdtempSync(join(tmpdir(), 'caravan-dst-'))
   dirs.push(dir)
-  const q = createCaravan({ db: join(dir, 'jobs.db'), pollInterval: 20 })
+  const q = caravan({ db: join(dir, 'jobs.db'), pollInterval: 20 })
   queues.push(q)
 
   const clocks = Array.from({ length: instances }, () => new Date(startISO))

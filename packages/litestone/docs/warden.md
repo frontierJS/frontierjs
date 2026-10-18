@@ -53,7 +53,7 @@ measured table of every declaration against every verb is
    in Junction (`FJS-D113`). A principal with no `id` grades STRANGER before any
    `getLevel` runs (`FJS-D515`).
 - **2 · Gate.** A level per operation on the 0–9 ladder, read.create.update.delete. It is
-   enforced whenever it is declared, and a model without one is open (`FJS-D53`). The
+   enforced whenever it is declared, and once a schema declares any access rule a model with neither a gate nor an `@@allow`/`@@deny` is system-only (`FJS-D1206`); `@@gate(0)` says public. The
    levels must keep read ≤ update ≤ delete and create ≤ delete (`FJS-D491`). `8` means
    `asSystem()` and nothing else, so use it for credential material, not for `User`
    (`FJS-D47`). The ladder, its comparison and its grader are one kit,

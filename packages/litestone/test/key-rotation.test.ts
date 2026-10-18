@@ -47,6 +47,7 @@ model Secret {
   ssn   String  @encrypted
   email String? @encrypted(deterministic: true)
   pin   String? @hashed
+  @@gate(0)
 }`
 
 const open = (opts: Record<string, unknown> = {}) =>

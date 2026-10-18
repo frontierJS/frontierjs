@@ -38,7 +38,8 @@ const { sys, db } = await import('../../api/src/core/db.ts')
 // From the package, not from this app: the models are junction's
 // (`db/metrics.lite`) and so is the reset rule that reads them. An app-local
 // copy of either is the second spelling this drive exists to prevent.
-const { counterIncrease, counterRate, isStale, metricsPlugin, seriesKey } = await import('@frontierjs/junction')
+const { counterIncrease, counterRate, isStale, seriesKey } = await import('@frontierjs/junction')
+const { metrics }                                       = await import('@frontierjs/junction/metrics')
 
 const iso = () => new Date().toISOString()
 
@@ -47,7 +48,7 @@ const iso = () => new Date().toISOString()
 // interval is immediate and boots it against a minimal app-shaped object — so
 // what runs here is the SHIPPED pass and not a copy of it, which is the whole
 // point of moving it into the package.
-const plugin  = metricsPlugin()
+const plugin  = metrics()
 const fakeApp = { db: { asSystem: () => sys }, logger: console, registerMetricsSource: () => {} }
 plugin.register(fakeApp)
 // `app.metrics.rollupNow()` — the operator's entry, which is also what makes

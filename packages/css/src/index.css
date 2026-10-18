@@ -122,6 +122,7 @@
 @import './patterns/nav.css'        layer(patterns);
 @import './patterns/prose.css'      layer(patterns);
 @import './patterns/bands.css'      layer(patterns);
+@import './patterns/aside.css'      layer(patterns);
 
 /*
  * The escape hatch — after every component and pattern, before a11y.

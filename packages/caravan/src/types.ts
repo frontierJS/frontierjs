@@ -622,7 +622,7 @@ export interface CaravanTelemetry {
  * An index signature here made `CaravanApp` unassignable *from* Junction's
  * `App` (which has none), and because `register(app: CaravanApp)` puts the app
  * in a contravariant position, that made the whole plugin unassignable to
- * Junction's `PluginInput` — so `app.configure(createCaravan())` failed to
+ * Junction's `PluginInput` — so `app.configure(caravan())` failed to
  * typecheck for every TypeScript consumer. List the fields Caravan actually
  * touches instead; anything else goes through an explicit cast at the use site.
  */

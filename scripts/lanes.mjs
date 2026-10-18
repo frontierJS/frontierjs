@@ -51,8 +51,20 @@ const GENERATED = /(^|\/)[^/]*\.snapshot\.[a-z]+$|^codegraph\.html$/
 
 const EXCLUDE = LINKED.map(f => `:(exclude)${f}`)
 
+/** ports.js has five port blocks for linked worktrees. */
+export const MAX_LANES = 5
+
+/** The first `count` lanes no other running loop holds, each opened. */
+export function openLanes(count) {
+  const got = []
+  for (let n = 1; n <= MAX_LANES && got.length < count; n++) if (claim(n)) got.push(openLane(n))
+  if (got.length < count) throw new Error(`${count} lanes asked, ${got.length} free: another loop holds the rest (${LANES_DIR}/*.lock)`)
+  return got
+}
+
 /** The lane numbered `n`, made and installed if it does not exist yet. */
 export function openLane(n) {
+  if (!claim(n)) throw new Error(`lane ${n} is held by pid ${holder(n)}, a loop still running`)
   const dir = join(LANES_DIR, `${basename(ROOT)}-${n}`)
   const bin = join(LANES_DIR, `bin-${n}`)
   if (!isWorktree(dir)) {
@@ -179,6 +191,42 @@ function snapshot({ dir, linked = true }) {
       if (argv[0] === 'write-tree') return out.stdout.trim()
     }
   } finally { rmSync(index, { force: true }) }
+}
+
+// ─── claims ─────────────────────────────────────────────────
+
+// A second loop opening a lane the first is running in resets it under that
+// session mid-prove, so the fix it then reports is one the harvest never
+// carries (FJS-3238). A claim is the holder's pid, freed when it exits; a
+// claim whose pid is gone was left by a killed loop and is taken over.
+const claimed = new Set()
+const lockOf  = n => join(LANES_DIR, `${basename(ROOT)}-${n}.lock`)
+
+function claim(n) {
+  if (claimed.has(n)) return true
+  mkdirSync(LANES_DIR, { recursive: true })
+  for (let tries = 0; tries < 2; tries++) {
+    try { writeFileSync(lockOf(n), String(process.pid), { flag: 'wx' }) }
+    catch (err) {
+      if (err.code !== 'EEXIST') throw err
+      if (alive(holder(n))) return false
+      rmSync(lockOf(n), { force: true })
+      continue
+    }
+    if (claimed.size === 0) process.on('exit', () => { for (const m of claimed) if (holder(m) === process.pid) rmSync(lockOf(m), { force: true }) })
+    claimed.add(n)
+    return true
+  }
+  return false
+}
+
+function holder(n) {
+  try { return Number(readFileSync(lockOf(n), 'utf8')) } catch { return 0 }
+}
+
+function alive(pid) {
+  if (!pid) return false
+  try { process.kill(pid, 0); return true } catch (err) { return err.code === 'EPERM' }
 }
 
 function blob(dir, tree, path) {

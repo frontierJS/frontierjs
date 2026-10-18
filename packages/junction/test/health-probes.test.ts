@@ -14,7 +14,7 @@
 // the failing side.
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { createApp, healthPlugin, defaultConfig } from '../index.ts'
+import { createApp, health, defaultConfig } from '../index.ts'
 import { createClient } from '../../litestone/src/index.js'
 import { renderPrometheus, wantsPrometheus, collectHealth, type MetricsResponse } from '../src/transport/health.ts'
 
@@ -31,7 +31,7 @@ beforeAll(async () => {
       http: { ...defaultConfig.http, drainTimeout: 200 },
     },
   })
-  app.configure(healthPlugin({
+  app.configure(health({
     checkTimeout: 300,
     checks: {
       // The pair: one that answers inside the bound, one that never answers.
@@ -254,7 +254,7 @@ describe('createApp({ db }) contributes the database readiness', () => {
     expect(body.checks.db).toBeUndefined()
   })
 
-  it('a healthPlugin check named db still wins', async () => {
+  it('a health check named db still wins', async () => {
     const db = await createClient({ schema: 'model Thing { id Int @id  name String }', db: ':memory:' })
     const app = await dbApp(db)
     app._readinessApp.set('db', () => false)
@@ -269,14 +269,14 @@ describe('/metrics in production needs a gate (FJS-3191)', () => {
   // `/metrics` names the pid, the runtime, every service and its methods, so a
   // scaffold's `plugins: { health: true }` served all of it to the internet.
   // `/health` is what a deploy's rollback and a load balancer poll, so it stays.
-  async function prodApp(opts: Parameters<typeof healthPlugin>[0] = {}) {
+  async function prodApp(opts: Parameters<typeof health>[0] = {}) {
     const was  = process.env.NODE_ENV
     const warn = console.warn
     process.env.NODE_ENV = 'production'
     console.warn = () => {}
     try {
       const prod = createApp({ config: { port: 0 } })
-      prod.configure(healthPlugin(opts))
+      prod.configure(health(opts))
       await prod.start()
       return prod
     } finally {

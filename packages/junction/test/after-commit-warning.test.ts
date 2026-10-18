@@ -9,7 +9,7 @@ import { describe, test, expect } from 'bun:test'
 
 import { createClient }  from '../../litestone/src/index.js'
 import { buildService, callService } from '../src/core/service.ts'
-import { mailerPlugin } from '../src/mail/index.ts'
+import { mail } from '../src/mail/index.ts'
 import { inAfterCommitDrain, warnEffectInDrain } from '../src/core/context.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 
@@ -26,10 +26,10 @@ function ctx(db: unknown, app: unknown): ServiceContext {
 function appWithMail() {
   const sent: unknown[] = []
   const app: any = {}
-  mailerPlugin({
+  mail({ mailer: {
     async send(m) { sent.push(m); return { id: '1', message: 'sent' } },
     async batch(ms) { sent.push(...ms); return [] },
-  }).register!(app)
+  } }).register!(app)
   return { app, sent }
 }
 

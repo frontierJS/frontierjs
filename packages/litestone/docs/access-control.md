@@ -432,10 +432,10 @@ than answering an empty list (a gate is per model: *no rows* and *not for you*
 are different answers).
 
 ```lite
-model User    { id Int @id  accountId Int  role String?  @@auth }
-model Team    { id Int @id  secrets Vault[] }
+model User    { id Int @id  accountId Int  role String?  @@auth  @@gate(0) }
+model Team    { id Int @id  secrets Vault[]  @@gate(0) }
 model Vault   { id Int @id  teamId Int  team Team @relation(fields: [teamId], references: [id])  @@gate(7) }
-model Account { id Int @id  posts Post[] }
+model Account { id Int @id  posts Post[]  @@gate(0) }
 model Post {
   id        Int     @id
   accountId Int
@@ -752,8 +752,10 @@ policy costing the table.
 **Gates are enforced by default.** If any model declares `@@gate`, Litestone
 installs the standard resolver (`FrontierGateGetLevel` — reads `verifiedAt`,
 `activatedAt`, `role`, `isAdmin`, `isOwner`, `isSystemAdmin` off the auth
-object) automatically. A declared gate is never silently inert. Models without
-`@@gate` are completely ungated.
+object) automatically. A declared gate is never silently inert. Once a schema declares
+any access rule, a model with no `@@gate` and no `@@allow`/`@@deny` is
+system-only on every operation, reads included; `@@gate(0)` says a model is
+public. A schema with no access rule at all is a plain ORM.
 
 ```js
 // Nothing to install — @@gate in the schema is enough:

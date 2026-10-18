@@ -10,6 +10,8 @@
  * live `value=` holding a newline paints two lines and fires no `input`,
  * since a program's write never does. A handler writing the value back on
  * each key, as the kit's does, leaves the cursor where the person was typing.
+ * A bracketed paste is a `paste` heard by an ancestor, carrying the text
+ * and no files, and one prevented never reaches the field.
  * A one-line field here joins the lines
  * (`FJS-2266`), which fails the first assertion after typing.
  */
@@ -54,4 +56,13 @@ export async function run(t) {
   await t.type('t')
   frame = await t.frame()
   t.expectFrame(frame, ['writes 3 typed "p\\nqstr"'], 'a value written back from input leaves the cursor where the person was typing')
+
+  await t.tab()                    // v
+  await t.paste('no thanks')
+  frame = await t.frame()
+  t.expectFrame(frame, ['pasted "no thanks" files 0 at v kept -'], 'a prevented paste is heard by an ancestor and never typed')
+
+  await t.paste('hi')
+  frame = await t.frame()
+  t.expectFrame(frame, ['pasted "hi" files 0 at v kept "hi"'], 'a paste not prevented types its text into the field')
 }

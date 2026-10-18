@@ -1859,6 +1859,71 @@ fix-loop is handed, and a CHEF! ticket opens in the study (`IDEAS/study.md`
     station `/heard` footed its ticket `HEARD` and left cli's CHEF!
     flashing; SessionEnd removed worker and close-out.
 
+### Phase 19 — Stops
+
+Goal: a member who came to work, not to wander, reaches every stop a scene
+cares about by Tab, the way a browser reaches every control on a page,
+without a scene file stating anything new.
+Done when: in the tavern and the kitchen, Tab names each stop in turn and
+Enter walks the figure there, a step at a time and seen by the room; the
+cellar's hidden door is never named; and a list of the scene's stops picks
+one by its number.
+
+**The reading** (owner, 2026-10-18). The noun is the browser's: a Tab
+stop, never a "place", which is what Haven itself is.
+Walking is the fun, and sometimes in the
+way. The precedent is the image map — a picture whose `<area>`s are Tab stops
+— and the roguelikes' travel: NetHack's `_` moves the cursor from one
+interesting thing to the next (`<` `>` stairs, `d` doors, `m` monsters, `a`
+anything) and then travels there, and DCSS's `G`/`X` does the same. A scene
+already declares what it cares about: every verb with a `reach` on
+`$context.commands` (`lib/hash/commands.js`) is a cell that answers, and every
+`<Door>` is a cell that leads somewhere. So the stops are DERIVED from those —
+no `tabindex` on a piece, no list beside the scene — and their order is the
+order the scene file mounts them, which is a browser's DOM order; a numbered
+order is the anti-pattern a positive `tabindex` is on the web. Enter WALKS
+there rather than jumping or acting at a distance: a `reach` is standing
+there, the room sees the figure cross to the board, and a walk cannot pass a
+wall or find a hidden door. A plain mesa TUI needs none of this — a box with a
+`tabindex` is already a Tab stop (`packages/mesa/src/terminal/tags.js`) — so
+this is the gap a surface painted in cells has, not mesa's.
+
+- [x] 19.1 The stops. `stops(stage.marks)` beside `words(at)` in `commands.js`: one
+  stop per verb `reach`, and one per door mark that is not `hidden` (the
+  marks, since `stage.doors` is claim order — a door claims over the wall that
+  came first — and a cell apiece), in mount order —
+  the doors, then the verbs, as every scene file puts its `<slot />` last. A
+  `night` door is never a stop either: it is found by being there in the
+  dark, as a hidden one is by stepping (**ruled 2026-10-18 (owner): never**,
+  not even at full night). A stop is `{ name, to?, reaches }`, a door's reaches its own cells
+  within 0. Probed: the tavern is `/`, `/kitchen/`, `/upstairs/` and one `/ask`;
+  the kitchen `/tavern/`, `/menu /bump` along the pass, `/heard` along the line. **Ruled 2026-10-18 (owner): stops whose reaches overlap
+  merge into one**, so the Barkeep's `/ask` on every stool is one stop at the
+  bar and the Notices' `e` and `/board` and `/pin` are one at the board. A
+  stop's name is what its verbs already say — their words, `/board /pin`, and
+  a door its `to` — since a new label field would restate the `help`. Pure. A hidden door
+  never named is the invariant, and nothing guards it yet (no new tests
+  while experimenting) — a line in `scenes.test.js` when this is settled.
+- [ ] 19.2 Tab and Shift+Tab. With the line empty, Tab names the next stop and
+  Shift+Tab the one before, from the figure's nearest; the stop's cells are
+  marked on the art and the status line reads `→ /board /pin (3/7)`. Tab on a
+  partial `/word` still completes it (`Scene.mesa`'s `keydown` asks that
+  first). The browser twin prevents Tab's own focus move, since the scene is
+  one `<pre>` and its stops are cells, not elements. Esc or an arrow lets the
+  stop go.
+- [ ] 19.3 Enter walks. **Ruled 2026-10-18 (owner): animated** — a step per
+  `FIND_MS` along `pathBeside`, the `f`-walk's mode in `HomeRow.mesa` with a
+  cell for its goal rather than a member, so any key stops it the same way and
+  every other screen sees each step. A door's walk ends ON the door, which is
+  the door taken; any other stop's ends beside it, in its reach. A stop no
+  floor reaches is named and refused (`nobody can reach /board from here`).
+- [ ] 19.4 The stops list. **Ruled 2026-10-18 (owner): yes.** `/stops` (no
+  reach) opens a pane over the art listing the scene's stops, numbered in
+  Tab's order with their words and how far each is walked; a number walks
+  there as 19.3, Esc closes. It is a mode on the registry, as the map is, so
+  it takes keys before the figure. The screen reader's rotor is the
+  precedent: the same stops, read as a list instead of in turn.
+
 ### Phase 10 — Hosted
 
 Goal: Haven answers at a public address, so a stranger needs no `--api`.

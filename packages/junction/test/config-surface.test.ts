@@ -306,9 +306,9 @@ describe('plugins declared in config are installed', () => {
 
 describe('a plugin has one owner', () => {
   test('declared in config AND configured by hand is refused, naming it', async () => {
-    const { healthPlugin } = await import('../src/transport/health.ts')
+    const { health } = await import('../src/transport/health.ts')
     const app = createApp({ config: { port: 0, plugins: { health: true } } as never, logLevel: 'silent' })
-    app.configure(healthPlugin())
+    app.configure(health())
     await expect(app.start()).rejects.toThrow(/'health'.*declared in config AND configured by hand/s)
   })
 
@@ -317,9 +317,9 @@ describe('a plugin has one owner', () => {
   // refused every hand-configured plugin would satisfy the assertion above and
   // break every app that needs a readiness check.
   test('configured by hand and NOT declared is the supported way to pass code', async () => {
-    const { healthPlugin } = await import('../src/transport/health.ts')
+    const { health } = await import('../src/transport/health.ts')
     const app = createApp({ config: { port: 0 } as never, logLevel: 'silent' })
-    app.configure(healthPlugin({ checks: { db: async () => true } }))
+    app.configure(health({ checks: { db: async () => true } }))
     await app.start()
     running.push(app as unknown as { stop: () => Promise<void> })
     const port = (app as unknown as { http: { port: number } }).http.port

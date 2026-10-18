@@ -15,9 +15,9 @@ import { describe, test, expect } from 'bun:test'
 import { buildBase, collectCustomMethods, customMethodNames, allowedMethodNames, callService, buildService } from '../src/core/service.ts'
 import { resultData } from '../src/core/envelope.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
-import { manifestPlugin } from '../src/plugins/manifest/index.ts'
+import { manifest as manifestPlugin } from '../src/plugins/manifest/index.ts'
 import { openapi } from '../src/plugins/openapi/index.ts'
-import { healthPlugin } from '../src/transport/health.ts'
+import { health } from '../src/transport/health.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 
 const noop = async () => ({ ok: true })
@@ -227,7 +227,7 @@ describe('what the app advertises comes from the same table', () => {
       })],
     })
     app.configure(manifestPlugin())
-    app.configure(healthPlugin())
+    app.configure(health())
     const spec = openapi({ title: 'T', version: '1' })
     await spec.register!(app)
 

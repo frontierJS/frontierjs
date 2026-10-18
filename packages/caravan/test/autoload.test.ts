@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { resolve } from 'node:path'
 import { autoloadJobs } from '../src/autoload.ts'
-import { createCaravan } from '../src/index.ts'
+import { caravan as caravanPlugin } from '../src/index.ts'
 import type { HandlerOptions, JobRegistrar } from '../src/types.ts'
 
 const FIXTURES = resolve(import.meta.dir, 'fixtures/jobs')
@@ -117,7 +117,7 @@ describe('two files claiming one job name', () => {
 
 describe('jobs/ beside the app root, loaded at boot()', () => {
   it('boot() autoloads handlers and they can process a dispatch', async () => {
-    const caravan = createCaravan({
+    const caravan = caravanPlugin({
       db:           ':memory:',
       pollInterval: 10,
       queues:       { default: { concurrency: 2 }, email: { concurrency: 1 } },

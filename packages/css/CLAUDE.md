@@ -33,7 +33,9 @@ src/
                    form-core · feedback · frame · icon · typography · code ·
                    overlays (how the whole Overlay tier enters and leaves)
   patterns/        nav · tabs · steps · lists · feed · facts · bars · disclosure ·
-                   prose · bands (Band, and the `.bleed, .band` escape rule)
+                   prose · bands (Band, and the `.bleed, .band` escape rule) ·
+                   aside (Aside, here and not beside `.screen` because its collapse
+                   hides a Facts or a Stack, which style `display` in `patterns`)
   a11y/            a11y.css · focus.css
   themes/          default · dark · midnight · forest · sunset · elite · basecamp
                    · notebook · press · field · dracula · twilight. press.css is the token-surface

@@ -16,7 +16,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { createApp, defaultConfig } from '../index.ts'
-import { manifestPlugin } from '../src/plugins/manifest/index.ts'
+import { manifest as manifestPlugin } from '../src/plugins/manifest/index.ts'
 import type { ILogger } from '../src/core/logger.ts'
 
 const PORT = 3401

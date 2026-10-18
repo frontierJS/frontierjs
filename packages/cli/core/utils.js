@@ -463,3 +463,19 @@ export function loadFliEnv(projectRoot, home) {
   loadEnv(join(projectRoot, '.env'))
   loadEnv(join(home, '.config', 'fli', '.env'))
 }
+
+// The local name `name` is imported under from `from` or one of its subpaths —
+// `import { auth as authRoutes } from '@frontierjs/auth'` answers `authRoutes`,
+// and no such import answers null. A Plugin factory is a bare noun
+// (`FJS-D1077`), so a scan for its call goes through the import: `health(`
+// alone matches every function of that name.
+export function importedAs(src, name, from) {
+  for (const m of src.matchAll(/\bimport\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g)) {
+    if (m[2] !== from && !m[2].startsWith(from + '/')) continue
+    for (const spec of m[1].split(',')) {
+      const [imported, local] = spec.trim().split(/\s+as\s+/)
+      if (imported === name) return local ?? imported
+    }
+  }
+  return null
+}

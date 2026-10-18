@@ -184,9 +184,9 @@ describe('app.stop() with a live socket (FJS-460)', () => {
 describe('shutdown says what it is doing (FJS-693)', () => {
 
   test('readiness answers 503 while draining, with Connection: close', async () => {
-    const { healthPlugin } = await import('../src/transport/health.ts')
+    const { health } = await import('../src/transport/health.ts')
     const app  = createApp({ config: { port: 0 } })
-    app.configure(healthPlugin())
+    app.configure(health())
     await app.start()
     const port = app.http.port as number
 

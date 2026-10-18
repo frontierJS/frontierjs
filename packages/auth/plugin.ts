@@ -1,5 +1,5 @@
 // plugin.ts
-// createAuthPlugin(auth, opts): Plugin
+// auth(auth, opts): Plugin
 //
 // The transport layer. Mounts /auth/* routes onto the Junction app.
 // Calls IAuth — never touches the database directly.
@@ -39,10 +39,8 @@ import type { AuthOAuth }                                          from './oauth
 // had already drifted: it returned before checking the limit on a fresh bucket,
 // so `max: 0` let one request through (FJS-017).
 
-export function createAuthPlugin(
-  auth: IAuth,
-  opts: AuthPluginOptions = {}
-): Plugin {
+export function auth(opts: AuthPluginOptions): Plugin {
+  const { auth } = opts
 
   const {
     prefix            = '/auth',
@@ -135,7 +133,7 @@ export function createAuthPlugin(
             `[auth] OAuth callback is mounted at ${found[0] ?? '(nowhere)'} ` +
             `but the redirect URI this app gives its providers resolves to ${expected}. ` +
             `A provider matches that string exactly, so every sign-in would fail. ` +
-            `Check apiPrefix and createAuthPlugin's prefix.`
+            `Check apiPrefix and auth's prefix.`
           )
         }
         // ── OAuth needs cookie mode, and the alternative is silent ────
@@ -158,7 +156,7 @@ export function createAuthPlugin(
 
         if (!oauthAuth.oauthBegin) {
           throw new Error(
-            `[auth] createAuthPlugin was given { oauth } but this IAuth provider has no OAuth support. ` +
+            `[auth] auth was given { oauth } but this IAuth provider has no OAuth support. ` +
             `Use createLitestoneAuth with { oauthProviders }, or drop the oauth block.`
           )
         }
@@ -170,7 +168,7 @@ export function createAuthPlugin(
         if (app.services?.has?.(svc.name!)) {
           throw new Error(
             `[auth] service '${svc.name}' is already registered by this app. ` +
-            `Rename or drop auth's — createAuthPlugin(auth, { services: { ` +
+            `Rename or drop auth's — auth(auth, { services: { ` +
             `${svc.name === 'api-keys' ? 'apiKeys' : svc.name}: false } }).`
           )
         }
@@ -439,7 +437,7 @@ export function createAuthPlugin(
         // it the numbers are the app's and a non-number refuses (`FJS-1559`).
         const standingLevel = services === false ? undefined : (asPrincipal(services.standingLevel) ?? asPrincipal(services.level))
         if (!standingLevel || !auth.sessionFor)
-          throw new Forbidden('Support sessions need the app\'s level resolver — pass services: { standingLevel } or services: { level } to createAuthPlugin')
+          throw new Forbidden('Support sessions need the app\'s level resolver — pass services: { standingLevel } or services: { level } to auth')
         const subject = await auth.sessionFor(subjectId)
         if (!subject) throw new NotFound(`No user '${subjectId}'`)
         const mine = standingLevel(operator), theirs = standingLevel(subject)

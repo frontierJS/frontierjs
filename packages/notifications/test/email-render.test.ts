@@ -73,7 +73,7 @@ describe('email driver — body rendering', () => {
   })
 
   it('throws when no mailer is configured', async () => {
-    await expect(sendEmail({ id: 1, email: 'a@b.co' }, sample(), {})).rejects.toThrow(/mailerPlugin/)
+    await expect(sendEmail({ id: 1, email: 'a@b.co' }, sample(), {})).rejects.toThrow(/mail\(\{ mailer \}\)/)
   })
 
   it('escapes HTML in line text and action urls', () => {

@@ -16,7 +16,7 @@ export const derived = [
   { title: 'Typed client',    line: 'The browser knows every service, field and filter.',                tag: 'ServiceTypes' },
   { title: 'Forms',           line: 'The right control, label and options per field, and server errors on the right input.', tag: '@label' },
   { title: 'Audit trail',     line: 'Every write is logged, with protected fields redacted.' },
-  { title: 'AI agent access', line: 'An MCP endpoint over your app, with the gate as the permission model.', tag: 'mcpPlugin()' },
+  { title: 'AI agent access', line: 'An MCP endpoint over your app, with the gate as the permission model.', tag: 'mcp()' },
 
   { title: 'Encryption at rest',    line: 'Sensitive fields are sealed at the data boundary.',            tag: '@encrypted' },
   { title: 'State machines',        line: 'The UI shows only the actions allowed now, and the server refuses the rest.', tag: '@@transitions' },

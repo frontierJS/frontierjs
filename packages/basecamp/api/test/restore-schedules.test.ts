@@ -16,7 +16,7 @@ import { join } from 'node:path'
 
 import { GatePlugin }    from '../../../litestone/src/index.js'
 import { createTestEnv } from '../../../litestone/src/testing.js'
-import { createCaravan } from '@frontierjs/caravan'
+import { caravan } from '@frontierjs/caravan'
 import type { CaravanInstance } from '@frontierjs/caravan'
 
 import { basecampGateLevel } from '../src/core/gate.ts'
@@ -51,7 +51,7 @@ async function makeApp() {
   })
   envs.push(env)
 
-  const jobs = createCaravan({ db: ':memory:', pollInterval: 20 })
+  const jobs = caravan({ db: ':memory:', pollInterval: 20 })
   queues.push(jobs)
 
   // `any`, the same reason db/test/schema.test.ts gives: a Litestone client is a

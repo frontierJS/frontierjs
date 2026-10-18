@@ -15,7 +15,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'
-import { createAuthPlugin } from '../plugin.ts'
+import { auth } from '../plugin.ts'
 import { defineProvider } from '../oauth.ts'
 import { makeAuth, type Harness } from './harness.ts'
 
@@ -28,7 +28,8 @@ beforeAll(async () => {
   })
   app = await createTestApp({ auth: h.auth as any })
   app.setAuth(h.auth as any)
-  app.configure(createAuthPlugin(h.auth, {
+  app.configure(auth({
+    auth: h.auth,
     cookieAuth: true,
     oauth: { publicUrl: 'https://shop.test', errorRedirect: '/sign-in', rateLimit: { max: 10_000, window: '15 minutes' } },
   }))

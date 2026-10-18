@@ -13,7 +13,7 @@
 // it was written to answer — which is how the original went unnoticed.
 
 import { describe, it, expect, afterEach } from 'bun:test'
-import { createCaravan } from '@frontierjs/caravan'
+import { caravan } from '@frontierjs/caravan'
 import type { CaravanInstance } from '@frontierjs/caravan'
 
 import { syncSchedule, unscheduleJob, scheduleName, nextRunAt } from '../src/services/jobs/job-schedule.ts'
@@ -24,7 +24,7 @@ afterEach(async () => { for (const q of queues.splice(0)) await q.stop() })
 
 /** An app that is nothing but a real queue — all these functions touch. */
 function makeApp(): { app: App; jobs: CaravanInstance } {
-  const jobs = createCaravan({ db: ':memory:', pollInterval: 20 })
+  const jobs = caravan({ db: ':memory:', pollInterval: 20 })
   queues.push(jobs)
   return { app: { jobs } as unknown as App, jobs }
 }

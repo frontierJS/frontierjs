@@ -14,8 +14,10 @@
 import { dirname, basename, extname, relative, resolve } from 'path'
 import { readFrontmatter } from './parse-frontmatter.js'
 import { importFresh } from './import-fresh.js'
+import { readFile } from 'fs/promises'
 import {
   classify,
+  layoutRole,
   isGroupSegment,
   isDynamicSegment,
   isSpreadSegment,
@@ -89,10 +91,14 @@ export async function buildTree(files, routesDir, options = {}) {
   // Pre-load frontmatter from all layout (_module.mesa) files
   // layout file path → frontmatter object
   const layoutFrontmatterCache = new Map()
+  // A pass-through `_module` still cascades its frontmatter, so it stays in
+  // layoutMap for meta and is left out of the map a page's wrapper is read from.
+  const passThrough = new Set()
   await Promise.all(
     [...layoutMap.values()].map(async (layoutFile) => {
       const absFm = abs(layoutFile)
       const fm = await readFrontmatter(absFm)
+      if (layoutRole(layoutFile, await readFile(absFm, 'utf8')) === 'pass-through') passThrough.add(layoutFile)
       // Strip Sierra-internal fields that should not propagate to pages
       const { reset, ...publicFm } = fm
       if (Object.keys(publicFm).length > 0) {
@@ -101,13 +107,15 @@ export async function buildTree(files, routesDir, options = {}) {
     })
   )
 
+  const wrapperMap = new Map([...layoutMap].filter(([, file]) => !passThrough.has(file)))
+
   // Detect file + folder conflicts
   checkConflicts(routeFiles, routesDir)
 
   // Build flat list of parsed route entries
   const entries = await Promise.all(
     routeFiles.map(file => parseRouteFile(
-      file, routesDir, layoutMap, companionMap,
+      file, routesDir, layoutMap, wrapperMap, companionMap,
       layoutCompanionMap, companionMetaCache,
       layoutFrontmatterCache,
       trailingSlash, abs
@@ -141,7 +149,7 @@ export async function buildTree(files, routesDir, options = {}) {
  * Parse a single route file into a route entry.
  */
 async function parseRouteFile(
-  file, routesDir, layoutMap, companionMap,
+  file, routesDir, layoutMap, wrapperMap, companionMap,
   layoutCompanionMap, companionMetaCache,
   layoutFrontmatterCache,
   trailingSlash, abs
@@ -155,7 +163,7 @@ async function parseRouteFile(
   // Resolve layout
   const layout = frontmatter.reset
     ? null
-    : resolveLayout(file, routesDir, layoutMap)
+    : resolveLayout(file, routesDir, wrapperMap)
 
   // Resolve route companion
   const companionKey = file.replace(/\.(mesa|md)$/, '')

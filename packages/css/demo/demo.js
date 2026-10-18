@@ -68,6 +68,16 @@ document.addEventListener('click', (e) => {
   go(nav.dataset.nav || nav.dataset.routeTo);
 });
 
+/* ── Aside ───────────────────────────────────────────────────────────
+ * The stylesheet reads aria-expanded off the toggle; flipping it is ours. */
+document.addEventListener('click', (e) => {
+  const toggle = e.target.closest('.aside-toggle');
+  if (!toggle) return;
+  const open = toggle.getAttribute('aria-expanded') === 'true';
+  toggle.setAttribute('aria-expanded', String(!open));
+  toggle.setAttribute('aria-label', open ? 'Show summary' : 'Hide summary');
+});
+
 /* ── Tabs ────────────────────────────────────────────────────────────
  *
  * The contract from tabs.css, implemented once for both orientations:

@@ -9,7 +9,7 @@ exit trigger to.
 
 - **12/12 tests pass** on this machine (Chrome + pdftotext present).
 - PDF of a document, PNG of an element, page rules and margin boxes from
-  data, the offline tab, `printerPlugin` claiming `app.printer`, refusal at
+  data, the offline tab, `printer` claiming `app.printer`, refusal at
   boot by name with no Chrome, a wedged browser failing one job and the next
   printing on a fresh one.
 

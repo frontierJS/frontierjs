@@ -32,7 +32,7 @@ export function stateOf(app: App): NotificationsState {
   if (!state) {
     throw new Error(
       '[notifications] this app has no notifications state — ' +
-      'app.configure(notificationsPlugin({ db })) has not run on it.'
+      'app.configure(notifications({ db })) has not run on it.'
     )
   }
   return state

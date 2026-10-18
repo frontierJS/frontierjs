@@ -176,7 +176,7 @@ extracts from one declaration. A `@@gate` is required beside `@@export`; protect
 do not leave even for a caller who may read them; the manifest records what was omitted
 and by which rule. 27 unit tests, and `example` declares two datasets.
 
-**Phase 1b — the HTTP endpoint. Shipped 2026-09-07.** `exportPlugin()` in junction, mounting
+**Phase 1b — the HTTP endpoint. Shipped 2026-09-07.** `exporter()` in junction, mounting
 `GET /exports` and `GET /exports/{dataset}`, streamed and taken as the calling session.
 [FJS-D230](../DECISIONS.md#fjs-d230) settled that the surface is the app's. It adds no
 enforcement — `runExport` already is the extract — and the one thing that took care is

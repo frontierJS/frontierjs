@@ -3224,8 +3224,11 @@ function customGateFloor(levels: Record<GateOp, number>): number {
  *              A method writing through `asSystem()` from here is reachable by
  *              every caller who can sign in, row policies included, because the
  *              Data boundary never sees who asked
- *   unchecked  no declaration, and the service's model declares no `@@gate` or
- *              its accessor names no model — there is no floor to derive, so
+ *   system     no declaration and no model, in a schema that grades access: only
+ *              an internal call with no principal, the app acting for itself,
+ *              reaches it; `gate: 0` says open (`FJS-D1206`)
+ *   unchecked  no declaration, and the service's model declares no `@@gate`, or
+ *              there is no model and the client grades no one (`FJS-D1212`) —
  *              nothing is checked at the API boundary
  *
  * A declaration is read before the model, because it needs nothing from one:
@@ -3233,13 +3236,14 @@ function customGateFloor(levels: Record<GateOp, number>): number {
  * the model first made `gate: 5` on a modelless service a typed, reported,
  * inert declaration (`FJS-1087`).
  *
- * `levels` is what `_gateLevels` answered: a record, or `null` for no gate.
- * `undefined` is a describer that holds no schema — `strategy database` has no
- * app-wide client — so the declared half is reported and the floor's number is
- * not, rather than guessing which of `floor` and `unchecked` it is.
+ * `levels` is what `methodGateBasis` answered: a record, `null` for no gate, or
+ * `'system'`. `undefined` is a describer that holds no schema — `strategy
+ * database` has no app-wide client — so the declared half is reported and the
+ * floor's number is not, rather than guessing which of `floor` and `unchecked`
+ * it is.
  */
 export interface CustomMethodGrade {
-  source: 'declared' | 'floor' | 'unchecked'
+  source: 'declared' | 'floor' | 'system' | 'unchecked'
   /** The level a caller must clear; `null` where the describer cannot read it. */
   level:  number | null
   /** Whether the caller's standing is compared to `level`, or only their presence. */
@@ -3249,16 +3253,28 @@ export interface CustomMethodGrade {
 export function customMethodGrade(
   method:   string,
   declared: Record<string, number>,
-  levels:   Record<GateOp, number> | null | undefined,
+  levels:   Record<GateOp, number> | 'system' | null | undefined,
 ): CustomMethodGrade {
   if (declared[method] !== undefined) return { source: 'declared', level: declared[method], graded: true }
+  if (levels === 'system') return { source: 'system', level: SYSTEM_LEVEL, graded: true }
   if (levels === null) return { source: 'unchecked', level: null, graded: false }
   return { source: 'floor', level: levels ? customGateFloor(levels) : null, graded: false }
 }
 
-/** The model's `@@gate` as four levels, `null` where none is declared. */
-export function gateLevels(client: unknown, accessor: string): Record<GateOp, number> | null {
-  return _gateLevels(client, accessor)
+/** Litestone's `asSystem()` level; a session's standing is clamped to 0–7 and never reaches it. */
+const SYSTEM_LEVEL = 8
+
+/**
+ * What an undeclared custom method is graded from: the model's `@@gate` as four
+ * levels, `null` where nothing grades it, or `'system'` where the service is over
+ * no model and the client grades access. That last is a method with no access
+ * declaration in a schema that declares some, which `FJS-D1206` makes SYSTEM-only
+ * as it does an undeclared model; `$levelOf` answering is the client saying its
+ * schema grades anyone, the line `FJS-D1212` draws.
+ */
+export function methodGateBasis(client: unknown, accessor: string | null): Record<GateOp, number> | 'system' | null {
+  if (accessor !== null && accessorIfModel(client, accessor)) return _gateLevels(client, accessor)
+  return askLevel(client, undefined, []) === null ? null : 'system'
 }
 
 // ─── Who the APP says this caller is ─────────────────────────────────────
@@ -3404,8 +3420,9 @@ export function gateAuthAround(
       }
     } else {
       const grade = customMethodGrade(method, declared,
-        accessor === null ? null : _gateLevels(ctx.locals.db, accessor ?? ctx.service))
-      if (grade.source !== 'unchecked') {
+        methodGateBasis(ctx.locals.db, accessor === null ? null : accessor ?? ctx.service))
+      const appItself = grade.source === 'system' && ctx.transport === 'internal' && !ctx.auth?.user
+      if (grade.source !== 'unchecked' && !appItself) {
         const need = grade.level as number
         if (need > 0) {
           // A stranger and a caller who is merely too junior are different

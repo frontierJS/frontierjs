@@ -11,9 +11,9 @@ bun add @frontierjs/caravan
 ## Quick start
 
 ```ts
-import { createCaravan } from '@frontierjs/caravan'
+import { caravan } from '@frontierjs/caravan'
 
-const queue = createCaravan({
+const queue = caravan({
   db:          './db/jobs.db', // default
   pollInterval: 1_000,        // ms
   queues: {
@@ -34,10 +34,10 @@ await queue.dispatch('send-email', { to: 'alice@example.com' })
 ## As a Junction plugin
 
 ```ts
-import { createCaravan } from '@frontierjs/caravan'
+import { caravan } from '@frontierjs/caravan'
 
 // *.job.ts files load from jobs/ beside createApp({ root }) (FJS-D1080).
-const queue = createCaravan()
+const queue = caravan()
 
 app.configure(queue)
 // Now available as app.jobs
@@ -84,7 +84,7 @@ await app.jobs.dispatch(sendEmail, { to: 'alice@example.com' })  // typed payloa
 
 ## API
 
-### `createCaravan(opts?)`
+### `caravan(opts?)`
 
 | Option | Default | Description |
 |--------|---------|-------------|

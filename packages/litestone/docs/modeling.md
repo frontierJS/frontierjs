@@ -315,6 +315,8 @@ model Post {
   message    String
   starred    Boolean @default(false) @local
   @@mirror(key: externalId)
+
+  @@gate(0)
 }
 ```
 

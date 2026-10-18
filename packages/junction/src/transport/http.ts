@@ -1821,7 +1821,7 @@ function toResponse(result: unknown, ctx: TransportContext): Response {
  * ── Why the cookie is opt-in (FJS-002) ────────────────────────────────────
  *
  * This used to read only `authorization` and `x-api-key`, so
- * `createAuthPlugin(auth, { cookieAuth: true })` set an httpOnly cookie that
+ * `auth({ auth, cookieAuth: true })` set an httpOnly cookie that
  * nothing ever read back: `ctx.user` stayed null and a cookie-only request to
  * any protected route was 401. The documented mode handed you a session you
  * could not use.

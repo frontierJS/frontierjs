@@ -349,7 +349,7 @@ export function jobsVolumeVerdict({ output, volume }) {
     `the jobs database is ${a.db}, which is inside the container and not under ${volume} — this swap starts an empty one`,
     `  lost with it: ${pending} pending, ${running} running, every stated dispatch id and unique lock` +
       (paused.length ? `, and the pause on ${paused.join(', ')}` : ''),
-    `  bind it under ${volume}: createCaravan({ db }) beside the main database, which DATABASE_URL already puts there`,
+    `  bind it under ${volume}: caravan({ db }) beside the main database, which DATABASE_URL already puts there`,
   ]
   if (paused.length)
     return { level: 'fail', lines: [...lines,

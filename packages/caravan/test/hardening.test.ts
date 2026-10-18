@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createTestApp, request } from '@frontierjs/junction'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 import { openDb } from '../src/db.ts'
 import type { CaravanInstance } from '../src/types.ts'
 
@@ -62,7 +62,7 @@ describe('FJS-674 — admin routes in production', () => {
   it('are NOT mounted in production without an authorizer', async () => {
     await prod(async () => {
       const app = await createTestApp()
-      app.configure(createCaravan({ db: ':memory:', pollInterval: 10, admin: true }))
+      app.configure(caravan({ db: ':memory:', pollInterval: 10, admin: true }))
       await jobsOf(app).dispatch('report', {})
 
       // The measured failure was a stranger reading the whole table and
@@ -74,7 +74,7 @@ describe('FJS-674 — admin routes in production', () => {
   it('refuse a `secret` in production — it is a development shortcut', async () => {
     await prod(async () => {
       const app = await createTestApp()
-      app.configure(createCaravan({ db: ':memory:', pollInterval: 10, admin: { secret: 's3cret' } }))
+      app.configure(caravan({ db: ':memory:', pollInterval: 10, admin: { secret: 's3cret' } }))
       expect((await request(app).get('/jobs')).status).toBe(404)
     })
   })
@@ -82,7 +82,7 @@ describe('FJS-674 — admin routes in production', () => {
   it('mount in production behind an authorizer, which decides per request', async () => {
     await prod(async () => {
       const app = await createTestApp()
-      app.configure(createCaravan({
+      app.configure(caravan({
         db: ':memory:', pollInterval: 10,
         admin: { authorize: (ctx) => (ctx as { headers?: Record<string, string> }).headers?.['x-ops'] === 'yes' },
       }))
@@ -96,7 +96,7 @@ describe('FJS-674 — admin routes in production', () => {
 
   it('redact every payload in the list unless it is asked for by name', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan({ db: ':memory:', pollInterval: 10, admin: true }))
+    app.configure(caravan({ db: ':memory:', pollInterval: 10, admin: true }))
     await jobsOf(app).dispatch('reset', { token: 'super-secret-reset-token' })
 
     const hidden = await request(app).get('/jobs')
@@ -109,7 +109,7 @@ describe('FJS-674 — admin routes in production', () => {
 
   it('answer 401 to a wrong secret and 200 to the right one', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan({ db: ':memory:', pollInterval: 10, admin: { secret: 'abcdef' } }))
+    app.configure(caravan({ db: ':memory:', pollInterval: 10, admin: { secret: 'abcdef' } }))
     expect((await request(app).get('/jobs').set('x-caravan-secret', 'abcdez')).status).toBe(401)
     // A different LENGTH must not throw out of timingSafeEqual.
     expect((await request(app).get('/jobs').set('x-caravan-secret', 'ab')).status).toBe(401)
@@ -126,7 +126,7 @@ describe('FJS-675 — a claim a process cannot execute', () => {
 
     // The measured shape: a web process with no handler polls 400ms before the
     // worker starts, and every job is `failed "No handler registered"`.
-    const web = createCaravan({ db, pollInterval: 20, cleanupAfter: 0 })
+    const web = caravan({ db, pollInterval: 20, cleanupAfter: 0 })
     await web.start()
     const ids: string[] = []
     for (let i = 0; i < 5; i++) ids.push(await web.dispatch('send-email', { i }, { queue: 'email' }))
@@ -136,7 +136,7 @@ describe('FJS-675 — a claim a process cannot execute', () => {
     for (const id of ids) expect(web.find(id)!.status).toBe('pending')
 
     let ran = 0
-    const worker = createCaravan({ db, pollInterval: 20, cleanupAfter: 0 })
+    const worker = caravan({ db, pollInterval: 20, cleanupAfter: 0 })
     worker.handle('send-email', async () => { ran++ }, { queue: 'email' })
     await worker.start()
     await Bun.sleep(600)
@@ -149,7 +149,7 @@ describe('FJS-675 — a claim a process cannot execute', () => {
   it('consumes no attempt when it releases one it claimed anyway', async () => {
     const dir = scratch()
     const db  = join(dir, 'jobs.db')
-    const q   = createCaravan({ db, pollInterval: 20, cleanupAfter: 0 })
+    const q   = caravan({ db, pollInterval: 20, cleanupAfter: 0 })
     // A handler on the queue, so the claim filter admits a poll; the job's own
     // name has none, which is the backstop path.
     q.handle('other', async () => {})
@@ -176,8 +176,8 @@ describe('FJS-676 — concurrent cold start', () => {
     const dir = scratch()
     const db  = join(dir, 'jobs.db')
     const script = `
-const { createCaravan } = await import(${JSON.stringify(SRC)})
-const q = createCaravan({ db: ${JSON.stringify(db)}, cleanupAfter: 0 })
+const { caravan } = await import(${JSON.stringify(SRC)})
+const q = caravan({ db: ${JSON.stringify(db)}, cleanupAfter: 0 })
 // Line the four processes up on the same instant — the race is the moment the
 // file is created, and a stagger hides it entirely.
 const at = Number(process.argv[3])
@@ -226,8 +226,8 @@ import { Database } from 'bun:sqlite'
 const seen = []
 const exec = Database.prototype.exec
 Database.prototype.exec = function (sql, ...r) { seen.push(String(sql)); return exec.call(this, sql, ...r) }
-const { createCaravan } = await import(${JSON.stringify(SRC)})
-const q = createCaravan({ db: ${JSON.stringify(join(dir, 'jobs.db'))}, cleanupAfter: 0 })
+const { caravan } = await import(${JSON.stringify(SRC)})
+const q = caravan({ db: ${JSON.stringify(join(dir, 'jobs.db'))}, cleanupAfter: 0 })
 await q.dispatch('x', {})
 console.log(JSON.stringify(seen.filter(s => /synchronous/i.test(s))))
 await q.stop()
@@ -242,7 +242,7 @@ await q.stop()
 describe('FJS-696 — a finished job claims the next one', () => {
   it('drains 100 jobs at a 1s poll in well under 5s', async () => {
     const dir = scratch()
-    const q = createCaravan({
+    const q = caravan({
       db: join(dir, 'jobs.db'), pollInterval: 1_000, cleanupAfter: 0,
       queues: { default: { concurrency: 2 } },
     })
@@ -273,8 +273,8 @@ import { Database } from 'bun:sqlite'
 let begins = 0
 const exec = Database.prototype.exec
 Database.prototype.exec = function (sql, ...r) { if (String(sql) === 'BEGIN IMMEDIATE') begins++; return exec.call(this, sql, ...r) }
-const { createCaravan } = await import(${JSON.stringify(SRC)})
-const q = createCaravan({
+const { caravan } = await import(${JSON.stringify(SRC)})
+const q = caravan({
   db: ${JSON.stringify(join(dir, 'jobs.db'))}, pollInterval: 50, cleanupAfter: 0,
   heartbeat: 60000, queues: { email: {}, sms: {} },
 })
@@ -294,7 +294,7 @@ await q.stop()
 
   it('survives a timer callback that throws', async () => {
     const dir = scratch()
-    const q = createCaravan({ db: join(dir, 'jobs.db'), pollInterval: 50, cleanupAfter: 0, heartbeat: 20 })
+    const q = caravan({ db: join(dir, 'jobs.db'), pollInterval: 50, cleanupAfter: 0, heartbeat: 20 })
     await q.start()
     // A sweep against a handle that is gone used to be an uncaughtException
     // out of setInterval, taking the process with it — and the heartbeat it
@@ -313,8 +313,8 @@ await q.stop()
     const db  = join(dir, 'jobs.db')
     const script = `
 process.on('unhandledRejection', (e) => console.log('UNHANDLED ' + (e && e.message)))
-const { createCaravan } = await import(${JSON.stringify(SRC)})
-const q = createCaravan({ db: ${JSON.stringify(db)}, pollInterval: 20, cleanupAfter: 1000, drainTimeout: 200 })
+const { caravan } = await import(${JSON.stringify(SRC)})
+const q = caravan({ db: ${JSON.stringify(db)}, pollInterval: 20, cleanupAfter: 1000, drainTimeout: 200 })
 q.handle('long', async () => { await Bun.sleep(1000) })
 await q.start()
 await q.dispatch('long', {})
@@ -341,8 +341,8 @@ describe('FJS-699 — dispatch({ unique }) under a cross-process race', () => {
     const dir = scratch()
     const db  = join(dir, 'jobs.db')
     const script = `
-const { createCaravan } = await import(${JSON.stringify(SRC)})
-const q = createCaravan({ db: ${JSON.stringify(db)}, cleanupAfter: 0 })
+const { caravan } = await import(${JSON.stringify(SRC)})
+const q = caravan({ db: ${JSON.stringify(db)}, cleanupAfter: 0 })
 const at = Number(process.argv[3])
 while (Date.now() < at) {}
 let ok = 0, threw = 0, msg = ''

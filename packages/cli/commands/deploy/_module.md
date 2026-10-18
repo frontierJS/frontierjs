@@ -644,10 +644,10 @@ exit 1`
     }
     log.error(`${container} answers ${healthPath} but has a database open outside ${CONTAINER_DB_DIR}, the one directory a swap keeps:`)
     for (const path of unbound) log.error(`  ${path}`)
-    log.info(`  the next swap would start each one empty — point its path under ${CONTAINER_DB_DIR} (DATABASE_URL, AUDIT_PATH, createCaravan({ db }))`)
+    log.info(`  the next swap would start each one empty — point its path under ${CONTAINER_DB_DIR} (DATABASE_URL, AUDIT_PATH, caravan({ db }))`)
   } else {
     // Name the URL. The most common cause is not a sick app but a health path that
-    // omits the app's apiPrefix — healthPlugin() registers through app.get(), which
+    // omits the app's apiPrefix — health() registers through app.get(), which
     // moves with the prefix, so an app serving /api/health polls 404 here and a
     // working release gets taken down. Without the URL in the message that reads as
     // the app's fault.
@@ -1227,7 +1227,7 @@ export default {
 
     api: {
       port:       3000,        // default: 3000
-      health:     '/health',    // must match the app: healthPlugin() serves
+      health:     '/health',    // must match the app: health() serves
                                 // `{apiPrefix}/health`, and Junction's default
                                 // apiPrefix is '' — so this is '/health' unless
                                 // the app sets one. make:deploy reads it for you.

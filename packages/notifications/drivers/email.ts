@@ -3,11 +3,11 @@ import type { App, MailLine, MailMessage, Recipient } from '../types.ts'
 /**
  * Email transport driver.
  *
- * Delegates to app.mail.send() — requires mailerPlugin to be configured
- * before notificationsPlugin in server.ts:
+ * Delegates to app.mail.send() — requires mail to be configured
+ * before notifications in server.ts:
  *
- *   app.configure(mailerPlugin(createResendMailer({ apiKey, from })))
- *   app.configure(notificationsPlugin({ db }))
+ *   app.configure(mail({ mailer: createResendMailer({ apiKey, from }) }))
+ *   app.configure(notifications({ db }))
  *
  * The address resolves as:
  *   1. message.to        — explicit override from the mail() builder
@@ -66,7 +66,7 @@ export async function sendEmail(
 ): Promise<void> {
   if (!('mail' in app) || !app.mail) {
     throw new Error(
-      'Email transport requires mailerPlugin to be configured before notificationsPlugin.'
+      'Email transport requires mail({ mailer }) from @frontierjs/junction/mail, configured before notifications.'
     )
   }
 

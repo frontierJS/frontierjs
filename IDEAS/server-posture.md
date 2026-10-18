@@ -393,7 +393,11 @@ Done when: the `bun run image:up` stack shows its host's readings on
 - [x] 2.1 The Outpost's report-only mode: the command listener off, `posture`
   posted over loopback (`FJS-D925`). `OUTPOST_HOST_KEY` selects it, signed with
   `hostReportKey` (`FJS-D944`).
-- [ ] 2.2 `fli deploy` installs it on the host. Waits on `FJS-D1023`.
+- [ ] 2.2 Fold the host readings into the fleet Outpost (`FJS-D1241`): `08b-outpost`
+  passes `OUTPOST_HOST_DB_PATH`/`OUTPOST_HOST_ENV_PATH` into the `basecamp-host`
+  install, `/hub/security/` grades that row with the `hub.*` controls, and 2.1's
+  report-only mode, `hostReportKey`, the `outpost-host` principal and 2.3's
+  nullable `serverId` are deleted.
 - [x] 2.3 `ServerPosture` rows with `serverId` null, read by the hub alone.
 - [x] 2.4 `hub.backup-recent`, `hub.db-mode` and `hub.env-mode`.
 - [x] 2.5 `/hub/security/` behind `isSystemAdmin` (`FJS-D924`), refusing *Harden*
@@ -599,6 +603,39 @@ posture report.
   - **Recommend A** — fli already owns the layout both paths come from and holds
     the `.env.production` the key derives from, so it is the one place that can
     state all three without a copy; one boolean in the one app that wants it.
+
+- ~~**FJS-D1241 — Now that `fli deploy` enrolls Basecamp's host as a fleet machine, does it still install the second, report-only host Outpost?**~~ **Answered 2026-10-18 (`FJS-D1241`): B — Fold the host readings into the fleet Outpost. `08b-outpost` passes `OUTPOST_HOST_DB_PATH`/`OUTPOST_HOST_ENV_PATH` into the `basecamp-host` install, and `/hub/security/` grades the `basecamp-host` row (`HOST_SLUG`) with the `hub.*` controls. Report-only mode, `hostReportKey`, the `outpost-host` principal and the nullable `serverId` are deleted. One reader per box, but the hub tier's reading depends on a workspace's Server row and goes dark under `--no-outpost`. `FJS-D924`/`FJS-D925`/`FJS-D944` are struck in part.**
+  Step 2.2 again. `FJS-D1023` was ruled on the premise that no Outpost runs on
+  the host. A day later `FJS-D1191`/`FJS-D1202` made `deploy.outpost: true`
+  install the full fleet Outpost there by default (`outpost.service`, Server row
+  `basecamp-host`, `08b-outpost`). Built as ruled, one box runs two Outposts that
+  both read its sshd, ruleset and pending updates. That gives two
+  `ServerPosture` rows for one machine, one on a workspace's `/security/` and one
+  on `/hub/security/`, and nothing compares them (§ V questions 1, 5, 6 and 9).
+  Nothing clashes in the plumbing: the units, state and listeners are separate,
+  since report-only opens no port.
+  - **A** — Build `FJS-D1023` as written, beside the fleet Outpost. A new
+    `deploy.hostOutpost` key and a `_steps-setup` step install
+    `outpost-host.service` with `hostReportKey` (its label moving to toolbelt so
+    fli derives the same value). The hub tier keeps its own reading, which stays
+    true under `--no-outpost` and in a workspace-free install, where
+    `enroll-host.ts` answers `skip`. The cost is a duplicated reading.
+  - **B** — Fold the host readings into the fleet Outpost. `08b-outpost` passes
+    `OUTPOST_HOST_DB_PATH`/`OUTPOST_HOST_ENV_PATH` into the `basecamp-host`
+    install, and `/hub/security/` grades the `basecamp-host` row (`HOST_SLUG`)
+    with the `hub.*` controls. Report-only mode, `hostReportKey`, the
+    `outpost-host` principal and the nullable `serverId` are deleted. One reader
+    per box, but the hub tier's reading depends on a workspace's Server row and
+    goes dark under `--no-outpost`. `FJS-D924`/`FJS-D925`/`FJS-D944` are struck
+    in part.
+  - **C** — Keep report-only mode only for `--no-outpost`. `08b-outpost`
+    installs the report-only unit when it skips the fleet enrollment, and
+    `/hub/security/` reads whichever exists. There is always exactly one reader,
+    at the price of two paths to keep correct.
+  - **Recommend B** — `FJS-D1191` already put an Outpost on the key's box with
+    its listener on, which was `FJS-D925`'s whole reason for report-only. One
+    reader per box is § V's ninth answer, and the hub screen grading
+    `basecamp-host` derives rather than restates.
 
 ## See also
 

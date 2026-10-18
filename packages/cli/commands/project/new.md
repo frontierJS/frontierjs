@@ -575,8 +575,8 @@ await app.start()
 // copy in this call would win the merge and move the routes under a proxy and a
 // client that still read the first.
 function makeApiAppTs(useAuth, useQueue = false, useNotify = false) {
-  const queueImport = (useQueue ? `\nimport { createCaravan } from '@frontierjs/caravan'\nimport { commitments } from '@frontierjs/junction/commitments'` : '')
-    + (useNotify ? `\nimport { notificationsPlugin } from '@frontierjs/notifications'` : '')
+  const queueImport = (useQueue ? `\nimport { caravan } from '@frontierjs/caravan'\nimport { commitments } from '@frontierjs/junction/commitments'` : '')
+    + (useNotify ? `\nimport { notifications } from '@frontierjs/notifications'` : '')
   const systemImport = useQueue ? `\nimport { SYSTEM }           from './core/gate.ts'` : ''
   // Deferred work nobody asked for -- a commitment's clock firing -- has no
   // caller, and no caller grades STRANGER on a gated model.
@@ -590,7 +590,7 @@ function makeApiAppTs(useAuth, useQueue = false, useNotify = false) {
 // one: the schema declares \`retention 90d\` on the audit trail, and litestone
 // sweeps it once when the client opens, so a server that stays up prunes
 // nothing after that unless a job does.
-app.configure(createCaravan())
+app.configure(caravan())
 
 // A \`@@commitment\` in db/schema.lite is swept and fired by this plugin, which
 // boot refuses to start without once the schema declares one. With none
@@ -603,10 +603,10 @@ app.configure(commitments())
 // app.notify(recipient, notification) -- an in-app record and a live event on
 // the recipient's channel. A notification is a FILE and the file names it:
 // api/src/notifications/OrderPaid.notification.ts is type "OrderPaid". Email is
-// off: it needs app.configure(mailerPlugin(...)) from
+// off: it needs app.configure(mail(...)) from
 // '@frontierjs/junction/mail' above this line, then
 // \`transports: { email: { mailer: 'default' } }\` here.
-app.configure(notificationsPlugin({ db }))
+app.configure(notifications({ db }))
 
 ` : ''
   if (useAuth) {
@@ -1074,7 +1074,7 @@ function makeApiCoreAuthTs() {
 // Both reference the same \`db\` import — auth uses db.asSystem()
 // internally so its writes bypass gates and policies.
 
-import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
+import { createLitestoneAuth, auth as authRoutes } from '@frontierjs/auth'
 import { db }   from './db.ts'
 import { env }  from './env.ts'
 import { getLevel } from './gate.ts'
@@ -1115,7 +1115,9 @@ export const auth = createLitestoneAuth(db, {
   },
 })
 
-export const authPlugin = createAuthPlugin(auth, {
+export const authPlugin = authRoutes({
+  auth,
+
   // Token in response body by default. Set true for httpOnly session cookie.
   cookieAuth: false,
 
@@ -1155,7 +1157,7 @@ const jobsDb = dbUrl && dbUrl !== ':memory:'
 ` : ''
   const caravan = useQueue ? `
   // The job queue: a SQLite file of its own. Declared here, so app.ts passes
-  // createCaravan() nothing.
+  // caravan() nothing.
   caravan: {
     db: jobsDb,
   },

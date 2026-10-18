@@ -34,6 +34,7 @@ model Person {
   ownerId String
   salary  Int?    @allow('read', auth().isAdmin)
   secretN Int?    @allow('read', auth().id == ownerId)
+  @@gate(0)
 }
 `
 
@@ -112,6 +113,7 @@ model Doc {
   ownerId Int
   rank    Int?    @allow('read', ownerId == auth().id) @map("rank_col")
   secret  String? @allow('read', ownerId == auth().id)
+  @@gate(0)
 }
 `
 
@@ -173,12 +175,14 @@ model Person {
   name   String
   salary Int?   @allow('read', auth().isAdmin)
   posts  Post[]
+  @@gate(0)
 }
 model Post {
   id       Int    @id
   title    String
   authorId Int
   author   Person @relation(fields: [authorId], references: [id])
+  @@gate(0)
 }
 `
 
@@ -215,6 +219,7 @@ model Doc {
   ownerId String  @allow('write', auth().isAdmin)
   title   String
   notes   String? @allow('write', auth().id == ownerId)
+  @@gate(0)
 }
 `
 
@@ -380,6 +385,7 @@ model Member {
   email String  @allow('write', auth().isAdmin)
   tier  String  @default("free") @allow('write', auth().isAdmin)
   note  String? @allow('write', auth().isAdmin)
+  @@gate(0)
 }
 `
   const open = async () => {
@@ -400,7 +406,8 @@ model Member {
   })
 
   it('a default-carrying and an optional policied column are dropped, not refused', async () => {
-    const SCH = `model M { id Int @id\n name String\n tier String @default("free") @allow('write', auth().isAdmin)\n note String? @allow('write', auth().isAdmin) }`
+    const SCH = `model M { id Int @id\n name String\n tier String @default("free") @allow('write', auth().isAdmin)\n note String? @allow('write', auth().isAdmin)
+ @@gate(0) }`
     const db: any = await createClient({ db: ':memory:', schema: SCH })
     const row = await db.$setAuth({ id: 'u' }).m.create({ data: { name: 'x', tier: 'gold', note: 'n' } })
     expect(row.tier).toBe('free')

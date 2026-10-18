@@ -100,7 +100,7 @@ describe('the three strengths', () => {
       schema: `
         model Tag { id Int @id  label String @unique  @@label(label)  @@gate(8) }
         valueset TaskTag { source Tag value label }
-        model Task { id Int @id  title String  free String? @values(TaskTag, suggested) }`,
+        model Task { id Int @id  title String  free String? @values(TaskTag, suggested)  @@gate(0) }`,
       db: ':memory:',
     })
     await db.task.create({ data: { title: 'a', free: 'anything' }, select: false })
@@ -169,6 +169,7 @@ describe('the set is resolved through the CALLER’S accessor', () => {
       title String
       tag   String? @values(TaskTag)
       grow  String? @values(TaskTag, open)
+      @@gate(0)
     }`
 
   const owned = async () => {
@@ -444,7 +445,7 @@ model Post {
 
 describe('a write the gate refuses is not answered by the value set', () => {
   const GATED = `
-    model Tag { id Int @id  label String @unique  @@label(label) }
+    model Tag { id Int @id  label String @unique  @@label(label)  @@gate(0) }
     valueset TaskTag { source Tag value label }
     model Task {
       id    Int     @id

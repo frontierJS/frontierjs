@@ -22,7 +22,7 @@ implements it.
 ```
 index.ts     public barrel
 auth.ts      createLitestoneAuth() — the IAuth implementation
-plugin.ts    createAuthPlugin() — the /auth/* routes (no error mapping: see errors.ts)
+plugin.ts    auth() — the /auth/* routes (no error mapping: see errors.ts)
 errors.ts    named domain errors (AuthError and friends)
 db/*.lite    the models this package ships — user.lite (the app's) + auth.lite
 schema.ts    reads those two — authUserModel / authMachineryModels / both

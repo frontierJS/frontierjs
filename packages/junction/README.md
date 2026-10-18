@@ -114,14 +114,14 @@ packages/junction/
 │   ├── bridge.ts         ← THE hard boundary between transport and services
 │   ├── channels.ts       ← WebSocket channels, announce() hook, channels() plugin
 │   ├── presence.ts       ← presence tracking + heartbeat
-│   ├── health.ts         ← /health + /metrics endpoints (healthPlugin)
+│   ├── health.ts         ← /health + /metrics endpoints (health)
 │   ├── body.ts           ← JSON / multipart / urlencoded parser
 │   ├── static.ts         ← range requests, etag, gzip, cache headers
 │   ├── types.ts          ← TransportContext, WsContext, WsHandlerSet, SSE types
 │   └── middleware.ts     ← cors, helmet, rateLimit, requestLogger, correlationId
 │
 ├── src/plugins/
-│   ├── manifest/         ← manifestPlugin — schema + migration state at /manifest
+│   ├── manifest/         ← manifest — schema + migration state at /manifest
 │   ├── openapi/          ← openapi() plugin, generateOpenAPI() — 3.1 from the registry
 │   ├── email/            ← mailer plugin, system + campaign senders
 │   ├── webhooks/         ← at-least-once delivery, IWebhookStore, SQLite adapter
@@ -639,12 +639,12 @@ advertise a `POST` it does not have.
 ## Health and metrics
 
 ```typescript
-import { healthPlugin } from '@frontierjs/junction'
+import { health } from '@frontierjs/junction'
 
-app.configure(healthPlugin())
+app.configure(health())
 
 // With auth, custom path, and custom readiness checks:
-app.configure(healthPlugin({
+app.configure(health({
   path:  '/_internal',
   token: process.env.METRICS_TOKEN,
   checks: {
@@ -746,7 +746,7 @@ app.configure(csrf({ origins: ['https://myapp.com'] }))
 
 ## CSRF protection
 
-The bearer token pattern (`Authorization: Bearer ...`) is **inherently CSRF-safe** — a cross-origin page cannot set arbitrary request headers, so it can never forge a bearer-token request on behalf of a victim. `csrf()` is needed with **cookie-based sessions**, and **cookie mode installs it for you** (`FJS-D610`): `createAuthPlugin(auth, { cookieAuth: true })` or `config.auth.cookie` turns it on at start, with `middleware.csrf` (or else `middleware.cors.origins`) as the list of other origins allowed. `SameSite=Lax` alone is not enough — a cross-site form POST to `/auth/login` carries no cookie and *sets* one.
+The bearer token pattern (`Authorization: Bearer ...`) is **inherently CSRF-safe** — a cross-origin page cannot set arbitrary request headers, so it can never forge a bearer-token request on behalf of a victim. `csrf()` is needed with **cookie-based sessions**, and **cookie mode installs it for you** (`FJS-D610`): `auth(auth, { cookieAuth: true })` or `config.auth.cookie` turns it on at start, with `middleware.csrf` (or else `middleware.cors.origins`) as the list of other origins allowed. `SameSite=Lax` alone is not enough — a cross-site form POST to `/auth/login` carries no cookie and *sets* one.
 
 ```typescript
 // Run cors() first so preflight is handled before csrf() checks the origin
@@ -1009,11 +1009,11 @@ sit outside the prefix still goes through `app.http.router`. An app with no
 ## Auth
 
 ```typescript
-import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
+import { createLitestoneAuth, auth as authPlugin } from '@frontierjs/auth'
 
 const auth = createLitestoneAuth(db)
 const app  = createApp({ config, auth, db })
-app.configure(createAuthPlugin(auth))  // mounts /auth/* routes
+app.configure(authPlugin({ auth }))  // mounts /auth/* routes
 ```
 
 Junction defines the `IAuth` interface and ships no vendor adapter. An app that wants another library implements `IAuth` over it and mounts the library's handler on a raw route.
@@ -1029,7 +1029,7 @@ cookie as well — on HTTP requests **and** on the WebSocket upgrade:
 app.http.setAuthCookie('session')      // or config: { auth: { cookie: 'session' } }
 ```
 
-Using `@frontierjs/auth` you never write that: `createAuthPlugin(auth, { cookieAuth: true })`
+Using `@frontierjs/auth` you never write that: `auth(auth, { cookieAuth: true })`
 declares it from its own `register()`, so cookie mode is one switch.
 
 Three rules worth knowing:
@@ -1494,7 +1494,7 @@ fli outbox:install     # imports the OutboxMessage model into db/schema.lite
 ```typescript
 import { outbox } from '@frontierjs/junction/outbox'
 
-app.configure(createCaravan())   // the relay needs a queue
+app.configure(caravan())   // the relay needs a queue
 app.configure(outbox())
 
 createService({
@@ -1554,7 +1554,7 @@ due (`db.order.due()`). Nothing in Litestone moves a row; this plugin does.
 ```typescript
 import { commitments } from '@frontierjs/junction/commitments'
 
-app.configure(createCaravan())   // the sweep is a Caravan cron
+app.configure(caravan())   // the sweep is a Caravan cron
 app.configure(commitments())
 ```
 
@@ -2135,26 +2135,26 @@ Every `connected` after the first emits `reconnected`, as a socket's reconnect d
 ## Mail
 
 `@frontierjs/junction/mail` puts an `IMail` on `app.mail`. Pick a transport and
-hand it to `mailerPlugin`:
+hand it to `mail`:
 
 ```typescript
-import { mailerPlugin, createSmtpMailer, createResendMailer } from '@frontierjs/junction/mail'
+import { mail, createSmtpMailer, createResendMailer } from '@frontierjs/junction/mail'
 
 // Any SMTP server: no package, no account. Bun opens the socket.
-app.configure(mailerPlugin(createSmtpMailer({
+app.configure(mail({ mailer: createSmtpMailer({
   host: env.SMTP_HOST,
   port: 587,
   user: env.SMTP_USER,
   pass: env.SMTP_PASS,
   from: 'system@acme.com',
-})))
+}) }))
 
 // Or Resend, with the key resolved at send time rather than held.
-app.configure(mailerPlugin(createResendMailer({
+app.configure(mail({ mailer: createResendMailer({
   from:        'Acme <noreply@acme.com>',
   credentials: { get: k => process.env[k] },
   apiKeyRef:   'RESEND_API_KEY',
-})))
+}) }))
 ```
 
 Send from anywhere you have `app`:
@@ -2232,9 +2232,9 @@ and `hasRoute()` answers a *matching* question — every app registers
 where" needs the router asked rather than guessed.
 
 ```typescript
-import { manifestPlugin } from '@frontierjs/junction/manifest'
+import { manifest } from '@frontierjs/junction/manifest'
 
-app.configure(manifestPlugin({ db }))   // devOnly by default
+app.configure(manifest({ db }))   // devOnly by default
 ```
 
 `GET /manifest` then carries `routes` beside the services, hooks and channels:
@@ -2265,9 +2265,9 @@ First-party plugins built specifically for Junction. Each is a separate package 
 SQLite-backed background job queue. Zero external dependencies. Jobs survive process restarts.
 
 ```ts
-import { createCaravan } from '@frontierjs/caravan'
+import { caravan } from '@frontierjs/caravan'
 
-const queue = createCaravan({
+const queue = caravan({
   db:      './jobs.db',       // default
   queues: {
     default:  { concurrency: 2 },

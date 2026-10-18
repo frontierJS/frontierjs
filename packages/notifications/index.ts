@@ -2,7 +2,7 @@
 
 export { Notification }          from './notification.ts'
 export { defineNotification }    from './define.ts'
-export { notificationsPlugin }   from './plugin.ts'
+export { notifications }   from './plugin.ts'
 
 import type { Notification as NotificationBase } from './notification.ts'
 import type { SendableNotification } from './define.ts'

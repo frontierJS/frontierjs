@@ -52,14 +52,15 @@
 /// A gate is per MODEL and never per row. WHICH rows is TENANCY, declared once
 /// in the `tenancy { }` block below rather than as a rule per model: every model
 /// carrying `workspaceId` is scoped on it, the 14 that reach one through a
-/// relation are scoped through that parent, and the FOURTEEN that legitimately
+/// relation are scoped through that parent, and the FIFTEEN that legitimately
 /// span workspaces say so by name with `@@tenant(none)`. They are three kinds
 /// of thing and the kind is the argument:
 ///
 ///   identity          User, Credential, Session, Verification, OauthFlow,
 ///                     Account — a person is one person in every workspace
 ///   the tenant itself Workspace, and WorkspaceMember, which is what the claim
-///                     is READ from
+///                     is READ from; AppEditor, a grant on one site held by a
+///                     person who is no member at all
 ///   the installation  HubConfig and Backup describe the whole install,
 ///                     Blueprint/BlueprintParam are one curated catalog
 ///                     every workspace sees, NotificationPreference has no
@@ -674,6 +675,7 @@ model User {
   deletedAt      DateTime?
 
   memberships    WorkspaceMember[]
+  appEditors     AppEditor[]
   deployments    Deployment[]
   apiKeys        ApiKey[]
 
@@ -1667,6 +1669,7 @@ model App {
   appNetworks   AppNetwork[]
   domains       Domain[]
   variables     Variable[]
+  editors       AppEditor[]
 
   @@gate(2.4.4.5)
   // The deploy job writes App.status through asSystem(), which is how it
@@ -1783,6 +1786,43 @@ model Domain {
 
 // Placement — which servers an App's replicas actually landed on.
 // Written by the deploy job, never by a person.
+// A person who may change a static site's words (`FJS-D1230`): `edit` saves
+// drafts, `publish` also ships them. A Kobami client edits one site, and a
+// membership would show them the whole fleet, so this is the only row tying
+// them to the workspace. Which App may have one (static, built from git) is
+// `app-editors.service.ts`'s; what an editor may write is site-kit's
+// `editable.js` (`FJS-D1226`).
+enum EditorRole { edit publish }
+
+model AppEditor {
+  id        String     @id @default(uuid())
+  appId     String     @immutable
+  app       App        @relation(fields: [appId], references: [id], onDelete: Cascade)
+  userId    String     @immutable
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      EditorRole @default(edit)
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @default(now()) @updatedAt
+
+  @@gate(1.5)
+  @@trail(audit)
+  // Once per site, and *which sites may this person edit* is the reverse index.
+  @@relator([appId, userId], once)
+
+  // No workspaceId of its own: the App's is read through the relation, so the
+  // two cannot disagree. An editor reads their own rows across workspaces, a
+  // member reads the rows of the workspace they act in, and the gate's 5 says
+  // only an admin writes one.
+  @@allow('read',   userId == auth().id || app.workspaceId == auth().workspaceId)
+  @@allow('create', app.workspaceId == auth().workspaceId)
+  @@allow('update', app.workspaceId == auth().workspaceId)
+  @@allow('delete', app.workspaceId == auth().workspaceId)
+
+  // Read by a holder who has no membership, so no claim to scope against.
+  @@tenant(none)
+}
+
 model AppServer {
   id           String   @id @default(uuid())
   appId        String

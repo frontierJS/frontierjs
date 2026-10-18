@@ -145,7 +145,7 @@ async function installHelpers() {
  * Sign in from the header and wait for the level badge.
  *
  * Waits for the badge OR the header's error alert, because the failure that
- * actually happens is a 429: createAuthPlugin rate-limits login to 10 per 15
+ * actually happens is a 429: auth rate-limits login to 10 per 15
  * minutes and this file signs in twice per run, so the sixth run in a quarter
  * hour is refused. Waiting only for the badge turns that into
  * "waitFor timed out: () => byText('header .badge', 'level')", which reads like

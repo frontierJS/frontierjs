@@ -11,7 +11,7 @@ not.
 
 The views are written to `api/dist/mcp/`, beside the API that serves them,
 because the API image carries `api/` and never `web/` (`FJS-D955`). The plugin
-is told the same directory once, as `mcpPlugin({ ui: { root } })`, and refuses
+is told the same directory once, as `mcp({ ui: { root } })`, and refuses
 to start when it is declared and missing.
 
 | Command | What it does |

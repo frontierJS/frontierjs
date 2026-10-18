@@ -24,8 +24,9 @@
  *
  * A side pane is a `.mesa` component in a split at the right, mounted the
  * first time Ctrl+\ shows it and kept while hidden. Ctrl+O moves focus
- * between the panes. Both keys are taken before any mount sees them, since a
- * field binds most Ctrl letters. A page's own command shows and hides it
+ * between the panes, and Alt+= and Alt+- widen and narrow the side by five
+ * columns. They are taken before any mount sees them, since a field binds
+ * most Ctrl letters. A page's own command shows and hides it
  * through Mesa's `sideToggle()`, as Ctrl+\ does, and `toggle(true)` only shows it. In the side the mode line says so, and
  * h/j/k/l and Esc are the side's own: Esc going back is the page's.
  *
@@ -68,6 +69,11 @@ const OTHER_PANE  = 'o'
 // leave it fewer, an open side shows one pane at a time.
 const SIDE_SHARE   = 0.3
 const PAGE_COLUMNS = 120
+// Alt+= and Alt+- move the split's edge, by RESIZE_STEP columns, as far as
+// leaves each pane EDGE_COLUMNS. opentui's fields bind Alt+arrows to words.
+const WIDER  = { '=': 1, '+': 1, '-': -1, '_': -1 }
+const RESIZE_STEP  = 5
+const EDGE_COLUMNS = 20
 const MODE  = new URL('./Mode.mesa', import.meta.url).pathname
 const NO_LOWERING = / has no terminal lowering$/
 
@@ -149,8 +155,13 @@ function paneKeys(tui, renderer, file, setMode, setZoom, say) {
   box.visible = false
   let open = false
   let front = 'side'    // the pane drawn while zoomed
+  let columns = null    // the side's width once Alt+= or Alt+- set it, else its share
+  // Zoom stays the terminal's call, made at the share: a side widened past
+  // PAGE_COLUMNS is the person's choice to clip the page.
+  const fit = (n) => Math.max(EDGE_COLUMNS, Math.min(n, renderer.width - EDGE_COLUMNS))
   const lay = () => {
     const zoom = open && renderer.width * (1 - SIDE_SHARE) < PAGE_COLUMNS
+    if (columns !== null) box.width = fit(columns)
     box.visible = open && (!zoom || front === 'side')
     page.visible = !zoom || front === 'page'
     // The side keeps its share beside the page and takes the row alone.
@@ -191,7 +202,18 @@ function paneKeys(tui, renderer, file, setMode, setZoom, say) {
     into('side')
   }
   tui.setSideToggle(renderer, toggle)
+  // A legacy terminal sends Alt+= as ESC =, which opentui names '' and leaves
+  // unmarked; the kitty protocol names it '=' with meta.
+  const altOf = (k) => k.ctrl ? null : k.meta ? k.name : /^\x1b(.)$/.exec(k.sequence ?? '')?.[1]
   renderer.keyInput.on('keypress', (k) => {
+    const wider = WIDER[altOf(k)]
+    // Zoomed, one pane takes the row and there is no edge to move.
+    if (wider && box.visible && page.visible) {
+      k.preventDefault()
+      columns = fit((columns ?? box.width) + wider * RESIZE_STEP)
+      lay()
+      return
+    }
     if (!k.ctrl || k.meta || k.option) return
     if (k.name === TOGGLE_SIDE) { k.preventDefault(); toggle() }
     else if (k.name === OTHER_PANE && open) {
@@ -219,6 +241,9 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   const routes = await routeList(root, tree, loader)
   const open = routes.filter((r) => !r.refused)
   const trailingSlash = config.trailingSlash ?? 'always'
+  // `terminal: { jump: false }` leaves Ctrl+P to the app: a route that opens
+  // its own finder on it would otherwise sit under the shell's.
+  const jumps = config.terminal?.jump !== false
 
   if (list) {
     const width = Math.max(...routes.map((r) => r.path.length))
@@ -312,7 +337,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   }
   const [state, write] = createSignal({ app, note: '', ...listed })
   const set = (fields) => write({ ...state(), ...fields })
-  const where = () => `${page.pathname}${page.search} · Esc goes back · Ctrl+P jumps`
+  const where = () => `${page.pathname}${page.search} · Esc goes back${jumps ? ' · Ctrl+P jumps' : ''}`
 
   let screen = null
   let shown = null      // the screenKey of the route on screen, null on the list
@@ -371,7 +396,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   tui.mount(Mode,{ renderer, parent: tui.footerOf(renderer), props: { mode, zoom } })
   tui.mount(Shell, { renderer, props: {
     state,
-    paths:  listed.routes.map((r) => r.path),
+    paths:  jumps ? listed.routes.map((r) => r.path) : [],
     onopen: openPath,
     onjump: jump,
     onmove: (step) => step > 0 ? tui.focusNext() : tui.focusPrev(),

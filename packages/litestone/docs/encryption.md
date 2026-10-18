@@ -53,6 +53,8 @@ model User {
   id   Int     @id
   ssn  String? @encrypted
   dob  String? @encrypted
+
+  @@gate(0)
 }
 ```
 
@@ -82,6 +84,8 @@ model User {
   id    Int    @id
   // Looked up at sign-in AND mailed to. Both, so both must work.
   email String @encrypted(deterministic: true)
+
+  @@gate(0)
 }
 ```
 
@@ -259,12 +263,16 @@ Re-encrypts every key-reversible column — `@encrypted` in both modes, and `@se
 model User {
   id  Int     @id
   ssn String? @encrypted
+
+  @@gate(0)
 }
 
 model Order {
   id   Int     @id
   card String? @encrypted
   iban String? @encrypted(deterministic: true)
+
+  @@gate(0)
 }
 ```
 

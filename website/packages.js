@@ -234,7 +234,7 @@ const PKGS = [
   rows:[
     { k:'Mounting', v:'One plugin, inside the running API',
       why:'Stdio would have to boot the app a second time — a second job worker, a second migration check, and an event bus no browser tab is on. Mounted, a tool call is one more caller of the process that is already serving.',
-      code:"import { mcpPlugin } from '@frontierjs/mcp'\n\napp.configure(mcpPlugin())   // POST/GET/DELETE at {apiPrefix}/mcp",
+      code:"import { mcp } from '@frontierjs/mcp'\n\napp.configure(mcp())   // POST/GET/DELETE at {apiPrefix}/mcp",
       r:['a separate MCP server process'] },
     { k:'Scoping', v:'Tools are computed per standing, not described in a prompt',
       why:'What an agent may do is the gate it is already graded by. A stranger sees a stranger’s tools; a prompt can be talked out of a rule, and the database layer cannot.',

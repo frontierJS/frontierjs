@@ -93,7 +93,7 @@ render: static
           it assembles surfaces rather than inventing them.
         </p>
         <div class="facts">
-          <div class="fact"><b><code>/health</code></b><span>liveness, from <code>healthPlugin</code></span></div>
+          <div class="fact"><b><code>/health</code></b><span>liveness, from <code>health</code></span></div>
           <div class="fact"><b><code>/metrics</code></b><span>plugin-contributed — caravan and conduit register their own providers</span></div>
           <div class="fact"><b><code>/manifest</code></b><span>migration state, from litestone <code>status()</code></span></div>
           <div class="fact"><b><code>/openapi.json</code></b><span>the full API surface, derived</span></div>

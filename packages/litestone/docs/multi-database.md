@@ -28,6 +28,8 @@ model User {
   email String
   // no @@db — goes to 'main' (first database block, or db: option)
   @@trail(audit)    // writes fire entries into the audit trail database
+
+  @@gate(0)
 }
 
 model PageView {
@@ -36,6 +38,8 @@ model PageView {
   duration  Int
   createdAt DateTime @default(now())
   @@db(analytics)
+
+  @@gate(0)
 }
 
 model ApiRequest {

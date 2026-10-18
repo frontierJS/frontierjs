@@ -137,6 +137,7 @@ model Job {
   id     Int @id
   status S   @default(pending)
   @@transitions(status, pay: pending -> paid, ship: paid -> shipped @gate(5))
+  @@gate(0)
 }
 `
   const setup = async () => {

@@ -16,9 +16,9 @@ import { Notification } from '../notification.ts'
 import { defineNotification } from '../define.ts'
 import { inApp, mail } from '../builders.ts'
 import { NotificationDeliveryError } from '../errors.ts'
-import { notificationsPlugin } from '../plugin.ts'
+import { notifications } from '../plugin.ts'
 import { createTestApp } from '@frontierjs/junction'
-import { mailerPlugin } from '@frontierjs/junction/mail'
+import { mail as mailPlugin } from '@frontierjs/junction/mail'
 import { makeApp } from './harness.ts'
 import type { InAppMessage, MailMessage, Recipient, Transport } from '../types.ts'
 
@@ -42,10 +42,10 @@ describe('audit 1.5 — a failed transport after a committed one', () => {
   // what tells that retry from a new notification (FJS-D872).
   const smtpDown = (h: { app: any }) => {
     const seen = { attempts: 0 }
-    h.app.configure(mailerPlugin({
+    h.app.configure(mailPlugin({ mailer: {
       send: async () => { seen.attempts++; throw new Error('smtp down') },
       batch: async () => { throw new Error('smtp down') },
-    }))
+    } }))
     return seen
   }
   const bobsRows = async (h: { rows: () => Promise<{ userId: unknown, contextId: unknown }[]> }) =>
@@ -121,18 +121,18 @@ describe('audit 1.5 — a failed transport after a committed one', () => {
   // app.mail. A second mailer named here configures nothing and is found when
   // mail goes out through the wrong one.
   test('a mailer name no plugin registered is refused at construction', () => {
-    expect(() => notificationsPlugin({ db: {}, transports: { email: { mailer: 'secondary' } } }))
+    expect(() => notifications({ db: {}, transports: { email: { mailer: 'secondary' } } }))
       .toThrow(/secondary/)
-    expect(() => notificationsPlugin({ db: {}, transports: { email: { mailer: 'default' } } })).not.toThrow()
-    expect(() => notificationsPlugin({ db: {}, transports: { email: {} } })).not.toThrow()
+    expect(() => notifications({ db: {}, transports: { email: { mailer: 'default' } } })).not.toThrow()
+    expect(() => notifications({ db: {}, transports: { email: {} } })).not.toThrow()
   })
 
   test('the observed shape: one row, no mail, a thrown error (what the three cases above build on)', async () => {
     const h = await makeApp({ noMailer: true })
-    h.app.configure(mailerPlugin({
+    h.app.configure(mailPlugin({ mailer: {
       send: async () => { throw new Error('smtp down') },
       batch: async () => { throw new Error('smtp down') },
-    }))
+    } }))
     await expect(h.app.notify(bob, new InvoiceDue())).rejects.toBeInstanceOf(NotificationDeliveryError)
     expect((await h.rows()).length).toBe(1)
     expect(h.sent.length).toBe(0)
@@ -153,7 +153,7 @@ describe('audit 1.5 — per-recipient grading of the WS push', () => {
   test('createTestApp has no channels — the push is skipped and the row still lands', async () => {
     const app: any = await createTestApp()
     const h = await makeApp()
-    app.configure(notificationsPlugin({ db: h.db }))
+    app.configure(notifications({ db: h.db }))
     await app._startForTest()
     await app.notify({ id: 'u-carol' }, new (class extends Notification {
       static type = 'OnlyInApp'

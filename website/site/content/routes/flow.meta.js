@@ -51,7 +51,7 @@ function stampOwner(ctx) {
 }`,
   S3: `const app = createApp({ db, auth })
 
-app.configure(createCaravan({ jobsDir: './jobs' }))  // → app.jobs
+app.configure(caravan({ jobsDir: './jobs' }))  // → app.jobs
 app.configure(conduit({ … }))                        // → app.conduit
 
 // the after Hook from the previous stop

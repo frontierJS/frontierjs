@@ -7912,6 +7912,7 @@ function framePage() {
     ["--sidebar-width", "15rem", "Sidebar column width, and an open rail's"],
     ["--rail-width", "3.5rem", "A closed rail's column width"],
     ["--screen-pad", "1.5rem", "Screen padding (1rem below md)"],
+    ["--aside-width", "20rem", "An Aside's column width, until its toggle collapses it"],
   ];
 
   return `

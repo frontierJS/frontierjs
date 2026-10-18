@@ -4,7 +4,7 @@
   "engines": {
     "bun": ">=1.4.0"
   },
-  "description": "FJS native authentication — createLitestoneAuth + createAuthPlugin",
+  "description": "FJS native authentication — createLitestoneAuth + auth",
   "type": "module",
   "main": "./index.ts",
   "exports": {

@@ -14,7 +14,7 @@ import { join } from "node:path"
 
 import { createTestEnv } from "../../../litestone/src/testing.js"
 import { generateJsonSchema } from "../../../litestone/src/jsonschema.js"
-import { createCaravan } from "../../../caravan/src/index"
+import { caravan } from "../../../caravan/src/index"
 import { createRunner, type Runner } from "../../src/runner"
 import { litestoneHost } from "../../src/tenancy"
 import { modelCatalog, litestoneModelActions } from "../../src/models"
@@ -69,7 +69,7 @@ export const PRINCIPALS: Record<string, object> = {
 export interface AppHost {
   env:    any
   dir:    string
-  jobs:   ReturnType<typeof createCaravan>
+  jobs:   ReturnType<typeof caravan>
   runner: Runner
   stop(): Promise<void>
   settled(runId: string, statuses?: string[], ms?: number): Promise<any>
@@ -78,7 +78,7 @@ export interface AppHost {
 export async function appHost(opts: { start?: boolean } = {}): Promise<AppHost> {
   const dir  = mkdtempSync(join(tmpdir(), "orion-app-"))
   const env: any = await createTestEnv({ schema: APP, encryptionKey: KEY, claims: [] })
-  const jobs = createCaravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 })
+  const jobs = caravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 })
 
   const names  = env.schema.models.map((m: any) => m.name)
   const runner = createRunner({

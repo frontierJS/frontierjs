@@ -23,7 +23,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createTestApp, request } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
-import { createCaravan, CARAVAN_CONFIG_KEYS } from '../src/index.ts'
+import { caravan as caravanPlugin, CARAVAN_CONFIG_KEYS } from '../src/index.ts'
 import type { CaravanOptions, CaravanInstance, JobRecord } from '../src/types.ts'
 
 // An app root whose `jobs/` holds the job fixtures (`FJS-D1080`).
@@ -47,7 +47,7 @@ const opts = (o: Partial<CaravanOptions> = {}): CaravanOptions => ({
 // start() must go through it.
 async function bootApp(o: Partial<CaravanOptions> = {}) {
   const app = await createTestApp()
-  app.configure(createCaravan(opts(o)))
+  app.configure(caravanPlugin(opts(o)))
   await app._startForTest()
   return app
 }
@@ -70,7 +70,7 @@ describe('plugin lifecycle against a real app', () => {
     const app = await createTestApp()
     expect('jobs' in app).toBe(false)
 
-    app.configure(createCaravan(opts()))
+    app.configure(caravanPlugin(opts()))
 
     // configure() runs register() synchronously — no start() needed
     expect(app.jobs).toBeDefined()
@@ -78,7 +78,7 @@ describe('plugin lifecycle against a real app', () => {
   })
 
   it('the plugin exposes every lifecycle phase Junction calls', () => {
-    const plugin = createCaravan(opts())
+    const plugin = caravanPlugin(opts())
     // Junction invokes these as optional — a rename on either side would
     // silently skip the phase rather than error.
     for (const phase of ['register', 'boot', 'work', 'shutdown'] as const) {
@@ -100,7 +100,7 @@ describe('plugin lifecycle against a real app', () => {
 
   it('a handler registered before start still processes once work() runs', async () => {
     const app = await createTestApp()
-    const caravan = createCaravan(opts())
+    const caravan = caravanPlugin(opts())
     app.configure(caravan)
 
     let ran = false
@@ -114,7 +114,7 @@ describe('plugin lifecycle against a real app', () => {
 
   it('shutdown() stops the worker — no further jobs are processed', async () => {
     const app = await createTestApp()
-    const plugin = createCaravan(opts())
+    const plugin = caravanPlugin(opts())
     plugin.register(app as App)
     await plugin.boot!(app as App)
     await plugin.work!(app as App)
@@ -143,7 +143,7 @@ describe('plugin lifecycle against a real app', () => {
 describe('_startOnce() queues and runs nothing', () => {
   it('a dispatch is accepted and stays pending; the same dispatch under _startForTest() runs', async () => {
     const once = await createTestApp({ root: ROOT })
-    once.configure(createCaravan(opts()))
+    once.configure(caravanPlugin(opts()))
     await once._startOnce()
     const id = await jobsOf(once).dispatch('send-email', { to: 'a@b.c' })
     await new Promise(r => setTimeout(r, 100))
@@ -151,7 +151,7 @@ describe('_startOnce() queues and runs nothing', () => {
     await once.stop()
 
     const test = await createTestApp({ root: ROOT })
-    test.configure(createCaravan(opts()))
+    test.configure(caravanPlugin(opts()))
     await test._startForTest()
     const ran = await jobsOf(test).dispatch('send-email', { to: 'a@b.c' })
     const done = await until(() => jobsOf(test).find(ran)!.status !== 'pending')
@@ -207,7 +207,7 @@ describe('metrics provider', () => {
 //
 // register() reads `app.config._junction.caravan` and honors every key of it
 // (JunctionCaravanConfig in junction's src/config/index.ts). It could once
-// honor only cleanupAfter and the jobs folder: createCaravan() opened the database and
+// honor only cleanupAfter and the jobs folder: caravan() opened the database and
 // built the workers before any app existed, so db, pollInterval, queues and
 // admin were already spent by the time a config file was visible. The database
 // now opens on first use and the workers are built in start(), which is what
@@ -217,7 +217,7 @@ describe('junction config caravan section', () => {
   const withConfig = async (caravanCfg: Record<string, unknown>, o: Partial<CaravanOptions> = {}) => {
     const app = await createTestApp()
     ;(app.config as Record<string, unknown>)._junction = { caravan: caravanCfg }
-    app.configure(createCaravan(opts(o)))
+    app.configure(caravanPlugin(opts(o)))
     await app._startForTest()
     return app
   }
@@ -227,7 +227,7 @@ describe('junction config caravan section', () => {
   const withRawConfig = async (caravanCfg: Record<string, unknown>, o: CaravanOptions = {}) => {
     const app = await createTestApp()
     ;(app.config as Record<string, unknown>)._junction = { caravan: caravanCfg }
-    app.configure(createCaravan(o))
+    app.configure(caravanPlugin(o))
     await app._startForTest()
     return app
   }
@@ -239,7 +239,7 @@ describe('junction config caravan section', () => {
 
   it('loads jobs/ beside createApp({ root })', async () => {
     const app = await createTestApp({ root: ROOT })
-    app.configure(createCaravan(opts()))
+    app.configure(caravanPlugin(opts()))
     await app._startForTest()
 
     // The autoloaded 'send-email' handler declares queue 'email', so dispatch
@@ -334,7 +334,7 @@ describe('junction config caravan section', () => {
     // read as unset from either side.
     const app = await createTestApp()
     ;(app.config as Record<string, unknown>)._junction = { caravan: { cleanupAfter: 1 } }
-    app.configure(createCaravan(opts()))
+    app.configure(caravanPlugin(opts()))
 
     const id = await jobsOf(app).dispatch('report', {})
     await jobsOf(app).cancel(id)
@@ -352,7 +352,7 @@ describe('junction config caravan section', () => {
 describe('admin routes over real routes', () => {
   it('GET /jobs lists jobs through the HTTP layer', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: true })))
+    app.configure(caravanPlugin(opts({ admin: true })))
     await jobsOf(app).dispatch('report', { id: 1 })
 
     const res = await request(app).get('/jobs')
@@ -364,7 +364,7 @@ describe('admin routes over real routes', () => {
 
   it('GET /jobs/:id resolves a single job', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: true })))
+    app.configure(caravanPlugin(opts({ admin: true })))
     const id = await jobsOf(app).dispatch('report', { id: 1 })
 
     const res = await request(app).get(`/jobs/${id}`)
@@ -375,7 +375,7 @@ describe('admin routes over real routes', () => {
 
   it('GET /jobs/:id on an unknown id returns 404', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: true })))
+    app.configure(caravanPlugin(opts({ admin: true })))
 
     const res = await request(app).get('/jobs/nope')
     expect(res.status).toBe(404)
@@ -385,7 +385,7 @@ describe('admin routes over real routes', () => {
   // flips, this request is captured by the :id route and 404s instead.
   it('GET /jobs/schedules is not shadowed by /jobs/:id', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: true })))
+    app.configure(caravanPlugin(opts({ admin: true })))
     jobsOf(app).schedule('nightly', '0 2 * * *', () => {})
 
     const res = await request(app).get('/jobs/schedules')
@@ -397,7 +397,7 @@ describe('admin routes over real routes', () => {
 
   it('POST /jobs/:id/cancel cancels the job', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: true })))
+    app.configure(caravanPlugin(opts({ admin: true })))
     const id = await jobsOf(app).dispatch('report', {})
 
     const res = await request(app).post(`/jobs/${id}/cancel`)
@@ -409,7 +409,7 @@ describe('admin routes over real routes', () => {
 
   it('POST /jobs/:id/retry re-queues a cancelled job', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: true })))
+    app.configure(caravanPlugin(opts({ admin: true })))
     const id = await jobsOf(app).dispatch('report', {})
     await jobsOf(app).cancel(id)
 
@@ -428,7 +428,7 @@ describe('admin routes over real routes', () => {
 
   it('POST /jobs/run/{name} dispatches a registered job', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: true })))
+    app.configure(caravanPlugin(opts({ admin: true })))
     jobsOf(app).handle('report', async () => {})
 
     const res = await request(app).post('/jobs/run/report')
@@ -441,7 +441,7 @@ describe('admin routes over real routes', () => {
 
   it('the body becomes the job data, so a scheduled handler can be re-parameterized', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: true })))
+    app.configure(caravanPlugin(opts({ admin: true })))
     jobsOf(app).schedule('sweep', '0 3 * * *', async () => {})
 
     const res = await request(app).post('/jobs/run/sweep').send({ days: 0 })
@@ -454,7 +454,7 @@ describe('admin routes over real routes', () => {
     // ctx.body is already parsed by the transport. Reading the raw request
     // instead would await a stream nobody is going to write to.
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: true })))
+    app.configure(caravanPlugin(opts({ admin: true })))
     jobsOf(app).handle('report', async () => {})
 
     const res = await request(app).post('/jobs/run/report')
@@ -466,7 +466,7 @@ describe('admin routes over real routes', () => {
   it('refuses an unregistered name with 404 rather than queueing it', async () => {
     // A job nothing handles sits pending forever and reports as a backlog.
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: true })))
+    app.configure(caravanPlugin(opts({ admin: true })))
 
     const res = await request(app).post('/jobs/run/nope')
 
@@ -476,7 +476,7 @@ describe('admin routes over real routes', () => {
 
   it('run/{name} is guarded by the same secret as everything else', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: { secret: 's3cret' } })))
+    app.configure(caravanPlugin(opts({ admin: { secret: 's3cret' } })))
     jobsOf(app).handle('report', async () => {})
 
     expect((await request(app).post('/jobs/run/report')).status).toBe(401)
@@ -486,7 +486,7 @@ describe('admin routes over real routes', () => {
 
   it('honors a custom admin path', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: { path: '/admin/jobs' } })))
+    app.configure(caravanPlugin(opts({ admin: { path: '/admin/jobs' } })))
 
     const res = await request(app).get('/admin/jobs')
     expect(res.status).toBe(200)
@@ -494,7 +494,7 @@ describe('admin routes over real routes', () => {
 
   it('is not mounted when admin is omitted', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts()))
+    app.configure(caravanPlugin(opts()))
 
     const res = await request(app).get('/jobs')
     expect(res.status).toBe(404)
@@ -512,7 +512,7 @@ describe('admin routes over real routes', () => {
 describe('admin secret guard', () => {
   const secured = async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: { secret: 's3cret' } })))
+    app.configure(caravanPlugin(opts({ admin: { secret: 's3cret' } })))
     return app
   }
 
@@ -557,7 +557,7 @@ describe('admin secret guard', () => {
 
   it('leaves routes open when no secret is configured', async () => {
     const app = await createTestApp()
-    app.configure(createCaravan(opts({ admin: true })))
+    app.configure(caravanPlugin(opts({ admin: true })))
 
     const res = await request(app).get('/jobs')
     expect(res.status).toBe(200)
@@ -581,7 +581,7 @@ describe('CARAVAN_CONFIG_KEYS', () => {
   })
 
   it('is what the plugin states to junction', () => {
-    expect(createCaravan(opts()).configKeys).toBe(CARAVAN_CONFIG_KEYS)
+    expect(caravanPlugin(opts()).configKeys).toBe(CARAVAN_CONFIG_KEYS)
   })
 
   it('makes junction refuse a misspelled key and accept the right one', async () => {
@@ -594,7 +594,7 @@ describe('CARAVAN_CONFIG_KEYS', () => {
       writeFileSync(join(dir, 'config', 'junction.config.js'), `export default { caravan: ${section} }\n`)
       try {
         const app = createApp({ logLevel: 'silent', root: join(dir, 'src'), config: { port: 0 } })
-        app.configure(createCaravan(opts()))
+        app.configure(caravanPlugin(opts()))
         try { await app.start(); await app.stop(); return null }
         catch (err) { return (err as Error).message }
       } finally { rmSync(dir, { recursive: true, force: true }) }

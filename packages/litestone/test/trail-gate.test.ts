@@ -77,7 +77,7 @@ describe('what the trail gate does not reach', () => {
       }
     ` })
     try {
-      await db.note.create({ data: { id: 1, body: 'x' } })
+      await db.asSystem().note.create({ data: { id: 1, body: 'x' } })
       expect((await db.sql`SELECT body FROM note`).length).toBe(1)
     } finally {
       db.$close()

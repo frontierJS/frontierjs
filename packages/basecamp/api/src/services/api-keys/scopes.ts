@@ -89,7 +89,7 @@ export function keyAllows(user: KeyPrincipal | null | undefined, service: string
 }
 
 /**
- * `mcpPlugin({ narrow })`: no caller's list holds a service in
+ * `mcp({ narrow })`: no caller's list holds a service in
  * `NOT_FOR_AGENTS`, and no key's holds one in `OFF_LIMITS`. A key's scopes
  * withhold the rest in mcp itself (`FJS-D916`); the record checks — revoked,
  * another workspace — stay the guard's, at the call.

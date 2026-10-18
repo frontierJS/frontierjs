@@ -19,7 +19,7 @@ import { createClient }  from '../../litestone/src/index.js'
 import { createTestApp } from '../../junction/index.ts'
 import { outbox }        from '../../junction/src/plugins/outbox/index.ts'
 import type { App }      from '../../junction/index.ts'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 
 const OUTBOX = await Bun.file(new URL('../../junction/db/outbox.lite', import.meta.url)).text()
 
@@ -45,7 +45,7 @@ async function bootApp(pluginOpts: Parameters<typeof outbox>[0] = {}) {
   const app = await createTestApp()
   app.db = db
 
-  const queue = createCaravan({ db: ':memory:', pollInterval: 10 })
+  const queue = caravan({ db: ':memory:', pollInterval: 10 })
   app.configure(queue)
   // A long interval on purpose: every test below drives the relay by hand, so
   // a tick landing mid-assertion would make the counts non-deterministic.
@@ -356,7 +356,7 @@ describe('what the relay refuses at startup', () => {
 
     const app = await createTestApp()
     app.db = db
-    const queue = createCaravan({ db: ':memory:', pollInterval: 10 })
+    const queue = caravan({ db: ':memory:', pollInterval: 10 })
     closers.push(() => queue.stop())
     app.configure(queue)
     app.configure(outbox())

@@ -519,3 +519,83 @@ test('frame: a topbar of two groups wraps on a phone and keeps every control on 
 
   cleanup();
 });
+
+/* ── Aside — the supporting column beside a Screen's main (FJS-D1233) ── */
+
+function asideScreen(expanded, knob) {
+  return el(
+    '<main class="screen" style="padding:0;' + (knob ? '--aside-width:' + knob : '') + '">' +
+      '<aside class="aside">' +
+        '<button class="btn ghost square aside-toggle" aria-label="Details" aria-expanded="' + expanded + '"></button>' +
+        '<dl class="facts"><dt>Status</dt><dd>Open</dd></dl>' +
+      '</aside>' +
+      '<div class="stack">' +
+        '<div class="bar bordered" style="--align:flex-end"><button class="btn">Edit</button></div>' +
+        '<p>The record</p>' +
+      '</div>' +
+    '</main>'
+  );
+}
+
+function asideBoxes(screen) {
+  return {
+    aside: screen.querySelector('.aside').getBoundingClientRect(),
+    main:  screen.querySelector('.stack').getBoundingClientRect(),
+    facts: screen.querySelector('.facts'),
+    shown: screen.getBoundingClientRect(),
+  };
+}
+
+test('aside: a Screen holding an .aside lays out two columns, the first --aside-width wide', function () {
+  var screen = asideScreen('true');
+  var b      = asideBoxes(screen);
+  
+  assert.ok(b.aside.width > 100, 'the aside should be a real column, got ' + b.aside.width + 'px');
+  assert.ok(b.main.left >= b.aside.right - 0.5, 'the main should sit beside the aside, not under it');
+  assert.ok(Math.abs(b.main.top - b.aside.top) < 1, 'and start at the same height');
+  assert.ok(Math.abs(b.main.right - b.shown.right) < 1, 'the main takes the rest of the Screen');
+  assert.ok(Math.abs(b.aside.width - 320) < 1, 'the aside defaults to 20rem, got ' + b.aside.width + 'px');
+
+  cleanup();
+});
+
+test('aside: --aside-width is the knob', function () {
+  var b = asideBoxes(asideScreen('true', '200px'));
+  assert.ok(Math.abs(b.aside.width - 200) < 1, 'expected 200px, got ' + b.aside.width + 'px');
+  cleanup();
+});
+
+test('aside: aria-expanded="false" on the toggle collapses the aside and gives the main its room', function () {
+  var open      = asideBoxes(asideScreen('true', '240px'));
+  cleanup();
+  var screen    = asideScreen('false', '240px');
+  var collapsed = asideBoxes(screen);
+
+  assert.ok(collapsed.aside.width < 80, 'a collapsed aside is its toggle, got ' + collapsed.aside.width + 'px');
+  assert.ok(collapsed.main.width > open.main.width + 150, 'the main should take the room the aside gave up');
+  assert.equal(style(collapsed.facts, 'display'), 'none', 'and what the aside held is out of the page');
+  assert.ok(screen.querySelector('.aside-toggle').getBoundingClientRect().width > 0, 'the toggle stays');
+
+  cleanup();
+});
+
+test('aside: the toggle draws its own glyph and the attribute flips it', function () {
+  function glyph(expanded) {
+    var t  = asideScreen(expanded).querySelector('.aside-toggle');
+    var cs = getComputedStyle(t, '::before');
+    var out = { content: cs.content, rotate: cs.rotate };
+    cleanup();
+    return out;
+  }
+  var open = glyph('true');
+  var shut = glyph('false');
+
+  assert.ok(/\u00ab/.test(open.content), 'the expanded glyph is «, got ' + open.content);
+  assert.notEqual(open.rotate, shut.rotate, 'collapsed should turn it, both read ' + open.rotate);
+});
+
+test('aside: the main child takes no flow margin in the grid', function () {
+  var screen = asideScreen('true');
+  assert.equal(style(screen.querySelector('.stack'), 'margin-top'), '0px');
+  cleanup();
+});

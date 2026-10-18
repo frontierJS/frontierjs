@@ -63,7 +63,9 @@ function readDivider({ text, band, descriptor }, file) {
   return { look, extra }
 }
 
-const html = (value) => ({ type: 'html', value })
+// An opening tag carries its divider's position, so a preview build stamps the
+// wrapper with the `====` line rather than the template's (FJS-3275).
+const html = (value, position) => (position ? { type: 'html', value, position } : { type: 'html', value })
 const classAttr = (list) => (list ? ` class="${list}"` : '')
 
 /**
@@ -100,19 +102,19 @@ export default function remarkDividers({ words } = {}) {
       }
       record(divider.text, read.extra)
       if (divider.band) {
-        regions.push({ band: read, nodes: [], articles: null })
+        regions.push({ band: { ...read, position: node.position }, nodes: [], articles: null })
         continue
       }
       const region = current()
-      region.articles ??= region.nodes.length ? [{ look: {}, extra: [], nodes: region.nodes }] : []
+      region.articles ??= region.nodes.length ? [{ look: {}, extra: [], nodes: region.nodes, position: region.nodes[0].position }] : []
       region.nodes = []
-      region.articles.push({ ...read, nodes: [] })
+      region.articles.push({ ...read, nodes: [], position: node.position })
     }
 
     // Text ahead of the first `====` is a band like the rest of the page.
     const [preamble] = regions
     if (regions.some((r) => r.band) && (preamble.nodes.length || preamble.articles)) {
-      preamble.band = { look: {}, extra: [] }
+      preamble.band = { look: {}, extra: [], position: (preamble.nodes[0] ?? preamble.articles[0]).position }
     }
 
     const out = []
@@ -120,7 +122,7 @@ export default function remarkDividers({ words } = {}) {
       if (!region.band && !region.nodes.length && !region.articles) continue
       const body = region.articles
         ? region.articles.flatMap((a) => [
-            html(`<article${classAttr(cellClasses({ ...a.look, extra: a.extra }))}>`),
+            html(`<article${classAttr(cellClasses({ ...a.look, extra: a.extra }))}>`, a.position),
             ...a.nodes,
             html('</article>'),
           ])
@@ -130,7 +132,7 @@ export default function remarkDividers({ words } = {}) {
         continue
       }
       const { outer, inner } = bandClasses({ ...region.band.look, extra: region.band.extra })
-      out.push(html(`<section class="${outer}"><div class="${inner}">`), ...body, html('</div></section>'))
+      out.push(html(`<section class="${outer}"><div class="${inner}">`, region.band.position), ...body, html('</div></section>'))
     }
     tree.children = out
   }

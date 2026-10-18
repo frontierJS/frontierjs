@@ -8,12 +8,12 @@
 //
 //   health: http://host:port/health
 //
-// and that URL 404'd unless healthPlugin() happened to be configured. The
+// and that URL 404'd unless health() happened to be configured. The
 // endpoint was fine; the advertisement was fiction.
 
 import { describe, it, expect } from 'bun:test'
 import { createTestApp, request } from '../src/testing/index.ts'
-import { healthPlugin } from '../src/transport/health.ts'
+import { health as healthPlugin } from '../src/transport/health.ts'
 
 // ─── hasRoute vs hasExactRoute ────────────────────────────────────────────
 
@@ -59,12 +59,12 @@ describe('hasRoute matches, hasExactRoute exists', () => {
 // ─── the endpoint itself ──────────────────────────────────────────────────
 
 describe('/health responds when mounted', () => {
-  it('404s on an app that never configured healthPlugin', async () => {
+  it('404s on an app that never configured health()', async () => {
     const app = await createTestApp()
     expect((await request(app).get('/health')).status).toBe(404)
   })
 
-  it('200s with a status body when healthPlugin is configured', async () => {
+  it('200s with a status body when health() is configured', async () => {
     const app = await createTestApp()
     app.configure(healthPlugin())
 
@@ -134,7 +134,7 @@ describe('routePaths', () => {
 // their own, and hasRoute() matches rather than exists. FJS-012 is what that
 // cost — a plugin route sitting somewhere nobody looked, for months.
 
-import { manifestPlugin } from '../src/plugins/manifest/index.ts'
+import { manifest } from '../src/plugins/manifest/index.ts'
 import { buildRoutes } from '../src/core/app-model.ts'
 import { createService } from '../src/core/service.ts'
 
@@ -187,7 +187,7 @@ describe('buildRoutes', () => {
     const app = await createTestApp({
       services: [createService({ name: 'notes', find: async () => [] })],
     })
-    app.configure(manifestPlugin())
+    app.configure(manifest())
     app.get('/custom/thing', (ctx) => ctx.json({ ok: true }))
 
     const body = (await request(app).get('/manifest')).body as {

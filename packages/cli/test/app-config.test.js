@@ -534,6 +534,6 @@ describe('the scaffolded auth plugin is handed the app’s getLevel', () => {
     const text = readFileSync(join(CLI, 'commands', 'project', 'new.md'), 'utf8')
     const auth = text.slice(text.indexOf('function makeApiCoreAuthTs'), text.indexOf('function makeJunctionConfig'))
     expect(auth).toContain("import { getLevel }")
-    expect(auth).toMatch(/createAuthPlugin\(auth, \{[^]*services:\s*\{\s*level:\s*getLevel\s*\}/)
+    expect(auth).toMatch(/authRoutes\(\{\s*auth,[^]*services:\s*\{\s*level:\s*getLevel\s*\}/)
   })
 })

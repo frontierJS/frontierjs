@@ -11,8 +11,8 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createApp, request } from '@frontierjs/junction'
-import { mcpPlugin } from '../../mcp/src/plugin.ts'
-import { createAuthPlugin } from '../plugin.ts'
+import { mcp as mcpPlugin } from '../../mcp/src/plugin.ts'
+import { auth } from '../plugin.ts'
 import { makeAuth, rejectsWith, type Harness, TEST_KEY } from './harness.ts'
 import { AuthConfigError } from '../errors.ts'
 
@@ -37,7 +37,7 @@ beforeAll(async () => {
     config: { port: 0 },
     logLevel: 'silent',
   } as never)
-  app.configure(createAuthPlugin(h.auth, { ...rateLimits, services: { level: levelOf } }))
+  app.configure(auth({ auth: h.auth, ...rateLimits, services: { level: levelOf } }))
   app.configure(mcpPlugin({ name: 'people' }))
   const warn = console.warn
   console.warn = () => {}
@@ -267,7 +267,7 @@ async function tenantedApp(schema: string, gate: (u: any) => number, principal?:
     logLevel: 'silent',
     ...(principal ? { principal } : {}),
   } as never)
-  tapp.configure(createAuthPlugin(th.auth, { ...rateLimits, services: { standingLevel: gate } }))
+  tapp.configure(auth({ auth: th.auth, ...rateLimits, services: { standingLevel: gate } }))
   const warn = console.warn
   console.warn = () => {}
   await tapp.start()

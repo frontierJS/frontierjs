@@ -15,7 +15,7 @@ import { describe, test, expect } from 'bun:test'
 
 import { createClient } from '../../litestone/src/index.js'
 import { createApp }    from '../src/core/app.ts'
-import { exportPlugin } from '../src/plugins/export/index.ts'
+import { exporter } from '../src/plugins/export/index.ts'
 
 const SCHEMA = `
 database main { path "./app.db" }
@@ -104,7 +104,7 @@ async function serve(opts: { maxConcurrent?: number } = {}) {
     logLevel: 'silent',
   })
   app.setAuth({ verifySession: async (t: string) => (AS[t] ?? null) as any })
-  app.configure(exportPlugin(opts))
+  app.configure(exporter(opts))
   await app.start()
   return { app, db, port: app.http.port as number }
 }
@@ -128,7 +128,7 @@ async function serveWithResolver() {
     logLevel: 'silent',
   })
   app.setAuth({ verifySession: async (t: string) => (AS[t] ?? null) as any })
-  app.configure(exportPlugin())
+  app.configure(exporter())
   await app.start()
   return { app, port: app.http.port as number }
 }
@@ -263,7 +263,7 @@ describe('a session names the account userId and the boundary reads id', () => {
     })
     // No `id` anywhere on it — the shape auth's own session context has.
     app.setAuth({ verifySession: async () => ({ userId: 'u-shop', email: SHOPPER.email, isAdmin: false }) as any })
-    app.configure(exportPlugin())
+    app.configure(exporter())
     await app.start()
     try {
       const res  = await get(app.http.port as number, '/exports/Order', 'anything')
@@ -307,7 +307,7 @@ describe('under database tenancy the extract is one tenant\'s', () => {
       logLevel: 'silent',
     })
     app.setAuth({ verifySession: async (t: string) => (AS[t] ?? null) as any })
-    app.configure(exportPlugin())
+    app.configure(exporter())
     await app.start()
     return { app, port: app.http.port as number }
   }
@@ -514,7 +514,7 @@ describe('the extract takes the list\'s filter', () => {
       logLevel: 'silent',
     })
     app.setAuth({ verifySession: async (t: string) => (AS[t] ?? null) as any })
-    app.configure(exportPlugin({ reservedQuery: ['dept'] }))
+    app.configure(exporter({ reservedQuery: ['dept'] }))
     await app.start()
     try {
       const res = await get(app.http.port as number, '/exports/Report?dept=d-south', 'tok-shop')

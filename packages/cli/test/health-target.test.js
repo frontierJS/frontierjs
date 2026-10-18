@@ -25,7 +25,7 @@ afterEach(() => rmSync(TMP, { recursive: true, force: true }))
 
 const write = (rel, body) => writeFileSync(resolve(TMP, rel), body, 'utf8')
 
-const appTs    = (extra = '') => `import { createApp } from '@frontierjs/junction'\nconst app = createApp({ config: { port: 3000, apiPrefix: '/api' } })\n${extra}\nexport default app\n`
+const appTs    = (extra = '') => `import { createApp, health } from '@frontierjs/junction'\nconst app = createApp({ config: { port: 3000, apiPrefix: '/api' } })\n${extra}\nexport default app\n`
 const configJs = (plugins) => `export default {\n  app: { name: 'x', apiPrefix: '/api' },\n  plugins: ${plugins},\n}\n`
 
 // ─── resolveHealthPath ───────────────────────────────────────────────────────
@@ -91,14 +91,21 @@ describe('declaresHealth', () => {
   })
 
   test('configured by hand in the API source', () => {
-    write('api/src/app.ts', appTs('app.configure(healthPlugin())'))
+    write('api/src/app.ts', appTs('app.configure(health())'))
     const d = declaresHealth(TMP, '/api/health')
     expect(d.declared).toBe(true)
     expect(d.sources[0].how).toBe('plugin-call')
   })
 
+  test('a call is the plugin only through its import', () => {
+    write('api/src/app.ts', `import { health as probe } from '@frontierjs/junction'\napp.configure(probe())\n`)
+    expect(declaresHealth(TMP, '/api/health').sources[0].how).toBe('plugin-call')
+    write('api/src/app.ts', `const health = () => ({ ok: true })\napp.get('/status', () => health())\n`)
+    expect(declaresHealth(TMP, '/api/health').declared).toBe(false)
+  })
+
   test('both is a clash — start() refuses it by name', () => {
-    write('api/src/app.ts', appTs('app.configure(healthPlugin())'))
+    write('api/src/app.ts', appTs('app.configure(health())'))
     write('api/config/junction.config.js', configJs('{ health: true }'))
     expect(declaresHealth(TMP, '/api/health').clash).toBe(true)
   })
@@ -110,7 +117,7 @@ describe('declaresHealth', () => {
   })
 
   test('the plugin cannot answer a path that does not end in /health', () => {
-    write('api/src/app.ts', appTs('app.configure(healthPlugin())'))
+    write('api/src/app.ts', appTs('app.configure(health())'))
     write('api/config/junction.config.js', configJs('{ health: true }'))
     expect(declaresHealth(TMP, '/status').declared).toBe(false)
   })

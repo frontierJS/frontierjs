@@ -195,7 +195,7 @@ export const pickerHidden = (hidden, cls) =>
  * before its children draw (`opaque`, FJS-D979). `test/terminal-tags.test.js`
  * holds both lists to `surface.css`.
  */
-export const SURFACES    = ['surface', 'card', 'tile', 'alert', 'toast', 'dialog', 'popover', 'drawer', 'band']
+export const SURFACES    = ['surface', 'card', 'tile', 'lane', 'alert', 'toast', 'dialog', 'popover', 'drawer', 'band']
 export const SEE_THROUGH = ['outlined', 'ghost']
 
 /** Whether a box of class `cls` hides what is under it. */
@@ -204,6 +204,14 @@ export const opaque = (cls) => {
   const names = cls.split(/\s+/)
   return names.some((n) => SURFACES.includes(n)) && !names.some((n) => SEE_THROUGH.includes(n))
 }
+
+/**
+ * Whether a box of class `cls` is glass: a browser blurs what is behind it
+ * (`backdrop-filter`), and a terminal frosts it, so the cells under the box
+ * keep the colors of what is behind and lose its characters.
+ */
+export const GLASS = 'glass'
+export const frosted = (cls) => typeof cls === 'string' && cls.split(/\s+/).includes(GLASS)
 
 /**
  * The roles a browser lays out inside a line, beside text, rather than as a
@@ -237,7 +245,10 @@ export const isInline = (tag) => {
  * `touchstart` is heard and never sent: a terminal has no touch, and every
  * kit listener sits beside a `mousedown` that does the same. `toggle` is a
  * `<details>`'s, sent a task after its `open` changes. `cancel`
- * and `close` are a `<dialog>`'s, and neither bubbles.
+ * and `close` are a `<dialog>`'s, and neither bubbles. `paste` is a
+ * bracketed paste, sent where a key would be before the field takes the
+ * text: a terminal pastes text only, so `clipboardData.files` is empty and a
+ * handler for pasted files does nothing, as a browser's does for a text paste.
  *
  * `mouseenter` and `mouseleave` follow the pointer from element to element,
  * a drag included: one at each element the pointer came onto or went off,
@@ -257,6 +268,7 @@ export const TERMINAL_EVENTS = {
   submit:  { bubbles: true },
   keydown: { bubbles: true },
   keypress: { bubbles: true },
+  paste:   { bubbles: true },
   mousedown: { bubbles: true },
   mousemove: { bubbles: true },
   mouseenter: { bubbles: false },

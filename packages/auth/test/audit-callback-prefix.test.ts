@@ -12,7 +12,7 @@
 
 import { describe, test, expect, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'
-import { createAuthPlugin } from '../plugin.ts'
+import { auth } from '../plugin.ts'
 import { defineProvider, OAUTH_STATE_COOKIE } from '../oauth.ts'
 import { makeAuth, type Harness } from './harness.ts'
 
@@ -27,7 +27,8 @@ async function appWithPrefix(apiPrefix: string) {
   cleanups.push(() => h.cleanup())
   const app: any = await createTestApp({ auth: h.auth as any, config: { apiPrefix } as any })
   app.setAuth(h.auth as any)
-  app.configure(createAuthPlugin(h.auth, {
+  app.configure(auth({
+    auth: h.auth,
     cookieAuth: true,
     oauth: { publicUrl: PUBLIC_URL, rateLimit: { max: 10_000, window: '15 minutes' } },
   }))

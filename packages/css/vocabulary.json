@@ -1,9 +1,9 @@
 {
   "$comment": "Generated from vocabulary.js by build-vocabulary.js — do not edit. vocabulary.js is the source and is a classic script by necessity; see that file.",
   "counts": {
-    "terms": 60,
+    "terms": 61,
     "tiers": 8,
-    "anatomy": 28
+    "anatomy": 29
   },
   "terms": [
     {
@@ -61,6 +61,14 @@
       "element": "<main>",
       "meaning": "The routed page body",
       "class": "screen"
+    },
+    {
+      "term": "Aside",
+      "tier": "Page",
+      "tierBlurb": "What changes when you navigate.",
+      "element": "<aside>",
+      "meaning": "The supporting column beside a Screen's main content: a record's facts next to its tabs. A Screen holding one lays out two columns, --aside-width wide, and the .aside-toggle the app owns collapses it",
+      "class": "aside"
     },
     {
       "term": "Pane",
@@ -855,6 +863,16 @@
         [
           ".tooltip-anchor",
           "The positioning context. The Tooltip is absolute inside it"
+        ]
+      ]
+    },
+    "Aside": {
+      "markup": "<main class=\"screen\">\n  <aside class=\"aside\" aria-label=\"Details\">\n    <button class=\"btn ghost square aside-toggle\" aria-label=\"Hide details\" aria-expanded=\"true\"></button>\n    <dl class=\"facts\">&hellip;</dl>\n  </aside>\n  <div class=\"stack\">&hellip;</div>\n</main>",
+      "parts": [
+        [
+          ".aside-toggle",
+          "The control that collapses the Aside to itself. It draws its own «, flipped while aria-expanded is \"false\"; flipping the attribute is the app’s job, and so is its label",
+          "optional"
         ]
       ]
     },

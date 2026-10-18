@@ -70,7 +70,7 @@
 // is the long wait a lane exists to overlap. A lane merges its row's edits into
 // the main tree when the row ends; a failed attempt's edits are kept as a patch
 // under ~/.fli/lanes/patches instead, and the next attempt at that row starts
-// from it.
+// from it. A second loop gets the lanes the first does not hold, or refuses.
 //
 // --trial <name> compares models on the same rows, so nothing it does lands:
 // each lane gets a COPY of the register, the session closes the row in that
@@ -88,7 +88,7 @@ import { dirname, join }            from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
 import { ROOT, LOG_DIR, runSession, printAttempt, appendLog, lastEntry, readLog, sentBack, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
-import { LANES_DIR, LINKED, openLane, syncLane, applyPatch, lanePatch, harvest } from './lanes.mjs'
+import { LANES_DIR, LINKED, MAX_LANES, openLanes, syncLane, applyPatch, lanePatch, harvest } from './lanes.mjs'
 
 // Not `LADDER`: frame-loop shares that one and stays on Opus.
 const FIX_LADDER = [{ model: 'sonnet', effort: 'high' }, { model: 'opus', effort: 'high' }]
@@ -126,8 +126,7 @@ if (args.help) { printHelp(import.meta.url); process.exit(0) }
 if (menu) console.log(`[fix-loop] menu: ${menu.menu} ${MENU.flagsLine(menu.flags) || '(no flags)'} — ${MENU.MENU_FILE}`)
 // Without a lane a trial session edits the main tree, and the first model's fix is the second model's starting point.
 if (trial && !(/^[\w-]+$/.test(trial) && lanes)) { console.error('[fix-loop] --trial takes a name of letters, digits, - and _, and needs --lanes'); process.exit(1) }
-// A lane is a linked worktree and ports.js has five port blocks for those.
-if (!Number.isInteger(lanes) || lanes < 0 || lanes > 5) { console.error('[fix-loop] --lanes takes 1–5: a lane is a worktree, and there are five branch port blocks'); process.exit(1) }
+if (!Number.isInteger(lanes) || lanes < 0 || lanes > MAX_LANES) { console.error('[fix-loop] --lanes takes 1–5: a lane is a worktree, and there are five branch port blocks'); process.exit(1) }
 
 // ─── the loop ───────────────────────────────────────────────
 
@@ -144,7 +143,7 @@ let blocked   = 0
 const usageAtStart = dryRun ? null : await planUsage()
 printPlanUsage('fix-loop', 'start', usageAtStart)
 
-if (lanes && !dryRun) await Promise.all(Array.from({ length: lanes }, (_, i) => worker(openLane(i + 1))))
+if (lanes && !dryRun) await Promise.all(openLanes(lanes).map(worker))
 else await worker(null)
 
 console.log(`\n[fix-loop] ${closed} closed · ${blocked} waiting on a ruling · $${spent.toFixed(2)} spent · log ${LOG}`)

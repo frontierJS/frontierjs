@@ -142,7 +142,7 @@ and the single one most worth having a record of.
 ## Over HTTP
 
 `fli db:export` is the operator's path. The application's is junction's
-`exportPlugin()`, which mounts `GET /exports` and `GET /exports/{dataset}` and
+`exporter()`, which mounts `GET /exports` and `GET /exports/{dataset}` and
 streams the extract **as the calling session** — the same `runExport`, so the
 same gate, the same row policies, the same tenancy.
 
@@ -153,7 +153,7 @@ Four differences, all deliberate:
   URL query transplants onto the export and the file is the rows on screen. A key
   that is no column is a 400 naming it, and a `$` key is refused. `since` and
   `format` are the route's own; an app that reads another key off the URL
-  (`tenantFrom`, a `principal` resolver) names it in `exportPlugin({ reservedQuery })`.
+  (`tenantFrom`, a `principal` resolver) names it in `exporter({ reservedQuery })`.
   `runExport`'s `where` is the same filter, ANDed with `since`, and the manifest
   records it.
 

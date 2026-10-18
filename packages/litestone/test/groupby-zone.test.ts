@@ -20,6 +20,7 @@ model Order {
   id       Int      @id
   placedAt DateTime
   amount   Int
+  @@gate(0)
 }
 model Secret {
   id    Int    @id

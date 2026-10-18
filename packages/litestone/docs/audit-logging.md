@@ -158,6 +158,8 @@ model Candidate {
   stage       String
   @@person
   @@trail(audit)
+
+  @@gate(0)
 }
 ```
 

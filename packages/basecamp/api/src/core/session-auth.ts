@@ -66,7 +66,7 @@ export function basecampSessionFields(user: Record<string, any>): Record<string,
  *
  * Spread, not a subclass: createLitestoneAuth returns a plain object literal
  * of closures, so every method not named here passes through unchanged — and
- * `_sessionTtl`, which createAuthPlugin reads off the instance, travels with
+ * `_sessionTtl`, which auth reads off the instance, travels with
  * it. A wrapper that rebuilt the object by hand would drop it and the cookie
  * maxAge would silently fall back to auth's own default.
  */

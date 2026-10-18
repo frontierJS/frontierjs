@@ -12,7 +12,7 @@
   //   since it waits on you and nothing else shows that until you tab to it;
   //   its head fills amber, then red, as the wait passes each of `WAIT`;
   // - two cooks at one station are about to edit one package in a shared
-  //   tree, and the station says so (`! N here`);
+  //   tree, and the station says so (`N here`);
   // - a session that has stopped is a PLATE on the pass, and ORDER UP flashes
   //   over the heat lamps while one waits, its age on the counter under it
   //   and both going amber, then red, by the same `WAIT`;
@@ -52,7 +52,7 @@
   import { LEDGER } from '@/lib/hash/ledger.data.js'
   import { TICKET, rail, line, board, pass, lamps, bell } from '@/pieces/kitchen.js'
   import { markOf, MARKS } from '@/lib/marks.js'
-  import { stateOf, spinAt, TOOL } from '@/lib/working.js'
+  import { stateOf, spinAt, TASK, TOOL } from '@/lib/working.js'
   import { BUBBLE, picked } from '@/lib/scene/crowd.js'
   import { bubble } from '@/lib/games/booth.js'
   import { cells } from '@/lib/scene/cells.js'
@@ -81,6 +81,8 @@
     head:  [null, ['#fde68a', '#78350f'], ['#fecaca', '#7f1d1d']],
     order: ['#fbbf24', '#f97316'],
     chalk: '#e5e7eb',
+    // Two cooks at one station: worth knowing, not an alarm.
+    note:  '#93c5fd',
     hot:   '#f97316',
     dim:   '#78716c',
     // Under a label on the counter: a space with no ground shows the counter's `=` through it.
@@ -297,8 +299,6 @@
   }
 
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  // A step (`3.2`) or a register row (`FJS-123`, `FJS-D45`): what the cook was on.
-  const TASK = /\b(?:FJS-D?\d+|\d+\.\d+(?:\.\d+)?)\b/g
 
   /**
    * The words a reading's bubble picks out of its own ink: the session, the
@@ -398,8 +398,8 @@
       out.push({ ...inked(`sm:${s.name}`, s.name, lx + 2, LINE.y), ground: INK.tag })
       const asks = s.cooks.filter((w) => w.asking)
       const unheard = asks.find((w) => !w.asking.heard)
-      const says = [s.cooks.length > 1 && `! ${s.cooks.length} here`, asks.length && (unheard ? 'CHEF!' : 'HEARD')].filter(Boolean).join(' · ')
-      if (says) out.push({ key: `n:${s.name}`, x: s.x + 1, y: LINE.y + 1, text: says.slice(0, s.w - 1), color: asks.length ? asked(unheard ?? asks[0], now) : INK.hot, layer: 11 })
+      const says = [s.cooks.length > 1 && `${s.cooks.length} here`, asks.length && (unheard ? 'CHEF!' : 'HEARD')].filter(Boolean).join(' · ')
+      if (says) out.push({ key: `n:${s.name}`, x: s.x + 1, y: LINE.y + 1, text: says.slice(0, s.w - 1), color: asks.length ? asked(unheard ?? asks[0], now) : INK.note, layer: 11 })
     }
 
     // ─── the pass ───────────────────────────────────────────

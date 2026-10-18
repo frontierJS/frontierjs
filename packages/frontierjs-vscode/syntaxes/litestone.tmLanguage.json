@@ -135,9 +135,19 @@
     "model-attribute": {
       "patterns": [
         {
-          "comment": "Model-level attributes (@@)",
+          "comment": "@@expr inside function body. Above the @@ rule, which would otherwise take the name and leave the string unopened.",
+          "name": "meta.attribute.expr.litestone",
+          "begin": "@@expr\\(\"",
+          "end": "\"\\)",
+          "beginCaptures": {
+            "0": { "name": "entity.other.attribute-name.model.litestone" }
+          },
+          "contentName": "string.regexp.litestone"
+        },
+        {
+          "comment": "Model-level attributes (@@), matched by shape. A list of names drifts from litestone's catalog, and every word it misses (@@mirror, @@tenant, @@transitions) renders as plain text.",
           "name": "meta.attribute.model.litestone",
-          "match": "@@(index|unique|fts|noStrict|strict|map|softDelete|gate|auth|allow|deny|db|trail|anonymous|external)\\b",
+          "match": "@@\\w+",
           "captures": {
             "0": { "name": "entity.other.attribute-name.model.litestone" }
           }
@@ -148,29 +158,11 @@
           "match": "\\b(STRANGER|VISITOR|READER|CREATOR|USER|ADMINISTRATOR|OWNER|SYSADMIN|SYSTEM|LOCKED)\\b"
         },
         {
-          "comment": "@@expr inside function body",
-          "name": "meta.attribute.expr.litestone",
-          "begin": "@@expr\\(\"",
-          "end": "\"\\)",
-          "beginCaptures": {
-            "0": { "name": "entity.other.attribute-name.model.litestone" }
-          },
-          "contentName": "string.regexp.litestone"
-        },
-        {
-          "comment": "Field-level attributes with known names (@)",
+          "comment": "Field-level attributes (@), by shape for the same reason. The lookbehind keeps a @@ the rule above did not take from reading as @ plus a field attribute.",
           "name": "meta.attribute.field.litestone",
-          "match": "@(id|unique|default|relation|generated|computed|hardDelete|email|url|phone|trim|lower|upper|slug|regex|length|gt|gte|lt|lte|startsWith|endsWith|contains|date|datetime|omit|guarded|encrypted|secret|updatedAt|updatedBy|map|sequence|trail|keepVersions|accept|syntax|from)\\b",
+          "match": "(?<![@\\w])@\\w+",
           "captures": {
             "0": { "name": "entity.other.attribute-name.field.litestone" }
-          }
-        },
-        {
-          "comment": "Function calls as field attributes: @funcName(...)",
-          "name": "meta.attribute.funcall.litestone",
-          "match": "@(\\w+)\\(",
-          "captures": {
-            "0": { "name": "entity.name.function.call.litestone" }
           }
         }
       ]

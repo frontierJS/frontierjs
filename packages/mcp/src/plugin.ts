@@ -98,7 +98,7 @@ const DEFAULT_KEEP_ALIVE_MS = 5_000
 const DEFAULT_AWAIT_MS      = 10 * 60_000
 const AWAIT_POLL_MS         = 500
 
-export function mcpPlugin(opts: McpOptions = {}): Plugin {
+export function mcp(opts: McpOptions = {}): Plugin {
   const path = opts.path ?? '/mcp'
 
   let views:     SchemaViews | null     = null

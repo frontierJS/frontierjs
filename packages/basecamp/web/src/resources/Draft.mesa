@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Draft.mesa — the Resource layer for an owner's drafts of a
+  // static site (api services/drafts/).
+  //
+  // No model, like Git: a draft is a branch on the site's repository, and this
+  // app keeps no copy of one.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const drafts = createResource('drafts', { model: null })
+</script>

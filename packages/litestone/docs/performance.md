@@ -13,6 +13,8 @@ database audit {
 model Account {
   id   Int    @id
   name String
+
+  @@gate(0)
 }
 
 model User {
@@ -23,6 +25,8 @@ model User {
   deletedAt DateTime?
   @@softDelete
   @@index([accountId])
+
+  @@gate(0)
 }
 
 model Order {
@@ -34,6 +38,8 @@ model Order {
   @@index([accountId])
   @@index([accountId, status])
   @@unique([accountId, orderNumber])
+
+  @@gate(0)
 }
 ```
 

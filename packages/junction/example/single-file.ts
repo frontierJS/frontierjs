@@ -66,14 +66,14 @@ import {
   announce,
   authenticate,
   protect,
-  healthPlugin,
+  health,
   correlationId,
   requestLogger,
   cors,
   defaultConfig,
 } from '../index.ts'
 import { openapi } from '../src/plugins/openapi/index.ts'
-import { mailerPlugin, type IMail, type MailMessage, type SendResult } from '../src/mail/index.ts'
+import { mail, type IMail, type MailMessage, type SendResult } from '../src/mail/index.ts'
 
 import { withLitestoneDb } from '../src/core/litestone.ts'
 
@@ -243,7 +243,7 @@ app.configure(requestLogger())
 // Prometheus-style counters. Both are public by default — for production,
 // gate with the `token` or `authFn` option.
 
-app.configure(healthPlugin({
+app.configure(health({
   checks: {
     database: async () => {
       // Cheap readiness check — confirms the SQLite handle is alive.
@@ -268,7 +268,7 @@ app.configure(openapi({
 // ─── Mailer ───────────────────────────────────────────────────────────────
 // `app.mail` is now the consoleMailer — services and hooks can call it.
 
-app.configure(mailerPlugin(consoleMailer))
+app.configure(mail({ mailer: consoleMailer }))
 
 // ─── WebSocket channels ───────────────────────────────────────────────────
 // Mounts /ws (and the bare ws:// upgrade). New connections auto-join the

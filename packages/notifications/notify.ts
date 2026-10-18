@@ -118,7 +118,7 @@ export async function notify(
       throw new NotificationDriverNotFoundError(
         transport, notificationType,
         'but app.mail is not set and no driver is registered under transports.email. ' +
-        'Configure mailerPlugin(...) before notificationsPlugin(...), or register your own driver.'
+        'Configure mail({ mailer }) from @frontierjs/junction/mail before notifications(...), or register your own driver.'
       )
     }
 

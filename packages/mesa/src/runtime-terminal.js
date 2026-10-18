@@ -57,8 +57,9 @@
  *   events still bubble through the component that wrote it.
  * - A box with no background leaves the cells beneath it showing, and a
  *   background is a color. A modal dialog, and a box whose class a browser
- *   paints opaque (`opaque`), blank their own cells instead, and the
- *   backdrop sets the dim bit on everything drawn before it.
+ *   paints opaque (`opaque`), blank their own cells instead, a glass one
+ *   (`frosted`) frosts them, and the backdrop sets the dim bit on everything
+ *   drawn before it.
  * - The engine fits a column of boxes into its parent's height by shrinking
  *   them, so a page taller than the screen painted its rows over each other.
  *   A mount goes into the renderer's document (`documentOf`), a box the size
@@ -66,7 +67,7 @@
  */
 import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS, WIDGET_ROLES, isInline, inputKind, pickerHidden, opaque } from './terminal/tags.js'
+import { TERMINAL_TAGS, TERMINAL_EVENTS, WIDGET_ROLES, isInline, inputKind, pickerHidden, opaque, frosted } from './terminal/tags.js'
 import { htmlEntitiesToText } from './entities.js'
 
 // A terminal is a running client with no DOM: `$.onMount` runs and a watch is
@@ -430,7 +431,8 @@ class DialogBox extends BoxRenderable {
   // Blank under a modal dialog: the page behind it is drawn first and would
   // show through every cell the dialog leaves empty.
   renderBefore = function (buffer) {
-    if (this.__home || this.__opaque) blank.call(this, buffer)
+    if (this.__glass) frost.call(this, buffer)
+    else if (this.__home || this.__opaque) blank.call(this, buffer)
   }
 }
 
@@ -472,6 +474,68 @@ function blank(buffer) {
   for (let y = 0; y < this.height; y++) {
     for (let x = 0; x < this.width; x++) buffer.setCell(this.screenX + x, this.screenY + y, ' ', CLEAR, CLEAR, 0)
   }
+}
+
+const SPACE = 0x20
+const HAZE  = '·'.codePointAt(0)
+// How many cells a glyph behind spreads its haze; nearest first, so the
+// closest glyph colors the dot.
+const REACH = 2
+const NEAR  = []
+for (let dy = -REACH; dy <= REACH; dy++) for (let dx = -REACH; dx <= REACH; dx++) NEAR.push([dx, dy])
+NEAR.sort((a, b) => Math.hypot(...a) - Math.hypot(...b))
+
+/** A glass box's `renderBefore`. A cell beside a character of what is behind
+ *  becomes a dim dot in that character's color, and every other cell a space,
+ *  so the page shows through as a blurred haze, its colors kept and its text
+ *  gone. The rows of the box's own text are cleared, ground and all, from its
+ *  left edge to a cell past their end: a text's spaces leave the cell under
+ *  them showing, and haze between its words would read as part of the line. */
+function frost(buffer) {
+  const { char, fg, bg, attributes } = buffer.buffers
+  const W = buffer.width, H = buffer.height
+  const x0 = Math.max(0, this.screenX), x1 = Math.min(W, this.screenX + this.width)
+  const y0 = Math.max(0, this.screenY), y1 = Math.min(H, this.screenY + this.height)
+  if (x0 >= x1 || y0 >= y1) return
+  const per = fg.length / char.length
+  const behind = char.slice(), inks = fg.slice()
+  const glyph = (x, y) => x >= 0 && x < W && y >= 0 && y < H && behind[y * W + x] !== SPACE && behind[y * W + x] !== 0
+  const clear = cleared(this)
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = y * W + x
+      const plain = x < (clear.get(y) ?? -1)
+      const near = plain ? null : NEAR.find(([dx, dy]) => glyph(x + dx, y + dy))
+      char[i] = near ? HAZE : SPACE
+      attributes[i] = TextAttributes.DIM
+      if (plain) bg.fill(0, i * per, i * per + per)
+      if (near) {
+        const j = (y + near[1]) * W + x + near[0]
+        for (let k = 0; k < per; k++) fg[i * per + k] = inks[j * per + k]
+      }
+    }
+  }
+}
+
+/** Each screen row of `box`'s own text or controls → the column its clear run
+ *  ends before. A control's whole width is cleared, since an input's empty
+ *  cells are its own. */
+function cleared(box) {
+  const ends = new Map()
+  const reach = (y, end) => { if (end > (ends.get(y) ?? -1)) ends.set(y, end) }
+  const walk = (n) => {
+    for (const c of n.getChildren()) {
+      if (!c.visible) continue
+      if (c.focusable) {
+        for (let y = 0; y < c.height; y++) reach(c.screenY + y, c.screenX + c.width + 1)
+      } else if (c instanceof TextRenderable) {
+        const widths = c.lineInfo?.lineWidthCols ?? []
+        widths.forEach((w, y) => { if (w) reach(c.screenY + y, c.screenX + w + 1) })
+      } else walk(c)
+    }
+  }
+  walk(box)
+  return ends
 }
 
 // ─── the current renderer ─────────────────────────────────────────────
@@ -824,7 +888,7 @@ export function set_attribute(node, name, value) {
 
 /**
  * `class:name={on}` on a terminal node. It paints nothing, as the `class`
- * attribute paints nothing, except a name `opaque` reads, which are the only
+ * attribute paints nothing, except a name `opaque` or `frosted` reads, which are the only
  * ones the emitter sends here.
  */
 export function toggle_class(node, name, on) {
@@ -832,11 +896,14 @@ export function toggle_class(node, name, on) {
   paintOpaque(node)
 }
 
-/** Blank `node` or stop, from its `class` and its `class:` names together. */
+/** Blank `node`, frost it or stop, from its `class` and its `class:` names together. */
 function paintOpaque(node) {
   if (!(node instanceof BoxRenderable)) return
-  node.__opaque = opaque([node.__attrs.class ?? '', ...(node.__toggled ?? [])].join(' '))
-  if (!(node instanceof DialogBox)) node.renderBefore = node.__opaque ? blank : undefined
+  const cls = [node.__attrs.class ?? '', ...(node.__toggled ?? [])].join(' ')
+  node.__opaque = opaque(cls)
+  node.__glass  = frosted(cls)
+  if (node instanceof DialogBox) node.borderStyle = node.__glass ? 'rounded' : 'single'
+  else node.renderBefore = node.__glass ? frost : node.__opaque ? blank : undefined
 }
 
 /**
@@ -1285,21 +1352,47 @@ function onKey(r, k) {
   activate(target, fields)
 }
 
+const PASTED = new TextDecoder()
+
+/** What a handler reads off `e.clipboardData`: the text, and no files. */
+const clipboard = (text) => ({
+  types: ['text/plain'],
+  files: [],
+  items: [{ kind: 'string', type: 'text/plain', getAsString: (cb) => cb(text), getAsFile: () => null }],
+  getData: (type) => (type === 'text/plain' || type === 'text' ? text : ''),
+})
+
+/**
+ * A bracketed paste, as a browser delivers one: `paste` at the focused node,
+ * or at the window, before the field takes the text. A prevented one is
+ * withheld from the field, which never types it.
+ */
+function onPaste(r, p) {
+  if (p.defaultPrevented) return
+  const focused = r.currentFocusedRenderable
+  const target = focused?.__focusSource && !focused.isDestroyed ? focused : windowOf(r)
+  const e = dispatch(target, 'paste', { clipboardData: clipboard(PASTED.decode(p.bytes)), raw: p })
+  if (e.defaultPrevented) p.preventDefault()
+}
+
 const keyed = new WeakMap()
 
-/** Take `r`'s keys through `onKey`, once however many mounts share it; the
- *  answer lets one mount go. */
+/** Take `r`'s keys and pastes through `onKey` and `onPaste`, once however
+ *  many mounts share it; the answer lets one mount go. */
 function keys(r) {
   let held = keyed.get(r)
   if (!held) {
     const listener = (k) => onKey(r, k)
+    const pasted = (p) => onPaste(r, p)
     r.keyInput.on('keypress', listener)
-    keyed.set(r, held = { count: 0, listener })
+    r.keyInput.on('paste', pasted)
+    keyed.set(r, held = { count: 0, listener, pasted })
   }
   held.count++
   return () => {
     if (--held.count) return
     r.keyInput.off('keypress', held.listener)
+    r.keyInput.off('paste', held.pasted)
     keyed.delete(r)
   }
 }
@@ -1397,7 +1490,9 @@ const sides = new WeakMap()
 /**
  * A pane at the right of the page, for `mount(C, { parent })`: the page and
  * the side are a row above the footer, and the page takes what the side
- * leaves. Hidden (`visible = false`), the side gives its columns back.
+ * leaves. Hidden (`visible = false`), the side gives its columns back. A
+ * rule down its left edge takes one of its columns, since two panes on one
+ * background otherwise read as one screen.
  *
  * Each is a PANE. Tab and `focusNext` stay inside the pane holding focus, and
  * `focusPane` moves between them. A key at a node in the side does not reach
@@ -1415,7 +1510,7 @@ export function sideOf(r, { width = '40%' } = {}) {
   doc.height = '100%'
   doc.flexGrow = 1
   doc.flexShrink = 1
-  side = new BoxRenderable(r, { width, height: '100%', flexShrink: 0, flexDirection: 'column' })
+  side = new BoxRenderable(r, { width, height: '100%', flexShrink: 0, flexDirection: 'column', border: ['left'] })
   row.add(side)
   side.__pane = 'side'
   doc.__pane = 'page'

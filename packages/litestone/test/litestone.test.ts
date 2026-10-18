@@ -5800,6 +5800,7 @@ describe('@omit / @guarded field policy', () => {
         prefs    String?   @omit(all)
         salary   Int @guarded
         secret   String    @guarded
+        @@gate(0)
       }
     `, 'policy')
     await db.asSystem().user.create({ data: { id: 1, name: 'Alice', bio: 'Long bio', prefs: '{}', salary: 100000, secret: 'top-secret' } })
@@ -5896,6 +5897,7 @@ describe('@guarded — write half', () => {
       riskFlag String? @guarded
       note     String? @guarded
       card     String? @encrypted
+      @@gate(0)
     }
   `
   let db: any
@@ -6082,6 +6084,7 @@ describe('@guarded + WHERE clause', () => {
         name    String
         secret  String    @guarded
         token   String    @encrypted @guarded
+        @@gate(0)
       }
     `, 'guarded-where', { encryptionKey: ENC_KEY })
 
@@ -6205,6 +6208,7 @@ describe('@encrypted field policy', () => {
         ssn   String    @encrypted
         email String    @encrypted(deterministic: true)
         token String    @hashed
+        @@gate(0)
       }
     `, 'encrypted', { encryptionKey: ENC_KEY })
     await db.user.create({ data: { id: 1, name: 'Alice', ssn: '123-45-6789', email: 'alice@example.com', token: 'tok-alice' } })
@@ -6614,6 +6618,7 @@ describe('@encrypted on a Json field', () => {
         id   Int   @id
         blob Json? @encrypted
         open Json?
+        @@gate(0)
       }
     `, 'encrypted-json', { encryptionKey: ENC_KEY })
   })
@@ -6792,7 +6797,7 @@ describe('@secret field attribute', () => {
   })
 
   test('@secret field is stripped from findMany results', async () => {
-    const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'secret-strip', { encryptionKey: ENC_KEY })
+    const db = await makeDb(`model Secret { id Int @id; token String @secret  @@gate(0) }`, 'secret-strip', { encryptionKey: ENC_KEY })
     await db.asSystem().secret.create({ data: { token: 'mysecret' } })
     const rows = await db.secret.findMany()
     expect((rows[0] as any).token).toBeUndefined()
@@ -7065,7 +7070,7 @@ describe('@secret field attribute', () => {
   })
 
   test('$rotateKey leaves null fields untouched', async () => {
-    const db = await makeDb(`model Secret { id Int @id; token String? @secret }`, 'rotate-null', { encryptionKey: ENC_KEY })
+    const db = await makeDb(`model Secret { id Int @id; token String? @secret  @@gate(0) }`, 'rotate-null', { encryptionKey: ENC_KEY })
     await db.secret.create({ data: {} })
     const stats = await db.$rotateKey(NEW_KEY)
     expect(stats.Secret?.rows ?? 0).toBe(0)   // null field — nothing to update
@@ -7092,6 +7097,7 @@ describe('onLog callback', () => {
 
       @@db(main)
       @@trail(audit)
+      @@gate(0)
     }
   `
 
@@ -7410,7 +7416,7 @@ describe('onLog callback', () => {
   test('onLog not called when no @trail / @@trail on model', async () => {
     const PLAIN_SCHEMA = `
       database main { path env("MAIN_DB", "./main.db") }
-      model Note { id Int @id; text String @@db(main) }
+      model Note { id Int @id; text String @@db(main)  @@gate(0) }
     `
     const r = parse(PLAIN_SCHEMA)
     const dir = tmpSub('ls-onlog-plain-')
@@ -7655,6 +7661,7 @@ describe('audit log redaction', () => {
 
         @@db(main)
         @@trail(audit)
+        @@gate(0)
       }
     `)
     if (!r.valid) throw new Error(r.errors.join('\n'))
@@ -7703,6 +7710,7 @@ describe('audit trail covers bulk writes', () => {
       @@db(main)
       @@softDelete
       @@trail(audit)
+      @@gate(0)
     }
   `
 
@@ -7715,6 +7723,7 @@ describe('audit trail covers bulk writes', () => {
       text String
 
       @@db(main)
+      @@gate(0)
     }
   `
 
@@ -8360,6 +8369,7 @@ describe('@@allow / @@deny row-level policies', () => {
         name  String
         posts Post[]
         tags  Tag[]
+        @@gate(0)
       }
       model Post {
         id        Int @id
@@ -8499,6 +8509,7 @@ describe('@allow field-level access', () => {
         id     Int @id
         name   String
         salary Float?   @allow('read', auth().role == 'hr')
+        @@gate(0)
       }
     `, 'field-allow-read-strip')
     await db.asSystem().user.create({ data: { name: 'Alice', salary: 100000 } })
@@ -8514,6 +8525,7 @@ describe('@allow field-level access', () => {
         id     Int @id
         name   String
         salary Float?   @allow('read', auth().role == 'hr')
+        @@gate(0)
       }
     `, 'field-allow-read-visible')
     await db.asSystem().user.create({ data: { name: 'Alice', salary: 100000 } })
@@ -8527,6 +8539,7 @@ describe('@allow field-level access', () => {
       model User {
         id     Int @id
         salary Float?   @allow('read', auth().role == 'hr')
+        @@gate(0)
       }
     `, 'field-allow-read-system')
     await db.asSystem().user.create({ data: { salary: 50000 } })
@@ -8542,6 +8555,7 @@ describe('@allow field-level access', () => {
         ownerId Int
         notes   String?   @allow('read', auth().role == 'admin')
                         @allow('read', ownerId == auth().id)
+        @@gate(0)
       }
     `, 'field-allow-read-or')
     await db.asSystem().post.create({ data: { ownerId: 1, notes: 'private' } })
@@ -8559,6 +8573,7 @@ describe('@allow field-level access', () => {
       model User {
         id     Int @id
         salary Float?   @allow('read', auth() != null)
+        @@gate(0)
       }
     `, 'field-allow-no-auth')
     await db.asSystem().user.create({ data: { salary: 80000 } })
@@ -8574,6 +8589,7 @@ describe('@allow field-level access', () => {
       model User {
         id   Int @id
         role String    @default('user') @allow('write', auth().isAdmin)
+        @@gate(0)
       }
     `, 'field-allow-write-drop')
     const row = await db.$setAuth({ id: 1, isAdmin: false }).user.create({ data: { role: 'admin' } }) as any
@@ -8587,6 +8603,7 @@ describe('@allow field-level access', () => {
       model User {
         id   Int @id
         role String    @default('user') @allow('write', auth().isAdmin)
+        @@gate(0)
       }
     `, 'field-allow-write-pass')
     const row = await db.$setAuth({ id: 1, isAdmin: true }).user.create({ data: { role: 'admin' } }) as any
@@ -8599,6 +8616,7 @@ describe('@allow field-level access', () => {
       model User {
         id   Int @id
         role String    @default('user') @allow('write', auth().isAdmin)
+        @@gate(0)
       }
     `, 'field-allow-write-system')
     const row = await db.asSystem().user.create({ data: { role: 'superadmin' } }) as any
@@ -8611,6 +8629,7 @@ describe('@allow field-level access', () => {
       model User {
         id   Int @id
         role String    @default('user') @allow('write', auth().isAdmin)
+        @@gate(0)
       }
     `, 'field-allow-write-update')
     await db.asSystem().user.create({ data: { role: 'user' } })
@@ -8634,6 +8653,7 @@ describe('@allow field-level access', () => {
         id      Int @id
         name    String
         members Member[]
+        @@gate(0)
       }
       model Member {
         id     Int @id
@@ -8642,6 +8662,7 @@ describe('@allow field-level access', () => {
         name   String
         token  String  @guarded
         salary Float?  @allow('read', auth().role == 'hr')
+        @@gate(0)
       }
     `, name)
     const sys = db.asSystem()
@@ -9127,6 +9148,7 @@ describe('GatePlugin', () => {
       model Task {
         id      Int    @id
         members User[]
+        @@gate(0)
       }
     `, 'gate-nested-set', { plugins: [new GatePlugin({ getLevel: () => 3 })] })
     await db.asSystem().user.create({ data: { id: 1 } })
@@ -9198,7 +9220,7 @@ describe('GatePlugin', () => {
 
   // ── Models without @@gate are open ─────────────────────────────────────────
 
-  test('model without @@gate is open to all', async () => {
+  test('a model without @@gate is SYSTEM-only once any model gates (FJS-D1206)', async () => {
     const { GatePlugin } = await import('../src/plugins/gate.js')
     const db = await makeDb(`
       model OpenTable { id Int @id }
@@ -9211,11 +9233,10 @@ describe('GatePlugin', () => {
     })
     await db.$db.run('INSERT INTO open_table VALUES (1)')
     await db.$db.run('INSERT INTO gated_table VALUES (1)')
-    // open_table has no gate — stranger can read
-    const rows = await db.openTable.findMany()
-    expect(rows.length).toBe(1)
-    // gated_table requires 5 — stranger (0) denied
     const { AccessDeniedError } = await import('../src/core/plugin.js')
+    await expect(db.openTable.findMany()).rejects.toThrow(/requires SYSTEM access/)
+    expect(await db.asSystem().openTable.findMany()).toHaveLength(1)
+    // gated_table requires 5 — stranger (0) denied
     await expect(db.gatedTable.findMany()).rejects.toThrow(AccessDeniedError)
     db.$close()
   })
@@ -9345,6 +9366,7 @@ describe('GatePlugin', () => {
         id      Int @id
         name    String
         secrets Vault[]
+        @@gate(0)
       }
       model Vault {
         id     Int @id
@@ -9389,12 +9411,14 @@ describe('GatePlugin', () => {
       model Org {
         id    Int @id
         teams Team[]
+        @@gate(0)
       }
       model Team {
         id      Int @id
         orgId   Int
         org     Org @relation(fields: [orgId], references: [id])
         secrets Vault[]
+        @@gate(0)
       }
       model Vault {
         id     Int @id
@@ -9417,12 +9441,14 @@ describe('GatePlugin', () => {
         id      Int @id
         name    String
         members Member[]
+        @@gate(0)
       }
       model Member {
         id     Int @id
         teamId Int
         team   Team @relation(fields: [teamId], references: [id])
         name   String
+        @@gate(0)
       }
     `, 'gate-include-open', () => 4)
     await db.asSystem().team.create({ data: { id: 1, name: 'T' } })
@@ -10926,6 +10952,7 @@ const GATED_SCHEMA = `
       ship:   paid            -> shipped,
       refund: paid            -> refunded @gate(5),
       cancel: [pending, paid] -> cancelled)
+    @@gate(0)
   }
 `
 
@@ -11015,8 +11042,8 @@ model Page { id Int @id  status S @default(draft)  @@transitions(status, bin: dr
   test('the same enum can carry different rules on two models', async () => {
     // The reason the machine lives on the model: an enum block cannot say this.
     const { db } = await makeTestClient(`enum S { pending approved }
-model Order   { id Int @id  status S @default(pending)  @@transitions(status, approve: pending -> approved) }
-model Expense { id Int @id  status S @default(pending)  @@transitions(status, approve: pending -> approved @gate(5)) }`)
+model Order   { id Int @id  status S @default(pending)  @@transitions(status, approve: pending -> approved)  @@gate(0) }
+model Expense { id Int @id  status S @default(pending)  @@transitions(status, approve: pending -> approved @gate(5))  @@gate(0) }`)
     // No GatePlugin configured, so the shipped FrontierGateGetLevel resolves —
     // it grades a bare session at VISITOR(1), well under the gate either way.
     const user = db.$setAuth({ id: 1 })
@@ -11774,6 +11801,7 @@ describe('enum transitions — conflict and upsert', () => {
         @@transitions(isPrimary,
           promote: false -> true,
           demote:  true  -> false @gate(5))
+        @@gate(0)
       }
     `)
     const d = await bdb.domain.create({ data: { name: 'a.com' } })
@@ -11864,6 +11892,7 @@ describe('enum transitions — conflict and upsert', () => {
           build:  queued   -> building @gate(8),
           finish: building -> done     @gate(8),
           cancel: queued   -> cancelled)
+        @@gate(0)
       }
     `)
     const sys = gdb.asSystem()
@@ -11895,12 +11924,13 @@ describe('enum transitions — conflict and upsert', () => {
 
   test('the same predicate on the FK guards the direct write and connect alike', async () => {
     const { db: fdb } = await makeTestClient(`
-      model Team   { id String @id @default(cuid())  name String  members Member[] }
+      model Team   { id String @id @default(cuid())  name String  members Member[]  @@gate(0) }
       model Member {
         id     String @id @default(cuid())
         name   String
         teamId String @allow('write', 'Member.reassign' in auth().perms)
         team   Team   @relation(fields: [teamId], references: [id])
+        @@gate(0)
       }`)
     const sys = fdb.asSystem()
     const t1 = await sys.team.create({ data: { name: 'A' } })
@@ -13464,7 +13494,7 @@ describe('snapshot / restore', () => {
     // Rows are copied through the raw connection, so ciphertext is preserved
     // byte for byte — a round trip through the ORM would re-encrypt it.
     const { db } = await makeTestClient(
-      `model S { id Int @id @default(autoincrement()); tok String @encrypted }`,
+      `model S { id Int @id @default(autoincrement()); tok String @encrypted  @@gate(0) }`,
       { encryptionKey: 'a'.repeat(64) })
     await db.s.create({ data: { tok: 'hunter2' } })
     const snap = snapshot(db)
@@ -13851,6 +13881,7 @@ const UTIL_SCHEMA = `
     plan  Plan    @default(starter)
     url   String?   @url
     slug  String?   @length(3, 50)
+    @@gate(0)
   }
 
   model Lead {
@@ -13862,6 +13893,7 @@ const UTIL_SCHEMA = `
     status    Status  @default(new)
     score     Float?   @gte(0) @lte(100)
     notes     String?   @contains("note")
+    @@gate(0)
   }
 
   model Post {
@@ -14207,7 +14239,7 @@ describe('generateGateMatrix', () => {
   })
 
   test('returns empty array for model with no @@gate', () => {
-    const matrix = generateGateMatrix(schema, 'Account')
+    const matrix = generateGateMatrix(parse('model Bare { id Int @id }').schema, 'Bare')
     expect(matrix).toEqual([])
   })
 
@@ -15190,6 +15222,7 @@ const GUARDED_SCHEMA = `
     id     Int    @id
     name   String
     token  String @guarded
+    @@gate(0)
   }
 `
 
@@ -15395,7 +15428,7 @@ describe('createTestEnv', () => {
 
   test('readOnly still reads, and still throws on a typo', async () => {
     const env = await createTestEnv({ schema: ENV_SCHEMA })
-    const read = readOnly(env.db)
+    const read = readOnly(env.system)
 
     await env.system.account.create({ data: { id: 1, name: 'a' } })
     expect(await read.account.count()).toBe(1)
@@ -17715,12 +17748,13 @@ describe('@from — a where: string is raw SQL, and carries the clock trap', () 
 
 describe('@from — first/last returns a properly read row', () => {
   const SHOP = `
-    model Company { id Int @id  name String  accounts Account[] }
+    model Company { id Int @id  name String  accounts Account[]  @@gate(0) }
     model Account {
       id Int @id  name String  companyId Int?
       company Company? @relation(fields: [companyId], references: [id])
       orders  Order[]
       lastOrder Order? @from(Order, last: true)
+      @@gate(0)
     }
     model Order {
       id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
@@ -17731,8 +17765,9 @@ describe('@from — first/last returns a properly read row', () => {
       label      String  @computed
       lines      Line[]
       lineCount  Int @from(Line, count: true)
+      @@gate(0)
     }
-    model Line { id Int @id  orderId Int  order Order @relation(fields: [orderId], references: [id]) }
+    model Line { id Int @id  orderId Int  order Order @relation(fields: [orderId], references: [id])  @@gate(0) }
   `
   const shop = async (label: string) => {
     const db = await makeDb(SHOP, label, {
@@ -17796,8 +17831,8 @@ describe('@from — first/last returns a properly read row', () => {
 
   test('a @computed on the PARENT sees the row, not its id', async () => {
     const db = await makeDb(`
-      model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true)  lastAmount Float @computed }
-      model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  amount Float }
+      model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true)  lastAmount Float @computed  @@gate(0) }
+      model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  amount Float  @@gate(0) }
     `, 'from-row-parent-computed', {
       computed: { Account: { lastAmount: (r: any) => r.lastOrder?.amount ?? 0 } },
     })
@@ -17809,7 +17844,7 @@ describe('@from — first/last returns a properly read row', () => {
 
   test('no matching row is null, and the target policy applies', async () => {
     const db = await makeDb(`
-      model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true) }
+      model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true)  @@gate(0) }
       model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  ownerId Int
                       @@allow('read', ownerId == auth().id) }
     `, 'from-row-policy')
@@ -17833,7 +17868,7 @@ describe('@from — first/last returns a properly read row', () => {
   // redone here under the policy, which is the answer a direct findFirst gives.
 
   const POLICIED = `
-    model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true) }
+    model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true)  @@gate(0) }
     model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
                     ownerId Int  amount Int  note String? @guarded  deletedAt DateTime?
                     @@allow('read', ownerId == auth().id)
@@ -17884,7 +17919,7 @@ describe('@from — first/last returns a properly read row', () => {
 
   test('a declared where: on the @from survives the repick', async () => {
     const db = await makeDb(`
-      model Account { id Int @id  orders Order[]  lastBig Order? @from(Order, last: true, where: "amount > 100") }
+      model Account { id Int @id  orders Order[]  lastBig Order? @from(Order, last: true, where: "amount > 100")  @@gate(0) }
       model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
                       ownerId Int  amount Int
                       @@allow('read', ownerId == auth().id) }
@@ -17928,7 +17963,7 @@ describe('@from — first/last returns a properly read row', () => {
 
   test('first: true picks the OLDEST visible row, not the oldest row', async () => {
     const db = await makeDb(`
-      model Account { id Int @id  orders Order[]  firstOrder Order? @from(Order, first: true) }
+      model Account { id Int @id  orders Order[]  firstOrder Order? @from(Order, first: true)  @@gate(0) }
       model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  ownerId Int
                       @@allow('read', ownerId == auth().id) }
     `, 'from-pick-first')
@@ -26900,11 +26935,13 @@ describe('an aggregate names a column, and every name is checked', () => {
     upper  String?  @computed
     kids   Int      @from(Kid, count: true)
     all    Kid[]
+    @@gate(0)
   }
   model Kid {
     id    Int @id @default(autoincrement())
     rowId Int
     row   Row @relation(fields: [rowId], references: [id])
+    @@gate(0)
   }`
 
   const mk = async (label: string) => {
@@ -27029,6 +27066,7 @@ describe('$checkWhere says WHY a key cannot be filtered', () => {
     enc   String? @encrypted
     encs  String? @encrypted(deterministic: true)
     hsh   String? @hashed
+    @@gate(0)
   }`
 
   test('reasons match $checkOrderBy\'s contract', async () => {
@@ -27358,6 +27396,7 @@ describe('an impossible filter is refused on a read', () => {
     enc   String? @encrypted
     encs  String? @encrypted(deterministic: true)
     hsh   String? @hashed
+    @@gate(0)
   }`
   const mk = (n: string) => makeDb(S, n, {
     encryptionKey: 'a'.repeat(64),

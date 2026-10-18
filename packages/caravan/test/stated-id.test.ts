@@ -9,7 +9,7 @@
 // can, because it is the one thing in the table that lasts.
 
 import { describe, it, expect, afterEach } from 'bun:test'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 import { openDb, buildStatements, isPrimaryKeyCollision } from '../src/db.ts'
 import type { CaravanInstance } from '../src/types.ts'
 
@@ -17,7 +17,7 @@ const queues: CaravanInstance[] = []
 afterEach(async () => { for (const q of queues.splice(0)) await q.stop() })
 
 const makeQueue = (): CaravanInstance => {
-  const q = createCaravan({ db: ':memory:', pollInterval: 20 })
+  const q = caravan({ db: ':memory:', pollInterval: 20 })
   queues.push(q)
   return q
 }

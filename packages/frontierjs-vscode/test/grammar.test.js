@@ -282,6 +282,29 @@ async function main() {
       scopesOf(tk, 'Boolean').join(' '))
   }
 
+  // The attribute rules were lists of names, so every word litestone added
+  // after them — @@mirror, @@tenant, @local, @system — rendered as plain text.
+  // Paired with @@expr, which must still open its string, and a field name
+  // that only LOOKS like an attribute word.
+  {
+    const tk = tokenize(lite, 'model Person {\n  externalId String @unique\n  note String @local\n  mirror String\n  @@mirror(key: externalId)\n  @@gate(4.8.8.8)\n}\n')
+    for (const word of ['@@mirror', '@@gate', '@local', '@unique']) {
+      ok(`${word} is an attribute`,
+        scopesOf(tk, word).some(s => s.startsWith('entity.other.attribute-name')),
+        scopesOf(tk, word).join(' '))
+    }
+    const field = tk.find(t => t.text === 'mirror' && t.line === 4)
+    ok('a field named mirror is a field, not an attribute',
+      field && field.scopes.includes('variable.other.field.litestone'),
+      field ? field.scopes.join(' ') : 'no token')
+  }
+  {
+    const tk = tokenize(lite, 'function discounted(price: Integer) {\n  @@expr("{price} * 2")\n}\n')
+    ok('@@expr still opens its string',
+      scopesOf(tk, '{price} * 2').includes('string.regexp.litestone'),
+      scopesOf(tk, '{price} * 2').join(' '))
+  }
+
   console.log(`\n${'─'.repeat(60)}`)
   console.log(`  ${pass} passed, ${fail} failed`)
   if (failures.length) {

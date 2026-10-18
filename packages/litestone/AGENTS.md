@@ -418,8 +418,9 @@ env.close()
 1. Every model name is **PascalCase singular**.
 2. No `Text` / `Integer` / `Real` / `Blob` / `Decimal` anywhere.
 3. Money is `@money`; any other exact number is `Int @scale(n)`.
-4. Every model declares a `@@gate`, or the app declares none at all — a
-   declared-but-unenforced gate is fail-open.
+4. Every model declares a `@@gate` or `@@allow`/`@@deny` (`@@gate(0)` for public),
+   or the schema declares no access rule at all — beside one, an undeclared model
+   is system-only on every operation.
 5. Every protected column used one of the four words from the visibility table,
    not a hook.
 6. Every foreign key has an index (`foreign-key-without-index` warns).

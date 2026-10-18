@@ -72,7 +72,7 @@ test('a caravan app is scaffolded with the job that runs its declared retention'
   expect(existsSync(job)).toBe(true)
   expect(readFileSync(job, 'utf8')).toContain('$retain()')
   expect(readFileSync(join(app, 'api/src/core/db.ts'), 'utf8')).toMatch(/export const sys\s*=\s*db\.asSystem\(\)/)
-  expect(readFileSync(join(app, 'api/src/app.ts'), 'utf8')).toContain('createCaravan')
+  expect(readFileSync(join(app, 'api/src/app.ts'), 'utf8')).toContain('caravan(')
   // jobs/ loads from beside createApp({ root }) (FJS-D1080), so the config names no folder.
   expect(readFileSync(join(app, 'api/src/app.ts'), 'utf8')).toContain('root: import.meta.url')
   expect(readFileSync(join(app, 'api/config/junction.config.js'), 'utf8')).not.toContain('jobsDir')
@@ -102,16 +102,16 @@ test('the scaffolded queue sits beside DATABASE_URL, not beside the code', () =>
 }, 60_000)
 
 // FJS-1792 — --full installed caravan and notifications and wired neither past
-// createCaravan(), so a schema declaring @@commitment was refused at start and
+// caravan(), so a schema declaring @@commitment was refused at start and
 // the first app.notify() was hand-written plumbing.
 test('--full wires the commitments plugin, the system principal and the notifications plugin', () => {
   const app = scaffold('wired', '--full')
   const appTs = readFileSync(join(app, 'api/src/app.ts'), 'utf8')
   expect(appTs).toContain("import { commitments } from '@frontierjs/junction/commitments'")
   expect(appTs).toMatch(/^\s*system: SYSTEM,$/m)
-  expect(appTs).toMatch(/^app\.configure\(notificationsPlugin\(\{ db \}\)\)$/m)
+  expect(appTs).toMatch(/^app\.configure\(notifications\(\{ db \}\)\)$/m)
   // After caravan, which commitments() requires.
-  expect(appTs.indexOf('app.configure(createCaravan())')).toBeLessThan(appTs.indexOf('app.configure(commitments())'))
+  expect(appTs.indexOf('app.configure(caravan())')).toBeLessThan(appTs.indexOf('app.configure(commitments())'))
   expect(readFileSync(join(app, 'api/src/core/gate.ts'), 'utf8')).toMatch(/export const SYSTEM\s*=/)
   expect(existsSync(join(app, 'api/src/notifications'))).toBe(true)
 }, 60_000)
@@ -120,7 +120,7 @@ test('an app with neither package wires neither plugin', () => {
   const app = scaffold('unwired', '--minimal')
   const appTs = readFileSync(join(app, 'api/src/app.ts'), 'utf8')
   expect(appTs).not.toContain('commitments')
-  expect(appTs).not.toContain('notificationsPlugin')
+  expect(appTs).not.toContain('notifications(')
   expect(appTs).not.toContain('SYSTEM')
   expect(readFileSync(join(app, 'api/src/core/gate.ts'), 'utf8')).not.toContain('SYSTEM')
   expect(existsSync(join(app, 'api/src/notifications'))).toBe(false)

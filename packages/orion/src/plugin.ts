@@ -129,7 +129,7 @@ export function orion(options: OrionOptions = {}): Plugin {
     requires: ["caravan"],
 
     register(app: App) {
-      if (!('jobs' in app)) throw new Error("[orion] needs Caravan configured before it: app.configure(createCaravan(…))")
+      if (!('jobs' in app)) throw new Error("[orion] needs Caravan configured before it: app.configure(caravan(…))")
       const tenants = (app as unknown as { tenants?: { schema?: { models: Array<{ name: string }> } } }).tenants
       const db      = app.db as any
       if (!tenants && (!db || typeof db.asSystem !== "function")) {
@@ -170,7 +170,7 @@ export function orion(options: OrionOptions = {}): Plugin {
         notify: (actor, notification, recipient, payload) => asOwner(actor, async () => {
           const notifying = app as unknown as NotifyingApp
           if (typeof notifying.notify !== "function") {
-            throw new Error("This app sends no notifications: app.configure(notificationsPlugin(…))")
+            throw new Error("This app sends no notifications: app.configure(notifications(…))")
           }
           const define = notifying.notifications?.get(notification)
           if (!define) throw new Error(`This app declares no notification "${notification}"`)

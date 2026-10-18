@@ -140,7 +140,7 @@ export interface OutgoingMail {
 // Junction's `AppMail` is `{}` until its mail module is imported, which is what
 // augments it to `IMail`. An app with no mailer — in-app notifications alone —
 // never imports it, and junction's App was then unassignable to this one
-// (`mail` has no `send`), so `app.configure(notificationsPlugin(…))` failed
+// (`mail` has no `send`), so `app.configure(notifications(…))` failed
 // `tsc`. Type-only: no runtime import. `MailAttachment` is junction's own, so
 // the one field that crosses carries no second definition.
 import type { MailAttachment } from '@frontierjs/junction/mail'
@@ -149,7 +149,7 @@ export interface App {
   // `Promise<unknown>` and not `Promise<void>`: junction's `IMail.send` answers
   // a `SendResult` receipt, and under `strictFunctionTypes` a `void` return here
   // makes junction's own App unassignable to this one — so
-  // `app.configure(notificationsPlugin(…))` could not typecheck in ANY app that
+  // `app.configure(notifications(…))` could not typecheck in ANY app that
   // ran `tsc`. The driver awaits the send and discards the receipt, which is
   // correct: a failure THROWS, and `SendResult` is `{ id, message }`.
   //

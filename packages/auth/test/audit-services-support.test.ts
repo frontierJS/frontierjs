@@ -6,7 +6,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'
-import { createAuthPlugin } from '../plugin.ts'
+import { auth } from '../plugin.ts'
 import { makeAuth, type Harness, TEST_KEY } from './harness.ts'
 import { totp, TOTP_STEP_SEC } from '../totp.ts'
 
@@ -23,7 +23,8 @@ beforeAll(async () => {
   })
   app = await createTestApp({ auth: h.auth as any })
   app.setAuth(h.auth as any)
-  app.configure(createAuthPlugin(h.auth, {
+  app.configure(auth({
+    auth: h.auth,
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
     canStartSupport:   () => true,

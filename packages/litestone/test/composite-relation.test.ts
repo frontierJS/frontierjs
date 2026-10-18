@@ -161,8 +161,8 @@ describe('the policy forms that cross a composite relation', () => {
   })
 
   it('a create is graded by the person the payload names, not the first in its schedule', async () => {
-    const me = await asUser(withPolicy('Assignment',
-      `@@allow('read', true)\n  @@allow('create', person.role == 'organizer')`))
+    const me = await asUser(withPolicy('Shift', '@@gate(0)', withPolicy('Person', '@@gate(0)',
+      withPolicy('Assignment', `@@allow('read', true)\n  @@allow('create', person.role == 'organizer')`))))
     await expect(me.assignment.create({ data: { id: 'b1', scheduleId: 's1', shiftId: 'pm', personId: 'bob' } }))
       .rejects.toThrow()
     expect(await me.assignment.create({ data: { id: 's9', scheduleId: 's1', shiftId: 'pm', personId: 'sam' } }))

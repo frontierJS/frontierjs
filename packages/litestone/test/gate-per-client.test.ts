@@ -11,6 +11,7 @@ const withGate = (gate: string) => `
 model Author {
   id    String @id
   notes Note[]
+  @@gate(0)
 }
 model Note {
   id       String @id

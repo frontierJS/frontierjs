@@ -9,7 +9,7 @@ dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
 `/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/mailbox`, `/markdown`, `/match`, `/mime`,
-`/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sigv4`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
+`/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sigv4`, `/sse`, `/textedit`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -273,6 +273,13 @@ src/markdown/        Markdown somebody else wrote → HTML with no tag the text
                      a link is http, https, mailto or relative; an image is a
                      link to it. The same function at prerender and in the
                      browser (`FJS-D821`). Caller: ui's Markdown component
+src/textedit/        `locateText` — an element's words swapped where its
+                     `.mesa` or `.md` source wrote them, or `{ why }` when that
+                     takes a guess (interpolated, split by markup, written
+                     twice, or new words carrying markup). Pure over the
+                     source text, so a caller holding a git blob makes the
+                     edit a dev server's disk does. Caller: fli's ask panel
+                     (`/text` in `core/vite-ask.js`)
 docs/glow/           the Svelte editor and SCSS theme glow arrived with.
                      Reference only — not shipped, not FrontierJS code
 src/datetime/        an instant read as a place's wall clock, and written back —
@@ -689,4 +696,5 @@ license.
 | `match` | `packages/toolbelt`: `bun run test`, then `packages/sierra`: `bun run test` (the live store that reads it) and `packages/jetty`: `bun run test` (the other one, which may not import sierra). A `near` change is graded against litestone as well — `false` here REMOVES a row from a live list, so the two halves have to agree about a row on the circle's edge |
 | `sse` | `packages/toolbelt`: `bun run test` — the spec reads every frame at every chunk boundary. Then `packages/sierra`: `bun run test event-stream`, which reads a REAL junction `ctx.sse()` stream through `readEvents` and asserts leaving the loop fires the server's `onDisconnect` |
 | `frontmatter` | `packages/toolbelt`: `bun run test frontmatter`, then `packages/sierra`: `bun run test -- scanner` (the route table) and `packages/mesa`: `npx vitest run md-` (the `.md` module). A change to what the subset ADMITS is graded by `test/fixtures/frontmatter-compare.mjs` — js-yaml's core schema over every real block under the roots it is given (this repo, `fjs-prototypes`, `~/code/KOBAMI/SITES`); the spec's rows are the cases somebody thought of |
+| `textedit` | `packages/toolbelt`: `bun run test textedit`, then `packages/cli`: `bun test test/vite-ask.test.js` (the `/text` route over a real file) and `website`: `verify:ask`, which swaps a picked element's words in a browser |
 | `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation. **The orderBy pair has a third caller and a browser is the only place it runs**: `packages/ui`: `test:browser`, whose `Table — the modes` pushes the object and bracket-indexed shapes through the prop, each paired with a header that must stay unmarked |

@@ -29,13 +29,14 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Other declaring files |
 | --- | --- | --- |
+| `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | 22 |
 | `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 18 |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 13 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 10 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 9 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 9 |
+| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 9 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | 8 |
-| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 8 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 6 |
 | `app.conduit.receive(receiver)` | `packages/conduit/src/conduit.ts` | 4 |
@@ -132,7 +133,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `app.withDb(fn)` / `app.onTenantClient(observer)` | `packages/junction/src/core/app.ts` | yes | 1 |
 | `app.principal()` / `app.runAs(userId, fn)` | `packages/junction/src/core/app.ts` | yes | 6 |
 | `createLitestoneAuth(db, { sessionFields })` | `packages/auth/auth.ts` | yes | — |
-| `manifestPlugin()` | `packages/junction/src/plugins/manifest/index.ts` | yes | — |
+| `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | yes | 22 |
 | `app.registerMetricsSource(name, fn)` / `app.registerReadiness(name, fn)` | `packages/junction/src/core/app.ts` | yes | — |
 | `app.registerDevService({ name, url, note })` | `packages/junction/src/core/app.ts` | yes | — |
 | `devtools({ port, auth })` | `packages/junction/src/plugins/devtools/index.ts` | yes | 1 |
@@ -146,7 +147,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `announce()` | `packages/junction/src/transport/channels.ts` | yes | 8 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | — |
-| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 8 |
+| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 9 |
 | `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 18 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |

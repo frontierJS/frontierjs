@@ -38,6 +38,7 @@ model Key {
   id        Int    @id
   name      String
   tokenHint String @system
+  @@gate(0)
 }
 `
 
@@ -299,6 +300,7 @@ model Post {
   message    String
   status     PostStatus @default(open)
   starred    Boolean  @default(false) @local
+  @@gate(0)
   @@mirror(key: externalId)
 }
 enum PostStatus { open closed }

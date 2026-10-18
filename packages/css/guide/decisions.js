@@ -251,6 +251,7 @@ var QUESTIONS = {
       { label: 'The bar across the top', on: 'Topbar' },
       { label: 'The navigation column', on: 'Sidebar' },
       { label: 'The routed page body', on: 'Screen' },
+      { label: 'The supporting column beside that body', hint: 'a record’s facts next to its tabs', on: 'Aside' },
       { label: 'A labeled subdivision of that body', on: 'Pane' },
       { label: 'One switchable view inside it', on: 'View' },
     ],
@@ -1102,6 +1103,23 @@ var OUTCOMES = {
     states: [],
     instead: [{ term: 'Container', when: 'you only want a max-width column' }],
     note: 'It sets min-inline-size: 0, which is what stops one wide table dragging the whole grid sideways.',
+  },
+
+  Aside: {
+    live: false,
+    page: 'frame',
+    lead: 'The supporting column beside a Screen’s main content.',
+    markup: function (c) {
+      return '<main class="screen">\n  <aside class="' + c + '" aria-label="Details">\n    <button class="btn ghost square aside-toggle" aria-label="Hide details" aria-expanded="true"></button>\n    …\n  </aside>\n  <div class="stack">…</div>\n</main>'
+    },
+    tones: false,
+    treatments: [],
+    states: [],
+    instead: [
+      { term: 'Pane', when: 'it is a labeled subdivision of the main content rather than a column beside it' },
+      { term: 'Sidebar', when: 'it is the app’s navigation, which persists across screens' },
+    ],
+    note: 'The main content is one wrapper beside it. Setting aria-expanded="false" on .aside-toggle collapses the column; the app flips the attribute. --aside-width sets the width. Rule the actions off at the main’s top end with a Bar: class="bar bordered" and --align: flex-end.',
   },
 
   Pane: {

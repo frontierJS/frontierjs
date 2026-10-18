@@ -152,7 +152,7 @@ export interface JunctionClientOptions {
   // The names the auth plugin registered its three services under. Only needed
   // when the server renamed them — see AuthPluginOptions.services.
   authServices?: AuthServiceNames
-  // MUST match `createAuthPlugin(auth, { cookieAuth: true })` on the server.
+  // MUST match `auth({ auth, cookieAuth: true })` on the server.
   //
   // In cookie mode the session lives in an httpOnly cookie the browser will not
   // let this object read, so `token` is empty BY DESIGN and its emptiness stops

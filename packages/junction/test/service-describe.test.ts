@@ -12,8 +12,8 @@
 import { describe, test, expect } from 'bun:test'
 import { createService, buildBase, isBuiltService, buildService, ServiceRegistry } from '../src/core/service.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
-import { manifestPlugin } from '../src/plugins/manifest/index.ts'
-import { healthPlugin } from '../src/transport/health.ts'
+import { manifest as manifestPlugin } from '../src/plugins/manifest/index.ts'
+import { health } from '../src/transport/health.ts'
 import { openapi } from '../src/plugins/openapi/index.ts'
 
 const noop = async () => ({ ok: true })
@@ -59,7 +59,7 @@ describe('describe()', () => {
   test('/manifest, /metrics and the OpenAPI spec all agree with it', async () => {
     const app = await createTestApp({ services: [mkService()] })
     app.configure(manifestPlugin())
-    app.configure(healthPlugin())
+    app.configure(health())
     const spec = openapi({ title: 'T', version: '1' })
     await spec.register!(app)
 

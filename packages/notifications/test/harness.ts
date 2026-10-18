@@ -1,6 +1,6 @@
 // test/harness.ts
 // A real Litestone database + a real Junction app with channels, a capturing
-// mailer, and notificationsPlugin.
+// mailer, and notifications.
 //
 // The bug this package shipped twice — an empty email body, then an empty
 // in-app payload — was invisible to unit tests of the renderers because those
@@ -10,13 +10,13 @@
 import { createClient, parse, generateDDLForDatabase } from '@frontierjs/litestone'
 import { splitStatements } from '@frontierjs/litestone/migrate'
 import { createTestApp, channels } from '@frontierjs/junction'
-import { mailerPlugin } from '@frontierjs/junction/mail'
+import { mail } from '@frontierjs/junction/mail'
 import { Database } from 'bun:sqlite'
 // Relative, not '@frontierjs/litestone/testing': bun resolves workspace:* to a
 // COPY under node_modules/.bun, so the package spec tests a stale reaper.
 import { tempDir } from '../../litestone/src/tmp-dirs.js'
 import { join } from 'path'
-import { notificationsPlugin } from '../plugin.ts'
+import { notifications } from '../plugin.ts'
 import type { NotificationRecord, OutgoingMail } from '../types.ts'
 
 // The schema exactly as README.md and examples/wiring.ts document it.
@@ -78,17 +78,17 @@ export async function makeApp(opts: {
   const app: any = await createTestApp({ root: opts.root })
   app.configure(channels())
   // CONFIGURED, not assigned. `app.mail = {...}` set the property without the
-  // plugin, so `requires: ['mailer']` — which notificationsPlugin declares and
+  // plugin, so `requires: ['mailer']` — which notifications declares and
   // junction checks at startup against presence AND configure order — had
   // nothing to find. It never fired because this harness stopped at configure()
   // and no boot phase ran; an app wired this way is refused at start().
   if (!opts.noMailer) {
-    // `mailerPlugin` takes the whole IMail — a `send` answering void satisfied
+    // `mail` takes the whole IMail — a `send` answering void satisfied
     // `app.mail = …` by assignment and fails the interface by name.
     const send = async (m: OutgoingMail) => { sent.push(m); return { id: String(sent.length), message: 'captured' } }
-    app.configure(mailerPlugin({ send, batch: (ms: OutgoingMail[]) => Promise.all(ms.map(send)) }))
+    app.configure(mail({ mailer: { send, batch: (ms: OutgoingMail[]) => Promise.all(ms.map(send)) } }))
   }
-  app.configure(notificationsPlugin({
+  app.configure(notifications({
     db,
     transports:    opts.transports as never,
   }))

@@ -182,6 +182,18 @@ describe('layoutChainFor', () => {
     expect(chain[1]).toMatch(/pages\/services\/_module\.md$/)
   })
 
+  test('a _module.md with no body wraps nothing (FJS-D1240)', () => {
+    const dir = tmpDir('sierra-md-passthrough-')
+    const routes = resolve(dir, 'content/routes')
+    mkdirSync(resolve(routes, 'thank-you'), { recursive: true })
+    writeFileSync(resolve(routes, '_module.md'), '<slot />')
+    writeFileSync(resolve(routes, 'thank-you/_module.md'), '---\nrobots: noindex,nofollow\n---\n')
+    writeFileSync(resolve(routes, 'thank-you/index.md'), 'Thank you.')
+    const chain = layoutChainFor(resolve(routes, 'thank-you/index.md'), routes)
+    expect(chain).toHaveLength(1)
+    expect(chain[0]).toMatch(/routes\/_module\.md$/)
+  })
+
   test('returns an empty chain when there are no layouts', () => {
     const dir = tmpDir('sierra-nolayout-')
     const routes = resolve(dir, 'src/routes')

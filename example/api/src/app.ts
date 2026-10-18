@@ -15,19 +15,19 @@ import {
   channels,
   type App,
 } from '@frontierjs/junction'
-import { manifestPlugin } from '@frontierjs/junction/manifest'
-import { metricsPlugin } from '@frontierjs/junction/metrics'
+import { manifest } from '@frontierjs/junction/manifest'
+import { metrics } from '@frontierjs/junction/metrics'
 import { devtools } from '@frontierjs/junction/devtools'
-import { exportPlugin } from '@frontierjs/junction/export'
+import { exporter } from '@frontierjs/junction/export'
 
-import { createLitestoneAuth, createAuthPlugin, defineProvider } from '@frontierjs/auth'
+import { createLitestoneAuth, auth as authPlugin, defineProvider } from '@frontierjs/auth'
 import type { CredentialChange }                 from '@frontierjs/auth'
-import { createCaravan }                        from '@frontierjs/caravan'
+import { caravan }                        from '@frontierjs/caravan'
 import { conduit }                              from '@frontierjs/conduit'
-import { notificationsPlugin }                  from '@frontierjs/notifications'
+import { notifications }                  from '@frontierjs/notifications'
 import { orion }                                from '@frontierjs/orion/plugin'
-import { mcpPlugin }                            from '@frontierjs/mcp'
-import { mailerPlugin } from '@frontierjs/junction/mail'
+import { mcp }                            from '@frontierjs/mcp'
+import { mail } from '@frontierjs/junction/mail'
 import { outbox } from '@frontierjs/junction/outbox'
 import { commitments } from '@frontierjs/junction/commitments'
 
@@ -329,7 +329,7 @@ const app = createApp({
 // this app was evaluable, because a rule reading "above 80% for five minutes"
 // had no window to read (`FJS-956`). The models come from the same package:
 // `import "@frontierjs/junction/metrics.lite"` in db/schema.lite.
-app.configure(metricsPlugin())
+app.configure(metrics())
 
 // ── The governed extract ──────────────────────────────────────────────────
 //
@@ -344,7 +344,7 @@ app.configure(metricsPlugin())
 // `--system` and `--include-protected` have no query parameter and must not
 // grow one — those belong to `fli db:export`, where an operator typed them and
 // the manifest recorded it (`FJS-D230`).
-app.configure(exportPlugin())
+app.configure(exporter())
 
 // ─── The agent surface ────────────────────────────────────────────────────
 //
@@ -363,7 +363,7 @@ app.configure(exportPlugin())
 // `SHOP_MCP_UI=1` serves the views `fli mcp:build` wrote, and is a switch rather
 // than the default because a declared root that is missing REFUSES the boot
 // (`FJS-D955`) and every other drive here starts this API unbuilt.
-app.configure(mcpPlugin({
+app.configure(mcp({
   name: 'shop', version: '1.0.0', keepAliveMs: 5_000,
   ui: process.env.SHOP_MCP_UI === '1' ? { root: new URL('../dist/mcp', import.meta.url).pathname } : undefined,
 }))
@@ -412,7 +412,8 @@ if (process.env.DEVTOOLS === '1')
 // job is to be trusted. Raised here, in the app, rather than weakened in the
 // package: an app decides what its own login volume looks like, and a demo
 // shop on localhost is not a login-stuffing target.
-app.configure(createAuthPlugin(auth, {
+app.configure(authPlugin({
+  auth,
   loginRateLimit: { max: 100, window: '15 minutes' },
   services:       { level: shopGateLevel },
   cookieAuth:     COOKIE_AUTH,
@@ -461,7 +462,7 @@ app.configure(createAuthPlugin(auth, {
 // Caravan reads that block and an explicit option here would win over it, so a
 // key belongs in exactly one of the two places.
 
-const queue = createCaravan()
+const queue = caravan()
 
 app.configure(queue)
 
@@ -606,8 +607,8 @@ process.env.STRIPE_WEBHOOK_SECRET    ??= 'whsec_dev'
 // Junction checks that at startup against presence *and* configure order, so
 // getting it wrong is a boot failure rather than a send failure an hour later.
 
-app.configure(mailerPlugin(createConduitMailer(app, { from: 'shop@example.test' })))
-app.configure(notificationsPlugin({
+app.configure(mail({ mailer: createConduitMailer(app, { from: 'shop@example.test' }) }))
+app.configure(notifications({
   db,
   transports:    { email: { mailer: 'default' } },
 }))
@@ -622,7 +623,7 @@ app.configure(notificationsPlugin({
 // `db`: under `strategy database` there is no single client for the config
 // path to derive, so which one the schema comes off is a decision this file
 // makes. health is declared, because it has nothing to decide.
-app.configure(manifestPlugin({ db }))
+app.configure(manifest({ db }))
 
 // Which channels a connection joins is `core/channels.ts`. It is a decision
 // and not a list: a channel nobody joined broadcasts into nothing, and a

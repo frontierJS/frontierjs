@@ -16,6 +16,7 @@ model Employee {
   dept   String
   salary Int    @guarded
   bonus  Int
+  @@gate(0)
 }
 `
 

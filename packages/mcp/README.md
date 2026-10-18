@@ -4,7 +4,7 @@
 is the permission model, and tool visibility is computed per standing rather than
 described in a prompt.
 
-**Status: an agent can reach your app.** `mcpPlugin()` mounts an MCP endpoint
+**Status: an agent can reach your app.** `mcp()` mounts an MCP endpoint
 inside the API you are already running, and `projectTools()` is what it serves â€”
 *which tools may this standing see, and what decided each*. Ruled as
 `@frontierjs/mcp` in `DECISIONS.md` (`FJS-D258`); the design is
@@ -13,9 +13,9 @@ inside the API you are already running, and `projectTools()` is what it serves â
 ## Mounting it
 
 ```js
-import { mcpPlugin } from '@frontierjs/mcp'
+import { mcp } from '@frontierjs/mcp'
 
-app.configure(mcpPlugin())          // POST/GET/DELETE at {apiPrefix}/mcp
+app.configure(mcp())          // POST/GET/DELETE at {apiPrefix}/mcp
 ```
 
 That is the whole setup. There is nothing to declare: the tool list is your

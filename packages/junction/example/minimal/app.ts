@@ -11,7 +11,7 @@
 //   curl http://localhost:3100/health
 //
 // In your own project the import is: '@frontierjs/junction'
-import { createApp, defaultConfig, healthPlugin } from '../../index.ts'
+import { createApp, defaultConfig, health } from '../../index.ts'
 import { createDb } from './db.ts'
 
 const app = createApp({
@@ -30,6 +30,6 @@ const app = createApp({
 app.db = createDb() as never
 
 // GET /health + GET /metrics
-app.configure(healthPlugin())
+app.configure(health())
 
 await app.start()

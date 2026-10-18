@@ -2,7 +2,7 @@
 // Bun test runner: bun test test/caravan.test.ts
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { createCaravan, defineJob } from '../src/index.ts'
+import { caravan, defineJob } from '../src/index.ts'
 import type { CaravanInstance } from '../src/types.ts'
 import { Database } from 'bun:sqlite'
 import { rmSync } from 'node:fs'
@@ -10,8 +10,8 @@ import { tmpdir } from 'node:os'
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
-function makeQueue(opts: Parameters<typeof createCaravan>[0] = {}): CaravanInstance {
-  return createCaravan({
+function makeQueue(opts: Parameters<typeof caravan>[0] = {}): CaravanInstance {
+  return caravan({
     db:          ':memory:',   // in-memory SQLite — no files, no cleanup
     pollInterval: 50,          // fast polling for tests
     ...opts,
@@ -30,9 +30,9 @@ async function waitFor(
   }
 }
 
-// ─── createCaravan ────────────────────────────────────────────────────────────
+// ─── caravan ────────────────────────────────────────────────────────────
 
-describe('createCaravan', () => {
+describe('caravan', () => {
 
   it('creates an instance without throwing', () => {
     expect(() => makeQueue()).not.toThrow()
@@ -200,7 +200,7 @@ describe('dispatch', () => {
 
   it('dispatchMany costs one transaction where dispatch costs N under FULL', async () => {
     const path = `${tmpdir()}/caravan-bulk-${crypto.randomUUID()}.db`
-    const full = createCaravan({ db: path, synchronous: 'FULL' })
+    const full = caravan({ db: path, synchronous: 'FULL' })
     const items = Array.from({ length: 300 }, (_, i) => ({ i }))
 
     let t = performance.now()

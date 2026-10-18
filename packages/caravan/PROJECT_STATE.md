@@ -17,7 +17,7 @@ Realm: **D5**. Sits beside Junction, not under it — Junction is inbound
 (routing, hooks, services), Caravan is deferred work.
 
 ```
-src/index.ts     createCaravan(), defineJob(), the Junction plugin, admin routes
+src/index.ts     caravan(), defineJob(), the Junction plugin, admin routes
 src/db.ts        SQLite schema + queries
 src/worker.ts    the polling worker loop
 src/cron.ts      cron expression scheduling
@@ -53,7 +53,7 @@ test/fixtures/bad-jobs/          a job whose name disagrees with its file
 | Tests | **220 pass, 0 fail**, 12 files (`bun run test`) — verified. See `docs/changes-archive/caravan.md` 2026-08-06 for the three defects `example/` found, 2026-08-16 for the job principal, 2026-09-02 for what two processes on one jobs.db could not survive, and 2026-09-03 for what the admin surface cost at 1M rows |
 | Known flake | `test/cron-dst.test.ts` › the two *two instances over one jobs.db* cases fail intermittently, with `unable to open database file` under them. Pre-existing and measured against a HEAD copy — `FJS-729` |
 | Typecheck | **clean, 0 errors, no baseline** (`bun run typecheck`) — verified |
-| Public exports | `createCaravan`, `defineJob`, plus types — verified |
+| Public exports | `caravan`, `defineJob`, plus types — verified |
 | Who a job runs as | the principal recorded at `dispatch()`, **re-resolved** through `app.runAs` when it runs. Nobody asked → `createApp({ system })`. `test/job-context.test.ts` |
 | Plugin seam | `register()` claims `app.jobs`, calls `app.registerMetricsSource('jobs', …)`, and optionally mounts admin routes — all three now asserted against a real app |
 
@@ -78,7 +78,7 @@ what makes a config file able to set any of them (`FJS-048`).
 
 Two things follow from that and are worth knowing:
 
-- A dispatch or a read **before** `app.configure(createCaravan(…))` opens the
+- A dispatch or a read **before** `app.configure(caravan(…))` opens the
   database at the default path, and a configured path can no longer take effect.
   `register()` says so by path rather than running against a file the app did
   not name.

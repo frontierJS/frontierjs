@@ -37,17 +37,17 @@ model Notification {              // PascalCase singular → accessor db.notific
 // ─── api/server.ts wiring ─────────────────────────────────────────────────────
 
 /*
-import { notificationsPlugin } from '@frontierjs/notifications'
-import { mailerPlugin, createResendMailer } from '@frontierjs/junction/mail'
+import { notifications } from '@frontierjs/notifications'
+import { mail, createResendMailer } from '@frontierjs/junction/mail'
 
-// mailerPlugin must be configured before notificationsPlugin
-app.configure(mailerPlugin(createResendMailer({
+// mail must be configured before notifications
+app.configure(mail({ mailer: createResendMailer({
   credentials: { get: ref => process.env[ref] },
   apiKeyRef:   'RESEND_API_KEY',
   from:        'noreply@example.com',
-})))
+}) }))
 
-app.configure(notificationsPlugin({
+app.configure(notifications({
   db,
 
   // `notifications/` loads from beside `createApp({ root: import.meta.url })`.

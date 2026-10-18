@@ -45,6 +45,7 @@ const SCHEMA = `
     draft     String?  @transient
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
+    @@gate(0)
   }
 `
 

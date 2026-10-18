@@ -5,7 +5,7 @@ behind one seam. Built on `@frontierjs/mesa/drive`, so an app that prints
 adds no second Chrome driver.
 
 ```js
-import { createPrinter, printDocument, printerPlugin } from '@frontierjs/print-kit'
+import { createPrinter, printDocument, printer as printerPlugin } from '@frontierjs/print-kit'
 
 const printer = createPrinter()            // opens Chrome on the first job
 const html    = printDocument({ title, body, css, margins })
@@ -14,7 +14,7 @@ const png     = await printer.png(html, '#chart')
 await printer.close()
 ```
 
-In a Junction app, `app.use(printerPlugin())` claims it as `app.printer`;
+In a Junction app, `app.use(printer())` claims it as `app.printer`;
 with no Chrome on the machine the app refuses at boot, by name.
 
 **The page runs offline, scripts off.** The document is built from landed

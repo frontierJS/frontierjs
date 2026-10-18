@@ -333,7 +333,7 @@ if (!existsSync(envExamplePath)) {
 }
 
 // ─── 5. Health endpoint reminder ─────────────────────────────────────────────
-// Two places can serve it and both count: `app.configure(healthPlugin())` in the
+// Two places can serve it and both count: `app.configure(health())` in the
 // API source, and `plugins: { health: true }` in junction.config.js — which is
 // what `fli new` writes, so a reader that only grepped the source warned about
 // every scaffold it had just produced. core/health-target.js owns the question.
@@ -346,7 +346,7 @@ if (health.from) {
 if (declared.clash) {
   // start() refuses a plugin configured by hand AND declared in config, by name.
   // A deploy finds that as a container that exits; this finds it here.
-  log.warn(`Health is declared twice — healthPlugin() in the API source and plugins.health in the config.`)
+  log.warn(`Health is declared twice — health() in the API source and plugins.health in the config.`)
   log.info(`  Junction refuses both at start(). Keep one: the config, unless you pass checks or authFn.`)
 } else if (declared.declared) {
   const where = declared.sources.map(s => s.file).join(', ')
@@ -354,7 +354,7 @@ if (declared.clash) {
 } else {
   log.warn(`Nothing found that answers ${health.path}`)
   log.info(`  Declare it:  plugins: { health: true }  in api/config/junction.config.js`)
-  log.info(`  Or by hand:  app.configure(healthPlugin())  where the plugin needs checks or authFn.`)
+  log.info(`  Or by hand:  app.configure(health())  where the plugin needs checks or authFn.`)
   log.info(`  apiPrefix moves it, which is why the deploy block above names the full`)
   log.info(`  path rather than '/health'.`)
 }

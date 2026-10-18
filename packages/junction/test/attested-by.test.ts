@@ -30,7 +30,7 @@ async function harness() {
     schema: `
       database main  { path ":memory:" }
       ${auditDatabase(dir)}
-      model Order { id Int @id  status String  @@trail(audit) }
+      model Order { id Int @id  status String  @@trail(audit)  @@gate(0) }
     `,
   })
   const auth = {

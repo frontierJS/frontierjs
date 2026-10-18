@@ -109,7 +109,7 @@ export interface Plugin {
    * Checked once at startup against app._plugins, before any boot() runs, and
    * throws naming both the dependent and what is missing. Ordering used to be
    * nothing but the sequence of configure() calls, so a requirement like
-   * "mailerPlugin must be configured before notificationsPlugin" could only
+   * "mail must be configured before notifications" could only
    * live in prose — and was discovered at first send, not at startup.
    *
    * @example requires: ['mailer']
@@ -573,7 +573,7 @@ export interface App {
    * Contribute a readiness check to `GET /health`, keyed by plugin name.
    *
    * The sibling of `registerMetricsSource`, and it did not exist: `checks` was
-   * an option on `healthPlugin()` alone, so the only thing that could declare a
+   * an option on `health()` alone, so the only thing that could declare a
    * check was the app author — a plugin owning the resource that fails (a job
    * queue's own database, an outbox relay that has stopped passing) had no way
    * to say so, and every app hand-wrote the probe or went without.
@@ -638,7 +638,7 @@ export interface App {
   /** Plugin-registered readiness checks — keyed by plugin name. Write through
    *  `registerReadiness`; this is the store, not the seam. */
   _readiness: Map<string, () => boolean | Promise<boolean>>
-  /** The checks the APP declared, through `healthPlugin({ checks })`. Kept
+  /** The checks the APP declared, through `health({ checks })`. Kept
    *  apart from the plugin registry rather than merged into it, because the
    *  precedence between them is by OWNER and not by who configured first: an
    *  app naming `db` means its own probe, whether it configured the health
@@ -933,14 +933,14 @@ export interface ServiceCaller {
 // line to add. `'jobs' in app` answers whether it is there.
 
 const APP_SLOTS = {
-  auth:            'createApp({ auth }) or app.configure(createAuthPlugin(...))',
-  mail:            'createApp({ mail }) or app.configure(mailerPlugin(...))',
+  auth:            "createApp({ auth }) or app.configure(auth({ auth })) from '@frontierjs/auth'",
+  mail:            "createApp({ mail }) or app.configure(mail({ mailer })) from '@frontierjs/junction/mail'",
   ai:              'createApp({ ai })',
   conduit:         "app.configure(conduit()) from '@frontierjs/conduit'",
-  jobs:            "app.configure(createCaravan()) from '@frontierjs/caravan'",
+  jobs:            "app.configure(caravan()) from '@frontierjs/caravan'",
   outbox:          'app.configure(outbox())',
   commitments:     'app.configure(commitments())',
-  notify:          "app.configure(notificationsPlugin(...)) from '@frontierjs/notifications'",
+  notify:          "app.configure(notifications(...)) from '@frontierjs/notifications'",
   channels:        'app.configure(channels())',
   channel:         'app.configure(channels())',
   localPresence:   'app.configure(channels())',
@@ -1902,7 +1902,7 @@ export function createApp(opts: AppOptions = {}): App {
     registerAuditMetrics(app, db)
     // An app that cannot reach its database is not ready, and a probe that
     // never asks reads ok over a lost file. Registered on the plugin tier, so a
-    // `healthPlugin({ checks: { db } })` of the app's own replaces it.
+    // `health({ checks: { db } })` of the app's own replaces it.
     app.registerReadiness('db', () => (db as { $ping(): boolean }).$ping() === true)
     if (opts.principal) Object.defineProperty(app, PRINCIPAL_RESOLVER, { value: opts.principal })
     // Row tenancy scopes with policies rather than with a second database, so
@@ -2276,7 +2276,7 @@ export function createApp(opts: AppOptions = {}): App {
         // and the prefixed fallback never ran. An app with an apiPrefix checked
         // only the unprefixed path and never advertised either endpoint.
         // Find where the endpoint is actually mounted, rather than guessing a
-        // location and testing it. healthPlugin({ path: '/internal' }) puts it
+        // location and testing it. health({ path: '/internal' }) puts it
         // at /internal/health, and probing only '/health' left the banner
         // silent about a working endpoint. Returning the real path also means
         // the advertised URL is the one that answers — it used to print the
@@ -2550,7 +2550,7 @@ function refuseShadowedServices(app: App): void {
       throw new Error(
         `Service '${name}' is shadowed by ${route}. A fixed route beats the service's ` +
         `\`${prefix}/{service}\` mount, so a request for the service reaches the route and the service ` +
-        `never answers. Rename the service, or move the route (healthPlugin({ path }) moves the health endpoints).`
+        `never answers. Rename the service, or move the route (health({ path }) moves the health endpoints).`
       )
     }
   }

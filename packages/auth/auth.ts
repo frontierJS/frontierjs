@@ -759,11 +759,11 @@ export function createLitestoneAuth(
     // Present only where the app mails them — see `onMagicLinkRequested`.
     ...(onMagicLinkRequested ? { requestMagicLink, verifyMagicLink } : {}),
 
-    // Exposed so createAuthPlugin can read it without requiring the caller
-    // to pass sessionTtl to both createLitestoneAuth and createAuthPlugin.
+    // Exposed so auth can read it without requiring the caller
+    // to pass sessionTtl to both createLitestoneAuth and auth.
     _sessionTtl: sessionTtl,
 
-    // The expired-row sweep. createAuthPlugin starts it in work() and stops it at
+    // The expired-row sweep. auth starts it in work() and stops it at
     // shutdown, so an app that mounts the plugin prunes without a plugin of its
     // own, and a one-shot boot (junction call, the snapshot tools) sweeps nothing.
     cleanup: createAuthCleanupJobs(db),

@@ -173,8 +173,9 @@ core/
                 the same, so a pick's loc and the scope agree),
                 reading also each `@frontierjs/*` AGENTS.md (`findGuides`) and
                 the app's `db/` — never the app root, which holds `api/.env`,
-                and `/text`, a text edit with no model (`locateText`) that
-                falls back to an ask when the text is not there exactly once.
+                and `/text`, a text edit with no model
+                (`@frontierjs/toolbelt/textedit`) that falls back to an ask
+                when the text is not there exactly once.
                 `/plan` is Make a plan, the ask with nothing to pick: the
                 Workbench's `buildPlanPrompt` in a fresh session that may edit
                 `PLAN.md` at the app root and nothing else, undoable and never

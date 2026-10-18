@@ -534,6 +534,7 @@ model Invoice {
   @@transitions(status, settle: issued -> settled)
   @@transitions(reminded, remind: false -> true @system)
   @@commitment(remind, on: dueOn - 3d, while: status == 'issued')
+  @@gate(0)
 }
 `
 

@@ -9,20 +9,20 @@ import {
   createApp,
   createLogger,
   channels,
-  healthPlugin,
+  health,
   membershipClaim,
   Forbidden,
   BadRequest,
 } from '@frontierjs/junction'
-import { metricsPlugin } from '@frontierjs/junction/metrics'
+import { metrics } from '@frontierjs/junction/metrics'
 import { devtools } from '@frontierjs/junction/devtools'
-import { mailerPlugin } from '@frontierjs/junction/mail'
+import { mail as mailPlugin } from '@frontierjs/junction/mail'
 
 import { conduit }           from '@frontierjs/conduit'
 import { createSQLiteStore } from '@frontierjs/conduit/stores/sqlite'
-import { createCaravan }     from '@frontierjs/caravan'
+import { caravan }     from '@frontierjs/caravan'
 import { orion, DEFAULT_SERVICE_NAMES } from '@frontierjs/orion/plugin'
-import { mcpPlugin }         from '@frontierjs/mcp'
+import { mcp }         from '@frontierjs/mcp'
 
 import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
@@ -31,7 +31,7 @@ import { workbenchTerminal }         from './plugins/workbench-terminal.ts'
 import { LEVELS }                                from '@frontierjs/litestone'
 import { apply }                                 from '@frontierjs/litestone/migrations'
 import type { WriteEvent }                       from '@frontierjs/litestone'
-import { createLitestoneAuth, createAuthPlugin, defineProvider } from '@frontierjs/auth'
+import { createLitestoneAuth, auth as authPlugin, defineProvider } from '@frontierjs/auth'
 import { ssoFromEnv }                            from './core/sso-env.ts'
 import { createBasecampDb, jobsDatabasePath } from './core/db.ts'
 import { openSqlite }                    from './core/sqlite.ts'
@@ -41,7 +41,7 @@ import { dependencyTargets }  from './core/dependencies.ts'
 import { accountMail }         from './core/account-mail.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
-import { notificationsPlugin }  from '@frontierjs/notifications'
+import { notifications }  from '@frontierjs/notifications'
 import { basecampAuditLog, basecampAuditPreImage, hostReportKey, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
@@ -348,7 +348,7 @@ export async function buildBasecampApp(
   // The database path is not a declaration: it is derived from the resolved one
   // above, so a test that redirects the main database takes the queue with it
   // rather than writing jobs into the developer's own.
-  const queue = createCaravan({
+  const queue = caravan({
     db: jobsDatabasePath(dbPath),
   })
   app.configure(queue)
@@ -364,7 +364,7 @@ export async function buildBasecampApp(
   // plugin order at startup rather than at the first send. Absent where no
   // provider is configured — `app.mail` being undefined is what every caller
   // reads to say so out loud instead of reporting a delivery that never left.
-  if (mail) app.configure(mailerPlugin(createConduitMailer(app, { from: env.MAIL_FROM })))
+  if (mail) app.configure(mailPlugin({ mailer: createConduitMailer(app, { from: env.MAIL_FROM }) }))
 
   // ── Notifications ─────────────────────────────────────────────────────
   // Seven kinds have been declared, a preferences screen has honoured them, and
@@ -378,7 +378,7 @@ export async function buildBasecampApp(
   // and `core/notify.ts` drops `email` per recipient — a person who asked for it
   // on an app that cannot mail must still get their in-app copy, and `notify()`
   // throws on an undeliverable transport before delivering any of them.
-  app.configure(notificationsPlugin({
+  app.configure(notifications({
     db,
     transports:    mail ? { email: { mailer: 'default' } } : {},
   }))
@@ -399,17 +399,17 @@ export async function buildBasecampApp(
   // ── Health + metrics ──────────────────────────────────────────────────
   // GET /health  → liveness + readiness (503 if DB unreachable; createApp({ db }) registers that check)
   // GET /metrics → conduit + caravan stats merged in via registerMetricsSource
-  app.configure(healthPlugin())
+  app.configure(health())
 
   // What /metrics says, KEPT. Every source above answers on request, and until
   // this the merged value lived for the duration of one response — so no
   // `AlertRule` in this app was evaluable, because a condition reading "above
   // 80% for five minutes" had no window to read (`FJS-123`, `FJS-956`).
   //
-  // AFTER healthPlugin, because the scrape reads what the sources contributed
+  // AFTER health, because the scrape reads what the sources contributed
   // and a plugin configured before them would take its first reading of an app
   // that had not claimed its sections yet.
-  app.configure(metricsPlugin())
+  app.configure(metrics())
 
   // ── The agent surface ─────────────────────────────────────────────────
   //
@@ -426,7 +426,7 @@ export async function buildBasecampApp(
   // `narrow`: a key is offered what its scopes reach, not everything its bot's
   // role does — the same reading apiKeyGuard refuses a call by (`FJS-1349`) —
   // and nobody is offered the workbench, which agentGuard refuses.
-  app.configure(mcpPlugin({ name: 'basecamp', version: '1.0.0', keepAliveMs: 5_000, narrow: narrowForAgent }))
+  app.configure(mcp({ name: 'basecamp', version: '1.0.0', keepAliveMs: 5_000, narrow: narrowForAgent }))
 
   // ── Devtools console ──────────────────────────────────────────────────
   // AFTER health and the queue: the console reads what plugins contributed, so
@@ -661,7 +661,8 @@ export async function buildBasecampApp(
     return subject != null && subject.isSystemAdmin !== true
   }
 
-  app.configure(createAuthPlugin(auth, {
+  app.configure(authPlugin({
+    auth,
     prefix:   '/auth',
     services: { apiKeys: false, standingLevel: basecampGateLevel },
     canStartSupport: supportGuard,

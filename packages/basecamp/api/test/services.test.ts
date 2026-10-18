@@ -1929,7 +1929,7 @@ describe('a move the engine makes, asked for by a person', () => {
 
 // ─── the metric store, read back ─────────────────────────────────────────
 //
-// `metricsPlugin` writes these; this service is the only thing that reads
+// `metrics` writes these; this service is the only thing that reads
 // them, and until it existed they were three models nothing could reach —
 // which is the shape `AlertRule` sat in for a month (`FJS-123`).
 //

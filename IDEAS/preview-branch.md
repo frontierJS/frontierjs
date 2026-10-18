@@ -276,7 +276,7 @@ are in this file's § Probed.
   no other origin to notice. A URL with no valid level refuses everyone.
 - **The level is the API's, and it is the person's `standing`.** `account/me`
   carries `standing` when the app passes `services: { standingLevel }` or
-  `{ level }` to `createAuthPlugin`; without either every caller is refused by
+  `{ level }` to `auth`; without either every caller is refused by
   name. Not `level`: that is what the browser's buttons read, and Basecamp,
   graded per workspace, publishes none. Basecamp's `standingLevel` answers 7
   for the hub, so its rule is `ASK_ADMIT_LEVEL=SYSADMIN`; ELA passes `level`,

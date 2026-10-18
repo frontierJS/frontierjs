@@ -73,6 +73,7 @@ const VOCAB = [
     "What changes when you navigate.",
     [
       ["Screen", "<main>", "The routed page body"],
+      ["Aside", "<aside>", "The supporting column beside a Screen's main content: a record's facts next to its tabs. A Screen holding one lays out two columns, --aside-width wide, and the .aside-toggle the app owns collapses it"],
       ["Pane", "<section aria-labelledby>", "A labeled major subdivision of a Screen"],
       ["View", '<article role="tabpanel">', "One switchable view inside a Pane"],
       ["Tabs", '<div> + <div role="tablist">', "The control that switches Views. The buttons are <button role=\"tab\">"],
@@ -654,6 +655,19 @@ const ANATOMY = {
 </span>`,
     parts: [
       ['.tooltip-anchor', 'The positioning context. The Tooltip is absolute inside it'],
+    ],
+  },
+
+  Aside: {
+    markup: `<main class="screen">
+  <aside class="aside" aria-label="Details">
+    <button class="btn ghost square aside-toggle" aria-label="Hide details" aria-expanded="true"></button>
+    <dl class="facts">&hellip;</dl>
+  </aside>
+  <div class="stack">&hellip;</div>
+</main>`,
+    parts: [
+      ['.aside-toggle', 'The control that collapses the Aside to itself. It draws its own «, flipped while aria-expanded is "false"; flipping the attribute is the app’s job, and so is its label', 'optional'],
     ],
   },
 

@@ -167,6 +167,11 @@ export const env = defineEnv({
   // spending call including ones nobody has written yet.
   ALLOW_CLOUD_SPEND: {},
 
+  // Where basecamp keeps its clone of each static site an owner edits
+  // (`core/site-checkout.ts`), default ~/.config/basecamp/sites. A cache: every
+  // draft save is pushed, so losing it costs a clone and no work.
+  SITES_DIR: {},
+
   // `1` says this Basecamp runs on its operator's own machine, so it may read
   // that machine: the Host aliases in ~/.ssh/config (`core/local-ssh.ts`) and
   // the git repositories under a folder (`core/local-git.ts`). Refused under

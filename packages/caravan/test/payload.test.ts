@@ -10,13 +10,13 @@
 // ============================================================
 
 import { describe, it, expect, afterEach } from 'bun:test'
-import { createCaravan, defineJob, PAYLOAD_MAX_BYTES } from '../src/index.ts'
+import { caravan, defineJob, PAYLOAD_MAX_BYTES } from '../src/index.ts'
 import type { CaravanInstance, JobContext } from '../src/types.ts'
 
 const queues: CaravanInstance[] = []
 
 function makeQueue(): CaravanInstance {
-  const q = createCaravan({ db: ':memory:', pollInterval: 20 })
+  const q = caravan({ db: ':memory:', pollInterval: 20 })
   queues.push(q)
   return q
 }

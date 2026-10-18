@@ -21,7 +21,7 @@ import {
   InvalidCredentialsError, EmailTakenError, InvalidTokenError,
   UserNotFoundError, AuthConfigError,
 } from '../errors.ts'
-import { createAuthPlugin } from '../plugin.ts'
+import { auth as authPlugin } from '../plugin.ts'
 import { makeAuth, type Harness, signedIn } from './harness.ts'
 
 let h: Harness
@@ -33,7 +33,8 @@ beforeAll(async () => {
   // createTestApp installs a stub auth; point the transport at ours so
   // ctx.user is resolved by this package's verifySession.
   app.setAuth(h.auth as any)
-  app.configure(createAuthPlugin(h.auth, {
+  app.configure(authPlugin({
+    auth: h.auth,
     // Generous limits: these tests make far more calls than a real client.
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
@@ -266,7 +267,8 @@ describe('rate limiting', () => {
     const scoped = await makeAuth()
     const limited = await createTestApp({ auth: scoped.auth as any })
     limited.setAuth(scoped.auth as any)
-    limited.configure(createAuthPlugin(scoped.auth, {
+    limited.configure(authPlugin({
+      auth: scoped.auth,
       registerRateLimit: { max: 3, window: '15 minutes' },
     }))
 
@@ -293,7 +295,7 @@ describe('cookieAuth mode', () => {
     scoped = await makeAuth()
     cookieApp = await createTestApp({ auth: scoped.auth as any })
     cookieApp.setAuth(scoped.auth as any)
-    cookieApp.configure(createAuthPlugin(scoped.auth, { cookieAuth: true }) as any)
+    cookieApp.configure(authPlugin({ auth: scoped.auth, cookieAuth: true }) as any)
     await request(cookieApp).post('/auth/register').send({ email: email('cookie'), password: 'pw-1' })
   })
   afterAll(() => scoped.cleanup())

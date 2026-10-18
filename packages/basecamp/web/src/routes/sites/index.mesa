@@ -1,0 +1,41 @@
+---
+title: Sites
+---
+<script>
+  // The static sites the caller may edit — a grant on each (`FJS-D1230`),
+  // held with or without a membership, so this list is the same in every
+  // workspace and a site's owner who belongs to none still has a way in.
+  import { drafts } from '../../resources/Draft.mesa'
+
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+
+  let sites = null
+  let error = null
+
+  drafts.service.invoke('sites', null)
+    .then(answer => { sites = answer.sites })
+    .catch(err => { error = err.message })
+</script>
+
+<div class="section-header">
+  <h1>Sites</h1>
+</div>
+
+{#if error}
+  <article class="alert danger" id="screen-error"><div class="alert-content">{error}</div></article>
+{:else if sites && !sites.length}
+  <EmptyState title="No sites to edit">
+    A site appears here once its workspace's admin adds you as an editor of it.
+  </EmptyState>
+{:else if sites}
+  <ul class="stack" id="sites-list">
+    {#each sites as s}
+      <li>
+        <a href={`/sites/${s.id}/`}><strong>{s.name}</strong></a>
+        <Pill tone={s.role === 'publish' ? 'success' : 'muted'}>{s.role === 'publish' ? 'edit and publish' : 'edit'}</Pill>
+        <div class="text-sm text-muted"><code>{s.repo}</code></div>
+      </li>
+    {/each}
+  </ul>
+{/if}

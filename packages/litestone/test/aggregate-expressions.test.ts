@@ -31,6 +31,7 @@ model Employee {
   salary   Int    @guarded
   bonus    Int
   homeTown String @map("home_town")
+  @@gate(0)
 }
 `
 

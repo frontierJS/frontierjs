@@ -71,8 +71,8 @@ export default defineBackfill({
 
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath }    from 'node:url'
-import { backfills }        from '@frontierjs/junction/backfill'
-import { createCaravan }    from '@frontierjs/caravan'
+import { backfill }         from '@frontierjs/junction/backfill'
+import { caravan }    from '@frontierjs/caravan'
 import { env }              from './core/env.ts'
 import orderShippedAt       from './backfills/order-shipped-at.ts'
 
@@ -82,8 +82,8 @@ import orderShippedAt       from './backfills/order-shipped-at.ts'
 const appRoot = fileURLToPath(new URL('../../', import.meta.url))
 const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), 'jobs.db')
 
-app.configure(createCaravan({ db: jobsDb }))  // a chunk runs as a job
-app.configure(backfills([orderShippedAt]))
+app.configure(caravan({ db: jobsDb }))  // a chunk runs as a job
+app.configure(backfill([orderShippedAt]))
 
 // It starts itself: boot queues the first chunk of anything unfinished, and each
 // chunk queues the next after a gap proportional to what it just cost. Ask
@@ -129,7 +129,7 @@ const declaresIt  = /^\s*model\s+BackfillRun\b/m.test(schemaContents)
 
 if (importsIt || declaresIt) {
   log.warn('BackfillRun already present — skipping schema injection')
-  log.info('Wire it with app.configure(backfills([...])) — a chunk runs as a job, so configure caravan too')
+  log.info('Wire it with app.configure(backfill([...])) — a chunk runs as a job, so configure caravan too')
   return
 }
 

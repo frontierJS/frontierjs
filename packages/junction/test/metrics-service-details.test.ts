@@ -17,7 +17,7 @@
 // service that genuinely has custom methods and genuinely allows bulk.
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { createApp, createService, healthPlugin, defaultConfig } from '../index.ts'
+import { createApp, createService, health, defaultConfig } from '../index.ts'
 
 const PORT = 3385
 let app: any
@@ -29,7 +29,7 @@ beforeAll(async () => {
       http: { ...defaultConfig.http, drainTimeout: 200 },
     },
   })
-  app.configure(healthPlugin())
+  app.configure(health())
 
   app.services.register(createService({
     name:      'servers',

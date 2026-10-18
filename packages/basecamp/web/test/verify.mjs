@@ -1744,7 +1744,7 @@ check('an alert rule is created',
 check('…and its condition reads as a condition rather than an em-dash',
   await waitFor(`document.getElementById('alert-list')?.textContent ?? ''`, t => t.includes('> 85')),
   t => t.includes('> 85') && !t.includes('> —'))
-// The rule names `process.memoryMb`, which `metricsPlugin` mints on its first
+// The rule names `process.memoryMb`, which `metrics` mints on its first
 // scrape — at boot, so it is there. A rule watching a TYPO never fires and looks
 // exactly like a threshold nobody crossed, so the card answers which it is.
 // Only the server can see the series; this is the half that makes anyone find out.

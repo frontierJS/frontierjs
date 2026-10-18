@@ -18,7 +18,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createClient, GatePlugin } from '@frontierjs/litestone'
 import { createApp, createService, membershipClaim } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
-import { mcpPlugin } from '../src/plugin.ts'
+import { mcp } from '../src/plugin.ts'
 
 const SCHEMA = `
   tenancy { strategy row  column workspaceId  claim workspaceId }
@@ -77,7 +77,7 @@ beforeAll(async () => {
     name: 'docs', model: 'Doc',
     methods: ['find', 'get', 'create'],
   }))
-  app.configure(mcpPlugin({ name: 'workspaces' }))
+  app.configure(mcp({ name: 'workspaces' }))
   await app.start()
   base = `http://localhost:${app.http.port}/mcp`
 })

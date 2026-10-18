@@ -3,7 +3,7 @@
 // holds them (`FJS-D639`). A battery is its own subpath and is not here.
 //
 //   import { createApp, createService, authenticate } from '@frontierjs/junction'
-//   import { mailerPlugin }                           from '@frontierjs/junction/mail'
+//   import { mail }                           from '@frontierjs/junction/mail'
 
 // ─── App ──────────────────────────────────────────────────────────────────
 export { createApp }                              from './src/core/app.ts'
@@ -137,7 +137,7 @@ export type { CorsOptions, HelmetOptions, RateLimitOptions, CorrelationIdOptions
 // this process's own port, or a reach into the private map. A scraper that has
 // the app in hand is the ordinary case (`FJS-956`), so the collector is part of
 // the seam rather than half of it.
-export { healthPlugin, collectMetrics, renderPrometheus }          from './src/transport/health.ts'
+export { health, collectMetrics, renderPrometheus }          from './src/transport/health.ts'
 // Reading what the store kept, as opposed to collecting what is true now.
 // Beside `db/metrics.lite`, because an app that imports those models cannot
 // read a counter out of them without the reset rule and would write its own.

@@ -1,0 +1,102 @@
+<script>
+  // Stops.mesa — Tab and Shift+Tab over the scene's stops (`IDEAS/haven.md`
+  // 19.2), the way a browser moves focus over a page's controls. The stops are
+  // `commands.stops(stage.marks)`, read at the first press, so a verb an actor
+  // added since is one. Standing in a stop's reach is that stop focused, and
+  // the first press moves past it; standing in none, it names the nearest by
+  // the walk, as `f` finds a member, since by the crow the nearest may be
+  // through a wall.
+  //
+  // A named stop is the registry's mode: Tab and Shift+Tab are its keys, and
+  // any other key lets it go — Esc taken, an arrow let through to step, a
+  // letter to the line — as the `f` walk does. Shift alone is a browser's
+  // keydown and lets nothing go. The scene is one `<pre>` and its stops are
+  // cells, so a Tab here is prevented on both targets or a browser would move
+  // focus off the line. A partial `/word` is Tab's to complete, which
+  // `Scene.mesa` asks before any verb.
+  import { reaches } from '@/lib/hash/commands.js'
+  import { walked } from '@/lib/scene/paths.js'
+  import { at, tint } from '#cell'
+
+  export let stage
+  export let view
+  // A line being typed keeps Tab for its completion and the browser's focus.
+  export let draft
+  // Where this figure stands, `{ x, y }`, asked afresh at each press.
+  export let where
+  export let tell
+
+  var verbs = $context.commands
+  const MODE   = 'stops'
+  const MARK   = { ink: '#000000', ground: '#5fd7ff' }
+  const ALONE  = new Set(['Shift', 'Control', 'Alt', 'Meta'])
+  let named = null   // { list, i } while a stop is named
+
+  const away = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))
+
+  /** The steps to stand where `stop` answers — beside a door, within a verb's reach. */
+  function distance(floor, stop) {
+    let best = Infinity
+    for (const r of stop.reaches) {
+      const within = Math.max(r.within, stop.to ? 1 : 0)
+      for (const c of floor) if (c.n < best && away(c, r) <= within) best = c.n
+    }
+    return best
+  }
+
+  /** Where the first press lands: past the stop stood in, else the nearest walked. */
+  function first(list, step) {
+    const me = where()
+    const stood = list.findIndex((s) => s.reaches.some((r) => reaches({ reach: r }, me)))
+    if (stood !== -1) return (stood + step + list.length) % list.length
+    const floor = walked(stage, me)
+    let i = 0
+    let best = Infinity
+    list.forEach((s, n) => { const d = distance(floor, s); if (d < best) { best = d; i = n } })
+    return i
+  }
+
+  function say() {
+    const s = named.list[named.i]
+    tell(`→ ${s.name} (${named.i + 1}/${named.list.length})`)
+  }
+
+  function move(e) {
+    e.preventDefault?.()
+    const n = named.list.length
+    named = { ...named, i: (named.i + (e.shiftKey ? -1 : 1) + n) % n }
+    say()
+  }
+
+  /** The cells a named stop marks on the art: each reach's own cell, in the view. */
+  const marked = (shown, v) => !shown ? [] : shown.list[shown.i].reaches
+    .filter((r) => r.x >= v.x && r.y >= v.y && r.x < v.x + v.w && r.y < v.y + v.h)
+    .map((r) => ({ key: `${r.x},${r.y}`, x: r.x - v.x, y: r.y - v.y, ch: stage.look(r.x, r.y, Date.now()).ch }))
+
+  $.onDestroy(verbs.add({
+    key: 'Tab',
+    run: ({ event }) => {
+      if (draft || verbs.mode) return false
+      event?.preventDefault?.()
+      const list = verbs.stops(stage.marks)
+      if (!list.length) { tell('nothing here to Tab to'); return true }
+      named = { list, i: first(list, event?.shiftKey ? -1 : 1) }
+      const close = verbs.open({
+        name: MODE,
+        keys: { Tab: move },
+        take: (e) => {
+          if (ALONE.has(e.key)) return false
+          close()
+          return e.key === 'Escape'
+        },
+        closed: () => { named = null; tell('') },
+      })
+      say()
+      return true
+    },
+  }))
+</script>
+
+{#each marked(named, view) as c (c.key)}
+  <p {@attach at(c.x, c.y, 9)} {@attach tint(MARK.ink, MARK.ground)}>{c.ch}</p>
+{/each}

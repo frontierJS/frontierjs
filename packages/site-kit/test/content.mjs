@@ -14,6 +14,7 @@ import { pathToFileURL } from 'node:url'
 import { readSettings, writeSettingsModule } from '../config/content.js'
 import { siteKit } from '../config/vite.js'
 import { collection } from '../src/collection.js'
+import { LOCKED_KEYS, applyEdit, formOf, lockedKeysChanged, pathRefusal } from '../src/editable.js'
 
 const failed = []
 const check = (label, ok, detail = '') => {
@@ -101,6 +102,82 @@ try {
     } catch (err) {
       check('siteKit() refuses a settings key no page can name', /'let'/.test(err.message), err.message)
     }
+  }
+
+  // ─── what an owner may change (FJS-D1226) ─────────────────────────────────
+  {
+    for (const path of ['content/routes/index.md', 'content/collections/reviews/1-annie.md', 'content/settings/site.md',
+      'content/menus/main.md', 'content/media/spa/room.JPG', 'content/public/hero.webp']) {
+      check(`${path} is the owner's`, pathRefusal(path) === null, pathRefusal(path))
+    }
+    for (const path of ['content/settings/site.js', 'content/layouts/Page.mesa', 'content/settings/site.css',
+      'content/settings/_redirects', 'content/public/logo.svg', 'content/fonts/a.woff2', 'package.json', 'content']) {
+      check(`${path} is the developer's`, /developer's/.test(pathRefusal(path) ?? ''), pathRefusal(path))
+    }
+    for (const path of ['', '/content/routes/index.md', 'content/../package.json', 'content//a.md', './content/a.md']) {
+      check(`"${path}" is not a path inside the site`, /not a path inside the site/.test(pathRefusal(path) ?? ''), pathRefusal(path))
+    }
+    check('the locked keys are layout, name and Block\'s six look keys',
+      LOCKED_KEYS.join() === 'layout,name,template,tone,treatment,density,align,background', LOCKED_KEYS.join())
+    const block = { layout: 'Block', name: 'Hero', tone: 'muted', title: 'Welcome', menu: [{ name: 'Home' }] }
+    check('a changed title, or a menu entry\'s name, locks nothing',
+      lockedKeysChanged(block, { ...block, title: 'Hello', menu: [{ name: 'Start' }] }).length === 0)
+    check('a changed, added or removed locked key is named',
+      lockedKeysChanged(block, { ...block, tone: 'danger', template: 'split', name: undefined }).join() === 'name,template,tone'
+        && lockedKeysChanged(block, { title: 'Welcome' }).join() === 'layout,name,tone')
+  }
+
+  // ─── the owner's form: a field per key, written line by line ──────────────
+  {
+    const file = [
+      '---',
+      'layout: Block',
+      'tone: muted',
+      'title: Welcome   # the hero line',
+      'stars: 5',
+      'open: true',
+      'hours: "9 # 5"',
+      'intro: >',
+      '  two lines',
+      '  folded',
+      'menu:',
+      '  - name: Home',
+      '---',
+      'Body text.',
+      '',
+    ].join('\n')
+    const form = formOf(file)
+    const field = (k) => form.keys.find((e) => e.key === k)
+    check('the form names the body and every key',
+      form.body === 'Body text.\n' && form.keys.map((e) => e.key).join() === 'layout,tone,title,stars,open,hours,intro,menu')
+    check('a one-line text, number or yes/no is a field; a locked, folded or listed key is not',
+      ['title', 'stars', 'open', 'hours'].every((k) => field(k).field)
+        && ['layout', 'tone', 'intro', 'menu'].every((k) => !field(k).field)
+        && field('tone').locked && !field('intro').locked)
+
+    const edited = applyEdit(file, { body: 'New body.\n', values: { title: 'Hello: there', stars: 4, open: false, hours: '10 # 6' } })
+    const lines = edited.text?.split('\n') ?? []
+    check('a write changes only its own lines and keeps the trailing comment',
+      lines[3] === 'title: "Hello: there"   # the hero line' && lines[4] === 'stars: 4' && lines[5] === 'open: false'
+        && lines[6] === 'hours: "10 # 6"' && lines.slice(7, 12).join('\n') === file.split('\n').slice(7, 12).join('\n')
+        && edited.text.endsWith('---\nNew body.\n'), edited.refused ?? edited.text)
+    check('the written file reads back as the values asked for',
+      formOf(edited.text ?? '').keys.find((e) => e.key === 'title')?.value === 'Hello: there')
+
+    const refused = (label, edit, pattern) => {
+      const out = applyEdit(file, edit)
+      check(label, pattern.test(out.refused ?? ''), out.refused ?? out.text)
+    }
+    refused('a locked key is refused', { values: { tone: 'danger' } }, /developer's/)
+    refused('a folded or listed key is refused', { values: { intro: 'one line' } }, /spans several lines/)
+    refused('a key the file does not hold is refused', { values: { subtitle: 'x' } }, /not in this file/)
+    refused('a number written as text is refused', { values: { stars: 'five' } }, /a number, not a string/)
+    const opened = applyEdit('Just prose.\n', { body: '---\nlayout: Other\n---\n' })
+    check('a body that opens a front-matter block of its own is refused', /also change layout/.test(opened.refused ?? ''),
+      opened.refused ?? opened.text)
+    check('a file with no front matter takes a body and refuses a key',
+      applyEdit('Just prose.\n', { body: 'More prose.\n' }).text === 'More prose.\n'
+        && /no front matter/.test(applyEdit('Just prose.\n', { values: { title: 'x' } }).refused ?? ''))
   }
 
   // ─── a content/ with no content/routes (FJS-2546) ─────────────────────────

@@ -338,7 +338,7 @@ nothing for it to be inside of.
   option TAKES decides which** (`FJS-D256`). Data is declared — `middleware:`
   normalizes onto `config.http` and installs in the `config-middleware` phase,
   `plugins:` onto `config.plugins` in `config-plugins`. Code is constructed:
-  `channels(cb)`, `authPlugin`, `backfills(defs)`, and any plugin whose options
+  `channels(cb)`, `authPlugin`, `backfill(defs)`, and any plugin whose options
   hold a function — `health.checks`, `health.authFn`, `manifest.db` are the three
   that exist. **A plugin declared in config AND configured by hand is refused by
   name at `start()`**, so an app needing one of those three declares it nowhere.

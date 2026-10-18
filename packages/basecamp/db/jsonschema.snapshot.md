@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-143 definitions · 69 models · 1 view · 30 types · 43 enums · 0 other
+145 definitions · 70 models · 1 view · 30 types · 44 enums · 0 other
 ```
 
 ## Definitions
@@ -60,6 +60,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `App` | model |
 | `Variable` | model |
 | `Domain` | model |
+| `AppEditor` | model |
 | `AppServer` | model |
 | `AppBackup` | model |
 | `AppNetwork` | model |
@@ -137,6 +138,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `DependencyKind` | enum |
 | `NotificationContext` | enum |
 | `NotificationKind` | enum |
+| `EditorRole` | enum |
 | `Capability` | enum |
 | `WorkspaceStatusChange` | type |
 | `UserStatusChange` | type |
@@ -216,6 +218,7 @@ validates, and a select that silently drops an option.
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`, `Monitor`
 - `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `server_unreachable`, `monitor_down`, `monitor_up`, `posture_failed`, `dependency_vulnerable`, `member_joined`, `job_failed`, `weekly_digest`
+- `EditorRole` — `edit`, `publish`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`, `Variable.create`, `Variable.delete`, `Variable.update`
 
 ## Models
@@ -527,6 +530,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:1 create:8 update:1 delete:5` · closed (`additionalProperties: false`)
 - relation `account` — belongsTo `Account` via `accountId` · optional
 - relation `memberships` — hasMany `WorkspaceMember`
+- relation `appEditors` — hasMany `AppEditor`
 - relation `deployments` — hasMany `Deployment`
 - relation `apiKeys` — hasMany `ApiKey`
 
@@ -858,6 +862,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `appNetworks` — hasMany `AppNetwork`
 - relation `domains` — hasMany `Domain`
 - relation `variables` — hasMany `Variable`
+- relation `editors` — hasMany `AppEditor`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -924,6 +929,21 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `appId`, `hostname` · not accepted — `id`, `version`
+
+### `AppEditor`
+
+- gate `read:1 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `app` — belongsTo `App` via `appId` · on delete Cascade
+- relation `user` — belongsTo `User` via `userId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `appId` | `string` | yes | — | — | — |
+| `userId` | `string` | yes | — | — | — |
+| `role` | `EditorRole` = `"edit"` | — | — | — | — |
+
+**On create**: required — `appId`, `userId` · not accepted — `id`
 
 ### `AppServer`
 

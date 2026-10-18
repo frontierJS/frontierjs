@@ -23,7 +23,7 @@ import { readFileSync } from 'node:fs'
 import { join }         from 'node:path'
 
 import {
-  createApp, channels, healthPlugin, sessionGateLevel,
+  createApp, channels, health, sessionGateLevel,
   type App, type IAuth,
 } from '../../index.ts'
 
@@ -118,7 +118,7 @@ const app = createApp({
   config: { name: 'fullstack', port: PORT, apiPrefix: '/api' },
 })
 
-app.configure(healthPlugin())
+app.configure(health())
 
 // Every connection joins the 'posts' channel.
 app.configure(channels((a: App) => {

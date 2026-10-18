@@ -12,7 +12,7 @@ spoken to an agent.
 ```
 index.ts                     the public surface — projectTools, resolveModel, the types
 src/projection.ts            which tools a standing sees, and what decided each
-src/plugin.ts                mcpPlugin — the endpoint mounted inside the running API
+src/plugin.ts                mcp — the endpoint mounted inside the running API
 src/await.ts                 hold an awaited call until the jobs its correlation id names are terminal (FJS-D406)
 src/breadcrumbs.ts           what a one-row answer offers next — the caller's own tools, narrowed by the row (FJS-D398)
 src/client/                  `@frontierjs/mcp/client` — the terminal client's half,

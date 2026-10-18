@@ -15,7 +15,7 @@
 
 import { describe, it, expect, afterEach } from 'bun:test'
 import { resolve } from 'node:path'
-import { createCaravan, defineJob } from '../src/index.ts'
+import { caravan, defineJob } from '../src/index.ts'
 import { autoloadJobs } from '../src/autoload.ts'
 import type {
   CaravanInstance, HandlerOptions, JobContext, JobRegistrar,
@@ -28,8 +28,8 @@ const BAD_FIXTURES  = resolve(import.meta.dir, 'fixtures/bad-jobs')
 
 const queues: CaravanInstance[] = []
 
-function makeQueue(opts: Parameters<typeof createCaravan>[0] = {}): CaravanInstance {
-  const q = createCaravan({ db: ':memory:', pollInterval: 20, ...opts })
+function makeQueue(opts: Parameters<typeof caravan>[0] = {}): CaravanInstance {
+  const q = caravan({ db: ':memory:', pollInterval: 20, ...opts })
   queues.push(q)
   return q
 }

@@ -20,8 +20,8 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createApp } from '@frontierjs/junction'
-import { mcpPlugin } from '../../mcp/src/plugin.ts'
-import { createAuthPlugin } from '../plugin.ts'
+import { mcp } from '../../mcp/src/plugin.ts'
+import { auth } from '../plugin.ts'
 import { makeAuth, type Harness, TEST_KEY } from './harness.ts'
 
 const PW = 'pw-agent-1'
@@ -40,11 +40,12 @@ beforeAll(async () => {
     config:   { port: 0 },
     logLevel: 'silent',
   } as never)
-  app.configure(createAuthPlugin(h.auth, {
+  app.configure(auth({
+    auth: h.auth,
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
   }))
-  app.configure(mcpPlugin({ name: 'agent-refusals' }))
+  app.configure(mcp({ name: 'agent-refusals' }))
   // The boot warning goes to `console.warn` on an app with no `log`.
   const warn = console.warn
   console.warn = (...a: unknown[]) => { warnings.push(a.map(String).join(' ')) }

@@ -100,7 +100,7 @@ Litestone applies the same number to every connection it opens: main's write and
 read handles, the tenant registry and each tenant's file, the CLI's handles, and
 the companion index beside a `jsonl`/`trail` file.
 
-`@frontierjs/caravan` (`createCaravan({ busyTimeout })`) and Junction's SQLite
+`@frontierjs/caravan` (`caravan({ busyTimeout })`) and Junction's SQLite
 cache (`createSqliteCache({ busyTimeout })`) have their own, because they own
 their own connections.
 

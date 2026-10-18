@@ -42,7 +42,7 @@
 
 import type { App } from '../../core/app.ts'
 
-/** Options for `exportPlugin()`. */
+/** Options for `exporter()`. */
 export interface ExportPluginOptions {
   /**
    * Mount point, under the app's own api prefix. Plural because the collection
@@ -76,7 +76,7 @@ export interface ExportPluginOptions {
 
 interface Dataset { name: string; accessor: string; kind: string; export: { format: string; since: string | null } }
 
-export function exportPlugin(opts: ExportPluginOptions = {}) {
+export function exporter(opts: ExportPluginOptions = {}) {
   const path          = opts.path ?? '/exports'
   const maxConcurrent = opts.maxConcurrent ?? 2
   const batch         = opts.batch ?? 1000
@@ -124,7 +124,7 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
         // and the request-time version of that is a route that is silently not
         // there.
         throw new Error(
-          'exportPlugin needs a Litestone client — `@@export` is a schema declaration and there is ' +
+          'exporter needs a Litestone client — `@@export` is a schema declaration and there is ' +
           'nothing to read it off. Pass `db` to createApp(), or `tenants` under database tenancy.')
       }
 

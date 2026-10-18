@@ -19,7 +19,7 @@ import { join } from 'node:path'
 import { createTenantRegistry } from '@frontierjs/litestone'
 import { createApp, createService, $ } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
-import { mcpPlugin } from '../src/plugin.ts'
+import { mcp } from '../src/plugin.ts'
 
 const SHOP = readFileSync(new URL('./fixtures/shop.lite', import.meta.url), 'utf8')
 
@@ -49,7 +49,7 @@ beforeAll(async () => {
     methods: ['find', 'get', { method: 'mint', gate: 5 }],
   }))
 
-  app.configure(mcpPlugin({ name: 'shop' }))
+  app.configure(mcp({ name: 'shop' }))
   await app.start()
   base = `http://localhost:${app.http.port}/mcp`
 })

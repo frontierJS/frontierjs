@@ -354,7 +354,7 @@ It is a gap in the design above rather than beside it, so it is recorded here ra
 than in a new file.
 
 **It is built** (`FJS-D157`). `defineBackfill({ name, model, field, fill })`, a
-`BackfillRun` row and `app.configure(backfills([...]))`, shipped from junction the way
+`BackfillRun` row and `app.configure(backfill([...]))`, shipped from junction the way
 the outbox is. Four of the five properties below come from the shape rather than being
 built — the row is the checkpoint, Caravan makes each chunk durable and retried, and
 **idempotence is the PREDICATE and not the cursor**: a chunk re-reads *the column is

@@ -32,6 +32,8 @@ model User {
   role      String    @default("member")
 
   @@trail(audit)     // log every create/update/delete
+
+  @@gate(0)
 }
 
 model Order {
@@ -43,6 +45,8 @@ model Order {
 
   @@softDelete
   @@trail(audit)
+
+  @@gate(0)
 }
 ```
 

@@ -11,7 +11,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'
-import { createAuthPlugin } from '../plugin.ts'
+import { auth } from '../plugin.ts'
 import { createAuthServices } from '../services.ts'
 import { makeAuth, type Harness, TEST_KEY } from './harness.ts'
 
@@ -32,7 +32,8 @@ beforeAll(async () => {
   h = await makeAuth({ encryptionKey: TEST_KEY })
   app = await createTestApp({ auth: h.auth as any })
   app.setAuth(h.auth as any)
-  app.configure(createAuthPlugin(h.auth, {
+  app.configure(auth({
+    auth: h.auth,
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
     services:          { level: () => 4, reauthenticationRateLimit: { max: 10_000, window: '15 minutes' } },
@@ -195,7 +196,8 @@ describe('account — TOTP over HTTP', () => {
 
     const other = await createTestApp({ auth: partial })
     other.setAuth(partial)
-    other.configure(createAuthPlugin(partial, {
+    other.configure(auth({
+      auth: partial,
       loginRateLimit:    { max: 10_000, window: '15 minutes' },
       registerRateLimit: { max: 10_000, window: '15 minutes' },
     }))
@@ -223,7 +225,8 @@ describe('account — the password, asked again, is bounded per account', () => 
     const scoped  = await makeAuth({ encryptionKey: TEST_KEY })
     const bounded = await createTestApp({ auth: scoped.auth as any })
     bounded.setAuth(scoped.auth as any)
-    bounded.configure(createAuthPlugin(scoped.auth, {
+    bounded.configure(auth({
+      auth: scoped.auth,
       loginRateLimit:    { max: 10_000, window: '15 minutes' },
       registerRateLimit: { max: 10_000, window: '15 minutes' },
       services:          { reauthenticationRateLimit: { max: 3, window: '15 minutes' } },
@@ -441,7 +444,7 @@ describe('how the three are registered', () => {
     clashing.setAuth(scoped.auth as any)
     // The app's own service, registered before the plugin boots.
     clashing.services.register(createAuthServices(scoped.auth, { account: false, apiKeys: false })[0])
-    clashing.configure(createAuthPlugin(scoped.auth))
+    clashing.configure(auth({ auth: scoped.auth }))
 
     await expect(clashing._startForTest()).rejects.toThrow(/sessions.*already registered/s)
     scoped.cleanup()
@@ -451,7 +454,7 @@ describe('how the three are registered', () => {
     const scoped = await makeAuth()
     const bare = await createTestApp({ auth: scoped.auth as any })
     bare.setAuth(scoped.auth as any)
-    bare.configure(createAuthPlugin(scoped.auth, { services: false }))
+    bare.configure(auth({ auth: scoped.auth, services: false }))
     await bare._startForTest()
 
     expect(bare.services.has('account')).toBe(false)

@@ -27,6 +27,7 @@ model Doc {
   guOml    Int?    @guarded @omit
   encAllow String? @encrypted @allow('read', auth().isAdmin)
   omAllow  Int?    @omit(all) @allow('read', auth().isAdmin)
+  @@gate(0)
 }
 `
 const ALL = ['gu', 'om', 'oml', 'guOm', 'guOml', 'encAllow', 'omAllow']

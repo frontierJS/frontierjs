@@ -3,7 +3,7 @@
 
 // ─── Core ─────────────────────────────────────────────────────────────────
 export { createLitestoneAuth }         from './auth.ts'
-export { createAuthPlugin }   from './plugin.ts'
+export { auth }   from './plugin.ts'
 // The service half of the surface. The plugin registers these itself; this is
 // for an app that wants them somewhere else, or wants one of them alone.
 export { createAuthServices, DEFAULT_SERVICE_NAMES } from './services.ts'

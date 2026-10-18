@@ -105,7 +105,9 @@ The schema is a starting point, not a migration:
 2. `litestone migrate create` — the schema describes tables that already exist
    elsewhere, so nothing here is a plan for adopting a live database.
 3. Declare access. An imported schema carries no `@@gate`, no `@@allow` and no
-   `@@softDelete`, because the source had nowhere to say them.
+   `@@softDelete`, because the source had nowhere to say them. It stays a plain
+   ORM until the first rule; from then on a model with none is system-only, and
+   `@@gate(0)` says public.
 
 ## Related
 

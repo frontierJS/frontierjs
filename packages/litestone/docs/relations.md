@@ -593,6 +593,8 @@ model Task {
   parentId Int?
   parent   Task?  @relation(fields: [parentId], references: [id])
   children Task[]
+
+  @@gate(0)
 }
 
 model Employee {
@@ -604,6 +606,8 @@ model Employee {
   mentorId  Int?
   mentor    Employee?  @relation("mentees", fields: [mentorId], references: [id])
   mentees   Employee[] @relation("mentees")
+
+  @@gate(0)
 }
 
 model Folder {

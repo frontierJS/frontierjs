@@ -1,5 +1,5 @@
 // manifest.ts
-// manifestPlugin — exposes GET /manifest (or custom path) returning a
+// manifest — exposes GET /manifest (or custom path) returning a
 // structural snapshot of the running app: services, hooks, channels, plugins.
 //
 // Consumed by FJSChain to build the App CoR Overview.
@@ -9,11 +9,11 @@
 // router, and services registered in boot() are visible in the manifest.
 //
 // Usage:
-//   app.configure(manifestPlugin({ db }))
+//   app.configure(manifest({ db }))
 //   // → GET /manifest   (includes schema from db.$schema)
 //   // → GET /migrations (from db.$config.migrationsDir)
 //
-//   app.configure(manifestPlugin({ db, devOnly: true }))
+//   app.configure(manifest({ db, devOnly: true }))
 //   // → only mounted in non-production
 
 import type { App, DevService, Plugin } from '../../core/app.ts'
@@ -74,7 +74,7 @@ export interface ChannelManifest {
 
 // ─── Plugin ───────────────────────────────────────────────────────────────
 
-export function manifestPlugin(opts: ManifestPluginOptions = {}): Plugin {
+export function manifest(opts: ManifestPluginOptions = {}): Plugin {
   const route          = opts.path    ?? '/manifest'
   const migrationsRoute = '/migrations'
   const devOnly        = opts.devOnly ?? true   // safe default — skip in production

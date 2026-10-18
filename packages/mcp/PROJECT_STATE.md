@@ -1,11 +1,11 @@
 # Project state — @frontierjs/mcp
 
-**An agent can reach a FrontierJS app now.** `mcpPlugin()` mounts the endpoint
+**An agent can reach a FrontierJS app now.** `mcp()` mounts the endpoint
 inside the API that is already running; `projectTools()` is what it serves.
 
 ## What is true
 
-- `mcpPlugin({ path })` is a Junction plugin. It registers POST/GET/DELETE at
+- `mcp({ path })` is a Junction plugin. It registers POST/GET/DELETE at
   `/mcp` (under the app's own `apiPrefix`), builds the projection at the caller's
   standing on every request, and dispatches through `app.service(name)` with
   `{ auth: { user } }` at `CALL_OPTIONS_AT`. Stateless: nothing is kept between
@@ -18,7 +18,7 @@ inside the API that is already running; `projectTools()` is what it serves.
   through Junction's own `customMethodGrade`.
 - `schemaViews(schema, generate)` owns the audience. There is no way through this
   module to generate a `system`-audience schema.
-- **A one-row tool's model is a view** (`mcpPlugin({ ui: { root } })`,
+- **A one-row tool's model is a view** (`mcp({ ui: { root } })`,
   `FJS-D955`): `<root>/<Model>.html` is served at `ui://<server>/<Model>` and
   every one-row tool of that model carries `_meta.ui.resourceUri`, both read
   off one per-request set after `narrow` and the key's scopes — pinned at

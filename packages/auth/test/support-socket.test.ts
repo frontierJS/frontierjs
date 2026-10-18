@@ -18,7 +18,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { channels, createApp } from '@frontierjs/junction'
 import { createJunctionClient } from '../../junction/src/client/index.ts'
-import { createAuthPlugin } from '../plugin.ts'
+import { auth } from '../plugin.ts'
 import { makeAuth, type Harness, TEST_KEY } from './harness.ts'
 
 const PW = 'pw-support-socket-1'
@@ -32,7 +32,8 @@ const clients: any[] = []
 beforeAll(async () => {
   h = await makeAuth({ encryptionKey: TEST_KEY, sessionFields: (u: any) => ({ role: u.role }) })
   app = createApp({ db: h.db, auth: h.auth as any, config: { port: 0 }, logLevel: 'silent' } as never)
-  app.configure(createAuthPlugin(h.auth, {
+  app.configure(auth({
+    auth: h.auth,
     services: { level: levelOf },
     canStartSupport: (op) => op.role === 'sysadmin',
     loginRateLimit: { max: 10_000, window: '15 minutes' },

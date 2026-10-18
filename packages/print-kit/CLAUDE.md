@@ -16,7 +16,7 @@ so 24 passing with nothing skipped is the only green.
 ```
 index.js         public API
 index.d.ts       the types, by hand — the kit is plain JS
-src/printer.js   createPrinter() → { pdf, png, close } · printerPlugin() → app.printer
+src/printer.js   createPrinter() → { pdf, png, close } · printer() → app.printer
 src/document.js  printDocument(), pageRules(), marginContent(), cssString()
 src/print.css    the print sheet every document carries after the app's own
 test/            print-kit.test.js (no browser) · run.mjs + specs/ (a real Chrome)
@@ -35,7 +35,7 @@ test/            print-kit.test.js (no browser) · run.mjs + specs/ (a real Chro
   (`FJS-2230`). The job queued behind a wedge still waits the 30 s.
 - **The print page is offline under `createNetwork`** — a template that
   fetches a font or an image from a URL gets nothing, by design. Inline it.
-- **`printerPlugin` must not import junction.** It exports the plugin
+- **`printer` must not import junction.** It exports the plugin
   protocol's shape and claims with `app.claim('printer', …)` (Invariant 5).
 - **Margin boxes are text the page context draws**, so what `print.css`
   sets on `@page` is the only styling they inherit.

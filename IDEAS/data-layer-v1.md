@@ -170,7 +170,7 @@ installed where the app runs.
 | # | Feature | Best at | FJS today | V1 |
 | --- | --- | --- | --- | --- |
 | X1 | File export with a manifest, at the caller's standing | — | ✅★ `@@export` (CSV, NDJSON) | **Keep** |
-| X2 | Streamed HTTP export | — | ✅ `exportPlugin` | **Keep** |
+| X2 | Streamed HTTP export | — | ✅ `exporter` | **Keep** |
 | X3 | Scheduled subscriptions: cron, timezone, recipients, channel | Metabase, Grafana reporting | ◐ caravan cron; no subscription | **Keep** |
 | X4 | Attachments: a PDF or CSV, inline chart images | Metabase 63 (July 2026) | ✗ | **Keep** |
 | X5 | Each recipient's copy rendered at that recipient's own standing | — (Metabase sends every recipient the same file) | ◐★ `app.runAs`, as webhooks grade an audience ([`FJS-D193`](../DECISIONS.md#fjs-d193)) | **Keep** — this is what makes the product FJS's own rather than a smaller Metabase |

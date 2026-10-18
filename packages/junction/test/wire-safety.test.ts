@@ -33,12 +33,14 @@ const SCHEMA = `
     id     Int    @id
     title  String
     secret String @secret
+    @@gate(0)
   }
 
   model Vault {
     id   Int    @id
     name String
     data String @secret
+    @@gate(0)
   }
 `
 

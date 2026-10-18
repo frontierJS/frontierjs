@@ -107,7 +107,7 @@ function relay(channel, call) {
 const BASE_META = 'frontierjs/base'
 
 /**
- * One relayed call → the `tools/call` params the app's `mcpPlugin()` takes.
+ * One relayed call → the `tools/call` params the app's `mcp()` takes.
  *
  * The argument shape per verb is the plugin's `invoke()` read backwards:
  * `find` takes `{ query, directives }`, a by-id verb `{ id }`, a write by id

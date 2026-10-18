@@ -26,7 +26,7 @@ import { join }             from 'node:path'
 import { readdirSync }      from 'node:fs'
 import { createTestEnv }    from '@frontierjs/litestone/testing'
 import { GatePlugin }       from '@frontierjs/litestone'
-import { notificationsPlugin } from '@frontierjs/notifications'
+import { notifications } from '@frontierjs/notifications'
 
 import { basecampGateLevel }   from '../src/core/gate.ts'
 import { NOTIFICATION_KINDS }  from '../src/services/notification-preferences/kinds.ts'
@@ -121,7 +121,7 @@ async function makeApp(opts: { mail?: boolean } = {}) {
     claim(name: string, value: unknown) { (this as any)[name] = value },
   }
 
-  const plugin = notificationsPlugin({
+  const plugin = notifications({
     db: env.db,
     notifications: NOTIF_DIR,
     transports: opts.mail ? { email: { mailer: 'default' } } : {},

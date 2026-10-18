@@ -57,8 +57,8 @@ exists twice, in `packages/auth/schema.ts` and `packages/cli/commands/auth/insta
 carrying a "KEEP IN SYNC" comment.
 
 **Behind — no installable unit.** Nothing declares what a package contributes.
-Installing notifications today is: paste a model, configure `mailerPlugin`, then
-`notificationsPlugin`, in that order (`packages/notifications/examples/wiring.ts`).
+Installing notifications today is: paste a model, configure `mail`, then
+`notifications`, in that order (`packages/notifications/examples/wiring.ts`).
 Four steps and an undeclared ordering constraint, versus the article's bar of "2
 env vars and 2–3 lines of config."
 

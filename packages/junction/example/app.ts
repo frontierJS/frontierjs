@@ -13,7 +13,7 @@
 //   • Server-Sent Events (ctx.sse)
 //   • ctx.paginate() response helper
 //   • Correlation IDs on every request
-//   • Health + metrics endpoints (healthPlugin)
+//   • Health + metrics endpoints (health)
 //   • Webhook delivery (webhooks plugin)
 //   • OpenAPI + Swagger UI
 //   • Scheduler jobs
@@ -80,7 +80,7 @@ import {
   loadConfig,
   createLogger,
   channels,
-  healthPlugin,
+  health,
   circuitBreaker,
   announce,
   correlationId,
@@ -142,7 +142,7 @@ app.configure(requestLogger())           // method path status ms - ip
 app.configure(rateLimit({ max: 200, window: '1 minute' }))
 
 // Health + metrics at /health and /metrics
-app.configure(healthPlugin({
+app.configure(health({
   checks: {
     // Add your own readiness checks here.
   },

@@ -8,9 +8,9 @@ description: Two lines in app.ts, and the app has a queue
 A queue is a plugin, and it is configured the way every other one is:
 
 ```text
-import { createCaravan } from '@frontierjs/caravan'
+import { caravan } from '@frontierjs/caravan'
 
-app.configure(createCaravan())
+app.configure(caravan())
 ```
 
 `app.jobs` exists from here on, and job statistics are added to `/metrics`
@@ -34,7 +34,7 @@ if (!needs($, ['appDir'], { from: '01-app' })) return
 const appTs = join($.config.appDir, 'api', 'src', 'app.ts')
 let   src   = readFileSync(appTs, 'utf8')
 
-if (!src.includes('createCaravan')) {
+if (!src.includes('caravan(')) {
   // Matched rather than compared: the scaffold configures the channels plugin
   // with a connection handler, and an app that has narrowed that down to a bare
   // `channels()` is still the same anchor. A literal would report either shape
@@ -58,7 +58,7 @@ if (!src.includes('createCaravan')) {
 
   const last = imports[imports.length - 1]
   src = src.slice(0, last.index + last[0].length)
-    + "\nimport { createCaravan }    from '@frontierjs/caravan'"
+    + "\nimport { caravan }          from '@frontierjs/caravan'"
     + src.slice(last.index + last[0].length)
 
   src = src.replace(CONFIGURE, [
@@ -66,7 +66,7 @@ if (!src.includes('createCaravan')) {
     '',
     '// ─── Background work ──────────────────────────────────────────────────────',
     '// app.jobs from here on; *.job.ts files load from jobs/ beside the root.',
-    'app.configure(createCaravan())',
+    'app.configure(caravan())',
   ].join('\n'))
 
   writeFileSync(appTs, src, 'utf8')
@@ -74,7 +74,7 @@ if (!src.includes('createCaravan')) {
 
 if (!await must($, probe.fileContains({
   path:   appTs,
-  needle: 'createCaravan(',
+  needle: 'caravan(',
   name:   'app.ts configures the queue',
 }), { likely: 'the edit missed its anchor' })) return
 

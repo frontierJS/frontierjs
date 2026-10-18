@@ -33,7 +33,7 @@
   // this scene add their verbs to it — `Whisper` the `/w`, `Dice` the `/roll`, `Fishing` the `/fish`, `Mod` the `/ban`,
   // `WorldMap` the `/map`, `Season` the `/season`, `Weather` the `/weather`, `Hush` the `/hush`, `Emotes` the `/wave`,
   // `/sit` and `/dance`, `Pets` the `/pet`, `Work` the `/work`, `History` the PageUp and
-  // PageDown, and whatever a route places (`Taskmaster`, `Ledger`) — and
+  // PageDown, `Stops` a Tab on an empty line, and whatever a route places (`Taskmaster`, `Ledger`) — and
   // this file reads it for the
   // line, Tab, the hints and the keys. The bubbles, the nameplates and the
   // booth are actors too (`Bubbles`, `Nameplates`, `Sitting`).
@@ -105,6 +105,7 @@
   import WorldMap        from '@/components/WorldMap.mesa'
   import History         from '@/components/History.mesa'
   import HomeRow         from '@/components/HomeRow.mesa'
+  import Stops           from '@/components/Stops.mesa'
   import Bubbles         from '@/components/Bubbles.mesa'
   import Nameplates      from '@/components/Nameplates.mesa'
   import Sitting         from '@/components/Sitting.mesa'
@@ -472,6 +473,7 @@
     <History {room} {nicks} box={PANE} {askNicks} />
     <Sitting {stage} {here} {x} {y} {spawn} tell={(text) => { note = text }} />
     <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} />
+    <Stops {stage} {view} {draft} {where} tell={(text) => { note = text }} />
     <Whisper {room} {here} />
     <Dice {room} />
     <Fishing {room} {stage} {here} {view} tell={(text) => { note = text }} />

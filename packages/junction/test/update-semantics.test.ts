@@ -192,6 +192,7 @@ describe('a write naming a @guarded column', () => {
       name   String
       token  String? @guarded
       secret String? @secret
+      @@gate(0)
     }
   `
 

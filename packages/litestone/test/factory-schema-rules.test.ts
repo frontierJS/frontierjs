@@ -411,7 +411,7 @@ test('>= against a @default(now()) column lands a full day past the clock, not o
 // FJS-2367 — an optional @guarded column is a system-context write whoever the
 // caller is, so a generated payload carrying it refuses every non-system seed.
 describe('an optional @guarded column is left out of the generated row', () => {
-  const schema = `model User { id Int @id @default(autoincrement()); email String @unique; apiKey String? @guarded }`
+  const schema = `model User { id Int @id @default(autoincrement()); email String @unique; apiKey String? @guarded; @@gate(0) }`
 
   test('a factory on a non-system client seeds the row', async () => {
     const { factories, db } = await makeTestClient(schema, { autoFactories: true })

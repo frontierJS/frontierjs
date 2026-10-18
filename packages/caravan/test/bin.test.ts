@@ -19,7 +19,7 @@ import { describe, it, expect, afterEach } from 'bun:test'
 import { rmSync, existsSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { Database } from 'bun:sqlite'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 import type { CaravanInstance } from '../src/types.ts'
 
 const BIN   = new URL('../bin/caravan.ts', import.meta.url).pathname
@@ -33,7 +33,7 @@ function tmpPath(): string {
 }
 
 function instanceAt(path: string): CaravanInstance {
-  const c = createCaravan({ db: path, pollInterval: 15, cleanupAfter: 0, queues: { mail: {}, reports: {} } })
+  const c = caravan({ db: path, pollInterval: 15, cleanupAfter: 0, queues: { mail: {}, reports: {} } })
   live.push(c)
   return c
 }

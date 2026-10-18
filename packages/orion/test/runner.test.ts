@@ -22,20 +22,20 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { createTestEnv } from "../../litestone/src/testing.js"
-import { createCaravan } from "../../caravan/src/index"
+import { caravan } from "../../caravan/src/index"
 import { litestoneHost } from "../src/tenancy"
 import { createRunner, FlowNotRunnableError, RUN_JOB, type Runner } from "../src/runner"
 import { SCHEMA, KEY, registryFor, ranIn, chain, count, wait, cronTrigger, activeFlow } from "./fixtures/host"
 
 let env:    any
 let dir:    string
-let jobs:   ReturnType<typeof createCaravan>
+let jobs:   ReturnType<typeof caravan>
 let runner: Runner
 
 beforeAll(async () => {
   dir    = mkdtempSync(join(tmpdir(), "orion-runner-"))
   env    = await createTestEnv({ schema: SCHEMA, encryptionKey: KEY, claims: [] })
-  jobs   = createCaravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 })
+  jobs   = caravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 })
   runner = createRunner({ host: litestoneHost({ db: env.db }), jobs, registry: registryFor(dir) })
   runner.register()
   await jobs.start()
@@ -243,7 +243,7 @@ describe("an activation made on another instance", () => {
   // A second Caravan over the same jobs file and a second runner over the same
   // database: what another process of the same app holds.
   function instance(extra: Partial<Parameters<typeof createRunner>[0]> = {}) {
-    const other = createCaravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 })
+    const other = caravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 })
     return { jobs: other, runner: createRunner({ host: litestoneHost({ db: env.db }), jobs: other, registry: registryFor(dir), ...extra }) }
   }
 

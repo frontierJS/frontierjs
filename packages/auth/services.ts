@@ -637,7 +637,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (!standingLevel) {
         throw new Forbidden(
           'Account recovery needs the app\'s level resolver — pass services: { standingLevel } ' +
-          'or services: { level } to createAuthPlugin'
+          'or services: { level } to auth()'
         )
       }
       // Positive tests, and a number required. `undefined < 7` is false, so a

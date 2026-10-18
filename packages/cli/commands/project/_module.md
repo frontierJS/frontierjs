@@ -153,7 +153,7 @@ const extractResourceMeta = (src, filename) => {
 //
 // Detection strategy: import presence + app.configure() call.
 // Tier-1 packages: auth, conduit, caravan, notifications
-// Tier-2 packages: litestream (config file), mailer (mailerPlugin call)
+// Tier-2 packages: litestream (config file), mailer (the junction/mail import)
 
 const TIER1_PACKAGES = [
   {
@@ -161,7 +161,7 @@ const TIER1_PACKAGES = [
     label: '@frontierjs/auth',
     short: 'auth',
     realm: 'junction',
-    signals: ['createLitestoneAuth', 'createAuthPlugin', 'frontierjs/auth'],
+    signals: ['createLitestoneAuth', 'frontierjs/auth'],
   },
   {
     id:    'conduit',
@@ -182,7 +182,7 @@ const TIER1_PACKAGES = [
     label: '@frontierjs/notifications',
     short: 'notifications',
     realm: 'junction',
-    signals: ['notificationsPlugin', 'frontierjs/notifications', 'app.notify('],
+    signals: ['notifications(', 'frontierjs/notifications', 'app.notify('],
   },
   {
     id:    'litestream',
@@ -234,7 +234,7 @@ const extractServerMeta = (root) => {
   const mailer =
     src.includes('createResendMailer') ? 'resend' :
     src.includes('createSmtpMailer')   ? 'smtp'   :
-    src.includes('mailerPlugin')       ? 'unknown' :
+    src.includes('junction/mail')      ? 'unknown' :
     null
 
   return { serverFile, packages, mailer }

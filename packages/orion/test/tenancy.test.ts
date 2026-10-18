@@ -23,7 +23,7 @@ import { join } from "node:path"
 
 import { createClient, createTenantRegistry } from "../../litestone/src/index.js"
 import { createApp, createService, createStubAuth, request } from "../../junction/index.ts"
-import { createCaravan } from "../../caravan/src/index"
+import { caravan } from "../../caravan/src/index"
 import { orion } from "../src/plugin"
 import { createRunner, type Runner } from "../src/runner"
 import { litestoneHost, tenantOfKey } from "../src/tenancy"
@@ -68,7 +68,7 @@ describe("strategy database: a tenant is a file", () => {
 
     app = createApp({ tenants: registry, auth: createStubAuth({ users: USERS }) })
     app.services.register(createService({ name: "leads", model: "Lead" }))
-    app.configure(createCaravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
+    app.configure(caravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
     const suite = registryFor(dir)
     app.configure(orion({ plugins: [{ manifest: suite.plugins().find(p => p.manifest.id === "suite")!.manifest, implementations: [suite.get("test.count")!] }] }))
     await app._startForTest()
@@ -221,7 +221,7 @@ model Lead {
       },
     })
     app.services.register(createService({ name: "leads", model: "Lead" }))
-    app.configure(createCaravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
+    app.configure(caravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
     app.configure(orion())
     await app._startForTest()
   })

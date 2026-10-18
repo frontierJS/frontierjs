@@ -23,7 +23,7 @@
 import { describe, it, expect } from 'bun:test'
 import { createTestApp, createService } from '@frontierjs/junction'
 import type { App, IAuth, SessionContext } from '@frontierjs/junction'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 import type { CaravanInstance, CaravanOptions, JobContext } from '../src/types.ts'
 
 const jobsOf = (app: { jobs?: CaravanInstance }) => app.jobs!
@@ -70,7 +70,7 @@ async function bootApp(o: {
   caravan?: Partial<CaravanOptions>
 } = {}) {
   const app = await createTestApp({ system: o.system, auth: o.auth } as never)
-  app.configure(createCaravan(opts(o.caravan)))
+  app.configure(caravan(opts(o.caravan)))
   await app._startForTest()
   return app
 }
@@ -243,7 +243,7 @@ describe('what the handler can reach', () => {
     // No Junction, so no runAs and no scope. The shape stays the shape — a
     // handler reads ctx.app and finds undefined rather than crashing on a
     // missing argument.
-    const queue = createCaravan(opts())
+    const queue = caravan(opts())
     const seen: JobContext[] = []
     queue.handle('record', async (ctx) => { seen.push(ctx) })
     await queue.start()
@@ -422,7 +422,7 @@ describe('the tenant a job runs in', () => {
 
 describe('ctx.progress', () => {
   it('lands on the running row where find() reads it, and a fresh attempt starts from nothing', async () => {
-    const q = createCaravan(opts())
+    const q = caravan(opts())
     const midway: Array<number | null> = []
     let first = true
     q.handle('crunch', async (ctx) => {
@@ -444,7 +444,7 @@ describe('ctx.progress', () => {
   })
 
   it('refuses a value that is not a fraction, naming it', async () => {
-    const q = createCaravan(opts())
+    const q = caravan(opts())
     let refusal = ''
     q.handle('bad', async (ctx) => {
       try { ctx.progress(40) } catch (e) { refusal = (e as Error).message }

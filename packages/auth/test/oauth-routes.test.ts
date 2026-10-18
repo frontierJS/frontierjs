@@ -10,7 +10,7 @@
 
 import { describe, test, expect, beforeAll, afterAll, afterEach } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'
-import { createAuthPlugin } from '../plugin.ts'
+import { auth } from '../plugin.ts'
 import { defineProvider, OAUTH_STATE_COOKIE } from '../oauth.ts'
 import { makeAuth, type Harness } from './harness.ts'
 import { totp, TOTP_STEP_SEC } from '../totp.ts'
@@ -29,7 +29,8 @@ beforeAll(async () => {
   })
   app = await createTestApp({ auth: h.auth as any })
   app.setAuth(h.auth as any)
-  app.configure(createAuthPlugin(h.auth, {
+  app.configure(auth({
+    auth: h.auth,
     cookieAuth: true,
     oauth: {
       publicUrl:     PUBLIC_URL,
@@ -60,7 +61,8 @@ describe('oauth without cookie mode', () => {
     try {
       const broken = await createTestApp({ auth: bare.auth as any })
       broken.setAuth(bare.auth as any)
-      broken.configure(createAuthPlugin(bare.auth, {
+      broken.configure(auth({
+        auth: bare.auth,
         oauth: { publicUrl: PUBLIC_URL, rateLimit: { max: 10_000, window: '15 minutes' } },
       }))
       // The start phases run lazily on the first request, not at
@@ -413,7 +415,7 @@ describe('GET /auth/oauth', () => {
     try {
       const plain = await createTestApp({ auth: bare.auth as any })
       plain.setAuth(bare.auth as any)
-      plain.configure(createAuthPlugin(bare.auth))
+      plain.configure(auth({ auth: bare.auth }))
 
       const res = await request(plain).get('/auth/oauth')
       expect(res.status).toBe(200)

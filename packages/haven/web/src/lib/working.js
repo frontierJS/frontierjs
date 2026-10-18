@@ -13,3 +13,7 @@ export const stateOf = (w) => (w.asking ? 'asking' : w.said ? 'said' : w.tool ? 
 
 /** A cooking session's frame at `now`, a frame a second, as the rooms read `#workers`. */
 export const spinAt = (now) => SPIN[Math.floor(now / 1000) % SPIN.length]
+
+// What a session's words say it was on, picked out of a readout in its own
+// ink: a plan step (`3.2`) or a register row (`FJS-123`, `FJS-D45`).
+export const TASK = /\b(?:FJS-D?\d+|\d+\.\d+(?:\.\d+)?)\b/g

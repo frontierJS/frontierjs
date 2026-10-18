@@ -16,14 +16,14 @@
  */
 
 import { createClient } from "../../../litestone/src/index.js"
-import { createCaravan } from "../../../caravan/src/index"
+import { caravan } from "../../../caravan/src/index"
 import { createRunner } from "../../src/runner"
 import { litestoneHost } from "../../src/tenancy"
 import { SCHEMA, KEY, registryFor } from "./host"
 
 // `any`: a client's tables come from the schema, which no static type here sees.
 const db: any = await createClient({ schema: SCHEMA, db: process.env.ORION_DB!, encryptionKey: KEY, claims: [] })
-const jobs    = createCaravan({ db: process.env.ORION_JOBS!, pollInterval: 20, heartbeat: 100, lease: 1_000, cleanupAfter: 0 })
+const jobs    = caravan({ db: process.env.ORION_JOBS!, pollInterval: 20, heartbeat: 100, lease: 1_000, cleanupAfter: 0 })
 
 const runner = createRunner({
   host:      litestoneHost({ db }),

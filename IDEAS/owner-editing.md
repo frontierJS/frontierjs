@@ -6,7 +6,7 @@ dated: 2026-10-17
 
 # Idea — owner editing: a site's owner changes their own words
 
-**Status: PROPOSED. Nothing is built. Q1–Q7 are ruled (`FJS-D1225`–`FJS-D1231`).** Do not cite this file as describing
+**Status: PROPOSED. Nothing is built. Q1–Q8 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`).** Do not cite this file as describing
 behavior — see `VERIFYING.md`.
 
 A site's owner (a Kobami client, or whoever runs frontierjs.com) opens their
@@ -34,7 +34,7 @@ Framer's and Webflow Editor's case, with the layout locked and a publish step.
 | Piece | Where | What owner editing gets from it |
 | --- | --- | --- |
 | Stamps on prose name the `.md` line | `mesa/src/compiler-md.js` `stampLoc` (`FJS-1711`) | a click on a paragraph resolves to `content/routes/x.md:12:1`, not to a template line |
-| One render function for the prerender and the browser | `FJS-D821` | a changed markdown route can re-render in the page before anything builds |
+| `compileMd` has no Node dependency | `mesa/src/compiler-md.js` | a changed markdown route can compile in the page before anything builds (0.2 measured it) |
 | A preview per branch | `site-kit deploy --preview` (`site-hosting.md` step 5) | each draft gets its own review link, with no extra work |
 | A deploy that ships the last build | `site-kit deploy` (step 4) | Publish ships the build it checked |
 | Real git in basecamp | `api/src/core/local-git.ts`, the `git` App source | basecamp already runs git and parses its output |
@@ -168,6 +168,41 @@ Basecamp itself lists drafts and history and holds the grants.
     stega does the same thing inside strings, and A avoids stega's failure by
     using the attribute that already exists. B is wrong about half the time
     and can't say so. C is the floor, and it is built anyway.
+- ~~**Q8 — Whether an owner can ask a model to change their words, and how far it reaches.**~~ **Answered 2026-10-18 (`FJS-D1242`): B — an agent over the draft. A Claude run with file tools on basecamp's checkout of the draft branch, limited to Q2's editable set, for a change across several fields or pages ("update the hours everywhere", "add an FAQ entry"). Its diff is graded against Q2's set after the run and refused whole if it touches a developer file or a look key. The owner sees the diff before it commits.** The ask panel (`on-page-editing.md`) runs `claude -p` with
+  Edit on a developer's disk. An owner has no `claude` and no disk, so any
+  model call here is basecamp calling the Claude API on the owner's behalf,
+  billed to whoever runs basecamp. Precedent: Webflow's Editor regenerates a
+  selected text element or CMS field from page and CMS context and offers three
+  variations to pick from ([Webflow AI](https://help.webflow.com/hc/en-us/articles/38323375464723),
+  [announcement](https://webflow.com/updates/ai-assistant-content-generation)).
+  Sanity's AI Assist runs instructions against a document's fields with the
+  invoking user's permissions ([AI Assist](https://www.sanity.io/docs/ai-assist-working-with-instructions)).
+  Framer has a Text Rewrite feature, and its agent edits page copy on the
+  canvas, with each edit reviewed before publish
+  ([Framer AI](https://framer.com/ai), [AI designer](https://framer.com/solutions/ai-designer/)).
+  - **A** — rewrite one field. The owner clicks an element as in 2.2 and asks
+    for a change ("shorter", "friendlier", or their own words). Basecamp sends
+    the field's text and the page's text to the Messages API with no tools, and
+    returns variations. The pick is saved as a typed edit would be: the same
+    grant, the same `locateText` swap or front-matter write, and the same
+    commit on the draft. The model never sees a path, and what it returns
+    cannot be anything but text for one field.
+  - **B** — an agent over the draft. A Claude run with file tools on
+    basecamp's checkout of the draft branch, limited to Q2's editable set, for
+    a change across several fields or pages ("update the hours everywhere",
+    "add an FAQ entry"). Its diff is graded against Q2's set after the run and
+    refused whole if it touches a developer file or a look key. The owner sees
+    the diff before it commits.
+  - **C** — none. Model edits stay with the developer and the ask panel. An
+    owner types every change.
+  - **Recommend A, with B as a later question once A is used.** In A the write
+    path is the one a typed edit already takes, so the grant (`FJS-D1230`) and
+    Q2's refusal by path are not restated for the model. B needs a second
+    enforcement of Q2 (a diff grader), and the cases it serves ("everywhere")
+    are also what produces a change an owner can't review in one look. C
+    leaves the owners without what Webflow, Framer and Sanity give theirs.
+    Either A or B needs an API key and a spend limit per site in basecamp,
+    which is part of the ruling.
 
 ## The plan
 
@@ -213,10 +248,65 @@ Done when: each step's number is written under it.
     the page to click. Phase 1's forms cover them.
   - Found on the way: `FJS-3255`. A body-less `_module.md` empties every page
     beneath it, which is Luminous Heart's `/thank-you/`.
-- [ ] 0.2 Re-render one changed markdown route in a browser with `FJS-D821`'s
+- [x] 0.2 Re-render one changed markdown route in a browser with `FJS-D821`'s
   function, and time it. Name what a `.mesa` route would need.
+  **Measured 2026-10-18** on Luminous Heart's `spa/index.md` (149 lines, 10
+  bands, 5 component tags), with one sentence changed. In Chrome the page was
+  the built `/spa/`, and the site's own dialect and the ksite preset's rehype
+  pass were used. In Bun the measurement was Sierra's `sierra:mesa` transform
+  over the site's real `siteKit({ preview: true })` config.
+
+  | | Bun (basecamp's side) | Chrome 150 | Chrome, CPU ×4 |
+  | --- | --- | --- | --- |
+  | Load the compiler bundle (local, no network) | — | 82 ms | 135 ms |
+  | First compile | 168 ms | 100 ms | 437 ms |
+  | Each compile after it | 19–36 ms | 18–30 ms | 84–99 ms |
+  | Replace the changed band in the page | — | 0.6 ms | 2.7 ms |
+
+  The bundle is 596 KB minified and 187 KB gzipped: unified, remark, rehype,
+  the Mesa compiler and acorn. The Mesa compiler alone is 100 KB gzipped.
+
+  - **`FJS-D821`'s function is the wrong one.** It is toolbelt's `markdown()`,
+    the safe subset written for a stranger's text. It escapes raw HTML (186 of
+    Luminous Heart's 456 prose values are raw HTML), and it knows neither
+    components nor the dialect's bands. A site-kit route compiles through
+    Mesa's `compileMd`, so a live render has to run `compileMd` in the page.
+  - **Swapping the compiled HTML in is correct only where there are no
+    components.** `<Image>` comes back as `<img source=…>`, with no `src`. The
+    band changed in the run contained one. Site-kit's image step (the srcset
+    and the webp) also runs after the build, so even a plain `<img>` loses it.
+    The prerendered element has to stay wherever the edit did not touch.
+  - **The built page ships no route module.** `/spa/` loads no script of its
+    own. The compiled route imports the runtime, ksite's `Image.mesa` and the
+    site's `SpaExperiences.mesa`, and that one reads `import.meta.glob` over a
+    collection, which only Vite resolves.
+  - **The hero is the layout's**, rendered from front matter, so it is not in
+    the route's compile. A front-matter edit does not re-render this way; that
+    is 2.4's problem.
+  - `prepareForCompile` lives in `mesa-plugin.js`, which imports Node
+    builtins, so it cannot be bundled for a browser. The run used the three
+    helpers it calls directly.
+  - **What a `.mesa` route would need:** the Mesa compiler in the page, plus
+    every module the route imports as a module the page can load. That means
+    each component, the settings module, and each `import.meta.glob` resolved
+    ahead of time. Today only a Vite dev server builds that graph.
+  - **For 2.5:** replace only the prose elements whose stamps fall on the edited
+    lines, and leave everything else to the preview rebuild. The compile can
+    run in the page (lazy, preview-only) or in basecamp, at the warm times
+    above.
+  - Found on the way: `FJS-3275`. The dialect's band and article wrappers
+    carry the template's line, not the `====` line.
 - [ ] 0.3 Run the first real preview upload (`site-hosting.md` step 5's gap),
   because every draft depends on it.
+  **Held by the owner 2026-10-18.** The local half passes: the website's
+  `site-kit build site --preview` stamps 51 pages, and `site-kit deploy site
+  --preview --dry` packs Worker `frontierjs-com`, aliased `main`. Two things
+  stand before the real upload. Wrangler's login has expired, so someone must
+  run `wrangler login` in a terminal or set `CLOUDFLARE_API_TOKEN`. And the
+  Worker does not exist yet. The two ways forward: a preview-only upload,
+  which may create the Worker without deploying it and leaves frontierjs.com
+  on Pages, or step 4's real deploy first, which moves frontierjs.com's
+  custom domain off `frontierjs-site`.
 
 ### Phase 1 — A draft and a publish, with forms
 
@@ -225,8 +315,27 @@ and Phase 2's on-page editor reuses their save and publish.
 Done when: a grant-holding user edits frontierjs.com's copy in basecamp, the
 preview link shows it, Publish ships it, and the commit carries their name.
 
-- [ ] 1.1 The grant (Q6) and the editable-file list for a git static App,
+- [x] 1.1 The grant (Q6) and the editable-file list for a git static App,
   derived from Q2's rule.
+  **Built 2026-10-18.** The grant is basecamp's `AppEditor` (`appId`,
+  `userId`, `role` of `edit` or `publish`), shaped like `WorkspaceMember`:
+  `@@tenant(none)`, gate `1.5`, no `workspaceId` of its own. An editor reads
+  their own rows with no membership, a member reads the rows of their
+  workspace's apps, and only an admin of the App's workspace writes one.
+  `/app-editors` refuses an App that is not `static` with a `git` source. The
+  rule is `@frontierjs/site-kit/editable`: `pathRefusal(path)` allows
+  `content/**/*.md` and raster photos under `content/` (an SVG can carry
+  script, so it is the developer's), and `lockedKeysChanged(before, after)`
+  names a changed `layout`, `name` or look key at the top level of the front
+  matter. The look keys are read off `block-look.js`.
+  - Proved by `db/test/schema.test.ts` § AppEditor (each rule with one row let
+    through and one refused) and site-kit's `test/content.mjs`.
+  - A cross-workspace create is refused twice: App's tenancy hides the app, so
+    the reference names nothing, before the create policy is read.
+  - Left for 1.2: the editor's own way in. `sessionScope` requires a
+    workspace, so a holder with no membership cannot call `/app-editors`, and
+    their list of sites is a method or a screen 1.2 adds. The seed has no site
+    built from git, so `app_editor` is in `NOT_SEEDED` until 1.2 seeds one.
 - [ ] 1.2 Edit a file's prose and its content keys in a form. A save commits to
   the draft branch (Q3, Q4).
 - [ ] 1.3 A preview of the draft: `build --preview` on the branch, then
@@ -248,7 +357,11 @@ a grant sees the Edit button but has every save refused.
   every one.
 - [ ] 2.2 The editor outlines stamped elements and turns a click's `loc` into
   a field. It ships only under `preview: true`.
-- [ ] 2.3 Edit a prose element inline. The save writes that `.md` line.
+- [ ] 2.3 Edit a prose element inline. The save writes that `.md` line
+  through `@frontierjs/toolbelt/textedit`'s `locateText`, the ask panel's text
+  edit. In a `.md` it searches the whole body, so the same words twice anywhere
+  on the page are refused; narrowing the search to the block the loc names is
+  this step's.
 - [ ] 2.4 A front-matter value lands on its field by provenance at the read (`FJS-D1231`).
 - [ ] 2.5 Re-render a markdown route live on the page before saving (0.2).
 
@@ -259,6 +372,21 @@ Done when: an owner adds a review, reorders a menu and swaps a photo.
 
 - [ ] 3.1 Add, remove and reorder collection items and menu entries.
 - [ ] 3.2 Upload an image into `content/media`. Alt text is required.
+
+### Phase 4 — Ask a model (`FJS-D1242`)
+
+Goal: an owner asks for a change in their own words and gets it as a draft
+commit, through the ask panel's engine with the scope narrowed to Q2's set.
+Done when: an owner asks for the opening hours to change on every page that
+shows them, reviews the diff and saves it to their draft.
+
+- [ ] 4.1 Basecamp runs `ask-claude.js`'s edit argv on its checkout of the
+  draft branch, scoped to `content/`, the way the workbench already imports
+  it. The key and a spend limit are per site and held by basecamp.
+- [ ] 4.2 The run's diff is graded against Q2's editable set before anything
+  commits, and refused whole if it touches a developer file or a look key.
+- [ ] 4.3 The owner sees the diff on the preview and saves or discards it.
+  A save is one commit on the draft, and Undo is that commit's revert.
 
 ## The nine (`decision-rules`, answered before any edit)
 

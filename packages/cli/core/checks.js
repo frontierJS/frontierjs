@@ -69,7 +69,7 @@ import { typeScriptIn }                        from './scope.js'
 import { kindOf }                              from './file-kind.js'
 import { readConfig }                          from './config.js'
 import { previewScope }                        from './preview.js'
-import { dockerfileScripts }                   from './utils.js'
+import { dockerfileScripts, importedAs }       from './utils.js'
 import { imageNeeds, installsChrome, carriesWebSrc } from './deploy-image.js'
 
 export const RULES = [
@@ -1970,7 +1970,7 @@ const CHECKS = {
     return { findings }
   },
 
-  // `createAuthPlugin` registers six services, and `start()` refuses an app that
+  // `auth()` registers six services, and `start()` refuses an app that
   // already has one of the same name. The name an app's own service for a model
   // takes is the model's plural, so `model Connection` (a third-party grant)
   // derives `connections`, which is auth's list of linked sign-in providers. The
@@ -1987,10 +1987,11 @@ const CHECKS = {
     let call = null
     for (const path of scripts(root, 'api')) {
       const code = readCode(path)
-      const m = code.match(/\bcreateAuthPlugin\s*\(/)
+      const local = importedAs(code, 'auth', '@frontierjs/auth')
+      const m = local && code.match(new RegExp(`\\b${local}\\s*\\(`))
       if (m) { call = spanFrom(code, m.index + m[0].length - 1); break }
     }
-    if (call === null) return { skipped: 'no createAuthPlugin under api/' }
+    if (call === null) return { skipped: "no auth() from '@frontierjs/auth' under api/" }
     if (/\bservices\s*:\s*false\b/.test(call)) return { findings: [] }
 
     const ships = new Set()
@@ -2007,10 +2008,10 @@ const CHECKS = {
         if (new RegExp(`\\b${key}\\s*:\\s*(false|['"\`])`).test(call)) continue
         findings.push({
           file: join(root, model.file), line: model.line,
-          message: `model ${model.name} derives the service name '${derived}', which createAuthPlugin ` +
+          message: `model ${model.name} derives the service name '${derived}', which auth() ` +
                    `already registers, and start() refuses an app holding two. Name your own service ` +
-                   `differently, or give auth's another name or none: createAuthPlugin(auth, ` +
-                   `{ services: { ${key}: false } }).`,
+                   `differently, or give auth's another name or none: auth({ auth, ` +
+                   `services: { ${key}: false } }).`,
         })
       }
     }
@@ -2980,7 +2981,7 @@ const CHECKS = {
     const findings = []
     if (needs.chrome && !installsChrome(text)) findings.push({ file, message:
       (needs.chrome === '@frontierjs/print-kit'
-        ? 'the app depends on @frontierjs/print-kit and this image installs no Chrome, so printerPlugin() ' +
+        ? 'the app depends on @frontierjs/print-kit and this image installs no Chrome, so printer() ' +
           'refuses to boot and the release does not start. '
         : 'the API imports @frontierjs/mesa/drive and this image installs no Chrome, so its first ' +
           'openChrome() throws in production. ') +
@@ -5188,7 +5189,7 @@ function modelResolver(schema, root) {
   return { resolves, modelNamed }
 }
 
-// The services `createAuthPlugin` registers, by the option key that renames or
+// The services `auth()` registers, by the option key that renames or
 // drops each. `auth-service-collision` reads it; a test holds it to auth's own.
 export const AUTH_SERVICES = {
   account: 'account', sessions: 'sessions', apiKeys: 'api-keys',

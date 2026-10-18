@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs'
 import { createClient }  from '@frontierjs/litestone'
 import { createApp, createService } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
-import { mcpPlugin } from '../src/plugin.ts'
+import { mcp } from '../src/plugin.ts'
 
 const SCHEMA = readFileSync(new URL('./fixtures/shop.lite', import.meta.url), 'utf8')
 
@@ -40,7 +40,7 @@ beforeAll(async () => {
   // find tool is offered even to a stranger. Ledger reads at 5.
   app.services.register(createService({ name: 'credentials', model: 'Credential', methods: ['find'] }))
   app.services.register(createService({ name: 'ledgers', model: 'Ledger', methods: ['find'] }))
-  app.configure(mcpPlugin({ name: 'shop' }))
+  app.configure(mcp({ name: 'shop' }))
   await app.start()
   base = `http://localhost:${app.http.port}/mcp`
 

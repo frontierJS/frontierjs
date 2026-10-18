@@ -21,8 +21,18 @@
 //
 // Only the command word completes. Once a space is typed the line is on its
 // arguments, and a Tab there would rewrite a nick.
+//
+// A stop (`IDEAS/haven.md` Phase 19) is a place Tab reaches, derived and never
+// declared: the verbs whose reaches overlap, merged into one, and each door of
+// the stage's `marks` that is neither `hidden` nor `night` -- both are found by
+// stepping, and Tab naming one would give it away. Its `reaches` are where
+// standing answers it (a door's are its own cells, within 0); with a `to` it is
+// a door. Doors come first, since every scene file puts its `<slot />`, where
+// the verbs' actors mount, after its placed tags.
 
 const away = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))
+
+const overlap = (a, b) => away(a, b) <= a.within + b.within
 
 // A cell the way `at.facing` names, past the figure's own row or column.
 const LOOKS = { n: (d) => d.y < 0, e: (d) => d.x > 0, s: (d) => d.y > 0, w: (d) => d.x < 0 }
@@ -71,6 +81,36 @@ export function createCommands() {
 
     /** The command words a figure at `at` can say, sorted; an alias is left out. */
     words,
+
+    /**
+     * The scene's stops in mount order: the doors among `marks` (the stage's,
+     * in placing order -- `stage.doors` is claim order and a cell apiece), then
+     * every verb with a reach, those whose reaches overlap merged into one,
+     * named by their words (`/board /pin`) and a door by its `to`.
+     */
+    stops(marks = []) {
+      const shown = marks
+        .filter((d) => d.kind === 'door' && !d.hidden && !d.night)
+        .map((d) => {
+          const reaches = []
+          for (let dy = 0; dy < (d.h ?? 1); dy++) for (let dx = 0; dx < (d.w ?? 1); dx++) reaches.push({ x: d.x + dx, y: d.y + dy, within: 0 })
+          return { name: d.to, to: d.to, reaches }
+        })
+      const groups = []
+      for (const v of verbs) {
+        if (!v.reach) continue
+        const met = groups.filter((g) => g.some((o) => overlap(o.reach, v.reach)))
+        const into = met[0] ?? []
+        if (!met.length) groups.push(into)
+        for (const g of met.slice(1)) { into.push(...g); groups.splice(groups.indexOf(g), 1) }
+        into.push(v)
+      }
+      const named = groups.map((g) => {
+        const words = [...new Set(g.filter((v) => v.word).map((v) => `/${v.word}`))]
+        return { name: (words.length ? words : [...new Set(g.map((v) => v.key))]).join(' '), reaches: [...new Set(g.map((v) => v.reach))] }
+      })
+      return [...shown, ...named]
+    },
 
     /** One line of help per word in reach, in the order Tab lists them. */
     helps: (at) => words(at).map((w) => find(w, at).verb.help),

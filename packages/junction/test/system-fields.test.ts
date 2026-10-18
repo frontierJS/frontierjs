@@ -33,6 +33,7 @@ const SCHEMA = `
     slug    String? @system
     open    String?
     version Int     @version
+    @@gate(0)
   }
 `
 

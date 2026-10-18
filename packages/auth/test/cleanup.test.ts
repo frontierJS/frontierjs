@@ -1,7 +1,7 @@
 // test/cleanup.test.ts
 //
 // The expired-row sweep: `auth.cleanup` on every createLitestoneAuth instance,
-// held by createAuthPlugin from work() to shutdown.
+// held by auth from work() to shutdown.
 //
 // The interval is an hour, so the timer is not what is under test here:
 // `sweepNow()` runs the SHIPPED predicate against a real Litestone database.
@@ -16,7 +16,7 @@
 
 import { describe, test, expect, afterAll } from 'bun:test'
 import { createAuthCleanupJobs } from '../cleanup.ts'
-import { createAuthPlugin }      from '../plugin.ts'
+import { auth }      from '../plugin.ts'
 import { makeAuth, type Harness } from './harness.ts'
 
 const harnesses: Harness[] = []
@@ -121,10 +121,10 @@ describe('auth cleanup — the handle', () => {
     })
   })
 
-  test('createAuthPlugin runs the sweep from work() to shutdown', async () => {
+  test('auth runs the sweep from work() to shutdown', async () => {
     // What an app no longer writes (FJS-1893): mounting the plugin is the wiring.
     const h = await env()
-    const plugin = createAuthPlugin(h.auth) as any
+    const plugin = auth({ auth: h.auth }) as any
     liveIntervals(live => {
       expect(live()).toBe(0)
       plugin.work()

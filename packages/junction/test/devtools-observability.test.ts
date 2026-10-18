@@ -11,11 +11,11 @@
 // equality between the two surfaces rather than a restatement of either.
 //
 // The readiness half is new rather than repaired: `checks` was an option on
-// healthPlugin(), so only the app author could declare one and a plugin owning
+// health(), so only the app author could declare one and a plugin owning
 // the resource that fails had no way to say so.
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { createApp, createService, healthPlugin, defaultConfig } from '../index.ts'
+import { createApp, createService, health as healthPlugin, defaultConfig } from '../index.ts'
 import { devtools } from '../src/plugins/devtools/index.ts'
 
 const PORT   = 3387
@@ -120,7 +120,7 @@ describe('readiness takes checks from plugins', () => {
 
   it('answers the same set on both surfaces', async () => {
     // The console reads readiness on its own port, and `checks` used to live in
-    // healthPlugin's closure where nothing else could see it — so an app that
+    // health's closure where nothing else could see it — so an app that
     // declared its own database probe had it graded at /health and silently
     // missing from the console. Two surfaces, one question.
     const [route, console_] = [

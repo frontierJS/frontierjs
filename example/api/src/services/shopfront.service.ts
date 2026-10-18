@@ -16,9 +16,9 @@ import { createService, $ } from '@frontierjs/junction'
 // served on is the deployment's, and junction refuses the reserved paths at boot
 // rather than trusting the list to be written carefully.
 //
-// Over no model, so the gate ladder does not apply and access is the service's
-// own business — a storefront's name is public by construction, since it is
-// printed on the page every visitor loads.
+// Over no model, so `settings` says who may call it: `gate: 0`, because a
+// storefront's name is printed on the page every visitor loads. Undeclared, it
+// would be SYSTEM-only (`FJS-D1206`).
 
 declare module '@frontierjs/junction' {
   interface AppConfig {
@@ -38,7 +38,7 @@ export default createService({
   // `methods:` also narrows the surface: without it the CRUD default answers
   // every CRUD verb it was not given, and on a service with no model that is a
   // 500 rather than a refusal.
-  methods: ['settings'],
+  methods: [{ method: 'settings', gate: 0 }],
 
   async settings() {
     const config = $.config

@@ -13,6 +13,7 @@
   //
   // Ctrl+P, from the list or from inside a route, opens the jump: a modal
   // over the screen with a field and the routes that match it, best first.
+  // No `paths` (the app set `terminal: { jump: false }`) and Ctrl+P is the app's.
   import { rank } from '@frontierjs/toolbelt/search'
 
   export let state  // () => { app, note, routes, patterns, refused }
@@ -25,7 +26,8 @@
   let path = ''
   const go = () => { if (path.trim()) onopen?.(path.trim()) }
 
-  // The keys are modal, and only `i` enters INSERT, where the field takes every
+  // The keys are modal, and only `i` and `a` enter INSERT, `a` one character
+  // right of the cursor and never past a line's end, as vim's does. The field takes every
   // key but Esc. Landing on a text field does not: a route focuses its first
   // control when it mounts, and a scene that opened already typing would eat
   // the h j k l it walks on. Every focus is NORMAL, so Tab to the next field
@@ -56,7 +58,8 @@
       return
     }
     if (!typing) return
-    if (e.key === 'i' || e.key === '/') set('insert')
+    if (e.key === 'i' || e.key === 'a' || e.key === '/') set('insert')
+    if (e.key === 'a' && e.target.getTextRange(e.target.cursorOffset, e.target.cursorOffset + 1) !== '\n') e.target.moveCursorRight()
     if (e.key === '/') return
     if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') e.preventDefault()
   }
@@ -119,7 +122,7 @@
   <p>{state().note}</p>
 {/if}
 {#if state().routes}
-  <p>Tab or j/k moves, Enter opens, Ctrl+P jumps, Esc goes back, Ctrl+C quits</p>
+  <p>Tab or j/k moves, Enter opens{paths.length ? ', Ctrl+P jumps' : ''}, Esc goes back, Ctrl+C quits</p>
   {#each state().routes as r (r.path)}
     <button onclick={() => onopen?.(r.path)} onkeydown={arrow}>{r.path}</button>
   {:else}
@@ -135,7 +138,7 @@
     <p>{state().refused} more do not lower yet: fli dev:tui --list names the first blocker of each.</p>
   {/if}
 {/if}
-<dialog bind:this={jumper} onclose={() => set('normal')}>
+<dialog class="glass" bind:this={jumper} onclose={() => set('normal')}>
   <p>Jump to a route · ↑↓ picks, Enter opens, Esc closes</p>
   <input bind:this={jumpField} value={query} placeholder="type to filter, or a /path/" oninput={typed} onkeydown={jumpKey} />
   {#each hits(query, paths) as h, i (h)}

@@ -5,7 +5,7 @@
  * drain waits on a socket a view never opens, so a held write would sit there
  * unsent. What `@@sync(field)` needs from a LIVE write — the row it was made
  * against — still rides, as the tool call's `_meta`, which the app's
- * `mcpPlugin()` reads back into the call's `base` (`IDEAS/agent-client-ui.md`
+ * `mcp()` reads back into the call's `base` (`IDEAS/agent-client-ui.md`
  * 3.6). The plugin's half is `packages/mcp/test/plugin.test.ts` § the base a
  * view read rides _meta.
  *

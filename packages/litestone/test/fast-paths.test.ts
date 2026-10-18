@@ -24,6 +24,7 @@ model Author {
   id    Int    @id
   name  String
   posts Post[]
+  @@gate(0)
 }
 
 model Post {
@@ -31,6 +32,7 @@ model Post {
   title    String
   authorId Int
   author   Author @relation(fields: [authorId], references: [id])
+  @@gate(0)
 }
 
 model Secret {
@@ -44,6 +46,7 @@ model Draft {
   title     String
   deletedAt DateTime?
   @@softDelete
+  @@gate(0)
 }
 `
 
@@ -68,7 +71,7 @@ function watched(args: any) {
 }
 
 describe('the fast paths in an app with a gate', () => {
-  it('a model with no gate of its own takes them', async () => {
+  it('a model gated at 0 takes them', async () => {
     const db = (await open([gate()])).$setAuth(user)
     const unique = watched({ where: { id: 1 } })
     expect((await db.author.findUnique(unique.proxy))?.name).toBe('A')

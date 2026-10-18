@@ -1,0 +1,72 @@
+/*
+ * aside.css
+ * The Aside -- the supporting column beside a Screen's main content
+ * (`FJS-D1233`).
+ *
+ * Lives in `patterns`, not beside `.screen` in frame.css: the collapse hides
+ * what the Aside holds, and a Facts, a Card or a Stack in there states its own
+ * `display` in this layer or the one before it. A `display: none` from
+ * `components` loses to all of them whatever its specificity.
+ *
+ *   <main class="screen">
+ *     <aside class="aside">
+ *       <button class="btn ghost square aside-toggle"
+ *               aria-label="Details" aria-expanded="true"></button>
+ *       &hellip;
+ *     </aside>
+ *     <div class="stack">&hellip;</div>
+ *   </main>
+ *
+ * The main content is ONE wrapper: a second child would start a second row
+ * under an Aside taller than the first. Collapsing is read off the toggle the
+ * app already owns -- the app flips `aria-expanded`, this file does the rest.
+ * What the Aside held leaves the page when collapsed, not just the view: a
+ * hidden column whose links still take focus is a trap.
+ */
+.screen:has(> .aside) {
+  display:               grid;
+  grid-template-columns: var(--aside-width) minmax(0, 1fr);
+  column-gap:            var(--space-2xl);
+  align-items:           start;
+}
+.screen:has(> .aside) > :where(:not(.aside)) {
+  grid-column:        2;
+  margin-block-start: 0;
+}
+.screen:has(> .aside .aside-toggle[aria-expanded="false"]) {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.aside {
+  grid-column:     1;
+  min-inline-size: 0;
+  display:         flex;
+  flex-direction:  column;
+  gap:             var(--space-lg);
+}
+.aside:has(> .aside-toggle[aria-expanded="false"]) > :where(:not(.aside-toggle)) {
+  display: none;
+}
+
+/* The control draws its own «; the attribute turns it to ». The label is the app's. */
+.aside-toggle {
+  align-self: flex-start;
+}
+.aside-toggle::before {
+  content: "\00ab";
+  display: inline-block;
+}
+.aside-toggle[aria-expanded="false"]::before {
+  rotate: 180deg;
+}
+
+/* Below md there is no room for a column: the Aside stacks over the main. */
+@media (max-width: 767px) {
+  .screen:is(:has(> .aside), :has(> .aside .aside-toggle[aria-expanded="false"])) {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap:               var(--space-2xl);
+  }
+  .screen:has(> .aside) > :where(:not(.aside)) {
+    grid-column: 1;
+  }
+}

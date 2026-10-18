@@ -7,7 +7,7 @@
  * built at all: which files are views, what the two generated modules say and
  * in which order, that a built view is ONE file with its runtime and its
  * stylesheet inside, and what a failed or stale build leaves in a directory
- * `mcpPlugin()` serves whole.
+ * `mcp()` serves whole.
  *
  * `viteBuild` is injected, as it is for the widget build, so the loop's
  * refusals and cleanup are asserted against a recorder. The last section runs
@@ -402,7 +402,7 @@ describe('the loop', () => {
   })
 
   test('a failed build withdraws that view and leaves the others', async () => {
-    // mcpPlugin() serves whatever the directory holds: a document from the
+    // mcp() serves whatever the directory holds: a document from the
     // LAST run under a model whose build just failed is a screen that lies.
     resource('Aaa'); resource('Zzz')
     mkdirSync(out(), { recursive: true })

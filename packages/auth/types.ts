@@ -1,8 +1,8 @@
 // types.ts
 // LitestoneAuthOptions  — passed to createLitestoneAuth(db, opts)
-// AuthPluginOptions — passed to createAuthPlugin(auth, opts)
+// AuthPluginOptions — passed to auth({ auth, ...opts })
 
-import type { RateLimitHookOptions, SessionContext } from '@frontierjs/junction'
+import type { IAuth, RateLimitHookOptions, SessionContext } from '@frontierjs/junction'
 
 // ─── A way into an account changed ──────────────────────────────────────────────
 
@@ -446,9 +446,11 @@ export interface AuthServicesOptions {
   reauthenticationRateLimit?: RateLimitHookOptions
 }
 
-// ─── createAuthPlugin options ─────────────────────────────────────────
+// ─── auth options ─────────────────────────────────────────
 
 export interface AuthPluginOptions {
+  /** The instance the routes sign in through — `createLitestoneAuth(db)`'s. */
+  auth: IAuth
   /**
    * SUPPORT MODE — may this operator act as this subject?
    *

@@ -18,7 +18,7 @@ import { describe, it, expect, afterEach } from 'bun:test'
 import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { Database } from 'bun:sqlite'
-import { createCaravan } from '../src/index.ts'
+import { caravan } from '../src/index.ts'
 import { openDb, buildStatements } from '../src/db.ts'
 import type { CaravanInstance } from '../src/types.ts'
 
@@ -30,8 +30,8 @@ function tmpPath(): string {
   return p
 }
 
-function makeQueue(path: string, opts: Parameters<typeof createCaravan>[0] = {}): CaravanInstance {
-  return createCaravan({ db: path, pollInterval: 20, cleanupAfter: 0, ...opts })
+function makeQueue(path: string, opts: Parameters<typeof caravan>[0] = {}): CaravanInstance {
+  return caravan({ db: path, pollInterval: 20, cleanupAfter: 0, ...opts })
 }
 
 async function waitFor(fn: () => boolean, timeoutMs = 3_000): Promise<void> {

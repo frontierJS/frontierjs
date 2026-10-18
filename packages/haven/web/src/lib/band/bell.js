@@ -1,6 +1,7 @@
 // bell.js — the kitchen's bells, for `#sound`: pure, so a strike sounds the
-// same on every machine and is rendered once. `chef` is two quick strikes, a
-// session waiting on you; `order` is one bright strike, a plate on the pass.
+// same on every machine and is rendered once. `chef` is two warbling strikes
+// that sag downhill, a session waiting on you; `order` is one bright strike, a
+// plate on the pass.
 //
 // `createBells().ring(kind)` queues a strike and `samples(from, n)` is what
 // `#sound` pulls. A strike has no sample of its own until the next pull: the
@@ -33,9 +34,34 @@ function strike(hz) {
   return out
 }
 
+/**
+ * One strike of a bell knocked off its hook: the note sags by `sag` and
+ * wobbles. A CHEF! heard across the room must not pass for a plate, and two
+ * true strikes in a row did.
+ */
+function wonk(hz, sag) {
+  const out = new Float32Array(Math.floor(LENGTH * RATE))
+  const phase = PARTIALS.map(() => 0)
+  let twin = 0
+  for (let i = 0; i < out.length; i++) {
+    const t = i / RATE
+    const f = hz * (1 - sag * (1 - Math.exp(-t / 0.25))) * (1 + 0.03 * Math.sin(2 * Math.PI * 6.5 * t))
+    let v = 0
+    PARTIALS.forEach((p, k) => {
+      phase[k] += 2 * Math.PI * f * p.r / RATE
+      v += p.a * Math.exp(-t / p.decay) * Math.sin(phase[k])
+    })
+    // A second fundamental a hair flat beats against the first, the wah-wah.
+    twin += 2 * Math.PI * f * 0.985 / RATE
+    v += 0.6 * Math.exp(-t / 1.1) * Math.sin(twin)
+    out[i] = v * LEVEL * 0.8 * Math.min(1, t / ATTACK)
+  }
+  return out
+}
+
 /** A kind's strikes, each `{ at, buf }` with `at` in samples from the first. */
 const KINDS = {
-  chef:  () => { const b = strike(1320); return [{ at: 0, buf: b }, { at: Math.floor(0.16 * RATE), buf: b }] },
+  chef:  () => [{ at: 0, buf: wonk(1320, 0.1) }, { at: Math.floor(0.22 * RATE), buf: wonk(1050, 0.3) }],
   order: () => [{ at: 0, buf: strike(1760) }],
 }
 

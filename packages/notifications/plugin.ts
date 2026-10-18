@@ -9,16 +9,17 @@ const isDriver = (v: unknown): v is NotificationDriver =>
   typeof (v as NotificationDriver | null)?.send === 'function'
 
 /**
- * notificationsPlugin — wires app.notify and registers transport drivers.
+ * notifications — wires app.notify and registers transport drivers.
  *
- * Must be configured after mailerPlugin if the email transport is used:
+ * Must be configured after junction's mail plugin if the email transport is used:
  *
  * @example
  * // api/server.ts
- * import { notificationsPlugin } from '@frontierjs/notifications'
+ * import { mail }          from '@frontierjs/junction/mail'
+ * import { notifications } from '@frontierjs/notifications'
  *
- * app.configure(mailerPlugin(createResendMailer({ apiKey, from })))
- * app.configure(notificationsPlugin({
+ * app.configure(mail({ mailer: createResendMailer({ apiKey, from }) }))
+ * app.configure(notifications({
  *   db,
  *   transports: {
  *     email: { mailer: 'default' },          // uses app.mail
@@ -32,7 +33,7 @@ const isDriver = (v: unknown): v is NotificationDriver =>
  * // From a service hook via ctx.app:
  * await ctx.app.notify(user, new WelcomeUser())
  */
-export function notificationsPlugin(opts: NotificationsPluginOptions) {
+export function notifications(opts: NotificationsPluginOptions) {
   // `sms: { provider: 'twilio' }` is the shape other frameworks take. There is
   // no built-in SMS to configure, so it registered nothing and was found at the
   // first send — which for an alert is the moment it was needed.
@@ -66,8 +67,8 @@ export function notificationsPlugin(opts: NotificationsPluginOptions) {
   //
   // A registered custom email driver replaces app.mail, so it needs no mailer.
   // Junction checks this before any boot() and fails naming both plugins.
-  // Before it existed, "mailerPlugin must be configured before
-  // notificationsPlugin" was a comment in an examples file, and getting it
+  // Before it existed, "mail must be configured before
+  // notifications" was a comment in an examples file, and getting it
   // wrong surfaced as a failed send long after startup rather than at boot.
   const emailTransport   = opts.transports?.email
   const emailUsesMailer  = !!emailTransport && !isDriver(emailTransport)
@@ -124,7 +125,7 @@ export function notificationsPlugin(opts: NotificationsPluginOptions) {
       if (emailUsesMailer && !('mail' in app)) {
         throw new Error(
           '[notifications] the email transport is configured but app.mail is not set. ' +
-          'Configure mailerPlugin(...) before notificationsPlugin(...), or register ' +
+          'Configure mail({ mailer }) from @frontierjs/junction/mail before notifications(...), or register ' +
           'your own driver under transports.email.'
         )
       }

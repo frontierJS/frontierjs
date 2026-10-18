@@ -7,7 +7,7 @@
 //
 // It was not blocked on effort. A rule reading *above 80% for five minutes* has
 // no window to read until something keeps a second reading, which is what
-// `metricsPlugin` now does (`FJS-956`): `MetricSeries` × `MetricPoint`, minted
+// `metrics` now does (`FJS-956`): `MetricSeries` × `MetricPoint`, minted
 // by the scrape and kept at minute resolution for 48 hours. This job reads that
 // tier and nothing else — the hourly fold is for charts, and an alert asking
 // about the last five minutes cannot be answered by a row covering an hour.

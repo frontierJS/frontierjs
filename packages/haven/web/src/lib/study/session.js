@@ -6,11 +6,12 @@
 // stdin and is answered under the same session id, and closing stdin ends it
 // with 0. Without `--verbose` the CLI refuses stream-json output.
 //
-// A session runs under `--permission-mode manual` and asks the host
-// (`--permission-prompt-tool stdio`, study.md 2.3): a call the owner's
-// settings do not allow arrives as a `control_request` the pane answers. Under
-// `auto` the CLI asked the host nothing, not even for `curl | sudo bash`, so a
-// panel there would never show.
+// A session runs under `--permission-mode auto`, the owner's default: the
+// CLI's own classifier decides and the host is asked nothing, not even for
+// `curl | sudo bash` (study.md 2.3), so the panel stays dark. Passing
+// `permissionMode: 'manual'` brings it back: a call the owner's settings do
+// not allow arrives over `--permission-prompt-tool stdio` as a
+// `control_request` the pane answers.
 //
 // Terminal only, and no `#` seam: the study mounts only from a checkout, so no
 // browser build reaches this file.
@@ -20,7 +21,7 @@ import { spawn } from 'node:child_process'
 export const CLAUDE_ENV = 'HAVEN_AGENTS_CLAUDE'
 
 /** The argv of a session; `resume` reopens one by its id. */
-export function studyArgv({ resume, model, permissionMode = 'manual' } = {}) {
+export function studyArgv({ resume, model, permissionMode = 'auto' } = {}) {
   const argv = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
     '--permission-mode', permissionMode, '--permission-prompt-tool', 'stdio']
   if (model) argv.push('--model', model)

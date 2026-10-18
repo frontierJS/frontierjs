@@ -8,8 +8,8 @@
  * the package whose bench is nearest the door, and one elsewhere. Sam is
  * Sierra's interactive shell under a pty, walks from the square's spawn
  * through the workshop's door, and sees the two at one bench with its count
- * and the third alone. He stands beside one and it is read out — the session,
- * the file, how long ago. Ana walks in by `fli haven --frame /workshop/` from
+ * and the third alone. He stands beside one and it is read out in a bubble —
+ * the session, the file, how long ago. Ana walks in by `fli haven --frame /workshop/` from
  * a HOME with no workers while Sam stands there: her frame draws Sam's
  * figure, so it is the same room, and none of Sam's workers, their count or
  * the reading — what is drawn from a workers directory stays on the screen
@@ -43,6 +43,7 @@ import { follow } from '../src/lib/scene/stage.js'
 import { BENCH_WIDTH } from '../src/pieces/bench.js'
 import { QUIET_MS, readWorkers } from '../src/lib/hash/workers.js'
 import { SPIN } from '../src/lib/working.js'
+import { BUBBLE } from '../src/lib/scene/crowd.js'
 
 const WEB      = join(import.meta.dir, '..')
 const REPO     = join(WEB, '../../..')
@@ -103,6 +104,23 @@ const API = `http://localhost:${env.port}`
 const sam = await signIn(env.port, 'sam')
 const term = terminal(API, sam.token, square, { HOME: samHome })
 const at = (x, y, width = 1, stage = workshop, view = stage.view) => cellOf(term.screen(), x, y, width, stage, view)
+
+/**
+ * The readout bubble that opens `(` + `head` on Sam's screen, its rows joined
+ * back into the line they wrap — '' where none is drawn. Its rows are one
+ * width, so the inner text of each starts under the `(`.
+ */
+function readout(head) {
+  const lines = term.screen().split('\n')
+  const r = lines.findIndex((l) => l.includes(`(${head}`))
+  if (r === -1) return ''
+  const c = lines[r].indexOf(`(${head}`) + 1
+  const rows = lines.slice(r, r + BUBBLE.rows).map((l) => l.slice(c, c + BUBBLE.w - 1))
+  const last = rows.findIndex((row) => row.includes(')'))
+  if (last === -1) return ''
+  const w = rows[last].lastIndexOf(')')
+  return rows.slice(0, last + 1).map((row) => row.slice(0, w).trim()).join(' ')
+}
 
 // ─── Sam walks to the workshop ────────────────────────────────────────
 
@@ -168,8 +186,8 @@ check(cooking(at(f0.x, f0.y)) && at(f0.x + 2, f0.y) !== '(', `the one at ${far.p
 const beside = { x: s0.x - 1, y: s0.y }
 check(await walk(workshop, route(workshop, inside, beside)), 'Sam walks to stand beside the first worker', term.screen())
 const READ = `aaaa ${fileOf(nearest.piece.bench)} · `
-check(await until(() => at(s0.x, s0.y + 1, READ.length) === READ && /\d+s ago/.test(at(s0.x, s0.y + 1, READ.length + 8))),
-  'standing beside it reads it: the session, the file it touched, how long ago', term.screen())
+check(await until(() => readout('aaaa').startsWith(READ) && /\d+s ago$/.test(readout('aaaa'))),
+  'standing beside it reads it in a bubble: the session, the file it touched, how long ago', term.screen())
 
 // ─── Ana, another terminal in the room ───────────────────────────────
 
@@ -207,11 +225,16 @@ check(await until(() => blank(at(s1.x, s1.y)) && cooking(at(s0.x, s0.y)) && !ter
 const WHY = 'Claude needs your permission to use Bash'
 const WAITS = '(? 1 waiting on you)'
 hookRun('aaaa-one', { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: WHY })
-check(await until(() => at(s0.x, s0.y) === '?' && at(s0.x + 2, s0.y, WAITS.length) === WAITS && term.screen().includes(`aaaa asks: ${WHY} · `)),
+check(await until(() => at(s0.x, s0.y) === '?' && at(s0.x + 2, s0.y, WAITS.length) === WAITS && readout('aaaa').startsWith(`aaaa asks: ${WHY} · `)),
   'a session stopped on a permission prompt is a ? whose bench says it waits on Sam, and beside it the prompt is read', term.screen())
 hookRun('aaaa-one', { hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: '**Booth sweep** fixed, 3 tests added.\n\nMore below.' })
-check(await until(() => at(s0.x, s0.y) === '✓' && !term.screen().includes(WAITS) && term.screen().includes('aaaa done: Booth sweep fixed, 3 tests added. · ')),
+check(await until(() => at(s0.x, s0.y) === '✓' && !term.screen().includes(WAITS) && readout('aaaa').startsWith('aaaa done: Booth sweep fixed, 3 tests added. · ')),
   'when it stops it is a ✓, its hand down, and beside it its last words are read', term.screen())
+const sgr = (hex) => `38;2;${hex.match(/\w\w/g).map((h) => parseInt(h, 16)).join(';')}`
+// The renderer sends a cell's ink and its ground as two sequences, either may come between.
+const inked = (hex, word) => new RegExp(`${sgr(hex)}m(?:\\x1b\\[[\\d;]*m)*${word}`).test(term.raw())
+check(inked(BUBBLE.nick, 'aaaa') && inked('#4ade80', 'done:') && inked(BUBBLE.old, '\\d+s ago'),
+  'its session, verb and age are each drawn in their own ink over the bubble', JSON.stringify(term.raw().slice(-2000)))
 
 // ─── the register, on the benches ─────────────────────────────────────
 

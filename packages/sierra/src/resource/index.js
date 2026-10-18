@@ -304,7 +304,7 @@ function _wrapDebug(client) {
  * @param {boolean} [config.cookieAuth]
  *        Which credential the server issues. Forwarded verbatim to
  *        `createJunctionClient` and it MUST match
- *        `createAuthPlugin(auth, { cookieAuth: true })` on the API — the browser
+ *        `auth({ auth, cookieAuth: true })` on the API — the browser
  *        cannot see the server's source and there is nothing here to derive it
  *        from, so it is declared. Left false, the client answers
  *        `hasCredential === !!token`, which is false for a signed-in cookie-mode
