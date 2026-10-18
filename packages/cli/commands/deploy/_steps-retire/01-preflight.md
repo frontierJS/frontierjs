@@ -35,10 +35,25 @@ const outpost    = $.flag.outpost && deployConf.outpost === true &&
   apiMachine.capture('[ -x /usr/local/sbin/outpost-uninstall ] && echo yes || echo no').trim() === 'yes'
 $.config.outpostPresent = outpost
 
+// The uninstall takes the box's firewall with it while the apps the Outpost
+// placed keep running, so a port one publishes on every interface without
+// Outpost's fjs.exposed-port label is dropped from outside now and answers
+// once this run ends.
+const opened = !outpost ? [] : apiMachine
+  .capture(`docker ps --format '{{.Names}}|{{.Label "fjs.exposed-port"}}|{{.Ports}}' 2>/dev/null || true`)
+  .split('\n').filter(Boolean).map(l => l.split('|'))
+  .filter(([name, declared]) => !declared && name !== container && name !== `${container}_replaced`)
+  .map(([name, , ports = '']) => [name, [...new Set([...ports.matchAll(/(?:0\.0\.0\.0|\[::\]|::):(\d+)->/g)].map(m => m[1]))]])
+  .filter(([, ports]) => ports.length)
+
 echo('')
 echo(`  ${appId} on ${target} — what goes:`)
 echo(`    routes      fli-${appId} in Caddy on ${[...new Set(sides.map(s => s.host))].join(', ')}`)
-if (outpost) echo(`    outpost     outpost-uninstall on ${$.config.api.host} (Docker and Caddy stay)`)
+if (outpost) {
+  echo(`    outpost     outpost-uninstall on ${$.config.api.host} (Docker and Caddy stay)`)
+  echo(`    firewall    ${$.config.api.host}'s, with the Outpost — inbound on any listening port is no longer dropped`)
+  for (const [name, ports] of opened) echo(`                ${name} then answers from outside on ${ports.join(', ')}`)
+}
 echo(`    containers  ${running ? running.split('\n').join(', ') : 'none running'}`)
 echo(`    images      ${images} of ${appId}`)
 for (const s of sides) echo(`    files       ${s.host}:${s.path}${keep ? ' (db and env file kept)' : ''}`)

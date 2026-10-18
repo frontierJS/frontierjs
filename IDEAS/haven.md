@@ -1829,7 +1829,7 @@ fix-loop is handed, and a CHEF! ticket opens in the study (`IDEAS/study.md`
     pass under it, and plate and age go green, amber, red. Both thresholds
     sit under `QUIET_MS`, since a plate leaves at ten minutes. A working
     ticket's age is not a wait on you and keeps the paper's ink. The two
-    numbers and the looks are not the owner's yet.
+    numbers ruled 2026-10-18 (owner).
   - Run (scratch probe, not committed) against a test API with six workers
     written into a HOME with old stamps: a `--frame /kitchen/` read each
     head's wait (`34s`, `3m`, `7m`) and each plate's age under it (`24s`,
@@ -1849,7 +1849,7 @@ fix-loop is handed, and a CHEF! ticket opens in the study (`IDEAS/study.md`
     `HEARD` and its station `HEARD`, and stays on the rail. Bare, each takes
     what is in front of you; a miss names what is up. SessionEnd and the
     hook's day-old sweep take the file. The workshop still shows a bumped
-    session's `✓`. Both words are not the owner's yet; nothing committed
+    session's `✓`. Both words, and `HEARD` on a ticket left on the rail, ruled 2026-10-18 (owner); nothing committed
     guards the stamp keying (no new tests while experimenting).
   - Run (scratch probe, not committed) in a pty against a test API, four
     workers written into a HOME: `/bump` at the door answered by nobody; in

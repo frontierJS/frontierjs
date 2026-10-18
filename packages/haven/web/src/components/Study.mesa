@@ -28,13 +28,15 @@
   // binary) is resumed by the next line with what it said kept above.
   // Terminal only: `session.js` spawns.
   //
+  // The status line names the bench the tab's workshop figure stands at
+  // (study.md 3.2), off `#workers` each second, the figure's own source.
+  //
   // The terminal scrolls nothing but the page, so the pane windows its own
   // rows (`rows.js`) to the size of the box it was mounted in, and again on
   // that box's `resize`. Not Mesa's `sideOf`, which makes a side where there
   // is none. Blank rows under the newest keep the input on the bottom.
   import { tint } from '#cell'
-  import { checkout } from '#ledger'
-  import { onOpen } from '#study'
+  import { onOpen, studyCwd } from '#study'
   import { readWorkers } from '#workers'
   import { TONES } from '@/lib/home/answer.js'
   import { clip } from '@/lib/scene/cells.js'
@@ -44,7 +46,7 @@
   import { askRows, rowsOf, waitRows, windowOf, wrapped } from '@/lib/study/rows.js'
   import { cycled, modelOf, studyLine, tabBar } from '@/lib/study/tabs.js'
 
-  const cwd = checkout() ?? process.cwd()
+  const cwd = studyCwd()
 
   // `earlier` is the messages of a session that ended, kept above the next;
   // `top` the first row shown while reading back, null following the newest;
@@ -99,7 +101,14 @@
   })
   $.onDestroy(() => box?.off('resize', fit))
 
-  const tick = setInterval(() => { if (tabs.some((t) => t.session?.state.status === 'working')) now = Date.now() }, 1000)
+  // Each session's bench, assigned again only when one moved: the pane redraws on every assignment.
+  const benchesNow = () => new Map(readWorkers().map((w) => [w.session, w.bench]))
+  let benches = benchesNow()
+  const tick = setInterval(() => {
+    if (tabs.some((t) => t.session?.state.status === 'working')) now = Date.now()
+    const next = benchesNow()
+    if (JSON.stringify([...next]) !== JSON.stringify([...benches])) benches = next
+  }, 1000)
   tick.unref?.()
   $.onDestroy(() => {
     clearInterval(tick)
@@ -121,12 +130,14 @@
   $: shown = windowOf(all, room, tabs[at].top)
   $: pad   = Math.max(0, room - shown.rows.length)
   $: bar   = clip(tabBar(tabs, at), w)
+  $: bench = benches.get(tabs[at].reads ?? state?.sessionId ?? tabs[at].resume) ?? null
   $: head  = clip(' ' + [
     modelOf(tabs[at], state),
     state?.readOnly ? `read-only · ${state.waiting ? 'waiting on you' : state.exit ? 'no transcript' : state.status}`
       : state?.status === 'needs-permission' ? 'needs permission'
       : state?.status === 'working' ? `working ${Math.max(0, Math.round((now - tabs[at].since) / 1000))}s`
       : state?.exit ? 'ended' : 'idle',
+    bench ? `at ${bench}` : null,
     state && !state.readOnly ? `$${state.cost.toFixed(2)}` : null,
     shown.below ? `${shown.below} newer ↓` : null,
   ].filter(Boolean).join(' · '), w)

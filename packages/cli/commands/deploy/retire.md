@@ -67,7 +67,9 @@ The inverse of `fli deploy:setup` and `fli deploy`, for one app:
 - the Outpost, by the box's own `outpost-uninstall`, where the deploy block
   says `outpost: true` — the inverse of `08b-outpost`. Bare, so the Docker and
   Caddy other apps share stay; `sudo outpost-uninstall --purge` on the box is
-  the rest. `--no-outpost` leaves it;
+  the rest. The box's firewall goes with it, and preflight names each running
+  container that then answers from outside on a port it never declared.
+  `--no-outpost` leaves it;
 - the API container, the one a deploy left `_replaced`, and every image of the
   app;
 - the deploy root on every machine a side lives on — source, web releases, the

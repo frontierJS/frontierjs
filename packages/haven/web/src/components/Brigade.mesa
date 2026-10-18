@@ -49,7 +49,10 @@
   import { createBells, RATE } from '@/lib/band/bell.js'
   import { LEDGER } from '@/lib/hash/ledger.data.js'
   import { TICKET, rail, line, board, pass, lamps, bell } from '@/pieces/kitchen.js'
-  import { markOf } from '@/lib/marks.js'
+  import { markOf, MARKS } from '@/lib/marks.js'
+  import { BUBBLE, picked } from '@/lib/scene/crowd.js'
+  import { bubble } from '@/lib/games/booth.js'
+  import { cells } from '@/lib/scene/cells.js'
 
   const scene = $context.scene
   const POLL_MS = 1000
@@ -270,9 +273,32 @@
 
   /** What standing beside a cook or a plate reads. */
   function reading(w, now) {
-    if (w.asking) return `${id(w)} asks: ${w.asking.why} · ${ago(now - w.asking.at)} ago`
-    if (w.said) return `${id(w)} plated: ${w.said.text} · ${ago(now - w.said.at)} ago`
-    return w.file ? `${id(w)} on ${w.file} · ${ago(now - w.at)} ago` : `${id(w)} firing · ${ago(now - w.seen)} ago`
+    const who = `${id(w)} ${markOf(w.bench).glyph} ${w.bench}`
+    if (w.asking) return `${who} asks: ${w.asking.why} · ${ago(now - w.asking.at)} ago`
+    if (w.said) return `${who} plated: ${w.said.text} · ${ago(now - w.said.at)} ago`
+    return w.file ? `${who} on ${w.file} · ${ago(now - w.at)} ago` : `${who} firing · ${ago(now - w.seen)} ago`
+  }
+
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // A step (`3.2`) or a register row (`FJS-123`, `FJS-D45`): what the cook was on.
+  const TASK = /\b(?:FJS-D?\d+|\d+\.\d+(?:\.\d+)?)\b/g
+
+  /**
+   * The words a reading's bubble picks out of its own ink: the session, the
+   * package in its mark's ink, the task, the verb and the age. The dim `·` a
+   * package with no mark gets is the separator's glyph, so only a real mark is picked.
+   */
+  function picks(w) {
+    const m = markOf(w.bench)
+    return [
+      [/(?<=^\()\S+/g, BUBBLE.nick],
+      ...(MARKS[w.bench] ? [[new RegExp(esc(m.glyph), 'g'), m.ink]] : []),
+      [new RegExp(`\\b${esc(w.bench)}\\b`, 'g'), m.ink],
+      [TASK, INK.order[0]],
+      [/\basks:/g, INK.chef[0]],
+      [/\bplated:/g, INK.plate[0]],
+      [/\d+[sm] ago/g, BUBBLE.old],
+    ]
   }
 
   /** A package's mark drawn over the cell its row left for it, in the mark's own ink. */
@@ -395,27 +421,41 @@
       if (r.mark) out.push(inked(`bm:${r.key}`, r.mark, BOARD.x + 2, BOARD.y + 2 + i))
     })
 
-    // ─── what the chef reads ────────────────────────────────
-    if (me) {
-      const atLine = atStation(line, me)
-      const atPass = inFront(plates, me)
-      const read = atLine ? atLine.cooks.slice(0, SEATS) : atPass ? [atPass.w] : []
-      read.forEach((w, i) => out.push({ key: `r:${w.session}`, x: me.x, y: me.y + 1 + i, text: reading(w, now), layer: 12, surface: true }))
-    }
-
-    // A line is kept inside the view, as a bubble is; anything else off it is not drawn.
-    return out
-      .filter((o) => o.y >= v.y && o.y < v.y + v.h && (o.surface || (o.x >= v.x && o.x < v.x + v.w)))
+    // Off the view is not drawn; what the chef reads is placed in the view's cells below.
+    const drawn = out
+      .filter((o) => o.y >= v.y && o.y < v.y + v.h && o.x >= v.x && o.x < v.x + v.w)
       .map((o) => {
         const text = o.text.slice(0, v.w)
         return { ...o, text, x: Math.max(0, Math.min(o.x - v.x, v.w - text.length)), y: o.y - v.y }
       })
+
+    // ─── what the chef reads ────────────────────────────────
+    // A bubble each, as a member's line is, stacked under the chef, or over
+    // them where the view has no room below; kept inside the view whole.
+    if (!me) return drawn
+    const atLine = atStation(line, me)
+    const atPass = inFront(plates, me)
+    const read = atLine ? atLine.cooks.slice(0, SEATS) : atPass ? [atPass.w] : []
+    const cards = read.map((w) => ({ w, rows: bubble(reading(w, now), Math.min(BUBBLE.w, v.w), { gap: '', most: BUBBLE.rows }) }))
+    const tall = cards.reduce((n, c) => n + c.rows.length, 0)
+    const fx = me.x - v.x
+    const fy = me.y - v.y
+    let y = fy + 1 + tall <= v.h ? fy + 1 : Math.max(0, fy - tall)
+    for (const { w, rows } of cards) {
+      const x = Math.max(0, Math.min(fx, v.w - cells(rows[0])))
+      rows.forEach((text, i) => drawn.push({ key: `r:${w.session}:${i}`, x, y: y + i, text, color: BUBBLE.ink, ground: BUBBLE.ground, layer: 12, surface: true }))
+      for (const s of picked(rows, picks(w))) {
+        drawn.push({ key: `rp:${w.session}:${s.dy}:${s.dx}`, x: x + s.dx, y: y + s.dy, text: s.text, color: s.ink, ground: BUBBLE.ground, layer: 13, surface: true })
+      }
+      y += rows.length
+    }
+    return drawn
   }
 </script>
 
 {#each placed(workers, view, me, now, rung, menu, list) as o (o.key)}
   {#if o.surface}
-    <p class="surface" {@attach at(o.x, o.y, o.layer)}>{o.text}</p>
+    <pre class="surface" {@attach at(o.x, o.y, o.layer)} {@attach tint(o.color, o.ground)}>{o.text}</pre>
   {:else}
     <pre class="line" {@attach at(o.x, o.y, o.layer)} {@attach tint(o.color, o.ground)}>{o.text}</pre>
   {/if}

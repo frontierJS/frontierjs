@@ -4,4 +4,5 @@
 export function sideToggle() { return null }
 export function openSession() {}
 export function onOpen() { return () => {} }
+export function studyCwd() { return null }
 export function studyTabs() { return new Map() }

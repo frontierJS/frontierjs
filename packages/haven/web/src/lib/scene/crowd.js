@@ -64,6 +64,22 @@ export const BUBBLE = { w: 36, rows: 5, ink: '#f4f7fa', ground: '#2c4257', old: 
 export const TAIL = '╵'
 
 /**
+ * Where `picks` fall in a bubble's `rows`, each `[pattern, ink]` a global
+ * RegExp and the ink its matches are drawn in over the bubble's own, as a
+ * nick is: `{ dx, dy, text, ink }` in the bubble's cells. Matched per row
+ * after the wrap, so a word the wrap moved down is still found.
+ */
+export function picked(rows, picks) {
+  const out = []
+  rows.forEach((row, dy) => {
+    for (const [re, ink] of picks) {
+      for (const m of row.matchAll(re)) out.push({ dx: cells(row.slice(0, m.index)), dy, text: m[0], ink })
+    }
+  })
+  return out
+}
+
+/**
  * The newest line of each member standing here, over where they stand, in the
  * view's cells: `{ key, x, y, rows, ink, tail?, name?, until? }` — the bottom
  * row two rows over the speaker and the rest above it, `tail` the cell

@@ -6,7 +6,7 @@ dated: 2026-10-17
 
 # Idea — the study: Claude sessions in tabs, split beside Haven
 
-**Status: PROPOSED.** Dated 2026-10-17. Phase 0, Phase 1, 2.1–2.3 and 3.1 are built. Do not
+**Status: PROPOSED.** Dated 2026-10-17. Phase 0, Phase 1, 2.1–2.3 and Phase 3 are built. Do not
 cite this file as describing behavior — see `VERIFYING.md`. Work the plan from
 the first open box.
 
@@ -484,8 +484,8 @@ is pointed out in the workshop.
     pane on screen. What fails: none while experimenting. Adjudication:
     familiarity vs precision, and tmux's shape and word both fit. Tier:
     Assessment.
-- [ ] 3.2 A tab names its figure; the figure names its tab
-  - **The figure half is built; the tab half is not.** Standing beside a
+- [x] 3.2 A tab names its figure; the figure names its tab
+  - **The figure names its tab.** Standing beside a
     workshop figure whose session is a study tab reads it out with the tab's
     number from the bar first, `[2] 3d06 working · 4s ago`. `#study`'s
     `studyTabs()` maps each session a tab runs (`sessionId`) or reads along
@@ -494,9 +494,20 @@ is pointed out in the workshop.
     The file and not the mounted study, since kept tabs exist before the
     study first shows. A fresh tab has no number on its figure until its
     `system/init` writes the id.
-  - The tab half (the bar or status line naming the bench its figure stands
-    at) waits: `Study.mesa` and `tabs.js` were being changed for 3.3 at the
-    same time.
+  - **The tab names its figure's bench** on the status line,
+    `haiku · idle · at junction · $0.04`: `Study.mesa` reads `#workers`
+    each second in the tick it already ran, the session's `bench` keyed by
+    the tab's `reads`, else its session id, else the id it resumes. Not the
+    bar: a bench per tab would not fit 40% of a terminal. A tab with no
+    session yet, or one quiet past `QUIET_MS`, names none. `#study`'s
+    `studyCwd()` is now the one place the cwd is worked out, and
+    `Study.mesa` and `studyTabs()` both read it.
+  - Tab half run through a scratch probe (deleted after) in a 200×40 pty
+    with `--side`, a HOME holding three kept tabs and two workers written
+    through the real hook: tab 2 read `at junction`; an edit in sierra
+    moved it to `at sierra`; Ctrl+J to the read-along read `at mesa`; the
+    tab with no session named none. 7/7. `verify:workshop` 18/18, Haven's
+    typecheck clean, `fli check` no errors.
   - Run through a one-off copy of `verify:workshop` (deleted after) with a
     `study.json` in Sam's HOME naming `aaaa-one` as tab 2: beside it Sam's
     screen read `[2] aaaa packages/…`. Probed `studyTabs()` over a scratch
@@ -507,21 +518,84 @@ is pointed out in the workshop.
   - The nine, answered late, after the code: (1) failed first: the cwd
     was read off `#taskmaster`'s `checkout()` where `Study.mesa` keys on
     `#ledger`'s, two roots that part under `HAVEN_LEDGER_ROOT`. It now
-    reads `#ledger`'s, but `checkout() ?? process.cwd()` is still written
-    twice, in `Study.mesa` and `studyTabs()`. **Owed with the tab half:**
-    `Study.mesa` takes the cwd from `#study` so one place states it. The
-    tabs are a pointer, read off the file 2.2 already writes; (2) no new noun, the number is the bar's own;
+    reads `#ledger`'s, and the tab half moved the cwd into `#study`'s
+    `studyCwd()` so one place states it. The tabs are a pointer, read off the file 2.2 already writes; (2) no new noun, the number is the bar's own;
     (3) the problem's; (4) `[n]` is the bar's spelling; (5) derived from
     `study.json` and `#workers` each poll, never stored; (6) `#study` is the
     one reader for the scene, `kept.js` the one parser; (7) one function, no
     option; (8) a torn or absent file is no numbers, and the reading is as
     before; (9) must stay true: a number on a figure is the bar's number for
-    that session in this checkout. What fails: none while experimenting.
+    that session in this checkout, and a bench on a tab is where its
+    figure stands. The tab half's nine, also late: the bench is read off
+    the `#workers` row the figure stands on, one origin; no new noun;
+    derived each second, never stored; `#workers` owns the bench and
+    `#study` the cwd; no worker row is no bench and the line as before. What fails: none while experimenting.
     Adjudication: none in tension. Tier: Assessment.
-- [ ] 3.3 A CHEF! ticket opens in the study. **Ruled 2026-10-17 (owner):
+- [x] 3.3 A CHEF! ticket opens in the study. **Ruled 2026-10-17 (owner):
   read-along plus own tabs.** A ticket whose session the study started opens
   that tab, answered in 2.3's panel. Any other ticket opens a read-only tab
   tailing that session's transcript (the hook's `transcript_path`, which
   `#workers` does not keep yet), showing the ask; its own host still answers
   it. Never `--resume` a session another host holds: two processes would
   drive one session in one tree.
+  - **The gesture is `/work <id>`**, the id a ticket or a plate shows, from
+    any scene. Bare `/work` still shows and hides the study. Not a kitchen
+    verb with a reach: the study is reached from every scene, and an id is
+    already on the rail. A prefix naming none or two answers with the ids up.
+    **Ruled 2026-10-18 (owner): `/work <id>`.**
+  - `#workers` keeps the hook's `transcript_path` (a `.jsonl` path, kept
+    from the first event naming it) and `readWorkers` hands it as
+    `transcript`. `#study` gains `openSession(worker)` and `onOpen(fn)`: the
+    study mounts the first time it shows, so a session handed in before then
+    waits there for it.
+  - **Sierra's side toggle takes `force`**, as DOM's `classList.toggle`:
+    `toggle(true)` only shows (and focuses the side), so `/work <id>` with the
+    study already open never hides it.
+  - `lib/study/transcript.js`: `foldEntry`, pure — a main-line `user` or
+    `assistant` entry handed to `session.js`'s `fold` (a sidechain, a meta line
+    and every other entry kind skipped; a prompt's `<system-reminder>` and IDE
+    tags stripped) — and `readAlong({ session, path, worker })`, shaped as
+    `startSession`'s answer with `send` and `answer` refusing. It reads the
+    file from the top, then the bytes added each second, a torn last line held
+    until its newline; it keeps the newest `KEEP` (500) messages. A transcript
+    has no `result`, so the status and the ask are read off the `#workers`
+    row: asking is `needs-permission` (`?` in the bar), a stop `idle`.
+  - **A read-along is keyed `reads`, never `sessionId`.** The first cut keyed
+    it on its transcript, and the probe caught a session with none: it became
+    an ordinary tab, and a line typed there would have `--resume`d another
+    host's session. Now `send` returns on `reads`, and `study.json` keeps a
+    read-along as `{ reads, transcript }`, so no reader of the file can
+    resume it. The bar names it `read <id4>`; its ask is a panel over the
+    input (`waitRows`, "answer it in its own terminal"), since the 80-column
+    status line clipped it; a typed line stays in the field.
+  - Run (scratch probe, not committed) in a 200×40 pty through the shell's
+    `--side` against a test API, a HOME of its own holding three workers, a
+    kept tab and a stub `claude` that marks any spawn: `/work zz` named the
+    ids up; `/work aaaa` opened `read aaaa?` with the prompt, words and call
+    drawn, the reminder and a sidechain line not, and the ask over the input;
+    a line and a `1` there started nothing; lines appended were tailed, the
+    stop read idle and the call `✓`; `/work bbbb` showed the kept `haiku` tab
+    and opened no second; `/work cccc`, with no transcript, said so and a line
+    there started nothing; `study.json` kept both as `reads`; after a restart
+    the read-along came back drawing its transcript, still spawning nothing.
+    23/23. The real hook wrote `transcript` for this session. Haven's suite:
+    681 pass, 4 fail (the editor's four, failing before); Sierra's 2332;
+    both typechecks clean; `verify:workshop` failed 15 once and passed 18/18
+    on the rerun, not looked into.
+  - **Not built:** a session the study started that asks is probably no
+    CHEF! at all. Its prompts go over stdio (2.3), and whether the CLI also
+    fires the `Notification` hook then is not probed. A read-along opened
+    before its session's first event named a transcript stays without one
+    until reopened.
+  - The nine, answered late, after the code: (1) the transcript stays Claude's
+    and the worker file holds its path, a pointer; (2) no new noun, a
+    read-along is a tab, and `force` is the DOM's; (3) the problem's; (4)
+    `/work` keeps its bare meaning, and an id behaves as `/bump`'s and
+    `/heard`'s do; (5) the status and the ask are read off `#workers`, never
+    stored; (6) `fold` is still the one reader of a stream event, and the
+    transcript is handed to it; (7) `foldEntry` is pure, the tail is one
+    module; (8) a missing or torn transcript is a red row in that tab alone,
+    and a read-along can never start a process; (9) must stay true: the
+    study never drives a session it did not start. What fails: none while
+    experimenting, though that rule is the one worth a test first.
+    Adjudication: none in tension. Tier: Assessment.

@@ -6,14 +6,17 @@ export { sideToggle } from '@frontierjs/mesa/runtime/terminal.js'
 import { checkout } from '../hash/ledger.js'
 import { readStudy } from './kept.js'
 
+/** Where the study's sessions run and `study.json` keeps its tabs: the checkout this Haven sits in, else the process's own directory. */
+export const studyCwd = () => checkout() ?? process.cwd()
+
 /**
  * Each session a study tab runs or reads along, to its number in the bar
  * (from 1), so a workshop figure names its tab (study.md 3.2). Read off
  * `study.json` and not the mounted study, since kept tabs exist before the
- * study first shows; the cwd is the one `Study.mesa` keeps under.
+ * study first shows.
  */
 export function studyTabs() {
-  const kept = readStudy(checkout() ?? process.cwd())
+  const kept = readStudy(studyCwd())
   const out = new Map()
   kept?.tabs.forEach((t, i) => { const s = t.sessionId ?? t.reads; if (s) out.set(s, i + 1) })
   return out
