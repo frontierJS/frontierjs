@@ -146,6 +146,11 @@ const DIRECTIVES = Object.freeze([
   // and not a filter, because a `$` key never reaches the filters; junction
   // hands it to Litestone as `where.$scope` (`FJS-2561`).
   { param: '$scope',         name: 'scope',         read: asNames, schema: NAMES  },
+  // A tree read (`FJS-D1098`): `true`, or `{ direction, maxDepth, nested, via }`
+  // travelling as a structure (`$recursive[direction]=ancestors`). The keys and
+  // the combinations litestone refuses are graded at the Data boundary, which
+  // holds the walk; this table only carries the value.
+  { param: '$recursive',     name: 'recursive',     read: asIs,    schema: OPAQUE },
 ].map(Object.freeze))
 
 /** Every `$` name that has a structured form. Derived — never restated. */

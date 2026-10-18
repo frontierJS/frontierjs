@@ -27,6 +27,7 @@
 //   Cycle-safe: visited set prevents infinite recursion.
 
 import { AccessDeniedError }   from './plugin.js'
+import { tenantAdmission }     from './tenancy.js'
 import { modelToTableName, sqlType, columnMapFor, isStoredField } from './ddl.js'
 import { sqlFragment, inList, pairsOn } from './query.js'
 import { comparisonEncoderFor } from './encryption.js'
@@ -194,7 +195,7 @@ export function buildClaimSet(schema, declared = null) {
 
   for (const n of FRAMEWORK_CLAIMS) names.set(n, 'the framework')
   if (authModel) for (const f of authModel.fields ?? []) names.set(f.name, `@@auth ${authModel.name}`)
-  if (tenantClaim) names.set(tenantClaim, 'tenancy')
+  if (tenantClaim) { names.set(tenantClaim, 'tenancy'); names.set(tenantAdmission(tenantClaim), 'tenancy') }
   for (const n of schemaClaims) names.set(n, 'claim')
   if (Array.isArray(declared)) for (const n of declared) names.set(n, 'declared')
 
@@ -217,9 +218,12 @@ export function buildClaimSet(schema, declared = null) {
 // disagree about a node kind the day the expression grammar grows one.
 export function authClaimSites(schema) {
   const sites = []
+  // The generated tenant deny names the admission twin; a notice listing it
+  // would be about a claim the app never wrote.
+  const twin  = schema?.tenancy?.claim ? tenantAdmission(schema.tenancy.claim) : null
   const walk = (n, at) => {
     if (!n || typeof n !== 'object') return
-    if (n.type === 'auth' && n.field) sites.push({ name: n.field, ...at })
+    if (n.type === 'auth' && n.field && n.field !== twin) sites.push({ name: n.field, ...at })
     for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else', 'where']) if (n[k]) walk(n[k], at)
   }
   for (const model of schema?.models ?? []) {
@@ -928,7 +932,7 @@ export function buildPolicyMap(schema, relationMap, claims = null) {
 
       for (const op of attr.operations) {
         if (!bucket[op]) bucket[op] = { allows: [], denies: [] }
-        const entry = { expr: attr.expr, message: attr.message ?? null, generated: attr.generated ?? null, claim: attr.claim ?? null }
+        const entry = { expr: attr.expr, message: attr.message ?? null, generated: attr.generated ?? null, claim: attr.claim ?? null, tenantColumn: attr.tenantColumn ?? null }
         if (attr.kind === 'allow') bucket[op].allows.push(entry)
         else                       bucket[op].denies.push(entry)
       }
@@ -1061,7 +1065,7 @@ function rulesFor(modelName, op, ctx, tenancyOnly = false) {
   if (!ctx.isSystem && !tenancyOnly) return rules
 
   const denies = rules.denies.filter(d =>
-    d.generated === 'tenancy' && (!ctx.isSystem || ctx.auth?.[d.claim] != null))
+    d.generated === 'tenancy' && (!ctx.isSystem || ctx.auth?.[d.claim] != null || ctx.auth?.[tenantAdmission(d.claim)] != null))
   return denies.length ? { allows: [], denies } : null
 }
 
@@ -1327,30 +1331,32 @@ function buildFilterSql(modelName, op, params, ctx, visited, tenancyOnly = false
     parts.push(sqls.length === 1 ? sqls[0] : `(${sqls.join(' OR ')})`)
   }
 
-  for (const { expr, generated } of denies) {
-    const pass = generated === 'tenancy' && tenantColumnPass(expr, params, ctx, modelName, op, next)
+  for (const deny of denies) {
+    const pass = deny.tenantColumn && tenantColumnPass(deny, params, ctx, modelName, op, next)
     if (pass) { parts.push(pass); continue }
-    const sql = compileSql(expr, params, ctx, modelName, op, next)
+    const sql = compileSql(deny.expr, params, ctx, modelName, op, next)
     parts.push(`NOT (${sql})`)
   }
 
   return parts.length === 1 ? parts[0] : parts.join(' AND ')
 }
 
-// The generated tenant column deny is `auth().<claim> == null || col != auth().<claim>`
-// and a deny fires on TRUE or UNKNOWN, so a row passes only when the claim is
-// present and equal. Spelled `NOT (? IS NULL OR col != ?)` no index serves it
-// and every scoped read scans every tenant's rows (FJS-1724); the pass form
-// below has the same truth table, and `col = ?` is a term SQLite searches on.
-// Null for any other deny, which compiles as written.
-function tenantColumnPass(expr, params, ctx, modelName, op, visited) {
-  if (expr.type !== 'or') return null
-  const { left, right } = expr
-  if (left?.type !== 'compare' || left.op !== '==' || left.left?.type !== 'auth') return null
-  if (right?.type !== 'compare' || right.op !== '!=' || right.left?.type !== 'field' || right.right?.type !== 'auth') return null
+// The generated tenant column deny fires on TRUE or UNKNOWN, so a row passes
+// only when the caller holds a tenant claim and the column equals it. Spelled
+// `NOT (... OR col != ?)` no index serves it and every scoped read scans every
+// tenant's rows (FJS-1724); the pass form has the same truth table and `col = ?`
+// is a term SQLite searches on. The claim is known when the statement is
+// compiled, so the member claim or, failing it, the admission twin is the one
+// compared; a caller holding neither binds the member claim's null and passes
+// nothing. Any other deny compiles as written.
+function tenantColumnPass(deny, params, ctx, modelName, op, visited) {
+  const member = claimValue(ctx, deny.claim, modelName)
+  const twin   = tenantAdmission(deny.claim)
+  const field  = member == null && claimValue(ctx, twin, modelName) != null ? twin : deny.claim
+  const claim  = { type: 'auth', field }
 
-  const present = compileSql({ ...left, op: '!=' }, params, ctx, modelName, op, visited)
-  const equal   = compileSql({ ...right, op: '==' }, params, ctx, modelName, op, visited)
+  const present = compileSql({ type: 'compare', op: '!=', left: claim, right: { type: 'literal', value: null } }, params, ctx, modelName, op, visited)
+  const equal   = compileSql({ type: 'compare', op: '==', left: { type: 'field', name: deny.tenantColumn }, right: claim }, params, ctx, modelName, op, visited)
   return `(${present} AND ${equal})`
 }
 

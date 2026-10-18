@@ -23072,6 +23072,19 @@ describe('findMany — recursive is a read, not a bypass', () => {
     db.$close()
   })
 
+  test('the recursive option is graded: a key or value it does not hold is refused by name (FJS-1748)', async () => {
+    const db = await makeDb(TREE(), 'rec-grade')
+    await db.task.createMany({ data: [{ id: 1, title: 'a' }, { id: 2, title: 'b', parentId: 1 }] })
+    const read = (recursive: unknown) => db.task.findMany({ where: { id: 1 }, recursive } as any)
+    await expect(read({ maxdepth: 1 })).rejects.toThrow(/'maxdepth' is not one of them/)
+    await expect(read({ direction: 'sideways' })).rejects.toThrow(/direction is 'descendants' or 'ancestors'/)
+    await expect(read({ maxDepth: 0 })).rejects.toThrow(/maxDepth is a whole number/)
+    await expect(read({ maxDepth: '2' })).rejects.toThrow(/maxDepth is a whole number/)
+    await expect(read({ nested: 'yes' })).rejects.toThrow(/nested is true or false/)
+    expect((await read({ direction: 'descendants', maxDepth: 1, nested: false })).length).toBe(1)
+    db.$close()
+  })
+
   test('orderBy _depth sorts the tree, and is sortable only on a tree read', async () => {
     const db = await makeDb(TREE(), 'rec-depth-sort')
     await db.task.createMany({ data: [

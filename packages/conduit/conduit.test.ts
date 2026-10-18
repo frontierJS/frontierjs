@@ -18,6 +18,7 @@ import { encodeBody }         from './src/transports/encode.ts'
 import { verifyRequest }      from '@frontierjs/toolbelt/signature'
 import { WebSocketTransport } from './src/transports/websocket.ts'
 import { UnixTransport }      from './src/transports/unix.ts'
+import { CONDUIT_FRAMING }    from './src/transports/broker.ts'
 import {
   createEnvResolver,
   createStaticResolver,
@@ -32,6 +33,8 @@ import type {
   ConduitError,
   CredentialResolver,
   CredentialRefusal,
+  BrokerFraming,
+  BrokerHandler,
 } from './src/types.ts'
 
 // ─── Fixtures ────────────────────────────────────────────────
@@ -5699,7 +5702,7 @@ describe('broker target', () => {
     const broker = fakeBroker()
     const checks = new Map<string, () => boolean>()
     const c = createConduit({ registerReadiness: (n, f) => checks.set(n, f) })
-    await c.register(brokerTarget(broker.url))
+    await c.register(brokerTarget(broker.url, { readiness: true }))
     await c.subscribe('broker:orders', () => {})
 
     expect(checks.get('conduit:broker:orders')!()).toBe(true)
@@ -5767,10 +5770,123 @@ describe('broker target', () => {
   it('reports down for a broker that never answered, rather than nothing', async () => {
     const checks = new Map<string, () => boolean>()
     const c = createConduit({ registerReadiness: (n, f) => checks.set(n, f) })
-    await c.register(brokerTarget('ws://127.0.0.1:1/'))
+    await c.register(brokerTarget('ws://127.0.0.1:1/', { readiness: true }))
     await c.subscribe('broker:orders', () => {})
     expect(checks.get('conduit:broker:orders')!()).toBe(false)
     await c.destroy()
+  })
+
+  // FJS-3150 (FJS-D1244): one person's socket is a view, not a dependency.
+  it('registers no readiness check for a broker target that does not say readiness: true', async () => {
+    const checks = new Map<string, () => boolean>()
+    const c = createConduit({ registerReadiness: (n, f) => checks.set(n, f) })
+    await c.register(brokerTarget('ws://127.0.0.1:1/'))
+    await c.subscribe('broker:orders', () => {})
+    expect(checks.size).toBe(0)
+    expect(c.stats().subscriptions['broker:orders']).toMatchObject({ connected: false })
+    await c.destroy()
+  })
+
+  it('refuses a readiness that is not a boolean', async () => {
+    const c = createConduit()
+    await expect(c.register(brokerTarget('ws://127.0.0.1:1/', { readiness: 'yes' as unknown as boolean }))).rejects.toThrow(/readiness/)
+    await c.destroy()
+  })
+})
+
+// A broker that may or may not answer `{ type: 'ping' }`, and records each.
+function pingedBroker(opts: { answer: boolean }) {
+  const pings: number[] = []
+  let dials = 0
+  const sockets = new Set<{ send(s: string): void }>()
+  const server = Bun.serve({
+    port: 0,
+    fetch(req, srv) { dials++; return srv.upgrade(req) ? undefined : new Response('no', { status: 400 }) },
+    websocket: {
+      open(ws)  { sockets.add(ws) },
+      close(ws) { sockets.delete(ws) },
+      message(ws, raw) {
+        const f = JSON.parse(String(raw))
+        if (f.type !== 'ping') return
+        pings.push(f.n)
+        if (opts.answer) ws.send(JSON.stringify({ type: 'pong', n: f.n }))
+      },
+    },
+  })
+  return {
+    url:   `ws://localhost:${server.port}/`,
+    pings,
+    get dials() { return dials },
+    get open() { return sockets.size },
+    push: (id: string) => { for (const s of sockets) s.send(JSON.stringify({ id, type: 'message', body: null })) },
+    stop: () => server.stop(true),
+  }
+}
+
+// A framing reaches `subscribe` from `receive({ target, dialect })`; these
+// hand it straight to the conduit's own three-argument subscribe.
+const subscribeFramed = (c: ReturnType<typeof createConduit>, handler: BrokerHandler, framing: BrokerFraming<any>) =>
+  (c.subscribe as (target: string, handler: BrokerHandler, framing: BrokerFraming<any>) => Promise<void>)('broker:orders', handler, framing)
+
+const keepalive = (every_ms: number, dead_ms: number) => ({
+  ...CONDUIT_FRAMING,
+  keepalive: {
+    ping: (n: number) => JSON.stringify({ type: 'ping', n }),
+    pong: (f: string) => JSON.parse(f).type === 'pong',
+    every_ms, dead_ms,
+  },
+})
+
+describe('broker keepalive', () => {
+  it('pings a quiet broker, keeps a connection that answers, and neither decodes nor drops the reply', async () => {
+    const broker = pingedBroker({ answer: true })
+    const c = createConduit()
+    await c.register(brokerTarget(broker.url))
+    await subscribeFramed(c, () => {}, keepalive(40, 150))
+    await new Promise(r => setTimeout(r, 400))
+    expect(broker.dials).toBe(1)
+    expect(broker.pings.length).toBeGreaterThanOrEqual(5)
+    expect(broker.pings).toEqual(broker.pings.map((_, i) => i + 1))
+    expect(c.stats().subscriptions['broker:orders']).toMatchObject({ connected: true, received: 0, dropped: 0 })
+
+    await c.destroy()
+    const after = broker.pings.length
+    await new Promise(r => setTimeout(r, 120))
+    expect(broker.pings.length).toBe(after)   // destroy stops the pings
+    broker.stop()
+  })
+
+  it('cuts a connection that has sent nothing for dead_ms and dials a new one, whose events land', async () => {
+    const broker = pingedBroker({ answer: false })
+    const c = createConduit()
+    await c.register(brokerTarget(broker.url))
+    const seen: string[] = []
+    const errors = console.error; console.error = () => {}
+    try {
+      await subscribeFramed(c, (m) => { seen.push(m.id) }, keepalive(40, 150))
+      expect(await until(() => !c.stats().subscriptions['broker:orders']!.connected, 1000)).toBe(true)
+      expect(await until(() => broker.dials === 2 && c.stats().subscriptions['broker:orders']!.connected, 3000)).toBe(true)
+    } finally { console.error = errors }
+    expect(broker.open).toBe(1)   // the silent one is gone, not left beside its replacement
+    expect(broker.pings.slice(-1)[0]).toBeLessThanOrEqual(4)   // `n` counts per connection
+    broker.push('after')
+    expect(await until(() => seen.length === 1)).toBe(true)
+    await c.destroy()
+    broker.stop()
+  })
+
+  it('counts any frame as alive, so a busy broker that never answers a ping is kept', async () => {
+    const broker = pingedBroker({ answer: false })
+    const c = createConduit()
+    await c.register(brokerTarget(broker.url))
+    await subscribeFramed(c, () => {}, keepalive(40, 150))
+    const busy = setInterval(() => broker.push(`m-${Date.now()}`), 50)
+    await new Promise(r => setTimeout(r, 450))
+    clearInterval(busy)
+    expect(broker.dials).toBe(1)
+    expect(c.stats().subscriptions['broker:orders']!.connected).toBe(true)
+    await c.destroy()
+    broker.stop()
   })
 })
 

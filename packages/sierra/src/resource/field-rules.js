@@ -1695,6 +1695,12 @@ function _checkConstraints(name, rule, value, errors) {
     if (rule.format === 'date-time' && Number.isNaN(Date.parse(value))) {
       say('format', `${label} must be a valid date`)
     }
+    // A calendar day: `Date.parse` alone would take '2026-2-30' or 'March 3'.
+    if (rule.format === 'date') {
+      const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+      const at = d && new Date(Date.UTC(+d[1], +d[2] - 1, +d[3]))
+      if (!at || at.getUTCMonth() !== +d[2] - 1 || at.getUTCDate() !== +d[3]) say('format', `${label} must be a valid date`)
+    }
   }
 
   if (typeof value === 'number') {

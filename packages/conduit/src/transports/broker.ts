@@ -21,6 +21,9 @@ import { ConduitStreamError } from '../types.ts'
 import { DEFAULT_MAX_BYTES, DEFAULT_TIMEOUT_MS } from './http.ts'
 
 const RECONNECT_BACKOFF = [1000, 2000, 4000, 8000, 16000]
+// A framing's keepalive, unless it says otherwise: khat's numbers.
+const PING_EVERY_MS = 30_000
+const DEAD_AFTER_MS = 60_000
 
 // Conduit's own frames, for a broker whose connector supplies none.
 export const CONDUIT_FRAMING: BrokerFraming<void> = {
@@ -48,6 +51,8 @@ export class BrokerTransport extends BaseTransport {
   private dropped    = 0
   private framing:   BrokerFraming<any> = CONDUIT_FRAMING
   private opened:    ((state: unknown) => void | Promise<void>) | null = null
+  // Ends the current connection's timers, which a close may never come to end.
+  private hangUp:    (() => void) | null = null
 
   private traceHeaders: (() => Record<string, string> | undefined) | null = null
 
@@ -80,6 +85,10 @@ export class BrokerTransport extends BaseTransport {
       message:   `Target ${this.descriptor.id} is a broker: it is subscribed to, not streamed from`,
       retryable: false,
     })
+  }
+
+  get gatesReadiness(): boolean {
+    return this.descriptor.readiness === true
   }
 
   // The reading `app.registerReadiness` is handed. A subscription that has
@@ -125,6 +134,7 @@ export class BrokerTransport extends BaseTransport {
     this.timer = null
     this.ws?.close()
     this.dialing?.close()
+    this.hangUp?.()
     this.ws = null
     this.dialing = null
   }
@@ -155,11 +165,7 @@ export class BrokerTransport extends BaseTransport {
       // neither opens nor errors, which would hold `subscribe()` for good. The
       // same clock covers the handshake: a Provider that never answers the
       // challenge is the same silence one step later.
-      const dialTimer = setTimeout(() => {
-        ws.close()
-        resolve()
-        this.scheduleReconnect()
-      }, this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS)
+      const dialTimer = setTimeout(() => lost(true), this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS)
 
       // Until the handshake answers, frames are the handshake's; after, they
       // are handed over one at a time in the order they arrived, since a
@@ -169,22 +175,66 @@ export class BrokerTransport extends BaseTransport {
       let state: unknown
       let order = Promise.resolve()
 
+      const keepalive = framing.keepalive
+      let heard = Date.now()
+      let beat: ReturnType<typeof setInterval> | null = null
+      let deadline: ReturnType<typeof setTimeout> | null = null
+
+      // Once per connection, by whichever comes first: its close, the dial
+      // timer, a refused handshake, or the silence that says it died without
+      // a close. A socket given up for silence may close much later or never,
+      // and that late close must not dial a second connection beside the
+      // first one's replacement. `drop` cuts it rather than closing, since a
+      // close waits on an answer a dead peer never sends.
+      let gone = false
+      const lost = (drop = false) => {
+        if (gone) return
+        gone = true
+        clearTimeout(dialTimer)
+        if (beat) clearInterval(beat)
+        if (deadline) clearTimeout(deadline)
+        if (this.hangUp === lost) this.hangUp = null
+        link.closed()
+        if (this.ws === ws) this.ws = null
+        if (this.dialing === ws) this.dialing = null
+        if (drop) terminate(ws)
+        resolve()
+        if (!this.destroyed) this.scheduleReconnect()
+      }
+      this.hangUp = lost
+
       ws.addEventListener('open', async () => {
         try {
           state = framing.handshake ? await framing.handshake(link, spent.value ?? null) : undefined
         } catch (err) {
-          clearTimeout(dialTimer)
           console.error(`[conduit] broker ${this.descriptor.id} handshake failed:`, (err as Error)?.message ?? err)
           ws.close()
-          resolve()
+          lost()
           return
         }
-        if (ws.readyState !== WebSocket.OPEN) return
+        if (gone || ws.readyState !== WebSocket.OPEN) return
         clearTimeout(dialTimer)
         believed      = true
         this.dialing  = null
         this.ws       = ws
         this.attempts = 0
+        if (keepalive) {
+          let n = 0
+          heard = Date.now()
+          beat = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(keepalive.ping(++n, state))
+          }, keepalive.every_ms ?? PING_EVERY_MS)
+          // Checked when it would have expired rather than reset on every
+          // frame, so a busy connection costs no timer per frame.
+          const dead = keepalive.dead_ms ?? DEAD_AFTER_MS
+          const watch = () => {
+            const left = heard + dead - Date.now()
+            if (left > 0) { deadline = setTimeout(watch, left); return }
+            console.error(`[conduit] broker ${this.descriptor.id} sent nothing for ${dead}ms; redialing`)
+            lost(true)
+          }
+          deadline = setTimeout(watch, dead)
+        }
         // Ahead of the connection's first frame in the same chain, so a
         // backfill it starts is never overtaken by what it is filling behind.
         const opened = this.opened
@@ -196,18 +246,15 @@ export class BrokerTransport extends BaseTransport {
         resolve()
       })
       ws.addEventListener('error', () => { clearTimeout(dialTimer); resolve() })
-      ws.addEventListener('close', () => {
-        clearTimeout(dialTimer)
-        link.closed()
-        if (this.ws === ws) this.ws = null
-        if (this.dialing === ws) this.dialing = null
-        resolve()
-        if (!this.destroyed) this.scheduleReconnect()
-      })
+      ws.addEventListener('close', () => lost())
       ws.addEventListener('message', (e) => {
+        if (gone) return
+        // Any frame is proof of life, an oversize one and the ping's reply too.
+        heard = Date.now()
         const frame = this.admit(e)
         if (frame === null) return
         if (!believed) { link.push(frame); return }
+        try { if (keepalive?.pong?.(frame, state)) return } catch {}
         order = order.then(() => this.onFrame(ws, framing, frame, state))
       })
     })
@@ -280,6 +327,15 @@ function handshakeLink(ws: WebSocket): BrokerLink & { push(frame: string): void;
     push: (frame) => { queue.push(frame); take() },
     closed: () => { shut = true; take() },
   }
+}
+
+// Bun's `terminate()` ends the socket now; elsewhere `close()` is the most
+// there is.
+function terminate(ws: WebSocket) {
+  const w = ws as WebSocket & { terminate?: () => void }
+  if (ws.readyState === WebSocket.CLOSED) return
+  if (typeof w.terminate === 'function') w.terminate()
+  else ws.close()
 }
 
 function pathOf(address: string): string {

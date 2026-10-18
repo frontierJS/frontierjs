@@ -153,6 +153,15 @@ describe('validateAgainstFields', () => {
     expect(byField.tags).toBe('tags must have at least 1 items')
   })
 
+  test('a date field takes an ISO calendar day and nothing else (FJS-2684)', () => {
+    const rules = { day: { type: 'string', format: 'date', required: false, nullable: false } }
+    const bad = (v) => validateAgainstFields(rules, { day: v }).map(e => e.message)
+    expect(bad('2026-10-18')).toEqual([])
+    expect(bad('nope')).toEqual(['day must be a valid date'])
+    expect(bad('2026-02-30')).toEqual(['day must be a valid date'])
+    expect(bad('March 3')).toEqual(['day must be a valid date'])
+  })
+
   test('an untyped Json field accepts anything', () => {
     expect(validateAgainstFields(fields(), {
       name: 'A', email: 'a@b.co', plan: 'pro', blob: { anything: [1, 2] },

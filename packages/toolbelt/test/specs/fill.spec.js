@@ -109,7 +109,7 @@ test('check: a brace that opens nothing is refused, so a stray one is written \\
 const CATALOG = [
   { key: 'contact.name',  label: 'Name',  description: 'Who it is for', example: 'Ann Lee', default: 'there', type: 'text', channels: ['email', 'text'] },
   { key: 'contact.phone', label: 'Phone', example: '555-0100', type: 'text', channels: ['text'] },
-  { key: 'quote.total',   label: 'Total', example: 1200, type: 'money', channels: ['email'] },
+  { key: 'quote.total',   label: 'Total', example: 1200, type: 'money', currency: 'USD', channels: ['email'] },
 ]
 
 test('mergeFields: one declaration feeds the editor list, the example data, the check and the render', function () {
@@ -178,4 +178,36 @@ test('segments: the scan fill reads -- text, a hole with its raw, an unclosed br
     { text: ' ' },
     { open: '{' },
   ])
+})
+
+// ─── mergeFields.schema (FJS-2684, FJS-D1204) ─────────────────────────────────
+
+test('mergeFields.schema: the declared fields as a JSON Schema the sender\'s form is drawn from', function () {
+  const reg = mergeFields([
+    { key: 'custom.venue',  label: 'Venue',  description: 'Where', default: 'TBA', type: 'text' },
+    { key: 'custom.notes',  label: 'Notes',  type: 'textarea' },
+    { key: 'custom.guests', label: 'Guests', type: 'number', default: 2 },
+    { key: 'custom.day',    label: 'Day',    type: 'date' },
+    { key: 'custom.fee',    label: 'Fee',    type: 'money', currency: 'USD', default: 1500 },
+  ])
+  const s = reg.schema()
+  assert.equal(s.type, 'object')
+  assert.deepEqual(Object.keys(s.properties), ['custom.venue', 'custom.notes', 'custom.guests', 'custom.day', 'custom.fee'])
+  assert.deepEqual(s.properties['custom.venue'], { type: 'string', title: 'Venue', description: 'Where', default: 'TBA' })
+  assert.equal(s.properties['custom.notes']['x-syntax'], 'txt')
+  assert.deepEqual([s.properties['custom.guests'].type, s.properties['custom.guests'].default], ['number', 2])
+  assert.deepEqual([s.properties['custom.day'].type, s.properties['custom.day'].format], ['string', 'date'])
+  assert.deepEqual(s.properties['custom.fee'], { type: 'integer', title: 'Fee', default: 1500, 'x-money': { currency: 'USD' } })
+  assert.deepEqual(s.required ?? [], [])
+})
+
+test('mergeFields.schema: a filter scopes it like list does', function () {
+  const reg = mergeFields(CATALOG.map((f) => (f.type === 'money' ? { ...f, currency: 'USD' } : f)))
+  const email = (f) => f.channels.includes('email')
+  assert.deepEqual(Object.keys(reg.schema(email).properties), ['contact.name', 'quote.total'])
+})
+
+test('mergeFields: a money field with no currency is refused, as a bare @money is', function () {
+  assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'money' }]), /a\.b.*currency/)
+  assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'money', currency: 'usd' }]), /currency/)
 })

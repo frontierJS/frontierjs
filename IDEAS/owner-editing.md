@@ -6,7 +6,7 @@ dated: 2026-10-17
 
 # Idea — owner editing: a site's owner changes their own words
 
-**Status: PROPOSED. Nothing is built. Q1–Q8 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`).** Do not cite this file as describing
+**Status: PROPOSED. 1.1 and 1.2 are built. Q1–Q12 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1249`).** Do not cite this file as describing
 behavior — see `VERIFYING.md`.
 
 A site's owner (a Kobami client, or whoever runs frontierjs.com) opens their
@@ -203,6 +203,34 @@ Basecamp itself lists drafts and history and holds the grants.
     leaves the owners without what Webflow, Framer and Sanity give theirs.
     Either A or B needs an API key and a spend limit per site in basecamp,
     which is part of the ruling.
+- ~~**Q9 — Whether a save pushes the draft (1.2).**~~ **Answered 2026-10-18 (`FJS-D1246`): A — every save is a commit pushed to `draft/<name>` on the remote, as each Decap save is a commit on its PR. Basecamp's clone is a cache, and the push is the lock: a rejected fast-forward means someone saved first.**
+  - **A** — every save is a commit pushed to `draft/<name>` on the remote, as
+    each Decap save is a commit on its PR. Basecamp's clone is a cache, and the
+    push is the lock: a rejected fast-forward means someone saved first.
+  - **B** — commits stay in basecamp's clone until Publish pushes them.
+  - **Recommend A** — a draft survives basecamp losing its disk, and a
+    developer sees it as a branch. B makes the clone hold the only copy.
+- ~~**Q10 — Where the deploy key per repository (`FJS-D1228`) lives (1.2).**~~ **Answered 2026-10-18 (`FJS-D1247`): B — deferred: 1.2 clones and pushes with the credential the host's git already holds, and the key is its own step.**
+  - **A** — the git source gains `key: 'secret:<id>'`, an `ssh_key` Secret in
+    the App's workspace, resolved by `core/credentials.ts`.
+  - **B** — deferred: 1.2 clones and pushes with the credential the host's git
+    already holds, and the key is its own step.
+  - **Recommend A** — the ref form and the resolver exist, so it is no new
+    noun. B leaves `FJS-D1228` unmet for now.
+- ~~**Q11 — What a draft is named, and who opens one (1.2).**~~ **Answered 2026-10-18 (`FJS-D1248`): A — an editor opens a draft by name, `draft/<slug>`; a site has several, and every editor of the site sees and saves to all of them.**
+  - **A** — an editor opens a draft by name, `draft/<slug>`; a site has
+    several, and every editor of the site sees and saves to all of them.
+  - **B** — `draft/<user>`, opened by an editor's first save, one per person.
+  - **Recommend A** — two changes can run side by side, and the preview alias
+    is the name the owner gave it.
+- ~~**Q12 — How the form writes front matter (1.2).**~~ **Answered 2026-10-18 (`FJS-D1249`): A — a field per top-level text, number or yes/no key, written back by replacing that key's line, so comments and formatting survive; lists show read-only until Phase 3.**
+  - **A** — a field per top-level text, number or yes/no key, written back by
+    replacing that key's line, so comments and formatting survive; lists show
+    read-only until Phase 3.
+  - **B** — the front-matter block as YAML text, graded by parsing before and
+    after.
+  - **Recommend A** — an owner edits a value, never YAML, and the writer sits
+    beside site-kit's rule.
 
 ## The plan
 
@@ -336,14 +364,38 @@ preview link shows it, Publish ships it, and the commit carries their name.
     workspace, so a holder with no membership cannot call `/app-editors`, and
     their list of sites is a method or a screen 1.2 adds. The seed has no site
     built from git, so `app_editor` is in `NOT_SEEDED` until 1.2 seeds one.
-- [ ] 1.2 Edit a file's prose and its content keys in a form. A save commits to
+- [x] 1.2 Edit a file's prose and its content keys in a form. A save commits to
   the draft branch (Q3, Q4).
+  **Built 2026-10-18.** `core/site-checkout.ts` keeps a bare clone per App
+  under `SITES_DIR` and fetches it before every read and save. A draft is
+  `draft/<slug>`, opened by name (Q11), and each save is one commit built
+  through a temporary index and pushed (Q9), authored and committed as the
+  editor. The `drafts` service takes no workspace: each method reads the
+  caller's own `AppEditor` row first, then the App through `asSystem()`. Its
+  methods are `sites`, `list`, `open`, `files`, `read` and `save`, each at
+  VISITOR, because the grant is what refuses. The form is site-kit's `formOf`
+  and `applyEdit` (Q12). `applyEdit` reads the result back and refuses one that
+  changes any key it was not asked to. `/sites/` and `/sites/[id]/` are the
+  screens. The seed has Harbor Spa, edited by Lee Carter, a member of no
+  workspace, and published by Kim.
+  - Proved by `api/test/drafts.test.ts` over a real bare remote. Dropping the
+    grant read turns it red. Also by site-kit's `test/content.mjs` § the
+    owner's form, and a browser probe of the two screens signed in as Lee (not
+    committed).
+  - A stale save is a 409 twice over: the blob the form read is checked, and
+    the push is a fast-forward.
+  - Left: photos (Phase 3), and lists, maps and folded values, which show
+    read-only. The image has no git (1.3 needs it there too). A client
+    landing on `/` meets the members' overview and its refusals.
 - [ ] 1.3 A preview of the draft: `build --preview` on the branch, then
   `deploy --preview` aliased by the branch.
 - [ ] 1.4 Publish: merge, build, deploy, record. A failed build, a conflict,
   or undeployed commits (Q5) each refuse by name.
 - [ ] 1.5 History: each publish lists the files and the author, and Revert
   makes a draft from `git revert`.
+- [ ] 1.6 A deploy key per repository (`FJS-D1228`, deferred by
+  `FJS-D1247`), so a private repository clones and pushes without the
+  host's own credential.
 
 ### Phase 2 — On the page
 

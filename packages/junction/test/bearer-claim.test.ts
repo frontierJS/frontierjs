@@ -743,3 +743,120 @@ describe('a header bearer stamps lastUsedAt when the row declares it', () => {
     expect(rows.map(r => r.answer)).toEqual(['one'])
   })
 })
+
+// A Send: a link opened at most `maxAccessCount` times (FJS-3068, FJS-D1132).
+// The resolver stays a pure read; the service method that IS the open spends.
+describe('bearerClaim.spend', () => {
+  const SEND = `
+    model Send {
+      id             Int       @id @default(autoincrement())
+      tokenHash      String    @unique @guarded
+      accessCount    Int       @default(0)
+      maxAccessCount Int?
+      expiresAt      DateTime?
+      @@gate(8)
+      @@check("accessCount <= maxAccessCount")
+    }
+  `
+  const sends = bearerClaim({
+    from: header('x-send'), model: 'send', column: 'tokenHash', subject: 'id', key: KEY, claims: {},
+    namedBy: 'the x-send header',
+  })
+
+  async function sendApp(max: number | null) {
+    const db: any = await createClient({ db: ':memory:', schema: SEND })
+    await db.asSystem().send.create({ data: { tokenHash: await fingerprint('open-me', { key: KEY, purpose: 'send.tokenHash' }), maxAccessCount: max } })
+    const app = createApp({ db, principal: sends })
+    app.services.register(buildService({
+      name: 'opens',
+      async find(ctx: ServiceContext) {
+        await sends.spend(ctx.locals.db, ctx)
+        return [{ opened: true }]
+      },
+    }))
+    const open  = () => enterRequest({ origin: 'http', headers: { 'x-send': 'open-me' }, caller: { headers: { 'x-send': 'open-me' } } } as never,
+      () => app.service('opens').find({}))
+    const count = async () => (await db.asSystem().send.findFirst({})).accessCount
+    return { open, count }
+  }
+
+  test('the (max+1)th concurrent open is refused and the count holds at max', async () => {
+    const { open, count } = await sendApp(3)
+    const out = await Promise.allSettled(Array.from({ length: 6 }, open))
+    expect(out.filter(o => o.status === 'fulfilled')).toHaveLength(3)
+    const refused = out.filter((o): o is PromiseRejectedResult => o.status === 'rejected')
+    expect(refused).toHaveLength(3)
+    expect(refused.every(r => r.reason?.code === 401)).toBe(true)
+    expect(await count()).toBe(3)
+  })
+
+  test('a Send with no maximum counts every open and refuses none', async () => {
+    const { open, count } = await sendApp(null)
+    await Promise.all(Array.from({ length: 4 }, open))
+    expect(await count()).toBe(4)
+  })
+
+  test('a spent grant is refused in the sentence a dead link gets', async () => {
+    const { open } = await sendApp(1)
+    await open()
+    await expect(open()).rejects.toThrow('This link does not work. It may have expired or been withdrawn.')
+  })
+})
+
+// FJS-1732 / FJS-D1100 — a grant admits its holder to a tenant and makes them no
+// member of it. Under row tenancy the grant's tenant claim travels as litestone's
+// admission twin, so the schema's tenant deny passes it and a policy reading
+// `accountId == auth().accountId` does not.
+describe('a grant admits to the tenant and is no member of it', () => {
+  const SCHEMA = `
+    tenancy { strategy row  column accountId  claim accountId }
+
+    model ShareGrant {
+      id        Int    @id @default(autoincrement())
+      accountId Int
+      scanId    Int
+      tokenHash String @unique(global) @guarded
+      @@gate(8)
+    }
+
+    model Scan {
+      id        Int    @id @default(autoincrement())
+      accountId Int
+      name      String
+      @@gate(0)
+      @@allow('read', accountId == auth().accountId || id == auth().sharedScanId)
+    }
+  `
+  const grant = bearerClaim({
+    from:   header('x-share'),
+    model:  'shareGrant',
+    column: 'tokenHash',
+    key:    KEY,
+    claims: { accountId: 'accountId', sharedScanId: 'scanId' },
+  })
+
+  async function resolved() {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA, claims: ['sharedScanId'] })
+    const sys = db.asSystem()
+    await sys.scan.create({ data: { accountId: 1, name: 'shared' } })
+    await sys.scan.create({ data: { accountId: 1, name: 'private' } })
+    await sys.shareGrant.create({
+      data: { accountId: 1, scanId: 1, tokenHash: await fingerprint('tok', { key: KEY, purpose: 'shareGrant.tokenHash' }) },
+    })
+    const headers = { 'x-share': 'tok' }
+    const ctx = { locals: { db }, headers, caller: { headers } }
+    const claims = await enterRequest({ origin: 'http', headers, caller: { headers } } as never, () => (grant as any)(ctx, null))
+    return { db, claims }
+  }
+
+  test('the tenant claim is emitted as the admission twin, beside the grant\'s own claims', async () => {
+    const { claims } = await resolved()
+    expect(claims).toEqual({ accountIdAdmitted: 1, sharedScanId: 1 })
+  })
+
+  test('the holder reads the shared row, and the policy\'s same-account branch reads them as nobody', async () => {
+    const { db, claims } = await resolved()
+    const rows = await db.$setAuth(claims).scan.findMany()
+    expect(rows.map((r: any) => r.name)).toEqual(['shared'])
+  })
+})

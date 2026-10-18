@@ -536,7 +536,7 @@ describe('broker subscription health', () => {
     const app = await bootApp()
     await conduitOf(app).register({
       id: 'broker:orders', kind: 'broker', protocol: 'websocket',
-      address: 'ws://127.0.0.1:1/', auth: { type: 'none' },
+      address: 'ws://127.0.0.1:1/', auth: { type: 'none' }, readiness: true,
       registered_at: 1_000, last_seen_at: null,
     })
     await conduitOf(app).subscribe('broker:orders', () => {})

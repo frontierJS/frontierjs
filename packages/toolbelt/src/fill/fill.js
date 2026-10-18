@@ -162,6 +162,11 @@ function declare(field) {
   if (!FIELD_TYPES.includes(field.type)) {
     throw new Error(`mergeFields: ${key} has type ${JSON.stringify(field.type)}, not one of ${FIELD_TYPES.join(' | ')}`)
   }
+  // Minor units in an unstated currency are a number nobody can read back, so a
+  // money field with none is refused as a bare `@money` is (`FJS-D556`).
+  if (field.type === 'money' && !(typeof field.currency === 'string' && /^[A-Z]{3}$/.test(field.currency))) {
+    throw new Error(`mergeFields: ${key} is money and declares no currency -- an ISO 4217 code such as 'USD'`)
+  }
   for (const slot of ['example', 'default']) {
     if (field[slot] !== undefined && render(field[slot], 'text') === undefined) {
       throw new Error(`mergeFields: ${key} ${slot} is not a value a hole can fill -- a scalar or { html, text }`)
@@ -178,6 +183,18 @@ function nest(fields, pick, into = {}) {
     into[f.owner] = { ...into[f.owner], [f.name]: v }
   }
   return into
+}
+
+// One property of the sender's form. Sierra's field rules read the keywords
+// (`x-money`, `x-syntax`, `format`), so nothing here validates or draws (`FJS-D1204`).
+function propertyOf(f) {
+  const p = { type: f.type === 'number' ? 'number' : f.type === 'money' ? 'integer' : 'string', title: f.label }
+  if (f.description !== undefined) p.description = f.description
+  if (f.default !== undefined) p.default = f.default
+  if (f.type === 'date') p.format = 'date'
+  else if (f.type === 'textarea') p['x-syntax'] = 'txt'
+  else if (f.type === 'money') p['x-money'] = { currency: f.currency }
+  return p
 }
 
 const absent = (v) => v === undefined || v === null || v === ''
@@ -202,6 +219,10 @@ export function mergeFields(declared = []) {
   const pick = (filter) => (filter ? fields.filter((f) => filter(f)) : fields)
   const registry = {
     list: (filter) => pick(filter).map(({ owner, name, ...f }) => f),
+    schema: (filter) => ({
+      type: 'object',
+      properties: Object.fromEntries(pick(filter).map((f) => [f.key, propertyOf(f)])),
+    }),
     example: (filter) => nest(pick(filter), (f) => f.example),
     names: (filter) => {
       const names = {}

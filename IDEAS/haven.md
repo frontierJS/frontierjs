@@ -1904,13 +1904,23 @@ this is the gap a surface painted in cells has, not mesa's.
   a door its `to` — since a new label field would restate the `help`. Pure. A hidden door
   never named is the invariant, and nothing guards it yet (no new tests
   while experimenting) — a line in `scenes.test.js` when this is settled.
-- [ ] 19.2 Tab and Shift+Tab. With the line empty, Tab names the next stop and
-  Shift+Tab the one before, from the figure's nearest; the stop's cells are
-  marked on the art and the status line reads `→ /board /pin (3/7)`. Tab on a
-  partial `/word` still completes it (`Scene.mesa`'s `keydown` asks that
-  first). The browser twin prevents Tab's own focus move, since the scene is
-  one `<pre>` and its stops are cells, not elements. Esc or an arrow lets the
-  stop go.
+- [x] 19.2 Tab and Shift+Tab. With the line empty, Tab names the next stop and
+  Shift+Tab the one before; the stop's cells are marked on the art (each
+  reach's own cell, in a mark's ground) and the NOTE reads `→ /board /pin (3/7)`
+  — the note, not the room's status line, since a verb answers there and every
+  drive's `cellOf` counts up from `· N here`. Where the first press lands is a
+  browser's focus: standing in a stop's reach is that stop focused, and the
+  press moves past it; standing in none, it names the nearest BY THE WALK
+  (`walked()` in `paths.js`), as `f` finds a member, since by the crow the
+  nearest may be through a wall. `Stops.mesa`, an actor: a `Tab` key verb
+  that opens a `stops` mode whose keys are Tab and Shift+Tab, any other key
+  letting it go as the `f` walk's does (Esc taken, an arrow let through to
+  step). Tab on a partial `/word` still completes it (`Scene.mesa`'s
+  `keydown` asks that first). Both targets prevent the Tab, since the scene
+  is one `<pre>` and its stops are cells, not elements. Probed in a pty: the
+  tavern `/`, `/kitchen/`, `/upstairs/`, `/ask` and round, Shift+Tab back,
+  the mark's ground in the stream, the kitchen `/tavern/`, `/menu /bump`,
+  `/heard`; no drive kept (no new tests while experimenting).
 - [ ] 19.3 Enter walks. **Ruled 2026-10-18 (owner): animated** — a step per
   `FIND_MS` along `pathBeside`, the `f`-walk's mode in `HomeRow.mesa` with a
   cell for its goal rather than a member, so any key stops it the same way and

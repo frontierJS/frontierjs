@@ -429,3 +429,77 @@ describe('applyClaims()', () => {
     expect(rows.map(r => r.title).sort()).toEqual(['ws two', 'ws two b'])
   })
 })
+
+// FJS-1732 / FJS-D1100 — admitted is not a member. A guest on the roster passes
+// the schema's tenant deny and is read by `workspaceId == auth().workspaceId`
+// as nobody; the app grants the guest something narrower on purpose.
+describe('membershipClaim({ guests })', () => {
+  const GUESTS = `
+    tenancy { strategy row  column workspaceId  claim workspaceId }
+
+    model Member {
+      id          Int    @id @default(autoincrement())
+      workspaceId Int
+      userId      String
+      role        String
+      @@tenant(none)
+    }
+
+    model Doc {
+      id          Int    @id @default(autoincrement())
+      workspaceId Int
+      title       String
+      @@allow('read', workspaceId == auth().workspaceId)
+    }
+
+    model Note {
+      id          Int    @id @default(autoincrement())
+      workspaceId Int
+      title       String
+      @@allow('read', auth().memberRole == 'guest')
+    }
+  `
+  const resolver = (guests?: string[]) => membershipClaim({
+    tenantFrom: () => '1', model: 'member', subject: 'userId', tenant: 'workspaceId',
+    standing: 'role', standingAs: 'memberRole', ...(guests ? { guests } : {}),
+  })
+
+  async function open(role: string, guests?: string[]) {
+    const db: any = await createClient({ db: ':memory:', schema: GUESTS, claims: ['memberRole'] })
+    const sys = db.asSystem()
+    await sys.member.create({ data: { workspaceId: 1, userId: 'u1', role } })
+    await sys.doc.create({ data: { workspaceId: 1, title: 'ws one' } })
+    await sys.doc.create({ data: { workspaceId: 2, title: 'ws two' } })
+    await sys.note.create({ data: { workspaceId: 1, title: 'note one' } })
+    await sys.note.create({ data: { workspaceId: 2, title: 'note two' } })
+    const app = createApp({ db, principal: resolver(guests) })
+    app.services.register(createService({ name: 'docs',  async find(ctx: ServiceContext) { return (ctx.locals.db as any).doc.findMany({}) } }))
+    app.services.register(createService({ name: 'notes', async find(ctx: ServiceContext) { return (ctx.locals.db as any).note.findMany({}) } }))
+    return app
+  }
+
+  test('a member row reads the common policy', async () => {
+    const app = await open('member', ['guest'])
+    expect((await rowsOf(await app.service('docs').find({}, AS_U1))).map(r => r.title)).toEqual(['ws one'])
+  })
+
+  test('a guest row passes the tenant deny and is no member to the common policy', async () => {
+    const app = await open('guest', ['guest'])
+    expect(await rowsOf(await app.service('docs').find({}, AS_U1))).toEqual([])
+  })
+
+  test('the narrower rule the app writes for the guest reads their tenant and no other', async () => {
+    const app = await open('guest', ['guest'])
+    expect((await rowsOf(await app.service('notes').find({}, AS_U1))).map(r => r.title)).toEqual(['note one'])
+  })
+
+  test('without `guests` the same row is a member, as before', async () => {
+    const app = await open('guest')
+    expect((await rowsOf(await app.service('docs').find({}, AS_U1))).map(r => r.title)).toEqual(['ws one'])
+  })
+
+  test('`guests` with no `standing` is refused by name', () => {
+    expect(() => membershipClaim({ tenantFrom: () => '1', model: 'member', subject: 'userId', tenant: 'workspaceId', guests: ['guest'] }))
+      .toThrow(/guests.*standing/)
+  })
+})

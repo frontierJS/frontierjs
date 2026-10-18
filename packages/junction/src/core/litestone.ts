@@ -221,6 +221,38 @@ export interface ParsedQuery {
   asOf?:           string    // $asOf — the instant/day a window is read at
   withExpired?:    boolean   // $withExpired — no window filter at all
   onlyExpired?:    boolean   // $onlyExpired — only the rows NOT in force
+  recursive?:      NonNullable<QueryDirectives['recursive']>   // $recursive — a tree read (`FJS-D1098`)
+}
+
+/**
+ * A `$recursive` beside a directive or a method that cannot walk a tree is
+ * refused by name, as Litestone refuses `count({ recursive })`: the alternative
+ * answers about the anchor row alone, or a flat page, with a 200.
+ */
+function refuseRecursive(recursive: unknown, beside: string, ctx: ServiceContext): void {
+  if (recursiveOf(recursive) === undefined) return
+  throw new BadRequest(
+    `$recursive does not combine with ${beside}${ctx.method === 'find' ? '' : ` on ${ctx.service}.${ctx.method}`}: ` +
+    `only a list read walks a tree. Read the length of the tree read, or page the flat result.`,
+    { directive: '$recursive', beside }
+  )
+}
+
+/**
+ * `$recursive` → Litestone's `recursive` option. The shape is the Data
+ * boundary's to grade (keys, direction, `limit` under `nested`); this only
+ * refuses a value that is neither the flag nor a structure, which would
+ * otherwise read as no tree at all and answer the flat list with a 200.
+ */
+function recursiveOf(v: unknown): ParsedQuery['recursive'] {
+  if (v === undefined || v === null || v === false || v === 'false' || v === 0 || v === '0') return undefined
+  if (v === true || v === 'true' || v === 1 || v === '1' || v === '') return true
+  if (typeof v === 'object' && !Array.isArray(v)) return v as ParsedQuery['recursive']
+  throw new BadRequest(
+    `$recursive is true, or a structure: $recursive[direction]=ancestors, $recursive[maxDepth]=3 ` +
+    `(also nested, via). Got ${JSON.stringify(v)}.`,
+    { directive: '$recursive', value: v }
+  )
 }
 
 const WHERE_COMBINATORS = new Set(['$or', '$and', '$not'])
@@ -301,6 +333,7 @@ export function parseQuery(
     asOf:          typeof asOfRaw === 'string' && asOfRaw !== '' ? asOfRaw : undefined,
     withExpired:   withExp  === true || undefined,
     onlyExpired:   onlyExp  === true || undefined,
+    recursive:     recursiveOf(directives.recursive),
   }
 }
 
@@ -1411,6 +1444,7 @@ const columns = writableColumns(db, m.accessor)
       // is a second, id-only pass, skipped when the first page is short enough
       // to BE the total.
       if (q.search) {
+        refuseRecursive(q.recursive, '$search', ctx)
         const args: Record<string, unknown> = {
           where,
           limit:  q.limit,
@@ -1454,6 +1488,19 @@ const columns = writableColumns(db, m.accessor)
       if (q.onlyExpired)   args.onlyExpired   = true
       if (q.asOf)          args.asOf          = q.asOf
 
+      // A tree read has no default page: the page is `maxDepth`. A stated
+      // `$limit`/`$offset` still reaches Litestone, which refuses it under
+      // `nested`. The envelope answers `total = data.length`.
+      if (q.recursive) {
+        if (q.after) refuseRecursive(q.recursive, '$after', ctx)
+        const stated = (ctx.directives ?? {}) as Record<string, unknown>
+        if (stated.limit  == null) delete args.limit
+        if (stated.offset == null) delete args.offset
+        args.recursive = q.recursive
+        const rows = await table.findMany(args) as unknown[]
+        return { total: rows.length, data: rows }
+      }
+
       // The window (`FJS-D145`) — a caller asking `$after` is growing a
       // window rather than stepping to a page. Both paths are `findWindow`'s,
       // because a service that assembles its own query answers the same two.
@@ -1472,6 +1519,7 @@ const columns = writableColumns(db, m.accessor)
      */
     async aggregate(ctx: ServiceContext): Promise<unknown> {
       const table = getTable(ctx)
+      refuseRecursive(ctx.directives?.recursive, 'a count or an aggregate', ctx)
       const args  = parseAggregate(ctx.data, ctx.query, paginate.default, paginate.max, ctx.directives)
       const by    = args.by as unknown[] | undefined
 
@@ -1508,6 +1556,7 @@ const columns = writableColumns(db, m.accessor)
     async get(ctx: ServiceContext): Promise<unknown> {
       const table = getTable(ctx)
       const q     = parseQuery(ctx.query, 1, 1, ctx.directives)
+      refuseRecursive(q.recursive, 'a read of one row', ctx)
 
       if (ctx.id) {
         // A URL segment is ONE value and this model's key is several. The list
@@ -3046,11 +3095,11 @@ const UNSORTABLE: Record<string, string> = {
 export function autoSort(accessorOpt: string | undefined) {
   return function autoSort(ctx: ServiceContext): void {
     const client = ctx.locals.db as {
-      $checkOrderBy?: (a: string, o: unknown) => OrderByKeyProblem[]
+      $checkOrderBy?: (a: string, o: unknown, opts?: { recursive?: boolean }) => OrderByKeyProblem[]
     } | undefined
     // Probing a Litestone client for a property it does not have THROWS — see
     // the note in autoFilter, and `FJS-117` for what that cost the last time.
-    let check: ((a: string, o: unknown) => OrderByKeyProblem[]) | undefined
+    let check: ((a: string, o: unknown, opts?: { recursive?: boolean }) => OrderByKeyProblem[]) | undefined
     try { check = client?.$checkOrderBy } catch { return }
     if (typeof check !== 'function') return
 
@@ -3063,7 +3112,8 @@ export function autoSort(accessorOpt: string | undefined) {
     const accessor = resolveAccessor(client, accessorOpt ?? ctx.service)
 
     let problems: OrderByKeyProblem[] = []
-    try { problems = check.call(client, accessor, parseSort(raw as SortParam)) ?? [] } catch { return }
+    const recursive = recursiveOf(ctx.directives?.recursive) !== undefined
+    try { problems = check.call(client, accessor, parseSort(raw as SortParam), { recursive }) ?? [] } catch { return }
     if (!problems.length) return
 
     const detail = problems.map(p =>
@@ -3986,6 +4036,12 @@ export interface MembershipClaimOptions {
   standing?:  string
   /** What the standing is called on the principal. Default `<standing>`. */
   standingAs?: string
+  /** Standings that are admitted to the tenant without being members of it —
+   *  `['guest']`. A row holding one emits the tenant under litestone's admission
+   *  claim, so the schema's tenant deny passes it and `workspaceId ==
+   *  auth().workspaceId` answers false until the app writes the guest a
+   *  narrower rule (`FJS-D1100`). Needs `standing`, and `tenancy { strategy row }`. */
+  guests?:    string[]
   /** The column holding this member's capability grants, if the row carries one.
    *  Emitted as `auth().capabilities` (`FJS-D151`), which is the name litestone's
    *  own grid reads — so it is not renameable the way a tenant claim is.
@@ -4028,6 +4084,10 @@ function asCapabilityList(v: unknown): string[] {
 export function membershipClaim(opts: MembershipClaimOptions): SelfDescribedResolver {
   const claimName    = opts.as ?? opts.tenant
   const standingName = opts.standingAs ?? opts.standing
+
+  if (opts.guests?.length && !opts.standing) throw new Error(
+    `membershipClaim: \`guests\` names standings and this resolver reads none — add \`standing: '<column>'\`. ` +
+    `Without it no row could be a guest, and every one would be admitted as a member.`)
 
   const resolver = async function membershipClaim(ctx: ServiceContext, user: ServiceContext['auth']['user'] | null) {
     // A GUEST cannot hold a membership. The resolver runs for a caller with no
@@ -4096,8 +4156,19 @@ export function membershipClaim(opts: MembershipClaimOptions): SelfDescribedReso
 
     ctx.locals[MEMBERSHIP] = row
 
+    const guest = !!opts.standing && !!opts.guests?.includes(String(row[opts.standing]))
+    let tenantClaim = claimName
+    if (guest) {
+      const t = tenancyOf(sys)
+      if (t?.strategy !== 'row' || t.claim !== claimName || !t.admission) throw new BadRequest(
+        `membershipClaim: \`guests\` admits a standing to the tenant without making it a member, and that is ` +
+        `a tenancy { strategy row } claim named '${claimName}'. This schema declares ` +
+        (t?.strategy === 'row' ? `claim '${t.claim}'.` : 'no row tenancy.'))
+      tenantClaim = t.admission
+    }
+
     return {
-      [claimName]: tenant,
+      [tenantClaim]: tenant,
       ...(standingName && opts.standing ? { [standingName]: row[opts.standing] } : {}),
       // An absent column and an empty grant are the same answer and both are
       // legitimate — a membership that holds no capabilities is what a fresh
@@ -4138,6 +4209,7 @@ export function membershipClaim(opts: MembershipClaimOptions): SelfDescribedReso
                  ...(opts.capabilities ? ['capabilities'] : [])],
     include:    opts.include    ?? [],
     namedBy:    opts.namedBy    ?? null,
+    ...(opts.guests?.length ? { guests: opts.guests } : {}),
     ...(opts.tenantFrom.headerName ? { headers: [opts.tenantFrom.headerName] } : {}),
   })
 
@@ -4380,6 +4452,16 @@ export interface BearerResolver extends SelfDescribedResolver {
    * open what the link was for. Only a `cookie()` bearer has one.
    */
   redeem(db: unknown, opts?: RedeemOptions): (ctx: RedeemContext) => Promise<Response>
+  /**
+   * Spend one open of the grant this call resolved (`FJS-D1132`): the third act
+   * beside `mint` and `redeem`. Call it once, from the service method that IS
+   * the open — the resolver stays a pure read, so a Send's open and its later
+   * file fetch are not two spends. The grant's `accessCount` rises by one only
+   * while it is under `maxAccessCount` (null is no maximum), in one conditional
+   * UPDATE, so the (max+1)th open under concurrency is refused with the same
+   * 401 sentence a dead link gets.
+   */
+  spend(db: unknown, ctx: ServiceContext): Promise<void>
 }
 
 const LAST_USED_WINDOW_MS = 4 * 60_000
@@ -4514,9 +4596,15 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
       }
     }
 
+    // A grant admits its holder to a tenant and makes them no member of it, so
+    // the tenant claim travels as the admission twin (`FJS-D1100`): the schema's
+    // tenant deny passes it and `workspaceId == auth().workspaceId` does not.
+    const tenancy = tenancyOf(db)
+    const asAdmitted = tenancy?.strategy === 'row' && tenancy.claim && tenancy.admission ? tenancy : null
+
     return Object.fromEntries(
       Object.entries(opts.claims).map(([claim, column]) => [
-        claim,
+        claim === asAdmitted?.claim ? asAdmitted.admission : claim,
         column.split('.').reduce<unknown>((at, key) => (at as Record<string, unknown> | null | undefined)?.[key], row) ?? null,
       ]),
     )
@@ -4602,6 +4690,33 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
     }
   }
 
+  async function spend(db: unknown, ctx: ServiceContext): Promise<void> {
+    const held = bearerOf(ctx, opts.model)
+    if (!held) throw new Error(
+      `bearerClaim: spend() found no '${opts.model}' grant on this call. ` +
+      `It spends the grant the resolver read, so the request must carry the token.`)
+    if (!('accessCount' in held.row)) throw new Error(
+      `bearerClaim: spend() counts in \`accessCount\` and model ${opts.model} declares no such column. ` +
+      `Add \`accessCount Int @default(0)\` (and \`maxAccessCount Int?\` for a budget).`)
+    const table = systemTable(db)
+    if (typeof table?.updateMany !== 'function') throw new Error(
+      `bearerClaim: no accessor '${opts.model}' on the client handed to spend().`)
+
+    // The maximum rides the WHERE as a value, not as a column compared to a
+    // column: the resolver read it a moment ago, and a `$raw` clause would name
+    // the SQL column, which an `@map` renames.
+    const max = 'maxAccessCount' in held.row ? held.row.maxAccessCount : null
+    const { count } = await table.updateMany({
+      where: { id: held.id, ...(max == null ? {} : { accessCount: { lt: max } }) },
+      data:  { accessCount: { increment: 1 } },
+    }) as { count: number }
+    if (count < 1) throw new Unauthorized(
+      opts.from.headerName === 'authorization'
+        ? `This key does not work. It may have expired or been revoked.`
+        : `This link does not work. It may have expired or been withdrawn.`,
+    )
+  }
+
   const described = resolver as BearerResolver
   described.describe = () => ({
     kind:     'bearer',
@@ -4618,6 +4733,7 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
   described.mint         = mint
   described.mintOnCreate = mintOnCreate
   described.redeem       = redeem
+  described.spend        = spend
 
   return described
 }
@@ -5485,6 +5601,9 @@ export interface ResolvedTenancy {
   strategy: 'database' | 'row'
   column?:  string
   claim?:   string
+  /** Row tenancy: the claim a caller admitted without being a member carries
+   *  in place of `claim` (`FJS-D1100`). Named by litestone, never derived here. */
+  admission?: string
   resolve?: TenantResolution | null
 }
 
@@ -5572,10 +5691,10 @@ function liftRowTenant(ctx: ServiceContext, client: unknown, claims?: PrincipalC
   const t = tenancyOf(client)
   if (t?.strategy !== 'row' || !t.claim) return
 
-  const fromClaims = claims?.[t.claim]
+  const held       = (from: Record<string, unknown> | undefined) =>
+    from?.[t.claim!] ?? (t.admission ? from?.[t.admission] : undefined)
   const user       = ctx.auth?.user
-  const fromUser   = user ? (toDataPrincipal(user) as Record<string, unknown>)[t.claim] : undefined
-  const value      = fromClaims ?? fromUser
+  const value      = held(claims) ?? (user ? held(toDataPrincipal(user) as Record<string, unknown>) : undefined)
 
   if (value != null) ctx.locals.tenantId = String(value)
 }
@@ -5799,6 +5918,7 @@ export function tenantClaimGuard(db: unknown): (ctx: ServiceContext) => void {
 
     const principal = toDataPrincipal(user) as Record<string, unknown>
     if (principal[tenancy.claim] != null) return
+    if (tenancy.admission && principal[tenancy.admission] != null) return
 
     if (!isRowScoped(db, ctx.service)) return
 

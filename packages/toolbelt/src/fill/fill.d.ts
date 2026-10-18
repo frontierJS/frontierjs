@@ -39,12 +39,16 @@ export interface MergeField {
   /** What a render uses when the data has no value (`undefined`, `null` or `''`). */
   default?: string | number | boolean | Markup
   type: FieldType
+  /** ISO 4217 code; required when `type` is `money`, whose values are minor units. */
+  currency?: string
   [extra: string]: unknown
 }
 
 export interface MergeFields<F extends MergeField = MergeField> {
   /** The fields for an editor's list, in declared order. */
   list(filter?: (field: F) => boolean): F[]
+  /** A JSON Schema object keyed by each field's full `owner.field`, for Sierra's field rules to grade and draw as the sender's form. */
+  schema(filter?: (field: F) => boolean): { type: 'object'; properties: Record<string, Record<string, unknown>> }
   /** `{ owner: { field: example } }` for a preview. */
   example(filter?: (field: F) => boolean): Record<string, Record<string, unknown>>
   /** The closed list `check` grades against. */

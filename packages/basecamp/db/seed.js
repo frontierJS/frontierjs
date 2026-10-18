@@ -894,6 +894,24 @@ export class BasecampSeeder extends Seeder {
         if (index === 0) await seedDependencies(sys, ws.id, projects[0].id)
       }
 
+      // ── A site and the client who edits it ────────────────────────
+      // A static site built from git, edited at /sites/ by a person who is a
+      // member of no workspace (`FJS-D1230`); Kim, an admin, may publish it.
+      // The repository is not real, so a draft opened here fails to clone.
+      {
+        const production = await sys.environment.findFirst({ where: { workspaceId: workspaces[0].id, tier: 'production' } })
+        const site = await sys.app.create({ data: {
+          workspaceId: workspaces[0].id, environmentId: production.id, name: 'Harbor Spa', slug: 'harbor-spa',
+          type: 'static', status: 'running',
+          source: { kind: 'git', repo: 'git@forgejo.local:acme/harbor-spa.git', branch: 'main', path: 'site' },
+        } })
+        const client = await auth.createUser({ email: 'lee@example.com', name: 'Lee Carter', password: PASSWORD })
+        await sys.user.update({ where: { id: client.userId },
+          data: { status: 'active', displayName: 'Lee Carter', emailVerified: true } })
+        await sys.appEditor.create({ data: { appId: site.id, userId: client.userId, role: 'edit' } })
+        await sys.appEditor.create({ data: { appId: site.id, userId: users[1].id, role: 'publish' } })
+      }
+
       // ── The installation ──────────────────────────────────────────
       // Outside the workspace loop, because none of these belongs to a
       // tenant — all four models are `@@tenant(none)`. They are the rows

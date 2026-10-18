@@ -60,7 +60,7 @@ const DESCRIPTOR_FIELDS: Record<keyof TargetDescriptor, true> = {
   id: true, kind: true, protocol: true, address: true, auth: true,
   encoding: true, headers: true, trace: true, pinned_cert: true,
   follow_redirects: true, address_from: true, destinations: true, origins: true,
-  idempotency: true, resilience: true, registered_at: true, last_seen_at: true,
+  idempotency: true, resilience: true, readiness: true, registered_at: true, last_seen_at: true,
 }
 
 function assertDescriptor(descriptor: TargetDescriptor): void {
@@ -189,6 +189,12 @@ function assertRefusal(descriptor: TargetDescriptor): void {
 // The wire built for a broker is the websocket one, and a broker target on any
 // other protocol would register and then never connect.
 function assertBroker(descriptor: TargetDescriptor): void {
+  if (descriptor.readiness !== undefined) {
+    if (descriptor.kind !== 'broker')
+      throw new TypeError(`Target '${descriptor.id}': readiness only applies to a broker target, this one is '${descriptor.kind}'`)
+    if (typeof descriptor.readiness !== 'boolean')
+      throw new TypeError(`Target '${descriptor.id}': readiness must be a boolean, got ${typeof descriptor.readiness}`)
+  }
   if (descriptor.kind !== 'broker') return
   const where = `Target '${descriptor.id}' (kind 'broker')`
   if (descriptor.protocol !== 'websocket')
@@ -786,9 +792,13 @@ export function createConduit(
       throw new TypeError(`[conduit] '${target}' is not a registered broker target`)
 
     // Registered before the dial: a broker that never answers must already be
-    // reporting down, since that is the case the reading exists for.
+    // reporting down, since that is the case the reading exists for. Only a
+    // target that says `readiness: true` gates `/health` — a mirror app holds
+    // one socket per linked person, and one person's refused token must not
+    // take the app out of rotation (`FJS-D1244`).
     subscriptions.set(target, transport)
-    opts.registerReadiness?.(`conduit:${target}`, () => subscriptions.get(target)?.health().connected ?? true)
+    if (transport.gatesReadiness)
+      opts.registerReadiness?.(`conduit:${target}`, () => subscriptions.get(target)?.health().connected ?? true)
     try {
       await transport.subscribe(handler, () => withTrace({ target, method: 'CONNECT' }, transport).headers, framing, opened)
     } catch (err) {

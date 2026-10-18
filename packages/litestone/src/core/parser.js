@@ -15,6 +15,7 @@ import { parseGateString, validateGate } from '../plugins/gate.js'
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
 import { suggestKey } from './args.js'
 import { compileStatic, policyExprToString } from './policy.js'
+import { tenantAdmission } from './tenancy.js'
 import { pointColumnNames, isStoredField, mapIdentifiers, labelColumn, COLLATIONS } from './ddl.js'
 import { inferFromFk, inferFromHop, inferToOneFrom } from './schema-maps.js'
 import { sealedStates, sealFaults, machineWithMove } from './seal.js'
@@ -4226,6 +4227,31 @@ function expandAuthorshipAttributes(schema) {
   return errors
 }
 
+// The tenant deny, read and create. A member carries the tenant claim and an
+// admitted-only caller (a guest, a link holder) carries its admission twin; the
+// deny passes either to the column's own value and nothing else, so the member
+// claim stays null for the second and `col == auth().claim` answers false.
+// A create states the column for an admitted-only caller, since the stamp is
+// the member claim's.
+function tenantDenyExprs(column, claim) {
+  const lit     = (value) => ({ type: 'literal', value })
+  const auth    = (field) => ({ type: 'auth', field })
+  const cmp     = (op, left, right) => ({ type: 'compare', op, left, right })
+  const and     = (left, right) => ({ type: 'and', left, right })
+  const or      = (left, right) => ({ type: 'or', left, right })
+  const col     = { type: 'field', name: column }
+  const member  = auth(claim)
+  const admit   = auth(tenantAdmission(claim))
+
+  const unknown      = and(cmp('==', member, lit(null)), cmp('==', admit, lit(null)))
+  const memberAway   = and(cmp('!=', member, lit(null)), cmp('!=', col, member))
+  const admittedAway = and(cmp('==', member, lit(null)), cmp('!=', col, admit))
+  return {
+    read:   or(unknown, or(memberAway, admittedAway)),
+    create: or(unknown, or(and(cmp('!=', member, lit(null)), and(cmp('!=', col, lit(null)), cmp('!=', col, member))), admittedAway)),
+  }
+}
+
 // ── tenancy { strategy row } expansion ─────────────────────────────────────────
 // The tenant column becomes two @@deny rules and a stamp, per model, so from
 // here on nothing downstream knows the block existed — the gate ladder, the
@@ -4316,11 +4342,8 @@ function expandTenancy(schema) {
       continue
     }
 
-    const col       = () => ({ type: 'field', name: column })
-    const authClaim = () => ({ type: 'auth',  field: claim })
-    const noPrincipal = { type: 'compare', op: '==', left: authClaim(), right: { type: 'literal', value: null } }
-    const mismatch    = { type: 'compare', op: '!=', left: col(),       right: authClaim() }
-    const message     = `Outside your ${column}`
+    const denies  = tenantDenyExprs(column, claim)
+    const message = `Outside your ${column}`
 
     // `post-update` is in this list and it is the half a hand-written
     // `@@allow('all', col == auth().claim)` got for free: `all` expands to every
@@ -4336,20 +4359,12 @@ function expandTenancy(schema) {
     // context needs it to answer *is a tenant in scope at all* (FJS-519).
     // `column` is what a tenant read of a view shadows this table by (FJS-D1149).
     model.attributes.push({
-      kind: 'deny', operations: ['read', 'update', 'delete', 'post-update'], generated: 'tenancy', claim, column, message,
-      expr: { type: 'or', left: noPrincipal, right: mismatch },
+      kind: 'deny', operations: ['read', 'update', 'delete', 'post-update'], generated: 'tenancy', claim, column, tenantColumn: column, message,
+      expr: denies.read,
     })
     model.attributes.push({
       kind: 'deny', operations: ['create'], generated: 'tenancy', claim, message,
-      expr: {
-        type: 'or',
-        left: noPrincipal,
-        right: {
-          type: 'and',
-          left:  { type: 'compare', op: '!=', left: col(), right: { type: 'literal', value: null } },
-          right: mismatch,
-        },
-      },
+      expr: denies.create,
     })
 
     // The stamp. A column the app already defaults is left alone — an app
@@ -4388,14 +4403,9 @@ function expandTenancy(schema) {
       continue
     }
 
-    const col         = { type: 'field', name: column }
-    const authClaim   = { type: 'auth',  field: claim }
-    const noPrincipal = { type: 'compare', op: '==', left: authClaim, right: { type: 'literal', value: null } }
-    const mismatch    = { type: 'compare', op: '!=', left: col,       right: authClaim }
-
     view.attributes.push({
-      kind: 'deny', operations: ['read'], generated: 'tenancy', claim, message: `Outside your ${column}`,
-      expr: { type: 'or', left: noPrincipal, right: mismatch },
+      kind: 'deny', operations: ['read'], generated: 'tenancy', claim, tenantColumn: column, message: `Outside your ${column}`,
+      expr: tenantDenyExprs(column, claim).read,
     })
     scoped.push(view.name)
   }

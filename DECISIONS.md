@@ -17409,6 +17409,38 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d1249"></a>2026-10-18 · `FJS-D1249` — Q12 — How the form writes front matter (1.2) — A field per top-level text, number or yes/no key, written back by replacing that key's line, so comments and formatting survive; lists show read-only until Phase 3.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (the front-matter block as YAML text, graded by parsing before and after).
+
+The paper's recommendation, taken as written: an owner edits a value, never YAML, and the writer sits beside site-kit's rule.
+
+*Lives in:* `packages/site-kit/src/editable.js` (`formOf`, `applyEdit`). *Enforced by:* `packages/site-kit/test/content.mjs` § the owner's form.
+
+### <a id="fjs-d1248"></a>2026-10-18 · `FJS-D1248` — Q11 — What a draft is named, and who opens one (1.2) — An editor opens a draft by name, `draft/<slug>`; a site has several, and every editor of the site sees and saves to all of them.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (`draft/<user>`, opened by an editor's first save, one per person).
+
+The paper's recommendation, taken as written: two changes can run side by side, and the preview alias is the name the owner gave it.
+
+*Lives in:* `packages/basecamp/api/src/core/site-checkout.ts` (`draftBranch`, `openDraft`) and `packages/basecamp/api/src/services/drafts/drafts.service.ts`. *Enforced by:* `packages/basecamp/api/test/drafts.test.ts`.
+
+### <a id="fjs-d1247"></a>2026-10-18 · `FJS-D1247` — Q10 — Where the deploy key per repository (`FJS-D1228`) lives (1.2) — Deferred: 1.2 clones and pushes with the credential the host's git already holds, and the key is its own step.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **B** was picked over **A** (the git source gains `key: 'secret:<id>'`, an `ssh_key` Secret in the App's workspace, resolved by `core/credentials.ts`).
+
+the owner deferred it: 1.2 clones and pushes with the credential the host's git already holds, and the key per repository is its own step.
+
+*Lives in:* `packages/basecamp/api/src/core/site-checkout.ts`, which runs git with the host's credential and `GIT_TERMINAL_PROMPT=0`. *Enforced by:* `none` — the key is `IDEAS/owner-editing.md` 1.6.
+
+### <a id="fjs-d1246"></a>2026-10-18 · `FJS-D1246` — Q9 — Whether a save pushes the draft (1.2) — Every save is a commit pushed to `draft/<name>` on the remote, as each Decap save is a commit on its PR. Basecamp's clone is a cache, and the push is the lock: a rejected fast-forward means someone saved first.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (commits stay in basecamp's clone until Publish pushes them).
+
+The paper's recommendation, taken as written: a draft survives basecamp losing its disk, and a developer sees it as a branch. B makes the clone hold the only copy.
+
+*Lives in:* `packages/basecamp/api/src/core/site-checkout.ts` (`saveDraftFile`). *Enforced by:* `packages/basecamp/api/test/drafts.test.ts` § a save is one commit pushed.
+
 ### <a id="fjs-d1244"></a>2026-10-18 · `FJS-D1244` — Which conduit broker targets gate `/health` readiness — Only a target whose descriptor says `readiness: true`. `subscribe()` registers `conduit:<target>` with `app.registerReadiness` for that target alone; every other broker target, a mirror app's per-person socket among them, never turns `/health` 503. One field on the target, default off.
 
 Asked in [`ISSUES.md`](ISSUES.md#fjs-3150) (`FJS-3150`). **A, default off** was picked over **A, default on** (today's behavior kept, a target opts out with `readiness: false`, so each per-person target must remember it) and **B** (a target registered after boot never gates: no option, but implicit, and no product found derives it from registration time).
@@ -17465,7 +17497,7 @@ Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions, Q
 
 The paper's recommendation, taken as written: Webflow and Framer both lock the layout, because a layout mistake is the one a developer ends up repairing. A is derived from the path and a key list site-kit already fixes; C is a second, hand-written statement of what the content already says.
 
-*Lives in:* `packages/site-kit/src/editable.js` (`@frontierjs/site-kit/editable`). *Enforced by:* `packages/site-kit/test/content.mjs` § what an owner may change; no save calls it until `IDEAS/owner-editing.md` 1.2.
+*Lives in:* `packages/site-kit/src/editable.js` (`@frontierjs/site-kit/editable`). *Enforced by:* `packages/site-kit/test/content.mjs` § what an owner may change, and `packages/basecamp/api/test/drafts.test.ts`, where basecamp's save refuses by it.
 
 ### <a id="fjs-d1227"></a>2026-10-17 · `FJS-D1227` — What an owner's draft is in git — A branch per draft, previewed at its alias (`FJS-D1222`); Publish merges it.
 
@@ -17473,7 +17505,7 @@ Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions, Q
 
 The paper's recommendation, taken as written: the preview alias is already the branch, so a draft gets its review link without new code, and an abandoned draft is an unmerged branch. Decap and Keystatic work this way.
 
-*Lives in:* not built. *Enforced by:* `none` until `IDEAS/owner-editing.md` 1.2.
+*Lives in:* `packages/basecamp/api/src/core/site-checkout.ts`; the merge is 1.4. *Enforced by:* `packages/basecamp/api/test/drafts.test.ts` (a draft is a branch on the remote; `main` untouched).
 
 ### <a id="fjs-d1228"></a>2026-10-17 · `FJS-D1228` — Who writes an owner's edit to git — A checkout basecamp holds, written with the git CLI and a deploy key per repository.
 
@@ -17481,7 +17513,7 @@ Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions, Q
 
 The paper's recommendation, taken as written: Publish builds, and a build needs a checkout anyway. Git works with any host, which is `IDEAS/site-hosting.md`'s thesis, and basecamp already runs real git (`api/src/core/local-git.ts`).
 
-*Lives in:* not built. *Enforced by:* `none` until `IDEAS/owner-editing.md` 1.2.
+*Lives in:* `packages/basecamp/api/src/core/site-checkout.ts`, a bare clone per App under `SITES_DIR`; the deploy key is deferred (`FJS-D1247`). *Enforced by:* `packages/basecamp/api/test/drafts.test.ts`, over a real remote.
 
 ### <a id="fjs-d1229"></a>2026-10-17 · `FJS-D1229` — What an owner's Publish does when the default branch has undeployed commits — It refuses, naming each undeployed commit and its author, and basecamp notifies the developer.
 

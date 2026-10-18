@@ -224,10 +224,12 @@ src/
   no pin, refused.
 - **A `broker` target is subscribed to, and the ack follows the handler**
   (`FJS-D235`). The handler is where the app dispatches under `message.id`
-  (caravan's `dispatch({ id })`); an ack sent before it is a lost message. Every
-  subscription registers `conduit:<target>` through `registerReadiness` — *connected*,
-  not *recent message*, since a quiet broker is not an outage — and a new broker
-  path that cannot say so does not ship.
+  (caravan's `dispatch({ id })`); an ack sent before it is a lost message. A
+  subscription to a target that says `readiness: true` registers
+  `conduit:<target>` through `registerReadiness` — *connected*, not *recent
+  message*, since a quiet broker is not an outage. Default off (`FJS-D1244`): a
+  mirror app's per-person socket is a view, and one refused token must not 503
+  `/health`. An essential broker that omits the flag answers 200 while down.
 - **A Provider's socket is a receiver that names a `target`, and it mounts no
   route** (`FJS-D1127`). `receive()` branches on `'target' in receiver`, and
   the junction plugin's wrapper must branch first: a route for a socket

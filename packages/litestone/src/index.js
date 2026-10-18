@@ -29,7 +29,7 @@ export { listMigrationFiles, unmatchedMigrationFiles,
 export { generateJsonSchema }                     from './jsonschema.js'
 export { generateTypeScript }                     from './tools/typegen.js'
 export { createTenantRegistry }                  from './tenant.js'
-export { resolveTenancy, tenantFrom }            from './core/tenancy.js'
+export { resolveTenancy, tenantFrom, tenantAdmission } from './core/tenancy.js'
 export { parseDuration, parseSize,
          runSqliteRetention, compactJsonl }       from './core/retention.js'
 export { Factory, defineFactory, Seeder, runSeeder,

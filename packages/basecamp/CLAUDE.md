@@ -116,6 +116,13 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           core/app-source.ts is the ONE reader of `App.source` — `git`, `image`,
           `inline`, parsed and normalized, and the paste box's limits (the
           machine's are outpost's, and they win)
+          core/site-checkout.ts is basecamp's bare clone of each static site an
+          owner edits, under SITES_DIR: a draft is `draft/<slug>` ON THE REMOTE,
+          and a save is a commit built through a temporary index and pushed, so
+          the push is the lock (`FJS-D1246`). services/drafts/ is its surface and
+          takes no workspace: the caller's own `AppEditor` row is read first and
+          the App through asSystem() after it; what may be written is
+          site-kit's `editable` (`formOf`, `applyEdit`), never a list here
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
           core/runtime.ts is the ONE reader of how a container starts —

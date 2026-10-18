@@ -26,6 +26,7 @@ export const groups = [
   { label: 'Work', icon: 'work', open: true, show: member, entries: [
     { href: '/dashboards/',         label: 'Dashboards',      icon: 'dashboards',    sub: 'saved views' },
     { href: '/projects/',           label: 'Projects',        icon: 'projects' },
+    { href: '/sites/',              label: 'Sites',           icon: 'pages',         sub: 'the static sites you may edit, and their drafts' },
     { href: '/jobs/',               label: 'Jobs',            icon: 'jobs' },
     { href: '/flags/',              label: 'Flags',           icon: 'flags',         sub: 'feature flags' },
     { href: '/activity/',           label: 'Activity',        icon: 'activity',      sub: 'what happened here' },

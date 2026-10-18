@@ -657,6 +657,13 @@ child or the immediate parent, counting outward in both directions. The anchor
 itself is never in its own result, and `orderBy: { _depth: 'desc' }` sorts by it
 (only on a tree read; `_depth` is not a column).
 
+Over Junction's API the same option is `$recursive`, one structured directive
+(`$recursive[direction]=ancestors&$recursive[maxDepth]=3`, or `$recursive=true`)
+on a model service's `find`. A tree read skips the default page, so the answer
+is `{ total, data }` with `total` the length and no `limit`/`offset`. The
+refusals below hold there too, and `get`, `$search`, `$after` and `aggregate`
+refuse `$recursive` by name.
+
 ### A tree read is an ordinary read
 
 The `@@gate`, the `@@allow` row policies and `@@softDelete` all apply, and they

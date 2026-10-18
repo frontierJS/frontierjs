@@ -24,6 +24,16 @@ const DEFAULTS = {
   maxOpen:  100,
 }
 
+// ─── Admitted is not a member ────────────────────────────────────────────────
+//
+// Under `tenancy { strategy row }` the generated deny reads two claims: the
+// tenant claim a MEMBER carries, and this twin, which a caller admitted into the
+// tenant without being one of its members carries instead — a guest on the
+// roster, a share-link holder. A policy saying `workspaceId == auth().workspaceId`
+// reads only the first, so admission never widens the common policy by accident
+// and the app grants a guest something narrower on purpose (`FJS-D1100`).
+export const tenantAdmission = (claim) => `${claim}Admitted`
+
 // { kind:'literal', value } | { kind:'env', var, default } → string | null
 function readValue(def, what) {
   if (def == null) return null
@@ -47,7 +57,7 @@ function readValue(def, what) {
  * @returns {object|null} null when the schema declares no tenancy
  *
  * database → { strategy, dir, registry, maxOpen, key, resolve }
- * row      → { strategy, column, claim }
+ * row      → { strategy, column, claim, admission }
  */
 export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {}) {
   const t = schema?.tenancy
@@ -63,6 +73,7 @@ export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {
       strategy: 'row',
       column:   overrides.column ?? t.column,
       claim:    overrides.claim  ?? t.claim,
+      admission: tenantAdmission(overrides.claim ?? t.claim),
     }
   }
 

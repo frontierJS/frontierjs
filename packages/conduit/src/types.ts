@@ -301,6 +301,13 @@ export interface TargetDescriptor {
   // request succeed (`FJS-728`).
   resilience?:     TargetResilience
 
+  // A broker target's socket gates the app's `/health` readiness. Off by
+  // default: a socket the app cannot work without says so, and one that is a
+  // single person's view (a mirror app holds one per linked person) must not
+  // turn the whole app 503 when that person's token is refused (`FJS-D1244`).
+  // Broker targets only.
+  readiness?:      boolean
+
   registered_at:   number        // unix ms
   last_seen_at:    number | null
 }
@@ -973,11 +980,31 @@ export interface BrokerLink {
  * connection. A throw closes the socket and the reconnect dials again.
  * `decode` answers a message or `null`, and a `null` is dropped and counted,
  * never buffered. `ack` absent is a Provider that redelivers nothing.
+ *
+ * `keepalive` is for a Provider that answers a ping: a connection that died
+ * without a close looks open forever, and only a frame that must come back
+ * tells the two apart. Without it a quiet broker is never closed for being
+ * quiet.
  */
 export interface BrokerFraming<State = unknown> {
   handshake?(link: BrokerLink, secret: string | null): Promise<State>
   decode(frame: string, state: State): BrokerMessage | null
   ack?(message: BrokerMessage): string
+  keepalive?: BrokerKeepalive<State>
+}
+
+/**
+ * Once a connection is believed, `ping(n, state)` is sent every `every_ms`
+ * (30 s), `n` counting from 1 per connection. With no frame at all for
+ * `dead_ms` (60 s) — any frame, an event or the reply — the connection is
+ * dropped without waiting on a close and redialed. `pong` names the reply,
+ * so it is neither decoded nor counted dropped.
+ */
+export interface BrokerKeepalive<State = unknown> {
+  ping(n: number, state: State): string
+  pong?(frame: string, state: State): boolean
+  every_ms?: number
+  dead_ms?: number
 }
 
 export interface BrokerHealth {

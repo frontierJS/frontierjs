@@ -21,7 +21,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { parse } from '../src/core/parser.js'
 import { createClient } from '../src/core/client.js'
-import { resolveTenancy, tenantFrom } from '../src/core/tenancy.js'
+import { resolveTenancy, tenantFrom, tenantAdmission } from '../src/core/tenancy.js'
 import { createTenantRegistry } from '../src/tenant.js'
 
 const ROW_SCHEMA = `
@@ -1007,5 +1007,61 @@ describe('createTenantRegistry options', () => {
   it('still opens with only legal options', async () => {
     const tenants = await open({ maxOpen: 3, clientOptions: { plugins: [] } })
     tenants.close()
+  })
+})
+
+// FJS-1732 / FJS-D1100 — admission and membership are two facts. The generated
+// tenant deny admits a principal carrying EITHER the tenant claim or its
+// admission twin; a policy that says `workspaceId == auth().workspaceId` reads
+// only the first, so a guest or a link holder admitted by the second is never
+// read as a member by the common policy.
+describe('tenancy { strategy row } — admitted is not a member (FJS-1732)', () => {
+  const SCHEMA = `
+tenancy { strategy row  column workspaceId  claim workspaceId }
+
+model Page {
+  id          Int    @id
+  workspaceId Int
+  name        String
+  @@allow('read', workspaceId == auth().workspaceId)
+}
+
+model Note {
+  id          Int    @id
+  workspaceId Int
+  name        String
+  @@allow('read', auth().memberRole == 'guest')
+  @@allow('create', auth().memberRole == 'guest')
+}
+`
+  const seed = async () => {
+    const db  = await createClient({ schema: SCHEMA, db: ':memory:', claims: ['memberRole'] })
+    const sys = db.asSystem()
+    await sys.page.create({ data: { workspaceId: 1, name: 'w1' } })
+    await sys.page.create({ data: { workspaceId: 2, name: 'w2' } })
+    await sys.note.create({ data: { workspaceId: 1, name: 'n1' } })
+    await sys.note.create({ data: { workspaceId: 2, name: 'n2' } })
+    return db
+  }
+  const guest = (db: any, workspaceId: number) =>
+    db.$setAuth({ id: 'g', [tenantAdmission('workspaceId')]: workspaceId, memberRole: 'guest' })
+
+  it('the common member policy reads an admitted-only caller as nobody', async () => {
+    const db = await seed()
+    expect(await guest(db, 1).page.findMany()).toEqual([])
+    expect((await db.$setAuth({ id: 'm', workspaceId: 1 }).page.findMany()).map((r: any) => r.name)).toEqual(['w1'])
+  })
+
+  it('a narrower rule the app writes for the guest still passes the tenant deny, in its own tenant only', async () => {
+    const db = await seed()
+    expect((await guest(db, 1).note.findMany()).map((r: any) => r.name)).toEqual(['n1'])
+    expect((await guest(db, 2).note.findMany()).map((r: any) => r.name)).toEqual(['n2'])
+  })
+
+  it('a create must state the admitted tenant, since the stamp is the member claim\'s', async () => {
+    const db = await seed()
+    await expect(guest(db, 1).note.create({ data: { name: 'x' } })).rejects.toThrow()
+    await expect(guest(db, 1).note.create({ data: { workspaceId: 2, name: 'x' } })).rejects.toThrow()
+    await guest(db, 1).note.create({ data: { workspaceId: 1, name: 'x' } })
   })
 })

@@ -240,6 +240,22 @@ A tenant cannot read one, create one, or detach a row into one; `asSystem()`
 reads it, and a grandchild of one follows it. `verifyTenantIsolation` seeds the
 orphan and reports a read by another tenant or a claimless caller as `leaked`.
 
+### Admitted is not a member
+
+The generated deny admits a principal carrying EITHER the tenant claim or its
+twin, `<claim>Admitted` (`workspaceIdAdmitted`; `resolveTenancy(...).admission`
+names it). A **member** carries the first. A caller **admitted** without being a
+member — a guest on the roster, a share-link holder — carries the twin, so the
+tenant deny passes them and `workspaceId == auth().workspaceId`, the common
+policy, answers false: `auth().workspaceId` is null for them. Widening for a
+guest is a rule the app writes, because nothing reads admission as membership
+(`FJS-D1100`).
+
+Junction emits the twin from two places: `membershipClaim({ standing: 'role',
+guests: ['guest'] })` for a roster row holding a guest standing, and `bearerClaim`
+for any grant whose `claims` name the tenant claim. A create by an admitted-only
+caller must state the tenant column, because the stamp is the member claim's.
+
 ### Models that carry no column
 
 They are **not** scoped, and that is sometimes exactly right — a plan table, a

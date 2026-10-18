@@ -74,6 +74,10 @@ export function formOf(source) {
  * and refused unless it holds exactly the values asked for, so a write that
  * would reach another key, or a body that opens a front-matter block of its
  * own, never lands.
+ *
+ * @param {string} source
+ * @param {{ body?: string, values?: Record<string, unknown> }} [edit]
+ * @returns {{ text: string } | { refused: string }}
  */
 export function applyEdit(source, { body, values = {} } = {}) {
   const { block, body: oldBody } = splitFrontmatter(source)

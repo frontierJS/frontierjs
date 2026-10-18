@@ -656,7 +656,7 @@ export interface LitestoneClient {
    * with no column) or an opaque encoding. Pass `{ aggregates: true }` for
    * groupBy/aggregate, where `_count` is the point rather than a typo.
    */
-  $checkOrderBy(accessor: string, orderBy: unknown, opts?: { aggregates?: boolean }): {
+  $checkOrderBy(accessor: string, orderBy: unknown, opts?: { aggregates?: boolean; recursive?: boolean }): {
     key: string; reason: 'computed' | 'transient' | 'opaque' | 'unknown'; suggestion: string | null
     sortable: string[]; message: string
   }[]
@@ -1596,6 +1596,8 @@ export interface RowTenancy {
   strategy: 'row'
   column:   string
   claim:    string
+  /** The claim a caller admitted without being a member carries instead of `claim`. */
+  admission: string
 }
 
 export type ResolvedTenancy = DatabaseTenancy | RowTenancy
@@ -1605,6 +1607,9 @@ export declare function resolveTenancy(
   schema: LitestoneSchema,
   opts?: { schemaPath?: string | null; overrides?: Record<string, unknown> },
 ): ResolvedTenancy | null
+
+/** The claim name a caller admitted without being a member carries (`FJS-D1100`). */
+export declare function tenantAdmission(claim: string): string
 
 /** Which tenant a request names, per the declared `resolve`. */
 export declare function tenantFrom(

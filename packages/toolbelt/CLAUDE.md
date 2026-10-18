@@ -244,7 +244,10 @@ src/fill/            merge fields into text a user wrote -- `fill(source, ctx,
                      editor's `list`, the preview's `example`, the save-time
                      `check` and the render's `fill` (a `default` stands in for
                      a missing value); `.with(rowFields)` adds a template row's
-                     own. Ships a `.d.ts`
+                     own; `schema(filter)` is the sender's form as a JSON
+                     Schema keyed by `owner.field`, which Sierra's field rules
+                     grade and draw (`FJS-D1204`) -- a `money` field must state
+                     its `currency`. Ships a `.d.ts`
 src/search/          ranked fuzzy matching, adapted from quick-score (MIT,
                      `LICENSE` beside it). Two callers, both in @frontierjs/ui:
                      CommandPalette and MultiSelect. `rank`'s `words` and

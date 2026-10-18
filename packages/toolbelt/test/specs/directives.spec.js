@@ -230,7 +230,7 @@ test('directives: every name written is a name this table strips', function () {
     withDeleted: true, onlyDeleted: false,
     withTemplates: true, onlyTemplates: false,
     asOf: '2026-06-01T00:00:00.000Z', withExpired: true, onlyExpired: false,
-    scope: ['active'],
+    scope: ['active'], recursive: { direction: 'ancestors' },
   }
   const params = directiveParams(every)
 
@@ -434,4 +434,13 @@ test('directives: $scope is a list of names — one name is a list of one (FJS-2
   assert.deepEqual(parseDirectives({ $scope: 5 }), { scope: [5] })
   assert.deepEqual(splitParams({ $scope: ['a'], kind: 'x' }), { query: { kind: 'x' }, directives: { scope: ['a'] } })
   assert.deepEqual(directiveParams({ scope: ['a'] }), { $scope: ['a'] })
+})
+
+test('directives: $recursive travels as a structure and the kit does not grade its keys (FJS-D1098)', function () {
+  const read = parseDirectives(parseQueryString('$recursive[direction]=ancestors&$recursive[maxDepth]=3&$recursive[nested]=true'))
+  assert.deepEqual(read, { recursive: { direction: 'ancestors', maxDepth: 3, nested: true } })
+  assert.deepEqual(parseDirectives({ $recursive: true }), { recursive: true })
+  assert.deepEqual(directiveParams({ recursive: { direction: 'ancestors' } }), { $recursive: { direction: 'ancestors' } })
+  assert.deepEqual(unknownDirectives({ $recursive: true }), [])
+  assert.deepEqual(parseDirectives({ $recursive: { depth: 2 } }), { recursive: { depth: 2 } }, 'the Data boundary refuses a key it does not hold')
 })

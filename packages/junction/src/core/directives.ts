@@ -12,7 +12,7 @@
 // ─── Query directives ─────────────────────────────────────────────────────
 // The internal form of what arrives on the wire as $limit, $offset, $orderBy,
 // $select, $populate, $search, $withDeleted, $onlyDeleted, $withTemplates,
-// $onlyTemplates, $asOf, $withExpired, $onlyExpired, $scope — the same names, in the
+// $onlyTemplates, $asOf, $withExpired, $onlyExpired, $scope, $recursive — the same names, in the
 // same order, as the table in
 // `@frontierjs/toolbelt/directives`, which is what the bridge reads them by.
 //
@@ -67,6 +67,12 @@ export interface QueryDirectives {
    * `where.$scope`, which refuses a name the model does not declare.
    */
   scope?:         string[]
+  /**
+   * A tree read (`FJS-D1098`): `true`, or `{ direction, maxDepth, nested, via }`.
+   * Handed to Litestone's `findMany({ recursive })` whole, which grades the keys
+   * and refuses `limit` under `nested`; it answers a flat list with no page.
+   */
+  recursive?:     boolean | { direction?: 'descendants' | 'ancestors', nested?: boolean, maxDepth?: number, via?: string }
 }
 
 // ─── The page ─────────────────────────────────────────────────────────────

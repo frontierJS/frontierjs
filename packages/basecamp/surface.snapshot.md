@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-53 services · 40 routes · 18 plugins · prefix (none)
+54 services · 40 routes · 18 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -565,6 +565,29 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 | before | `uploadCert` | `validateInput` |
+
+### `drafts` · model `drafts`
+
+- **methods** — `sites`, `list`, `files`, `read`, `open`, `save`
+- **custom methods** — `sites`, `list`, `files`, `read`, `open`, `save`
+- **who may call** —
+  - `sites` — standing 1 or above — declared `gate: 1`
+  - `list` — standing 1 or above — declared `gate: 1`
+  - `files` — standing 1 or above — declared `gate: 1`
+  - `read` — standing 1 or above — declared `gate: 1`
+  - `open` — standing 1 or above — declared `gate: 1`
+  - `save` — standing 1 or above — declared `gate: 1`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `signedIn` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
 
 ### `edge` · model `edge`
 

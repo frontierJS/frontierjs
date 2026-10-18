@@ -148,8 +148,11 @@ what they mean in any app.
   after)`, exported as `@frontierjs/site-kit/editable`: what a site's owner may
   write (`FJS-D1226`): `content/**/*.md` and raster photos under `content/`,
   every top-level front-matter key but `LOCKED_KEYS` (`layout`, `name`, Block's
-  six look keys, read off `block-look.js`). Basecamp's save and the grade of a
-  model's diff both call it.
+  six look keys, read off `block-look.js`). `formOf(source)` is a file as an
+  owner's form; `applyEdit(source, { body, values })` writes one, replacing
+  only the named keys' lines and refusing a result that reads back with any
+  other key changed (`FJS-D1249`). Basecamp's save and the grade of a model's
+  diff both call it.
 - `src/block-look.js` — the one owner of what a look word may be and where its
   class lands, imported by both `Block.mesa` and `config/dividers.js`.
 - `config/shell.js` — `siteShell({ html, entry })`, the kit's own pair or a

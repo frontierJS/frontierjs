@@ -150,6 +150,7 @@ const NOT_VISIBLE      = Symbol('not-visible')
 // The operators a Json column takes on its WHOLE value. A `where` on an
 // extensible column carrying one of these is comparing the document, not
 // reaching into it.
+const RECURSIVE_KEYS = ['direction', 'maxDepth', 'nested', 'via']
 const JSON_WHOLE_OPS = new Set(['equals', 'not', 'in', 'notIn', 'isNull', 'isNotNull'])
 
 // ─── The flavor of client a call is running as ────────────────────────────
@@ -7040,6 +7041,21 @@ function makeTable(readDb, writeDb, shape, ctx) {
           ? { direction: 'descendants' }
           : { direction: 'descendants', ...args.recursive }
 
+        // The option arrives from a wire as well as from code (`$recursive`), so
+        // a key or a value it does not hold is refused by name: a misspelt
+        // `maxdepth` otherwise walks to the 1000-level ceiling and answers 200.
+        const badRecursive = (key, message) => { throw new ValidationError([{ path: ['recursive', key], message }]) }
+        for (const k of Object.keys(rec))
+          if (!RECURSIVE_KEYS.includes(k)) badRecursive(k, `recursive takes ${RECURSIVE_KEYS.join(', ')}; '${k}' is not one of them`)
+        if (rec.direction !== 'descendants' && rec.direction !== 'ancestors')
+          badRecursive('direction', `recursive.direction is 'descendants' or 'ancestors', not ${JSON.stringify(rec.direction)}`)
+        if (rec.maxDepth != null && !(Number.isInteger(rec.maxDepth) && rec.maxDepth >= 1))
+          badRecursive('maxDepth', `recursive.maxDepth is a whole number of 1 or more, not ${JSON.stringify(rec.maxDepth)}`)
+        if (rec.nested != null && typeof rec.nested !== 'boolean')
+          badRecursive('nested', `recursive.nested is true or false, not ${JSON.stringify(rec.nested)}`)
+        if (rec.via != null && typeof rec.via !== 'string')
+          badRecursive('via', `recursive.via names a relation field or its foreign key, not ${JSON.stringify(rec.via)}`)
+
         const selfRels = shape.selfRelations
         if (!selfRels?.length) {
           const composite = Object.entries(shape.relations)
@@ -11993,7 +12009,10 @@ function makeLockPrimitive(rawWriteDb) {
       orderBy = Array.isArray(orderBy) ? kept : kept[0]
     }
 
-    const { sortable, relations, computed, transient, opaque } = sortableKeysFor(model)
+    const keys = sortableKeysFor(model)
+    const { relations, computed, transient, opaque } = keys
+    // `_depth` is sortable on a tree read only, as the read itself grades it.
+    const sortable = opts.recursive ? new Set([...keys.sortable, '_depth']) : keys.sortable
     // Legality is still the schema's — what narrows is only what the 400 SAYS,
     // which is the half junction puts in front of an unauthenticated caller.
     return collectOrderByKeyProblems(orderBy, sortable, relations, computed, opaque, opts.aggregates === true, transient, [],

@@ -293,6 +293,13 @@ token from the URL fragment, the grant's digest is rotated to a fresh token's
 under the resolver's purpose, that token is set as the httpOnly
 `SameSite=Strict` cookie `from: cookie()` reads, and `{ subject }` comes back so
 the page knows what the link opens. The emailed link is dead from that moment.
+**A grant that spends a budget is spent by the open** (`FJS-D1132`): the model
+declares `accessCount Int @default(0)` and `maxAccessCount Int?`, and the
+service method that IS the open calls `await send.spend(ctx.locals.db, ctx)`
+once. The resolver stays a read, so a later fetch riding the same token does not
+spend. The increment is one conditional UPDATE, so the (max+1)th open under
+concurrency is the 401 a dead link gets; a null maximum counts and refuses
+none. A path that never calls `spend()` is a free open — nothing else counts.
 Only a `cookie()` bearer has a `redeem()`; a `header()` or `authorization()`
 bearer is handed its token directly. Over the socket the cookie is the one the
 UPGRADE carried, so a page that redeems after its socket opened reloads

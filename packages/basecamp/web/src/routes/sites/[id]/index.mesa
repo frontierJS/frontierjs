@@ -1,0 +1,191 @@
+---
+title: Site
+---
+<script>
+  // One site's drafts, and a form over one file of a draft (`IDEAS/owner-editing.md`
+  // 1.2). A draft is a branch on the site's repository; each save is one commit
+  // pushed to it in the editor's name.
+  //
+  // The form writes only what changed: the body when it differs, and a key
+  // when its field does. A key that is not a field (a locked one, a list, a
+  // value over several lines) is shown and never sent, and the server refuses
+  // one anyway — this screen is the affordance, site-kit's rule is the check.
+  import { page } from '@frontierjs/sierra/router'
+  import { drafts } from '../../../resources/Draft.mesa'
+  import { ago } from '../../../datetime.js'
+
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Checkbox   from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
+
+  $: page.params
+
+  let site    = null
+  let list    = null
+  let draft   = null
+  let files   = null
+  let path    = null
+  let form    = null
+  let body    = ''
+  let values  = {}
+  let message = ''
+  let newName = ''
+  let busy    = null
+  let error   = null
+  let notice  = null
+
+  const call = (method, data) => drafts.service.invoke(method, null, { appId: page.params.id, ...data })
+
+  async function attempt(what, fn) {
+    busy = what; error = null; notice = null
+    try { await fn() } catch (err) { error = err.message } finally { busy = null }
+  }
+
+  async function load() {
+    site = null; list = null; draft = null; files = null; path = null; form = null
+    await attempt('load', async () => {
+      const { sites } = await drafts.service.invoke('sites', null)
+      site = sites.find(s => s.id === page.params.id) ?? null
+      if (!site) throw new Error('This is not a site you may edit')
+      list = (await call('list')).drafts
+    })
+  }
+
+  async function open(e) {
+    e?.preventDefault()
+    await attempt('open', async () => {
+      const made = await call('open', { name: newName })
+      newName = ''
+      list = (await call('list')).drafts
+      await pick(made.name)
+    })
+  }
+
+  async function pick(name) {
+    draft = name; path = null; form = null
+    await attempt('files', async () => { files = (await call('files', { draft })).files })
+  }
+
+  async function edit(p) {
+    path = p
+    await attempt('read', async () => {
+      form = await call('read', { draft, path })
+      body = form.body; values = {}; message = ''
+    })
+  }
+
+  function setValue(key, value) { values = { ...values, [key]: value } }
+
+  $: changedKeys = form ? form.keys.filter(k => k.field && k.key in values && values[k.key] !== k.value).map(k => k.key) : []
+  $: dirty = !!form && (body !== form.body || changedKeys.length > 0)
+
+  async function save() {
+    await attempt('save', async () => {
+      const sent = { draft, path, blob: form.blob, message: message || undefined }
+      if (body !== form.body) sent.body = body
+      if (changedKeys.length) sent.values = Object.fromEntries(changedKeys.map(k => [k, values[k]]))
+      const saved = await call('save', sent)
+      list = (await call('list')).drafts
+      await edit(path)
+      notice = saved.changed ? `Saved to ${draft} as ${saved.commit.slice(0, 7)}` : 'Nothing had changed'
+    })
+  }
+
+  load()
+  $: page.params.id, () => load()
+</script>
+
+<div class="section-header">
+  <h1>{site?.name ?? 'Site'}</h1>
+  <Button treatment="ghost" href="/sites/">All sites</Button>
+</div>
+
+{#if error}
+  <article class="alert danger" id="screen-error"><div class="alert-content">{error}</div></article>
+{/if}
+{#if notice}
+  <article class="alert success" id="screen-notice"><div class="alert-content">{notice}</div></article>
+{/if}
+
+{#if site}
+  <div class="grid" style="grid-template-columns: minmax(14rem, 1fr) 3fr; gap: var(--space-4)">
+    <div class="stack">
+      <Card title="Drafts">
+        <form class="cluster" id="draft-open" onsubmit={open}>
+          <Input id="draft-name" label="New draft" placeholder="spring hours" value={newName}
+                 oninput={(e) => newName = e.target.value} />
+          <Button type="submit" disabled={!newName.trim() || busy === 'open'}>Open</Button>
+        </form>
+        {#if list && !list.length}
+          <p class="text-sm text-muted">No drafts open. A draft is a copy of the site you change and preview before anyone sees it.</p>
+        {:else if list}
+          <ul class="stack" id="draft-list">
+            {#each list as d}
+              <li>
+                <Button treatment={d.name === draft ? 'solid' : 'ghost'} size="sm" onclick={() => pick(d.name)}>{d.name}</Button>
+                <div class="text-sm text-muted">{d.author} · {ago(d.at)}</div>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </Card>
+
+      {#if files}
+        <Card title="Pages">
+          {#if !files.length}
+            <p class="text-sm text-muted">This draft has no markdown under content/.</p>
+          {:else}
+            <ul class="stack" id="draft-files">
+              {#each files as f}
+                <li><Button treatment={f === path ? 'solid' : 'ghost'} size="sm" onclick={() => edit(f)}><code>{f}</code></Button></li>
+              {/each}
+            </ul>
+          {/if}
+        </Card>
+      {/if}
+    </div>
+
+    <div class="stack">
+      {#if !draft}
+        <EmptyState title="Pick a draft">Open one, or pick one on the left, to change the site's words.</EmptyState>
+      {:else if !form}
+        <EmptyState title="Pick a page">The pages on {draft} are on the left.</EmptyState>
+      {:else}
+        <Card title={path}>
+          <div class="stack" id="draft-form">
+            {#each form.keys as k}
+              {#if k.field && typeof k.value === 'boolean'}
+                <Checkbox id={`key-${k.key}`} label={k.key}
+                          checked={k.key in values ? values[k.key] : k.value}
+                          onchange={(on) => setValue(k.key, on)} />
+              {:else if k.field}
+                <Input id={`key-${k.key}`} label={k.key} type={typeof k.value === 'number' ? 'number' : 'text'}
+                       value={k.key in values ? values[k.key] : (k.value ?? '')}
+                       oninput={(e) => setValue(k.key, typeof k.value === 'number' ? Number(e.target.value) : e.target.value)} />
+              {:else}
+                <div class="text-sm" id={`key-${k.key}`}>
+                  <strong>{k.key}</strong>
+                  <Pill tone="muted">{k.locked ? 'set by the developer' : 'not editable here yet'}</Pill>
+                  {#if typeof k.value !== 'object' || k.value === null}<span class="text-muted"> {String(k.value)}</span>{/if}
+                </div>
+              {/if}
+            {/each}
+            <Textarea id="draft-body" label="Text" rows={18} value={body} oninput={(e) => body = e.target.value} />
+            <Input id="draft-message" label="What changed (optional)" placeholder={`Edit ${path}`} value={message}
+                   oninput={(e) => message = e.target.value} />
+            <div class="cluster">
+              <Button tone="primary" id="draft-save" disabled={!dirty || busy === 'save'} onclick={save}>
+                {busy === 'save' ? 'Saving…' : `Save to ${draft}`}
+              </Button>
+              {#if dirty}<Button treatment="ghost" onclick={() => edit(path)}>Discard</Button>{/if}
+            </div>
+          </div>
+        </Card>
+      {/if}
+    </div>
+  </div>
+{/if}

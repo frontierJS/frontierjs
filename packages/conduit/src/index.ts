@@ -82,6 +82,7 @@ export type {
   BrokerHandler,
   BrokerHealth,
   BrokerFraming,
+  BrokerKeepalive,
   BrokerLink,
 
   // Receiving

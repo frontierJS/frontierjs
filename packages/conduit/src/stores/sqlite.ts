@@ -48,7 +48,7 @@ const CREATE_RECEIPTS = `
 // A descriptor field absent from this list is dropped on write with nothing
 // said — the row round-trips, the target works, and the field it was declared
 // with is simply not there after a restart (`FJS-657`).
-const EXTRA_KEYS = ['encoding', 'headers', 'follow_redirects', 'resilience', 'idempotency', 'pinned_cert', 'trace', 'address_from', 'destinations', 'origins'] as const
+const EXTRA_KEYS = ['encoding', 'headers', 'follow_redirects', 'resilience', 'idempotency', 'pinned_cert', 'trace', 'address_from', 'destinations', 'origins', 'readiness'] as const
 
 // `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so a
 // registry written before this column simply lacks it. Added idempotently rather

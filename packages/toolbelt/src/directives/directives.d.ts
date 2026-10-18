@@ -28,6 +28,8 @@ export interface Directives {
   onlyExpired?:   boolean
   /** `@@scope` names, ANDed — read by the Data boundary as `where: { $scope }`. */
   scope?:         string[]
+  /** A tree read: `true` (every descendant) or litestone's `recursive` option. Keys and refusals are the Data boundary's. */
+  recursive?:     boolean | { direction?: 'descendants' | 'ancestors', nested?: boolean, maxDepth?: number, via?: string }
 }
 
 /** Every `$` name that has a structured form. */

@@ -169,7 +169,7 @@ A dialect whose signed timestamp bounds freshness needs nothing more; one whose 
 
 Resilience does not cross: the retry is the sender's, and there is no breaker on the inbound side. A receiver never mints a principal; `apply` runs as whoever you say.
 
-**A Provider that pushes over a socket you dial** — Mattermost's WebSocket — is a receiver that names a `broker` target in place of a path (`FJS-D1127`). Conduit dials it with the target's credential, reconnects without bound, reports `health()` under `conduit:<target>`, and runs each frame through the same order from parse on. No route is mounted, so nobody can post a frame to you; a receiver on a target carrying `path`, `credential` or a dialect `verify` is refused by name. The connector's `FrameDialect` adds `framing`: a `handshake` run after open and before the first frame is believed (handed the secret the dial spent, so the two cannot differ), a `decode` from text to `{ id, body }` or `null`, and an `ack` for a Provider that redelivers. Frames are handed over one at a time in arrival order, because an edit applied before its create is a wrong row and two copies of one frame applied side by side both pass the receipt.
+**A Provider that pushes over a socket you dial** — Mattermost's WebSocket — is a receiver that names a `broker` target in place of a path (`FJS-D1127`). Conduit dials it with the target's credential, reconnects without bound, reports `health()` under `conduit:<target>`, and runs each frame through the same order from parse on. No route is mounted, so nobody can post a frame to you; a receiver on a target carrying `path`, `credential` or a dialect `verify` is refused by name. The connector's `FrameDialect` adds `framing`: a `handshake` run after open and before the first frame is believed (handed the secret the dial spent, so the two cannot differ), a `decode` from text to `{ id, body }` or `null`, an `ack` for a Provider that redelivers, and a `keepalive` for one that answers a ping: `ping(n, state)` goes out every `every_ms` (30 s), and a connection that has sent no frame at all for `dead_ms` (60 s) is cut without waiting on a close and redialed, since a link that died without one otherwise looks connected forever. `pong` marks the reply so it is not counted dropped; a framing with no `keepalive` is never closed for being quiet. Frames are handed over one at a time in arrival order, because an edit applied before its create is a wrong row and two copies of one frame applied side by side both pass the receipt.
 
 **`opened({ connection })` runs after every handshake conduit believes** — the first dial and each redial — ahead of that connection's first frame, handed what the handshake answered (`FJS-D1154`). A Provider that redelivers nothing lost what it sent while the socket was down, and this is where the gap's backfill starts; a throw is logged and the frames still flow. `deregister(target)` drops the receiver with the target, so the same id can be registered and received again.
 
@@ -184,7 +184,7 @@ await app.conduit.receive({
 })
 ```
 
-Every broker target registers readiness, so one that cannot connect makes the app's `/health` 503 — wrong for a target that is one person's view (`FJS-3150`).
+A broker target registers readiness only when its descriptor says `readiness: true`, and then one that cannot connect makes the app's `/health` 503. Without it the socket is a view (a mirror app holds one per linked person) and never gates `/health` (`FJS-D1244`).
 
 `stats().subscriptions[target].dropped` counts frames over `max_response_bytes` and frames the framing could not read; `stats().received[target]` counts outcomes as a route's do.
 
@@ -1021,7 +1021,7 @@ const { conduit } = await createTestConduit(
 
 **Not a service mesh.** It does not proxy application traffic between services.
 
-**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it; `@frontierjs/outpost` is not reached this way — it is an `http` target with `hmac` auth. A third-party socket is reachable only to be LISTENED to: a `broker` target whose connector supplies the framing. Nothing is sent over it but the handshake and the acks.
+**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it; `@frontierjs/outpost` is not reached this way — it is an `http` target with `hmac` auth. A third-party socket is reachable only to be LISTENED to: a `broker` target whose connector supplies the framing. Nothing is sent over it but the handshake, the acks and the keepalive's ping.
 
 **Not a boundary anything enforces.** Declaring a target is how you get the ring around a call, not a rule the framework applies to every outbound byte.
 
