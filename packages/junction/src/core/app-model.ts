@@ -16,7 +16,7 @@
 // re-exporting it, because two import paths to one function is the thing the
 // arrangement is trying to stop.
 
-import { describePrincipalRealm, customMethodGrade, methodGateBasis, isCrudGatedMethod, isDeclaredMove, TENANT_REGISTRY } from './litestone.ts'
+import { describePrincipalRealm, customMethodGrade, methodGateBasis, isCrudGatedMethod, isDeclaredTransition, TENANT_REGISTRY } from './litestone.ts'
 import type { PrincipalRealm, CustomMethodGrade }                                 from './litestone.ts'
 import type { App }                      from './app.ts'
 import type { HookMap }                  from './hooks.ts'
@@ -128,7 +128,7 @@ function bodiesOf(svc: object, methods: string[]): Record<string, MethodBody> {
   for (const m of methods) {
     const fn = (svc as Record<string, unknown>)[m]
     if (typeof fn !== 'function') continue
-    out[m] = isDeclaredMove(fn) ? 'derived'
+    out[m] = isDeclaredTransition(fn) ? 'derived'
            : /\basSystem\b/.test(Function.prototype.toString.call(fn)) ? 'elevated'
            : 'scoped'
   }

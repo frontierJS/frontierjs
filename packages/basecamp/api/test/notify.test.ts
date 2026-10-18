@@ -118,7 +118,7 @@ async function makeApp(opts: { mail?: boolean } = {}) {
     // cannot.
     ...(opts.mail ? { mail: { send: async (m: any) => { sent.push({ to: m.to, subject: m.subject }); return { id: '1', message: 'ok' } } } } : {}),
     channel: () => undefined,
-    claim(name: string, value: unknown) { (this as any)[name] = value },
+    own(name: string, value: unknown) { (this as any)[name] = value },
   }
 
   const plugin = notifications({

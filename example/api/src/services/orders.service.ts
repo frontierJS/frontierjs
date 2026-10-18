@@ -103,7 +103,7 @@ const ship = async () => {
   // again, which is exactly why this guard cannot be left to the queue.
   if (order.trackingCode) return order
 
-  // `app.jobs` is Caravan's claim on the app, made through app.claim().
+  // `app.jobs` is Caravan's, taken through app.own().
   await $.app?.jobs?.dispatch(bookCourier,
     { orderId: order.id, reference: order.reference },
     { unique: `courier-book:${order.id}` })

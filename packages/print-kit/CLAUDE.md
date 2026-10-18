@@ -36,7 +36,7 @@ test/            print-kit.test.js (no browser) · run.mjs + specs/ (a real Chro
 - **The print page is offline under `createNetwork`** — a template that
   fetches a font or an image from a URL gets nothing, by design. Inline it.
 - **`printer` must not import junction.** It exports the plugin
-  protocol's shape and claims with `app.claim('printer', …)` (Invariant 5).
+  protocol's shape and takes its name with `app.own('printer', …)` (Invariant 5).
 - **Margin boxes are text the page context draws**, so what `print.css`
   sets on `@page` is the only styling they inherit.
 

@@ -63,13 +63,13 @@ describe('a service-cache override is the claiming app\'s', () => {
     return { service, calls: () => hits }
   }
 
-  it('app.claim(\'serviceCache\') is read by that app and by no other', async () => {
+  it('app.own(\'serviceCache\') is read by that app and by no other', async () => {
     const mine = createMemoryCache({ defaultTtl: '1 minute' })
     const a    = cached()
     const b    = cached()
     const appA = await createTestApp({ services: [a.service] })
     const appB = await createTestApp({ services: [b.service] })
-    appA.claim('serviceCache', mine)
+    appA.own('serviceCache', mine)
 
     await request(appA).get('/accounts/1')
     expect(mine.size()).toBe(1)

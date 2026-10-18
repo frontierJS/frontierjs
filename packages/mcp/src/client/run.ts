@@ -21,7 +21,7 @@
  * finds them by the call's correlation id and holds the call open
  * (`FJS-D406`); this side only asks, shows progress on stderr, and reports.
  *
- * A call answering one row is followed on stderr by its breadcrumbs — the moves
+ * A call answering one row is followed on stderr by its breadcrumbs — the transitions
  * the row's state allows and the rows it points at, each as the command line
  * that runs it. The app computes them at the caller's standing (`FJS-D398`);
  * this side only spells them in its own argv, so stdout stays the data.
@@ -67,10 +67,10 @@ export interface RunOptions extends ParseOptions {
   out:           (text: string) => void
   err:           (text: string) => void
   /** Injected by a test; the real one is `@modelcontextprotocol/client`. */
-  connect?:      (url: URL, headers: Record<string, string>) => Promise<Session>
+  connect?:      (url: URL, headers: Record<string, string>) => Promise<Connection>
 }
 
-export interface Session {
+export interface Connection {
   /** The build the app stated on its last response (`x-fjs-build`), or null. */
   build?(): string | null
   listTools(): Promise<ToolListing[]>
@@ -88,9 +88,9 @@ export interface AwaitedJob { id: string; name: string; status: string; attempts
 
 /** One next step the app offered after a one-row answer — `_meta['frontierjs/breadcrumbs']`. */
 export type Breadcrumb =
-  | { kind: 'move';      tool: string; args: { id: unknown }; move: string; field: string; to: string }
-  | { kind: 'belongsTo'; tool: string; args: { id: unknown }; relation: string }
-  | { kind: 'hasMany';   tool: string; args: { query: Record<string, unknown> }; relation: string }
+  | { kind: 'transition'; tool: string; args: { id: unknown }; transition: string; field: string; to: string }
+  | { kind: 'belongsTo';  tool: string; args: { id: unknown }; relation: string }
+  | { kind: 'hasMany';    tool: string; args: { query: Record<string, unknown> }; relation: string }
 
 export interface CallAnswer {
   isError?: boolean
@@ -151,9 +151,9 @@ export async function run(argv: string[], opts: RunOptions): Promise<number> {
   if (token) headers.authorization = `Bearer ${token}`
 
   const tenant = g.workspace ?? lateWorkspace(words) ?? opts.tenant ?? profile?.tenant
-  let session: Session
+  let connection: Connection
   try {
-    session = await (opts.connect ?? connectMcp)(new URL(url), withTenant(opts, tenant, headers))
+    connection = await (opts.connect ?? connectMcp)(new URL(url), withTenant(opts, tenant, headers))
   } catch (e) {
     if (e instanceof ArgvError) { opts.err(e.message); return EXIT.usage }
     opts.err(`could not reach ${url}: ${(e as Error).message}`)
@@ -162,7 +162,7 @@ export async function run(argv: string[], opts: RunOptions): Promise<number> {
 
   try {
     const key = cacheKey(url, token, tenant)
-    let { tools, cached } = await treeFor(session, opts, key)
+    let { tools, cached } = await treeFor(connection, opts, key)
     const [service, method, ...tail] = words
     const routes = opts.routes ?? []
     const find = () => {
@@ -181,7 +181,7 @@ export async function run(argv: string[], opts: RunOptions): Promise<number> {
     // A cached tree answers for the build, not for a standing that moved since:
     // before anything is called *not offered*, the live list is asked.
     if (cached && service && (!ofService.length || (method && !method.startsWith('--') && !cmd))) {
-      tools = await live(session, opts, key)
+      tools = await live(connection, opts, key)
       ;({ commands, ofService, cmd, route } = find())
     }
 
@@ -230,16 +230,16 @@ export async function run(argv: string[], opts: RunOptions): Promise<number> {
       throw e
     }
 
-    if (route) return await runRoute(route, args, session, g, opts)
+    if (route) return await runRoute(route, args, connection, g, opts)
 
-    const result = await session.callTool(cmd.tool, args,
+    const result = await connection.callTool(cmd.tool, args,
       g.await ? { await: true, onProgress: m => opts.err(`· ${m}`) } : undefined)
     return print(result, g, opts, commands)
   } catch (e) {
     opts.err(`${(e as Error).message}`)
     return EXIT.refused
   } finally {
-    await session.close().catch(() => {})
+    await connection.close().catch(() => {})
   }
 }
 
@@ -250,13 +250,13 @@ function routeCommand(r: Route): Command {
   return { ...commandFor({ name: tool, description: r.description, inputSchema: r.input }), service: r.service, method: r.method }
 }
 
-async function runRoute(route: Route, args: Record<string, unknown>, session: Session, g: Globals, opts: RunOptions): Promise<number> {
+async function runRoute(route: Route, args: Record<string, unknown>, connection: Connection, g: Globals, opts: RunOptions): Promise<number> {
   const call = async (tool: string, a: Record<string, unknown> = {}) => {
     // Undeclared is refused rather than allowed: `uses` is what the offer and
     // `checkRoutes` both read, so a call outside it is one neither can see.
     if (!route.uses.includes(tool))
       throw new Error(`${route.file}: calls ${tool}, which is not in its uses — add it there`)
-    const r = await session.callTool(tool, a)
+    const r = await connection.callTool(tool, a)
     if (r.isError) throw new CallRefused(tool, r.text)
     try { return JSON.parse(r.text) } catch { return r.text }
   }
@@ -273,19 +273,19 @@ async function runRoute(route: Route, args: Record<string, unknown>, session: Se
 }
 
 /** The command tree: the cache when the app's build matches it, else live. */
-async function treeFor(session: Session, opts: RunOptions, key: string): Promise<{ tools: ToolListing[]; cached: boolean }> {
-  const build = session.build?.() ?? null
+async function treeFor(connection: Connection, opts: RunOptions, key: string): Promise<{ tools: ToolListing[]; cached: boolean }> {
+  const build = connection.build?.() ?? null
   const hit   = build && opts.cache ? opts.cache.get(key) : null
   if (hit && hit.build === build) {
     opts.trace?.(`tools: cache, build ${build}`)
     return { tools: hit.tools, cached: true }
   }
-  return { tools: await live(session, opts, key), cached: false }
+  return { tools: await live(connection, opts, key), cached: false }
 }
 
-async function live(session: Session, opts: RunOptions, key: string): Promise<ToolListing[]> {
-  const tools = await session.listTools()
-  const build = session.build?.() ?? null
+async function live(connection: Connection, opts: RunOptions, key: string): Promise<ToolListing[]> {
+  const tools = await connection.listTools()
+  const build = connection.build?.() ?? null
   if (build && opts.cache) opts.cache.set(key, { build, tools })
   opts.trace?.(`tools: live, build ${build ?? '(none — not cached)'}`)
   return tools
@@ -329,7 +329,7 @@ function lateWorkspace(words: string[]): string | undefined {
   return undefined
 }
 
-async function connectMcp(url: URL, headers: Record<string, string>): Promise<Session> {
+async function connectMcp(url: URL, headers: Record<string, string>): Promise<Connection> {
   // The build rides every response, `initialize` included, so it is known before
   // the tree would be asked for — read off the transport's own fetch.
   let build: string | null = null
@@ -484,7 +484,7 @@ function print(result: CallAnswer, g: { json: boolean; quiet: boolean }, opts: R
   if (crumbs && !g.json && !g.quiet) {
     for (const b of crumbs) {
       const line = commandLine(b, commands.find(c => c.tool === b.tool))
-      if (line) opts.err(`· ${line}  — ${b.kind === 'move' ? `${b.move}: ${b.field} → ${b.to}` : b.kind === 'belongsTo' ? `the ${b.relation} this points at` : `its ${b.relation}`}`)
+      if (line) opts.err(`· ${line}  — ${b.kind === 'transition' ? `${b.transition}: ${b.field} → ${b.to}` : b.kind === 'belongsTo' ? `the ${b.relation} this points at` : `its ${b.relation}`}`)
     }
   }
 

@@ -48,7 +48,7 @@ Here it is three numbers that already exist, enforced in the database layer:
 | --- | --- |
 | the tool list | `describe().methods`, after the service's method selection |
 | input schema per tool | `generateJsonSchema(schema)` — the document the browser already gets |
-| **what the caller may do** | **`@@gate` on the model, `@gate` on a declared move** |
+| **what the caller may do** | **`@@gate` on the model, `@gate` on a declared transition** |
 
 ## Using it
 
@@ -96,7 +96,7 @@ Every answer carries what decided it:
 | `verdict` | Meaning |
 | --- | --- |
 | `model-gate` | the model's `@@gate` position for this operation |
-| `move-floor` | `max(model update, the move's own @gate)` — a `@system` move included, since `@system` says whose decision it is and not how senior the caller must be (`FJS-D150`) |
+| `transition-floor` | `max(model update, the transition's own @gate)` — a `@system` transition included, since `@system` says whose decision it is and not how senior the caller must be (`FJS-D150`) |
 | `method-gate` | the level the service declared for this custom method (`methods: [{ method, gate }]`) |
 | `method-floor` | a SESSION is required and the level is not compared — the API boundary's rule for a custom verb on a gated model. `needs` is `null`, because naming the read gate would state a requirement nobody is held to |
 | `ungraded` | nothing says; permissive, and labelled |
@@ -111,9 +111,9 @@ evidence. The list of ungraded tools is the one worth shortening in an app.
 Data boundary whatever this answers, so a tool wrongly shown is a wasted turn and
 a 403. Never guard anything on this that the server does not also guard.
 
-**A move's `@gate` is a FLOOR over the model's update level, not a replacement.**
+**A transition's `@gate` is a FLOOR over the model's update level, not a replacement.**
 `example` declares `void @gate 5` on an `Invoice` whose `update` is 8, so the
-tool needs 8. Grading by the move's own number offers it two rungs below what the
+tool needs 8. Grading by the transition's own number offers it two rungs below what the
 boundary accepts — the one mistake here that misleads a caller about its own
 permissions rather than merely wasting a turn.
 

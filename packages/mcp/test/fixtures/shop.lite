@@ -45,7 +45,7 @@ model Order {
 }
 
 /// Written by the application only. `void` declares @gate(5) and the model's
-/// update level is 8, so the move needs 8 — the floor, not the move's number.
+/// update level is 8, so the transition needs 8 — the floor, not the transition's number.
 model Invoice {
   id     Int           @id
   status InvoiceStatus @default(draft)

@@ -97,9 +97,9 @@ export function notifications(opts: NotificationsPluginOptions) {
       const notifyFn = (recipient: Recipient, notification: Notification): Promise<void> =>
         notify(recipient, notification, app)
 
-      // claim() refuses to overwrite an existing claim — two plugins owning
+      // own() refuses to overwrite an existing owner — two plugins owning
       // one name used to be last-write-wins, and the loser just stopped working.
-      if (typeof app.claim === 'function') app.claim('notify', notifyFn)
+      if (typeof app.own === 'function') app.own('notify', notifyFn)
       else app.notify = notifyFn
     },
 
@@ -120,7 +120,7 @@ export function notifications(opts: NotificationsPluginOptions) {
       // Claimed so a devtools panel, a preferences screen or a snapshot can ask
       // what this app can send WITHOUT sending one. That is the whole reason a
       // definition holds `via` rather than closing over a payload.
-      if (typeof app.claim === 'function') app.claim('notifications', registry)
+      if (typeof app.own === 'function') app.own('notifications', registry)
 
       if (emailUsesMailer && !('mail' in app)) {
         throw new Error(

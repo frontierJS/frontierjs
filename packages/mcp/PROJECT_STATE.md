@@ -14,7 +14,7 @@ inside the API that is already running; `projectTools()` is what it serves.
   list, the unresolved models and the name collisions — each row carrying its
   verdict AND its argument schema.
 - **Four inputs**, matching what the boundary reads: the method selection, the
-  model's `@@gate`, a declared move's `gate`, and `describe().methodGates`
+  model's `@@gate`, a declared transition's `gate`, and `describe().methodGates`
   through Junction's own `customMethodGrade`.
 - `schemaViews(schema, generate)` owns the audience. There is no way through this
   module to generate a `system`-audience schema.
@@ -48,7 +48,7 @@ inside the API that is already running; `projectTools()` is what it serves.
 ## Measured over `example`, 2026-09-16
 
 44 services, 248 methods. 54 tools at STRANGER, 88 at VISITOR, 142 at USER, 245
-at STAFF, 248 at SYSTEM. 186 graded by a model gate, 12 by a move floor, 13 by a
+at STAFF, 248 at SYSTEM. 186 graded by a model gate, 12 by a transition floor, 13 by a
 declared method gate, 16 by a presence floor, 21 ungraded. 236 of 248 carry an
 argument schema. No collisions, and none of the 12 protected columns in that app
 reaches any tool schema.

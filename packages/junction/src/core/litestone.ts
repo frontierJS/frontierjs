@@ -33,7 +33,7 @@ import { NotFound, BadRequest, BadGateway, Unauthorized, Forbidden, FrameworkErr
 import type { AppDb, MirrorForward } from './app.ts'
 import { fieldError } from './field-errors.ts'
 import type { ServiceContext, ServiceContextLocals, QueryDirectives } from './context.ts'
-import { clampPage } from './directives.ts'
+import { clampPagination } from './directives.ts'
 import { coveredWrite, freezeUser, requestMeta, currentCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, list, resultData, isServiceResult, type BulkFailure } from './envelope.ts'
 import type { TransportContext } from '../transport/types.ts'
@@ -303,9 +303,9 @@ export function parseQuery(
   const withExp    = directives.withExpired
   const onlyExp    = directives.onlyExpired
 
-  // What a limit and an offset mean is `clampPage`'s answer, not this
+  // What a limit and an offset mean is `clampPagination`'s answer, not this
   // function's — the `paginate()` hook needs the same one and had its own.
-  const { limit, offset } = clampPage(
+  const { limit, offset } = clampPagination(
     { limit: limitRaw as number, offset: offsetRaw as number },
     defaultLimit, maxLimit,
   )
@@ -412,7 +412,7 @@ export function parseAggregate(
   // The same clamp a page gets. A group count is data-dependent, so this bounds
   // what comes BACK rather than what is computed — and the work bound is the
   // where, exactly as it is for find.
-  const { limit, offset } = clampPage(
+  const { limit, offset } = clampPagination(
     { limit: spec.limit as number, offset: spec.offset as number },
     defaultLimit, maxLimit,
   )
@@ -660,7 +660,7 @@ type ParsedModel = { name: string; attributes?: Array<{ kind: string; transition
  *
  * `{}` for a schema that names no such model or a model with no machine.
  */
-export function declaredMoveMethods(
+export function declaredTransitionMethods(
   schema:      unknown,
   accessor:    string,
   serviceName: string,
@@ -675,14 +675,14 @@ export function declaredMoveMethods(
     if (attr.kind !== 'transitions' || !attr.transitions) continue
     for (const [move, spec] of Object.entries(attr.transitions)) {
       if ((spec as { system?: boolean } | null)?.system) continue
-      if (!out[move]) out[move] = moveMethod(resolved, model!.name, move, serviceName, idField)
+      if (!out[move]) out[move] = transitionMethod(resolved, model!.name, move, serviceName, idField)
     }
   }
   return out
 }
 
-function moveMethod(accessor: string, modelName: string, move: string, serviceName: string, idField: string) {
-  return markDeclaredMove(async function declaredMove(ctx: ServiceContext): Promise<unknown> {
+function transitionMethod(accessor: string, modelName: string, move: string, serviceName: string, idField: string) {
+  return markDeclaredTransition(async function declaredTransition(ctx: ServiceContext): Promise<unknown> {
     if (ctx.id == null || ctx.id === '')
       throw new BadRequest(`${serviceName}.${move} moves one ${modelName} — call it with that row's id`)
     const db = ctx.locals?.db as Record<string, {
@@ -710,17 +710,17 @@ function moveMethod(accessor: string, modelName: string, move: string, serviceNa
 }
 
 // A symbol, not the function's name: an author may write a method called
-// `declaredMove`, and a written method wins over the derived one by name.
-const DECLARED_MOVE = Symbol.for('junction.declaredMove')
+// `declaredTransition`, and a written method wins over the derived one by name.
+const DECLARED_TRANSITION = Symbol.for('junction.declaredTransition')
 
-function markDeclaredMove<F extends object>(fn: F): F {
-  Object.defineProperty(fn, DECLARED_MOVE, { value: true })
+function markDeclaredTransition<F extends object>(fn: F): F {
+  Object.defineProperty(fn, DECLARED_TRANSITION, { value: true })
   return fn
 }
 
-/** Is this the method `declaredMoveMethods` derived, rather than one an author wrote? */
-export function isDeclaredMove(fn: unknown): boolean {
-  return typeof fn === 'function' && (fn as unknown as Record<symbol, unknown>)[DECLARED_MOVE] === true
+/** Is this the method `declaredTransitionMethods` derived, rather than one an author wrote? */
+export function isDeclaredTransition(fn: unknown): boolean {
+  return typeof fn === 'function' && (fn as unknown as Record<symbol, unknown>)[DECLARED_TRANSITION] === true
 }
 
 export interface LitestoneServiceOptions {

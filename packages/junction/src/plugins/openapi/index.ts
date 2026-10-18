@@ -692,7 +692,7 @@ export function openapi(opts: OpenAPIOptions): Plugin {
         ;app._openapiExtraPaths = { ...existing, ...paths }
         specCache = null
       }
-      if (typeof app.claim === 'function') app.claim('addOpenApiPaths', addPaths)
+      if (typeof app.own === 'function') app.own('addOpenApiPaths', addPaths)
       else app.addOpenApiPaths = addPaths
       // app.get applies apiPrefix — see the route shortcuts in core/app.ts.
       // The spec's own `paths` still carry the prefix, because they describe

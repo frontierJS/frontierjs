@@ -43,7 +43,7 @@ export interface HavenAppOptions {
   wsPerIp?:    number
 }
 
-/** The app a service is handed: `memory` is the room's memory (`FJS-D993`) and `cooldowns` the bolt's wait (`bolt.ts`) and `inventory` what a member carries (`inventory.ts`) and `crier` the square's announcer (`crier.ts`) and `setlist` the loft's song requests (`setlist.ts`), all claimed here. */
+/** The app a service is handed: `memory` is the room's memory (`FJS-D993`) and `cooldowns` the bolt's wait (`bolt.ts`) and `inventory` what a member carries (`inventory.ts`) and `crier` the square's announcer (`crier.ts`) and `setlist` the loft's song requests (`setlist.ts`), all owned here. */
 export type HavenApp = App & { memory: RoomMemory, cooldowns: ReturnType<typeof createCooldowns>, inventory: Inventories, crier: Crier, dice: Dice, casts: Casts, setlist: Setlist }
 
 export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
@@ -69,15 +69,15 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   } as Parameters<typeof createApp>[0])
 
   const memory = createRoomMemory()
-  app.claim('memory', memory)
-  app.claim('cooldowns', createCooldowns())
+  app.own('memory', memory)
+  app.own('cooldowns', createCooldowns())
   const inventory = createInventories()
-  app.claim('inventory', inventory)
+  app.own('inventory', inventory)
   const crier = createCrier(app, db, FIRST_ROOM)
-  app.claim('crier', crier)
-  app.claim('dice', createDice(app, db))
-  app.claim('casts', createCasts())
-  app.claim('setlist', createSetlist())
+  app.own('crier', crier)
+  app.own('dice', createDice(app, db))
+  app.own('casts', createCasts())
+  app.own('setlist', createSetlist())
   const { setup, options } = roomChannels(db, memory, inventory)
   app.configure(channels(setup as never, options))
   // Inside configure() so it registers during start(), after the router is patched.

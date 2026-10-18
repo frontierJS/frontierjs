@@ -69,17 +69,17 @@ function recorder() {
 async function mkApp(defs: any[], opts: any = {}) {
   const db  = await createClient({ databases: ':memory:', schema: SCHEMA }) as any
   const rec = recorder()
-  const claimed: Record<string, unknown> = {}
+  const owned: Record<string, unknown> = {}
   const metrics: Record<string, () => unknown> = {}
 
   const app: any = {
     db, jobs: rec.jobs, logger: { error() {} },
-    claim: (k: string, v: unknown) => { claimed[k] = v },
+    own: (k: string, v: unknown) => { owned[k] = v },
     registerMetricsSource: (k: string, fn: () => unknown) => { metrics[k] = fn },
   }
   const plugin = backfill(defs, { autoStart: true, intervalMs: 10_000, ...opts })
   plugin.register!(app)
-  return { app, db, rec, plugin, api: () => claimed.backfills as any, metrics }
+  return { app, db, rec, plugin, api: () => owned.backfills as any, metrics }
 }
 
 const ship = (over: Record<string, unknown> = {}) => defineBackfill({
@@ -127,7 +127,7 @@ describe('boot', () => {
       schema: 'database main { path "./a.db" }\nmodel Order { id Int @id @default(autoincrement())\n shippedAt DateTime?\n @@db(main) }',
     }) as any
     const plugin = backfill([ship()])
-    plugin.register!({ db, claim() {} } as never)
+    plugin.register!({ db, own() {} } as never)
     await expect(plugin.boot!({ db, jobs: { handle() {} } } as never))
       .rejects.toThrow(/declares no BackfillRun.*fli backfill:install/s)
   })

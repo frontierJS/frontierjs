@@ -104,7 +104,7 @@ describe('the walk', () => {
     try {
       const s = scripted(['s', 'b', '1'], { edits: ['# why B?\nan operator\nreads ciphertext\n# ignored'] })
       expect(await s.run(root)).toEqual({ ruled: 1, settled: 0, skipped: 1, quit: false })
-      expect(read()[0]).toContain('\nan operator reads ciphertext.\n')
+      expect(read()[0]).toContain('\nAgainst the recommendation (**A**): an operator reads ciphertext.\n')
     } finally { cleanup() }
   })
 

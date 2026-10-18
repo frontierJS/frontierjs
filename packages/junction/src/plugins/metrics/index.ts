@@ -16,7 +16,7 @@ import type { App } from '../../core/app.ts'
 import { collectMetrics } from '../../transport/health.ts'
 import { counterIncrease, seriesKey } from '../../core/metrics.ts'
 
-/** What the plugin claims as `app.metrics`. Both passes are exposed because
+/** What the plugin owns as `app.metrics`. Both passes are exposed because
  *  both are things an operator asks for by hand: a fold before reading a
  *  dashboard, and a reading before a deploy. It is also what makes the shipped
  *  passes drivable by a test rather than reimplemented by one. */
@@ -116,10 +116,10 @@ export function metrics(opts: MetricsPluginOptions = {}) {
                      record(app, name, value, opts ?? {}),
         stats:     () => ({ series, written, folded, pruned, refused }),
       }
-      // claim() refuses to overwrite, which is what stops two of these over one
+      // own() refuses to overwrite, which is what stops two of these over one
       // table from each driving the other's clock (Invariant 5).
-      if (typeof (app as { claim?: unknown }).claim === 'function')
-        (app as unknown as { claim(n: string, v: unknown): void }).claim('metrics', api)
+      if (typeof (app as { own?: unknown }).own === 'function')
+        (app as unknown as { own(n: string, v: unknown): void }).own('metrics', api)
       else (app as { metrics?: MetricsApi }).metrics = api
 
       app.registerMetricsSource?.('metricsStore', () => api.stats())

@@ -13,7 +13,7 @@ import { parseTraceparent } from '@frontierjs/toolbelt/trace'
 import type { FrameworkError } from './errors.ts'
 import { BadRequest } from './errors.ts'
 import type { SessionContext } from '../auth/types.ts'
-import type { QueryDirectives, Page } from './directives.ts'
+import type { QueryDirectives, Pagination } from './directives.ts'
 
 // ─── Context shape ────────────────────────────────────────────────────────
 // Single object throughout the pipeline (around → before → method → after
@@ -347,10 +347,10 @@ export function withCallEffects(
 // collision where `state` means app-global shared; `locals` has the
 // Astro/SvelteKit per-request meaning we want.)
 export interface ServiceContextLocals {
-  /** `Page`, not a restatement of it — `paginate()` and `parseQuery` both
-   *  answer the same shape through `clampPage`, and a third spelling here is
-   *  how the hook and the query builder came to disagree in the first place. */
-  paginate?: Page
+  /** `Pagination`, not a restatement of it — `paginate()` and `parseQuery`
+   *  both answer the same shape through `clampPagination`, and a third spelling
+   *  here is how the hook and the query builder came to disagree in the first place. */
+  paginate?: Pagination
   /** Set by `callService` on a custom method declared `read: true`, so
    *  `withLitestoneDb` hands that call a client that refuses writes (`FJS-D581`). */
   readCall?: boolean
@@ -363,7 +363,7 @@ export interface ServiceContextLocals {
 // node:async_hooks into a bundle. Re-exported here because this is where the
 // API realm has always found it.
 
-export type { QueryDirectives, Page } from './directives.ts'
+export type { QueryDirectives, Pagination } from './directives.ts'
 
 /** What carried the call. `'mcp'` is an agent's tool call: in-process like
  *  `'internal'`, and from outside like `'http'`, so an *is this call from
@@ -796,7 +796,7 @@ export function currentCall(): ServiceContext | undefined {
  *   (WRITABLE below) — `$.dispatch = false` works, `$.myThing = 1` throws. What
  *   makes an ambient object dangerous is that anyone can keep state on it, not
  *   that it can be written at all: a fixed list cannot grow, so it is not a
- *   bag. Per-call state is `$.locals`, app state is `app.claim()` (Invariant 5).
+ *   bag. Per-call state is `$.locals`, app state is `app.own()` (Invariant 5).
  *
  *   CALL LIFETIME. Outside a call it throws by name rather than answering
  *   undefined. An ambient dependency is an undeclared one — `steps(id)` does
@@ -892,7 +892,7 @@ const WRITABLE = new Set(['data', 'query', 'id', 'result', 'error', 'statusCode'
 const NOT_WRITABLE = (key: string | symbol) =>
   `[Junction] '$.${String(key)}' cannot be assigned. A service may set ` +
   `${[...WRITABLE].join(', ')} — everything else is a view of the call, not a ` +
-  `place to keep state: use $.locals for one call, or app.claim() for the app.`
+  `place to keep state: use $.locals for one call, or app.own() for the app.`
 
 // Derived accessors: reachable by name, absent from the context's own keys.
 // Enumerating one makes a spread EVALUATE it, and `$.db` on an app with no

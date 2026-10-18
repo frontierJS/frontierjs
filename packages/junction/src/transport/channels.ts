@@ -1526,7 +1526,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
         ? { match: roomMatcher(opts.rooms, !!app.tenants), open: openRoomClient(app) }
         : undefined
       const manager = createChannelManager({ enabled, flushMs: opts.presenceFlushMs ?? 50 }, opts.claims, rooms)
-      if (typeof app.claim === 'function') app.claim('channels', manager)
+      if (typeof app.own === 'function') app.own('channels', manager)
       else (app as unknown as Record<string, unknown>).channels = manager
       _manager = manager
 

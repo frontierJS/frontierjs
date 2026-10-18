@@ -364,7 +364,7 @@ export interface App {
   _openapiExtraPaths?: Record<string, unknown>
   /** This app's service cache -- created lazily by cache-declaring services,
    *  or swapped in before the first cached call with
-   *  `app.claim('serviceCache', cache)` (`FJS-D580`). Destroyed by stop(). */
+   *  `app.own('serviceCache', cache)` (`FJS-D580`). Destroyed by stop(). */
   serviceCache?: AppCache
 
   /** The error mappers this app declared, in declaration order; read by
@@ -540,7 +540,7 @@ export interface App {
   setAuth:   (auth: import('../auth/types.ts').SessionVerifier) => void
 
   /**
-   * Claim a namespace on the app, failing loudly if it is already taken.
+   * Own a namespace on the app, failing loudly if it is already taken.
    *
    * Two plugins attaching one name by plain assignment is a silent
    * last-write-wins, and the loser simply stops working with no error
@@ -548,16 +548,15 @@ export interface App {
    * pattern (AppConduit / AppJobs / AppNotify) that already handles the types.
    *
    * It defines the REAL property, so augmented types keep resolving:
-   * `app.claim('conduit', c)` still leaves `app.conduit` typed as AppConduit.
+   * `app.own('conduit', c)` still leaves `app.conduit` typed as AppConduit.
    * The property is non-writable, so a later `app.conduit = other` throws.
    *
-   *   app.claim('conduit', instance)   // throws if anything already claimed it
+   *   app.own('conduit', instance)   // throws if anything already owns it
    *
-   * The verb is `claim` and not `provide` because nothing is provided here — a
-   * Provider is a third party the app speaks to (`FJS-D06`), and this only takes
-   * a name on the app object.
+   * Not `provide`, because a Provider is a third party the app speaks to
+   * (`FJS-D06`), and not `claim`, which is what a principal carries (`FJS-D1255`).
    */
-  claim:     (name: string, value: unknown) => void
+  own:       (name: string, value: unknown) => void
 
   /**
    * Contribute a section to `GET /metrics`, keyed by plugin name.
@@ -1654,11 +1653,11 @@ export function createApp(opts: AppOptions = {}): App {
       }
     },
 
-    claim(name: string, value: unknown): void {
+    own(name: string, value: unknown): void {
       // Read past the slot guard, which would throw on the free name.
       if (Reflect.get(body, name) !== undefined) {
         throw new Error(
-          `[Junction] app.claim('${name}') — that name is already claimed. ` +
+          `[Junction] app.own('${name}') — that name is already owned. ` +
           `Two plugins cannot both own app.${name}; the second used to win ` +
           `silently and the first would stop working. Rename one, or have the ` +
           `owning plugin expose the other's surface deliberately.`

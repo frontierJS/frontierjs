@@ -47,7 +47,7 @@ Covered: **19 of 19**.
 
 | Kind | What | Covers |
 | --- | --- | --- |
-| test | `packages/junction/test/plugin-contract.test.ts` | a second `app.claim(name)` throws naming the holder |
+| test | `packages/junction/test/plugin-contract.test.ts` | a second `app.own(name)` throws naming the holder |
 
 ### 6. Access is declared in the schema, not in hooks
 

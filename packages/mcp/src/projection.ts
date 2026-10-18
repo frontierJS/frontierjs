@@ -4,7 +4,7 @@
  * An MCP server's hard problem is not exposing tools, it is SCOPING them. A
  * hand-written one invents an authorization story from nothing, usually as prose
  * in a system prompt. Here the story is already written: `@@gate` on a model,
- * `@gate` on a declared move, and the method selection on the service. This module
+ * `@gate` on a declared transition, and the method selection on the service. This module
  * reads those three and answers what one standing may see.
  *
  * ── It is an AFFORDANCE and the boundary is elsewhere ────────────────────────
@@ -21,8 +21,8 @@
  *
  * The third is the one this module is arranged around, and `example` is what
  * found it: `invoices.void` declares `@gate 5` on a model whose `update` is 8.
- * A move's gate is a FLOOR on top of the model's update level, never a
- * replacement for it, so grading by the move's own number offers that tool two
+ * A transition's gate is a FLOOR on top of the model's update level, never a
+ * replacement for it, so grading by the transition's own number offers that tool two
  * rungs below what the boundary accepts.
  *
  * ── Every answer says what graded it ─────────────────────────────────────────
@@ -56,8 +56,8 @@ export interface ModelGate {
   delete?: number
 }
 
-/** One declared move, as `x-transitions` emits it. */
-export interface DeclaredMove {
+/** One declared transition, as `x-transitions` emits it. */
+export interface DeclaredTransition {
   from:    string[]
   to:      string
   gate:    number | null
@@ -71,7 +71,7 @@ export interface DeclaredMove {
  */
 export interface ModelDef {
   'x-gate'?:        ModelGate
-  'x-transitions'?: Record<string, Record<string, DeclaredMove>>
+  'x-transitions'?: Record<string, Record<string, DeclaredTransition>>
 }
 
 /** The half of `describe()` this module reads. */
@@ -103,13 +103,13 @@ export interface ServiceShape {
 // ─── what it answers ──────────────────────────────────────────────────────────
 
 /**
- * Which rule decided, named. `model-gate` and `move-floor` are the two that
+ * Which rule decided, named. `model-gate` and `transition-floor` are the two that
  * ALLOWED something by clearing a declared number; `ungraded` is the absence of
  * any rule and is never to be read as the first two.
  */
 export type Verdict =
   | 'model-gate'    // the model's @@gate position for this operation
-  | 'move-floor'    // max(model update, the move's own @gate), @system or not
+  | 'transition-floor' // max(model update, the transition's own @gate), @system or not
   | 'method-gate'   // the level the service declared — a custom method, or a CRUD verb over no model
   | 'method-floor'  // a SESSION is required and the level is not compared
   | 'ungraded'      // nothing says; permissive by Invariant 6
@@ -134,7 +134,7 @@ export interface Tool {
   method:  string
   /** The `$def` that graded this, or `null` for a service over no model. */
   model:   string | null
-  kind:    'crud' | 'move' | 'custom'
+  kind:    'crud' | 'transition' | 'custom'
   /** What decided, and the level it cleared. `null` where nothing was declared. */
   verdict: Verdict
   needs:   number | null
@@ -195,7 +195,7 @@ export interface Projection {
 
 // CRUD verbs graded by the model's own gate. `aggregate` is a read and `restore`
 // is an update; both are in the kit's map, and both are here because a verb this
-// set omits falls through to the custom path and is graded as a move that does
+// set omits falls through to the custom path and is graded as a transition that does
 // not exist.
 export const CRUD = new Set([
   'find', 'get', 'aggregate',
@@ -204,7 +204,7 @@ export const CRUD = new Set([
 ])
 
 /**
- * Find the declared move a custom method drives, by NAME.
+ * Find the declared transition a custom method drives, by NAME.
  *
  * A match is a convention rather than a declaration — nothing in the seed says
  * `orders.refund` is the method that runs `Order.status`'s `refund` move — and
@@ -214,31 +214,31 @@ export const CRUD = new Set([
  * affordance failure, and it cannot widen anything. The inverse convention
  * would not be safe and is not attempted.
  *
- * A move is searched across every machine on the model, because a model may
+ * A transition is searched across every machine on the model, because a model may
  * declare more than one `@@transitions` field and the method name does not say
  * which.
  */
-function declaredMove(def: ModelDef | undefined, method: string): DeclaredMove | null {
+function declaredTransition(def: ModelDef | undefined, method: string): DeclaredTransition | null {
   const machines = def?.['x-transitions']
   if (!machines) return null
-  for (const moves of Object.values(machines)) {
-    if (Object.hasOwn(moves, method)) return moves[method] as DeclaredMove
+  for (const transitions of Object.values(machines)) {
+    if (Object.hasOwn(transitions, method)) return transitions[method] as DeclaredTransition
   }
   return null
 }
 
 /**
- * The level a declared move actually requires.
+ * The level a declared transition actually requires.
  *
- * `max(model.update, move.gate)` — Litestone's catalog: *a `@gate(N)` on a move
+ * `max(model.update, transition.gate)` — Litestone's catalog: *a `@gate(N)` on a transition
  * is a floor on top of the model update level*. Either half alone is wrong in a
  * different direction, and only one of those directions is visible from this
  * app: `invoices.void` is `@gate 5` on a model whose `update` is 8.
  */
-function moveFloor(gate: ModelGate | undefined, move: DeclaredMove): number | null {
+function transitionFloor(gate: ModelGate | undefined, transition: DeclaredTransition): number | null {
   const update = typeof gate?.update === 'number' ? gate.update : null
-  if (typeof move.gate !== 'number') return update
-  return update === null ? move.gate : Math.max(update, move.gate)
+  if (typeof transition.gate !== 'number') return update
+  return update === null ? transition.gate : Math.max(update, transition.gate)
 }
 
 /**
@@ -504,7 +504,7 @@ function scalarOf(field: JsonSchemaObject): JsonSchemaObject | null {
  * A MOVE takes an id and is required to: it acts on one row, and the seed says
  * so by declaring the transition on that model. It takes no payload unless the
  * service declared an input type — `example` states this outright, that its four
- * order moves take an id and nothing else, because a move's rules live in
+ * order transitions take an id and nothing else, because a transition's rules live in
  * `@@transitions` where every other rule about the row lives.
  *
  * A custom method that declared no input type is the one shape the seed is
@@ -514,13 +514,13 @@ function scalarOf(field: JsonSchemaObject): JsonSchemaObject | null {
  * that cannot be called at all. `id` is optional there — a custom verb over a
  * collection is an ordinary shape.
  */
-function callInput(views: SchemaViews, declared: string | undefined, isMove: boolean): ToolInput {
+function callInput(views: SchemaViews, declared: string | undefined, isTransition: boolean): ToolInput {
   const idProp = (ID_INPUT.properties as Record<string, unknown>).id
   const data   = declared
     ? toolSchema(views.full[declared] as JsonSchemaObject | undefined, views.full as Record<string, JsonSchemaObject>)
     : null
 
-  if (isMove && !data) {
+  if (isTransition && !data) {
     return { schema: ID_INPUT, source: 'id' }
   }
 
@@ -536,7 +536,7 @@ function callInput(views: SchemaViews, declared: string | undefined, isMove: boo
           ? body
           : { type: 'object', description: 'The payload for this method. Nothing in the seed describes its shape; an unknown key is refused by name at the Data boundary.' },
       },
-      ...(isMove ? { required: ['id'] } : {}),
+      ...(isTransition ? { required: ['id'] } : {}),
       additionalProperties: false,
       ...($defs ? { $defs } : {}),
     },
@@ -560,10 +560,10 @@ function inputFor(
 ): ToolInput {
   // Everything that is not a CRUD verb is dispatched through
   // `ServiceCaller.call(name, id, data, opts)`, so both halves of that signature
-  // have to reach the tool schema. A move whose input named only its declared
+  // have to reach the tool schema. A transition whose input named only its declared
   // type, or nothing at all, described a call an agent cannot make: it has the
   // payload and no way to say WHICH ROW.
-  if (kind !== 'crud') return callInput(views, declared, kind === 'move')
+  if (kind !== 'crud') return callInput(views, declared, kind === 'transition')
 
   if (method === 'find')                            return { schema: findInput(model ? views.full[model] as JsonSchemaObject | undefined : undefined), source: 'query' }
   if (method === 'get' || method === 'remove' || method === 'restore')
@@ -669,16 +669,16 @@ export function projectTools(
       //
       //   the API boundary   `customMethodGrade` — a declared `gate:`, else the
       //                      model's read gate as a PRESENCE check
-      //   the Data boundary  the move's own floor, when the method drives one
+      //   the Data boundary  the transition's own floor, when the method drives one
       //
-      // `@system` is not part of either. It says whose DECISION a move is, and
+      // `@system` is not part of either. It says whose DECISION a transition is, and
       // the method that lifts it does so on the caller's client with
       // `{ system: true }`, which keeps the gate and every row policy
       // (`FJS-D150`). Withholding a `@system` move from every standing hid
       // `example`'s `invoices.settle` from the staff who press it.
-      const move     = declaredMove(def, method)
-      const api      = customMethodGrade(method, svc.methodGates ?? {}, (gate ?? null) as never)
-      const moveNeed = move ? moveFloor(gate, move) : null
+      const transition     = declaredTransition(def, method)
+      const api            = customMethodGrade(method, svc.methodGates ?? {}, (gate ?? null) as never)
+      const transitionNeed = transition ? transitionFloor(gate, transition) : null
 
       // Only a number the boundary COMPARES goes in here. `floor` is deliberately
       // absent: its level is the model's read gate and nothing is graded against
@@ -686,11 +686,11 @@ export function projectTools(
       // actually held to — the one mistake this module is arranged against.
       const compared: Array<[Verdict, number]> = []
       if (api.source === 'declared' && typeof api.level === 'number') compared.push(['method-gate', api.level])
-      if (moveNeed !== null)                                          compared.push(['move-floor', moveNeed])
+      if (transitionNeed !== null)                                    compared.push(['transition-floor', transitionNeed])
 
       const top      = compared.sort((a, b) => b[1] - a[1])[0] ?? null
       const presence = api.source === 'floor' && (api.level ?? 0) > 0
-      const kind     = move ? 'move' as const : 'custom' as const
+      const kind     = transition ? 'transition' as const : 'custom' as const
       const base     = { ...ident, kind, input: inputFor(method, model, views, svc.inputs?.[method], kind) }
 
       if (top && top[1] > 0) {

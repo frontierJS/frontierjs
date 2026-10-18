@@ -138,6 +138,10 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     <td class="m">cd . &amp;&amp; bunx fli ws:deps</td>
   </tr><tr data-row>
     <td><span class="chip c-api">api</span></td>
+    <td class="path">example/api/app.snapshot.md</td>
+    <td class="m">cd example/api &amp;&amp; bunx junction app --app src/app.ts</td>
+  </tr><tr data-row>
+    <td><span class="chip c-api">api</span></td>
     <td class="path">example/api/jobs.snapshot.md</td>
     <td class="m">cd example/api &amp;&amp; bunx junction jobs --app src/app.ts</td>
   </tr><tr data-row>
@@ -148,10 +152,6 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     <td><span class="chip c-api">api</span></td>
     <td class="path">example/api/principal.snapshot.md</td>
     <td class="m">cd example/api &amp;&amp; bunx junction principal --app src/app.ts</td>
-  </tr><tr data-row>
-    <td><span class="chip c-api">api</span></td>
-    <td class="path">example/api/surface.snapshot.md</td>
-    <td class="m">cd example/api &amp;&amp; bunx junction surface --app src/app.ts</td>
   </tr><tr data-row>
     <td><span class="chip c-data">data</span></td>
     <td class="path">example/db/access.snapshot.md</td>
@@ -189,6 +189,10 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     <td class="path">invariants.snapshot.md</td>
     <td class="m">cd . &amp;&amp; bunx fli ws:invariants</td>
   </tr><tr data-row>
+    <td><span class="chip c-api">api</span></td>
+    <td class="path">packages/basecamp/app.snapshot.md</td>
+    <td class="m">cd packages/basecamp &amp;&amp; bunx junction app --app api/src/app.ts</td>
+  </tr><tr data-row>
     <td><span class="chip c-data">data</span></td>
     <td class="path">packages/basecamp/db/access.snapshot.md</td>
     <td class="m">cd packages/basecamp/db &amp;&amp; bunx litestone access --schema schema.lite</td>
@@ -216,10 +220,6 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     <td><span class="chip c-api">api</span></td>
     <td class="path">packages/basecamp/principal.snapshot.md</td>
     <td class="m">cd packages/basecamp &amp;&amp; bunx junction principal --app api/src/app.ts</td>
-  </tr><tr data-row>
-    <td><span class="chip c-api">api</span></td>
-    <td class="path">packages/basecamp/surface.snapshot.md</td>
-    <td class="m">cd packages/basecamp &amp;&amp; bunx junction surface --app api/src/app.ts</td>
   </tr><tr data-row>
     <td><span class="chip c-ui">ui</span></td>
     <td class="path">packages/basecamp/web/routes.snapshot.md</td>
@@ -368,7 +368,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       </tr><tr data-row>
         <td class="m">@frontierjs/basecamp</td>
         <td class="m sub"><span class="chip c-tool">private</span></td>
-        <td class="m sub">auth · caravan · conduit · css · junction · litestone · mcp · mesa · notifications · orion · sierra · toolbelt · ui</td>
+        <td class="m sub">auth · caravan · conduit · css · junction · litestone · mcp · mesa · notifications · orion · sierra · site-kit · toolbelt · ui</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/caravan</td>
@@ -587,12 +587,12 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m">@frontierjs/caravan</td>
       <td class="m">Quick start</td>
-      <td class="m sub">import { createCaravan } from '@frontierjs/caravan'</td>
+      <td class="m sub">import { caravan } from '@frontierjs/caravan'</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">As a Junction plugin</td>
-      <td class="m sub">import { createCaravan } from '@frontierjs/caravan'</td>
+      <td class="m sub">import { caravan } from '@frontierjs/caravan'</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1037,7 +1037,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Health and metrics</td>
-      <td class="m sub">import { healthPlugin } from '@frontierjs/junction'</td>
+      <td class="m sub">import { health } from '@frontierjs/junction'</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1077,7 +1077,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Auth</td>
-      <td class="m sub">import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'</td>
+      <td class="m sub">import { createLitestoneAuth, auth as authPlugin } from '@frontierjs/auth'</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1184,11 +1184,6 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td class="m">Aggregation</td>
       <td class="m sub">The examples on this page use this schema:</td>
       <td class="m sub">packages/litestone/docs/aggregation.md</td>
-    </tr>,<tr data-row>
-      <td class="m"></td>
-      <td class="m">Audit Logging</td>
-      <td class="m sub">Litestone provides field-level and model-level audit logging via the trail database driver.</td>
-      <td class="m sub">packages/litestone/docs/audit-logging.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">CLI Reference</td>
@@ -1366,6 +1361,11 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td class="m sub">packages/litestone/docs/testing.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
+      <td class="m">Audit Trail</td>
+      <td class="m sub">Litestone provides a field-level and model-level audit trail via the trail database driver.</td>
+      <td class="m sub">packages/litestone/docs/trail.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
       <td class="m">Traits</td>
       <td class="m sub">A trait is a reusable model fragment — a chunk of fields and model-level attributes that get spliced into a model via @@trait(T).</td>
       <td class="m sub">packages/litestone/docs/traits.md</td>
@@ -1422,7 +1422,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Multi-database</td>
-      <td class="m sub">Route models to separate SQLite files, JSONL logs, or auto-schema audit loggers:</td>
+      <td class="m sub">Route models to separate SQLite files, JSONL logs, or auto-schema audit trails:</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1627,7 +1627,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m">@frontierjs/mcp</td>
       <td class="m">Mounting it</td>
-      <td class="m sub">import { mcpPlugin } from '@frontierjs/mcp'</td>
+      <td class="m sub">import { mcp } from '@frontierjs/mcp'</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1777,7 +1777,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">email transport</td>
-      <td class="m sub">Delegates to app.mail.send(). Requires mailerPlugin to be configured before notificationsPlugin. The address resolves as message.to (explicit…</td>
+      <td class="m sub">Delegates to app.mail.send(). Requires mail to be configured before notifications. The address resolves as message.to (explicit override) →…</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -2774,11 +2774,11 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>packages/litestone: test/caller-supplied-id.test.ts (the grid is RUN, not read off the helper) and packages/junction: test/caller-supplied-id.test.ts — the layer litestone cannot reach, where the schema stops being a document and becomes the validator between an HTTP body and a row. The strip is what makes it silent: junction drops what the create schema does not declare, so a key missing from it is refused one layer down, naming a field the request carried</td>
       <td><span class="tally"><b>packages/litestone</b>test/caller-supplied-id.test.ts</span><span class="tally"><b>packages/junction</b>test/caller-supplied-id.test.ts</span></td>
     </tr><tr data-row>
-      <td>the agent surface — mcpPlugin(), projectTools, a tool's argument schema, describe().methodGates</td>
+      <td>the agent surface — mcp(), projectTools, a tool's argument schema, describe().methodGates</td>
       <td>packages/mcp: bun run test for the rules against a .lite fixture and the plugin against a Junction app on a real port — then example: verify:mcp, which is the only place a REAL MCP client connects over an app with no app.db, and basecamp: verify:mcp, the only one over strategy row with a membershipClaim resolver, where the standing is a claim the session does not carry. A change under src/client/ — the app CLI's argv, run loop, profiles, cache or routes — is bun run test here (argv.test.ts over 526 captured tools, run.test.ts), then basecamp: verify:cli, the only thing that runs the program as a process against a real /mcp. The two are not the same question: the package's own drive proves the protocol and the crossings, this one proves the NUMBERS, which are otherwise a hand measurement in a commit message that goes stale in silence. Run packages/junction too — customMethodGrade and CALLOPTIONSAT are imported from it, so a change there moves this package's answers with nothing here failing</td>
       <td><span class="tally"><b>packages/mcp</b>bun run test</span><span class="tally"><b>example</b>verify:mcp</span><span class="tally"><b>basecamp</b>verify:mcp</span><span class="tally"><b>basecamp</b>verify:cli</span></td>
     </tr><tr data-row>
-      <td>a governed extract — @@export, runExport, junction's exportPlugin</td>
+      <td>a governed extract — @@export, runExport, junction's exporter</td>
       <td>packages/litestone: test/export.test.ts for the contract and packages/junction: test/export-endpoint.test.ts for the transport — the second is where the trap lives, since a raw route runs BELOW the pipeline that finishes a principal, so it must run the same around hook and take back BOTH the client and the translated principal. And example: verify:export, which is the only one over a real app: it found that a session names the account userId while the boundary reads auth().id, so an untranslated principal exported nothing and answered 200</td>
       <td><span class="tally"><b>packages/litestone</b>test/export.test.ts</span><span class="tally"><b>packages/junction</b>test/export-endpoint.test.ts</span><span class="tally"><b>example</b>verify:export</span></td>
     </tr><tr data-row>
@@ -2826,9 +2826,9 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>example: verify:live — nothing else can see a broadcast</td>
       <td><span class="tally"><b>example</b>verify:live</span></td>
     </tr><tr data-row>
-      <td>junction's client store, nodes.ts, resource.record(id)</td>
-      <td>packages/junction: test/nodes.test.ts + test/live-order.test.ts (the placement rules are the negative control) · packages/sierra: test/resource-record.test.js (a push must not move the version) · example: verify:live, whose detail half is the only place the whole path runs</td>
-      <td><span class="tally"><b>packages/junction</b>test/nodes.test.ts</span><span class="tally"><b>packages/junction</b>test/live-order.test.ts</span><span class="tally"><b>packages/sierra</b>test/resource-record.test.js</span><span class="tally"><b>example</b>verify:live</span></td>
+      <td>junction's client store, entries.ts, resource.record(id)</td>
+      <td>packages/junction: test/entries.test.ts + test/live-order.test.ts (the placement rules are the negative control) · packages/sierra: test/resource-record.test.js (a push must not move the version) · example: verify:live, whose detail half is the only place the whole path runs</td>
+      <td><span class="tally"><b>packages/junction</b>test/entries.test.ts</span><span class="tally"><b>packages/junction</b>test/live-order.test.ts</span><span class="tally"><b>packages/sierra</b>test/resource-record.test.js</span><span class="tally"><b>example</b>verify:live</span></td>
     </tr><tr data-row>
       <td>a CLAIM in a policy — auth().x, buildClaimSet, createClient({ claims }), evalJs's null</td>
       <td>packages/litestone: test/auth-claims.test.ts — every refusal is PAIRED with the acceptance of a schema one character different, because a check that refuses the correct spelling too proves nothing about the typo (FJS-351), and the 3VL rows are paired the other way, the claim present-and-false beside the claim absent. Measured with each fix stubbed: 9 of 22 fail without the claim set and only 2 without the three-valued logic — the second number is honest rather than a gap, since an ALLOW list was already fail-closed and what actually moved is the DENY side and ! · example: verify:cart, the only place a DECLARED claim (cartToken) is carried end to end by a caller with no session, which is the one source of the four that nothing can derive</td>
@@ -2914,7 +2914,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>packages/junction: test/otlp.test.ts for the translation — trace, parenting, sampling, redaction, a dead collector — then verify:otlp, the only place the bodies meet a real OTLP decoder</td>
       <td><span class="tally"><b>packages/junction</b>test/otlp.test.ts</span></td>
     </tr><tr data-row>
-      <td>a metric store — junction/db/metrics.lite, metricsPlugin, core/metrics.ts, seriesKey</td>
+      <td>a metric store — junction/db/metrics.lite, metrics, core/metrics.ts, seriesKey</td>
       <td>packages/junction: test/series-key.test.ts for the identity half — labelsKey is @unique and IS the series, so the rows that must stay are a label VALUE cannot forge a second label (without escaping, a value containing &quot;, closes the pair and addresses somebody else's series) and no labels is the bare name, since a format that wrapped them orphans every point already written. Then example: verify:metrics — the only place a reading is kept over TIME rather than read as a last value, and the only drive whose every assertion is paired with the plausible wrong answer, because nothing here fails loudly. The row that must stay is the counter's increase folded at WRITE time: after the prune the raw points are gone, so a test that recomputes it from the hour row is grading nothing. It drives the SHIPPED pass through app.metrics.rollupNow() rather than a copy, which is the only arrangement that survives the models and the fold living in junction while the drive lives in an app</td>
       <td><span class="tally"><b>packages/junction</b>test/series-key.test.ts</span><span class="tally"><b>example</b>verify:metrics</span></td>
     </tr><tr data-row>
@@ -3035,7 +3035,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td><span class="tally"><b>packages/mesa</b>test/browser/runtime/specs/forward-attributes.spec.mjs</span><span class="tally"><b>example</b>verify:payroll</span></td>
     </tr><tr data-row>
       <td>a correction — api/src/domain/payroll/arrears.ts, PayslipLine.correctsPayRunId, a backdated effectiveFrom</td>
-      <td>example: verify:retro — the only place a row is computed FROM other rows that have since moved, and the only one where a past as-at answer is deliberately made to change. It also reads the audit log, which is where a superseded belief survives</td>
+      <td>example: verify:retro — the only place a row is computed FROM other rows that have since moved, and the only one where a past as-at answer is deliberately made to change. It also reads the audit trail, which is where a superseded belief survives</td>
       <td><span class="tally"><b>example</b>verify:retro</span></td>
     </tr><tr data-row>
       <td>a pay run — api/src/domain/payroll/payroll.ts, PayRun's @@transitions, a payslip, allocate</td>
@@ -3138,7 +3138,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>packages/cli: test/desktop-surface.test.js, which holds example/desktop/ to the generator byte for byte — then example: verify:desktop, the only place a page runs from a scheme that is not http(s), and the only drive that builds a native binary, so it is what proves the generator. packages/sierra: test/router-hardening.test.js for the link guard alone</td>
       <td><span class="tally"><b>packages/cli</b>test/desktop-surface.test.js</span><span class="tally"><b>example</b>verify:desktop</span><span class="tally"><b>packages/sierra</b>test/router-hardening.test.js</span></td>
     </tr><tr data-row>
-      <td>matchesQuery / a live store's membership rule</td>
+      <td>matchesQuery / a tether's membership rule</td>
       <td>packages/toolbelt: bun run test match (the behavior) · packages/jetty: test/phase3.test.js and packages/sierra: test/live-filter.test.js (the two SEAMS — that each store actually asks) · example: verify:extension, where a shipped order has to leave the queue</td>
       <td><span class="tally"><b>packages/toolbelt</b>bun run test match</span><span class="tally"><b>packages/jetty</b>test/phase3.test.js</span><span class="tally"><b>packages/sierra</b>test/live-filter.test.js</span><span class="tally"><b>example</b>verify:extension</span></td>
     </tr><tr data-row>

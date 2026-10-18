@@ -440,12 +440,12 @@ describe('management routes', () => {
 // ─── plugin wiring ────────────────────────────────────────────────────────
 
 describe('plugin wiring', () => {
-  it('claims app.webhooks through provide(), so a second claim fails loudly', async () => {
+  it('owns app.webhooks, so a second owner fails loudly', async () => {
     const app = await makeApp()
     expect(app.webhooks).toBeDefined()
 
-    expect(() => app.configure({ name: 'squatter', register(a) { a.claim('webhooks', {}) } }))
-      .toThrow(/already claimed/)
+    expect(() => app.configure({ name: 'squatter', register(a) { a.own('webhooks', {}) } }))
+      .toThrow(/already owned/)
   })
 
   it('refuses to register with no store', async () => {

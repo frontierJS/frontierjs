@@ -8,7 +8,7 @@ import type { ServiceContext } from './context.ts'
 import { resultData } from './envelope.ts'
 import { Unauthorized, Forbidden } from './errors.ts'
 import type { Hook, AroundHook } from './hooks.ts'
-import { clampPage } from './directives.ts'
+import { clampPagination } from './directives.ts'
 
 // ─── Common built-in hooks ────────────────────────────────────────────────
 
@@ -50,15 +50,15 @@ export function paginate(defaultLimit = 20, maxLimit = 100): Hook {
   return (ctx: ServiceContext): void => {
     // `ctx.query` as the fallback: an internal caller may pass `{ limit: 50 }`
     // plainly, having never gone through a bridge.
-    const q    = ctx.query as Record<string, unknown> | undefined
-    const page = clampPage(ctx.directives, defaultLimit, maxLimit,
+    const q          = ctx.query as Record<string, unknown> | undefined
+    const pagination = clampPagination(ctx.directives, defaultLimit, maxLimit,
       { limit: q?.limit, offset: q?.offset })
 
     if (ctx.directives) {
-      ctx.directives.limit  = page.limit
-      ctx.directives.offset = page.offset
+      ctx.directives.limit  = pagination.limit
+      ctx.directives.offset = pagination.offset
     }
-    ctx.locals.paginate = page
+    ctx.locals.paginate = pagination
   }
 }
 

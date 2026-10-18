@@ -1,25 +1,25 @@
 /*
  * src/breadcrumbs.ts — what a caller may do next with the one row a call answered.
  *
- * After `orders_get 5`, the moves the order's state allows and the rows it
+ * After `orders_get 5`, the transitions the order's state allows and the rows it
  * points at, each as a tool call the caller could make now (`FJS-D398`). An
  * agent reading the result is served by the list exactly as a person at a
  * command line is.
  *
  * **Nothing here grades a standing.** Every breadcrumb names a tool in the
- * caller's OWN offered list, which `projectTools` graded — a move at
- * `max(model update, move gate)`, a relation's read at the target's `@@gate`.
- * This module only asks which of those tools the ROW makes sensible: a move whose
+ * caller's OWN offered list, which `projectTools` graded — a transition at
+ * `max(model update, transition gate)`, a relation's read at the target's `@@gate`.
+ * This module only asks which of those tools the ROW makes sensible: a transition whose
  * `from` holds the row's current value, a read of the row a foreign key names,
  * a find over the rows naming this one. Sierra's `transitionsAt` is the UI
  * realm's and out of reach (Invariant 1), and would be a second grader and a
- * weaker one: it compares the move's own number, which offers `invoices.void`
+ * weaker one: it compares the transition's own number, which offers `invoices.void`
  * (`@gate 5` on a model written at 8) below what the boundary accepts.
  *
  * It is the tool list's affordance and has the tool list's limit (Invariant 6):
- * a row POLICY is not graded, so a move a policy refuses is offered and refused
- * when called. It can only OMIT wrongly in one way — a move served by a method
- * named differently from the move is not recognized as that move, which is the
+ * a row POLICY is not graded, so a transition a policy refuses is offered and refused
+ * when called. It can only OMIT wrongly in one way — a transition served by a method
+ * named differently from the transition is not recognized as that transition, which is the
  * projection's own convention.
  */
 
@@ -28,12 +28,12 @@ import type { Tool } from './projection.ts'
 export const BREADCRUMBS_META = 'frontierjs/breadcrumbs'
 
 export type Breadcrumb =
-  /** A declared move the row's current state allows. */
-  | { kind: 'move';      tool: string; args: { id: unknown }; move: string; field: string; to: string }
+  /** A declared transition the row's current state allows. */
+  | { kind: 'transition'; tool: string; args: { id: unknown }; transition: string; field: string; to: string }
   /** The row a foreign key on this one names. */
-  | { kind: 'belongsTo'; tool: string; args: { id: unknown }; relation: string }
+  | { kind: 'belongsTo';  tool: string; args: { id: unknown }; relation: string }
   /** The rows whose foreign key names this one. */
-  | { kind: 'hasMany';   tool: string; args: { query: Record<string, unknown> }; relation: string }
+  | { kind: 'hasMany';    tool: string; args: { query: Record<string, unknown> }; relation: string }
 
 interface RelationDef {
   field:       string
@@ -43,9 +43,9 @@ interface RelationDef {
   references?: string[]
 }
 
-interface MoveDef { from: string[]; to: string }
+interface TransitionDef { from: string[]; to: string }
 
-type Defs = Record<string, { 'x-transitions'?: Record<string, Record<string, MoveDef>>; 'x-relations'?: RelationDef[] } | undefined>
+type Defs = Record<string, { 'x-transitions'?: Record<string, Record<string, TransitionDef>>; 'x-relations'?: RelationDef[] } | undefined>
 
 /**
  * The CRUD verbs that answer ONE row of their model. A custom method's answer
@@ -60,7 +60,7 @@ const ONE_ROW = new Set(['get', 'create', 'patch', 'update', 'restore'])
  * tool's `_meta.ui.resourceUri`, and the boot warning for a stale document).
  */
 export function answersOneRow(tool: Tool): boolean {
-  return tool.model !== null && (tool.kind === 'move' || (tool.kind === 'crud' && ONE_ROW.has(tool.method)))
+  return tool.model !== null && (tool.kind === 'transition' || (tool.kind === 'crud' && ONE_ROW.has(tool.method)))
 }
 
 /**
@@ -69,7 +69,7 @@ export function answersOneRow(tool: Tool): boolean {
  *
  * The row's own identifier is the one the call was given, else the row's `id`
  * — a `create` is given none. A model keyed otherwise and just created gets no
- * moves; its relations still resolve, since they read the columns the
+ * transitions; its relations still resolve, since they read the columns the
  * relations name.
  */
 export function breadcrumbsFor(tool: Tool, row: unknown, args: Record<string, unknown>, offered: Tool[], defs: Defs): Breadcrumb[] {
@@ -79,18 +79,18 @@ export function breadcrumbsFor(tool: Tool, row: unknown, args: Record<string, un
   const def   = defs[model]
   const out: Breadcrumb[] = []
 
-  // ── the moves the row's state allows, on the service that answered ────────
+  // ── the transitions the row's state allows, on the service that answered ──
   // Only that service: a second service over the same model is a different
   // surface with its own hooks, and the caller asked this one.
   const id = args.id ?? r.id
   if (id != null) {
-    for (const [field, moves] of Object.entries(def?.['x-transitions'] ?? {})) {
+    for (const [field, transitions] of Object.entries(def?.['x-transitions'] ?? {})) {
       const current = r[field]
       if (current == null) continue
-      for (const [name, move] of Object.entries(moves)) {
-        if (!move.from.includes(current as string)) continue
-        const t = offered.find(o => o.kind === 'move' && o.service === tool.service && o.method === name)
-        if (t) out.push({ kind: 'move', tool: t.name, args: { id }, move: name, field, to: move.to })
+      for (const [name, transition] of Object.entries(transitions)) {
+        if (!transition.from.includes(current as string)) continue
+        const t = offered.find(o => o.kind === 'transition' && o.service === tool.service && o.method === name)
+        if (t) out.push({ kind: 'transition', tool: t.name, args: { id }, transition: name, field, to: transition.to })
       }
     }
   }
@@ -132,8 +132,8 @@ function filters(t: Tool, columns: string[]): boolean {
 export function describeBreadcrumbs(crumbs: Breadcrumb[]): string {
   const lines = crumbs.map(b => {
     const call = `${b.tool} ${JSON.stringify(b.args)}`
-    if (b.kind === 'move')      return `${call} — ${b.move}: ${b.field} → ${b.to}`
-    if (b.kind === 'belongsTo') return `${call} — the ${b.relation} this row points at`
+    if (b.kind === 'transition') return `${call} — ${b.transition}: ${b.field} → ${b.to}`
+    if (b.kind === 'belongsTo')  return `${call} — the ${b.relation} this row points at`
     return `${call} — its ${b.relation}`
   })
   return ['Next, at your standing:', ...lines].join('\n')

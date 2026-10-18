@@ -338,19 +338,19 @@ try {
     const names = await offered(client)
     return (await appDb.asSystem().server.transitions(row)).map(t => `servers_${t.name}`).filter(n => names.has(n)).sort()
   }
-  const moveCrumbs = r => (r.json?.breadcrumbs ?? []).filter(b => b.kind === 'move').map(b => b.tool).sort()
+  const transitionCrumbs = r => (r.json?.breadcrumbs ?? []).filter(b => b.kind === 'transition').map(b => b.tool).sort()
 
   const ownerGet  = await cli(['servers', 'get', SERVER, '--json'], asOwner)
   const viewerGet = await cli(['servers', 'get', SERVER, '--json'], asViewer)
   const row       = ownerGet.json?.data
   const ownerWant = row ? await movesAt(owner, row) : []
   check('a get names the moves the row\'s state allows among the owner\'s tools — Litestone\'s own transitions(row), narrowed',
-    ownerGet.code === 0 && ownerWant.length > 0 && JSON.stringify(moveCrumbs(ownerGet)) === JSON.stringify(ownerWant),
-    `status ${row?.status} got ${moveCrumbs(ownerGet)} want ${ownerWant} ${ownerGet.err}`.slice(0, 400))
+    ownerGet.code === 0 && ownerWant.length > 0 && JSON.stringify(transitionCrumbs(ownerGet)) === JSON.stringify(ownerWant),
+    `status ${row?.status} got ${transitionCrumbs(ownerGet)} want ${ownerWant} ${ownerGet.err}`.slice(0, 400))
   const viewerWant = row ? await movesAt(viewer, row) : []
   check('and a viewer a rung below is offered the viewer\'s own, which are fewer',
-    viewerGet.code === 0 && JSON.stringify(moveCrumbs(viewerGet)) === JSON.stringify(viewerWant) && viewerWant.length < ownerWant.length,
-    `viewer got ${moveCrumbs(viewerGet)} want ${viewerWant}`)
+    viewerGet.code === 0 && JSON.stringify(transitionCrumbs(viewerGet)) === JSON.stringify(viewerWant) && viewerWant.length < ownerWant.length,
+    `viewer got ${transitionCrumbs(viewerGet)} want ${viewerWant}`)
 
   // Human output: the row on stdout, each breadcrumb on stderr as a command.
   const human = await cli(['servers', 'get', SERVER], asOwner)

@@ -414,7 +414,7 @@ export function mail({ mailer }: { mailer: IMail }): import('../core/app.ts').Pl
         send:  (m: MailMessage)   => { warnEffectInDrain('app.mail.send()');  return mailer.send(m) },
         batch: (ms: MailMessage[]) => { warnEffectInDrain('app.mail.batch()'); return mailer.batch(ms) },
       })
-      if (typeof app.claim === 'function') app.claim('mail', wrapped)
+      if (typeof app.own === 'function') app.own('mail', wrapped)
       else app.mail = wrapped
     }
   }

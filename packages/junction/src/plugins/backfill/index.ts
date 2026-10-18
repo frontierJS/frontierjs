@@ -121,7 +121,7 @@ export function backfill(defs: BackfillDefinition[] = [], opts: BackfillPluginOp
         },
       }
 
-      if (typeof app.claim === 'function') app.claim('backfills', api)
+      if (typeof app.own === 'function') app.own('backfills', api)
       else (app as { backfills?: BackfillApi }).backfills = api
 
       if (typeof app.registerMetricsSource === 'function')

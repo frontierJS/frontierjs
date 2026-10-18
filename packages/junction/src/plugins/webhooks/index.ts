@@ -1000,10 +1000,10 @@ export function webhooks(opts: WebhookOptions): Plugin {
         _attemptAndRecord: attemptAndRecord,
       }
 
-      // claim() rather than a plain assignment: two plugins claiming one
+      // own() rather than a plain assignment: two plugins owning one
       // name used to be a silent last-write-wins, leaving the loser dead with
       // no error anywhere.
-      app.claim('webhooks', manager)
+      app.own('webhooks', manager)
 
       // ── HTTP routes ─────────────────────────────────────────────
       // Powers REPL commands and any management UI the app builds.

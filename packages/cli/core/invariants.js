@@ -73,7 +73,7 @@ export const ENFORCERS = {
                 'Nothing grades `Litestone ← Junction ← Sierra` itself' }],
 
   5: [{ kind: 'test', at: 'packages/junction/test/plugin-contract.test.ts',
-        covers: 'a second `app.claim(name)` throws naming the holder' }],
+        covers: 'a second `app.own(name)` throws naming the holder' }],
 
   6: [{ kind: 'test', at: 'packages/sierra/test/static-safety-real.mjs',
         covers: 'the prerender half — a published route proves its reads against the model\'s own `@@gate`, ' +

@@ -32,10 +32,10 @@ export interface PrinterOptions {
 
 export function createPrinter(opts?: PrinterOptions): Printer
 
-/** The printer as a junction plugin: claimed as `app.printer`; refuses to boot with no Chrome. */
+/** The printer as a junction plugin: owned as `app.printer`; refuses to boot with no Chrome. */
 export function printer(opts?: PrinterOptions): {
   name: 'printer'
-  register(app: { claim(name: string, value: unknown): void }): void
+  register(app: { own(name: string, value: unknown): void }): void
   boot(): void
   shutdown(): Promise<void>
 }

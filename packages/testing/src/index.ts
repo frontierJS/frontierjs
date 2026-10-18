@@ -59,7 +59,7 @@ export type ApiFactoryTools<TClient = RegisteredClient> =
   Pick<TestEnv<TClient>, 'db' | 'system' | 'factories' | 'schema' | 'path' | 'dir'>
 
 /** One announcement, exactly as `callService` put it on the bus. */
-export interface Announcement {
+export interface AnnouncedEvent {
   /** `'leads:created'` for CRUD, `'orders:pay'` for a custom method. */
   event: string
   data:  unknown
@@ -121,7 +121,7 @@ export interface ApiTestEnv<TClient = RegisteredClient> extends Omit<TestEnv<TCl
    */
   verifyTransportParity(opts?: ParityOptions): Promise<ParityMismatch[]>
   /** Everything `callService` announced since the current act began. */
-  announced(event?: string): Announcement[]
+  announced(event?: string): AnnouncedEvent[]
   clearAnnounced(): void
   close(): Promise<void>
 }
@@ -190,7 +190,7 @@ export async function createTestEnv<TClient = RegisteredClient>(
   // caller to subscribe is what makes the assertion a question instead of a
   // setup step; clearing it at the top of `act` is what makes it exact — the
   // alternative is "everything since the test began", with arrange's writes in it.
-  const announcements: Announcement[] = []
+  const announcements: AnnouncedEvent[] = []
   const unsubscribe = app.events.onAny((event: string, data: unknown) => {
     // `app:*` and `junction.*` are lifecycle and telemetry, not announcements.
     // A test asking what its act announced does not mean the app booting.

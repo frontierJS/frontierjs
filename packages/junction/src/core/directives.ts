@@ -75,7 +75,7 @@ export interface QueryDirectives {
   recursive?:     boolean | { direction?: 'descendants' | 'ancestors', nested?: boolean, maxDepth?: number, via?: string }
 }
 
-// ─── The page ─────────────────────────────────────────────────────────────
+// ─── Pagination ───────────────────────────────────────────────────────────
 // What a limit and an offset MEAN, answered once.
 //
 // Two callers had two answers and only one of them worked. `parseQuery` reads
@@ -90,14 +90,14 @@ export interface QueryDirectives {
 // nothing: it is where the directive table already is, and a clamp is a fact
 // about a directive.
 
-export interface Page { limit: number; offset: number }
+export interface Pagination { limit: number; offset: number }
 
-export function clampPage(
+export function clampPagination(
   directives:   QueryDirectives | undefined,
   defaultLimit: number,
   maxLimit:     number,
   fallback:     { limit?: unknown; offset?: unknown } = {},
-): Page {
+): Pagination {
   // `??` not `||`: a limit of 0 is a real request, for the count alone.
   const limitRaw  = directives?.limit  ?? fallback.limit  ?? defaultLimit
   const offsetRaw = directives?.offset ?? fallback.offset ?? 0

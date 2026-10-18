@@ -128,8 +128,8 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
       })
       instances.set(app, instance)
 
-      // claim() rather than `app.conduit = instance`: a second plugin
-      // claiming the same name used to win silently and leave this one dead.
+      // own() rather than `app.conduit = instance`: a second plugin
+      // owning the same name used to win silently and leave this one dead.
       // send() warns from an afterCommit effect (FJS-D659); the core stays
       // junction-free, so the plugin is where it learns where it runs.
       //
@@ -196,7 +196,7 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
         }
         mirror(claim)
       }
-      app.claim('conduit', instance)
+      app.own('conduit', instance)
 
       // Wire into Junction's /metrics endpoint. Called straight rather than
       // behind a presence check: this plugin imports Junction's own App type,

@@ -16,8 +16,8 @@ answer free. Every definition the loader found is on the app:
 app.get('/notification-types', (ctx) => ctx.json([...(app.notifications?.keys() ?? [])]))
 ```
 
-`app.notifications` is a **claim** — `app.claim('notifications', registry)` — and
-one owner claims each `app.<thing>` exactly once. It is a read-only map on
+`app.notifications` is **owned** — `app.own('notifications', registry)` — and
+one owner takes each `app.<thing>` exactly once. It is a read-only map on
 purpose: a type added at runtime is a type the build cannot see, and the browser
 reads this column to pick a renderer.
 

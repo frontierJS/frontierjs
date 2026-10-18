@@ -2590,7 +2590,7 @@ const CHECKS = {
   //   ctx.locals.db.asSystem()   the caller's tenant, gate and policies crossed
   //   app.data.asSystem()        no principal, no claim, every tenant
   //
-  // The app-level client cannot be named positively — it is `app.claim(<any
+  // The app-level client cannot be named positively — it is `app.own(<any
   // name>, db)`, and basecamp calls it `app.data` — so the test runs the other
   // way: a receiver that is not the request's client. That is also where the
   // fix is.

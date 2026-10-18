@@ -53,6 +53,17 @@ Every one of the nine is answered, the tier is named, and the proposal is in one
 
 Where two proposals both pass, the tiebreak is six months out — the one that lets a developer predict more from less knowledge.
 
+## Recommending
+
+The owner's rulings are graded against the recommendations: `rg -c 'Against the recommendation' DECISIONS.md` over the count of the other two phrases in its header. These are what the misses teach.
+
+- **Match a sibling that already decided the same shape.** `@scale` emits a CHECK so `@gte` does too; tones have the every-consumer rule so treatments get it. Precedent outranks both the stricter design and the simpler one.
+- **The sibling has to come from the question's own domain.** `FJS-D1196` lost on an infra precedent (Outpost) where the receiving app's own domain (a chat bot is a User) decided it.
+- **With no precedent, recommend what moves fewer callers and adds no convention**, and name the stricter option as the reopen path. Every round-2 miss was an invented file, refusal or shape.
+- **Research prior art before a design question about a third party or a product**: how two or three real products answer it, with sources, in the question.
+- **Naming, Dependencies and Mesa rulings miss most (11–14%); Query, Migrations and API almost never (0–4%).** The recent misses cluster in product papers — owner editing, lockdown, haven, tip of the day — so spend the research there.
+- **State a confidence (1–3) on the recommendation.** Middling confidence has run right more often than stated.
+
 ## When the code disagrees
 
 § IV's last adjudication is the one that gets skipped, because siding with the doctrine feels like rigor. **Hold a hearing instead**, then either fix the code or amend the doctrine, in writing. An undocumented divergence is the failure both directions share, and it is the one that survives.

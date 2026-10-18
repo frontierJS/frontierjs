@@ -334,7 +334,8 @@ describe('the pick', () => {
       const argued = decide({ root, id: ID, pick: 'B', why: 'an operator\nreads ciphertext\n### on purpose', section: 'Naming & vocabulary', today: TODAY })
       expect(argued.ok).toBe(true)
       // A reason is one paragraph; a newline in it cannot open a heading.
-      expect(readFileSync(join(root, 'DECISIONS.md'), 'utf8')).toContain('\nan operator reads ciphertext ### on purpose.\n')
+      // The recommended letter is the calibration record: a miss nothing names cannot be counted.
+      expect(readFileSync(join(root, 'DECISIONS.md'), 'utf8')).toContain('\nAgainst the recommendation (**A**): an operator reads ciphertext ### on purpose.\n')
     } finally { cleanup() }
   })
 

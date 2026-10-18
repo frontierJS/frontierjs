@@ -78,17 +78,17 @@ beforeAll(async () => {
     logLevel: 'silent',
   }) as never
 
-  // The two moves are real methods that drive the real transition, because the
-  // point of a move tool is the row moving — a stub would pass every assertion
+  // The two transitions are real methods that drive the real transition, because the
+  // point of a transition tool is the row moving — a stub would pass every assertion
   // about dispatch and none about what dispatch is for.
   type Orders = { order: { transition(id: unknown, name: string): Promise<unknown> } }
-  const move = (name: string) => async () =>
+  const transition = (name: string) => async () =>
     ($.db as unknown as Orders).order.transition(Number($.id), name)
 
   app.services.register(createService({
     name: 'orders', model: 'Order',
-    pay:    move('pay'),
-    refund: move('refund'),
+    pay:    transition('pay'),
+    refund: transition('refund'),
     methods: ['find', 'get', 'create', 'patch', 'remove', 'pay', 'refund'],
     scope:   { read: 'orders:read', write: 'orders:write' },
     // Taken off once seen: Order declares no `@@sync(field)`, so the Data
@@ -206,7 +206,7 @@ describe('the tool list is the caller\'s, not the app\'s', () => {
     expect(names(await list('shopper'))).toContain('orders_find')
   })
 
-  test('the refund move needs 5, so a shopper does not see it and staff do', async () => {
+  test('the refund transition needs 5, so a shopper does not see it and staff do', async () => {
     // `@gate 5` over an update of 4 — the floor. The pair one rung apart is the
     // only shape that separates *the gate works* from *this caller sees nothing*.
     const shopper = (await list('shopper')).map(t => t.name)
@@ -222,14 +222,14 @@ describe('the tool list is the caller\'s, not the app\'s', () => {
   })
 })
 
-// ─── a @system move ──────────────────────────────────────────────────────────
+// ─── a @system transition ──────────────────────────────────────────────────────────
 
 // FJS-1925's shape, both halves, in an app of its own so the services here do
 // not appear in the breadcrumbs the app above is graded on. `purchases` writes
-// no method, so junction derives each move Order declares, and `lapse` is
+// no method, so junction derives each transition Order declares, and `lapse` is
 // `@system`. `settlements` writes the method that lifts it, as `example`'s
 // `invoices.settle` does.
-describe('a @system move is offered only where a method lifts it (FJS-1925)', () => {
+describe('a @system transition is offered only where a method lifts it (FJS-1925)', () => {
   let own:   { stop?: () => Promise<void>; http: { port?: number } } & Record<string, never>
   let url:   string
   let store: Record<string, { create(a: unknown): Promise<unknown>; findFirst(a: unknown): Promise<{ status: string }> }>
@@ -269,7 +269,7 @@ describe('a @system move is offered only where a method lifts it (FJS-1925)', ()
   const call   = (name: string, id: number, who: string) => speak('tools/call', { name, arguments: { id } }, who)
   const status = async (id: number) => (await store.order!.findFirst({ where: { id } })).status
 
-  test('a generated service does not offer lapse at any level a person holds, while its other moves are', async () => {
+  test('a generated service does not offer lapse at any level a person holds, while its other transitions are', async () => {
     for (const who of ['shopper', 'staff']) {
       const offered = await names(who)
       expect(offered, who).toContain('purchases_pay')
@@ -360,7 +360,7 @@ describe('a one-row answer carries its breadcrumbs', () => {
   const result = (r: { body: Record<string, never> }) =>
     (r.body as { result?: { content?: Array<{ text: string }>; _meta?: Record<string, any> } }).result ?? {}
 
-  test('in _meta, and as a second text block — the moves the row allows at THIS caller, and the row it points at', async () => {
+  test('in _meta, and as a second text block — the transitions the row allows at THIS caller, and the row it points at', async () => {
     // A pair a rung apart: order 51 is paid, and refund needs 5.
     const staff   = result(await callTool('orders_get', { id: 51 }, 'staff'))
     const shopper = result(await callTool('orders_get', { id: 51 }, 'shopper'))
@@ -455,8 +455,8 @@ describe('a call goes through the service, as the caller', () => {
     expect(JSON.stringify(after.body)).toContain('by an agent')
   })
 
-  test('a move takes the id the tool asked for, and moves the row', async () => {
-    // The move half carried no argument schema at all until this build, so
+  test('a transition takes the id the tool asked for, and moves the row', async () => {
+    // The transition half carried no argument schema at all until this build, so
     // `orders_pay` was listed, correctly graded, and uncallable.
     const r = await callTool('orders_pay', { id: 1 }, 'staff')
     expect(r.body.result?.isError ?? false).toBe(false)
@@ -621,7 +621,7 @@ describe('GET /mcp/levels — what each level is offered, for an operator', () =
     expect(names(body.levels[4]!.tools)).not.toEqual(names(body.levels[5]!.tools))
   })
 
-  test('a custom method’s declared gate and a move’s floor are graded, each with the rule that decided', async () => {
+  test('a custom method’s declared gate and a transition’s floor are graded, each with the rule that decided', async () => {
     const { body } = await levels('staff')
     const at = (level: number, name: string) => ({
       offered:  body.levels[level]!.tools.find(t => t.name === name),
@@ -632,9 +632,9 @@ describe('GET /mcp/levels — what each level is offered, for an operator', () =
     expect(at(4, 'credentials_mint').withheld).toMatchObject({ verdict: 'method-gate', needs: 5 })
     expect(at(5, 'credentials_mint').offered).toMatchObject({ verdict: 'method-gate', needs: 5 })
 
-    // `refund` is @gate(5) on a model a USER updates: the move's own floor decides.
-    expect(at(4, 'orders_refund').withheld).toMatchObject({ verdict: 'move-floor', needs: 5 })
-    expect(at(5, 'orders_refund').offered).toMatchObject({ verdict: 'move-floor', needs: 5 })
+    // `refund` is @gate(5) on a model a USER updates: the transition's own floor decides.
+    expect(at(4, 'orders_refund').withheld).toMatchObject({ verdict: 'transition-floor', needs: 5 })
+    expect(at(5, 'orders_refund').offered).toMatchObject({ verdict: 'transition-floor', needs: 5 })
   })
 })
 

@@ -2883,7 +2883,7 @@ describe('resource-model-miss', () => {
 describe('service-as-system', () => {
   // FJS-519. `asSystem()` keeps the tenant it is standing in — so which client
   // is elevated decides whether the answer is scoped at all. The app-level
-  // client cannot be named positively (`app.claim(<any name>, db)`), so the
+  // client cannot be named positively (`app.own(<any name>, db)`), so the
   // rule tests the other direction.
   // CLEAN already declares row tenancy. `tenancy` REPLACES that block, so ''
   // is an app that declares none.

@@ -6,7 +6,7 @@
 export { commandFor, parseArgs, ArgvError } from './argv.ts'
 export type { Command, Flag, FlagType, Payload, ParseOptions, Slot, ToolListing } from './argv.ts'
 export { run, EXIT } from './run.ts'
-export type { RunOptions, Session, CallOptions, CallAnswer, AwaitedJob, Breadcrumb } from './run.ts'
+export type { RunOptions, Connection, CallOptions, CallAnswer, AwaitedJob, Breadcrumb } from './run.ts'
 export { configPath, fileStore, maskToken } from './profiles.ts'
 export type { Profile, ProfileFile, ProfileStore } from './profiles.ts'
 export { cacheKey, cacheDir, fileCache } from './cache.ts'

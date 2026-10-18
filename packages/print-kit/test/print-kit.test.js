@@ -31,13 +31,13 @@ describe('the document', () => {
 })
 
 describe('the plugin', () => {
-  test('is claimed as app.printer, and refuses to boot with no Chrome', async () => {
-    const claimed = {}
+  test('is owned as app.printer, and refuses to boot with no Chrome', async () => {
+    const owned = {}
     const plugin = printer({ find: () => null })
-    plugin.register({ claim: (name, value) => { claimed[name] = value } })
-    expect(typeof claimed.printer.pdf).toBe('function')
+    plugin.register({ own: (name, value) => { owned[name] = value } })
+    expect(typeof owned.printer.pdf).toBe('function')
     expect(() => plugin.boot()).toThrow(/no Chrome on this machine/)
     await plugin.shutdown()
-    await expect(claimed.printer.pdf('<p>')).rejects.toThrow(/closed/)
+    await expect(owned.printer.pdf('<p>')).rejects.toThrow(/closed/)
   })
 })

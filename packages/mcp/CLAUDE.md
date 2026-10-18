@@ -31,7 +31,7 @@ test/principal-standing.test.ts  the standing a membership resolver answers
 test/await.test.ts           the wait over a reader and a clock of its own
 test/breadcrumbs.test.ts     breadcrumbs against the real fixture and the real projection
 test/argv.test.ts            every tool in test/fixtures/tools/ (example, basecamp) as argv
-test/run.test.ts             globals, tenant header, exit codes, profiles, cache and routes, over a stubbed session
+test/run.test.ts             globals, tenant header, exit codes, profiles, cache and routes, over a stubbed connection
 ```
 
 **`src/client/` imports nothing from the server half, and must not** — it moves
@@ -44,10 +44,10 @@ says how).
 
 *Which tools does this standing see, and what decided each.* The inputs are what
 the boundary reads: the service's method selection (`describe().methods`, already
-applied), the model's `@@gate`, a declared move's `gate` from `x-transitions`,
+applied), the model's `@@gate`, a declared transition's `gate` from `x-transitions`,
 and a method's declared `gate:` (`describe().methodGates`) — which over no model
 grades a CRUD verb too, as junction enforces it (`FJS-D408`). `@system` is not an
-input: it says whose decision a move is, and the method lifting it keeps the gate
+input: it says whose decision a transition is, and the method lifting it keeps the gate
 (`FJS-D150`).
 
 **A key's declared scopes withhold a tool through junction's `scopeRefusal`**, the
@@ -84,15 +84,15 @@ is not must never be added to make a list look complete.
   is declared*: the most heavily gated service in an app comes out open and
   nothing fails. Go through `resolveModel`, and anything still unresolved belongs
   in the reported list rather than in a log.
-- **A move's `@gate` is a FLOOR over the model's `update`, never a replacement.**
+- **A transition's `@gate` is a FLOOR over the model's `update`, never a replacement.**
   `max` of the two. `invoices.void` is `@gate 5` on a model written at 8, so it
   needs 8 — and offering it at 5 is the one mistake here that misleads a caller
   about its own permissions instead of wasting a turn.
-- **A name match between a custom method and a move is a CONVENTION**, not a
+- **A name match between a custom method and a transition is a CONVENTION**, not a
   declaration. It is acceptable only because of the direction it can be wrong in:
   every custom method is permissive without the lookup, so a wrong match can only
   narrow. The inverse convention would not be safe and is not attempted.
-- **`ungraded` must not be filed with `model-gate` and `move-floor`.** *Nothing
+- **`ungraded` must not be filed with `model-gate` and `transition-floor`.** *Nothing
   refused this* and *a rule allowed it* are different facts and only one is
   evidence.
 - **The standing is the one the app's principal RESOLVER answers, never the

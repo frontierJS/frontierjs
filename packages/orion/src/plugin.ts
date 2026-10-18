@@ -239,7 +239,7 @@ export function orion(options: OrionOptions = {}): Plugin {
         onActivationError: (flowId, error) => app.logger.warn(`[orion] flow "${flowId}" is active and did not activate: ${error}`),
       })
       runner.register()
-      app.claim("orion", runner)
+      app.own("orion", runner)
 
       if (options.services !== false) {
         for (const svc of createOrionServices({ runner, names: options.services })) {

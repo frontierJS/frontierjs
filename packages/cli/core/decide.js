@@ -110,7 +110,7 @@ function decideUnguarded({ root, id, pick, why = '', section, file, dry = false,
 
   // The link is written INTO `DECISIONS.md`, so it is relative to that file.
   const link  = relative(dir, paperAbs)
-  const entry = rulingEntry({ q, link, option, qualified, ruling, date, reason: reason || q.recommend.why, followed: !reason })
+  const entry = rulingEntry({ q, link, option, qualified, ruling, date, reason: reason || q.recommend.why, written: !reason })
   const dec   = insertRuling(before.dec, section, entry)
   const close = row && closeRow(root, row, `Ruled [\`${ruling}\`](DECISIONS.md#${ruling.toLowerCase()}): **${letter}** — ${trimStop(option.text)}.`, today)
   if (close?.reason) return refuse(close.reason)
@@ -256,16 +256,24 @@ function strikeQuestion(src, q, { date, ruling, answer }) {
   return lines.join('\n')
 }
 
-function rulingEntry({ q, link, option, qualified, ruling, date, reason, followed }) {
+// The reason's opening words say whether the pick was the recommendation, and
+// they are the calibration record: with no recommended letter on a ruling that
+// went against it, nothing can count how often the recommendations lose.
+// `DECISIONS.md`'s header states the same three for a ruling written by hand.
+function rulingEntry({ q, link, option, qualified, ruling, date, reason, written }) {
   const others = q.options.filter(o => o !== option)
     .map(o => `**${o.letter}** (${trimStop(o.text)})`).join(', ')
   const picked = qualified ? `**${option.letter}** was picked as the recommendation qualifies it (*${trimStop(qualified)}*)` : `**${option.letter}** was picked`
+  const lead   = !q.recommend || qualified    ? ''
+    : q.recommend.letter !== option.letter    ? `Against the recommendation (**${q.recommend.letter}**): `
+    : written                                 ? `The paper's recommendation, taken as written: `
+    :                                           'As recommended: '
   return [
     `### <a id="${ruling.toLowerCase()}"></a>${date} · \`${ruling}\` — ${trimStop(q.question.replace(LEAD_ID, ''))} — ${capitalize(trimStop(qualified ?? option.text))}.`,
     '',
     `Asked in [\`${q.file}\`](${link}) § Open questions. ${picked} over ${others || 'no other option'}.`,
     '',
-    `${followed ? `The paper's recommendation, taken as written: ` : ''}${trimStop(reason)}.`,
+    `${lead}${trimStop(reason)}.`,
     '',
   ]
 }

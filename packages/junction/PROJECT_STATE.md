@@ -63,9 +63,9 @@ accounts are in `docs/changes-archive/junction.md`.
   `src/core/app.ts`. Add a phase to the list, never to one caller.
 - **`register` is `=> void`, not `=> Promise<void>`.** `configure()` runs it
   synchronously. Async setup goes in `boot()`.
-- **`app.claim(name, value)`** is the guarded namespace claim — it throws on a
-  taken name instead of silently overwriting. Named `claim` and not `provide`
-  because a Provider is a third party the app speaks to (`FJS-D06`).
+- **`app.own(name, value)`** takes a name on the app — it throws on a
+  taken name instead of silently overwriting. Not `provide` (a Provider is a
+  third party, `FJS-D06`) and not `claim` (a principal's, `FJS-D1255`).
 - **`app.registerMetricsSource(name, fn)`** is the blessed way into `/metrics`.
   The store behind it is `_metricsSources`; a plugin reaching for that field
   directly is guessing, and the guess fails silently.

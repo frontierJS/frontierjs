@@ -125,6 +125,9 @@ sources comes before a recommendation).
   - **B** — no; the corpus stays the Invariants and the Packages table.
   - **Recommend A** — this is Q3's A, which its recommendation already named as the next step if C proved coarse, and the gate tip is the one an app developer hits first.
 - **Q5 — Does a tip with a code example run in CI?** Invariant 16 says a runnable example is verified, not a sketch. The literate runner (`commands/literate/`) and litestone's fence runner (`FJS-D860`) already exist. Phase 0 tips are plain sentences, so this becomes a question only when `--try` arrives (4.2).
+  - **A** — no tip-level runner: a tip is a rule the tree already states (`FJS-D1220`), so any code it shows is its source's fence, graded where that source lives (`FJS-D860`, the reader `FJS-D909` places), and `--try` runs a tutor step `packages/cli/test/tutor.test.js` already exercises.
+  - **B** — `fli tip`'s own suite runs every fence the corpus can print, through `FJS-D909`'s reader, so a tip is graded even where its source package has no fence runner yet.
+  - **Recommend A** — B grades the same text twice in two suites (Invariant 4's one-owner shape); where a source is ungraded the gap is that package's fence runner, not the tip's.
 
 ## The nine
 

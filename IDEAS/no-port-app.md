@@ -137,13 +137,45 @@ an untrusted client* already argued, and this paper defers to it.
 - **Is Junction's Bun-only stance also a stance about Workers?** A yes closes
   the vendor-hosted kind for good and this paper says so plainly. A *not yet*
   reopens `runtime-targets.md`, which this paper does not re-argue.
+  - **A** — yes: the vendor-hosted Worker kind is closed, this paper states it
+    beside the two kinds it adds, and `runtime-targets.md` stays the only place
+    a non-Bun runtime is argued (`CLAUDE.md` Packages: *Bun-only and no version
+    of it is not* — `Bun.serve`, `Bun.file`, `bun:sqlite`)
+  - **B** — not yet: the paper names Workers as deferred, and `runtime-targets.md`
+    gains a Workers section as a second target beside the native one, still
+    parked until core leaves alpha (`FJS-D14`, `runtime-targets.md:9`)
+  - **Recommend A** — the tree already says it plainly and the browser-only kind
+    is the reachable shape without it; `runtime-targets.md` can still reopen it
+    after alpha, so a *yes* closes nothing a later ruling cannot.
 - **Who owns the sync server for a browser-only app** when the author later
   wants two devices? Homestead says Junction. That is the moment the kind
   changes, and the migration from browser-only to static + API is the path
   worth making cheap.
+  - **A** — Junction: browser-only → static + API is adding an `api/` surface over
+    the same `db/schema.lite`, and Homestead's sync (`homestead.md`, every phase
+    assumes a Junction behind it) is the one sync; the migration owed is moving
+    the OPFS rows up on first connect
+  - **B** — the host: the vendor's storage is a Provider declared in conduit
+    (`FJS-D177`), and the browser Litestone syncs to it with no Junction — a
+    second sync protocol beside Homestead's
+  - **Recommend A** — one sync owner (Invariant 4's shape), and the kind change
+    is then a surface added rather than a protocol swapped; B duplicates
+    Homestead's held writes and conflict rules against a store with no gates.
 - **Lifetime as a declaration.** A disposable app has one. Nothing in the
   schema says *this is gone in a month*, and `forgetting.md` is the nearest
   paper.
+  - **A** — no word: lifetime stays outside the schema, as `FJS-D657` ruled
+    for retention (*Retention stays a job the app schedules, and Caravan owns
+    the clock* — `FJS-D36`); a disposable app is deleted by whoever hosts it
+  - **B** — a Release declaration: the artifact kind carries an expiry (the
+    deploy says *gone after 30d*, the way a preview already dies with its
+    branch, `FJS-D1252`), and the schema stays silent
+  - **C** — a schema word (`@@lifetime(30d)` at the schema level), read by the
+    build and the host — a sibling of row-level `@@expires`
+    (`packages/litestone/src/core/schema-maps.js:1558`)
+  - **Recommend A** — no second product asks for it, `FJS-D657` already refused
+    a declared clock, and a whole-app lifetime is the host's to enforce; B is
+    the place if one ever does, never the schema.
 
 ## Sources
 

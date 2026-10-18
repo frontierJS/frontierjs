@@ -401,7 +401,7 @@ function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
 //
 // A negative `$limit` reaches SQLite as `LIMIT -1`, which SQLite reads as NO
 // limit — so the one directive a paginated endpoint exists to bound became the
-// way past the bound, unauthenticated (`FJS-683`). `clampPage` floors it now,
+// way past the bound, unauthenticated (`FJS-683`). `clampPagination` floors it now,
 // but a clamp answers a caller who stated something impossible with silence.
 // Refused by NAME here, where the `$` convention is already owned, in the same
 // shape `$checkWhere` refuses a filter key it cannot honor.

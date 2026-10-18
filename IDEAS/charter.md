@@ -26,7 +26,7 @@ everywhere (Charter's model, service, files and `charter.json`) for two reasons:
 belongs and what they may do is most of one. **Set aside:** Schematic, Foundation,
 Roughcut and Atlas. Atlas may still fit later, as the name for a charter that
 covers a live app and its rigs as well as the first build. *Homestead* is taken
-(the offline work, `FJS-D297`), and `app.claim` rules out *claim*.
+(the offline work, `FJS-D297`), and *claim* is the Warden's (`FJS-D1255`).
 
 ---
 
@@ -197,12 +197,39 @@ document and the build in one.
 
 - **Is a charter a framework artifact or an app's?** If `fli new` replays it, the
   format is the framework's, and so is the name.
+  - **A** — the framework's: a charter file format lives beside Oracle's answer
+    (`packages/oracle/src/`), `fli new --charter <file>` replays it the way
+    Better-T-Stack replays `bts.jsonc`, and *Charter* becomes a `VOCABULARY.md` noun
+  - **B** — the app's: the format stays in the Charter stressor
+    (`charter/builder/charter.ts`); `fli new` takes only an Oracle answer, which
+    `emit(answer, { scaffold })` already consumes (`packages/oracle/src/emit.js:62`),
+    and the shape, vendors and custom pieces stay the builder's business
+  - **Recommend B** — the framework already owns the replayable part, the answer
+    `emit` turns into `db/schema.lite`; the rest is a prototype's guess at a
+    product, and the paper's own needs table lists the replay as *Not started*.
+    Promote the format when a second caller of `fli new` needs it.
 - **Is the charter the Oracle answer, or a wrapper around one?** The shape, the
   vendors and the custom pieces are not entities. Either the answer grows to
   hold them, or the charter holds the answer next to them.
+  - **A** — the answer grows: `checkAnswer` (`packages/oracle/src/answer.js:126`)
+    and the contract `brief.js` renders gain shape, vendors and custom pieces, so
+    one graded object is the whole plan
+  - **B** — a wrapper: the charter is `{ shape, entry, bought, later, answer }`,
+    with the Oracle answer embedded untouched and graded as it is today
+  - **Recommend B** — Oracle is the catalog, the ladder and the emitter to `.lite`
+    (`FJS-D601`); vendors and to-dos emit no schema, so grading them in `checkAnswer`
+    widens a module whose job is the Data realm. The paper's claim, *the plan is
+    Oracle's answer*, still holds for the part that is built.
 - **Where does it run?** Inside Charter it is an instrument. As a product it is a
   page that calls a model, and `FJS-D601` keeps the model out of Oracle, so the
   caller is the product.
+  - **A** — as `FJS-D601` rules: Oracle holds no model, and the prompt-to-app
+    builder is the caller for anyone who is not a developer, so the charter runs
+    in the Charter app (its own `api/` holds the key), and a developer's path is a
+    skill that calls the same Oracle module
+  - **Recommend A** — `FJS-D601` settles it: *whatever runs the model calls that
+    module — a skill for a developer, the prompt-to-app builder for anyone else.
+    `fli` never holds a key.*
 
 ## Sources
 

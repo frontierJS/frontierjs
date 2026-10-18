@@ -273,7 +273,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           it on the files' mtimes), behind the same refusal. It writes one
           thing itself — a ruling, through fli's `decide` under the register
           guard; everything else is `discuss`, a send to `app.workbench`
-          (claimed in app.ts, ONE instance, because a queued message lives in
+          (owned in app.ts, ONE instance, because a queued message lives in
           the instance that started the run) with the prompt
           core/registers.ts composes per intent — `fix` and `frame` are the
           repo's `/fix-next` and `/frame-next`, never a restatement of them.

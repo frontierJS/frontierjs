@@ -38,28 +38,28 @@ const at = (level: number) => {
 const ORDER = { id: 7, reference: 'ORD-7', total: 100, note: null, customerId: 3 }
 const names = (cs: Array<{ tool: string }>) => cs.map(c => c.tool).sort()
 
-describe('the moves a row allows', () => {
+describe('the transitions a row allows', () => {
 
-  test('are the moves whose from holds the row\'s value — a pending order is paid or lapsed, never shipped', () => {
-    const moves = at(4).crumbs('orders_get', { ...ORDER, status: 'pending' }, { id: 7 }).filter(c => c.kind === 'move')
-    expect(names(moves)).toEqual(['orders_lapse', 'orders_pay'])
-    expect(moves.find(m => m.tool === 'orders_pay')).toMatchObject({ args: { id: 7 }, field: 'status', to: 'paid' })
+  test('are the transitions whose from holds the row\'s value — a pending order is paid or lapsed, never shipped', () => {
+    const transitions = at(4).crumbs('orders_get', { ...ORDER, status: 'pending' }, { id: 7 }).filter(c => c.kind === 'transition')
+    expect(names(transitions)).toEqual(['orders_lapse', 'orders_pay'])
+    expect(transitions.find(m => m.tool === 'orders_pay')).toMatchObject({ args: { id: 7 }, field: 'status', to: 'paid' })
   })
 
   test('and only those the caller is offered — refund needs 5, so a paid order offers it to staff and not to a user', () => {
     const paid = { ...ORDER, status: 'paid' }
-    expect(names(at(4).crumbs('orders_get', paid, { id: 7 }).filter(c => c.kind === 'move'))).toEqual(['orders_ship'])
-    expect(names(at(5).crumbs('orders_get', paid, { id: 7 }).filter(c => c.kind === 'move'))).toEqual(['orders_refund', 'orders_ship'])
+    expect(names(at(4).crumbs('orders_get', paid, { id: 7 }).filter(c => c.kind === 'transition'))).toEqual(['orders_ship'])
+    expect(names(at(5).crumbs('orders_get', paid, { id: 7 }).filter(c => c.kind === 'transition'))).toEqual(['orders_refund', 'orders_ship'])
   })
 
-  test('a move answers the moved row, and its breadcrumbs are the moves from where it landed', () => {
+  test('a transition answers the moved row, and its breadcrumbs are the transitions from where it landed', () => {
     const shipped = at(5).crumbs('orders_pay', { ...ORDER, status: 'shipped' }, { id: 7 })
-    expect(shipped.filter(c => c.kind === 'move')).toEqual([])
+    expect(shipped.filter(c => c.kind === 'transition')).toEqual([])
   })
 
-  test('a create is given no id, so the moves take the row\'s own', () => {
+  test('a create is given no id, so the transitions take the row\'s own', () => {
     const made = at(4).crumbs('orders_create', { ...ORDER, id: 9, status: 'pending' })
-    expect(made.filter(c => c.kind === 'move').every(c => (c.args as { id: unknown }).id === 9)).toBe(true)
+    expect(made.filter(c => c.kind === 'transition').every(c => (c.args as { id: unknown }).id === 9)).toBe(true)
   })
 })
 

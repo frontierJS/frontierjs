@@ -89,7 +89,7 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
   let timer:   ReturnType<typeof setInterval> | null = null
   let running = false
   // The timer runs the API's own pass rather than reaching for `app.outbox`:
-  // `claim()` refuses to overwrite, so on a second relay over one table that
+  // `own()` refuses to overwrite, so on a second relay over one table that
   // property is the FIRST relay's and this one's clock would drive it.
   let api:     OutboxApi | null = null
 
@@ -157,9 +157,9 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
         drop:    (ids?: string[]) => dropOutbox(app, ids),
       }
 
-      // claim() refuses to overwrite, which is what stops two relays over one
+      // own() refuses to overwrite, which is what stops two relays over one
       // table from both thinking they own it.
-      if (typeof app.claim === 'function') app.claim('outbox', api)
+      if (typeof app.own === 'function') app.own('outbox', api)
       else (app as { outbox?: OutboxApi }).outbox = api
 
       // *How many effects are owed* is the first question asked when something

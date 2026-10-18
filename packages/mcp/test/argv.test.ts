@@ -194,7 +194,7 @@ describe('the schema types each value', () => {
 
 describe('an id and a payload', () => {
 
-  test('a move takes its id as the first bare word, and refuses to run without one', () => {
+  test('a transition takes its id as the first bare word, and refuses to run without one', () => {
     const reboot = cmd('basecamp', 'servers_reboot')
     expect(parseArgs(reboot, ['srv-1'])).toEqual({ id: 'srv-1' })
     expect(parseArgs(reboot, ['--id', 'srv-1'])).toEqual({ id: 'srv-1' })

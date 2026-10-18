@@ -274,19 +274,19 @@ export async function buildBasecampApp(
     return new Forbidden(`Requires ${role} role in this workspace to ${e.transition ?? e.operation ?? 'make this change'}`)
   })
 
-  // Attach the Basecamp-specific subsystems. Every one of them is a claim —
-  // the guarded namespace claim, which throws on a collision instead of
-  // silently last-write-wins. Nothing here assigns over a name Junction owns:
-  // `app.db` IS the Litestone client createApp was given and is claimed by
-  // nobody, and the raw handle takes a name of its own rather than replacing it.
-  app.claim('sqlite', rawDb)
-  app.claim('providers', await buildProviders(
+  // Attach the Basecamp-specific subsystems through `app.own`, which throws on
+  // a collision instead of silently last-write-wins. Nothing here assigns over
+  // a name Junction owns: `app.db` IS the Litestone client createApp was given
+  // and is owned by nobody, and the raw handle takes a name of its own rather
+  // than replacing it.
+  app.own('sqlite', rawDb)
+  app.own('providers', await buildProviders(
     ((config as Record<string, unknown>).providers ?? {}) as Record<string, Record<string, unknown>>
   ))
   // One instance for every service that sends to it: a message sent while a
   // run is working waits in this instance's memory, and only the instance that
   // started the run drains it when the run ends.
-  app.claim('workbench', createWorkbench({ dir: env.WORKBENCH_DIR || undefined, bin: env.CLAUDE_BIN, env }))
+  app.own('workbench', createWorkbench({ dir: env.WORKBENCH_DIR || undefined, bin: env.CLAUDE_BIN, env }))
 
   // ── Conduit — integrations ────────────────────────────────────────────
   // Plugin augments app with app.conduit, wires /metrics, and registers

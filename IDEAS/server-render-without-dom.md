@@ -150,6 +150,23 @@ happy-dom path, or each difference is a ruling.
 - **Q2: `{@html}`.** A raw string has to be inserted into a plain tree as-is
   and serialized unescaped. That is the one place the escaping owner is
   deliberately bypassed, so it needs its own test.
+  - **A** — a `raw` node kind in the plain tree, serialized verbatim. Fastest,
+    but the client parses the same string through a `<template>`'s
+    `innerHTML` (`packages/mesa/src/runtime.js:6107`), which repairs unclosed
+    and misnested tags, so a malformed string serializes differently on the
+    two paths and § 3's corpus parity check fails on it.
+  - **B** — parse the string once with happy-dom's fragment parser into plain
+    nodes, then serialize through the one escaping owner. Output matches the
+    client's parse, and `{@html}` stops being a bypass; the cost is a parse
+    per `{@html}`, not a document.
+  - **C** — `{@html}` is a kind the server target does not lower: the
+    component falls back to happy-dom and the result names it in `unlowered`,
+    as § 3 already provides. No new code; every component using it pays the
+    old cost.
+  - **Recommend B** — it keeps § 3's "same HTML on either path" without a
+    second escaping path, and the window Q1-A installs already carries the
+    parser. A's verbatim output disagrees with `runtime.js:6107` on any
+    malformed string; C is the fallback if B's parse is measured as the cost.
 
 ## See also
 

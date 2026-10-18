@@ -162,11 +162,11 @@ export interface App {
   root?:    string | null
   notify?:  (recipient: Recipient, notification: Notification) => Promise<void>
   /**
-   * Junction's guarded namespace claim. Used when present so a second plugin
-   * claiming `app.notify` fails loudly instead of silently winning; falls back
+   * Junction's guarded namespace owner. Used when present so a second plugin
+   * owning `app.notify` fails loudly instead of silently winning; falls back
    * to plain assignment against an older Junction.
    */
-  claim?: (name: string, value: unknown) => void
+  own?: (name: string, value: unknown) => void
 }
 
 // ─── Plugin options ───────────────────────────────────────────────────────────

@@ -3135,13 +3135,13 @@ describe('conduit Junction plugin', () => {
     expect(typeof plugin.ready).toBe('function')
   })
 
-  // A minimal stand-in for the two seams register() uses — app.claim() for the
+  // A minimal stand-in for the two seams register() uses — app.own() for the
   // namespace and app.registerMetricsSource() for /metrics.
   const fakeApp = (): Record<string, unknown> => {
     const sources = new Map<string, () => unknown>()
     const a: Record<string, unknown> = { _metricsSources: sources }
-    a.claim = (name: string, value: unknown) => {
-      if (a[name] !== undefined) throw new Error(`already claimed: ${name}`)
+    a.own = (name: string, value: unknown) => {
+      if (a[name] !== undefined) throw new Error(`already owned: ${name}`)
       a[name] = value
     }
     a.registerMetricsSource = (name: string, fn: () => unknown) => { sources.set(name, fn) }

@@ -190,17 +190,52 @@ evolution*: none in tension, nothing here exists yet.
 - **Q1** — The nouns. `Call` for the row; *huddle* is Slack's product word and
   *room* is the SFU's. **Recommend `Call`** — it is what the row is, and the
   adapter keeps *room* for the SFU's object.
+  - **A** — `model Call` is the row, `calls` the rig, `call:{id}` the channel; *room* survives
+    only inside the adapter as the SFU's object (`connect(room, token)`, § 2)
+  - **B** — `model Huddle`: Slack's product word as the noun, `huddles.*` service; the row
+    then names one UX rather than the thing every meeting, 1:1 or bot join is
+  - **C** — `model Room`: the SFU's word lifted to the row, so the adapter's `connect(room)`
+    and the schema share one noun — but a mesh call has no room object to match it
+  - **Recommend A** — the row is a call whatever the transport, and keeping *room* behind
+    the adapter keeps one word for one thing (`decision-rules` coin test).
 - **Q2** — Mesh default or SFU default? **Recommend mesh**: zero infrastructure,
   ≤4 covers the huddle; the SFU adapter is Phase 5.
+  - **A** — mesh is the default adapter: no infrastructure past TURN (`calls.turn()`), ≤4
+    peers; LiveKit / Cloudflare SFU adapters arrive in Phase 5 behind the same `connect()`
+  - **B** — an SFU is the default from Phase 1: LiveKit (self-hosted or cloud) as a required
+    service for any app with calls; scales past 4 and gives Egress for § 3, but every app
+    pays a server and a token issuer before its first call
+  - **Recommend A** — the target is the ≤4 huddle, and the adapter seam means the SFU is a
+    config change later, not a rewrite; B charges infrastructure to the common case.
 - **Q3** — Does print-kit's Chromium worker become a seam two kits consume, or
   does the server-side participant get its own? **Recommend lift**: one owner,
   and the 25-jobs-per-tab replacement and the 30 s wedge rule are already learned
   there.
+  - **A** — lift: `createPrinter`'s queue/tab worker (`packages/print-kit/src/printer.js:37`)
+    becomes a shared seam the participant also consumes
+  - **B** — the participant builds its own worker on `@frontierjs/mesa/drive` (`openChrome`,
+    already what print-kit imports, `printer.js:31`), which is where the 30 s bound lives
+    (`printer.js:34`); print-kit stays as it is
+  - **Recommend B** — the printer's lessons are specific to short, offline, script-off,
+    one-at-a-time jobs (`printer.js:20`, `TAB_JOBS = 25` at `:69`); a participant is one
+    long, networked, script-on tab, so the shared part already has its owner in `mesa/drive`.
 - **Q4** — Does the recorder kit need a schema at all? **Recommend no**: a share
   link is a `File` column in the app's own model; the kit stays a leaf.
+  - **A** — no schema: the kit is a UI leaf; an app that keeps recordings declares its own
+    `File` column (as `Call.artifacts` does, § 2)
+  - **B** — the kit ships a `Recording` schema fragment an app imports (the way auth ships
+    fragments), with share-link and view-count fields — and so a server half
+  - **Recommend A** — a schema makes the kit a three-realm rig and ends its use from
+    `site/`, `widgets/` and `extension/` (§ 1); B can be added when two apps model the same row.
 - **Q5** — `desktop/` (Tauri 2) for native capture, Cap-style? **Recommend not
   now**: web `getDisplayMedia` covers everything but macOS system audio and the
   picker, and iOS is out either way.
+  - **A** — not now: web `getDisplayMedia` only; macOS system audio and the native picker
+    are recorded as known gaps
+  - **B** — a `desktop/` surface (`FJS-D263`) that `wraps` `web/` and adds a Tauri 2 native
+    capture plugin for system audio and the picker, Cap-style
+  - **Recommend A** — the gap is two features on one OS, and B adds a native build and
+    release to a kit that is not yet built; `FJS-D263` keeps B open as a later surface.
 
 ---
 

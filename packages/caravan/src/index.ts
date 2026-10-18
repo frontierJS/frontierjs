@@ -1154,10 +1154,10 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
     // ── Junction plugin protocol ──────────────────────────────────────────────
 
     register(app: CaravanApp): void {
-      // Expose caravan instance on app.jobs. claim() refuses to overwrite an
-      // existing claim — two plugins owning one name used to be last-write-wins,
+      // Expose caravan instance on app.jobs. own() refuses to overwrite an
+      // existing owner — two plugins owning one name used to be last-write-wins,
       // and the loser just stopped working with no error anywhere.
-      if (typeof app.claim === 'function') app.claim('jobs', caravan)
+      if (typeof app.own === 'function') app.own('jobs', caravan)
       else app.jobs = caravan
 
       // The app itself, held for the two things a job needs it for: reading who

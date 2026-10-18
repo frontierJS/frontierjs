@@ -252,7 +252,7 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
 
     register(app: App): void {
       api = { sweep: () => sweep(app) }
-      if (typeof app.claim === 'function') app.claim('commitments', api)
+      if (typeof app.own === 'function') app.own('commitments', api)
       else (app as { commitments?: CommitmentsApi }).commitments = api
 
       // A source must be SYNCHRONOUS — `/metrics` assigns `fn()` straight into

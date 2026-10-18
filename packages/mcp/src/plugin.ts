@@ -508,7 +508,7 @@ function register(server: McpServer, app: App, tool: Tool, user: unknown, call: 
 function describeTool(tool: Tool): string {
   const subject = tool.model ?? tool.service
   const what =
-    tool.kind === 'move'   ? `Runs the '${tool.method}' transition on one ${subject}.` :
+    tool.kind === 'transition'   ? `Runs the '${tool.method}' transition on one ${subject}.` :
     tool.kind === 'custom' ? `Calls '${tool.method}' on the ${tool.service} service.` :
     `${VERB[tool.method] ?? tool.method} ${subject}.`
 
@@ -794,7 +794,7 @@ function invoke(
   const m = tool.method
 
   // Every non-CRUD verb is one signature: `call(name, id, data, opts)`. The
-  // projection shapes their inputs to match it, which is why a move carries an
+  // projection shapes their inputs to match it, which is why a transition carries an
   // id at all.
   if (!CRUD.has(m)) {
     return caller.call(m, (a.id ?? null) as never, (a.data ?? null) as never, opts)

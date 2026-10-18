@@ -4,7 +4,7 @@
 //
 // Both exist because the runtime declares something more precisely than a test
 // stub can say it: Bun's `fetch` carries `preconnect`, and `App` has no index
-// signature on purpose (Invariant 5 — a slot is claimed with `app.claim()` and
+// signature on purpose (Invariant 5 — a slot is taken with `app.own()` and
 // typed by augmenting an interface, never by making every key legal). Written
 // at the call site instead, that is twenty casts, and then one of them quietly
 // widens to `any`.

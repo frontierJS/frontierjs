@@ -65,7 +65,7 @@ Ranked by how often Feathers, Express, Nest and Prisma habits produce them.
 | `app.service('posts').find({}, { limit: 10 })` | `find(filters, { directives: { limit: 10 } })` |
 | `throw new Error('Not found')` | `throw new NotFound()` — or any error carrying a numeric `status` |
 | setting a `@system` column in a hook | `ctx.system.add('slug')` beside the assignment, or the write is a 403 |
-| `app.myThing = value` in a plugin | `app.claim('myThing', value)`, typed by augmenting an exported interface |
+| `app.myThing = value` in a plugin | `app.own('myThing', value)`, typed by augmenting an exported interface |
 | `app.scheduler.every(…, () => app.jobs.dispatch(…))` | `app.jobs.schedule(name, expr, fn)` — the queue owns its clock |
 | `process.env.N8N_URL` read where the service is first called | `attachments: { n8n: { env: { … } } }` in `junction.config.js` — startup refuses it unbound or half-bound |
 
@@ -111,7 +111,7 @@ $.dispatch = false         // announce nothing for this call
 
 **Only `data`, `query`, `id`, `result`, `error`, `statusCode` and `dispatch` can
 be assigned.** `$.anything = x` throws by name; per-call state goes in
-`$.locals`, app state in `app.claim()`.
+`$.locals`, app state in `app.own()`.
 
 A raw route gets a different context: `ctx.user` (flat, may be `null`),
 `ctx.route`, `ctx.headers`, `ctx.query` with `$` keys still present, `ctx.body`,

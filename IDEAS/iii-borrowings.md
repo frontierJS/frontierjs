@@ -36,7 +36,7 @@ iii rejects a second live owner of a worker name (fatal — the connection close
 or of a function id (only that function is rejected; the worker keeps serving the
 rest). Start order never decides who serves.
 
-**FJS:** `app.claim()` and the router already refuse. The loader does not: two
+**FJS:** `app.own()` and the router already refuse. The loader does not: two
 service files claiming one name are resolved by sort order — the first serves and
 the second is reported and skipped (`packages/junction/src/core/loader.ts`, the
 `registeredBy` branch). That is start order deciding, which is the case iii closes.

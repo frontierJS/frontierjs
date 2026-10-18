@@ -118,7 +118,25 @@ Done when: deferred until Phases 1–3 land.
 ## Open questions
 
 - **Q1** — Should every `fli check` error refuse a deploy, or only a security-tagged subset? Refusing on all of them is simpler, but a CSS token error would then block a hotfix.
+  - **A** — every `severity: 'error'` app rule refuses. Today that is the hygiene set — `css-token-undefined` (`packages/cli/core/checks.js:202`), `resource-file-name`, `vite-strict-port` — while the security rules the paper names are all `warn`: `gate-unreachable` (`:171`), `service-as-system` (`:162`), `battery-raw-secret` (`:167`), `untrusted-upload-root` (`:110`). So A blocks a hotfix on a token and refuses no security finding.
+  - **B** — the rule table gains one field, `deploy: 'refuse'`, set on the security rules; `01c-posture` refuses on those and prints every other finding as a warning. Severity keeps meaning what it means in `fli check`, and a rule opts into the deploy by its own row.
+  - **C** — `01c` runs `fli check` and refuses on nothing; it prints. The refusals stay in `02b-build-check`, which already owns refusing a deploy.
+  - **Recommend B** — the probe inverts the premise: error severity is the hygiene half (`checks.js:202`) and the security half is warn (`:162`–`:171`), so A refuses the wrong set and C refuses nothing; a per-row field keeps the choice in the rule's one owner.
 - **Q2** — Should a critical advisory that ships refuse, or always warn?
+  - **A** — always warn, per the paper's item 8: blocking an operator mid-incident costs more than the risk. A deploy and CI then disagree, since CI FAILS on a shipping advisory (`scripts/ci.mjs:524`).
+  - **B** — a shipping CRITICAL refuses, lower severities warn; an accepted one is a named entry with a reason, the `knownAdvisories` allowance CI already reads (`scripts/ci.mjs:554`), and no network is a named skip.
+  - **Recommend A** — an advisory is about code already running in production, so refusing the deploy that might carry the fix inverts the risk; the shipping-advisory FAIL belongs where CI already enforces it, before a release, not at the deploy.
 - **Q3** — Escape hatch: a config key (precedent: `api.buildCheck: false`), a per-run flag, or none?
+  - **A** — a config key, `deploy.api.posture = false`, beside the precedent `buildCheck` (`packages/cli/commands/deploy/_steps-docker/02b-build-check.md:4`). Off for every deploy until someone edits it back.
+  - **B** — a per-run flag, `fli deploy --skip-posture "<reason>"`, the reason required and printed in the deploy log; nothing persists.
+  - **C** — none; a refusal is cleared by fixing the finding or by the rule's own allowance (Q2's `knownAdvisories`).
+  - **Recommend B** — the paper's own adjudication (*paved road vs. the workaround*) asks for a written reason, which a config key never carries and which an incident needs; a persisted key is a check silently off for every later deploy, the silence item 9 forbids.
 - **Q4** — Secret shapes: our own patterns in `build-check.js`, or gitleaks as a dependency?
+  - **A** — our own shapes in `build-check.js`, applied inside the walk `traceToFinalImage` (`packages/cli/core/build-check.js:311`) already does, so only what reaches the final image is scanned: a short list (AWS `AKIA`, Stripe `sk_live_`, PEM private key, GitHub `ghp_`, Slack `xox`) plus the keys an app's own `.env` declares.
+  - **B** — gitleaks as a dependency, its ~200 maintained rules, called on the paths the walk says reach the image; a Go binary `fli` must find or fetch, so a machine without it is a named skip.
+  - **Recommend A** — the value is the final-image trace, which gitleaks does not do, and an external binary turns every missing install into a skip line; a short list scoped by the trace keeps one owner and no new dependency, and gitleaks can be a later layer if the list proves thin.
 - **Q5** — `bun audit` (CI) or OSV (Basecamp): which is the one source for *is this version vulnerable*?
+  - **A** — `bun audit`, as CI uses it (`scripts/ci.mjs` `advisories()`), lifted per 1.1; Basecamp's OSV lookup (`packages/basecamp/api/src/core/dependencies.ts:30`) calls the lifted module instead. Needs the app's lockfile and a bun on the machine asking.
+  - **B** — OSV per installed version, as Basecamp asks it (`dependencies.ts:144`); CI and deploy call it through the lifted module. One HTTP API, no lockfile tooling, works from a server that only knows the installed names and versions.
+  - **C** — two sources stay: `bun audit` for the builder (CI, deploy), OSV for Basecamp's after-the-fact watch, the ruling saying why.
+  - **Recommend B** — OSV answers from name and version alone, which is all Basecamp has on a running fleet and all the builder has too, and it already carries a provider target with a named unanswered state (`dependencies.ts:122`); `bun audit` reads the npm advisory DB, which OSV aggregates.

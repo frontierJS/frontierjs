@@ -24,7 +24,7 @@ export async function usesTheClient(ctx: ServiceContext) {
   // The principal. Declared, and reached without a cast.
   const actor = ctx.auth.user?.userId ?? null
 
-  // The page a `paginate()` hook leaves behind, in the one shape `clampPage`
+  // The pagination a `paginate()` hook leaves behind, in the one shape `clampPagination`
   // answers rather than a third spelling of it.
   const page: { limit: number; offset: number } | undefined = ctx.locals.paginate
 

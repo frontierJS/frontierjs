@@ -47,7 +47,7 @@ at the package root, which is what `files:` publishes.
 | Tests | **54 pass, 0 fail**, 3 files (`bun run test`) |
 | Typecheck | **clean, 0 errors, no baseline** |
 | Public exports | `Notification`, `notifications`, `inApp`, `mail`, four error classes, + types |
-| Plugin seam | `register()` claims `app.notify`; `boot()` checks the mailer; `shutdown()` closes drivers |
+| Plugin seam | `register()` owns `app.notify`; `boot()` checks the mailer; `shutdown()` closes drivers |
 | Drive | `example`: `bun run verify:notify` — mail at a real server, plus the in-app rows each caller can and cannot see |
 
 Reproduce: `cd packages/notifications && bun run test && bun run typecheck`.
@@ -85,8 +85,8 @@ cannot half-land.
 ## How it attaches
 
 `register()` builds the driver registry, puts `{ db, drivers }` on the app under
-`Symbol.for('frontierjs.notifications.state')`, and claims `app.notify` through
-`app.claim` when Junction offers it. The state does not enumerate onto the app
+`Symbol.for('frontierjs.notifications.state')`, and takes `app.notify` through
+`app.own` when Junction offers it. The state does not enumerate onto the app
 surface, and `notify()` on an app that never configured the plugin names the
 missing plugin rather than throwing about an undefined property.
 

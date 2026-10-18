@@ -221,13 +221,13 @@ export function createPrinter({ windowSize = '1280,900', find = findChrome } = {
 }
 
 /** The printer as a junction plugin, without importing junction: the app
- *  claims it as `app.printer`. With no Chrome on the machine the app refuses
+ *  owns it as `app.printer`. With no Chrome on the machine the app refuses
  *  to boot, by name — not at the first send, hours later, to a recipient. */
 export function printer(/** @type {Parameters<typeof createPrinter>[0]} */ opts) {
   const printer = createPrinter(opts)
   return {
     name: 'printer',
-    register(/** @type {{ claim(name: string, value: unknown): void }} */ app) { app.claim('printer', printer) },
+    register(/** @type {{ own(name: string, value: unknown): void }} */ app) { app.own('printer', printer) },
     boot() {
       if (!printer.available())
         throw new Error(process.env.FJS_CHROME

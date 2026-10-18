@@ -125,25 +125,25 @@ describe('LOCKED is reachable by nobody — the shape example has not got', () =
 
 // ─── the half the gate says nothing about ─────────────────────────────────────
 
-describe('a declared move grades the verb that drives it', () => {
+describe('a declared transition grades the verb that drives it', () => {
 
-  test('a move with no gate of its own takes the model update level', () => {
+  test('a transition with no gate of its own takes the model update level', () => {
     expect(at(0).hid('orders_pay')).toBe(true)
     expect(at(4).has('orders_pay')).toBe(true)
     expect(at(4).has('orders_ship')).toBe(true)
     expect(at(4).why('orders_pay')?.needs).toBe(4)
-    expect(at(4).why('orders_pay')?.verdict).toBe('move-floor')
+    expect(at(4).why('orders_pay')?.verdict).toBe('transition-floor')
   })
 
-  test('a gated move takes the HIGHER of the two, not its own number', () => {
-    // orders.refund — @gate 5 over update 4. The move's number wins.
+  test('a gated transition takes the HIGHER of the two, not its own number', () => {
+    // orders.refund — @gate 5 over update 4. The transition's number wins.
     expect(at(4).hid('orders_refund')).toBe(true)
     expect(at(5).has('orders_refund')).toBe(true)
     expect(at(5).why('orders_refund')?.needs).toBe(5)
   })
 
   test('invoices.void needs 8, because the MODEL is written at 8', () => {
-    // The regression that measurement found. Grading by the move's own @gate 5
+    // The regression that measurement found. Grading by the transition's own @gate 5
     // offers this at STAFF, two rungs under what the boundary accepts — the one
     // mistake here that misleads a caller about its own permissions rather than
     // merely wasting a turn.
@@ -152,19 +152,19 @@ describe('a declared move grades the verb that drives it', () => {
     expect(at(8).has('invoices_void')).toBe(true)
     expect(at(8).why('invoices_void')?.needs).toBe(8)
 
-    // The negative control for the floor: taking the move's number alone.
+    // The negative control for the floor: taking the transition's number alone.
     const naive = Math.min(8, 5)
     expect(naive).toBe(5)
     expect(at(naive).has('invoices_void')).toBe(false)
   })
 
-  test('a @system move takes the same floor as any move — @system is whose decision, not how senior', () => {
+  test('a @system transition takes the same floor as any transition — @system is whose decision, not how senior', () => {
     // `FJS-D150`: the method lifts @system on the CALLER's client, which keeps
     // the gate. Withheld from every standing, `example`'s `invoices.settle`
     // was hidden from the staff who press it.
     expect(at(3).hid('orders_lapse')).toBe(true)
     expect(at(4).has('orders_lapse')).toBe(true)
-    expect(at(4).why('orders_lapse')?.verdict).toBe('move-floor')
+    expect(at(4).why('orders_lapse')?.verdict).toBe('transition-floor')
     expect(at(4).why('orders_lapse')?.needs).toBe(4)
 
     // The control: on a model written at 8 the same attribute still leaves the
@@ -177,7 +177,7 @@ describe('a declared move grades the verb that drives it', () => {
 
 describe('what the seed does not say is labelled, not guessed', () => {
 
-  test('a custom method backed by no declared move stays visible and is marked', () => {
+  test('a custom method backed by no declared transition stays visible and is marked', () => {
     const p = at(0)
     expect(p.has('carts_checkout')).toBe(true)
     expect(p.why('carts_checkout')?.verdict).toBe('ungraded')
@@ -198,7 +198,7 @@ describe('what the seed does not say is labelled, not guessed', () => {
     // *Nothing refused this* and *a rule allowed it* are different facts, and a
     // verdict that conflated them would make the list useless as evidence.
     const p = at(0)
-    const graded = p.tools.filter(t => t.verdict === 'model-gate' || t.verdict === 'move-floor')
+    const graded = p.tools.filter(t => t.verdict === 'model-gate' || t.verdict === 'transition-floor')
     const open   = p.tools.filter(t => t.verdict === 'ungraded')
     // Only `Cart` earns it, and it earns it by declaring no `@@gate` at all —
     // which is what `customMethodGrade` calls `unchecked`. A custom method on a
@@ -305,7 +305,7 @@ describe('the model name a service STATES may not be a model', () => {
 
   // `Service.model` is optional and Junction defaults it to the service's own
   // name, so a service declaring no `model:` reports `orders` — camelCase,
-  // plural, matching no `$def`. Every gate and every move on that model then
+  // plural, matching no `$def`. Every gate and every transition on that model then
   // resolves to undefined, which permissive-unknown reads as *nothing declared*.
   // The most heavily gated service in an app comes out completely open, and
   // nothing fails. The first measurement taken against `example` reported a
@@ -323,7 +323,7 @@ describe('the model name a service STATES may not be a model', () => {
     expect(p.withheld[0]?.model).toBe('Order')
   })
 
-  test('the gates and the moves are really applied, not merely found', () => {
+  test('the gates and the transitions are really applied, not merely found', () => {
     // The pair. The assertion above passes against a projection that withheld
     // everything for any reason at all.
     const p4 = projectTools(AS_JUNCTION_REPORTS_IT, VIEWS, 4)
@@ -461,10 +461,10 @@ describe('a tool says what to send, or says nothing', () => {
     expect(t?.input.schema?.additionalProperties).toBe(false)
   })
 
-  test('a move takes an id and nothing else', () => {
+  test('a transition takes an id and nothing else', () => {
     // The seed says this outright by declaring the transition on the model: a
     // move acts on one row and its rules live in `@@transitions`. Before this
-    // the whole move half of the list carried no argument schema at all, so
+    // the whole transition half of the list carried no argument schema at all, so
     // `orders.refund` was visible, correctly graded, and uncallable.
     const t = tool(5, 'orders_refund')
     expect(t?.input.source).toBe('id')

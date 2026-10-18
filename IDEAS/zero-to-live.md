@@ -137,6 +137,17 @@ a restore drill with no hand SSH.
   droplet's address. DNS-only keeps the operator console off Cloudflare's path,
   and Caddy's ACME HTTP-01 works either way. `FJS-D563` makes the bit
   per-record, so this is only a default.
+  - **A** — DNS-only: step 3.4's script makes Basecamp's Domain row without
+    naming `proxied`, so it takes the schema's `false` (`FJS-D563`, `Domain.proxied`
+    in `packages/basecamp/db/schema.lite`); the A record points straight at the
+    droplet and Caddy's HTTP-01 certificate is what the browser sees.
+  - **B** — Proxied: the 3.4 script writes `proxied: true` for Basecamp's own row
+    only, so the droplet's address stays behind Cloudflare and the console's
+    traffic crosses Cloudflare's edge; an operator flips it per record either way.
+  - **Recommend A** — the schema already defaults `false`, so A writes no
+    override and keeps one origin for the value (`FJS-D563`'s reason for refusing a
+    global flag); the operator console staying off a third party's TLS
+    termination outweighs hiding an address the fleet's own enrollment already exposes.
 - Basecamp's own distribution (a checkout, or a published image) stays
   `deploy-plane.md`'s question. It matters only once someone outside this repo
   installs Basecamp.

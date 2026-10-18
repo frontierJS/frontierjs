@@ -37,7 +37,7 @@ for structure, quotes as the escape.
 `unknownDirectives`, `directiveParams`, `orderByPair`) · `@frontierjs/toolbelt/query`
 (the values) · junction `transport/bridge.ts` `toContext()` / `internal()` +
 `refuseBadDirectives` / `refuseNegativeWindow` · junction `core/directives.ts`
-`clampPage` · junction `core/query-values.ts` `normalizeOrderBy` / `normalizeSelect` ·
+`clampPagination` · junction `core/query-values.ts` `normalizeOrderBy` / `normalizeSelect` ·
 junction `core/litestone.ts` `parseQuery` / `parsePopulate` / `findWindow` · sierra
 `router/index.js` L782 (`page.query` + `page.directives`) · junction `client/index.ts`
 `buildQueryString` / `buildWsQuery` · Invariant 10 · `FJS-D125`, `FJS-D237`, `FJS-D145`,
@@ -317,7 +317,7 @@ a flag as a boolean, or `1`/`0`; a text directive as a string only.
 
 | # | leak | where | what the spec must say instead |
 | --- | --- | --- | --- |
-| L1 | The `0` floor on a count exists because *SQLite reads a negative LIMIT as UNBOUNDED* | `packages/junction/src/core/directives.ts:96-101` (`clampPage`), `FJS-683` | A negative count is refused; a host's own LIMIT sentinel is its own problem |
+| L1 | The `0` floor on a count exists because *SQLite reads a negative LIMIT as UNBOUNDED* | `packages/junction/src/core/directives.ts:96-101` (`clampPagination`), `FJS-683` | A negative count is refused; a host's own LIMIT sentinel is its own problem |
 | L2 | *No limit* is spelled `LIMIT -1` | `packages/litestone/src/core/query.js:1329` (`pageSql`) | Absent is the host default; `-1` is never a wire or parsed value |
 | L3 | The count grammar is enforced by SQLite, not the parser: `1.5` reaches `LIMIT 1.5` and SQLite says *datatype mismatch* | `packages/toolbelt/src/directives/directives.js:40-44` (`asNumber` = `Number()`), `directives.ts:103-105` | DIGITS, § 2.2; F2 |
 | L4 | `normalizeOrderBy`'s output `[{field:'asc'|'desc'}]` IS litestone's `orderBy` argument, and the ARGUMENT escape (`{dir,nulls}`, `near`, relation hop) is litestone's grammar passed *untouched* | `packages/junction/src/core/query-values.ts:63-77`, header L17-26 | The list form is the normal form; an argument is host-defined and the spec names only that it is an object in the direction position |
@@ -344,7 +344,7 @@ host-defined* notes, not defects. L3, L14, L15, L16, L17 are defects and have ro
 **Findings (rows in the run report).** Each was RUN on 2026-10-10 unless marked.
 
 - **F2** `?$limit=1.5` → **500** `GeneralError: datatype mismatch`. `asNumber` passes
-  `1.5`, `clampPage` keeps it, `pageSql` emits `LIMIT 1.5`, SQLite refuses at prepare.
+  `1.5`, `clampPagination` keeps it, `pageSql` emits `LIMIT 1.5`, SQLite refuses at prepare.
   `directives.js:40-44` · `directives.ts:103-105` · `query.js:1329`. Confirmed.
 - **F3** Lenient count reads: `true`→1 (one row), `[]`→0 (no rows), `0x10`→16, `1e2`→100,
   `+5`→5, `"5"`→5, all 200. `directives.js:40-44` (`Number()` where the value half uses a
@@ -373,7 +373,7 @@ host-defined* notes, not defects. L3, L14, L15, L16, L17 are defects and have ro
   `0` (400). The kit comment claims bracket notation yields `{'0':…}`; the kit's own
   encoder emits `[]`. `directives.js:258-262, 282-296` vs `query-values.ts:70-71`. Confirmed.
 - **F10** `bridge.internal({ query: { $limit: -1 } })` → `directives.limit = -1`, no
-  refusal; `clampPage` floors it to `0`, so the in-process and socket paths answer *no
+  refusal; `clampPagination` floors it to `0`, so the in-process and socket paths answer *no
   rows, 200* where HTTP answers 400. `bridge.ts:276-294` (no `refuseNegativeWindow`) ·
   `directives.ts:104`. Confirmed.
 - **F11** `$first` and `$wrap` each read truthiness their own way: `?$first=no` answers a

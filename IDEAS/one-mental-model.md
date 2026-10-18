@@ -155,7 +155,7 @@ export function audit(opts): Plugin {
   const instance = createAuditor(opts)
   return {
     name: 'audit',
-    register(app) { app.claim('audit', instance) },   // sync, at configure()
+    register(app) { app.own('audit', instance) },   // sync, at configure()
     async boot(app)     { await instance.init() },      // async, at start()
     ready(app)          {},                             // after listening
     async shutdown(app) { await instance.close() },     // at stop()
@@ -306,7 +306,7 @@ frameworks — comments explain *why*, not *what*. Specific issues:
   half-works (acknowledged in a comment). Since `register` is guaranteed
   synchronous, instance creation could move *into* `register` and make reuse
   actually correct.
-- **`app.claim()` already exists** — `app.ts:1364`, throws on collision, and
+- **`app.own()` already exists** — `app.ts:1364`, throws on collision, and
   Caravan already uses it (`packages/caravan/src/index.ts:285`). Conduit's raw
   `app.conduit = instance` is the outlier and should adopt it.
 - **Stale landmine:** `CLAUDE.md` says junction and conduit declare `app.conduit`

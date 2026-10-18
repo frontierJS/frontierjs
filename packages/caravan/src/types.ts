@@ -636,11 +636,11 @@ export interface CaravanApp {
   /** Where Caravan attaches itself — Junction's augmentable `App.jobs` slot */
   jobs?: unknown
   /**
-   * Junction's guarded namespace claim. Used when present so a second plugin
-   * claiming `app.jobs` fails loudly instead of silently winning; falls back to
+   * Junction's guarded namespace owner. Used when present so a second plugin
+   * owning `app.jobs` fails loudly instead of silently winning; falls back to
    * plain assignment against an older Junction.
    */
-  claim?: (name: string, value: unknown) => void
+  own?: (name: string, value: unknown) => void
   /** Junction's resolved config — read for an optional `caravan` section */
   config?: unknown
   /** `createApp({ root })` — `*.job.ts` files load from `jobs/` beside it (`FJS-D1080`) */

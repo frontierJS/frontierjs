@@ -91,8 +91,8 @@ describe('plugin lifecycle against a real app', () => {
 
   it('shutdown() destroys the conduit — later sends fail closed', async () => {
     // Drive the full lifecycle on a fresh app, the way app.stop() does, without
-    // binding a port. It must be a fresh app: register() claims app.conduit via
-    // app.claim(), which now refuses to overwrite an existing claim.
+    // binding a port. It must be a fresh app: register() takes app.conduit with
+    // app.own(), which refuses to overwrite an existing owner.
     const app = await createTestApp()
     const plugin = conduitPlugin({ credentials: secrets(), targets: [providerTarget()] })
 
@@ -120,12 +120,12 @@ describe('plugin lifecycle against a real app', () => {
     expect(await conduitOf(appB).resolve('provider:hetzner')).not.toBeNull()
   })
 
-  it('a second plugin claiming app.conduit fails loudly instead of silently winning', async () => {
+  it('a second plugin owning app.conduit fails loudly instead of silently winning', async () => {
     const app = await createTestApp()
     app.configure(conduitPlugin({ credentials: secrets() }))
 
     expect(() => app.configure(conduitPlugin({ credentials: secrets() })))
-      .toThrow(/already claimed/)
+      .toThrow(/already owned/)
   })
 
   it('the plugin exposes every lifecycle phase Junction calls', async () => {

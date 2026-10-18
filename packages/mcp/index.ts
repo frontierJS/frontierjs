@@ -11,5 +11,5 @@ export { projectTools, resolveModel, schemaViews } from './src/projection.ts'
 export type {
   Projection, Tool, Withheld, Verdict,
   ToolInput, InputSource, SchemaViews,
-  ServiceShape, ModelDef, ModelGate, DeclaredMove,
+  ServiceShape, ModelDef, ModelGate, DeclaredTransition,
 } from './src/projection.ts'

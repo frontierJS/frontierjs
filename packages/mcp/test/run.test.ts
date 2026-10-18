@@ -1,7 +1,7 @@
 /*
  * test/run.test.ts — the rules `run()` owns that no app drive reaches.
  *
- * The session is stubbed over the `Session` interface, and ONLY for this: every
+ * The connection is stubbed over the `Connection` interface, and ONLY for this: every
  * claim about what a real app answers is `basecamp`'s `verify:mcp`, which runs
  * the bin as a process against a real `/mcp`. What is asked here is the global
  * flags, the tenant header and the exit codes — decided before a call is made,
@@ -14,7 +14,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { spawnSync }               from 'node:child_process'
 import { tmpdir }                  from 'node:os'
 import { join }                    from 'node:path'
-import { run, EXIT, type Session } from '../src/client/run.ts'
+import { run, EXIT, type Connection } from '../src/client/run.ts'
 import type { ToolListing }        from '../src/client/argv.ts'
 import { fileStore, configPath, type ProfileFile, type ProfileStore } from '../src/client/profiles.ts'
 import { cacheKey, fileCache, type CachedTools, type ToolCache } from '../src/client/cache.ts'
@@ -36,7 +36,7 @@ const WITH_WORKSPACE: ToolListing = {
 function harness(extra: Partial<Parameters<typeof run>[1]> = {}) {
   const seen: { headers?: Record<string, string>; call?: [string, unknown] } = {}
   const out: string[] = [], err: string[] = []
-  const session: Session = {
+  const connection: Connection = {
     listTools: async () => [...TOOLS, WITH_WORKSPACE],
     callTool:  async (name, args) => { seen.call = [name, args]; return { text: JSON.stringify({ kind: 'list', object: 'sites', data: [], errors: [] }) } },
     close:     async () => {},
@@ -44,7 +44,7 @@ function harness(extra: Partial<Parameters<typeof run>[1]> = {}) {
   const opts = {
     url: 'http://app.test/mcp', token: 'fjs_key', tenantHeader: 'x-workspace-id',
     out: (t: string) => out.push(t), err: (t: string) => err.push(t),
-    connect: async (_: URL, headers: Record<string, string>) => { seen.headers = headers; return session },
+    connect: async (_: URL, headers: Record<string, string>) => { seen.headers = headers; return connection },
     ...extra,
   }
   return { seen, out, err, go: (argv: string[]) => run(argv, opts) }
@@ -128,7 +128,7 @@ function memory(initial: ProfileFile = { profiles: {} }): ProfileStore & { file:
 // is what junction does with a Bearer it cannot verify.
 function app(goodKey: string) {
   const seen: Array<Record<string, string>> = []
-  const connect = async (_: URL, headers: Record<string, string>): Promise<Session> => {
+  const connect = async (_: URL, headers: Record<string, string>): Promise<Connection> => {
     seen.push(headers)
     const signedIn = headers.authorization === `Bearer ${goodKey}`
     return {
@@ -245,7 +245,7 @@ function memoryCache(): ToolCache & { map: Map<string, CachedTools> } {
 /** An app at a build, counting how often the tree is asked for. */
 function deployed(build: string | null, tools: ToolListing[] = TOOLS) {
   const state = { build, tools, lists: 0 }
-  const connect = async (): Promise<Session> => ({
+  const connect = async (): Promise<Connection> => ({
     build:     () => state.build,
     listTools: async () => { state.lists++; return state.tools },
     callTool:  async () => ({ text: JSON.stringify({ kind: 'list', object: 'sites', data: [], errors: [] }) }),
@@ -326,7 +326,7 @@ const route = (over: Partial<Route>): Route => ({
 describe('routes', () => {
   const go = (routes: Route[], argv: string[], tools = TOOLS) => {
     const out: string[] = [], err: string[] = [], calls: string[] = []
-    const connect = async (): Promise<Session> => ({
+    const connect = async (): Promise<Connection> => ({
       listTools: async () => tools,
       callTool:  async (name) => { calls.push(name); return name === 'servers_reboot'
         ? { isError: true, text: 'refused by the app' }
@@ -459,10 +459,10 @@ describe('breadcrumbs are spelled as this program\'s own command lines', () => {
 
   const SERVER = { id: 's1', name: 'web-1', status: 'online', workspaceId: 'w 1' }
   const CRUMBS = [
-    { kind: 'move',      tool: 'servers_drain',  args: { id: 's1' }, move: 'drain', field: 'status', to: 'draining' },
-    { kind: 'belongsTo', tool: 'workspaces_get', args: { id: 'w 1' }, relation: 'workspace' },
-    { kind: 'hasMany',   tool: 'volumes_find',   args: { query: { serverId: 's1' } }, relation: 'volumes' },
-    { kind: 'hasMany',   tool: 'volumes_find',   args: { query: { nope: 1 } }, relation: 'odd' },
+    { kind: 'transition', tool: 'servers_drain',  args: { id: 's1' }, transition: 'drain', field: 'status', to: 'draining' },
+    { kind: 'belongsTo',  tool: 'workspaces_get', args: { id: 'w 1' }, relation: 'workspace' },
+    { kind: 'hasMany',    tool: 'volumes_find',   args: { query: { serverId: 's1' } }, relation: 'volumes' },
+    { kind: 'hasMany',    tool: 'volumes_find',   args: { query: { nope: 1 } }, relation: 'odd' },
   ] as const
 
   const answering = () => harness({
@@ -501,7 +501,7 @@ describe('breadcrumbs are spelled as this program\'s own command lines', () => {
 describe('a row that looks like a list envelope', () => {
   const quietFind = async (answer: unknown) => {
     const out: string[] = []
-    const connect = async (): Promise<Session> => ({
+    const connect = async (): Promise<Connection> => ({
       listTools: async () => [...TOOLS, WITH_WORKSPACE],
       callTool:  async () => ({ text: JSON.stringify(answer) }),
       close:     async () => {},

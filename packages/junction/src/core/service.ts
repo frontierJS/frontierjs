@@ -30,7 +30,7 @@ import { AUTO_EVENT_MAP, isAnnounceHook } from './events.ts'
 import {
   createLitestoneBase, autoValidate, validateInput, gateAuthAround, autoFilter, autoSort, liftReservedQuery,
   watchFilterReads, markDerived, isDerivedHook, isCrudGatedMethod,
-  jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload, declaredMoveMethods,
+  jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload, declaredTransitionMethods,
 } from './litestone.ts'
 
 // ─── Service-level cache ──────────────────────────────────────────────────
@@ -62,7 +62,7 @@ export type CacheDeclaration =
     }
 
 // Service cache resolution, in precedence order:
-//   1. The app's `serviceCache` -- claimed with `app.claim('serviceCache', c)`
+//   1. The app's `serviceCache` -- claimed with `app.own('serviceCache', c)`
 //      to swap in e.g. a SQLite-backed cache, else created lazily as a memory
 //      cache. app.stop() destroys it (entries + GC timer).
 //   2. A module-level fallback for bare callService() usage with no app
@@ -656,7 +656,7 @@ async function _callService(
   // A `$limit` over `paginate.max` was clamped with a 200, so a caller that
   // asked for a day's 260 rows read 100 and a correct-looking day
   // (`FJS-1972`). Refused for a caller that STATED it over a wire; an internal
-  // call still clamps (`clampPage`), since its limit is code rather than a
+  // call still clamps (`clampPagination`), since its limit is code rather than a
   // request. `paginate()`'s own max is a hook's and stays a clamp.
   const stated = ctx.directives?.limit
   if (method === 'find' && service.paginate && ctx.transport && ctx.transport !== 'internal'
@@ -2670,7 +2670,7 @@ const SERVE_MOVES = Symbol.for('junction.serveMoves')
  * built service and the app's parsed schema meet. Idempotent; a no-op for an
  * object createService did not build, and for a model with no machine.
  */
-export function serveDeclaredMoves(svc: object, schema: unknown): void {
+export function serveDeclaredTransitions(svc: object, schema: unknown): void {
   const serve = (svc as { [SERVE_MOVES]?: (schema: unknown) => void })[SERVE_MOVES]
   if (typeof serve === 'function' && schema) serve(schema)
 }
@@ -3001,7 +3001,7 @@ export function buildService(def: ServiceDefinition): Service {
   // A FUNCTION because it runs twice. The moves a model's `@@transitions`
   // declares are methods of this service too (`FJS-1255`), and the schema that
   // names them is not known here — a service module is imported before any
-  // client exists. The registry knows it, and hands it to `serveDeclaredMoves`
+  // client exists. The registry knows it, and hands it to `serveDeclaredTransitions`
   // at register(), which re-resolves this whole table with the moves as one
   // more SOURCE. Everything downstream — dispatch, the 405 and its list, the
   // manifest, OpenAPI, the findings — then reads one table, and a move listed
@@ -3097,7 +3097,7 @@ export function buildService(def: ServiceDefinition): Service {
   resolveTable({})
 
   Object.defineProperty(service, SERVE_MOVES, {
-    value: (schema: unknown) => resolveTable(serviceAccessor(service) === null ? {} : declaredMoveMethods(
+    value: (schema: unknown) => resolveTable(serviceAccessor(service) === null ? {} : declaredTransitionMethods(
       schema, serviceAccessor(service) as string, service.name,
       (def.idField as string | undefined) ?? 'id')),
   })
@@ -3173,7 +3173,7 @@ export class ServiceRegistry {
     // HERE, because this is the first place a built service and the schema meet:
     // a service module is imported before any client exists. Before the warm
     // below, so the pipelines are built for the table the service will answer with.
-    serveDeclaredMoves(service, this._schema())
+    serveDeclaredTransitions(service, this._schema())
     this._map.set(service.name, service)
     this._version++
     for (const alias of aliases) {

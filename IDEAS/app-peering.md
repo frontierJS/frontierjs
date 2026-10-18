@@ -239,6 +239,28 @@ each side approves.
   or a keypair per app with public keys distributed (n keys, Nebula's shape).
   The signature kit signs either way already, so this is a question of
   distribution, not of crypto. Waits for Phase 1.
+  - **A** — a shared secret per pair. Basecamp mints one HMAC secret for each
+    dialer → receiver pair and writes it to both ends: the dialer's conduit
+    `hmac` target, and the peer account's credential on the receiver
+    (`FJS-D1196`). It is the shape Outpost → Basecamp uses today
+    (`packages/basecamp/api/src/core/hooks.ts:703`), and junction's door takes it
+    as is (`packages/junction/src/auth/credentials.ts:44` returns a `secret`).
+    It costs n² secrets: rotating one app touches every pair it is in, on both
+    ends, and a breached receiver holds a secret that can sign as its dialer.
+  - **B** — a keypair per app. Each app generates its Ed25519 key and keeps the
+    private half; Basecamp records the public half at enrollment and pushes it
+    to every receiver, which stores it on the peer's account. The toolbelt kit
+    already signs and verifies `v1-ed25519`
+    (`packages/toolbelt/src/signature/signature.js:356`), but the door does not
+    yet carry it: `keyFor` answers only `{ secret, session }`
+    (`credentials.ts:44`), so it widens to `{ publicKey }` too. It costs that
+    widening; it buys n keys, a rotation that is one key pushed outward, and
+    receivers that hold nothing able to sign.
+  - **Recommend B** — Phase 2's done-when is a rotation started in Basecamp
+    landing on both ends, and B makes that one key per app rather than a
+    secret per pair; the crypto ships (`signature.js:94`) and the cost is one
+    type in junction's door. Nebula's CA and SPIFFE both distribute public
+    identities for the same reason.
 
 ---
 

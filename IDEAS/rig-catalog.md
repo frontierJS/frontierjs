@@ -113,7 +113,37 @@ consumer: its schema has `Room` and `Message` and almost no code yet.
 - **Q1** — Which rig is first: teams (the most evidence, and others depend on
   it), telephony (the cheapest to extract), or billing (overview 2.5's
   "canonical first")?
+  - **A** — teams first: an organization/member/invitation/role package whose
+    gate input is a standing fragment, lifted from basecamp's `Workspace` +
+    `WorkspaceMember` + `applyStanding()` (overview 3.8); chat, boards, tasks
+    and comments then build on it
+  - **B** — telephony first: quo and serpgrid's shared model names become one
+    package over `conduit-telnyx`; nothing else in § Order waits on it
+  - **C** — billing first, as overview 2.5 nominates: ledger → billing, phased
+    in `billing.md`, with the rig as its phase 7
+  - **Recommend A** — 9 apps rebuilt it, most of § Order depends on it, and it is
+    the only candidate that tests a rig feeding the gate, the hard part of the
+    format; telephony's cheapness proves the least about the format.
 - **Q2** — Is a cluster that only verticals rebuild (payroll, timeclock) a rig,
   or a reference schema for `reference-library.md`?
+  - **A** — a reference schema: payroll and timeclock go into the
+    `reference-library.md` set as `.lite` files to compare against, and no
+    package; a rig needs evidence across non-vertical apps
+  - **B** — a rig like any other: connectteam, sstime and eventmark's timeclock
+    becomes a package installed by `fli add` (`FJS-D630`), and only the vertical
+    apps install it
+  - **Recommend A** — a rig earns its cost through reuse across many apps;
+    timeclock has 3 vertical consumers and payroll 1 (example), so a reference
+    schema captures the modeling with no package to maintain.
 - **Q3** — Custom fields and saved views: a rig, or a litestone feature (overview
   4.29)?
+  - **A** — a rig: a `FieldDef` binding model, the pool of `@generated`
+    columns, and a `SavedView` holding a stored `where`, shipped as a `.lite`
+    fragment plus service; litestone is unchanged, since overview 4.29 measured
+    that the pattern needs no framework change
+  - **B** — a litestone feature: a schema attribute declares the pool and the
+    client owns the binding and the saved view, so every app gets it without
+    installing anything
+  - **Recommend A** — 4.29 built and measured it with existing `@generated`
+    and an ordinary `where`, so the remaining pieces are models and a service:
+    what a rig is, with nothing for litestone to own.
