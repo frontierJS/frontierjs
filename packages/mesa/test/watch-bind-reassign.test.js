@@ -17,7 +17,7 @@ function execCompiled(js, userImports = {}) {
   const importRe = /^import\s+(.+?)\s+from\s+'([^']+)';$/gm
   let m
   while ((m = importRe.exec(js)) !== null) {
-    if (m[2] === '@frontierjs/mesa/runtime.js') continue
+    if (m[2] === '@frontierjs/mesa/runtime') continue
     importNames.push(m[1].trim())
     importValues.push(userImports[m[2]])
   }

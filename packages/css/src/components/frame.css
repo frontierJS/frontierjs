@@ -124,7 +124,15 @@
   display:         flex;
   align-items:     center;
   justify-content: space-between;
-  gap:             var(--space-2xl);
+  /*
+   * Wraps, because a Group inside it is nowrap by definition: two of them
+   * and the second ran past a 390px screen's edge, the signed-in email
+   * wrapped and Sign out left the page (`FJS-2384`). Wrapping is the bar's
+   * job and not the Group's, so a bar that fits is unchanged.
+   */
+  flex-wrap:       wrap;
+  column-gap:      var(--space-2xl);
+  row-gap:         var(--space-sm);
   /*
    * A MINIMUM, not a height. A .cluster is `flex-wrap: wrap` and the two are
    * paired in this package's own frame docs, so a bar holding more than fits
@@ -285,6 +293,16 @@
    * one line is what stops the entire app layout blowing out sideways.
    */
   min-inline-size: 0;
+}
+
+/*
+ * A page that fills its cell edge to edge — an editor, a reader, a canvas.
+ * Two classes deep so the narrow-viewport padding below cannot win it back.
+ * Apps that undid the pad by hand with a negative margin and a calc() height
+ * were paying for padding the Screen only has because it was never told not to.
+ */
+.screen.flush {
+  padding: 0;
 }
 
 /*

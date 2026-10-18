@@ -25,7 +25,7 @@ title: Alerts
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import { page } from '@frontierjs/sierra/router'
 
   $: session.workspaceId

@@ -10,7 +10,7 @@
   // /trash/ is the same restore with no clock on it — a timed button is never
   // the only way to take something back.
   import { createResource, getClient } from '@frontierjs/sierra/resource'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   export const trash = createResource('trash', { model: null })
 

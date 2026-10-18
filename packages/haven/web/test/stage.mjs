@@ -19,7 +19,7 @@
  */
 import { join } from 'node:path'
 import { installTerminalLoader } from '../../../sierra/src/terminal/loader.js'
-import * as tui from '@frontierjs/mesa/runtime/terminal.js'
+import * as tui from '@frontierjs/mesa/runtime/terminal'
 import { stages } from '../src/lib/scene/stage.js'
 
 export const WEB = join(import.meta.dir, '..')

@@ -102,7 +102,7 @@
 
 <button
   type="button"
-  class={cx('btn', treatment,!label && !trigger && 'square', copied && 'success')}
+  class={cx('btn', treatment, !label && !trigger && 'square', copied && 'success')}
   {class}
   {...$attributes}
   aria-label={label || trigger ? null : (copied ? 'Copied' : 'Copy to clipboard')}

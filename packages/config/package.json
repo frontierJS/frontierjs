@@ -9,9 +9,7 @@
   },
   "exports": {
     "./tsconfig": "./tsconfig.json",
-    "./tsconfig.json": "./tsconfig.json",
     "./biome": "./biome.json",
-    "./biome.json": "./biome.json",
     "./editorconfig": "./editorconfig"
   },
   "files": [

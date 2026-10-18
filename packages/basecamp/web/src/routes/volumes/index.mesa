@@ -26,7 +26,7 @@ title: Volumes
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   $: session.workspaceId
   $: page.query

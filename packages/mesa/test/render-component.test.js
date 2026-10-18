@@ -511,7 +511,7 @@ describe('renderComponent — tmpDir', () => {
 
 // ─── The default tmpDir must not depend on where you started the process ─────
 //
-// A temp render module carries `import '@frontierjs/mesa/runtime.js'`, so it has
+// A temp render module carries `import '@frontierjs/mesa/runtime'`, so it has
 // to be written somewhere that specifier resolves from — the mesa package root.
 // `findMesaDir()` used to test `dirname(import.meta.url)` for a package.json,
 // which stopped being true when these sources moved into `src/`; it then fell

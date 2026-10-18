@@ -40,7 +40,7 @@ function execCompiled(compiledJs, runtime, userImports = {}) {
   let m
   while ((m = importRe.exec(compiledJs)) !== null) {
     const spec = m[1].trim(), src = m[2]
-    if (src === '@frontierjs/mesa/runtime.js') continue
+    if (src === '@frontierjs/mesa/runtime') continue
     const mock = userImports[src] || {}
     if (spec.startsWith('* as ')) {
       importNames.push(spec.slice(5).trim())
@@ -517,8 +517,8 @@ describe('analyzeScript', () => {
 describe('compile() output shape', () => {
 
   describe('component shape', () => {
-    it('imports @frontierjs/mesa/runtime.js', async () => {
-      expect(await cx(`<p>hi</p>`)).toContain("from '@frontierjs/mesa/runtime.js'")
+    it('imports @frontierjs/mesa/runtime', async () => {
+      expect(await cx(`<p>hi</p>`)).toContain("from '@frontierjs/mesa/runtime'")
     })
     it('exports a named function, not makeComponent', async () => {
       const out = await cx(`<p>hi</p>`)

@@ -33,7 +33,7 @@ title: API keys
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import StatCard   from '@frontierjs/ui/components/display/StatCard.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
   import { page } from '@frontierjs/sierra/router'
 

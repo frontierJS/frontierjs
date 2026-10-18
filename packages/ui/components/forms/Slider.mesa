@@ -31,8 +31,8 @@
   export let disabled = undefined  // undefined = ask the form; false overrides it
   export let format   = undefined    // (value: number) => string — pip label formatter
   export let showPips = true         // show value labels under handles
-  export let tone     = ''           // one of the 7 css tones; '' is primary
-  export let color    = ''           // legacy alias for `tone`
+  export let tone     = ''           // one of the 7 css tones; '' is primary. A hue that is the
+                                     // data is `--data-accent` on the slider or an ancestor.
 
   // Field integration
   export let name     = ''
@@ -115,7 +115,7 @@
   // One tone class on the root; every part of the control reads --bg-mix, so
   // the fill, the handle and the focus ring cannot disagree about the color.
 
-  const t = toTone(color || tone)
+  const t = toTone(tone)
 
   // ── Drag logic ─────────────────────────────────────────────────────────────
 
@@ -277,7 +277,7 @@
         ></div>
 
         {#if showPips}
-          <div class="fjs-slider-pip" style:left="{singlePct}%">{fmt(value)}</div>
+          <div class="fjs-slider-pip" style:left="{singlePct}%" style:transform="translateX(-{singlePct}%)">{fmt(value)}</div>
         {/if}
 
       {:else}
@@ -316,8 +316,8 @@
         ></div>
 
         {#if showPips}
-          <div class="fjs-slider-pip" style:left="{startPct}%">{fmt(start)}</div>
-          <div class="fjs-slider-pip" style:left="{endPct}%">{fmt(end)}</div>
+          <div class="fjs-slider-pip" style:left="{startPct}%" style:transform="translateX(-{startPct}%)">{fmt(start)}</div>
+          <div class="fjs-slider-pip" style:left="{endPct}%" style:transform="translateX(-{endPct}%)">{fmt(end)}</div>
         {/if}
       {/if}
     </div>
@@ -362,12 +362,14 @@
 <style>
   /* @frontierjs/css has no Slider term, so this control draws itself — but
      from the same tokens as everything else, so it themes with the page.
-     --bg-mix is what a tone class sets; the fallback keeps it primary. */
+     --data-accent is a hue that is the data and must not follow the theme; it
+     wins over the tone. --bg-mix is what a tone class sets; the fallback keeps
+     it primary. */
   .fjs-slider {
     display:        flex;
     flex-direction: column;
     gap:            0.75rem;
-    --slider-accent: var(--bg-mix, var(--color-primary));
+    --slider-accent: var(--data-accent, var(--bg-mix, var(--color-primary)));
   }
   .fjs-slider-bare { padding-block: 0.5rem 0.25rem; }
 
@@ -401,10 +403,12 @@
   .fjs-slider-handle:active { cursor: grabbing; }
   /* The ring itself comes from focus.css — this only rounds the shape it
      traces, since outline follows border-radius. */
+  /* Centred on the handle only mid-track: the inline transform shifts by the
+     value's own percentage, so the label's edge meets the track's at either
+     end instead of hanging out to be clipped by a scrolling parent. */
   .fjs-slider-pip {
     position:       absolute;
     inset-block-start: 1.25rem;
-    transform:      translateX(-50%);
     font-size:      0.75rem;
     color:          var(--ink-mute);
     white-space:    nowrap;

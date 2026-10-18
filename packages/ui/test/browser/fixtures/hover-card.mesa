@@ -1,0 +1,26 @@
+<script>
+  // hover-card.mesa — one HoverCard over a region of many triggers, and a
+  // target outside it. The region is wide enough that a trigger at the far end
+  // forces the card to be placed rather than left at the origin.
+  import HoverCard from '../../../components/overlay/HoverCard.mesa'
+
+  const words = Array.from({ length: 300 }, (_, i) => 'word' + i)
+</script>
+
+<div style:padding="6rem 3rem">
+  <HoverCard selector="[data-word]" delay={50} closeDelay={60} label="Word">
+    {#snippet children()}
+      <p id="region">
+        {#each words as w (w)}
+          <span data-word={w} tabindex="0" id={w}>{w}</span>{' '}
+        {/each}
+      </p>
+    {/snippet}
+    {#snippet content(el)}
+      <p id="card-body">card for {el?.dataset?.word}</p>
+      <a href="#x" id="card-link">link</a>
+    {/snippet}
+  </HoverCard>
+</div>
+
+<button type="button" id="outside">Elsewhere</button>

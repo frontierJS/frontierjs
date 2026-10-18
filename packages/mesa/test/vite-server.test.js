@@ -47,7 +47,7 @@ beforeAll(async () => {
     logLevel:  'silent',
     configFile: false,
     server:    { middlewareMode: true, hmr: false },
-    resolve:   { alias: { '@frontierjs/mesa/runtime.js': RUNTIME } },
+    resolve:   { alias: { '@frontierjs/mesa/runtime': RUNTIME } },
     plugins:   [mesaPlugin()],
   })
 

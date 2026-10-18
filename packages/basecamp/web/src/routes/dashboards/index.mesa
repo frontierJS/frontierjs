@@ -27,7 +27,7 @@ title: Dashboards
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Form       from '@frontierjs/ui/components/forms/Form.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import { offerUndo } from '../../resources/Trash.mesa'
 
   $: session.workspaceId

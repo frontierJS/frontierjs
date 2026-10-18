@@ -52,6 +52,9 @@ const CASES = [
   ['components/display/Breadcrumbs.mesa', { items: [{ label: 'Home' }] }, ['breadcrumb']],
   ['components/display/Table.mesa',     { columns: [{ name: 'a', label: 'A' }] }, ['table', 'table-wrap']],
   ['components/display/Kbd.mesa',       {},                          ['kbd']],
+  // A prerendered page draws a markdown column rendered, not as its source
+  // until hydration (FJS-3153, FJS-D821). The renderer's class is the assertion.
+  ['components/display/Cell.mesa',      { value: '**b**', column: { name: 'notes', display: 'markdown' } }, ['cell', 'fjs-markdown']],
   // auth's user.name is String?, so null is the value a signed-in user hands
   // over; a prop default covers undefined only, and a throw at setup takes the
   // whole mount down (FJS-2604). The person icon is the assertion.
@@ -184,6 +187,34 @@ const TRIGGER = `<script>
   }
 }
 
+// ── A tone and a treatment are two props ────────────────────────────────────
+//
+// `FJS-2943`. Read off the CLASS list: an undeclared prop lands on the element
+// as an attribute, so `treatment="outlined"` matches a whole-html search while
+// the button is drawn a plain primary.
+{
+  const BUTTONS = [
+    ['forms/Button.mesa',      {},                                         'btn primary'],
+    ['forms/Button.mesa',      { tone: 'danger' },                         'btn danger'],
+    ['forms/Button.mesa',      { treatment: 'ghost' },                     'btn ghost'],
+    ['forms/Button.mesa',      { tone: 'danger', treatment: 'outlined' },  'btn danger outlined'],
+    ['display/CopyButton.mesa', { text: 'x', label: 'Copy' },              'btn ghost'],
+    ['display/CopyButton.mesa', { text: 'x', label: 'Copy', treatment: 'outlined' }, 'btn outlined'],
+  ]
+  for (const [file, data, want] of BUTTONS) {
+    const out = await renderComponent(readFileSync(join(ROOT, 'components', file), 'utf8'), {
+      data, cwd: ROOT, filename: `components/${file}`, styleTag: false,
+      tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+    })
+    const tag = out.html.match(/<(?:button|a)\b[^>]*>/)?.[0] ?? ''
+    const got = (tag.match(/class="([^"]*)"/)?.[1] ?? '').split(/\s+/).filter(Boolean).sort().join(' ')
+    if (got !== want.split(' ').sort().join(' ')) {
+      console.error(`✗ ${file} ${JSON.stringify(data)}\n    class "${got}", want "${want}"`)
+      failed++
+    }
+  }
+}
+
 // ── Long category labels ────────────────────────────────────────────────────
 //
 // `FJS-2735`. formatX is the tick, the tooltip and the mark's accessible name,
@@ -210,6 +241,62 @@ const TRIGGER = `<script>
   if (problems.length) {
     console.error(`✗ Chart with a long category label\n    ${problems.join('\n    ')}`)
     failed++
+  }
+}
+
+// ── A caller's class lands on the outermost element Input draws ─────────────
+//
+// `FJS-1138`. Field takes `class` on its wrapper, so an Input with no label, no
+// name, no hint and no message drew no wrapper and dropped the class.
+{
+  const HOST = (attrs) => `<script>
+  import Input from './forms/Input.mesa'
+</script>
+<Input ${attrs} class="mine" />`
+  const CLASS_ON = [
+    ['bare',          '',                  /^<input\b[^>]*class="[^"]*\bmine\b/],
+    ['reveal addon',  'type="password"',   /^<div\b[^>]*class="[^"]*\bfield-row\b[^"]*\bmine\b/],
+    ['named',         'name="a"',          /^<div\b[^>]*class="[^"]*\bfield-group\b[^"]*\bmine\b/],
+    ['labeled',       'label="L"',         /^<div\b[^>]*class="[^"]*\bfield-group\b[^"]*\bmine\b/],
+  ]
+  for (const [label, attrs, want] of CLASS_ON) {
+    const out = await renderComponent(HOST(attrs), {
+      data: {}, cwd: ROOT, filename: 'components/Host.mesa', styleTag: false,
+      tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+    })
+    const html = out.html.trim()
+    if (!want.test(html) || (html.match(/\bmine\b/g) ?? []).length !== 1) {
+      console.error(`✗ Input class (${label})\n    class "mine" must land once, on the outermost element: ${html.slice(0, 160)}`)
+      failed++
+    }
+  }
+
+  // `FJS-3268`. Textarea and Select wrap in a Field the same way, so the same
+  // bare case drew the control with `class="field"` alone.
+  const CLASS_ON_CONTROL = [
+    ['Textarea', 'textarea', 'Textarea'],
+    ['Select',   'select',   'Select'],
+  ]
+  for (const [comp, tag] of CLASS_ON_CONTROL) {
+    for (const [label, attrs, want] of [
+      ['bare',    '',           new RegExp(`^<${tag}\\b[^>]*class="[^"]*\\bmine\\b`)],
+      ['named',   'name="a"',   /^<div\b[^>]*class="[^"]*\bfield-group\b[^"]*\bmine\b/],
+      ['labeled', 'label="L"',  /^<div\b[^>]*class="[^"]*\bfield-group\b[^"]*\bmine\b/],
+    ]) {
+      const src = `<script>
+  import ${comp} from './forms/${comp}.mesa'
+</script>
+<${comp} ${attrs} class="mine" />`
+      const out = await renderComponent(src, {
+        data: {}, cwd: ROOT, filename: 'components/Host.mesa', styleTag: false,
+        tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+      })
+      const html = out.html.trim()
+      if (!want.test(html) || (html.match(/\bmine\b/g) ?? []).length !== 1) {
+        console.error(`✗ ${comp} class (${label})\n    class "mine" must land once, on the outermost element: ${html.slice(0, 160)}`)
+        failed++
+      }
+    }
   }
 }
 

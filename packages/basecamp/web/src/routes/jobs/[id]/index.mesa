@@ -6,7 +6,7 @@ title: Job
   import { session }    from '../../../session.js'
   import Job, { jobs }  from '../../../resources/Job.mesa'
   import { at }         from '../../../datetime.js'
-  import { toasts }     from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }     from '@frontierjs/ui/stores/toastStore'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import Drawer   from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'

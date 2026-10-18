@@ -198,6 +198,9 @@
   --pill-text-transform: none;
   --pill-letter-spacing: normal;
 
+  /* ── Tab typography ───────────────────────────────────────── */
+  --tab-font-weight:    600;
+
   /* ── Badge typography ─────────────────────────────────────── */
   --badge-font-weight:    600;
   --badge-text-transform: uppercase;
@@ -712,6 +715,8 @@
   --app-bg:               initial;
   --topbar-bg:            initial;
   --sidebar-bg:           initial;
+  --navlink-current-bg:   initial;
+  --navlink-current-ink:  initial;
   --dialog-bg:            initial;
   --toast-bg:             initial;
   --toast-radius:         initial;
@@ -755,6 +760,7 @@
   --btn-ink:         initial;
   --badge-radius:    initial;
   --tile-min:        initial;
+  --lane-size:       initial;
   --avatar-size:     initial;
   --avatar-radius:   initial;
   --avatar-ring:     initial;

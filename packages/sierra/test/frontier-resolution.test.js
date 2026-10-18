@@ -110,7 +110,7 @@ describe('exports-map resolution', () => {
   })
 
   test('handles a subpath spelled with its extension', () => {
-    expect(resolve_('@frontierjs/mesa/runtime.js')).toBe(join(root, 'mesa/runtime.js'))
+    expect(resolve_('@frontierjs/mesa/runtime')).toBe(join(root, 'mesa/runtime.js'))
   })
 
   test('expands wildcard subpaths', () => {

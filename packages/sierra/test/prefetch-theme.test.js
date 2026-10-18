@@ -4,7 +4,7 @@
 
 import {
   flushSync, watchPath, createEffect, setRenderEnvironment,
-} from '@frontierjs/mesa/runtime.js'
+} from '@frontierjs/mesa/runtime'
 import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { mkdir, writeFile, rm, readFile } from 'fs/promises'
 import { join } from 'path'

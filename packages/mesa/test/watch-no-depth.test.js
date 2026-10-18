@@ -47,7 +47,7 @@ async function errorsFor(script, markup = '<p>{1}</p>') {
 async function render(src) {
   const ctx = await compileSource(src, { filename: `/WR${n}.mesa`, dev: false })
   if (ctx.analysis?.errors?.length) throw new Error(ctx.analysis.errors[0])
-  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime\.js'/g, `'./src/runtime.js'`)
+  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`)
   const file = path.join(process.cwd(), `_tmp_watch_${n++}.mjs`)
   writeFileSync(file, js)
   let Comp

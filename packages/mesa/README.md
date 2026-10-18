@@ -241,7 +241,7 @@ Useful options:
 ## Runtime API
 
 ```js
-import { mount, mountStatic, flushSync } from '@frontierjs/mesa/runtime.js'
+import { mount, mountStatic, flushSync } from '@frontierjs/mesa/runtime'
 import App from './App.mesa'
 
 // Standard mount — inserts after the label node, which needs a parent
@@ -262,7 +262,7 @@ rendering one page of a static build, swapping one preview for another —
 `createRoot` owns everything created inside it and disposes it on demand.
 
 ```js
-import { createRoot, flushSync } from '@frontierjs/mesa/runtime.js'
+import { createRoot, flushSync } from '@frontierjs/mesa/runtime'
 
 const html = createRoot((dispose) => {
   Component(anchor, props, null)

@@ -65,7 +65,7 @@ title: Orders
   and `export { … }` are refused; module-scope exports go in `<script module>`.
 - **`<script module>` has no `$`** and its bindings are plain JavaScript — a
   module `let` rendered in markup never updates. Import `onMount`/`onDestroy`
-  from `@frontierjs/mesa/runtime.js` there.
+  from `@frontierjs/mesa/runtime` there.
 - **A `---` block in a `.mesa` file is metadata the build reads** (a route's
   title, its render mode) and declares no variables. In a `.md` file the keys
   do become props, and `layout: Name` wraps the body in that component — when
@@ -112,7 +112,7 @@ title: Orders
 
 `$:` is top-level only. `$: if (…)` and a `$: { }` block that only reads are
 refused, each naming the form you wanted. A `.js` module that WRITES its own
-state must write through `watchProxy(obj)` from `@frontierjs/mesa/runtime.js`,
+state must write through `watchProxy(obj)` from `@frontierjs/mesa/runtime`,
 or no component watching that object hears it.
 
 ---

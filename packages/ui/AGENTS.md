@@ -88,6 +88,7 @@ the package has no root entry.
 |---|---|
 | a list of rows, sortable | `@frontierjs/ui/components/display/Table.mesa`, each value through `@frontierjs/ui/components/display/Cell.mesa` |
 | filters over a list's query | `@frontierjs/ui/components/display/FilterBar.mesa` |
+| a list of rows worked from the keyboard — ↑/↓ or j/k, Enter to open, a key to select, one tab stop | `rowlist` from `@frontierjs/ui/rowlist`, an `{@attach}` on the list — § Keys over a list of rows |
 | rows a person ticks to act on together — bulk delete, resend, complete | `createSelection` from `@frontierjs/ui/selection`, a header box through `@frontierjs/ui/components/forms/Checkbox.mesa`'s `indeterminate`, and `@frontierjs/ui/components/display/BulkBar.mesa` for the count and the actions — § Selecting rows |
 | page numbers | `@frontierjs/ui/components/display/Pagination.mesa` |
 | a count, or a badge floated over an icon · a status or plan label · a removable token · a status dot | `@frontierjs/ui/components/display/Badge.mesa` · `@frontierjs/ui/components/display/Pill.mesa` · `@frontierjs/ui/components/display/Tag.mesa` · `@frontierjs/ui/components/display/Dot.mesa` |
@@ -102,6 +103,8 @@ the package has no root entry.
 | a JSON document, read, diffed or `editable` | `@frontierjs/ui/components/display/Json.mesa` |
 | a command or snippet somebody pastes — a block with a copy button in its corner | `@frontierjs/ui/components/display/Code.mesa` |
 | Markdown somebody else wrote — a model's reply, a `@syntax(md)` column — read | `@frontierjs/ui/components/display/Markdown.mesa` — `text`, `headingBase` (the level a `#` draws at; 3 inside a card), `breaks`. Raw HTML in the text draws as text and a link goes only to http, https, mailto or this site, so it is safe on a public page with no sanitizer |
+| HTML somebody else wrote — an email body, a template, filled with a sample record — previewed | `@frontierjs/ui/components/display/HtmlFrame.mesa` — `html`, `title` (the frame's accessible name), `height` (any CSS length; the document scrolls inside a fixed box). An `<iframe sandbox="">` with no token: no script, an opaque origin, no popup or form. A shadow root is not isolation and `srcdoc` is refused in a spread, so write this rather than your own frame |
+| A stored template previewed as its channel — an email's subject, HTML body and text part; an sms's text with its segment count; a page fragment — over example data | `@frontierjs/ui/components/display/TemplatePreview.mesa` — `channel` (`email` · `sms` · `page`), `body`, `subject`/`text` (email), `fields` (a toolbelt `mergeFields` catalog: its `example()` is the data), `data` (a record over the examples), `height`. The body is HTML and `text`/sms are text, stated by the channel, so a value is escaped into the first only; the HTML is drawn by `HtmlFrame` |
 | a chat screen — the log, a bubble, the box typed into | `@frontierjs/ui/components/display/Transcript.mesa` (a scrolling `role="log"` that follows the newest message until the reader scrolls up; give it a height; `scrollToEnd()` after the reader's own send) · `@frontierjs/ui/components/display/Message.mesa` (`side` `mine`/`theirs`, `tone`; a `<Markdown>` inside for a model's reply) · `@frontierjs/ui/components/display/Composer.mesa` (`onsend(text)`, `bind:value`, `disabled`, `label`; Enter sends, Shift+Enter breaks) |
 | copy to clipboard · a shortcut · a token or id · a rule | `@frontierjs/ui/components/display/CopyButton.mesa` · `@frontierjs/ui/components/display/Kbd.mesa` · `@frontierjs/ui/components/display/Mono.mesa` · `@frontierjs/ui/components/display/Divider.mesa` |
 
@@ -116,9 +119,10 @@ the package has no root entry.
 | a blocking dialog · a side panel | `@frontierjs/ui/components/overlay/Modal.mesa` · `@frontierjs/ui/components/overlay/Drawer.mesa` |
 | a menu of actions | `@frontierjs/ui/components/overlay/DropdownMenu.mesa` with `@frontierjs/ui/components/overlay/DropdownItem.mesa`, `@frontierjs/ui/components/overlay/DropdownGroup.mesa`, `@frontierjs/ui/components/overlay/DropdownSeparator.mesa` |
 | content that must escape a scroll container · a description on hover and focus | `@frontierjs/ui/components/overlay/Popover.mesa` · `@frontierjs/ui/components/overlay/Tooltip.mesa` |
+| a card on hover and focus for MANY triggers in one region (every element matching `selector`), one card and two listeners | `@frontierjs/ui/components/overlay/HoverCard.mesa` — the region is `children`, `content(el)` is handed the trigger; a trigger needs `tabindex="0"` for the keyboard, and a touch pointer never opens it |
 | confirm a destructive click | `@frontierjs/ui/components/overlay/ConfirmProvider.mesa` once, then `data-confirm` on any element — the provider's document listener is what reads the attribute, so with none mounted the click runs unconfirmed; `@frontierjs/ui/components/overlay/ConfirmationPopover.mesa` when a component owns its trigger or cannot be sure a provider is mounted |
-| ⌘K | `@frontierjs/ui/components/overlay/CommandPalette.mesa` with `@frontierjs/ui/stores/commandPaletteStore.js` |
-| a transient message · a banner for the whole app | `@frontierjs/ui/components/feedback/Toaster.mesa` with `@frontierjs/ui/stores/toastStore.js` · `@frontierjs/ui/components/feedback/AlertProvider.mesa` with `@frontierjs/ui/stores/alertStore.js` |
+| ⌘K | `@frontierjs/ui/components/overlay/CommandPalette.mesa` with `@frontierjs/ui/stores/commandPaletteStore` |
+| a transient message · a banner for the whole app | `@frontierjs/ui/components/feedback/Toaster.mesa` with `@frontierjs/ui/stores/toastStore` · `@frontierjs/ui/components/feedback/AlertProvider.mesa` with `@frontierjs/ui/stores/alertStore` |
 | a message in the page flow, announced as it appears (`role="alert"`) | `@frontierjs/ui/components/feedback/Alert.mesa` |
 | work in flight | `@frontierjs/ui/components/feedback/Spinner.mesa` · `@frontierjs/ui/components/feedback/Skeleton.mesa` · `@frontierjs/ui/components/feedback/Progress.mesa` |
 
@@ -214,7 +218,7 @@ argument `{ props: (ctx) => ({ … }) }` adapts an existing component instead.
 **Put `name` on the element that emits input**, or dirty tracking cannot see it,
 and wrap it in `<Field name={name}>` for the label and error. A registered name
 replaces the kit's own. `registerDisplayComponent` and `registerFilterComponent`
-do the same for `<Cell>` and `<FilterBar>` — see `node_modules/@frontierjs/ui/controls.js`.
+do the same for `<Cell>` and `<FilterBar>` — see `@frontierjs/ui/controls`.
 
 ## Tables
 
@@ -318,6 +322,27 @@ are the actions and it adds Clear after them. Every read subscribes, so a
 template needs no `$:` to follow a selection, and the verbs are closures:
 `rows.filter(picked.has)` is the ticked rows on screen.
 
+### Keys over a list of rows
+
+A screen worked from the keyboard — an inbox — takes `rowlist` from
+`@frontierjs/ui/rowlist`, an `{@attach}` on the element holding the rows:
+
+```mesa
+<ul {@attach rowlist(() => ({
+  onopen:   (row) => goto(row.dataset.id),
+  onselect: (row) => picked.toggle(byId[row.dataset.id]),
+}))}>
+  {#each items as it (it.id)}<li data-row data-id={it.id}>{it.title}</li>{/each}
+</ul>
+```
+
+↑/↓ or k/j move, Home/End jump, Enter is `onopen`, Space or `x` is `onselect`.
+The list is one tab stop (the cursor row; the controls inside the other rows
+are skipped by Tab). A row is `[data-row]` unless `row:` names another
+selector. A key typed in a field inside a row stays the field's, and Enter on a
+button inside a row is the button's click. Pass a getter, not an object. It
+writes no `role`: state `list`/`listitem` or whatever the rows are.
+
 ## Attributes, `class` and snippets
 
 **Every component forwards the attributes it does not declare**, and the
@@ -335,6 +360,12 @@ on the wrapper while other attributes reach the control. Where a component
 declares `id` it names something else — a `Toast`'s identity, a `Tab` and
 `TabPanel` pairing, an `AccordionItem`, the control a `Label` or `Field` points
 at, a `Tooltip`'s own element — so address those with `data-*`.
+
+**A `Slider` takes its hue from `tone`, or from the data.** `tone` is one of the
+seven css tones and follows the theme. A hue that IS the data (an HSL slider
+accented in its own hue) is `--data-accent` on the slider or an ancestor, the
+custom-property name `fli check` lets a raw color sit in; it wins over `tone`:
+`<Slider style={`--data-accent: hsl(${h} 80% 50%)`} … />`.
 
 **Trailing content has three names**: `actions` on `Form` and `Table`, `action`
 on `SectionHeader` and `EmptyState`, `footer` on `Modal`, `Drawer` and `Card`.
@@ -357,7 +388,7 @@ library produces, and what this kit wants.
 | `${(order.total / 100).toFixed(2)}` | `<Cell value={order.total} column={c} />` |
 | `<FormControl><FormLabel/>`, react-hook-form, zod | `<Input name="email" />` inside `<Form resource={…}>` — rules and validation are the resource's |
 | `<Input bind:value={record.email} />` | `value={draft.email} oninput={…}`; `bind:` takes a top-level `let` |
-| `toast.success()` from a provider hook | `toasts.success()` from `@frontierjs/ui/stores/toastStore.js`, `<Toaster />` once |
+| `toast.success()` from a provider hook | `toasts.success()` from `@frontierjs/ui/stores/toastStore`, `<Toaster />` once |
 | `<Tabs value onValueChange>` with `TabsTrigger`/`TabsContent` | `<Tabs bind:activeId>` with `Tab id` and `TabPanel id` |
 | `onDelete={() => confirm('Sure?') && remove()}` | `data-confirm="Delete this order?"` under a mounted `ConfirmProvider` |
 | importing the kit's `tokens.css` | nothing — tokens are `@frontierjs/css`'s, and no component reads that file |

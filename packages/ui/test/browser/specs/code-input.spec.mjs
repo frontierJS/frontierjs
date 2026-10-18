@@ -197,6 +197,63 @@ export async function run(t) {
   await t.eventually(`(() => { ${layers('plain')} return paint.scrollLeft === text.scrollLeft && text.scrollLeft > 0; })()`, true,
     'and the paint scrolls to where the textarea did')
 
+  /* ── maxRows: a ceiling, past which the box scrolls ───────────────────── */
+
+  // Unbounded, 65 lines pushed whatever sat under the box 2,000px down. The
+  // ceiling is on the box both layers share, so they scroll as one and the
+  // caret is kept in view by the browser, which scrolls the nearest scroller.
+  const cap = await t.evaluate(`${layers('bounded')}
+    const box  = text.parentElement;
+    const cs   = getComputedStyle(text);
+    const line = parseFloat(cs.lineHeight);
+    const pad  = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+               + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    return {
+      height: box.getBoundingClientRect().height,
+      max:    8 * line + pad,
+      scroll: box.scrollHeight > box.clientHeight,
+      below:  document.getElementById('below').getBoundingClientRect().top - box.getBoundingClientRect().bottom,
+      overlay: [text.getBoundingClientRect().top - paint.getBoundingClientRect().top,
+                text.getBoundingClientRect().height - paint.getBoundingClientRect().height],
+    };
+  `)
+  t.ok(Math.abs(cap.height - cap.max) <= 1, `65 lines stop at maxRows (${cap.height}px against ${cap.max}px)`)
+  t.ok(cap.scroll, 'and the box scrolls the rest')
+  t.ok(cap.below < 40, `so the control under it stays beside it (${cap.below}px)`)
+  t.is(cap.overlay.map(Math.round).join(','), '0,0', 'while the textarea and the paint stay the same box')
+
+  const roomy = await t.evaluate(`${layers('short')}
+    const cs = getComputedStyle(text);
+    return text.parentElement.getBoundingClientRect().height <
+      8 * parseFloat(cs.lineHeight);
+  `)
+  t.ok(roomy, 'a text shorter than maxRows is not padded out to it')
+
+  await t.evaluate(`${layers('bounded')} text.focus(); text.setSelectionRange(0, 0); text.parentElement.scrollTop = 0; return true;`)
+  await t.press('End', 2)
+  await t.eventually(`(() => { ${layers('bounded')}
+    const box = text.parentElement, last = paint.querySelector('code:last-of-type > span:last-child').getBoundingClientRect(), b = box.getBoundingClientRect();
+    return box.scrollTop > 0 && last.bottom <= b.bottom + 1;
+  })()`, true, 'the caret sent to the end scrolls the box to the last line')
+
+  /* ── insert(text): at the caret, from outside the box (FJS-2671) ──────── */
+
+  // A menu that appends can only ever write at the end of the body. The caret
+  // is set, focus is moved to a button, and the insert must still land at it.
+  await t.evaluate(`${layers('merge')} text.focus(); text.setSelectionRange(5, 5); return true;`)
+  await t.clickAt('#merge-btn')
+  await t.eventually(`document.getElementById('merge-out').textContent`, 'Dear {contact.first_name}, see you soon.',
+    'insert() puts text at the caret of a box that no longer has focus, and oninput reports it')
+  t.is(await t.evaluate(`${layers('merge')} return paint.textContent === text.value;`), true,
+    'and the paint follows')
+  t.is(await t.evaluate(`${layers('merge')} return text.selectionStart + ',' + text.selectionEnd + ',' + (document.activeElement === text);`),
+    '25,25,true', 'the caret sits after the inserted text and the box has focus again')
+
+  await t.evaluate(`${layers('merge')} text.setSelectionRange(0, 4); return true;`)
+  await t.evaluate(`window.__insert('Hi'); return true;`)
+  await t.eventually(`document.getElementById('merge-out').textContent`, 'Hi {contact.first_name}, see you soon.',
+    'and replaces a selection')
+
   /* ── a Field around it ────────────────────────────────────────────────── */
 
   const field = await t.evaluate(`

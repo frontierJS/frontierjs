@@ -22,5 +22,20 @@
   <Slider range label="Price" bind:start={lo} bind:end={hi} onchange={onrange} min={0} max={100} step={10} />
 </div>
 
+<div style="width: 400px; margin: 40px">
+  <Slider id="hue" value={50} aria-label="Hue" style="--data-accent: hsl(200 80% 50%)" />
+</div>
+<div style="width: 400px; margin: 40px">
+  <Slider id="plain" value={50} aria-label="Plain" tone="danger" />
+</div>
+
+<div style="width: 300px; margin: 40px; overflow: auto">
+  <Slider id="ends" value={200} min={100} max={200} format={(v) => v + '%'} aria-label="Zoom" />
+</div>
+<div style="width: 300px; margin: 40px; overflow: auto">
+  <Slider id="ends-lo" value={100} min={100} max={200} format={(v) => v + '%'} aria-label="Zoom low" />
+  <Slider id="ends-range" range start={100} end={200} min={100} max={200} format={(v) => v + '%'} aria-label="Zoom range" />
+</div>
+
 <output id="vol-out">{vol}</output>
 <output id="range-out">{lo},{hi}</output>

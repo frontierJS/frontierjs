@@ -21,7 +21,7 @@
  */
 import { join } from 'node:path'
 import { initJunction } from '@frontierjs/sierra/resource'
-import * as tui from '@frontierjs/mesa/runtime/terminal.js'
+import * as tui from '@frontierjs/mesa/runtime/terminal'
 import { installTerminalLoader } from '../../../sierra/src/terminal/loader.js'
 import { stages } from '../src/lib/scene/stage.js'
 import { WEB } from './stage.mjs'

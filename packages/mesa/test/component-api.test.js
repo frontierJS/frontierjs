@@ -23,7 +23,7 @@ function execCompiled(compiledJs, runtime, userImports = {}) {
   let m
   while ((m = importRe.exec(compiledJs)) !== null) {
     const spec = m[1].trim(), src = m[2]
-    if (src === '@frontierjs/mesa/runtime.js') continue
+    if (src === '@frontierjs/mesa/runtime') continue
     const mock = userImports[src] || {}
     importNames.push(spec.trim())
     importValues.push(mock?.default ?? mock)

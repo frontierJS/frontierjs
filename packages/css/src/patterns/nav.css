@@ -147,7 +147,8 @@
  * styles an <li> to look clickable, but an <li> is not focusable and takes
  * no keyboard input — the hover state writes a check the markup cannot
  * cash. `.navlink` goes on a real <a>, so it is focusable, activatable and
- * announced as a link.
+ * announced as a link. A row that opens a menu instead of navigating is a
+ * `<button type="button" class="navlink">` and draws the same.
  */
 .navlist {
   display:        flex;
@@ -169,6 +170,17 @@
   color:           var(--ink-soft);
   text-decoration: none;
   transition:      background var(--motion-fast), color var(--motion-fast);
+
+  /* A row that opens a menu is a <button>, which arrives with a UA border,
+     face, centered label and shrink-to-fit width. All no-ops on an <a>. */
+  box-sizing:      border-box;
+  inline-size:     100%;
+  border:          0;
+  background:      transparent;
+  font-family:     inherit;
+  line-height:     inherit;
+  text-align:      start;
+  cursor:          pointer;
 }
 
 .navlink:hover {
@@ -179,9 +191,12 @@
 /* Focus ring: focus.css, in the inset set — the sidebar's edge would
    otherwise clip an outward ring. */
 
+/* --navlink-current-bg / -ink are a theme's: a solid fill with its own ink
+   instead of the tint. Use-site fallbacks, so a token set on an ancestor
+   .theme-* reaches here (a :root alias would resolve once and inherit past). */
 .navlink[aria-current="page"] {
-  background:  color-mix(in srgb, var(--bg-mix, var(--color-primary)) 12%, var(--surface));
-  color:       var(--bg-mix, var(--color-primary));
+  background:  var(--navlink-current-bg, color-mix(in srgb, var(--bg-mix, var(--color-primary)) 12%, var(--surface)));
+  color:       var(--navlink-current-ink, var(--bg-mix, var(--color-primary)));
   font-weight: 600;
 }
 

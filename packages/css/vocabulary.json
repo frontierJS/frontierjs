@@ -1,9 +1,9 @@
 {
   "$comment": "Generated from vocabulary.js by build-vocabulary.js — do not edit. vocabulary.js is the source and is a classic script by necessity; see that file.",
   "counts": {
-    "terms": 59,
+    "terms": 60,
     "tiers": 8,
-    "anatomy": 27
+    "anatomy": 28
   },
   "terms": [
     {
@@ -189,6 +189,14 @@
       "element": "<article>",
       "meaning": "A compact metric or stat unit. Interactive as an <a>/<button>, like Card",
       "class": "tile"
+    },
+    {
+      "term": "Lane",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<section aria-labelledby>",
+      "meaning": "One column of a board — the vertical counterpart of a Bar. A Surface, so it takes a tone, at a width of its own (--lane-size); a row of them sits in .lanes and scrolls sideways rather than wrapping",
+      "class": "lane"
     },
     {
       "term": "Item",
@@ -562,6 +570,15 @@
           ".tile-delta",
           "The change. Takes a tone, which is the only place the color is decided",
           "optional"
+        ]
+      ]
+    },
+    "Lane": {
+      "markup": "<div class=\"lanes\">\n  <section class=\"lane warning\" aria-labelledby=\"lane-todo\">\n    <h3 class=\"lane-title\" id=\"lane-todo\">Todo</h3>\n    <article class=\"card\">Draft the brief</article>\n  </section>\n</div>",
+      "parts": [
+        [
+          ".lane-title",
+          "The lane’s name. Labels the section for assistive tech"
         ]
       ]
     },
@@ -948,7 +965,8 @@
       "outlined",
       "ghost",
       "glass",
-      "bordered"
+      "bordered",
+      "edge"
     ],
     "density": [
       "dense",
@@ -962,6 +980,7 @@
       "disabled",
       "divided",
       "end",
+      "flush",
       "focusable",
       "hover",
       "menu",
@@ -985,6 +1004,7 @@
     "container": [
       "avatars",
       "items",
+      "lanes",
       "rows",
       "tiles"
     ],

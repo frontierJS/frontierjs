@@ -19,7 +19,6 @@
   export let sub   = ''
   export let trend = ''    // 'up' | 'down' | 'flat' | ''
   export let tone  = ''    // tints the delta
-  export let color = ''    // legacy alias for `tone`
 
   // A trend has a natural tone, but "up" is not always good — churn going up
   // is bad. An explicit tone always wins over the default.
@@ -30,7 +29,7 @@
   }
 
   const t         = trendMap[trend] ?? null
-  const deltaTone = toTone(color || tone) || t?.tone || ''
+  const deltaTone = toTone(tone) || t?.tone || ''
 </script>
 
 <div class="stack" style:gap="0.25rem" {class} {...$attributes}>

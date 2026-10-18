@@ -36,7 +36,7 @@ title: Product
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
   import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
-  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore'
 
   // The two lists go through the resource's STORE rather than a one-shot
   // fetch. `resource.service` has no `findData` — that is the junction client

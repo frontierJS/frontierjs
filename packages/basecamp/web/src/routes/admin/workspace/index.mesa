@@ -16,7 +16,7 @@ title: Workspace
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Card   from '@frontierjs/ui/components/layout/Card.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   $: session.workspaceId
 

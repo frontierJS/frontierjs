@@ -35,6 +35,8 @@ is a convenience artifact, not the product.
 ├── index.css                      ← single entry point (one import covers all)
 ├── utilities.css                  ← .text-* size + color; late layer, beats
 │                                     components                        (v0.10.1)
+├── print.css                      ← @media print: no Frame/Toolbar/Pagination,
+│                                     the Screen flows; utilities layer
 │
 ├── foundation/ ─────────────────────────────────────────────────────
 │   ├── tokens.css                 ← :root defaults + border-box + reduced-motion
@@ -49,7 +51,7 @@ is a convenience artifact, not the product.
 │   ├── forest.css                 ← deep green
 │   ├── midnight.css               ← purple accent
 │   ├── dark.css                   ← neutral dark
-│   └── elite.css                  ← navy + lime + Montserrat (real client theme)
+│   └── elite.css                  ← navy + lime, uppercase (real client theme)
 │
 ├── components/ ─────────────────────────────────────────────────────
 │   ├── frame.css                  ← Frame + Page tiers: app shell        (NEW v0.6)

@@ -62,7 +62,7 @@ export function mesaPlugin(options = {}) {
       viteRoot = viteConfig.root ?? process.cwd()
     },
 
-    // Mesa's compiled output emits: `import * as $runtime from '@frontierjs/mesa/runtime.js'`
+    // Mesa's compiled output emits: `import * as $runtime from '@frontierjs/mesa/runtime'`
     // We need that resolvable from the Vite project's node_modules. If Mesa isn't installed,
     // these returns are skipped and Vite resolves via normal node resolution (which fails
     // gracefully if Mesa truly isn't there).
@@ -70,11 +70,11 @@ export function mesaPlugin(options = {}) {
       // The dev client imports Mesa's DOM swap by name (`FJS-259`). It must
       // resolve even in stub mode, where the specifier is unresolvable and the
       // failure would be a dev build that dies on a feature it is not using.
-      if (id === '@frontierjs/mesa/vite/swap' || id === '@frontierjs/mesa/vite/swap.js') {
+      if (id === '@frontierjs/mesa/vite/swap') {
         return resolvedSwapPath ?? SWAP_FALLBACK
       }
       if (!resolvedRuntimePath) return null
-      if (id === '@frontierjs/mesa/runtime.js' || id === '@frontierjs/mesa/runtime') {
+      if (id === '@frontierjs/mesa/runtime') {
         return resolvedRuntimePath
       }
     },

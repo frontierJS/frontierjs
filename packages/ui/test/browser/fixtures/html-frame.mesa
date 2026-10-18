@@ -1,0 +1,27 @@
+<script>
+  // html-frame.mesa — the fixture for HtmlFrame.
+  //
+  // `#hostile` is a document that tries to run in every way markup can: a
+  // script, an inline handler, a javascript: link followed by script, and a
+  // form. Each reports by postMessage, the one channel a sandboxed frame still
+  // has to its parent, so a script that ran is heard here. `#plain` is an
+  // ordinary template; `#tall` is a document taller than the box.
+  import HtmlFrame from '../../../components/display/HtmlFrame.mesa'
+
+  window.__heard = []
+  window.addEventListener('message', (e) => window.__heard.push(String(e.data)))
+
+  const hostile = [
+    '<p id="visible">Dear Ada</p>',
+    '<script>parent.postMessage("script", "*")</' + 'script>',
+    '<img src="x" onerror="parent.postMessage(\'handler\', \'*\')">',
+    '<form action="/pwn" method="post"><button id="go">Send</button></form>',
+    '<script>document.getElementById("go").click()</' + 'script>',
+  ].join('')
+
+  const tall = '<div style="height: 2000px">Dear Ada</div>'
+</script>
+
+<HtmlFrame id="hostile" html={hostile} title="Hostile" />
+<HtmlFrame id="plain" html="<h1>Hello</h1>" />
+<HtmlFrame id="tall" html={tall} height="10rem" />

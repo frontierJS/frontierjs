@@ -14,7 +14,7 @@ title: Members
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Mono       from '@frontierjs/ui/components/display/Mono.mesa'
   import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   $: (session.workspaceId, session.user)
 

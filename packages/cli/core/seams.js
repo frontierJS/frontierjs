@@ -106,7 +106,7 @@ const TICKED  = /`([^`]+)`/g
 // silently refused three owners that had just been written down.
 //
 // What separates a path from the three other things shaped like one — a relative
-// mention (`build/schema-plugin.js`), an import specifier (`@frontierjs/ui/utils.js`)
+// mention (`build/schema-plugin.js`), an import specifier (`@frontierjs/ui/utils`)
 // and a Vite alias (`@/api.js`) — is whether the first segment NAMES A PACKAGE.
 // That is read off the tree rather than guessed at, so a new package needs no
 // edit here and a plausible-looking non-path can never become an owner.

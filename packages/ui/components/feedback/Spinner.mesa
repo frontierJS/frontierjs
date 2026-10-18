@@ -18,7 +18,6 @@
 
   export let size  = 'md'      // 'xs' | 'sm' | 'md' | 'lg' | 'xl'
   export let tone  = ''        // '' inherits the surrounding text color
-  export let color = ''        // legacy alias for `tone`
   export let label = 'Loading' // announced by the live region below
 
   // font-size, because .spinner is sized in em.
@@ -31,7 +30,7 @@
   }
 
   const fontSize = sizeMap[size] ?? sizeMap.md
-  const t        = toTone(color || tone)
+  const t        = toTone(tone)
 </script>
 
 <!--

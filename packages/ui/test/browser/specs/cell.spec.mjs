@@ -148,6 +148,16 @@ export async function run(t) {
   await t.eventually(`!!document.querySelector('#unknown [class*="fjs-json"]')`, true,
     'and so does a document under a display name with no branch')
 
+  // A `@syntax(md)` column is prose somebody wrote, and printing its markup
+  // raw is the defect (FJS-3153). The renderer escapes the source, so a raw
+  // tag in the text must still draw as text.
+  await t.eventually(`document.querySelector('#markdown .fjs-markdown strong')?.textContent`, 'bold',
+    'a markdown column renders through the Markdown component once it has loaded')
+  t.is(await t.evaluate(`return document.querySelector('#markdown .fjs-markdown a')?.getAttribute('href')`),
+    'https://x.test', 'with its links as links')
+  t.is(await t.evaluate(`return document.querySelectorAll('#markdown img').length`), 0,
+    'and raw HTML in the source drawn as text, never as an element')
+
   /* ── a column the table could not place ───────────────────────────────── */
   //
   // `displayFor` answers `display: null` WITH a reason rather than dropping the

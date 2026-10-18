@@ -286,7 +286,7 @@ with the terminal backend as its second consumer, not ahead of it.
    headless renderer and asserted by its captured frame after typed keys.
    *First slice landed 2026-10-09:* `compile(src, { target: 'terminal' })`
    runs `src/terminal/emit.js` over `ctx.ir` and the output imports
-   `@frontierjs/mesa/runtime/terminal.js` (`src/runtime-terminal.js`, over
+   `@frontierjs/mesa/runtime/terminal` (`src/runtime-terminal.js`, over
    `@opentui/core` — `FJS-D698`, `FJS-D699`). `src/terminal/tags.js` is the
    per-target table (`FJS-D700`, `FJS-D692`): a tag or event not in it, any
    directive (`bind:`, `class:`, spreads, `{@attach}`), a dynamic attribute
@@ -1832,7 +1832,7 @@ every terminal fixture either parses or is refused by name.
   - 32 of 48 fixtures compile and 16 are refused at compile, by name: the
     device parity of § 10, moved from the runtime to the compiler. A
     `class:` paints on native from here, which is half of 3.1.
-- [x] 1.3 `runtime-native.js`, `@frontierjs/mesa/runtime/native.js`: the
+- [x] 1.3 `runtime-native.js`, `@frontierjs/mesa/runtime/native`: the
       spike's runtime with § 10's three fixes, `flatten=false` set on a bound
       node up front instead of retried
   - No engine import: the PAPI are main-thread globals, so mesa gains no

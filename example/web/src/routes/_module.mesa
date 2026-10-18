@@ -23,9 +23,9 @@ siteName: Kitchen sink
   import DropdownGroup     from '@frontierjs/ui/components/overlay/DropdownGroup.mesa'
   import DropdownMenu      from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
-  import { alert }          from '@frontierjs/ui/stores/alertStore.js'
-  import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
-  import { toasts }         from '@frontierjs/ui/stores/toastStore.js'
+  import { alert }          from '@frontierjs/ui/stores/alertStore'
+  import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore'
+  import { toasts }         from '@frontierjs/ui/stores/toastStore'
   import { paletteItems }   from '@frontierjs/ui/nav'
 
   import { groups } from '@/lib/nav.js'

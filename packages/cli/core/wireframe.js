@@ -39,7 +39,7 @@ import { createHash } from 'node:crypto'
 // The terms `packages/css/test/specs/tones.spec.js` grades a tone on. A copy,
 // and `test/wireframe.test.js` fails when the spec's list moves without it.
 export const TONES       = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger']
-export const TONE_TAKERS = new Set(['Card', 'Tile', 'Alert', 'Toast', 'Popover', 'Button', 'Pill', 'Badge', 'Avatar', 'Link', 'Field'])
+export const TONE_TAKERS = new Set(['Card', 'Tile', 'Lane', 'Alert', 'Toast', 'Popover', 'Button', 'Pill', 'Badge', 'Avatar', 'Link', 'Field'])
 
 // Terms whose children run across rather than down. Drawing only — the
 // terminal has no CSS to ask, and nothing grades this list.
@@ -642,7 +642,7 @@ ${markup}
     if (n.text && kids.length) inner.unshift(`<!-- ${n.text} -->`)
     const tag = {
       App: 'div', Shell: 'div', Topbar: 'header', Sidebar: 'nav', Screen: 'main', Pane: 'section',
-      Section: 'section', Card: 'article', Tile: 'article', Alert: 'article', Row: 'li',
+      Section: 'section', Card: 'article', Tile: 'article', Lane: 'section', Alert: 'article', Row: 'li',
     }[n.term] || 'div'
     const attrs = [
       t.class || ok.length ? `class="${cls(n.term, ok)}"` : '',

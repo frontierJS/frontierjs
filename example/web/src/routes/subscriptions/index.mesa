@@ -30,7 +30,7 @@ title: Subscriptions
   import Pill                from '@frontierjs/ui/components/display/Pill.mesa'
   import SectionHeader       from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Table               from '@frontierjs/ui/components/display/Table.mesa'
-  import { toasts }          from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }          from '@frontierjs/ui/stores/toastStore'
 
   const columns = [
     { name: 'reference',  label: 'Reference' },

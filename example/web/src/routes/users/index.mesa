@@ -140,7 +140,7 @@ title: Users
   const standing = (u) =>
     u.role === 'admin' ? { tone: 'danger',  text: 'admin'   }
     : u.isStaff        ? { tone: 'info',    text: 'staff'   }
-    :                    { tone: 'neutral', text: 'shopper' }
+    :                    { tone: 'muted',   text: 'shopper' }
 
   // ── The write, and the silent half of it ─────────────────────────────────
   //

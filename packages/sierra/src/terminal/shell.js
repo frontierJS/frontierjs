@@ -34,7 +34,7 @@
  * refused at boot rather than left to fail as an undefined name).
  *
  * Traps:
- * - The engine is reached through `@frontierjs/mesa/runtime/terminal.js` and
+ * - The engine is reached through `@frontierjs/mesa/runtime/terminal` and
  *   nothing else: an import of `@opentui/core` from this package installs a
  *   second copy of it.
  * - `@frontierjs/sierra/router` is `router/index.js` here, never `entry.js`:
@@ -227,7 +227,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     return 0
   }
 
-  const tui = await import('@frontierjs/mesa/runtime/terminal.js')
+  const tui = await import('@frontierjs/mesa/runtime/terminal')
   const Shell = (await import(SHELL)).default
   const Mode  = (await import(MODE)).default
   const app = config.siteName ?? root.split('/').filter(Boolean).at(-2) ?? 'app'

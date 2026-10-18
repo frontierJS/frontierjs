@@ -34,7 +34,7 @@ title: Channels
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
   import { page } from '@frontierjs/sierra/router'
   import { offerUndo } from '../../resources/Trash.mesa'
@@ -153,7 +153,7 @@ title: Channels
     } catch (e) {
       // Shown, not swallowed. A test that fails silently is the one failure
       // mode this whole screen exists to rule out.
-      said.update('error', `Test failed: ${e.message}`)
+      said.update('danger', `Test failed: ${e.message}`)
       error = e.message
     } finally {
       busy = null

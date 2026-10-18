@@ -30,7 +30,7 @@ title: Disk cleanup
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Sparkline  from '@frontierjs/ui/components/display/Sparkline.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId

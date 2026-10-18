@@ -15,7 +15,6 @@
   import { tone as toTone, cx } from '../../utils.js'
 
   export let tone  = ''      // one of the 7 css tones; '' is muted
-  export let color = ''      // legacy alias for `tone`
   export let size  = 'sm'    // 'xs'|'sm'|'md'|'lg'
   export let pulse = false   // ping animation for live/active states
   export let label = ''      // accessible label; without one the dot is decorative
@@ -24,7 +23,7 @@
   const sizeMap = { xs: '0.375rem', sm: '0.5rem', md: '0.625rem', lg: '0.75rem' }
   const sz = sizeMap[size] ?? sizeMap.sm
 
-  const t = toTone(color || tone)
+  const t = toTone(tone)
 </script>
 
 <span

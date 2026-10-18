@@ -13,7 +13,7 @@ import { cssOffense, lowerTypes } from '../native/css.js'
 export const TARGETS = {
   terminal: {
     name:      'terminal',
-    runtime:   '@frontierjs/mesa/runtime/terminal.js',
+    runtime:   '@frontierjs/mesa/runtime/terminal',
     tags:      terminal.TERMINAL_TAGS,
     events:    terminal.TERMINAL_EVENTS,
     isInline:  terminal.isInline,
@@ -27,7 +27,7 @@ export const TARGETS = {
   },
   native: {
     name:        'native',
-    runtime:     '@frontierjs/mesa/runtime/native.js',
+    runtime:     '@frontierjs/mesa/runtime/native',
     tags:        native.NATIVE_TAGS,
     events:      native.NATIVE_EVENTS,
     isInline:    native.isInline,

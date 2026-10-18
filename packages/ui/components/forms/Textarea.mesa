@@ -6,7 +6,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { humanize, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
+  import { cx, humanize, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
   export let value       = ''
   export let placeholder = ''
@@ -33,6 +33,8 @@
   export var id = ''
   const textareaId = id || uid('textarea')
   const autoLabel  = humanize(name)
+  // Field takes `class` on its wrapper; with none drawn it goes on the textarea.
+  const wrapped    = !!(label || (name && autoLabel))
 
   const form     = $context.form
 
@@ -52,12 +54,21 @@
   let el
   export function focus() { return $.focus(el) }
 
+  // Typing leaves an inline height behind, and a value written from code fires
+  // no input event, so the fit has to follow `value` itself: a composer cleared
+  // after a send otherwise kept the height of the message it had just sent.
+  function fit() {
+    if (!autogrow || !el) return
+    el.style.height = 'auto'
+    // scrollHeight leaves the border out and the box is border-box, so a bare
+    // scrollHeight is two pixels short and the box scrolls.
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+  }
+  $: value, () => { $.tick().then(fit) }
+
   function handleInput(e) {
     value = e.target.value
-    if (autogrow) {
-      e.target.style.height = 'auto'
-      e.target.style.height = `${e.target.scrollHeight}px`
-    }
+    fit()
     // The caller's hook runs AFTER the internal write and the autogrow, so a
     // handler that re-renders cannot cancel either.
     oninput?.(e)
@@ -76,7 +87,7 @@
 {#snippet control()}
   <textarea
     bind:this={el}
-    class="field"
+    class={cx('field', !wrapped && $class)}
     id={textareaId}
     name={name || undefined}
     rows={rows}
@@ -117,7 +128,7 @@
   {/if}
 {/snippet}
 
-{#if label || (name && autoLabel)}
+{#if wrapped}
   <!--
     label and required go down UNRESOLVED where the caller stated nothing:
     Field reads the same rule off the same <Form> and resolves them once. This

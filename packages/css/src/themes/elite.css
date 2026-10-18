@@ -1,6 +1,6 @@
 /*
  * elite.css
- * Navy + lime, uppercase, sharp corners, Montserrat.
+ * Navy + lime, uppercase, sharp corners.
  * Demonstrates a theme overriding the full token surface — not just colors.
  */
 
@@ -38,8 +38,16 @@
    * and it does not fall back through a theme: a theme that sets only
    * --font-primary leaves headings in whatever display face the host page
    * declared, which in the guide is its own serif.
+   *
+   * Platform faces only (FJS-D879): the package ships no font file, so a
+   * named web face (Montserrat) would render only where it happens to be
+   * installed. An app wanting one loads it and overrides these two.
    */
-  --font-primary: 'Montserrat', system-ui, sans-serif;
-  --font-display: 'Montserrat', system-ui, sans-serif;
-  --font-mono:    'IBM Plex Mono', monospace;
+  --font-primary: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text',
+                  'Segoe UI', Roboto, 'Noto Sans', Ubuntu, Cantarell,
+                  'Helvetica Neue', Arial, system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text',
+                  'Segoe UI', Roboto, 'Noto Sans', Ubuntu, Cantarell,
+                  'Helvetica Neue', Arial, system-ui, sans-serif;
+  --font-mono:    ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
 }

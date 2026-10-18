@@ -48,7 +48,7 @@
  * documents. It is not this switcher's job.
  */
 
-import { watchProxy, createRoot, createEffect, untrack, isBrowserClient } from '@frontierjs/mesa/runtime.js'
+import { watchProxy, createRoot, createEffect, untrack, isBrowserClient } from '@frontierjs/mesa/runtime'
 import { persisted, colorScheme } from '@frontierjs/mesa/browser'
 
 // ─── Public state ────────────────────────────────────────────────────────────

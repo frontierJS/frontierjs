@@ -30,7 +30,6 @@
   export let confirmLabel = 'Confirm'
   export let cancelLabel  = 'Cancel'
   export let tone         = 'danger'   // tone of the confirm button
-  export let variant      = ''         // legacy alias for `tone`
   export let onconfirm    = undefined
   export let oncancel     = undefined
   export let trigger      = null       // snippet
@@ -66,7 +65,7 @@
   <ConfirmPanel
     anchor={triggerEl}
     {title} {message} {confirmLabel} {cancelLabel}
-    tone={variant || tone}
+    {tone}
     onconfirm={handleConfirm}
     oncancel={handleCancel}
   />

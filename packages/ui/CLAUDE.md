@@ -21,12 +21,12 @@ components/
               FileUpload · FileField · GeoField · MoneyInput · Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
-              Json · Markdown · SignatureView · BulkBar ·
+              Json · Markdown · HtmlFrame · TemplatePreview · SignatureView · BulkBar ·
               Transcript · Message · Composer (chat) · …
   layout/     Card · Tabs (Tabs/TabList/Tab/TabPanel) · Accordion(+Item) ·
               Shell (the app frame, drawn from a nav.js table; Sierra's
               page, session and isActive arrive as props)
-  overlay/    Modal · Drawer · Popover · Tooltip · DropdownMenu(+Item/Group/
+  overlay/    Modal · Drawer · Popover · Tooltip · HoverCard · DropdownMenu(+Item/Group/
               Separator) · ConfirmationPopover · ConfirmPanel · ConfirmProvider ·
               CommandPalette
   feedback/   Alert(+Provider) · Toast(+er) · Progress · Spinner · Skeleton
@@ -36,6 +36,8 @@ dnd.js        dndzone — drag and drop between flow lists, an {@attach}
 drag.js       drag — one pointer drag, press to release or cancel, an {@attach}
 nav.js        the `src/lib/nav.js` contract (typedefs) and sectionFor · visible ·
               paletteItems; never decides CURRENT, which is Sierra's isActive
+rowlist.js    rowlist — the keys of a list of rows (cursor, one tab stop, open,
+              select), an {@attach} (FJS-2009)
 selection.js  createSelection — the ticked KEYS of a list, signal-backed; the
               screen composes it with Checkbox `indeterminate` and BulkBar,
               and Table stays out of it (FJS-D671)
@@ -412,7 +414,12 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   `.fjs-code-input-layer`, sets the metrics for both layers; glow runs with
   `prefix: false, mark: false` or it paints fewer characters than the box
   holds; a trailing newline is painted as a space or the `<pre>` draws one line
-  fewer. `JsonInput` is a `CodeInput` with `language="json"` and its own parse.
+  fewer. `maxRows` is the ceiling and is set on the shared box, never a layer;
+  unset, a 65-line text is 2,000px tall and pushes the controls under it out of
+  reach (`FJS-2823`). **`insert(text)` is how a Merge fields menu writes**: it
+  replaces the selection through `execCommand`, so undo survives and the real
+  `input` fires; a textarea keeps its selection blurred, so the caller need not
+  restore one (`FJS-2671`). `JsonInput` is a `CodeInput` with `language="json"` and its own parse.
   `code-input.spec.mjs` measures the glyph origin against the textarea's
   content box — a presence check passes against every one of those failures.
   **The paint is repainted by the line, in `<code>` chunks of 64** (`FJS-1621`):

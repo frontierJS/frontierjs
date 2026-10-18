@@ -1,0 +1,37 @@
+/*
+ * lanes.css
+ * Lane — one column of a board, the vertical counterpart of a Bar.
+ *
+ *   <div class="lanes">
+ *     <section class="lane warning" aria-labelledby="lane-todo">
+ *       <h3 class="lane-title" id="lane-todo">Todo</h3>
+ *       <article class="card">…</article>
+ *     </section>
+ *   </div>
+ *
+ * A Lane is a surface composite (surface.css), so it takes every tone and
+ * treatment. Its width is --lane-size and the board scrolls sideways past
+ * the viewport: a lane that shrank to fit would stop being readable at the
+ * fifth column, and one that wrapped would stop being a board.
+ */
+
+.lanes {
+  display:     flex;
+  align-items: flex-start;
+  gap:         var(--space-lg);
+  overflow-x:  auto;
+}
+
+.lane {
+  display:        flex;
+  flex-direction: column;
+  flex:           0 0 var(--lane-size, 18rem);
+  gap:            var(--space-lg);
+  padding:        var(--space-lg);
+  min-inline-size: 0;
+}
+
+.lane-title {
+  font-size:   var(--text-sm);
+  font-weight: var(--label-font-weight);
+}

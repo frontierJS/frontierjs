@@ -74,7 +74,8 @@ export async function run(t) {
 
   /* ── the section bar ────────────────────────────────────────────────── */
 
-  t.is(await t.evaluate(`return document.querySelector('#stage .topbar strong')?.textContent;`), 'Leads', 'the title is drawn')
+  t.is(await t.evaluate(`return document.querySelector('#stage .topbar h1')?.textContent;`), 'Leads', 'the title is drawn')
+  t.is(await t.evaluate(`return document.querySelectorAll('#stage h1').length;`), 1, 'and is the page\'s only h1')
   t.is(await t.evaluate(`return [...document.querySelectorAll('#stage .topbar nav[aria-label="Section"] .navlink')].map(a => a.textContent + (a.getAttribute('aria-current') ? '*' : '')).join('|');`),
     'Open*|Lost', 'the section\'s tabs are drawn and an exact tab is current on its own path')
   t.is(await t.evaluate(`return document.querySelector('#stage .topbar nav[aria-label="Section"] a.btn.primary')?.getAttribute('href');`),
@@ -248,7 +249,7 @@ export async function run(t) {
     const right = document.querySelector('#stage .topbar > .cluster:last-child');
     return !!right.querySelector('#top-right') && !!right.querySelector('[data-foot="topbar"]') && right.querySelector('button.btn')?.textContent === 'Sign out';
   `), 'the topbar snippet, the foot (told it is in the topbar) and Sign out sit at the bar\'s end')
-  t.is(await t.evaluate(`return document.querySelector('#stage main.screen strong')?.textContent;`), 'Leads', 'the title heads the Screen')
+  t.is(await t.evaluate(`return document.querySelector('#stage main.screen h1')?.textContent;`), 'Leads', 'the title heads the Screen')
   t.is(await t.evaluate(`return [...document.querySelectorAll('#stage main.screen nav[aria-label="Section"] .navlink')].map(a => a.textContent + (a.getAttribute('aria-current') ? '*' : '')).join('|');`),
     'Open*|Lost', 'and so does the section bar')
 

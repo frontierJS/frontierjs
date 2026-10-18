@@ -44,7 +44,7 @@ title: Flow
   import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
   import Textarea      from '@frontierjs/ui/components/forms/Textarea.mesa'
-  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore'
 
   import Select        from '@frontierjs/ui/components/forms/Select.mesa'
 

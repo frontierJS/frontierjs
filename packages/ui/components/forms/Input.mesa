@@ -35,7 +35,7 @@
   // bind:this exposes: focus(), select()
 
   import Field from './Field.mesa'
-  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
+  import { cx, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
   // Core input props
   export let value       = ''
@@ -141,6 +141,12 @@
   const displayError = resolveError(form, name, error, errors)
   const hasError     = !!displayError
 
+  // Field draws the wrapper, and `class` goes on it. Without one, `class` goes
+  // on the outermost element that is left: the .field-row around an addon, else
+  // the <input> itself.
+  const wrapped = !!(label || name || hasError || hint)
+  const addon   = !!(icon || canReveal || unit)
+
   // Constraint attributes. These are what assistive tech announces, so they
   // are worth emitting even with novalidate on the form suppressing the
   // browser's own bubbles.
@@ -175,7 +181,7 @@
 {#snippet field()}
   <input
     bind:this={inputEl}
-    class="field"
+    class={cx('field', !wrapped && !addon && $class)}
     id={inputId}
     name={name || undefined}
     type={inputType}
@@ -206,9 +212,9 @@
 
 <!-- The control, with the trailing addon when one was given. -->
 {#snippet control()}
-  {#if icon || canReveal || unit}
+  {#if addon}
     <!-- .field-row joins a control to an addon; the addon sizes its own icon. -->
-    <div class="field-row">
+    <div class={cx('field-row', !wrapped && $class)}>
       {@render field()}
       {#if canReveal}
         <!--
@@ -259,7 +265,7 @@
   {/if}
 {/snippet}
 
-{#if label || name || hasError || hint}
+{#if wrapped}
   <!--
     A message or hint with no label and no name still needs Field to draw it:
     label="" keeps the page's own heading and must not cost the reason a field

@@ -59,7 +59,7 @@ title: Your settings
   import RadioGroup from '@frontierjs/ui/components/forms/RadioGroup.mesa'
   import Switch     from '@frontierjs/ui/components/forms/Switch.mesa'
   import Table      from '@frontierjs/ui/components/display/Table.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   // The standing pill reads the membership row out of `session.workspaces` and
   // picks it with `session.workspaceId`; watching `session.user` alone leaves it

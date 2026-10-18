@@ -17,6 +17,12 @@
   //   <Combobox {options} allowNew newLabel={(t) => `Add “${t}” as a custom line`}
   //             oncreate={addCustom} onchange={pick} />
   //
+  // Usage — an icon or secondary text per row:
+  //   <Combobox {options}>
+  //     {#snippet option(o)}<StepIcon id={o.icon} /> {o.label}{/snippet}
+  //   </Combobox>
+  //   options of { value, label, description } draw the description under the label.
+  //
   // Usage — rows a server search answers (full-text, matched on text the
   // label does not show):
   //   <Combobox {options} search={(q, signal) => findOffers(q, signal)} onchange={pick} />
@@ -71,6 +77,12 @@
   // code the label never shows, so filtering its answer by label again dropped
   // the hits that were the point of asking. Its rows are drawn as answered.
   export let search   = undefined   // (query: string, signal: AbortSignal) => Promise<options>
+  // Draws a row's content in place of its label and description: an icon, a
+  // price, anything the caller's option object carries. It is handed the
+  // caller's own object, so a field the kit never heard of reaches it. The
+  // box still shows `label` once a row is picked, and the typed `allowNew` row
+  // is always plain text.
+  export let option   = null        // snippet (option) — one row's content
 
   export var id = ''
   const inputId = id || uid('cb')
@@ -95,7 +107,8 @@
   function normalize(o) {
     if (typeof o === 'string' || typeof o === 'number') return { value: o, label: String(o) }
     return { value: o.value, label: String(o.label ?? o.textContent ?? o.value), disabled: o.disabled ?? false,
-             recent: o.recent ?? false, unavailable: o.unavailable ?? false }
+             recent: o.recent ?? false, unavailable: o.unavailable ?? false,
+             description: o.description ?? '', raw: o }
   }
 
   // Same fallback as Select: the rule answers an enum synchronously, the form
@@ -432,7 +445,16 @@
                 onmousemove={() => { if (activeIdx !== i) activeIdx = i }}
                 onclick={() => select(opt)}
               >
-                <span style:flex="1">{opt.label}</span>
+                <span style:flex="1">
+                  {#if option && !opt.created}
+                    {@render option(opt.raw)}
+                  {:else}
+                    {opt.label}
+                    {#if opt.description}
+                      <span class="field-hint" style:display="block">{opt.description}</span>
+                    {/if}
+                  {/if}
+                </span>
                 {#if isSelected}
                   <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/>

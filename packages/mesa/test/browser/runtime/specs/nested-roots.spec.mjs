@@ -14,7 +14,7 @@ export const name = 'nested delegation roots (FJS-833)'
 export const covers = ['delegation-root', 'invariant-11']
 
 const plantInner = `
-  const { mount } = await import('@frontierjs/mesa/runtime.js')
+  const { mount } = await import('@frontierjs/mesa/runtime')
   const mod  = await import('/mesa/test/browser/runtime/fixtures/nested-inner.mesa')
   const host = document.querySelector('#inner-host')
   const label = document.createComment('inner')

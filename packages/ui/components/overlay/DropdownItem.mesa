@@ -37,7 +37,6 @@
   import { tone as toTone, cx } from '../../utils.js'
 
   export let tone     = ''           // one of the 7 css tones
-  export let variant  = ''           // legacy — 'destructive' → danger
   export let disabled = false
   export let kbd      = ''           // keyboard shortcut label shown on the right
   export let href     = undefined    // renders as <a> when set
@@ -55,7 +54,7 @@
   const close         = $context.close
   const menuKeepsOpen = $context.keepOpen
 
-  const t = toTone(variant === 'destructive' ? 'danger' : (variant || tone))
+  const t = toTone(tone)
 
   // The menu walks its rows by what they register, not by a DOM query: a
   // terminal node has none. Getters, because `disabled` can change after mount.

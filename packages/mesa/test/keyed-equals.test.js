@@ -235,7 +235,7 @@ import { createKeyedEquals as k } from './src/runtime.js'
 export const createKeyedEquals = (s) => { const is = k(s); return (key) => { globalThis.__keyedReads++; return is(key) } }
 `)
   const file = path.join(process.cwd(), `_tmp_keyed_${n}.mjs`)
-  writeFileSync(file, ctx.result.replace(/'@frontierjs\/mesa\/runtime(\.js)?'/g, `'./${path.basename(rt)}'`))
+  writeFileSync(file, ctx.result.replace(/'@frontierjs\/mesa\/runtime'/g, `'./${path.basename(rt)}'`))
   n++
   let Comp
   try { Comp = (await import('file://' + file)).default }

@@ -242,7 +242,7 @@ describe('island loader', () => {
       const v = win[k]
       if (v !== undefined) globalThis[k] = v
     }
-    mesa = await import('@frontierjs/mesa/runtime.js')
+    mesa = await import('@frontierjs/mesa/runtime')
     // The runtime decides `_isBrowser` at import time from `typeof document`,
     // and this suite runs under vitest's `node` environment. Say so explicitly
     // rather than depending on import order.

@@ -121,7 +121,7 @@ async function realApp(read, frontmatter = 'render: static', flavor = '.asSystem
 }
 
 async function run({ root, db, json }, { wireDb = true, warnings = null } = {}) {
-  const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+  const { renderComponent } = await import('@frontierjs/mesa/render-component')
   const { scan } = await import('../src/scanner/index.js')
   const tree = await scan('src/routes', { cwd: root })
   return prerenderRoutes({

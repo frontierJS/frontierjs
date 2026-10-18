@@ -188,7 +188,7 @@ let n = 0
 async function build(src) {
   const ctx = await compileSource(src, { filename: `/U${n}.mesa`, dev: false })
   if (ctx.analysis?.errors?.length) throw new Error(ctx.analysis.errors[0])
-  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime\.js'/g, `'./src/runtime.js'`)
+  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`)
   const file = path.join(process.cwd(), `_tmp_url_${n++}.mjs`)
   writeFileSync(file, js)
   try { return (await import('file://' + file)).default }

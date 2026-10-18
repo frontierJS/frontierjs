@@ -46,6 +46,10 @@
   import { cx } from '../../utils.js'
   import { displayComponent, defaultDisplayProps } from '../../controls.js'
   import Badge from './Badge.mesa'
+  // Not loaded lazily the way Json is: a prerendered page that shows `**bold**`
+  // until hydration is the defect `FJS-D821` ruled out, and the renderer is a
+  // small pure function.
+  import Markdown from './Markdown.mesa'
 
   // The value from the record. `undefined` and `null` are both "nothing here".
   export let value  = undefined
@@ -245,6 +249,8 @@
     <!-- One cell, one line of a table: monospace and escaped, never highlighted
          markup — a block editor's worth of paint does not fit in a row. -->
     <code>{String(value)}</code>
+  {:else if column?.display === 'markdown'}
+    <Markdown text={String(value)} headingBase={4} />
   {:else if column?.display === 'json'}
     {@render json()}
   {:else if column?.display === 'relation'}

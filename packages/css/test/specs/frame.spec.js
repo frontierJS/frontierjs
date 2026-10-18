@@ -447,3 +447,75 @@ test('frame: a sidebar with no foot lays out as it always did', function () {
 
   cleanup();
 });
+
+/* ── A Screen that fills the viewport edge to edge (FJS-2473) ─────── */
+
+function flushShell(screenClass) {
+  return el(
+    '<div class="shell viewport" style="inline-size:900px;block-size:600px">' +
+      '<header class="topbar"><span>bar</span></header>' +
+      '<main class="' + screenClass + '"><div class="stage" style="block-size:100%"></div></main>' +
+    '</div>',
+    '.screen'
+  );
+}
+
+test('frame: a flush Screen has no padding, so its child fills the cell edge to edge', function () {
+  var screen = flushShell('screen flush');
+  var stage  = screen.querySelector('.stage');
+  var cell   = screen.getBoundingClientRect();
+  var box    = stage.getBoundingClientRect();
+
+  assert.equal(style(screen, 'padding-top'), '0px', 'the flush Screen should state no padding');
+  assert.ok(
+    Math.abs(box.left - cell.left) < 0.5 && Math.abs(box.right - cell.right) < 0.5 &&
+    Math.abs(box.top - cell.top) < 0.5 && Math.abs(box.bottom - cell.bottom) < 0.5,
+    'the stage should cover the Screen cell, got inset ' +
+    [box.left - cell.left, box.top - cell.top, cell.right - box.right, cell.bottom - box.bottom].join(' / ')
+  );
+
+  cleanup();
+});
+
+test('frame: a Screen without flush keeps its padding', function () {
+  var screen = flushShell('screen');
+
+  assert.notEqual(style(screen, 'padding-top'), '0px', 'a plain Screen pads');
+
+  cleanup();
+});
+
+/* ── A Topbar of Groups on a phone (FJS-2384) ─────────────────────── */
+
+test('frame: a topbar of two groups wraps on a phone and keeps every control on screen', function () {
+  /*
+   * A Group is nowrap by definition and the bar was nowrap too, so at 390px
+   * the two Groups stayed on one row and the second one — the signed-in email
+   * and Sign out — ran past the screen edge. Geometry again: no declaration
+   * here is wrong on its own.
+   */
+  var bar = el(
+    '<div class="shell" style="inline-size:390px">' +
+      '<header class="topbar">' +
+        '<div class="group"><button class="btn">Menu</button><span>a-workspace-with-a-long-name</span></div>' +
+        '<div class="group"><span>somebody@an-organization.example</span><button class="btn">Sign out</button></div>' +
+      '</header>' +
+    '</div>',
+    '.topbar'
+  );
+  var box  = bar.getBoundingClientRect();
+  var kids = bar.querySelectorAll('.group > *');
+
+  assert.ok(kids.length === 4, 'fixture should have four items, got ' + kids.length);
+  for (var i = 0; i < kids.length; i++) {
+    var r = kids[i].getBoundingClientRect();
+    assert.ok(r.left >= box.left - 0.5 && r.right <= box.right + 0.5,
+      'item ' + i + ' (' + kids[i].textContent.trim().slice(0, 20) + ') is past the bar\'s edge — ' +
+      'bar ' + Math.round(box.left) + '–' + Math.round(box.right) + ', ' +
+      'item ' + Math.round(r.left) + '–' + Math.round(r.right));
+    assert.ok(r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5,
+      'item ' + i + ' is outside the bar vertically');
+  }
+
+  cleanup();
+});

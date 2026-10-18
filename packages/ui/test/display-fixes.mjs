@@ -69,5 +69,17 @@ const PAGINATION = 'components/display/Pagination.mesa'
   }
 }
 
+// FJS-3233: a hue that is the data reaches a Slider as --data-accent, the one
+// custom property name Invariant 13 lets carry a raw color; the tone is the fallback.
+{
+  const file = 'components/forms/Slider.mesa'
+  const out = await renderComponent(readFileSync(join(ROOT, file), 'utf8'), {
+    data: {}, cwd: ROOT, filename: file, styleTag: false,
+    tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+  })
+  const accent = (out.css ?? '').match(/--slider-accent:\s*([^;]*);/)?.[1] ?? ''
+  check(/^var\(--data-accent,\s*var\(--bg-mix,/.test(accent), `--slider-accent reads --data-accent before the tone: ${accent}`)
+}
+
 console.log(failed ? `${failed} display-fixes case(s) failed` : 'display-fixes cases hold')
 if (failed) process.exit(1)

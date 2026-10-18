@@ -113,7 +113,7 @@ async function buildFixture(name) {
     plugins:    [mesa()],
     // Workspace source by relative path: a by-name import resolves to the copy
     // `bun install` made, and would measure a runtime that no longer exists.
-    resolve:    { alias: { '@frontierjs/mesa/runtime.js': resolve(HERE, '../src/runtime.js') } },
+    resolve:    { alias: { '@frontierjs/mesa/runtime': resolve(HERE, '../src/runtime.js') } },
     build:      { outDir: join(DIST, name), emptyOutDir: true, target: 'es2020', reportCompressedSize: false },
   })
 }

@@ -567,6 +567,21 @@ test('theming: the three labels agree when nothing is set', function () {
   assert.equal(answers.size, 1, 'one role, ' + answers.size + ' answers:\n        ' + seen.join('\n        '));
 });
 
+test('theming: --tab-font-weight moves a tab and defaults to 600', function () {
+  /*
+   * FJS-2689: a tab's weight was a literal 600, so a theme whose tabs are
+   * regular weight had no token to say so.
+   */
+  var html = '<div class="tablist" role="tablist"><button class="tab" role="tab">One</button></div>';
+  var plain = themedBy('', html, '.tab');
+  assert.equal(style(plain, 'font-weight'), '600', 'the default tab weight moved');
+  cleanup();
+
+  var themed_ = themedBy('--tab-font-weight: 400', html, '.tab');
+  assert.equal(style(themed_, 'font-weight'), '400', '--tab-font-weight did not reach .tab');
+  cleanup();
+});
+
 test('theming: --heading-font-weight moves all six and is unset by default', function () {
   /*
    * The SIZE ladder was themable through --text-* and the treatment was
@@ -651,4 +666,25 @@ test('theming: a theme cannot turn the ring off, and the list is what enforces i
     assert.notEqual(style(node, 'outline-width'), '0px', 'the ring has no width after --ring-style: ' + attempt);
     cleanup();
   });
+});
+
+/* ── FJS-1946 — the current navlink's own fill ───────────────────── */
+
+test('theming: --navlink-current-bg and --navlink-current-ink draw the current navlink apart from the tint', function () {
+  var html = '<ul class="navlist"><li><a class="navlink" href="#a" aria-current="page">x</a></li></ul>';
+
+  var plain = themedBy('', html, '.navlink');
+  var tinted = style(plain, 'background-color');
+  assert.ok(tinted !== 'rgba(0, 0, 0, 0)', 'the current navlink lost its default tint');
+  cleanup();
+
+  var solid = themedBy('--navlink-current-bg: rgb(9, 8, 7); --navlink-current-ink: rgb(250, 249, 248)', html, '.navlink');
+  assert.sameColor(style(solid, 'background-color'), 'rgb(9, 8, 7)', 'the current navlink ignored --navlink-current-bg');
+  assert.sameColor(style(solid, 'color'), 'rgb(250, 249, 248)', 'the current navlink ignored --navlink-current-ink');
+  cleanup();
+
+  /* The fill alone must not strand the label on the primary ink. */
+  var fillOnly = themedBy('--navlink-current-bg: rgb(9, 8, 7)', html, '.navlink');
+  assert.sameColor(style(fillOnly, 'background-color'), 'rgb(9, 8, 7)', 'a fill without an ink was dropped');
+  cleanup();
 });

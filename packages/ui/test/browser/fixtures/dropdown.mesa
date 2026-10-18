@@ -147,3 +147,6 @@
   </DropdownItem>
   <DropdownItem suffix="3" kbd="⌘B">Bravo</DropdownItem>
 </DropdownMenu>
+
+<!-- A focusable target for the click-away path: a click that dismisses the menu must leave focus on it. -->
+<input type="text" id="dd-outside-input" aria-label="Elsewhere field" style="position: fixed; top: 0; left: 0; width: 8rem">

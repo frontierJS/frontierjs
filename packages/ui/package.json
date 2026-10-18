@@ -4,25 +4,18 @@
   "type": "module",
   "description": "Mesa component kit over @frontierjs/css — forms, display, layout, overlay, feedback",
   "exports": {
-    "./utils.js": "./utils.js",
     "./utils": "./utils.js",
-    "./controls.js": "./controls.js",
-    "./dnd.js": "./dnd.js",
     "./dnd": "./dnd.js",
-    "./drag.js": "./drag.js",
     "./drag": "./drag.js",
-    "./nav.js": "./nav.js",
     "./nav": "./nav.js",
-    "./selection.js": "./selection.js",
     "./selection": "./selection.js",
+    "./rowlist": "./rowlist.js",
     "./controls": "./controls.js",
-    "./stores/*.js": "./stores/*.js",
     "./stores/*": "./stores/*.js",
-    "./components/*.mesa": "./components/*.mesa",
-    "./components/*": "./components/*.mesa"
+    "./components/*.mesa": "./components/*.mesa"
   },
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'node test/compile-all.mjs && node test/render.mjs && node test/filter-bar-key.mjs && node test/display-fixes.mjs && node test/attributes.mjs && node test/form.mjs && node test/datetime-zone.mjs && bun test/form-reseal.mjs &&node test/agents-md.mjs && node test/docs-form-wiring.mjs && node test/dnd-configure.mjs && node test/selection.mjs && node test/nav.mjs && node test/browser/run.mjs'",
+    "test": "node ../../scripts/tmp-run.mjs 'node test/compile-all.mjs && node test/render.mjs && node test/filter-bar-key.mjs && node test/display-fixes.mjs && node test/attributes.mjs && node test/no-legacy-aliases.mjs && node test/form.mjs && node test/datetime-zone.mjs && bun test/form-reseal.mjs &&node test/agents-md.mjs && node test/docs-form-wiring.mjs && node test/dnd-configure.mjs && node test/selection.mjs && node test/nav.mjs && node test/browser/run.mjs'",
     "test:browser": "node test/browser/run.mjs",
     "serve": "node test/browser/server.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs"
@@ -50,6 +43,7 @@
     "dnd.js",
     "drag.js",
     "nav.js",
+    "rowlist.js",
     "selection.js",
     "utils.js",
     "README.md",

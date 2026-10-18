@@ -20,7 +20,6 @@
   export let sub   = ''
   export let trend = ''
   export let tone  = ''
-  export let color = ''    // legacy alias for `tone`
 
   // Tile props
   export let loading = false
@@ -40,7 +39,7 @@
       <div class="skeleton text" style:inline-size="5rem"></div>
     </div>
   {:else}
-    <Stat {label} {value} {sub} {trend} {tone} {color} />
+    <Stat {label} {value} {sub} {trend} {tone} />
   {/if}
 {/snippet}
 

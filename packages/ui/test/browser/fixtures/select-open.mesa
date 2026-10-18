@@ -1,0 +1,13 @@
+<script>
+  // select-open.mesa -- a value that swaps to a Select on click, which opens
+  // the list from the click that swapped it (FJS-2637).
+  import Select from '../../../components/forms/Select.mesa'
+  import Button from '../../../components/forms/Button.mesa'
+
+  let picker
+  let status = 'open'
+  const OPTIONS = ['open', 'closed']
+</script>
+
+<Select id="status" bind:this={picker} bind:value={status} options={OPTIONS} />
+<Button id="open" onclick={() => picker.showPicker()}>Open</Button>

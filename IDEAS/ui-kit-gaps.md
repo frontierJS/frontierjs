@@ -25,9 +25,6 @@ onto something that ships; what follows is the remainder.
 
 ## Maybe
 
-- **Hover Card** — a rich preview opened on hover or focus. `Popover` is
-  click-triggered only; this is a second trigger on it, not a new component, if the
-  popup code `mesa-kit-primitives.md` names is extracted first.
 - **File Diff** — a unified diff with gutters and change counts. Callers: Studio's
   migration diff, a Basecamp deploy. Niche.
 - **Shortcut** — `Kbd` displays a chord; the missing half binds it to a keypress.

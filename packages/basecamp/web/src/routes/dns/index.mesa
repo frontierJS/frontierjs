@@ -24,7 +24,7 @@ title: DNS & edge
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
   import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Skeleton   from '@frontierjs/ui/components/feedback/Skeleton.mesa'

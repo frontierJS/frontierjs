@@ -18,7 +18,7 @@ import { flushSync, mount } from '../src/runtime.js'
 let n = 0
 async function render(src) {
   const ctx = await compileSource(src, { filename: `/D${n}.mesa`, dev: false })
-  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime\.js'/g, `'./src/runtime.js'`)
+  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`)
   const file = path.join(process.cwd(), `_dup_${n++}.mjs`)
   writeFileSync(file, js)
   let Comp

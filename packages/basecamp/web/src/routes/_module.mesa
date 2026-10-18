@@ -18,7 +18,7 @@ siteName: Basecamp
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
   import ConfirmProvider from '@frontierjs/ui/components/overlay/ConfirmProvider.mesa'
-  import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
+  import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore'
 
   import NoticeBar from '../components/NoticeBar.mesa'
   import NavIcon   from '../components/NavIcon.mesa'

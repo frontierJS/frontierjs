@@ -25,10 +25,10 @@ export async function run(t) {
 
   /* ── tone and treatment compose ───────────────────────────────────────── */
 
-  // The split that closed the old six-value `variant`: a tone and a treatment
-  // are different kinds of class, so `outlined danger` needs no third entry.
+  // A tone and a treatment are different kinds of class, so `outlined danger`
+  // needs no third entry.
   t.is(await t.evaluate(`return ${classesOf('#b-tone')};`), 'btn danger outlined',
-    'a treatment in variant leaves the tone to the tone prop')
+    'a tone and a treatment compose')
   t.is(await t.evaluate(`return ${classesOf('#b-ghost')};`), 'btn ghost',
     'and a treatment alone takes no tone at all')
   t.is(await t.evaluate(`return ${classesOf('#b-square')};`), 'btn primary square',

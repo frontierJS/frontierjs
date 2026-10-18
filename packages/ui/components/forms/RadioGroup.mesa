@@ -17,6 +17,12 @@
   // labels (`.field-row.segmented`) -- FJS-D805's single-select toggle. It
   // draws no description, so use it for choices a word or two names.
   //
+  // An `option` snippet draws each option's content from the item, so a choice
+  // can be a picture:
+  //   <RadioGroup bind:value={scale} items={SETS}>
+  //     {#snippet option(item)}<ScaleIcon set={item.value} /> {item.label}{/snippet}
+  //   </RadioGroup>
+  //
   // Usage:
   //   <RadioGroup
   //     bind:value={plan}
@@ -44,6 +50,10 @@
   export let disabled = undefined  // undefined = ask the form; false overrides it
   export let layout   = 'stacked'  // 'stacked' | 'inline' | 'segmented'
   export let onchange = undefined  // (value) => void
+  // Draws an option's content in place of its label and description, handed
+  // the item. The snippet owns the description too, so none is wired to the
+  // radio's aria-describedby.
+  export let option   = null       // snippet (item) — one option's content
 
   // The enclosing <Form> and this field's rule, both undefined standing alone.
   // The group used to wrap itself in a Field only when a `label` prop was
@@ -127,7 +137,7 @@
             disabled={isDisabled}
             onchange={handleChange}
           />
-          {item.label}
+          {#if option}{@render option(item)}{:else}{item.label}{/if}
         </label>
       {:else}
       <label class="card field-check fjs-radio-card">
@@ -137,15 +147,19 @@
           value={item.value}
           checked={isSelected}
           disabled={isDisabled}
-          aria-describedby={item.description ? descId : null}
+          aria-describedby={!option && item.description ? descId : null}
           onchange={handleChange}
         />
-        <span class="stack" style:gap="0.125rem">
-          <span>{item.label}</span>
-          {#if item.description}
-            <span class="field-hint" id={descId}>{item.description}</span>
-          {/if}
-        </span>
+        {#if option}
+          {@render option(item)}
+        {:else}
+          <span class="stack" style:gap="0.125rem">
+            <span>{item.label}</span>
+            {#if item.description}
+              <span class="field-hint" id={descId}>{item.description}</span>
+            {/if}
+          </span>
+        {/if}
       </label>
       {/if}
     {/each}

@@ -1,0 +1,12 @@
+<script>
+  // textarea-autogrow.mesa -- an autogrow Textarea whose value the page also
+  // writes from code (FJS-2639), the way a composer clears after a send.
+  import Textarea from '../../../components/forms/Textarea.mesa'
+  import Button   from '../../../components/forms/Button.mesa'
+
+  let note = ''
+</script>
+
+<Textarea id="note" bind:value={note} rows={1} autogrow />
+<Button id="clear" onclick={() => note = ''}>Clear</Button>
+<Button id="fill" onclick={() => note = 'a\nb\nc\nd\ne\nf\ng\nh'}>Fill</Button>

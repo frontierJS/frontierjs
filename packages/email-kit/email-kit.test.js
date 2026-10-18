@@ -18,11 +18,11 @@ const COMPONENTS = path.join(__dirname, 'components')
 const TEMPLATES  = path.join(__dirname, 'templates')
 
 // Resolve mesa render-component relative to mesa package
-// In real usage this comes from @frontierjs/mesa/render-component.js
+// In real usage this comes from @frontierjs/mesa/render-component
 async function getRender() {
   // Try peer dep first, fall back to sibling package in monorepo layout
   for (const candidate of [
-    '@frontierjs/mesa/render-component.js',
+    '@frontierjs/mesa/render-component',
     '../mesa/render-component.js',
   ]) {
     try {

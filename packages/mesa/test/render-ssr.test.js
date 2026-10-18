@@ -36,7 +36,7 @@ async function build(src) {
   if (ctx.analysis?.errors?.length) throw new Error(ctx.analysis.errors[0])
   // The temp module is written to the package root (cwd), not beside this
   // file, so its runtime import is relative to the package root.
-  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime\.js'/g, `'./src/runtime.js'`)
+  const js = ctx.result.replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`)
   const file = path.join(process.cwd(), `_tmp_ssr_${n++}.mjs`)
   writeFileSync(file, js)
   try { return (await import('file://' + file)).default }
@@ -547,7 +547,7 @@ describe('component children — one protocol, two spellings (FJS-D668)', () => 
         : { SlotLayout: SLOT_LAYOUT, PropLayout: PROP_LAYOUT, Page: PAGE }[mod]
       const ctx = await compileSource(src, { filename: path.join(dir, `${mod}.mesa`), dev: false })
       writeFileSync(path.join(dir, `${mod}.mjs`), ctx.result
-        .replace(/'@frontierjs\/mesa\/runtime\.js'/g, `'../src/runtime.js'`)
+        .replace(/'@frontierjs\/mesa\/runtime'/g, `'../src/runtime.js'`)
         .replace(/'\.\/(\w+)\.mesa'/g, `'./$1.mjs'`))
     }
     const Comp = (await import(`file://${path.join(dir, `${name}.mjs`)}?v=${n++}`)).default
@@ -646,7 +646,7 @@ describe('islands — client:* markers in SSR output', () => {
       const ctx = await compileSource(s, { filename: path.join(dir, `${mod}.mesa`), dev: false, ...compileOptions })
       if (ctx.analysis?.errors?.length) throw new Error(ctx.analysis.errors[0])
       writeFileSync(path.join(dir, `${mod}.mjs`), ctx.result
-        .replace(/'@frontierjs\/mesa\/runtime\.js'/g, `'../src/runtime.js'`)
+        .replace(/'@frontierjs\/mesa\/runtime'/g, `'../src/runtime.js'`)
         .replace(/'\.\/(\w+)\.mesa'/g, `'./$1.mjs'`))
     }
     const Comp = (await import(`file://${path.join(dir, `${name}.mjs`)}?v=${n++}`)).default

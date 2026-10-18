@@ -1,0 +1,65 @@
+/*
+ * print.css
+ * What the browser's own Print draws: the page, not the application around it.
+ *
+ * Printing a screen otherwise prints the Topbar, the Sidebar and the strip of
+ * filters above a list, and clips the page to one viewport because the shell
+ * is a viewport-high grid. Paper has no use for a control, so the Frame and
+ * every strip of controls (Toolbar, Pagination) go, and the Screen flows as
+ * the document.
+ *
+ * Utilities layer, so it beats the component rules it undoes without a
+ * specificity contest -- `.shell.viewport > .screen` is three classes deep and
+ * lives in components. Nothing here sets a color: a theme's ground is the
+ * browser's to drop (it omits backgrounds unless asked), and a dark theme's
+ * ink on white paper is the app's choice to make, not this file's.
+ *
+ * This is the screen's print, rendered by the user's browser. A document
+ * rendered to PDF by headless Chrome is @frontierjs/print-kit's print.css,
+ * which adds @page and the margin boxes this one leaves alone.
+ */
+@media print {
+  .topbar,
+  .sidebar,
+  .sidebar-toggle,
+  .skip-link,
+  .toolbar,
+  .pagination,
+  .toast-stack {
+    display: none;
+  }
+
+  .app {
+    min-block-size: 0;
+    background:     none;
+  }
+  .shell,
+  .shell.sidebar-first {
+    display:        block;
+    min-block-size: 0;
+  }
+  .shell.viewport {
+    block-size: auto;
+    overflow:   visible;
+  }
+  .shell.viewport > .screen,
+  .table-wrap {
+    overflow: visible;
+  }
+  .screen {
+    padding: 0;
+  }
+
+  /* A table broken across pages repeats its header; no row, card or tile is cut. */
+  thead {
+    display: table-header-group;
+  }
+  tr,
+  .card,
+  .tile {
+    break-inside: avoid;
+  }
+  h1, h2, h3 {
+    break-after: avoid;
+  }
+}

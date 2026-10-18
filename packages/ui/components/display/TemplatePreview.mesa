@@ -1,0 +1,116 @@
+<script>
+  // TemplatePreview.mesa
+  // A stored template as its reader will get it: the channel's shape, filled
+  // with example data. An email is a subject, an HTML body and a plain-text
+  // part; an sms is one text and what it costs in segments; a page is a
+  // fragment drawn as a document of its own. The HTML is drawn by HtmlFrame,
+  // so a template's own tags and script are seen and never run.
+  //
+  // The example data is the catalog's: `fields.example()` is what a field
+  // declared as its `example`, so a preview needs no hand-written sample
+  // client beside the field list. `data` stands in for it when a screen holds
+  // a real record to preview against; the catalog's defaults still fill a
+  // value that record lacks.
+  //
+  // A body is HTML and a text part or an sms is text, and the caller states
+  // which by the channel -- a value is escaped into the first and left plain in
+  // the second, never read off the tags (`fill`'s `mode`).
+  //
+  // Usage:
+  //   <TemplatePreview channel="email" {fields} subject={t.subject}
+  //                    body={t.html} text={t.text} />
+  //   <TemplatePreview channel="sms" {fields} body={t.text} />
+  //   <TemplatePreview channel="page" {fields} body={t.html} data={record} />
+  //
+  // `height` sizes the HTML frame, as on HtmlFrame.
+
+  import { fill } from '@frontierjs/toolbelt/fill'
+  import HtmlFrame from './HtmlFrame.mesa'
+
+  export let channel = 'email'   // email | sms | page
+  export let body    = ''
+  export let subject = ''        // email only
+  export let text    = ''        // email only: the plain-text part
+  export let fields  = null      // a `mergeFields(...)` catalog
+  export let data    = null      // a record to preview against, over the catalog's examples
+  export let height  = '24rem'
+
+  // The 3GPP GSM 7-bit alphabet. The extension table costs two septets a
+  // character; anything outside both sends the whole message as UCS-2.
+  const GSM = new Set(
+    '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà'
+  )
+  const GSM_EXT = new Set('\f^{}\\[~]|€')
+
+  function segmentsOf(message) {
+    let septets = 0
+    let gsm = true
+    for (const ch of message) {
+      if (GSM.has(ch)) septets += 1
+      else if (GSM_EXT.has(ch)) septets += 2
+      else { gsm = false; break }
+    }
+    if (gsm) {
+      return { encoding: 'GSM-7', length: septets, count: septets === 0 ? 0 : septets <= 160 ? 1 : Math.ceil(septets / 153) }
+    }
+    const units = message.length
+    return { encoding: 'UCS-2', length: units, count: units <= 70 ? 1 : Math.ceil(units / 67) }
+  }
+
+  const tallyOf = ({ encoding, length, count }) =>
+    `${length} ${encoding === 'UCS-2' ? 'characters' : 'septets'} · ${count} ${count === 1 ? 'segment' : 'segments'} · ${encoding}`
+
+  const render = (source, mode) => {
+    const s = source ?? ''
+    if (fields) return fields.fill(s, data ?? fields.example(), { mode })
+    return fill(s, data ?? {}, { mode })
+  }
+
+  $: html = channel === 'sms' ? '' : render(body, 'html')
+  $: plain = channel === 'sms' ? render(body, 'text') : channel === 'email' ? render(text, 'text') : ''
+  $: head = channel === 'email' ? render(subject, 'text') : ''
+  // One string: mesa trims the whitespace a markup line break leaves beside an
+  // expression, so a count laid out across the template loses its spaces.
+  $: tally = channel === 'sms' ? tallyOf(segmentsOf(plain)) : ''
+</script>
+
+<section class="fjs-template-preview" data-channel={channel} {class} {...$attributes}>
+  {#if channel === 'email'}
+    <p class="fjs-template-preview-subject"><span class="fjs-template-preview-label">Subject</span> <strong>{head}</strong></p>
+    <HtmlFrame {html} {height} title="Email body" />
+    {#if plain}
+      <p class="fjs-template-preview-label">Plain-text part</p>
+      <pre class="fjs-template-preview-text">{plain}</pre>
+    {/if}
+  {:else if channel === 'sms'}
+    <pre class="fjs-template-preview-text">{plain}</pre>
+    <p class="fjs-template-preview-count">{tally}</p>
+  {:else}
+    <HtmlFrame {html} {height} title="Page preview" />
+  {/if}
+</section>
+
+<style>
+  .fjs-template-preview {
+    display:        flex;
+    flex-direction: column;
+    gap:            var(--space-2);
+  }
+  .fjs-template-preview p { margin: 0; }
+  .fjs-template-preview-label {
+    color:          var(--text-muted);
+    font-size:      var(--text-sm);
+    text-transform: uppercase;
+  }
+  .fjs-template-preview-text {
+    margin:      0;
+    padding:     var(--space-3);
+    border:      var(--border-width) solid var(--rule-strong);
+    border-radius: var(--radius-md);
+    white-space: pre-wrap;
+  }
+  .fjs-template-preview-count {
+    color:     var(--text-muted);
+    font-size: var(--text-sm);
+  }
+</style>

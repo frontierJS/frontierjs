@@ -30,7 +30,7 @@ Mesa is built on five foundational principles:
 Mesa's compiler targets `@frontierjs/mesa/runtime` and emits a named function per component:
 
 ```js
-import * as $$runtime from '@frontierjs/mesa/runtime.js';
+import * as $$runtime from '@frontierjs/mesa/runtime';
 
 // Template factory — cloned once per mount via cloneNode(true)
 var $$tpl0 = $$runtime.template(`<p> </p>`, 0);
@@ -2214,7 +2214,7 @@ else (`FJS-D134`). Neither is ever authored.
 
 > **RULE 18b** — `$` is the component's, so it does not exist in a `<script
 > module>` block, which runs once at import outside any instance. Reaching for
-> it there is refused by name; import from `@frontierjs/mesa/runtime.js`
+> it there is refused by name; import from `@frontierjs/mesa/runtime`
 > instead.
 
 **`$` the object and `$:` the label are unrelated.** A reactive watch is a
@@ -2258,7 +2258,7 @@ The rest — `props`, `slots`, `attributes`, `emit`, `context`, `mounted`,
 `inspect`, `async` — differ per instance and are set on `$` itself, and only
 when the component reaches for them.
 
-`$.onMount` and `$.onDestroy` are also exported from `@frontierjs/mesa/runtime.js`
+`$.onMount` and `$.onDestroy` are also exported from `@frontierjs/mesa/runtime`
 as `onMount` and `onDestroy`, for a composable helper written outside component
 scope — where there is no instance and therefore no `$`. Those are module
 exports and keep the bare spelling; the door is what a component writes.

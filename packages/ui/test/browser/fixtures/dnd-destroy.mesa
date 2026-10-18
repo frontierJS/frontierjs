@@ -1,0 +1,49 @@
+<script>
+  // dnd-destroy.mesa — a zone removed from the page while an item is held.
+  //
+  // `kitHide(a, b)` hides lane `a` and/or lane `b` the way a route change or an
+  // `{#if}` would, which runs the zone's cleanup under a live session. Each
+  // lane's last `onfinalize` is logged so a spec can read whether the host was
+  // told anything at all (`FJS-2894`).
+  import { dndzone } from '@frontierjs/ui/dnd'
+
+  let a = [{ id: 1, t: 'one' }, { id: 2, t: 'two' }]
+  let b = [{ id: 5, t: 'five' }]
+  let showA = true
+  let showB = true
+  let log   = []
+
+  window.kitHide = (hideA, hideB) => { if (hideA) showA = false; if (hideB) showB = false }
+
+  const record = (list, which) => ({ items, info }) => {
+    if (which === 'f') log = [...log, `${list}:f:${info.trigger}`]
+    if (list === 'a') a = items
+    else b = items
+  }
+</script>
+
+<div class="board">
+  {#if showA}
+    <ul id="a" {@attach dndzone(() => ({ items: a, type: 'task', onconsider: record('a', 'c'), onfinalize: record('a', 'f') }))}>
+      {#each a as it (it.id)}
+        <li data-id={it.id}>{it.t}</li>
+      {/each}
+    </ul>
+  {/if}
+  {#if showB}
+    <ul id="b" {@attach dndzone(() => ({ items: b, type: 'task', onconsider: record('b', 'c'), onfinalize: record('b', 'f') }))}>
+      {#each b as it (it.id)}
+        <li data-id={it.id}>{it.t}</li>
+      {/each}
+    </ul>
+  {/if}
+</div>
+
+<output id="state">{a.map(i => i.id).join(',')}|{b.map(i => i.id).join(',')}</output>
+<output id="log">{log.join(' ')}</output>
+
+<style>
+  .board { display: flex; gap: 2rem; align-items: flex-start; }
+  ul { list-style: none; margin: 0; padding: 0.5rem; width: 10rem; min-height: 3rem; }
+  li { height: 2rem; line-height: 2rem; margin: 0 0 0.25rem; padding: 0 0.5rem; border: 1px solid var(--rule); }
+</style>

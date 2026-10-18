@@ -18,7 +18,7 @@ let n = 0
 async function mountSrc(src) {
   const ctx = await compileSource(src, { filename: `/CR${n}.mesa`, dev: false })
   const file = path.join(process.cwd(), `_tmp_classrw_${n++}.mjs`)
-  writeFileSync(file, ctx.result.replace(/'@frontierjs\/mesa\/runtime(\.js)?'/g, `'./src/runtime.js'`))
+  writeFileSync(file, ctx.result.replace(/'@frontierjs\/mesa\/runtime'/g, `'./src/runtime.js'`))
   let Comp
   try { Comp = (await import('file://' + file)).default }
   finally { try { unlinkSync(file) } catch {} }

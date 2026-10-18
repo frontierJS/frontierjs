@@ -7,7 +7,7 @@ title: Deployment
   import { session }      from '../../../session.js'
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
   import { clock, at }    from '../../../datetime.js'
-  import { toasts }       from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts }       from '@frontierjs/ui/stores/toastStore'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
 

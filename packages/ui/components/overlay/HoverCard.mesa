@@ -1,0 +1,188 @@
+<script>
+  // HoverCard.mesa
+  // One card for MANY triggers. The region is the children; every element in it
+  // matching `selector` is a trigger, found by two listeners on a wrapper
+  // rather than one component per trigger. `Popover` wraps ONE trigger and
+  // opens on click, `Tooltip` is text on one element, so a page of thousands of
+  // trigger words would mount thousands of either.
+  //
+  // The card is the same surface as a Popover panel (`.popover`), portaled to
+  // overlayHost() for the same reasons (FJS-D904) and placed by the same
+  // placeAgainst. It opens after `delay` on hover and at once on focus, stays
+  // open while the pointer is over the trigger OR the card (so a link inside
+  // it is reachable), moves from trigger to trigger without closing, and
+  // Escape dismisses it.
+  //
+  // `content` is handed the trigger element, which is how one snippet renders
+  // a card for whichever trigger is current:
+  //
+  //   <HoverCard selector="[data-word]">
+  //     {#snippet children()}
+  //       <p>… <span data-word="serendipity" tabindex="0">serendipity</span> …</p>
+  //     {/snippet}
+  //     {#snippet content(el)}
+  //       <Definition word={el.dataset.word} />
+  //     {/snippet}
+  //   </HoverCard>
+  //
+  // A trigger must be focusable (`tabindex="0"`, a button or a link) to reach
+  // the card by keyboard; hover alone is no way to read it on a touch screen,
+  // which has no hover, so a touch pointer never opens it.
+
+  import { tone as toTone, cx, placeAgainst, overlayHost, uid } from '../../utils.js'
+
+  export let selector   = '[data-hovercard]'  // what counts as a trigger
+  export let placement  = 'bottom-start'      // '<side>-<align>', as Popover
+  export let offset     = 8                   // gap between trigger and card, px
+  export let delay      = 250                 // ms the pointer rests before it opens
+  export let closeDelay = 100                 // ms of grace crossing from trigger to card
+  export let tone       = ''
+  export let label      = ''                  // accessible name for the card
+  export let children   = null                // snippet — the region holding the triggers
+  export let content    = null                // snippet — receives the current trigger
+
+  let open    = false
+  let current = null                          // the trigger the card is for
+  let x       = 0
+  let y       = 0
+  let placed  = false
+  let panelEl
+
+  var openTimer  = 0
+  var closeTimer = 0
+  var described  = null                       // the trigger carrying aria-describedby
+
+  const t      = toTone(tone)
+  const cardId = uid('hovercard')
+
+  const panelAnim = $.entrance({
+    in:  el => el.animate(
+      [{ opacity: 0, transform: 'scale(0.96) translateY(-4px)' },
+       { opacity: 1, transform: 'scale(1) translateY(0)' }],
+      { duration: 140, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
+    ),
+    out: el => el.animate(
+      [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.96)' }],
+      { duration: 100, fill: 'forwards' }
+    ).finished,
+  })
+
+  function triggerOf(e) {
+    return e.target?.closest?.(selector) ?? null
+  }
+
+  function describe(el) {
+    if (described === el) return
+    described?.removeAttribute?.('aria-describedby')
+    described = el
+    el?.setAttribute?.('aria-describedby', cardId)
+  }
+
+  function show(el) {
+    clearTimeout(closeTimer)
+    clearTimeout(openTimer)
+    if (open && current === el) return
+    // A card already open follows the pointer from word to word; a closed one
+    // renders hidden first, because it cannot be measured until it exists.
+    placed  = open
+    open    = true
+    current = el
+    describe(el)
+    requestAnimationFrame(async () => { await position(el); placed = true })
+  }
+
+  async function position(el) {
+    const [tr, pr, vp] = await Promise.all([$.measure(el), $.measure(panelEl), $.viewport()])
+    // The pointer has since moved to another trigger, which has its own frame.
+    if (!tr || !pr || current !== el) return
+    ;({ x, y } = placeAgainst(tr, pr, vp, { placement, offset }))
+  }
+
+  function hide() {
+    clearTimeout(openTimer)
+    clearTimeout(closeTimer)
+    open = false
+    current = null
+    describe(null)
+  }
+
+  function onOver(e) {
+    if (e.pointerType === 'touch') return
+    const el = triggerOf(e)
+    if (!el) return
+    clearTimeout(closeTimer)
+    clearTimeout(openTimer)
+    // Open with no wait when the card is already up: the wait is for a pointer
+    // passing over, not for one moving between words.
+    if (open) show(el)
+    else openTimer = setTimeout(() => show(el), delay)
+  }
+
+  // Left the trigger for somewhere that is neither it nor the card.
+  function onOut(e) {
+    const el = triggerOf(e)
+    if (!el || el.contains(e.relatedTarget)) return
+    clearTimeout(openTimer)
+    if (e.relatedTarget?.closest?.(selector) || panelEl?.contains(e.relatedTarget)) return
+    clearTimeout(closeTimer)
+    closeTimer = setTimeout(hide, closeDelay)
+  }
+
+  function onFocusIn(e) {
+    const el = triggerOf(e)
+    if (el) show(el)
+  }
+
+  function onFocusOut(e) {
+    if (!triggerOf(e) || panelEl?.contains(e.relatedTarget)) return
+    if (e.relatedTarget?.closest?.(selector)) return
+    hide()
+  }
+
+  function onCardLeave(e) {
+    if (current?.contains(e.relatedTarget)) return
+    clearTimeout(closeTimer)
+    closeTimer = setTimeout(hide, closeDelay)
+  }
+
+  $.onDestroy(() => {
+    clearTimeout(openTimer)
+    clearTimeout(closeTimer)
+    described?.removeAttribute?.('aria-describedby')
+  })
+</script>
+
+<mesa:window onkeydown={(e) => { if (e.key === 'Escape' && open) hide() }} />
+
+<span
+  style:display="contents"
+  {class}
+  {...$attributes}
+  onpointerover={onOver}
+  onpointerout={onOut}
+  onfocusin={onFocusIn}
+  onfocusout={onFocusOut}
+>
+  {@render children?.()}
+</span>
+
+{#if open}
+  <mesa:portal to={overlayHost()}>
+    <div
+      bind:this={panelEl}
+      id={cardId}
+      class={cx('popover', t)}
+      role="group"
+      aria-label={label || null}
+      style:position="fixed"
+      style:left="{x}px"
+      style:top="{y}px"
+      style:visibility="{placed ? 'visible' : 'hidden'}"
+      onpointerenter={() => clearTimeout(closeTimer)}
+      onpointerleave={onCardLeave}
+      {@attach panelAnim}
+    >
+      {@render content?.(current)}
+    </div>
+  </mesa:portal>
+{/if}

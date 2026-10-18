@@ -5,6 +5,7 @@
   // In @frontierjs/css a tone (primary, danger, …) and a treatment (outlined,
   // ghost, link, raised, glass) are different kinds of class and compose
   // freely, so `tone="danger" treatment="outlined"` is a red outline button.
+  // With neither given the button is primary; a treatment alone takes no tone.
   //
   // Sizes are a font-size: `.btn` is sized in em, so the padding scales.
   //
@@ -20,27 +21,23 @@
   import { tone as toTone, cx } from '../../utils.js'
 
   export let tone      = ''
-  export let treatment = ''         // 'outlined' | 'ghost' | 'link' | 'raised' | 'glass'
+  export let treatment = ''         // '' | 'outlined' | 'ghost' | 'link' | 'raised' | 'glass'
   export let size      = 'md'       // 'xs' | 'sm' | 'md' | 'lg'
-  export let type     = 'button'
-  export let disabled = false
-  export let loading  = false
-  export let square   = false      // icon-only shape (was `icon`, renamed in css v0.10)
-  export let icon     = false      // legacy alias for `square`
-  export let href     = undefined  // renders as <a> when set
-  export let leading  = null       // snippet — icon before label
-  export let trailing = null       // snippet — icon after label
-  export let onclick  = undefined
+  export let type      = 'button'
+  export let disabled  = false
+  export let loading   = false
+  export let square    = false      // icon-only shape
+  export let href      = undefined  // renders as <a> when set
+  export let leading   = null       // snippet — icon before label
+  export let trailing  = null       // snippet — icon after label
+  export let onclick   = undefined
 
-  // An untoned ghost reads --ink-soft and an untoned fill reads primary, so
-  // primary is the default only where no treatment is stated: a toggle
-  // written `treatment={on ? '' : 'ghost'}` is a primary fill when on.
   const t = toTone(tone) || (treatment ? '' : 'primary')
 
   const sizeMap = { xs: 'var(--text-xs)', sm: 'var(--text-sm)', md: '', lg: 'var(--text-lg)' }
   const fontSize = sizeMap[size] ?? ''
 
-  const isSquare = square || icon
+  const isSquare = square
 
   // A submit button inside <Form> reports the form's state without being told.
   // Scoped to type="submit" on purpose: that is the button the submission

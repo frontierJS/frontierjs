@@ -184,57 +184,24 @@ export function nativeValidationGuard(el) {
  * class that works on every element that takes one — a btn, a card, a <tr>,
  * a feed-dot. No component here keeps a color list; they call tone().
  *
- * The aliases exist because component APIs in the wild say `type="error"`
- * or `color="red"`, and rewriting every call site is not the point. An
- * unrecognized name resolves to '' rather than guessing, so a typo renders
- * untoned (the component's own default) instead of silently wrong.
+ * Only the seven names resolve. A hue (`red`) or another kit's word (`error`)
+ * is a second spelling of a tone, and an unrecognized name renders untoned
+ * (the component's own default) instead of silently wrong.
  */
 export const TONES = [
   'primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger',
 ]
 
-const TONE_ALIASES = {
-  // semantic names other kits use
-  error:   'danger',
-  neutral: 'muted',
-  gray:    'muted',
-  default: '',
-  none:    '',
-
-  // raw hue names, from the Tailwind-era palette props
-  red:     'danger',
-  rose:    'danger',
-  green:   'success',
-  emerald: 'success',
-  teal:    'success',
-  yellow:  'warning',
-  amber:   'warning',
-  orange:  'warning',
-  blue:    'primary',
-  indigo:  'primary',
-  cyan:    'info',
-  sky:     'info',
-  purple:  'secondary',
-  violet:  'secondary',
-  fuchsia: 'secondary',
-  pink:    'secondary',
-}
-
 /**
- * Resolve a color-ish prop to one of the seven @frontierjs/css tones.
- * Returns '' when there is no sensible mapping, which means "untoned" —
- * every component in the package falls back to its own default that way.
+ * Resolve a prop to one of the seven @frontierjs/css tones, or '' for
+ * "untoned" -- every component in the package falls back to its own default
+ * that way.
  *
- *   tone('error')   → 'danger'
- *   tone('success') → 'success'
- *   tone('teal')    → 'success'
- *   tone('mauve')   → ''
+ *   tone('danger') → 'danger'
+ *   tone('error')  → ''
  */
 export function tone(name) {
-  if (!name) return ''
-  const key = String(name).toLowerCase()
-  if (TONES.includes(key)) return key
-  return TONE_ALIASES[key] ?? ''
+  return TONES.includes(name) ? name : ''
 }
 
 /**

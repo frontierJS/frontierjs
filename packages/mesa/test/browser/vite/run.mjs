@@ -108,7 +108,7 @@ const vite = await createServer({
   // The HMR socket rides the same server, which is the only way to keep the
   // port ephemeral: Vite would otherwise open a second one of its own choosing.
   server:  { middlewareMode: true, hmr: { server: http } },
-  resolve: { alias: { '@frontierjs/mesa/runtime.js': RUNTIME } },
+  resolve: { alias: { '@frontierjs/mesa/runtime': RUNTIME } },
   plugins: [mesaPlugin()],
 })
 

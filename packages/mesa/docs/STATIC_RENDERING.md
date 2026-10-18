@@ -262,7 +262,7 @@ parsers. `render-ssr.test.js` § *islands* pins it; sierra's loader is the consu
 wherever the temp module is written. `options.tmpDir` states it per call and is
 threaded through the recursive compile so one import graph cannot be split across
 two directories. The default stays Mesa's own package root, because a temp module
-imports `@frontierjs/mesa/runtime.js`; sierra's build passes
+imports `@frontierjs/mesa/runtime`; sierra's build passes
 `node_modules/.sierra/render`, which is what lets a prerendered layout import
 `@frontierjs/sierra/router`. `render-component.test.js` carries the negative case —
 the same import still fails under the default.

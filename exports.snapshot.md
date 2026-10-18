@@ -81,9 +81,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `./tsconfig` | `tsconfig.json` | yes |
-| exports | `./tsconfig.json` | `tsconfig.json` | yes |
 | exports | `./biome` | `biome.json` | yes |
-| exports | `./biome.json` | `biome.json` | yes |
 | exports | `./editorconfig` | `editorconfig` | yes |
 
 ## `@frontierjs/css`
@@ -95,10 +93,11 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `.` | `src/index.css` | yes |
 | exports | `./index.css` | `src/index.css` | yes |
 | exports | `./utilities.css` | `src/utilities.css` | yes |
+| exports | `./print.css` | `src/print.css` | yes |
 | exports | `./foundation/*.css` | `src/foundation/*.css` | 6 files |
 | exports | `./themes/*.css` | `src/themes/*.css` | 12 files |
 | exports | `./components/*.css` | `src/components/*.css` | 20 files |
-| exports | `./patterns/*.css` | `src/patterns/*.css` | 10 files |
+| exports | `./patterns/*.css` | `src/patterns/*.css` | 11 files |
 | exports | `./a11y/*.css` | `src/a11y/*.css` | 2 files |
 | exports | `./bundle.css` | `dist/frontier.css` | yes |
 | exports | `./bundle.min.css` | `dist/frontier.min.css` | yes |
@@ -115,7 +114,6 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `. (import)` | `index.js` | yes |
 | exports | `./render (import)` | `render.js` | yes |
 | exports | `./components/*.mesa (import)` | `components/*.mesa` | 22 files |
-| exports | `./components/* (import)` | `components/*.mesa` | 22 files |
 | main | `main` | `index.js` | yes |
 
 - peers — `@frontierjs/mesa`: `^0.1.0`
@@ -248,21 +246,13 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `. (import)` | `src/compiler.js` | yes |
-| exports | `./runtime.js (import)` | `src/runtime.js` | yes |
 | exports | `./runtime (import)` | `src/runtime.js` | yes |
-| exports | `./runtime/terminal.js (import)` | `src/runtime-terminal.js` | yes |
 | exports | `./runtime/terminal (import)` | `src/runtime-terminal.js` | yes |
-| exports | `./runtime/native.js (import)` | `src/runtime-native.js` | yes |
 | exports | `./runtime/native (import)` | `src/runtime-native.js` | yes |
-| exports | `./compiler.js (import)` | `src/compiler.js` | yes |
 | exports | `./compiler (import)` | `src/compiler.js` | yes |
-| exports | `./compiler-md.js (import)` | `src/compiler-md.js` | yes |
 | exports | `./compiler-md (import)` | `src/compiler-md.js` | yes |
-| exports | `./render.js (import)` | `src/render.js` | yes |
 | exports | `./render (import)` | `src/render.js` | yes |
-| exports | `./css-inliner.js (import)` | `src/css-inliner.js` | yes |
 | exports | `./css-inliner (import)` | `src/css-inliner.js` | yes |
-| exports | `./render-component.js (import)` | `src/render-component.js` | yes |
 | exports | `./render-component (import)` | `src/render-component.js` | yes |
 | exports | `./drive (types)` | `src/drive.d.ts` | yes |
 | exports | `./drive (import)` | `src/drive.js` | yes |
@@ -431,26 +421,19 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/ui`
 
-`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `drag.js` `nav.js` `package.json` `selection.js` `stores/` `utils.js`
+`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `drag.js` `nav.js` `package.json` `rowlist.js` `selection.js` `stores/` `utils.js`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
-| exports | `./utils.js` | `utils.js` | yes |
 | exports | `./utils` | `utils.js` | yes |
-| exports | `./controls.js` | `controls.js` | yes |
-| exports | `./dnd.js` | `dnd.js` | yes |
 | exports | `./dnd` | `dnd.js` | yes |
-| exports | `./drag.js` | `drag.js` | yes |
 | exports | `./drag` | `drag.js` | yes |
-| exports | `./nav.js` | `nav.js` | yes |
 | exports | `./nav` | `nav.js` | yes |
-| exports | `./selection.js` | `selection.js` | yes |
 | exports | `./selection` | `selection.js` | yes |
+| exports | `./rowlist` | `rowlist.js` | yes |
 | exports | `./controls` | `controls.js` | yes |
-| exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 86 files |
-| exports | `./components/*` | `components/*.mesa` | 86 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 89 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

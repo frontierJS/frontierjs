@@ -96,4 +96,36 @@ export async function run(t) {
   await t.eventually(range, '40,100', 'End takes the high handle to max')
   await t.press('Home')
   await t.eventually(range, '40,40', 'Home takes it only to the low handle')
+
+  /* ── the value label stays inside the control at either end (FJS-2515) ── */
+
+  // A label centred on a handle at min or max hangs half outside the track,
+  // and a scrolling parent clips it.
+  const hung = await t.evaluate(`
+    const out = []
+    for (const id of ['ends', 'ends-lo', 'ends-range']) {
+      const root = document.getElementById(id)
+      const tr = root.querySelector('.fjs-slider-track').getBoundingClientRect()
+      for (const p of root.querySelectorAll('.fjs-slider-pip')) {
+        const r = p.getBoundingClientRect()
+        if (r.left < tr.left - 0.5 || r.right > tr.right + 0.5) out.push(id + ':' + p.textContent)
+      }
+    }
+    return out.join(',')
+  `)
+  t.is(hung, '', 'a value label at min or max does not hang outside the track')
+
+  /* ── a hue that is the data (FJS-3233) ────────────────────────────────── */
+
+  const fillOf = (id) => `
+    const el = document.getElementById('${id}');
+    return getComputedStyle(el.querySelector('.fjs-slider-fill')).backgroundColor;
+  `
+  const handleOf = (id) => `
+    const el = document.getElementById('${id}');
+    return getComputedStyle(el.querySelector('[role=slider]')).backgroundColor;
+  `
+  t.is(await t.evaluate(fillOf('hue')), 'rgb(26, 162, 230)', 'a --data-accent on the slider fills the track in that hue')
+  t.is(await t.evaluate(handleOf('hue')), 'rgb(26, 162, 230)', 'and the handle takes the same hue')
+  t.ok(await t.evaluate(fillOf('plain')) !== 'rgb(26, 162, 230)', 'a slider with no --data-accent keeps its tone')
 }

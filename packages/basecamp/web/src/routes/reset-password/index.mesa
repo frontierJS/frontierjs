@@ -20,7 +20,7 @@ title: Reset password
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Alert  from '@frontierjs/ui/components/feedback/Alert.mesa'
-  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
 
   $: (page.query, session.canMail)
 

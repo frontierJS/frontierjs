@@ -24,7 +24,6 @@
   import { tone as toTone, cx } from '../../utils.js'
 
   export let tone        = 'info'   // one of the 7 css tones
-  export let type        = ''       // legacy alias — 'error' resolves to 'danger'
   export let title       = ''
   export let dismissible = false
   export let onclose     = undefined
@@ -38,7 +37,7 @@
     danger:  'M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z',
   }
 
-  const t    = toTone(type || tone) || 'info'
+  const t    = toTone(tone) || 'info'
   const path = iconMap[t] ?? iconMap.info
 
   function handleDismiss() {
