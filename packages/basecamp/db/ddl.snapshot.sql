@@ -850,7 +850,7 @@ CREATE TABLE IF NOT EXISTS "disk_usage" (
 
 CREATE TABLE IF NOT EXISTS "server_posture" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "serverId" TEXT,
+  "serverId" TEXT NOT NULL,
   "at" TEXT NOT NULL,
   "readings" TEXT NOT NULL DEFAULT '{}',
   "controls" TEXT NOT NULL DEFAULT '[]',

@@ -1920,21 +1920,16 @@ table `server_posture` · db `main` · gate `2.8`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `readings` | `Json` | no | `'{}'` | — |
 | `server` | `Server` | — | — | relation |
-| `serverId` | `String` | yes | — | — |
+| `serverId` | `String` | no | — | **required on write** |
 | `unknown` | `Int` | no | `0` | — |
 
 ```
 @@index(serverId, at)
 @@deny('create', !check(server, tenancy))
-@@deny('create', server == null)
 @@deny('delete', !check(server, tenancy))
-@@deny('delete', server == null)
 @@deny('post-update', !check(server, tenancy))
-@@deny('post-update', server == null)
 @@deny('read', !check(server, tenancy))
-@@deny('read', server == null)
 @@deny('update', !check(server, tenancy))
-@@deny('update', server == null)
 ```
 
 ### `Session`
