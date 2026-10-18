@@ -134,8 +134,8 @@ client, not read off a file:
 ```lite
 model Invoice {
   @@gate("2")
-  @@allow('read',   'billing_read'  in auth().capabilities)
-  @@allow('update', 'billing_write' in auth().capabilities)
+  @@allow(read,   'billing_read'  in auth().capabilities)
+  @@allow(update, 'billing_write' in auth().capabilities)
 }
 ```
 
@@ -170,7 +170,7 @@ application, in exactly the place this record predicts it will break.
 ## Why the obvious workaround is a trap
 
 The workaround is to push the grid into row policies: a `Permission` model, a join
-table, and `@@allow('update', auth().id in editorIds)` on every model that needs it.
+table, and `@@allow(update, auth().id in editorIds)` on every model that needs it.
 It works, and it costs four things that are the point of declaring access in the
 seed at all:
 
@@ -239,7 +239,7 @@ What falls out for free once the vocabulary is declared:
   empty-screen failure mode does not return. **This is why the declaration is not
   sugar over `@@allow` and must not be built as sugar** — the obvious
   implementation, desugaring `@@require(read: invoices_read)` into
-  `@@allow('read', 'invoices_read' in auth().capabilities)`, inherits the exact failure
+  `@@allow(read, 'invoices_read' in auth().capabilities)`, inherits the exact failure
   this record opens by complaining about: `@@allow` filters, so a caller missing the
   grant is shown *no invoices* rather than told they need *View invoices*. The
   declaration is gate-shaped over a grid — a different owner of the translation from
@@ -296,8 +296,8 @@ model Role {
 
   @@gate("2.5.5.6")
   @@unique([tenantId, name])
-  @@deny('update', builtIn == true)
-  @@deny('delete', builtIn == true)
+  @@deny(update, builtIn == true)
+  @@deny(delete, builtIn == true)
 }
 
 model Member {
@@ -318,10 +318,10 @@ model Invoice {
   amount   Int
 
   @@gate("2")
-  @@allow('read',   'invoices_read'  in auth().capabilities)
-  @@allow('create', 'invoices_write' in auth().capabilities)
-  @@allow('update', 'invoices_write' in auth().capabilities)
-  @@allow('delete', 'invoices_void'  in auth().capabilities)
+  @@allow(read,   'invoices_read'  in auth().capabilities)
+  @@allow(create, 'invoices_write' in auth().capabilities)
+  @@allow(update, 'invoices_write' in auth().capabilities)
+  @@allow(delete, 'invoices_void'  in auth().capabilities)
 }
 ```
 
@@ -384,7 +384,7 @@ permission is always new code that reads it.
 hold* is enforceable, and today it is not.** The predicate is refused at parse:
 
 ```
-@@allow('create', permissions in auth().capabilities)
+@@allow(create, permissions in auth().capabilities)
 
 Role: 'permissions' is an array field, and 'in' asks whether ONE value is in a
 list. Overlap between two lists is not expressible yet
@@ -398,7 +398,7 @@ SQL is a shape already compiled for the singular case:
 **This is the mandatory piece of the whole idea.** A grid shipped without it hands
 every tenant administrator a route to every permission the application has.
 
-**The spelling is `allIn`** — `@@allow('create', permissions allIn auth().capabilities)` —
+**The spelling is `allIn`** — `@@allow(create, permissions allIn auth().capabilities)` —
 and the menu is one operator rather than a family. Subset and *contains all* are the
 same operator with the operands swapped, so naming both is naming one thing twice;
 an intersection is not a predicate at all and does not belong in a boolean
@@ -466,7 +466,7 @@ operation list and a method name is not on it:
 ```
 
 A custom method still crosses the boundary as whatever CRUD it performs, so
-`orders.pay` calling `db.order.update()` is covered by `@@allow('update', …)`.
+`orders.pay` calling `db.order.update()` is covered by `@@allow(update, …)`.
 What cannot be said is that `pay` takes a *different* rule from an ordinary edit
 — void, refund and correcting a typo in the note all collapse to `update`. Which
 is the whole point of the grid: `invoices_void` is not a capability if the
@@ -644,7 +644,7 @@ multiselect, the snapshot and the coverage report to mean anything.
 ## Per-column capabilities, and the two shapes with no noun
 
 The finest thing worth binding to is usually a column rather than a model, and
-**that tier already compiles**: a field `@allow('write', 'x' in auth().capabilities)` is a
+**that tier already compiles**: a field `@allow(write, 'x' in auth().capabilities)` is a
 predicate both ways (`FJS-D129`), so per-column capabilities need no mechanism that
 does not exist. Probed against three column kinds, and two of them have no noun to
 bind to.
@@ -680,7 +680,7 @@ that was hidden inside sugar.
 a `@capability(read)` that should not exist:
 
 ```lite
-hostname String @allow('read', 'Server.hostname' in auth().capabilities)
+hostname String @allow(read, 'Server.hostname' in auth().capabilities)
 ```
 
 ```
@@ -704,7 +704,7 @@ coarse and answers cleanly.
 capability name in that predicate is a literal nothing resolves. Typo it:
 
 ```lite
-@allow('read', 'Server.hostnme' in auth().capabilities)
+@allow(read, 'Server.hostnme' in auth().capabilities)
 ```
 
 ```
@@ -944,7 +944,7 @@ and it inherits the filter, which is the empty screen this record opens by compl
 about.
 
 Rule two it breaks knowingly. The caller IS merely narrower — but being told is the
-point, and the alternative is the springing toggle a field `@allow('write')` already
+point, and the alternative is the springing toggle a field `@allow(write)` already
 produces.
 
 Order, with the proposal in place and the rest measured:
@@ -982,7 +982,7 @@ silent one is a statement somebody makes on purpose.**
 
 **Ruled 2026-08-25: C** — `FJS-D140`, which carries the measurement and the
 spelling. `@@capabilities` covers writes and moves; `@@capabilities(all)` adds
-read, following `@guarded` and `@allow('all', …)` rather than inventing a
+read, following `@guarded` and `@allow(all, …)` rather than inventing a
 token. A model that says nothing about read has its reads governed exactly as
 before.
 
@@ -1029,8 +1029,8 @@ gives away something the rest of the record rests on.
 
 **A permission that carries its own scope** — `invoices_read:region:west`, or a
 condition like `invoice.amount < 10000` folded into the grant string. Both are
-already expressible and better expressed: `@@allow('read', region == auth().region)`
-and `@@allow('update', amount < 10000)` compile into the WHERE, which is the thing
+already expressible and better expressed: `@@allow(read, region == auth().region)`
+and `@@allow(update, amount < 10000)` compile into the WHERE, which is the thing
 FJS does that the ERPs this record was audited against hand-write per endpoint. And
 a constructed permission string makes the set **unbounded**, which takes the closed
 enum with it — and with the closed enum go the DDL check, the generated multiselect,
@@ -1043,7 +1043,7 @@ and a fourth is the collision `DECISIONS.md` § Outpost rules against. `builtIn`
 what it means and collides with nothing. (The *column* is `@system`; the column
 NAME is not.)
 
-**An `@@immutable(…)` attribute.** It is `@@deny('update' | 'delete', …)` with a
+**An `@@immutable(…)` attribute.** It is `@@deny(update | 'delete', …)` with a
 second spelling, which Invariant 4 refuses. A record that cannot change is a policy
 that denies both write operations, and there is already a way to say it.
 
@@ -1115,13 +1115,13 @@ language stops being reviewable.
   syntax in litestone, where every other Data-boundary rule is declared, and the
   `map-packages.md` reservation is retired. The name question does not arise.
 - ~~**Does a permission narrow to a field?**~~ Yes, and both halves are settled.
-  `@allow('write', …)` is already a compiled predicate per field (`FJS-D129`), and the
+  `@allow(write, …)` is already a compiled predicate per field (`FJS-D129`), and the
   column tier is `@capability` on the field (`FJS-D147`), opt-in per column because
   deriving every writable column gives basecamp 461 of them and no picker. The cost
   worry was measured rather than promised: `roleOf(ctx)` reads `ctx.locals[MEMBERSHIP]`,
   resolved once per request at the standing seam (`FJS-D113`), so the claim is on the
   principal and there is no query at write time. **The read half needs no attribute
-  either** — probed 2026-08-26, `@allow('read', 'X' in auth().capabilities)` strips and
+  either** — probed 2026-08-26, `@allow(read, 'X' in auth().capabilities)` strips and
   refuses to be filtered by, and a `@capability(read)` could not have done it because a
   capability throws where a column read must strip.
 - ~~**Custom methods and named moves.**~~ Ruled by `FJS-D149`: a method that changes state

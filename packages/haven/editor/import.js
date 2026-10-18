@@ -16,6 +16,8 @@
  * @returns {{ placements: Array<{ ident: string, piece: object, x: number, y: number }>, twice: object[], unclaimed: object[] }}
  */
 export function recognize(art, known) {
+  // A piece with no glyph (the tavern's mat out of season) has nothing to find.
+  known = known.filter((k) => k.piece.cells.length)
   const rows = art.replace(/^\n/, '').replace(/\n$/, '').split('\n')
   const owner = rows.map((row) => Array(row.length).fill(null))
   const placements = [], twice = []

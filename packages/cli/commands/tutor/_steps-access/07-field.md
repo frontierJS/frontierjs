@@ -3,13 +3,13 @@ title: 07-field
 description: A column one caller may write and another may not — and the refusal is silent
 ---
 
-## `@allow('write', …)` — which columns
+## `@allow(write, …)` — which columns
 
 The third mechanism is per **column**, and it does a third thing. A gate
 refuses, a policy filters, and a field policy **drops**:
 
 ```text
-done  Boolean  @default(false)  @allow('write', auth().isAdmin)
+done  Boolean  @default(false)  @allow(write, auth().isAdmin)
 ```
 
 Both callers now send the identical body, `done: true`. Both are answered
@@ -35,7 +35,7 @@ if (!await refreshTokens($)) return
 
 const edit = editSchema($,
   '  done      Boolean',
-  "  done      Boolean   @default(false) @allow('write', auth().isAdmin)")
+  "  done      Boolean   @default(false) @allow(write, auth().isAdmin)")
 
 if (!edit.ok) {
   log.error(`${edit.why} — this step puts a write policy on Note.done`)

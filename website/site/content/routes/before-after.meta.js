@@ -29,7 +29,7 @@ const SAMPLES = {
 )}`,
   S3: `model Lead {
   ownerId Int
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }`,
   S4: `ALTER TABLE leads
   ADD CONSTRAINT leads_email_unique UNIQUE (email),

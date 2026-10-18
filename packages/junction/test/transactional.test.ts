@@ -146,8 +146,8 @@ describe('the scope survives into the transaction', () => {
         id      Int    @id @default(autoincrement())
         title   String
         ownerId Int    @default(auth().id)
-        @@allow('read', ownerId == auth().id)
-        @@allow('create', auth() != null)
+        @@allow(read, ownerId == auth().id)
+        @@allow(create, auth() != null)
       }`,
     }) as any
 

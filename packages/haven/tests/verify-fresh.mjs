@@ -31,6 +31,8 @@ import { join } from 'node:path'
 import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../api/src/app.ts'
+import { isVoice } from '../api/src/keyless.ts'
+import { VIEW } from '../web/src/lib/scene/stage.js'
 
 const HAVEN    = join(import.meta.dir, '..')
 const PACKAGES = join(HAVEN, '..')
@@ -39,8 +41,9 @@ const REGISTRY = 'verdaccio/verdaccio:6'
 const NAME     = `haven-fresh-${process.pid}`
 const NICK     = 'fresh'
 
-// The square's top row, as scenes.test.js pins the picture.
-const SQUARE_TOP = readFileSync(join(HAVEN, 'web/src/scenes/square.frame.txt'), 'utf8').split('\n')[0].trim()
+// The square's top row as a screen at the spawn shows it: scenes.test.js pins
+// the picture, and the square is wider than a screen (6.1).
+const SQUARE_TOP = readFileSync(join(HAVEN, 'web/src/scenes/square.frame.txt'), 'utf8').split('\n')[0].slice(0, VIEW.w).trim()
 
 let failed = 0
 const check = (ok, label, evidence = '') => {
@@ -165,10 +168,12 @@ try {
   check(first.includes(`@frontierjs/haven@${version}`), `fli asked the server and installed @frontierjs/haven@${version}`, first)
   check(first.includes(SQUARE_TOP) && first.includes('@'), 'the square is drawn with a figure on it', first)
   check(!second.includes('installing it'), 'the second walk installs nothing', second)
-  const dirs = versions.split('\n').filter((l) => l.startsWith('/root/.fli/haven/'))
+  // Beside the versions, `seen/` keeps each room's picture for the map (6.4).
+  const dirs = versions.split('\n').filter((l) => /^\/root\/\.fli\/haven\/\d[^/]*\/$/.test(l))
   check(dirs.length === 1 && dirs[0] === `/root/.fli/haven/${version}/`, `~/.fli/haven holds one version, ${version}`, versions)
 
-  const members = await env.system.member.findMany({ select: { nick: true } })
+  // The crier announces a first walk-in, and is a member no login can be.
+  const members = (await env.system.member.findMany({ select: { nick: true } })).filter((m) => !isVoice(m.nick))
   check(members.length === 1 && members[0].nick === NICK, `the two walks are one member, ${NICK}`, JSON.stringify(members))
 } catch (e) {
   check(false, 'the rehearsal ran to the end', e.message)

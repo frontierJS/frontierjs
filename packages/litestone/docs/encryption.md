@@ -370,5 +370,5 @@ shape a large blob or an audit payload wants, where even `asSystem()` should not
 be dragging it into every read.
 
 For a column *some* callers may write, the tool is field-level
-`@allow('write', …)`; it cannot sit beside `@guarded`, which already answers
+`@allow(write, …)`; it cannot sit beside `@guarded`, which already answers
 both halves.

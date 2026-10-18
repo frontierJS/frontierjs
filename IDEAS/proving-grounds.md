@@ -109,7 +109,7 @@ framework put its name on.
 
 | Hard thing | What FJS has today | What breaks |
 | --- | --- | --- |
-| **Relationship-based read** — a clinician may read a patient because a *care relationship* row exists whose validity window covers now | the membership spelling `@@allow('read', auth().id in memberIds)`; `@from` correlating on a relation's full key | the policy must join to another table **with a time window**. Never proven. If it falls to a hook, Invariant 6 is prose |
+| **Relationship-based read** — a clinician may read a patient because a *care relationship* row exists whose validity window covers now | the membership spelling `@@allow(read, auth().id in memberIds)`; `@from` correlating on a relation's full key | the policy must join to another table **with a time window**. Never proven. If it falls to a hook, Invariant 6 is prose |
 | **Consent as data** — a patient records a dissent for one purpose | policies compile into the caller's WHERE off their own accessor | the predicate's input is a *third table's rows*, negated. Does it compile, or does it become an empty screen with a 200? |
 | **Purpose of use** — same clinician, same patient, different answer for treatment against billing against research | `auth().capabilities` (`FJS-D151`) is per-principal; `callHeaders` is per-call transport | purpose is **per call** and standing is per session. Nothing joins them |
 | **Break-glass** — refuse normally; permit when the caller states a reason, and make the permission itself an event somebody reviews | `db.$audit()` (an event, awaited, throwing — the right raw material), gates, capabilities | there is no **allow-with-obligation** tier. The language is allow / deny / filter, and this is a fourth answer |

@@ -173,7 +173,7 @@ describe('what is refused, and why', () => {
 
 // ─── the field write policy, and the half the operators went round ──────────
 //
-// `FJS-D129` says a field @allow('write', …) is the WHEN of
+// `FJS-D129` says a field @allow(write, …) is the WHEN of
 // `SET col = CASE WHEN … THEN ? ELSE col END`, so the predicate reads the
 // STORED row and a caller who may not write the column leaves it as it was.
 // An operator was spliced into the SET clause whole and never reached that
@@ -189,8 +189,8 @@ describe('an operator on a column carrying @allow(write)', () => {
     model Post {
       id    Int      @id
       title String
-      views Int      @default(0)  @allow('write', auth().role == 'admin')
-      tags  String[] @default([]) @allow('write', auth().role == 'admin')
+      views Int      @default(0)  @allow(write, auth().role == 'admin')
+      tags  String[] @default([]) @allow(write, auth().role == 'admin')
       @@gate(0.0.0.0)
     }
   `

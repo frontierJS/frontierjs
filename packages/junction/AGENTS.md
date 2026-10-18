@@ -275,7 +275,7 @@ createApp({ auth, db, principal: bearerClaim({
 
 **The grant model is the shipped trait** —
 `import "@frontierjs/litestone/references/Grant.lite"` then `@@trait(Grant)` on the
-host model, which declares its own `@@gate` and `@@allow('create', …)`: who may
+host model, which declares its own `@@gate` and `@@allow(create, …)`: who may
 issue a link is the host's declaration, at the Data boundary. **The row is minted
 by the resolver, never by hand**: `portal.mint($.db, { clientId })` is the
 caller's own create with the digest written by naming the column
@@ -308,7 +308,7 @@ UPGRADE carried, so a page that redeems after its socket opened reloads
 also carries every signed-in person's session, and `authorization()` passes on a
 token the request already signed in with rather than refusing it as a dead link.
 A policy compares ids, never the token:
-`@@allow('read', clientId == auth().portalClientId)`. Two grants on one request
+`@@allow(read, clientId == auth().portalClientId)`. Two grants on one request
 each keep their row: `$.locals[BEARER]` is the first in the list's order and
 `bearerOf($, 'csatLink')` reads the other. **A session beside a grant is a 400**,
 before the grant is read: a person who also presents a link is two standings,

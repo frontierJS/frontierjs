@@ -54,7 +54,7 @@ ${FILLER}
     title   String
     ownerId Int
     @@gate(0.4.4.5)
-    @@allow('read', auth().id == ownerId)
+    @@allow(read, auth().id == ownerId)
     @@db(main)
   }
 `

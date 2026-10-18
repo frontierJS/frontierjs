@@ -415,7 +415,7 @@ describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
         agencyId String
         agency   Agency @relation(fields: [agencyId], references: [id])
         notes    Note[]
-        @@allow('read', notes.some(body != 'hidden'))
+        @@allow(read, notes.some(body != 'hidden'))
       }
       model Note {
         id    String @id

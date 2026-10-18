@@ -186,7 +186,7 @@ So the fan-out can grade **per subscriber** before a byte reaches a socket:
 | --- | --- | --- |
 | subscriber below the model's read gate | receives the row | not sent |
 | subscriber above it, row has `@guarded` columns | receives them | column stripped |
-| field-level `@allow('read', …)` fails for this subscriber | receives it | field stripped |
+| field-level `@allow(read, …)` fails for this subscriber | receives it | field stripped |
 | `@scoped` model, row belongs to another tenant | receives it | not sent |
 
 The cost is a comparison per subscriber per field, against a table that does not

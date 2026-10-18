@@ -15,8 +15,8 @@ const SCHEMA = `
   model Member {
     id    String @id
     tasks Task[]
-    @@allow('read', id == 'nobody')
-    @@allow('create', true)
+    @@allow(read, id == 'nobody')
+    @@allow(create, true)
   }
 
   model Project {
@@ -25,7 +25,7 @@ const SCHEMA = `
     deletedAt DateTime?
     tasks     Task[]
     @@softDelete
-    @@allow('all', ownerId == auth().id)
+    @@allow(all, ownerId == auth().id)
   }
 
   model Task {
@@ -36,7 +36,7 @@ const SCHEMA = `
     project   Project? @relation(fields: [projectId], references: [id], onDelete: Restrict)
     authorId  String?  @default(auth().id)
     author    Member?  @relation(fields: [authorId], references: [id])
-    @@allow('all', ownerId == auth().id)
+    @@allow(all, ownerId == auth().id)
   }
 `
 
@@ -264,15 +264,15 @@ describe('a create rule reading a parent the caller cannot read', () => {
       deletedAt   DateTime?
       members     TeamMember[]
       @@softDelete
-      @@allow('all', private == false)
+      @@allow(all, private == false)
     }
     model TeamMember {
       id     Int  @id
       teamId Int
       team   Team @relation(fields: [teamId], references: [id])
       userId Int
-      @@allow('read', true)
-      @@allow('create', team.ownerId == userId)
+      @@allow(read, true)
+      @@allow(create, team.ownerId == userId)
     }
   `
   const seed = async (tenancy = '') => {
@@ -313,8 +313,8 @@ describe('a create rule reading a parent the caller cannot read', () => {
         id     Int  @id
         teamId Int
         team   Team @relation(fields: [teamId], references: [id])
-        @@allow('read', true)
-        @@allow('create', check(team))
+        @@allow(read, true)
+        @@allow(create, check(team))
       }
     `
     const plugins = [new GatePlugin({ getLevel: (u: any) => u?.level ?? 0 })]
@@ -328,7 +328,7 @@ describe('a create rule reading a parent the caller cannot read', () => {
       db.$close()
       return out
     }
-    expect(await answers(`@@allow('all', true)`)).toEqual(['AccessDeniedError', 'AccessDeniedError', 'created', 'AccessDeniedError'])
+    expect(await answers(`@@allow(all, true)`)).toEqual(['AccessDeniedError', 'AccessDeniedError', 'created', 'AccessDeniedError'])
     // No row policy: check() admits without a lookup, so both reach the
     // missing-parent answer.
     expect(await answers('')).toEqual(['ForeignKeyError', 'ForeignKeyError', 'created', 'ForeignKeyError'])
@@ -343,7 +343,7 @@ describe('a create rule reading a parent the caller cannot read', () => {
         private Boolean @default(false)
         a       Pair[]  @relation("a")
         b       Pair[]  @relation("b")
-        @@allow('all', private == false)
+        @@allow(all, private == false)
       }
       model Pair {
         id     Int  @id
@@ -352,8 +352,8 @@ describe('a create rule reading a parent the caller cannot read', () => {
         bId    Int
         b      Team @relation("b", fields: [bId], references: [id])
         userId Int
-        @@allow('read', true)
-        @@allow('create', b.ownerId == userId)
+        @@allow(read, true)
+        @@allow(create, b.ownerId == userId)
       }
     ` })
     await db.asSystem().team.createMany({ data: [{ id: 1, ownerId: 42, private: true }, { id: 2, ownerId: 42, private: true }] })
@@ -394,7 +394,7 @@ describe('a foreign key the app names under system:', () => {
       id      Int    @id @default(autoincrement())
       ownerId String
       tasks   Task[] @relation("lifted")
-      @@allow('all', ownerId == auth().id)
+      @@allow(all, ownerId == auth().id)
     }
 
     model Task {
@@ -402,7 +402,7 @@ describe('a foreign key the app names under system:', () => {
       ownerId  String
       liftedId Int?     @system
       lifted   Project? @relation("lifted", fields: [liftedId], references: [id])
-      @@allow('all', ownerId == auth().id)
+      @@allow(all, ownerId == auth().id)
     }
   `
   async function lifted() {
@@ -450,7 +450,7 @@ describe('a template parent is not a hidden one', () => {
       parent   Task?   @relation(fields: [parentId], references: [id])
       children Task[]
       @@hasTemplates
-      @@allow('all', ownerId == auth().id)
+      @@allow(all, ownerId == auth().id)
     }
   `
   test("a child under a template the caller reads is written; one under another's is refused", async () => {

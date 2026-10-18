@@ -11,7 +11,7 @@ const schema = (allow: string) => `
   model Post {
     id     Int    @id
     status String
-    @@allow('read', ${allow})
+    @@allow(read, ${allow})
   }
 `
 

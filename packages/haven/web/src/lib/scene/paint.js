@@ -27,7 +27,7 @@
 // sits between the figures' layer (10, 11) and the speech bubbles' (12),
 // which a canopy must not hide.
 import { BloomEffect, FrameBufferRenderable, RGBA } from '@opentui/core'
-import { pageOf } from '@frontierjs/mesa/runtime/terminal.js'
+import { pageOf } from '@frontierjs/mesa/runtime/terminal'
 import { INK as INK_HEX, viewFor } from './stage.js'
 import { at } from './cell.js'
 

@@ -63,6 +63,7 @@ export class CapabilityPlugin extends LitestonePlugin {
     if (!decl) return                       // no grid declared, nothing to hold
     if (ctx.isSystem) return                // permission, not scope
     if (op === 'read' && !decl.read) return // writes-and-moves is the default
+    if (op === 'create' && !decl.create) return // the gate admits a stranger (`FJS-D1048`)
 
     requireCapability(model, op, ctx)
   }

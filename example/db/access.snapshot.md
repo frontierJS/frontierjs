@@ -222,12 +222,12 @@ rather than refusing the row.
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
 | `CreditNote` | `userId` | `@system` |
-| `Customer` | `notes` | `@allow('read', auth().role == 'admin')` |
+| `Customer` | `notes` | `@allow(read, auth().role == 'admin')` |
 | `Customer` | `userId` | `@system` |
 | `Customer` | `fieldsSlots` | `@system` |
 | `CustomField` | `slot` | `@system` |
 | `Discount` | `redemptions` | `@system` |
-| `Flow` | `currentVersion` | `@allow('write', status == null || status != 'active')` |
+| `Flow` | `currentVersion` | `@allow(write, status == null || status != 'active')` |
 | `FlowCredential` | `secret` | `@encrypted` |
 | `Invoice` | `subtotal` | `@system` |
 | `Invoice` | `tax` | `@system` |
@@ -273,12 +273,12 @@ rather than refusing the row.
 | `Subscription` | `userId` | `@system` |
 | `SubscriptionPeriod` | `endsOn` | `@system` |
 | `SubscriptionPeriod` | `userId` | `@system` |
-| `User` | `email` | `@allow('write', auth().isAdmin)` |
-| `User` | `emailVerified` | `@allow('write', auth().isAdmin)` |
-| `User` | `role` | `@allow('write', auth().isAdmin)` |
+| `User` | `email` | `@allow(write, auth().isAdmin)` |
+| `User` | `emailVerified` | `@allow(write, auth().isAdmin)` |
+| `User` | `role` | `@allow(write, auth().isAdmin)` |
 | `User` | `kind` | `@system` |
-| `User` | `isStaff` | `@allow('write', auth().isAdmin)` |
-| `User` | `isSystemAdmin` | `@allow('write', auth().isSystemAdmin)` |
+| `User` | `isStaff` | `@allow(write, auth().isAdmin)` |
+| `User` | `isSystemAdmin` | `@allow(write, auth().isSystemAdmin)` |
 | `Verification` | `value` | `@guarded` |
 | `Verification` | `code` | `@guarded` |
 

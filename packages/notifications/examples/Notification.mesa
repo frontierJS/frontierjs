@@ -8,7 +8,7 @@
   // are importable anywhere. There is no markup here because this model has no
   // form — a notification is read, never filled in.
   //
-  // Nothing here says "only mine". The model does — `@@allow('read', userId ==
+  // Nothing here says "only mine". The model does — `@@allow(read, userId ==
   // auth().id)` — and the server enforces it, which is why signing out and back
   // in as somebody else needs no code on this side at all.
   //
@@ -28,7 +28,7 @@
 
   /**
    * Mark one read. `readAt` is a real column and the model's
-   * `@@allow('update', userId == auth().id)` is what stops it being anybody
+   * `@@allow(update, userId == auth().id)` is what stops it being anybody
    * else's — the service narrows `patch` to this one field.
    */
   export const markRead = (id) =>

@@ -136,7 +136,7 @@ const widgetPro = await sys.product.findUnique({ where: { id: 1 } })
 console.log(`  ✓  products (main):  ${prodResult.count} created`)
 console.log(`       "Widget Pro" → slug: "${widgetPro!.slug}"  salePrice: $${(widgetPro!.salePrice / 100).toFixed(2)}`)
 
-// Leads — demonstrate @@deny('update', status == 'archived')
+// Leads — demonstrate @@deny(update, status == 'archived')
 const leadResult = await sys.lead.createMany({ data: [
   { id: 1, accountId: acme.id,    firstName: 'Sara',  lastName: 'Park',   email: 'sara@co.co',       status: 'active',    score: 87.5 },
   { id: 2, accountId: acme.id,    firstName: 'James', lastName: 'Wright', email: 'james@biz.io',     status: 'converted', score: 94.0 },

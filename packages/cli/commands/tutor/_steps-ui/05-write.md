@@ -87,11 +87,11 @@ if (!await must($, await probe.pageEval({
 })) return
 
 // Whether the TICK is part of the assertion depends on the schema, which a
-// later lesson changes: `tutor:access` puts `@allow('write', auth().isAdmin)`
+// later lesson changes: `tutor:access` puts `@allow(write, auth().isAdmin)`
 // on this column, and after that a plain caller's `true` is accepted and
 // dropped — deliberately, and in silence, which is the thing that lesson is
 // about. So the column is asked about only where this caller may write it.
-const guarded = /done .*@allow\('write'/.test(readFileSync(schemaFile($), 'utf8'))
+const guarded = /done .*@allow\(write/.test(readFileSync(schemaFile($), 'utf8'))
 if (guarded)
   log.info('  (done carries a field policy in this workspace, so it is not part of what follows)')
 

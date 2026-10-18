@@ -1,7 +1,7 @@
 /*
  * form-withheld.spec.mjs — a column the caller was not allowed to read.
  *
- * A field `@allow('read', …)` is enforced by stripping the KEY, so the value a
+ * A field `@allow(read, …)` is enforced by stripping the KEY, so the value a
  * form holds for it is `undefined` whether the column is empty or forbidden.
  * The two are one answer to every reader that looks at the value, which is why
  * the flag exists and why nothing could use it until there was a reader.

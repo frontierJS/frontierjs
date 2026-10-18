@@ -242,7 +242,7 @@ Four words, and they are not a ladder. This table is the whole decision.
 | yes | no | `@encrypted` |
 | no | yes | `@system` |
 | no | no | `@guarded` |
-| — | depends who asks | `@allow('read', …)` **on the field** |
+| — | depends who asks | `@allow(read, …)` **on the field** |
 
 - **`@system`** — the application writes it, the caller does not. A tracking
   code, a computed total. Readable by anyone. Fill it by naming the column on
@@ -343,7 +343,7 @@ model Cart {
   token      String
   employeeId Int?
 
-  @@allow('read', token == auth().cartToken || employeeId == auth().employeeId)
+  @@allow(read, token == auth().cartToken || employeeId == auth().employeeId)
 }
 ```
 
@@ -439,7 +439,7 @@ Ask these three questions, then pick the row. The row decides the word.
 | no | yes | no | `@transient` | Validated with the model's own rules and then lifted onto ctx.transients, so nothing below the API boundary sees it. |
 | no | no | no | nothing at all | A value nobody writes and nobody reads is not a field. Delete it. |
 | no | yes | yes | not expressible | A value read back has to be stored or computed. If the application computes it, that is @computed and the caller does not write it; if the caller writes it, it needs a column. |
-| — | — | depends who asks | `@allow('read', …) on the field` | The column is stripped from results when the expression is false. Several @allow on one field OR together, and asSystem() bypasses them. This is the answer whenever "may they see it" has a different answer for different callers. |
+| — | — | depends who asks | `@allow(read, …) on the field` | The column is stripped from results when the expression is false. Several @allow on one field OR together, and asSystem() bypasses them. This is the answer whenever "may they see it" has a different answer for different callers. |
 
 ## Rules
 
@@ -468,8 +468,8 @@ Shapes the parser accepts and something later refuses. Check every proposal agai
 - **a @generated column reads a member the Json column's type does not declare** (error). A `Json @type(T)` column has a declared shape and the SQL that reads it is graded against that shape by nothing. A misspelled member is valid SQL over valid JSON: json_extract answers NULL for a path that is not there, so the column is null for every row, forever, and no write is ever refused. The type declaration is the only thing that knows better.
 - **an index over a Json column indexes the document, not anything inside it** (warn). The column holds one serialized document, so the index holds one entry per document — which answers *this exact document* and nothing else. A path filter cannot use it: json_extract() is opaque to the planner, so the query is a full scan with the index sitting beside it being written on every insert. What indexes a path is a @generated column over that path with an @@index on THAT.
 - **the unit is in the identifier, where nothing can read it** (info). timeoutSeconds Int states the unit and states it to a human only — no form renders it, no agent describing the model repeats it, and nothing checks that the value being written was measured in the same thing. @unit(s) puts the fact where those can reach it, and the name goes back to being the name. It changes no stored value: a unit declares what the number counts, it does not convert it.
-- **a bare check() in a write rule asks the parent the same write** (warn). check(rel) with no operation takes the operation of the rule it sits in, so @@allow('create', check(inbox)) asks whether the caller may create an INBOX, not whether they may see it. Chained, that climbs to whoever may write the root; against a parent held only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.
-- **a create or update policy reads a parent through a key the caller can move, with no post-update beside it** (warn). An 'update' policy compiles to a WHERE over the row as it IS, so a PATCH moving the foreign key into somebody else's parent is graded against the parent the row is leaving and admitted. Only @@allow('post-update', …) reads the row as it WOULD BE, and 'all' includes it where 'update' and 'write' do not. A create policy naming the same parent is refused for a new row and bypassed by a move.
+- **a bare check() in a write rule asks the parent the same write** (warn). check(rel) with no operation takes the operation of the rule it sits in, so @@allow(create, check(inbox)) asks whether the caller may create an INBOX, not whether they may see it. Chained, that climbs to whoever may write the root; against a parent held only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.
+- **a create or update policy reads a parent through a key the caller can move, with no post-update beside it** (warn). An 'update' policy compiles to a WHERE over the row as it IS, so a PATCH moving the foreign key into somebody else's parent is graded against the parent the row is leaving and admitted. Only @@allow(postUpdate, …) reads the row as it WOULD BE, and 'all' includes it where 'update' and 'write' do not. A create policy naming the same parent is refused for a new row and bypassed by a move.
 - **a public create on a model whose required column defaults to auth()** (warn). A required column with @default(auth().id) is filled from the signed-in principal. With create at level 0 a visitor has none, so the runtime refuses the create (401, naming the field) unless the visitor states the column — and a visitor naming a user it cannot read is refused too. Raise the create level, or make the column optional.
 - **a create policy reaches through a relation the picker cannot be narrowed by** (warn). A create @@allow that reads a related row (schedule.hostId == auth().id) accepts only some of that model, and a generated picker offers every row the caller can READ. Litestone derives the narrowing for a top-level rel.col == auth().claim conjunct (x-pick-where); any other shape — an ||, an in, a computed value — it cannot state, so the picker offers rows the write refuses unless the related model's own read policy already narrows them.
 - **a read @@allow written for a claim the tenant's members do not carry hides the model from them** (warn). Under row tenancy a read @@allow is the WHOLE of who reads, not an addition to the tenant's scope: the generated @@deny still narrows to the tenant, and the allow then admits only the rows it names. One that compares a row to a claim only some principals carry (a share-link or widget bearer claim) reads as "and the link's holder may read this one", and is "only the link's holder" — every member reads an empty screen.
@@ -909,7 +909,7 @@ hostname String @capability
 
 tier: **common** · legal in: on a model's field, on a trait's field · also called: at-rest · see also: `secret`, `hashed`, `guarded`
 
-Encrypted at rest. Hides the value from a reader and stays WRITABLE, which is what a caller submitting a secret needs. Not a guard: the choice is @allow('write', …) for a column some callers may set, @guarded for one only asSystem() touches, and @encrypted for one anybody may write and nobody may read back.
+Encrypted at rest. Hides the value from a reader and stays WRITABLE, which is what a caller submitting a secret needs. Not a guard: the choice is @allow(write, …) for a column some callers may set, @guarded for one only asSystem() touches, and @encrypted for one anybody may write and nobody may read back.
 
 ```lite
 ssn String @encrypted
@@ -1402,7 +1402,7 @@ tier: **common** · legal in: on a model's field, on a trait's field · see also
 Field-level access: the column is stripped from results, or dropped from write data, when the expression is false. Several @allow on one field OR together. asSystem() bypasses them.
 
 ```lite
-salary Int @allow('read', auth().isAdmin)
+salary Int @allow(read, auth().isAdmin)
 ```
 
 ### Model attributes
@@ -1623,14 +1623,14 @@ This dataset may leave in bulk. It adds NO way in: an export is a paginated scop
 @@export(ndjson, since: updatedAt)
 ```
 
-#### `@@allow` ('read'|'create'|'update'|'post-update'|'delete'|'write'|'all', <expression>[, message])
+#### `@@allow` (read|create|update|postUpdate|delete|write|all, <expression>[, message])
 
 tier: **common** · legal in: in a model, in a trait · also called: rls, row level security · see also: `deny`, `gate`, `scope`
 
 A row policy: compiled into the WHERE. Allows OR together within one operation, so a wrong policy is an empty screen with a 200 rather than an error. Membership spells as `auth().id in memberIds`, the list always the right operand. `update` grades the row as it IS, before the write, so a PATCH moving a foreign key into somebody else's parent passes a rule reading that parent; `post-update` grades the row as it WOULD BE and rolls the write back when refused. `all` includes it and `write` (create, update, delete) does not.
 
 ```lite
-@@allow('read', ownerId == auth().id)
+@@allow(read, ownerId == auth().id)
 ```
 
 #### `@@deny` ('read'|…, <expression>[, message])
@@ -1640,7 +1640,17 @@ tier: **common** · legal in: in a model, in a trait · see also: `allow`, `tena
 The other half, and it is not sugar for a negated allow: a deny cannot be widened by another rule. Row tenancy desugars into @@deny for exactly that reason.
 
 ```lite
-@@deny('read', archived == true)
+@@deny(read, archived == true)
+```
+
+#### `@@require` (create|postUpdate, <expression>[, message])
+
+tier: **common** · legal in: in a model, in a trait · see also: `deny`, `check`, `exclude`
+
+A rule about the DATA, in the policy language and graded for every writer: `asSystem()` drops a @@deny and keeps this, so a job, a webhook and a migration are refused as a member is. The expression must be TRUE for the row as it lands — an unknown (an absent claim, a null) refuses — and it may read one hop across a to-one, which is the reach @@check lacks (SQLite refuses a subquery in a CHECK). Graded in JS on the row in hand, so only create and postUpdate are legal; no `read`, `update` or `delete`, which have a WHERE and no landing row. Write the allowed case and not the forbidden one: `direction == 'inbound' || conversation.optedOutAt == null` is a consent to contact.
+
+```lite
+@@require(create, direction == 'inbound' || conversation.optedOutAt == null, 'They texted STOP.')
 ```
 
 #### `@@scope` (<name>, <expression>)

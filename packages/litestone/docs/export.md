@@ -14,8 +14,8 @@ model Order {
   updatedAt DateTime @updatedAt
 
   @@gate(1.4.4.5)
-  @@allow('read', auth().isStaff)
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, auth().isStaff)
+  @@allow(read, ownerId == auth().id)
 
   @@export(ndjson, since: updatedAt)
 }

@@ -20,19 +20,19 @@ title: Users
   //   @@gate(4.4.4.5)        a caller with no session gets 401 on the list.
   //                            A gate REFUSES.
   //
-  //   @@allow('read', id == auth().id || auth().isStaff)
+  //   @@allow(read, id == auth().id || auth().isStaff)
   //                            a shopper asking for the roster gets 200 and
   //                            ONE row — their own. A policy FILTERS, so the
   //                            wrong answer here is an empty screen and never
   //                            an error (Invariant 6). Measured: admin 5 rows,
   //                            staff 5 rows, shopper 1 row, stranger 401.
   //
-  //   @@allow('update', id == auth().id || auth().isAdmin)
+  //   @@allow(update, id == auth().id || auth().isAdmin)
   //                            a member of staff who is not an admin editing
   //                            somebody else gets **404**, not 403 — a refusal
   //                            must never confirm a row exists.
   //
-  //   role / emailVerified / isStaff  @allow('write', auth().isAdmin)
+  //   role / emailVerified / isStaff  @allow(write, auth().isAdmin)
   //                            and this is the one worth reading twice. A field
   //                            write policy compiles to
   //                            `SET col = CASE WHEN … THEN ? ELSE col END`, so
@@ -153,7 +153,7 @@ title: Users
       const saved = await users.save({ id: u.id, [field]: value }, { mode: 'patch' })
       if (saved?.[field] !== value) {
         note = `${field} did not move. The request succeeded — the column is `
-             + `@allow('write', auth().isAdmin), so the boundary kept the value `
+             + `@allow(write, auth().isAdmin), so the boundary kept the value `
              + `it had rather than refusing the whole patch.`
       }
       await reload()
@@ -189,7 +189,7 @@ title: Users
   // offered to everybody and the boundary refuses, which is the same shape as
   // the roster above and the reason `x-gate` is an affordance rather than a
   // rule. What a non-admin actually gets is a 403 from
-  // `@@allow('create', auth().isAdmin)` before any of it matters.
+  // `@@allow(create, auth().isAdmin)` before any of it matters.
   let adding = null
 
   const openAdd  = () => { note = null; error = null; adding = users.make() }
@@ -206,7 +206,7 @@ title: Users
 <SectionHeader title="Users" level={1}>
   {#snippet action()}
     <div class="cluster" style="align-items: center; gap: .5rem">
-      <!-- An affordance. `@@allow('create', auth().isAdmin)` is what actually
+      <!-- An affordance. `@@allow(create, auth().isAdmin)` is what actually
            decides, and it THROWS rather than filtering — create is the one
            operation with no stored row to hide, so a shopper gets a 403 naming
            the model instead of a silent nothing. -->
@@ -222,7 +222,7 @@ title: Users
 <Alert tone="muted" id="u-explain">
   This list is <code>@frontierjs/auth</code>'s <code>User</code> — a model this app
   did not write. What you can see of it is
-  <code>@@allow('read', id == auth().id || auth().isStaff)</code>: staff read
+  <code>@@allow(read, id == auth().id || auth().isStaff)</code>: staff read
   everybody, a shopper reads one row, a stranger gets 401. Nothing on this screen
   enforces that.
 </Alert>

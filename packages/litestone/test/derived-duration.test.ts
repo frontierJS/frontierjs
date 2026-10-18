@@ -71,7 +71,7 @@ describe('now() + <duration> in @derived', () => {
 // grades the SQL and JS halves against each other.
 describe('a row policy takes it at startup', () => {
   test.each([
-    ['@@allow("read", dueAt < now() + 2d)'],
+    ['@@allow(read, dueAt < now() + 2d)'],
     ['@@scope(soon, dueAt < now() + 2d)'],
   ])('%s', async (attr) => {
     const db: any = await createClient({ db: ':memory:', schema: `model Task { id Int @id  dueAt DateTime?  ${attr} }` })

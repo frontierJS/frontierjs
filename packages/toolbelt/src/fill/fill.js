@@ -78,7 +78,7 @@ function walk(ctx, path) {
 // is reachable by a dotted name and by nothing richer.
 const owners = (ctx) => Object.fromEntries(Object.entries(ctx).filter(([, v]) => v !== null && typeof v === 'object' && !Array.isArray(v)))
 
-function valueOf(hole, ctx) {
+function holeValue(hole, ctx) {
   if (hole === '') return { found: false }
   if (DOTTED.test(hole)) return walk(ctx, hole)
   try {
@@ -108,7 +108,7 @@ export function fill(source, ctx, { mode } = {}) {
   for (const seg of segments(String(source))) {
     if ('text' in seg) { out += seg.text; continue }
     if ('open' in seg) { out += seg.open; continue }
-    const got = valueOf(seg.hole, ctx ?? {})
+    const got = holeValue(seg.hole, ctx ?? {})
     const text = got.found ? render(got.value, mode) : undefined
     out += text === undefined ? seg.raw : text
   }

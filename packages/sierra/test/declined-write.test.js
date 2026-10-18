@@ -1,7 +1,7 @@
 /**
  * test/declined-write.test.js — a write the boundary kept, said out loud.
  *
- * A field `@allow('write', …)` is a predicate over the caller AND the row, so
+ * A field `@allow(write, …)` is a predicate over the caller AND the row, so
  * the Data boundary answers it by keeping the stored value: the write succeeds,
  * every other column lands, and nothing throws. That is deliberate (`FJS-D129`)
  * — the same payload is legitimate for somebody else, so a refusal by name
@@ -78,7 +78,7 @@ describe('declinedFields', () => {
     expect(out).toEqual({})
   })
 
-  // A column ABSENT from the answer is `@allow('read', …)` on the same column
+  // A column ABSENT from the answer is `@allow(read, …)` on the same column
   // or a narrow select. Neither says anything about the write, and reporting it
   // would make every read-policied column report on every save.
   test('says nothing about a column the answer does not carry', () => {

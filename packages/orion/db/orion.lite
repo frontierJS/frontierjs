@@ -38,10 +38,10 @@ model Flow {
   // The FlowVersion.version a trigger runs. Not writable while the flow is
   // active: pointing a live flow at a new definition is an activation, and it
   // goes through `pause` and `activate` like one. The write is dropped rather
-  // than refused, which is litestone's answer for a field `@allow('write')`.
+  // than refused, which is litestone's answer for a field `@allow(write)`.
   // A create reads the payload, where an absent status is NULL and a bare
   // `status != 'active'` would drop the version from every new flow.
-  currentVersion  Int?         @allow('write', status == null || status != 'active')
+  currentVersion  Int?         @allow(write, status == null || status != 'active')
   ownerId         String       @default(auth().id) @immutable
   // How many runs may start in any sixty seconds. Null is no limit; a trigger
   // over it is refused rather than queued (`FJS-D283`).
@@ -69,18 +69,18 @@ model Flow {
   // is legitimate here and the `!= null` is what keeps it so. Where a flow
   // starts is the machine's to say: `draft`, its @default (`FJS-D470`).
   // The gate is the whole answer to who creates; the deny only narrows what.
-  @@allow('create', true)
+  @@allow(create, true)
   // The owner and an administrator READ a flow (`FJS-D295`). The gate cannot say
   // it: a host's USER(4) may be wider than the people who own automations —
   // `example` grades its shoppers 4 — and `auth().level` is the host's own grade
   // (`FJS-D296`), so a broadcast reaches an administrator the way a query does.
-  @@allow('read', ownerId == auth().id || auth().level >= 5)
+  @@allow(read, ownerId == auth().id || auth().level >= 5)
   // Only the owner edits, an administrator included (`FJS-D289`): an edit
   // changes what the owner's standing does. An administrator activating or
   // pausing somebody else's flow goes through the flows service, which grades
   // the caller and writes as system — so the `@gate(5)` above grades an owner.
-  @@allow('update', ownerId == auth().id)
-  @@deny('create', ownerId != null && ownerId != auth().id)
+  @@allow(update, ownerId == auth().id)
+  @@deny(create, ownerId != null && ownerId != auth().id)
   @@index([status])
   @@index([ownerId])
 }
@@ -105,9 +105,9 @@ model FlowVersion {
   @@gate(4.4.9.8)
   // A version is an edit, so it is the owner's (`FJS-D289`), and a definition is
   // read by the owner of its flow, like the flow (`FJS-D295`).
-  @@allow('read',   flow.ownerId == auth().id || auth().level >= 5)
-  @@allow('create', flow.ownerId == auth().id)
-  @@deny('create', authorId != null && authorId != auth().id)
+  @@allow(read,   flow.ownerId == auth().id || auth().level >= 5)
+  @@allow(create, flow.ownerId == auth().id)
+  @@deny(create, authorId != null && authorId != auth().id)
   @@unique([flowId, version])
 }
 
@@ -120,8 +120,8 @@ model FlowLayout {
   updatedAt DateTime  @updatedAt
 
   @@gate(4.4.4.5)
-  @@allow('read',                 flow.ownerId == auth().id || auth().level >= 5)   // FJS-D295
-  @@allow('create,update,delete', flow.ownerId == auth().id)                        // FJS-D289
+  @@allow(read,                 flow.ownerId == auth().id || auth().level >= 5)   // FJS-D295
+  @@allow(write,                 flow.ownerId == auth().id)                        // FJS-D289
 }
 
 // ─── Runs ────────────────────────────────────────────────────────────────────
@@ -173,7 +173,7 @@ model Run {
   // By the owner the run acted as, which is the flow's owner at dispatch and
   // immutable after, and by an administrator (`FJS-D295`). A run's trigger is the
   // row as that owner read it, so the owner is the reader it was recorded for.
-  @@allow('read', actorId == auth().id || auth().level >= 5)
+  @@allow(read, actorId == auth().id || auth().level >= 5)
   // The engine writes through asSystem(), which does not consult this, so it
   // binds the engine only through the store suite that grades every status
   // write against it. What it gives the host is x-transitions for `cancel`.
@@ -215,7 +215,7 @@ model RunStep {
   @@gate(4.8.9.8)
   // A step's output is the row as the owner read it, read by that owner and an
   // administrator (`FJS-D295`).
-  @@allow('read', run.actorId == auth().id || auth().level >= 5)
+  @@allow(read, run.actorId == auth().id || auth().level >= 5)
   @@unique([runId, nodeId])
 }
 

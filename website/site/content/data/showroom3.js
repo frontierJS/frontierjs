@@ -76,8 +76,8 @@ export const CHANGES = [
     id: 'policy', label: 'Add a row policy',
     diff: [
       ['ctx',"  @@gate(0.4.4.5)"],
-      ['add',"  @@allow('read',   ownerId == auth().id)"],
-      ['add',"  @@allow('update', ownerId == auth().id)"],
+      ['add',"  @@allow(read,   ownerId == auth().id)"],
+      ['add',"  @@allow(update, ownerId == auth().id)"],
     ],
     hits: [
       { realm:'Data', what:'Every query',  moved:1, note:'<code>AND ownerId = ?</code> is compiled into the WHERE clause. Not a filter a caller applies.' },

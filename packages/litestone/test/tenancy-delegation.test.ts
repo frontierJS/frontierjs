@@ -128,7 +128,7 @@ describe('a model scoped through its parent (FJS-282)', () => {
     expect(denies).toHaveLength(1)
     // Five, not four: `post-update` grades the row the write produced, which is
     // what stops a child being re-pointed at a parent in another tenant.
-    expect(denies[0].operations).toEqual(['read', 'update', 'delete', 'create', 'post-update'])
+    expect(denies[0].operations).toEqual(['read', 'update', 'delete', 'create', 'postUpdate'])
     // 'read' is STATED: the question is always "is that parent mine", never
     // "may I create that parent", which is what the default would ask.
     // And `tenancy` narrows it to the parent's generated denies, so the parent's
@@ -203,13 +203,13 @@ describe('check() outside a WHERE is a real lookup (FJS-282)', () => {
       id      Int @id
       ownerId Int
       orders  Order[]
-      @@allow('all', ownerId == auth().id)
+      @@allow(all, ownerId == auth().id)
     }
     model Order {
       id    Int @id
       org   Org @relation(fields: [orgId], references: [id])
       orgId Int
-      @@deny('all', !check(org))
+      @@deny(all, !check(org))
     }
   `
 
@@ -225,9 +225,9 @@ describe('check() outside a WHERE is a real lookup (FJS-282)', () => {
 
   test('an absent foreign key allows — there is no parent to be outside of', async () => {
     const d: any = await createClient({ db: ':memory:', schema: `
-      model Org   { id Int @id  ownerId Int  orders Order[]  @@allow('all', ownerId == auth().id) }
+      model Org   { id Int @id  ownerId Int  orders Order[]  @@allow(all, ownerId == auth().id) }
       model Order { id Int @id  org Org? @relation(fields: [orgId], references: [id])  orgId Int?
-                    @@deny('all', !check(org)) }
+                    @@deny(all, !check(org)) }
     ` })
     await d.asSystem().org.create({ data: { id: 1, ownerId: 100 } })
     await d.$setAuth({ id: 100 }).order.create({ data: { id: 1 } })
@@ -241,9 +241,9 @@ describe('check() outside a WHERE is a real lookup (FJS-282)', () => {
   // case-insensitively and `Order` is `order`.
   test('a model whose table name is snake_cased still correlates', async () => {
     const d: any = await createClient({ db: ':memory:', schema: `
-      model Org      { id Int @id  ownerId Int  items LineItem[]  @@allow('all', ownerId == auth().id) }
+      model Org      { id Int @id  ownerId Int  items LineItem[]  @@allow(all, ownerId == auth().id) }
       model LineItem { id Int @id  org Org @relation(fields: [orgId], references: [id])  orgId Int
-                       @@deny('all', !check(org)) }
+                       @@deny(all, !check(org)) }
     ` })
     await d.asSystem().org.createMany({ data: [{ id: 1, ownerId: 100 }, { id: 2, ownerId: 200 }] })
     await d.asSystem().lineItem.createMany({ data: [{ id: 1, orgId: 1 }, { id: 2, orgId: 2 }] })
@@ -370,7 +370,7 @@ describe('a parent the caller may not read is still in their tenant (FJS-1319)',
       workspaceId Int
       private     Boolean @default(false)
       members     TeamMember[]
-      @@allow('all', private == false || id in auth().teamIds)
+      @@allow(all, private == false || id in auth().teamIds)
     }
 
     model TeamMember {
@@ -473,7 +473,7 @@ describe('a parent the caller may not read is still in their tenant (FJS-1319)',
 
   test('a create the child\'s own @@allow refuses is refused as that, whatever team it names', async () => {
     const adb: any = await createClient({ db: ':memory:', schema: PRIVATE.replace(
-      'notes  Note[]', 'notes  Note[]\n      @@allow(\'all\', userId == auth().id)') })
+      'notes  Note[]', 'notes  Note[]\n      @@allow(all, userId == auth().id)') })
     await adb.asSystem().team.createMany({ data: [{ id: 1, workspaceId: 10, private: true }, { id: 2, workspaceId: 20 }] })
     const a = adb.$setAuth({ id: 1, workspaceId: 10, teamIds: [] })
     for (const teamId of [1, 2, 999]) {

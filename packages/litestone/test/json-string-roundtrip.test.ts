@@ -8,7 +8,7 @@ import { describe, test, expect } from 'bun:test'
 import { createClient } from '../src/index.js'
 
 const SCHEMA = `
-  model Doc { id Int @id  body Json?  @@allow('all', true) }
+  model Doc { id Int @id  body Json?  @@allow(all, true) }
 `
 
 describe('a Json column round-trips a string as a string', () => {

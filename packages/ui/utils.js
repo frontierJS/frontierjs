@@ -93,7 +93,7 @@ export function ruleLabel(name, rule) {
  * the form resolves them and passes the lists.
  *
  * Withheld is the one that is not about permission to WRITE. A field
- * `@allow('read', …)` strips the key, so the form holds no value for it, and an
+ * `@allow(read, …)` strips the key, so the form holds no value for it, and an
  * editable empty box would save that emptiness over whatever is stored — which
  * the boundary accepts, because a read policy is not a write policy. Locking it
  * is not an affordance stricter than the rule: there is no value here to send.

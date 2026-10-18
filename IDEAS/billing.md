@@ -629,7 +629,7 @@ happens *at an instant* rather than *from a state*.
 `cancel` joined the other three moves as `@system`, and `subscriptions.cancel` /
 `.resume` write the one column through the model's own gate and row policies —
 so a shopper stopping their own arrangement is still
-`@@allow('update', userId == auth().id)` and nothing in either screen grades
+`@@allow(update, userId == auth().id)` and nothing in either screen grades
 anybody. `subscription-renew` reads the flag AT the boundary, after both of its
 existing guards, and ends the arrangement there instead of issuing.
 

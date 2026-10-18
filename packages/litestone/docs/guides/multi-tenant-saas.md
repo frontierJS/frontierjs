@@ -50,9 +50,9 @@ model User {
   @@softDelete
   @@auth
   @@trail(audit)
-  @@allow('read',   id == auth().id || auth().role == 'admin')
-  @@allow('update', id == auth().id || auth().role == 'admin')
-  @@allow('delete', auth().role == 'admin')
+  @@allow(read,   id == auth().id || auth().role == 'admin')
+  @@allow(update, id == auth().id || auth().role == 'admin')
+  @@allow(delete, auth().role == 'admin')
 }
 
 model Project {
@@ -64,10 +64,10 @@ model Project {
   deletedAt   DateTime?
 
   @@softDelete
-  @@allow('read',   auth() != null)
-  @@allow('create', auth() != null)
-  @@allow('update', ownerId == auth().id || auth().role == 'admin')
-  @@allow('delete', ownerId == auth().id || auth().role == 'admin')
+  @@allow(read,   auth() != null)
+  @@allow(create, auth() != null)
+  @@allow(update, ownerId == auth().id || auth().role == 'admin')
+  @@allow(delete, ownerId == auth().id || auth().role == 'admin')
 }
 ```
 

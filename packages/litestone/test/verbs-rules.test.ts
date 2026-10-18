@@ -52,7 +52,7 @@
 //
 // ─── not covered here, and deliberately named ─────────────────────────────────
 //
-// Field-level rules (@guarded, @allow('read'|'write'), @encrypted) narrow a
+// Field-level rules (@guarded, @allow(read|'write'), @encrypted) narrow a
 // COLUMN rather than a row, so they need a different verdict and a second
 // fixture — that is the cost, and it is why they are out rather than an
 // oversight. `restore`, `transition` and `search` need a rule-specific fixture
@@ -108,10 +108,10 @@ const RULES: Record<string, Rule> = {
   },
   // A row policy: row 1 is the caller's, row 2 is somebody else's.
   policy: {
-    schema: M(`@@allow('read', ownerId == auth().id)
-  @@allow('create', ownerId == auth().id)
-  @@allow('update', ownerId == auth().id)
-  @@allow('delete', ownerId == auth().id)`),
+    schema: M(`@@allow(read, ownerId == auth().id)
+  @@allow(create, ownerId == auth().id)
+  @@allow(update, ownerId == auth().id)
+  @@allow(delete, ownerId == auth().id)`),
     rows:   [{ id: 1, title: 'aaa', ownerId: 'u1' }, { id: 2, title: 'bbb', ownerId: 'u2' }],
     caller: (db) => db.$setAuth({ id: 'u1' }),
     opts:   { claims: [] },
@@ -330,9 +330,9 @@ model Doc {
   ownerId String?
   @@db(main)
   @@trail(audit)
-  @@allow('read',   ownerId == auth().id)
-  @@allow('create', ownerId == auth().id)
-  @@allow('update', ownerId == auth().id)
+  @@allow(read,   ownerId == auth().id)
+  @@allow(create, ownerId == auth().id)
+  @@allow(update, ownerId == auth().id)
 }
 `),
       db: ':memory:', claims: [],

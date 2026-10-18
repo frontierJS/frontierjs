@@ -138,10 +138,10 @@ model Ledger {
   code    String @immutable
   note    String
   @@gate(0)
-  @@allow('update', ownerId == auth().id)
-  @@allow('read', true)
-  @@allow('create', true)
-  @@allow('delete', true)
+  @@allow(update, ownerId == auth().id)
+  @@allow(read, true)
+  @@allow(create, true)
+  @@allow(delete, true)
 }
 `
 

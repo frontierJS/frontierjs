@@ -24,7 +24,7 @@ model Folder {
   docs      Doc[]
   deletedAt DateTime?
   @@gate(2.4.4.5)
-  @@deny('all', ws != auth().ws)
+  @@deny(all, ws != auth().ws)
   @@softDelete(cascade)
 }
 model Doc {

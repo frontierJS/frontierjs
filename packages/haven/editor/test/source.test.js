@@ -44,10 +44,11 @@ test('an attribute edit moves only its own characters, and a missing one is adde
   const src = SOURCES.Tavern
   const { elements } = readScene(src)
   const table0 = elements.find((e) => e.kind === 'Piece' && e.attrs.of === 'table')
-  const out = writeScene(src, { elements: { [table0.id]: { x: 10 }, 0: { x: 1, y: 2 } } })
-  expect(out).toContain('<Piece of={table}   x={10}  y={13} />')
-  expect(out).toContain('<Piece of={frame} x={1} y={2} />')
-  expect(out.length).toBe(src.length + 1 + ' x={1} y={2}'.length)
+  const door = elements.find((e) => e.kind === 'Door' && e.attrs.to === '/')
+  const out = writeScene(src, { elements: { [table0.id]: { x: 10 }, [door.id]: { w: 2 } } })
+  expect(out).toContain('<Piece of={table}   x={10}  y={14} />')
+  expect(out).toContain('<Door  x={48} y={25} to="/" w={2} />')
+  expect(out.length).toBe(src.length + 1 + ' w={2}'.length)
 })
 
 test('a removed tag takes its line with it, and an added one goes before </Scene> with an import', () => {
@@ -103,7 +104,7 @@ const tavernEls = bind(readScene(SOURCES.Tavern), tavern)
 test('every tag binds to the mark the scene drew for it, in order', () => {
   expect(tavernEls.length).toBe(tavern.marks.length)
   const cat = tavernEls.find((e) => e.kind === 'Pacer')
-  expect(placeOf(cat)).toEqual({ y: 12, from: 66, to: 86 })
+  expect(placeOf(cat)).toEqual({ y: 16, from: 66, to: 86 })
   const door = tavernEls.find((e) => e.kind === 'Door')
   expect(placeOf(door)).toEqual({ x: 48, y: 25, to: '/', w: 1, h: 1 })
   expect(cellsOf(door)).toEqual([{ x: 48, y: 25 }])
@@ -113,7 +114,7 @@ test('a click finds the door before the wall it is in, and the last placed piece
   expect(hit(tavernEls, 48, 25).kind).toBe('Door')
   expect(hit(tavernEls, 1, 1).ident).toBe('frame')
   expect(hit(tavernEls, 10, 14).ident).toBe('table')
-  expect(hit(tavernEls, 70, 12).kind).toBe('Pacer')
+  expect(hit(tavernEls, 70, 16).kind).toBe('Pacer')
   expect(hit(tavernEls, 40, 20)).toBeNull()
 })
 
@@ -135,7 +136,7 @@ test('edits are the difference between the marks and the file, nothing when noth
   const state = { els: snapshotEls(tavernEls), spawn: { ...parsed.spawn }, colors }
   expect(editsOf(parsed, state, colors)).toEqual({})
   const table0 = tavernEls.find((e) => e.ident === 'table')
-  table0.mark.move(10, 13)
+  table0.mark.move(10, 14)
   const moved = { ...state, els: snapshotEls(tavernEls).filter((e) => e.ident !== 'barrel'), spawn: { x: 50, y: 20 } }
   moved.els.push({ id: 99, kind: 'Piece', ident: 'lamp', file: 'lamp.js', x: 40, y: 20 })
   const edits = editsOf(parsed, { ...moved, colors: { ...colors, f: ['#000000'] } }, colors)
@@ -144,7 +145,7 @@ test('edits are the difference between the marks and the file, nothing when noth
   expect(edits.add).toEqual([{ kind: 'Piece', attrs: { of: { expr: 'lamp' }, x: 40, y: 20 }, import: { ident: 'lamp', file: 'lamp.js' } }])
   expect(edits.spawn).toEqual({ x: 50, y: 20 })
   expect(edits.palette).toEqual({ f: ['#000000'] })
-  table0.mark.move(9, 13)
+  table0.mark.move(9, 14)
 })
 
 // ─── a pasted block of art ───────────────────────────────────────────
@@ -156,6 +157,7 @@ test('a block of art is recognized as the pieces at hand, largest first', () => 
   expect(out.placements.map(({ ident, x, y }) => ({ ident, x, y }))).toEqual([{ ident: 'table', x: 0, y: 0 }, { ident: 'wall', x: 4, y: 0 }])
   expect(out.twice).toEqual([])
   expect(out.unclaimed).toEqual([])
+  expect(recognize('|', [{ ident: 'mat', piece: piece('mat', ' ', ' ') }, { ident: 'wall', piece: wall }]).placements.map((p) => p.ident)).toEqual(['wall'])
 })
 
 test('two pieces of one size on a cell, and a glyph no piece draws, are named with the cell', () => {

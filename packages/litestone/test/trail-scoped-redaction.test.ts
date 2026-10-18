@@ -100,7 +100,7 @@ const ENC_SCHEMA = `
     userAgent String?
     @@db(main)
     @@gate(4.4.4.4)
-    @@allow('read', userId == auth().id)
+    @@allow(read, userId == auth().id)
     @@trail(audit)
   }
 `

@@ -67,7 +67,7 @@ export default defineJob<AnnouncePayment>({
     // Everyone who can act on an order, which in this shop is everyone with a
     // login. A real one would scope this to a role or a workspace; the point
     // here is that the row belongs to a USER and the UI reads it back through
-    // the model's own `@@allow('read', userId == auth().id)` — no service code
+    // the model's own `@@allow(read, userId == auth().id)` — no service code
     // says "only your own notifications".
     const staff = (await db.asSystem().user.findMany({})) as { id: string; email: string }[]
 

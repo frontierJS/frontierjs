@@ -227,7 +227,7 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
 // ─── The trail ─────────────────────────────────────────────────────────────
 //
 // A write the SUBJECT is entitled to make, from inside the episode. `User`
-// carries `@@trail(audit)` and `@@allow('update', id == auth().id || …)`, so this
+// carries `@@trail(audit)` and `@@allow(update, id == auth().id || …)`, so this
 // is the shopper editing their own row — and every part of the entry that
 // matters is about who really did it.
 

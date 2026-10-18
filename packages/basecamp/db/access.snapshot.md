@@ -104,7 +104,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(rule, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(rule, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(rule, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(rule, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(rule, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(rule, tenancy)` — "Outside your workspaceId"
 
 ### `AlertRule`
@@ -112,7 +112,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `AlertRuleChannel`
@@ -123,8 +123,8 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `!check(channel, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(rule, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(channel, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(rule, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(rule, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(channel, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(rule, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(channel, tenancy)` — "Outside your workspaceId"
 
@@ -133,7 +133,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `App`
@@ -141,7 +141,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `AppBackup`
@@ -152,8 +152,8 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(app, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
@@ -172,8 +172,8 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `!check(network, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(network, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(app, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(network, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(network, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(network, tenancy)` — "Outside your workspaceId"
 
@@ -185,8 +185,8 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(app, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
@@ -195,7 +195,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `CleanupRun`
@@ -203,7 +203,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `Dashboard`
@@ -211,7 +211,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `DashboardWidget`
@@ -225,9 +225,9 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **update** — `!check(dashboard, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(dashboard, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(dashboard, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(dashboard, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
@@ -237,7 +237,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `DependencyUse`
@@ -245,7 +245,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `Deployment`
@@ -253,7 +253,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `DeploymentStep`
@@ -261,7 +261,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(deployment, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 
 ### `DiskUsage`
@@ -269,7 +269,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `Domain`
@@ -277,7 +277,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `Environment`
@@ -286,7 +286,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - allow **update** — `isProtected == false || auth().level >= 5` — "Protected environments require admin or owner role to modify"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `FeatureFlag`
@@ -294,7 +294,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `FlagOverride`
@@ -305,8 +305,8 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `!check(environment, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(flag, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(environment, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(flag, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(environment, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(flag, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(environment, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(flag, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(environment, tenancy)` — "Outside your workspaceId"
 
@@ -323,7 +323,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - allow **update** — `ownerId == auth().id`
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `FlowCredential`
@@ -331,7 +331,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `FlowLayout`
@@ -342,7 +342,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `!check(flow, tenancy)` — "Outside your workspaceId"
 - allow **update** — `flow.ownerId == auth().id`
 - deny **update** — `!check(flow, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(flow, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(flow, tenancy)` — "Outside your workspaceId"
 - allow **delete** — `flow.ownerId == auth().id`
 - deny **delete** — `!check(flow, tenancy)` — "Outside your workspaceId"
 
@@ -354,7 +354,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `authorId != null && authorId != auth().id`
 - deny **create** — `!check(flow, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(flow, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(flow, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(flow, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(flow, tenancy)` — "Outside your workspaceId"
 
 ### `Invitation`
@@ -362,7 +362,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `Job`
@@ -370,7 +370,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `JobRun`
@@ -378,7 +378,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(job, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(job, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(job, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(job, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(job, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(job, tenancy)` — "Outside your workspaceId"
 
 ### `KvEntry`
@@ -386,7 +386,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `Monitor`
@@ -394,7 +394,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `MonitorChannel`
@@ -405,8 +405,8 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `!check(channel, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(channel, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(channel, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(channel, tenancy)` — "Outside your workspaceId"
 
@@ -415,7 +415,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 
 ### `MonitorEvent`
@@ -423,7 +423,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(monitor, tenancy)` — "Outside your workspaceId"
 
 ### `Network`
@@ -431,7 +431,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `Notification`
@@ -444,7 +444,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `NotificationPreference`
@@ -452,7 +452,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **read** — `userId == auth().id`
 - allow **create** — `userId == auth().id`
 - allow **update** — `userId == auth().id`
-- allow **post-update** — `userId == auth().id`
+- allow **postUpdate** — `userId == auth().id`
 - allow **delete** — `userId == auth().id`
 
 ### `Project`
@@ -460,7 +460,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `Recipe`
@@ -468,7 +468,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `RecipeRun`
@@ -479,8 +479,8 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(recipe, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(recipe, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(recipe, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(recipe, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
@@ -489,7 +489,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `Run`
@@ -498,7 +498,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(flowVersion, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(flowVersion, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(flowVersion, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(flowVersion, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(flowVersion, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(flowVersion, tenancy)` — "Outside your workspaceId"
 
 ### `RunStep`
@@ -507,7 +507,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(run, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(run, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(run, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(run, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(run, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(run, tenancy)` — "Outside your workspaceId"
 
 ### `Secret`
@@ -515,7 +515,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `Server`
@@ -523,7 +523,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
 ### `ServerEvent`
@@ -531,7 +531,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `ServerNetwork`
@@ -542,8 +542,8 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `!check(network, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(network, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(network, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(network, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(network, tenancy)` — "Outside your workspaceId"
 
@@ -552,7 +552,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `User`
@@ -567,7 +567,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - allow **update** — `appId != null || environment.isProtected == false || auth().level >= 5` — "Protected environments require admin or owner role to modify"
 - deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
-- deny **post-update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - allow **delete** — `appId != null || environment.isProtected == false || auth().level >= 5` — "Protected environments require admin or owner role to modify"
 - deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 
@@ -576,7 +576,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `Wait`
@@ -584,7 +584,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `!check(run, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(run, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(run, tenancy)` — "Outside your workspaceId"
-- deny **post-update** — `!check(run, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(run, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(run, tenancy)` — "Outside your workspaceId"
 
 ### `WorkspaceMember`
@@ -616,7 +616,7 @@ rather than refusing the row.
 | `Dependency` | `advisories` | `@system` |
 | `Dependency` | `checkedAt` | `@system` |
 | `Dependency` | `checkError` | `@system` |
-| `Flow` | `currentVersion` | `@allow('write', status == null || status != 'active')` |
+| `Flow` | `currentVersion` | `@allow(write, status == null || status != 'active')` |
 | `FlowCredential` | `secret` | `@encrypted` |
 | `Invitation` | `token` | `@guarded` |
 | `Job` | `retryCount` | `@system` |
@@ -634,14 +634,14 @@ rather than refusing the row.
 | `Secret` | `data` | `@encrypted` |
 | `Server` | `enrollTokenHash` | `@guarded` |
 | `Session` | `token` | `@guarded` |
-| `User` | `email` | `@allow('write', auth().isSystemAdmin)` |
-| `User` | `emailVerified` | `@allow('write', auth().isAdmin)` |
-| `User` | `role` | `@allow('write', auth().isAdmin)` |
-| `User` | `accountId` | `@allow('write', auth().isSystemAdmin)` |
-| `User` | `kind` | `@allow('write', auth().isSystemAdmin)` |
-| `User` | `status` | `@allow('write', auth().isSystemAdmin)` |
-| `User` | `scopes` | `@allow('write', auth().isSystemAdmin)` |
-| `User` | `isSystemAdmin` | `@allow('write', auth().isSystemAdmin)` |
+| `User` | `email` | `@allow(write, auth().isSystemAdmin)` |
+| `User` | `emailVerified` | `@allow(write, auth().isAdmin)` |
+| `User` | `role` | `@allow(write, auth().isAdmin)` |
+| `User` | `accountId` | `@allow(write, auth().isSystemAdmin)` |
+| `User` | `kind` | `@allow(write, auth().isSystemAdmin)` |
+| `User` | `status` | `@allow(write, auth().isSystemAdmin)` |
+| `User` | `scopes` | `@allow(write, auth().isSystemAdmin)` |
+| `User` | `isSystemAdmin` | `@allow(write, auth().isSystemAdmin)` |
 | `Variable` | `secretValue` | `@encrypted` |
 | `Verification` | `value` | `@guarded` |
 | `Verification` | `code` | `@guarded` |

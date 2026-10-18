@@ -25,7 +25,7 @@ model User {
   // account taken over by whoever holds a session, with `emailVerified` still
   // true for an address nobody proved; a new one has to be verified before it
   // is kept, and a flow that does that writes through asSystem().
-  email          String    @email @unique @lower @allow('write', auth().isAdmin) @personal(contact)
+  email          String    @email @unique @lower @allow(write, auth().isAdmin) @personal(contact)
   name           String?   @trim @personal(contact)
   // The columns a caller must not write about themselves. role is what an
   // app's own resolver grades on, and marking your own address verified is
@@ -34,8 +34,8 @@ model User {
   // so the level that may delete a person is the level that may set their role
   // — one idea, not two. asSystem() writes all of them regardless, which is how
   // this package sets them.
-  emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
-  role           String    @default("user") @allow('write', auth().isAdmin)
+  emailVerified  Boolean   @default(false) @allow(write, auth().isAdmin)
+  role           String    @default("user") @allow(write, auth().isAdmin)
   // Written once by the app, never by the caller. A person who could mark
   // themselves a bot would refile who did what, and a later change would make
   // every past entry's actorType disagree with the row.
@@ -68,6 +68,6 @@ model User {
   // policies unchecked.
   @@auth
   @@gate(4.4.4.5)
-  @@allow('update', id == auth().id || auth().isAdmin)
+  @@allow(update, id == auth().id || auth().isAdmin)
   @@trail(audit)
 }

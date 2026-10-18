@@ -74,7 +74,7 @@
 /// property of a MODEL, said with `@@tenant(none)`, never of a row that happens
 /// to have nothing in the column.
 ///
-/// This replaced sixteen hand-written `@@allow('all', workspaceId ==
+/// This replaced sixteen hand-written `@@allow(all, workspaceId ==
 /// auth().workspaceId)` lines. The claim it grades against is resolved per
 /// REQUEST — `createApp({ principal: membershipClaim(...) })` in
 /// api/src/core/app.ts — because a person belongs to several workspaces and
@@ -179,7 +179,7 @@ model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@d
 // `createApp({ principal: membershipClaim(...) })` in api/src/core/app.ts.
 //
 // Declaring it here replaces sixteen hand-written
-// `@@allow('all', workspaceId == auth().workspaceId)` lines, which was sixteen
+// `@@allow(all, workspaceId == auth().workspaceId)` lines, which was sixteen
 // chances to leave one off and no way to notice: a missing one is a screen
 // showing another workspace's rows with a 200.
 tenancy { strategy row  column workspaceId  claim workspaceId }
@@ -616,7 +616,7 @@ model User {
   // it is an account taken over by whoever holds a session, with
   // `emailVerified` still true for an address nobody verified. `accountId`
   // moves a person between organizations, which is the hub's act.
-  email          String    @email @unique @lower @allow('write', auth().isSystemAdmin) @personal(contact)
+  email          String    @email @unique @lower @allow(write, auth().isSystemAdmin) @personal(contact)
   name           String?   @trim @personal(contact)
   // Both carry auth's own field policy, and they carry it because this model
   // lets a person update their own row (`users.patch`, the profile form).
@@ -627,9 +627,9 @@ model User {
   // `role` is auth's and is read nowhere in this app — the privileged bit is
   // `isSystemAdmin` below. It keeps the policy anyway: a column nobody reads is
   // one somebody will.
-  emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
-  role           String    @default("user") @allow('write', auth().isAdmin)
-  accountId      String?   @allow('write', auth().isSystemAdmin)
+  emailVerified  Boolean   @default(false) @allow(write, auth().isAdmin)
+  role           String    @default("user") @allow(write, auth().isAdmin)
+  accountId      String?   @allow(write, auth().isSystemAdmin)
   account        Account?  @relation(fields: [accountId], references: [id])
 
   // ── Basecamp additions ──
@@ -639,14 +639,14 @@ model User {
   // `status == 'suspended'` STRANGER, and api-keys refuses an owner whose
   // `kind` is not `bot`. A column a caller can write is not a column a level
   // can be graded from.
-  kind           UserKind   @default(user)  @allow('write', auth().isSystemAdmin)
-  status         UserStatus @default(pending_verification) @allow('write', auth().isSystemAdmin)
+  kind           UserKind   @default(user)  @allow(write, auth().isSystemAdmin)
+  status         UserStatus @default(pending_verification) @allow(write, auth().isSystemAdmin)
   username       String?    @trim
   displayName    String?    @trim
   avatarUrl      String?
   // Read by nothing here: a key's scopes are its Credential's. It is named
   // like a grant, so it is written like one, for `role`'s reason above.
-  scopes         Json       @default([]) @allow('write', auth().isSystemAdmin)
+  scopes         Json       @default([]) @allow(write, auth().isSystemAdmin)
 
   // The hub tier — who may read across workspaces and suspend a tenant.
   //
@@ -668,7 +668,7 @@ model User {
   // act and the hub writes through asSystem(), which passes; every read that
   // matters — session-auth building the session, /hub/users/ listing people —
   // is asSystem() for the same reason.
-  isSystemAdmin  Boolean    @default(false) @allow('write', auth().isSystemAdmin)
+  isSystemAdmin  Boolean    @default(false) @allow(write, auth().isSystemAdmin)
 
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @default(now()) @updatedAt
@@ -689,8 +689,8 @@ model User {
   // themselves. Create is SYSTEM: registration, setup, an accepted invitation
   // and the hub's bots all write through asSystem(), which passes all of it.
   @@gate(1.8.1.5)
-  @@allow('read',   id == auth().id || auth().level >= 4)
-  @@allow('update', id == auth().id)
+  @@allow(read,   id == auth().id || auth().level >= 4)
+  @@allow(update, id == auth().id)
   @@softDelete
   @@trail(audit)
   // Both members are optional and that is the shape wanted: one username per
@@ -920,7 +920,7 @@ model WorkspaceMember {
   // granting themselves level 6. A hook is one door; a job, a hub screen and a
   // `fli db:repl` session at level 5 are others.
   //
-  // A model-level @@deny rather than `role @allow('write', userId != auth().id)`,
+  // A model-level @@deny rather than `role @allow(write, userId != auth().id)`,
   // and the difference is the whole reason this is written twice: a FIELD write
   // policy is evaluated against the PAYLOAD (`evalJs(expr, ctx, transformed)`),
   // not against the stored row — so `userId` is undefined in a patch of
@@ -932,7 +932,7 @@ model WorkspaceMember {
   // Nothing legitimately updates a caller's own membership: the invitation
   // accept CREATES the row with acceptedAt on it, leaving is a delete, and
   // asSystem() bypasses this for the hub and the setup path.
-  @@deny('update', userId == auth().id)
+  @@deny(update, userId == auth().id)
 
   // `workspaces.addMember`, `setMemberRole` and `removeMember` write through
   // the caller's own client, so this deny holds the door a person walks
@@ -954,10 +954,10 @@ model WorkspaceMember {
   // acted in: the gate already says ADMINISTRATOR(5), and this says whose
   // workspace. Neither reaches asSystem(), which is every path the app itself
   // takes.
-  @@allow('read',   userId == auth().id)
-  @@allow('create', workspaceId == auth().workspaceId)
-  @@allow('update', workspaceId == auth().workspaceId)
-  @@allow('delete', workspaceId == auth().workspaceId)
+  @@allow(read,   userId == auth().id)
+  @@allow(create, workspaceId == auth().workspaceId)
+  @@allow(update, workspaceId == auth().workspaceId)
+  @@allow(delete, workspaceId == auth().workspaceId)
 
   // @@tenant(none) — this is the row the CLAIM is read from, and the workspace
   // switcher lists a person's memberships ACROSS workspaces — scoping it to the
@@ -1590,7 +1590,7 @@ model Environment {
   // does not reshape it. The gate cannot say it, since a developer holds
   // update on every environment, so the row does — and it holds for every
   // writer, which a check in two services did not (FJS-1087, FJS-2354).
-  @@allow('update', isProtected == false || auth().level >= 5, "Protected environments require admin or owner role to modify")
+  @@allow(update, isProtected == false || auth().level >= 5, "Protected environments require admin or owner role to modify")
 
   // Environment carries its own workspaceId rather than reaching through
   // projectId, so tenancy scopes it on a column rather than through a parent.
@@ -1732,7 +1732,7 @@ model Variable {
   // An environment-wide variable is the environment's to guard (see
   // Environment's @@deny); an app's own is the app's, at the level that may
   // write the app.
-  @@allow('create,update,delete', appId != null || environment.isProtected == false || auth().level >= 5, "Protected environments require admin or owner role to modify")
+  @@allow(write, appId != null || environment.isProtected == false || auth().level >= 5, "Protected environments require admin or owner role to modify")
   @@softDelete
   @@trail(audit)
   @@unique([environmentId, key], where: appId == null)
@@ -1814,10 +1814,10 @@ model AppEditor {
   // two cannot disagree. An editor reads their own rows across workspaces, a
   // member reads the rows of the workspace they act in, and the gate's 5 says
   // only an admin writes one.
-  @@allow('read',   userId == auth().id || app.workspaceId == auth().workspaceId)
-  @@allow('create', app.workspaceId == auth().workspaceId)
-  @@allow('update', app.workspaceId == auth().workspaceId)
-  @@allow('delete', app.workspaceId == auth().workspaceId)
+  @@allow(read,   userId == auth().id || app.workspaceId == auth().workspaceId)
+  @@allow(create, app.workspaceId == auth().workspaceId)
+  @@allow(update, app.workspaceId == auth().workspaceId)
+  @@allow(delete, app.workspaceId == auth().workspaceId)
 
   // Read by a holder who has no membership, so no claim to scope against.
   @@tenant(none)
@@ -3276,8 +3276,8 @@ model Notification {
   // Create is 8 and NOT 9. `9` is LOCKED — a wall `asSystem()` does not pass
   // either — so a 9 here would stop the driver from ever writing a row.
   @@gate(0.8.1.8)
-  @@allow('read',   userId == auth().id)
-  @@allow('update', userId == auth().id)
+  @@allow(read,   userId == auth().id)
+  @@allow(update, userId == auth().id)
   @@index([userId, readAt])
   @@index([createdAt])
   @@unique([userId, type, deliveryKey], nullsDistinct: true)
@@ -3316,7 +3316,7 @@ model NotificationPreference {
   // is checked BEFORE a default is stamped, so `@default(auth().id)` here would
   // grade an absent column and admit everybody.
   @@gate(1)
-  @@allow('all', userId == auth().id)
+  @@allow(all, userId == auth().id)
   @@unique([userId, kind])
   @@index([userId])
 

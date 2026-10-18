@@ -561,7 +561,7 @@ const FIELD = [
     'field',
     'protect',
     '',
-    "Encrypted at rest. Hides the value from a reader and stays WRITABLE, which is what a caller submitting a secret needs. Not a guard: the choice is @allow('write', …) for a column some callers may set, @guarded for one only asSystem() touches, and @encrypted for one anybody may write and nobody may read back.",
+    "Encrypted at rest. Hides the value from a reader and stays WRITABLE, which is what a caller submitting a secret needs. Not a guard: the choice is @allow(write, …) for a column some callers may set, @guarded for one only asSystem() touches, and @encrypted for one anybody may write and nobody may read back.",
     'ssn String @encrypted',
     { seeAlso: ['secret', 'hashed', 'guarded'] }
   ),
@@ -616,7 +616,7 @@ const FIELD = [
     'access',
     "('read'|'write'|'all', <expression>)",
     'Field-level access: the column is stripped from results, or dropped from write data, when the expression is false. Several @allow on one field OR together. asSystem() bypasses them.',
-    "salary Int @allow('read', auth().isAdmin)",
+    "salary Int @allow(read, auth().isAdmin)",
     { seeAlso: ['guarded', 'field:system', 'model:allow'] }
   ),
 
@@ -1227,9 +1227,9 @@ const MODEL = [
     'allow',
     'model',
     'access',
-    "('read'|'create'|'update'|'post-update'|'delete'|'write'|'all', <expression>[, message])",
+    "(read|create|update|postUpdate|delete|write|all, <expression>[, message])",
     "A row policy: compiled into the WHERE. Allows OR together within one operation, so a wrong policy is an empty screen with a 200 rather than an error. Membership spells as `auth().id in memberIds`, the list always the right operand. `update` grades the row as it IS, before the write, so a PATCH moving a foreign key into somebody else's parent passes a rule reading that parent; `post-update` grades the row as it WOULD BE and rolls the write back when refused. `all` includes it and `write` (create, update, delete) does not.",
-    "@@allow('read', ownerId == auth().id)",
+    "@@allow(read, ownerId == auth().id)",
     { extraFields: 'ownerId Int', seeAlso: ['deny', 'model:gate', 'model:scope'] }
   ),
   t(
@@ -1238,8 +1238,23 @@ const MODEL = [
     'access',
     "('read'|…, <expression>[, message])",
     'The other half, and it is not sugar for a negated allow: a deny cannot be widened by another rule. Row tenancy desugars into @@deny for exactly that reason.',
-    "@@deny('read', archived == true)",
+    "@@deny(read, archived == true)",
     { extraFields: 'archived Boolean @default(false)', seeAlso: ['model:allow', 'tenant'] }
+  ),
+  t(
+    'require',
+    'model',
+    'access',
+    "(create|postUpdate, <expression>[, message])",
+    "A rule about the DATA, in the policy language and graded for every writer: `asSystem()` drops a @@deny and keeps this, so a job, a webhook and a migration are refused as a member is. The expression must be TRUE for the row as it lands — an unknown (an absent claim, a null) refuses — and it may read one hop across a to-one, which is the reach @@check lacks (SQLite refuses a subquery in a CHECK). Graded in JS on the row in hand, so only create and postUpdate are legal; no `read`, `update` or `delete`, which have a WHERE and no landing row. Write the allowed case and not the forbidden one: `direction == 'inbound' || conversation.optedOutAt == null` is a consent to contact.",
+    "@@require(create, direction == 'inbound' || conversation.optedOutAt == null, 'They texted STOP.')",
+    {
+      context:
+        'model Conversation {\n  id         Int       @id @default(autoincrement())\n  optedOutAt DateTime?\n}',
+      extraFields:
+        'direction      String\n  conversationId Int\n  conversation   Conversation @relation(fields: [conversationId], references: [id])',
+      seeAlso: ['deny', 'model:check', 'exclude']
+    }
   ),
   t(
     'scope',
@@ -1701,6 +1716,7 @@ export const DOCS = {
   'field:capability': 'access-control.md',
   'model:allow': 'access-control.md',
   'model:deny': 'access-control.md',
+  'model:require': 'access-control.md',
   'model:scope': 'filtering.md',
   'model:tenant': 'multi-tenancy.md',
   'model:transitions': 'schema.md',
@@ -1811,6 +1827,7 @@ export const TIERS = {
     'model:label',
     'model:allow',
     'model:deny',
+    'model:require',
     'model:transitions',
     'model:trail',
     'model:person',
@@ -1939,7 +1956,7 @@ export const AXES = {
     'schema:tenancy', 'schema:claim', 'field:omit', 'field:guarded', 'field:system',
     'field:capability', 'field:encrypted', 'field:hashed', 'field:personal',
     'field:secret', 'field:allow', 'move:gate', 'move:system', 'model:capabilities', 'model:gate', 'model:export',
-    'model:allow', 'model:deny', 'model:scope', 'model:tenant', 'model:auth', 'model:person',
+    'model:allow', 'model:deny', 'model:require', 'model:scope', 'model:tenant', 'model:auth', 'model:person',
     'model:anonymous'
   ],
   life: [

@@ -177,13 +177,15 @@ Each scoped model gains two `@@deny` rules and a stamp — the rules you would
 otherwise write on every model by hand:
 
 ```
-@@deny('read,update,delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
-@@deny('create',             auth().workspaceId == null || (workspaceId != null && workspaceId != auth().workspaceId))
+@@deny(read, auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny(update, auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny(delete, auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny(create,             auth().workspaceId == null || (workspaceId != null && workspaceId != auth().workspaceId))
 workspaceId Int @default(auth().workspaceId)
 ```
 
 **A deny, never an `@@allow`.** Allows are OR'd within an operation, so adding
-one to a model that already declares `@@allow('read', ownerId == auth().id)`
+one to a model that already declares `@@allow(read, ownerId == auth().id)`
 would *widen* its reads to every row in the tenant. Tenancy narrows; `@@deny`
 overrides every allow and applies to a model that declares no policy at all.
 
@@ -233,7 +235,7 @@ tenant, so where every scoping relation is optional the desugar adds one more
 deny:
 
 ```
-@@deny('all', doc == null && srv == null)   // generated, "Outside your workspaceId"
+@@deny(all, doc == null && srv == null)   // generated, "Outside your workspaceId"
 ```
 
 A tenant cannot read one, create one, or detach a row into one; `asSystem()`

@@ -143,7 +143,7 @@ const TENANCY = `
 
   export async function run() {
     const env   = await createTestEnv({ schema: 'model Employee { id Int @id\\n name String }' })
-    const rows  = await env.verifyTenantIsolation({ ops: ['read', 'post-update'], actors: [{ workspaceId: 1 }, { workspaceId: 2 }] })
+    const rows  = await env.verifyTenantIsolation({ ops: ['read', 'postUpdate'], actors: [{ workspaceId: 1 }, { workspaceId: 2 }] })
     const leaks = rows.filter(r => r.got === 'leaked')
     const model: string | null = leaks[0].model
     // @ts-expect-error -- not a verdict

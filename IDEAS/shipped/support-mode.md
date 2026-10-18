@@ -162,7 +162,7 @@ the episode, and holds a permanent credential the ceiling never bounded.
 
 The second is the app's, and the mechanism ships: **a top-level `claim`.** litestone's own
 `docs/access-control.md` names an impersonation as the example of a claim that is on no
-row, so `claim support` plus `@@deny('update', auth().support)` on the app's own model is
+row, so `claim support` plus `@@deny(update, auth().support)` on the app's own model is
 the escape hatch — already parsed, already graded at startup, already a snapshot line.
 Nothing here coins a `.lite` word.
 

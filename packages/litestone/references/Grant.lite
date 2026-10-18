@@ -23,7 +23,7 @@
 ///       customerId Int
 ///       @@trait(Grant)
 ///       @@gate(4)
-///       @@allow('create', check(customer, 'update'))
+///       @@allow(create, check(customer, 'update'))
 ///     }
 ///
 /// A trait is IMPORTED where a reference model is copied: it carries no
@@ -37,8 +37,8 @@
 /// the host's own key:
 ///
 ///     claim bookingId
-///     @@allow('read',   id == auth().bookingId)
-///     @@allow('update', id == auth().bookingId)
+///     @@allow(read,   id == auth().bookingId)
+///     @@allow(update, id == auth().bookingId)
 ///
 /// The claim is minted by the app when it issues the token, lands in the
 /// session, and is what the row policy compares against. Nothing in this
@@ -49,7 +49,7 @@
 /// ─── Who may mint is the host's ──────────────────────────────────────────
 ///
 /// No `@@gate` and no policy in the trait, because the host alone knows who
-/// may issue a link: `@@allow('create', check(customer, 'update'))` on the
+/// may issue a link: `@@allow(create, check(customer, 'update'))` on the
 /// host model is that declaration, and a trait's `@@gate` would be the one in
 /// force, a second one on the host refused as a second answer. The digest is
 /// still nobody's to write by hand: junction's `bearerClaim(...).mint()` fills

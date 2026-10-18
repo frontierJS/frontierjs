@@ -10,7 +10,7 @@ import { decryptField } from './encryption.js'
 // Strip and decrypt fields according to @omit/@guarded/@encrypted/@allow rules.
 //
 // Two independent axes, AND'd: VISIBILITY (@hashed, @encrypted, @guarded, field
-// @allow('read')) — may this caller see the column at all — and INCLUSION
+// @allow(read)) — may this caller see the column at all — and INCLUSION
 // (@omit) — is it in the default payload. They compose, so `@guarded @omit(all)`
 // is system-context AND asked-for, and neither word can silently swallow the
 // other the way a chain did (`FJS-D205`).
@@ -126,7 +126,7 @@ export function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'l
     // These words answer different questions and a chain answered them as one:
     // @guarded was tested before @omit, first match won, so a column carrying
     // both came back to asSystem() in a plain read with nothing saying so, and
-    // a field @allow('read') under @guarded or @encrypted was unreachable
+    // a field @allow(read) under @guarded or @encrypted was unreachable
     // (`FJS-D205`, `FJS-827`).
     //
     //   visible  — may this caller see it at all. Strictest wins; nothing here
@@ -154,7 +154,7 @@ export function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'l
     }
 
     if (visible && !isSystem && allow?.read?.length) {
-      // Hoisted where the predicate reads only the caller. `@allow('read',
+      // Hoisted where the predicate reads only the caller. `@allow(read,
       // auth().isAdmin)` has one answer for the whole result set, and this ran
       // the interpreter once per field per ROW (`FJS-619`). The memo hangs on
       // the context, which is one principal — `$setAuth` builds a NEW ctx

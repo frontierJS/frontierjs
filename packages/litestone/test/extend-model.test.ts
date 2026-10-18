@@ -105,7 +105,7 @@ describe('extend model', () => {
     // be an empty screen with a 200 — the worst failure this repo has.
     const schema = ok(HOST + `
       extend model Session {
-        @@allow('read', userId == auth().id)
+        @@allow(read, userId == auth().id)
       }
     `)
     const allows = model(schema, 'Session').attributes.filter((a: any) => a.kind === 'allow')
@@ -144,8 +144,8 @@ describe('extend model refuses', () => {
   test('but a repeatable attribute is not a second answer', () => {
     const schema = ok(HOST + `
       extend model Session {
-        @@allow('read', userId == auth().id)
-        @@allow('delete', userId == auth().id)
+        @@allow(read, userId == auth().id)
+        @@allow(delete, userId == auth().id)
         @@index([token])
       }
     `)

@@ -43,14 +43,14 @@ const SCHEMA = `
     contactId Int
     body      String
     @@gate(0)
-    @@allow('read', contactId == auth().contactId)
+    @@allow(read, contactId == auth().contactId)
   }
   model Answer {
     id       Int    @id @default(autoincrement())
     surveyId Int
     text     String
     @@gate(0)
-    @@allow('read', surveyId == auth().surveyId)
+    @@allow(read, surveyId == auth().surveyId)
   }
 `
 

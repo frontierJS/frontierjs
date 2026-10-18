@@ -199,12 +199,12 @@ import "./user.lite"
 // one to the people `isStaff` already names. A gate is per MODEL and single, so
 // the narrowing is a policy (Invariant 6).
 extend model Flow {
-  @@deny('create', auth().isStaff != true)
+  @@deny(create, auth().isStaff != true)
 }
 
 // A claim a caller with NO SESSION holds, resolved per request off a declared
 // header. It is on no row, so `@@auth User` cannot name it, and `Cart`'s
-// `@@allow('read', id == auth().cartId)` is a policy over it. Declared here
+// `@@allow(read, id == auth().cartId)` is a policy over it. Declared here
 // rather than only at `createClient` because a tool that has the schema and not
 // the app — `fli studio`, `litestone repl` — grades the same names the app
 // does (`FJS-772`). The VALUE is still the app's, per request.
@@ -563,7 +563,7 @@ model Customer {
   ///
   /// NOT @guarded — that is a system-context lock (@guarded / @guarded),
   /// not a level, and it takes no numeric argument. @guarded(5) does not parse.
-  notes       String?    @allow('read', auth().role == 'admin')
+  notes       String?    @allow(read, auth().role == 'admin')
   
   /// The credential behind this record, once there is one.
   ///
@@ -695,10 +695,10 @@ model Customer {
   /// a verified shopper and a member of staff both grade USER(4), so the ladder
   /// cannot tell them apart and was never meant to — a gate answers *what kind
   /// of caller*, and this is *which person*.
-  @@allow('read', auth().isStaff)
+  @@allow(read, auth().isStaff)
   
   /// …and a shopper reads their own record and no other.
-  @@allow('read', userId == auth().id)
+  @@allow(read, userId == auth().id)
   
   @@softDelete
   
@@ -1294,8 +1294,8 @@ model Order {
   /// Staff read every order; a shopper reads their own. Two allows rather than
   /// one expression, because within an operation they are OR'd — and because
   /// they are two different sentences that will change at different times.
-  @@allow('read', auth().isStaff)
-  @@allow('read', userId == auth().id)
+  @@allow(read, auth().isStaff)
+  @@allow(read, userId == auth().id)
   
   /// ─── The receipt adds up ────────────────────────────────────────────────
   ///
@@ -1404,7 +1404,7 @@ model OrderLine {
   /// answerable to anyone with `curl`. Same paste as `Order` and `Customer`.
   @@gate(1.8.8.8)
   
-  @@allow('read', auth().isStaff)
+  @@allow(read, auth().isStaff)
   
   /// *The lines of my own orders*, asked of the ORDER rather than of a column
   /// here. The three copies above are facts about the moment of sale; a buyer's
@@ -1413,7 +1413,7 @@ model OrderLine {
   /// The bound is ONE hop (`FJS-D221`), which is why `Order.userId` is a
   /// denormalized copy of `Customer.userId` and has to stay one: reaching the
   /// customer from a line is two hops and is a parse error.
-  @@allow('read', order.userId == auth().id)
+  @@allow(read, order.userId == auth().id)
   
   @@softDelete
   
@@ -1554,8 +1554,8 @@ model PaymentMethod {
   /// wants rules this pass does not have — which card the default moves to, and
   /// what happens to a live subscription whose only instrument has gone.
   @@gate(1.8.8.8)
-  @@allow('read', auth().isStaff)
-  @@allow('read', userId == auth().id)
+  @@allow(read, auth().isStaff)
+  @@allow(read, userId == auth().id)
 
   @@index([customerId])
 
@@ -1685,8 +1685,8 @@ model Payment {
   /// taken cannot stop having been taken, and 9 is how that is spelt for every
   /// caller including the application itself.
   @@gate(1.8.8.9)
-  @@allow('read', auth().isStaff)
-  @@allow('read', userId == auth().id)
+  @@allow(read, auth().isStaff)
+  @@allow(read, userId == auth().id)
   @@trail(audit)
 }
 
@@ -1898,10 +1898,10 @@ model Subscription {
   /// and the one move a subscriber makes for themselves is cancelling, which
   /// the policy below scopes to their own row.
   @@gate(1.4.4.5)
-  @@allow('read',   auth().isStaff)
-  @@allow('read',   userId == auth().id)
-  @@allow('update', auth().isStaff)
-  @@allow('update', userId == auth().id)
+  @@allow(read,   auth().isStaff)
+  @@allow(read,   userId == auth().id)
+  @@allow(update, auth().isStaff)
+  @@allow(update, userId == auth().id)
 
   /// The moves, and every one of them is the ENGINE's — which is what `@system`
   /// says, and it is a different sentence from a gate set high (`FJS-D150`): a
@@ -1976,9 +1976,9 @@ model SubscriptionPeriod {
   /// and updated at 7, which is the shop's own principal making the move a
   /// fire makes. Every column a caller could name is `@system` or frozen.
   @@gate(1.8.7.8)
-  @@allow('read',   auth().isStaff)
-  @@allow('read',   userId == auth().id)
-  @@allow('update', auth().isStaff)
+  @@allow(read,   auth().isStaff)
+  @@allow(read,   userId == auth().id)
+  @@allow(update, auth().isStaff)
 
   @@transitions(status, close: open -> closed @system)
   @@commitment(close, on: endsOn)
@@ -2122,10 +2122,10 @@ model Invoice {
   /// this policy. A draft exists only inside that transaction and its one move
   /// is `@system`, so this admits nothing a request can ask for.
   @@gate(1.8.4.8)
-  @@allow('read',   auth().isStaff)
-  @@allow('read',   userId == auth().id)
-  @@allow('update', auth().isStaff)
-  @@allow('update', userId == auth().id && status == 'draft')
+  @@allow(read,   auth().isStaff)
+  @@allow(read,   userId == auth().id)
+  @@allow(update, auth().isStaff)
+  @@allow(update, userId == auth().id && status == 'draft')
 
   /// The one-row half of the receipt identity. The other half — that the lines
   /// sum to `subtotal` — is the cross-row invariant this language cannot state.
@@ -2201,8 +2201,8 @@ model InvoiceLine {
   userId      String?  @system
 
   @@gate(1.8.8.8)
-  @@allow('read', auth().isStaff)
-  @@allow('read', userId == auth().id)
+  @@allow(read, auth().isStaff)
+  @@allow(read, userId == auth().id)
 
   /// Every read of this table is "the lines of one invoice" —
   /// `invoices.get(id)` composes the header with them.
@@ -2226,8 +2226,8 @@ model CreditNote {
   userId     String?   @system
 
   @@gate(1.8.8.8)
-  @@allow('read', auth().isStaff)
-  @@allow('read', userId == auth().id)
+  @@allow(read, auth().isStaff)
+  @@allow(read, userId == auth().id)
 
   /// What has been credited back against one invoice. `Restrict`, so it is also
   /// the check that runs before an invoice can be removed.
@@ -2285,7 +2285,7 @@ model Cart {
   /// reprice history.
   ///
   /// Both are `@system`. The basket's own policy lets its holder update it —
-  /// `@@allow('update', id == auth().cartId)` — which is what makes the
+  /// `@@allow(update, id == auth().cartId)` — which is what makes the
   /// quantity stepper work without a session, and it would just as happily let
   /// them point `discountId` at any row in the table. So neither is set by a
   /// write: `carts.applyDiscount` takes a CODE and validates it, and
@@ -2331,8 +2331,8 @@ model Cart {
   /// basket is abandoned by the sweep, not removed by its holder.
   @@gate(0.0.0.5)
 
-  @@allow('read',   id == auth().cartId)
-  @@allow('update', id == auth().cartId)
+  @@allow(read,   id == auth().cartId)
+  @@allow(update, id == auth().cartId)
 
   /// Neither is a lookup anybody performs — a basket reaches its discount and
   /// its delivery method by primary key. Both are `SetNull`, which is the read
@@ -2426,10 +2426,10 @@ model CartLine {
   /// basket's id now, so the column the policy needs is the foreign key that
   /// was always there.
   @@gate(0.0.0.0)
-  @@allow('read',   cartId == auth().cartId)
-  @@allow('create', cartId == auth().cartId)
-  @@allow('update', cartId == auth().cartId)
-  @@allow('delete', cartId == auth().cartId)
+  @@allow(read,   cartId == auth().cartId)
+  @@allow(create, cartId == auth().cartId)
+  @@allow(update, cartId == auth().cartId)
+  @@allow(delete, cartId == auth().cartId)
 }
 
 /// What `carts.checkout` accepts. A basket knows what is in it; it does not
@@ -2498,7 +2498,7 @@ enum StockMovementKind { received sold returned adjusted damaged }
 /// It would fit there — a line already names a variant and a quantity, and an
 /// `heldUntil` column would have been three characters of schema. It is wrong
 /// for one reason and the reason is a POLICY: CartLine is scoped by the
-/// shopper's own basket (`@@allow('read', cartId == auth().cartId)`), and
+/// shopper's own basket (`@@allow(read, cartId == auth().cartId)`), and
 /// availability is a sum over *everybody's* holds. Summing CartLine from a
 /// shopper's own client answers a sum over their own basket — a number that is
 /// always plausible, usually zero, and never the one asked for. It is the exact
@@ -3516,8 +3516,8 @@ model Notification {
   /// so a 9 here would stop the driver from ever writing a row. Update is 4
   /// so a signed-in user can mark their own as read; delete is SYSTEM.
   @@gate(0.8.4.8)
-  @@allow('read',   userId == auth().id)
-  @@allow('update', userId == auth().id)
+  @@allow(read,   userId == auth().id)
+  @@allow(update, userId == auth().id)
 }
 
 // ─── What is NOT in this file ─────────────────────────────────────────────
@@ -3551,7 +3551,7 @@ model User {
   // account taken over by whoever holds a session, with `emailVerified` still
   // true for an address nobody proved; a new one has to be verified before it
   // is kept, and a flow that does that writes through asSystem().
-  email          String    @email @unique @lower @allow('write', auth().isAdmin) @personal(contact)
+  email          String    @email @unique @lower @allow(write, auth().isAdmin) @personal(contact)
   name           String?   @trim @personal(contact)
   // The columns a caller must not write about themselves. role is what an
   // app's own resolver grades on, and marking your own address verified is
@@ -3560,8 +3560,8 @@ model User {
   // so the level that may delete a person is the level that may set their role
   // — one idea, not two. asSystem() writes all of them regardless, which is how
   // this package sets them.
-  emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
-  role           String    @default("user") @allow('write', auth().isAdmin)
+  emailVerified  Boolean   @default(false) @allow(write, auth().isAdmin)
+  role           String    @default("user") @allow(write, auth().isAdmin)
   // Written once by the app, never by the caller. A person who could mark
   // themselves a bot would refile who did what, and a later change would make
   // every past entry's actorType disagree with the row.
@@ -3587,7 +3587,7 @@ model User {
   // asSystem(), which is above the ladder. Every model in auth.lite stays at 8
   // — they hold the credential material, and that is the case 8 is for.
   @@gate(4.4.4.5)
-  @@allow('update', id == auth().id || auth().isAdmin)
+  @@allow(update, id == auth().id || auth().isAdmin)
   @@trail(audit)
 
   // The principal `auth()` reads. Declaring it is what makes a claim GRADED:

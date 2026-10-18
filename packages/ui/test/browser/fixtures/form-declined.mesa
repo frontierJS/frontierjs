@@ -1,7 +1,7 @@
 <script>
   // form-declined.mesa — the write that succeeded and kept a column.
   //
-  // A field `@allow('write', …)` is a predicate over the caller AND the row, so
+  // A field `@allow(write, …)` is a predicate over the caller AND the row, so
   // the Data boundary answers it by keeping the stored value: the write
   // succeeds, every other column lands, nothing throws. That is deliberate —
   // the same payload is legitimate for somebody else — and it means there is no
@@ -15,7 +15,7 @@
   import Form from '../../../components/forms/Form.mesa'
   import { formFieldList, coerceToSchema, declinedFields } from '@frontierjs/sierra/field-rules'
 
-  // The shape litestone emits for `isStaff Boolean @allow('write', auth().isAdmin)`
+  // The shape litestone emits for `isStaff Boolean @allow(write, auth().isAdmin)`
   // — which is `example/db/user.lite`, verbatim. Note what is NOT here:
   // `readOnly`. The column is writable by SOME callers, so nothing on this
   // schema can switch the box off.

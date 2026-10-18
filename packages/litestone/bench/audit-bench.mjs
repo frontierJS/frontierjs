@@ -238,7 +238,7 @@ await run('baseline', async () => {
   db.$close()
 })
 
-// ── 12. M7: a field @allow('read') that reads only the caller ───────────────
+// ── 12. M7: a field @allow(read) that reads only the caller ───────────────
 // `auth().isAdmin` has one answer for the whole result set; `ownerId == auth().id`
 // has one per row. Both are a single compare through the same interpreter, so the
 // second is a fair stand-in for what the first cost before it was hoisted
@@ -252,8 +252,8 @@ model Doc {
   ownerId Int
   a String${extra} b String${extra} c String${extra} d String${extra}
 }`
-  const rowFree = `  @allow('read', auth().isAdmin)`
-  const perRow  = `  @allow('read', ownerId == auth().id)`
+  const rowFree = `  @allow(read, auth().isAdmin)`
+  const perRow  = `  @allow(read, ownerId == auth().id)`
   const seed = (db) => db.asSystem().doc.createMany({ data: Array.from({ length: 5000 },
     (_, i) => ({ id: i + 1, ownerId: (i % 50) + 1, a: 'a', b: 'b', c: 'c', d: 'd' })) })
 

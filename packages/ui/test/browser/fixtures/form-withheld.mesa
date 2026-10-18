@@ -1,7 +1,7 @@
 <script>
   // form-withheld.mesa — a column the server did not send.
   //
-  // A field `@allow('read', …)` is enforced by STRIPPING the key, not by
+  // A field `@allow(read, …)` is enforced by STRIPPING the key, not by
   // nulling it. Measured against `example`'s `Customer.notes`: an admin reading
   // a customer with a note gets the text, an admin reading one without gets
   // `null`, and everybody else gets NO KEY, both times. So *there is nothing
@@ -22,7 +22,7 @@
     from '@frontierjs/sierra/field-rules'
 
   // The shape litestone emits for
-  //   notes String? @allow('read', auth().role == 'admin')
+  //   notes String? @allow(read, auth().role == 'admin')
   const MODEL = {
     type: 'object',
     properties: {

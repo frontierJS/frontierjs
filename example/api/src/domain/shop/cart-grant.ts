@@ -2,7 +2,7 @@
 //
 // A shopper is a STRANGER: no account, no session, level 0. They still have to
 // be the only person who can see their own basket, and `Cart`'s policies say so
-// in the schema — `@@allow('read', id == auth().cartId)`. Something has to put
+// in the schema — `@@allow(read, id == auth().cartId)`. Something has to put
 // `cartId` on the principal for a caller who has no principal, and `bearerClaim`
 // is that something; what lives here is the half that is this shop's: which
 // header carries the token, what the digest is separated by, and how a grant is

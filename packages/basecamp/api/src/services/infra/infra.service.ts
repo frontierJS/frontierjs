@@ -199,7 +199,7 @@ export default createService({
     // and the answer would not be 0 — it would be a refusal. `Secret` and
     // `Invitation` are @@gate(5), so a developer asking *does this
     // workspace have an SSH key* throws; `WorkspaceMember` reads only the
-    // caller's OWN rows (@@allow('read', userId == auth().id)), so the
+    // caller's OWN rows (@@allow(read, userId == auth().id)), so the
     // count is 1 for everybody. What crosses is a COUNT of rows in the
     // workspace the caller is already in, never a row — the screen this
     // feeds is the one a new viewer opens first.

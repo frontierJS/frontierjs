@@ -90,13 +90,13 @@ model Account {
   @@db(main)
   @@index([slug])
   @@gate(2.5.5.6)
-  @@allow('read', auth() != null)
+  @@allow(read, auth() != null)
 }
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 // Demonstrates:
 //   @@allow / @@deny   — row-level access policy
-//   @allow('read')     — field-level: salary only visible to admins
+//   @allow(read)     — field-level: salary only visible to admins
 //   @secret            — encrypted + guarded + recorded in the audit trail (via @trail(audit))
 //   @@trail(audit)       — model-level audit trail: create/update/delete
 
@@ -110,7 +110,7 @@ model User {
   displayName String    @fullName(firstName, lastName)
   initials    String    @initials(firstName, lastName)
   role        Role      @default(member)
-  salary      Float?    @allow('read', auth().role == 'admin')
+  salary      Float?    @allow(read, auth().role == 'admin')
   apiKey      String?   @secret
   prefs       Json?
   createdAt   DateTime  @default(now())
@@ -122,9 +122,9 @@ model User {
   @@index([email])
   @@index([displayName])
   @@gate(2.4.4.6)
-  @@allow('read',   accountId == auth().accountId)
-  @@allow('update', id == auth().id || auth().role == 'admin')
-  @@allow('delete', auth().role == 'admin')
+  @@allow(read,   accountId == auth().accountId)
+  @@allow(update, id == auth().id || auth().role == 'admin')
+  @@allow(delete, auth().role == 'admin')
   @@trail(audit)
 }
 
@@ -147,7 +147,7 @@ model Product {
   @@index([slug])
   @@index([salePrice])
   @@gate(1.4.4.6)
-  @@allow('read', true)
+  @@allow(read, true)
 }
 
 // ─── Leads ────────────────────────────────────────────────────────────────────
@@ -173,10 +173,10 @@ model Lead {
   @@index([status])
   @@index([fullName])
   @@gate(3.3.4.6)
-  @@allow('read',   accountId == auth().accountId)
-  @@allow('create', accountId == auth().accountId)
-  @@allow('update', accountId == auth().accountId)
-  @@deny('update',  status == 'archived')
+  @@allow(read,   accountId == auth().accountId)
+  @@allow(create, accountId == auth().accountId)
+  @@allow(update, accountId == auth().accountId)
+  @@deny(update,  status == 'archived')
 }
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ model Message {
   @@index([accountId])
   @@index([channel])
   @@gate(2.4.4.5)
-  @@allow('read', accountId == auth().accountId)
+  @@allow(read, accountId == auth().accountId)
 }
 
 // ─── Analytics — separate SQLite database ─────────────────────────────────────
@@ -223,8 +223,8 @@ model PageView {
   @@index([path])
   @@index([accountId])
   @@index([createdAt])
-  @@allow('read',   auth() != null)
-  @@allow('create', true)
+  @@allow(read,   auth() != null)
+  @@allow(create, true)
 }
 
 model DailyStat {
@@ -241,7 +241,7 @@ model DailyStat {
   // equal — so the per-account pair is constrained and the global row is not.
   @@unique([date, accountId], nullsDistinct: true)
   @@index([date])
-  @@allow('read', auth() != null)
+  @@allow(read, auth() != null)
 }
 
 // ─── Request log — its own SQLite database ────────────────────────────────────

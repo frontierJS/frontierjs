@@ -195,7 +195,7 @@ audit trail and the gate like every other refusal.
 
 - **A cookie does not cross to a third-party domain.** The visitor identity is a
   minted token the transcript's own policy checks, which is `cartToken`'s shape
-  exactly (`@@allow('read', token == auth().cartToken)`), not a bearer credential
+  exactly (`@@allow(read, token == auth().cartToken)`), not a bearer credential
   handed to a page the app does not control — `IDEAS/bearer-access.md` and the
   off-origin finding behind `FJS-D204` are the reasons to state this once here.
 - **Rate limiting is per visitor and per origin**, and the origin is the only one

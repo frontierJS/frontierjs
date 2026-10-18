@@ -51,7 +51,7 @@ model Book {
   @@softDelete
   @@check("pages >= 0", "a book has pages")
   @@transitions(status, draft -> published)
-  @@allow('read', auth().id == ownerId)
+  @@allow(read, auth().id == ownerId)
   @@gate(0)
 }`
 

@@ -21,7 +21,7 @@
  *     refused.
  *
  *   · **A field write policy DECLINING in silence.** `isStaff` is
- *     `@allow('write', auth().isAdmin)`, which compiles to
+ *     `@allow(write, auth().isAdmin)`, which compiles to
  *     `SET col = CASE WHEN … THEN ? ELSE col END`. A non-admin sending
  *     `isStaff: true` on their own row is answered **200 with the column
  *     unchanged**: no error, no field message, nothing a form can render. It is
@@ -33,7 +33,7 @@
  *     account — the other half is a `Credential`, which only @frontierjs/auth
  *     writes — so the drive asserts the new address cannot sign in, and that an
  *     invitation reached the outbox. The authority is
- *     `@@allow('create', auth().isAdmin)`, and create is the one operation
+ *     `@@allow(create, auth().isAdmin)`, and create is the one operation
  *     where a policy THROWS rather than filtering, so a shopper is refused by
  *     name where a read would have been an empty list.
  *

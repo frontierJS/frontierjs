@@ -125,7 +125,7 @@ const _CARRIED = [
   // is *not unconditionally required*, so a form that never asked would behave
   // exactly as it did before.
   'x-litestone-required-where',
-  // `x-litestone-write-policy` is a field `@allow('write', …)`: whether this
+  // `x-litestone-write-policy` is a field `@allow(write, …)`: whether this
   // caller may write this column depends on the CALLER and the ROW, so no
   // keyword on the schema can answer it and the boundary answers it by DROPPING
   // the value rather than refusing — silently and correctly, because the same
@@ -145,7 +145,7 @@ const _CARRIED = [
   // other value is `auth().<claim> == value` (`FJS-D578`). Present only when
   // the whole predicate is of that shape, so `refusedFor` may disable on it.
   'x-litestone-write-claims',
-  // `x-litestone-read-policy` is a field `@allow('read', …)`: whether this
+  // `x-litestone-read-policy` is a field `@allow(read, …)`: whether this
   // column ARRIVES depends on the caller and the row, and when the policy
   // refuses the key is not null — it is ABSENT (measured: an admin reading a
   // note gets the text and an admin reading a row with none gets `null`, while
@@ -1446,7 +1446,7 @@ export function buildTransitions(schema) {
  * ── It is the GATE half of litestone's answer, and only that half ────────────
  *
  * `db.<model>.transitions(row)` grades a row POLICY too, since a move is an
- * update and an `@@allow('update', …)` refuses one exactly as a gate does
+ * update and an `@@allow(update, …)` refuses one exactly as a gate does
  * (`FJS-495`). Nothing here can: a policy is compiled to SQL or evaluated
  * against the row by litestone's own JS evaluator, and neither exists in a
  * browser — which is why `x-transitions` carries the gate and not the
@@ -2209,7 +2209,7 @@ export function requiredFor(rule, record, mode) {
 /**
  * Which of the columns this write SENT did the boundary decline to write.
  *
- * A field `@allow('write', …)` is a predicate over the caller and the row, and
+ * A field `@allow(write, …)` is a predicate over the caller and the row, and
  * the Data boundary answers it by keeping the stored value: the write succeeds,
  * every other column lands, and the one the predicate refused comes back as it
  * was. That is deliberate and stays — the same payload is legitimate for
@@ -2239,7 +2239,7 @@ export function requiredFor(rule, record, mode) {
  * compares unequal by reference for reasons that have nothing to do with a
  * policy, and a `Json` column would report on every save.
  *
- * A column ABSENT from the answer is not a decline: that is `@allow('read', …)`
+ * A column ABSENT from the answer is not a decline: that is `@allow(read, …)`
  * on the same column, or a narrow `select`, and neither says anything about the
  * write.
  *
@@ -2272,7 +2272,7 @@ export function declinedFields(fields, sent, saved) {
 /**
  * Which columns this caller was not allowed to READ.
  *
- * A field `@allow('read', …)` is enforced by STRIPPING the key, so a refused
+ * A field `@allow(read, …)` is enforced by STRIPPING the key, so a refused
  * read and an empty column are the same answer to every reader that tests the
  * value — and a generated form then offers an ordinary empty box for a note it
  * is not allowed to see. Typing in that box overwrites what is there, unseen:

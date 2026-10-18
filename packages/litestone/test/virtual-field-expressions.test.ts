@@ -5,9 +5,9 @@
 // string literal. Beside `adults Int @from(Assignment, count: true)`:
 //   - `@derived(adults < 1)` read false on a shift with no adults while
 //     `where: { noAdults: true }` found it;
-//   - `@@allow('update', adults > 0)` let `updateMany` and `count` through on
+//   - `@@allow(update, adults > 0)` let `updateMany` and `count` through on
 //     every row, since `'adults' > 0` is true;
-//   - `@@allow('read', event.enrolled > 4)` built and answered every read
+//   - `@@allow(read, event.enrolled > 4)` built and answered every read
 //     with a raw `no such column`, and `@@scope` the same at `$scope`;
 //   - `@@check("adults >= 1")` parsed valid and died on the build.
 // Each is refused by name before a query runs.
@@ -52,11 +52,11 @@ describe('a @derived naming a field with no column', () => {
 
 describe('a policy naming a field with no column', () => {
   test('refuses @@allow naming a @from on its own model', async () => {
-    await expect(build(schema(`@@allow('update', adults > 0)`)))
+    await expect(build(schema(`@@allow(update, adults > 0)`)))
       .rejects.toThrow(/Shift: 'adults' is @from, so there is no column to compare — in @@allow\/@@deny/)
   })
   test('refuses @@allow naming a @from across a hop', async () => {
-    await expect(build(schema(`@@allow('read', event.enrolled > 4)`)))
+    await expect(build(schema(`@@allow(read, event.enrolled > 4)`)))
       .rejects.toThrow(/Shift: 'event\.enrolled' is @from on Event, so there is no column to correlate on/)
   })
   test('refuses @@scope naming a @from across a hop', async () => {
@@ -64,7 +64,7 @@ describe('a policy naming a field with no column', () => {
       .rejects.toThrow(/'event\.enrolled' is @from on Event.*@@scope\(busy/)
   })
   test('accepts a policy over stored columns, here and across the hop', async () => {
-    const db: any = await build(schema(`@@allow('read', eventId > 0 && event.title != null)`))
+    const db: any = await build(schema(`@@allow(read, eventId > 0 && event.title != null)`))
     db.$close()
   })
 })

@@ -26,7 +26,7 @@ model Team {
   id      String  @id
   ownerId String
   issues  Issue[]
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }
 
 model Issue {
@@ -36,7 +36,7 @@ model Issue {
   title       String
   description String?
   comments    Comment[]
-  @@allow('read', check(team))
+  @@allow(read, check(team))
   @@fts([title, description])
   @@label(title)
 }
@@ -47,7 +47,7 @@ model Comment {
   issue   Issue  @relation(fields: [issueId], references: [id])
   author  String
   body    String
-  @@allow('read', check(issue))
+  @@allow(read, check(issue))
   @@fts([body])
   @@label(author)
 }

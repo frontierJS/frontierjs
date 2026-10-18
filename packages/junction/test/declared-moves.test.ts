@@ -29,10 +29,10 @@ model Todo {
   title   String    @default("t")
   ownerId String
   status  TodoState @default(open)
-  @@allow('read',   ownerId == auth().id || auth().isStaff)
-  @@allow('create', auth() != null)
-  @@allow('update', ownerId == auth().id)
-  @@allow('delete', ownerId == auth().id)
+  @@allow(read,   ownerId == auth().id || auth().isStaff)
+  @@allow(create, auth() != null)
+  @@allow(update, ownerId == auth().id)
+  @@allow(delete, ownerId == auth().id)
   @@transitions(status,
     complete: open -> done,
     reopen:   done -> open,
@@ -259,7 +259,7 @@ enum ProjectState { active  archived }
 model Project {
   id     Int          @id @default(autoincrement())
   status ProjectState @default(active)
-  @@allow('all', true)
+  @@allow(all, true)
   @@transitions(status, archive: active -> archived, ${inverse}: archived -> active)
   @@db(main)
 }

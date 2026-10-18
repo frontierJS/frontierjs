@@ -780,7 +780,7 @@ describe('the gate ladder', () => {
 // are others, and none of them runs it.
 //
 // Driven rather than described, and the first version of this was GREEN against
-// a policy that did nothing. `role @allow('write', userId != auth().id)` reads
+// a policy that did nothing. `role @allow(write, userId != auth().id)` reads
 // like the rule and is not one: a field write policy is evaluated against the
 // PAYLOAD, so `userId` is undefined in a patch of `{ role }`, the comparison is
 // true and the column is permitted (`FJS-433`). The rule that works is a

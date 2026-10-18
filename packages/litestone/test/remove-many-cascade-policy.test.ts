@@ -16,10 +16,10 @@ model Folder {
   ownerId   Int
   docs      Doc[]
   deletedAt DateTime?
-  @@allow('read', true)
-  @@allow('create', true)
-  @@allow('update', true)
-  @@allow('delete', ownerId == auth().id)
+  @@allow(read, true)
+  @@allow(create, true)
+  @@allow(update, true)
+  @@allow(delete, ownerId == auth().id)
   @@softDelete(cascade)
 }
 model Doc {
@@ -27,7 +27,7 @@ model Doc {
   folder    Folder    @relation(fields: [folderId], references: [id])
   folderId  Int
   deletedAt DateTime?
-  @@allow('all', true)
+  @@allow(all, true)
   @@softDelete
 }`
 

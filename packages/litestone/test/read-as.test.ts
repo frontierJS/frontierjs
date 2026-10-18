@@ -21,12 +21,12 @@ model Order {
   id         Int     @id @default(autoincrement())
   reference  String
   total      Int
-  margin     Int?    @allow('read', auth().isStaff == true)
+  margin     Int?    @allow(read, auth().isStaff == true)
   internal   String? @guarded
   userId     String?
   @@gate(1.4.4.5)
-  @@allow('read', auth().isStaff == true)
-  @@allow('read', userId == auth().id)
+  @@allow(read, auth().isStaff == true)
+  @@allow(read, userId == auth().id)
 }
 
 // Reads at 0, no policy, no field rule — nothing to grade.
@@ -54,13 +54,13 @@ model Ledger {
 model Note {
   id     Int     @id @default(autoincrement())
   userId String?
-  @@allow('read', userId == auth().id)
+  @@allow(read, userId == auth().id)
 }
 
 model Draft {
   id     Int     @id @default(autoincrement())
   hidden Boolean @default(false)
-  @@deny('read', hidden == true)
+  @@deny(read, hidden == true)
 }
 
 // Read is on the grid and on nothing else: no gate, no policy. Each verb is a
@@ -248,7 +248,7 @@ model Workspace {
   id      Int    @id @default(autoincrement())
   ownerId String
   pages   Page[]
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }
 
 model Page {
@@ -258,7 +258,7 @@ model Page {
   ownerId     String
   shares      Share[]
   blocks      Block[]
-  @@allow('read', ownerId == auth().id || shares.some(userId == auth().id) || workspace.ownerId == auth().id)
+  @@allow(read, ownerId == auth().id || shares.some(userId == auth().id) || workspace.ownerId == auth().id)
 }
 
 model Share {
@@ -272,7 +272,7 @@ model Block {
   id     Int  @id @default(autoincrement())
   pageId Int
   page   Page @relation(fields: [pageId], references: [id])
-  @@allow('read', check(page))
+  @@allow(read, check(page))
 }
 
 model Tag {

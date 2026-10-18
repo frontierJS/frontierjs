@@ -82,6 +82,16 @@ out/                  build output, not source
   dependency — which is why adding this changed nothing in `exports.snapshot.md`.
   A checkout whose litestone predates the catalog falls back to a short built-in
   list rather than failing to start.
+- **A document is parsed by the APP's litestone, the bundle is the fallback**
+  (`FJS-1404`). An install's bundle is frozen at its build and its version
+  never moved, so an old install called correct schemas broken. `parserFor()`
+  walks up from the document to the nearest
+  `node_modules/@frontierjs/litestone/src/core/parser.js` and imports it once
+  per realpath — the Mesa client's opaque dynamic import, since `exports` has
+  only an `import` condition and `require.resolve` misses it. Only `parse` and
+  the import splice move over; the lexer and the catalog stay the bundle's. The
+  Output channel says which parser each app got, and an edit to a linked
+  litestone is read on the server's next start.
 - **`ATTR_DOCS` still wins on hover where it has an entry** — it is longer, has
   worked examples and explains the reasoning. The catalog is what the other 29
   words get, which is the difference between hovering `@system` and hovering

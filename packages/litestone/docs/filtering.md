@@ -68,14 +68,14 @@ model Doc {
   id    Int    @id
   owner String @hashed
 
-  @@allow('read', owner == auth().email)
+  @@allow(read, owner == auth().email)
 }
 
 model Invoice {
   id        Int @id
   accountId Int
 
-  @@allow('read', accountId == auth().accountId)
+  @@allow(read, accountId == auth().accountId)
 }
 
 model Product {
@@ -367,10 +367,10 @@ await createClient({ db: ':memory:', encryptionKey: 'a'.repeat(64), schema: `
   model Doc {
     id    Int    @id
     owner String @encrypted
-    @@allow('read', owner == auth().email)
+    @@allow(read, owner == auth().email)
   }
 ` })
-// Error: Doc: the @@allow('read', …) policy compares a value no row can
+// Error: Doc: the @@allow(read, …) policy compares a value no row can
 // satisfy, so every caller would read this model as empty — "owner" is
 // @encrypted under a random IV, so the same value stores different bytes on
 // every write and no operand can be encoded to match it — declare it
@@ -389,7 +389,7 @@ model Doc {
   id    Int    @id
   owner String @hashed
 
-  @@allow('read', owner == auth().email)
+  @@allow(read, owner == auth().email)
 }
 ```
 
@@ -402,8 +402,8 @@ policy that matches nothing reads as a table with no data:
 | any operator but `==` / `!=` | both encodings preserve equality and nothing else |
 | column compared to column | neither side is a value the policy can encode |
 
-`@@allow('create', …)` is exempt — it is evaluated in JS against the data as
-written, which is still plaintext. `@@allow('post-update', …)` is refused
+`@@allow(create, …)` is exempt — it is evaluated in JS against the data as
+written, which is still plaintext. `@@allow(postUpdate, …)` is refused
 instead: it reads the row back through the field policy, which strips an
 encrypted column, so the comparison would deny every write.
 
@@ -427,7 +427,7 @@ When using `$setAuth(user)`, `@@allow` and `@@deny` policies are automatically i
 ```js
 const userDb = db.$setAuth({ id: 1, accountId: 5, role: 'member' })
 
-// @@allow('read', accountId == auth().accountId) → WHERE "accountId" = 5
+// @@allow(read, accountId == auth().accountId) → WHERE "accountId" = 5
 const mine = await userDb.invoice.findMany()
 
 // Bypass all policies

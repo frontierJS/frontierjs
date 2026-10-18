@@ -1,9 +1,9 @@
 /**
  * test/withheld-read.test.js — a column the server did not send.
  *
- * A field `@allow('read', …)` is enforced by STRIPPING the key, which is the
+ * A field `@allow(read, …)` is enforced by STRIPPING the key, which is the
  * one fact the whole reader turns on. Measured against `example`'s
- * `Customer.notes @allow('read', auth().role == 'admin')`, through a real
+ * `Customer.notes @allow(read, auth().role == 'admin')`, through a real
  * litestone client over a real database:
  *
  *   admin, row has a note   → key present, value 'SECRET staff note'
@@ -26,7 +26,7 @@
 import { describe, test, expect } from 'vitest'
 import { buildFieldRules, withheldFields } from '../src/resource/field-rules.js'
 
-// The shape litestone emits for a field `@allow('read', …)`. `notes` is the
+// The shape litestone emits for a field `@allow(read, …)`. `notes` is the
 // policed one; `name` is the control, and it is the whole reason the flag is
 // carried — without it these two columns are indistinguishable from here.
 const MODEL = {

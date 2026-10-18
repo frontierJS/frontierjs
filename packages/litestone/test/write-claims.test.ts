@@ -1,4 +1,4 @@
-// A field `@allow('write', auth().isStaff)` crosses to the client as the claims
+// A field `@allow(write, auth().isStaff)` crosses to the client as the claims
 // the caller must hold, beside the bit (`FJS-1671`, `FJS-D578`).
 //
 // The subset is `auth().<claim>` truthiness, `auth().<claim> == <literal>` and
@@ -14,18 +14,18 @@ const SRC = `
 model Thing {
   id       Int     @id
   ownerId  Int
-  staff    String  @allow('write', auth().isStaff)
-  litTrue  String  @allow('write', auth().isStaff == true)
-  staffRo  String? @allow('all',   auth().isStaff)
-  staffReq String  @allow('all',   auth().isStaff)
-  kind     String  @allow('write', auth().role == 'admin' && auth().isStaff)
-  flipped  String  @allow('write', 'admin' == auth().role)
-  mine     String  @allow('write', ownerId == auth().id)
-  mixed    String  @allow('write', auth().isStaff && ownerId == auth().id)
-  either   String  @allow('write', auth().isStaff || auth().isAdmin)
-  notEq    String  @allow('write', auth().role != 'guest')
-  signedIn String  @allow('write', auth() != null)
-  twice    String  @allow('write', auth().isStaff) @allow('write', auth().isAdmin)
+  staff    String  @allow(write, auth().isStaff)
+  litTrue  String  @allow(write, auth().isStaff == true)
+  staffRo  String? @allow(all,   auth().isStaff)
+  staffReq String  @allow(all,   auth().isStaff)
+  kind     String  @allow(write, auth().role == 'admin' && auth().isStaff)
+  flipped  String  @allow(write, 'admin' == auth().role)
+  mine     String  @allow(write, ownerId == auth().id)
+  mixed    String  @allow(write, auth().isStaff && ownerId == auth().id)
+  either   String  @allow(write, auth().isStaff || auth().isAdmin)
+  notEq    String  @allow(write, auth().role != 'guest')
+  signedIn String  @allow(write, auth() != null)
+  twice    String  @allow(write, auth().isStaff) @allow(write, auth().isAdmin)
   plain    String
 }
 `

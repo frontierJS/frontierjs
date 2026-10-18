@@ -30,8 +30,8 @@ model User {
   id     Int    @id
   email  String @unique
   role   Role   @default(viewer)
-  salary Float? @allow('read',  auth().role == 'admin')   // absent unless admin
-  notes  String? @allow('write', auth().role == 'admin')  // read-only unless admin
+  salary Float? @allow(read,  auth().role == 'admin')   // absent unless admin
+  notes  String? @allow(write, auth().role == 'admin')  // read-only unless admin
 
   @@auth
   @@gate(0)                                              // public; the field rules above narrow it
@@ -52,11 +52,11 @@ model Post {
   @@gate(1.3.4.5)
 
   // Row policies: published posts visible to all; drafts only to author or admin
-  @@allow('read',   status == 'published' || authorId == auth().id || auth().role == 'admin')
-  @@allow('create', auth() != null)
-  @@allow('update', authorId == auth().id || auth().role == 'admin')
-  @@deny('update',  status == 'archived')            // archived posts are immutable
-  @@allow('delete', auth().role == 'admin')           // only admins can delete
+  @@allow(read,   status == 'published' || authorId == auth().id || auth().role == 'admin')
+  @@allow(create, auth() != null)
+  @@allow(update, authorId == auth().id || auth().role == 'admin')
+  @@deny(update,  status == 'archived')            // archived posts are immutable
+  @@allow(delete, auth().role == 'admin')           // only admins can delete
 }
 ```
 
@@ -195,9 +195,9 @@ const row = await db.$setAuth(viewer).user.update({ where: { id: viewer.id }, da
 if (row.notes !== null) throw new Error('a viewer wrote notes')
 ```
 
-A field `@allow('read', …)` the caller fails is **omitted** from the row — the
+A field `@allow(read, …)` the caller fails is **omitted** from the row — the
 key is absent, not `null`, so a reader can tell *hidden* from *empty*. A field
-`@allow('write', …)` the caller fails drops that key from the payload silently,
+`@allow(write, …)` the caller fails drops that key from the payload silently,
 because the same form body is legitimate for someone else. Neither throws.
 
 ---
@@ -227,10 +227,10 @@ model Comment {
   ownerId Int    @default(auth().id)
   body    String
 
-  @@allow('read', true)              // anyone can read
-  @@allow('create', auth() != null)  // must be logged in to write
-  @@allow('update', ownerId == auth().id)
-  @@allow('delete', ownerId == auth().id)
+  @@allow(read, true)              // anyone can read
+  @@allow(create, auth() != null)  // must be logged in to write
+  @@allow(update, ownerId == auth().id)
+  @@allow(delete, ownerId == auth().id)
 }
 ```
 
@@ -251,10 +251,10 @@ model Task {
   id     Int @id
   teamId Int
 
-  @@allow('read',   teamId == auth().teamId)
-  @@allow('create', teamId == auth().teamId)
-  @@allow('update', teamId == auth().teamId)
-  @@allow('delete', teamId == auth().teamId)
+  @@allow(read,   teamId == auth().teamId)
+  @@allow(create, teamId == auth().teamId)
+  @@allow(update, teamId == auth().teamId)
+  @@allow(delete, teamId == auth().teamId)
 }
 ```
 

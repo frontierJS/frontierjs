@@ -13,7 +13,7 @@ afterEach(() => { process.exitCode = 0 })
 
 function freePort() {
   const s = Bun.serve({ port: 0, fetch: () => new Response() })
-  const port = s.port
+  const port = s.port!
   s.stop(true)
   return port
 }

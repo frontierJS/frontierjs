@@ -1,9 +1,9 @@
-// api/enroll-host.ts — the box this container runs on, enrolled as a fleet machine.
+// api/src/core/enroll-host.ts — the box this container runs on, enrolled as a fleet machine.
 //
 // `fli deploy` runs it in the API container over the operator's SSH, for an app
 // whose deploy block says `outpost: true` (FJS-D1191):
 //
-//   docker exec <api container> bun api/enroll-host.ts
+//   docker exec <api container> bun api/src/core/enroll-host.ts
 //
 // It opens the database as the application and does NOT boot the app: a boot
 // would start a second Caravan worker on the jobs queue beside the running one.
@@ -16,8 +16,8 @@
 //   { skip: '<why>' }                    nothing to enroll into yet, or no one place to
 //   { error: '<what>' }                  and the exit is non-zero
 
-import { createBasecampDb } from './src/core/db.ts'
-import { findHost, useHost } from './src/core/host-machine.ts'
+import { createBasecampDb } from './db.ts'
+import { findHost, useHost } from './host-machine.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))
 

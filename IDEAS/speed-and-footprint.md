@@ -88,7 +88,7 @@ Each declaration added alone to an otherwise bare schema, 20,000 inserts:
 | --- | --- |
 | `@length` / `@email` / `@gte` validators (three of them) | **+0.0** |
 | `@@gate("0.4.4.5")` | **+0.5** |
-| `@@allow('all', …)` policy | **+0.7** |
+| `@@allow(all, …)` policy | **+0.7** |
 | `@default(now())` DateTime | +1.9 |
 | `@@log(audit)` | ~~+3.1~~ — the enqueue; the write is ~140 µs, see below |
 | `@unique` | +3.7 |

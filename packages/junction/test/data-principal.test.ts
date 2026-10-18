@@ -5,7 +5,7 @@
 // example in its docs uses. Nothing bridged the two, so a session handed
 // straight to `$setAuth` reached the Data boundary with NO `id`, and
 //
-//   @@allow('read', userId == auth().id)
+//   @@allow(read, userId == auth().id)
 //
 // compared a column to `undefined` and matched nothing. Silent: an empty list,
 // not an error, and only for policies — every `@@gate` still worked, because

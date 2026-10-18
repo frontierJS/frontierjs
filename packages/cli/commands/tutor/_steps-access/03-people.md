@@ -9,7 +9,7 @@ Every assertion after this is a **pair**: the same request, twice, differing in
 one thing. So the lesson needs two accounts.
 
 The ordinary one registers through the API, the way anybody would. The
-administrator does not — `role` is `@allow('write', auth().isAdmin)`, so an
+administrator does not — `role` is `@allow(write, auth().isAdmin)`, so an
 account cannot make itself one, which is the point of that line. The way in is
 the CLI, which writes through `asSystem()` and is above the ladder entirely:
 

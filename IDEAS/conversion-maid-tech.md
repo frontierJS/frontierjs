@@ -408,7 +408,7 @@ answered by anything currently in the tree.
 
 Each is dead weight: its row is closed and the fix was found in the code on this date, unless marked *row only*. The list covers every port read, not maid.tech alone, because the maid.tech ledger copies remnant's.
 
-- **maidtech** `db/schema.lite:134` — `roleId @allow('write', auth().isOwner)` goes back to the reference's `auth().isAdmin`, bounded by what the admin holds: `FJS-2324` is closed and `requireParentGrants` is committed (`f1251e7e`). `roles.test.ts`'s pin passes either way. The `role` column's `isOwner` at `:109` is the standing column and stays.
+- **maidtech** `db/schema.lite:134` — `roleId @allow(write, auth().isOwner)` goes back to the reference's `auth().isAdmin`, bounded by what the admin holds: `FJS-2324` is closed and `requireParentGrants` is committed (`f1251e7e`). `roles.test.ts`'s pin passes either way. The `role` column's `isOwner` at `:109` is the standing column and stays.
 - **maidtech** Q7 — registration need not be a root `asSystem()` write of the first row: `onRegistered({ user, db })` (`FJS-1458`) runs inside the register transaction and may write the tenant.
 - **transit** `web/src/resources/Subscription.mesa:78-81` — the make()-minus-`ownerId` seed; `FJS-1669`'s own row says the workaround can go, and `FJS-1229`'s `x-determined` covers the `except` entry. `channel` and `target` stay.
 - **transit** — the four template edits for `FJS-1675`/`1676`/`1677`/`1679` are optional; both spellings compile.

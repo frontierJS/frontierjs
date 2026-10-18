@@ -30,7 +30,7 @@ model Team {
   id      String  @id
   ownerId String
   issues  Issue[]
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }
 
 model Issue {
@@ -39,7 +39,7 @@ model Issue {
   team     Team      @relation(fields: [teamId], references: [id])
   title    String
   comments Comment[]
-  @@allow('read', check(team))
+  @@allow(read, check(team))
 }
 
 model Comment {
@@ -48,7 +48,7 @@ model Comment {
   issue     Issue     @relation(fields: [issueId], references: [id])
   body      String
   deletedAt DateTime?
-  @@allow('read', check(issue))
+  @@allow(read, check(issue))
   @@fts([body])
   @@label(body)
   @@softDelete

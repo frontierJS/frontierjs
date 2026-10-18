@@ -4,7 +4,7 @@
 // policy that filters to nothing reads exactly like a working one, so every
 // refusal here sits beside the row a rule must still let through.
 //
-// A field `@allow('write')` DROPS the key rather than throwing (`FJS-D22`), so
+// A field `@allow(write)` DROPS the key rather than throwing (`FJS-D22`), so
 // a member unbanning themselves resolves and writes nothing: the assertion is
 // the column after, never the promise.
 //

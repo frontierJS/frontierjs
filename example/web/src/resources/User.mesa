@@ -14,7 +14,7 @@ anArrat: [12,2,4, "thisString"]
   // other resource here does with an irregular.
   //
   // Nothing below restates the schema. `emailVerified`, `role` and `isStaff`
-  // each carry `@allow('write', auth().isAdmin)` in the seed, and none of that
+  // each carry `@allow(write, auth().isAdmin)` in the seed, and none of that
   // is written here or on the screen — the boundary answers it.
 
   import { createResource } from '@frontierjs/sierra/resource'

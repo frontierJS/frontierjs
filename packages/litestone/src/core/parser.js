@@ -172,6 +172,20 @@ class Parser {
 
   eatIdent(value) { return this.eat(TK.IDENT, value) }
   maybeEat(type, value) { if (this.check(type, value)) return this.advance() }
+
+  // The one operation argument of @@allow, @@deny and @@require: a bare word,
+  // like @@sync(server) and @@tenant(none). A quoted one is refused by name.
+  parsePolicyOp(attr) {
+    const tok = this.peek()
+    if (tok.type === TK.STRING)
+      throw new ParseError(
+        `${attr}: write the operation bare, ${attr}(${tok.value.split(',')[0].trim()}, …), not quoted. ` +
+        'It takes one operation: read, create, update, postUpdate, delete, write or all; for two, write the rule twice',
+        tok)
+    if (tok.type !== TK.IDENT) throw new ParseError(`${attr}: expected an operation, got '${tok.value}'`, tok)
+    this.advance()
+    return normalizePolicyOps(tok.value, attr, tok)
+  }
   // The grammar in toolbelt throws what this returns, so its messages carry a position here.
   fail(msg, pos) { return new ParseError(msg, pos) }
 
@@ -1241,16 +1255,19 @@ class Parser {
       }
 
       // ── Field-level access policy ─────────────────────────────────────────
-      // @allow('read',  expr)  — field stripped from results if condition false
-      // @allow('write', expr)  — field silently dropped from write data if condition false
-      // @allow('all',   expr)  — both read + write
+      // @allow(read,  expr)  — field stripped from results if condition false
+      // @allow(write, expr)  — field silently dropped from write data (create + update) if condition false
+      // @allow(all,   expr)  — both read + write
       // Multiple @allow on same field/op → OR semantics (any passing = allowed)
       // asSystem() bypasses all field @allow checks
       case 'allow': {
         this.eat(TK.LPAREN)
-        const opStr = this.eat(TK.STRING).value
+        const opToken = this.peek()
+        if (opToken.type === TK.STRING)
+          throw new ParseError(`@allow: write the operation bare, @allow(${opToken.value}, …), not quoted`, opToken)
+        const opStr = this.eat(TK.IDENT).value
         if (opStr !== 'read' && opStr !== 'write' && opStr !== 'all')
-          throw new ParseError(`@allow on a field only accepts 'read', 'write', or 'all', got '${opStr}'`, this.peek())
+          throw new ParseError(`@allow on a field only accepts read, write or all, got '${opStr}'`, opToken)
         const operations = opStr === 'all' ? ['read', 'write'] : [opStr]
         this.eat(TK.COMMA)
         const expr = this.parsePolicyExpr()
@@ -2384,7 +2401,7 @@ class Parser {
         // a capability refusal on a write throws and names itself, while a
         // missing read capability composes with the policy layer into an empty
         // list with a 200. `all` is the widening token this language already
-        // uses — @omit(all), @allow('all', …).
+        // uses — @omit(all), @allow(all, …).
         let read = false
         if (this.check(TK.LPAREN)) {
           this.eat(TK.LPAREN)
@@ -2561,14 +2578,13 @@ class Parser {
         return { kind: name, base }
       }
       // ── Access policies ──────────────────────────────────────────────────────
-      // @@allow('read', published || owner == auth())
-      // @@allow('create,update', auth() != null)
-      // @@deny('delete', status == 'archived')
+      // @@allow(read, published || owner == auth())
+      // @@allow(all, auth() != null)
+      // @@deny(delete, status == 'archived')
       case 'allow':
       case 'deny': {
         this.eat(TK.LPAREN)
-        const opStr = this.eat(TK.STRING).value
-        const operations = normalizePolicyOps(opStr, this.peek())
+        const operations = this.parsePolicyOp(`@@${name}`)
         this.eat(TK.COMMA)
         const expr = this.parsePolicyExpr()
         let message = null
@@ -2578,6 +2594,31 @@ class Parser {
         }
         this.eat(TK.RPAREN)
         return { kind: name === 'allow' ? 'allow' : 'deny', operations, expr, message }
+      }
+      // @@require(create, direction == 'inbound' || conversation.optedOutAt == null, 'They texted STOP.')
+      //
+      // A rule about the DATA: the predicate must hold for the row as it will
+      // land, whoever writes it. `@@deny` is the caller tier and `asSystem()`
+      // drops it; this word is graded under `asSystem()` too (`FJS-D1045`).
+      // Same predicate grammar and one hop across a to-one, graded in JS, so
+      // only the operations that have a row in hand and no WHERE are legal.
+      case 'require': {
+        this.eat(TK.LPAREN)
+        const opToken = this.peek()
+        const operations = this.parsePolicyOp('@@require', REQUIRE_OPS)
+        if (!operations.every(o => REQUIRE_OPS.has(o)))
+          throw new ParseError(
+            `@@require: cannot grade ${opToken.value}. A requirement is graded on the row as it lands, so the operations are create and postUpdate`,
+            opToken)
+        this.eat(TK.COMMA)
+        const expr = this.parsePolicyExpr()
+        let message = null
+        if (this.check(TK.COMMA)) {
+          this.eat(TK.COMMA)
+          message = this.eat(TK.STRING).value
+        }
+        this.eat(TK.RPAREN)
+        return { kind: 'require', operations, expr, message }
       }
       // @@scope(overdue, dueAt < now() && completedAt == null)
       //
@@ -3492,24 +3533,23 @@ class Parser {
 }
 
 // ─── Policy operation normalizer ─────────────────────────────────────────────
-// Accepts: 'read', 'create', 'update', 'post-update', 'delete',
-//          'write' (= create+update+delete), 'all' (= all five),
-//          or comma-separated combos: 'update,delete'
-// Returns: array of canonical op names, deduplicated
+// Accepts: read, create, update, postUpdate, delete,
+//          write (= create+update+delete), all (= all five)
+// Returns: array of canonical op names
 
-const VALID_POLICY_OPS = new Set(['read', 'create', 'update', 'post-update', 'delete'])
+const VALID_POLICY_OPS = new Set(['read', 'create', 'update', 'postUpdate', 'delete'])
 
-function normalizePolicyOps(str, token) {
-  if (str === 'all')   return ['read', 'create', 'update', 'post-update', 'delete']
-  if (str === 'write') return ['create', 'update', 'delete']
-  const parts = str.split(',').map(s => s.trim())
-  for (const p of parts)
-    if (!VALID_POLICY_OPS.has(p))
-      throw new ParseError(
-        `@@allow/@@deny: invalid operation '${p}'. Valid: read, create, update, post-update, delete, write, all`,
-        token
-      )
-  return [...new Set(parts)]
+const REQUIRE_OPS = new Set(['create', 'postUpdate'])
+
+function normalizePolicyOps(op, attr, token) {
+  if (op === 'all')   return ['read', 'create', 'update', 'postUpdate', 'delete']
+  if (op === 'write') return ['create', 'update', 'delete']
+  if (!VALID_POLICY_OPS.has(op))
+    throw new ParseError(
+      `${attr}: invalid operation '${op}'. Valid: read, create, update, postUpdate, delete, write, all`,
+      token
+    )
+  return [op]
 }
 
 // ─── Validator ────────────────────────────────────────────────────────────────
@@ -3597,7 +3637,7 @@ const MODEL_ATTRIBUTE_WORDS = [
   'index', 'id', 'unique', 'arc', 'relator', 'noStrict', 'fts', 'map', 'label',
   'external', 'extensible', 'softDelete', 'capabilities', 'hasTemplates',
   'expires', 'effective', 'commitment', 'createdBy', 'updatedBy', 'allow',
-  'deny', 'scope', 'tenant', 'check', 'export', 'gate', 'transitions', 'auth',
+  'deny', 'require', 'scope', 'tenant', 'check', 'export', 'gate', 'transitions', 'auth',
   'person', 'trail', 'db', 'trait', 'sync', 'anonymous', 'exclude', 'mirror',
 ]
 
@@ -3607,7 +3647,7 @@ const MODEL_ATTRIBUTE_WORDS = [
 // matches nothing and the rule silently stops applying. `repeatable-attrs`
 // in the suite parses each of these twice and fails on a kind no parse emits.
 export const REPEATABLE_MODEL_ATTRS = new Set([
-  'allow', 'deny', 'index', 'uniqueIndex', 'check', 'scope', 'trait',
+  'allow', 'deny', 'require', 'index', 'uniqueIndex', 'check', 'scope', 'trait',
   // One per predicate, as `index` beside it — an entry row and a move row are
   // two constraints ([FJS-1306](ISSUES.md#fjs-1306)).
   'partialUnique',
@@ -3622,8 +3662,8 @@ export const REPEATABLE_MODEL_ATTRS = new Set([
 
 // Field attributes a field may legitimately carry more than one of. No field in
 // this workspace or the imported corpus carries a repeated attribute at all, so
-// this one is here on the argument and on the suite: `@allow('read', …)` beside
-// `@allow('write', …)` is two operations, not two answers.
+// this one is here on the argument and on the suite: `@allow(read, …)` beside
+// `@allow(write, …)` is two operations, not two answers.
 export const REPEATABLE_FIELD_ATTRS = new Set(['fieldAllow'])
 
 // What a reader TYPED, where the parse kind is not the word. `@@unique` parses
@@ -4260,7 +4300,7 @@ function tenantDenyExprs(column, claim) {
 //
 // A deny rather than an @@allow, and that is the whole correctness argument:
 // allows are OR'd within an operation, so adding one to a model that already
-// has `@@allow('read', ownerId == auth().id)` WIDENS its read to every row in
+// has `@@allow(read, ownerId == auth().id)` WIDENS its read to every row in
 // the tenant. Tenancy narrows. `@@deny` overrides every allow and applies to a
 // model that declares no policy at all.
 //
@@ -4346,7 +4386,7 @@ function expandTenancy(schema) {
     const message = `Outside your ${column}`
 
     // `post-update` is in this list and it is the half a hand-written
-    // `@@allow('all', col == auth().claim)` got for free: `all` expands to every
+    // `@@allow(all, col == auth().claim)` got for free: `all` expands to every
     // operation, so an allow was graded against the RESULTING row too. The
     // generated rules were read/update/delete + create, which asks *may you
     // touch this row* and never *may the row end up there* — so a caller could
@@ -4359,7 +4399,7 @@ function expandTenancy(schema) {
     // context needs it to answer *is a tenant in scope at all* (FJS-519).
     // `column` is what a tenant read of a view shadows this table by (FJS-D1149).
     model.attributes.push({
-      kind: 'deny', operations: ['read', 'update', 'delete', 'post-update'], generated: 'tenancy', claim, column, tenantColumn: column, message,
+      kind: 'deny', operations: ['read', 'update', 'delete', 'postUpdate'], generated: 'tenancy', claim, column, tenantColumn: column, message,
       expr: denies.read,
     })
     model.attributes.push({
@@ -4481,7 +4521,7 @@ function expandTenancy(schema) {
           // move. `claim` as the column rule carries it: without it a system
           // client with a tenant in scope dropped this deny and read every
           // tenant's children (FJS-1370).
-          kind: 'deny', operations: ['read', 'update', 'delete', 'create', 'post-update'], generated: 'tenancy',
+          kind: 'deny', operations: ['read', 'update', 'delete', 'create', 'postUpdate'], generated: 'tenancy',
           claim, message: `Outside your ${t.column}`,
           expr: { type: 'not', expr: { type: 'check', field: r.field, operation: 'read', tenancy: true } },
         })
@@ -4494,7 +4534,7 @@ function expandTenancy(schema) {
       // A required key cannot be null, so one of them is enough to omit this.
       if (usable.every(r => r.optional))
         p.model.attributes.push({
-          kind: 'deny', operations: ['read', 'update', 'delete', 'create', 'post-update'], generated: 'tenancy',
+          kind: 'deny', operations: ['read', 'update', 'delete', 'create', 'postUpdate'], generated: 'tenancy',
           claim, message: `Outside your ${t.column}`,
           expr: usable
             .map(r => ({ type: 'compare', op: '==', left: { type: 'field', name: r.field }, right: { type: 'literal', value: null } }))
@@ -5465,7 +5505,7 @@ function validate(schema) {
           `Add @@capabilities to ${model.name}, or drop @capability.`)
 
       // Three shapes that make @capability contradict its neighbor, refused for
-      // the reason @system beside a field @allow('write') is: one says the
+      // the reason @system beside a field @allow(write) is: one says the
       // application fills this column and the other says a granted caller may.
       //
       // The stamp is the one that bites hardest and it is silent in the worst
@@ -6219,7 +6259,7 @@ function validate(schema) {
       }
       // The driver runs no access layer, so a rule here is stated and never
       // enforced: an anonymous caller creates and reads every row (FJS-1920).
-      for (const kind of ['gate', 'allow', 'deny']) {
+      for (const kind of ['gate', 'allow', 'deny', 'require']) {
         if (model.attributes.some(a => a.kind === kind))
           errors.push(
             `Model '${model.name}': @@${kind} on '${dbAttr.name}', which is 'driver jsonl' — that driver runs ` +
@@ -6239,7 +6279,7 @@ function validate(schema) {
     // A trail model's `@@gate` is graded (FJS-2139), but the jsonl reader
     // compiles no row policy, so a declared one let every caller read every row.
     if (dbAttr && trailNames.has(dbAttr.name)) {
-      for (const kind of ['allow', 'deny']) {
+      for (const kind of ['allow', 'deny', 'require']) {
         if (model.attributes.some(a => a.kind === kind))
           errors.push(
             `Model '${model.name}': @@${kind} on '${dbAttr.name}', which is 'driver trail' — that driver runs ` +
@@ -6323,7 +6363,7 @@ function validate(schema) {
         errors.push(
           `${label} names auth(), which is a different answer for every caller — this is one answer for the ROW, ` +
           `shared by all of them, and a CHECK cannot see a principal. Whether a caller may WRITE a column is a ` +
-          `field @allow('write', …); which rows they may see at all is @@scope or a row policy.`)
+          `field @allow(write, …); which rows they may see at all is @@scope or a row policy.`)
         continue
       }
       if (names.now) {
@@ -6420,11 +6460,11 @@ function validate(schema) {
       // already refused above.
       if (!secret && field.attributes.some(a => a.kind === 'guarded'))
         errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @guarded — @hashed already strips the field from every read, asSystem() included`)
-      // Only the READ half has nothing to say. `@allow('write', …)` composes: it
+      // Only the READ half has nothing to say. `@allow(write, …)` composes: it
       // grades who may replace the digest, which is the one way a column nobody
       // can read is ever changed by a caller who is not the row's owner.
       if (field.attributes.some(a => a.kind === 'fieldAllow' && a.operations.includes('read')))
-        errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @allow('read', …) — no caller can read a digest, so a read policy over one has nothing to permit. @allow('write', …) is fine`)
+        errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @allow(read, …) — no caller can read a digest, so a read policy over one has nothing to permit. @allow(write, …) is fine`)
 
       // A digest is TEXT. Hashing a number or a date and comparing it works, but the
       // column's declared type would then describe something it no longer holds.
@@ -6483,14 +6523,14 @@ function validate(schema) {
   //
   // @system composes with @guarded — that pair is a column invisible to a client
   // AND unwritable by one, which could not be spelled at all before (FJS-235).
-  // It does NOT compose with a field @allow('write', …): one says nobody ever,
+  // It does NOT compose with a field @allow(write, …): one says nobody ever,
   // the other says it depends who is asking, and a field cannot mean both.
   for (const model of schema.models) {
     for (const field of model.fields) {
       if (!field.attributes.some(a => a.kind === 'system')) continue
 
       if (field.attributes.some(a => a.kind === 'fieldAllow' && a.operations.includes('write')))
-        errors.push(`Model '${model.name}', field '${field.name}': @system conflicts with @allow('write', …) — @system means no caller may write it at all, @allow('write') means some may. Pick the one you mean`)
+        errors.push(`Model '${model.name}', field '${field.name}': @system conflicts with @allow(write, …) — @system means no caller may write it at all, @allow(write) means some may. Pick the one you mean`)
 
       // A value with no column cannot be written by anyone, system included, so
       // locking the write says nothing and reads as though it did.
@@ -6543,7 +6583,7 @@ function validate(schema) {
   // A transient field has no column, so every attribute that describes storage,
   // derivation or read-side visibility says nothing about it — and the way that
   // goes wrong is silently: @@index([secret]) indexes a column that was never
-  // created, @allow('write', …) compiles a rule the Data boundary never reaches
+  // created, @allow(write, …) compiles a rule the Data boundary never reaches
   // because the value never arrives there. Refused by name, with what the
   // attribute would have needed.
   //
@@ -8252,7 +8292,7 @@ function validate(schema) {
   for (const model of schema.models) {
     // Warn if @@deny exists with no @@allow — probably a mistake, and the
     // wording matters. A deny DOES restrict the operations it names: measured,
-    // a lone `@@deny('update', …)` filters an update out. What stays open is
+    // a lone `@@deny(update, …)` filters an update out. What stays open is
     // every operation it does not name, which is the thing worth saying. The
     // old text said the deny would not restrict at all, which reads as "this
     // declaration is inert" about a rule that is working.

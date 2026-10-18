@@ -23,7 +23,7 @@ The policy itself, on `model Note`:
 ```text
 authorId  String?  @default(auth().id)
 
-@@allow('read', authorId == auth().id)
+@@allow(read, authorId == auth().id)
 ```
 
 Two lines. The column stamps itself with whoever created the row, and the policy
@@ -46,7 +46,7 @@ const marked = /^\s*@@auth\b/m.test(readFileSync(schemaFile($), 'utf8'))
 for (const [from, to] of [
   ...(marked ? [] : [['  @@gate(4.4.4.5)', '  @@auth\n  @@gate(4.4.4.5)']]),
   ['  updatedAt DateTime  @updatedAt\n\n  ///',
-   '  updatedAt DateTime  @updatedAt\n  authorId  String?   @default(auth().id)\n\n  @@allow(\'read\', authorId == auth().id)\n\n  ///'],
+   '  updatedAt DateTime  @updatedAt\n  authorId  String?   @default(auth().id)\n\n  @@allow(read, authorId == auth().id)\n\n  ///'],
 ]) {
   const edit = editSchema($, from, to)
   if (!edit.ok) {

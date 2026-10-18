@@ -27,7 +27,7 @@ async function client() {
         id       Int    @id
         name     String
         original File?
-        @@allow('all', true)
+        @@allow(all, true)
       }
     `,
     db: ':memory:', plugins: [files],
@@ -108,7 +108,7 @@ describe('a file reaches the provider without being read whole (FJS-3094)', () =
         model Photo {
           id       Int    @id
           original File?
-          @@allow('all', true)
+          @@allow(all, true)
         }
       `,
       db: ':memory:', plugins: [FileStorage({ provider: 'local', bucket: 'test', localPath: root, publicBase: 'https://cdn.test' })],
@@ -130,7 +130,7 @@ describe('a file reaches the provider without being read whole (FJS-3094)', () =
   test('fromPath hands the provider the file, not its bytes', async () => {
     const files = FileStorage({ provider: 'local', bucket: 'test', publicBase: 'https://cdn.test' }) as any
     const db: any = await createClient({
-      schema: `model Photo {\n id Int @id\n original File?\n @@allow('all', true)\n}`,
+      schema: `model Photo {\n id Int @id\n original File?\n @@allow(all, true)\n}`,
       db: ':memory:', plugins: [files],
     })
     await autoMigrate(db)

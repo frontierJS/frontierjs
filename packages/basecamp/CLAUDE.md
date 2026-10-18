@@ -394,9 +394,9 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   unless they carry it.
 - **`User` reads and updates at VISITOR(1), and the level is not what makes that
   safe.** A gate is per MODEL, so 1 on update is *any signed-in caller rewrites
-  any person's row*. `@@allow('update', id == auth().id)` narrows it to their
+  any person's row*. `@@allow(update, id == auth().id)` narrows it to their
   own, the read policy gives everyone else's only at 4, and
-  `@allow('write', auth().isSystemAdmin)` on `isSystemAdmin`, `status`, `kind`,
+  `@allow(write, auth().isSystemAdmin)` on `isSystemAdmin`, `status`, `kind`,
   `email`, `accountId` and `scopes` keeps what a person may not write about
   themselves out of reach — a column the caller can write is not a column a level can be
   graded from. `users.patch('me')` is the one caller-scoped write, and it names

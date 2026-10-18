@@ -76,7 +76,7 @@ const readIds = async (db: any, who: string | null) =>
 
 describe('the membership row decides', () => {
   it('a private team is visible to its members and to nobody else', async () => {
-    const db = await seeded(`@@allow('read', private == false || members.some(userId == auth().id))`)
+    const db = await seeded(`@@allow(read, private == false || members.some(userId == auth().id))`)
     // u1's row in DES is revoked, and this condition does not ask about state,
     // so DES is admitted. The next test is the one that separates them.
     expect(await readIds(db, 'u1')).toEqual(['DES', 'ENG', 'SEC'])
@@ -88,7 +88,7 @@ describe('the membership row decides', () => {
   it('the condition reads the CHILD row, so a revoked membership admits nothing', async () => {
     // Portal's grant and jazzhr's submitted scorecard — membership that depends
     // on a state of the membership row.
-    const db = await seeded(`@@allow('read', members.some(userId == auth().id && status == 'active'))`)
+    const db = await seeded(`@@allow(read, members.some(userId == auth().id && status == 'active'))`)
     expect(await readIds(db, 'u1')).toEqual(['SEC'])
     // The revoke is a write to the MEMBERSHIP row, made the way a seed or a job
     // makes it — and nothing else has to move for the team to disappear.
@@ -98,7 +98,7 @@ describe('the membership row decides', () => {
   })
 
   it('a soft-deleted membership is not a membership — the same rows the query where calls the relation', async () => {
-    const db = await seeded(`@@allow('read', members.some(userId == auth().id))`)
+    const db = await seeded(`@@allow(read, members.some(userId == auth().id))`)
     expect(await readIds(db, 'u2')).toEqual(['DES', 'ENG'])
     await db.asSystem().teamMember.remove({ where: { id: 'm4' } })
     expect(await readIds(db, 'u2')).toEqual(['DES'])
@@ -110,7 +110,7 @@ describe('the membership row decides', () => {
   })
 
   it('a negated test admits the rows with no match, including a team with no members at all', async () => {
-    const db = await seeded(`@@allow('read', !members.some(userId == auth().id))`)
+    const db = await seeded(`@@allow(read, !members.some(userId == auth().id))`)
     expect(await readIds(db, 'u1')).toEqual(['EMPTY', 'ENG'])
     db.$close()
   })
@@ -119,10 +119,10 @@ describe('the membership row decides', () => {
 describe('a create', () => {
   it('a create answers false — nothing points at a row that does not exist yet — and says so as a refusal', async () => {
     const db: any = await createClient({
-      schema: TEAMS(`@@allow('read', true)\n  @@allow('create', members.some(userId == auth().id))`), db: ':memory:' })
+      schema: TEAMS(`@@allow(read, true)\n  @@allow(create, members.some(userId == auth().id))`), db: ':memory:' })
     await expect(db.$setAuth({ id: 'u1' }).team.create({ data: { id: 'NEW' } })).rejects.toThrow()
     // The control: the same caller creates under a rule that does not ask.
-    const db2: any = await createClient({ schema: TEAMS(`@@allow('all', true)`), db: ':memory:' })
+    const db2: any = await createClient({ schema: TEAMS(`@@allow(all, true)`), db: ':memory:' })
     expect((await db2.$setAuth({ id: 'u1' }).team.create({ data: { id: 'NEW' } })).id).toBe('NEW')
     db.$close(); db2.$close()
   })
@@ -134,7 +134,7 @@ describe('mapped names and a self-relation', () => {
 model Team {
   id      String       @id
   members TeamMember[]
-  @@allow('read', members.some(userId == auth().id))
+  @@allow(read, members.some(userId == auth().id))
 }
 model TeamMember {
   id     String @id
@@ -161,7 +161,7 @@ model User {
   managerId String?
   manager   User?   @relation("reports", fields: [managerId], references: [id])
   reports   User[]  @relation("reports")
-  @@allow('read', id == auth().id || reports.some(id == auth().id))
+  @@allow(read, id == auth().id || reports.some(id == auth().id))
 }
 ` })
     const sys = db.asSystem()
@@ -179,41 +179,41 @@ model User {
 
 describe('the bound is one hop, and the mistake says where the rule goes', () => {
   it('a to-many test is accepted', async () => {
-    expect(await refusal(TEAMS(`@@allow('read', members.some(userId == auth().id))`))).toBe('')
+    expect(await refusal(TEAMS(`@@allow(read, members.some(userId == auth().id))`))).toBe('')
   })
 
   it('the to-many read as a PATH is refused and still points at a to-one', async () => {
-    const msg = await refusal(TEAMS(`@@allow('read', members.userId == auth().id)`))
+    const msg = await refusal(TEAMS(`@@allow(read, members.userId == auth().id)`))
     expect(msg).toContain('hasMany')
   })
 
   it('.some() over a to-ONE is refused, naming the path it should be', async () => {
-    const msg = await refusal(TEAMS('', `@@allow('read', team.some(private == false))`))
+    const msg = await refusal(TEAMS('', `@@allow(read, team.some(private == false))`))
     expect(msg).toContain('to-one')
     expect(msg).toContain("'team.<column>'")
-    expect(await refusal(TEAMS('', `@@allow('read', team.private == false)`))).toBe('')
+    expect(await refusal(TEAMS('', `@@allow(read, team.private == false)`))).toBe('')
   })
 
   it('a dot inside the condition is a second hop, refused at parse', async () => {
-    const msg = await refusal(TEAMS(`@@allow('read', members.some(team.private == false))`))
+    const msg = await refusal(TEAMS(`@@allow(read, members.some(team.private == false))`))
     expect(msg).toContain('crosses a second relation')
   })
 
   it('check() inside the condition is a second hop too', async () => {
-    const msg = await refusal(TEAMS(`@@allow('read', members.some(check(team)))`))
+    const msg = await refusal(TEAMS(`@@allow(read, members.some(check(team)))`))
     expect(msg).toContain('second hop')
   })
 
   it("two relations away names the to-many test, not the hops", async () => {
     // jazzhr wrote `interview.scorecards.any(…)` and was told it crosses two
     // relations — true of the path, silent about where the rule belongs.
-    const msg = await refusal(TEAMS('', `@@allow('read', team.members.some(userId == auth().id))`))
+    const msg = await refusal(TEAMS('', `@@allow(read, team.members.some(userId == auth().id))`))
     expect(msg).toContain('two relations away')
     expect(msg).toContain("'members.some(…)'")
   })
 
   it('an unknown column names the CHILD model and its fields', async () => {
-    const msg = await refusal(TEAMS(`@@allow('read', members.some(usrId == auth().id))`))
+    const msg = await refusal(TEAMS(`@@allow(read, members.some(usrId == auth().id))`))
     expect(msg).toContain("TeamMember: 'usrId' is not a field")
     expect(msg).toContain('userId')
   })
@@ -221,17 +221,17 @@ describe('the bound is one hop, and the mistake says where the rule goes', () =>
   it('a column of the PARENT inside the condition is refused rather than read off the parent', async () => {
     // The subquery would resolve an unqualified `private` to the outer table
     // and answer a question nobody asked.
-    const msg = await refusal(TEAMS(`@@allow('read', members.some(private == false))`))
+    const msg = await refusal(TEAMS(`@@allow(read, members.some(private == false))`))
     expect(msg).toContain("'private' is not a field")
   })
 
   it('an empty condition is refused', async () => {
-    const msg = await refusal(TEAMS(`@@allow('read', members.some())`))
+    const msg = await refusal(TEAMS(`@@allow(read, members.some())`))
     expect(msg).toContain('needs a condition')
   })
 
   it('an unknown claim inside is refused like one outside', async () => {
-    const msg = await refusal(TEAMS(`@@allow('read', members.some(userId == auth().nope))`).replace('model Team', 'claim teamIds\nmodel Team'))
+    const msg = await refusal(TEAMS(`@@allow(read, members.some(userId == auth().nope))`).replace('model Team', 'claim teamIds\nmodel Team'))
     expect(msg).toContain("'nope' is not a claim")
   })
 })
@@ -259,7 +259,7 @@ describe('a to-many test is a policy form and not a schema-wide one', () => {
 // it when it is missing, and with the index it asks for the plan is a SEARCH.
 
 describe('the EXISTS reaches the children by their foreign key', () => {
-  const RULE = `@@allow('read', members.some(userId == auth().id))`
+  const RULE = `@@allow(read, members.some(userId == auth().id))`
 
   it('advise names the foreign key the EXISTS correlates on when nothing indexes it', () => {
     const at = (cols: string) => checkRules(parse(TEAMS(RULE, cols)).schema)

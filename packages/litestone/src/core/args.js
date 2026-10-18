@@ -177,7 +177,7 @@ function fieldReadRelationError(found, accessorName, method) {
   const first = found[0]
   const names = [...new Set(found.map(f => `"${f.key}"`))].join(', ')
   return new AccessDeniedError(
-    `${first.model}: ${names} carries @allow('read', …) and is named through a RELATION from ` +
+    `${first.model}: ${names} carries @allow(read, …) and is named through a RELATION from ` +
     `${accessorName}.${method}. The predicate decides which ROWS of ${first.model} this caller may ` +
     `read the column on, and a filter one relation away has no row of ${first.model} to decide it ` +
     `against — so comparing it there would recover the value of rows the predicate refuses. ` +
@@ -1041,13 +1041,13 @@ export function withArgValidation(table, model, ctx) {
         const answer = hoistedFieldRead(ctx, /** @type {unknown[]} */ (readExprs(k)))
         if (answer === true) { keep(); continue }
         if (answer === false) throw new AccessDeniedError(
-          `${modelName}.${method} cannot sort by "${k}": its @allow('read') admits this caller on no row, so every ` +
+          `${modelName}.${method} cannot sort by "${k}": its @allow(read) admits this caller on no row, so every ` +
           `value would sort as NULL and the order asked for would be none. Sort by a column this caller can read.`,
           { model: modelName, operation: 'read' })
         // A keyset cursor resumes from the value the last row holds, and a cell
         // this caller cannot read holds none for them.
         if (method === 'findManyCursor') throw new ValidationError([{ path: ['orderBy', k], message:
-          `${modelName}.findManyCursor cannot sort by "${k}": its @allow('read') is decided per row, and a cursor ` +
+          `${modelName}.findManyCursor cannot sort by "${k}": its @allow(read) is decided per row, and a cursor ` +
           `resumes from the value each row holds, which a row this caller cannot read has none of. Page with limit/offset.` }])
         if (rest) { out.push(rest); rest = null }
         changed = true

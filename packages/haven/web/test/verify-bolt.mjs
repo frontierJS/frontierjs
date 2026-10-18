@@ -99,10 +99,12 @@ check(!between(sam)().includes('>') && !between(ana)().includes('>'), 'once land
 
 // ─── d j: a bolt that scorches ─────────────────────────────────────────────
 // The hedge below is a wall drawn as `,`, the scorch's own glyph, so the shot
-// goes north to the tavern's wall, seven cells from four rows up.
-const wall = { x: sx, y: 10 }
+// goes north to the workshop's wall, seven cells from four rows up. The
+// fountain stands over the spawn's column, so Sam steps west of it first.
+const wall = { x: sx - 12, y: 10 }
+for (let i = 0; i < 12; i++) { sam.send('\x1b[D'); await sleep(140) }
 for (let i = 0; i < 4; i++) { sam.send('\x1b[A'); await sleep(140) }
-check(sam.at(wall.x, wall.y) !== ',' && sam.at(wall.x, wall.y) !== ' ', 'the wall below Sam is a wall before the bolt', sam.at(wall.x, wall.y))
+check(sam.at(wall.x, wall.y) !== ',' && sam.at(wall.x, wall.y) !== ' ', 'the wall north of Sam is a wall before the bolt', sam.at(wall.x, wall.y))
 await sleep(BOLT_MS)
 sam.send('d'); await sleep(80); sam.send('k')
 check(await until(() => sam.at(wall.x, wall.y) === ','), 'a bolt north ends in a `,` on the wall it struck, on Sam\'s screen', sam.screen())

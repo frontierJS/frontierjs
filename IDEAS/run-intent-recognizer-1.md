@@ -72,7 +72,7 @@ needed change reaches.
 
 | # | The ask | Resolved by | needs | depth | Verdict |
 | --- | --- | --- | --- | --- | --- |
-| A1 | a private note on a customer | `Customer.notes @allow('read', auth().role == 'admin')` | S | none | **exists** — and the assistant must be an admin to read it |
+| A1 | a private note on a customer | `Customer.notes @allow(read, auth().role == 'admin')` | S | none | **exists** — and the assistant must be an admin to read it |
 | A2 | order says paid, money not received | `Payment`, `PaymentEvent` say where the truth is | R | none | **incident** |
 | A3 | what the revenue figure counts; refund month | `revenueByStatus @@sql` — `SUM(total)` per status, tax and shipping included, no date window; no refund date column exists | S | none | **exists** (explanation) |
 | A4 | warehouse see orders, may not refund; a role for new staff | `refund @gate(5)`; `User.role` is a string, no role template | S | Data | **exists** / **needs us** |

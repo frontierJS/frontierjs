@@ -411,7 +411,7 @@ rounds, min reported, each case's spread printed and a delta inside the two spre
 
 | declaration, 100 of 5,000 rows per read | Δ µs | Δ % |
 | --- | --- | --- |
-| `@@allow('read', ownerId == auth().id \|\| status == 'published')` | +21 | +42 |
+| `@@allow(read, ownerId == auth().id \|\| status == 'published')` | +21 | +42 |
 | row tenancy | +10 | +19 |
 | `check()` chain, 1 · 2 · 3 hops | +26 · +41 · +55 | +62 · +94 · +121 |
 | `@from(count)`, child FK indexed | +72 | +131 |

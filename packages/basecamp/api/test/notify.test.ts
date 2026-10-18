@@ -112,7 +112,7 @@ async function makeApp(opts: { mail?: boolean } = {}) {
 
   const sent: { to: string; subject: string }[] = []
   const app: any = {
-    db: env.db, logger: noopLog(),
+    db: env.db, logger: noopLog(), root: join(NOTIF_DIR, '..'),
     // The mailer is real enough to be graded: what matters is whether the email
     // transport was ATTEMPTED, which a recorder answers and a missing property
     // cannot.
@@ -123,7 +123,6 @@ async function makeApp(opts: { mail?: boolean } = {}) {
 
   const plugin = notifications({
     db: env.db,
-    notifications: NOTIF_DIR,
     transports: opts.mail ? { email: { mailer: 'default' } } : {},
   }) as any
   plugin.register(app)

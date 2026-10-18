@@ -109,7 +109,7 @@ Four words, and they are not a ladder. This table is the whole decision.
 | yes | no | `@encrypted` |
 | no | yes | `@system` |
 | no | no | `@guarded` |
-| — | depends who asks | `@allow('read', …)` **on the field** |
+| — | depends who asks | `@allow(read, …)` **on the field** |
 
 - **`@system`** — the application writes it, the caller does not. A tracking
   code, a computed total. Readable by anyone. Fill it by naming the column on
@@ -216,7 +216,7 @@ model Cart {
   token      String
   employeeId Int?
 
-  @@allow('read', token == auth().cartToken || employeeId == auth().employeeId)
+  @@allow(read, token == auth().cartToken || employeeId == auth().employeeId)
 }
 ```
 

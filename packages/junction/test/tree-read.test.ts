@@ -35,7 +35,7 @@ async function trees() {
         parent   Folder? @relation(fields: [parentId], references: [id])
         children Folder[]
 
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
     `,
   })

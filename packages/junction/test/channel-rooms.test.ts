@@ -32,7 +32,7 @@ const SCHEMA = `
     ownerId String
     title   String  @default("")
     shares  Share[]
-    @@allow('read', ownerId == auth().id || shares.some(userId == auth().id))
+    @@allow(read, ownerId == auth().id || shares.some(userId == auth().id))
   }
 
   model Share {
@@ -56,7 +56,7 @@ const SCHEMA = `
   model Doc {
     id    Int    @id @default(autoincrement())
     title String @default("")
-    @@allow('read', auth().memberRole == 'editor')
+    @@allow(read, auth().memberRole == 'editor')
   }
 `
 
@@ -261,7 +261,7 @@ database main { path "./app.db" }
 model Page {
   id      Int     @id @default(autoincrement())
   ownerId String
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
   @@db(main)
 }
 `)

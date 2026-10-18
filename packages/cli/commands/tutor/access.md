@@ -57,7 +57,7 @@ Four mechanisms, in the order you meet them:
 
 - **`@@gate`** — a level per operation. It refuses.
 - **`@@allow`** on a model — a predicate over the row. It filters.
-- **`@allow('write', …)`** on a column — a predicate over one field. It drops.
+- **`@allow(write, …)`** on a column — a predicate over one field. It drops.
 - **`fli test:access`** — all three of them written down and committed.
 
 Every refusal here is asked **twice**: once by a caller who should be refused,

@@ -416,7 +416,7 @@ fli auth:create-user you@example.com --role admin
 
 or \`/register/\` in the browser, which signs the new account straight in.
 Registration gives everybody role \`user\`; \`--role admin\` is the only way to
-mint an ADMINISTRATOR, and \`db/schema.lite\` marks \`role\` \`@allow('write',
+mint an ADMINISTRATOR, and \`db/schema.lite\` marks \`role\` \`@allow(write,
 auth().isAdmin)\` so nobody promotes themselves on the way in.
 
 ### Email
@@ -804,7 +804,7 @@ function makeApiAccessTest() {
 //
 // Every rule under test is declared in db/schema.lite, not in a service: @@gate
 // sets the level each operation needs, @@allow narrows an update to your own
-// row, and @allow('write', auth().isAdmin) guards the role column. The resolver
+// row, and @allow(write, auth().isAdmin) guards the role column. The resolver
 // is the app's own (api/src/core/gate.ts), so this grades the ladder the API
 // runs rather than a copy of it.
 //
@@ -1084,8 +1084,8 @@ export const auth = createLitestoneAuth(db, {
 
   // The one place this app says what 'admin' MEANS, and it is load-bearing.
   // gate.ts grades the gate on \`isAdmin\`, and schema.lite spends it three times —
-  // \`@@gate(4.4.4.5)\` for who may delete a person, \`@@allow('update', … ||
-  // auth().isAdmin)\` for whose row, \`@allow('write', auth().isAdmin)\` on role
+  // \`@@gate(4.4.4.5)\` for who may delete a person, \`@@allow(update, … ||
+  // auth().isAdmin)\` for whose row, \`@allow(write, auth().isAdmin)\` on role
   // and emailVerified. The User model ships a role STRING, which auth stores
   // and never interprets, so without this line \`isAdmin\` is never on the
   // session and all three are dead: an administrator grades USER(4), a delete
@@ -2120,7 +2120,7 @@ title: Account
 ${withName ? `  // The password and the sessions go through client.auth, which is the account
   // and sessions services scoped to the CALLER — nothing here names a user id
   // for them, because nothing there will take one. The name is the User row,
-  // written through the users service; db/schema.lite's @@allow('update',
+  // written through the users service; db/schema.lite's @@allow(update,
   // id == auth().id || …) is what lets a person write their own.
   import { getClient, session, refresh } from '@frontierjs/sierra/resource'
   import { at } from '../../datetime.js'` : `  // The password and the sessions go through client.auth, which is the account
@@ -2271,7 +2271,7 @@ title: Create an account
   //
   // Everyone who arrives this way gets role "user", which db/schema.lite grades
   // as USER(4). ADMINISTRATOR(5) comes from \`fli auth:create-user --role admin\`
-  // or from an admin editing the row: role carries @allow('write', auth().isAdmin),
+  // or from an admin editing the row: role carries @allow(write, auth().isAdmin),
   // so a caller cannot promote themselves on the way in.
   async function handleSubmit() {
     loading = true

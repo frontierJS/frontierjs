@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**125 words** — 13 declarations · 72 field attributes · 36 model attributes · 4 move words.
+**126 words** — 13 declarations · 72 field attributes · 37 model attributes · 4 move words.
 
 ## Index
 
@@ -41,7 +41,7 @@ and shows you the diff first.
 
 - *Identify a row* — [`@@id`](#id-model)
 - *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
-- *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
+- *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@require`](#require-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@@mirror`](#mirror-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
 **Move words**
@@ -673,7 +673,7 @@ model Example {
 
 #### `@encrypted` <a id="encrypted-field"></a>
 
-Encrypted at rest. Hides the value from a reader and stays WRITABLE, which is what a caller submitting a secret needs. Not a guard: the choice is @allow('write', …) for a column some callers may set, @guarded for one only asSystem() touches, and @encrypted for one anybody may write and nobody may read back.
+Encrypted at rest. Hides the value from a reader and stays WRITABLE, which is what a caller submitting a secret needs. Not a guard: the choice is @allow(write, …) for a column some callers may set, @guarded for one only asSystem() touches, and @encrypted for one anybody may write and nobody may read back.
 
 ```lite
 model Example {
@@ -1384,7 +1384,7 @@ Field-level access: the column is stripped from results, or dropped from write d
 ```lite
 model Example {
   id Int @id
-  salary Int @allow('read', auth().isAdmin)
+  salary Int @allow(read, auth().isAdmin)
 }
 ```
 
@@ -1760,7 +1760,7 @@ model Example {
 - **Deeper** — [export.md](export.md)
 - **See also** — [`@@gate`](#gate-model) · [`@@allow`](#allow-model) · [`view`](#view-declaration)
 
-#### `@@allow` `('read'|'create'|'update'|'post-update'|'delete'|'write'|'all', <expression>[, message])` <a id="allow-model"></a>
+#### `@@allow` `(read|create|update|postUpdate|delete|write|all, <expression>[, message])` <a id="allow-model"></a>
 
 A row policy: compiled into the WHERE. Allows OR together within one operation, so a wrong policy is an empty screen with a 200 rather than an error. Membership spells as `auth().id in memberIds`, the list always the right operand. `update` grades the row as it IS, before the write, so a PATCH moving a foreign key into somebody else's parent passes a rule reading that parent; `post-update` grades the row as it WOULD BE and rolls the write back when refused. `all` includes it and `write` (create, update, delete) does not.
 
@@ -1768,7 +1768,7 @@ A row policy: compiled into the WHERE. Allows OR together within one operation, 
 model Example {
   id Int @id
   ownerId Int
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }
 ```
 
@@ -1784,12 +1784,34 @@ The other half, and it is not sugar for a negated allow: a deny cannot be widene
 model Example {
   id Int @id
   archived Boolean @default(false)
-  @@deny('read', archived == true)
+  @@deny(read, archived == true)
 }
 ```
 
 - **Deeper** — [access-control.md](access-control.md)
 - **See also** — [`@@allow`](#allow-model) · [`@@tenant`](#tenant-model)
+
+#### `@@require` `(create|postUpdate, <expression>[, message])` <a id="require-model"></a>
+
+A rule about the DATA, in the policy language and graded for every writer: `asSystem()` drops a @@deny and keeps this, so a job, a webhook and a migration are refused as a member is. The expression must be TRUE for the row as it lands — an unknown (an absent claim, a null) refuses — and it may read one hop across a to-one, which is the reach @@check lacks (SQLite refuses a subquery in a CHECK). Graded in JS on the row in hand, so only create and postUpdate are legal; no `read`, `update` or `delete`, which have a WHERE and no landing row. Write the allowed case and not the forbidden one: `direction == 'inbound' || conversation.optedOutAt == null` is a consent to contact.
+
+```lite
+model Conversation {
+  id         Int       @id @default(autoincrement())
+  optedOutAt DateTime?
+}
+
+model Example {
+  id Int @id
+  direction      String
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  @@require(create, direction == 'inbound' || conversation.optedOutAt == null, 'They texted STOP.')
+}
+```
+
+- **Deeper** — [access-control.md](access-control.md)
+- **See also** — [`@@deny`](#deny-model) · [`@@check`](#check-model) · [`@@exclude`](#exclude-model)
 
 #### `@@scope` `(<name>, <expression>)` <a id="scope-model"></a>
 
@@ -2144,7 +2166,7 @@ interview and writes the answer into your schema.
 | no | yes | no | `@transient` |
 | no | no | no | *nothing at all* |
 | no | yes | yes | *not expressible* |
-| — | — | depends who asks | `@allow('read', …) on the field` |
+| — | — | depends who asks | `@allow(read, …) on the field` |
 
 The column is stripped from results when the expression is false. Several @allow on one field OR together, and asSystem() bypasses them. This is the answer whenever "may they see it" has a different answer for different callers.
 
@@ -2248,11 +2270,11 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 
 ### `check-without-an-operation-in-a-write-rule` — a bare check() in a write rule asks the parent the same write
 
-*warn*. check(rel) with no operation takes the operation of the rule it sits in, so @@allow('create', check(inbox)) asks whether the caller may create an INBOX, not whether they may see it. Chained, that climbs to whoever may write the root; against a parent held only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.
+*warn*. check(rel) with no operation takes the operation of the rule it sits in, so @@allow(create, check(inbox)) asks whether the caller may create an INBOX, not whether they may see it. Chained, that climbs to whoever may write the root; against a parent held only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.
 
 ### `write-policy-reads-a-parent-without-post-update` — a create or update policy reads a parent through a key the caller can move, with no post-update beside it
 
-*warn*. An 'update' policy compiles to a WHERE over the row as it IS, so a PATCH moving the foreign key into somebody else's parent is graded against the parent the row is leaving and admitted. Only @@allow('post-update', …) reads the row as it WOULD BE, and 'all' includes it where 'update' and 'write' do not. A create policy naming the same parent is refused for a new row and bypassed by a move.
+*warn*. An 'update' policy compiles to a WHERE over the row as it IS, so a PATCH moving the foreign key into somebody else's parent is graded against the parent the row is leaving and admitted. Only @@allow(postUpdate, …) reads the row as it WOULD BE, and 'all' includes it where 'update' and 'write' do not. A create policy naming the same parent is refused for a new row and bypassed by a move.
 
 ### `anonymous-create-auth-default` — a public create on a model whose required column defaults to auth()
 

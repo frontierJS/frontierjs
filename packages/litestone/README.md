@@ -24,8 +24,8 @@ model User {
   address Json  @type(Address)
 
   @@trait(Dates)
-  @@allow('read',   auth() != null)
-  @@allow('update', id == auth().id)
+  @@allow(read,   auth() != null)
+  @@allow(update, id == auth().id)
 }
 ```
 
@@ -183,7 +183,7 @@ The comparison is organized around what you can **declare** in the schema and wh
 
 ¹ Drizzle schema is TypeScript code — you can split it across files using normal JS imports, but there is no dedicated schema import declaration like `import "./models/users.lite"`. Multi-file is a code organization choice, not a language feature.
 
-² ZenStack v3 ships soft delete as a plugin (`@zenstackhq/plugin-soft-delete`, since v3.8.0, preview): a nullable `DateTime? @deletedAt` field, deletes rewritten to updates and reads filtered. It does not cascade, and a plain `@unique` still collides with a soft-deleted row until you add a partial unique index by hand in a manual migration (2026-10-16). Older ZenStack material shows a `@@deny('read', deleted)` policy instead; that pattern predates the plugin.
+² ZenStack v3 ships soft delete as a plugin (`@zenstackhq/plugin-soft-delete`, since v3.8.0, preview): a nullable `DateTime? @deletedAt` field, deletes rewritten to updates and reads filtered. It does not cascade, and a plain `@unique` still collides with a soft-deleted row until you add a partial unique index by hand in a manual migration (2026-10-16). Older ZenStack material shows a `@@deny(read, deleted)` policy instead; that pattern predates the plugin.
 
 ³ Via Prisma Accelerate / ZenStack Cloud — managed external services, not part of the local ORM.
 
@@ -297,14 +297,14 @@ model User {
   email       String      @unique @email @lower
   name        String?     @trim
   role        Role      @default(member)
-  salary      Float?     @allow('read', auth().role == 'admin')   // field-level policy
+  salary      Float?     @allow(read, auth().role == 'admin')   // field-level policy
   apiKey      String?     @secret                                   // encrypted + guarded + audited
   deletedAt   DateTime?
 
   @@softDelete
   @@index([accountId, email])
-  @@allow('read',   accountId == auth().accountId)
-  @@allow('update', id == auth().id || auth().role == 'admin')
+  @@allow(read,   accountId == auth().accountId)
+  @@allow(update, id == auth().id || auth().role == 'admin')
   @@trail(audit)                           // write-audit every create/update/delete
 }
 ```
@@ -363,7 +363,7 @@ model User {
 @secret                          @encrypted + @guarded + @trail(audit) + $rotateKey
 @secret(rotate: false)           the same but excluded from key rotation — and therefore
                                  unreadable after one. $rotateKey refuses while one exists
-@allow('read'|'write'|'all', expr)   field-level conditional visibility
+@allow(read|'write'|'all', expr)   field-level conditional visibility
 @trail(dbName)                     field-level audit trail to a trail database
 @keepVersions                    on File? / File[]: skip old S3 object cleanup on update
 @accept("mime/type")             on File / File[]: validate content type before upload
@@ -408,10 +408,10 @@ model User {
 @@index([col1, col2])            composite index
 @@unique([col1, col2])           composite unique constraint
 @@gate(R.C.U.D)                level-based access control — read.create.update.delete
-@@allow('read'|'create'|'update'|'delete'|'write'|'all', expr)  row-level policy
-@@allow('read'|..., expr, "custom error message")
-@@deny('read'|..., expr)         row-level deny (always wins over allow)
-@@deny('read'|..., expr, "custom error message")
+@@allow(read|'create'|'update'|'delete'|'write'|'all', expr)  row-level policy
+@@allow(read|..., expr, "custom error message")
+@@deny(read|..., expr)         row-level deny (always wins over allow)
+@@deny(read|..., expr, "custom error message")
 @@scope(name, expr)              a named predicate in the @@allow expression language, asked
                                  for as `where: { $scope: 'name' }`. See below
 @@transitions(field, ...)        a state machine on an enum field, enforced at the Data
@@ -742,10 +742,10 @@ model Post {
   status    String     @default("draft")
 
   // Default is open. First @@allow makes it deny-by-default for that operation.
-  @@allow('read',   status == 'published' || accountId == auth().accountId)
-  @@allow('create', accountId == auth().accountId)
-  @@allow('update', accountId == auth().accountId)
-  @@deny('delete',  status == 'published')   // published posts can never be deleted
+  @@allow(read,   status == 'published' || accountId == auth().accountId)
+  @@allow(create, accountId == auth().accountId)
+  @@allow(update, accountId == auth().accountId)
+  @@deny(delete,  status == 'published')   // published posts can never be deleted
 }
 ```
 
@@ -848,7 +848,7 @@ await app.order.update({ where: { id: 1 }, data: { trackingCode: 'TRK-1' }, syst
 Three things follow. **Both refuse a write by name rather than dropping it**,
 because the client is told the column is `readOnly` and a generated form does not
 offer it — so a payload naming one is code that meant to write it. A field
-`@allow('write', …)` still drops silently, and must: there the same payload is
+`@allow(write, …)` still drops silently, and must: there the same payload is
 legitimate for another caller. **`@guarded` is not a level** — it takes no
 argument, and `@guarded(5)` does not parse; per-role column access is field-level
 `@allow`. And a **required** `@guarded` column makes its model uncreatable below
@@ -856,7 +856,7 @@ level 8.
 
 `@encrypted` alone is not a guard — it hides a value from a reader and stays
 writable, which is what a caller submitting a secret needs. The two cannot sit on
-one field, and that is the choice: `@allow('write', …)` for a column some callers
+one field, and that is the choice: `@allow(write, …)` for a column some callers
 may set, `@guarded` for one only `asSystem()` touches.
 
 ---

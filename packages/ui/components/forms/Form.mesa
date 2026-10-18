@@ -211,7 +211,7 @@
   // correction made in that same submit is deleted on the way out.
   let _sealed = resource?.sealedFields?.(_opened) ?? []
 
-  // Which columns the server KEPT BACK from this read. A field `@allow('read',
+  // Which columns the server KEPT BACK from this read. A field `@allow(read,
   // …)` is enforced by stripping the key, so the form holds no value for it and
   // an ordinary empty box would write that emptiness over what is stored — a
   // write the boundary ACCEPTS, because a read policy is not a write policy.
@@ -684,7 +684,7 @@
       if (!wasNew) _rebaseline(asSent, result)
 
       // The write succeeded and the boundary may still have kept a column.
-      // A field `@allow('write', …)` DROPS rather than refuses, because the
+      // A field `@allow(write, …)` DROPS rather than refuses, because the
       // same payload is legitimate for another caller — so there is no error
       // to map, no throw to catch, and the only thing that separates *saved*
       // from *saved except that one* is the answer beside what was sent

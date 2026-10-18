@@ -712,12 +712,12 @@ as the answer to `FJS-1161`, is gone (`FJS-1771`).
   - **B** — the kill switch and the dry run only.
   - **Recommend A** — the README calls these day-one features rather than
     hardening, and each one bounds a different way a flow edit goes wrong.
-- ~~**18 — Who may edit a flow they do not own?**~~ **Answered 2026-09-14 (`FJS-D289`): A — owners only: `@@allow('update', ownerId == auth().id)` on `Flow`, `FlowLayout` and version creates, with administrators editing through the phase 5 `flows` service after its own gate check.** `Flow` is gated `4.4.4.5` and
+- ~~**18 — Who may edit a flow they do not own?**~~ **Answered 2026-09-14 (`FJS-D289`): A — owners only: `@@allow(update, ownerId == auth().id)` on `Flow`, `FlowLayout` and version creates, with administrators editing through the phase 5 `flows` service after its own gate check.** `Flow` is gated `4.4.4.5` and
   carries no row policy, so any `USER(4)` may rename another person's draft,
   write a new version of it or pause it. A run acts as the owner (`FJS-D276`),
   so an edit by somebody else changes what the owner's standing does, and
   `FlowVersion.authorId` now records who did.
-  - **A** — owners only: `@@allow('update', ownerId == auth().id)` on `Flow`,
+  - **A** — owners only: `@@allow(update, ownerId == auth().id)` on `Flow`,
     `FlowLayout` and version creates, with administrators editing through the
     phase 5 `flows` service after its own gate check.
   - **B** — the gate only. Any `USER(4)` edits any flow, and activation at
@@ -838,7 +838,7 @@ as the answer to `FJS-1161`, is gone (`FJS-1771`).
     owner reads it. Automations become an administrator's screen; staff keep
     drafting through the services and read nothing back.
   - **C** — orion ships no read rule beyond the gate, and a host whose USER is
-    wider than its staff adds its own `@@allow('read', …)` with `extend model`.
+    wider than its staff adds its own `@@allow(read, …)` with `extend model`.
   - **Recommend A** — B and C both still leave a run holding columns its readers
     may not read, and C makes every host rediscover the hole; A follows the
     owner-or-administrator rule the services already use for every write, so a

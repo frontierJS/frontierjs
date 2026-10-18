@@ -53,8 +53,8 @@ model Doc {
   editorIds String[]
   openUntil DateTime?
   ${cols}
-  @@allow('read',   ${expr})
-  @@allow('create', ${expr})
+  @@allow(read,   ${expr})
+  @@allow(create, ${expr})
 }
 `
 
@@ -169,7 +169,7 @@ describe('one predicate, two interpreters', () => {
 model Task {
   id    Int       @id
   dueAt DateTime?
-  note  String?   @allow('read', dueAt != null && dueAt < now() + 2d)
+  note  String?   @allow(read, dueAt != null && dueAt < now() + 2d)
   @@scope(soon, dueAt > now() && dueAt < now() + 2d)
   @@gate(0)
 }` })
@@ -188,15 +188,15 @@ model Task {
 model Team {
   id      String  @id
   ownerId String?
-  @@allow('read',   ownerId == auth().id)
-  @@allow('create', ownerId == auth().id)
+  @@allow(read,   ownerId == auth().id)
+  @@allow(create, ownerId == auth().id)
 }
 model Doc {
   id     String @id
   teamId String?
   team   Team?  @relation(fields: [teamId], references: [id])
-  @@allow('read',   check(team))
-  @@allow('create', check(team))
+  @@allow(read,   check(team))
+  @@allow(create, check(team))
 }
 `
     const db  = await createClient({ schema, db: ':memory:' })
@@ -238,8 +238,8 @@ model Doc {
   id      String @id
   ownerId String?
   owner   Owner? @relation(fields: [ownerId], references: [id])
-  @@allow('read',   EXPR)
-  @@allow('create', EXPR)
+  @@allow(read,   EXPR)
+  @@allow(create, EXPR)
 }
 `
     const OWNERS = [
@@ -301,7 +301,7 @@ model Doc {
   id      String @id
   ownerId String?
   owner   Owner? @relation(fields: [ownerId], references: [id])
-  @@allow('read', owner.userId == auth().id)
+  @@allow(read, owner.userId == auth().id)
 }
 `
     const db  = await createClient({ schema, db: ':memory:' })
@@ -336,7 +336,7 @@ model Team {
   id      String       @id
   private Boolean      @default(false)
   members TeamMember[]
-  @@allow('read', EXPR)
+  @@allow(read, EXPR)
 }
 model TeamMember {
   id        String    @id
@@ -391,10 +391,10 @@ model Doc {
   id      String @id
   status  String?
   ownerId String?
-  @@allow('read',   ownerId == auth().id)
-  @@allow('create', ownerId == auth().id)
-  @@deny('read',    status == 'locked')
-  @@deny('create',  status == 'locked')
+  @@allow(read,   ownerId == auth().id)
+  @@allow(create, ownerId == auth().id)
+  @@deny(read,    status == 'locked')
+  @@deny(create,  status == 'locked')
 }
 `
     const rows = [
@@ -501,8 +501,8 @@ model Doc {
   id  String @id
   qty Int?
   ${col}
-  @@allow('read',   ${expr})
-  @@allow('create', ${expr})
+  @@allow(read,   ${expr})
+  @@allow(create, ${expr})
 }
 `
       await expect(createClient({ schema, db: ':memory:' })).rejects.toThrow(new RegExp(`@${kind}`))
@@ -517,8 +517,8 @@ model Doc {
   id  String @id
   qty Int?
   ${col}
-  @@allow('read',   qty > 5)
-  @@allow('create', qty > 5)
+  @@allow(read,   qty > 5)
+  @@allow(create, qty > 5)
 }
 `
       const db = await createClient({ schema, db: ':memory:' })
@@ -534,8 +534,8 @@ model Doc {
   id   String @id
   kids Kid[]
   n    Int?   @from(Kid, count: true)
-  @@allow('read',   n > 0)
-  @@allow('create', n > 0)
+  @@allow(read,   n > 0)
+  @@allow(create, n > 0)
 }
 model Kid {
   id    String @id
@@ -552,8 +552,8 @@ model Doc {
   id  String @id
   qty Int?
   dbl Int? @generated("qty * 2")
-  @@allow('create', qty > 0)
-  @@deny('create',  dbl > 10)
+  @@allow(create, qty > 0)
+  @@deny(create,  dbl > 10)
 }
 `
     await expect(createClient({ schema, db: ':memory:' })).rejects.toThrow(/can never fire, so it refuses nothing/)
@@ -567,8 +567,8 @@ model Doc {
 model Doc {
   id  String @id
   tag String? @system
-  @@allow('read',   tag == 'x')
-  @@allow('create', tag == 'x')
+  @@allow(read,   tag == 'x')
+  @@allow(create, tag == 'x')
 }
 `
     const db = await createClient({ schema, db: ':memory:' })
@@ -587,8 +587,8 @@ describe('a String column used as a predicate', () => {
 model Doc {
   id   String @id
   flag String?
-  @@allow('read',   ${expr})
-  @@allow('create', ${expr})
+  @@allow(read,   ${expr})
+  @@allow(create, ${expr})
 }
 `
   for (const expr of [`flag`, `!flag`, `flag ? true : false`, `flag && true`]) {
@@ -610,8 +610,8 @@ model Doc {
   id      Int  @id
   ownerId Int
   owner   User @relation(fields: [ownerId], references: [id])
-  @@allow('read',   owner == auth().id)
-  @@allow('create', owner == auth().id)
+  @@allow(read,   owner == auth().id)
+  @@allow(create, owner == auth().id)
 }
 `
   it('read and create admit the caller\'s own row and refuse another\'s', async () => {
@@ -698,5 +698,55 @@ describe('a scalar where a claim is read as a LIST', () => {
       { claims: ['teamIds'] })
     expect([...readable]).toEqual(['r1'])
     expect([...creatable]).toEqual(['r1'])
+  })
+})
+
+// ─── @@require: a rule about the data, graded under asSystem() (FJS-1878) ────
+//
+// `@@deny` is the caller tier and `asSystem()` drops it, so a carrier send, an
+// automation and a job all wrote past a consent the schema stated. `@@require`
+// takes the same predicate and holds for every writer.
+describe('@@require is graded under asSystem()', () => {
+  const SCHEMA = `
+model Conversation {
+  id         Int       @id @default(autoincrement())
+  optedOutAt DateTime?
+  messages   Message[]
+}
+model Message {
+  id             Int          @id @default(autoincrement())
+  direction      String
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  @@require(create, direction == 'inbound' || conversation.optedOutAt == null, 'They texted STOP.')
+}`
+
+  const build = async () => {
+    const db  = await createClient({ schema: SCHEMA, db: ':memory:' })
+    const sys = db.asSystem()
+    const open = await sys.conversation.create({ data: {} })
+    const stopped = await sys.conversation.create({ data: { optedOutAt: new Date().toISOString() } })
+    return { db, sys, open, stopped }
+  }
+
+  it('refuses an outbound row for an opted-out conversation, system or not', async () => {
+    const { db, sys, stopped } = await build()
+    const data = { direction: 'outbound', conversationId: stopped.id }
+    await expect(sys.message.create({ data })).rejects.toThrow('They texted STOP.')
+    await expect(db.$setAuth({ id: 1 }).message.create({ data })).rejects.toThrow('They texted STOP.')
+    db.$close()
+  })
+
+  it('admits an inbound row for the same conversation and an outbound row for an open one', async () => {
+    const { db, sys, open, stopped } = await build()
+    await sys.message.create({ data: { direction: 'inbound', conversationId: stopped.id } })
+    await sys.message.create({ data: { direction: 'outbound', conversationId: open.id } })
+    expect(await sys.message.count()).toBe(2)
+    db.$close()
+  })
+
+  it('refuses a rule on an operation it cannot grade, by name', async () => {
+    const bad = SCHEMA.replace('(create,', '(read,')
+    await expect(createClient({ schema: bad, db: ':memory:' })).rejects.toThrow(/cannot grade read/)
   })
 })

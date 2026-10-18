@@ -309,7 +309,7 @@ export interface PolicyMismatch {
   message: string
 }
 
-export type TenantIsolationOp = 'read' | 'create' | 'update' | 'delete' | 'post-update'
+export type TenantIsolationOp = 'read' | 'create' | 'update' | 'delete' | 'postUpdate'
 
 /**
  * `'leaked'` is the finding. `'unreachable'` (the owning tenant cannot reach its

@@ -34,13 +34,13 @@ describe('a check() cycle is refused at startup', () => {
         id      Int    @id
         right   Right  @relation(fields: [rightId], references: [id])
         rightId Int
-        @@allow('read', check(right))
+        @@allow(read, check(right))
       }
       model Right {
         id     Int   @id
         left   Left? @relation(fields: [leftId], references: [id])
         leftId Int?
-        @@allow('read', check(left))
+        @@allow(read, check(left))
       }
     `).then(() => null, (e: Error) => e)
 
@@ -58,19 +58,19 @@ describe('a check() cycle is refused at startup', () => {
         id Int @id
         b  B   @relation(fields: [bId], references: [id])
         bId Int
-        @@allow('read', check(b))
+        @@allow(read, check(b))
       }
       model B {
         id Int @id
         c  C   @relation(fields: [cId], references: [id])
         cId Int
-        @@allow('read', check(c))
+        @@allow(read, check(c))
       }
       model C {
         id Int @id
         a  A?  @relation(fields: [aId], references: [id])
         aId Int?
-        @@allow('read', check(a))
+        @@allow(read, check(a))
       }
     `).then(() => null, (e: Error) => e)
 
@@ -86,8 +86,8 @@ describe('a check() cycle is refused at startup', () => {
         children Comment[] @relation("thread")
         parentId Int?
         ownerId  Int
-        @@allow('read', ownerId == auth().id)
-        @@allow('read', check(parent))
+        @@allow(read, ownerId == auth().id)
+        @@allow(read, check(parent))
       }
     `).then(() => null, (e: Error) => e)
 
@@ -106,13 +106,13 @@ describe('a check() cycle is refused at startup', () => {
         id      Int    @id
         queue   Queue  @relation(fields: [queueId], references: [id])
         queueId Int
-        @@allow('update', check(queue, 'read'))
+        @@allow(update, check(queue, 'read'))
       }
       model Queue {
         id       Int     @id
         ticket   Ticket? @relation(fields: [ticketId], references: [id])
         ticketId Int?
-        @@allow('read', check(ticket, 'update'))
+        @@allow(read, check(ticket, 'update'))
       }
     `).then(() => null, (e: Error) => e)
 
@@ -128,18 +128,18 @@ describe('a check() cycle is refused at startup', () => {
         id     Int  @id
         folder Folder @relation(fields: [folderId], references: [id])
         folderId Int
-        @@allow('read', check(folder))
+        @@allow(read, check(folder))
       }
       model Folder {
         id      Int  @id
         vault   Vault @relation(fields: [vaultId], references: [id])
         vaultId Int
-        @@allow('read', check(vault))
+        @@allow(read, check(vault))
       }
       model Vault {
         id      Int @id
         ownerId Int
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
     `)
     const sys = db.asSystem()
@@ -162,13 +162,13 @@ describe('a check() cycle is refused at startup', () => {
         id      Int    @id
         posts   Post[]
         ownerId Int
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
       model Post {
         id       Int    @id
         author   Author @relation(fields: [authorId], references: [id])
         authorId Int
-        @@allow('read', check(author))
+        @@allow(read, check(author))
       }
     `)
     const sys = db.asSystem()
@@ -198,7 +198,7 @@ describe('a check() at protection the compiler cannot see is warned about', () =
         id      Int   @id
         vault   Vault @relation(fields: [vaultId], references: [id])
         vaultId Int
-        @@allow('read', check(vault))
+        @@allow(read, check(vault))
       }
       model Vault {
         id Int @id
@@ -225,7 +225,7 @@ describe('a check() at protection the compiler cannot see is warned about', () =
         id      Int   @id
         vault   Vault @relation(fields: [vaultId], references: [id])
         vaultId Int
-        @@allow('read', check(vault))
+        @@allow(read, check(vault))
       }
       model Vault {
         id Int @id
@@ -243,13 +243,13 @@ describe('a check() at protection the compiler cannot see is warned about', () =
         id      Int   @id
         vault   Vault @relation(fields: [vaultId], references: [id])
         vaultId Int
-        @@allow('read', check(vault))
+        @@allow(read, check(vault))
       }
       model Vault {
         id      Int @id
         ownerId Int
         @@gate(4)
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
     `)
     expect(warnings).toEqual([])
@@ -262,11 +262,70 @@ describe('a check() at protection the compiler cannot see is warned about', () =
         id      Int   @id
         vault   Vault @relation(fields: [vaultId], references: [id])
         vaultId Int
-        @@allow('read', check(vault))
+        @@allow(read, check(vault))
       }
       model Vault { id Int @id }
     `)
     expect(warnings).toEqual([])
+    db.$close?.()
+  })
+
+  test('a target whose policy is itself a delegation is silent — the chain ends at a row policy', async () => {
+    const { db, warnings } = await warningsFrom(`
+      model Project {
+        id      Int   @id
+        ownerId Int
+        runs    Run[]
+        @@gate(4)
+        @@allow(read, ownerId == auth().id)
+      }
+      model Run {
+        id        Int     @id
+        projectId Int
+        project   Project @relation(fields: [projectId], references: [id])
+        steps     StepRun[]
+        @@gate(4)
+        @@allow(read, check(project, 'read'))
+      }
+      model StepRun {
+        id    Int @id
+        runId Int
+        run   Run @relation(fields: [runId], references: [id])
+        @@gate(4)
+        @@allow(read, check(run, 'read'))
+      }
+    `)
+    expect(warnings).toEqual([])
+    db.$close?.()
+  })
+
+  test('the same chain with the middle policy gone warns, naming the middle model', async () => {
+    const { db, warnings } = await warningsFrom(`
+      model Project {
+        id      Int   @id
+        ownerId Int
+        runs    Run[]
+        @@gate(4)
+        @@allow(read, ownerId == auth().id)
+      }
+      model Run {
+        id        Int     @id
+        projectId Int
+        project   Project @relation(fields: [projectId], references: [id])
+        steps     StepRun[]
+        @@gate(4)
+      }
+      model StepRun {
+        id    Int @id
+        runId Int
+        run   Run @relation(fields: [runId], references: [id])
+        @@gate(4)
+        @@allow(read, check(run, 'read'))
+      }
+    `)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('StepRun')
+    expect(warnings[0]).toContain('delegates to Run')
     db.$close?.()
   })
 
@@ -276,13 +335,13 @@ describe('a check() at protection the compiler cannot see is warned about', () =
         id      Int   @id
         vault   Vault @relation(fields: [vaultId], references: [id])
         vaultId Int
-        @@allow('delete', check(vault, 'delete'))
+        @@allow(delete, check(vault, 'delete'))
       }
       model Vault {
         id      Int @id
         ownerId Int
         @@gate(4)
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
     `)
     expect(warnings).toHaveLength(1)

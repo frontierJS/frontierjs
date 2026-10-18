@@ -33,9 +33,9 @@ model Invoice {
   token    String  @guarded @default("minted")
   lines    Line[]
   @@gate(1.8.8.9)
-  @@allow('read',   true)
-  @@allow('create', ownerId == auth().id)
-  @@allow('update', ownerId == auth().id)
+  @@allow(read,   true)
+  @@allow(create, ownerId == auth().id)
+  @@allow(update, ownerId == auth().id)
 }
 
 model Line {

@@ -61,10 +61,10 @@ describe('the declaration', () => {
     expect(parse(`model T { id Int @id  c String? @guarded @system }`).valid).toBe(true)
   })
 
-  it("refuses @allow('write', …) beside it — one says nobody, the other says it depends", () => {
-    const r = parse(`model T { id Int @id  c String? @system @allow('write', auth().isAdmin) }`)
+  it("refuses @allow(write, …) beside it — one says nobody, the other says it depends", () => {
+    const r = parse(`model T { id Int @id  c String? @system @allow(write, auth().isAdmin) }`)
     expect(r.valid).toBe(false)
-    expect(r.errors.join(' ')).toMatch(/@system conflicts with @allow\('write'/)
+    expect(r.errors.join(' ')).toMatch(/@system conflicts with @allow\(write/)
   })
 
   it('refuses a field with no column to lock', () => {
@@ -340,7 +340,7 @@ model Credit {
   // Provider's to keep; a @local key is the app's and keeps the constraint.
   it('lands a child before its parent, and keeps the foreign key a @local column holds', async () => {
     const REL = `
-model Channel { id Int @id  externalId String  posts Post[]  @@mirror(key: externalId)  @@allow('read', true) }
+model Channel { id Int @id  externalId String  posts Post[]  @@mirror(key: externalId)  @@allow(read, true) }
 model Crew    { id Int @id  posts Post[] }
 model Post {
   id                Int     @id
@@ -350,7 +350,7 @@ model Post {
   crewId            Int?    @local
   crew              Crew?   @relation(fields: [crewId], references: [id])
   @@mirror(key: externalId)
-  @@allow('read', check(channel))
+  @@allow(read, check(channel))
 }`
     const db = await createClient({ schema: REL, db: ':memory:' })
     const sys = db.asSystem()

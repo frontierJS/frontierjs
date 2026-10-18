@@ -187,7 +187,9 @@ describe('gate-with-nothing-saying-whose-row', () => {
   test('silent with a policy, and on a model only asSystem() reaches', () => {
     expect(found(AUTH + `
       model Post { id Int @id  ownerId Int  @@gate(2.4.4.5)
-        @@allow('read,update,delete', ownerId == auth().id) }`, ID)).toEqual([])
+        @@allow(read, ownerId == auth().id)
+        @@allow(update, ownerId == auth().id)
+        @@allow(delete, ownerId == auth().id) }`, ID)).toEqual([])
     expect(found(`model Secret { id Int @id  @@gate(8) }`, ID)).toEqual([])
   })
 
@@ -201,7 +203,8 @@ describe('gate-with-nothing-saying-whose-row', () => {
         authorId Int
         author   User @relation(fields: [authorId], references: [id])
         @@gate(2.4.4.5)
-        @@allow('update,delete', authorId == auth().id)
+        @@allow(update, authorId == auth().id)
+        @@allow(delete, authorId == auth().id)
       }`, ID)
     expect(f.map(x => [x.model, x.confidence])).toEqual([['Issue', 'likely']])
     expect(f[0].message).toContain('read')
@@ -214,7 +217,9 @@ describe('gate-with-nothing-saying-whose-row', () => {
         id    Int  @id
         orgId Int
         @@gate(4)
-        @@allow('read,create,update', orgId == auth().id)
+        @@allow(read, orgId == auth().id)
+        @@allow(create, orgId == auth().id)
+        @@allow(update, orgId == auth().id)
       }`, ID)
     expect(f.map(x => x.model)).toEqual(['Subscription'])
     expect(f[0].message).toContain('delete')
@@ -226,7 +231,8 @@ describe('gate-with-nothing-saying-whose-row', () => {
       model Subscription {
         id Int @id  orgId Int
         @@gate(4.4.4.8)
-        @@allow('read,update', orgId == auth().id)
+        @@allow(read, orgId == auth().id)
+        @@allow(update, orgId == auth().id)
       }`, ID)).toEqual([])
   })
 
@@ -237,7 +243,7 @@ describe('gate-with-nothing-saying-whose-row', () => {
         ownerId Int
         owner   User @relation(fields: [ownerId], references: [id])
         @@gate(4)
-        @@allow('all', ownerId == auth().id)
+        @@allow(all, ownerId == auth().id)
       }
       model Issue {
         id     Int  @id
@@ -257,7 +263,7 @@ describe('gate-with-nothing-saying-whose-row', () => {
     const f = found(AUTH + `
       model A { id Int @id  ownerId Int  owner User @relation(fields: [ownerId], references: [id])
         bId Int  b B @relation(fields: [bId], references: [id])
-        @@allow('all', ownerId == auth().id)  @@gate(4) }
+        @@allow(all, ownerId == auth().id)  @@gate(4) }
       model B { id Int @id  aId Int  a A @relation(fields: [aId], references: [id])  @@gate(4) }
       model C { id Int @id  bId Int  b B @relation(fields: [bId], references: [id])  @@gate(4) }`, ID)
     expect(f.map(x => [x.model, x.confidence]).sort()).toEqual([['B', 'likely'], ['C', 'likely']])
@@ -588,7 +594,9 @@ describe('a schema that took every suggestion', () => {
         password String  @hashed
         @@auth
         @@gate(2.4.4.5)
-        @@allow('read,update,delete', id == auth().id)
+        @@allow(read, id == auth().id)
+        @@allow(update, id == auth().id)
+        @@allow(delete, id == auth().id)
       }
       model Order {
         id        Int      @id
@@ -600,7 +608,9 @@ describe('a schema that took every suggestion', () => {
         @@softDelete
         @@transitions(status, draft -> paid)
         @@gate(2.4.4.5)
-        @@allow('read,update,delete', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
+        @@allow(update, ownerId == auth().id)
+        @@allow(delete, ownerId == auth().id)
       }`)).toEqual([])
   })
 })

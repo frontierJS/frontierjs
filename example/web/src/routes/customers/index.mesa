@@ -361,7 +361,7 @@ title: Customers
 
 {#if hasNotes}
   <Alert tone="success">
-    <code>notes</code> is present. <code>@allow('read', auth().role == 'admin')</code> let this response carry it.
+    <code>notes</code> is present. <code>@allow(read, auth().role == 'admin')</code> let this response carry it.
   </Alert>
 {:else}
   <Alert tone="muted">

@@ -753,7 +753,7 @@ CREATE INDEX IF NOT EXISTS "idx_cart_line_variantId" ON "cart_line" ("variantId"
 -- It would fit there — a line already names a variant and a quantity, and an
 -- `heldUntil` column would have been three characters of schema. It is wrong
 -- for one reason and the reason is a POLICY: CartLine is scoped by the
--- shopper's token (`@@allow('read', token == auth().cartToken)`), and
+-- shopper's token (`@@allow(read, token == auth().cartToken)`), and
 -- availability is a sum over *everybody's* holds. Summing CartLine from a
 -- shopper's own client answers a sum over their own basket — a number that is
 -- always plausible, usually zero, and never the one asked for. It is the exact

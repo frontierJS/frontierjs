@@ -326,7 +326,7 @@ await user.person.aggregate({ _max: { salary: true } })
 await db.asSystem().person.aggregate({ _max: { salary: true } })   // { _max: { salary: 900 } }
 ```
 
-A field-level `@allow('read', …)` is **refused rather than evaluated**: it is a
+A field-level `@allow(read, …)` is **refused rather than evaluated**: it is a
 predicate over a row, and an aggregate has no row to decide it against, so there
 is no honest answer over some rows and not others.
 

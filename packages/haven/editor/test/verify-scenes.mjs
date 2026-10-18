@@ -92,7 +92,7 @@ writeFileSync(join(root, 'bin/claude'), `#!/usr/bin/env bun
 const fs = require('fs')
 fs.writeFileSync(${JSON.stringify(SEEN)}, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), input: fs.readFileSync(0, 'utf8') }))
 const scene = ${JSON.stringify(SCENE)}
-fs.writeFileSync(scene, fs.readFileSync(scene, 'utf8').replace('x={10}  y={13}', 'x={12}  y={13}'))
+fs.writeFileSync(scene, fs.readFileSync(scene, 'utf8').replace('x={10}  y={14}', 'x={12}  y={14}'))
 process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false }) + '\\n')
 `)
 chmodSync(join(root, 'bin/claude'), 0o755)
@@ -176,30 +176,30 @@ check(rows[25].includes('n'), "the door's n is in the bottom wall")
 check((await text('[data-problems]'))?.includes('The spawn reaches every door'), 'an unedited tavern has nothing wrong', await text('aside'))
 check(!(await saveEnabled()), 'and nothing to save')
 check((await marksOf('success')).join() === '48,24', 'the spawn is marked on its cell', JSON.stringify(await marksOf('success')))
-check((await marksOf('warning')).join() === '48,25,75,11', 'both doors are marked on their cells, the hidden one too: the editor is where an author finds a secret', JSON.stringify(await marksOf('warning')))
+check((await marksOf('warning')).join() === '48,25,75,15,95,13,17,21', 'both doors are marked on their cells, the hidden one too: the editor is where an author finds a secret', JSON.stringify(await marksOf('warning')))
 
 // ─── a piece moved by arrow ───────────────────────────────────────────
 
-await clickCell(10, 14)
-check(await selectedIs('table at 9,13'), 'a click on a table selects it, named with its cell', await selected())
+await clickCell(10, 15)
+check(await selectedIs('table at 9,14'), 'a click on a table selects it, named with its cell', await selected())
 await browser.press('ArrowRight')
-check(await selectedIs('table at 10,13'), 'ArrowRight moves it one cell right', await selected())
-check(await until(async () => tableAt((await art())[14], 10)), 'and the art moves with it', (await art())[14])
+check(await selectedIs('table at 10,14'), 'ArrowRight moves it one cell right', await selected())
+check(await until(async () => tableAt((await art())[15], 10)), 'and the art moves with it', (await art())[15])
 check(await saveEnabled(), 'and there is something to save')
 
-await clickCell(84, 16)
-check(await selectedIs('barrel at 83,15'), 'a click on a barrel selects it', await selected())
-await browser.press('ArrowRight')
-check(await until(async () => (await text('[data-status]'))?.includes('cell 89,16 is claimed by both barrel and barrel')), 'a move onto another barrel is refused naming the cell and both', await text('[data-status]'))
-check((await selected())?.includes('barrel at 83,15'), 'and the barrel stays where it was', await selected())
+await clickCell(91, 15)
+check(await selectedIs('barrel at 90,14'), 'a click on a barrel selects it', await selected())
+await browser.press('ArrowDown')
+check(await until(async () => (await text('[data-status]'))?.includes('cell 91,17 is claimed by both barrel and barrel')), 'a move onto another barrel is refused naming the cell and both', await text('[data-status]'))
+check((await selected())?.includes('barrel at 90,14'), 'and the barrel stays where it was', await selected())
 
-await clickCell(11, 14)
-check(await selectedIs('table at 10,13'), 'the moved table is selected again')
+await clickCell(11, 15)
+check(await selectedIs('table at 10,14'), 'the moved table is selected again')
 await browser.press('z', CTRL)
-check(await selectedIs('table at 9,13'), 'Ctrl+Z undoes the move', await selected())
-check(await until(async () => tableAt((await art())[14], 9)), 'and the art goes back')
+check(await selectedIs('table at 9,14'), 'Ctrl+Z undoes the move', await selected())
+check(await until(async () => tableAt((await art())[15], 9)), 'and the art goes back')
 await browser.press('z', CTRL | SHIFT)
-check(await selectedIs('table at 10,13'), 'Ctrl+Shift+Z redoes it', await selected())
+check(await selectedIs('table at 10,14'), 'Ctrl+Shift+Z redoes it', await selected())
 
 // ─── placed, moved, typed, picked, removed ────────────────────────────
 
@@ -214,9 +214,9 @@ check(await page(`return document.querySelectorAll('pre[data-art]').length`) ===
 check(await page(`return window.__stage.picture()[20].slice(40, 43)`) === '(o)', 'and the edited stage has the lamp', await page(`return window.__stage.picture()[20]`))
 
 await mode('Spawn')
-await clickCell(50, 21)
-check(await until(async () => (await text('[data-spawn]')) === 'Spawn 50,21'), 'the spawn moves by click', await text('[data-spawn]'))
-check((await marksOf('success')).join() === '50,21', 'and is marked there')
+await clickCell(40, 13)
+check(await until(async () => (await text('[data-spawn]')) === 'Spawn 40,13'), 'the spawn moves by click', await text('[data-spawn]'))
+check((await marksOf('success')).join() === '40,13', 'and is marked there')
 
 await mode('Select')
 await clickCell(48, 25)
@@ -235,10 +235,10 @@ await page(`
 `)
 check(await until(async () => await page(`return getComputedStyle(document.querySelector('pre[data-art] span')).color`) === 'rgb(0, 0, 0)'), 'a palette color picked is drawn at once')
 
-await clickCell(87, 19)
-check(await selectedIs('barrel at 86,18'), 'a click on the lower barrel selects it', await selected())
+await clickCell(91, 21)
+check(await selectedIs('barrel at 90,20'), 'a click on the lower barrel selects it', await selected())
 await browser.press('Delete')
-check(await until(async () => (await art())[19].slice(86, 92) === '      '), 'Delete removes it from the art', `${(await art())[19]}\nstage: ${await page(`return window.__stage.picture()[19]`)}`)
+check(await until(async () => (await art())[21].slice(90, 96) === '      '), 'Delete removes it from the art', `${(await art())[21]}\nstage: ${await page(`return window.__stage.picture()[21]`)}`)
 check((await selected())?.includes('Click a piece'), 'and nothing is selected')
 
 // ─── saved into the file's own text ───────────────────────────────────
@@ -247,23 +247,23 @@ await mode('Save')
 check(await until(async () => (await text('[data-status]'))?.startsWith('Saved Tavern.mesa')), 'Save writes the file', await text('[data-status]'))
 const saved = readFileSync(SCENE, 'utf8')
 check(saved !== original, 'the saved file differs from the original')
-check(saved.includes('<Piece of={table}   x={10}  y={13} />'), 'the moved table is its attribute edit, in place', saved.split('\n').filter((l) => l.includes('table')).join('\n'))
-check(!saved.includes('x={86} y={18}'), 'the removed barrel took its line with it')
+check(saved.includes('<Piece of={table}   x={10}  y={14} />'), 'the moved table is its attribute edit, in place', saved.split('\n').filter((l) => l.includes('table')).join('\n'))
+check(!saved.includes('x={90} y={20}'), 'the removed barrel took its line with it')
 check(saved.includes("import { lamp } from '@/pieces/lamp.js'\n") && saved.includes('<Piece of={lamp} x={40} y={20} />\n</Scene>'), 'the lamp is imported and placed before </Scene>', saved.slice(-200))
-check(saved.includes('spawn={{ x: 50, y: 21 }}'), 'the spawn is written')
+check(saved.includes('spawn={{ x: 40, y: 13 }}'), 'the spawn is written')
 check(saved.includes('to="/square/"'), "the door's target is written")
 check(saved.includes("f: { fg: '#000000' }"), 'the picked color is written')
 const gone = original.split('\n').filter((l) => !saved.includes(l))
-check(gone.length === 5 && gone.every((l) => /x=\{9\}|x=\{86\}|spawn=|<Door|^\s+f: /.test(l)), 'and every other line of the file is untouched', gone.join('\n'))
+check(gone.length === 5 && gone.every((l) => /x=\{9\} {2}y=\{14\}|x=\{90\} y=\{20\}|spawn=|<Door|^\s+f: /.test(l)), 'and every other line of the file is untouched', gone.join('\n'))
 
 const again = readScene(saved)
-check(again.elements.length === 17, 'read again, the file is 17 placed tags', String(again.elements.length))
+check(again.elements.length === 21, 'read again, the file is 21 placed tags', String(again.elements.length))
 const { stage, dispose } = await mountScene(SCENE)
 const shown = stage.doors.filter((d) => !d.hidden)
-check(shown.length === 1 && shown[0].to === '/square/' && shown[0].x === 48, 'the saved scene mounts with its door retargeted', JSON.stringify(stage.doors))
+check(shown.length === 3 && shown.some((d) => d.to === '/square/' && d.x === 48), 'the saved scene mounts with its door retargeted', JSON.stringify(stage.doors))
 check(stage.doors.some((d) => d.hidden && d.to === '/cellar/'), 'and the hidden door to the cellar is still hidden, a save having left its tag alone', JSON.stringify(stage.doors))
-check(stage.picture()[20].slice(40, 43) === '(o)' && stage.picture()[19].slice(86, 92) === '      ', 'the lamp placed and the barrel gone')
-check(stage.spawn.x === 50 && stage.spawn.y === 21 && stage.walkable(50, 21), 'and the spawn where it was put, on floor')
+check(stage.picture()[20].slice(40, 43) === '(o)' && stage.picture()[21].slice(90, 96) === '      ', 'the lamp placed and the barrel gone')
+check(stage.spawn.x === 40 && stage.spawn.y === 13 && stage.walkable(40, 13), 'and the spawn where it was put, on floor')
 dispose()
 
 // ─── the history survives the save and a reload ───────────────────────
@@ -274,10 +274,10 @@ check(await until(async () => (await art()).length === 26 && lampAt((await overh
 check(!(await saveEnabled()), 'with nothing to save', await text('[data-status]'))
 await clickCell(45, 23)
 await browser.press('z', CTRL)
-check(await until(async () => (await art())[19].slice(86, 92) === '(====)'), 'Ctrl+Z after the reload undoes the removal before the save', `${(await art())[19]}\nstatus: ${await text('[data-status]')}\nstage: ${await page(`return window.__stage.picture()[19]`)}\nmarks: ${await page(`return window.__stage.marks.length`)}`)
+check(await until(async () => (await art())[21].slice(90, 96) === '(====)'), 'Ctrl+Z after the reload undoes the removal before the save', `${(await art())[21]}\nstatus: ${await text('[data-status]')}\nstage: ${await page(`return window.__stage.picture()[21]`)}\nmarks: ${await page(`return window.__stage.marks.length`)}`)
 check(await saveEnabled(), 'and there is something to save again')
 await browser.press('z', CTRL | SHIFT)
-check(await until(async () => (await art())[19].slice(86, 92) === '      '), 'and Ctrl+Shift+Z removes it again')
+check(await until(async () => (await art())[21].slice(90, 96) === '      '), 'and Ctrl+Shift+Z removes it again')
 
 // ─── a block of art pasted in ─────────────────────────────────────────
 
@@ -289,9 +289,9 @@ await page(`
 `)
 await mode('Place as pieces')
 check(await until(async () => (await text('[data-status]'))?.startsWith('2 piece(s) placed')), 'two tables drawn side by side are placed as two tables', await text('[data-status]'))
-check(await until(async () => tableAt((await art())[22], 50) && tableAt((await art())[22], 64)), 'with their top-left on the spawn', (await art())[22])
+check(await until(async () => tableAt((await art())[14], 40) && tableAt((await art())[14], 54)), 'with their top-left on the spawn', (await art())[14])
 // A table's top-left is a space, so the spawn under it stays floor; the cell right of it is a wall.
-check(await page(`return window.__stage.walkable(50, 21) && !window.__stage.walkable(51, 21)`), 'the spawn stays floor beside the wall of the first', await text('[data-problems]'))
+check(await page(`return window.__stage.walkable(40, 13) && !window.__stage.walkable(41, 13)`), 'the spawn stays floor beside the wall of the first', await text('[data-problems]'))
 
 // ─── the ask panel ────────────────────────────────────────────────────
 
@@ -306,13 +306,13 @@ const locOf = (needle) => {
   const before = now.slice(0, at)
   return `scenes/Tavern.mesa:${before.split('\n').length}:${at - before.lastIndexOf('\n')}`
 }
-const tableLoc = locOf('<Piece of={table}   x={10}  y={13} />')
+const tableLoc = locOf('<Piece of={table}   x={10}  y={14} />')
 const placed = (at) => page(`return document.querySelector('[data-placed=${JSON.stringify(at)}]')?.getAttribute('data-fjs-loc') ?? null`)
-check(await placed('table at 10,13') === tableLoc, "a placed table carries its tag's line", String(await placed('table at 10,13')))
+check(await placed('table at 10,14') === tableLoc, "a placed table carries its tag's line", String(await placed('table at 10,14')))
 check(await placed('the scene') === locOf('<Scene'), "and the stage the <Scene> tag's", String(await placed('the scene')))
 
 const was = await selected()
-await clickCell(11, 14, ALT | SHIFT)
+await clickCell(11, 15, ALT | SHIFT)
 check(await until(async () => !!(await page(`return document.querySelector('[data-pick=${JSON.stringify(tableLoc)}]')`))), 'shift+alt-click on the table picks it into the panel', await page(`return [...document.querySelectorAll('[data-pick]')].map((e) => e.dataset.pick).join()`))
 check(await selected() === was, 'and the editor never sees the click: its selection is as it was', await selected())
 
@@ -327,10 +327,10 @@ const edits = seen.argv.filter((a) => a.startsWith('Edit('))
 check(edits.join() === `Edit(/${COPY_SRC}),Edit(/${COPY_SRC}/**)`, "with Edit scoped to the copy's web/src and nothing wider", edits.join())
 check(seen.cwd === COPY_SRC, 'run from it', seen.cwd)
 check(seen.input.includes(tableLoc) && seen.input.includes('move this table two cells right'), "and the table's line and the instruction in the prompt", seen.input.slice(0, 600))
-check(await until(async () => tableAt((await art())[14], 12) && (await page(`return { at: document.querySelector('[data-placed="table at 12,13"]')?.getAttribute('data-fjs-loc') ?? '' }`)).at === tableLoc), "the edit it made reopens the editor on the moved table, at the tag's line", `${(await art())[14]}\n${await text('[data-status]')}`)
+check(await until(async () => tableAt((await art())[15], 12) && (await page(`return { at: document.querySelector('[data-placed="table at 12,14"]')?.getAttribute('data-fjs-loc') ?? '' }`)).at === tableLoc), "the edit it made reopens the editor on the moved table, at the tag's line", `${(await art())[15]}\n${await text('[data-status]')}`)
 check(await until(async () => (await page(`return { t: document.body.innerText }`)).t.includes('move this table two cells right')), 'and the panel is open again over the conversation')
 
-check(await page(`return window.__errors ?? 0`) === 0, 'the tab threw nothing')
+check(browser.errors.length === 0, 'the tab threw nothing', browser.errors.join('\n'))
 await browser.close()
 cleanup()
 process.exit(failed ? 1 : 0)

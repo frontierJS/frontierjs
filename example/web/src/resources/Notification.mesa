@@ -8,7 +8,7 @@
   // notification is read, never filled in.
   //
   // Nothing here says "only mine". The model does
-  // (`@@allow('read', userId == auth().id)`), and the server is what enforces
+  // (`@@allow(read, userId == auth().id)`), and the server is what enforces
   // it — which is why signing out and back in as somebody else needs no code on
   // this side at all.
   import { createResource } from '@frontierjs/sierra/resource'

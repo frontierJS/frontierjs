@@ -40,7 +40,7 @@ dropped, until [FJS-395](../../../ISSUES_ARCHIVE.md#fjs-395).
 could still compare it, which recovers it one `startsWith` at a time, and could
 sort by it, which leaks the ordering of every row at once. The refusal follows
 the grammar across relations, so a relation filter, a relation `orderBy` and a
-nested `include` are refused too. **A field-level `@allow('read', …)` still has
+nested `include` are refused too. **A field-level `@allow(read, …)` still has
 this hole** ([FJS-442](../../../ISSUES_ARCHIVE.md#fjs-442)) — a predicate is not a set,
 and the two do not have the same fix — so a value that must not be recoverable
 is `@guarded`.

@@ -18,7 +18,7 @@ model Post {
 model Draft {
   id      String @id
   ownerId String
-  @@allow('all', ownerId == auth().id)
+  @@allow(all, ownerId == auth().id)
 }
 `
 

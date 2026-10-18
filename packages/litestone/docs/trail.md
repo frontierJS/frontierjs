@@ -98,7 +98,7 @@ const [entry] = await sys.auditTrail.findMany({ where: { model: 'Widget', operat
 if (entry.before !== null || entry.after !== null || !/1,2,3/.test(JSON.stringify(entry.records))) throw new Error('a bulk write logs ids and no images')
 ```
 
-Every write path reaches the trail: `create`, `createMany`, `update`, `updateMany`, `upsert`, `upsertMany`, `remove`, `removeMany`, `delete`, `deleteMany` and `restore`. A bulk op on a logged model takes a `RETURNING` path so the entry can name the rows by id — an autoincrement id does not exist until SQLite assigns one — and `upsertMany` splits its batch into a `create` entry and an `update` entry, because it did both. `restore` logs as `update`: a restored row changed state, it was not created.
+Every write path reaches the trail: `create`, `createMany`, `update`, `updateMany`, `upsert`, `upsertMany`, `remove`, `removeMany`, `delete`, `deleteMany` and `restore`. A bulk op on a logged model takes a `RETURNING` path so the entry can name the rows by id — an autoincrement id does not exist until SQLite assigns one — and `upsertMany` splits its batch into a `create` entry and an `update` entry, because it did both. `restore` logs as `update`: a restored row changed state, it was not created. `remove` and `delete` both log as `delete`, and the entry tells them apart: a trash has an `after` (the row, stamped with `deletedAt`) and a purge has none. A `restore` of one row carries `before` (stamped) and `after` (cleared).
 
 An unlogged model pays none of this — the `RETURNING` path is taken only when the model declares `@trail` / `@@trail`.
 

@@ -53,7 +53,7 @@ that need it wrote it twice, differently.
 | --- | --- | --- |
 | A claim resolved per request, for a caller with no session | `createApp({ principal })`; `example/api/src/domain/shop/cart-claim.ts` | a stranger stays STRANGER(0); the claim decides *which rows*, never *what kind of caller* |
 | The claim is declared | `FJS-D181` — `claims: [...]` at `createClient` | a policy naming `auth().cartTokn` is refused rather than matching nothing |
-| The policy is in the schema | `example/db/schema.lite` § `Cart`, `CartLine` | `@@allow('read', token == auth().cartToken)` — Invariant 6, no hook |
+| The policy is in the schema | `example/db/schema.lite` § `Cart`, `CartLine` | `@@allow(read, token == auth().cartToken)` — Invariant 6, no hook |
 | The secret never comes back | `Cart.token @guarded` | the only way to hold one is to have been handed it |
 | It is visible to review | `cartClaim.describe()` → `kind: 'bearer'`; `principal.snapshot.md` § Claims | *bearer* against *membership* is stated where access is reviewed |
 | A capability crossing an origin | `carts.handoff` / `carts.redeem` | a one-time code in the fragment, not the token in a URL |
@@ -201,8 +201,8 @@ enum PortalScope { forms full }
 model PortalMessage {
   // …
   @@gate("0.0.0.5")
-  @@allow('read',   clientId == auth().portalClientId && auth().portalScope == 'full')
-  @@allow('create', clientId == auth().portalClientId && auth().portalScope == 'full')
+  @@allow(read,   clientId == auth().portalClientId && auth().portalScope == 'full')
+  @@allow(create, clientId == auth().portalClientId && auth().portalScope == 'full')
 }
 ```
 

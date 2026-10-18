@@ -17,7 +17,7 @@ async function client() {
         id     Int    @id
         tag    String?
         photos File[]
-        @@allow('all', true)
+        @@allow(all, true)
       }
     `,
     db: ':memory:', plugins: [files],

@@ -255,9 +255,12 @@
 
   // The shell focuses a route's first control when it mounts it, and this
   // scene mounts later, once the room's row is read. Every focus is NORMAL in
-  // the shell, so a command refocuses the line to leave INSERT (`say`).
+  // the shell, so a command refocuses the line to leave INSERT (`say`), and so
+  // does a key a verb or a mode took: the shell reads `a` and `i` as INSERT
+  // before the scene sees them, so `f a` would find Ana and start a line.
   var input = null
   const focus = (el) => { input = el; el.focus() }
+  const normal = () => { input?.blur(); input?.focus() }
 
   // Other screens hang `(…)` over this figure while its line has words and is
   // not a command (`crowd.js`), lapsing after IDLE_MS without a key so a line
@@ -404,6 +407,7 @@
     }
     if (commands.mode && commands.modeKey(e)) {
       e.preventDefault()
+      normal()
       return
     }
     if (room && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && (said.browsing || draft.startsWith('/'))) {
@@ -412,7 +416,7 @@
       if (line !== null) draft = line
       return
     }
-    if (room && commands.press(e.key, { x, y, facing }, e)) return
+    if (room && commands.press(e.key, { x, y, facing }, e)) { if (e.defaultPrevented) normal(); return }
     const step = STEP[e.key] ?? (e.defaultPrevented && !e.ctrlKey && !e.altKey && !e.metaKey ? DIAGONAL[e.key] : null)
     if (!step || !room || draft) return
     e.preventDefault()
@@ -448,7 +452,7 @@
     if (!body) return
     const lone = partial(body) && !commands.find(body.slice(1), { x, y }) ? matches(body, commands.words({ x, y })) : []
     if (lone.length === 1) body = `/${lone[0]}`
-    if (body.startsWith('/')) { said.push(body); input?.blur(); input?.focus() }
+    if (body.startsWith('/')) { said.push(body); normal() }
     draft = ''
     note  = ''
     try {

@@ -98,7 +98,7 @@ describe('createTestEnv — the API tier', () => {
   })
 
   test('a row policy sees the principal — userId became id somewhere', async () => {
-    // The seam this tier exists for. `@@allow('read', ownerId == auth().id)` is
+    // The seam this tier exists for. `@@allow(read, ownerId == auth().id)` is
     // compiled into the WHERE, so a principal that arrives as `undefined`
     // returns an empty list with a 200 and nothing raises (FJS-097). Junction's
     // toDataPrincipal() renames userId → id; if it stops, this is what goes red.

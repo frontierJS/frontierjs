@@ -71,12 +71,12 @@ measured table of every declaration against every verb is
    belongs to nobody. A model whose rows are shared across tenants declares
    `@@tenant(none)` (`FJS-D141`).
 - **5 · Field.** Two independent axes. *Visibility* asks whether this caller may see the
-   column: `@hashed`, `@encrypted`, `@guarded`, a field `@allow('read', …)`. The
+   column: `@hashed`, `@encrypted`, `@guarded`, a field `@allow(read, …)`. The
    strictest word wins, and nothing widens it. *Inclusion* asks whether the column is
    in the default payload: `@omit`. Naming the column in `select` unlocks inclusion
    only (`FJS-D205`). A field predicate is compiled into SQL, never evaluated against
    the payload (`FJS-D129`). On a write, `@guarded` and `@system` throw, and a field
-   `@allow('write')` drops the key, because the same form body is legitimate for
+   `@allow(write)` drops the key, because the same form body is legitimate for
    someone else (`FJS-D22`, `FJS-D427`).
 - **7 · Transition authority.** A move's `@gate(n)` says who may ask for it, and
    `@system` says the application makes it. A move asked for by name grades the

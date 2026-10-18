@@ -8,7 +8,7 @@ skip: "!$.config.doApi || !$.flag.outpost || $.config.deployConf.outpost !== tru
 The box a Basecamp runs on is the first place an app can go, and `fli deploy`
 already left it the Caddy Outpost writes routes into (`FJS-D598`). What it
 lacks is the Outpost, and this step installs it (`FJS-D1191`): the app's own
-`api/enroll-host.ts`, run in the new container, finds or makes the host's
+`api/src/core/enroll-host.ts`, run in the new container, finds or makes the host's
 Server row and mints its token, and the install command it answers runs on the
 host. `--no-outpost` skips it for one run.
 
@@ -41,12 +41,12 @@ const lastJson = (out) => {
 
 let answer
 try {
-  answer = lastJson(machine.capture(`docker exec ${apiContainer(appId, deployConf)} bun api/enroll-host.ts`))
+  answer = lastJson(machine.capture(`docker exec ${apiContainer(appId, deployConf)} bun api/src/core/enroll-host.ts`))
 } catch (err) {
   answer = lastJson(err.stdout) ?? { error: err.message.split('\n')[0] }
 }
 
-if (!answer)            log.warn('Outpost not enrolled: api/enroll-host.ts answered nothing — pass --no-outpost to stop trying')
+if (!answer)            log.warn('Outpost not enrolled: api/src/core/enroll-host.ts answered nothing — pass --no-outpost to stop trying')
 else if (answer.error)  log.warn(`Outpost not enrolled: ${answer.error}`)
 else if (answer.skip)   log.info(`Outpost not enrolled: ${answer.skip}`)
 else if (answer.enrolled) log.info('Outpost: this box is in the fleet already')

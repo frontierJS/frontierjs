@@ -23,7 +23,7 @@ export const SCHEMA = [
   /* 7*/ "  createdAt DateTime   @default(now())",
   /* 8*/ "",
   /* 9*/ "  @@gate(0.4.4.5)",
-  /*10*/ "  @@allow('read', ownerId == auth().id)",
+  /*10*/ "  @@allow(read, ownerId == auth().id)",
   /*11*/ "  @@index([status, createdAt])",
   /*12*/ "  @@trail(audit)",
   /*13*/ "}",
@@ -64,7 +64,7 @@ CREATE INDEX leads_status_createdAt
 CREATE UNIQUE INDEX leads_email ON leads (email);` },
 
   { id:'policies', lang:['js', 'sql'], realm:'Data', label:'Row policies', lines:[10],
-    from:"@@allow('read', ownerId == auth().id)",
+    from:"@@allow(read, ownerId == auth().id)",
     blurb:'Policies compile into the WHERE clause of every query. Not a filter you remember to apply — a filter no caller can skip.',
     code:
 `const db = client.$setAuth(user)   // user.id = 42

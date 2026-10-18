@@ -145,7 +145,7 @@ model M {
 
 The way out is to move the field out of one of the traits.
 
-**3. Model-level attributes are additive.** If `Dates` adds `@@index([createdAt])` and `Audited` adds `@@trail(audit)`, the host gets both. If two traits both add `@@allow('read', X)`, the host gets both rows in its policy list — same effect as if you'd written them inline.
+**3. Model-level attributes are additive.** If `Dates` adds `@@index([createdAt])` and `Audited` adds `@@trail(audit)`, the host gets both. If two traits both add `@@allow(read, X)`, the host gets both rows in its policy list — same effect as if you'd written them inline.
 
 ## Nested traits
 

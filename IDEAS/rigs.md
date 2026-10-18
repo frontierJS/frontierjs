@@ -237,7 +237,7 @@ rig and the wrong *structural* one, and there is a better candidate that nothing
 `Workspace` and `WorkspaceMember`, a five-rung role ladder (viewer/billing → READER,
 developer → USER, admin → ADMINISTRATOR, owner → OWNER), `applyStanding()` resolving
 membership onto the principal once per request, a `/hub/` tier above every workspace,
-and fifteen models carrying `@@allow('all', workspaceId == auth().workspaceId)`. That
+and fifteen models carrying `@@allow(all, workspaceId == auth().workspaceId)`. That
 is a rig with the packaging removed. Every B2B application built on FJS writes it
 again, and writes it slightly differently.
 

@@ -239,7 +239,7 @@ describe('what it inherits by being an ordinary write', () => {
     const client: any = await createClient({ db: ':memory:', schema: `
       model Doc {
         id  Int  @id
-        d   Json @default("{}") @allow('write', auth().role == 'admin')
+        d   Json @default("{}") @allow(write, auth().role == 'admin')
         @@gate(0.0.0.0)
       }` })
     await client.asSystem().doc.create({ data: { id: 1, d: { a: 1 } } })

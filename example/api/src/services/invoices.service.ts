@@ -78,7 +78,7 @@ export default createService({
    * where they cannot drift.
    *
    * On the CALLER's client. `@system` on the move is lifted by naming it on
-   * the call, which leaves the gate and `@@allow('update', auth().isStaff)`
+   * the call, which leaves the gate and `@@allow(update, auth().isStaff)`
    * grading who pressed the button — `asSystem()` here grades nobody, and a
    * custom method's gate floor is only a presence check (`FJS-1087`).
    *

@@ -3,7 +3,7 @@
 //
 // `_max: { salary }` and `by: ['salary']` are graded by `refuseAggregateKeys`,
 // which is the whole ladder: @hashed, @encrypted, @guarded, @omit(all) and a
-// field-level @allow('read') that an aggregate has no row to decide. The two
+// field-level @allow(read) that an aggregate has no row to decide. The two
 // grammars that name a column INSIDE an expression reached none of it, so a
 // @guarded column was recoverable by asking about it — a binary search on a
 // HAVING threshold gave an exact value in 18 requests, and one aggregate sort

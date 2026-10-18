@@ -195,13 +195,13 @@ describe('contract — the deploy is the pivot', () => {
   })
 
   it('an added row policy — the failure that arrives as a 200', () => {
-    const r = verdictOf(BASE, BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow('read', total > 0)`))
+    const r = verdictOf(BASE, BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow(read, total > 0)`))
     expect(r.verdict).toBe('contract')
     expect(about(r, '@@allow(`read`) added')!.detail).toContain('200')
   })
 
   it('one policy declaration is one finding, not one per operation it expands to', () => {
-    const r = verdictOf(BASE, BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow('all', total > 0)`))
+    const r = verdictOf(BASE, BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow(all, total > 0)`))
     const policy = r.findings.filter((x: any) => x.detail.includes('@@allow'))
 
     expect(policy).toHaveLength(1)
@@ -223,8 +223,8 @@ describe('contract — the deploy is the pivot', () => {
 
 describe('unknown — counts as a contract, because a wrong "reversible" is the costly answer', () => {
   it('a policy predicate that moved: nothing here can say which way', () => {
-    const before = BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow('read', total > 0)`)
-    const after  = BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow('read', total > 100)`)
+    const before = BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow(read, total > 0)`)
+    const after  = BASE.replace('@@gate(2.4.4.5)', `@@gate(2.4.4.5)\n  @@allow(read, total > 100)`)
     const r = verdictOf(before, after)
     expect(r.verdict).toBe('unknown')
     expect(about(r, '@@allow(`read`) predicate changed')!.detail).toContain('not decidable')
@@ -263,11 +263,11 @@ const GUARDED = `
 model User {
   id            Int      @id
   email         String   @unique
-  role          String   @default("user") @allow('write', auth().isAdmin)
+  role          String   @default("user") @allow(write, auth().isAdmin)
   apiKey        String?  @secret
   status        Status   @default("draft")
   @@gate(4.4.5.6)
-  @@allow('read', id == auth().id)
+  @@allow(read, id == auth().id)
   @@transitions(status, publish: draft -> live @gate(5), retire: live -> archived)
 }
 
@@ -277,10 +277,10 @@ enum Status { draft live archived }
 describe('the deploy axis and the access axis disagree, which is why there are two', () => {
   it('every widening in this change is an EXPAND for the deploy', () => {
     const after = GUARDED
-      .replace(`@allow('write', auth().isAdmin)`, '')
+      .replace(`@allow(write, auth().isAdmin)`, '')
       .replace('@secret', '')
       .replace('@@gate(4.4.5.6)', '@@gate(2.4.5.6)')
-      .replace(`  @@allow('read', id == auth().id)\n`, '')
+      .replace(`  @@allow(read, id == auth().id)\n`, '')
       .replace('publish: draft -> live @gate(5)', 'publish: draft -> live')
 
     const access = accessOf(GUARDED, after)
@@ -308,10 +308,10 @@ describe('the deploy axis and the access axis disagree, which is why there are t
 
 describe('what a permission diff has to see', () => {
   it('a field-level @allow removed — the shape that guards isSystemAdmin and role', () => {
-    const after = GUARDED.replace(`@allow('write', auth().isAdmin)`, '')
+    const after = GUARDED.replace(`@allow(write, auth().isAdmin)`, '')
     const r = accessOf(GUARDED, after)
     expect(r.verdict).toBe('widens')
-    expect(about(r, 'User.role')!.detail).toContain(`@allow('write') removed`)
+    expect(about(r, 'User.role')!.detail).toContain(`@allow(write) removed`)
   })
 
   it('a field-level @allow whose predicate moved is undecidable, not a widening', () => {
@@ -350,7 +350,7 @@ describe('the verdict is the alarming answer, not the common one', () => {
   it('nine narrowings and one widening is a widening', () => {
     const before = GUARDED
     const after  = GUARDED
-      .replace(`@allow('write', auth().isAdmin)`, '')                 // widens
+      .replace(`@allow(write, auth().isAdmin)`, '')                 // widens
       .replace('@@gate(4.4.5.6)', '@@gate(6.6.6.6)')              // narrows, four ops
       .replace('publish: draft -> live @gate(5)', 'publish: draft -> live @gate(7)')
 
@@ -593,8 +593,8 @@ ${policy}
 `
 
 describe('an allow→deny inversion (FJS-380)', () => {
-  const ALLOW = `  @@allow('all', workspaceId == auth().workspaceId)`
-  const DENY  = `  @@deny('all', workspaceId != auth().workspaceId)`
+  const ALLOW = `  @@allow(all, workspaceId == auth().workspaceId)`
+  const DENY  = `  @@deny(all, workspaceId != auth().workspaceId)`
 
   it('is undecidable, not a widening', () => {
     const r = accessOf(OWNED(ALLOW), OWNED(DENY))
@@ -636,8 +636,8 @@ describe('an allow→deny inversion (FJS-380)', () => {
     // undecidable would hide a widening inside a refactor, which is the failure
     // this axis exists to catch.
     const r = accessOf(
-      OWNED(`  @@allow('all', workspaceId == auth().workspaceId)`),
-      OWNED(`  @@deny('read', workspaceId != auth().workspaceId)`))
+      OWNED(`  @@allow(all, workspaceId == auth().workspaceId)`),
+      OWNED(`  @@deny(read, workspaceId != auth().workspaceId)`))
     expect(r.counts.widens).toBe(1)
     expect(r.verdict).toBe('widens')
   })

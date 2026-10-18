@@ -149,8 +149,8 @@ index.ts     public API
 - **`User` is `@@gate(4.4.4.5)` and the level is not what makes it safe.** A
   gate is per MODEL, so that alone says *any signed-in caller may write any user
   row*. The fragment ships the two declarations that bound it:
-  `@@allow('update', id == auth().id || auth().isAdmin)` for whose row, and
-  `@allow('write', auth().isAdmin)` on `role` and `emailVerified`, the columns
+  `@@allow(update, id == auth().id || auth().isAdmin)` for whose row, and
+  `@allow(write, auth().isAdmin)` on `role` and `emailVerified`, the columns
   a resolver grades on, and on `email`, which a password reset is keyed by — a
   column the caller can write is not a column a level can be graded from. An
   app's tenant column is the app's, and polices itself the same way. Nothing in this package writes the row as a caller,

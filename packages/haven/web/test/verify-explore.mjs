@@ -26,10 +26,11 @@
  * the key to the road drawn with him in it — the reconnect a door hides
  * behind a scene change and a border cannot — Ana's frame of the road has
  * him there, and the step back west puts him on the square's east edge.
- * Through all of it the square is fogged (6.3): a wall nobody has walked
- * near is blank on every screen, a lamp's halo is drawn from across the
- * square, a hedge walked past stays drawn once it is out of sight, and a
- * figure nine rows beyond a frame's sight is listed and not drawn.
+ * Where a scene names the fog (6.3) the drive reads it: a wall nobody has
+ * walked near is blank on every screen, a lamp's halo is drawn from across
+ * the square, a hedge walked past stays drawn once it is out of sight, and a
+ * figure nine rows beyond a frame's sight is listed and not drawn. Where it
+ * does not, the same checks read every cell lit for every screen.
  *
  * Traps (the terminal's own are in `terminal.mjs`):
  * - A move past 10 a second is dropped by the server in silence, so the
@@ -56,6 +57,7 @@ const WEB = join(import.meta.dir, '..')
 const square = await stageOf('Square')
 const tavern = await stageOf('Tavern')
 const road   = await stageOf('Road')
+const fogged = (stage) => stage.layers.includes('fog')
 const FLI = join(WEB, '../../cli/bin/fli.js')
 
 let failed = 0
@@ -95,11 +97,14 @@ const { x: sx, y: sy } = square.spawn
 check(await until(() => at(sx, sy) === '@' && screen(out).includes('1 here')),
   'Enter opens it, and Sam stands where a figure walks in', screen(out))
 const lamp = square.marks.find((m) => m.kind === 'piece' && m.piece.name === 'lamp')
-check(blank(at(sx, 0)) && at(lamp.x, lamp.y, 3) === '(o)' && at(sx - 1, sy + 2, 3) === ',,,',
-  'the square is fogged: the wall across it is blank, the lamp is lit from across it, the hedge beside him is drawn', screen(out))
-
-// Six right puts the figure over a hedge, two rows down.
 const dx = 6
+const hedgeY = sy + 1
+check(blank(at(sx, 0)) === fogged(square) && at(lamp.x, lamp.y, 3) === '(o)' && at(sx + dx - 1, hedgeY, 3) === ',,,',
+  fogged(square)
+    ? 'the square is fogged: the wall across it is blank, the lamp is lit from across it, the hedge beside him is drawn'
+    : 'the square is lit whole: the wall across it, the lamp and the hedge beside him are drawn', screen(out))
+
+// Six right puts the figure over a hedge, the next row down.
 for (let step = 1; step <= dx; step++) {
   shell.stdin.write('\x1b[C')
   await until(() => at(sx + step, sy) === '@', 3000)
@@ -107,12 +112,8 @@ for (let step = 1; step <= dx; step++) {
 check(at(sx + dx, sy) === '@' && at(sx, sy) === ' ', 'six steps right move the figure six cells and draw the art back', screen(out))
 
 shell.stdin.write('\x1b[B')
-await until(() => at(sx + dx, sy + 1) === '@', 3000)
-shell.stdin.write('\x1b[B')
 await new Promise((r) => setTimeout(r, 300))
-check(at(sx + dx, sy + 1) === '@' && at(sx + dx, sy + 2) === ',', 'a hedge is a wall', screen(out))
-shell.stdin.write('\x1b[A')
-check(await until(() => at(sx + dx, sy) === '@', 3000), 'and Up steps back', screen(out))
+check(at(sx + dx, sy) === '@' && at(sx + dx, hedgeY) === ',', 'a hedge is a wall', screen(out))
 
 // A scene opens in NORMAL, so a line starts with `i`.
 shell.stdin.write('i')
@@ -130,13 +131,13 @@ check(await until(() => at(sx + dx, sy - 2, 8) === '(hi all)'), 'Enter says it, 
 shell.stdin.write('\x1b')
 check(await until(() => screen(out).includes('-- NORMAL --')), 'Esc in the line is NORMAL', screen(out))
 await new Promise((r) => setTimeout(r, 100))
-const vim = [['j', 0, 1], ['k', 0, 0], ['h', -1, 0], ['l', 0, 0]]
+const vim = [['k', 0, -1], ['j', 0, 0], ['h', -1, 0], ['l', 0, 0]]
 let vimWalked = true
 for (const [key, ox, oy] of vim) {
   shell.stdin.write(key)
   vimWalked &&= await until(() => at(sx + dx + ox, sy + oy) === '@', 3000)
 }
-check(vimWalked, 'j k h l step down, up, left and right', screen(out))
+check(vimWalked, 'k j h l step up, down, left and right', screen(out))
 shell.stdin.write('i')
 check(await until(() => screen(out).includes('-- INSERT --') && screen(out).includes('arrows walk')),
   'and i types again, into a line h j k l left empty', screen(out))
@@ -165,8 +166,8 @@ check(existsSync(join(anaHome, '.fli/haven/key.json')), "the first fli haven wro
 check(cellOf(framed, sx + dx, sy, 1, square) === 'S', "Ana's frame shows Sam's figure on the cell it walked to", framed)
 check(cellOf(framed, sx + dx, sy - 2, 8, square) === '(hi all)', "with Sam's line over it", framed)
 check(cellOf(framed, sx, sy, 1, square) === '@', "and Ana's own figure where it walked in", framed)
-check(blank(cellOf(framed, sx, 0, 1, square)) && cellOf(framed, lamp.x, lamp.y, 3, square) === '(o)',
-  'and nothing of the wall she has not walked near, the lamp lit', framed)
+check(blank(cellOf(framed, sx, 0, 1, square)) === fogged(square) && cellOf(framed, lamp.x, lamp.y, 3, square) === '(o)',
+  fogged(square) ? 'and nothing of the wall she has not walked near, the lamp lit' : 'and the wall across and the lamp, the square lit whole', framed)
 check(await until(() => at(sx, sy) === ' ' && screen(out).includes('1 here')), "Ana leaving takes that figure off Sam's screen", screen(out))
 
 // ─── the tavern's door ────────────────────────────────────────────────
@@ -194,8 +195,11 @@ async function walk(who, key, from, to, scene = square, eye = null) {
 
 const door = square.doors.find((d) => d.to === '/tavern/')
 const inFront = { x: door.x, y: door.y + 1 }
-const walked = await walk(samTerm, 'up', { x: sx + dx, y: sy }, { x: sx + dx, y: inFront.y })
-  && await walk(samTerm, 'left', { x: sx + dx, y: inFront.y }, inFront)
+// Round the fountain by a column clear from the spawn's row up to the doors'.
+const lane = 40
+const walked = await walk(samTerm, 'left', { x: sx + dx, y: sy }, { x: lane, y: sy })
+  && await walk(samTerm, 'up', { x: lane, y: sy }, { x: lane, y: inFront.y })
+  && await walk(samTerm, 'left', { x: lane, y: inFront.y }, inFront)
 check(walked && at(inFront.x, inFront.y) === '@', "Sam walks to the left house's door", screen(out))
 shell.stdin.write('\x1b[A')
 check(await until(() => at(tavern.spawn.x, tavern.spawn.y, 1, tavern) === '@' && screen(out).includes('The tavern · 1 here')),
@@ -221,7 +225,7 @@ check(await until(() => !screen(out).includes('PageDown newer') && at(bar.x, bar
   'PageDown past the newest line closes it, the figure where it stood', screen(out))
 
 const outside = await havenFrame('/')
-check(outside.code === 0 && cellOf(outside.framed, inFront.x, inFront.y, 1, square) === ' ' && outside.framed.includes('The square · 1 here'),
+check(outside.code === 0 && cellOf(outside.framed, inFront.x, inFront.y, 1, square) !== 'S' && outside.framed.includes('The square · 1 here'),
   "Ana's frame of the square no longer shows Sam", outside.framed + outside.err)
 const inside = havenFrame('/tavern/')
 check(await until(() => at(tavern.spawn.x, tavern.spawn.y, 1, tavern) === 'A' && screen(out).includes('The tavern · 2 here')),
@@ -234,9 +238,9 @@ await walk(samTerm, 'down', bar, tavern.spawn, tavern)
 shell.stdin.write('\x1b[B')
 check(await until(() => at(inFront.x, inFront.y) === '@' && screen(out).includes('The square · 1 here')),
   "the tavern's door brings Sam back out to the square, standing before the door he came out of", screen(out))
-await walk(samTerm, 'right', inFront, { x: sx + dx, y: inFront.y })
-  && await walk(samTerm, 'down', { x: sx + dx, y: inFront.y }, { x: sx + dx, y: sy })
-  && await walk(samTerm, 'left', { x: sx + dx, y: sy }, { x: sx, y: sy })
+await walk(samTerm, 'right', inFront, { x: lane, y: inFront.y })
+  && await walk(samTerm, 'down', { x: lane, y: inFront.y }, { x: lane, y: sy })
+  && await walk(samTerm, 'right', { x: lane, y: sy }, { x: sx, y: sy })
 check(at(sx, sy) === '@', 'and he walks back to where a figure walks in', screen(out))
 
 // ─── the key is the member ────────────────────────────────────────────
@@ -280,16 +284,22 @@ const east = await walk(samTerm, 'right', { x: sx, y: sy }, farEast, square, sam
   && await walk(samTerm, 'left', farEast, far, square, samEye)
 check(east && samEye.view.x > 0 && at(far.x, far.y, 1, square, samEye.view) === '@',
   `Sam walks east past the first screen's edge and the view follows, to column ${samEye.view.x}`, screen(out))
-check(at(0, sy, 1, square, samEye.view) === null && at(far.x, sy + 2, 1, square, samEye.view) === ',',
+check(at(0, sy, 1, square, samEye.view) === null && at(far.x, hedgeY, 1, square, samEye.view) === ',',
   "the square's west edge is off Sam's screen and the hedge runs on beside him", screen(out))
-check(blank(at(far.x, 0, 1, square, samEye.view)) && at(sx + dx, sy + 2, 1, square, samEye.view) === ',',
-  'the wall across is still blank, and the hedge he bumped is drawn from memory, out of sight', screen(out))
+check(blank(at(far.x, 0, 1, square, samEye.view)) === fogged(square) && at(sx + dx, hedgeY, 1, square, samEye.view) === ',',
+  fogged(square)
+    ? 'the wall across is still blank, and the hedge he bumped is drawn from memory, out of sight'
+    : 'the wall across and the hedge he bumped are drawn, the square lit whole', screen(out))
+// A shout, since a plain line is heard only within earshot and the spawn is
+// out of it (7.1).
+const shout = '!over here'
 shell.stdin.write('i')
-shell.stdin.write('over here\r')
-check(await until(() => at(far.x, far.y - 2, 11, square, samEye.view) === '(over here)'), 'Sam says a line there', screen(out))
+shell.stdin.write(`${shout}\r`)
+check(await until(() => at(far.x, far.y - 2, shout.length + 2, square, samEye.view) === `(${shout})`), 'Sam shouts a line there', screen(out))
+const marker = `(sam: ${shout})>`
 
 const edge = await havenFrame('/')
-check(edge.code === 0 && cellOf(edge.framed, VIEW.w - 17, far.y - 1, 17, square) === '(sam: over here)>',
+check(edge.code === 0 && cellOf(edge.framed, VIEW.w - marker.length, far.y - 1, marker.length, square) === marker,
   "Ana's frame from the spawn shows Sam's line as a marker on the edge facing him", edge.framed + edge.err)
 check(cellOf(edge.framed, far.x, far.y, 1, square) === null && edge.framed.includes('· sam'),
   "Sam's figure is past her edge, and Sam is still listed", edge.framed)
@@ -300,11 +310,11 @@ const beaEye  = { view: square.view }
 const beaWho  = { write: (k) => beaTerm.shell.stdin.write(k), at: beaTerm.at }
 check(await until(() => beaTerm.screen().includes('j/k moves, Enter opens')), "Bea's terminal lists the square", beaTerm.screen())
 beaTerm.shell.stdin.write('\r')
-check(await until(() => beaTerm.at(sx, sy) === '@' && beaTerm.screen().includes('2 here') && beaTerm.at(VIEW.w - 17, far.y - 1, 17) === '(sam: over here)>'),
+check(await until(() => beaTerm.at(sx, sy) === '@' && beaTerm.screen().includes('2 here') && beaTerm.at(VIEW.w - marker.length, far.y - 1, marker.length) === marker),
   "Bea walks in at the spawn and sees Sam's marker on her edge", beaTerm.screen())
 const beaEast = await walk(beaWho, 'right', { x: sx, y: sy }, { x: farEast.x - 1, y: sy }, square, beaEye)
   && await walk(beaWho, 'left', { x: farEast.x - 1, y: sy }, { x: far.x - 1, y: sy }, square, beaEye)
-check(beaEast && beaTerm.at(far.x, far.y, 1, square, beaEye.view) === 'S' && beaTerm.at(far.x, far.y - 2, 11, square, beaEye.view) === '(over here)',
+check(beaEast && beaTerm.at(far.x, far.y, 1, square, beaEye.view) === 'S' && beaTerm.at(far.x, far.y - 2, shout.length + 2, square, beaEye.view) === `(${shout})`,
   "Bea's screen, panned the same way, shows Sam's figure and line where the first screen never reached", beaTerm.screen())
 check(await until(() => at(far.x - 1, far.y, 1, square, samEye.view) === 'B'), "and Sam's shows Bea beside him", screen(out))
 beaTerm.shell.stdin.write('\x03')
@@ -335,8 +345,11 @@ const ms = Date.now() - t0
 check(crossed, 'one step east is the road, Sam beside its west edge at the row he crossed on', screen(out))
 check(crossed && ms < 3000, `the crossing — a new route, the socket cycled into the road's room, presence synced — took ${ms} ms`)
 const onRoad = await havenFrame('/road/')
-check(onRoad.code === 0 && blank(cellOf(onRoad.framed, arrive.x, arrive.y, 1, road)) && onRoad.framed.includes('The road · 2 here') && onRoad.framed.includes('· sam'),
-  `Ana's frame of the road lists Sam and draws nothing on his cell, ${arrive.y - road.spawn.y} rows beyond her sight`, onRoad.framed + onRoad.err)
+const onCell = cellOf(onRoad.framed, arrive.x, arrive.y, 1, road)
+check(onRoad.code === 0 && (fogged(road) ? blank(onCell) : onCell === 'S') && onRoad.framed.includes('The road · 2 here') && onRoad.framed.includes('· sam'),
+  fogged(road)
+    ? `Ana's frame of the road lists Sam and draws nothing on his cell, ${arrive.y - road.spawn.y} rows beyond her sight`
+    : "Ana's frame of the road lists Sam and draws him on his cell, the road lit whole", onRoad.framed + onRoad.err)
 const backEye = { view: follow(square.view, eastEdge, square) }
 shell.stdin.write('\x1b[D')
 check(await until(() => at(eastEdge.x, eastEdge.y, 1, square, backEye.view) === '@' && screen(out).includes('The square · 1 here')),

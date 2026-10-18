@@ -34,7 +34,7 @@ const SCHEMA = `
     customerId Int?
     status     String @default("pending")
     @@gate(1.4.4.5)
-    @@allow('read', customerId == auth().id || auth().isAdmin)
+    @@allow(read, customerId == auth().id || auth().isAdmin)
   }
 `
 
@@ -462,7 +462,7 @@ describe('a write from a second process is graded like a local one (FJS-2159)', 
         status     String @default("pending")
         @@db(main)
         @@gate(1.4.4.5)
-        @@allow('read', customerId == auth().id || auth().isAdmin)
+        @@allow(read, customerId == auth().id || auth().isAdmin)
       }`
     try {
       const { port } = await mkApp({ schema, file })
@@ -497,7 +497,7 @@ const REACH_SCHEMA = `
     shares Share[]
     blocks Block[]
     @@gate(1.4.4.5)
-    @@allow('read', shares.some(userId == auth().id))
+    @@allow(read, shares.some(userId == auth().id))
   }
   model Share {
     id     Int  @id @default(autoincrement())
@@ -505,7 +505,7 @@ const REACH_SCHEMA = `
     page   Page @relation(fields: [pageId], references: [id])
     userId Int
     @@gate(1.4.4.5)
-    @@allow('read', userId == auth().id)
+    @@allow(read, userId == auth().id)
   }
   model Block {
     id     Int    @id @default(autoincrement())
@@ -513,7 +513,7 @@ const REACH_SCHEMA = `
     page   Page   @relation(fields: [pageId], references: [id])
     body   String
     @@gate(1.4.4.5)
-    @@allow('read', check(page))
+    @@allow(read, check(page))
   }
   model Tag {
     id   Int    @id @default(autoincrement())

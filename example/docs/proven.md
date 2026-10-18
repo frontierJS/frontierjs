@@ -4,7 +4,7 @@ Each of these is an assertion in one of the eight drives, or a line in the
 README's *Verified* section — not a claim.
 
 - **A stranger can buy something.** `Cart` and `CartLine` are `@@gate(0.0.0.5)`
-  reached by `@@allow('read', id == auth().cartId)`, the claim comes from
+  reached by `@@allow(read, id == auth().cartId)`, the claim comes from
   `bearerClaim` running for a caller with no session — which reads the token's
   digest off `CartGrant` and puts the BASKET'S ID on the principal — and the
   token rides `x-cart-token` over HTTP and over the socket alike. `verify:cart` adds

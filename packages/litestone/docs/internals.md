@@ -110,7 +110,7 @@ Read the section for the path you are changing before changing it.
   nothing more (grouping stored text is self-consistent), everything producing a
   VALUE also refuses the opaque bucket. `fieldReadRefusal` mirrors
   `applyFieldPolicyTo`'s strip ladder over a name; a field-level
-  `@allow('read', …)` is refused rather than evaluated, because it is a
+  `@allow(read, …)` is refused rather than evaluated, because it is a
   predicate over a row. The grid in `test/litestone.test.ts` § *an aggregate
   names a column* is what a new argument has to pass.
 - **A bare array in a `where` is not `equals`, on either kind of column.** It
@@ -128,7 +128,7 @@ Read the section for the path you are changing before changing it.
   matches, and the six forms that cannot are refused by name — in the `sql` tag
   and in a `@from(where:)` at startup. `julianday()`
   is untouched: it answers a number, so it compares like with like.
-- **A protection that only STRIPS is not a protection.** `@guarded` hid its value from every read and let the same caller name the column in a `where`, which recovers it one `startsWith` at a time, and in an `orderBy`, which leaks the ordering of every row at once (`FJS-393`). The refusal is `collectGuardedArgs` in `client.js`, at the read where `ctx.isSystem` is known — NOT in `filterableKeysFor`, which answers whether a column CAN be compared and is therefore the same answer on every flavor of client, which is what lets junction ask `$checkWhere` of a caller's own. **It walks the relation graph**, because the filter grammar does: `where: { author: { is: { … } } }`, a relation `orderBy` and a nested `include` all ask about a model the table is not. `ctx.guardedMap.reaches` is the gate — a model from which no guarded column is reachable at any depth costs one boolean — and the walk descends only into a relation key or a logical/relation operator, since a nested object under an ordinary column is a typed-Json path where a key sharing a guarded column's name means something else. The sibling hole through a field-level `@allow('read', …)` is open and measured (`FJS-442`): a predicate is not a set, and refusing it needs a ruling first. **A credential lookup is now a system read by construction** — a `Session`/`Invitation`/`ApiKey` token is `@guarded` and found BY its value, so `where: { token }` on a caller's client is refused; auth and basecamp already went through `asSystem()` for it, and the comment in `invitations.service.ts` says why. Allowing bare equality instead would have kept them working and left the hole open for anything low-entropy, which is what a probe enumerates.
+- **A protection that only STRIPS is not a protection.** `@guarded` hid its value from every read and let the same caller name the column in a `where`, which recovers it one `startsWith` at a time, and in an `orderBy`, which leaks the ordering of every row at once (`FJS-393`). The refusal is `collectGuardedArgs` in `client.js`, at the read where `ctx.isSystem` is known — NOT in `filterableKeysFor`, which answers whether a column CAN be compared and is therefore the same answer on every flavor of client, which is what lets junction ask `$checkWhere` of a caller's own. **It walks the relation graph**, because the filter grammar does: `where: { author: { is: { … } } }`, a relation `orderBy` and a nested `include` all ask about a model the table is not. `ctx.guardedMap.reaches` is the gate — a model from which no guarded column is reachable at any depth costs one boolean — and the walk descends only into a relation key or a logical/relation operator, since a nested object under an ordinary column is a typed-Json path where a key sharing a guarded column's name means something else. The sibling hole through a field-level `@allow(read, …)` is open and measured (`FJS-442`): a predicate is not a set, and refusing it needs a ruling first. **A credential lookup is now a system read by construction** — a `Session`/`Invitation`/`ApiKey` token is `@guarded` and found BY its value, so `where: { token }` on a caller's client is refused; auth and basecamp already went through `asSystem()` for it, and the comment in `invitations.service.ts` says why. Allowing bare equality instead would have kept them working and left the hole open for anything low-entropy, which is what a probe enumerates.
 - **An FTS index mirrors its table, soft-deleted rows included** — `search()` is
   the only reader and does the filtering, which is what makes its
   `withDeleted`/`onlyDeleted` mean anything. Keeping deleted rows *out* of the
@@ -180,10 +180,10 @@ has no model in scope, so the default belongs at the caller that has one.
 
   Both refuse a write BY NAME rather than dropping it, because the client is told
   `readOnly` and a generated form does not offer the column — so a payload
-  naming one is code that meant to write it. A field `@allow('write', …)` still
+  naming one is code that meant to write it. A field `@allow(write, …)` still
   drops silently, and must: there the same payload is legitimate for another
   caller. The pair `@guarded @system` is legal and means both halves; a
-  field `@allow('write')` beside `@system` is refused, because one says nobody
+  field `@allow(write)` beside `@system` is refused, because one says nobody
   ever and the other says it depends who is asking.
 - **`upsertMany` is TWO writes and they are policed by two different rules.** A
   row that will INSERT is a create and one that will conflict is an update, so

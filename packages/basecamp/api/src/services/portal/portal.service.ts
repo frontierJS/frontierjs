@@ -29,7 +29,7 @@ import { shapedByCaller } from '../../core/resource.ts'
 
 export type ServiceStatus = 'healthy' | 'degraded' | 'unreachable' | 'unconfigured'
 
-export interface PortalEntry {
+export type PortalEntry = {
   id:          string
   name:        string
   description: string

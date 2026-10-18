@@ -8,7 +8,7 @@
 //
 // **Takes no workspace**, for notification-preferences' reason: a notification
 // is addressed to a person, and a person is in several workspaces.
-// `Notification` is `@@tenant(none)` with `@@allow('read'|'update', userId ==
+// `Notification` is `@@tenant(none)` with `@@allow(read|'update', userId ==
 // auth().id)`, so the Data boundary confines every read and write to the
 // caller's own rows and this file never writes a `userId` filter.
 //

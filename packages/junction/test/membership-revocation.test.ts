@@ -26,21 +26,21 @@ const SCHEMA = `
     id       String       @id
     members  RoomMember[]
     messages Message[]
-    @@allow('read', members.some(userId == auth().id))
+    @@allow(read, members.some(userId == auth().id))
   }
   model RoomMember {
     id     String @id
     roomId String
     room   Room   @relation(fields: [roomId], references: [id])
     userId String
-    @@allow('read', true)
+    @@allow(read, true)
   }
   model Message {
     id     Int    @id @default(autoincrement())
     roomId String
     room   Room   @relation(fields: [roomId], references: [id])
     body   String
-    @@allow('read', check(room))
+    @@allow(read, check(room))
   }
 `
 

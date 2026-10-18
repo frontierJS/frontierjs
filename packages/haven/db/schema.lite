@@ -59,7 +59,7 @@ model Member {
 
   /// Set by a mod, cleared by a mod (`null` lifts the ban). Never by the member
   /// it names, since that would be a caller writing their own grade.
-  bannedAt  DateTime? @allow('write', auth().role == 'mod')
+  bannedAt  DateTime? @allow(write, auth().role == 'mod')
 
   createdAt DateTime  @default(now())
 
@@ -73,8 +73,8 @@ model Member {
   /// own nick and nothing else. A mod reaches every row, the banned included —
   /// a ban is lifted by naming the member, who is otherwise nobody's row.
   @@gate(3.8.3.8)
-  @@allow('read', auth().bannedAt == null && (bannedAt == null || auth().role == 'mod'))
-  @@allow('update', id == auth().id || auth().role == 'mod')
+  @@allow(read, auth().bannedAt == null && (bannedAt == null || auth().role == 'mod'))
+  @@allow(update, id == auth().id || auth().role == 'mod')
 
   @@trail(audit)
 }
@@ -106,7 +106,7 @@ model Room {
   /// one they stand in on the next write. A booth is joined by its pair alone
   /// — to anyone else it is no row, and the socket joins it to nothing.
   @@gate(3.8)
-  @@allow('read', auth().bannedAt == null && (pairLoId == null || pairLoId == auth().id || pairHiId == auth().id))
+  @@allow(read, auth().bannedAt == null && (pairLoId == null || pairLoId == auth().id || pairHiId == auth().id))
 }
 
 model Message {
@@ -142,8 +142,8 @@ model Message {
   /// room id answers empty and a `create` into it writes nothing. A whisper is
   /// read by its speaker and the member it names and by nobody else, a mod
   /// included -- distance is fan-out only (`FJS-D992`), so privacy is this.
-  @@allow('read', auth().bannedAt == null && member.bannedAt == null && (room.pairLoId == null || room.pairLoId == auth().id || room.pairHiId == auth().id) && (toId == null || toId == auth().id || memberId == auth().id))
-  @@allow('create', auth().bannedAt == null && (room.pairLoId == null || room.pairLoId == auth().id || room.pairHiId == auth().id))
+  @@allow(read, auth().bannedAt == null && member.bannedAt == null && (room.pairLoId == null || room.pairLoId == auth().id || room.pairHiId == auth().id) && (toId == null || toId == auth().id || memberId == auth().id))
+  @@allow(create, auth().bannedAt == null && (room.pairLoId == null || room.pairLoId == auth().id || room.pairHiId == auth().id))
 
   @@trail(audit)
 }
@@ -179,7 +179,7 @@ model Game {
   createdAt DateTime @default(now())
 
   @@gate(3.8.8.8)
-  @@allow('read', auth().bannedAt == null && (room.pairLoId == auth().id || room.pairHiId == auth().id))
+  @@allow(read, auth().bannedAt == null && (room.pairLoId == auth().id || room.pairHiId == auth().id))
 }
 
 /// A member's aye or nay on one idea of `IDEAS/overview.md`, as it stands in
@@ -206,10 +206,10 @@ model Vote {
   /// filtered out by the member they belong to, so a ban takes them off the
   /// hall at once and lifting it puts them back.
   @@gate(3.3.3.3)
-  @@allow('read', auth().bannedAt == null && member.bannedAt == null)
-  @@allow('create', auth().bannedAt == null)
-  @@allow('update', auth().bannedAt == null && memberId == auth().id)
-  @@allow('delete', auth().bannedAt == null && memberId == auth().id)
+  @@allow(read, auth().bannedAt == null && member.bannedAt == null)
+  @@allow(create, auth().bannedAt == null)
+  @@allow(update, auth().bannedAt == null && memberId == auth().id)
+  @@allow(delete, auth().bannedAt == null && memberId == auth().id)
 
   @@trail(audit)
 }

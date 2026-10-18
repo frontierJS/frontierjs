@@ -85,10 +85,10 @@
       "  id      Integer @id",
       "  ownerId Integer @default(auth().id)",
       "  $0",
-      "  @@allow('read',   ownerId == auth().id)",
-      "  @@allow('create', auth() != null)",
-      "  @@allow('update', ownerId == auth().id)",
-      "  @@allow('delete', ownerId == auth().id)",
+      "  @@allow(read,   ownerId == auth().id)",
+      "  @@allow(create, auth() != null)",
+      "  @@allow(update, ownerId == auth().id)",
+      "  @@allow(delete, ownerId == auth().id)",
       "}"
     ],
     "description": "Model with owner-scoped row-level policies"
@@ -306,7 +306,7 @@
 
   "@allow field": {
     "prefix": "@allow",
-    "body": ["@allow('${1|read,write,all|}', ${2:auth().role == 'admin'})"],
+    "body": ["@allow(${1|read,write,all|}, ${2:auth().role == 'admin'})"],
     "description": "Field-level conditional access policy"
   },
 
@@ -414,13 +414,13 @@
 
   "@@allow": {
     "prefix": "@@allow",
-    "body": ["@@allow('${1|read,create,update,delete,write,all|}', ${2:auth() != null})"],
+    "body": ["@@allow(${1|read,create,update,postUpdate,delete,write,all|}, ${2:auth() != null})"],
     "description": "Row-level allow policy"
   },
 
   "@@deny": {
     "prefix": "@@deny",
-    "body": ["@@deny('${1|read,create,update,delete,write,all|}', ${2:condition})"],
+    "body": ["@@deny(${1|read,create,update,postUpdate,delete,write,all|}, ${2:condition})"],
     "description": "Row-level deny policy (overrides allow)"
   },
 

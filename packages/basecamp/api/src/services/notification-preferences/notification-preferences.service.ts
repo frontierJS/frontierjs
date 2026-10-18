@@ -4,7 +4,7 @@
 // Mounted at /notification-preferences. **Takes no workspace**, like
 // /blueprints and for the opposite reason: a blueprint belongs to everybody and
 // a preference belongs to exactly one person. `NotificationPreference` is
-// `@@tenant(none)` with `@@allow('all', userId == auth().id)`, so the Data
+// `@@tenant(none)` with `@@allow(all, userId == auth().id)`, so the Data
 // boundary confines every read and write to the caller's own rows and this file
 // never writes a `userId` filter of its own.
 //

@@ -24,7 +24,7 @@ below is a summary, not the source of truth.
 | `06-swap` | Stop the old container, start the new one — migrations run in the entrypoint | yes, gated by `doApi` |
 | `07-health` | Health-check the new container, rolling back to `_replaced` on failure | yes, gated by `doApi` |
 | `08-release-web` | Point nginx at the new web release via symlink | yes, gated by `doWeb` |
-| `08b-outpost` | Enroll the API's box in the app's own fleet: `api/enroll-host.ts` in the container, then the install it answers on the host; warns, never aborts (`FJS-D1202`) | yes, gated by `outpost: true`, `--no-outpost` or `--dry` |
+| `08b-outpost` | Enroll the API's box in the app's own fleet: `api/src/core/enroll-host.ts` in the container, then the install it answers on the host; warns, never aborts (`FJS-D1202`) | yes, gated by `outpost: true`, `--no-outpost` or `--dry` |
 | `09-cleanup` | Remove `_replaced`, prune old images, release the deploy lock — also runs on abort (`runOnAbort: true`) | always |
 
 ### Key design choices in deploy

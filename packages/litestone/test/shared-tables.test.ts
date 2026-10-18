@@ -52,7 +52,7 @@ const SCHEMA = `
     id      Int    @id @default(autoincrement())
     title   String
     ownerId Int
-    @@allow('read', auth().id == ownerId)
+    @@allow(read, auth().id == ownerId)
     @@db(main)
   }
 

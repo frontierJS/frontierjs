@@ -2,7 +2,7 @@
   // src/resources/Notification.mesa — the in-app half of a notification.
   //
   // No markup: a notification is read, never filled in. No filter for "mine"
-  // either — `@@allow('read', userId == auth().id)` on the model is what scopes
+  // either — `@@allow(read, userId == auth().id)` on the model is what scopes
   // it, so a sign-in as somebody else is a different list with no code here.
   //
   // One store for the bell and /notifications/. The inApp driver pushes

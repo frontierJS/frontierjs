@@ -81,7 +81,7 @@ export function visibilityFor({ stored, callerWrites, callerReads }) {
  */
 export const PER_CALLER = {
   word: 'allow',
-  answer: "@allow('read', …) on the field",
+  answer: "@allow(read, …) on the field",
   note: 'The column is stripped from results when the expression is false. Several @allow on one field OR together, and asSystem() bypasses them. This is the answer whenever "may they see it" has a different answer for different callers.',
 }
 
@@ -282,8 +282,8 @@ export const RULES = [
             ? `${model.name} is ${why === 'auth' ? 'the @@auth model' : 'where the tenancy claim is read from'}, is gated at update=${gate.update}, and carries '${f.name}'.`
             : `${model.name} is gated at update=${gate.update} and carries '${f.name}', which is a name a gate ladder is often graded from — and often is not, so this is a question rather than a finding.`
           const fix = rowPolicy
-            ? `A row policy decides WHOSE row; add @allow('write', …) on the column to decide WHICH columns.`
-            : `Add @@allow('update', id == auth().id || auth().isAdmin) for whose row, and @allow('write', auth().isAdmin) on the column.`
+            ? `A row policy decides WHOSE row; add @allow(write, …) on the column to decide WHICH columns.`
+            : `Add @@allow(update, id == auth().id || auth().isAdmin) for whose row, and @allow(write, auth().isAdmin) on the column.`
           const nudge = why ? '' : ` If a getLevel is graded from it, declare @@auth on the identity model and this becomes decidable rather than guessed.`
 
           out.push({
@@ -324,7 +324,8 @@ export const RULES = [
     title:    'a @@fts index names a column whose stored text is not the value',
     blurb:    'FTS5 indexes what the COLUMN HOLDS. For @encrypted that is a ciphertext and for @hashed a ' +
               'digest, so no query can ever match one — the index builds, the search runs and returns ' +
-              'nothing. A @guarded column is the other half: it matches, and then read() strips it from ' +
+              'nothing. A Json column is the serialized document, keys included, so a key name matches ' +
+              'every row holding it. A @guarded column is the other half: it matches, and then read() strips it from ' +
               'every result, so callers can search text they may never see and highlight/snippet render it.',
     run(schema) {
       const out = []
@@ -345,6 +346,14 @@ export const RULES = [
                   `${has(f, 'encrypted') ? 'a ciphertext' : 'a one-way digest'} rather than the text. ` +
                   `search() can never match it and nothing says so — the query succeeds with no rows. ` +
                   `Take the column out of the @@fts, or store a searchable column beside it.`,
+              })
+            } else if (f.type?.name === 'Json' && !f.type.array) {
+              out.push({
+                model: model.name, field: f.name, severity: 'warn',
+                message: `${model.name}.${f.name} is in @@fts and is Json, so the index holds the serialized ` +
+                  `document: its keys are searchable words (search('pt') answers every row with a pt member) ` +
+                  `while orderBy refuses the same column as opaque. Search a String column that holds the text, ` +
+                  `or store the member you mean to search beside it.`,
               })
             } else if (has(f, 'guarded')) {
               out.push({
@@ -1049,7 +1058,7 @@ export const RULES = [
     severity: 'warn',
     title:    'a bare check() in a write rule asks the parent the same write',
     blurb:    'check(rel) with no operation takes the operation of the rule it sits in, so ' +
-              "@@allow('create', check(inbox)) asks whether the caller may create an INBOX, not whether " +
+              "@@allow(create, check(inbox)) asks whether the caller may create an INBOX, not whether " +
               'they may see it. Chained, that climbs to whoever may write the root; against a parent held ' +
               'only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.',
     run(schema) {
@@ -1090,7 +1099,7 @@ export const RULES = [
     title:    'a create or update policy reads a parent through a key the caller can move, with no post-update beside it',
     blurb:    "An 'update' policy compiles to a WHERE over the row as it IS, so a PATCH moving the foreign " +
               "key into somebody else's parent is graded against the parent the row is leaving and admitted. " +
-              "Only @@allow('post-update', …) reads the row as it WOULD BE, and 'all' includes it where " +
+              "Only @@allow(postUpdate, …) reads the row as it WOULD BE, and 'all' includes it where " +
               "'update' and 'write' do not. A create policy naming the same parent is refused for a new row " +
               'and bypassed by a move.',
     run(schema) {
@@ -1106,7 +1115,7 @@ export const RULES = [
       for (const model of schema.models ?? []) {
         const allows = (model.attributes ?? []).filter(a => a.kind === 'allow' && !a.generated)
         if (!allows.some(a => a.operations?.includes('update'))) continue
-        if (allows.some(a => a.operations?.includes('post-update'))) continue
+        if (allows.some(a => a.operations?.includes('postUpdate'))) continue
         const seen = new Set()
         for (const allow of allows) {
           if (!allow.operations?.some(op => op === 'create' || op === 'update')) continue
@@ -1122,9 +1131,9 @@ export const RULES = [
             out.push({
               model: model.name, field: movable[0],
               message: `${model.name}.${movable[0]}: a policy reads ${rel} through ${movable.join(', ')}, which a caller ` +
-                `may write, and ${model.name} declares no @@allow('post-update', …). An 'update' policy grades the row ` +
+                `may write, and ${model.name} declares no @@allow(postUpdate, …). An 'update' policy grades the row ` +
                 `before the write, so a PATCH moving ${movable[0]} into another ${field.type.name} is admitted by the ` +
-                `${field.type.name} the row is leaving. Add @@allow('post-update', …) naming the same ${rel} condition, ` +
+                `${field.type.name} the row is leaving. Add @@allow(postUpdate, …) naming the same ${rel} condition, ` +
                 `or make ${movable[0]} @immutable.`,
             })
           }

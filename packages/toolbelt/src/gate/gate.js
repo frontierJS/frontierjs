@@ -135,7 +135,7 @@ export const STANDING_FIELDS = Object.freeze([
  * reached by a caller some other path built (`FJS-D197`).
  *
  * A caller who can WRITE the column they are graded from is a ladder that grades
- * nothing, which is why auth ships `@allow('write', auth().isAdmin)` on both
+ * nothing, which is why auth ships `@allow(write, auth().isAdmin)` on both
  * `role` and `emailVerified`.
  */
 export function gradeStanding(user) {

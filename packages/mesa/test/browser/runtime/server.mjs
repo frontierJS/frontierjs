@@ -54,15 +54,11 @@ const TYPES = {
 }
 
 /*
- * The import map.
- *
- * Both spellings of the runtime are mapped because the compiler's output and a
- * hand-written import do not have to agree about the extension. The kit drive
- * serves through this same server, so its subpath is mapped here too.
+ * The import map. The kit drive serves through this same server, so its
+ * subpath is mapped here too.
  */
 const IMPORT_MAP = {
   imports: {
-    '@frontierjs/mesa/runtime': '/mesa/src/runtime.js',
     '@frontierjs/mesa/runtime':    '/mesa/src/runtime.js',
     '@frontierjs/mesa/browser':    '/mesa/src/browser/index.js',
     ...toolbeltImports,

@@ -13,8 +13,8 @@ model Note {
   id      String @id
   ownerId String
   body    String?
-  @@allow('read',   ownerId == auth().id || auth().level >= 5)
-  @@allow('create', ownerId == auth().id || auth().level >= 5)
+  @@allow(read,   ownerId == auth().id || auth().level >= 5)
+  @@allow(create, ownerId == auth().id || auth().level >= 5)
 }
 `
 
@@ -67,14 +67,14 @@ describe('auth().level in a row policy', () => {
 model Team {
   id      String @id
   ownerId String
-  @@allow('read', ownerId == auth().id || auth().level >= 5)
+  @@allow(read, ownerId == auth().id || auth().level >= 5)
 }
 model Note {
   id      String @id
   ownerId String
   teamId  String
   team    Team   @relation(fields: [teamId], references: [id])
-  @@allow('read', check(team))
+  @@allow(read, check(team))
 }
 `
     // An administrator of teams and nothing else: the delegated Team policy

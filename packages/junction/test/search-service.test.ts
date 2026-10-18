@@ -25,7 +25,7 @@ model Issue {
   id      String @id
   ownerId String
   title   String
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
   @@fts([title])
   @@label(title)
 }
@@ -35,7 +35,7 @@ model Comment {
   ownerId String
   author  String
   body    String
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
   @@fts([body])
   @@label(author)
 }
@@ -44,7 +44,7 @@ model Secret {
   id      String @id
   ownerId String
   name    String
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
   @@fts([name])
   @@label(name)
 }

@@ -315,6 +315,29 @@ describe('every write path files an entry (FJS-1042)', () => {
     db.$close()
   })
 
+  test('a trash, a restore and a purge are three different entries (FJS-3131)', async () => {
+    const db = await fresh()
+    await db.asSystem().thing.create({ data: { id: 1, name: 'one' } })
+
+    await db.asSystem().thing.remove({ where: { id: 1 } })
+    const trashed = (await trail(db)).at(-1)
+    expect(trashed.before.deletedAt).toBeNull()
+    expect(trashed.after.deletedAt).not.toBeNull()
+
+    await db.asSystem().thing.restore({ where: { id: 1 } })
+    const restored = (await trail(db)).at(-1)
+    expect(restored.op).toBe('update')
+    expect(restored.before.deletedAt).toBe(trashed.after.deletedAt)
+    expect(restored.after.deletedAt).toBeNull()
+
+    await db.asSystem().thing.delete({ where: { id: 1 } })
+    const purged = (await trail(db)).at(-1)
+    expect(purged.op).toBe('delete')
+    expect(purged.before.name).toBe('one')
+    expect(purged.after).toBeNull()
+    db.$close()
+  })
+
   test('delete · deleteMany — the hard path files too', async () => {
     // A hard delete is the write with the most to answer for and the least
     // left to read: after it there is no row, so an entry that was never filed

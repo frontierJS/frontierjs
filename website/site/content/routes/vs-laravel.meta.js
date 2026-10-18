@@ -75,7 +75,7 @@ public function store(StoreLeadRequest $request) {
 
   // read · create · update · delete
   @@gate(0.4.4.5)
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }`,
   S7: `// name  ← this filename   ('leads.service.ts' → /api/leads)
 // model ← the service name ('leads' → db.lead)

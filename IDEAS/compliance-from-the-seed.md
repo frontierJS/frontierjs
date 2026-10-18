@@ -88,10 +88,10 @@ because the change is spread across files that do not look like permissions.
 Against `origin/main` — 5 widen · 0 undecidable · 1 narrow
 
   widens   model User      gate "4.4.5.6" → "2.4.5.6" — read drops to READER
-  widens   model User      @@allow('read') removed
+  widens   model User      @@allow(read) removed
   widens   User.apiKey     @secret removed
-  widens   User.role       @allow('write') removed
-  narrows  model Order     @@allow('read') added
+  widens   User.role       @allow(write) removed
+  narrows  model Order     @@allow(read) added
 ```
 
 **It cost less than the parse of two schema versions this record budgeted, and
@@ -119,7 +119,7 @@ Two things fell out of building it:
   as a single added row and are counted per field instead.
 
 What it deliberately refuses to answer is a predicate whose text moved:
-`@@allow('read', total > 0)` → `total > 100` is reported as undecidable, because
+`@@allow(read, total > 0)` → `total > 100` is reported as undecidable, because
 two expressions are not comparable by reading them and a guess in this direction
 is the one that ships. Same limit at the field level.
 

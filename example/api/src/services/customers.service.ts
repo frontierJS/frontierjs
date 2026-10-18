@@ -2,7 +2,7 @@ import { createService, $ }             from '@frontierjs/junction'
 import { compileSegment }                  from '../domain/shop/custom-fields.ts'
 import type { CustomField, SegmentTerm }   from '../domain/shop/custom-fields.ts'
 
-// `notes` is `@allow('read', auth().role == 'admin')` in the schema — a field
+// `notes` is `@allow(read, auth().role == 'admin')` in the schema — a field
 // policy, not `@guarded`, which takes no level — so it is stripped from this
 // service's responses for anyone the predicate rejects without a line here.
 //

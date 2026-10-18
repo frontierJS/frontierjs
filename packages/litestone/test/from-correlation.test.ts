@@ -83,7 +83,7 @@ describe('@from across a composite key (FJS-377)', () => {
     // than the id the startup subquery chose — the other place the correlation
     // is spelled, and the one a single-column partition would silently merge.
     const { db } = await grid(COMPOSITE
-      .replace('model Note {', 'model Note {\n  @@allow(\'read\', cost > 0)')
+      .replace('model Note {', 'model Note {\n  @@allow(read, cost > 0)')
       .replace('  @@unique([workspaceId, userId])', '  @@unique([workspaceId, userId])\n  @@gate(0)'))
     const rows = await db.$setAuth({ id: 1 }).membership.findMany({ orderBy: { id: 'asc' } })
     expect(rows.map((r: any) => r.latest?.id)).toEqual([3, 8, 15])
@@ -95,7 +95,7 @@ describe('@from across a composite key (FJS-377)', () => {
     // The key columns are injected into the SQL and out of the answer; with a
     // composite key that is every column of it, not the first.
     const { db } = await grid(COMPOSITE
-      .replace('model Note {', 'model Note {\n  @@allow(\'read\', cost > 0)')
+      .replace('model Note {', 'model Note {\n  @@allow(read, cost > 0)')
       .replace('  @@unique([workspaceId, userId])', '  @@unique([workspaceId, userId])\n  @@gate(0)'))
     const rows = await db.$setAuth({ id: 1 })
       .membership.findMany({ select: { id: true, noteCount: true, latest: true }, orderBy: { id: 'asc' } })
@@ -468,7 +468,7 @@ model Doc {
   })
 
   it('counts only the rows the target policy lets the caller read', async () => {
-    const { db } = await seeded(M2M("@@allow('read', true)", "@@allow('read', score > 1)"))
+    const { db } = await seeded(M2M("@@allow(read, true)", "@@allow(read, score > 1)"))
     const rows = await db.$setAuth({ id: 'x' }).task.findMany({ orderBy: { id: 'asc' } })
     expect(rows.map((r: any) => r.msgCount)).toEqual([2, 1, 0])
     const sys = await db.asSystem().task.findMany({ orderBy: { id: 'asc' } })

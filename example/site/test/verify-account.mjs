@@ -19,7 +19,7 @@
  * ─── The assertion that matters most ──────────────────────────────────────
  *
  * `GET /api/orders` with no filter, and the answer is one order. The screen
- * does no filtering and must not: `@@allow('read', userId == auth().id)` is
+ * does no filtering and must not: `@@allow(read, userId == auth().id)` is
  * declared at the Data boundary, and a page that filtered as well would be a
  * second copy of the rule in the one place it cannot be enforced. So the drive
  * asks for everything, twice — as a shopper and with no session at all — and
@@ -437,7 +437,7 @@ check('the page tells them their bank is asking, and sends them to the provider'
 // What a person may do to their own arrangement, and it is NOT a move: all four
 // declared transitions are `@system`, so no request can ask for any of them.
 // `subscriptions.cancel` writes `cancelAtPeriodEnd`, and what lets a shopper do
-// it to their OWN row is `@@allow('update', userId == auth().id)` rather than
+// it to their OWN row is `@@allow(update, userId == auth().id)` rather than
 // anything on this page.
 //
 // **The status must not move**, and that is the assertion rather than a detail

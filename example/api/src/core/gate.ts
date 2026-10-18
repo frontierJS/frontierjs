@@ -44,7 +44,7 @@ import { LEVELS }           from '@frontierjs/litestone'
 type Gradable = { role?: string, isSystemAdmin?: boolean } | null | undefined
 
 // SYSADMIN comes from a COLUMN only a sysadmin may write, never from `role`:
-// `role` is writable by any admin (auth's `@allow('write', auth().isAdmin)`),
+// `role` is writable by any admin (auth's `@allow(write, auth().isAdmin)`),
 // so a role string graded 7 is a level an admin can hand to anybody with one
 // PATCH — measured, a stranger's unverified account went from 1 to 7 (FJS-1097).
 export function shopGateLevel(user: Gradable): number {
@@ -81,7 +81,7 @@ export const SYSTEM = {
   authMethod: 'created' as const,
 
   // The shop acting on its own behalf is one of ours, and this is not a
-  // formality. `Order` and `Customer` carry `@@allow('read', auth().isStaff)`,
+  // formality. `Order` and `Customer` carry `@@allow(read, auth().isStaff)`,
   // and a job runs through the caller's SCOPED client — not `asSystem()`, so
   // that the audit actor and the announcement survive. Without this a cron job
   // grades SYSADMIN(7), clears every gate, reads NO ROWS because it satisfies

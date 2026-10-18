@@ -75,7 +75,7 @@
   const resolvedLabel    = stated(label, ruleLabel(name, rule))
   const resolvedRequired = stated(required, rule?.required)
 
-  // A field `@allow('read', …)` the server refused arrives as a MISSING key, so
+  // A field `@allow(read, …)` the server refused arrives as a MISSING key, so
   // the control renders an empty box and a person reads *there is nothing here*.
   // Said once here rather than in each control, for `resolveRule`'s reason:
   // every control wraps itself in a `<Field>`, so this reaches all of them and

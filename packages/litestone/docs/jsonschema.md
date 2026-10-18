@@ -48,14 +48,14 @@ model Article {
   wordCount Int      @computed
   version   Int      @version
   apiKey    String?  @secret
-  salary    Float?   @allow('read', auth().role == 'admin')
+  salary    Float?   @allow(read, auth().role == 'admin')
   authorId  Int      @default(auth().id)
   author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   comments  Comment[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@gate(2.4.4.6)
-  @@allow('read', status == 'published')
+  @@allow(read, status == 'published')
   @@transitions(status, publish: draft -> published, archive: published -> archived @gate(5), settle: published -> settled @system)
 }
 ```
@@ -246,8 +246,8 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-litestone-policies` | model | `true` when the model has any `@@allow`/`@@deny` | nothing yet |
 | `x-determined` | model | `{ hostId: 'auth().id' }` — a column every create `@@allow` pins to the caller as a top-level `&&` conjunct (`hostId == auth().id`) | sierra drops it from a generated form and `required`, and fills it from the session at create (`FJS-D492`) |
 | `x-pick-where` | model | `{ scheduleId: { hostId: 'auth().id' } }` — per relation column, the related rows every create `@@allow` accepts, from a top-level `rel.col == auth().claim` conjunct | sierra's `options()` lists only those rows, the claim filled from the session (`FJS-D669`); any other shape is left to `fli advise` (`create-reaches-unpickable-relation`) |
-| `x-litestone-read-policy` | field | `true` when a field-level `@allow('read', …)` may hide it | sierra (`buildFieldRules` → `withheldFields`), `<Form>`, `<Field>` |
-| `x-litestone-write-policy` | field | `true` when a field-level `@allow('write', …)` may DROP the value written to it | sierra (`buildFieldRules` → `declinedFields`), `<Form>` |
+| `x-litestone-read-policy` | field | `true` when a field-level `@allow(read, …)` may hide it | sierra (`buildFieldRules` → `withheldFields`), `<Form>`, `<Field>` |
+| `x-litestone-write-policy` | field | `true` when a field-level `@allow(write, …)` may DROP the value written to it | sierra (`buildFieldRules` → `declinedFields`), `<Form>` |
 | `x-litestone-write-claims` | field | `{ isStaff: true }` — beside the write flag, when the whole predicate is `auth().<claim>` truthiness, `auth().<claim> == <literal>` and `&&` and the field has one write allow; `true` means truthy, any other value strictly equal. A predicate reading the row, `\|\|` or `!=` stays the bare flag | sierra (`buildFieldRules` → `refusedFor`) freezes the control for a session failing it (`FJS-D578`) |
 | `x-litestone-required-where` | field | the AST of `@required(where: …)` — the predicate deciding whether this column needs a value | sierra (`buildFieldRules` → `requiredFor`), `<Form>` |
 | `x-litestone-secret` | field | `true` — `audience: 'system'` only | nothing yet |
@@ -311,7 +311,7 @@ model's `required[]`, not on the field.
 
 - `@secret` and `@guarded` — gone from every mode.
 - `@guarded` (select-level) — gone from `create` and `update`, present in `full`.
-- A field-level `@allow('read', …)` field is made nullable and annotated
+- A field-level `@allow(read, …)` field is made nullable and annotated
   `x-litestone-read-policy: true`, because whether it arrives depends on who asked.
 
 **The enforcement is that the KEY is absent, not that the value is null**, and

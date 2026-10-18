@@ -28,7 +28,7 @@ const SCHEMA = `
     id       Int    @id
     title    String
     original File   @accept("image/*")
-    @@allow('all', auth() != null)
+    @@allow(all, auth() != null)
   }
 `
 

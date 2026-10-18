@@ -68,7 +68,7 @@ describe('@secret @hashed', () => {
   test('@encrypted or @allow beside the pair is still refused', () => {
     for (const [decl, re] of [
       ['t String @secret @hashed @encrypted', /conflicts with @encrypted/],
-      [`t String @secret @hashed @allow('read', true)`, /conflicts with @allow/],
+      [`t String @secret @hashed @allow(read, true)`, /conflicts with @allow/],
       ['t String @secret(deterministic: true) @hashed', /deterministic/],
     ] as [string, RegExp][]) {
       const r = parse(`model D { id Int @id\n  ${decl} }`)
@@ -115,17 +115,17 @@ describe('@secret @hashed', () => {
 })
 
 // FJS-3067 — a column nobody can read still has a "who may replace it", and
-// that is the field @allow('write') question. The read half stays refused.
-describe('@hashed beside @allow(\'write\')', () => {
+// that is the field @allow(write) question. The read half stays refused.
+describe('@hashed beside @allow(write)', () => {
   const SCHEMA = `
     claim isGrantee
 
     model Vault {
       id                 Int     @id
       name               String
-      masterPasswordHash String? @hashed @allow('write', auth().isGrantee)
-      @@allow('read', true)
-      @@allow('update', auth().id > 0)
+      masterPasswordHash String? @hashed @allow(write, auth().isGrantee)
+      @@allow(read, true)
+      @@allow(update, auth().id > 0)
     }
   `
   const open = async () => {
@@ -138,10 +138,10 @@ describe('@hashed beside @allow(\'write\')', () => {
 
   test('a write predicate composes, and the read half is still refused', () => {
     expect(parse(SCHEMA).valid).toBe(true)
-    const r = parse(`model D { id Int @id\n  t String @hashed @allow('read', true) }`)
+    const r = parse(`model D { id Int @id\n  t String @hashed @allow(read, true) }`)
     expect(r.valid).toBe(false)
-    expect(r.errors.join(' ')).toMatch(/conflicts with @allow\('read'/)
-    const both = parse(`model D { id Int @id\n  t String @hashed @allow('read,write', true) }`)
+    expect(r.errors.join(' ')).toMatch(/conflicts with @allow\(read/)
+    const both = parse(`model D { id Int @id\n  t String @hashed @allow(all, true) }`)
     expect(both.valid).toBe(false)
   })
 

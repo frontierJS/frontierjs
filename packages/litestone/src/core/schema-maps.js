@@ -224,7 +224,7 @@ export function buildGeneratedDefaultMap(schema, now) {
 // the payload; this map exists for the one reader that runs BEFORE the INSERT
 // and must see the row as it will land: a create policy. Graded on the bare
 // payload, `channel Channel @default(email)` under
-// `@@allow('create', channel == 'email')` refuses every create that leaves the
+// `@@allow(create, channel == 'email')` refuses every create that leaves the
 // column at its default, which is every create a form makes without showing it.
 // Json is left out: its default is text the column parses, and a policy over a
 // Json value is not one this can answer by substitution.
@@ -1467,7 +1467,7 @@ export function guardedKeysFor(model) {
   return out
 }
 
-// ─── @allow('read', …) on a FIELD ─────────────────────────────────────────────
+// ─── @allow(read, …) on a FIELD ─────────────────────────────────────────────
 //
 // The same hole `FJS-393` closed for `@guarded`, wearing a predicate: the column
 // is stripped from the answer and stays fully filterable and sortable, so its

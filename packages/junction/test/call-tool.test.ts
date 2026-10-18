@@ -37,7 +37,7 @@ export async function buildApp() {
       id      Int    @id @default(autoincrement())
       ownerId String
       body    String
-      @@allow('read', ownerId == auth().id)
+      @@allow(read, ownerId == auth().id)
     }\` })
   const sys = db.asSystem()
   await sys.user.create({ data: { email: 'ann@x.test' } })

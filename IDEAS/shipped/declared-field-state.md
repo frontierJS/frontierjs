@@ -32,8 +32,8 @@ The four sentences, each written as a real schema and run:
 | --- | --- | --- |
 | `trackingCode` is required once `status` is `shipped` | **`@@check("status != 'shipped' OR trackingCode IS NOT NULL", …)`** — refuses, `ValidationError` | **nothing**, and the error's `path` is `[]` |
 | `currency` may be set at create and never again | **`@immutable`** — throws, names the field, says what to do instead | `readOnly` in update mode, `x-litestone-kind: 'immutable'` |
-| `cancelReason` is read-only until the order is cancelled | **`@allow('write', status == 'cancelled')`** — the WHEN of a `CASE` in the SET, so it reads the STORED row and grades every row of a bulk write separately | `x-litestone-write-policy: true` — **the flag, since 2026-09-10 (`FJS-1071`)**; not the predicate |
-| `vatNumber` is shown only for a business customer | `@allow('read', customerType == 'business')` — strips the column from the answer, and closes the filter and sort oracles with it | `x-litestone-read-policy: true`, whose reader is nobody |
+| `cancelReason` is read-only until the order is cancelled | **`@allow(write, status == 'cancelled')`** — the WHEN of a `CASE` in the SET, so it reads the STORED row and grades every row of a bulk write separately | `x-litestone-write-policy: true` — **the flag, since 2026-09-10 (`FJS-1071`)**; not the predicate |
+| `vatNumber` is shown only for a business customer | `@allow(read, customerType == 'business')` — strips the column from the answer, and closes the filter and sort oracles with it | `x-litestone-read-policy: true`, whose reader is nobody |
 
 The probe:
 
@@ -49,7 +49,7 @@ S1 via @@check THREW: ValidationError
 
 Two of those lines are the whole of what this file is now about.
 
-**`@allow('write', status == 'cancelled')` reached the client as nothing.** The
+**`@allow(write, status == 'cancelled')` reached the client as nothing.** The
 generated JSON Schema for that column was `{"type": ["string","null"]}` in create
 mode and in update mode alike — indistinguishable from an ordinary writable
 column. So a generated `<Form>` rendered an editable box, a person typed into it,
@@ -97,7 +97,7 @@ first.
 ### 1. Emit the write predicate, and read it — **BUILT, `FJS-1071`**
 
 `x-litestone-write-policy` beside the existing `x-litestone-read-policy`, hoisted
-past the `anyOf` wrapper the read half builds so `@allow('all', …)` on a
+past the `anyOf` wrapper the read half builds so `@allow(all, …)` on a
 non-optional column carries it where a consumer looks; carried in sierra's
 `_CARRIED`; and read by `declinedFields(fields, sent, saved)`, which `<Form>`
 calls on the SUCCESS path and renders in the slot a server error would have used.
@@ -218,13 +218,13 @@ and evaluable by piece 2.
   says *written once*. A second name for it is the thing `PHILOSOPHY.md` § IV
   *preservation vs. evolution* forbids in the other direction: no second name for
   one idea.
-- **`@readOnlyWhen(expr)`** — it is `@allow('write', !expr)`, shipped, per-row,
+- **`@readOnlyWhen(expr)`** — it is `@allow(write, !expr)`, shipped, per-row,
   graded against the stored row. The first draft's own example is the argument:
   `@readOnlyWhen(status != 'cancelled')` is a double negative where
-  `@allow('write', status == 'cancelled')` is not. What was missing was the
+  `@allow(write, status == 'cancelled')` is not. What was missing was the
   emission, which is piece 1.
 - **`@hiddenWhen(expr)`** — two different things wore one word. *The caller may
-  not have the value* is `@allow('read', expr)`, shipped and stronger than
+  not have the value* is `@allow(read, expr)`, shipped and stronger than
   hiding. *The reader has the value and the form should not show the box* is
   presentation, and the first draft's own § *What this is not* rules that out:
   `formFieldList`'s `only`/`except` own what a form shows, and Salesforce's four

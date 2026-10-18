@@ -25,6 +25,6 @@ model Lead {
   @@gate(2.4.4.5)
   // A row policy, so a principal that arrives undefined filters to nothing
   // rather than raising — the failure this whole tier exists to make visible.
-  @@allow('read', ownerId == auth().id || ownerId == null)
+  @@allow(read, ownerId == auth().id || ownerId == null)
   @@softDelete
 }

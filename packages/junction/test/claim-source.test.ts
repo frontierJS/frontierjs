@@ -35,7 +35,7 @@ const SCHEMA = `
     id     Int    @id @default(autoincrement())
     siteId Int
     note   String
-    @@allow('read', siteId == auth().siteId)
+    @@allow(read, siteId == auth().siteId)
   }
 `
 

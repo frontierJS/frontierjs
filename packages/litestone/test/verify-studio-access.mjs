@@ -291,7 +291,7 @@ t('moves.nonTerminalNotNamed', await evaluate(`
 // it. A misspelling — `auth().isStaf` — is exactly the shape FJS-666 is about,
 // and it parses, builds and reads as a policy doing its job.
 {
-  const edited = ORIGINAL_SCHEMA.replace("@@allow('read', auth().isStaff)", "@@allow('read', auth().isStaf)")
+  const edited = ORIGINAL_SCHEMA.replace("@@allow(read, auth().isStaff)", "@@allow(read, auth().isStaf)")
   if (edited === ORIGINAL_SCHEMA) { console.error('claims: no isStaff read policy to misspell'); process.exit(1) }
   writeFileSync(SCHEMA, edited, 'utf8')
 

@@ -27,10 +27,10 @@ const POLICY = `
 model User { id Int @id  @@auth }
 model Doc {
   id Int @id @default(autoincrement())  title String  ownerId Int
-  @@allow('read', ownerId == auth().id)
-  @@allow('create', ownerId == auth().id)
-  @@allow('update', ownerId == auth().id)
-  @@allow('delete', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
+  @@allow(create, ownerId == auth().id)
+  @@allow(update, ownerId == auth().id)
+  @@allow(delete, ownerId == auth().id)
 }`
 const LOGGED = `
 database main  { path env("MAIN_DB", "./main.db") }

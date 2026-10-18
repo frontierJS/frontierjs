@@ -255,7 +255,7 @@ model Organization {
   id      Int @id
   ownerId Int
   ciphers Cipher[]
-  @@allow('all', ownerId == auth().id)
+  @@allow(all, ownerId == auth().id)
 }
 model Cipher {
   id             Int           @id @default(autoincrement())
@@ -264,7 +264,7 @@ model Cipher {
   organizationId Int?
   organization   Organization? @relation(fields: [organizationId], references: [id])
   @@arc([userId, organizationId])
-  @@allow('all', ${rule})
+  @@allow(all, ${rule})
 }`
   const BARE    = `userId == auth().id || check(organization, 'update')`
   const GUARDED = `userId == auth().id || (organizationId != null && check(organization, 'update'))`

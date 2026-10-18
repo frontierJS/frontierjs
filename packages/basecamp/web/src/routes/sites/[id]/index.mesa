@@ -147,7 +147,7 @@ title: Site
 {/if}
 
 {#if site}
-  <div class="grid" style="grid-template-columns: minmax(14rem, 1fr) 3fr; gap: var(--space-4)">
+  <div class="grid" style="grid-template-columns: minmax(14rem, 1fr) 3fr; gap: var(--space-md)">
     <div class="stack">
       <Card title="Drafts">
         <form class="cluster" id="draft-open" onsubmit={open}>

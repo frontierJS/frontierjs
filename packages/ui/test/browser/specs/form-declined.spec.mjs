@@ -1,7 +1,7 @@
 /*
  * form-declined.spec.mjs — a save that succeeded and kept a column.
  *
- * A field `@allow('write', …)` is a predicate over the caller AND the row. The
+ * A field `@allow(write, …)` is a predicate over the caller AND the row. The
  * Data boundary answers it by keeping the stored value: the write succeeds,
  * every other column lands, and nothing throws. That is deliberate — the same
  * payload is legitimate for another caller, so a refusal by name would be wrong

@@ -55,8 +55,8 @@ model Doc {
 model Memo {
   id   Int    @id
   body String
-  @@allow('all', true)
-  @@deny('post-update', body == 'forbidden')
+  @@allow(all, true)
+  @@deny(postUpdate, body == 'forbidden')
 }`
 
 type Write = { sql: string, inTx: boolean }

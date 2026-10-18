@@ -144,7 +144,7 @@ workspace, and a null compared to a caller's workspace hides exactly the rows th
 trail exists for. The line each of the 15 carries:
 
 ```
-@@allow('all', workspaceId == auth().workspaceId)
+@@allow(all, workspaceId == auth().workspaceId)
 ```
 
 `workspaceId` reaches `auth()` the same way `memberRole` does — `applyStanding()`
@@ -251,8 +251,8 @@ Two properties worth knowing, both verified by running:
   `asSystem()`, and they all still are. A gate is per MODEL, so 4 on update says
   *any signed-in caller may rewrite any other person's row*, the hub tier
   column included. Two declarations narrow it, neither of them a level:
-  `@@allow('update', id == auth().id)` for whose row, and
-  `@allow('write', auth().isSystemAdmin)` on `isSystemAdmin`, `status` and
+  `@@allow(update, id == auth().id)` for whose row, and
+  `@allow(write, auth().isSystemAdmin)` on `isSystemAdmin`, `status` and
   `kind` for which columns — the three `basecampGateLevel()` grades on, which is
   the reason they may not be written by the caller being graded. `asSystem()`
   passes both, so the hub grants the tier and `/setup` makes the first

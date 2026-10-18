@@ -288,8 +288,8 @@ function emitModel(m, backs, access, currency, declares) {
 
   attrs.push(`@@gate(${access.gate.join('.')})`)
   if (m.lifecycle) attrs.push(transitions(m.lifecycle))
-  const opWidth = Math.max(0, ...access.policies.map(([op]) => op.length + 3))
-  for (const [op, expr] of access.policies) attrs.push(`@@allow(${`'${op}',`.padEnd(opWidth)} ${expr})`)
+  const opWidth = Math.max(0, ...access.policies.map(([op]) => op.length + 1))
+  for (const [op, expr] of access.policies) attrs.push(`@@allow(${`${op},`.padEnd(opWidth)} ${expr})`)
 
   for (const e of enums) out.push(...e, '')
   out.push(`model ${m.name} {`, ...body, '', ...attrs.flatMap(a => a.split('\n').map(line => `  ${line}`)), '}')

@@ -24,7 +24,7 @@ const SALES = `
     startAt DateTime
     endAt   DateTime
     @@gate(0)
-    @@allow('read', startAt < now() && now() < endAt)
+    @@allow(read, startAt < now() && now() < endAt)
   }
 `
 

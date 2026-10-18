@@ -51,7 +51,7 @@ model Assignment {
 // row, which is the path that used to read the schedule's first Person.
 const GATED = SRC.replace(
   /model Assignment \{([\s\S]*?)\n\}/,
-  `model Assignment {$1\n  @@allow('read', person.role == 'organizer')\n}`)
+  `model Assignment {$1\n  @@allow(read, person.role == 'organizer')\n}`)
 
 async function seed(db: any) {
   await db.schedule.create({ data: { id: 's1' } })
@@ -149,20 +149,20 @@ describe('the policy forms that cross a composite relation', () => {
   }
 
   it('check(person) delegates to the row\'s own person', async () => {
-    const schema = withPolicy('Person', `@@allow('read', role == 'organizer')`,
-      withPolicy('Assignment', `@@allow('read', check(person))`))
+    const schema = withPolicy('Person', `@@allow(read, role == 'organizer')`,
+      withPolicy('Assignment', `@@allow(read, check(person))`))
     const me = await asUser(schema)
     expect(ids(await me.assignment.findMany({ where: { scheduleId: 's1' } }))).toEqual(['a1', 'a3'])
   })
 
   it('assignments.some(…) tests the shift\'s own assignments', async () => {
-    const me = await asUser(withPolicy('Shift', `@@allow('read', assignments.some(personId == 'bob'))`))
+    const me = await asUser(withPolicy('Shift', `@@allow(read, assignments.some(personId == 'bob'))`))
     expect(ids(await me.shift.findMany({}))).toEqual(['am'])
   })
 
   it('a create is graded by the person the payload names, not the first in its schedule', async () => {
     const me = await asUser(withPolicy('Shift', '@@gate(0)', withPolicy('Person', '@@gate(0)',
-      withPolicy('Assignment', `@@allow('read', true)\n  @@allow('create', person.role == 'organizer')`))))
+      withPolicy('Assignment', `@@allow(read, true)\n  @@allow(create, person.role == 'organizer')`))))
     await expect(me.assignment.create({ data: { id: 'b1', scheduleId: 's1', shiftId: 'pm', personId: 'bob' } }))
       .rejects.toThrow()
     expect(await me.assignment.create({ data: { id: 's9', scheduleId: 's1', shiftId: 'pm', personId: 'sam' } }))
@@ -170,7 +170,7 @@ describe('the policy forms that cross a composite relation', () => {
   })
 
   it('a composite relation compared as ONE value is refused by name', async () => {
-    await expect(createClient({ schema: withPolicy('Assignment', `@@allow('read', person == auth())`), db: ':memory:' }))
+    await expect(createClient({ schema: withPolicy('Assignment', `@@allow(read, person == auth())`), db: ':memory:' }))
       .rejects.toThrow(/'person' relates over \(scheduleId, personId\)/)
   })
 })

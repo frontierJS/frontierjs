@@ -12,7 +12,7 @@ Most ORMs that have access control implement it as a JS filter: fetch the rows, 
 
 Litestone's policies are structural. Once a policy is declared on a model, it is injected into every query automatically. There is no path to unfiltered data except `asSystem()`, which is always explicit. The only way to bypass it is intentional.
 
-As a concrete example: `@@allow('read', accountId == auth().accountId)` compiles to:
+As a concrete example: `@@allow(read, accountId == auth().accountId)` compiles to:
 
 ```sql
 WHERE "accountId" = ? -- bound to ctx.auth.accountId
@@ -30,10 +30,10 @@ model Post {
   status    String     @default("draft")
   title     String
 
-  @@allow('read',   status == 'published' || accountId == auth().accountId)
-  @@allow('create', auth() != null)
-  @@allow('update', ownerId == auth().id)
-  @@deny('delete',  status == 'published')   // published posts can never be deleted
+  @@allow(read,   status == 'published' || accountId == auth().accountId)
+  @@allow(create, auth() != null)
+  @@allow(update, ownerId == auth().id)
+  @@deny(delete,  status == 'published')   // published posts can never be deleted
 }
 ```
 
@@ -42,7 +42,7 @@ Rules:
 - First `@@allow` makes the operation deny-by-default
 - `@@deny` always wins over `@@allow`
 - Multiple `@@allow` on same op → OR'd together
-- Custom error messages: `@@allow('update', expr, "You can only edit your own posts")`
+- Custom error messages: `@@allow(update, expr, "You can only edit your own posts")`
 
 ### Policy expressions
 
@@ -133,7 +133,7 @@ The set has six sources:
 | **`createClient({ claims: [...] })`** | the same statement made in code, for a claim an app adds to a schema it does not own |
 
 ```
-claim cartToken            // read by `@@allow('read', token == auth().cartToken)`
+claim cartToken            // read by `@@allow(read, token == auth().cartToken)`
 ```
 
 ### A claim that lives on another row
@@ -144,7 +144,7 @@ claim siteId     from Employee(userId).siteId     // another column of it
 
 model Shift {
   …
-  @@allow('read', siteId == auth().siteId)
+  @@allow(read, siteId == auth().siteId)
 }
 ```
 
@@ -224,14 +224,14 @@ CASE keyword:
 
 ```
 @@scope(urgent, priority > 8 ? true : priority > 5 ? status == 'open' : false)
-@@allow('create', priority > 8 ? auth().isAdmin == true : auth() != null)
+@@allow(create, priority > 8 ? auth().isAdmin == true : auth() != null)
 ```
 
 A parenthesized group is an operand on **either** side of a comparison, so a
 ternary can choose the value being compared against:
 
 ```
-@@allow('read', ownerId == (status == 'open' ? auth().id : auth().adminId))
+@@allow(read, ownerId == (status == 'open' ? auth().id : auth().adminId))
 ```
 
 This is where the language stops being predicate-only and starts producing
@@ -259,9 +259,9 @@ model Doc {
   ownerId   Int
   status    String
 
-  @@allow('read',   auth().id in memberIds)          // the row holds the list
-  @@allow('delete', ownerId in auth().ownedIds)      // the principal holds it
-  @@allow('update', status in ['draft', 'review'])   // written literally
+  @@allow(read,   auth().id in memberIds)          // the row holds the list
+  @@allow(delete, ownerId in auth().ownedIds)      // the principal holds it
+  @@allow(update, status in ['draft', 'review'])   // written literally
 }
 ```
 
@@ -297,7 +297,7 @@ was encoded, which is the rewrite a `where` gets — so a `@hashed` or
 ```
 model Doc {
   owner String @hashed
-  @@allow('read', owner == auth().email)
+  @@allow(read, owner == auth().email)
 }
 ```
 
@@ -311,7 +311,7 @@ policy for the table and the `create` / `post-update` exceptions.
 ### `now()` and the clock
 
 `now()` resolves **once per policy evaluation**, not once per occurrence — so
-`@@allow('read', startAt < now() && now() < endAt)` compares both sides against
+`@@allow(read, startAt < now() && now() < endAt)` compares both sides against
 the same instant. Without that a query has no single "as of" moment and can
 return a row satisfying a contradiction, which matters far more for a report
 than for an access check.
@@ -364,8 +364,8 @@ model Doc {
   qty Int?
   big Boolean? @derived(qty > 5)
 
-  @@allow('read',   big == true)   // fine — SQL answers it
-  @@allow('create', big == true)   // refused at build: nobody could ever create one
+  @@allow(read,   big == true)   // fine — SQL answers it
+  @@allow(create, big == true)   // refused at build: nobody could ever create one
 }
 ```
 
@@ -394,9 +394,9 @@ model Bookmark {
   collectionId Int?
   collection   Collection? @relation(fields: [collectionId], references: [id])
 
-  @@allow('create',      collection.ownerId == auth().id)
-  @@allow('update',      ownerId == auth().id)
-  @@allow('post-update', collection.ownerId == auth().id)   // without this line the move is admitted
+  @@allow(create,      collection.ownerId == auth().id)
+  @@allow(update,      ownerId == auth().id)
+  @@allow(postUpdate, collection.ownerId == auth().id)   // without this line the move is admitted
 }
 ```
 
@@ -413,7 +413,7 @@ key cannot be moved and is exempt.
 // Scope client to a user — policies apply to all queries
 const userDb = db.$setAuth({ id: 1, accountId: 1 })
 
-await userDb.post.create({ data: { id: 1, accountId: 1, title: 'Mine' } })   // checked against @@allow('create', ...)
+await userDb.post.create({ data: { id: 1, accountId: 1, title: 'Mine' } })   // checked against @@allow(create, ...)
 await db.asSystem().post.create({ data: { id: 2, accountId: 2, ownerId: 9, title: 'Theirs' } })
 const posts = await userDb.post.findMany()   // only returns allowed posts
 
@@ -441,7 +441,7 @@ model Post {
   accountId Int
   account   Account @relation(fields: [accountId], references: [id])
   title     String
-  @@allow('read', accountId == auth().accountId)
+  @@allow(read, accountId == auth().accountId)
 }
 ```
 
@@ -463,7 +463,7 @@ try {
 }
 // AccessDeniedError: "Vault.read" requires level 7, user has level 4
 
-// Post is @@allow('read', accountId == auth().accountId)
+// Post is @@allow(read, accountId == auth().accountId)
 const accounts = await userDb.account.findMany({ include: { posts: true } })
 // each account carries only the posts this caller may read
 if (accounts[0].posts.length !== 1 || accounts[1].posts.length !== 0) throw new Error('the include is filtered by the child policy')
@@ -480,19 +480,19 @@ it costs one subquery; an **absent** foreign key allows, in SQL and in JS alike.
 
 ```lite
 model User { id Int @id  @@auth }
-model App  { id Int @id  ownerId Int  deploys Deploy[]  @@allow('read', ownerId == auth().id) }
+model App  { id Int @id  ownerId Int  deploys Deploy[]  @@allow(read, ownerId == auth().id) }
 
 model Deploy {
   id    Int @id
   app   App @relation(fields: [appId], references: [id])
   appId Int
-  @@allow('read', check(app))            // readable if the app is
-  @@allow('update', check(app, 'read'))  // updatable by anyone who may READ the app
+  @@allow(read, check(app))            // readable if the app is
+  @@allow(update, check(app, 'read'))  // updatable by anyone who may READ the app
 }
 ```
 
 **A bare `check(parent)` asks the parent the rule's own operation.** In a read
-rule that is read; in `@@allow('create', check(inbox))` it is *may this caller
+rule that is read; in `@@allow(create, check(inbox))` it is *may this caller
 create an inbox*, which is almost never what a child's write rule means. Chained
 through two models it climbs to whoever may write the root, so the child is
 writable by admins only. Write `check(inbox, 'read')` for *a member of it*, and
@@ -510,8 +510,8 @@ what the parent is actually protected by.
 
 ```lite
 model Vault { id Int @id  docs Doc[]  @@gate(7) }        // ← no row policy
-model Doc   { id Int @id  vaultId Int  vault Vault @relation(fields: [vaultId], references: [id])  @@allow('read', check(vault)) }
-// [litestone] Doc: @@allow/@@deny('read', check(vault)) delegates to Vault, whose protection
+model Doc   { id Int @id  vaultId Int  vault Vault @relation(fields: [vaultId], references: [id])  @@allow(read, check(vault)) }
+// [litestone] Doc: @@allow/@@deny(read, check(vault)) delegates to Vault, whose protection
 // for 'read' is a @@gate and no row policy ... places no restriction at all on Doc
 ```
 
@@ -542,7 +542,7 @@ model OrderLine {
   id      Int    @id
   order   Order  @relation(fields: [orderId], references: [id])
   orderId String
-  @@allow('read', order.userId == auth().id)   // the lines of my own orders
+  @@allow(read, order.userId == auth().id)   // the lines of my own orders
 }
 ```
 
@@ -600,7 +600,7 @@ model Team {
   id      Int          @id
   private Boolean      @default(false)
   members TeamMember[]
-  @@allow('read', private == false || members.some(userId == auth().id))
+  @@allow(read, private == false || members.some(userId == auth().id))
 }
 model TeamMember { id Int @id  teamId Int  team Team @relation(fields: [teamId], references: [id])  userId Int  @@index([teamId]) }
 
@@ -608,7 +608,7 @@ model Lens {
   id      Int     @id
   ownerId Int
   grants  Grant[]
-  @@allow('read', ownerId == auth().id || grants.some(granteeId == auth().id && status == 'active'))
+  @@allow(read, ownerId == auth().id || grants.some(granteeId == auth().id && status == 'active'))
 }
 model Grant { id Int @id  lensId Int  lens Lens @relation(fields: [lensId], references: [id])  granteeId Int  status String  @@index([lensId]) }
 ```
@@ -650,18 +650,53 @@ spent the one hop. Refused, each naming the rule:
 **`verifyRowPolicies` reports it as not-graded**, by name, like a path and
 `check()`.
 
+### A rule about the data, for every writer — `@@require`
+
+`@@deny` is the caller tier: `asSystem()` drops it, and a carrier send, an
+automation and a job all write as the system. A rule that is about the DATA —
+*a number that texted STOP may not be texted* — has to hold for them too, and
+`@@check` cannot say it (single-row SQL; SQLite refuses a subquery in a CHECK).
+`@@require` takes the policy language, reaches one hop across a to-one, and is
+graded under `asSystem()`.
+
+```lite
+model Conversation {
+  id         Int       @id @default(autoincrement())
+  optedOutAt DateTime?
+}
+
+model Message {
+  id             Int          @id @default(autoincrement())
+  direction      String
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@require(create, direction == 'inbound' || conversation.optedOutAt == null, 'They texted STOP.')
+}
+```
+
+- **Write the allowed case, not the forbidden one.** The predicate must be TRUE
+  for the row as it lands; an unknown (a null, an absent claim) refuses.
+- **Only `create` and `postUpdate`.** Both grade the row in hand, in JS. A
+  `read`, `update` or `delete` has a WHERE and no landing row, and is refused at
+  parse by name.
+- **Messages and ordering follow `@@deny`**: the message is the third argument,
+  and a refusal is an `AccessDeniedError`.
+
 ### Field-level policies
 
 ```lite
 model User {
-  salary Float?   @allow('read',  auth().role == 'admin')   // hidden unless admin
-  apiKey String?   @allow('write', auth().role == 'admin')   // read-only unless admin
+  salary Float?   @allow(read,  auth().role == 'admin')   // hidden unless admin
+  apiKey String?   @allow(write, auth().role == 'admin')   // read-only unless admin
 }
 ```
 
-`@allow('read', expr)` — field silently stripped when expr is false
-`@allow('write', expr)` — field silently dropped from write data when expr is false
-`@allow('all', expr)` — both
+`@allow(read, expr)` — field silently stripped when expr is false
+`@allow(write, expr)` — field silently dropped from write data (create and update) when expr is false
+`@allow(all, expr)` — both
+
+An operation is a bare word, never quoted, and a rule takes one: `@@allow(update, …)` beside `@@allow(delete, …)` where `update, delete` was once written. A model rule's words are `read`, `create`, `update`, `postUpdate`, `delete`, `write` (create, update and delete) and `all`; a field rule's are `read`, `write` and `all`.
 
 `asSystem()` always sees and writes all fields.
 
@@ -694,7 +729,7 @@ table this model has no column for at all; declare the join as a model to guard 
 `@guarded` answers both halves at once — a system-context column, stripped from
 every read and refused on every write — so a field cannot carry both a lock that
 says *nobody but the system* and a predicate that says *some callers*. Pick the
-one that describes the column: `@allow('write', …)` for a column an admin may
+one that describes the column: `@allow(write, …)` for a column an admin may
 set, `@guarded` for one only `asSystem()` touches. The two also fail
 differently, which is deliberate: a field `@allow` DROPS the key, because the
 same form body is legitimate for the caller one level up, while `@guarded`
@@ -787,7 +822,7 @@ first grade. The same answer is what a row policy reads as `auth().level`, so
 broadcast grades it exactly as a query does:
 
 ```
-@@allow('read', ownerId == auth().id || auth().level >= 5)
+@@allow(read, ownerId == auth().id || auth().level >= 5)
 ```
 
 The level is the grade for the model whose policy is being asked, which is not
@@ -879,11 +914,11 @@ distinction:
 ```lite
 model User {
   id             Int      @id
-  emailVerified  Boolean  @default(false) @allow('write', auth().isAdmin)
-  role           String   @default("user") @allow('write', auth().isAdmin)
+  emailVerified  Boolean  @default(false) @allow(write, auth().isAdmin)
+  role           String   @default("user") @allow(write, auth().isAdmin)
 
   @@gate(4.4.4.5)
-  @@allow('update', id == auth().id || auth().isAdmin)
+  @@allow(update, id == auth().id || auth().isAdmin)
   @@auth
 }
 
@@ -899,7 +934,7 @@ three**:
 |---|---|---|
 | `@@gate` | what KIND of caller | throws, naming the model and the level |
 | `@@allow` | WHOSE row | filters — the write matches nothing and answers |
-| field `@allow('write', …)` | WHICH columns | drops the field, keeps the rest of the write |
+| field `@allow(write, …)` | WHICH columns | drops the field, keeps the rest of the write |
 
 A gate is per model, never per row, so `@@gate(4.4.4.5)` on its own says *any
 signed-in caller may write any user row*. That is not an argument for raising
@@ -1032,7 +1067,7 @@ predicate, and the literal in it is resolved against the same derived set:
 ```lite
 model Employee {
   id     Int   @id
-  salary Float @capability @allow('read', 'Employee.salary' in auth().capabilities)
+  salary Float @capability @allow(read, 'Employee.salary' in auth().capabilities)
   @@gate(2)
   @@capabilities(all)
 }
@@ -1059,7 +1094,7 @@ model Post {
   ownerId Int @default(auth().id)
 
   @@gate(1.2.4.6)                           // level check first
-  @@allow('update', ownerId == auth().id)     // row check second
+  @@allow(update, ownerId == auth().id)     // row check second
 }
 ```
 
@@ -1099,7 +1134,7 @@ If the payload is wrong for **everybody**, refuse. If it is right and this calle
 merely narrower, drop the key and let the rest land.
 
 - `@guarded` and `@system` throw, because no caller was ever meant to send that column.
-- A field `@allow('write', …)` drops, because the same form body is legitimate for the
+- A field `@allow(write, …)` drops, because the same form body is legitimate for the
   caller one level up, and failing the whole write would punish a form rather than a
   request.
 

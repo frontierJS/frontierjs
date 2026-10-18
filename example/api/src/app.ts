@@ -90,7 +90,7 @@ const authOptions = {
   encryptionKey: process.env.ENCRYPTION_KEY ?? DEV_KEY,
   // What 'admin' means here, said once. api/gate.ts grades the role string onto
   // ADMINISTRATOR(5); auth's own User model bounds its columns with
-  // @allow('write', auth().isAdmin) and a row policy that reads the same field.
+  // @allow(write, auth().isAdmin) and a row policy that reads the same field.
   // Without this projection the two would disagree — the level would say admin
   // and the policy would not — and the disagreement is silent, because a policy
   // filters rather than refuses.

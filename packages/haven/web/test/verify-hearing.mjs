@@ -110,6 +110,9 @@ check(bea.includes('(!over here)') && !bea.includes('meet me') && !bea.includes(
 
 await ana.walk(-OUT)
 await until(() => sam.at(sx + 1, sy) === 'A' || sam.at(sx, sy) !== '@', 3000)
+// The whisper was a command, and a command leaves the line in NORMAL.
+sam.send('i')
+await sleep(150)
 await sam.say('again')
 check(await until(() => ana.screen().includes('(again)')), 'walking back within earshot, the next line is hers', ana.screen())
 

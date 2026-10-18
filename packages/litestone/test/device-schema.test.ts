@@ -59,7 +59,7 @@ model Count {
   where     Json?    @type(Position)
   counted   Int
   @@gate(5.5.5.9)
-  @@allow('read', counted >= 0)
+  @@allow(read, counted >= 0)
   @@index([sheetId])
   @@sync(append)
 }
@@ -233,6 +233,39 @@ describe('the blocks a device cannot have', () => {
     expect(noteFor(r, 'Sheet @@trail(audit)')?.grade).toBe('lost')
   })
 
+  // FJS-2539 (FJS-D893): a device never holds the ciphertext. Left in, the schema
+  // makes createClient demand a key the device must not have.
+  test('@encrypted and @hashed columns are dropped, graded, and the result opens with no key', async () => {
+    const src = `
+model Vault {
+  id     Int    @id @default(autoincrement())
+  label  String
+  token  String @encrypted
+  digest String @hashed
+  @@index([token])
+  @@sync(server)
+}`
+    const r = deviceSchema(parse(src))
+    expect(fieldNames(r, 'Vault')).toEqual(['id', 'label'])
+    expect(noteFor(r, 'Vault.token')?.grade).toBe('lost')
+    expect(noteFor(r, 'Vault.digest')?.grade).toBe('lost')
+    expect(noteFor(r, 'Vault.token')?.why).toContain('@encrypted')
+    const db = (await createClient({ parsed: JSON.parse(JSON.stringify(r.parsed)), db: ':memory:' })).asSystem()
+    await db.vault.create({ data: { label: 'a' } })
+    expect((await db.vault.findFirst()).label).toBe('a')
+  })
+
+  test('a model rule that reads a dropped protected column is refused by name', () => {
+    const src = `
+model Vault {
+  id    Int    @id @default(autoincrement())
+  token String @encrypted
+  @@check("token IS NOT NULL")
+  @@sync(server)
+}`
+    expect(() => deviceSchema(parse(src))).toThrow(/Vault @@check reads token/)
+  })
+
   test('a tenancy block is dropped and graded', () => {
     const src = 'tenancy {\n  strategy database\n  dir "./shops"\n  registry "./r.db"\n  resolve subdomain\n}\n' + SOURCE
     const r = deviceSchema(parse(src))
@@ -288,7 +321,7 @@ model Bookmark {
   @@sync(server)
 }
 `
-  const READS = "@@allow('read', collection.ownerId == auth().id)"
+  const READS = "@@allow(read, collection.ownerId == auth().id)"
 
   test('a path through the relation: refused, naming the model to add @@sync to', () => {
     expect(() => deviceSchema(parse(PORTAL(READS))))
@@ -311,14 +344,14 @@ model Bookmark {
   })
 
   test('check(rel) is refused the same way', () => {
-    expect(() => deviceSchema(parse(PORTAL("@@allow('read', check(collection))"))))
+    expect(() => deviceSchema(parse(PORTAL("@@allow(read, check(collection))"))))
       .toThrow(/delegates to check\(collection\)[\s\S]*Add @@sync to Collection/)
   })
 
   test('rel.some(...) on a to-many is refused the same way', () => {
     const src = PORTAL('', '@@sync(server)')
       .replace('  @@gate(0)\n  @@sync(server)\n}\n\nmodel Bookmark',
-               '  @@gate(0)\n  @@allow(\'read\', tags.some(name == "x"))\n  @@sync(server)\n}\n\nmodel Bookmark')
+               '  @@gate(0)\n  @@allow(read, tags.some(name == "x"))\n  @@sync(server)\n}\n\nmodel Bookmark')
       .replace('  bookmarks Bookmark[]', '  bookmarks Bookmark[]\n  tags      Tag[]') +
       '\nmodel Tag {\n  id Int @id\n  name String\n  collectionId Int\n  collection Collection @relation(fields: [collectionId], references: [id])\n}\n'
     expect(() => deviceSchema(parse(src)))
@@ -327,13 +360,13 @@ model Bookmark {
 
   test('a field-level @allow is refused the same way', () => {
     const src = PORTAL('', '@@sync(server)').replace('  url          String',
-      "  url          String     @allow('read', collection.ownerId == auth().id)")
+      "  url          String     @allow(read, collection.ownerId == auth().id)")
     expect(() => deviceSchema(parse(src.replace('@@sync(server)\n}\n\nmodel Bookmark', '\n}\n\nmodel Bookmark'))))
       .toThrow(/Bookmark\.url @allow\(read\) reads collection\.ownerId/)
   })
 
   test('every crossing is named in one refusal, and each model to add once', () => {
-    const src = PORTAL(READS + "\n  @@deny('delete', collection.ownerId != auth().id)")
+    const src = PORTAL(READS + "\n  @@deny(delete, collection.ownerId != auth().id)")
     let message = ''
     try { deviceSchema(parse(src)) } catch (e: any) { message = e.message }
     expect(message).toContain('@@allow(read)')

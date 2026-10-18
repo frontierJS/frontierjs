@@ -1046,7 +1046,7 @@ describe('package-model-drift', () => {
       '  label   String?',
       '  @@tenant(none)',
       '  @@trail(audit)',
-      '  @@allow(\'read\', ownerId == auth().id)',
+      '  @@allow(read, ownerId == auth().id)',
       '}',
     ].join('\n')))
 

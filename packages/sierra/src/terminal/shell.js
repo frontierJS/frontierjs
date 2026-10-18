@@ -177,6 +177,7 @@ function paneKeys(tui, renderer, file, setMode, setZoom, say) {
     if (pane && pane !== front) { front = pane; lay() }
   })
   renderer.on('resize', lay)
+  // biome-ignore lint/correctness/noUnusedVariables: the ??= below reads it, so the side mounts once
   let mounted = null
   // Focus arriving sets the mode, through Shell.mesa's focusin; a pane with
   // nothing to focus leaves none, so a hidden side keeps no keys.
@@ -204,6 +205,7 @@ function paneKeys(tui, renderer, file, setMode, setZoom, say) {
   tui.setSideToggle(renderer, toggle)
   // A legacy terminal sends Alt+= as ESC =, which opentui names '' and leaves
   // unmarked; the kitty protocol names it '=' with meta.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: ESC is the prefix a legacy terminal's Alt key sends
   const altOf = (k) => k.ctrl ? null : k.meta ? k.name : /^\x1b(.)$/.exec(k.sequence ?? '')?.[1]
   renderer.keyInput.on('keypress', (k) => {
     const wider = WIDER[altOf(k)]

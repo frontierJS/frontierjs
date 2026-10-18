@@ -159,7 +159,7 @@ describe('gate-over-own-standing', () => {
         isAdmin Boolean @default(false)
         @@auth
         @@gate(4.4.4.5)
-        @@allow('update', id == auth().id)
+        @@allow(update, id == auth().id)
       }`, 'gate-over-own-standing')
     expect(f.length).toBe(1)
     expect(f[0].message).toContain('WHICH columns')
@@ -169,10 +169,10 @@ describe('gate-over-own-standing', () => {
     expect(findings(`
       model User {
         id      Int     @id
-        isAdmin Boolean @default(false) @allow('write', auth().isAdmin)
+        isAdmin Boolean @default(false) @allow(write, auth().isAdmin)
         @@auth
         @@gate(4.4.4.5)
-        @@allow('update', id == auth().id)
+        @@allow(update, id == auth().id)
       }`, 'gate-over-own-standing')).toEqual([])
   })
 
@@ -247,6 +247,13 @@ describe('fts-over-a-column-search-cannot-read', () => {
     const f = findings(`
       model Doc { id Int @id  title String  body String? @secret  @@fts([title, body])  @@label(title) }`, ID)
     expect(f.map(x => x.severity)).toEqual(['error'])
+  })
+
+  test('a Json column is indexed as its serialized document, so the keys are searchable words', () => {
+    const f = findings(`
+      model Doc { id Int @id  name String  title Json  @@fts([name, title])  @@label(name) }`, ID)
+    expect(f.map(x => [x.field, x.severity])).toEqual([['title', 'warn']])
+    expect(f[0].message).toContain('keys')
   })
 
   test('silent on an ordinary column', () => {
@@ -555,7 +562,7 @@ describe('a @@deny with no @@allow', () => {
   test('restricts the operation it names', async () => {
     const { createClient } = await import('../src/index.js')
     const db = await createClient({
-      schema: `model Doc { id Int @id  ownerId Int  title String  @@deny('update', ownerId == auth().id) }`,
+      schema: `model Doc { id Int @id  ownerId Int  title String  @@deny(update, ownerId == auth().id) }`,
       db: ':memory:',
     })
     await db.asSystem().doc.create({ data: { id: 1, ownerId: 7, title: 'orig' } })
@@ -570,7 +577,7 @@ describe('a @@deny with no @@allow', () => {
   })
 
   test('and says what is actually open, rather than that it does nothing', () => {
-    const out = parse(`model Doc { id Int @id  ownerId Int  @@deny('update', ownerId == auth().id) }`)
+    const out = parse(`model Doc { id Int @id  ownerId Int  @@deny(update, ownerId == auth().id) }`)
     const w = out.warnings.find((x: string) => x.includes('@@deny and no @@allow'))
     expect(w).toBeTruthy()
     expect(w).toContain('restricts the operations it names')
@@ -711,10 +718,10 @@ describe('the rule set', () => {
       model User {
         id      Int     @id
         plan    Plan    @default(free)
-        isAdmin Boolean @default(false) @allow('write', auth().isAdmin)
+        isAdmin Boolean @default(false) @allow(write, auth().isAdmin)
         secret  String? @guarded
         @@gate(2.4.4.5)
-        @@allow('update', id == auth().id || auth().isAdmin)
+        @@allow(update, id == auth().id || auth().isAdmin)
       }`)).toEqual([])
   })
 })
@@ -850,14 +857,14 @@ describe('an index over a Json column', () => {
 
 describe('check-without-an-operation-in-a-write-rule', () => {
   // FJS-1940: a bare check() takes the operation of the rule it sits in, so
-  // @@allow('create', check(inbox)) asks whether the caller may create an INBOX
+  // @@allow(create, check(inbox)) asks whether the caller may create an INBOX
   // — and the writer of it almost always meant "may see the inbox".
   const schema = (rules: string) => `
     model Inbox {
       id   Int    @id
       name String
-      @@allow('read', auth() != null)
-      @@allow('create', auth().isAdmin == true)
+      @@allow(read, auth() != null)
+      @@allow(create, auth().isAdmin == true)
     }
     model Message {
       id      Int   @id
@@ -867,8 +874,8 @@ describe('check-without-an-operation-in-a-write-rule', () => {
     }`
 
   test('fires on a bare check() in a create, update, delete, write or all rule', () => {
-    for (const op of ['create', 'update', 'delete', 'write', 'all', 'read, create']) {
-      const f = findings(schema(`@@allow('${op}', check(inbox))`), 'check-without-an-operation-in-a-write-rule')
+    for (const op of ['create', 'update', 'delete', 'write', 'all']) {
+      const f = findings(schema(`@@allow(${op}, check(inbox))`), 'check-without-an-operation-in-a-write-rule')
       expect(f.length).toBe(1)
       expect(f[0].model).toBe('Message')
       expect(f[0].message).toContain(`check(inbox, 'read')`)
@@ -876,17 +883,17 @@ describe('check-without-an-operation-in-a-write-rule', () => {
   })
 
   test('fires inside a larger expression and on a deny', () => {
-    expect(findings(schema(`@@allow('update', auth() != null && check(inbox))`),
+    expect(findings(schema(`@@allow(update, auth() != null && check(inbox))`),
       'check-without-an-operation-in-a-write-rule').length).toBe(1)
-    expect(findings(schema(`@@deny('delete', !check(inbox))`),
+    expect(findings(schema(`@@deny(delete, !check(inbox))`),
       'check-without-an-operation-in-a-write-rule').length).toBe(1)
   })
 
   test('is silent on a read rule and on a check() that names its operation', () => {
     expect(findings(schema(`
-      @@allow('read', check(inbox))
-      @@allow('create', check(inbox, 'read'))
-      @@allow('update', check(inbox, 'update'))`), 'check-without-an-operation-in-a-write-rule')).toEqual([])
+      @@allow(read, check(inbox))
+      @@allow(create, check(inbox, 'read'))
+      @@allow(update, check(inbox, 'update'))`), 'check-without-an-operation-in-a-write-rule')).toEqual([])
   })
 })
 
@@ -899,7 +906,7 @@ describe('write-policy-reads-a-parent-without-post-update', () => {
     model Collection {
       id      Int @id
       ownerId Int
-      @@allow('read', true)
+      @@allow(read, true)
     }
     model Bookmark {
       id           Int        @id
@@ -910,35 +917,35 @@ describe('write-policy-reads-a-parent-without-post-update', () => {
     }`
 
   test('fires on an update policy reading the parent through a writable key', () => {
-    const f = findings(schema(`@@allow('update', ownerId == auth().id && collection.ownerId == auth().id)`), ID)
+    const f = findings(schema(`@@allow(update, ownerId == auth().id && collection.ownerId == auth().id)`), ID)
     expect(f.length).toBe(1)
     expect(f[0].model).toBe('Bookmark')
     expect(f[0].field).toBe('collectionId')
-    expect(f[0].message).toContain('post-update')
+    expect(f[0].message).toContain('postUpdate')
   })
 
   test('fires on a create policy reading the parent beside a plain update policy', () => {
     expect(findings(schema(`
-      @@allow('create', collection.ownerId == auth().id)
-      @@allow('update', ownerId == auth().id)`), ID).length).toBe(1)
+      @@allow(create, collection.ownerId == auth().id)
+      @@allow(update, ownerId == auth().id)`), ID).length).toBe(1)
   })
 
   test('fires on a check() into the parent in an update policy', () => {
-    expect(findings(schema(`@@allow('update', check(collection, 'update'))`), ID).length).toBe(1)
+    expect(findings(schema(`@@allow(update, check(collection, 'update'))`), ID).length).toBe(1)
   })
 
   test('is silent once a post-update policy sits beside it, and on "all"', () => {
     expect(findings(schema(`
-      @@allow('update', collection.ownerId == auth().id)
-      @@allow('post-update', collection.ownerId == auth().id)`), ID)).toEqual([])
-    expect(findings(schema(`@@allow('all', collection.ownerId == auth().id)`), ID)).toEqual([])
+      @@allow(update, collection.ownerId == auth().id)
+      @@allow(postUpdate, collection.ownerId == auth().id)`), ID)).toEqual([])
+    expect(findings(schema(`@@allow(all, collection.ownerId == auth().id)`), ID)).toEqual([])
   })
 
   test('is silent where no caller can move the key, or no policy reads the parent', () => {
-    expect(findings(schema(`@@allow('update', collection.ownerId == auth().id)`, '@immutable'), ID)).toEqual([])
-    expect(findings(schema(`@@allow('update', collection.ownerId == auth().id)`, '@system'), ID)).toEqual([])
-    expect(findings(schema(`@@allow('update', ownerId == auth().id)`), ID)).toEqual([])
-    expect(findings(schema(`@@allow('read', collection.ownerId == auth().id)`), ID)).toEqual([])
+    expect(findings(schema(`@@allow(update, collection.ownerId == auth().id)`, '@immutable'), ID)).toEqual([])
+    expect(findings(schema(`@@allow(update, collection.ownerId == auth().id)`, '@system'), ID)).toEqual([])
+    expect(findings(schema(`@@allow(update, ownerId == auth().id)`), ID)).toEqual([])
+    expect(findings(schema(`@@allow(read, collection.ownerId == auth().id)`), ID)).toEqual([])
   })
 })
 
@@ -983,7 +990,7 @@ describe('advise --strict', () => {
   // or `claim` declaration supplies is refused at boot (FJS-1936).
   const UNDECLARED_CLAIM = (decl: string) =>
     `${decl}model User {\n  id Int @id\n  @@auth\n}\n` +
-    `model Contact {\n  id Int @id\n  @@allow('read', id == auth().contactId)\n}\n`
+    `model Contact {\n  id Int @id\n  @@allow(read, id == auth().contactId)\n}\n`
 
   test('a policy naming an undeclared claim under @@auth exits 1', () => {
     expect(parse(UNDECLARED_CLAIM('')).valid).toBe(true)
@@ -1091,7 +1098,7 @@ describe('create-reaches-unpickable-relation', () => {
     }`
 
   test('fires on a create conjunct the derivation cannot state', () => {
-    const f = findings(SCHEMA(`@@allow('create', schedule.hostId == auth().id || auth().isAdmin)`), 'create-reaches-unpickable-relation')
+    const f = findings(SCHEMA(`@@allow(create, schedule.hostId == auth().id || auth().isAdmin)`), 'create-reaches-unpickable-relation')
     expect(f.length).toBe(1)
     expect(f[0].model).toBe('Booking')
     expect(f[0].field).toBe('scheduleId')
@@ -1099,12 +1106,12 @@ describe('create-reaches-unpickable-relation', () => {
   })
 
   test('silent when the shape is derived into x-pick-where', () => {
-    expect(findings(SCHEMA(`@@allow('create', schedule.hostId == auth().id)`), 'create-reaches-unpickable-relation')).toEqual([])
+    expect(findings(SCHEMA(`@@allow(create, schedule.hostId == auth().id)`), 'create-reaches-unpickable-relation')).toEqual([])
   })
 
   test('silent when the related model narrows its own read', () => {
-    expect(findings(SCHEMA(`@@allow('create', schedule.hostId == auth().id || auth().isAdmin)`,
-      `@@allow('read', hostId == auth().id)`), 'create-reaches-unpickable-relation')).toEqual([])
+    expect(findings(SCHEMA(`@@allow(create, schedule.hostId == auth().id || auth().isAdmin)`,
+      `@@allow(read, hostId == auth().id)`), 'create-reaches-unpickable-relation')).toEqual([])
   })
 })
 
@@ -1121,22 +1128,22 @@ describe('rule: read-allow-hides-tenant-members', () => {
   const rule = (src: string) => findings(src, 'read-allow-hides-tenant-members')
 
   test('fires when the only read allow compares a row to a claim members do not carry', () => {
-    const f = rule(model(`@@allow('read', id == auth().sharedScanId)`))
+    const f = rule(model(`@@allow(read, id == auth().sharedScanId)`))
     expect(f.length).toBe(1)
     expect(f[0].model).toBe('Scan')
     expect(f[0].message).toContain('sharedScanId')
   })
 
   test('is quiet once a branch lets the tenant\'s members in', () => {
-    expect(rule(model(`@@allow('read', auth().memberRole != null || id == auth().sharedScanId)`))).toEqual([])
-    expect(rule(model(`@@allow('read', agencyId == auth().agencyId || id == auth().sharedScanId)`))).toEqual([])
-    expect(rule(model(`@@allow('read', id == auth().sharedScanId)
-      @@allow('read', auth().memberRole != null)`))).toEqual([])
+    expect(rule(model(`@@allow(read, auth().memberRole != null || id == auth().sharedScanId)`))).toEqual([])
+    expect(rule(model(`@@allow(read, agencyId == auth().agencyId || id == auth().sharedScanId)`))).toEqual([])
+    expect(rule(model(`@@allow(read, id == auth().sharedScanId)
+      @@allow(read, auth().memberRole != null)`))).toEqual([])
   })
 
   test('is quiet where the model is not scoped by the tenant, or has no read allow', () => {
-    expect(rule(model(`@@allow('read', id == auth().sharedScanId)`, '@@tenant(none)'))).toEqual([])
-    expect(rule(model(`@@allow('update', id == auth().sharedScanId)`))).toEqual([])
+    expect(rule(model(`@@allow(read, id == auth().sharedScanId)`, '@@tenant(none)'))).toEqual([])
+    expect(rule(model(`@@allow(update, id == auth().sharedScanId)`))).toEqual([])
   })
 })
 
@@ -1150,17 +1157,17 @@ describe('rule: allow-needs-bearer-claim-under-gate', () => {
   const rule = (src: string) => findings(src, 'allow-needs-bearer-claim-under-gate')
 
   test('fires when every create allow reads only a bare claim and create is gated above 0', () => {
-    const f = rule(model('0.4', `@@allow('create', kind == 'incoming' && senderContactId == auth().contactId)`))
+    const f = rule(model('0.4', `@@allow(create, kind == 'incoming' && senderContactId == auth().contactId)`))
     expect(f.length).toBe(1)
     expect(f[0].model).toBe('Message')
     expect(f[0].message).toContain('contactId')
   })
 
   test('is quiet when the operation is open, a branch reads auth().id, or a branch reads no claim', () => {
-    expect(rule(model('0.0', `@@allow('create', senderContactId == auth().contactId)`))).toEqual([])
-    expect(rule(model('0.4', `@@allow('create', senderContactId == auth().contactId || senderContactId == auth().id)`))).toEqual([])
-    expect(rule(model('0.4', `@@allow('create', senderContactId == auth().contactId)
-      @@allow('create', kind == 'note')`))).toEqual([])
-    expect(rule(model('0.4', `@@allow('read', senderContactId == auth().contactId)`))).toEqual([])
+    expect(rule(model('0.0', `@@allow(create, senderContactId == auth().contactId)`))).toEqual([])
+    expect(rule(model('0.4', `@@allow(create, senderContactId == auth().contactId || senderContactId == auth().id)`))).toEqual([])
+    expect(rule(model('0.4', `@@allow(create, senderContactId == auth().contactId)
+      @@allow(create, kind == 'note')`))).toEqual([])
+    expect(rule(model('0.4', `@@allow(read, senderContactId == auth().contactId)`))).toEqual([])
   })
 })

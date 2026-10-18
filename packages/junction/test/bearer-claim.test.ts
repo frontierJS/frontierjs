@@ -44,8 +44,8 @@ const SCHEMA = `
     clientId Int
     answer   String
     @@gate(0)
-    @@allow('read',   clientId == auth().portalClientId)
-    @@allow('create', clientId == auth().portalClientId)
+    @@allow(read,   clientId == auth().portalClientId)
+    @@allow(create, clientId == auth().portalClientId)
   }
 `
 
@@ -462,7 +462,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
       id   Int    @id @default(autoincrement())
       name String
       @@gate(0)
-      @@allow('read', id == auth().portalCustomerId)
+      @@allow(read, id == auth().portalCustomerId)
     }
     model PortalLink {
       id         Int       @id @default(autoincrement())
@@ -472,7 +472,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
       revokedAt  DateTime?
       lastUsedAt DateTime? @system
       @@gate(4)
-      @@allow('create', customerId == auth().customerId)
+      @@allow(create, customerId == auth().customerId)
     }
   `
   const link = bearerClaim({
@@ -698,7 +698,7 @@ describe('a header bearer stamps lastUsedAt when the row declares it', () => {
       id       Int    @id @default(autoincrement())
       clientId Int
       @@gate(0)
-      @@allow('read', clientId == auth().portalClientId)
+      @@allow(read, clientId == auth().portalClientId)
     }
   `
   const keyed = bearerClaim({
@@ -824,7 +824,7 @@ describe('a grant admits to the tenant and is no member of it', () => {
       accountId Int
       name      String
       @@gate(0)
-      @@allow('read', accountId == auth().accountId || id == auth().sharedScanId)
+      @@allow(read, accountId == auth().accountId || id == auth().sharedScanId)
     }
   `
   const grant = bearerClaim({

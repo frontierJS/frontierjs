@@ -291,7 +291,7 @@ describe('an operator in an account acts inside it (FJS-2643)', () => {
   beforeAll(async () => {
     t = await tenantedApp(`
 tenancy { strategy row  column accountId  claim accountId }
-extend model User { accountId String? @allow('write', auth().isAdmin) }`, accountGate)
+extend model User { accountId String? @allow(write, auth().isAdmin) }`, accountGate)
   })
   afterAll(async () => { await t.tapp.stop?.(); t.th.cleanup() })
 

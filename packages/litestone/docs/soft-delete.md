@@ -200,7 +200,7 @@ model Order {
 
   @@softDelete
   @@transitions(status, cancel: pending -> cancelled)
-  @@deny('delete', status != 'cancelled')
+  @@deny(delete, status != 'cancelled')
 }
 ```
 

@@ -256,7 +256,7 @@ export default createService({
     // FJS-410. `role` is what core/gate.ts grades every gate from, so naming
     // your OWN userId with `role: 'owner'` granted level 6. The write below
     // is the caller's own client, so `WorkspaceMember`'s
-    // `@@deny('update', userId == auth().id)` refuses it; the read stays
+    // `@@deny(update, userId == auth().id)` refuses it; the read stays
     // system because standing cannot be read through the caller it grades.
     const wsId   = $.id as string
     const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })

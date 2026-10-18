@@ -17,7 +17,7 @@ async function client() {
         id     Int    @id
         avatar File?
         docs   File[]
-        @@allow('all', true)
+        @@allow(all, true)
       }
     `,
     db: ':memory:', plugins: [files],
@@ -65,7 +65,7 @@ describe('a File reference is an object wherever it is not resolved (FJS-2422)',
 
   test('replacing the file deletes the old object', async () => {
     const files = FileStorage({ provider: 'local', bucket: 'test', publicBase: 'https://cdn.test' }) as any
-    const db: any = await createClient({ schema: `model P { id Int @id\n avatar File?\n @@allow('all', true) }`, db: ':memory:', plugins: [files] })
+    const db: any = await createClient({ schema: `model P { id Int @id\n avatar File?\n @@allow(all, true) }`, db: ':memory:', plugins: [files] })
     await autoMigrate(db)
     const deletes: string[] = []
     files._provider = { async put() {}, async get() { return null }, async delete(k: string) { deletes.push(k) } }

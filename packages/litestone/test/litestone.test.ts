@@ -2184,7 +2184,7 @@ describe('client — CRUD', () => {
       weight       Int       @default(0)
       dueAt        DateTime?
       snoozedUntil DateTime?
-      @@allow('read', ownerId == auth().id)
+      @@allow(read, ownerId == auth().id)
     }`
     const D = (d: number) => new Date(Date.now() + d * 86400000).toISOString()
     const seeded = async (label: string) => {
@@ -5971,7 +5971,7 @@ describe('@guarded — write half', () => {
   })
 
   test('the pair still cannot be spelled — @allow beside @guarded is a parse error', () => {
-    const r = parse(`model T { id Int @id  x String? @guarded @allow('write', false) }`)
+    const r = parse(`model T { id Int @id  x String? @guarded @allow(write, false) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('@allow conflicts with @guarded'))).toBe(true)
   })
@@ -6423,7 +6423,7 @@ describe('raw SQL and the access rules it cannot enforce', () => {
       ssn       String   @guarded
       deletedAt DateTime?
       @@softDelete
-      @@allow('read', ownerId == auth().id)
+      @@allow(read, ownerId == auth().id)
     }`
 
   let db: any
@@ -7868,7 +7868,7 @@ describe('@@allow / @@deny row-level policies', () => {
       model Post {
         id      Int @id
         ownerId Int
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
     `)
     expect(r.valid).toBe(true)
@@ -7883,7 +7883,7 @@ describe('@@allow / @@deny row-level policies', () => {
       model Post {
         id     Int @id
         status String
-        @@deny('delete', status == 'archived')
+        @@deny(delete, status == 'archived')
       }
     `)
     expect(r.valid).toBe(true)
@@ -7892,28 +7892,39 @@ describe('@@allow / @@deny row-level policies', () => {
   })
 
   test("parses 'all' operation alias", () => {
-    const r = parse(`model T { id Int @id; @@allow('all', true) }`)
+    const r = parse(`model T { id Int @id; @@allow(all, true) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
-    expect(attr.operations).toEqual(['read', 'create', 'update', 'post-update', 'delete'])
+    expect(attr.operations).toEqual(['read', 'create', 'update', 'postUpdate', 'delete'])
   })
 
   test("parses 'write' operation alias", () => {
-    const r = parse(`model T { id Int @id; @@allow('write', true) }`)
+    const r = parse(`model T { id Int @id; @@allow(write, true) }`)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr.operations).toEqual(['create', 'update', 'delete'])
   })
 
-  test('parses comma-separated operations', () => {
-    const r = parse(`model T { id Int @id; @@allow('update,delete', true) }`)
-    const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
-    expect(attr.operations).toEqual(['update', 'delete'])
+  // FJS-2947: an operation is a bare word, like @@sync(server) and @@tenant(none)
+  test('a quoted operation is refused by name, and so is a comma-combo', () => {
+    for (const quoted of ["'read'", "'update,delete'", '"read"']) {
+      const r = parse(`model T { id Int @id; @@allow(${quoted}, true) }`)
+      expect(r.valid).toBe(false)
+      expect(r.errors[0]).toMatch(/write the operation bare/)
+    }
+    const field = parse(`model T { id Int @id; n Int? @allow('read', true) }`)
+    expect(field.valid).toBe(false)
+    expect(field.errors[0]).toMatch(/write the operation bare/)
+  })
+
+  test('postUpdate is the bare spelling of the post-write check', () => {
+    const r = parse(`model T { id Int @id; @@allow(postUpdate, true) }`)
+    expect(r.schema.models[0].attributes.find((a: any) => a.kind === 'allow').operations).toEqual(['postUpdate'])
   })
 
   test('invalid operation is a parse error', () => {
-    const r = parse(`model T { id Int @id; @@allow('fetch', true) }`)
+    const r = parse(`model T { id Int @id; @@allow(fetch, true) }`)
     expect(r.valid).toBe(false)
-    expect(r.errors[0]).toMatch(/invalid operation/)
+    expect(r.errors[0]).toMatch(/invalid operation 'fetch'/)
   })
 
   test('parses || && ! operators', () => {
@@ -7922,8 +7933,8 @@ describe('@@allow / @@deny row-level policies', () => {
         id        Int @id
         published Boolean
         ownerId   Int
-        @@allow('read', published || ownerId == auth().id)
-        @@allow('create', auth() != null && !published)
+        @@allow(read, published || ownerId == auth().id)
+        @@allow(create, auth() != null && !published)
       }
     `)
     expect(r.valid).toBe(true)
@@ -7933,7 +7944,7 @@ describe('@@allow / @@deny row-level policies', () => {
   })
 
   test('parses auth() != null', () => {
-    const r = parse(`model T { id Int @id; @@allow('create', auth() != null) }`)
+    const r = parse(`model T { id Int @id; @@allow(create, auth() != null) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr.expr.type).toBe('compare')
@@ -7943,7 +7954,7 @@ describe('@@allow / @@deny row-level policies', () => {
   })
 
   test('parses now() in condition', () => {
-    const r = parse(`model T { id Int @id; expiresAt DateTime; @@allow('read', expiresAt > now()) }`)
+    const r = parse(`model T { id Int @id; expiresAt DateTime; @@allow(read, expiresAt > now()) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr.expr.right.type).toBe('now')
@@ -7955,7 +7966,7 @@ describe('@@allow / @@deny row-level policies', () => {
         id     Int @id
         author User @relation(fields: [authorId], references: [id])
         authorId Int
-        @@allow('read', check(author))
+        @@allow(read, check(author))
       }
       model User { id Int @id }
     `)
@@ -7972,7 +7983,7 @@ describe('@@allow / @@deny row-level policies', () => {
         id Int @id
         author User @relation(fields: [authorId], references: [id])
         authorId Int
-        @@allow('update', check(author, 'read'))
+        @@allow(update, check(author, 'read'))
       }
       model User { id Int @id }
     `)
@@ -7981,7 +7992,7 @@ describe('@@allow / @@deny row-level policies', () => {
   })
 
   test('warns if @@deny exists without @@allow', () => {
-    const r = parse(`model T { id Int @id; @@deny('delete', true) }`)
+    const r = parse(`model T { id Int @id; @@deny(delete, true) }`)
     expect(r.valid).toBe(true)
     expect(r.warnings.some((w: string) => w.includes('@@deny') && w.includes('@@allow'))).toBe(true)
   })
@@ -7994,7 +8005,7 @@ describe('@@allow / @@deny row-level policies', () => {
         id      Int @id
         ownerId Int
         title   String
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
     `, 'policy-read-own')
     await db.asSystem().post.create({ data: { ownerId: 1, title: 'mine' } })
@@ -8013,7 +8024,7 @@ describe('@@allow / @@deny row-level policies', () => {
         ownerId   Int
         published Boolean @default(false)
         title     String
-        @@allow('read', published || ownerId == auth().id)
+        @@allow(read, published || ownerId == auth().id)
       }
     `, 'policy-read-or')
     const sys = db.asSystem()
@@ -8034,8 +8045,8 @@ describe('@@allow / @@deny row-level policies', () => {
         ownerId Int
         deleted Boolean @default(false)
         title   String
-        @@allow('read', ownerId == auth().id)
-        @@deny('read', deleted == true)
+        @@allow(read, ownerId == auth().id)
+        @@deny(read, deleted == true)
       }
     `, 'policy-deny')
     const sys = db.asSystem()
@@ -8057,7 +8068,7 @@ describe('@@allow / @@deny row-level policies', () => {
         id      Int    @id
         ownerId Int?
         title   String
-        @@allow('read', ownerId == auth().id || ownerId == null)
+        @@allow(read, ownerId == auth().id || ownerId == null)
       }
     `, 'policy-null-cmp')
     const sys = db.asSystem()
@@ -8076,7 +8087,7 @@ describe('@@allow / @@deny row-level policies', () => {
         id      Int    @id
         ownerId Int?
         title   String
-        @@allow('read', ownerId != null)
+        @@allow(read, ownerId != null)
       }
     `, 'policy-notnull-cmp')
     const sys = db.asSystem()
@@ -8098,8 +8109,8 @@ describe('@@allow / @@deny row-level policies', () => {
         id      Int    @id
         ownerId Int?
         title   String
-        @@allow('create', ownerId == null)
-        @@allow('read',   ownerId == null)
+        @@allow(create, ownerId == null)
+        @@allow(read,   ownerId == null)
       }
     `, 'policy-null-agree')
     const user = db.$setAuth({ id: 1 })
@@ -8114,7 +8125,7 @@ describe('@@allow / @@deny row-level policies', () => {
       model Post {
         id      Int @id
         ownerId Int
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
     `, 'policy-no-auth')
     await db.asSystem().post.create({ data: { ownerId: 1 } })
@@ -8128,7 +8139,7 @@ describe('@@allow / @@deny row-level policies', () => {
       model Post {
         id      Int @id
         ownerId Int
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
     `, 'policy-system-bypass')
     await db.asSystem().post.create({ data: { ownerId: 99 } })
@@ -8146,8 +8157,8 @@ describe('@@allow / @@deny row-level policies', () => {
       model Post {
         id      Int @id
         ownerId Int
-        @@allow('read',   ownerId == auth().id)
-        @@allow('update', ownerId == auth().id)
+        @@allow(read,   ownerId == auth().id)
+        @@allow(update, ownerId == auth().id)
       }
     `, 'policy-empty-update')
     await db.asSystem().post.create({ data: { id: 1, ownerId: 99 } })
@@ -8176,7 +8187,7 @@ describe('@@allow / @@deny row-level policies', () => {
         id          Int  @id
         title       String
         publishedAt DateTime
-        @@allow('read', publishedAt <= now())
+        @@allow(read, publishedAt <= now())
       }
     `, 'policy-now')
     const sys = db.asSystem()
@@ -8195,7 +8206,7 @@ describe('@@allow / @@deny row-level policies', () => {
       model Post {
         id    Int @id
         title String
-        @@allow('create', auth() != null)
+        @@allow(create, auth() != null)
       }
     `, 'policy-create-auth')
     await expect(db.$setAuth({ id: 1 }).post.create({ data: { title: 'ok' } }))
@@ -8208,7 +8219,7 @@ describe('@@allow / @@deny row-level policies', () => {
       model Post {
         id    Int @id
         title String
-        @@allow('create', auth() != null)
+        @@allow(create, auth() != null)
       }
     `, 'policy-create-block')
     await expect(db.post.create({ data: { title: 'fail' } }))
@@ -8221,7 +8232,7 @@ describe('@@allow / @@deny row-level policies', () => {
       model Post {
         id      Int @id
         ownerId Int
-        @@allow('create', ownerId == auth().id)
+        @@allow(create, ownerId == auth().id)
       }
     `, 'policy-create-field')
     await expect(db.$setAuth({ id: 1 }).post.create({ data: { ownerId: 1 } }))
@@ -8239,8 +8250,8 @@ describe('@@allow / @@deny row-level policies', () => {
         id      Int @id
         ownerId Int
         title   String
-        @@allow('read', true)
-        @@allow('update', ownerId == auth().id)
+        @@allow(read, true)
+        @@allow(update, ownerId == auth().id)
       }
     `, 'policy-update-own')
     const sys = db.asSystem()
@@ -8260,8 +8271,8 @@ describe('@@allow / @@deny row-level policies', () => {
       model Post {
         id      Int @id
         ownerId Int
-        @@allow('read', true)
-        @@allow('delete', ownerId == auth().id)
+        @@allow(read, true)
+        @@allow(delete, ownerId == auth().id)
       }
     `, 'policy-delete-own')
     const sys = db.asSystem()
@@ -8281,9 +8292,9 @@ describe('@@allow / @@deny row-level policies', () => {
       model Post {
         id      Int @id
         ownerId Int
-        @@allow('read', true)
-        @@allow('update', ownerId == auth().id)
-        @@allow('post-update', ownerId == auth().id)
+        @@allow(read, true)
+        @@allow(update, ownerId == auth().id)
+        @@allow(postUpdate, ownerId == auth().id)
       }
     `, 'policy-post-update')
     await db.asSystem().post.create({ data: { ownerId: 1 } })
@@ -8310,9 +8321,9 @@ describe('@@allow / @@deny row-level policies', () => {
         ownerId Int
         active  Boolean @default(true)
         meta    Json    @default("{}")
-        @@allow('read', true)
-        @@allow('update', ownerId == auth().id)
-        @@allow('post-update', ownerId == auth().id)
+        @@allow(read, true)
+        @@allow(update, ownerId == auth().id)
+        @@allow(postUpdate, ownerId == auth().id)
       }
     `, 'policy-post-update-json')
     await db.asSystem().post.create({ data: { ownerId: 1, meta: { tier: 3 } } })
@@ -8335,14 +8346,14 @@ describe('@@allow / @@deny row-level policies', () => {
       model User {
         id      Int @id
         ownerId Int
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
       model Post {
         id       Int @id
         authorId Int
         author   User @relation(fields: [authorId], references: [id])
         title    String
-        @@allow('read', check(author))
+        @@allow(read, check(author))
       }
     `, 'policy-check')
     const sys = db.asSystem()
@@ -8376,13 +8387,13 @@ describe('@@allow / @@deny row-level policies', () => {
         accountId Int
         account   Account @relation(fields: [accountId], references: [id])
         title     String
-        @@allow('read', accountId == auth().accountId)
+        @@allow(read, accountId == auth().accountId)
       }
       model Tag {
         id       Int @id
         name     String
         accounts Account[]
-        @@allow('read', name != 'private')
+        @@allow(read, name != 'private')
       }
     `, name)
     const sys = db.asSystem()
@@ -8457,7 +8468,7 @@ describe('@allow field-level access', () => {
     const r = parse(`
       model User {
         id     Int @id
-        salary Float?   @allow('read', auth().role == 'hr')
+        salary Float?   @allow(read, auth().role == 'hr')
       }
     `)
     expect(r.valid).toBe(true)
@@ -8469,34 +8480,34 @@ describe('@allow field-level access', () => {
   })
 
   test('parses @allow(write) on field', () => {
-    const r = parse(`model T { id Int @id; role String @allow('write', auth().isAdmin) }`)
+    const r = parse(`model T { id Int @id; role String @allow(write, auth().isAdmin) }`)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'role')
     const fa = field.attributes.find((a: any) => a.kind === 'fieldAllow')
     expect(fa.operations).toEqual(['write'])
   })
 
-  test("@allow('all') expands to read + write", () => {
-    const r = parse(`model T { id Int @id; data String @allow('all', auth() != null) }`)
+  test("@allow(all) expands to read + write", () => {
+    const r = parse(`model T { id Int @id; data String @allow(all, auth() != null) }`)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'data')
     const fa = field.attributes.find((a: any) => a.kind === 'fieldAllow')
     expect(fa.operations).toEqual(['read', 'write'])
   })
 
   test('@allow on field with invalid operation is a parse error', () => {
-    const r = parse(`model T { id Int @id; x String @allow('create', true) }`)
+    const r = parse(`model T { id Int @id; x String @allow(create, true) }`)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/read.*write.*all/)
   })
 
   test('@allow conflicts with @guarded is a validation error', () => {
-    const r = parse(`model T { id Int @id; x String @guarded @allow('read', true) }`)
+    const r = parse(`model T { id Int @id; x String @guarded @allow(read, true) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('@allow') && e.includes('@guarded'))).toBe(true)
   })
 
   test('@allow conflicts with @secret is a validation error', () => {
-    const r = parse(`model T { id Int @id; x String @secret @allow('read', true) }`)
+    const r = parse(`model T { id Int @id; x String @secret @allow(read, true) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('@allow') && e.includes('@secret'))).toBe(true)
   })
@@ -8508,7 +8519,7 @@ describe('@allow field-level access', () => {
       model User {
         id     Int @id
         name   String
-        salary Float?   @allow('read', auth().role == 'hr')
+        salary Float?   @allow(read, auth().role == 'hr')
         @@gate(0)
       }
     `, 'field-allow-read-strip')
@@ -8524,7 +8535,7 @@ describe('@allow field-level access', () => {
       model User {
         id     Int @id
         name   String
-        salary Float?   @allow('read', auth().role == 'hr')
+        salary Float?   @allow(read, auth().role == 'hr')
         @@gate(0)
       }
     `, 'field-allow-read-visible')
@@ -8538,7 +8549,7 @@ describe('@allow field-level access', () => {
     const db = await makeDb(`
       model User {
         id     Int @id
-        salary Float?   @allow('read', auth().role == 'hr')
+        salary Float?   @allow(read, auth().role == 'hr')
         @@gate(0)
       }
     `, 'field-allow-read-system')
@@ -8553,8 +8564,8 @@ describe('@allow field-level access', () => {
       model Post {
         id      Int @id
         ownerId Int
-        notes   String?   @allow('read', auth().role == 'admin')
-                        @allow('read', ownerId == auth().id)
+        notes   String?   @allow(read, auth().role == 'admin')
+                        @allow(read, ownerId == auth().id)
         @@gate(0)
       }
     `, 'field-allow-read-or')
@@ -8572,7 +8583,7 @@ describe('@allow field-level access', () => {
     const db = await makeDb(`
       model User {
         id     Int @id
-        salary Float?   @allow('read', auth() != null)
+        salary Float?   @allow(read, auth() != null)
         @@gate(0)
       }
     `, 'field-allow-no-auth')
@@ -8588,7 +8599,7 @@ describe('@allow field-level access', () => {
     const db = await makeDb(`
       model User {
         id   Int @id
-        role String    @default('user') @allow('write', auth().isAdmin)
+        role String    @default('user') @allow(write, auth().isAdmin)
         @@gate(0)
       }
     `, 'field-allow-write-drop')
@@ -8602,7 +8613,7 @@ describe('@allow field-level access', () => {
     const db = await makeDb(`
       model User {
         id   Int @id
-        role String    @default('user') @allow('write', auth().isAdmin)
+        role String    @default('user') @allow(write, auth().isAdmin)
         @@gate(0)
       }
     `, 'field-allow-write-pass')
@@ -8615,7 +8626,7 @@ describe('@allow field-level access', () => {
     const db = await makeDb(`
       model User {
         id   Int @id
-        role String    @default('user') @allow('write', auth().isAdmin)
+        role String    @default('user') @allow(write, auth().isAdmin)
         @@gate(0)
       }
     `, 'field-allow-write-system')
@@ -8628,7 +8639,7 @@ describe('@allow field-level access', () => {
     const db = await makeDb(`
       model User {
         id   Int @id
-        role String    @default('user') @allow('write', auth().isAdmin)
+        role String    @default('user') @allow(write, auth().isAdmin)
         @@gate(0)
       }
     `, 'field-allow-write-update')
@@ -8661,7 +8672,7 @@ describe('@allow field-level access', () => {
         team   Team @relation(fields: [teamId], references: [id])
         name   String
         token  String  @guarded
-        salary Float?  @allow('read', auth().role == 'hr')
+        salary Float?  @allow(read, auth().role == 'hr')
         @@gate(0)
       }
     `, name)
@@ -8714,7 +8725,7 @@ describe('policyDebug logging', () => {
         model Post {
           id      Int @id
           ownerId Int
-          @@allow('read', ownerId == auth().id)
+          @@allow(read, ownerId == auth().id)
         }
       `, 'pdebug-sql', { policyDebug: true })
 
@@ -8741,7 +8752,7 @@ describe('policyDebug logging', () => {
       const db = await makeDb(`
         model Post {
           id Int @id
-          @@allow('create', auth() != null)
+          @@allow(create, auth() != null)
         }
       `, 'pdebug-deny', { policyDebug: true })
 
@@ -8766,7 +8777,7 @@ describe('policyDebug logging', () => {
         model Post {
           id      Int @id
           ownerId Int
-          @@allow('read', ownerId == auth().id)
+          @@allow(read, ownerId == auth().id)
         }
       `, 'pdebug-off', { policyDebug: false })
 
@@ -8790,7 +8801,7 @@ describe('policyDebug logging', () => {
         model Post {
           id      Int @id
           ownerId Int
-          @@allow('read', ownerId == auth().id)
+          @@allow(read, ownerId == auth().id)
         }
       `, 'pdebug-verbose', { policyDebug: 'verbose' })
 
@@ -9337,7 +9348,7 @@ describe('GatePlugin', () => {
         id      Int    @id
         ownerId String
         body    String
-        @@allow('all', ownerId == auth().id)
+        @@allow(all, ownerId == auth().id)
       }
     `, 'tx-scope-policy')
 
@@ -9667,8 +9678,8 @@ describe('plugin system', () => {
       model T {
         id  Int    @id
         val String?
-        @@allow('all', true)
-        @@deny('create', val == 'bad', 'val is bad')
+        @@allow(all, true)
+        @@deny(create, val == 'bad', 'val is bad')
       }
     `, 'plugin-create-policy-order', { plugins: [new FillVal()] })
     await expect(db.t.create({ data: { id: 1, val: 'bad' } })).rejects.toThrow('val is bad')
@@ -9698,11 +9709,11 @@ describe('plugin system', () => {
       model Secret {
         id    Int @id
         owner Int
-        @@allow('all', owner == auth().id)
+        @@allow(all, owner == auth().id)
       }
       model Note {
         id Int @id
-        @@allow('all', true)
+        @@allow(all, true)
       }
     `, 'plugin-ctx-tables', { plugins: [new ReadBack()] })
     await db.$db.run(`INSERT INTO secret VALUES (1, 1), (2, 2)`)
@@ -11152,7 +11163,7 @@ model Msg {
     drop:  draft -> void @stamps(sentAt, voidAt),
     reopen: void -> draft)
   @@check("status != 'sent' OR sentAt IS NOT NULL")
-  @@allow('all', true)
+  @@allow(all, true)
 }`
 
   test('parses a stamp list, and refuses a column that cannot hold the clock', () => {
@@ -11261,8 +11272,8 @@ describe('@@transitions — transitions() listing', () => {
       ownerId Int
       status  OrderStatus @default(pending)
 
-      @@allow('read', true)
-      @@allow('update', ownerId == auth().id)
+      @@allow(read, true)
+      @@allow(update, ownerId == auth().id)
       @@transitions(status,
         pay:  pending -> paid,
         ship: paid    -> shipped @gate(5))
@@ -11343,9 +11354,9 @@ describe('@@transitions — transitions() listing', () => {
         id     Int @id
         status S @default(draft)
 
-        @@allow('read', true)
-        @@allow('update', true)
-        @@deny('post-update', status == 'archived')
+        @@allow(read, true)
+        @@allow(update, true)
+        @@deny(postUpdate, status == 'archived')
         @@transitions(status,
           publish: draft -> live,
           archive: draft -> archived)
@@ -11863,16 +11874,16 @@ describe('enum transitions — conflict and upsert', () => {
         team   Team   @relation(fields: [teamId], references: [id]) ${attr}
       }`
 
-    await expect(makeTestClient(rel(`@allow('write', 'Member.reassign' in auth().perms)`)))
+    await expect(makeTestClient(rel(`@allow(write, 'Member.reassign' in auth().perms)`)))
       .rejects.toThrow(/no column to guard[\s\S]*Put it on 'teamId'/)
     // The read half is just as ineffective, so it is refused too.
-    await expect(makeTestClient(rel(`@allow('read', 'Member.seeTeam' in auth().perms)`)))
+    await expect(makeTestClient(rel(`@allow(read, 'Member.seeTeam' in auth().perms)`)))
       .rejects.toThrow(/no column to guard/)
 
     // An implicit many-to-many has no column on this model at all.
     await expect(makeTestClient(`
       model Tag  { id String @id @default(cuid())  name String  posts Post[] }
-      model Post { id String @id @default(cuid())  title String  tags Tag[] @allow('write', 'Post.tag' in auth().perms) }
+      model Post { id String @id @default(cuid())  title String  tags Tag[] @allow(write, 'Post.tag' in auth().perms) }
     `)).rejects.toThrow(/implicit many-to-many/)
   })
 
@@ -11928,7 +11939,7 @@ describe('enum transitions — conflict and upsert', () => {
       model Member {
         id     String @id @default(cuid())
         name   String
-        teamId String @allow('write', 'Member.reassign' in auth().perms)
+        teamId String @allow(write, 'Member.reassign' in auth().perms)
         team   Team   @relation(fields: [teamId], references: [id])
         @@gate(0)
       }`)
@@ -11969,8 +11980,8 @@ describe('enum transitions — conflict and upsert', () => {
       model Ticket {
         id     Int    @id
         status Status @default(pending)
-        @@allow('read',   'tickets_read' in auth().perms)
-        @@allow('update', 'tickets_edit' in auth().perms)
+        @@allow(read,   'tickets_read' in auth().perms)
+        @@allow(update, 'tickets_edit' in auth().perms)
       }
     `)
     await pdb.asSystem().ticket.create({ data: { id: 1 } })
@@ -14388,13 +14399,13 @@ const ACCESS_SCHEMA = `
     ownerId   Int
     stage     Stage    @default(draft)
     title     String
-    salary    Float?    @allow('read', auth().role == 'admin')
+    salary    Float?    @allow(read, auth().role == 'admin')
     deletedAt DateTime?
 
     @@gate(2.4.4.6)
     @@softDelete
-    @@allow('read', ownerId == auth().id || stage == 'published')
-    @@deny('update', stage == 'published', "A published doc is frozen")
+    @@allow(read, ownerId == auth().id || stage == 'published')
+    @@deny(update, stage == 'published', "A published doc is frozen")
     @@transitions(stage,
       review:    draft -> review,
       publish:   review -> published @gate(5),
@@ -14451,7 +14462,7 @@ describe('deriveAccess', () => {
     const p = byName('Doc').policies
     expect(p.read.allows).toEqual([{ expr: `ownerId == auth().id || stage == 'published'`, message: null }])
     expect(p.update.denies).toEqual([{ expr: `stage == 'published'`, message: 'A published doc is frozen' }])
-    // No @@allow('create') was written, so nothing claims create is restricted.
+    // No @@allow(create) was written, so nothing claims create is restricted.
     expect(p.create).toBeUndefined()
   })
 
@@ -14541,7 +14552,7 @@ describe('policyExprToString', () => {
   // is checked by round trip rather than against hand-written strings.
   const roundTrip = (src: string) => {
     const render = (s: string) => {
-      const { schema } = parse(`model P { id Int @id; a Int; b Int; @@allow('read', ${s}) }`)
+      const { schema } = parse(`model P { id Int @id; a Int; b Int; @@allow(read, ${s}) }`)
       return policyExprToString((schema.models[0].attributes as any[]).find(x => x.kind === 'allow').expr)
     }
     const once = render(src)
@@ -14585,10 +14596,10 @@ describe("the policy language's `in`", () => {
     memberIds Int[]  @default("[]")
     status    String @default("draft")
 
-    @@allow('read',   auth().id in memberIds)
-    @@allow('create', auth().id in memberIds)
-    @@allow('update', status in ['draft', 'review'])
-    @@allow('delete', ownerId in auth().ownedIds)
+    @@allow(read,   auth().id in memberIds)
+    @@allow(create, auth().id in memberIds)
+    @@allow(update, status in ['draft', 'review'])
+    @@allow(delete, ownerId in auth().ownedIds)
   }`
 
   const seeded = async (label: string) => {
@@ -14668,15 +14679,15 @@ describe("the policy language's `in`", () => {
     // can name the model and quote the expression back.
     const build = (body: string) => makeDb(
       `model T { id Int @id\n tags String[] @default("[]")\n name String @default("")\n ${body} }`, 'in-bad')
-    await expect(build(`@@allow('read', auth().id in name)`)).rejects.toThrow(/'name' is not an array field/)
-    await expect(build(`@@allow('read', auth().id in nope)`)).rejects.toThrow(/'nope' is not a field/)
-    await expect(build(`@@allow('read', tags in auth().id)`)).rejects.toThrow(/is an array field, and 'in' asks whether ONE value/)
-    await expect(build(`@@allow('read', name in tags)`)).rejects.toThrow(/both sides name a column/)
+    await expect(build(`@@allow(read, auth().id in name)`)).rejects.toThrow(/'name' is not an array field/)
+    await expect(build(`@@allow(read, auth().id in nope)`)).rejects.toThrow(/'nope' is not a field/)
+    await expect(build(`@@allow(read, tags in auth().id)`)).rejects.toThrow(/is an array field, and 'in' asks whether ONE value/)
+    await expect(build(`@@allow(read, name in tags)`)).rejects.toThrow(/both sides name a column/)
   })
 
   test('an encoded column holds an encoding, not its members', async () => {
     await expect(makeDb(
-      `model T { id Int @id\n secrets String[] @encrypted\n @@allow('read', auth().id in secrets) }`,
+      `model T { id Int @id\n secrets String[] @encrypted\n @@allow(read, auth().id in secrets) }`,
       'in-enc', { encryptionKey: 'd'.repeat(64) },
     )).rejects.toThrow(/is @encrypted, so the column holds an encoding/)
   })
@@ -14685,10 +14696,10 @@ describe("the policy language's `in`", () => {
     const err = (src: string) => (parse(`model T { id Int @id\n tags String[]\n ${src} }`) as any).errors?.[0]?.toString() ?? ''
     // Was `Expected RPAREN, got 'in'` — a line and a column, and no statement
     // about what was wrong or what is available.
-    expect(err(`@@allow('read', auth().id has tags)`)).toMatch(/'has' is not a policy operator/)
-    expect(err(`@@allow('read', auth().id has tags)`)).toMatch(/Available: ==, !=, <, >, <=, >=, in/)
-    expect(err(`@@allow('read', auth().id in [])`)).toMatch(/empty list/)
-    expect(err(`@@allow('read', auth().id in [tags])`)).toMatch(/holds literals/)
+    expect(err(`@@allow(read, auth().id has tags)`)).toMatch(/'has' is not a policy operator/)
+    expect(err(`@@allow(read, auth().id has tags)`)).toMatch(/Available: ==, !=, <, >, <=, >=, in/)
+    expect(err(`@@allow(read, auth().id in [])`)).toMatch(/empty list/)
+    expect(err(`@@allow(read, auth().id in [tags])`)).toMatch(/holds literals/)
   })
 
   test('it round-trips through the access snapshot', () => {
@@ -14829,7 +14840,7 @@ describe('@@scope', () => {
       @@scope(a, nope > 1)
     }`, 'scope-badfield')).rejects.toThrow(/'nope' is not a field on this model/)
     await expect(makeDb(`model T { id Int @id
-      @@allow('read', nope > 1)
+      @@allow(read, nope > 1)
     }`, 'allow-badfield')).rejects.toThrow(/'nope' is not a field on this model/)
   })
 })
@@ -14851,7 +14862,7 @@ describe('a ternary in the policy expression language', () => {
     @@scope(urgent, priority > 8 ? true : priority > 5 ? status == 'open' : false)
     @@scope(tiered, (priority > 8 ? 3 : priority > 5 ? 2 : 1) == 3)
     @@scope(pickAuth, ownerId == (status == 'open' ? auth().id : auth().adminId))
-    @@allow('create', priority > 8 ? auth().isAdmin == true : auth() != null)
+    @@allow(create, priority > 8 ? auth().isAdmin == true : auth() != null)
   }`
   const seeded = async (label: string) => {
     const db = await makeDb(S, label)
@@ -14902,7 +14913,7 @@ describe('a ternary in the policy expression language', () => {
       id      Int @id @default(autoincrement())
       level   Int @default(0)
       ownerId Int @default(0)
-      @@allow('read', level > 5 ? ownerId == auth().id : true)
+      @@allow(read, level > 5 ? ownerId == auth().id : true)
     }`)
     const env = await createTestEnv({ schema: path })
     expect(await env.verifyRowPolicies({ principal: { id: 1 } } as any)).toEqual([])
@@ -14919,7 +14930,7 @@ describe('a ternary in the policy expression language', () => {
     writeFileSync(path, `model N {
       id    Int @id @default(autoincrement())
       level Int @default(0)
-      @@allow('read', level > 5)
+      @@allow(read, level > 5)
     }`)
     const env = await createTestEnv({ schema: path })
     expect(await env.verifyRowPolicies({ principal: { id: 1 } } as any)).toEqual([])
@@ -14928,7 +14939,7 @@ describe('a ternary in the policy expression language', () => {
 
   test('it round-trips through the printer, parens and all', () => {
     const render = (src: string) => {
-      const { schema } = parse(`model P { id Int @id; a Int; b Int; @@allow('read', ${src}) }`)
+      const { schema } = parse(`model P { id Int @id; a Int; b Int; @@allow(read, ${src}) }`)
       return policyExprToString((schema.models[0].attributes as any[]).find(x => x.kind === 'allow').expr)
     }
     const round = (src: string) => { const once = render(src); expect(render(once)).toBe(once); return once }
@@ -14939,7 +14950,7 @@ describe('a ternary in the policy expression language', () => {
   })
 
   test('a missing else branch is a parse error that says so', () => {
-    const r: any = parse(`model T { id Int @id  a Int\n @@allow('read', a > 1 ? 2) }`)
+    const r: any = parse(`model T { id Int @id  a Int\n @@allow(read, a > 1 ? 2) }`)
     expect(r.valid).toBe(false)
     expect(r.errors[0].toString()).toMatch(/a ternary needs both branches/)
   })
@@ -15180,7 +15191,7 @@ const POLICY_LADDER_SCHEMA = `
     ownerId String
     title   String
     @@gate(2.4.4.5)
-    @@allow('create', ownerId == auth().id)
+    @@allow(create, ownerId == auth().id)
   }
 `
 
@@ -15193,9 +15204,9 @@ const POLICY_SCHEMA = `
     ownerId String?
     status  String  @default("draft")
     title   String
-    @@allow('read',   ownerId == auth().id || ownerId == null || status == 'published')
-    @@allow('update', ownerId == auth().id)
-    @@deny('read',    status == 'archived')
+    @@allow(read,   ownerId == auth().id || ownerId == null || status == 'published')
+    @@allow(update, ownerId == auth().id)
+    @@deny(read,    status == 'archived')
   }
 `
 
@@ -15591,7 +15602,7 @@ describe('createTestEnv', () => {
     const schema = `
       model Person {
         id    Int    @id @default(autoincrement())
-        email String @allow('write', auth().isAdmin)
+        email String @allow(write, auth().isAdmin)
         @@gate(2.4.4.5)
       }
     `
@@ -15713,7 +15724,7 @@ describe('createTestEnv', () => {
       model Note {
         id     Int    @id
         title  String
-        @@allow('read', title != null)
+        @@allow(read, title != null)
       }
     ` })
     const bad = await env.verifyRowPolicies()
@@ -15736,7 +15747,7 @@ describe('createTestEnv', () => {
         id      Int  @id
         ownerId Int
         owner   User @relation(fields: [ownerId], references: [id])
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
     ` })
     expect(await env.verifyRowPolicies()).toEqual([])
@@ -15752,13 +15763,13 @@ describe('createTestEnv', () => {
     // policy looks like — so the two answers have to be told apart by name.
     for (const rule of [`check(team)`, `team.name != null`]) {
       const env = await createTestEnv({ schema: `
-        model Team { id Int @id  name String  notes Note[]  @@allow('read', name != null) }
+        model Team { id Int @id  name String  notes Note[]  @@allow(read, name != null) }
         model Note {
           id     Int    @id
           title  String
           teamId Int
           team   Team   @relation(fields: [teamId], references: [id])
-          @@allow('read', ${rule})
+          @@allow(read, ${rule})
         }
       ` })
       const bad = await env.verifyRowPolicies()
@@ -15777,16 +15788,16 @@ describe('createTestEnv', () => {
         id       String  @id @default(uuid())
         ownerId  String? @default(auth().id)
         versions FlowVersion[]
-        @@allow('create', true)
-        @@deny('create', ownerId != null && ownerId != auth().id)
+        @@allow(create, true)
+        @@deny(create, ownerId != null && ownerId != auth().id)
       }
       model FlowVersion {
         id       String  @id @default(uuid())
         flowId   String
         flow     Flow    @relation(fields: [flowId], references: [id])
         authorId String? @default(auth().id)
-        @@allow('create', flow.ownerId == auth().id)
-        @@deny('create', authorId != null && authorId != auth().id)
+        @@allow(create, flow.ownerId == auth().id)
+        @@deny(create, authorId != null && authorId != auth().id)
       }
     `
     const original = parse(OWNED).schema
@@ -15796,7 +15807,7 @@ describe('createTestEnv', () => {
 
     for (const model of ['Flow', 'FlowVersion']) {
       const dropped = OWNED.split('\n').filter(l =>
-        !(l.includes(`@@deny('create'`) && l.includes(model === 'Flow' ? 'ownerId' : 'authorId'))).join('\n')
+        !(l.includes(`@@deny(create`) && l.includes(model === 'Flow' ? 'ownerId' : 'authorId'))).join('\n')
       const mutant = await createTestEnv({ schema: dropped })
       const bad = await mutant.verifyRowPolicies({ against: original, ops: ['create'] })
       expect(bad.map((m: any) => [m.model, m.got]), model).toContainEqual([model, 'admitted'])
@@ -17655,7 +17666,7 @@ describe('@from — derived relation fields', () => {
 describe('now() is one instant per evaluation', () => {
   const EVENTS = `
     model Event { id Int @id  title String  startAt DateTime  endAt DateTime
-      @@allow('read', startAt < now() && now() < endAt) }
+      @@allow(read, startAt < now() && now() < endAt) }
   `
   const iso = (offset: number) => new Date(Date.now() + offset).toISOString()
 
@@ -17690,8 +17701,8 @@ describe('now() is one instant per evaluation', () => {
     // one rule, so the clock has to reach both.
     const BOOKING = `
       model Booking { id Int @id  opensAt DateTime  closesAt DateTime
-        @@allow('create', opensAt < now() && now() < closesAt)
-        @@allow('read', true) }
+        @@allow(create, opensAt < now() && now() < closesAt)
+        @@allow(read, true) }
     `
     const iso = (offset: number) => new Date(Date.now() + offset).toISOString()
     const opensAt = iso(-3600e3), closesAt = iso(3600e3)
@@ -17846,7 +17857,7 @@ describe('@from — first/last returns a properly read row', () => {
     const db = await makeDb(`
       model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true)  @@gate(0) }
       model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  ownerId Int
-                      @@allow('read', ownerId == auth().id) }
+                      @@allow(read, ownerId == auth().id) }
     `, 'from-row-policy')
     await db.asSystem().account.createMany({ data: [{ id: 1 }, { id: 2 }] })
     await db.asSystem().order.create({ data: { id: 1, accountId: 1, ownerId: 7 } })
@@ -17871,7 +17882,7 @@ describe('@from — first/last returns a properly read row', () => {
     model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true)  @@gate(0) }
     model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
                     ownerId Int  amount Int  note String? @guarded  deletedAt DateTime?
-                    @@allow('read', ownerId == auth().id)
+                    @@allow(read, ownerId == auth().id)
                     @@softDelete }
   `
   const policied = async (label: string) => {
@@ -17922,7 +17933,7 @@ describe('@from — first/last returns a properly read row', () => {
       model Account { id Int @id  orders Order[]  lastBig Order? @from(Order, last: true, where: "amount > 100")  @@gate(0) }
       model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
                       ownerId Int  amount Int
-                      @@allow('read', ownerId == auth().id) }
+                      @@allow(read, ownerId == auth().id) }
     `, 'from-pick-where')
     const sys = db.asSystem()
     await sys.account.create({ data: { id: 1 } })
@@ -17965,7 +17976,7 @@ describe('@from — first/last returns a properly read row', () => {
     const db = await makeDb(`
       model Account { id Int @id  orders Order[]  firstOrder Order? @from(Order, first: true)  @@gate(0) }
       model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  ownerId Int
-                      @@allow('read', ownerId == auth().id) }
+                      @@allow(read, ownerId == auth().id) }
     `, 'from-pick-first')
     const sys = db.asSystem()
     await sys.account.create({ data: { id: 1 } })
@@ -19450,7 +19461,7 @@ describe('db.query() — multi-model batch', () => {
       model Widget {
         id   Int @id
         name String
-        @@deny('read', true)
+        @@deny(read, true)
       }
     `
     const { db } = await makeTestClient(POLICY, {
@@ -19475,7 +19486,7 @@ describe('db.query() — multi-model batch', () => {
         id      Int @id
         ownerId Int
         title   String
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }
     `
     const { db } = await makeTestClient(POLICY_SCHEMA, {
@@ -19945,12 +19956,12 @@ describe('trait declarations', () => {
     const r = parse(`
       trait Tenant {
         tenantId Int
-        @@allow('read', tenantId == auth().tenantId)
+        @@allow(read, tenantId == auth().tenantId)
       }
       model Post {
         id Int @id
         @@trait(Tenant)
-        @@allow('read', auth() != null)
+        @@allow(read, auth() != null)
       }
     `)
     const post = r.schema.models.find((m: any) => m.name === 'Post')!
@@ -22489,7 +22500,7 @@ describe('custom policy error messages', () => {
       model Post {
         id       Int @id
         ownerId  Int
-        @@allow('create', auth() != null, "You must be logged in to create posts")
+        @@allow(create, auth() != null, "You must be logged in to create posts")
       }
     `, 'policy-msg-allow')
     try {
@@ -22506,8 +22517,8 @@ describe('custom policy error messages', () => {
       model Post {
         id      Int @id
         status  String    @default("draft")
-        @@allow('all', true)
-        @@deny('post-update', status == 'locked', "Cannot edit locked posts")
+        @@allow(all, true)
+        @@deny(postUpdate, status == 'locked', "Cannot edit locked posts")
       }
     `, 'policy-msg-deny')
     await db.post.create({ data: { id: 1, status: 'active' } })
@@ -22524,7 +22535,7 @@ describe('custom policy error messages', () => {
     const db = await makeDb(`
       model Post {
         id      Int @id
-        @@allow('create', auth() != null)
+        @@allow(create, auth() != null)
       }
     `, 'policy-msg-default')
     try {
@@ -22540,8 +22551,8 @@ describe('custom policy error messages', () => {
     const { schema } = parse(`
       model T {
         id Int @id
-        @@allow('read', true, "Only readable")
-        @@deny('write', true, "Not writable")
+        @@allow(read, true, "Only readable")
+        @@deny(write, true, "Not writable")
       }
     `)
     const attrs = schema.models[0].attributes
@@ -22550,7 +22561,7 @@ describe('custom policy error messages', () => {
   })
 
   test('policy without message has message: null on AST', () => {
-    const { schema } = parse(`model T { id Int @id; @@allow('read', true) }`)
+    const { schema } = parse(`model T { id Int @id; @@allow(read, true) }`)
     const attr = schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr?.message).toBeNull()
   })
@@ -22994,7 +23005,7 @@ describe('findMany — recursive is a read, not a bypass', () => {
   })
 
   test('a row policy hides a subtree, not just the row it refuses', async () => {
-    const db = await makeDb(TREE('', `@@allow('read', ownerId == auth().id)`), 'rec-policy')
+    const db = await makeDb(TREE('', `@@allow(read, ownerId == auth().id)`), 'rec-policy')
     await db.asSystem().task.createMany({ data: [
       { id: 1, title: 'mine',   ownerId: 1 },
       { id: 2, title: 'theirs', ownerId: 2, parentId: 1 },
@@ -26630,7 +26641,7 @@ model Person {
   teamId Int
   team   Team   @relation(fields: [teamId], references: [id])
   @@gate(2.4.4.5)
-  @@allow('read', handle != null)
+  @@allow(read, handle != null)
 }
 `
 
@@ -26642,7 +26653,7 @@ model Person {
     expect(r.errored).toHaveLength(0)
     expect(r.score).toBeGreaterThan(0.8)
 
-    // The one that survives is `@@allow('read', handle != null)` over a
+    // The one that survives is `@@allow(read, handle != null)` over a
     // NON-optional column — a policy that admits every row there can ever be, so
     // deleting it changes nothing anything could observe. A correct survival,
     // and the reason `verifyRowPolicies` reports a one-sided predicate rather
@@ -27159,7 +27170,7 @@ describe('every read applies the filter, the policy and the gate', () => {
       ownerId  Int
       @@fts([title])
       @@label(title)
-      @@allow('read', ownerId == auth().id)
+      @@allow(read, ownerId == auth().id)
     }`
 
   let db: any, user: any
@@ -27307,7 +27318,7 @@ describe('a predicate that can never match is refused at startup', () => {
       id Int @id @default(autoincrement())
       title String
       owner String ${decl}
-      @@allow('read', owner == auth().email)
+      @@allow(read, owner == auth().email)
     }`
     await expect(makeDb(mk('@encrypted'), 'tier2-pol', { encryptionKey: 'a'.repeat(64) }))
       .rejects.toThrow(/@encrypted under a random IV/)
@@ -27332,21 +27343,21 @@ describe('a predicate that can never match is refused at startup', () => {
     await expect(makeDb(`model Doc {
       id Int @id @default(autoincrement())
       owner String @hashed
-      @@allow('read', owner > auth().email)
+      @@allow(read, owner > auth().email)
     }`, 'tier2-pol-gt', key)).rejects.toThrow(/preserve equality and nothing else/)
 
     await expect(makeDb(`model Doc {
       id Int @id @default(autoincrement())
       owner   String @hashed
       manager String
-      @@allow('read', owner == manager)
+      @@allow(read, owner == manager)
     }`, 'tier2-pol-cc', key)).rejects.toThrow(/compared column to column/)
 
     // Evaluated in JS against the row read BACK, which has the column stripped.
     await expect(makeDb(`model Doc {
       id Int @id @default(autoincrement())
       owner String @hashed
-      @@allow('post-update', owner == auth().email)
+      @@allow(postUpdate, owner == auth().email)
     }`, 'tier2-pol-pu', key)).rejects.toThrow(/post-update check reads the row back/)
   })
 
@@ -27357,10 +27368,10 @@ describe('a predicate that can never match is refused at startup', () => {
       id Int @id @default(autoincrement())
       title String
       owner String @hashed
-      @@allow('read',   owner == auth().email)
-      @@allow('create', owner == auth().email)
-      @@allow('update', owner == auth().email)
-      @@allow('delete', owner == auth().email)
+      @@allow(read,   owner == auth().email)
+      @@allow(create, owner == auth().email)
+      @@allow(update, owner == auth().email)
+      @@allow(delete, owner == auth().email)
     }`, 'tier2-pol-ops', { encryptionKey: 'a'.repeat(64) })
     await db.asSystem().doc.create({ data: { title: 'mine',   owner: 'a@x.com' } })
     await db.asSystem().doc.create({ data: { title: 'theirs', owner: 'b@x.com' } })
@@ -27379,7 +27390,7 @@ describe('a predicate that can never match is refused at startup', () => {
       title String
       ownerId Int
       status String
-      @@allow('read', ownerId == auth().id)
+      @@allow(read, ownerId == auth().id)
     }`, 'tier2-ok', { filters: { doc: { status: 'live' } } })
     await db.asSystem().doc.create({ data: { title: 'a', ownerId: 1, status: 'live' } })
     expect(await db.$setAuth({ id: 1 }).doc.count()).toBe(1)
@@ -27453,7 +27464,7 @@ describe('an impossible filter is refused on a read', () => {
         id      Int @id
         ownerId Int
         body    String
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }`,
       't3-inject',
     )
@@ -27550,7 +27561,7 @@ describe('@encrypted(deterministic) / @hashed — declaration', () => {
     const cases: [string, RegExp][] = [
       ['t String @hashed @encrypted',            /conflicts with @encrypted/],
       ['t String @hashed @guarded',         /conflicts with @guarded/],
-      [`t String @hashed @allow('read', true)`,  /conflicts with @allow/],
+      [`t String @hashed @allow(read, true)`,  /conflicts with @allow/],
       ['t Int    @hashed',                       /requires a String field/],
       ['t String[] @hashed',                     /cannot be applied to an array/],
     ]

@@ -97,7 +97,7 @@ model Note {
   deletedAt DateTime?
 
   @@softDelete
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }
 
 model Node {

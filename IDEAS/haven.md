@@ -255,7 +255,7 @@ exercised end to end (3.2). The hosted Haven is Phase 10.
   member out of the room on the next write; the lift puts them back), and
   `verify:explore` (Sam types `/ban ana`, Ana's `--frame /` has no square;
   `/unban ana` and it has Sam again).
-  Found: a field `@allow('write')` DROPS the key rather than refusing
+  Found: a field `@allow(write)` DROPS the key rather than refusing
   (`FJS-D22`), so a member's `/ban` resolves with nothing written — the client
   reads the answered row's `bannedAt` to say *only a mod bans*. And the session
   carried `role: 'user'`, so every member graded USER(4) where the schema and
@@ -746,7 +746,7 @@ footprints, and a line said at one end of the square does not reach the other.
   and each step presence shows it, by the same `stepped()`, so a step costs
   no frame of its own. `stage.tread()` keeps the newest footprint per cell,
   and the `steps` layer draws it as a `.` on a blank lit cell, fading through
-  `STEP_FG` in thirds of `TRACES.step` (five minutes), under a falling drop
+  `STEP_FG` in thirds of `TRACES.step`, under a falling drop
   and shaded by the night; each third is a tick of the stage's clock.
   `steps.test.js`, `memory.test.ts`, `room.test.ts` § footprints and
   `verify:steps` (two ptys and a late `--frame`). Not done: footprints in

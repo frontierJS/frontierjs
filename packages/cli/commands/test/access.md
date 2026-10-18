@@ -89,11 +89,11 @@ fli test:access --from origin/main
 Against `origin/main` — 2 widen · 0 undecidable · 1 narrow
 
   widens   User.role
-           @allow('write') removed — nothing at the field refuses this column now
+           @allow(write) removed — nothing at the field refuses this column now
   widens   model User
            gate "4.4.5.6" → "2.4.5.6" — read drops to READER
   narrows  model Order
-           @@allow('read') added — rows N-1 reads are filtered out, with a 200 and no error
+           @@allow(read) added — rows N-1 reads are filtered out, with a 200 and no error
 ```
 
 Nothing is written. It reads gates, row policies, field `@allow`, `@guarded` /

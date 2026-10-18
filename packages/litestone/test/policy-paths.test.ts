@@ -1,6 +1,6 @@
 // policy-paths.test.ts — a row policy naming a column ONE relation away.
 //
-// `@@allow('read', order.userId == auth().id)` used to be `Expected RPAREN, got
+// `@@allow(read, order.userId == auth().id)` used to be `Expected RPAREN, got
 // '.'`, so *the lines of my own orders* had nowhere to live but a copy of the
 // id on the child (`FJS-499`). `FJS-D221` rules the dotted form: one hop, the
 // compiler owns the join, two hops is a parse error.
@@ -59,7 +59,7 @@ model Doc {
 
 describe('one hop is accepted', () => {
   it('the form the workaround existed for', async () => {
-    expect(await refusal(S(`@@allow('read', owner.userId == auth().id)`))).toBe('')
+    expect(await refusal(S(`@@allow(read, owner.userId == auth().id)`))).toBe('')
   })
 
   it('and it is what admits the row — the PARENT decides, not the child', async () => {
@@ -67,7 +67,7 @@ describe('one hop is accepted', () => {
     // everybody; this separates rows, and separates them by a column that lives
     // on the other model — so a hop compiled away to the child's own `ownerId`
     // fails here and passes everything else.
-    const db: any = await createClient({ schema: S(`@@allow('read', owner.userId == auth().id)`), db: ':memory:' })
+    const db: any = await createClient({ schema: S(`@@allow(read, owner.userId == auth().id)`), db: ':memory:' })
     const sys = db.asSystem()
     await sys.owner.create({ data: { id: 'o1', userId: 'u1', editorIds: [] } })
     await sys.owner.create({ data: { id: 'o2', userId: 'u2', editorIds: [] } })
@@ -91,32 +91,32 @@ describe('one hop is accepted', () => {
 
 describe('the hop is bounded at one, and the bound is discoverable from the mistake', () => {
   it('two hops is a parse error naming the rule', async () => {
-    const msg = await refusal(S(`@@allow('read', owner.docs.id == auth().id)`))
+    const msg = await refusal(S(`@@allow(read, owner.docs.id == auth().id)`))
     expect(msg).toContain('crosses two relations')
     expect(msg).toContain('ONE hop away')
   })
 
   it('and one hop over the same relation is fine', async () => {
-    expect(await refusal(S(`@@allow('read', owner.userId == auth().id)`))).toBe('')
+    expect(await refusal(S(`@@allow(read, owner.userId == auth().id)`))).toBe('')
   })
 
   it('a to-many is refused, in the words check() uses', async () => {
     // Two ways to cross a relation in a policy, and they must not come to
     // accept different sets. `any child matches` is a different question and
     // `FJS-D221` leaves it unruled rather than pre-paying for it with syntax.
-    const msg = await refusal(S(`@@allow('read', docs.id == auth().id)`, 'Owner'))
+    const msg = await refusal(S(`@@allow(read, docs.id == auth().id)`, 'Owner'))
     expect(msg).toContain('hasMany')
     expect(msg).toContain('belongsTo')
   })
 
   it('and the to-ONE side of the same relation is accepted', async () => {
-    expect(await refusal(S(`@@allow('read', owner.id == auth().id)`, 'Doc'))).toBe('')
+    expect(await refusal(S(`@@allow(read, owner.id == auth().id)`, 'Doc'))).toBe('')
   })
 })
 
 describe('what the hop lands on is checked against the target model', () => {
   it('an unknown relation lists the ones that exist', async () => {
-    const msg = await refusal(S(`@@allow('read', ownr.userId == auth().id)`))
+    const msg = await refusal(S(`@@allow(read, ownr.userId == auth().id)`))
     expect(msg).toContain("'ownr' is not a relation")
     expect(msg).toContain('Relations: owner')
   })
@@ -124,24 +124,24 @@ describe('what the hop lands on is checked against the target model', () => {
   it('an unknown column names the TARGET model and its fields', async () => {
     // Not this model's fields, which is what the local branch prints and what a
     // walk that forgot to follow the hop would print here.
-    const msg = await refusal(S(`@@allow('read', owner.usrId == auth().id)`))
+    const msg = await refusal(S(`@@allow(read, owner.usrId == auth().id)`))
     expect(msg).toContain('is not a field on Owner')
     expect(msg).toContain("reached as 'owner.usrId'")
     expect(msg).toContain('userId')
   })
 
   it('and the correctly spelled column on the same relation is accepted', async () => {
-    expect(await refusal(S(`@@allow('read', owner.userId == auth().id)`))).toBe('')
+    expect(await refusal(S(`@@allow(read, owner.userId == auth().id)`))).toBe('')
   })
 
   it('a column with no storage is refused — @computed and @transient', async () => {
     for (const attr of ['@computed', '@transient']) {
-      const msg = await refusal(S(`@@allow('read', owner.tag == auth().id)`, 'Doc', `tag String? ${attr}`))
+      const msg = await refusal(S(`@@allow(read, owner.tag == auth().id)`, 'Doc', `tag String? ${attr}`))
       expect(msg, attr).toContain('no column to correlate on')
     }
     // The pair: an ordinary column declared in the same slot is accepted, so
     // the refusal is keyed on the attribute and not on the extra field.
-    expect(await refusal(S(`@@allow('read', owner.tag == auth().id)`, 'Doc', `tag String?`))).toBe('')
+    expect(await refusal(S(`@@allow(read, owner.tag == auth().id)`, 'Doc', `tag String?`))).toBe('')
   })
 
   it('an ENCODED column across the hop is refused rather than compared', async () => {
@@ -150,16 +150,16 @@ describe('what the hop lands on is checked against the target model', () => {
     // which is an empty screen with a 200. `encodedCompare` encodes the operand
     // for a LOCAL column and has no counterpart across a relation.
     for (const attr of ['@encrypted(deterministic: true)', '@hashed', '@secret']) {
-      const msg = await refusal(S(`@@allow('read', owner.tok == auth().id)`, 'Doc', `tok String? ${attr}`))
+      const msg = await refusal(S(`@@allow(read, owner.tok == auth().id)`, 'Doc', `tok String? ${attr}`))
       expect(msg, attr).toContain('would match nothing')
     }
-    expect(await refusal(S(`@@allow('read', owner.tok == auth().id)`, 'Doc', `tok String?`))).toBe('')
+    expect(await refusal(S(`@@allow(read, owner.tok == auth().id)`, 'Doc', `tok String?`))).toBe('')
   })
 })
 
 describe('membership crosses the hop, and the same shapes are refused', () => {
   it('a list on the parent is read by json_each over the subquery', async () => {
-    const db: any = await createClient({ schema: S(`@@allow('read', auth().id in owner.editorIds)`), db: ':memory:' })
+    const db: any = await createClient({ schema: S(`@@allow(read, auth().id in owner.editorIds)`), db: ':memory:' })
     const sys = db.asSystem()
     await sys.owner.create({ data: { id: 'o1', userId: 'x', editorIds: ['u1', 'u3'] } })
     await sys.owner.create({ data: { id: 'o2', userId: 'x', editorIds: [] } })
@@ -175,7 +175,7 @@ describe('membership crosses the hop, and the same shapes are refused', () => {
   })
 
   it('a SCALAR column on the parent is refused as the list', async () => {
-    const msg = await refusal(S(`@@allow('read', auth().id in owner.userId)`))
+    const msg = await refusal(S(`@@allow(read, auth().id in owner.userId)`))
     expect(msg).toContain('not an array field')
   })
 })
@@ -229,7 +229,7 @@ describe('the correlated subquery reaches the parent by its key', () => {
     try {
       const seen: any[] = []
       const db: any = await createClient({
-        schema: S(`@@allow('read', owner.userId == auth().id)`), db: file,
+        schema: S(`@@allow(read, owner.userId == auth().id)`), db: file,
         onQuery: (e: any) => seen.push(e),
       })
       const sys = db.asSystem()

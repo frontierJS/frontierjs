@@ -492,7 +492,7 @@ model Bookmark {
   collectionId Int
   collection   Collection @relation(fields: [collectionId], references: [id])
   @@gate(0)
-  @@allow('read', collection.ownerId == auth().id)
+  @@allow(read, collection.ownerId == auth().id)
   @@sync(server)
 }
 `

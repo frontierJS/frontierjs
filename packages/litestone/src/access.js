@@ -25,7 +25,7 @@ for (const [name, n] of Object.entries(LEVELS)) LEVEL_LABEL[n] = name
 export function levelLabel(n) { return LEVEL_LABEL[n] ?? `LEVEL_${n}` }
 
 const OPS        = ['read', 'create', 'update', 'delete']
-const POLICY_OPS = ['read', 'create', 'update', 'post-update', 'delete']
+const POLICY_OPS = ['read', 'create', 'update', 'postUpdate', 'delete']
 
 // Every level a caller can actually arrive at. 9 is absent on purpose — LOCKED
 // is a gate value, never a principal's standing.
@@ -422,7 +422,7 @@ export function renderAccessSnapshot(access, opts = {}) {
       for (const f of m.fields) {
         const rules = []
         if (f.protection) rules.push(`\`${f.protection}\``)
-        for (const a of f.allows) rules.push(`\`@allow('${a.operations.join(',')}', ${a.expr})\``)
+        for (const a of f.allows) rules.push(`\`@allow(${a.operations.length === 1 ? a.operations[0] : 'all'}, ${a.expr})\``)
         out.push(`| \`${m.name}\` | \`${f.name}\` | ${rules.join(' · ')} |`)
       }
     }

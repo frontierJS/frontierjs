@@ -145,8 +145,8 @@ model Shift {
   id     Int    @id @default(autoincrement())
   siteId Int
   note   String
-  @@allow('read',   siteId == auth().siteId)
-  @@allow('create', siteId == auth().siteId)
+  @@allow(read,   siteId == auth().siteId)
+  @@allow(create, siteId == auth().siteId)
 }`
 
 async function shop() {

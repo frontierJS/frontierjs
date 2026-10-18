@@ -45,7 +45,7 @@ const SCHEMA = `
 database main { path env("DATABASE_URL", "./app.db") }
 
 /// An article. Drafts are readable by their author alone:
-/// @@allow('read', authorId == auth().id)
+/// @@allow(read, authorId == auth().id)
 model Article {
   id          Int     @id
   /// The headline. Rotate the editorial key at /internal/rotate.

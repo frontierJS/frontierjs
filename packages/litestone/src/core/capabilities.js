@@ -14,7 +14,10 @@
 //
 // Which operations a model contributes is `FJS-D140`: create, update, delete and
 // every named move by default, plus read where the model wrote @@capabilities(all).
-// Read is opt-in because its refusal is the silent one.
+// Read is opt-in because its refusal is the silent one. Create is absent where the
+// gate admits a stranger to it (`FJS-D1048`).
+
+import { parseGateString } from '../plugins/gate.js'
 
 // A move the ENGINE makes and a person never does is not a grant anybody could
 // hold, so offering one in a role editor is offering nothing. A schema marks it
@@ -35,6 +38,15 @@ const machineMove = (t) => t.gate === 8 || t.gate === 9 || t.system === true
 
 const WRITE_OPS = ['create', 'update', 'delete']
 
+// A model whose `@@gate` lets a stranger create has already said everyone may,
+// and a stranger holds no list to name `Model.create` in, so a grant for it
+// would be one nobody could hold (`FJS-D1048`). Only a declared level 0 counts:
+// an absent gate says nothing, and a drop box at level 1+ stays on the grid.
+function strangerMayCreate(model) {
+  const gate = model.attributes?.find(a => a.kind === 'gate')
+  return gate != null && parseGateString(gate.value).create === 0
+}
+
 /**
  * Every capability this schema declares, sorted by model then by name.
  *
@@ -54,7 +66,8 @@ export function capabilitiesForModel(model) {
     out.push({ name: `${model.name}.${target}`, model: model.name, kind, target, gate })
 
   if (decl.read) add('operation', 'read')
-  for (const op of WRITE_OPS) add('operation', op)
+  const open = strangerMayCreate(model)
+  for (const op of WRITE_OPS) if (!(open && op === 'create')) add('operation', op)
 
   for (const attr of (model.attributes ?? []).filter(a => a.kind === 'transitions')) {
     for (const [name, t] of Object.entries(attr.transitions ?? {})) {
@@ -85,15 +98,16 @@ export function capabilityNames(schema) {
  * The same declarations keyed by model, for a reader that has a model in hand and
  * needs an answer per call rather than a list — enforcement asks this one.
  *
- * `{ [model]: { read: boolean, moves: Set<string>, columns: Set<string> } }`, and a
+ * `{ [model]: { read, create: boolean, moves: Set<string>, columns: Set<string> } }`, and a
  * model absent from it declares no grid. One reading of the attributes, because two
  * would let the set a picker OFFERS drift from the set the boundary ENFORCES.
  */
 export function capabilityDeclarations(schema) {
   const out = {}
   for (const c of deriveCapabilities(schema)) {
-    const m = out[c.model] ??= { read: false, moves: new Set(), columns: new Set(), moveFields: new Set() }
+    const m = out[c.model] ??= { read: false, create: false, moves: new Set(), columns: new Set(), moveFields: new Set() }
     if (c.kind === 'operation' && c.target === 'read') m.read = true
+    if (c.kind === 'operation' && c.target === 'create') m.create = true
     if (c.kind === 'move')   m.moves.add(c.target)
     if (c.kind === 'column') m.columns.add(c.target)
   }

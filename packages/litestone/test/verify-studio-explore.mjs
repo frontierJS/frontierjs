@@ -763,7 +763,7 @@ t('interview.perCallerIsShownBesideTheAnswer', await evaluate(`
   _ivAnswer = { stored: true, callerWrites: false, callerReads: true, perCaller: true };
   exRender();
   const txt = document.getElementById('exBody').textContent;
-  return { keptTheWord: txt.includes('@system'), addedThePolicy: txt.includes("@allow('read'") };
+  return { keptTheWord: txt.includes('@system'), addedThePolicy: txt.includes("@allow(read") };
 `), { keptTheWord: true, addedThePolicy: true })
 
 // The one line on a card that leads OUT of the catalog. Named rather than

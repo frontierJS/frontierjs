@@ -46,10 +46,14 @@
 // them gets to see that `StocktakeCount.variant` is not a column it can
 // `include` in a stockroom.
 //
-// One cut is refused rather than graded: a relation a kept model's POLICY reads,
-// since the policy does not compile without it (`FJS-D847`).
+// Two cuts are refused rather than graded: a relation a kept model's POLICY reads,
+// since the policy does not compile without it (`FJS-D847`), and a protected
+// column a model-level rule reads (`FJS-D893`).
 
 const GRADES = ['lost', 'changed', 'noted']
+
+// A column whose value the server keeps ciphertext or a digest of.
+const PROTECTED_KINDS = new Set(['encrypted', 'hashed', 'secret'])
 
 /**
  * Filter a parse result down to what a device is given.
@@ -115,9 +119,21 @@ export function deviceSchema(parseResult) {
   // ─── the models ─────────────────────────────────────────────────────────
 
   const models = syncable.map((model) => {
-    const fields = []
+    const fields  = []
+    const dropped = new Set()
     for (const field of model.fields ?? []) {
       const typeName = field.type?.name
+
+      // The key is not on a device (host/browser.js), so a column that needs one
+      // would make createClient demand it and a read of it cannot be answered.
+      // The ciphertext stays on the server (`FJS-D893`).
+      const protectedAttr = (field.attributes ?? []).find(a => PROTECTED_KINDS.has(a.kind))
+      if (protectedAttr) {
+        dropped.add(field.name)
+        note('lost', `${model.name}.${field.name}`,
+          `@${protectedAttr.kind} needs a key a device does not hold, so the column stays on the server`)
+        continue
+      }
       const scalar   = field.type?.kind === 'scalar'
 
       if (!scalar && (viewNames.has(typeName) || (isModelName(source, typeName) && !keptNames.has(typeName)))) {
@@ -169,6 +185,17 @@ export function deviceSchema(parseResult) {
           'a trail database is a fleet-wide file on a server; a device has one database')
         continue
       }
+      const cut = [...dropped].filter(name => attr.fields?.includes(name))
+      if (cut.length) {
+        note('lost', `${model.name} @@${attr.kind}([${attr.fields.join(', ')}])`,
+          `it names ${cut.join(', ')}, which is not in the device schema`)
+        continue
+      }
+      const reads = [...dropped].filter(name => readsField(attr, name))
+      if (reads.length)
+        throw new Error(
+          `deviceSchema: ${model.name} @@${attr.kind} reads ${reads.join(', ')}, a protected column the device is not given, ` +
+          'so the rule would not compile there (FJS-D893). Move the rule to a column the device holds, or drop @@sync from the model.')
       attributes.push(attr)
     }
 
@@ -252,6 +279,19 @@ const stripType = (t) => stripComments({ ...t, fields: (t.fields ?? []).map(stri
 
 // ─── asking the tree ──────────────────────────────────────────────────────
 
+/** Whether a model attribute's expression names `field`: a policy's field node, or a `@@check`'s SQL text. */
+function readsField(attr, field) {
+  if (attr.kind === 'check')
+    return typeof attr.expr === 'string' && new RegExp(`\\b${field}\\b`).test(attr.expr)
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return false
+    if (Array.isArray(node)) return node.some(walk)
+    if (node.type === 'field' && node.name === field) return true
+    return Object.values(node).some(walk)
+  }
+  return walk(attr.expr)
+}
+
 const isModelName = (schema, name) => (schema.models ?? []).some(m => m.name === name)
 
 /** The scalar column a relation is stored in, for the note that says it stayed. */
@@ -282,7 +322,7 @@ function namesReferredToBy(field) {
 
 // ─── the refusal ──────────────────────────────────────────────────────────
 
-const POLICY_KINDS = new Set(['allow', 'deny', 'fieldAllow'])
+const POLICY_KINDS = new Set(['allow', 'deny', 'require', 'fieldAllow'])
 
 /**
  * Refuse a `@@sync` model whose row policy reads a model that is not `@@sync`

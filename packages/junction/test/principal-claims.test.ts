@@ -449,14 +449,14 @@ describe('membershipClaim({ guests })', () => {
       id          Int    @id @default(autoincrement())
       workspaceId Int
       title       String
-      @@allow('read', workspaceId == auth().workspaceId)
+      @@allow(read, workspaceId == auth().workspaceId)
     }
 
     model Note {
       id          Int    @id @default(autoincrement())
       workspaceId Int
       title       String
-      @@allow('read', auth().memberRole == 'guest')
+      @@allow(read, auth().memberRole == 'guest')
     }
   `
   const resolver = (guests?: string[]) => membershipClaim({

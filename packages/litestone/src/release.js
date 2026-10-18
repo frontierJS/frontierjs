@@ -218,7 +218,7 @@ function describeField(field, access) {
     // `emailVerified` — so a comparison that could not see it would be silent
     // on the one change a reviewer most needs to be shown.
     allows: (rules?.allows ?? [])
-      .map(a => `${[...(a.operations ?? [])].sort().join(',') || 'all'}: ${a.expr}`)
+      .map(a => `${a.operations?.length === 1 ? a.operations[0] : 'all'}: ${a.expr}`)
       .sort(),
     // A `@values` binding is a rule about which values are legal, so a column
     // gaining a `required` one starts refusing writes N-1 makes with no other
@@ -614,14 +614,14 @@ function compareFieldAllows(old, field, at, f) {
   for (const [ops, exprs] of now) {
     const before = was.get(ops)
     if (!before)
-      add(f, CONTRACT, at, `@allow('${ops}') added — the column is refused to callers the predicate does not admit`, { access: NARROWS })
+      add(f, CONTRACT, at, `@allow(${ops}) added — the column is refused to callers the predicate does not admit`, { access: NARROWS })
     else if (before.join(' | ') !== exprs.join(' | '))
-      add(f, UNKNOWN, at, `@allow('${ops}') predicate changed — whether that widens or narrows is not decidable from the text`, { access: UNKNOWN })
+      add(f, UNKNOWN, at, `@allow(${ops}) predicate changed — whether that widens or narrows is not decidable from the text`, { access: UNKNOWN })
   }
 
   for (const [ops] of was)
     if (!now.has(ops))
-      add(f, EXPAND, at, `@allow('${ops}') removed — nothing at the field refuses this column now`, { access: WIDENS })
+      add(f, EXPAND, at, `@allow(${ops}) removed — nothing at the field refuses this column now`, { access: WIDENS })
 }
 
 // The one strength that refuses is `required`, so the severity is not a ladder
@@ -767,7 +767,7 @@ function compareAccess(b, m, f) {
     }
   }
 
-  // Grouped by what happened rather than by operation. `@@allow('all', …)` is
+  // Grouped by what happened rather than by operation. `@@allow(all, …)` is
   // one line in the schema and five operations in the policy map, so a per-op
   // finding says the same sentence five times — and a tenancy predicate added
   // across fifteen models is then seventy rows nobody reads.
@@ -791,7 +791,7 @@ function compareAccess(b, m, f) {
   // `@@allow(X)` and `@@deny(!X)` admit the same set, so replacing one with the
   // other over the same operations moves nobody — and the walk saw an allow
   // removed (widens) beside a deny added (narrows) and took the worst.
-  // Measured on basecamp's move from sixteen hand-written `@@allow('all',
+  // Measured on basecamp's move from sixteen hand-written `@@allow(all,
   // workspaceId == auth().workspaceId)` lines to `tenancy { strategy row }`,
   // which desugars to exactly that pairing: **verdict WIDENS on the safest
   // refactor there is** (`FJS-380`).
@@ -1190,8 +1190,8 @@ export function renderReleaseSnapshot(surface, { source = 'schema.lite' } = {}) 
     for (const cols of m.indexes) extra.push(`@@index(${k(cols)})`)
     for (const expr of m.checks ?? []) extra.push(`@@check(${expr})`)
     for (const [op, p] of Object.entries(m.policies).sort()) {
-      for (const e of p.allows) extra.push(`@@allow('${op}', ${e})`)
-      for (const e of p.denies) extra.push(`@@deny('${op}', ${e})`)
+      for (const e of p.allows) extra.push(`@@allow(${op}, ${e})`)
+      for (const e of p.denies) extra.push(`@@deny(${op}, ${e})`)
     }
     for (const t of m.transitions)
       extra.push(`transition ${t.field}.${t.name}: ${t.from} → ${t.to}` +

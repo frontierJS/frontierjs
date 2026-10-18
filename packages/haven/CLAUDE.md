@@ -175,7 +175,7 @@ box, is `IDEAS/haven.md`.
   `fli haven`, not at once, and a nick struck from it keeps the standing until
   theirs; the session carries no `role`, so there is nothing to revoke.
 - **A member's `/ban` is not refused — it writes nothing.** A field
-  `@allow('write')` drops the key (`FJS-D22`) and the row policy filters another
+  `@allow(write)` drops the key (`FJS-D22`) and the row policy filters another
   member's row to no row, so the patch resolves either way. The client reads
   the answered row's `bannedAt` to say *only a mod bans*; a test asserts the
   column, never the promise.

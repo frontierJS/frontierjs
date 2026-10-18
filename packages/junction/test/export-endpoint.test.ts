@@ -41,8 +41,8 @@ model Order {
   memo    String?  @guarded
   placed  DateTime @default(now())
   @@gate(1)
-  @@allow('read', auth().isAdmin)
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, auth().isAdmin)
+  @@allow(read, ownerId == auth().id)
   @@export(ndjson, since: placed)
   @@db(main)
 }
@@ -66,7 +66,7 @@ model Report {
   title  String
   deptId String
   @@gate(1)
-  @@allow('read', deptId == auth().deptId)
+  @@allow(read, deptId == auth().deptId)
   @@export(ndjson)
   @@db(main)
 }

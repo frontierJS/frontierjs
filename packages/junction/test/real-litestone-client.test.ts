@@ -972,7 +972,7 @@ describe('a hook that hands a derived verb the system client', () => {
       model Note {
         id      Int    @id @default(autoincrement())
         ownerId String
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }` })
     await db.asSystem().note.create({ data: { ownerId: 'u2' } })
     const app = createApp({ db, auth: createStubAuth({ users: [{ id: 'u1', role: 'member' }] }) })

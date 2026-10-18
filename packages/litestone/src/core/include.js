@@ -281,7 +281,7 @@ export function deserializeFromRow(row, fromFields, hidden = null) {
 // the soft-delete and @@hasTemplates filters below are hand-appended. @@allow
 // was not, until 2026-08-10: a policy declared on a model filtered every direct
 // read of it and none reached through a parent's `include`, so a tenant scoped
-// out of a row by `@@allow('read', workspaceId == auth().workspaceId)` still
+// out of a row by `@@allow(read, workspaceId == auth().workspaceId)` still
 // received it as `appServer.server`. Same for the field rules — see
 // applyFieldPolicyTo above. The gate is the third of the three and is checked
 // before the query runs, in GatePlugin.onBeforeRead, because getLevel is async

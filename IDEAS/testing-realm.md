@@ -297,7 +297,7 @@ expect(env.announced('leads:removed')).toHaveLength(1)
 ```
 
 **The tier justified itself on its first run.** The fixture schema wrote the
-natural thing — `@@allow('read', ownerId == auth().id || ownerId == null)` — and
+natural thing — `@@allow(read, ownerId == auth().id || ownerId == null)` — and
 the unowned rows never came back. `field == null` compiled to `"col" = NULL`,
 never true in SQLite, so the policy hid rows nobody meant to hide and raised
 nothing; and `create` is evaluated in JS with `===`, so a caller could create a
@@ -580,7 +580,7 @@ right — each found by running it against basecamp rather than by reasoning:**
 
 **Rows on one side only are reported, never passed.** A policy that admits
 everything and a policy that is not applied at all are the same observation when
-every row matches. `example`'s own `@@allow('read', title != null)` over a
+every row matches. `example`'s own `@@allow(read, title != null)` over a
 required column is exactly that shape, and a `allow-drop` mutant on it survives
 *correctly* — deleting a no-op changes nothing anything can see.
 

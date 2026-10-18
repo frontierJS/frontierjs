@@ -31,7 +31,7 @@ model Lead {
 
   // read · create · update · delete
   @@gate(0.4.4.5)
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }`],
   API: ['js', `import { createApp, createService, announce } from '@frontierjs/junction'
 
@@ -75,7 +75,7 @@ await app.start()`],
   DECLARATION: ['lite', `model Invoice {
   total Float @gte(0)
   @@gate(0.4.4.8)
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
   @@trail(audit)
 }`],
   HOOK: ['js', `// Same four phases in the API and the UI.

@@ -1,6 +1,6 @@
-// FJS-619 — a field `@allow('read')` that reads only the caller is answered once.
+// FJS-619 — a field `@allow(read)` that reads only the caller is answered once.
 //
-// `@allow('read', auth().isAdmin)` has ONE answer for a whole result set, and it
+// `@allow(read, auth().isAdmin)` has ONE answer for a whole result set, and it
 // was asked once per field per ROW through the expression interpreter — the
 // worst per-row cost in the 2026-07-18 audit (M7). It is now hoisted.
 //
@@ -18,7 +18,7 @@ model Doc {
   id      Int    @id
   ownerId Int
   title   String
-  secret  String @allow('read', ${pred})
+  secret  String @allow(read, ${pred})
   @@gate(0)
 }
 `
@@ -91,7 +91,7 @@ model Doc {
   id      Int    @id
   ownerId Int
   title   String
-  secret  String @allow('read', auth().isAdmin) @allow('read', ownerId == auth().id)
+  secret  String @allow(read, auth().isAdmin) @allow(read, ownerId == auth().id)
   @@gate(0)
 }` })
     await seed(db)

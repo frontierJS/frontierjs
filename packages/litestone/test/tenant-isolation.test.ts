@@ -103,7 +103,7 @@ describe('verifyTenantIsolation', () => {
     // row into somebody else's tenant. Removing it is the mutation, and the
     // check has to see it.
     const env = await createTestEnv({ schema: CLEAN })
-    const rows = await env.verifyTenantIsolation({ ops: ['post-update'] })
+    const rows = await env.verifyTenantIsolation({ ops: ['postUpdate'] })
     expect(leaks(rows)).toEqual([])
 
     // And the same schema with the rule gone must not come back clean.
@@ -419,9 +419,9 @@ const OWNED = `
     workspace   Workspace @relation(fields: [workspaceId], references: [id])
     ownerId     String    @default(auth().id)
     title       String
-    @@allow('read',   true)
-    @@allow('update', ownerId == auth().id)
-    @@allow('delete', ownerId == auth().id)
+    @@allow(read,   true)
+    @@allow(update, ownerId == auth().id)
+    @@allow(delete, ownerId == auth().id)
   }
 `
 
@@ -458,8 +458,8 @@ describe('the two policy checkers seed into the tenant their reader holds', () =
       workspace   Workspace @relation(fields: [workspaceId], references: [id])
       ownerId     String    @default(auth().id)
       body        String
-      @@allow('read',   ownerId == auth().id)
-      @@allow('update', ownerId == auth().id)
+      @@allow(read,   ownerId == auth().id)
+      @@allow(update, ownerId == auth().id)
     }
 
     // Scoped through its PARENT, which is the shape that bites: a delegated

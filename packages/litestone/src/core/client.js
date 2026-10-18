@@ -1049,7 +1049,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // joined with commas, which is not an aggregate but a dump (FJS-273).
   //
   // The ladder mirrors applyFieldPolicyTo's, with one addition it cannot have:
-  // a field-level @allow('read') is a predicate over a row, and an aggregate has
+  // a field-level @allow(read) is a predicate over a row, and an aggregate has
   // no row to evaluate it against, so it is refused rather than guessed at.
   const _aggKeySets = aggregatableKeysFor(shape.model)
 
@@ -1067,7 +1067,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (p.encrypted)                  return `is @encrypted — a non-system read is stripped, and the stored column is ciphertext`
     if (p.guarded)                    return `is @guarded — a system-context column. Use asSystem() for a read that is not a caller's`
     if (p.omit === 'all')             return `is @omit(all) — excluded from every read`
-    if (p.allow?.read?.length)        return `carries a field-level @allow('read', …), which is decided per row — an aggregate has no ` +
+    if (p.allow?.read?.length)        return `carries a field-level @allow(read, …), which is decided per row — an aggregate has no ` +
                                              `row to decide it against, so it cannot be answered for some rows and not others`
     return null
   }
@@ -3142,7 +3142,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return { data: plain ?? data, ops }
   }
 
-  // ── @allow('write', …) on a FIELD, compiled into the SET ─────────────────────
+  // ── @allow(write, …) on a FIELD, compiled into the SET ─────────────────────
   //
   // `FJS-D129`: the predicate is answered where the row is. In an UPDATE a bare
   // column reference IS the stored row, so `CASE WHEN <pred> THEN ? ELSE "col"
@@ -3506,7 +3506,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @guarded — ` +
       `a system-context column on write as well as read. Name it on the call to write it as the application ` +
       `(system: [${denied.map(f => `'${f}'`).join(', ')}]), write it through asSystem(), or leave it out of the ` +
-      `payload. For a column some callers may write, @allow('write', …) is the tool; @guarded answers both ` +
+      `payload. For a column some callers may write, @allow(write, …) is the tool; @guarded answers both ` +
       `halves at once, which is why the two cannot sit on one field.`,
       { model: modelName, operation: 'write' }
     )
@@ -4003,7 +4003,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // the owner could not see that they had (FJS-235). The strip made a landed
     // write look exactly like a refusal, which is why it went unnoticed.
     //
-    // Refused by name rather than dropped the way a field @allow('write') is:
+    // Refused by name rather than dropped the way a field @allow(write) is:
     // naming a guarded column is not a form body passing through, and a silent
     // drop is the shape being fixed. @encrypted alone does NOT reach here — it
     // hides a value from a reader, and the caller supplying a secret is
@@ -4031,7 +4031,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // Refused by name rather than dropped, for @guarded's reason: the client is
     // told `readOnly` and a generated form does not offer the column at all, so
     // a payload naming it is code that meant to write it. A field
-    // @allow('write', …) still DROPS — there the same payload is legitimate for
+    // @allow(write, …) still DROPS — there the same payload is legitimate for
     // another caller, and a form body passing through an ordinary one is
     // expected traffic.
     //
@@ -4084,12 +4084,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // 461 capabilities and no picker can show that.
     //
     // Refused by name rather than dropped, which is the difference between this
-    // and a field @allow('write', …) that happens to name a capability: a
+    // and a field @allow(write, …) that happens to name a capability: a
     // capability THROWS (`FJS-D146`), because it is verb-scoped and refusing
     // leaks nothing about any row.
     //
     // Only the WRITE tier is here. A per-column READ wants the predicate
-    // spelling — @allow('read', 'X' in auth().capabilities) — because a column
+    // spelling — @allow(read, 'X' in auth().capabilities) — because a column
     // read must STRIP rather than refuse, or a caller who never named the column
     // gets a 403 on an ordinary list.
     //
@@ -4172,7 +4172,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
     // Validate enum fields with friendly errors before hitting SQLite's CHECK
     if (_hasEnumFields) refuseBadEnums(transformed)
-    // @allow('write', expr) — silently drop restricted fields before write.
+    // @allow(write, expr) — silently drop restricted fields before write.
     // Dropped rather than refused because the predicate is per-caller: the same
     // payload is legitimate for an admin, so a form body reaching an ordinary
     // caller is expected traffic. @guarded above is the other answer, for a
@@ -5796,10 +5796,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const LOG_OP = { create: 'create', update: 'update', delete: 'delete', remove: 'delete', upsert: 'update' }
   // The trail's snapshots for a row result, by op: a delete's `before` is the
   // row, a soft remove's is the row with its stamp cleared, an update's is the
-  // row the planner read first; a create has none. A bulk write records which
-  // rows and what operation, never their contents.
+  // row the planner read first; a create has none. A remove keeps an `after`
+  // (the stamped row) because it is what tells a trash from a purge: both file
+  // as `delete`, and only the purge leaves no row behind. A bulk write records
+  // which rows and what operation, never their contents.
   const LOG_BEFORE = { create: null, update: 'prefetch', delete: 'row', remove: 'undeleted', upsert: null }
-  const LOG_AFTER  = { create: true, update: true, delete: false, remove: false, upsert: true }
+  const LOG_AFTER  = { create: true, update: true, delete: false, remove: true, upsert: true }
 
   // The refusal a statement's op produces, by op rather than by verb: a DELETE
   // refused by a child is read back by its WHERE, every other refusal names
@@ -6206,7 +6208,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // their contents (same shape as createMany; see emitLogs).
     // The WHERE grades each row as it was; the post-update rule reads the row
     // as it is now, which only RETURNING carries (FJS-1713).
-    const _umPost = ctx.hasPolicies && !!shape.policy['post-update']
+    const _umPost = ctx.hasPolicies && !!shape.policy['postUpdate']
     const _umNeedRows = tableHasLogWork || _umWantRows || _umPost || !!plugins?.hearsWrites
     const _umStmt = frag(sqlJoin([KW.update, T, KW.set, _umSetAll, _umWhereClause, _umNeedRows && KW.returning], ''))
     return {
@@ -6575,7 +6577,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // below whether this update needs a transaction at all.
     const { scalar, nested, hasNested } = extractNestedWrites(data)
     const { data: scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
-    const _postUpdatePolicy = Boolean(ctx.hasPolicies && shape.policy['post-update'])
+    const _postUpdatePolicy = Boolean(ctx.hasPolicies && shape.policy['postUpdate'])
     // One UPDATE with no transaction open is its own unit, as a one-statement
     // create is (`FJS-1106`). What keeps the transaction: a nested or edge
     // write (more statements), a post-update policy (its refusal IS the
@@ -8462,7 +8464,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // — the compromise the collection form has to make and this one does not.
       // The conflict half's post-update rule reads the row as it is now, which
       // only RETURNING carries — updateMany's reason (FJS-1730).
-      const _usPost = ctx.hasPolicies && !!shape.policy['post-update']
+      const _usPost = ctx.hasPolicies && !!shape.policy['postUpdate']
       const _usNeedRows = tableHasLogWork || _usWantRows || _usPost || !!plugins?.hearsWrites
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
       // The conflict half is an update and is graded as one — without this a
@@ -8801,8 +8803,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // The children and the parent come back together, or neither does — the
       // walk below is many statements and used to be that many auto-commits
       // (`FJS-638`).
-      let restored
+      let restored, trashed = null
       await tx.wrapExclusive(() => {
+      // The stamp the restore clears is the one fact the trail's `before` needs
+      // and RETURNING cannot carry.
+      if (tableHasLogWork) trashed = readDb.query(`SELECT * FROM ${ident(tableName).sql} WHERE ${whereSql}`).all(...params)
       // If cascading, restore child tables too (reverse of delete cascade).
       // Only the children holding the ROOT'S stamp: remove() stamps every live
       // child with its own timestamp and leaves an already-deleted child with
@@ -8843,9 +8848,18 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       })
       // Un-deleting is a write and belongs in the trail. It logs as 'update' —
       // the entry vocabulary is create|update|delete|read, and a restored row is
-      // a row that changed state, not one that was created.
+      // a row that changed state, not one that was created. One row carries its
+      // images like any single-row write; many name their ids.
       if (tableHasLogWork && restored.length) {
-        emitLogs('update', restored, { written: [Object.fromEntries(['deletedAt', ..._stampCols].map(c => [c, null]))] })
+        const written = [Object.fromEntries(['deletedAt', ..._stampCols].map(c => [c, null]))]
+        const one = restored.length === 1 && trashed?.length === 1
+        emitLogs('update', restored, one
+          ? {
+              before: trailImage(trashed[0], read(trashed[0], { mode: 'single' })),
+              after:  trailImage(restored[0], read(restored[0], { mode: 'single' })),
+              written,
+            }
+          : { written })
       }
       // The rows, shaped — not `{ count }`. Three sources claimed three
       // different answers here (index.d.ts said one row, CLAUDE.md said an
@@ -9697,7 +9711,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
           if (allowed && policies) {
             updateOk ??= admits('update', row)
-            if (!postOk.has(to)) postOk.set(to, admits('post-update', { ...row, [fieldName]: to }))
+            if (!postOk.has(to)) postOk.set(to, admits('postUpdate', { ...row, [fieldName]: to }))
             allowed   = updateOk && postOk.get(to)
             refusedBy = allowed ? null : 'policy'
           }
@@ -11022,7 +11036,7 @@ function makeLockPrimitive(rawWriteDb) {
           }
           continue
         }
-        if (op === 'post-update') {
+        if (op === 'postUpdate') {
           const named = fieldsIn(rule.expr).find(n => keys.encryptedAny.has(n))
           if (named) throw new Error(
             `${decl} cannot be answered — "${named}" holds encoded bytes and a post-update check reads the row back ` +
@@ -11060,16 +11074,16 @@ function makeLockPrimitive(rawWriteDb) {
           ? `A self-relation cannot delegate to itself: SQL has no unbounded recursion here, so "readable if ` +
             `its parent is" is expressible only as a column every row carries — denormalize the answer onto ` +
             `${back} and compare that.`
-          : `Point one side at the columns it needs — @@allow('${loop[0].op}', …) over ${back}'s own fields — ` +
+          : `Point one side at the columns it needs — @@allow(${loop[0].op}, …) over ${back}'s own fields — ` +
             `so the pair has a direction.`))
     }
 
     for (const { model, op, field, target, targetOp, protectedBy } of gateOnly) {
       console.warn(
-        `[litestone] ${model}: @@allow/@@deny('${op}', check(${field})) delegates to ${target}, whose protection for ` +
+        `[litestone] ${model}: @@allow/@@deny(${op}, check(${field})) delegates to ${target}, whose protection for ` +
         `'${targetOp}' is ${protectedBy} and no row policy. Delegation compiles the TARGET'S POLICY only — a ` +
         `gate is enforced a tier above, where no compiled predicate can see it — so this rule places no ` +
-        `restriction at all on ${model}. Give ${target} an @@allow('${targetOp}', …), or drop the check() and ` +
+        `restriction at all on ${model}. Give ${target} an @@allow(${targetOp}, …), or drop the check() and ` +
         `say what ${model} requires.`)
     }
   }
@@ -12348,7 +12362,7 @@ function makeLockPrimitive(rawWriteDb) {
   // with `changes` over it under `post-update`. `delete` grades `row` as stored.
   // The gate and the `@@capabilities` grid first, as the write's own plugins do.
   //
-  // Field `@allow('write')` and `@@transitions` are not graded here. On a mirror
+  // Field `@allow(write)` and `@@transitions` are not graded here. On a mirror
   // the first is refused by the parser on every Provider column, and a `@local`
   // one is written through the table; a claim on a model declaring the second
   // is refused at its bind (`FJS-D1162`).
@@ -12374,7 +12388,7 @@ function makeLockPrimitive(rawWriteDb) {
         return policyVerdict(modelName, withLiteralDefaults(row, shapes[modelName].literalDefaults), ownCtx, 'create')
       const before = policyVerdict(modelName, row, ownCtx, op)
       if (!before.ok || op === 'delete') return before
-      return policyVerdict(modelName, { ...row, ...(changes ?? {}) }, ownCtx, 'post-update')
+      return policyVerdict(modelName, { ...row, ...(changes ?? {}) }, ownCtx, 'postUpdate')
     }
   }
 

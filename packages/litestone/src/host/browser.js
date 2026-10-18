@@ -18,8 +18,9 @@
 // column inside the statement that read it — but that is the smaller reason.
 // The larger one is that decrypting on a device means the key is on the device,
 // and a column is `@encrypted` precisely because somebody decided it should not
-// be lying around. A local database holding the ciphertext and refusing to read
-// it is the correct outcome, not a gap.
+// be lying around. So a device never holds the ciphertext either: `deviceSchema`
+// drops such a column from a `@@sync` model and grades it `lost` (`FJS-D893`),
+// and a schema that still carries one is refused at `createClient`.
 
 const no = (what, instead) => () => {
   const e = new Error(`[Litestone] ${what} is not available in a browser. ${instead}`)

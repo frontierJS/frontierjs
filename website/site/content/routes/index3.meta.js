@@ -62,7 +62,7 @@ const SAMPLES = {
   <EditButton />   // a third opinion, in a third language
 )}`,
   S6: `model Lead {
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }
 
 // the query is filtered, the API returns 403,

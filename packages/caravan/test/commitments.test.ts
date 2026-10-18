@@ -647,7 +647,7 @@ describe('the move is graded, not bypassed', () => {
   it('a row policy that hides the row from the app\'s principal FAILS the fire, naming both', async () => {
     // A move on a row the caller cannot see answers null (`FJS-1093`), and the
     // fire counted that as made: the job went done and the row stayed owed.
-    const hidden = SCHEMA.replace('model Order {', 'model Order {\n  @@allow(\'all\', auth() != null)')
+    const hidden = SCHEMA.replace('model Order {', 'model Order {\n  @@allow(all, auth() != null)')
     const { app, db, queue, advance, status } = await started(hidden)
     const order = await db.asSystem().order.create({ data: {} })
 

@@ -207,7 +207,7 @@ It is a lookup, not a decision tree drawn beside the table — a tree would be f
 to disagree with it. All eight combinations are named, including the three that
 are not a word, so the answer is never silence. *Does it depend who is asking?*
 is shown **beside** the answer rather than as a fourth question, because a field
-`@allow('read', …)` multiplies with every row instead of partitioning them.
+`@allow(read, …)` multiplies with every row instead of partitioning them.
 
 **Legal and worth a look** is the other half. Every rule fires on a schema the
 parser accepts — each case parses clean and is still wrong. The list is `RULES`
@@ -219,7 +219,7 @@ in `src/core/advise.js`; among them:
 | `gate-over-own-standing` | a gate is per MODEL, so `@@gate` on the table `getLevel` reads from lets any caller at that level rewrite anyone else's standing |
 | `required-system-unfilled` | `@system` is out of create-mode `required`, so no form asks for it and the application must name it on the write |
 | `guarded-and-encrypted-is-secret` | the pair by hand is `@secret` spelled out |
-| `fts-over-a-column-search-cannot-read` | `@@fts` over `@encrypted`/`@hashed`: the index holds ciphertext, so search returns nothing and says nothing. Over `@guarded` it matches and is then stripped, and `snippet()` renders the text |
+| `fts-over-a-column-search-cannot-read` | `@@fts` over `@encrypted`/`@hashed`: the index holds ciphertext, so search returns nothing and says nothing. Over `@guarded` it matches and is then stripped, and `snippet()` renders the text. Over a `Json` column the index holds the serialized document, so its keys are searchable words |
 | `foreign-key-without-index` | SQLite indexes a PK and a UNIQUE and nothing else, so an unindexed FK scans — including every `ON DELETE CASCADE` walk |
 | `transition-to-a-state-nothing-reaches` | an enum value no `@@transitions` move ends at, and not the default: a state nothing can put a row in |
 | `label-column-that-may-be-null` | `@@label` on an optional column: a blank row in every picker, sorted together and matching no search |
@@ -227,8 +227,8 @@ in `src/core/advise.js`; among them:
 | `index-another-index-already-covers` | a prefix of a longer index, or a duplicate of what `@unique` built. A `@@softDelete` model is exempt: there every `@@index` is partial and every UNIQUE is not |
 | `retention-without-an-index` | a model a `retention` window sweeps by `createdAt < cutoff`, with no index leading with `createdAt`: every sweep scans the table, due or not |
 | `declared-and-unreferenced` | an enum or type nothing uses |
-| `check-without-an-operation-in-a-write-rule` | a bare `check(rel)` takes its rule's operation, so `@@allow('create', check(inbox))` asks who may create an inbox, not who may see one |
-| `write-policy-reads-a-parent-without-post-update` | a create or update policy reads a parent through a key a caller can move, and no `@@allow('post-update', …)` grades the row after the move |
+| `check-without-an-operation-in-a-write-rule` | a bare `check(rel)` takes its rule's operation, so `@@allow(create, check(inbox))` asks who may create an inbox, not who may see one |
+| `write-policy-reads-a-parent-without-post-update` | a create or update policy reads a parent through a key a caller can move, and no `@@allow(postUpdate, …)` grades the row after the move |
 
 The rules run on the **proposed** schema in the
 preview, with anything already true of the file marked as such — a warning that

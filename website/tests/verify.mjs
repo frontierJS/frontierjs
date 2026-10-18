@@ -102,7 +102,7 @@ const ENTITIES = { '&lt;': '<', '&gt;': '>', '&nbsp;': ' ', '&rarr;': '\u2192', 
 const textOf = (h) => Object.entries(ENTITIES)
   .reduce((t, [e, c]) => t.split(e).join(c), h.replace(/<[^>]+>/g, ''))
 t('samples.literalBraces', pres.some(p => textOf(p).includes('{#each leads.data as lead}'))
-                        && pres.some(p => textOf(p).includes("@@allow('read'")))
+                        && pres.some(p => textOf(p).includes("@@allow(read")))
 t('samples.noRawTag',   pres.every(p => !p.includes('{@html')))
 
 // Highlighted by glow, which marks a token with the ELEMENT that means it and

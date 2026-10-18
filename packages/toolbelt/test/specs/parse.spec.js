@@ -219,7 +219,7 @@ test('parse: an ordering against a literal null is refused, == and != are not', 
 
 test('parse: a malformed number literal is refused rather than lexed as NaN', function () {
   // A NaN literal compared equal to every number on the JS side, so
-  // @@allow('create', qty <= 1.000.000) admitted any qty while SQL hid the row.
+  // @@allow(create, qty <= 1.000.000) admitted any qty while SQL hid the row.
   for (const src of ['1..', '-1.2.3']) assert.throws(() => tokenize(src), /Malformed number/)
   assert.equal(tokenize('1.5')[0].value, 1.5)
   assert.equal(tokenize('-2')[0].value, -2)

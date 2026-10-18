@@ -226,7 +226,7 @@ describe('the numbers are computed over the rows the caller may READ', () => {
       id      Int    @id
       ownerId Int
       amount  Int
-      @@allow("read", ownerId == auth().id)
+      @@allow(read, ownerId == auth().id)
     }
     model User { id Int @id  @@auth }
   `

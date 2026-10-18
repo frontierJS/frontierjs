@@ -34,7 +34,7 @@ model Project {
   id          Int    @id
   workspaceId Int
   name        String
-  @@allow('read', name != '')
+  @@allow(read, name != '')
 }
 
 model Plan {
@@ -140,7 +140,7 @@ describe('tenancy { strategy row } — desugaring', () => {
     // read. `post-update` rides with the first rule because it asks the same
     // question of the row the write produced — *is this still mine* — which is
     // what stops a caller pushing their own row into another tenant.
-    expect(ops).toEqual(['read,update,delete,post-update', 'create'])
+    expect(ops).toEqual(['read,update,delete,postUpdate', 'create'])
   })
 
   it('stamps the column', () => {
@@ -205,7 +205,7 @@ describe('tenancy { strategy row } — desugaring', () => {
   })
 
   it('refuses @@gate and @@allow on a jsonl model, and a client will not open it', async () => {
-    for (const rule of ['@@gate(8)', `@@allow('read', auth() != null)`]) {
+    for (const rule of ['@@gate(8)', `@@allow(read, auth() != null)`]) {
       const text = `
         database rawj { path "./rawj/" driver jsonl }
         model Note { id String @id @default(uuid())  text String  @@db(rawj)  ${rule} }
@@ -476,7 +476,7 @@ describe('createTenantRegistry reads the block', () => {
 // WHERE matched legitimately at the moment it ran, and the row landed in
 // somebody else's tenant.
 //
-// A hand-written `@@allow('all', col == auth().claim)` never had the hole, and
+// A hand-written `@@allow(all, col == auth().claim)` never had the hole, and
 // that is what found it: basecamp's own tests kept passing on the hand-written
 // version and failed the moment the same models moved to the declaration. `all`
 // expands to every operation including `post-update`, so an allow was graded
@@ -532,7 +532,7 @@ describe('a row cannot be moved out of its tenant', () => {
 
   it('grades a hand-written post-update rule on updateMany as update() does', async () => {
     const db: any = await createClient({ db: ':memory:', schema: `
-      model Task { id Int @id @default(autoincrement())  status String  @@allow('all', true)  @@deny('post-update', status == 'locked') }
+      model Task { id Int @id @default(autoincrement())  status String  @@allow(all, true)  @@deny(postUpdate, status == 'locked') }
     ` })
     const sys = db.asSystem()
     await sys.task.create({ data: { status: 'open' } })
@@ -561,7 +561,7 @@ describe('a row cannot be moved out of its tenant', () => {
 
   it('grades a hand-written post-update rule on upsertMany, a key repeated in the batch included', async () => {
     const db: any = await createClient({ db: ':memory:', schema: `
-      model Task { id Int @id  status String  @@allow('all', true)  @@deny('post-update', status == 'locked') }
+      model Task { id Int @id  status String  @@allow(all, true)  @@deny(postUpdate, status == 'locked') }
     ` })
     const sys = db.asSystem()
     await sys.task.create({ data: { id: 1, status: 'open' } })
@@ -1023,15 +1023,15 @@ model Page {
   id          Int    @id
   workspaceId Int
   name        String
-  @@allow('read', workspaceId == auth().workspaceId)
+  @@allow(read, workspaceId == auth().workspaceId)
 }
 
 model Note {
   id          Int    @id
   workspaceId Int
   name        String
-  @@allow('read', auth().memberRole == 'guest')
-  @@allow('create', auth().memberRole == 'guest')
+  @@allow(read, auth().memberRole == 'guest')
+  @@allow(create, auth().memberRole == 'guest')
 }
 `
   const seed = async () => {

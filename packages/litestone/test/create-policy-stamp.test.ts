@@ -8,7 +8,7 @@ model Lens {
   id      Int     @id
   name    String
   ownerId String  @default(auth().id)
-  @@allow('all', ownerId == auth().id)
+  @@allow(all, ownerId == auth().id)
 }
 `
 
@@ -36,8 +36,8 @@ model Sub {
   ownerId  String  @default(auth().id)
   channel  Channel @default(email)
   public   Boolean @default(false)
-  @@allow('create', ownerId == auth().id && channel == 'email' && public == false)
-  @@allow('read', true)
+  @@allow(create, ownerId == auth().id && channel == 'email' && public == false)
+  @@allow(read, true)
 }
 `
 

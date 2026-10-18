@@ -137,7 +137,7 @@ model Note {
   id      Int    @id
   ownerId Int
   body    String
-  @@allow("read", ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }
 `, db: ':memory:' })
     const sys = db.asSystem()

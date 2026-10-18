@@ -30,7 +30,7 @@ model Lead {
   @@gate(2.4.4.5)
 
   // Policy — a row predicate, compiled into the SQL
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }`,
   S1: `// name  ← the filename      ('leads.service.ts' → /api/leads)
 // model ← the service name  ('leads' → db.lead)

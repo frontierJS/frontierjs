@@ -1605,7 +1605,7 @@ function wardenPanel() {
       v.system ? yes('lifted for system') : OPS.filter(op => v.ops[op].ok).map(opBadge).join(' ') || quiet('nothing reached')],
     ['5', 'field', 'which columns',
       (m.fields ?? []).length ? m.fields.map(f => `<code>${esc(f.name)}</code> <span class="text-xs text-muted">${esc(f.protection ?? '')}${
-        f.allows?.length ? ' · ' + f.allows.map(a => `@allow('${a.operations.join("','")}', ${a.expr})`).map(esc).join(' ') : ''}</span>`).join('<br>')
+        f.allows?.length ? ' · ' + f.allows.map(a => `@allow(${a.operations.length > 1 ? 'all' : a.operations[0]}, ${a.expr})`).map(esc).join(' ') : ''}</span>`).join('<br>')
         : none('No column is protected.'),
       (m.fields ?? []).length ? (v.system ? yes('writes @system') : some(`${m.fields.length} held back`)) : quiet('none')],
     ['6', 'validate', 'is it well-formed', none('Field rules and unknown keys — integrity, the same for every caller.'), quiet('everyone')],

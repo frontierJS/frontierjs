@@ -5,7 +5,7 @@ import type { CustomField } from '../domain/shop/custom-fields.ts'
 import { checkoutCodeFor, cartClaim } from '../domain/shop'
 import { postJournal, saleJournal } from '../domain/ledger.ts'
 
-// The basket. Its ACCESS is entirely in db/schema.lite — `@@allow('read',
+// The basket. Its ACCESS is entirely in db/schema.lite — `@@allow(read,
 // id == auth().cartId)` on both models — so nothing in this file checks
 // who is calling. What it adds is the three things a policy cannot express:
 // minting a basket, adding to it at the price the shopper is being shown, and
@@ -420,7 +420,7 @@ export default createService({
 
     // Built through the SYSTEM client, and this is the one call where that is
     // right. Every other method here reads lines through the caller's own
-    // client so `@@allow('read', cartId == auth().cartId)` does the work —
+    // client so `@@allow(read, cartId == auth().cartId)` does the work —
     // and the caller redeeming a code holds no claim yet, because the claim
     // rides a header on the NEXT request. Reading as the caller answers a
     // basket with `lines: []` and `count: 0`: a wrong policy is an empty
@@ -535,7 +535,7 @@ export default createService({
     // written here, and afterwards it is a receipt.
     //
     // Two writes, and they are not the same fact. The order carries the id so
-    // `@@allow('read', userId == auth().id)` can answer without traversing a
+    // `@@allow(read, userId == auth().id)` can answer without traversing a
     // relation; the customer record carries it so the NEXT sale, and the
     // order history screen, find the person rather than a second record with
     // the same address.

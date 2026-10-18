@@ -287,9 +287,10 @@ async function main() {
     labels(await c.completion(u('valid'), 17, col(17, '@from(') + 6)),
     { has: ['Lead', 'Owner'], hasNot: ['lead', 'owner', 'Int'] })
 
-  completion('inside @@gate(...)',
+  // FJS-D239: a gate is digits; a level name there is a parse error.
+  completion('inside @@gate(...) — digits, never level names',
     labels(await c.completion(u('valid'), 25, col(25, '@@gate(') + 8)),
-    { has: ['STRANGER', 'USER', 'SYSADMIN'], hasNot: ['Int', '@id'] })
+    { has: ['0', '4', '7', '9'], hasNot: ['STRANGER', 'USER', 'SYSADMIN', 'Int', '@id'] })
 
   completion('inside @@trail(...)',
     labels(await c.completion(u('valid'), 26, col(26, '@@trail(') + 8)),
@@ -445,6 +446,36 @@ async function main() {
     const absent = (await c.openDoc(`file://${root}`, absentText)).filter(d => d.severity === 1)
     ok('an import that resolves to nothing is not an error squiggle',
        absent.length === 0, absent.map(d => d.message).join(' | '))
+
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+
+  // ── The app's own parser ───────────────────────────────────────────────────
+  // FJS-1404: an installed bundle is frozen at its build, so the editor called
+  // correct schemas broken. The stub parser answers with a sentence the bundle
+  // cannot produce, which is what proves whose parser ran.
+  section("the app's own parser")
+  {
+    const dir     = fs.mkdtempSync(path.join(os.tmpdir(), 'lsp-app-parser-'))
+    const install = (app, body) => {
+      const core = path.join(dir, app, 'node_modules', '@frontierjs', 'litestone', 'src', 'core')
+      fs.mkdirSync(core, { recursive: true })
+      fs.mkdirSync(path.join(dir, app, 'db'), { recursive: true })
+      fs.writeFileSync(path.join(core, 'parser.js'), body)
+      return `file://${path.join(dir, app, 'db', 'schema.lite')}`
+    }
+    const text = 'model Lead {\n  id Int @id\n}\n'
+
+    const own = install('own', "export function parse() {\n" +
+      "  return { valid: false, errors: ['the app parser answered'], warnings: [], schema: null }\n}\n")
+    const ownDiags = await c.openDoc(own, text)
+    ok('a document is parsed by the litestone above it, not the bundle',
+       ownDiags.some(d => d.message === 'the app parser answered'), ownDiags.map(d => d.message).join(' | '))
+
+    const broken = install('broken', "throw new Error('half-installed')\n")
+    const brokenErrors = (await c.openDoc(broken, text)).filter(d => d.severity === 1)
+    ok('a litestone that fails to load falls back to the bundle',
+       brokenErrors.length === 0, brokenErrors.map(d => d.message).join(' | '))
 
     fs.rmSync(dir, { recursive: true, force: true })
   }

@@ -4452,7 +4452,7 @@ function acFields() {
       <td><b>${esc(m.name)}</b></td>
       <td><code>${esc(f.name)}</code></td>
       <td>${f.protection ? `<span class="badge info">${esc(f.protection)}</span>` : ''}</td>
-      <td>${f.allows.map(a => `<code>@allow('${esc(a.operations.join("','"))}', ${esc(a.expr)})</code>`).join('<br>')}</td>
+      <td>${f.allows.map(a => `<code>@allow(${esc(a.operations.length > 1 ? 'all' : a.operations[0])}, ${esc(a.expr)})</code>`).join('<br>')}</td>
     </tr>`)).join('')
 
   return `

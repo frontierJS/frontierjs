@@ -54,8 +54,9 @@ const MODEL_FIXTURES: Record<string, string> = {
   partialUnique: '@@unique([a], where: b > 0)\n  @@unique([b], where: a > 0)',
   check:       '@@check("a > 0", "a must be positive")\n  @@check("b > 0", "b must be positive")',
   scope:       '@@scope(mine, a > 0)\n  @@scope(other, b > 0)',
-  allow:       "@@allow('read', a > 0)\n  @@allow('read', b > 0)",
-  deny:        "@@deny('read', a > 0)\n  @@deny('read', b > 0)",
+  allow:       "@@allow(read, a > 0)\n  @@allow(read, b > 0)",
+  deny:        "@@deny(read, a > 0)\n  @@deny(read, b > 0)",
+  require:     "@@require(create, a > 0)\n  @@require(create, b > 0)",
   trait:       '@@trait(T1)\n  @@trait(T2)',
   // One per move owed — the same deadline twice is @@commitment's own refusal.
   // One per FIELD — two machines on one row, as an invoice's status and its
@@ -68,7 +69,7 @@ const MODEL_FIXTURES: Record<string, string> = {
 }
 
 const FIELD_FIXTURES: Record<string, string> = {
-  fieldAllow: "@allow('read', true) @allow('write', true)",
+  fieldAllow: "@allow(read, true) @allow(write, true)",
 }
 
 describe('every listed kind is a kind the parser actually emits', () => {

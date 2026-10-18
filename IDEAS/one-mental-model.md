@@ -114,7 +114,7 @@ model Lead {
   id    Int    @id
   email String @email @unique @lower
   @@gate("0.4.4.5")                    // read/create/update/delete levels
-  @@allow('read', userId == auth().id) // row policy → compiled into SQL
+  @@allow(read, userId == auth().id) // row policy → compiled into SQL
   @@log(audit)
 }
 ```

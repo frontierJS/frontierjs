@@ -2,7 +2,7 @@
 // of its side pane, which holds the study where `fli haven` passed one
 // (`IDEAS/study.md` 1.4), and a session handed to the study to open
 // (study.md 3.3). Null where the shell was started with no side.
-export { sideToggle } from '@frontierjs/mesa/runtime/terminal.js'
+export { sideToggle } from '@frontierjs/mesa/runtime/terminal'
 import { checkout } from '../hash/ledger.js'
 import { readStudy } from './kept.js'
 

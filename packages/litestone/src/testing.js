@@ -380,7 +380,7 @@ export async function createTestEnv(opts = {}) {
   // The gate ladder's clients carry no field WRITE policy. One the synthetic
   // principal fails drops its column without a word, so a required column
   // fails NOT NULL and the gate is never asked — auth's
-  // `email @allow('write', auth().isAdmin)` did that to User.create at every
+  // `email @allow(write, auth().isAdmin)` did that to User.create at every
   // level from 4 to 7. Built only when the schema declares one.
   const unpoliced  = new Map()
   const fieldWrite = (a) => a.kind === 'fieldAllow' && a.operations?.includes('write')
@@ -924,7 +924,7 @@ export async function createTestEnv(opts = {}) {
      * on the feature already has.
      */
     verifyTenantIsolation: async ({ against = null, actors = null,
-                                   ops = ['read', 'create', 'update', 'delete', 'post-update'] } = {}) => {
+                                   ops = ['read', 'create', 'update', 'delete', 'postUpdate'] } = {}) => {
       const schema  = against ?? built.parsed.schema
       const t       = schema.tenancy
       const wanted  = new Set(ops)
@@ -1150,7 +1150,7 @@ export async function createTestEnv(opts = {}) {
           }
 
           // ── post-update — B moves its OWN row into A's tenant ───────────────
-          if (wanted.has('post-update') && rowA && (!gate || gate.update <= 7)) {
+          if (wanted.has('postUpdate') && rowA && (!gate || gate.update <= 7)) {
             let rowB = null
             try { rowB = await _seedForTenant(schema, model.name, vb, chain, new Map()) }
             catch { /* B's own row could not be built; the move below is unaskable */ }
@@ -1179,7 +1179,7 @@ export async function createTestEnv(opts = {}) {
                   const after = moved ? await sys[acc].findUnique({ where }) : null
                   if (after && String(after[key]) === String(move[key])) {
                     out.push({
-                      model: model.name, op: 'post-update', actor: 'B', got: 'leaked',
+                      model: model.name, op: 'postUpdate', actor: 'B', got: 'leaked',
                       message: `${model.name}#${_rowId(schema, model.name, rowB)} started in tenant B and a caller in tenant B moved it into tenant A by writing '${key}' through ${verb}()` })
                     break
                   }
@@ -2777,7 +2777,7 @@ function withDeclaredCapabilities(who, schema) {
  */
 //
 // A deny comparing a claim to a LITERAL gets the literal. `@@deny` fires on
-// UNKNOWN, so example's `@@deny('create', auth().isStaff != true)` refused every
+// UNKNOWN, so example's `@@deny(create, auth().isStaff != true)` refused every
 // create and Flow's owner deny beside it could not be graded. Filled from denies
 // only: in an allow the same value would admit every row and leave a policy
 // with all its rows on one side.

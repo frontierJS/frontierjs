@@ -120,7 +120,7 @@ describe('what the trail gate does not reach', () => {
 // @@deny parsed and admitted every caller to every row (FJS-2148).
 describe('a row policy on a trail model is refused by name', () => {
 
-  for (const rule of [`@@allow('read', auth().id == actorId)`, `@@deny('read', auth().id != actorId)`]) {
+  for (const rule of [`@@allow(read, auth().id == actorId)`, `@@deny(read, auth().id != actorId)`]) {
     test(rule.slice(0, 7), async () => {
       const dir = mkdtempSync(join(tmpdir(), 'fjs-trail-gate-'))
       const schema = `

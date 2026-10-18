@@ -6,10 +6,10 @@
 // declared in two files neither of which is this one:
 //
 //   @@gate(4.4.4.5)        read/create/update at USER(4), delete at ADMIN(5)
-//   @@allow('read', …)       your own row, or every row if you are staff
-//   @@allow('update', …)     your own row, or any row if you are an admin
-//   email, role, emailVerified  @allow('write', auth().isAdmin)
-//   isStaff       @allow('write', auth().isAdmin)
+//   @@allow(read, …)       your own row, or every row if you are staff
+//   @@allow(update, …)     your own row, or any row if you are an admin
+//   email, role, emailVerified  @allow(write, auth().isAdmin)
+//   isStaff       @allow(write, auth().isAdmin)
 //
 // So the four things a person can do on the users screen — see the roster,
 // promote somebody to staff, change a role, mark an address verified — are each
@@ -58,12 +58,12 @@
 // the mistake `payments.refund` documents at length and refuses to make.
 //
 // A plain create asks instead. `db/user.lite` declares
-// `@@allow('create', auth().isAdmin)`, so the Data boundary refuses a shopper
+// `@@allow(create, auth().isAdmin)`, so the Data boundary refuses a shopper
 // with a 403 naming the model, and moving that line moves this method with it.
 // Three more things come free and none of them is written here:
 //
 //   · `email`, `role`, `emailVerified` and `isStaff` are each
-//     `@allow('write', auth().isAdmin)`, so the same payload from a
+//     `@allow(write, auth().isAdmin)`, so the same payload from a
 //     non-admin is accepted with those columns unmoved.
 //   · `email @unique` answers `UniqueConflictError` — a 409 carrying `errors`,
 //     so <Form> marks the box rather than showing a banner. auth's own

@@ -619,7 +619,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       fieldSchema['x-litestone-required-where'] = reqWhere.where
     }
 
-    // @allow('write', expr) — whether this caller may write this column depends
+    // @allow(write, expr) — whether this caller may write this column depends
     // on the ROW, so no keyword on this schema can answer it and `readOnly`
     // would be a lie for every caller the predicate admits. What the boundary
     // does when it does not admit them is DROP the value, silently and
@@ -637,7 +637,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     // session answers without a row; a predicate outside it stays the bare bit.
     //
     // Emitted before the read block below, which `continue`s on a non-optional
-    // field — `@allow('all', …)` is both halves on one column, and ordering it
+    // field — `@allow(all, …)` is both halves on one column, and ordering it
     // the other way drops the write flag for exactly those.
     if (audience === 'client' &&
         field.attributes.some(a => a.kind === 'fieldAllow' && a.operations.includes('write'))) {
@@ -658,7 +658,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     const owedByCaller = mode !== 'update' && !isSystemWritten && !authStamped &&
       !field.type.optional && !isServerFilled(field, model) && (!isId || !isServerAssignedId(field, model))
 
-    // @allow('read', expr) — field is conditionally visible; mark as optional + annotate
+    // @allow(read, expr) — field is conditionally visible; mark as optional + annotate
     const readAllows = field.attributes.filter(a => a.kind === 'fieldAllow' && a.operations.includes('read'))
     if (readAllows.length && audience === 'client') {
       fieldSchema['x-litestone-read-policy'] = true
@@ -666,7 +666,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       if (!field.type.optional) {
         const adjusted = Object.assign({}, fieldSchema)
         delete adjusted['x-litestone-read-policy']
-        // The write flag is hoisted with it. `@allow('all', …)` on a
+        // The write flag is hoisted with it. `@allow(all, …)` on a
         // non-optional column takes this branch, and a flag left inside
         // `anyOf[0]` is one a consumer reads only if it unwraps the union
         // first — which is the difference between a rule that carries it and

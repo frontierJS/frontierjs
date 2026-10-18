@@ -275,7 +275,7 @@ try {
   // 3 ─ a stranger reads no customers at all
   //
   // This used to assert the field-level policy from here — `notes` is
-  // `@allow('read', auth().role == 'admin')`, so the column was ABSENT rather
+  // `@allow(read, auth().role == 'admin')`, so the column was ABSENT rather
   // than blank for an anonymous caller. That worked because `Customer` read at
   // level 0, which is the catalog's gate on the shop's address book. The
   // field policy is still asserted, twice, at level 4 and level 5 — where the
@@ -514,7 +514,7 @@ try {
   `))
 
   // …and the same column in the EDIT DRAWER, which is the half a table cannot
-  // show. `notes` is `@allow('read', …)`, and the boundary enforces it by
+  // show. `notes` is `@allow(read, …)`, and the boundary enforces it by
   // STRIPPING the key — so for anybody but an admin the form holds no value and
   // an ordinary empty box saves that emptiness over the note. This drawer is
   // where that costs the most: it carries `autosave={1000}`, so nobody has to
@@ -1293,7 +1293,7 @@ try {
   await signIn('user', 4)
 
   // The field policy, from the side that can see the rows. `notes` is
-  // `@allow('read', auth().role == 'admin')`, so a member of staff at level 4
+  // `@allow(read, auth().role == 'admin')`, so a member of staff at level 4
   // gets the column ABSENT rather than blank — stripped by the Data boundary,
   // with nothing in the component saying so. Admin's side of the same
   // assertion is `customers.headersAdmin` above.
@@ -1388,7 +1388,7 @@ const expected = {
   // A stranger reads no customers at all — the address book is not the
   // catalog, and the screen says so rather than showing an empty table.
   'customers.anonSeesNothing': { rows: 0, told: true },
-  // The field policy, both sides. `notes` is @allow('read', role == 'admin'),
+  // The field policy, both sides. `notes` is @allow(read, role == 'admin'),
   // so the column is ABSENT at level 4 and present at 5 — stripped at the Data
   // boundary, with nothing in the component saying so.
   // `Orders` is a @from count and is what makes `orders Order[] @keep` visible:

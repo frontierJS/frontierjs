@@ -63,7 +63,7 @@ model Item {
 }`
 
 const TENANCY    = `tenancy {\n  strategy row\n  column   workspaceId\n}`
-const ROW_POLICY = `@@allow('read', ownerId == auth().id || status == 'published')`
+const ROW_POLICY = `@@allow(read, ownerId == auth().id || status == 'published')`
 const TRANSITION = `@@transitions(status,\n    submit:  draft  -> review,\n    publish: review -> published\n  )`
 const AUDIT_DB   = `database audit {\n  path   "${DIR}/audit/"\n  driver trail\n}`
 
@@ -77,11 +77,11 @@ function chain(depth, policy) {
   for (let d = depth; d >= 1; d--) {
     const up   = d < depth ? `parentId Int\n  parent P${d + 1} @relation(fields: [parentId], references: [id])` : 'ownerId Int'
     const down = d > 1 ? `P${d - 1}[]` : 'Item[]'
-    const rule = !policy ? '' : d < depth ? `@@allow('read', check(parent))` : `@@allow('read', ownerId == auth().id)`
+    const rule = !policy ? '' : d < depth ? `@@allow(read, check(parent))` : `@@allow(read, ownerId == auth().id)`
     models.push(`model P${d} {\n  id Int @id\n  ${up}\n  children ${down}\n  ${rule}\n}`)
   }
   const leafUp = depth ? `parentId Int\n  parent P1 @relation(fields: [parentId], references: [id])` : ''
-  const leaf   = policy && depth ? `@@allow('read', check(parent))` : ''
+  const leaf   = policy && depth ? `@@allow(read, check(parent))` : ''
   return `${STATE}\n${models.join('\n')}\nmodel Item {\n  id Int @id\n  title String\n  status State @default(draft)\n  ${leafUp}\n  ${leaf}\n}`
 }
 
@@ -115,7 +115,7 @@ const CASES = [
     op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}` } }) },
   { name: 'create/tenancy-row', floor: 'create/bare',  schema: item({ head: TENANCY }),
     op: (t, i) => t.item.create({ data: { ownerId: 1, title: `t${i}` } }) },
-  { name: 'create/allow',       floor: 'create/bare',  schema: item({ rules: `@@allow('create', auth() != null)\n  ${ROW_POLICY}` }),
+  { name: 'create/allow',       floor: 'create/bare',  schema: item({ rules: `@@allow(create, auth() != null)\n  ${ROW_POLICY}` }),
     op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}` } }) },
   { name: 'create/version',     floor: 'create/bare',  schema: item({ extra: 'version Int @version' }),
     op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}` } }) },

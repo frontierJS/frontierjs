@@ -15,7 +15,7 @@ async function client() {
       model P {
         id     Int    @id
         photos File[]
-        @@allow('all', true)
+        @@allow(all, true)
       }
     `,
     db: ':memory:', plugins: [files],

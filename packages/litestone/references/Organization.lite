@@ -80,8 +80,8 @@ model Organization {
 
   /// Members read their own organization. `members` is the back-relation the
   /// host wires once `Member.userId` points at its identity model.
-  @@allow('read',   id == auth().orgId)
-  @@allow('update', id == auth().orgId)
+  @@allow(read,   id == auth().orgId)
+  @@allow(update, id == auth().orgId)
 }
 
 /// The row that makes a person a member, once. `@@relator` is the whole of
@@ -104,7 +104,7 @@ model Member {
   /// field-level write guard, which is the one line every instance got right:
   /// only an administrator changes a role, and a member who could change
   /// their own would be an administrator.
-  role      String       @default("member") @allow('write', auth().memberRole == 'admin')
+  role      String       @default("member") @allow(write, auth().memberRole == 'admin')
 
   createdAt DateTime     @default(now())
 
@@ -123,10 +123,10 @@ model Member {
   /// an administrator adds, changes and removes.
   @@gate(4.5.5.5)
 
-  @@allow('read',   userId == auth().id || orgId == auth().orgId)
-  @@allow('create', orgId == auth().orgId)
-  @@allow('update', orgId == auth().orgId)
-  @@allow('delete', orgId == auth().orgId)
+  @@allow(read,   userId == auth().id || orgId == auth().orgId)
+  @@allow(create, orgId == auth().orgId)
+  @@allow(update, orgId == auth().orgId)
+  @@allow(delete, orgId == auth().orgId)
 
   // Every instance audits this row (`@@trail(audit)`) — who was added, by whom,
   // with what role is the first question after a breach. The line is the

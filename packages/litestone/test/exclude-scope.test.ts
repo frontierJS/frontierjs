@@ -150,7 +150,7 @@ const WRITE_SCHEMA = `
     deletedAt  DateTime?
     @@softDelete
     @@exclude(person, range: [startsAt, endsAt])
-    @@allow('all', true)
+    @@allow(all, true)
   }
 
   model LeaveRequest {
@@ -159,8 +159,8 @@ const WRITE_SCHEMA = `
     fromDate   String  @date
     toDate     String  @date
     @@exclude(person, range: [fromDate, toDate])
-    @@allow('create', true)
-    @@allow('read', employeeId == auth().id)
+    @@allow(create, true)
+    @@allow(read, employeeId == auth().id)
   }
 `
 
@@ -373,7 +373,7 @@ const WHERE_SCHEMA = `
     endsAt     DateTime
     status     ShiftStatus @default(draft) @map("shift_status")
     @@exclude(person, range: [startsAt, endsAt], where: status != "cancelled")
-    @@allow('all', true)
+    @@allow(all, true)
   }
 
   model LeaveRequest {
@@ -383,7 +383,7 @@ const WHERE_SCHEMA = `
     endsAt     DateTime
     status     LeaveStatus @default(requested)
     @@exclude(person, range: [startsAt, endsAt], where: status == "approved")
-    @@allow('all', true)
+    @@allow(all, true)
   }
 `
 
@@ -457,7 +457,7 @@ const CLOCK = `
     opensAt  String @time(seconds: true)
     shutsAt  String @time(seconds: true)
     @@exclude(personDay, range: [opensAt, shutsAt])
-    @@allow('all', true)
+    @@allow(all, true)
   }
 `
 
@@ -531,7 +531,7 @@ const ROSTER = `
     endLocal    DateTime
     note        String?
     assignments Assignment[]
-    @@allow('all', true)
+    @@allow(all, true)
   }
 
   model Assignment {
@@ -542,7 +542,7 @@ const ROSTER = `
     startsAt DateTime @from(shift, startLocal)
     endsAt   DateTime @from(shift, endLocal)
     @@exclude(person, range: [startsAt, endsAt])
-    @@allow('all', true)
+    @@allow(all, true)
   }
 `
 

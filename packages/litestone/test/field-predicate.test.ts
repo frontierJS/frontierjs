@@ -2,7 +2,7 @@
 //
 // `@guarded` is a set-membership test decided once per model, which is what let
 // `guarded-filter.test.ts` close its half with a walk over the caller's
-// arguments. `@allow('read'|'write', …)` on a field is a PREDICATE, and both
+// arguments. `@allow(read|'write', …)` on a field is a PREDICATE, and both
 // halves of it were answered in the wrong place.
 //
 // **Read (`FJS-442`)** — the column was stripped from the answer and left fully
@@ -32,8 +32,8 @@ model Person {
   id      Int     @id
   name    String
   ownerId String
-  salary  Int?    @allow('read', auth().isAdmin)
-  secretN Int?    @allow('read', auth().id == ownerId)
+  salary  Int?    @allow(read, auth().isAdmin)
+  secretN Int?    @allow(read, auth().id == ownerId)
   @@gate(0)
 }
 `
@@ -46,7 +46,7 @@ async function people() {
   return { db, sys, ada: db.$setAuth({ id: 'ada' }), admin: db.$setAuth({ id: 'zoe', isAdmin: true }) }
 }
 
-describe("@allow('read', …) on a field — the value is not recoverable by filtering", () => {
+describe("@allow(read, …) on a field — the value is not recoverable by filtering", () => {
 
   it('still strips the column from the answer', async () => {
     const { ada } = await people()
@@ -111,8 +111,8 @@ const SORT_SCHEMA = `
 model Doc {
   id      Int     @id
   ownerId Int
-  rank    Int?    @allow('read', ownerId == auth().id) @map("rank_col")
-  secret  String? @allow('read', ownerId == auth().id)
+  rank    Int?    @allow(read, ownerId == auth().id) @map("rank_col")
+  secret  String? @allow(read, ownerId == auth().id)
   @@gate(0)
 }
 `
@@ -173,7 +173,7 @@ const REL_SCHEMA = `
 model Person {
   id     Int    @id
   name   String
-  salary Int?   @allow('read', auth().isAdmin)
+  salary Int?   @allow(read, auth().isAdmin)
   posts  Post[]
   @@gate(0)
 }
@@ -216,14 +216,14 @@ describe('through a RELATION it is refused, because the predicate has no row the
 const WRITE_SCHEMA = `
 model Doc {
   id      Int     @id
-  ownerId String  @allow('write', auth().isAdmin)
+  ownerId String  @allow(write, auth().isAdmin)
   title   String
-  notes   String? @allow('write', auth().id == ownerId)
+  notes   String? @allow(write, auth().id == ownerId)
   @@gate(0)
 }
 `
 
-describe("@allow('write', …) on a field — the predicate reads the STORED row", () => {
+describe("@allow(write, …) on a field — the predicate reads the STORED row", () => {
 
   async function docs() {
     const db: any = await createClient({ db: ':memory:', schema: WRITE_SCHEMA })
@@ -292,10 +292,10 @@ const CROSSING = `
 model Thing {
   id       Int     @id
   owner    String
-  both     String  @allow('all',   owner == 'x')
-  bothOpt  String? @allow('all',   owner == 'x')
-  writeOnl String  @allow('write', owner == 'x')
-  readOnl  String  @allow('read',  owner == 'x')
+  both     String  @allow(all,   owner == 'x')
+  bothOpt  String? @allow(all,   owner == 'x')
+  writeOnl String  @allow(write, owner == 'x')
+  readOnl  String  @allow(read,  owner == 'x')
   plain    String
 }
 `
@@ -323,7 +323,7 @@ describe('a field write predicate crosses to the client', () => {
     })
   }
 
-  // `@allow('all', …)` on a NON-optional column is the one that takes the read
+  // `@allow(all, …)` on a NON-optional column is the one that takes the read
   // half's `anyOf` branch, and a flag left inside `anyOf[0]` is one a consumer
   // reads only if it unwraps the union first. `bothOpt` is the control: same
   // declaration, optional, so it never enters that branch.
@@ -377,14 +377,14 @@ describe('a read-policied NOT NULL column stays required to create', () => {
 
 // FJS-2649: a create the column's write policy refuses is a refusal of the
 // whole write -- the dropped required value reached SQLite as a 500.
-describe("a create a required column's @allow('write') refuses", () => {
+describe("a create a required column's @allow(write) refuses", () => {
   const SCHEMA = `
 model Member {
   id    Int     @id
   name  String
-  email String  @allow('write', auth().isAdmin)
-  tier  String  @default("free") @allow('write', auth().isAdmin)
-  note  String? @allow('write', auth().isAdmin)
+  email String  @allow(write, auth().isAdmin)
+  tier  String  @default("free") @allow(write, auth().isAdmin)
+  note  String? @allow(write, auth().isAdmin)
   @@gate(0)
 }
 `
@@ -406,7 +406,7 @@ model Member {
   })
 
   it('a default-carrying and an optional policied column are dropped, not refused', async () => {
-    const SCH = `model M { id Int @id\n name String\n tier String @default("free") @allow('write', auth().isAdmin)\n note String? @allow('write', auth().isAdmin)
+    const SCH = `model M { id Int @id\n name String\n tier String @default("free") @allow(write, auth().isAdmin)\n note String? @allow(write, auth().isAdmin)
  @@gate(0) }`
     const db: any = await createClient({ db: ':memory:', schema: SCH })
     const row = await db.$setAuth({ id: 'u' }).m.create({ data: { name: 'x', tier: 'gold', note: 'n' } })

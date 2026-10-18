@@ -3616,7 +3616,7 @@ export const sessionGateLevel: (user?: GradableUser | null) => number = gradeSta
  * to `$setAuth` therefore gives the Data boundary a principal with **no `id`**,
  * and a row policy written the documented way:
  *
- *   @@allow('read', userId == auth().id)
+ *   @@allow(read, userId == auth().id)
  *
  * compares a column to `undefined` and matches nothing. No error, no warning —
  * an empty list. Every gate still worked, because `sessionGateLevel()` was
@@ -3787,7 +3787,7 @@ function mergeClaims(ctx: ServiceContext, db: unknown, claims: PrincipalClaims):
   //
   // A caller with no session may still hold a claim the REQUEST proves: a cart
   // token, an invitation token, an unsubscribe token. The claims reach the Data
-  // boundary so `@@allow('read', token == auth().cartToken)` can scope rows to
+  // boundary so `@@allow(read, token == auth().cartToken)` can scope rows to
   // the bearer, which is the only way a schema can own access for a population
   // that has no `auth().id`.
   //
@@ -3946,7 +3946,7 @@ export function withLitestoneDb(
     //
     // This used to seed the ROOT client and leave $setAuth to
     // the service factory. A factory that never scoped ran unscoped — and a schema declaring
-    // `@@allow('read', ownerId == auth().id)` then compared against a null
+    // `@@allow(read, ownerId == auth().id)` then compared against a null
     // auth() and matched nothing. The service looked broken; the policy was
     // fine. Which factory you picked silently decided whether your row policies
     // worked.
@@ -4232,7 +4232,7 @@ export function membershipClaim(opts: MembershipClaimOptions): SelfDescribedReso
 // cannot traverse a relation; resolving to an id instead means the children are
 // already scoped by the id they carry.
 //
-// What travels is the SUBJECT, never the token. `@@allow('read', clientId ==
+// What travels is the SUBJECT, never the token. `@@allow(read, clientId ==
 // auth().portalClientId)` compares an id to an id, so the secret stops at this
 // function and never reaches a policy, a query or a log line.
 

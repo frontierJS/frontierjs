@@ -20,7 +20,7 @@ const SCHEMA = `
     id       Int    @id
     original File?  @accept("image/*")
     extras   File[]
-    @@allow('all', true)
+    @@allow(all, true)
   }
 `
 

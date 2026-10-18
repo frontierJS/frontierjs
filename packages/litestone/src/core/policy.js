@@ -103,7 +103,7 @@ export function policyExprToString(node) {
 // ─── Build policy map ─────────────────────────────────────────────────────────
 // { modelName: { 'read': { allows: [expr,...], denies: [expr,...] }, ... } }
 
-const _ALL_OPS = ['read', 'create', 'update', 'post-update', 'delete']
+const _ALL_OPS = ['read', 'create', 'update', 'postUpdate', 'delete']
 
 // ─── What a claim is, decided at startup ─────────────────────────────────────
 //
@@ -308,7 +308,7 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
     }
     // The same string-constant fallback for a field with no column: a SELECT
     // resolves `"adults"` to its alias and a COUNT or an UPDATE does not, so
-    // `@@allow('update', adults > 0)` admitted every row to updateMany.
+    // `@@allow(update, adults > 0)` admitted every row to updateMany.
     if (n.type === 'field' && !relationMap?.[model.name]?.[n.name]) {
       const f = model.fields.find(x => x.name === n.name)
       const none = f && noColumn(f)
@@ -678,7 +678,7 @@ export function dependsOnClock(node) {
 
 // Does this expression read the ROW, or only the caller?
 //
-// A field `@allow('read', auth().isAdmin)` has the same answer for every row in
+// A field `@allow(read, auth().isAdmin)` has the same answer for every row in
 // a result set, and it was being asked once per FIELD per ROW through the
 // interpreter (`FJS-619`). Answering it once needs to know which predicates are
 // row-independent, which is a property of the AST alone.
@@ -911,7 +911,7 @@ export function checkFieldPolicies(schema, relationMap, claims = null) {
     for (const field of model.fields ?? []) {
       for (const attr of field.attributes ?? []) {
         if (attr.kind !== 'fieldAllow') continue
-        const ops = (attr.operations ?? []).map(o => `'${o}'`).join(', ')
+        const ops = attr.operations?.length === 1 ? attr.operations[0] : 'all'
         checkExpr(model, attr.expr, relationMap, `@allow(${ops}, …) on ${model.name}.${field.name}`, claims, schema)
       }
     }
@@ -925,6 +925,21 @@ export function buildPolicyMap(schema, relationMap, claims = null) {
   // columns the view declares, which is why it needs no reading of `@@sql`.
   for (const model of [...schema.models, ...(schema.views ?? [])]) {
     for (const attr of model.attributes ?? []) {
+      if (attr.kind === 'require') {
+        // A requirement is the deny of its negation: a deny fires on TRUE or
+        // UNKNOWN, so the row is refused unless the predicate is TRUE. The
+        // `generated` tag is what `rulesFor` keeps under `asSystem()`.
+        checkExpr(model, attr.expr, relationMap, '@@require', claims, schema)
+        const bucket = (map[model.name] ??= {})
+        for (const op of attr.operations) {
+          bucket[op] ??= { allows: [], denies: [] }
+          bucket[op].denies.push({
+            expr: { type: 'not', expr: attr.expr }, message: attr.message ?? null,
+            generated: 'require', claim: null, tenantColumn: null,
+          })
+        }
+        continue
+      }
       if (attr.kind !== 'allow' && attr.kind !== 'deny') continue
       checkExpr(model, attr.expr, relationMap, '@@allow/@@deny', claims, schema)
       if (!map[model.name]) map[model.name] = {}
@@ -944,7 +959,7 @@ export function buildPolicyMap(schema, relationMap, claims = null) {
 
 // ─── Columns a create policy DETERMINES ───────────────────────────────────────
 //
-// `@@allow('create', hostId == auth().id)` has exactly one legal value for
+// `@@allow(create, hostId == auth().id)` has exactly one legal value for
 // `hostId` and the caller is it. A form that offers a choice there offers a
 // refusal for every other row, so the fact is carried to the client as
 // `x-determined`.
@@ -980,7 +995,7 @@ export function determinedColumns(model) {
 
 // ─── What a field write policy asks of the CALLER alone ──────────────────────
 //
-// `@allow('write', auth().isStaff)` reads nothing on the row, so the browser can
+// `@allow(write, auth().isStaff)` reads nothing on the row, so the browser can
 // answer it from the session it already holds. The subset is `auth().<claim>`
 // truthiness, `auth().<claim> == <literal>` (either side) and `&&`; anything
 // else -- a column, `||`, `!=`, bare `auth()` -- is not carried, and the client
@@ -1064,7 +1079,9 @@ function rulesFor(modelName, op, ctx, tenancyOnly = false) {
   if (!rules) return null
   if (!ctx.isSystem && !tenancyOnly) return rules
 
-  const denies = rules.denies.filter(d =>
+  // A `@@require` is about the data and not the caller, so the system principal
+  // keeps it (`FJS-D1045`). A tenancy-only question is about a parent's tenant.
+  const denies = rules.denies.filter(d => d.generated === 'require' && !tenancyOnly ||
     d.generated === 'tenancy' && (!ctx.isSystem || ctx.auth?.[d.claim] != null || ctx.auth?.[tenantAdmission(d.claim)] != null))
   return denies.length ? { allows: [], denies } : null
 }
@@ -1145,7 +1162,7 @@ export function atOneInstant(ctx) {
 
 // ─── A FIELD's predicate, as SQL ──────────────────────────────────────────────
 //
-// `@allow('read'|'write', …)` on a FIELD is a predicate, and `FJS-D129` rules
+// `@allow(read|write, …)` on a FIELD is a predicate, and `FJS-D129` rules
 // that it is answered where the row is — the database — rather than in JS
 // against whatever the caller sent. Two callers and two positions:
 //
@@ -1294,18 +1311,18 @@ export function withLiteralDefaults(data, list) {
 // Evaluates a post-update policy against a row object in JS.
 // Call after the write, inside a transaction — throw to trigger rollback.
 export function checkPostUpdatePolicy(modelName, row, ctx) {
-  const v = policyVerdict(modelName, row, ctx, 'post-update')
+  const v = policyVerdict(modelName, row, ctx, 'postUpdate')
   if (v.ok) return
-  plog(ctx, 'post-update', modelName, `[31mDENIED[0m (${v.rule === 'deny' ? '@@deny fired' : 'no @@allow passed'}) — rolling back`)
+  plog(ctx, 'postUpdate', modelName, `[31mDENIED[0m (${v.rule === 'deny' ? '@@deny fired' : 'no @@allow passed'}) — rolling back`)
   throw new AccessDeniedError(
     v.message ?? `Update denied by @@${v.rule} post-update policy on "${modelName}"`,
-    { model: modelName, operation: 'post-update' })
+    { model: modelName, operation: 'postUpdate' })
 }
 
 // ─── SQL compiler ─────────────────────────────────────────────────────────────
 
 function buildFilterSql(modelName, op, params, ctx, visited, tenancyOnly = false) {
-  // Cycle guard. Two models each holding `@@allow('read', check(other))` are
+  // Cycle guard. Two models each holding `@@allow(read, check(other))` are
   // deny-by-default whitelists on both sides, and re-entry compiling to '1' made
   // that pair readable by a stranger — measured. There is no sound answer to a
   // cycle, so it takes the direction every other refusal here takes; a chain
@@ -1539,7 +1556,7 @@ function compileSql(node, params, ctx, modelName, op, visited) {
     case 'field':
       // A policy names FIELDS and compiles to SQL, so a mapped model needs the
       // column. Silent without it, and in the worst direction: SQLite reads an
-      // unknown `"ident"` as a STRING LITERAL, so `@@allow('read', …)` compiled
+      // unknown `"ident"` as a STRING LITERAL, so `@@allow(read, …)` compiled
       // to a comparison against the text `'ownerId'`, matched nothing, and every
       // read on the model answered an empty list (`FJS-761`). The JS half needs
       // no counterpart — `evalJs` reads a row that is already field-keyed.
@@ -1876,7 +1893,7 @@ function evalSome(node, ctx, data, modelName, op) {
 // resolver only sets on some requests.
 //
 // `truth()` and not `Boolean()` at the edges: the language admits a predicate
-// that is not a boolean (`@@allow('read', auth())`), and SQLite coerces those
+// that is not a boolean (`@@allow(read, auth())`), and SQLite coerces those
 // the same way, so only NULL is special.
 
 
@@ -1949,7 +1966,7 @@ function affinityOf(node, ctx, modelName) {
 
 // ─── Rows a picker may offer ──────────────────────────────────────────────────
 //
-// `@@allow('create', schedule.hostId == auth().id)` accepts a `scheduleId` only
+// `@@allow(create, schedule.hostId == auth().id)` accepts a `scheduleId` only
 // from the caller's own schedules, and a picker over every readable Schedule
 // offers a refusal for the rest. The one-hop shape is carried as
 // `x-pick-where` (`FJS-D669`): `{ scheduleId: { hostId: 'auth().id' } }`, the

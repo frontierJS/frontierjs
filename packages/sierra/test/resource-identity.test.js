@@ -12,7 +12,7 @@
  *   the tether   — after signOut and signIn as somebody else, and before any
  *                 load, it still held `[{ body: 'u1 private', ownerId: 'u1' }]`
  *   `_versions` — `version(1)` answered a revision the new caller never read
- *   `_options`  — with `@@allow("read", ownerId == auth().id)` on `Customer`,
+ *   `_options`  — with `@@allow(read, ownerId == auth().id)` on `Customer`,
  *                 the second caller was offered `Alice-of-u1` by id and by
  *                 label, permanently: no request is ever made again
  *

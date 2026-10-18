@@ -45,16 +45,16 @@ ${body}
 }`
 
   test('@@allow — and the same schema spelled right builds', async () => {
-    const err = await refusal(model(`  @@allow('read', auth().isStff == true)`))
+    const err = await refusal(model(`  @@allow(read, auth().isStff == true)`))
     expect(err).toContain("'isStff' is not a claim the principal carries")
     expect(err).toContain('@@allow/@@deny')
-    expect(await build(model(`  @@allow('read', auth().isStaff == true)`))).toBeTruthy()
+    expect(await build(model(`  @@allow(read, auth().isStaff == true)`))).toBeTruthy()
   })
 
   test('@@deny', async () => {
-    const err = await refusal(model(`  @@deny('update', auth().suspnded == true)`))
+    const err = await refusal(model(`  @@deny(update, auth().suspnded == true)`))
     expect(err).toContain("'suspnded' is not a claim the principal carries")
-    expect(await build(model(`  @@deny('update', auth().suspended == true)`))).toBeTruthy()
+    expect(await build(model(`  @@deny(update, auth().suspended == true)`))).toBeTruthy()
   })
 
   test('@@scope', async () => {
@@ -73,16 +73,16 @@ ${body}
 model Note {
   id      Int    @id @default(autoincrement())
   ownerId Int
-  secret  String @allow('read', ${expr})
+  secret  String @allow(read, ${expr})
 }`
     const err = await refusal(withField('auth().isStff == true'))
     expect(err).toContain("'isStff' is not a claim")
-    expect(err).toContain('@allow(\'read\', …) on Note.secret')
+    expect(err).toContain('@allow(read, …) on Note.secret')
     expect(await build(withField('auth().isStaff == true'))).toBeTruthy()
   })
 
   test("the refusal names the set and the way out", async () => {
-    const err = await refusal(model(`  @@allow('read', auth().cartToken == ownerId)`))
+    const err = await refusal(model(`  @@allow(read, auth().cartToken == ownerId)`))
     expect(err).toContain('Claims:')
     expect(err).toContain('isStaff (@@auth User)')
     expect(err).toContain('`claim cartToken`')
@@ -98,7 +98,7 @@ describe('a field @allow names a column that must exist', () => {
 model Note {
   id      Int    @id @default(autoincrement())
   ownerId Int
-  secret  String @allow('read', ${expr})
+  secret  String @allow(read, ${expr})
   @@gate(0)
 }`
 
@@ -127,7 +127,7 @@ describe('the four sources of a claim', () => {
 model Note {
   id      Int @id @default(autoincrement())
   ownerId Int
-  @@allow('read', ${expr})
+  @@allow(read, ${expr})
 }`
 
   test('the framework fixes eight names, and this package reads all eight', async () => {
@@ -156,7 +156,7 @@ model Note {
   id       Int @id @default(autoincrement())
   tenantId String
   ownerId  Int
-  @@allow('read', auth().tenantId == tenantId)
+  @@allow(read, auth().tenantId == tenantId)
 }`
     expect(await build(tenant)).toBeTruthy()
   })
@@ -194,7 +194,7 @@ model User { id Int @id  isStaff Boolean @default(false) }
 model Note {
   id      Int @id @default(autoincrement())
   ownerId Int
-  @@allow('read', auth().isStff == true)
+  @@allow(read, auth().isStff == true)
 }`
     expect(await refusal(bare)).toContain("'isStff' is not a claim")
   })
@@ -211,7 +211,7 @@ model User { id Int @id  isStaff Boolean @default(false) }
 model Note {
   id      Int @id @default(autoincrement())
   ownerId Int
-  @@allow('read', auth().isStaff == true)
+  @@allow(read, auth().isStaff == true)
 }`
 
   test('no @@auth and no claims: the schema builds, ungraded', async () => {
@@ -250,9 +250,9 @@ model Note {
   id      Int    @id @default(autoincrement())
   ownerId Int
   body    String
-  @@allow('read', true) @@allow('create', true) @@allow('update', true)
-  @@deny('create', auth().suspended == true)
-  @@deny('update', auth().suspended == true)
+  @@allow(read, true) @@allow(create, true) @@allow(update, true)
+  @@deny(create, auth().suspended == true)
+  @@deny(update, auth().suspended == true)
 }`
 
   const both = async (principal: Record<string, unknown>) => {
@@ -290,7 +290,7 @@ model User { id Int @id  suspended Boolean @default(false)  @@auth }
 model Note {
   id      Int @id @default(autoincrement())
   ownerId Int
-  @@allow('create', ${expr})
+  @@allow(create, ${expr})
 }`
 
   const creates = async (schema: string, principal: Record<string, unknown>) => {
@@ -339,14 +339,14 @@ describe('every field the grader reads is a claim a policy may name', () => {
       const schema = `${AUTH_USER}
 model Note {
   id Int @id @default(autoincrement())
-  @@allow('read', auth().${field} != null)
+  @@allow(read, auth().${field} != null)
 }`
       expect(await refusal(schema, { claims: [] })).toBeNull()
     }
     const typo = `${AUTH_USER}
 model Note {
   id Int @id @default(autoincrement())
-  @@allow('read', auth().${STANDING_FIELDS[0]}x != null)
+  @@allow(read, auth().${STANDING_FIELDS[0]}x != null)
 }`
     expect(await refusal(typo, { claims: [] })).toContain('is not a claim')
   })

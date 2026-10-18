@@ -192,7 +192,7 @@ try {
     user:  userRows  ? userRows.length  : 0,
     // Two users, one event, one row each — and neither can see the other's.
     // Nothing in notifications.service.ts says so; the model does, with
-    // `@@allow('read', userId == auth().id)`.
+    // `@@allow(read, userId == auth().id)`.
     sameRow: adminRows && userRows ? adminRows[0].id === userRows[0].id : null,
     type:    adminRows ? adminRows[0].type : null,
     title:   adminRows ? adminRows[0].data.title : null,

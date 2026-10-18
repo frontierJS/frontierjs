@@ -76,7 +76,7 @@ siteName: Kitchen sink
 
   async function openNote(note) {
     // Marking read is a patch of one field — `readAt` is the only thing the
-    // service accepts, and the model's @@allow('update') is what stops it being
+    // service accepts, and the model's @@allow(update) is what stops it being
     // somebody else's row.
     if (isUnread(note)) await notifications.service.patch(note.id, {}).catch(() => {})
     const url = note.data?.action?.url

@@ -25,7 +25,7 @@ model Order {
   customerId String
   status     Status
   amount     Int
-  @@allow('read', customerId == auth().customerId)
+  @@allow(read, customerId == auth().customerId)
   @@gate(3.8.8.8)
 }
 // Lower camel: a PascalCase view is not readable yet (FJS-1631).

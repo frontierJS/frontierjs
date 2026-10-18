@@ -28,7 +28,7 @@ model Parent {
   anyHigh   Boolean @from(Kid, exists: true, where: "score > 50")
   tags      Tag[]
   tagCount  Int     @from(Tag, count: true)
-  @@allow('read', true)
+  @@allow(read, true)
 }
 model Kid {
   id       Int    @id
@@ -36,7 +36,7 @@ model Kid {
   parent   Parent @relation(fields: [parentId], references: [id])
   owner    String
   score    Int
-  @@allow('read', owner == auth().id)
+  @@allow(read, owner == auth().id)
 }
 model Tag {
   id       Int    @id
@@ -154,7 +154,7 @@ model Room {
   size  Int
   full  Boolean @default(false)
   seats Seat[]
-  @@allow('read', owner == auth().id)
+  @@allow(read, owner == auth().id)
 }
 model Seat {
   id        Int     @id
@@ -162,7 +162,7 @@ model Seat {
   room      Room    @relation(fields: [roomId], references: [id])
   roomLabel String  @from(room, label)
   roomFull  Boolean @from(room, full)
-  @@allow('read', true)
+  @@allow(read, true)
 }
 `
 

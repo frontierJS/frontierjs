@@ -83,8 +83,8 @@ table `cart` · db `main` · gate `0.0.0.5`
 ```
 @@index(discountId)
 @@index(shippingMethodId)
-@@allow('read', id == auth().cartId)
-@@allow('update', id == auth().cartId)
+@@allow(read, id == auth().cartId)
+@@allow(update, id == auth().cartId)
 ```
 
 ### `CartGrant`
@@ -121,10 +121,10 @@ table `cart_line` · db `main` · gate `0.0.0.0`
 ```
 @@unique(cartId, variantId)
 @@index(variantId)
-@@allow('create', cartId == auth().cartId)
-@@allow('delete', cartId == auth().cartId)
-@@allow('read', cartId == auth().cartId)
-@@allow('update', cartId == auth().cartId)
+@@allow(create, cartId == auth().cartId)
+@@allow(delete, cartId == auth().cartId)
+@@allow(read, cartId == auth().cartId)
+@@allow(update, cartId == auth().cartId)
 ```
 
 ### `Color`
@@ -182,8 +182,8 @@ table `credit_note` · db `main` · gate `1.8.8.8`
 
 ```
 @@index(invoiceId)
-@@allow('read', auth().isStaff)
-@@allow('read', userId == auth().id)
+@@allow(read, auth().isStaff)
+@@allow(read, userId == auth().id)
 ```
 
 ### `Customer`
@@ -225,8 +225,8 @@ table `customer` · db `main` · gate `1.4.4.5` · @@softDelete
 
 ```
 @@index(t1, t2, n1, t3, t4, n2, t5, t6, n3, t7, t8, n4)
-@@allow('read', auth().isStaff)
-@@allow('read', userId == auth().id)
+@@allow(read, auth().isStaff)
+@@allow(read, userId == auth().id)
 ```
 
 ### `CustomField`
@@ -317,11 +317,11 @@ table `flow` · db `main` · gate `4.4.4.5`
 ```
 @@index(ownerId)
 @@index(status)
-@@allow('create', true)
-@@deny('create', auth().isStaff != true)
-@@deny('create', ownerId != null && ownerId != auth().id)
-@@allow('read', ownerId == auth().id || auth().level >= 5)
-@@allow('update', ownerId == auth().id)
+@@allow(create, true)
+@@deny(create, auth().isStaff != true)
+@@deny(create, ownerId != null && ownerId != auth().id)
+@@allow(read, ownerId == auth().id || auth().level >= 5)
+@@allow(update, ownerId == auth().id)
 transition status.activate: draft, paused → active @gate(5)
 transition status.archive: active, draft, paused → archived
 transition status.pause: active → paused
@@ -358,10 +358,10 @@ table `flow_layout` · db `main` · gate `4.4.4.5`
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
 
 ```
-@@allow('create', flow.ownerId == auth().id)
-@@allow('delete', flow.ownerId == auth().id)
-@@allow('read', flow.ownerId == auth().id || auth().level >= 5)
-@@allow('update', flow.ownerId == auth().id)
+@@allow(create, flow.ownerId == auth().id)
+@@allow(delete, flow.ownerId == auth().id)
+@@allow(read, flow.ownerId == auth().id || auth().level >= 5)
+@@allow(update, flow.ownerId == auth().id)
 ```
 
 ### `FlowVersion`
@@ -381,9 +381,9 @@ table `flow_version` · db `main` · gate `4.4.9.8`
 
 ```
 @@unique(flowId, version)
-@@allow('create', flow.ownerId == auth().id)
-@@deny('create', authorId != null && authorId != auth().id)
-@@allow('read', flow.ownerId == auth().id || auth().level >= 5)
+@@allow(create, flow.ownerId == auth().id)
+@@deny(create, authorId != null && authorId != auth().id)
+@@allow(read, flow.ownerId == auth().id || auth().level >= 5)
 ```
 
 ### `InventoryMovement`
@@ -441,10 +441,10 @@ table `invoice` · db `main` · gate `1.8.4.8`
 @@index(customerId)
 @@index(subscriptionId)
 @@check(total = subtotal + tax)
-@@allow('read', auth().isStaff)
-@@allow('read', userId == auth().id)
-@@allow('update', auth().isStaff)
-@@allow('update', userId == auth().id && status == 'draft')
+@@allow(read, auth().isStaff)
+@@allow(read, userId == auth().id)
+@@allow(update, auth().isStaff)
+@@allow(update, userId == auth().id && status == 'draft')
 transition reminded.remind: false → true @system
 transition status.issue: draft → issued @system @seals
 transition status.settle: issued → paid @system
@@ -471,8 +471,8 @@ table `invoice_line` · db `main` · gate `1.8.8.8`
 
 ```
 @@index(invoiceId)
-@@allow('read', auth().isStaff)
-@@allow('read', userId == auth().id)
+@@allow(read, auth().isStaff)
+@@allow(read, userId == auth().id)
 ```
 
 ### `JournalEntry`
@@ -617,8 +617,8 @@ table `notification` · db `main` · gate `0.8.4.8`
 
 ```
 @@unique(deliveryKey, type, userId)
-@@allow('read', userId == auth().id)
-@@allow('update', userId == auth().id)
+@@allow(read, userId == auth().id)
+@@allow(update, userId == auth().id)
 ```
 
 ### `OauthFlow`
@@ -673,8 +673,8 @@ table `order` · db `main` · gate `1.4.4.5` · @@softDelete(cascade)
 @@index(customerId)
 @@check(discount <= subtotal)
 @@check(subtotal = 0 OR total = subtotal - discount + shipping + tax)
-@@allow('read', auth().isStaff)
-@@allow('read', userId == auth().id)
+@@allow(read, auth().isStaff)
+@@allow(read, userId == auth().id)
 transition status.abandon: pending → cancelled @system
 transition status.cancel: paid, pending → cancelled
 transition status.pay: pending → paid
@@ -704,8 +704,8 @@ table `order_line` · db `main` · gate `1.8.8.8` · @@softDelete
 ```
 @@index(orderId)
 @@index(variantId)
-@@allow('read', auth().isStaff)
-@@allow('read', order.userId == auth().id)
+@@allow(read, auth().isStaff)
+@@allow(read, order.userId == auth().id)
 ```
 
 ### `OutboxMessage`
@@ -760,8 +760,8 @@ table `payment` · db `main` · gate `1.8.8.9`
 @@index(orderId)
 @@index(paymentMethodId)
 @@check((("orderId" IS NOT NULL) + ("invoiceId" IS NOT NULL)) = 1)
-@@allow('read', auth().isStaff)
-@@allow('read', userId == auth().id)
+@@allow(read, auth().isStaff)
+@@allow(read, userId == auth().id)
 ```
 
 ### `PaymentEvent`
@@ -798,8 +798,8 @@ table `payment_method` · db `main` · gate `1.8.8.8`
 ```
 @@unique(customerId), where: "isDefault" = 1
 @@index(customerId)
-@@allow('read', auth().isStaff)
-@@allow('read', userId == auth().id)
+@@allow(read, auth().isStaff)
+@@allow(read, userId == auth().id)
 ```
 
 ### `PayRate`
@@ -1077,7 +1077,7 @@ table `run` · db `main` · gate `4.8.8.8`
 @@index(flowVersionId, startedAt)
 @@index(status, createdAt)
 @@index(status, heartbeatAt)
-@@allow('read', actorId == auth().id || auth().level >= 5)
+@@allow(read, actorId == auth().id || auth().level >= 5)
 transition status.cancel: pending, running, waiting → cancelled
 transition status.complete: running → completed
 transition status.fail: pending, running, waiting → failed
@@ -1107,7 +1107,7 @@ table `run_step` · db `main` · gate `4.8.9.8`
 
 ```
 @@unique(nodeId, runId)
-@@allow('read', run.actorId == auth().id || auth().level >= 5)
+@@allow(read, run.actorId == auth().id || auth().level >= 5)
 ```
 
 ### `Session`
@@ -1228,10 +1228,10 @@ table `subscription` · db `main` · gate `1.4.4.5`
 ```
 @@index(customerId)
 @@index(planVersionId)
-@@allow('read', auth().isStaff)
-@@allow('read', userId == auth().id)
-@@allow('update', auth().isStaff)
-@@allow('update', userId == auth().id)
+@@allow(read, auth().isStaff)
+@@allow(read, userId == auth().id)
+@@allow(update, auth().isStaff)
+@@allow(update, userId == auth().id)
 transition status.activate: trialing → active @system
 transition status.cancel: active, pastDue, trialing → cancelled @system
 transition status.lapse: active → pastDue @system
@@ -1257,9 +1257,9 @@ table `subscription_period` · db `main` · gate `1.8.7.8`
 @@unique(subscriptionId), where: "status" = 'open'
 @@index(subscriptionId, startsOn)
 @@check(startsOn < endsOn)
-@@allow('read', auth().isStaff)
-@@allow('read', userId == auth().id)
-@@allow('update', auth().isStaff)
+@@allow(read, auth().isStaff)
+@@allow(read, userId == auth().id)
+@@allow(update, auth().isStaff)
 transition status.close: open → closed @system
 ```
 
@@ -1294,9 +1294,9 @@ table `user` · db `main` · gate `4.4.4.5`
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 
 ```
-@@allow('create', auth().isAdmin)
-@@allow('read', id == auth().id || auth().isStaff)
-@@allow('update', id == auth().id || auth().isAdmin)
+@@allow(create, auth().isAdmin)
+@@allow(read, id == auth().id || auth().isStaff)
+@@allow(update, id == auth().id || auth().isAdmin)
 ```
 
 ### `Verification`

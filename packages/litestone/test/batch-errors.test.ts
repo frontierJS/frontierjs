@@ -112,9 +112,9 @@ describe('a failing batch names its row (FJS-207)', () => {
           id      Int     @id
           slug    String  @unique
           ownerId String?
-          @@allow('read',   ownerId == auth().id)
-          @@allow('create', ownerId == auth().id)
-          @@allow('update', ownerId == auth().id)
+          @@allow(read,   ownerId == auth().id)
+          @@allow(create, ownerId == auth().id)
+          @@allow(update, ownerId == auth().id)
         }
       `,
       db: ':memory:', claims: [],

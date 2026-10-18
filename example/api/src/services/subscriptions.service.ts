@@ -10,7 +10,7 @@
 // So what a person presses is here, and it is two methods over one `@system`
 // column rather than a move: `cancel` sets `cancelAtPeriodEnd` and `resume`
 // clears it. The row policy scopes both — staff act on any subscription, a
-// subscriber on their own — and the `@@allow('update', userId == auth().id)`
+// subscriber on their own — and the `@@allow(update, userId == auth().id)`
 // pair on the model is what says so, not a line of code here.
 //
 // **Neither method transitions anything**, and the ordering is the reason: the

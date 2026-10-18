@@ -25,8 +25,8 @@ model Inv {
   shop    String  @default("a")
   status  S       @default(issued)
   @@gate(1.8.4.8)
-  @@allow('read',   auth().isStaff || ownerId == auth().id)
-  @@allow('update', auth().isStaff)
+  @@allow(read,   auth().isStaff || ownerId == auth().id)
+  @@allow(update, auth().isStaff)
   @@transitions(status,
     settle: issued -> paid,
     void:   issued -> void @gate(5),

@@ -732,17 +732,17 @@ describe('a capability literal inside a predicate', () => {
   const p = (src: string) => parse(src)
 
   it('resolves when it names a real capability', () =>
-    expect(p(`model S { id Int @id  h String? @allow('read', 'S.update' in auth().capabilities)  @@capabilities }`).valid)
+    expect(p(`model S { id Int @id  h String? @allow(read, 'S.update' in auth().capabilities)  @@capabilities }`).valid)
       .toBe(true))
 
   it('is refused when it names nothing, with the suggestion', () => {
-    const r = p(`model S { id Int @id  n String  @@capabilities  @@allow('update', 'S.updte' in auth().capabilities) }`)
+    const r = p(`model S { id Int @id  n String  @@capabilities  @@allow(update, 'S.updte' in auth().capabilities) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toMatch(/can never be true.*Did you mean 'S\.update'\?/s)
   })
 
   it('is caught on a field @allow too, which is where the read tier lives', () => {
-    const r = p(`model S { id Int @id  h String? @allow('read', 'S.hostname' in auth().capabilities)  @@capabilities }`)
+    const r = p(`model S { id Int @id  h String? @allow(read, 'S.hostname' in auth().capabilities)  @@capabilities }`)
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toMatch(/names no capability/)
   })
@@ -750,7 +750,7 @@ describe('a capability literal inside a predicate', () => {
   it('says nothing when no model declares the grid', () =>
     // Below that, auth().capabilities is the app's own bag; `FJS-D151` only
     // claims the name for a schema that opted in.
-    expect(p(`model S { id Int @id  h String? @allow('read', 'anything.at.all' in auth().capabilities) }`).valid)
+    expect(p(`model S { id Int @id  h String? @allow(read, 'anything.at.all' in auth().capabilities) }`).valid)
       .toBe(true))
 
   it('strips the column for everybody when it is wrong — the failure being closed', async () => {
@@ -761,7 +761,7 @@ describe('a capability literal inside a predicate', () => {
       model S {
         id Int @id @default(autoincrement())
         n  String
-        h  String? @allow('read', 'S.update' in auth().capabilities)
+        h  String? @allow(read, 'S.update' in auth().capabilities)
         @@gate(0)
       }` })
     await db.asSystem().s.create({ data: { n: 'a', h: 'secret' } })
@@ -1198,5 +1198,49 @@ describe('the refusal reads as a sentence to the person refused', () => {
     const e = await denied(() => holder.invoice.update({ where: { ref: 'A' }, data: { ref: 'B' } }), 'Invoice.update')
     expect(e.message).toBe('You do not hold the "Invoice.update" capability')
     expect(e.message.split('Invoice.update').length - 1).toBe(1)
+  })
+})
+
+// FJS-1486 / FJS-D1048: a model whose @@gate lets a stranger create has already
+// said everyone may create, so `create` is not a grant — a drop box can still
+// grade its moves, update and delete on the grid.
+describe('a model a stranger may create', () => {
+  const DROP = `
+enum Stage { applied withdrawn rejected }
+model Application {
+  id    Int   @id @default(autoincrement())
+  name  String
+  stage Stage @default(applied)
+  @@gate(2.0.2.5)
+  @@capabilities
+  @@transitions(stage, withdraw: applied -> withdrawn, reject: applied -> rejected)
+}
+model Closed {
+  id Int @id @default(autoincrement())
+  n  String
+  @@gate(2.1.2.5)
+  @@capabilities
+}
+`
+
+  it('does not offer create as a capability, and keeps every other grant', () => {
+    const got = names(DROP)
+    expect(got).not.toContain('Application.create')
+    expect(got).toEqual(expect.arrayContaining(['Application.update', 'Application.delete', 'Application.withdraw', 'Application.reject']))
+    expect(got).toContain('Closed.create')   // level 1 stays on the grid
+  })
+
+  it('lets a stranger create with no grant at all', async () => {
+    const db: any = await client(DROP)
+    const row = await db.$setAuth(null).application.create({ data: { name: 'Ann' } })
+    expect(row.name).toBe('Ann')
+    await db.$close()
+  })
+
+  it('a grant naming Application.create is refused as unknown', async () => {
+    const r = parse(`${DROP}
+model Role { id Int @id @default(autoincrement())  caps Capability[] }`)
+    expect(r.valid).toBe(true)
+    expect(capabilityNames(r.schema as any).has('Application.create')).toBe(false)
   })
 })

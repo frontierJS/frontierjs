@@ -32,7 +32,7 @@ model Lead {
   tier      String?
   internal  String? @guarded
   // Read by an administrator alone, so a row one writes is not the row a USER reads.
-  score     Int?    @allow('read', auth().isAdmin == true)
+  score     Int?    @allow(read, auth().isAdmin == true)
   @@gate(4.4.4.4)
 }
 

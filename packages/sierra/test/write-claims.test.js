@@ -1,7 +1,7 @@
 /**
  * test/write-claims.test.js
  *
- * A field `@allow('write', auth().isStaff)` arrives as `x-litestone-write-claims`
+ * A field `@allow(write, auth().isStaff)` arrives as `x-litestone-write-claims`
  * beside the bit. A caller who fails it is not offered the column: the resource
  * reports it among the frozen fields, which `<Form>` already draws disabled and
  * drops from the payload. The boundary enforces regardless (Invariant 6), so an

@@ -618,7 +618,7 @@ model Folder {
   parent   Folder?  @relation(fields: [parentId], references: [id])
   children Folder[]
 
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }
 ```
 
@@ -671,7 +671,7 @@ apply **at every level, not just to the row you named**. A node the caller
 cannot see hides its whole subtree:
 
 ```js
-// Folder declares @@allow('read', ownerId == auth().id)
+// Folder declares @@allow(read, ownerId == auth().id)
 await db.asSystem().folder.createMany({ data: [
   { id: 1, name: 'mine',   ownerId: 1 },
   { id: 2, name: 'theirs', ownerId: 2, parentId: 1 },

@@ -747,7 +747,7 @@ export interface LitestoneClient {
    *
    * `create` grades `row` as the payload; `update` grades `row` as stored, then
    * with `changes` over it under `post-update`; `delete` grades `row` as stored.
-   * The gate and the `@@capabilities` grid first. Field `@allow('write')` and
+   * The gate and the `@@capabilities` grid first. Field `@allow(write)` and
    * `@@transitions` are not graded. A refusal is a verdict; an undecidable
    * policy throws.
    */

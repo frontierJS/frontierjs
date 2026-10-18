@@ -79,7 +79,7 @@ describe('the declaration', () => {
   })
 
   it("refuses @allow beside it — the rule would be declared and never evaluated", () => {
-    const r = decl(`@transient @allow('write', auth().isAdmin)`)
+    const r = decl(`@transient @allow(write, auth().isAdmin)`)
     expect(r.valid).toBe(false)
     expect(r.errors.join(' ')).toMatch(/never reaches the Data boundary/)
   })
@@ -99,7 +99,7 @@ describe('the declaration', () => {
       schema: `model T {
         id    Int    @id
         owner String @transient
-        @@allow('read', owner == auth().id)
+        @@allow(read, owner == auth().id)
       }`,
     })).rejects.toThrow(/is @transient/)
   })

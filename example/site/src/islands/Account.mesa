@@ -20,7 +20,7 @@
   ── What the API does, and what this does not ───────────────────────────────
 
   Nothing here filters. `orders` and `order-lines` answer the shopper's OWN rows
-  because Order and OrderLine each declare `@@allow('read', userId ==
+  because Order and OrderLine each declare `@@allow(read, userId ==
   auth().id)`, and a screen that also filtered would be a second copy of that
   rule in the place where it cannot be enforced. The proof is that this asks for
   everything and gets a page.
@@ -85,7 +85,7 @@
     orders = list?.data ?? []
 
     // Nothing here filters by who is asking, and that is the assertion: both
-    // models declare `@@allow('read', userId == auth().id)`, so asking for
+    // models declare `@@allow(read, userId == auth().id)`, so asking for
     // everything and getting this person's rows is the boundary working. A
     // screen that also filtered would be a second copy of that rule in the one
     // place it cannot be enforced.
@@ -131,7 +131,7 @@
    *  is why the button says so rather than saying *cancel*.
    *
    *  What lets a shopper do it to their OWN is
-   *  `@@allow('update', userId == auth().id)` on the model; nothing here grades
+   *  `@@allow(update, userId == auth().id)` on the model; nothing here grades
    *  anybody. */
   async function setRenewal(sub, on) {
     working = sub.id

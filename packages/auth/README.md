@@ -183,8 +183,8 @@ and imports the rest with `import "@frontierjs/auth/schema.lite"`, so an upgrade
 reaches them:
 
 - `User` — identity. `@@gate(4.4.4.5)` — read, create and update USER(4),
-  delete ADMINISTRATOR(5) — bounded by `@@allow('update', id == auth().id ||
-  auth().isAdmin)` and `@allow('write', auth().isAdmin)` on `role` and
+  delete ADMINISTRATOR(5) — bounded by `@@allow(update, id == auth().id ||
+  auth().isAdmin)` and `@allow(write, auth().isAdmin)` on `role` and
   `emailVerified`. A level says what kind of caller, a policy says whose row, a
   field policy says which columns; identity needs all three, and the columns a
   gate is graded from are exactly the ones a caller must not write. `@@trail(audit)`

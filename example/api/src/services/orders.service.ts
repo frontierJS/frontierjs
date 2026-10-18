@@ -182,8 +182,8 @@ const recordTracking = defineMethod('TrackingUpdate', async ctx => {
  * carries it and no filter can probe it.
  *
  * The read goes through the CALLER'S own client and that is the whole
- * permission check — `Order` declares `@@allow('read', auth().isStaff)` and
- * `@@allow('read', userId == auth().id)`, so staff and the shopper it belongs
+ * permission check — `Order` declares `@@allow(read, auth().isStaff)` and
+ * `@@allow(read, userId == auth().id)`, so staff and the shopper it belongs
  * to are exactly who gets an answer, and a hook restating that would be a
  * second copy of a rule the schema already holds. The re-read as the shop is
  * what fetches the guarded column, after the caller's own client has said they
@@ -201,8 +201,8 @@ const paymentCode = async () => {
   const id = Number($.id)
 
   // The CALLER'S own client, and that read is the whole permission check.
-  // `Order` declares `@@allow('read', auth().isStaff)` and
-  // `@@allow('read', userId == auth().id)`, so staff and the shopper it belongs
+  // `Order` declares `@@allow(read, auth().isStaff)` and
+  // `@@allow(read, userId == auth().id)`, so staff and the shopper it belongs
   // to are exactly who gets an answer — and a hook restating that would be a
   // second copy of a rule the schema already holds.
   const own = await $.db.order.findFirst({ where: { id } })

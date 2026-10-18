@@ -34,7 +34,7 @@
 // It reaches `auth()` through `sessionFields` in api/src/app.ts — the one route
 // an app's own User columns take onto the SessionContext.
 extend model User {
-  isStaff Boolean @default(false) @allow('write', auth().isAdmin)
+  isStaff Boolean @default(false) @allow(write, auth().isAdmin)
 }
 
 // ─── Who is a sysadmin ────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ extend model User {
 // a level every admin can grant. Only a sysadmin writes this one, and the first
 // is made by the seed, through `asSystem()`.
 extend model User {
-  isSystemAdmin Boolean @default(false) @allow('write', auth().isSystemAdmin)
+  isSystemAdmin Boolean @default(false) @allow(write, auth().isSystemAdmin)
 }
 
 // ─── Who may read the roster ──────────────────────────────────────────────
@@ -69,7 +69,7 @@ extend model User {
 // It costs auth nothing: every write this package makes goes through
 // asSystem(), which is above the ladder and above this.
 extend model User {
-  @@allow('read', id == auth().id || auth().isStaff)
+  @@allow(read, id == auth().id || auth().isStaff)
 
   // ─── Who may add somebody ───────────────────────────────────────────────
   //
@@ -92,5 +92,5 @@ extend model User {
   // through `asSystem()`, which is above the ladder and above this — so
   // `/auth/register` and `db/seed.ts` are unaffected, and the only caller this
   // grades is a request to the app's own `users` service.
-  @@allow('create', auth().isAdmin)
+  @@allow(create, auth().isAdmin)
 }

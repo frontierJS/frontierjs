@@ -60,7 +60,7 @@ describe('a view must be gated wherever the schema gates anything', () => {
   })
 
   test('a field-level @allow is enough to make the schema a guarding one', () => {
-    const src = `model Order { id Int @id  total Int  margin Int? @allow('read', auth().isAdmin == true) }\nview revenue { total Int ${SQL} }`
+    const src = `model Order { id Int @id  total Int  margin Int? @allow(read, auth().isAdmin == true) }\nview revenue { total Int ${SQL} }`
     expect(errs(src)[0]).toContain("must declare @@gate")
   })
 })
@@ -120,7 +120,7 @@ view ownerTotals {
   total   Int
   @@sql("SELECT ownerId, SUM(total) AS total FROM [order] GROUP BY ownerId")
   @@gate(1)
-  @@allow('read', ownerId == auth().id)
+  @@allow(read, ownerId == auth().id)
 }
 `
   const client = () => createClient({ schema: SCHEMA, resolveFrom: import.meta.dir })

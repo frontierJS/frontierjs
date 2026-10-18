@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**125 words** — 13 declarations · 72 field attributes · 36 model attributes · 4 move words.
+**126 words** — 13 declarations · 72 field attributes · 37 model attributes · 4 move words.
 
 ## Declarations
 
@@ -133,8 +133,9 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@commitment` | Shape the table | ([<relation>.]<transition>, on: <field> [+\|- <n><unit> \| <field>] [, while: <expr>]) |  |  |  |
 | `@@gate` | Decide who may | ("<read>.<create>.<update>.<delete>" \| "<n>") |  |  |  |
 | `@@export` | Decide who may | (ndjson \| csv [, since: <column>]) |  |  |  |
-| `@@allow` | Decide who may | ('read'\|'create'\|'update'\|'post-update'\|'delete'\|'write'\|'all', <expression>[, message]) |  |  |  |
+| `@@allow` | Decide who may | (read\|create\|update\|postUpdate\|delete\|write\|all, <expression>[, message]) |  |  |  |
 | `@@deny` | Decide who may | ('read'\|…, <expression>[, message]) |  |  |  |
+| `@@require` | Decide who may | (create\|postUpdate, <expression>[, message]) |  |  |  |
 | `@@scope` | Decide who may | (<name>, <expression>) |  |  |  |
 | `@@tenant` | Decide who may | (<column> \| none \| via: parent) |  | mode: none |  |
 | `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …)], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |
@@ -184,7 +185,7 @@ Three answers, one word. Asked as an interview in Litestone Studio.
 | no | yes | no | `@transient` |
 | no | no | no | *nothing at all* |
 | no | yes | yes | *not expressible* |
-| — | — | depends who asks | `@allow('read', …) on the field` |
+| — | — | depends who asks | `@allow(read, …) on the field` |
 
 ## Rules
 

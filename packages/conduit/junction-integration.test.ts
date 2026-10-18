@@ -808,10 +808,10 @@ describe('a claimed mirror model forwards its generated writes', () => {
 
   it("grades the app's own write policies before it sends (FJS-3147)", async () => {
     const schema = MIRROR_SCHEMA.replace('  @@mirror(key: externalId)\n}', `  @@mirror(key: externalId)
-  @@allow('read', true)
-  @@allow('create', channelExternalId != 'closed')
-  @@allow('update', message != 'frozen')
-  @@allow('delete', false)
+  @@allow(read, true)
+  @@allow(create, channelExternalId != 'closed')
+  @@allow(update, message != 'frozen')
+  @@allow(delete, false)
 }`)
     const { app, acme } = await mirrorApp({ schema })
     try {

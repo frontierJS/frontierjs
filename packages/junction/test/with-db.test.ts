@@ -27,7 +27,7 @@ describe('app.withDb with no tenancy', () => {
         id      Int    @id @default(autoincrement())
         ownerId String @default(auth().id)
         body    String
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }` })
     await db.asSystem().note.create({ data: { ownerId: 'u1', body: 'mine' } })
     await db.asSystem().note.create({ data: { ownerId: 'u2', body: 'theirs' } })
@@ -49,7 +49,7 @@ describe('app.withDb with no tenancy', () => {
         id      Int    @id @default(autoincrement())
         ownerId String @default(auth().id)
         body    String
-        @@allow('read', ownerId == auth().id)
+        @@allow(read, ownerId == auth().id)
       }` })
     await db.asSystem().note.create({ data: { ownerId: 'u2', body: 'theirs' } })
     const app = createApp({ db, auth: USERS })

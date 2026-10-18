@@ -1,9 +1,9 @@
 // FJS-D205 — the read strip is two axes AND'd, not a chain.
 //
-// VISIBILITY (@hashed, @encrypted, @guarded, field @allow('read')) answers *may
+// VISIBILITY (@hashed, @encrypted, @guarded, field @allow(read)) answers *may
 // this caller see the column at all*; INCLUSION (@omit) answers *is it in the
 // default payload*. They were one if/else ladder where the first match won, so
-// `@guarded` swallowed an `@omit` written beside it and a field `@allow('read')`
+// `@guarded` swallowed an `@omit` written beside it and a field `@allow(read)`
 // under `@guarded` or `@encrypted` was unreachable — silently, in both cases.
 //
 // The shape of this file is the point. Every pair is asserted BESIDE each of its
@@ -25,8 +25,8 @@ model Doc {
   oml      Int?    @omit
   guOm     Int?    @guarded @omit(all)
   guOml    Int?    @guarded @omit
-  encAllow String? @encrypted @allow('read', auth().isAdmin)
-  omAllow  Int?    @omit(all) @allow('read', auth().isAdmin)
+  encAllow String? @encrypted @allow(read, auth().isAdmin)
+  omAllow  Int?    @omit(all) @allow(read, auth().isAdmin)
   @@gate(0)
 }
 `

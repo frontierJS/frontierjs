@@ -121,7 +121,7 @@ this design has and every other claim is downstream of it.
 
 **2. The predicate and its source line are already recoverable.**
 `policyExprToString` exists and `access.snapshot.md` is committed, so a trace can
-say *`@@allow('read', ownerId == auth().id)` on `Order` compiled `WHERE ownerId =
+say *`@@allow(read, ownerId == auth().id)` on `Order` compiled `WHERE ownerId =
 ?` with `? = null`* and point at the line in `schema.lite`. The prose is not
 generated from a template over a rule id — it is the rule, round-tripped.
 

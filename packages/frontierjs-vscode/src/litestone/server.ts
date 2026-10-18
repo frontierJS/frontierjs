@@ -13,11 +13,11 @@
 //
 // ─── Parser bridge ───────────────────────────────────────────────────────────
 //
-//  The Litestone parser is bundled to CJS by scripts/build-parser.js (esbuild).
-//  It runs at build time and outputs out/litestone/parser-bundle.js.
-//
-//  The bundle is a single CJS file — no Bun runtime needed, no subprocess,
-//  no async overhead. parse() is a synchronous call: ~0.1ms per document.
+//  A document is parsed by the litestone its app installs — the nearest
+//  node_modules/@frontierjs/litestone above it — so the editor reads the
+//  language fli check and createClient read (FJS-1404). The bundle
+//  scripts/build-parser.js writes to out/litestone/parser-bundle.js answers
+//  wherever no app parser is found or it fails to load.
 
 import {
   createConnection,
@@ -63,18 +63,34 @@ type ParseResult = {
   } | null
 }
 
-let _parse: ((src: string) => ParseResult) | null = null
+// The import half is feature-detected: an older litestone without these
+// exports parses the buffer alone.
+type Parser = {
+  parse:         (src: string) => ParseResult
+  hasImports:    ((text: string) => boolean) | null
+  inlineImports: ((text: string, parent: string, opts: any) => string) | null
+  resolveImport: ((spec: string, from: string) => { path: string | null }) | null
+}
+
+function asParser(mod: any): Parser | null {
+  if (typeof mod?.parse !== 'function') return null
+  return {
+    parse:         mod.parse,
+    hasImports:    mod.hasImports    ?? null,
+    inlineImports: mod.inlineImports ?? null,
+    resolveImport: mod.resolveImportSpecifier ?? null,
+  }
+}
+
+let _bundle: Parser | null = null
 let _parseError: string | null = null
 
 function loadParser() {
-  if (_parse) return
+  if (_bundle) return
   try {
     const bundle = require(path.join(__dirname, 'parser-bundle'))
-    _parse         = bundle.parse
-    _hasImports    = bundle.hasImports    ?? null
-    _inlineImports = bundle.inlineImports ?? null
-    _resolveImport = bundle.resolveImportSpecifier ?? null
-    _tokenize      = bundle.tokenize      ?? null
+    _bundle   = asParser(bundle)
+    _tokenize = bundle.tokenize ?? null
   } catch (e: any) {
     _parseError = [
       `Litestone parser bundle not found.`,
@@ -106,25 +122,21 @@ function loadParser() {
 // for the name in the message and never uses a line number, so an error about an
 // imported model simply lands at line 0 rather than at a wrong line.
 //
-// Feature-detected, because the language server is expected to work against an
-// older checkout of litestone (see the catalog fallback below): without these
-// exports it parses the buffer alone, exactly as it always did.
-let _hasImports:    ((text: string) => boolean) | null = null
-let _inlineImports: ((text: string, parent: string, opts: any) => string) | null = null
-let _resolveImport: ((spec: string, from: string) => { path: string | null }) | null = null
 // Litestone's own lexer — the formatter's second guard, so "only whitespace
-// changed" is answered by the tokens the parser reads.
+// changed" is answered by the tokens the parser reads. Always the bundle's: a
+// lexer older than the app's refuses a format, it never rewrites one.
 let _tokenize: Tokenize | null = null
 
-function withImports(src: string, uri?: string): string {
-  if (!uri || !uri.startsWith('file://'))          return src
-  if (!_hasImports || !_inlineImports || !_resolveImport) return src
-  if (!_hasImports(src))                            return src
+function withImports(parser: Parser, src: string, uri?: string): string {
+  const { hasImports, inlineImports, resolveImport } = parser
+  if (!uri || !uri.startsWith('file://'))        return src
+  if (!hasImports || !inlineImports || !resolveImport) return src
+  if (!hasImports(src))                          return src
 
   const abs = decodeURIComponent(uri.slice('file://'.length))
   try {
-    return _inlineImports(src, abs, {
-      resolveChild: (parent: string, spec: string) => _resolveImport!(spec, parent).path,
+    return inlineImports(src, abs, {
+      resolveChild: (parent: string, spec: string) => resolveImport(spec, parent).path,
       read:         (p: string) => { try { return fs.readFileSync(p, 'utf8') } catch { return null } },
       seen:         new Set([abs]),
       // An unresolvable import drops its line and lands here. Not reported: the
@@ -138,9 +150,61 @@ function withImports(src: string, uri?: string): string {
   }
 }
 
-function callParser(src: string, uri?: string): ParseResult {
+// ─── The app's own parser ─────────────────────────────────────────────────────
+//
+// An installed extension's bundle is frozen at its build, and the version does
+// not move with it, so an old install reported correct schemas as broken while
+// fli check passed them (FJS-1404). Keyed by realpath, so every app linking one
+// workspace litestone shares a single import; an edit to that litestone is
+// read on the server's next start.
+
+// tsc under module:commonjs rewrites import() to require(), which throws on ESM.
+const dynamicImport: (specifier: string) => Promise<any> =
+  new Function('specifier', 'return import(specifier)') as any
+
+const _parserPathByDir = new Map<string, string | null>()
+const _appParsers      = new Map<string, Promise<Parser | null>>()
+
+function appParserPath(dir: string): string | null {
+  if (_parserPathByDir.has(dir)) return _parserPathByDir.get(dir)!
+  const pkg = path.join(dir, 'node_modules', '@frontierjs', 'litestone', 'src')
+  // core/parser.js is the current layout, parser.js the one before it moved.
+  const here = [path.join(pkg, 'core', 'parser.js'), path.join(pkg, 'parser.js')].find(p => fs.existsSync(p))
+  const parent = path.dirname(dir)
+  const found  = here ? fs.realpathSync(here) : parent === dir ? null : appParserPath(parent)
+  _parserPathByDir.set(dir, found)
+  return found
+}
+
+function loadAppParser(file: string): Promise<Parser | null> {
+  let pending = _appParsers.get(file)
+  if (!pending) {
+    pending = dynamicImport(require('url').pathToFileURL(file).href).then(
+      mod => {
+        const parser = asParser(mod)
+        connection.console.log(parser
+          ? `[litestone] parser: ${file}`
+          : `[litestone] ${file} exports no parse(); using the bundled parser`)
+        return parser
+      },
+      (e: any) => {
+        connection.console.warn(`[litestone] ${file} failed to load (${e.message}); using the bundled parser`)
+        return null
+      })
+    _appParsers.set(file, pending)
+  }
+  return pending
+}
+
+async function parserFor(uri: string): Promise<Parser | null> {
   loadParser()
-  if (!_parse) {
+  if (!uri.startsWith('file://')) return _bundle
+  const file = appParserPath(path.dirname(decodeURIComponent(uri.slice('file://'.length))))
+  return (file && await loadAppParser(file)) || _bundle
+}
+
+function callParser(parser: Parser | null, src: string, uri?: string): ParseResult {
+  if (!parser) {
     return {
       valid:    false,
       errors:   [_parseError ?? 'Parser not loaded'],
@@ -149,7 +213,7 @@ function callParser(src: string, uri?: string): ParseResult {
     }
   }
   try {
-    return _parse(withImports(src, uri))
+    return parser.parse(withImports(parser, src, uri))
   } catch (e: any) {
     return {
       valid:    false,
@@ -189,9 +253,13 @@ documents.onDidClose(e => {
   connection.sendDiagnostics({ uri: e.document.uri, diagnostics: [] })
 })
 
-function validateDocument(doc: TextDocument) {
+async function validateDocument(doc: TextDocument) {
+  const parser = await parserFor(doc.uri)
+  // Read after the await: an edit made while the app parser loaded is newer,
+  // and a document closed meanwhile must not be cached or reported again.
+  if (!documents.get(doc.uri)) return
   const text   = doc.getText()
-  const result = callParser(text, doc.uri)
+  const result = callParser(parser, text, doc.uri)
   parseCache.set(doc.uri, result)
 
   const diagnostics = [
@@ -442,12 +510,13 @@ connection.onCompletion((pos: TextDocumentPositionParams): CompletionItem[] => {
     }
   }
 
-  // @@gate level completions — numeric string form "R.C.U.D"
+  // A gate is written in digits and the parser refuses a level name (FJS-D239),
+  // so the name rides as detail and only the digit is inserted.
   const GATE_LEVELS = ['STRANGER', 'VISITOR', 'READER', 'CREATOR', 'USER', 'ADMINISTRATOR', 'OWNER', 'SYSADMIN', 'SYSTEM', 'LOCKED']
   if (inModel && inArgsOf === 'gate') {
-    for (const l of GATE_LEVELS) {
-      items.push({ label: l, kind: CompletionItemKind.EnumMember, detail: `level ${GATE_LEVELS.indexOf(l)}` })
-    }
+    GATE_LEVELS.forEach((name, level) => {
+      items.push({ label: String(level), kind: CompletionItemKind.EnumMember, detail: name })
+    })
   }
 
   // @@db — database name completions from parsed schema
@@ -610,7 +679,7 @@ const ATTR_DOCS: Record<string, string> = {
   '@contains':   'Validates the string contains the given substring.',
 
   '@allow':
-    'Field-level conditional access policy.\n\n```\nsalary Float? @allow(\'read\',  auth().role == \'admin\')\napiKey String? @allow(\'write\', auth().role == \'admin\')\n```\n\n- `\'read\'` — field silently stripped from results when expr is false\n- `\'write\'` — field silently dropped from write data when expr is false\n- `\'all\'` — both\n\n`asSystem()` always sees and writes all fields. Conflicts with `@guarded` and `@secret`.',
+    'Field-level conditional access policy.\n\n```\nsalary Float? @allow(read,  auth().role == \'admin\')\napiKey String? @allow(write, auth().role == \'admin\')\n```\n\n- `\'read\'` — field silently stripped from results when expr is false\n- `\'write\'` — field silently dropped from write data when expr is false\n- `\'all\'` — both\n\n`asSystem()` always sees and writes all fields. Conflicts with `@guarded` and `@secret`.',
 
   // ── Model attributes ────────────────────────────────────────────────────────
 
@@ -639,10 +708,10 @@ const ATTR_DOCS: Record<string, string> = {
     'Marks this model as the auth subject. `auth()` in policy expressions resolves to a row from this model.',
 
   '@@allow':
-    'Row-level allow policy — compiled to a SQL `WHERE` injection.\n\nMakes the operation deny-by-default for that op: blocked unless at least one `@@allow` matches.\n\n```\n@@allow(\'read\',   status == \'published\' || ownerId == auth().id)\n@@allow(\'create\', auth() != null)\n@@allow(\'update\', ownerId == auth().id, "You can only edit your own posts")\n```\n\nOptional third argument is a custom error message.',
+    'Row-level allow policy — compiled to a SQL `WHERE` injection.\n\nMakes the operation deny-by-default for that op: blocked unless at least one `@@allow` matches.\n\n```\n@@allow(read,   status == \'published\' || ownerId == auth().id)\n@@allow(create, auth() != null)\n@@allow(update, ownerId == auth().id, "You can only edit your own posts")\n```\n\nOptional third argument is a custom error message.',
 
   '@@deny':
-    'Row-level deny policy — always wins over `@@allow`.\n\n```\n@@deny(\'delete\', status == \'published\')\n@@deny(\'update\', status == \'archived\', "Archived posts cannot be edited")\n```\n\nOptional third argument is a custom error message.',
+    'Row-level deny policy — always wins over `@@allow`.\n\n```\n@@deny(delete, status == \'published\')\n@@deny(update, status == \'archived\', "Archived posts cannot be edited")\n```\n\nOptional third argument is a custom error message.',
 
   '@@trail':
     'Model-level audit trail — fires a log entry for every `create`, `update`, and `delete` on this model.\n\n```\nmodel User {\n  @@trail(audit)\n}\n```\n\nRequires a `database` block with `driver trail`.',

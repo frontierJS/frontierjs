@@ -43,8 +43,8 @@ model Notification {
 
   @@check("contextType IN ('Note')")
   @@gate(0.8.4.8)
-  @@allow('read',   userId == auth().id)
-  @@allow('update', userId == auth().id)
+  @@allow(read,   userId == auth().id)
+  @@allow(update, userId == auth().id)
 }
 ```
 

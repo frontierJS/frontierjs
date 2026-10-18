@@ -330,7 +330,8 @@ const AGENT_RULES = [
   { needs: '@frontierjs/litestone', rules: [],
     text: 'Access is declared in the schema — `@@gate`, `@@allow`, `@guarded`, `@@transitions` — and never '
         + 'checked in a service hook. A hook guards the callers that pass through it; the schema guards every '
-        + 'one, including a job, a seed and a migration.' },
+        + 'one that writes on a principal\'s client. `asSystem()` — a job, a seed, a migration — skips `@@allow` and '
+        + '`@@deny`, so a rule about the data that must hold for it too is `@@require` or `@@check`.' },
   { needs: '@frontierjs/junction', rules: ['service-module-db'],
     text: 'A service reads the request-scoped client, `$.db` (`import { $ } from \'@frontierjs/junction\'`). '
         + 'The app\'s own imported client carries no principal, so every row policy sees `auth()` as null.' },

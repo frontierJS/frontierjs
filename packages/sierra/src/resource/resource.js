@@ -2289,7 +2289,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
    * Which columns this caller was not allowed to READ on the row it opened.
    *
    * The third member of the family and the only one that is about what is NOT
-   * in the record. A field `@allow('read', …)` is enforced by stripping the
+   * in the record. A field `@allow(read, …)` is enforced by stripping the
    * key, so a note the caller may not see and a customer with no note are one
    * answer — and a form then offers an ordinary empty box, which SAVES: the
    * read policy is not a write policy, and nothing refuses the write.
@@ -2306,7 +2306,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
    * Which columns of the write that just succeeded did the boundary decline.
    *
    * The counterpart of `sealedFields` on the other side of the write, and it is
-   * on the other side because it has to be: a field `@allow('write', …)` is a
+   * on the other side because it has to be: a field `@allow(write, …)` is a
    * predicate over the caller AND the row, so *may I write this* is unanswerable
    * from the schema, and the boundary answers it by keeping the stored value.
    * The write succeeds. Every other column lands. Nothing raises.
@@ -2316,7 +2316,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
    * a form merges it into the slot server errors already use.
    *
    * The CREATE table, because the flag is a fact about the column rather than
-   * about the mode: `@allow('write', …)` is emitted on both, and a create drops
+   * about the mode: `@allow(write, …)` is emitted on both, and a create drops
    * silently too (there the payload IS the row, graded in JS one layer up).
    */
   function declined(sent, saved) {

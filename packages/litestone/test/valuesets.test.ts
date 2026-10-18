@@ -160,8 +160,8 @@ describe('the set is resolved through the CALLER’S accessor', () => {
       label   String @unique
       ownerId Int
       @@label(label)
-      @@allow('read',   ownerId == auth().id)
-      @@allow('create', auth().id == 1)
+      @@allow(read,   ownerId == auth().id)
+      @@allow(create, auth().id == 1)
     }
     valueset TaskTag { source Tag value label }
     model Task {

@@ -24,7 +24,7 @@ model User {
 
   @@auth
   @@gate(4.4.4.5)
-  @@allow('update', id == auth().id)
+  @@allow(update, id == auth().id)
 }
 `
 
@@ -113,9 +113,9 @@ describe('emit', () => {
 
   test('a membership delegates to the container\'s update rule where it has one', () => {
     const text = emit(hiring, { scaffold: SCAFFOLD }).text
-    expect(text).toContain("@@allow('create', check(company, 'update'))")
-    expect(text).toContain("@@allow('read',   memberships.some(userId == auth().id))")
-    expect(text).toContain("@@allow('update', memberships.some(userId == auth().id && role == 'recruiter'))")
+    expect(text).toContain("@@allow(create, check(company, 'update'))")
+    expect(text).toContain("@@allow(read,   memberships.some(userId == auth().id))")
+    expect(text).toContain("@@allow(update, memberships.some(userId == auth().id && role == 'recruiter'))")
     expect(text).toContain('@@relator([companyId, userId], once)')
   })
 
@@ -126,7 +126,7 @@ describe('emit', () => {
     delete a.entities[0].access.roles
     const out = emit(a, { scaffold: SCAFFOLD })
     const membership = out.text.slice(out.text.indexOf('model Membership {'))
-    expect(membership.slice(0, membership.indexOf('\n}'))).toMatch(/@@gate\(4\.8\.8\.8\)\n {2}@@allow\('read', +userId == auth\(\)\.id \|\| check\(company\)\)$/)
+    expect(membership.slice(0, membership.indexOf('\n}'))).toMatch(/@@gate\(4\.8\.8\.8\)\n {2}@@allow\(read, +userId == auth\(\)\.id \|\| check\(company\)\)$/)
     expect(out.findings.map(f => f.message).join('\n')).toContain('No member administers a Company')
     expect(parses(out.text)).toBe(true)
   })
@@ -152,7 +152,7 @@ describe('emit', () => {
   test('two administering roles are either one', () => {
     const a = clone(hiring)
     a.entities[0].access.roles.update = ['recruiter', 'manager']
-    expect(emit(a, { scaffold: SCAFFOLD }).text).toContain("@@allow('update', memberships.some(userId == auth().id && (role == 'recruiter' || role == 'manager')))")
+    expect(emit(a, { scaffold: SCAFFOLD }).text).toContain("@@allow(update, memberships.some(userId == auth().id && (role == 'recruiter' || role == 'manager')))")
   })
 
   // check(parent, 'update') against a parent held only by a gate compiles to
@@ -164,7 +164,7 @@ describe('emit', () => {
     ] }
     const text = emit(a, { scaffold: SCAFFOLD }).text
     expect(text).not.toContain("check(account, 'update')")
-    expect(text).toContain("@@allow('update', check(account, 'read'))")
+    expect(text).toContain("@@allow(update, check(account, 'read'))")
   })
 
   // A published shop is read by everybody; its orders are not.
@@ -175,9 +175,9 @@ describe('emit', () => {
       { name: 'OrderItem', rung: 'novel', why: 'probe', links: [{ name: 'order', to: 'Order', required: true }], access: { via: 'order' } },
     ] }
     const { text } = emit(a, { scaffold: SCAFFOLD })
-    expect(text).toMatch(/@@allow\('read', +buyerId == auth\(\)\.id \|\| check\(shop, 'update'\)\)/)
-    expect(text).toContain("@@allow('create', check(shop, 'read') && (buyerId == auth().id))")
-    expect(text).toMatch(/@@allow\('read', +check\(order\)\)/)
+    expect(text).toMatch(/@@allow\(read, +buyerId == auth\(\)\.id \|\| check\(shop, 'update'\)\)/)
+    expect(text).toContain("@@allow(create, check(shop, 'read') && (buyerId == auth().id))")
+    expect(text).toMatch(/@@allow\(read, +check\(order\)\)/)
     expect(text).not.toMatch(/check\(shop\)[^,]/)
     expect(parses(text)).toBe(true)
   })
@@ -204,7 +204,7 @@ describe('emit', () => {
 
   test('a create names its caller AND reaches the parent', () => {
     const text = emit(hiring, { scaffold: SCAFFOLD }).text
-    expect(text).toContain("@@allow('create', check(application, 'read') && (interviewerId == auth().id))")
+    expect(text).toContain("@@allow(create, check(application, 'read') && (interviewerId == auth().id))")
     expect(text).toContain('interviewerId  String       @default(auth().id)')
   })
 
@@ -219,15 +219,15 @@ describe('emit', () => {
     const a = { entities: [{ name: 'Receipt', rung: 'novel', why: 'probe', fields: [{ name: 'total', type: 'money', required: true }], links: [{ name: 'customer', to: 'User', actor: 'subject', required: true }], access: { system: true } }] }
     const text = emit(a, { scaffold: SCAFFOLD }).text
     expect(text).toContain('@@gate(4.8.8.8)')
-    expect(text).toContain("@@allow('read', customerId == auth().id)")
+    expect(text).toContain("@@allow(read, customerId == auth().id)")
   })
 
   test('shared opens the read only; the writes stay with the links, and an administrator holds the rest', () => {
     const text = emit(TIMETABLE, { scaffold: SCAFFOLD }).text
     expect(text).toContain('@@gate(4.4.4.5)')
-    expect(text).toContain("@@allow('create', instructorId == auth().id)")
-    expect(text).toContain("@@allow('update', instructorId == auth().id)")
-    expect(text).not.toContain("@@allow('read'")
+    expect(text).toContain("@@allow(create, instructorId == auth().id)")
+    expect(text).toContain("@@allow(update, instructorId == auth().id)")
+    expect(text).not.toContain("@@allow(read")
     const bare = clone(TIMETABLE)
     bare.entities[0].links = []
     expect(emit(bare, { scaffold: SCAFFOLD }).text).toContain('@@gate(4.5.5.5)')
@@ -260,7 +260,7 @@ describe('emit', () => {
   test('public is the gate at 0, and a condition narrows it', () => {
     const text = emit(hiring, { scaffold: SCAFFOLD }).text
     expect(text).toContain('@@gate(0.4.4.4)')
-    expect(text).toMatch(/@@allow\('read', +managerId == auth\(\)\.id \|\| check\(company\) \|\| status == 'open'\)/)
+    expect(text).toMatch(/@@allow\(read, +managerId == auth\(\)\.id \|\| check\(company\) \|\| status == 'open'\)/)
   })
 })
 

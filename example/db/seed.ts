@@ -572,7 +572,7 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
 
   // A shopper with an account, so the storefront has somebody to be. Their
   // customer record is linked by `userId` — the same write `carts.checkout`
-  // makes when a signed-in person buys — which is what turns `@@allow('read',
+  // makes when a signed-in person buys — which is what turns `@@allow(read,
   // userId == auth().id)` on Order and Customer from a rule into a screen.
   if (!await sys.user.findFirst({ where: { email: DEMO.buyer.email } })) {
     await auth.createUser(DEMO.buyer)
