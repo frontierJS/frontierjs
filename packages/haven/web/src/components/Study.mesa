@@ -1,15 +1,27 @@
 <script>
-  // Study.mesa — the study (`IDEAS/study.md` 1.3, 2.1): Claude sessions in
+  // Study.mesa — the study (`IDEAS/study.md` 1.3, 2.1, 2.3): Claude sessions in
   // tabs beside the scene, in Sierra's side pane (`--side`, Ctrl+\ shows it,
   // Ctrl+O crosses). A tab bar, the shown tab's status line, its newest rows
   // that fit, and a line to type in; Enter sends it. PageUp and PageDown read
   // back and forward, Ctrl+J and Ctrl+K show the next and the last tab, and
   // `/new [model]` and `/close` are the study's own words (`tabs.js`).
   //
+  // A call the owner's settings do not allow waits on a panel over the input
+  // (`askRows`): on an empty line `1` allows it, `2` allows it and keeps what
+  // the CLI suggested, `3` denies it, and a line typed and sent denies it and
+  // goes to Claude as the owner's next line, as Claude Code's own "No, and tell
+  // Claude what to do differently" does. Claude Code's own digits, not y/a/n: a
+  // reason typed as "no, …" would lose its first letter to the answer. The bar marks a tab waiting `?`, so a
+  // prompt in a tab not shown is not left unseen.
+  //
   // The tabs are kept in `study.json` (`kept.js`) on every change, and a kept
   // tab's session reopens by `--resume` at its next line. What it said before
-  // the restart is not drawn: the transcript is Claude's, and nothing reads it
-  // yet (study.md 3.3).
+  // the restart is not drawn.
+  //
+  // `/work <id>` hands a `#workers` session in (study.md 3.3): the tab whose
+  // session it is, else a tab READING ALONG its transcript (`transcript.js`).
+  // A read-along sends nothing and never starts a process, since its own
+  // terminal holds the session and a `--resume` here would drive it twice.
   //
   // A tab's session starts at its first line, in the checkout this Haven sits
   // in, on the model the tab names, and one that ended (a crash, a missing
@@ -22,19 +34,24 @@
   // is none. Blank rows under the newest keep the input on the bottom.
   import { tint } from '#cell'
   import { checkout } from '#ledger'
+  import { onOpen } from '#study'
+  import { readWorkers } from '#workers'
   import { TONES } from '@/lib/home/answer.js'
   import { clip } from '@/lib/scene/cells.js'
   import { keptOf, readStudy, writeStudy } from '@/lib/study/kept.js'
   import { startSession } from '@/lib/study/session.js'
-  import { rowsOf, windowOf, wrapped } from '@/lib/study/rows.js'
+  import { readAlong } from '@/lib/study/transcript.js'
+  import { askRows, rowsOf, waitRows, windowOf, wrapped } from '@/lib/study/rows.js'
   import { cycled, modelOf, studyLine, tabBar } from '@/lib/study/tabs.js'
 
   const cwd = checkout() ?? process.cwd()
 
   // `earlier` is the messages of a session that ended, kept above the next;
   // `top` the first row shown while reading back, null following the newest;
-  // `resume` the session id a kept tab reopens, until its process starts.
-  const tabOf = (model = null, resume = null) => ({ model, resume, session: null, off: null, earlier: [], top: null, since: 0 })
+  // `resume` the session id a kept tab reopens, until its process starts;
+  // `reads` the session a read-along tails from `transcript`, and such a tab never resumes.
+  const tabOf = (model = null, resume = null) => ({ model, resume, transcript: null, reads: null, session: null, off: null, earlier: [], top: null, since: 0 })
+  const alongOf = (reads, transcript) => ({ ...tabOf(), reads, transcript })
   const kept = readStudy(cwd)
 
   let root
@@ -43,7 +60,7 @@
   let draft = ''
   // A tab is held in place and `tabs` assigned again, since its session's
   // state arrives on the session's own subscription.
-  let tabs  = kept ? kept.tabs.map((t) => tabOf(t.model, t.sessionId)) : [tabOf()]
+  let tabs  = kept ? kept.tabs.map((t) => t.reads ? alongOf(t.reads, t.transcript) : tabOf(t.model, t.sessionId)) : [tabOf()]
   let at    = kept?.at ?? 0
   let now   = Date.now()
   // Written only when what is kept changed: a session's state arrives once an event.
@@ -56,6 +73,21 @@
     try { writeStudy(cwd, next) } catch {}
   }
   const changed = () => { tabs = [...tabs]; keep() }
+
+  function listen(t) {
+    t.session = readAlong({ session: t.reads, path: t.transcript, worker: () => readWorkers().find((w) => w.session === t.reads) ?? null })
+    t.off = t.session.subscribe(changed)
+    return t
+  }
+  for (const t of tabs) if (t.reads) listen(t)
+  tabs = [...tabs]
+  // Its own tab where there is one, so a prompt there is answered on its panel.
+  $.onDestroy(onOpen((w) => {
+    const i = tabs.findIndex((t) => (t.session?.state.sessionId ?? t.resume) === w.session)
+    if (i >= 0) at = i
+    else { tabs = [...tabs, listen(alongOf(w.session, w.transcript))]; at = tabs.length - 1 }
+    keep()
+  }))
 
   var box = null
   // Before its first layout the box reads 0 wide.
@@ -74,31 +106,36 @@
     for (const t of tabs) { t.off?.(); t.session?.end() }
   })
 
-  const hint = (model, resume) => wrapped(`${resume ? `Session ${resume.slice(0, 8)} reopens at your next line. ` : ''}Claude in ${cwd}${model ? ` on ${model}` : ''}. Enter sends a line, PageUp reads back, Ctrl+J and Ctrl+K the next and last tab, /new [model] opens one, /close ends this one, Ctrl+O is the scene.`, w - 1)
+  const hint = (model, resume, reads, transcript) => wrapped(reads ? `Reading along ${transcript ?? reads}. Its own terminal answers it; /close leaves.` : `${resume ? `Session ${resume.slice(0, 8)} reopens at your next line. ` : ''}Claude in ${cwd}${model ? ` on ${model}` : ''}. Enter sends a line, PageUp reads back, Ctrl+J and Ctrl+K the next and last tab, /new [model] opens one, /close ends this one, Ctrl+O is the scene.`, w - 1)
     .map((text) => ({ text, ink: TONES.muted }))
 
   // Each reads `tabs[at]` itself: a tab is the same object after a change,
   // so a value derived from a derived tab would be judged unchanged and stop.
   $: state = tabs[at].session?.state ?? null
   $: said  = [...tabs[at].earlier, ...(state?.messages ?? [])]
-  $: all   = said.length ? rowsOf(said, w - 1) : hint(tabs[at].model, tabs[at].resume)
-  $: room  = Math.max(1, h - 3)
+  $: all   = said.length ? rowsOf(said, w - 1) : hint(tabs[at].model, tabs[at].resume, tabs[at].reads, tabs[at].transcript)
+  $: asking = state?.asking ?? []
+  $: panel = asking.length ? askRows(asking[0], asking.length - 1, w - 1, Math.max(3, h - 8))
+    : state?.waiting ? waitRows(state.waiting, w - 1) : []
+  $: room  = Math.max(1, h - 3 - panel.length)
   $: shown = windowOf(all, room, tabs[at].top)
   $: pad   = Math.max(0, room - shown.rows.length)
   $: bar   = clip(tabBar(tabs, at), w)
   $: head  = clip(' ' + [
     modelOf(tabs[at], state),
-    state?.status === 'working' ? `working ${Math.max(0, Math.round((now - tabs[at].since) / 1000))}s`
+    state?.readOnly ? `read-only · ${state.waiting ? 'waiting on you' : state.exit ? 'no transcript' : state.status}`
+      : state?.status === 'needs-permission' ? 'needs permission'
+      : state?.status === 'working' ? `working ${Math.max(0, Math.round((now - tabs[at].since) / 1000))}s`
       : state?.exit ? 'ended' : 'idle',
-    state ? `$${state.cost.toFixed(2)}` : null,
+    state && !state.readOnly ? `$${state.cost.toFixed(2)}` : null,
     shown.below ? `${shown.below} newer ↓` : null,
   ].filter(Boolean).join(' · '), w)
 
   function close() {
     const t = tabs[at]
     t.off?.()
-    // A turn under way is stopped rather than left to finish where no tab shows it.
-    if (t.session?.state.status === 'working') t.session.kill()
+    // A turn under way is stopped rather than left to finish, or to ask, where no tab shows it.
+    if (t.session && t.session.state.status !== 'idle') t.session.kill()
     else t.session?.end()
     const rest = tabs.filter((x) => x !== t)
     tabs = rest.length ? rest : [tabOf()]
@@ -119,6 +156,8 @@
     }
     if (asked.close) { close(); draft = ''; return }
     const t = tabs[at]
+    if (t.reads) return
+    if (t.session?.state.asking.length) t.session.answer('deny')
     if (!t.session || t.session.state.exit) {
       const resume = t.session?.state.sessionId ?? t.resume ?? undefined
       if (t.session) t.earlier = [...t.earlier, ...t.session.state.messages]
@@ -134,9 +173,15 @@
   }
 
   const step = () => Math.max(1, room - 1)
+  const CHOICE = { 1: 'allow', 2: 'always', 3: 'deny' }
   function keydown(e) {
     // `code`, the key's name: a legacy terminal's Ctrl+K is a control byte.
-    if (e.ctrlKey && (e.code === 'j' || e.code === 'k')) {
+    if (asking.length && !draft && !e.ctrlKey && !e.metaKey && !e.altKey && CHOICE[e.key]) {
+      // Before the field sees it, so the letter answers rather than starting a line.
+      e.preventDefault()
+      tabs[at].session.answer(CHOICE[e.key])
+      changed()
+    } else if (e.ctrlKey && (e.code === 'j' || e.code === 'k')) {
       // Before the field sees it: an input submits on a line feed and deletes to its end on Ctrl+K.
       e.preventDefault()
       at = cycled(at, tabs.length, e.code === 'j' ? 1 : -1)
@@ -163,8 +208,11 @@
   {#each { length: pad } as _, i (i)}
     <pre class="line">{' '}</pre>
   {/each}
+  {#each panel as row, i (`${i}:${row.ink}:${row.text}`)}
+    <pre class="line" {@attach tint(row.ink)}> {row.text}</pre>
+  {/each}
   <form onsubmit|preventDefault={send}>
-    <input bind:value={draft} onkeydown={keydown} placeholder="ask Claude, Enter sends" />
+    <input bind:value={draft} onkeydown={keydown} placeholder={tabs[at].reads ? 'read-only — its own terminal answers it' : asking.length ? '1, 2 or 3, or why and Enter to deny' : 'ask Claude, Enter sends'} />
   </form>
 </div>
 

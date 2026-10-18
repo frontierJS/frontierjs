@@ -468,7 +468,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       </tr><tr data-row>
         <td class="m">@frontierjs/testing</td>
         <td class="m sub">0.1.7</td>
-        <td class="m sub">junction · litestone</td>
+        <td class="m sub">junction · litestone · mesa</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/toolbelt</td>
@@ -493,7 +493,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       </tr></tbody></table></div>
 </section>
 <section id="features">
-  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">338 across 26 packages · read, never invented</span></div>
+  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">339 across 26 packages · read, never invented</span></div>
   <p class="note">One row per file under a package's <code>docs/</code> and per <code>##</code> heading in its README — the two places a capability is already written down. A package that documents itself in one README contributes headings; one that writes a file per feature contributes files; a package with neither contributes a finding.</p><div class="panel scroll"><table><thead><tr><th>Package</th><th>Capability</th><th>The first thing it says</th><th>Where</th></tr></thead><tbody><tr data-row>
       <td class="m">@frontierjs/auth</td>
       <td class="m">Setup</td>
@@ -1987,7 +1987,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m">@frontierjs/site-kit</td>
       <td class="m">Changes — @frontierjs/site-kit</td>
-      <td class="m sub">- site-kit check &lt;dir&gt; is the pre-ship check every site-kit site has: content/ without a build (unknown &lt;Tag&gt; or layout:, a…</td>
+      <td class="m sub">- site-kit build &lt;dir&gt; --preview writes a review build.</td>
       <td class="m sub">packages/site-kit/docs/CHANGES.md</td>
     </tr>,<tr data-row>
       <td class="m">@frontierjs/testing</td>
@@ -2023,6 +2023,11 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td class="m"></td>
       <td class="m">Binding the principal</td>
       <td class="m sub">Junction's CALLOPTIONSAT states which argument of each ServiceCaller method</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Driving the app in a browser — @frontierjs/testing/drive</td>
+      <td class="m sub">One call owns a verify run: it refuses a port that already answers, starts each</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -2559,7 +2564,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">165 rows · 272 targets · 1 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">167 rows · 276 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>a migration, db/migrations/, or a column whose KIND of time changed</td>
       <td>example: verify:migrate — the only thing that reads the committed files, since autoMigrate means nothing else ever does</td>
@@ -2692,6 +2697,14 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>either static origin — site/serve.js, widget/serve.js, serve/http-answers.js</td>
       <td>packages/sierra: test/site-serve.test.js + test/widget-serve.test.js — the two answer CORS OPPOSITELY on purpose, which is the pair a test over one server cannot state, and a range and an encoding never combine</td>
       <td><span class="tally"><b>packages/sierra</b>test/site-serve.test.js</span><span class="tally"><b>packages/sierra</b>test/widget-serve.test.js</span></td>
+    </tr><tr data-row>
+      <td>a host function or the Cloudflare adapter — postbuild/functions.js, postbuild/function-handler.js, site/cloudflare.js, site-kit deploy, a preview (preview: true, --preview)</td>
+      <td>packages/sierra: test/site-functions.test.js (the entry under serveSite, Vite dev, the compiled binary, the Worker the adapter writes called with a stand-in ASSETS, the preview alias, and each kind of dist refused by the other deploy) · website: verify (host.worker, the config frontierjs.com deploys with). test/site-functions.test.js also fails an import in function-handler.js, which wrangler would refuse to bundle. Workerd itself is none: site-kit deploy &lt;dir&gt; --dry proves the Worker bundles, and only wrangler dev on a built site shows runworkerfirst and the 404 page answering, which no suite starts. A Version URL serving a preview is none until the first upload</td>
+      <td><span class="tally"><b>packages/sierra</b>test/site-functions.test.js</span><span class="tally"><b>website</b>verify</span></td>
+    </tr><tr data-row>
+      <td>the cache rule and its host file — postbuild/headers.js, postbuild/hashed-asset.js</td>
+      <td>packages/sierra: test/site-serve.test.js (headers asked per file against what serveSite sends) · website: verify (host.headers, every shipped file both ways). Workerd itself is none: only wrangler dev on a built site shows Cloudflare applying headers, which no suite starts</td>
+      <td><span class="tally"><b>packages/sierra</b>test/site-serve.test.js</span><span class="tally"><b>website</b>verify</span></td>
     </tr><tr data-row>
       <td>a string this repo renders as HTML by HAND — the dev overlay (build/dev-overlay.js), a devtools panel (src/devtools/)</td>
       <td>packages/sierra: test/dev-overlay.test.js + test/devtools-escaping.test.js — both evaluate the SHIPPED string in a DOM instead of asserting on its text, because an unescaped quote inside an attribute reads as correct to any substring check, and each hostile value is graded beside a legitimate one that must still render</td>
@@ -2911,7 +2924,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr><tr data-row>
       <td>@@mirror's derivation (expandMirror in parser.js), litestone mirror exit (src/mirror-exit.js), or a relation's enforced: false</td>
       <td>../fjs-prototypes/chat: verify:mirror-exit — the only place a mirror is filled by a sync, cut loose and booted again; litestone's test/system-column.test.ts holds the DDL-equality half without a Provider</td>
-      <td><span class="tally bad"><b>../fjs-prototypes/chat</b>verify:mirror-exit — not found</span></td>
+      <td><span class="tally"><b>../fjs-prototypes/chat</b>verify:mirror-exit</span></td>
     </tr><tr data-row>
       <td>conduit · notifications · email-kit</td>
       <td>example: verify:notify</td>

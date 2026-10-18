@@ -6,7 +6,8 @@
   "license": "MIT",
   "author": "FrontierJS",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./drive": "./src/drive.ts"
   },
   "files": [
     "src",
@@ -23,12 +24,19 @@
   },
   "peerDependencies": {
     "@frontierjs/junction": "^0.1.0",
-    "@frontierjs/litestone": "^1.1.0"
+    "@frontierjs/litestone": "^1.1.0",
+    "@frontierjs/mesa": "^0.1.6"
+  },
+  "peerDependenciesMeta": {
+    "@frontierjs/mesa": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "bun-types": "^1.3.14",
     "@frontierjs/junction": "workspace:*",
-    "@frontierjs/litestone": "workspace:*"
+    "@frontierjs/litestone": "workspace:*",
+    "@frontierjs/mesa": "workspace:*"
   },
   "publishConfig": {
     "access": "public"

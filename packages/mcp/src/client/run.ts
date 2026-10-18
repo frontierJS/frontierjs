@@ -36,6 +36,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { commandFor, parseArgs, ArgvError, type Command, type ToolListing, type ParseOptions } from './argv.ts'
 import { maskToken, type Profile, type ProfileFile, type ProfileStore } from './profiles.ts'
 import { cacheKey, type ToolCache } from './cache.ts'
+import { isListResult } from '@frontierjs/junction/envelope'
 import { routeOffered, CallRefused, type Route } from './routes.ts'
 
 export interface RunOptions extends ParseOptions {
@@ -523,8 +524,7 @@ const shellWord = (v: unknown) => {
 
 /** A `find` answers the list envelope; its rows are `.data`. */
 function rowsOf(data: unknown): unknown[] | null {
-  const d = data as { kind?: string; data?: unknown }
-  return d && d.kind === 'list' && Array.isArray(d.data) ? d.data : null
+  return isListResult(data) && Array.isArray(data.data) ? data.data : null
 }
 
 const SCALAR = (v: unknown) => v === null || ['string', 'number', 'boolean'].includes(typeof v)

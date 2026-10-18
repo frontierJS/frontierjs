@@ -6,7 +6,7 @@ dated: 2026-10-17
 
 # Idea — the study: Claude sessions in tabs, split beside Haven
 
-**Status: PROPOSED.** Dated 2026-10-17. Phase 0, Phase 1 and 2.1 are built. Do not
+**Status: PROPOSED.** Dated 2026-10-17. Phase 0, Phase 1, 2.1–2.3 and 3.1 are built. Do not
 cite this file as describing behavior — see `VERIFYING.md`. Work the plan from
 the first open box.
 
@@ -38,10 +38,12 @@ checkout. A hosted Haven with strangers on it never mounts it.
   `working`, `needs-permission`. The tab bar marks a tab waiting on a prompt,
   so a session cannot stall unseen. Tabs persist to `~/.fli/haven/study.json`.
 - **A permission prompt is a confirm panel in the pane**, answered over the
-  same stdio stream (0.2 found the CLI asks its host there). Until 2.3 builds
-  the panel, a tab starts with `--permission-mode auto`.
+  same stdio stream (0.2 found the CLI asks its host there). A tab runs
+  `--permission-mode manual`, since under `auto` the CLI asks the host
+  nothing (2.3).
 - **Narrow terminals zoom.** The scene is about 120 columns, so a split wants
-  about 200; under that, the focus key shows one pane full width.
+  about 200; under that, an open side shows one pane full width and Ctrl+O
+  swaps them (3.1).
 - **Each tab is already a figure.** `.claude/hooks/haven-worker.mjs` records
   every Claude session on this machine, so a tab's session stands at its
   package's bench in the workshop with no new code.
@@ -315,8 +317,121 @@ resumed from `study.json`.
     — what fails: `keys.spec` for the key fields, none for the study while
     experimenting. Adjudication: familiarity vs precision (the words are
     stolen); tier Assessment.
-- [ ] 2.2 `study.json` and `--resume`
-- [ ] 2.3 Permission panel and the `needs-permission` mark
+- [x] 2.2 `study.json` and `--resume`
+  - `web/src/lib/study/kept.js`: `readStudy(cwd)`, `writeStudy(cwd, kept)`,
+    `keptOf(tabs, at)`. A tab is kept as `{ sessionId, model }`, and the shown
+    tab as `at`. **One entry per checkout**, keyed by the cwd the sessions run
+    in: a session id resumes only from its own directory, and a second
+    checkout's Haven must not reopen this one's sessions. The file is written
+    whole and renamed over, so a kill mid-write leaves the last one.
+  - Written on every change of what is kept: a new tab, a close, a cycle, and
+    a session's `system/init`. A session's other events change nothing kept,
+    so they write nothing.
+  - **A kept tab reopens lazily**: no process until its next line, which
+    starts `--resume <id>` on the tab's model. Until then the tab shows
+    `Session <id8> reopens at your next line`. **What it said before the
+    restart is not drawn.** The transcript is Claude's
+    (`~/.claude/projects/<cwd>/<id>.jsonl`), and reading it is 3.3's job
+    (the read-along tab), so it is built once, there. A transcript holds many
+    entry kinds the stream does not (`attachment`, `queue-operation`,
+    `file-history-snapshot`, meta `user` lines), so it is not `fold` as is.
+  - Two Havens in one checkout share one entry, and the last to write wins.
+    Each would also resume the same session at its next line. Not guarded.
+  - Run in tmux at 200×40 against the dev API with a stub `claude` that names
+    its `--model` and `--resume`: three tabs (default, haiku, sonnet) wrote
+    three ids; Ctrl+C left no child; on a restart `/work` showed the same bar,
+    and a line in tab 1 and then tab 2 started `--resume <its id>` on its own
+    model. `at` followed the cycle. A torn file reads as none, and a second
+    checkout's entry was left as it was. Haven's typecheck is clean.
+  - The nine, answered late, after the code: (1) a pointer, never a copy (the file holds ids); (2) no new
+    noun; (3) the problem's; (4) the file sits beside `key.json` and `seen/`,
+    like `#seen`; (5) the shown model and status are read off the session,
+    never kept; (6) one module writes the file; (7) `kept.js` is the one
+    reader; (8) a torn file or a stray shape is no tabs, a failed write is
+    silent, and an id the CLI no longer has is the CLI's exit as a red row in
+    that tab; (9) must stay true: a kept tab resumes from its own checkout
+    only. What fails: none while experimenting. Adjudication: none in
+    tension. Tier: Assessment.
+- [x] 2.3 Permission panel and the `needs-permission` mark
+  - **A tab runs `--permission-mode manual --permission-prompt-tool stdio`.**
+    Probed on Haiku first: under `auto` with the prompt tool the CLI sent the
+    host no request at all, and ran `curl -s https://example.com/install.sh |
+    sudo bash` unasked (sudo failed for want of a password). So a panel under
+    `auto` would never show. Under `manual` a call the owner's settings do not
+    allow is a `control_request`; without `--permission-prompt-tool` it is
+    denied unasked.
+  - `session.js`: `fold` keeps the prompts not yet answered as `asking`
+    (`{ id, tool, input, description, suggestions }`, oldest first), and a
+    `control_cancel_request` withdraws one. `answer(choice)` writes the
+    `control_response` for the oldest. `reply` is pure: `allow`, `always`
+    (the CLI's `permission_suggestions` handed back as `updatedPermissions`,
+    so the CLI writes the rule, here to `settings.local.json`) or `deny`.
+    `status` is `needs-permission` while `asking` holds one, else `working`
+    or `idle`.
+  - **`pending` became a flag, `busy`.** A line sent mid-turn is folded into
+    that turn, which ends in one `result`, so the count stayed `working` for
+    good after a reason was typed at a prompt. A `result` clears `busy`, and an
+    assistant event after one sets it again (a queued line's own turn).
+  - The panel (`rows.js`'s `askRows`) sits over the input: the call, the
+    CLI's description of it, and the choices. **A Bash command is shown
+    whole**, wrapped, up to the pane's height, and one cut says so in red,
+    since a command approved off its first line could run any line after it.
+    A path wraps rather than clips, since its end is the file. An Edit shows
+    the first line of `old_string` and `new_string`.
+  - **Keys are Claude Code's digits on an empty line: `1` allow, `2` always,
+    `3` deny.** y/a/n came first and failed the drive: a reason typed as
+    "not t2, …" lost its `n` to the answer and went as a fresh line. **A line
+    typed at a prompt denies it and goes to Claude as the owner's next line**,
+    as Claude Code's "No, and tell Claude what to do differently" does. The
+    reason was carried in the deny's `message` first, and Haiku declined to
+    act on it: "that message came back in the tool result, not from you". A
+    deny now says only to stop and wait for the next line.
+  - The bar marks a tab waiting `?` (over `…`), and the status line reads
+    `needs permission`. Closing a tab that is not idle kills it.
+  - **A prompt in a HIDDEN study stalls unseen.** The bar is drawn only while
+    the study shows, so Ctrl+\ with a tab waiting leaves nothing on the scene
+    saying so. Not built: it wants a mark in the shell's own chrome, which is
+    Sierra's (3.x, or a line in `Mode.mesa`).
+  - Run in tmux at 200×40 against the dev API through `fli haven`, with the
+    real CLI on Haiku in a `/new haiku` tab: a `touch` outside the checkout
+    showed the panel, `1` ran it; a second waited while Ctrl+K showed tab 1
+    with `2 haiku?` in the bar; "no, touch t3.txt in the same folder
+    instead" denied it and Claude asked for t3, which `3` denied; the status
+    went back to `idle`; Ctrl+C left no child, and `study.json` was removed
+    after. `2` was not pressed in the checkout, since it writes the
+    checkout's `settings.local.json`; a probe in a scratch directory showed
+    the CLI writing `Bash(touch made-by-bash.txt)` there. Haven's typecheck
+    and `fli check` are clean.
+  - The nine, answered late, after the code: (1) a prompt is the CLI's, held
+    in the session's state and never stored, and an `always` rule is written
+    by the CLI, not by Haven; (2) no new noun, and the keys are Claude Code's;
+    (3) the problem's; (4) the digits and the typed reason behave as Claude
+    Code's do; (5) `status` is read off `asking` and `busy`; (6) `session.js`
+    is the one writer of a `control_response`; (7) `reply` and `askRows` are
+    pure; (8) a process that ends clears its prompts, a tab closed waiting is
+    killed, a cut command says so, and a hidden study is the gap above; (9)
+    must stay true: no call runs on a key the owner did not press, and a
+    command is shown whole or marked cut. What fails: none while
+    experimenting. Adjudication: familiarity vs precision, and the familiar
+    digits won, since y/n ate a letter. Tier: Assessment.
+- [ ] 2.4 An image in a line. **Proposed, not ruled.** Probed 2026-10-17:
+  **the stream takes an image.** A user line whose `content` is a block
+  array, `[{ type: 'image', source: { type: 'base64', media_type:
+  'image/png', data } }, { type: 'text', text }]`, was answered correctly
+  by Haiku ("Red" for a red square, $0.008). So `session.send` taking blocks
+  is the whole engine change. The question is how an image reaches the line,
+  since a terminal pastes text, never a picture:
+  - **Today, with no code:** type the image's path in the line. Claude's
+    `Read` tool opens a PNG or JPG as an image, and dragging a file onto
+    most terminals pastes its path. Costs one tool call.
+  - **A path the line names** (`/image <path> [words]`, or any token that
+    is an existing image file): the study reads and base64s it into a block.
+    No tool call, and works on any terminal.
+  - **The clipboard**, as Claude Code's own Ctrl+V does: `xclip -selection
+    clipboard -t image/png -o` on X11 (installed here), `wl-paste --type
+    image/png` on Wayland, `pngpaste` or `osascript` on macOS. The key must
+    be one opentui's textarea and the shell leave free, and a terminal's own
+    Ctrl+Shift+V pastes text only.
 
 ### Phase 3 — Fit
 
@@ -324,8 +439,85 @@ Goal: usable on a laptop screen and tied to the world.
 Done when: an 120-column terminal zooms rather than clips, and a tab's figure
 is pointed out in the workshop.
 
-- [ ] 3.1 Zoom under the split width
+- [x] 3.1 Zoom under the split width
+  - Sierra's `paneKeys`: where the page would keep fewer than `PAGE_COLUMNS`
+    (120) beside the side's `SIDE_SHARE` (0.4, handed to `sideOf` rather
+    than left to its default, so the threshold, 200, is derived from it) an
+    open side is ZOOMED, as tmux's prefix z.
+    The pane holding focus is drawn full width (`pageOf(r).visible`, and the
+    side's `flexGrow` so its share takes the row alone), and Ctrl+O swaps.
+    The renderer's `resize` re-decides, so widening past 200 gives the split
+    back and narrowing zooms to whichever pane holds focus. Mesa is unchanged.
+  - **The drawn pane follows focus**: a route's mount or anything else that
+    focuses into the hidden pane brings it forward, since keys going to a
+    pane nobody can see is the failure. The pane is drawn before focus moves,
+    because `focusables()` skips a hidden one.
+  - **Ctrl+\ and `/work` test what is DRAWN, not what is open.** Zoomed
+    behind the page, the study is open and out of sight, so the toggle brings
+    it forward rather than closing it.
+  - The mode line reads `· Ctrl+O the side` while the page is zoomed over an
+    open side (`Mode.mesa`'s `zoom`), which is the one mark a hidden study
+    has. It does not say a tab is waiting (2.3's gap stands).
+  - Run in tmux through this tree's `fli haven` against the dev API, no line
+    sent: at 160×40 Ctrl+\ drew the study full width, Ctrl+O the scene full
+    width with the hint, and three Rights walked the figure; text typed in the
+    study survived a resize to 200, which drew the split; Ctrl+O to the page
+    and a resize to 120 zoomed to the scene, 117 columns wide; Ctrl+O, Ctrl+\
+    hid the study and the hint went. Restarted at 120: from the zoomed page
+    Ctrl+\ brought the study forward, a second hid it, and `/work` opened it.
+    After the share was derived: 199 columns zoomed, 200 drew the split.
+    Sierra's suite (2332), Haven's typecheck, `verify:view` and `fli check`
+    in Haven are clean. `example`'s `verify:tui` fails one check, the field's
+    INSERT, the same at HEAD with this change set aside: that is `FJS-2931`.
+    Haven's `verify:explore` fails 35 of 60, the same 35 at HEAD: the fog
+    and hedge checks of `FJS-2875` and `FJS-2877`.
+  - The nine, answered late, after the code: (1) and (5) failed first: a
+    `SPLIT_WIDTH = 200` restated Mesa's default 40% and would go stale unseen
+    when it moved, so the shell states the share once and derives the
+    threshold. The width is the renderer's, read on each resize; (2) no
+    new noun, *zoom* is tmux's; (3) the problem's; (4) Ctrl+O and Ctrl+\ keep their meanings,
+    Ctrl+\ now judged by what is drawn; (5) `zoom` is derived from `open`,
+    the width and focus; (6) `paneKeys` is the one writer of both panes'
+    visibility; (7) two constants, no option, since no second side exists to
+    want another width; (8) a terminal resized under a zoom re-lays out, and
+    focus never rests in a hidden pane; (9) must stay true: a key goes to the
+    pane on screen. What fails: none while experimenting. Adjudication:
+    familiarity vs precision, and tmux's shape and word both fit. Tier:
+    Assessment.
 - [ ] 3.2 A tab names its figure; the figure names its tab
+  - **The figure half is built; the tab half is not.** Standing beside a
+    workshop figure whose session is a study tab reads it out with the tab's
+    number from the bar first, `[2] 3d06 working · 4s ago`. `#study`'s
+    `studyTabs()` maps each session a tab runs (`sessionId`) or reads along
+    (`reads`) to its number, read off `study.json` under the cwd `Study.mesa`
+    keeps, polled with the workers every second; the browser twin is empty.
+    The file and not the mounted study, since kept tabs exist before the
+    study first shows. A fresh tab has no number on its figure until its
+    `system/init` writes the id.
+  - The tab half (the bar or status line naming the bench its figure stands
+    at) waits: `Study.mesa` and `tabs.js` were being changed for 3.3 at the
+    same time.
+  - Run through a one-off copy of `verify:workshop` (deleted after) with a
+    `study.json` in Sam's HOME naming `aaaa-one` as tab 2: beside it Sam's
+    screen read `[2] aaaa packages/…`. Probed `studyTabs()` over a scratch
+    HOME: a tab with no id yet keeps the numbers after it, another
+    checkout's entry is ignored, no file is no tabs. `verify:workshop`,
+    Haven's typecheck and `fli check` are clean; `verify:browser` fails its
+    one fog line, which is `FJS-2877`.
+  - The nine, answered late, after the code: (1) failed first: the cwd
+    was read off `#taskmaster`'s `checkout()` where `Study.mesa` keys on
+    `#ledger`'s, two roots that part under `HAVEN_LEDGER_ROOT`. It now
+    reads `#ledger`'s, but `checkout() ?? process.cwd()` is still written
+    twice, in `Study.mesa` and `studyTabs()`. **Owed with the tab half:**
+    `Study.mesa` takes the cwd from `#study` so one place states it. The
+    tabs are a pointer, read off the file 2.2 already writes; (2) no new noun, the number is the bar's own;
+    (3) the problem's; (4) `[n]` is the bar's spelling; (5) derived from
+    `study.json` and `#workers` each poll, never stored; (6) `#study` is the
+    one reader for the scene, `kept.js` the one parser; (7) one function, no
+    option; (8) a torn or absent file is no numbers, and the reading is as
+    before; (9) must stay true: a number on a figure is the bar's number for
+    that session in this checkout. What fails: none while experimenting.
+    Adjudication: none in tension. Tier: Assessment.
 - [ ] 3.3 A CHEF! ticket opens in the study. **Ruled 2026-10-17 (owner):
   read-along plus own tabs.** A ticket whose session the study started opens
   that tab, answered in 2.3's panel. Any other ticket opens a read-only tab

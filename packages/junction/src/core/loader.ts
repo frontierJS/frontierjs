@@ -14,6 +14,10 @@ import { diagnostic }       from './diagnostics.ts'
 
 // ─── Loader ───────────────────────────────────────────────────────────────
 
+// A message like "Object.entries requires that input parameter not be null"
+// names no frame; the stack (which opens with the message) is what finds the line.
+const thrownText = (err: unknown): string =>
+  err instanceof Error ? (err.stack || err.message) : String(err)
 
 
 export interface LoaderOptions {
@@ -107,8 +111,7 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
       // logged and stepped over, so the app booted green and the failure
       // arrived later as a 404 against a name somebody had written down.
       const msg = `${file} threw while loading, so its service is not registered and ` +
-                  `every call to it answers 404: ` +
-                  `${err instanceof Error ? err.message : String(err)}`
+                  `every call to it answers 404: ${thrownText(err)}`
       if (report) report(`loader:${file}:threw`, msg)
       else console.error(`[Loader] Failed to load: ${file}`, err)
     }
@@ -311,7 +314,7 @@ export async function autoloadRoutes(opts: RouteLoaderOptions): Promise<void> {
     } catch (err) {
       fail(`loader:${file}:threw`,
         `${join('routes', rel)} threw while loading, so ${url} answers 404: ` +
-        `${err instanceof Error ? err.message : String(err)}`)
+        thrownText(err))
     }
   }
 }

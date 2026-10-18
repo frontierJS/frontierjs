@@ -173,7 +173,8 @@ test/browser/
   kit/                 — @frontierjs/mesa/browser, one spec per wrapper; runtime/'s
                          server and page, its own fixtures
   drive/               — src/drive.js itself: each spec launches its own browsers
-                         (a kept profile, a wedged close, a signal to the launcher)
+                         (a kept profile, a wedged close, a browser gone mid-call,
+                         a signal to the launcher)
 
 bench/
   run.mjs              — bun run bench: bytes, DOM mutations, time, heap

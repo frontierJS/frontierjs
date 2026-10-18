@@ -63,7 +63,7 @@ export function decide(opts) {
   return withRegisterGuard(opts.root, () => decideUnguarded(opts))
 }
 
-function decideUnguarded({ root, id, pick, why = '', section, file, today = new Date() }) {
+function decideUnguarded({ root, id, pick, why = '', section, file, dry = false, today = new Date() }) {
   const q = findQuestion(root, id, file)
   if (q?.reason)              return q
   if (!q)                     return refuse(`no question has the id ${id}${file ? ` in ${file}` : ''}`)
@@ -115,6 +115,9 @@ function decideUnguarded({ root, id, pick, why = '', section, file, today = new 
   const close = row && closeRow(root, row, `Ruled [\`${ruling}\`](DECISIONS.md#${ruling.toLowerCase()}): **${letter}** — ${trimStop(option.text)}.`, today)
   if (close?.reason) return refuse(close.reason)
 
+  const files = ['DECISIONS.md', q.file, ...(row ? [row.file] : [])]
+  if (dry) return { ok: true, dry: true, ruling, date, question: q.question, pick: letter, closed: row?.id ?? null, files }
+
   const baseline = errorKeys(root)
   writeFileSync(decPath, dec)
   writeFileSync(paperAbs, struck)
@@ -128,7 +131,7 @@ function decideUnguarded({ root, id, pick, why = '', section, file, today = new 
     return refuse(`the ruling was put back: register:check found ${added.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
   }
 
-  return { ok: true, ruling, date, question: q.question, pick: letter, closed: row?.id ?? null, files: ['DECISIONS.md', q.file, ...(row ? [row.file] : [])] }
+  return { ok: true, ruling, date, question: q.question, pick: letter, closed: row?.id ?? null, files }
 }
 
 /**
@@ -146,7 +149,7 @@ export function settle(opts) {
   return withRegisterGuard(opts.root, () => settleUnguarded(opts))
 }
 
-function settleUnguarded({ root, id, by, why = '', file, today = new Date() }) {
+function settleUnguarded({ root, id, by, why = '', file, dry = false, today = new Date() }) {
   const q = findQuestion(root, id, file)
   if (q?.reason)           return q
   if (!q)                  return refuse(`no question has the id ${id}${file ? ` in ${file}` : ''}`)
@@ -176,6 +179,9 @@ function settleUnguarded({ root, id, by, why = '', file, today = new Date() }) {
   const close = row && closeRow(root, row, `Answered by [\`${found.id}\`](DECISIONS.md#${found.id.toLowerCase()}), an existing ruling.`, today)
   if (close?.reason) return refuse(close.reason)
 
+  const files = [q.file, ...(row ? [row.file] : [])]
+  if (dry) return { ok: true, dry: true, ruling: found.id, question: q.question, closed: row?.id ?? null, files }
+
   const baseline = errorKeys(root)
   writeFileSync(paperAbs, struck)
   close?.write()
@@ -186,7 +192,7 @@ function settleUnguarded({ root, id, by, why = '', file, today = new Date() }) {
     return refuse(`the strike was put back: register:check found ${added.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
   }
 
-  return { ok: true, ruling: found.id, question: q.question, closed: row?.id ?? null, files: [q.file, ...(row ? [row.file] : [])] }
+  return { ok: true, ruling: found.id, question: q.question, closed: row?.id ?? null, files }
 }
 
 // ─── the question ─────────────────────────────────────────────────────────────

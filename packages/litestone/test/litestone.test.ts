@@ -292,7 +292,7 @@ describe('parser', () => {
   // try — a caller reading `errors` crashed on the one kind of bad schema it
   // never saw coming (FJS-1777).
   test('a lexer error is a result in parse() and parseFile(), the file named', () => {
-    const bad = 'model A {\n id Int @id\n rate Int @unit(%)\n}'
+    const bad = 'model A {\n id Int @id\n rate Int @unit(#)\n}'
     const dir = tmpDir('lex-error')
     writeFileSync(join(dir, 'schema.lite'), bad)
     writeFileSync(join(dir, 'child.lite'), bad)
@@ -301,12 +301,12 @@ describe('parser', () => {
     let a: any, b: any, c: any
     expect(() => { a = parse(bad) }).not.toThrow()
     expect(a.valid).toBe(false)
-    expect(a.errors.join(' ')).toContain("Unexpected character '%'")
+    expect(a.errors.join(' ')).toContain("Unexpected character '#'")
 
     expect(() => { b = parseFile(join(dir, 'schema.lite')) }).not.toThrow()
     expect(b.valid).toBe(false)
     expect(b.errors.join(' ')).toContain('schema.lite')
-    expect(b.errors.join(' ')).toContain("Unexpected character '%'")
+    expect(b.errors.join(' ')).toContain("Unexpected character '#'")
 
     expect(() => { c = parseFile(join(dir, 'root.lite')) }).not.toThrow()
     expect(c.valid).toBe(false)
@@ -5098,6 +5098,19 @@ describe('nested writes', () => {
     expect(acc.name).toBe('Acme Final')
     const u = await db.user.findUnique({ where: { id: 20 } })
     expect(u?.accountId).toBe(1)
+  })
+
+  // FJS-2040: a bulk verb takes no nested writes, and says so rather than
+  // reporting the relation key as a malformed column value.
+  test.each([
+    ['createMany', (t: any) => t.createMany({ data: [{ id: 90, name: 'x', User: { create: [{ id: 90, email: 'n@x.com' }] } }] })],
+    ['updateMany', (t: any) => t.updateMany({ where: { id: 1 }, data: { User: { connect: [{ id: 1 }] } } })],
+    ['upsertMany', (t: any) => t.upsertMany({ data: [{ id: 91, name: 'x', User: { connect: [{ id: 1 }] } }], conflictTarget: ['id'] })],
+  ])('%s refuses a nested write by name', async (verb, call) => {
+    const err = await call(db.account).then(() => null, (e: any) => e)
+    expect(err?.message).toContain(`${verb} takes no nested writes`)
+    expect(err?.message).toContain('User')
+    expect(err?.message).not.toContain('must be an array')
   })
 })
 
@@ -12432,7 +12445,7 @@ describe('generateTypeScript — emits the surface a real client has', () => {
       'findManyCursor', 'findManyAndCount', 'count', 'exists', 'aggregate', 'groupBy',
       'query', 'create', 'createMany', 'update', 'updateMany', 'upsert', 'upsertMany',
       'remove', 'removeMany', 'restore', 'delete', 'deleteMany', 'search',
-      'optimizeFts', 'transitions',
+      'optimizeFts', 'transitions', 'transition',
     ]
     for (const m of methods) {
       expect(typeof (db.thing as any)[m]).toBe('function')   // the client really has it
@@ -16625,10 +16638,65 @@ describe('generateTypeScript', () => {
 
   test('emits TableClient<TRow, TCreate, TUpdate, TWhere>', () => {
     const dts = generateTypeScript(schema)
-    expect(dts).toContain('export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}>')
+    expect(dts).toContain('export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string>')
     expect(dts).toContain('findMany<')
     expect(dts).toContain('createMany(')
     expect(dts).toContain('findManyCursor(')
+  })
+
+  // FJS-3084
+  test('a model with @@transitions types its move names on transition()', () => {
+    const { schema: withMoves } = parse(`
+      enum Status { pending paid shipped }
+      model Order {
+        id     Int    @id
+        status Status @default(pending)
+        @@transitions(status, pay: pending -> paid, ship: paid -> shipped)
+      }
+      model Note { id Int @id }
+    `)
+    const dts = generateTypeScript(withMoves)
+    expect(dts).toContain('transition(id: TRow | string | number, name: TMove, opts?: { system?: boolean }): Promise<TRow>')
+    expect(dts).toContain("readonly order: TableClient<Order, OrderCreate, OrderUpdate, OrderWhere, OrderRelations, 'pay' | 'ship', 'status'>")
+    expect(dts).toContain('readonly note: TableClient<Note, NoteCreate, NoteUpdate, NoteWhere, NoteRelations, never, never>')
+  })
+
+  // FJS-3079
+  test('a write takes system: [...] typed to the columns and gate it can lift', () => {
+    const { schema: withSys } = parse(`
+      model Component {
+        id          Int      @id
+        name        String
+        lastCheckOk Boolean? @system
+        token       String?  @guarded
+        @@gate(5)
+      }
+      model Plain { id Int @id }
+    `)
+    const dts = generateTypeScript(withSys, { audience: 'system' })
+    for (const call of ['create', 'update', 'updateMany', 'upsert'])
+      expect(dts.match(new RegExp(`  ${call}[<(].*system\\?: TSys\\[\\]`))).not.toBeNull()
+    expect(dts).toContain('createMany(args: { data: TCreate[]; system?: TSys[] })')
+    expect(dts).toContain("ComponentRelations, never, 'lastCheckOk' | 'token' | '@@gate'>")
+    expect(dts).toContain('PlainRelations, never, never>')
+    // the client audience cannot see a @guarded column, so cannot lift it
+    expect(generateTypeScript(withSys)).toContain("ComponentRelations, never, 'lastCheckOk' | '@@gate'>")
+  })
+
+  // FJS-3107
+  test('a DateTime takes a Date on a write and an ISO string on a read', () => {
+    const { schema: withDates } = parse(`
+      model Check { id Int @id  at DateTime  seen DateTime?  marks DateTime[] }
+    `)
+    const dts = generateTypeScript(withDates)
+    const block = (name: string) => dts.match(new RegExp(`export interface ${name}\\b[^{]*\\{[^}]*\\}`))![0]
+    expect(block('Check')).toContain('at: string\n')
+    expect(block('CheckCreate')).toContain('at: string | Date')
+    expect(block('CheckCreate')).toContain('seen?: string | Date | null')
+    expect(block('CheckCreate')).toContain('marks')
+    expect(block('CheckCreate')).toContain('(string | Date)[]')
+    expect(block('CheckUpdate')).toContain('at?: string | Date')
+    expect(block('CheckWhere')).toContain('at?: string | Date | WhereOp<string | Date> | null')
   })
 
   test('emits QueryEvent interface', () => {
@@ -16641,8 +16709,8 @@ describe('generateTypeScript', () => {
   test('emits LitestoneClient with all models', () => {
     const dts = generateTypeScript(schema)
     expect(dts).toContain('export interface LitestoneClient {')
-    expect(dts).toContain('readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations>')
-    expect(dts).toContain('readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations>')
+    expect(dts).toContain('readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, never>')
+    expect(dts).toContain('readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, never>')
     expect(dts).toContain('asSystem(): LitestoneClient')
     expect(dts).toContain('$tapQuery(')
   })

@@ -1,8 +1,8 @@
 // src/pieces/kitchen.js — the kitchen's fittings (`scenes/Kitchen.mesa`):
 // the ticket rail across the back wall, the line the cooks stand behind, the
 // 86 board, the pass and the heat lamps over it, and what makes it a working
-// kitchen around them: the range behind the cooks, the sink, the stockpot,
-// the prep block, the produce, the walk-in, the mop and the service bell. The brigade
+// kitchen around them: the sink, the stockpot, the prep block, the produce,
+// the walk-in, the mop and the service bell. The brigade
 // (`components/Brigade.mesa`) finds each by `stage.placed()` and reads its
 // size off the art, so a fitting moved or resized here or in the scene moves
 // what is drawn on it.
@@ -33,13 +33,6 @@ export const board = (() => {
 export const lamps = (() => {
   const row = [...' '.repeat(PASS.length)].map((_, i) => (i % 10 === 5 ? 'v' : ' ')).join('')
   return piece('lamps', row, row.replace(/v/g, 'Y'))
-})()
-
-/** The range behind the line, as wide as it: a burner every seventh cell, `F` the flame. */
-export const range = (() => {
-  const inner = [...' '.repeat(LINE.length - 2)].map((_, i) => '(@)='[(i % 7) - 2] ?? '=').join('')
-  const art = `[${inner}]`
-  return piece('range', art, inked(art, 's', { '[': 'S', ']': 'S', '(': 'k', ')': 'k', '@': 'F' }))
 })()
 
 const SINK = String.raw`

@@ -4,3 +4,5 @@
 export const QUIET_MS = 10 * 60 * 1000
 
 export function readWorkers() { return [] }
+
+export function closeOut() { return false }

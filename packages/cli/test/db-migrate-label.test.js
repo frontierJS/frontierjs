@@ -52,3 +52,24 @@ describe('db:migrate label', () => {
     expect(await dry([])).toContain('migrate dev  (drift')
   })
 })
+
+// FJS-2252: `migrate create` exits 0 under a green check when the schema needs
+// nothing, so the command reads the migrations directory and not the exit code.
+describe('db:migrate --create-only reports what was written', () => {
+  async function real(flag = {}) {
+    const events = []
+    const emit = (e) => { events.push(e); return Promise.resolve() }
+    const cmd = await Command({ file, arg: [], flag: { 'create-only': true, ...flag }, emit })
+    await cmd()
+    return events.map(e => e.text ?? '').join('\n')
+  }
+
+  test('a file written is named, and a second run with nothing to do says none was', async () => {
+    const first = await real()
+    expect(first).toContain('Migration file created')
+    expect(first).toMatch(/\.sql/)
+    const second = await real()
+    expect(second).not.toContain('Migration file created')
+    expect(second).toContain('No migration file written')
+  })
+})

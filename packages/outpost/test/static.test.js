@@ -13,7 +13,7 @@
  */
 
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, rm, writeFile, readFile, readlink, stat, symlink } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, readFile, readdir, readlink, stat, symlink } from 'node:fs/promises'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
 import { createStatic, digestOfFiles, validRelativePath, LIMITS } from '../src/static.js'
@@ -65,6 +65,18 @@ describe('publishing bytes', () => {
 
     const { digests } = await statics.releases({ appId: 'app-1' })
     expect(digests).toEqual([first.digest])
+  })
+
+  test('republishing the live digest leaves the live directory in place', async () => {
+    const first = await release({ appId: 'app-1', slug: 'shop', files: page() })
+    // Not part of the digest: it survives only if the directory is never removed.
+    const marker = join(dir, 'apps/app-1', first.digest, 'marker')
+    await writeFile(marker, 'still here')
+
+    await statics.publish({ appId: 'app-1', files: page() })
+
+    expect(await readFile(marker, 'utf8')).toBe('still here')
+    expect((await readdir(join(dir, 'apps/app-1'))).filter(n => n.includes('.partial.'))).toEqual([])
   })
 
   test('the order the files were listed in is not part of the identity', async () => {
@@ -172,6 +184,14 @@ describe('activating what is already here', () => {
     expect(digests.length).toBe(2)
     expect(current).toBe(live.digest)
     expect(digests).toContain(live.digest)
+  })
+
+  test('a keep that is not a number falls back to the default instead of pruning every rollback target', async () => {
+    for (const keep of ['x', NaN, null, {}]) {
+      const fresh = createStatic({ staticDir: join(dir, 'keep-' + String(keep)) })
+      for (let i = 0; i < 3; i++) await fresh.publish({ appId: 'app-1', files: page(`v${i}`), keep })
+      expect((await fresh.releases({ appId: 'app-1' })).digests.length).toBe(3)
+    }
   })
 })
 

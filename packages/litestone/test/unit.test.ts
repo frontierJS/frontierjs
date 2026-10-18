@@ -169,13 +169,12 @@ describe('the advice that makes the declaration takeable', () => {
     }
     const [pct] = checkRules(parse('model M { id Int @id\n taxPercent Int }').schema)
       .filter(r => r.id === 'unit-in-the-column-name')
-    expect(pct.message).toContain('tax Int @unit("%")')
+    expect(pct.message).toContain('tax Int @unit(%)')
   })
 
-  test('the catalog entry for @unit lists % quoted', () => {
+  test('the catalog entry for @unit lists % bare', () => {
     const blurb = lookup('@unit')!.blurb
-    expect(blurb).toContain('ratio "%"')
-    expect(blurb).not.toContain('ratio %')
+    expect(blurb).toContain('ratio % (@unit(%)')
   })
 
   test('a column that already answers is not asked again', () => {
@@ -216,5 +215,18 @@ describe('the table behind it', () => {
 
   test('converting across dimensions is refused rather than answered', () => {
     expect(() => convertUnit(1, 'kg', 'm')).toThrow('measures mass')
+  })
+})
+
+// FJS-3046
+describe('@unit(%) — the one symbol that is not an identifier', () => {
+  test('parses bare, and quoted still parses to the same unit', () => {
+    const units = ['@unit(%)', '@unit("%")'].map(attr => {
+      const r = parse(`model M {\n id Int @id\n share Float ${attr}\n}`)
+      expect({ attr, errors: r.errors }).toEqual({ attr, errors: [] })
+      return r.schema.models[0].fields.find((f: any) => f.name === 'share').attributes.find((a: any) => a.kind === 'unit')
+    })
+    expect(units[0]).toEqual(units[1])
+    expect(units[0].symbol).toBe('%')
   })
 })

@@ -150,7 +150,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V6.5.2 | 2 | partial | `packages/auth/auth.ts:379` | Recovery codes (~49 bits) are stored as keyed HMAC-SHA256, not a salted password hash |
 | V6.5.3 | 2 | covered | `packages/auth/totp.ts:68`, `packages/auth/test/audit-data-token-lifecycle.test.ts:129` | `randomBytes` / `randomInt` for every secret, seed and code |
 | V6.5.4 | 2 | covered | `packages/auth/totp.ts:191`, `packages/auth/crypto.ts:104` | Recovery codes ~49 bits. Magic-link code is 6 digits |
-| V6.5.5 | 2 | partial | `packages/auth/auth.ts:105`, `packages/auth/auth.ts:89` | Magic link defaults to 15 min (limit is 10). `totpDrift: 1` accepts a code for about 90s · [FJS-3209](../ISSUES.md#fjs-3209) |
+| V6.5.5 | 2 | covered | `packages/auth/auth.ts:105`, `packages/auth/test/magic-link.test.ts:58` | Magic link defaults to 10 min. `totpDrift: 1` accepts a code for about 90s · [FJS-3209](../ISSUES.md#fjs-3209) |
 | V6.5.6 | 3 | covered | `packages/auth/auth.ts:1204`, `packages/auth/test/totp-login.test.ts:393`, `packages/auth/test/account-recovery.test.ts` | TOTP disable and reset, API-key revoke, OAuth unlink and session revoke all exist |
 | V6.5.7 | 3 | n.a. | — | No biometric mechanism |
 | V6.5.8 | 3 | covered | `packages/auth/auth.ts:1083`, `packages/auth/CLAUDE.md:85` | Uses the server clock `sys.$now()`. A caller-supplied `at` is refused by rule |
@@ -394,4 +394,4 @@ A line where a reasonable grader could pick the neighboring grade. Each says wha
 - **V13.4.2 (covered)** holds only where `fli deploy` sets `NODE_ENV=production` ([FJS-3207](../ISSUES.md#fjs-3207)). V16.5.2 (covered) holds only when the call goes through conduit.
 - **V14.2.3 (partial)** depends on Plausible's and GTM's scripts reading the full `location.href`. That is recalled, not measured.
 - **V6.3.6 (partial).** The magic link is off by default but ships as a sole email factor.
-- **V6.5.5 (partial)** is graded on the magic-link TTL. TOTP's ±1 step is accepted by most readers.
+- **V6.5.5 (covered)** is graded on the magic-link TTL. TOTP's ±1 step is accepted by most readers.

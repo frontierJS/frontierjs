@@ -1,12 +1,28 @@
 <script>
   // Work.mesa — `/work`: shows and hides the study beside the scene, as
-  // Ctrl+\ does (`IDEAS/study.md` 1.4). The side is the shell's, so where it
-  // was started with none — an installed Haven, a browser — there is no
-  // `/work`. Draws nothing.
-  import { sideToggle } from '#study'
+  // Ctrl+\ does (`IDEAS/study.md` 1.4). `/work <id>` opens that session of
+  // `#workers` there — a ticket's id on the kitchen's rail, a plate's on its
+  // pass — as its own tab when the study started it, else read along (3.3).
+  // The side is the shell's, so where it was started with none — an installed
+  // Haven, a browser — there is no `/work`. Draws nothing.
+  import { openSession, sideToggle } from '#study'
+  import { readWorkers } from '#workers'
 
   var verbs = $context.commands
   const toggle = sideToggle()
+  const HELP = '/work [id] — the study, beside the scene (Ctrl+\\); an id opens that session in it'
 
-  if (toggle) $.onDestroy(verbs.add({ word: 'work', help: '/work — the study, beside the scene (Ctrl+\\)', run: () => { toggle(); return '' } }))
+  function work({ args }) {
+    const word = args.trim()
+    if (!word) { toggle(); return '' }
+    const up = readWorkers()
+    const ws = up.filter((w) => w.session.startsWith(word))
+    const ids = up.map((w) => w.session.slice(0, 4)).join(', ')
+    if (ws.length !== 1) return `${ws.length ? `${word} is ${ws.length} sessions` : `no session ${word}`}${ids ? ` · up: ${ids}` : ''} · ${HELP}`
+    openSession(ws[0])
+    toggle(true)
+    return ''
+  }
+
+  if (toggle) $.onDestroy(verbs.add({ word: 'work', help: HELP, run: work }))
 </script>

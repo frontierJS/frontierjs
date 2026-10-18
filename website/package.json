@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "site-kit dev site --port 8690",
     "build": "site-kit build site",
-    "preview": "site-kit preview site --port 8790",
+    "serve": "site-kit serve site --port 8790",
     "verify": "node tests/verify.mjs",
     "verify:ask": "bun tests/verify-ask.mjs",
     "clean": "rm -rf site/dist",

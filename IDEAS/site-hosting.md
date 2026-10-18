@@ -6,7 +6,7 @@ dated: 2026-10-12
 
 # Idea — a site is files, and a host is an adapter
 
-**Status: PROPOSED. Steps 1, 3 and 4 of § The plan are built, each saying what it leaves.** Do not cite this file as
+**Status: PROPOSED. Steps 1–5 of § The plan are built, each saying what it leaves.** Do not cite this file as
 describing behavior — see `VERIFYING.md`.
 
 Cloudflare Pages is deprecated in favor of Workers. The move is the moment to
@@ -204,9 +204,25 @@ Each step adds its case to the website's `verify` drive before it is done.
    Plausible proxy (`FJS-2893`). The first real deploy of frontierjs.com
    creates the Worker `frontierjs-com`, so frontierjs.com's custom domain
    moves off `frontierjs-site`, which is then deleted by hand.
-5. **Preview deploys** of `site-kit build --preview` through the same adapter.
-6. **Owner editing** gets its own idea file, as `on-page-editing.md` § *Not in
-   this file* already says.
+5. ~~**Preview deploys** of `site-kit build --preview` through the same adapter.~~
+   Done: Sierra's `preview: true` (static only) stamps `data-fjs-loc` in the
+   build and the prerender, relative to the root, and adds `X-Robots-Tag:
+   noindex` to `/*` in `_headers`. `site-kit deploy --preview [name]` uploads
+   that dist as a version of the same Worker, aliased by the git branch or the
+   name (`FJS-D1221`, `FJS-D1222`). The adapter reads which kind a dist is
+   from its pages, so a deploy refuses a stamped one and a preview refuses an
+   unstamped one. The derived config gains `preview_urls: true`.
+   `site-kit preview` is now `site-kit serve` (`FJS-D1223`). Proved by
+   `test/site-functions.test.js`, `test/site-serve.test.js`, a preview build
+   of the website under `wrangler dev` (`noindex` on every path, the cache
+   rule unchanged), and `--dry` both ways. Left: no upload has run. The first
+   needs the Worker, so it waits for step 4's first real deploy. A dashboard
+   *Deploy version* on a preview still ships it. A file outside the site root,
+   such as a linked site-kit's own block, stamps an absolute path, the rule
+   Mesa applies in dev too. Basecamp's record of previews (`FJS-D921`) is not
+   built.
+6. ~~**Owner editing** gets its own idea file.~~ Done: `owner-editing.md`,
+   whose six questions are ruled (`FJS-D1225`–`FJS-D1230`).
 
 ## The nine (`decision-rules`, answered before any edit)
 

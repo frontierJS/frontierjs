@@ -1028,8 +1028,7 @@ export const RULES = [
           // duration and `holidays` is not a count of days.
           if (!/[a-z0-9]$/.test(f.name.slice(0, -suffix.length))) continue
 
-          // A symbol that is not an identifier (`%`) parses only quoted.
-          const symbol = /^[A-Za-z_]\w*$/.test(SUFFIXES[suffix]) ? SUFFIXES[suffix] : JSON.stringify(SUFFIXES[suffix])
+          const symbol = SUFFIXES[suffix]
           const bare   = f.name.slice(0, -suffix.length)
           out.push({
             model: model.name, field: f.name,

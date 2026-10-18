@@ -28,9 +28,9 @@
  * expression with `return` on its own line — ASI turns it into `return;`.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, readdirSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, readdirSync, existsSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 // ─── which Chrome ─────────────────────────────────────────────────────
 
@@ -193,7 +193,9 @@ function reapOrphanedProfiles() {
  *  `errors` is a live array — anything the page threw or reported since it was
  *  last emptied. A component that throws while rendering still leaves a
  *  partial tree, so an assertion about what IS there passes over the top of
- *  it; read this after every step that can fail.
+ *  it; read this after every step that can fail. `failed` is the same for
+ *  responses of 400 and above, kept apart because a page asking a signed-out
+ *  session for its account gets a 401 by design.
  *
  *    windowSize — `'W,H'`
  *    bootstrap  — script run before anything else in every document, for a
@@ -316,10 +318,11 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     }
     pending.clear()
   }
-  //X browser.addEventListener('close', () => refuseAll('Chrome closed before answering'))
-  //X chrome.once('exit', () => refuseAll('Chrome exited before answering'))
+  browser.addEventListener('close', () => refuseAll('Chrome closed before answering'))
+  chrome.once('exit', () => refuseAll('Chrome exited before answering'))
 
   const errors = []
+  const failed = []
   const listeners = new Map()
 
   /** Hear a CDP event — `on('Network.webSocketFrameReceived', (params) => …)`.
@@ -360,6 +363,11 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
       const text = msg.params.args.map((a) => a.value ?? a.description ?? '').join(' ')
       if (text.startsWith('[Mesa]')) errors.push('console.warn: ' + text)
     }
+    // The browser's own favicon probe is not a request the page made.
+    if (msg.method === 'Network.responseReceived') {
+      const { status, url } = msg.params.response
+      if (status >= 400 && !url.endsWith('/favicon.ico')) failed.push(`${status} ${url}`)
+    }
   })
 
   const { targetId }  = await send('Target.createTarget', { url: 'about:blank' })
@@ -375,6 +383,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   await cmd('Emulation.setFocusEmulationEnabled', { enabled: true })
   await cmd('Page.enable')
   await cmd('Runtime.enable')
+  await cmd('Network.enable')
 
   // Runs before anything else in EVERY document, including one this drive
   // navigates to later. A drive over a page it owns installs its probes from
@@ -491,6 +500,43 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
       })
   }
 
+  /** Poll an expression until it is truthy and answer its value. A drive
+   *  that sleeps a guessed interval passes on a fast machine and fails on a
+   *  loaded one. A throw counts as not yet: the element it reads may not
+   *  exist yet, and the last one is named if time runs out. */
+  async function waitFor(expression, { ms = 15000, every = 50, label = expression } = {}) {
+    const until = Date.now() + ms
+    let threw = null
+    for (;;) {
+      try {
+        const v = await evaluate(`return (${expression})`)
+        if (v) return v
+        threw = null
+      } catch (e) { threw = e }
+      if (Date.now() > until)
+        throw new Error(`waitFor: ${label} was not true after ${ms}ms${threw ? ` (last threw: ${threw.message})` : ''}`)
+      await new Promise((r) => setTimeout(r, every))
+    }
+  }
+
+  /** Replace a field's text through the keyboard. A value assigned by script
+   *  fires no input event the browser trusts, and a framework bound to the
+   *  field reads the old one. */
+  async function fill(selector, text) {
+    await clickAt(selector)
+    await evaluate(`document.querySelector(${JSON.stringify(selector)}).select?.(); return true`)
+    await press('Backspace')
+    await type(text)
+  }
+
+  /** The page as it stands, as a PNG at `path`. */
+  async function shot(path) {
+    const { data } = await cmd('Page.captureScreenshot', { format: 'png' })
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, Buffer.from(data, 'base64'))
+    return path
+  }
+
   /** Open a SECOND page on the same browser, and answer a handle to it.
    *
    *  A relay between two tabs cannot be asked of one: `BroadcastChannel` is
@@ -506,6 +552,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     const cmd2 = (method, params) => send(method, params, s2.sessionId)
     await cmd2('Page.enable')
     await cmd2('Runtime.enable')
+    await cmd2('Network.enable')
     if (bootstrap) await cmd2('Page.addScriptToEvaluateOnNewDocument', { source: bootstrap })
 
     const evaluate2 = async (expression) => {
@@ -564,7 +611,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     launched.delete(entry)
   }
 
-  return { cmd, send, evaluate, navigate, newPage, key, press, type, clickAt, on, errors, close }
+  return { cmd, send, evaluate, navigate, newPage, key, press, type, clickAt, fill, waitFor, shot, on, errors, failed, close }
 }
 
 // ─── the network ──────────────────────────────────────────────────────

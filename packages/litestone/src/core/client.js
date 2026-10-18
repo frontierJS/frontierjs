@@ -5493,6 +5493,19 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return { scalar, nested, hasNested: Object.keys(nested).length > 0 }
   }
 
+  // A bulk verb writes one statement per row shape and has no parent id to hang
+  // children on. Left to the column checks, `{ connect: [...] }` on a relation
+  // was reported as "messages: must be an array" -- a complaint about a value
+  // the caller meant as a nested write (FJS-2040).
+  function refuseBulkNested(rows, verb) {
+    const named = new Set()
+    for (const row of rows) for (const k of Object.keys(extractNestedWrites(row).nested)) named.add(k)
+    if (named.size) throw new ValidationError([...named].map(k => ({
+      path: [k],
+      message: `${verb} takes no nested writes. Write ${k} with ${verb === 'updateMany' ? 'update()' : 'create()'}, one row at a time.`,
+    })), { model: modelName, operation: verb === 'updateMany' ? 'update' : 'create' })
+  }
+
   // belongsTo ops — run BEFORE parent insert/update, return FK fields to inject
   async function processBelongsToNested(nested) {
     const extra = {}
@@ -6123,6 +6136,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   async function planUpdateMany({ where, data, system, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
+    refuseBulkNested([data], 'updateMany')
     const _umMove = _bulkTransitionField(data, 'updateMany')
     if (_umMove) throw new BulkTransitionError(modelName, _umMove, 'updateMany')
     refuseSoftDeleteWrite(data, 'updateMany')
@@ -6317,6 +6331,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // object-where-a-value-belongs guard in writeData, which cannot see
     // `$merge`: a Json column legitimately takes an object, so the operator
     // was stored as the document — `{"$merge":{"a":1}}`.
+    refuseBulkNested(data, 'createMany')
     for (const row of data) extractWriteOps(row, { where: 'createMany' })
     refuseSystemEntries(system, ['create'])
     if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
@@ -8420,6 +8435,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           named.every((c, i) => a.fields[i + 1] === c))
         return scoped ? [t.column, ...named] : named
       })()
+      refuseBulkNested(data, 'upsertMany')
       for (const row of data) extractWriteOps(row, { where: 'upsertMany' })
       refuseSystemEntries(system, ['create', 'update'])
       const { mode: _usMode, wantRows: _usWantRows } = announceFor(announce)

@@ -1,6 +1,6 @@
 <script>
   // Kitchen.mesa — the kitchen, through the door in the tavern's east wall:
-  // the ticket rail across the back wall, the range and the line under it,
+  // the ticket rail across the back wall, the line under it,
   // the 86 board on the left wall, the pass under its heat lamps with the
   // service bell at its end, the sink, stockpot, prep block and produce bins
   // between them, the walk-in on the east wall, and the door back to the
@@ -13,7 +13,7 @@
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import { frame } from '@/pieces/frame.js'
-  import { rail, line, board, pass, lamps, range, sink, stockpot, prep, bin, walkIn, mop, plates, bell } from '@/pieces/kitchen.js'
+  import { rail, line, board, pass, lamps, sink, stockpot, prep, bin, walkIn, mop, plates, bell } from '@/pieces/kitchen.js'
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -47,7 +47,6 @@
   <Piece of={board} x={3}  y={13} />
   <Piece of={lamps} x={32} y={19} />
   <Piece of={pass}  x={32} y={21} />
-  <Piece of={range} x={4}  y={8} />
   <Piece of={sink}     x={28} y={15} />
   <Piece of={stockpot} x={37} y={14} />
   <Piece of={prep}     x={46} y={15} />

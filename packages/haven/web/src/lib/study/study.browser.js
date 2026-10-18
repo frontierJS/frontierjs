@@ -2,3 +2,6 @@
 // `study.js`. A page has no side pane and runs no session on its machine, so
 // `/work` is no command there.
 export function sideToggle() { return null }
+export function openSession() {}
+export function onOpen() { return () => {} }
+export function studyTabs() { return new Map() }

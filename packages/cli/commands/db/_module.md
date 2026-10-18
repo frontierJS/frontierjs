@@ -123,6 +123,25 @@ const litestone = ($) => {
   return `cd ${JSON.stringify($.paths.root)} && ${$.bin('litestone')}`
 }
 
+// ─── migrationFiles ──────────────────────────────────────────────────────────
+// Every .sql under db/, as paths. `migrate create` exits 0 and prints a green
+// check when the schema needs no migration, so the only answer to *was a file
+// written* is the difference between two listings. A per-database layout puts
+// the migrations in a subfolder, which is why this walks.
+const migrationFiles = ($) => {
+  const found = []
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules') continue
+      const p = resolve(dir, e.name)
+      if (e.isDirectory()) walk(p)
+      else if (e.name.endsWith('.sql')) found.push(p)
+    }
+  }
+  if (existsSync($.paths.db)) walk($.paths.db)
+  return found
+}
+
 // ─── litestoneQuiet ──────────────────────────────────────────────────────────
 // Runs litestone with its output held, for a command that composes it and
 // prints its own result. Litestone writes a banner, its schema warnings (to

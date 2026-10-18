@@ -67,10 +67,23 @@ export function generateCuid() {
 const NANOID_ALPHABET = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
 
 export function generateNanoid(size = 21, alphabet = NANOID_ALPHABET) {
-  const bytes = randomBytes(size)
+  // `['a', 'b'].map(generateNanoid)` hands an element in as the size; refuse it
+  // rather than answer ''.
+  if (!Number.isInteger(size) || size < 1) throw new RangeError('nanoid size must be a positive integer')
+  if (typeof alphabet !== 'string' || alphabet.length < 1 || alphabet.length > 256) {
+    throw new RangeError('nanoid alphabet must be 1 to 256 characters')
+  }
+  // Bytes at or past the largest multiple of the alphabet are skipped: a mask
+  // reaches only some indexes of an alphabet that is not a power of two, and a
+  // modulo over the tail favors the first few characters.
+  const limit = 256 - (256 % alphabet.length)
   let id = ''
-  for (let i = 0; i < size; i++) {
-    id += alphabet[bytes[i] & (alphabet.length - 1 > 255 ? 255 : alphabet.length - 1)]
+  while (id.length < size) {
+    for (const byte of randomBytes(Math.ceil((size - id.length) * 256 / limit) + 2)) {
+      if (byte >= limit) continue
+      id += alphabet[byte % alphabet.length]
+      if (id.length === size) break
+    }
   }
   return id
 }

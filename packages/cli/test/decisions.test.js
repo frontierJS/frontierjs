@@ -536,6 +536,33 @@ describe('the settle', () => {
 
 // ─── several processes at once ────────────────────────────────────────────────
 
+// FJS-3003: `--dry` is on every command, and a dry ruling writes the files it was asked not to.
+describe('ruling and settling dry', () => {
+  const snapshot = (root) => [readFileSync(join(root, 'DECISIONS.md'), 'utf8'), readFileSync(join(root, 'IDEAS', 'views.md'), 'utf8')]
+
+  test('decide answers the ruling it would write and writes nothing', () => {
+    const { root, cleanup } = fixture()
+    try {
+      const before = snapshot(root)
+      const next   = nextDecisionNumber(root)
+      const out    = decide({ root, id: 'views:omit-encrypted-columns-or-expose-them', pick: 'a', section: 'Naming & vocabulary', dry: true, today: TODAY })
+      expect(out).toMatchObject({ ok: true, dry: true, ruling: `FJS-D${next}` })
+      expect(snapshot(root)).toEqual(before)
+    } finally { cleanup() }
+  })
+
+  test('settle answers the ruling it would cite and writes nothing', () => {
+    const { root, cleanup } = fixture()
+    try {
+      const before = snapshot(root)
+      const out    = settle({ root, id: 'views:does-the-cache-key-grow', by: 'FJS-D03', why: 'the key is the view name', dry: true, today: TODAY })
+      expect(out).toMatchObject({ ok: true, dry: true, ruling: 'FJS-D03' })
+      expect(snapshot(root)).toEqual(before)
+    } finally { cleanup() }
+  })
+
+})
+
 describe('ruling from several processes at once', () => {
   // `fli decide` in a terminal and basecamp's screen are two processes writing
   // one DECISIONS.md: unguarded, both read the same next id and the second write

@@ -55,6 +55,18 @@ describe('turned on by the callback', () => {
   })
 })
 
+describe('lifetime', () => {
+  // FJS-3209: ASVS V6.5.5 caps an out-of-band code at 10 minutes.
+  test('the default lives no longer than ten minutes', async () => {
+    const email = nextEmail()
+    await mailed(email)
+    const row = await h.sys.verification.findFirst({ where: { purpose: 'magicLink', identifier: email } })
+    const lives = new Date(String(row!.expiresAt)).getTime() - Date.now()
+    expect(lives).toBeGreaterThan(0)
+    expect(lives).toBeLessThanOrEqual(10 * 60 * 1000)
+  })
+})
+
 describe('an address nobody holds', () => {
   test('the request makes no user; the click makes a verified one and signs it in', async () => {
     const email = nextEmail()

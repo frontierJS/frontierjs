@@ -1,5 +1,12 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-10-18 — preview deploys (`FJS-D1221`–`FJS-D1223`)
+
+- **`site-kit build <dir> --preview`** writes a review build. Every element is stamped `data-fjs-loc` with its source location, and `_headers` sends `X-Robots-Tag: noindex` on every path.
+- **`site-kit deploy <dir> --preview [name]`** uploads that build as a version of the site's Worker without deploying it, at `<alias>-<worker>.<account>.workers.dev`. The alias is the git branch, or the name given.
+- **Refused by name:** a plain `deploy` of a preview build, and a `deploy --preview` of a production build.
+- **`site-kit preview` is now `site-kit serve`.** The old command fails and names the new one. ksite's `serve:site` script moved with it.
+
 ## 2026-10-13 — `site-kit check` (`FJS-D962`)
 
 - **`site-kit check <dir>`** is the pre-ship check every site-kit site has: content/ without a build (unknown `<Tag>` or `layout:`, a `{merge_field}` no setting holds, dividers, front-matter, robots.txt, the redirects) and dist/ when there is one (sitemap, canonicals, titles, descriptions, headings, og:image, links, images, JSON-LD against schema.org). Exits 1 on an error. Exported as `@frontierjs/site-kit/check`.

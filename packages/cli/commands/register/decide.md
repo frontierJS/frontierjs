@@ -81,12 +81,18 @@ if (flag.by) {
     process.exitCode = 1
     return
   }
-  const out = settle({ root, id: arg.id, by: flag.by, why: flag.why ?? '', file: flag.file })
+  const out = settle({ root, id: arg.id, by: flag.by, why: flag.why ?? '', file: flag.file, dry: flag.dry })
   echo('')
   if (!out.ok) {
     echo(`  ✗ ${out.reason}`)
     echo('')
     process.exitCode = 1
+    return
+  }
+  if (out.dry) {
+    echo(`  ✓ ${out.question} — would be answered by ${out.ruling} (--dry: nothing written, register:check not run)`)
+    for (const f of out.files) echo(`    would write ${f}`)
+    echo('')
     return
   }
   echo(`  ✓ ${out.question} — answered by ${out.ruling}`)
@@ -111,13 +117,20 @@ if (!flag.section) {
   return
 }
 
-const out = decide({ root, id: arg.id, pick: arg.pick, why: flag.why ?? '', section: flag.section, file: flag.file })
+const out = decide({ root, id: arg.id, pick: arg.pick, why: flag.why ?? '', section: flag.section, file: flag.file, dry: flag.dry })
 
 echo('')
 if (!out.ok) {
   echo(`  ✗ ${out.reason}`)
   echo('')
   process.exitCode = 1
+  return
+}
+
+if (out.dry) {
+  echo(`  ✓ ${out.ruling} — ${out.question} → ${out.pick} (--dry: nothing written, register:check not run)`)
+  for (const f of out.files) echo(`    would write ${f}`)
+  echo('')
   return
 }
 

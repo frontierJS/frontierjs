@@ -46,6 +46,10 @@ model Order {
 }
 `
 
+// A schema holding any gated model turns the gate on for all of them, so an
+// Order that declares none is SYSTEM-only. Fixtures that add one declare it.
+const PUBLIC_ORDER = (schema: string) => schema.replace('@@db(main)', '@@gate(0)\n  @@db(main)')
+
 const DAY = 86_400_000
 const T0  = Date.parse('2026-01-01T00:00:00.000Z')
 
@@ -162,11 +166,11 @@ describe('a due row is transitioned', () => {
     // row is what an investigation reads, and `before`/`after` alone are the
     // same row a person's cancel writes (`FJS-1294`).
     const dir    = mkdtempSync(join(tmpdir(), 'fjs-commit-audit-'))
-    const logged = SCHEMA
+    const logged = PUBLIC_ORDER(SCHEMA)
       .replace('database main { path "./app.db" }',
         `database main { path "./app.db" }\n${auditDatabase(dir)}`)
       .replace('@@db(main)', '@@db(main)\n  @@trail(audit)')
-    const { app, db, advance, status } = await started(logged)
+    const { app, db, advance, status } = await started(logged, { system: SYSTEM })
     const order = await db.order.create({ data: {} })
 
     advance(14 * DAY)
@@ -529,13 +533,13 @@ describe('a commitment hook has the service pipeline\'s tiers', () => {
 // own transaction instead, and the relay delivers it.
 
 const OUTBOX   = await Bun.file(new URL('../../junction/db/outbox.lite', import.meta.url)).text()
-const OUTBOXED = `${SCHEMA}\n${OUTBOX}`
+const OUTBOXED = `${PUBLIC_ORDER(SCHEMA)}\n${OUTBOX}`
 
 describe('a hook enqueues on the move\'s transaction', () => {
 
   it('the row commits with the move and the relay runs the job once', async () => {
     const sent: unknown[] = []
-    const { app, db, queue, advance, status } = await bootApp(OUTBOXED, { relay: true, hooks: {
+    const { app, db, queue, advance, status } = await bootApp(OUTBOXED, { relay: true, system: SYSTEM, hooks: {
       'Order.abandon': defineCommitment({ after: async ({ record, enqueue }) => { await enqueue('order-notice', { orderId: record.id }) } }),
     } })
     queue.handle('order-notice', async (ctx: { data: unknown }) => { sent.push(ctx.data) })
@@ -555,7 +559,7 @@ describe('a hook enqueues on the move\'s transaction', () => {
   })
 
   it('a hook that throws after enqueueing leaves no row and no move', async () => {
-    const { app, db, advance, status } = await started(OUTBOXED, { relay: true, hooks: {
+    const { app, db, advance, status } = await started(OUTBOXED, { relay: true, system: SYSTEM, hooks: {
       'Order.abandon': defineCommitment({ after: async ({ record, enqueue }) => {
         await enqueue('order-notice', { orderId: record.id })
         throw new Error('after the enqueue')

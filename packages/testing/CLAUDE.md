@@ -13,11 +13,15 @@ needs a Junction app, which Litestone may not import (Invariant 1).
 ```
 src/index.ts          createTestEnv, session, the principal binding, the `listen` port
 src/parity.ts         verifyTransportParity — HTTP vs WS, over a real socket
+src/drive.ts          drive() — @frontierjs/testing/drive: the servers, the checks
+                      and the exit code around @frontierjs/mesa/drive's page
 src/doubles.ts         createTestMailer — the one stand-in this realm was actually
                        missing; cache and storage already have one apiece elsewhere
 test/testing.test.ts  the vertical, against a real client and a real app
 test/parity.test.ts   the runner, and the ways it can be worthless
 test/doubles.test.ts  the mailer double, held to the real send path's own guards
+test/drive.test.ts    drive()'s refusals and group stop — every case fails before
+                      Chrome would open, so the suite stays hermetic
 test/fixtures/schema.lite
 ```
 
@@ -78,6 +82,14 @@ It deliberately owns **no HTTP helper**. `env.http` IS `request(app)` from
 - **`close()` force-stops the server before `app.stop()`.** Bun's graceful stop
   never closes a WebSocket and one never drains on its own, so shutting down with
   a live socket waits the whole drain window (5s) and reads as a hang.
+- **`drive()` is the server half and only that** (`FJS-D1224`). What the page
+  can do — waiting, typing, failed responses — belongs to `@frontierjs/mesa/drive`,
+  where mesa's own drives and ui's reach it too; a helper added here instead
+  is a second owner of the browser. `mesa` is an OPTIONAL peer, so an app using
+  `createTestEnv` alone installs no browser driver.
+- **A server is killed as a GROUP.** `bun run web` is a launcher and its child
+  holds the port; `process.kill(pid)` kills the wrapper and leaves the port
+  held for the next run. `drive.test.ts` reds on that mutation.
 - **The WS attempt is deliberately sandwiched between the two HTTP ones.** That is
   what makes the volatility calibration sound for anything moving with the clock;
   reordering it makes `deletedAt` a spurious mismatch roughly half the time.

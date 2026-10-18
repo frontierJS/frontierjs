@@ -168,6 +168,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./otlp` | `src/plugins/otlp/index.ts` | yes |
 | exports | `./webhooks` | `src/plugins/webhooks/index.ts` | yes |
 | exports | `./public-url` | `src/core/public-url.ts` | yes |
+| exports | `./envelope` | `src/core/envelope.ts` | yes |
 | exports | `./manifest` | `src/plugins/manifest/index.ts` | yes |
 | exports | `./outbox` | `src/plugins/outbox/index.ts` | yes |
 | exports | `./backfill` | `src/plugins/backfill/index.ts` | yes |
@@ -263,6 +264,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./css-inliner (import)` | `src/css-inliner.js` | yes |
 | exports | `./render-component.js (import)` | `src/render-component.js` | yes |
 | exports | `./render-component (import)` | `src/render-component.js` | yes |
+| exports | `./drive (types)` | `src/drive.d.ts` | yes |
 | exports | `./drive (import)` | `src/drive.js` | yes |
 | exports | `./browser (types)` | `src/browser/browser.d.ts` | yes |
 | exports | `./browser (import)` | `src/browser/index.js` | yes |
@@ -365,8 +367,9 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `src/index.ts` | yes |
+| exports | `./drive` | `src/drive.ts` | yes |
 
-- peers — `@frontierjs/junction`: `^0.1.0` · `@frontierjs/litestone`: `^1.1.0`
+- peers — `@frontierjs/junction`: `^0.1.0` · `@frontierjs/litestone`: `^1.1.0` · `@frontierjs/mesa`: `^0.1.6`
 
 ## `@frontierjs/toolbelt`
 

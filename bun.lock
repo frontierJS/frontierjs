@@ -507,12 +507,17 @@
       "devDependencies": {
         "@frontierjs/junction": "workspace:*",
         "@frontierjs/litestone": "workspace:*",
+        "@frontierjs/mesa": "workspace:*",
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
         "@frontierjs/junction": "^0.1.0",
         "@frontierjs/litestone": "^1.1.0",
+        "@frontierjs/mesa": "^0.1.6",
       },
+      "optionalPeers": [
+        "@frontierjs/mesa",
+      ],
     },
     "packages/toolbelt": {
       "name": "@frontierjs/toolbelt",

@@ -26,7 +26,7 @@
  * first time Ctrl+\ shows it and kept while hidden. Ctrl+O moves focus
  * between the panes. Both keys are taken before any mount sees them, since a
  * field binds most Ctrl letters. A page's own command shows and hides it
- * through Mesa's `sideToggle()`, as Ctrl+\ does. In the side the mode line says so, and
+ * through Mesa's `sideToggle()`, as Ctrl+\ does, and `toggle(true)` only shows it. In the side the mode line says so, and
  * h/j/k/l and Esc are the side's own: Esc going back is the page's.
  *
  * Not here yet, each named where a route would need it: layouts (a route
@@ -64,6 +64,10 @@ const SHELL = new URL('./Shell.mesa', import.meta.url).pathname
 // Ctrl+\ is a split in VS Code, and o is tmux's next pane.
 const TOGGLE_SIDE = '\\'
 const OTHER_PANE  = 'o'
+// A page narrower than PAGE_COLUMNS clips a scene, so where the side would
+// leave it fewer, an open side shows one pane at a time.
+const SIDE_SHARE   = 0.4
+const PAGE_COLUMNS = 120
 const MODE  = new URL('./Mode.mesa', import.meta.url).pathname
 const NO_LOWERING = / has no terminal lowering$/
 
@@ -134,11 +138,34 @@ const screenKey = (node, params) =>
 
 /**
  * The side pane's two keys, on `renderer` ahead of every mount. The pane is
- * hidden until the first Ctrl+\, which mounts `file` there.
+ * hidden until the first Ctrl+\, which mounts `file` there. Where the
+ * page would keep fewer than `PAGE_COLUMNS`, an open side is ZOOMED, as tmux's prefix z: the pane holding
+ * focus is drawn full width and Ctrl+O swaps. `setZoom` hears whether the
+ * page is drawn over a side that is open.
  */
-function paneKeys(tui, renderer, file, setMode, say) {
-  const box = tui.sideOf(renderer)
+function paneKeys(tui, renderer, file, setMode, setZoom, say) {
+  const box = tui.sideOf(renderer, { width: `${SIDE_SHARE * 100}%` })
+  const page = tui.pageOf(renderer)
   box.visible = false
+  let open = false
+  let front = 'side'    // the pane drawn while zoomed
+  const lay = () => {
+    const zoom = open && renderer.width * (1 - SIDE_SHARE) < PAGE_COLUMNS
+    box.visible = open && (!zoom || front === 'side')
+    page.visible = !zoom || front === 'page'
+    // The side keeps its share beside the page and takes the row alone.
+    box.flexGrow = zoom ? 1 : 0
+    setZoom(zoom && front === 'page')
+  }
+  // focusables() skips a hidden pane, so the pane is drawn before focus moves.
+  const show = (pane) => { front = pane; lay(); flushSync() }
+  // Whatever moves focus while zoomed — a route's mount, a click — brings its
+  // pane forward, or keys would go to a pane nobody can see.
+  renderer.on('focused_renderable', (node) => {
+    const pane = open && node && tui.paneOf(renderer, node)
+    if (pane && pane !== front) { front = pane; lay() }
+  })
+  renderer.on('resize', lay)
   let mounted = null
   // Focus arriving sets the mode, through Shell.mesa's focusin; a pane with
   // nothing to focus leaves none, so a hidden side keeps no keys.
@@ -147,25 +174,31 @@ function paneKeys(tui, renderer, file, setMode, say) {
     renderer.currentFocusedRenderable?.blur()
     setMode({ mode: 'normal', field: false })
   }
-  const toggle = async () => {
-    if (box.visible) { box.visible = false; return into('page') }
+  // `force` as DOM's `classList.toggle`: true only shows, false only hides.
+  const toggle = async (force) => {
+    // A side zoomed behind the page is open and not drawn: this brings it forward.
+    if (box.visible && force === true) return into('side')
+    if (box.visible) { open = false; show('page'); return into('page') }
+    if (force === false) return
     try {
       mounted ??= tui.mount((await import(file)).default, { renderer, parent: box })
     } catch (e) {
       say(`${file} failed: ${e.message}`)
       return
     }
-    box.visible = true
-    flushSync()
+    open = true
+    show('side')
     into('side')
   }
   tui.setSideToggle(renderer, toggle)
   renderer.keyInput.on('keypress', (k) => {
     if (!k.ctrl || k.meta || k.option) return
     if (k.name === TOGGLE_SIDE) { k.preventDefault(); toggle() }
-    else if (k.name === OTHER_PANE && box.visible) {
+    else if (k.name === OTHER_PANE && open) {
       k.preventDefault()
-      into(tui.paneOf(renderer) === 'side' ? 'page' : 'side')
+      const to = tui.paneOf(renderer) === 'side' ? 'page' : 'side'
+      show(to)
+      into(to)
     }
   })
 }
@@ -269,7 +302,8 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     focusStep = FOCUS[k.name] ?? 0
     ;[k.name, k.sequence] = arrow
   })
-  if (side) paneKeys(tui, renderer, side, setMode, (note) => set({ note }))
+  const [zoom, setZoom] = createSignal(false)
+  if (side) paneKeys(tui, renderer, side, setMode, setZoom, (note) => set({ note }))
 
   const listed = {
     routes:   open.filter((r) => !r.params.length),
@@ -334,7 +368,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     else goto(path)
   }
 
-  tui.mount(Mode,{ renderer, parent: tui.footerOf(renderer), props: { mode } })
+  tui.mount(Mode,{ renderer, parent: tui.footerOf(renderer), props: { mode, zoom } })
   tui.mount(Shell, { renderer, props: {
     state,
     paths:  listed.routes.map((r) => r.path),

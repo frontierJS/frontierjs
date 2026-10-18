@@ -72,4 +72,7 @@ A test about a hook, a plugin guard or `ctx.auth` wants `as`.
   it does not know where to put the principal for.
 - **A plugin's guard only registers once the app starts.** `createTestEnv`
   starts it eagerly; an `App` you build and start yourself should do the same.
+- **A verify file is `drive()` and its steps** (`@frontierjs/testing/drive`).
+  It refuses a port that already answers; never pick a port that something
+  else is running on, and never write your own start-poll-kill wrapper.
 - **Layout and the rest:** `CLAUDE.md` (maintainers), `README.md` (a person).

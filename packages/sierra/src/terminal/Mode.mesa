@@ -1,15 +1,18 @@
 <script>
   // Mode.mesa — the shell's mode line, mounted in the footer under the page so
-  // a long page does not scroll it away. `mode` is a signal's read, as
+  // a long page does not scroll it away. `mode` and `zoom` are signal reads, as
   // Shell.mesa's `state` is.
   // In the side pane its keys are the pane's own, so the line names the way out.
+  // A page zoomed over an open side hides it, so the line names the way there.
   export let mode  // () => { mode: 'normal' | 'insert' | 'side', field }
+  export let zoom  // () => boolean
 
   const LINE = {
     side:   () => '-- SIDE --  Ctrl+O back to the page, Ctrl+\\ hides',
     insert: () => '-- INSERT --  Esc stops typing',
     normal: (m) => m.field ? '-- NORMAL --  i types' : '-- NORMAL --',
   }
+  const line = (m, z) => m.mode !== 'side' && z ? `${LINE[m.mode](m)}  · Ctrl+O the side` : LINE[m.mode](m)
 </script>
 
-<p>{LINE[mode().mode](mode())}</p>
+<p>{line(mode(), zoom())}</p>

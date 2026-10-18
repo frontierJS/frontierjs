@@ -38,7 +38,7 @@ function harness(extra: Partial<Parameters<typeof run>[1]> = {}) {
   const out: string[] = [], err: string[] = []
   const session: Session = {
     listTools: async () => [...TOOLS, WITH_WORKSPACE],
-    callTool:  async (name, args) => { seen.call = [name, args]; return { text: JSON.stringify({ kind: 'list', data: [] }) } },
+    callTool:  async (name, args) => { seen.call = [name, args]; return { text: JSON.stringify({ kind: 'list', object: 'sites', data: [], errors: [] }) } },
     close:     async () => {},
   }
   const opts = {
@@ -133,7 +133,7 @@ function app(goodKey: string) {
     const signedIn = headers.authorization === `Bearer ${goodKey}`
     return {
       listTools: async () => signedIn ? TOOLS : TOOLS.slice(0, 3),
-      callTool:  async () => ({ text: JSON.stringify({ kind: 'list', data: [] }) }),
+      callTool:  async () => ({ text: JSON.stringify({ kind: 'list', object: 'sites', data: [], errors: [] }) }),
       close:     async () => {},
     }
   }
@@ -248,7 +248,7 @@ function deployed(build: string | null, tools: ToolListing[] = TOOLS) {
   const connect = async (): Promise<Session> => ({
     build:     () => state.build,
     listTools: async () => { state.lists++; return state.tools },
-    callTool:  async () => ({ text: JSON.stringify({ kind: 'list', data: [] }) }),
+    callTool:  async () => ({ text: JSON.stringify({ kind: 'list', object: 'sites', data: [], errors: [] }) }),
     close:     async () => {},
   })
   return { state, connect }
@@ -330,7 +330,7 @@ describe('routes', () => {
       listTools: async () => tools,
       callTool:  async (name) => { calls.push(name); return name === 'servers_reboot'
         ? { isError: true, text: 'refused by the app' }
-        : { text: JSON.stringify({ kind: 'list', data: [{ id: 's1' }] }) } },
+        : { text: JSON.stringify({ kind: 'list', object: 'sites', data: [{ id: 's1' }], errors: [] }) } },
       close: async () => {},
     })
     return run(argv, { url: 'http://app.test/mcp', routes, connect, out: t => out.push(t), err: t => err.push(t) })
@@ -495,5 +495,24 @@ describe('breadcrumbs are spelled as this program\'s own command lines', () => {
     await q.go(['--quiet', 'servers', 'get', 's1'])
     expect(JSON.parse(q.out[0])).toEqual(SERVER)
     expect(q.err).toEqual([])
+  })
+})
+
+describe('a row that looks like a list envelope', () => {
+  const quietFind = async (answer: unknown) => {
+    const out: string[] = []
+    const connect = async (): Promise<Session> => ({
+      listTools: async () => [...TOOLS, WITH_WORKSPACE],
+      callTool:  async () => ({ text: JSON.stringify(answer) }),
+      close:     async () => {},
+    })
+    await run(['--quiet', 'sites', 'find'], { url: 'http://app.test/mcp', connect, out: t => out.push(t), err: () => {} })
+    return JSON.parse(out[0])
+  }
+
+  test('a real list envelope prints its rows; a half envelope prints whole, as the owner reads it', async () => {
+    expect(await quietFind({ kind: 'list', object: 'sites', data: [{ id: 's1' }], errors: [] })).toEqual([{ id: 's1' }])
+    const half = { kind: 'list', data: [{ id: 's1' }] }
+    expect(await quietFind(half)).toEqual(half)
   })
 })

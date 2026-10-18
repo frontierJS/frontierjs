@@ -332,7 +332,7 @@ export interface LitestoneAuthOptions {
     provider: string
   }) => Promise<void> | void
 
-  // How long a magic link and its code live. Default: '15 minutes'.
+  // How long a magic link and its code live. Default: '10 minutes', ASVS's cap on an out-of-band code.
   //
   // Shorter than a reset: a reset ends at a form that still asks for a new
   // password, and this ends at a session.

@@ -38,7 +38,7 @@ export function closeIssue(opts) {
   return withRegisterGuard(opts.root, () => closeUnguarded(opts))
 }
 
-function closeUnguarded({ root, id, how, today = new Date() }) {
+function closeUnguarded({ root, id, how, dry = false, today = new Date() }) {
   const doc = readRegisters(root)
   if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no row can be read')
 
@@ -54,6 +54,9 @@ function closeUnguarded({ root, id, how, today = new Date() }) {
   const before = readFileSync(abs, 'utf8')
   const moved  = moveToClosed(before, record, reason, today)
   if (moved.reason) return refuse(moved.reason)
+
+  // register:check grades the file on disk, so a preview skips it, as `fli file` does.
+  if (dry) return { ok: true, dry: true, id: record.id, file: record.file, line: moved.line }
 
   const baseline = errorKeys(root)
   writeFileSync(abs, moved.text)

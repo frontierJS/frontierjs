@@ -102,10 +102,12 @@ export async function resolveSite({ root }) {
  * @param {string} opts.root — the site directory, the one holding `content/`
  * @param {number} [opts.port] — dev port; `SITE_PORT` / `FLI_PORT_SITE` otherwise
  * @param {boolean} [opts.host] — listen on every interface, not just localhost
+ * @param {boolean} [opts.preview] — a review build: Sierra's `preview`, which no
+ *   site states, because the same content ships both ways
  * @param {Awaited<ReturnType<typeof resolveSite>>} [opts.site] — already resolved, by the check
  * @returns {Promise<import('vite').InlineConfig>}
  */
-export async function siteKit({ root, port, host = false, site }) {
+export async function siteKit({ root, port, host = false, preview = false, site }) {
   site ??= await resolveSite({ root })
   const { content, keys, preset, sierra } = site
   root = site.root
@@ -127,6 +129,7 @@ export async function siteKit({ root, port, host = false, site }) {
     // cleared, and editing it updated nothing.
     routeTable: { output: '.sierra/routes.js' },
     ...sierra,
+    preview,
     // The kit's dialect runs first, so a preset's passes see a page already
     // split into bands and articles. The check runs before a preset's
     // post-build steps rewrite the output.

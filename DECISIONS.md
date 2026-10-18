@@ -17349,6 +17349,92 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d1224"></a>2026-10-18 · `FJS-D1224` — Where does the app-level browser drive live, and what does a verify file call — Split by owner, one call: `waitFor`, `fill`, `shot` and a `failed` list of responses of 400 and above grow `@frontierjs/mesa/drive`, the page's owner by `FJS-D554`; `@frontierjs/testing/drive` is `drive(options, steps)`, owning the port refusal (`FJS-740`), each server as a process group, the checks and the exit code. `mesa` is an optional peer of testing.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (both halves in `@frontierjs/testing/drive`, as the row proposed. The failed-response list and `waitFor` sit beside mesa's `errors`, a second owner, and mesa, ui and css drives cannot reach them (`FJS-D554`'s reason against `testing/browser`)), **C** (a new `@frontierjs/drive` package over mesa's, `FJS-D554`'s option B. The same code plus a package and a noun).
+
+The paper's recommendation, taken as written: each half sits with the owner it already has, and one call is the paved road: a verify file that composes building blocks re-writes the try/finally and the signal kill, which is what the four copies are.
+
+### <a id="fjs-d1221"></a>2026-10-18 · `FJS-D1221` — Where a preview deploy lands — A Version URL on the site's own Worker: `wrangler versions upload --preview-alias <alias>`, served at `<alias>-<worker>.<account>.workers.dev`, uploaded and never deployed. The derived wrangler config states `preview_urls: true`.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § The plan, step 5. **A** was picked over **B** (a second Worker, `<name>-preview`, on workers.dev only, which no click can promote) and **C** (a `preview.` subdomain of the site's zone as a custom domain, one preview at a time).
+
+This is Cloudflare's own feature for the job, and Pages, Vercel and Netlify all keep previews inside the project they preview. The config has to state `preview_urls`: with `routes` set, wrangler defaults `workers_dev` off and Version URLs follow it. The costs are recorded rather than solved. The first preview waits for the first real deploy, and whether an upload creates a missing Worker is unverified. A preview version also sits in production's version list, where a dashboard *Deploy version* would ship the stamped build. It is uploaded with the `preview` tag so the list says which versions those are.
+
+*Lives in:* `packages/sierra/src/site/cloudflare.js`, `packages/site-kit/bin/site-kit.js`. *Enforced by:* `writeCloudflare` refuses a stamped dist without `preview` and an unstamped one with it, which stops the CLI; nothing stops a dashboard promotion (`none`).
+
+### <a id="fjs-d1222"></a>2026-10-18 · `FJS-D1222` — What names a preview — The git branch, spelled as wrangler spells one, and `deploy --preview <name>` replaces it. An alias that starts with no letter, or that makes a host past 63 characters, is refused by name rather than truncated.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § The plan, step 5. **B** was picked over **A** (the branch with no override; recommended, because every upload also has an immutable version URL that pins a round) and **C** (the version URL alone, no alias).
+
+The branch is what wrangler's own `generatePreviewAlias` reads in Workers CI, and what Pages, Netlify and Vercel name a branch preview after. The owner wanted a named review round (`round-2`) as well as the branch. A detached HEAD names no branch, so the alias is refused and asks for a name. Truncation is refused for the reason `FJS-D1213` refuses it for the Worker's name.
+
+*Lives in:* `previewAlias()` in `packages/sierra/src/site/cloudflare.js`. *Enforced by:* `test/site-functions.test.js`.
+
+### <a id="fjs-d1223"></a>2026-10-18 · `FJS-D1223` — `site-kit preview` is renamed `site-kit serve` — `preview` means a review build (`build --preview`, `deploy --preview`), and the local server is named for `serveSite`, the function it runs.
+
+Asked while building [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) step 5. **A** was picked over **B** (keep both: the command as Vite's word for serving `dist/`, the flag as the review build).
+
+*Familiarity vs. precision*: the shape is Vite's, and the word only half fits once a preview is something a reviewer opens. `site-kit preview` fails loudly and names `serve` and the two `--preview` commands. The website's `preview` script became `serve`, and so did ksite's `serve:site`.
+
+*Lives in:* `packages/site-kit/bin/site-kit.js`. *Enforced by:* the refusal in the command.
+
+### <a id="fjs-d1225"></a>2026-10-17 · `FJS-D1225` — Where the owner's editor runs — An Edit button on the preview site itself, as Framer's On-Page Editing has: the draft's preview carries the editor, and its writes go to basecamp's API.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions, Q1. **B** was picked over **A** (a basecamp page framing the preview, with a bridge posting a click's `loc` to the parent; recommended, because auth and writes stay on basecamp's origin) and **C** (forms only, no page).
+
+The owner picked Framer's shape over the paper's recommendation: the owner edits the page they are looking at, with no second app around it. The cost is recorded rather than solved. The preview origin, a `workers.dev` link handed to reviewers, now carries a session that can write. Framer's rule is the mitigation: the button may show to anyone on a preview, and an edit needs a grant (`FJS-D1230`), which basecamp's API checks on every write. The editor ships only under Sierra's `preview: true`, so `FJS-D1221`'s refusal of a stamped dist keeps it out of production.
+
+*Lives in:* the preview build's editor (not built). *Enforced by:* `none` until `IDEAS/owner-editing.md` Phase 2 has a drive; a production deploy of a stamped dist is refused by `writeCloudflare`.
+
+### <a id="fjs-d1226"></a>2026-10-17 · `FJS-D1226` — What a site owner may change — The markdown under `content/`: prose, and every front-matter key but `layout`, `name` and site-kit's six look keys, collection items, menus and images included. `.mesa`, `.js` and `settings/site.js` are developer files, refused by path.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions, Q2. **A** was picked over **B** (everything in a `.md` file, look keys included) and **C** (only what a block marks editable with an attribute, as CloudCannon's `data-editable`).
+
+The paper's recommendation, taken as written: Webflow and Framer both lock the layout, because a layout mistake is the one a developer ends up repairing. A is derived from the path and a key list site-kit already fixes; C is a second, hand-written statement of what the content already says.
+
+*Lives in:* not built. *Enforced by:* `none` until `IDEAS/owner-editing.md` 1.1.
+
+### <a id="fjs-d1227"></a>2026-10-17 · `FJS-D1227` — What an owner's draft is in git — A branch per draft, previewed at its alias (`FJS-D1222`); Publish merges it.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions, Q3. **A** was picked over **B** (every save commits straight to the default branch) and **C** (one long-lived `content` branch per site).
+
+The paper's recommendation, taken as written: the preview alias is already the branch, so a draft gets its review link without new code, and an abandoned draft is an unmerged branch. Decap and Keystatic work this way.
+
+*Lives in:* not built. *Enforced by:* `none` until `IDEAS/owner-editing.md` 1.2.
+
+### <a id="fjs-d1228"></a>2026-10-17 · `FJS-D1228` — Who writes an owner's edit to git — A checkout basecamp holds, written with the git CLI and a deploy key per repository.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions, Q4. **A** was picked over **B** (GitHub's contents API through a GitHub App, as Decap, Pages CMS, Keystatic and Tina Cloud do).
+
+The paper's recommendation, taken as written: Publish builds, and a build needs a checkout anyway. Git works with any host, which is `IDEAS/site-hosting.md`'s thesis, and basecamp already runs real git (`api/src/core/local-git.ts`).
+
+*Lives in:* not built. *Enforced by:* `none` until `IDEAS/owner-editing.md` 1.2.
+
+### <a id="fjs-d1229"></a>2026-10-17 · `FJS-D1229` — What an owner's Publish does when the default branch has undeployed commits — It refuses, naming each undeployed commit and its author, and basecamp notifies the developer.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions, Q5. **C** was picked over **A** (merge and ship everything, listing the other commits on the confirm screen) and **B** (ship the draft on top of the last deployed commit and merge it separately).
+
+The paper's recommendation, taken as written: it is Webflow's hazard, where an editor's publish also ships the designer's staged work. An owner cannot judge a developer's commit, and B deploys a commit on no branch.
+
+*Lives in:* not built. *Enforced by:* `none` until `IDEAS/owner-editing.md` 1.4.
+
+### <a id="fjs-d1230"></a>2026-10-17 · `FJS-D1230` — Who may edit and who may publish a site — A grant row per (user, App) with two levels, `edit` and `publish`, gated in the schema.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions, Q6. **A** was picked over **B** (a role on `WorkspaceMember`, for every site in the workspace).
+
+The paper's recommendation, taken as written: a Kobami client edits one site, and workspace membership would show them the fleet. Framer keeps content editing and publishing as separate permissions too. The gate is in the schema (Invariant 6).
+
+*Lives in:* `packages/basecamp/db/schema.lite` (not built). *Enforced by:* `none` until `IDEAS/owner-editing.md` 1.1.
+
+### <a id="fjs-d1231"></a>2026-10-17 · `FJS-D1231` — How a value rendered through a template lands on its field — By provenance at the read. In a preview build, site-kit's loader records each loaded value's content line, and Mesa's preview codegen stamps an element whose interpolation reads a field off a recorded object with that content line as its `data-fjs-loc`. A prop passed in whole, or a derived value, keeps the template stamp and opens the form for its kind of file.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions, Q7. **A** was picked over **B** (the editor matches the clicked text against the page's values) and **C** (no field landing: a template stamp opens the form for its kind of file, and the owner picks the entry).
+
+The paper's recommendation, taken as written. 0.1 measured 35–63% of on-page text rendering through about 20 shared template lines, and 53–66% of front-matter values sharing their text with another value, so B is wrong about half the time and cannot say so. A is derived from YAML key positions and adds no attribute: `data-fjs-loc` keeps its one meaning, the source line that wrote this. C is what A falls back to. Adjudication: *batteries vs. smallness*. The provenance exists only in a preview build, and Mesa stays a leaf, because site-kit writes to a seam that Mesa exports.
+
+*Lives in:* not built (site-kit's loader, and Mesa's preview codegen). *Enforced by:* `none` until `IDEAS/owner-editing.md` 2.4 has a drive.
+
 ### <a id="fjs-d1213"></a>2026-10-18 · `FJS-D1213` — Does a site state anything a deploy cannot derive — Nothing: the Worker's name is `siteUrl`'s host with dots as dashes (`frontierjs.com` → `frontierjs-com`), the adapter writes `.sierra/wrangler.json`, `website/wrangler.jsonc` is deleted, and a deploy with no `siteUrl`, or whose host makes a name past Cloudflare's 63 characters, is refused by name rather than truncated.
 
 Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Open questions. **A** was picked over **B** (A, plus an optional `host: { name }` in `site.js` for a name that must differ), **C** (`packages/basecamp`'s App row names it, as Vercel and Netlify keep a linked id, and the deploy asks basecamp), **D** (`host: { name, domain }` in `site.js`, as first asked).

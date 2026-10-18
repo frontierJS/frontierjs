@@ -166,6 +166,39 @@ caller is built**, naming it. Guessing is not an option available here: a call
 bound at the wrong argument runs anonymous, and an empty result reads as a
 correct answer.
 
+## Driving the app in a browser — `@frontierjs/testing/drive`
+
+One call owns a verify run: it refuses a port that already answers, starts each
+server in its own process group, waits for each URL, opens Chrome
+(`@frontierjs/mesa/drive`, an optional peer), runs your steps, and stops
+everything on a throw, on Ctrl-C and on exit. `process.exitCode` is set from the
+result, so the file is its steps:
+
+```ts
+import { drive } from '@frontierjs/testing/drive'
+
+await drive({
+  servers: [
+    { name: 'api', cmd: ['bun', 'run', 'api'], url: `${API}/health` },
+    { name: 'web', cmd: ['bun', 'run', 'web'], url: UI },
+  ],
+  open: UI,
+}, async (page, check) => {
+  await page.fill('input[name=email]', 'ada@example.com')
+  await page.clickAt('button[type=submit]')
+  await page.waitFor(`location.pathname === '/home'`)
+  check('signed in', await page.evaluate('return document.title'), 'Home')
+  check.clean('sign in')
+})
+```
+
+A busy port is refused rather than reused: a running dev server serves the code
+it started with. `check(label, got, want?)` compares deeply, or checks `got` is
+truthy. `check.clean(step)` fails the step if the page threw or a response
+failed since the last clean, and `check.allow(/401 .*account/)` names one the
+run provokes. A server that never answers fails the run with the last lines it
+printed.
+
 ## Running
 
 ```bash

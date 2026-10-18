@@ -2927,11 +2927,9 @@ class Parser {
   }
 
   /**
-   * `@unit(ms)` · `@unit("%")`
+   * `@unit(ms)` · `@unit(%)` · `@unit("%")`
    *
-   * Bare where the symbol is an identifier, quoted where it is not — `%` is a
-   * token this lexer already spends on something else, and a unit that cannot
-   * be written bare is better quoted than renamed. The symbol is NOT folded to
+   * Bare is canonical; the quoted spelling stays legal. The symbol is NOT folded to
    * a case: `MB` is a megabyte and `Mb` a megabit everywhere a reader has seen
    * them, so a wrong case is a wrong unit and is refused as one.
    */
@@ -2948,9 +2946,11 @@ class Parser {
   parseUnit() {
     const t = this.peek()
     if (!this.check(TK.LPAREN))
-      throw new ParseError('@unit takes a symbol — @unit(ms), @unit(kg), @unit("%")', { line: t.line, col: t.col })
+      throw new ParseError('@unit takes a symbol — @unit(ms), @unit(kg), @unit(%)', { line: t.line, col: t.col })
     this.eat(TK.LPAREN)
-    const symbol = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
+    const symbol = this.check(TK.STRING) ? this.eat(TK.STRING).value
+      : this.check(TK.PERCENT) ? this.eat(TK.PERCENT).value
+      : this.eat(TK.IDENT).value
     this.eat(TK.RPAREN)
     return { kind: 'unit', symbol: String(symbol) }
   }

@@ -50,9 +50,11 @@ a live socket) are only exercised against a real app.
   guards — an empty call list, and a socket that never connected — are reported
   rows rather than silent passes, and they are the only defence against a green
   parity run over nothing. Both are tested here.
-- **Open rows naming it:** `FJS-2759` (the floor-shaped pin `FJS-D1114` ruled,
-  in maidtech and the tutor template) and `FJS-1563` (a `drive` export owning
-  the dev-server lifecycle; the Chrome half is `@frontierjs/mesa/drive`).
+- **`drive()` has no app consumer yet.** The four copies it replaces —
+  linear, connectteam, maidtech and transit's verify files — still carry their
+  own. Like `example/` above, that is a gap in adoption, not a filed defect.
+  Proved by `test/drive.test.ts` and a scratch run against a real Chrome
+  (`FJS-D1224`).
 
 ## Picking it up next
 

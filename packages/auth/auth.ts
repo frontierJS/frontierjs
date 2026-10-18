@@ -102,7 +102,7 @@ export function createLitestoneAuth(
     oauthReturnToAllow   = [],
     oauthLinkTtl         = '1 hour',
     onOAuthLinkRequested,
-    magicLinkTtl         = '15 minutes',
+    magicLinkTtl         = '10 minutes',
     onMagicLinkRequested,
   } = opts
 

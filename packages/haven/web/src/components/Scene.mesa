@@ -41,7 +41,9 @@
   // Arrows walk while the input line is empty and edit it while it is not, so
   // a line being typed is never walked away from by a Left meant for it. In
   // the terminal shell's NORMAL mode h j k l arrive as the arrows, and a step
-  // is prevented so the shell does not also move focus for a j or a k. A step
+  // is prevented so the shell does not also move focus for a j or a k; `y u b n`
+  // walk the diagonals there, as a roguelike's, read only when the shell
+  // prevented the letter (`HomeRow`'s rule), so INSERT and a browser type them. A step
   // onto a door is a navigation carrying where it was stepped through
   // (`from`, `x`, `y` in the query), the next route's walk-in cycles the
   // socket into that room, and its scene stands the figure beside the door
@@ -145,7 +147,8 @@
   // is made again on every step — a second subscribe and an empty roster.
   var room = $context.room
 
-  const STEP = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+  const STEP     = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+  const DIAGONAL = { y: [-1, -1], u: [1, -1], b: [-1, 1], n: [1, 1] }
 
   let x = spawn.x
   let y = spawn.y
@@ -409,15 +412,18 @@
       return
     }
     if (room && commands.press(e.key, { x, y, facing }, e)) return
-    const step = STEP[e.key]
+    const step = STEP[e.key] ?? (e.defaultPrevented && !e.ctrlKey && !e.altKey && !e.metaKey ? DIAGONAL[e.key] : null)
     if (!step || !room || draft) return
     e.preventDefault()
     const nx = x + step[0]
     const ny = y + step[1]
     const turned = facingOf({ x, y }, { x: nx, y: ny })
-    const door = stage.doorAt(nx, ny, Date.now())
+    // A diagonal is a step either way round, or a figure slips through a
+    // wall's corner and between two pieces touching at theirs.
+    const squeezed = step[0] && step[1] && !(stands(nx, y) && stands(x, ny))
+    const door = !squeezed && stage.doorAt(nx, ny, Date.now())
     if (door) { goto(door.to, { from: page.pathname, x: nx, y: ny }); return }
-    if (!stands(nx, ny) || stage.pacerOn(nx, ny, Date.now())) {
+    if (squeezed || !stands(nx, ny) || stage.pacerOn(nx, ny, Date.now())) {
       if (turned !== facing) { facing = turned; here.updateMeta(meta()) }
       return
     }

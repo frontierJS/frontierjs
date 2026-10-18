@@ -9,6 +9,7 @@
 // and an answer's code is indented.
 import { clip } from '../scene/cells.js'
 import { TONES } from '../home/answer.js'
+import { toolLine } from './session.js'
 
 /**
  * `text` as rows of at most `w` cells: its own line breaks kept, a long line
@@ -75,3 +76,45 @@ export function windowOf(rows, room, top = null) {
   const start = top == null ? last : Math.min(Math.max(0, top), last)
   return { rows: rows.slice(start, start + room), start, below: Math.max(0, rows.length - start - room) }
 }
+
+// ─── the permission panel (study.md 2.3) ──────────────────────────────────────
+
+const WHERE = { localSettings: 'settings.local.json', projectSettings: 'settings.json', userSettings: '~/.claude/settings.json', session: 'this session' }
+
+/** What `always` adds, one phrase per suggestion the CLI made. */
+export function suggested(suggestions) {
+  return suggestions.map((s) => {
+    const where = WHERE[s.destination] ?? s.destination
+    if (s.type === 'addRules') return `${s.rules.map((r) => r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName).join(', ')} in ${where}`
+    if (s.type === 'setMode') return `${s.mode} for ${where}`
+    if (s.type === 'addDirectories') return `${s.directories.join(', ')} for ${where}`
+    return `${s.type} for ${where}`
+  }).join('; ')
+}
+
+/**
+ * The panel over the input while prompt `ask` waits, `more` others behind it.
+ * A command is shown whole, up to `most` rows: one approved off its first
+ * line could run any line after it, so a cut one says so in red. A path is
+ * wrapped rather than clipped, since its end is the file.
+ */
+export function askRows(ask, more, w, most = 6) {
+  const call = wrapped(ask.tool === 'Bash' && ask.input.command ? `Bash ${ask.input.command}` : toolLine(ask.tool, ask.input), w - 2)
+  const rows = call.slice(0, call.length > most ? most - 1 : most).map((text, i) => ({ text: `${i ? '  ' : '? '}${text}`, ink: TONES.warn }))
+  if (call.length > most) rows.push({ text: `  … ${call.length - most + 1} more rows the pane cannot show`, ink: TONES.danger })
+  if (ask.tool === 'Edit') {
+    const first = (t) => String(t ?? '').split('\n')[0]
+    rows.push({ text: clip(`  - ${first(ask.input.old_string)}`, w), ink: TONES.danger }, { text: clip(`  + ${first(ask.input.new_string)}`, w), ink: TONES.ok })
+  }
+  if (ask.description && !call.join(' ').includes(ask.description)) rows.push({ text: clip(`  ${ask.description}`, w), ink: TONES.muted })
+  const always = ask.suggestions.length ? ` · 2 always: ${suggested(ask.suggestions)}` : ''
+  rows.push(...wrapped(`1 allow${always} · 3 deny · or type why and Enter${more ? ` · ${more} more waiting` : ''}`, w - 2)
+    .map((text) => ({ text: `  ${text}`, ink: TONES.info })))
+  return rows
+}
+
+/** A read-along's ask (`IDEAS/study.md` 3.3): what it waits on, and where it is answered, since this pane cannot. */
+export const waitRows = (why, w) => [
+  ...wrapped(`? ${why}`, w).map((text, i) => ({ text: i ? `  ${text}` : text, ink: TONES.warn })),
+  { text: clip('  answer it in its own terminal', w), ink: TONES.muted },
+]

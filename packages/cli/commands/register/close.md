@@ -24,13 +24,19 @@ const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/register
 // package or a surface means the project's registers.
 const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 
-const out = closeIssue({ root, id: arg.id, how: flag.how ?? '' })
+const out = closeIssue({ root, id: arg.id, how: flag.how ?? '', dry: flag.dry })
 
 echo('')
 if (!out.ok) {
   echo(`  ✗ ${out.reason}`)
   echo('')
   process.exitCode = 1
+  return
+}
+
+if (out.dry) {
+  echo(`  ✓ ${out.id} would be closed — ${out.file}:${out.line} (--dry: nothing written, register:check not run)`)
+  echo('')
   return
 }
 

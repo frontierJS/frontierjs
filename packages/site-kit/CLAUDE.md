@@ -21,7 +21,7 @@ it is the outcome this package exists to prevent.
 ## Layout
 
 A site is a directory holding `content/` and nothing else; `site-kit
-dev|build|preview|deploy|check <dir>` runs it. The site directory stays the Vite root, so
+dev|build|serve|deploy|check <dir>` runs it. The site directory stays the Vite root, so
 `dist/` lands beside `content/` and Sierra's root-relative paths keep meaning
 what they mean in any app.
 
@@ -36,7 +36,11 @@ what they mean in any app.
   `deploy [--dry]` ships the dist the last build wrote, never a rebuild, through
   Sierra's Cloudflare adapter (`@frontierjs/sierra/site/cloudflare`) and the
   SITE's wrangler, run under node; `--dry` is wrangler's `--dry-run`, which
-  bundles the Worker and uploads nothing.
+  bundles the Worker and uploads nothing. `build --preview` is Sierra's
+  `preview: true`, a review build; `deploy --preview [name]` uploads it as a
+  version of the same Worker, never deployed, aliased by the git branch or the
+  name (`FJS-D1221`, `FJS-D1222`). `site-kit preview` is refused, naming
+  `serve` (`FJS-D1223`).
 - `config/vite.js` — `resolveSite({ root })`, the site as one object: its
   settings, its `site.js`, its preset and the Sierra config the three compose;
   and `siteKit({ root, port, host, site? })`, the whole Vite + Sierra config

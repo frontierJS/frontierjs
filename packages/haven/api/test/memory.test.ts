@@ -106,12 +106,12 @@ describe('taking traces out', () => {
 })
 
 describe('a step (7.4)', () => {
-  test('is one cell over, up or down from where the figure stood, and a join, a jump or a diagonal is none', () => {
-    expect([[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dy]) => stepped({ x: 5, y: 5 }, { x: 5 + dx, y: 5 + dy }))).toBe(true)
+  test('is one cell any way from where the figure stood, a diagonal too, and a join or a jump is none', () => {
+    expect([[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].every(([dx, dy]) => stepped({ x: 5, y: 5 }, { x: 5 + dx, y: 5 + dy }))).toBe(true)
     expect(stepped(undefined, { x: 5, y: 5 })).toBe(false)
     expect(stepped({}, { x: 5, y: 5 })).toBe(false)
     expect(stepped({ x: 5, y: 5 }, { x: 5, y: 5 })).toBe(false)
-    expect(stepped({ x: 5, y: 5 }, { x: 6, y: 6 })).toBe(false)
+    expect(stepped({ x: 5, y: 5 }, { x: 7, y: 6 })).toBe(false)
     expect(stepped({ x: 5, y: 5 }, { x: 40, y: 20 })).toBe(false)
   })
 })

@@ -22,13 +22,19 @@ const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/register
 
 const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 
-const out = amendIssue({ root, id: arg.id, detail: flag.detail })
+const out = amendIssue({ root, id: arg.id, detail: flag.detail, dry: flag.dry })
 
 echo('')
 if (!out.ok) {
   echo(`  ✗ ${out.reason}`)
   echo('')
   process.exitCode = 1
+  return
+}
+
+if (out.dry) {
+  echo(`  ✓ ${out.id} would be amended — ${out.file}:${out.line} (--dry: nothing written, register:check not run)`)
+  echo('')
   return
 }
 

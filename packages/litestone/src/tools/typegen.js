@@ -466,7 +466,7 @@ export interface CursorResult<T> {`,
     `type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__SelectedColumns<E, NS>>[] : __Flat<__SelectedColumns<T, NS>>`,
     `type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>`,
     ``,
-    `export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}> {`,
+    `export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string> {`,
     `  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>`,
     `  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S> | null>`,
     `  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S> | null>`,
@@ -476,11 +476,11 @@ export interface CursorResult<T> {`,
     `  /** The cursor of a row already taken, for the ordering it was scanned in; \`null\` where the row lacks a sort key. Throws where the ordering is not total. */`,
     `  cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null`,
     `  count(args?: { where?: TWhere }): Promise<number>`,
-    `  create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { data: TCreate; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S>>`,
-    `  createMany(args: { data: TCreate[] }): Promise<{ count: number }>`,
-    `  update<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { where: TWhere; data: TUpdate; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S> | null>`,
-    `  updateMany(args: { where?: TWhere; data: TUpdate }): Promise<{ count: number }>`,
-    `  upsert<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { where: TWhere; create: TCreate; update: TUpdate; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S>>`,
+    `  create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { data: TCreate; system?: TSys[]; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S>>`,
+    `  createMany(args: { data: TCreate[]; system?: TSys[] }): Promise<{ count: number }>`,
+    `  update<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { where: TWhere; data: TUpdate; system?: TSys[]; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S> | null>`,
+    `  updateMany(args: { where?: TWhere; data: TUpdate; system?: TSys[] }): Promise<{ count: number }>`,
+    `  upsert<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { where: TWhere; create: TCreate; update: TUpdate; system?: TSys[]; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S>>`,
     `  upsertMany(args: { data: TCreate[]; conflictTarget?: string[]; update?: string[] }): Promise<{ count: number }>`,
     `  remove(args: { where: TWhere }): Promise<TRow | null>`,
     `  removeMany(args?: { where?: TWhere }): Promise<{ count: number }>`,
@@ -498,6 +498,8 @@ export interface CursorResult<T> {`,
     `  aggregate(args?: Record<string, unknown>): Promise<Record<string, any>>`,
     `  groupBy(args: Record<string, unknown>): Promise<Record<string, any>[]>`,
     `  query(args?: Record<string, unknown>): Promise<any>`,
+    `  /** A named move of a @@transitions machine; \`system: true\` makes one declared @system. TMove is never on a model with no machine, so the call is a type error there. */`,
+    `  transition(id: TRow | string | number, name: TMove, opts?: { system?: boolean }): Promise<TRow>`,
     `  /** @@transitions — [] on a model that declares none. */`,
     `  transitions(idOrRow: TRow | string | number): Promise<TransitionOption[]>`,
     `  /** @@commitment — the rows owing a declared transition by \`by\` (the client's clock unless stated). */`,
@@ -564,8 +566,21 @@ export interface CursorResult<T> {`,
 
   // One entry per model
   for (const model of schema.models) {
+    // A machine whose moves are rows (declaredBy) has no names to state here.
+    const machines = (model.attributes ?? []).filter(a => a.kind === 'transitions')
+    const moves = machines.some(a => a.declaredBy) ? 'string'
+      : [...new Set(machines.flatMap(a => Object.keys(a.transitions)))].map(n => `'${n}'`).join(' | ')
+    // What a write's `system: [...]` may name: a @system column, a @guarded one
+    // the audience can see, a field with declared moves, and the gate itself.
+    const lifts = [
+      ...model.fields.filter(f => f.type.kind !== 'relation' && f.attributes.some(a =>
+        a.kind === 'system' || (a.kind === 'guarded' && audience === 'system'))).map(f => f.name),
+      ...machines.map(a => a.field),
+      ...((model.attributes ?? []).some(a => a.kind === 'gate') ? ['@@gate'] : []),
+    ]
+    const sys = [...new Set(lifts)].map(n => `'${n}'`).join(' | ') || 'never'
     lines.push(
-      `  readonly ${accessor(model.name)}: TableClient<${pascal(model.name)}, ${pascal(model.name)}Create, ${pascal(model.name)}Update, ${pascal(model.name)}Where, ${pascal(model.name)}Relations>`
+      `  readonly ${accessor(model.name)}: TableClient<${pascal(model.name)}, ${pascal(model.name)}Create, ${pascal(model.name)}Update, ${pascal(model.name)}Where, ${pascal(model.name)}Relations, ${moves || 'never'}, ${sys}>`
     )
   }
   // And one per view. A view is reached exactly as a table is — `db.<name>` —
@@ -816,7 +831,7 @@ function fieldCreateSpec(field, schema, audience, modelNames) {
   // same as omitting it: `null` CLEARS, absent leaves the column alone. Typing
   // it `T` only made the documented idiom an error, which an app fixes by
   // casting the client back to any.
-  const tsType = (fileInputTs(field, 'create') ?? fieldToTs(field, schema, modelNames, false)) + (type.optional ? ' | null' : '')
+  const tsType = (fileInputTs(field, 'create') ?? fieldToTs(field, schema, modelNames, false, true)) + (type.optional ? ' | null' : '')
 
   // @rank and @sequence are minted on a create that names no value, so the
   // column carries no @default and would otherwise type as required
@@ -841,7 +856,7 @@ function fieldUpdateSpec(field, schema, audience, modelNames) {
   // Same as create, and it matters more here: clearing a nullable column is
   // only expressible as an explicit null (Invariant 9 — test key presence, not
   // `??`), so without this the one way to clear a field does not typecheck.
-  const tsType = (fileInputTs(field, 'update') ?? fieldToTs(field, schema, modelNames, false)) + (type.optional ? ' | null' : '')
+  const tsType = (fileInputTs(field, 'update') ?? fieldToTs(field, schema, modelNames, false, true)) + (type.optional ? ' | null' : '')
   return { name, tsType, optional: true, comment: null }
 }
 
@@ -853,7 +868,7 @@ function fieldWhereSpec(field, schema, modelNames) {
   // offering it here would make a filter that cannot work compile.
   if (attributes.some(a => a.kind === 'transient')) return null
 
-  const base = fieldToTs(field, schema, modelNames, false)
+  const base = fieldToTs(field, schema, modelNames, false, true)
   // Where accepts the scalar value OR a WhereOp object
   const tsType = `${base} | WhereOp<${base}> | null`
   return { name, tsType, optional: true, comment: null }
@@ -861,7 +876,9 @@ function fieldWhereSpec(field, schema, modelNames) {
 
 // ─── TypeScript type string for a field ──────────────────────────────────────
 
-function fieldToTs(field, schema, modelNames, nullable = true) {
+// `input` types a value a caller SENDS: the client turns a Date into its ISO text on a
+// write and in a where, so a DateTime takes either there and reads back a string.
+function fieldToTs(field, schema, modelNames, nullable = true, input = false) {
   const { type, attributes } = field
   let base
 
@@ -874,7 +891,7 @@ function fieldToTs(field, schema, modelNames, nullable = true) {
       case 'Float':     base = 'number';  break
       case 'String':     base = 'string';  break
       case 'Boolean':  base = 'boolean'; break
-      case 'DateTime': base = 'string';  break   // ISO-8601 string
+      case 'DateTime': base = input ? 'string | Date' : 'string';  break   // ISO-8601 string
       case 'Json': {
         // Json @type(T) → use the type's interface name. Otherwise unknown.
         const typeAttr = attributes.find(a => a.kind === 'type')
@@ -900,7 +917,7 @@ function fieldToTs(field, schema, modelNames, nullable = true) {
   // @encrypted fields — stored as ciphertext string, returned as string (decrypted by ORM)
   // Keep as string (the ORM handles encrypt/decrypt transparently)
 
-  if (type.array) base = `${base}[]`
+  if (type.array) base = base.includes(' | ') ? `(${base})[]` : `${base}[]`
 
   if (nullable && type.optional) base = `${base} | null`
 

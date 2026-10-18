@@ -48,7 +48,18 @@ test('ids: nanoid is 21 url-safe chars and takes a size', function () {
   for (const id of many(generateNanoid)) assert.equal(/^[A-Za-z0-9_-]{21}$/.test(id), true)
 })
 
-// ─── they do not repeat ───────────────────────────────────────────────────────
+test('ids: nanoid draws from the whole of any alphabet, and refuses a size it cannot honor', function () {
+  for (const alphabet of ['0123456789', 'abcdefghijklmnopqrstuvwxyz0123456789', 'ab']) {
+    const seen = new Set(generateNanoid(4000, alphabet))
+    assert.equal(seen.size, alphabet.length, 'alphabet of ' + alphabet.length + ' reached ' + seen.size)
+  }
+  assert.throws(() => ['a', 'b'].map(generateNanoid), /size must be/)
+  assert.throws(() => generateNanoid(0), /size must be/)
+  assert.throws(() => generateNanoid(8, ''), /alphabet must be/)
+  assert.throws(() => generateNanoid(8, 'x'.repeat(257)), /alphabet must be/)
+})
+
+// ─── they do not repeat───────────────────────────────────────────────────────
 
 test('ids: every generator is collision-free over a run', function () {
   for (const [kind, gen] of Object.entries(ID_GENERATORS)) {

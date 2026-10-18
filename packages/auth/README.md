@@ -211,7 +211,7 @@ const auth = createLitestoneAuth(db, {
       html:    `<a href="${env.APP_URL}/sign-in/link?token=${token}">Sign in</a>`,
     })
   },
-  magicLinkTtl: '15 minutes',   // the default
+  magicLinkTtl: '10 minutes',   // the default
 })
 ```
 

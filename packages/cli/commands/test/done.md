@@ -1,6 +1,6 @@
 ---
 title: test:done
-description: Is the change in the working tree finished — history, docs pointers, test wiring, snapshots, registers, and the drives it needs
+description: Is the change in the working tree finished — docs pointers, test wiring, snapshots, registers, and the drives it needs
 alias: done
 examples:
   - fli done

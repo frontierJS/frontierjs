@@ -13,11 +13,13 @@
   // Standing beside a worker reads it: what it asks, else its last words,
   // else the file it last touched, and how long ago. No key does this,
   // because the line input holds the keys and a letter pressed beside a
-  // worker would be typed into the line.
+  // worker would be typed into the line. A session that is one of the
+  // study's tabs reads out with its number in the study's bar, `[2]`.
   //
   // A route places this (`routes/workshop.mesa`) and never the scene file:
   // the scene's picture is pinned, and the directory differs per machine.
   import { at } from '#cell'
+  import { studyTabs } from '#study'
   import { readWorkers } from '#workers'
 
   const scene = $context.scene
@@ -26,17 +28,18 @@
   const SEATS = 3
 
   let workers = readWorkers()
+  let tabs = studyTabs()
   let now  = Date.now()
   let view = scene.view
   let me   = scene.seer
   $.onDestroy(scene.subscribe(() => { view = scene.view; me = scene.seer }))
-  $.onDestroy(scene.task('workers', (ms) => { workers = readWorkers({ now: ms }); now = ms }, { every: POLL_MS }))
+  $.onDestroy(scene.task('workers', (ms) => { workers = readWorkers({ now: ms }); tabs = studyTabs(); now = ms }, { every: POLL_MS }))
 
   const glyph = (w) => (w.asking ? '?' : w.said ? '✓' : '✻')
 
   /** What standing beside a worker reads. */
-  function reading(w, now) {
-    const s = w.session.slice(0, 4)
+  function reading(w, now, tabs) {
+    const s = tabs.has(w.session) ? `[${tabs.get(w.session)}] ${w.session.slice(0, 4)}` : w.session.slice(0, 4)
     if (w.asking) return `${s} asks: ${w.asking.why} · ${ago(now - w.asking.at)}`
     if (w.said) return `${s} done: ${w.said.text} · ${ago(now - w.said.at)}`
     return w.file ? `${s} ${w.file} · ${ago(now - w.at)}` : `${s} working · ${ago(now - w.seen)}`
@@ -45,7 +48,7 @@
   const ago = (ms) => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))}s ago` : `${Math.round(ms / 60_000)}m ago`)
 
   /** What is drawn, in the view's cells: a figure per worker, a count over a crowded bench, and the worker beside `me` read out. */
-  function placed(ws, v, me, now) {
+  function placed(ws, v, me, now, tabs) {
     const benches = new Map(scene.marks.filter((m) => m.kind === 'piece' && m.piece.bench).map((m) => [m.piece.bench, m]))
     const byBench = new Map()
     for (const w of ws) if (benches.has(w.bench)) byBench.set(w.bench, [...(byBench.get(w.bench) ?? []), w])
@@ -68,7 +71,7 @@
     }
     const near = me && figures.find((f) => Math.abs(f.x - me.x) <= 1 && Math.abs(f.y - me.y) <= 1)
     if (near) {
-      const text = reading(near.w, now)
+      const text = reading(near.w, now, tabs)
       out.push({ key: 'read', x: near.x, y: near.y + 1, text, layer: 12, surface: true })
     }
     // A figure off the view is not drawn; a line is kept inside it, as a bubble is.
@@ -81,7 +84,7 @@
   }
 </script>
 
-{#each placed(workers, view, me, now) as o (o.key)}
+{#each placed(workers, view, me, now, tabs) as o (o.key)}
   {#if o.surface}
     <p class="surface" {@attach at(o.x, o.y, o.layer)}>{o.text}</p>
   {:else}

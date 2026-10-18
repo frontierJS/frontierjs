@@ -23,15 +23,17 @@ export const cycled = (at, n, step) => (at + step + n) % n
 export const modelOf = (tab, state) => tab.model ?? state?.model?.replace(/^claude-/, '') ?? 'claude'
 
 /**
- * The bar: each tab its number and model, the one shown in brackets, a tab
- * working marked `…` and one whose process ended `✗`. Read off each
- * session's state, never stored.
+ * The bar: each tab its number and model, a read-along `read <id>` instead,
+ * the one shown in brackets, a tab
+ * waiting on a permission prompt marked `?`, one working `…` and one whose
+ * process ended `✗`. Read off each session's state, never stored.
  */
 export function tabBar(tabs, at) {
   return tabs.map((tab, i) => {
     const s = tab.session?.state
-    const mark = s?.status === 'working' ? '…' : s?.exit ? '✗' : ''
-    const name = `${i + 1} ${modelOf(tab, s)}${mark}`
+    const mark = s?.status === 'needs-permission' ? '?' : s?.status === 'working' ? '…' : s?.exit ? '✗' : ''
+    // A read-along by the id the kitchen's ticket showed.
+    const name = `${i + 1} ${tab.reads ? `read ${tab.reads.slice(0, 4)}` : modelOf(tab, s)}${mark}`
     return i === at ? `[${name}]` : ` ${name} `
   }).join('')
 }

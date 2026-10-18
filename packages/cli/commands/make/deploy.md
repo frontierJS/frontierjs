@@ -278,8 +278,11 @@ if (existsSync(dockerignorePath)) {
     '**/*.sqlite3',
     'db/backups/',
     'dist/',
-    '*.test.ts',
-    '*.test.js',
+    // Same `**/` reason: `*.test.ts` matched the root only, so api/test/ shipped.
+    '**/*.test.ts',
+    '**/*.test.js',
+    '**/test/',
+    '**/tests/',
   ].join('\n') + '\n'
 
   if (!flag.dry) writeFileSync(dockerignorePath, dockerignore, 'utf8')

@@ -25,6 +25,7 @@
     "./otlp": "./src/plugins/otlp/index.ts",
     "./webhooks": "./src/plugins/webhooks/index.ts",
     "./public-url": "./src/core/public-url.ts",
+    "./envelope": "./src/core/envelope.ts",
     "./manifest": "./src/plugins/manifest/index.ts",
     "./outbox": "./src/plugins/outbox/index.ts",
     "./backfill": "./src/plugins/backfill/index.ts",

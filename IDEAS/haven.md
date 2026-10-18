@@ -1819,15 +1819,45 @@ fix-loop is handed, and a CHEF! ticket opens in the study (`IDEAS/study.md`
     terminal turned the board within the poll, `off` back to the ledger.
     `fix-loop --dry-run` under a kept prep list took S3/S4 rows only, under
     a station night only `cli`, and with `--pkg mesa` ignored the menu.
-- [ ] 18.3 Timers (owner note, 2026-10-17): how long a chef has waited and
+- [x] 18.3 Timers (owner note, 2026-10-17): how long a chef has waited and
   how long an order has sat ready, on the ticket and the plate. A CHEF!
   ticket's head already counts from `asking.at`; a plate shows no age, only
   its reading does. A wait past some threshold should look worse.
-- [ ] 18.4 Closing an order out (owner note, 2026-10-17): a verb at the pass
+  - Built: `WAIT` in `Brigade.mesa`, 2 and 5 minutes, the turn a kitchen
+    display's ticket timer makes (fresh, late, over). A CHEF! ticket's head
+    row is filled amber late and red over; a plate's age is chalked on the
+    pass under it, and plate and age go green, amber, red. Both thresholds
+    sit under `QUIET_MS`, since a plate leaves at ten minutes. A working
+    ticket's age is not a wait on you and keeps the paper's ink. The two
+    numbers and the looks are not the owner's yet.
+  - Run (scratch probe, not committed) against a test API with six workers
+    written into a HOME with old stamps: a `--frame /kitchen/` read each
+    head's wait (`34s`, `3m`, `7m`) and each plate's age under it (`24s`,
+    `3m`, `6m`); a pty's raw stream carried the amber and red head fills and
+    the green and amber plate inks.
+- [x] 18.4 Closing an order out (owner note, 2026-10-17): a verb at the pass
   acknowledges a plate and it leaves. Today a plate stays until the session's
   next event or `QUIET_MS`. Keyed `session:said.at`, so the session's next
   stop plates again; kept per machine beside `workers/`, as the workers are.
   A CHEF! can be marked seen, but only its own host answers it (study 3.3).
+  - Built: `/bump [id | all]` along the pass (a kitchen display's bump bar)
+    and `/heard [id | all]` along the line (the cook's call-back), each
+    `closeOut(w, 'said' | 'asking')` in `#workers`, which keeps that moment's
+    stamp in `~/.fli/haven/closed/<session>.json`; `readWorkers` reads
+    `said.bumped` and `asking.heard` true only for that very stamp. A bumped
+    plate leaves the pass; a heard CHEF! stops flashing, its ticket footed
+    `HEARD` and its station `HEARD`, and stays on the rail. Bare, each takes
+    what is in front of you; a miss names what is up. SessionEnd and the
+    hook's day-old sweep take the file. The workshop still shows a bumped
+    session's `✓`. Both words are not the owner's yet; nothing committed
+    guards the stamp keying (no new tests while experimenting).
+  - Run (scratch probe, not committed) in a pty against a test API, four
+    workers written into a HOME: `/bump` at the door answered by nobody; in
+    front of a plate it left and the next took its slot, the file kept the
+    stamp; an unknown id named what was up; a new stop on the bumped session
+    plated again; `/bump all` cleared the pass and ORDER UP; at the mesa
+    station `/heard` footed its ticket `HEARD` and left cli's CHEF!
+    flashing; SessionEnd removed worker and close-out.
 
 ### Phase 10 — Hosted
 

@@ -44,7 +44,7 @@ export function amendIssue(opts) {
   return withRegisterGuard(opts.root, () => amendUnguarded(opts))
 }
 
-function amendUnguarded({ root, id, detail, drop = null, today = new Date() }) {
+function amendUnguarded({ root, id, detail, drop = null, dry = false, today = new Date() }) {
   const doc = readRegisters(root)
   if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no row can be read')
 
@@ -71,6 +71,8 @@ function amendUnguarded({ root, id, detail, drop = null, today = new Date() }) {
   // The open shape is `Id | Area | Title | Status | Verified | Detail`.
   if (cells.length >= 6) cells[4] = isoDate(today)
   lines[at] = `| ${cells.join(' | ')} |`
+
+  if (dry) return { ok: true, dry: true, id: record.id, file: record.file, line: record.line, dropped: kept.dropped }
 
   const baseline = errorKeys(root)
   writeFileSync(abs, lines.join('\n'))

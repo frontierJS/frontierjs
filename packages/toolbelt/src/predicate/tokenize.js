@@ -50,6 +50,9 @@ export const TK = {
   // `Expected …, got '+'` from the parser rather than a value.
   PLUS:  'PLUS',  // +
   MINUS: 'MINUS', // -  (a `-` before a digit is a negative NUMBER instead)
+  // `@unit(%)` — the one unit symbol that is not an identifier. No expression
+  // grammar reads it, so `%` in a predicate is still `got '%'` from the parser.
+  PERCENT: 'PERCENT', // %
 }
 
 // Any other escaped character stands for itself. Without these three a
@@ -137,6 +140,7 @@ export function tokenize(src) {
     if (src[i] === '>') { tokens.push({ type: TK.GT,   value: '>',  ...pos }); advance(); continue }
     if (src[i] === '!') { tokens.push({ type: TK.BANG, value: '!',  ...pos }); advance(); continue }
     if (src[i] === '+') { tokens.push({ type: TK.PLUS, value: '+',  ...pos }); advance(); continue }
+    if (src[i] === '%') { tokens.push({ type: TK.PERCENT, value: '%', ...pos }); advance(); continue }
     if (src[i] === '-' && !/[0-9]/.test(src[i + 1])) { tokens.push({ type: TK.MINUS, value: '-', ...pos }); advance(); continue }
 
     // Semicolon — field separator in compact inline schemas, treated as whitespace

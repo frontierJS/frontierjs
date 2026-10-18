@@ -89,3 +89,26 @@ describe('the Dockerfile make:deploy writes', () => {
     }
   })
 })
+
+// FJS-3212: `*.test.ts` matches at the context root only, so api/test/ shipped
+// in every production image. Read through the same matcher `02b-build-check` uses.
+describe('the .dockerignore make:deploy writes', () => {
+  test('a test file or test directory under a surface is excluded', async () => {
+    const { parseDockerignore, ignoreDecision } = await import('../core/build-check.js')
+    const app = mkdtempSync(join(tmpdir(), 'fli-mkdeploy-ignore-'))
+    try {
+      writeFileSync(join(app, 'package.json'), '{"name":"t","scripts":{}}')
+      const r = spawnSync(process.execPath, [resolve(ROOT, 'bin/fli.js'), 'make:deploy'], {
+        encoding: 'utf8', cwd: app, env: { ...process.env, NO_COLOR: '1' },
+      })
+      expect(r.status).toBe(0)
+      const pats = parseDockerignore(readFileSync(join(app, '.dockerignore'), 'utf8'))
+      for (const p of ['api/test/app.test.ts', 'api/test/fixtures/seed.json', 'api/src/x.test.js', 'x.test.ts']) {
+        expect([p, ignoreDecision(p, pats)]).toEqual([p, 'ignored'])
+      }
+      expect(ignoreDecision('api/src/app.ts', pats)).toBe('included')
+    } finally {
+      rmSync(app, { recursive: true, force: true })
+    }
+  })
+})

@@ -126,3 +126,15 @@ describe('what it refuses', () => {
   })
 
 })
+
+// FJS-3003: `--dry` is on every command, and a dry amend appends what it was asked not to.
+describe('amending a row dry', () => {
+
+  test('answers where the row is and writes nothing', () => {
+    const root = project()
+    const out  = amendIssue({ root, id: 'ELA-001', detail: 'seen again', dry: true, today: TODAY })
+    expect(out).toMatchObject({ ok: true, dry: true, id: 'ELA-001' })
+    expect(file(root)).toBe(ISSUES.join('\n'))
+  })
+
+})

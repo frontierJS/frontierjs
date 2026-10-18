@@ -205,8 +205,7 @@ core/
                 from `merge-base HEAD origin/HEAD` — the diff the pull request
                 carries, so nothing stores a base. `markPreview` writes the
                 marker, for basecamp's Open. Plain node, for `checks.js`
-  done.js       is the change in the working tree FINISHED — a CHANGES entry per
-                package touched, a new module or command named where its
+  done.js       is the change in the working tree FINISHED — a new module or command named where its
                 siblings are, a new `.gitignore` rule that hides a file on
                 disk, then `fli check`'s error rules (changed files only),
                 test-files-run, register:check and the snapshots asked about

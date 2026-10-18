@@ -32,14 +32,15 @@ export type Laid = Position & { kind: TraceKind, by?: number, ch?: string, id?: 
 export type Trace = Laid & { at: number, until: number }
 
 /**
- * Whether going from `was` to `now` lays a step: one cell over, up or down. A
+ * Whether going from `was` to `now` lays a step: one cell any way, a diagonal
+ * (`y u b n`) included. A
  * join, a door's arrival and a booth's stand are not, so they leave no
  * footprint (`IDEAS/haven.md` 7.4). The server lays by it and a client asks it
  * of the moves presence shows, so the two agree on which cells were walked.
  */
 export function stepped (was: Partial<Position> | undefined, now: Position): boolean {
   if (!Number.isInteger(was?.x) || !Number.isInteger(was?.y)) return false
-  return Math.abs(now.x - was!.x!) + Math.abs(now.y - was!.y!) === 1
+  return Math.max(Math.abs(now.x - was!.x!), Math.abs(now.y - was!.y!)) === 1
 }
 
 /** How much of a trace is left at `now`: 1 as it is laid, 0 once it is gone. */

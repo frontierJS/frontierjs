@@ -133,3 +133,21 @@ describe('what it refuses', () => {
   })
 
 })
+
+// FJS-3003: `--dry` is on every command, and a dry close moves the row it was asked not to.
+describe('closing a row dry', () => {
+
+  test('answers where the row would go and writes nothing', () => {
+    const root = project()
+    const out  = closeIssue({ root, id: 'ELA-001', how: 'Uncommented the fields', dry: true, today: TODAY })
+    expect(out).toMatchObject({ ok: true, dry: true, id: 'ELA-001' })
+    expect(file(root)).toBe(ISSUES.join('\n'))
+  })
+
+  test('still refuses what the real close refuses', () => {
+    const root = project()
+    expect(closeIssue({ root, id: 'ELA-001', how: '', dry: true })).toMatchObject({ ok: false })
+    expect(closeIssue({ root, id: 'ELA-404', how: 'x', dry: true })).toMatchObject({ ok: false })
+  })
+
+})

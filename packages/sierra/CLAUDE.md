@@ -59,8 +59,11 @@ src/
                          walks on window keys); from a route it `goto`s, so
                          Esc comes back. `side` (`--side`) is a component in
                          mesa's `sideOf`, mounted on the first Ctrl+\ and
-                         kept while hidden; Ctrl+O crosses, and a page's own
-                         command shows it through mesa's `sideToggle()`,
+                         kept while hidden; Ctrl+O crosses, and where the page
+                         would keep under 120 columns an open side is ZOOMED:
+                         one pane drawn full width, the one holding focus, and
+                         Ctrl+O swaps. A page's own
+                         command shows it through mesa's `sideToggle()` (`true` only shows),
                          which the shell fills. Both keys are
                          taken before any mount, since a field binds most Ctrl
                          letters, and in the side Esc and h/j/k/l are its own
@@ -101,7 +104,10 @@ src/
                          build (`FJS-D1213`), and `.sierra/worker.js` when there
                          are functions — `run_worker_first` lists their paths
                          only, since Workers otherwise serves a same-path page
-                         before the script. Reads a finished build
+                         before the script. Reads a finished build, and refuses
+                         the other kind: a dist carrying `data-fjs-loc` is a
+                         `preview: true` build and ships only as a preview
+                         version, aliased by `previewAlias` (`FJS-D1221`)
 
   widget/                — the `widgets/` surface's runtime and its origin
     index.js             the embed runtime: a custom element (and a selector,
@@ -319,7 +325,7 @@ src/
                            serveSite sends and a static build writes as
                            `_headers`; each rule after `/*` detaches before it
                            states, since Cloudflare joins two matches with a
-                           comma. `headerUnder` reads it as Cloudflare does,
+                           comma. A `preview: true` build adds `noindex` to `/*`. `headerUnder` reads it as Cloudflare does,
                            hashed-asset.js: is this name content-addressed —
                            the one answer both servers and `_headers` share,
                            here because the build may not import `serve/`,

@@ -212,16 +212,16 @@ const NO_MINOR_UNIT = new Set([
   'XTS', 'XXX',
 ])
 
-let _known = null
+const KNOWN = new Set(ACTIVE)
 
-/** The ISO 4217 codes, as a Set. The same set on every runtime. */
+/** The ISO 4217 codes, as a new Set each call. The same codes on every runtime. */
 export function knownCurrencies() {
-  return _known ??= new Set(ACTIVE)
+  return new Set(KNOWN)
 }
 
 /** Is this an ISO 4217 code? */
 export function isKnownCurrency(code) {
-  return knownCurrencies().has(String(code ?? '').toUpperCase())
+  return KNOWN.has(String(code ?? '').toUpperCase())
 }
 
 /**

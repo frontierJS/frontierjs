@@ -10,8 +10,14 @@ and the Kobami client template (`fjs-prototypes/ksite`) extends it with a
 cleaning-company preset over the same engine.
 
 A site is its `content/` folder: `site-kit dev site`, `site-kit build site`,
-`site-kit preview site`. `site-kit build site --binary` then compiles `site/dist`
-and its server into one executable at `site/bin/site` (`./site/bin/site --port 8080`). The shell, the dev entry and the build config live
+`site-kit serve site`. `site-kit build site --binary` then compiles `site/dist`
+and its server into one executable at `site/bin/site` (`./site/bin/site --port 8080`).
+`site-kit deploy site` ships the last build to a Cloudflare Worker named for
+`siteUrl`. A review link is `site-kit build site --preview` (every element
+stamped with its source location, every path `noindex`), then `site-kit deploy
+site --preview [name]`, which uploads it as a version of the same Worker at
+`<branch>-<worker>.<account>.workers.dev` without deploying it. A plain deploy
+refuses a preview build. The shell, the dev entry and the build config live
 here. `content/settings/site.js` is the site's Sierra config, and
 `content/settings/site.md` is its settings. Blocks are exported as
 `@frontierjs/site-kit/blocks/<Name>.mesa`.

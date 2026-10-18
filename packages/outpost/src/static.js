@@ -230,21 +230,6 @@ export function createStatic({ staticDir = '/var/lib/outpost/static', staticUrl 
       const digest  = digestOfFiles(entries)
       const release = join(dir, digest)
 
-      // Written into a staging directory and moved into place, so a publish
-      // interrupted halfway cannot leave a digest directory holding some of its
-      // own files — which `activate` would then happily serve, forever, as a
-      // release that passes every check it has.
-      const staging = `${release}.partial.${process.pid}.${Date.now()}`
-      await fsp.rm(staging, { recursive: true, force: true })
-      for (const { path, bytes } of entries) {
-        const target = join(staging, path)
-        await fsp.mkdir(dirname(target), { recursive: true })
-        await fsp.writeFile(target, bytes)
-      }
-      await fsp.rm(release, { recursive: true, force: true })
-      await fsp.mkdir(dirname(release), { recursive: true })
-      await fsp.rename(staging, release)
-
       // Everything but the ones a rollback can still reach — and never the one
       // that is live, which is a separate question from which is newest: an app
       // rolled back to a release from last week has a `current` that every
@@ -252,9 +237,31 @@ export function createStatic({ staticDir = '/var/lib/outpost/static', staticUrl 
       // app on the machine with it, and a prototyping surface is the one most
       // likely to redeploy forty times in an afternoon.
       const live = await currentDigest(appId)
+
+      // Written into a staging directory and moved into place, so a publish
+      // interrupted halfway cannot leave a digest directory holding some of its
+      // own files — which `activate` would then happily serve, forever, as a
+      // release that passes every check it has. The live digest is left alone:
+      // removing it before the rename is a window in which the app serves 404.
+      if (live !== digest) {
+        const staging = `${release}.partial.${process.pid}.${Date.now()}`
+        await fsp.rm(staging, { recursive: true, force: true })
+        for (const { path, bytes } of entries) {
+          const target = join(staging, path)
+          await fsp.mkdir(dirname(target), { recursive: true })
+          await fsp.writeFile(target, bytes)
+        }
+        await fsp.rm(release, { recursive: true, force: true })
+        await fsp.mkdir(dirname(release), { recursive: true })
+        await fsp.rename(staging, release)
+      }
+
       // The release just written is the newest whatever its mtime ties with.
       const kept = [digest, ...(await digests(dir, live)).filter(d => d !== digest)]
-      for (const old of kept.slice(Math.max(keep, 1)))
+      // `keep` arrives off the wire: a non-number is NaN here, and slice(NaN)
+      // keeps nothing — every rollback target gone.
+      const window = Number.isFinite(Number(keep)) && keep !== null && keep !== '' ? Math.max(Math.floor(Number(keep)), 1) : KEEP_DEFAULT
+      for (const old of kept.slice(window))
         if (old !== digest && old !== live) await fsp.rm(join(dir, old), { recursive: true, force: true })
 
       return { digest, files: entries.length, bytes: total, path: release }

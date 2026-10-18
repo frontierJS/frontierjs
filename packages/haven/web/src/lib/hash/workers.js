@@ -12,13 +12,22 @@
 // transcripts say the same and were not used: their shape is Claude Code's
 // to change.
 //
+// What the kitchen has closed out of a session is a second file beside it,
+// `closed/<session>.json` (`IDEAS/haven.md` 18.4): the `said.at` of a plate
+// bumped off the pass and the `asking.at` of a CHEF! heard, so the session's
+// next stop plates again and its next ask flashes again. The hook never
+// writes it; a SessionEnd takes it with the worker.
+//
 // Nothing here is sent. A worker is drawn on the screen of the machine whose
 // directory it is in, the way the tavern's runner is.
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, relative, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 
 export const WORKERS_DIR = join(homedir(), '.fli', 'haven', 'workers')
+
+// Beside the workers it closes out, so a `dir` handed in brings its own.
+const closedDir = (dir) => join(dirname(dir), 'closed')
 
 /** A session with no event for this long has left its bench — unless it is asking, since then it is waiting on you. */
 export const QUIET_MS = 10 * 60 * 1000
@@ -63,7 +72,8 @@ function readOne(file) {
  * Record one hook event for this session. `input` is the hook's stdin:
  * `session_id`, `hook_event_name` (a `PostToolUse` when absent), and per
  * event `tool_input.file_path` (`notebook_path` for a notebook),
- * `notification_type` and `message`, `last_assistant_message`, `cwd`.
+ * `notification_type` and `message`, `last_assistant_message`, `cwd`, and on
+ * every event `transcript_path`.
  *
  * - An edit inside `root` seats the session at that file's bench, and clears
  *   any hand or last words: it is working.
@@ -82,11 +92,17 @@ export function recordWorker(input, { root, dir = WORKERS_DIR, now = Date.now() 
   if (!session || !root) return null
   const file = join(dir, `${session}.json`)
   const event = input.hook_event_name ?? 'PostToolUse'
-  if (event === 'SessionEnd') { rmSync(file, { force: true }); return null }
+  if (event === 'SessionEnd') {
+    rmSync(file, { force: true })
+    rmSync(join(closedDir(dir), `${session}.json`), { force: true })
+    return null
+  }
   if (event === 'Notification' && !ASKS.has(input.notification_type)) return null
 
   const at = new Date(now).toISOString()
   const was = readOne(file)
+  // The study's read-along tails it (`IDEAS/study.md` 3.3); kept from the first event that names it.
+  const transcript = typeof input.transcript_path === 'string' && input.transcript_path.endsWith('.jsonl') ? input.transcript_path : was?.transcript
   const working = { ...was }
   delete working.asking
   delete working.said
@@ -101,23 +117,48 @@ export function recordWorker(input, { root, dir = WORKERS_DIR, now = Date.now() 
   else if (event === 'Stop') worker = { ...started(), seen: at, said: { text: lastWords(input.last_assistant_message), at } }
   else if (was) worker = { ...working, seen: at }
   if (!worker?.bench) return null
+  if (transcript) worker.transcript = transcript
 
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   writeFileSync(file, JSON.stringify(worker) + '\n')
-  for (const name of readdirSync(dir)) {
-    const f = join(dir, name)
-    try { if (now - statSync(f).mtimeMs > KEEP_MS) rmSync(f) } catch {}
+  for (const d of [dir, closedDir(dir)]) {
+    let names
+    try { names = readdirSync(d) } catch { continue }
+    for (const name of names) {
+      const f = join(d, name)
+      try { if (now - statSync(f).mtimeMs > KEEP_MS) rmSync(f) } catch {}
+    }
   }
   return worker
+}
+
+/**
+ * Close out what the kitchen shows of worker `w`: `'said'` bumps its plate
+ * off the pass, `'asking'` marks its CHEF! heard. Keyed by that moment, so
+ * it answers nothing the session does next; a heard CHEF! is still the
+ * session's own to answer (`IDEAS/study.md` 3.3). Answers whether there was
+ * one to close.
+ */
+export function closeOut(w, what, { dir = WORKERS_DIR } = {}) {
+  const at = w?.[what]?.at
+  const session = String(w?.session ?? '').replace(/[^\w-]/g, '')
+  if (!session || !Number.isFinite(at) || !(what === 'said' || what === 'asking')) return false
+  const d = closedDir(dir)
+  const file = join(d, `${session}.json`)
+  mkdirSync(d, { recursive: true, mode: 0o700 })
+  writeFileSync(file, JSON.stringify({ ...readOne(file), [what]: new Date(at).toISOString() }) + '\n')
+  return true
 }
 
 const stamped = (o, key) => (o && typeof o === 'object' && o[key] ? { [key]: String(o[key]), at: Date.parse(o.at) } : null)
 
 /**
  * Every session heard from within QUIET_MS, or asking, oldest session id
- * first: `{ session, bench, file, at, seen, asking, said }` — `at` the last
- * edit (null before one), `seen` the last event, `asking` `{ why, at }` and
- * `said` `{ text, at }` or null. An unreadable file is no worker.
+ * first: `{ session, bench, file, transcript, at, seen, asking, said }` —
+ * `transcript` the path Claude Code writes the session to, or null, `at` the
+ * last edit (null before one), `seen` the last event, `asking` `{ why, at, heard }`
+ * and `said` `{ text, at, bumped }` or null, `heard` and `bumped` whether
+ * `closeOut` has closed that moment. An unreadable file is no worker.
  */
 export function readWorkers({ dir = WORKERS_DIR, now = Date.now() } = {}) {
   let names
@@ -129,7 +170,11 @@ export function readWorkers({ dir = WORKERS_DIR, now = Date.now() } = {}) {
     const seen = Date.parse(w.seen ?? w.at)
     const asking = stamped(w.asking, 'why')
     if (!asking && !(now - seen <= QUIET_MS)) continue
-    out.push({ session: String(w.session), bench: String(w.bench), file: String(w.file ?? ''), at: w.at ? Date.parse(w.at) : null, seen, asking, said: stamped(w.said, 'text') })
+    const said = stamped(w.said, 'text')
+    const closed = readOne(join(closedDir(dir), name)) ?? {}
+    if (asking) asking.heard = Date.parse(closed.asking) === asking.at
+    if (said) said.bumped = Date.parse(closed.said) === said.at
+    out.push({ session: String(w.session), bench: String(w.bench), file: String(w.file ?? ''), transcript: typeof w.transcript === 'string' ? w.transcript : null, at: w.at ? Date.parse(w.at) : null, seen, asking, said })
   }
   return out
 }

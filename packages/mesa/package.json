@@ -59,6 +59,7 @@
       "import": "./src/render-component.js"
     },
     "./drive": {
+      "types": "./src/drive.d.ts",
       "import": "./src/drive.js"
     },
     "./browser": {

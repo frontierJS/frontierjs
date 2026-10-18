@@ -38,7 +38,7 @@ test('an edit seats its session at the bench, and a later one moves it', () => {
   expect(edit('abc-123', '/repo/packages/mesa/src/x.js', t)).toEqual({ session: 'abc-123', bench: 'mesa', file: 'packages/mesa/src/x.js', at: '2026-10-14T12:00:00.000Z', seen: '2026-10-14T12:00:00.000Z' })
   expect(readWorkers({ dir, now: t }).map((w) => w.bench)).toEqual(['mesa'])
   edit('abc-123', '/repo/packages/sierra/src/y.js', t + 1000)
-  expect(readWorkers({ dir, now: t + 1000 })).toEqual([{ session: 'abc-123', bench: 'sierra', file: 'packages/sierra/src/y.js', at: t + 1000, seen: t + 1000, asking: null, said: null }])
+  expect(readWorkers({ dir, now: t + 1000 })).toEqual([{ session: 'abc-123', bench: 'sierra', file: 'packages/sierra/src/y.js', transcript: null, at: t + 1000, seen: t + 1000, asking: null, said: null }])
 })
 
 test('an edit outside the repo moves nothing, so the session stays at its bench and file', () => {
@@ -53,7 +53,7 @@ test('a permission prompt raises the hand, and the next tool lowers it', () => {
   const t = Date.now()
   edit('s1', '/repo/packages/litestone/src/a.js', t)
   hook('s1', 'Notification', t + 1, { notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' })
-  expect(one(t + 1).asking).toEqual({ why: 'Claude needs your permission to use Bash', at: t + 1 })
+  expect(one(t + 1).asking).toEqual({ why: 'Claude needs your permission to use Bash', at: t + 1, heard: false })
   hook('s1', 'PostToolUse', t + 2, { tool_name: 'Bash', tool_input: { command: 'ls' } })
   expect([one(t + 2).asking, one(t + 2).bench, one(t + 2).at]).toEqual([null, 'litestone', t])
 })
@@ -70,7 +70,7 @@ test('a stop leaves its last words, an idle notice after it keeps them, and the 
   const t = Date.now()
   edit('s1', '/repo/packages/junction/a.ts', t)
   hook('s1', 'Stop', t + 1, { last_assistant_message: '## Done\n\n**Booth sweep** fixed, 3 tests added.' })
-  expect(one(t + 1).said).toEqual({ text: 'Done', at: t + 1 })
+  expect(one(t + 1).said).toEqual({ text: 'Done', at: t + 1, bumped: false })
   expect(hook('s1', 'Notification', t + 2, { notification_type: 'idle_prompt', message: 'Claude is waiting for your input' })).toBe(null)
   expect(one(t + 2).said?.text).toBe('Done')
   hook('s1', 'UserPromptSubmit', t + 3, { prompt: 'next' })

@@ -229,6 +229,16 @@ test('units: isKnownCurrency separates a real code from a plausible one', functi
   assert.equal(isKnownCurrency('ATS'), false)   // withdrawn in 2002
 })
 
+test('units: knownCurrencies hands back a copy, so a caller cannot change the table', function () {
+  knownCurrencies().add('BTC')
+  knownCurrencies().delete('USD')
+  assert.equal(isKnownCurrency('BTC'), false)
+  assert.equal(isKnownCurrency('USD'), true)
+  assert.equal(minorUnits('USD'), 2)
+  assert.throws(() => minorUnits('BTC'), /not an ISO 4217 currency/)
+  assert.equal(knownCurrencies().size, 183)
+})
+
 test('units: the table is a few hundred codes, and the odd ones are the point', function () {
   const known = knownCurrencies()
   assert.equal(known.size, 183)

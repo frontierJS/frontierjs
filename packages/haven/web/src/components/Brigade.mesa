@@ -8,10 +8,19 @@
   //   first, and a cook behind the line at its package's STATION; a session
   //   stopped on a prompt flashes CHEF! on its ticket and under its station,
   //   since it waits on you and nothing else shows that until you tab to it;
+  //   its head fills amber, then red, as the wait passes each of `WAIT`;
   // - two cooks at one station are about to edit one package in a shared
   //   tree, and the station says so (`! N here`);
   // - a session that has stopped is a PLATE on the pass, and ORDER UP flashes
-  //   over the heat lamps while one waits;
+  //   over the heat lamps while one waits, its age on the counter under it
+  //   and both going amber, then red, by the same `WAIT`;
+  // - `/bump` at the pass closes a plate out and it leaves, as a kitchen
+  //   display's bump bar clears a ticket; `/heard` at the line answers a
+  //   CHEF! the way a cook calls back, and it stops flashing but stays on the
+  //   rail, since only the session's own terminal can answer it. Each is
+  //   `closeOut` in `#workers`, so the next stop or ask is drawn again;
+  // - a package's mark (`lib/marks.js`) leads its name on a ticket, a
+  //   station and the board, so one package is found across the three by eye;
   // - the 86 board is the ledger's open issues, the most first — until a menu
   //   is up, and then it is that menu's list: the rows the loop would be
   //   handed under its flags, worst first, or for the chef's table the
@@ -33,13 +42,14 @@
   // reads its last words. Drawn on this screen only and never sent, as the
   // workshop's workers are; a route places it, never the scene file.
   import { at, tint } from '#cell'
-  import { readWorkers } from '#workers'
+  import { readWorkers, closeOut } from '#workers'
   import { checkout, readMenu, setMenu, clearMenu, readyRows, rulings, running, MENUS, flagsLine } from '#taskmaster'
   import { stream } from '#sound'
   import { listening } from '@/lib/band/band.js'
   import { createBells, RATE } from '@/lib/band/bell.js'
   import { LEDGER } from '@/lib/hash/ledger.data.js'
   import { TICKET, rail, line, board, pass, lamps, bell } from '@/pieces/kitchen.js'
+  import { markOf } from '@/lib/marks.js'
 
   const scene = $context.scene
   const POLL_MS = 1000
@@ -49,11 +59,17 @@
   const PLATE = 8
   // How long the service bell is drawn jumping after it rings.
   const RUNG_MS = 2000
+  // A wait on you -- a CHEF! or a plate on the pass -- is late past the first
+  // and over past the second, as a kitchen display's ticket timer turns. Both
+  // under `QUIET_MS` in `#workers`, or a plate leaves before it is over.
+  const WAIT = [2 * 60_000, 5 * 60_000]
 
   const INK = {
     paper: '#e7e5e4',
     chef:  ['#ef4444', '#fca5a5'],
-    plate: '#4ade80',
+    // Fresh, late, over; a CHEF! ticket's head is filled late and over, `[ink, ground]`.
+    plate: ['#4ade80', '#fbbf24', '#ef4444'],
+    head:  [null, ['#fde68a', '#78350f'], ['#fecaca', '#7f1d1d']],
     order: ['#fbbf24', '#f97316'],
     chalk: '#e5e7eb',
     hot:   '#f97316',
@@ -121,8 +137,8 @@
 
   var verbs = $context.commands
   const root = checkout()
-  // How near the pass a `/menu` reaches, and how far apart along it; the reaches meet.
-  const MENU_REACH = 3
+  // How near a fitting a verb reaches, and how far apart along it; the reaches meet.
+  const REACH = 3
   const HELP = '/menu [expedite | station [pkg] | prep [lanes] | chef | off]'
 
   let menu = root ? readMenu() : null
@@ -172,10 +188,50 @@
     return `on the menu: ${said(menu)}`
   }
 
-  if (root) {
-    for (let x = PASS.x + MENU_REACH; x < PASS.x + PASS.w; x += 2 * MENU_REACH) {
-      $.onDestroy(verbs.add({ word: 'menu', help: HELP, reach: { x, y: PASS.y + 1, within: MENU_REACH }, run: pick }))
-    }
+  // ─── closing out ───────────────────────────────────────────────────────────
+
+  const BUMP  = '/bump [id | all] — the plate in front of you leaves the pass'
+  const HEARD = '/heard [id | all] — a CHEF! at the station in front of you stops flashing'
+
+  /**
+   * Close out `what` of the workers `args` names, else of `here` -- an id's
+   * first letters, or `all` of `up` -- and answer the ids closed, or null.
+   */
+  function close(what, args, here, up) {
+    const word = args.trim()
+    const ws = word === 'all' ? up : word ? up.filter((w) => w.session.startsWith(word)) : here
+    if (!ws.length) return null
+    for (const w of ws) closeOut(w, what)
+    workers = readWorkers({ now })
+    return ws.map(id).join(', ')
+  }
+
+  /** What a close-out that found nothing answers: what is up, and the verb's help. */
+  const missed = (noun, args, up, help) => {
+    const ids = up.map(id).join(', ')
+    return `no ${noun} ${args.trim() || (ids ? 'in front of you' : 'up')}${ids ? ` · up: ${ids}` : ''} · ${help}`
+  }
+
+  const bump = ({ args }) => {
+    const here = inFront(platesOf(workers), me)
+    const up = plating(workers)
+    const done = close('said', args, here ? [here.w] : [], up)
+    return done ? `bumped ${done}` : missed('plate', args, up, BUMP)
+  }
+  const heard = ({ args }) => {
+    const unheard = (ws) => ws.filter((w) => w.asking && !w.asking.heard)
+    const up = unheard(workers)
+    const done = close('asking', args, unheard(atStation(stations(cooks(workers)), me)?.cooks ?? []), up)
+    return done ? `heard ${done} — its own terminal still answers it` : missed('CHEF!', args, up, HEARD)
+  }
+
+  for (let x = PASS.x + REACH; x < PASS.x + PASS.w; x += 2 * REACH) {
+    const reach = { x, y: PASS.y + 1, within: REACH }
+    if (root) $.onDestroy(verbs.add({ word: 'menu', help: HELP, reach, run: pick }))
+    $.onDestroy(verbs.add({ word: 'bump', help: BUMP, reach, run: bump }))
+  }
+  for (let x = LINE.x + REACH; x < LINE.x + LINE.w; x += 2 * REACH) {
+    $.onDestroy(verbs.add({ word: 'heard', help: HEARD, reach: { x, y: LINE.y + 2, within: REACH }, run: heard }))
   }
 
   $.onDestroy(scene.task('brigade', (ms) => {
@@ -197,15 +253,19 @@
   const fit = (s, n) => String(s).slice(0, n).padEnd(n)
   const base = (file) => file.split('/').pop()
   const flash = (pair, now) => pair[Math.floor(now / POLL_MS) % 2]
+  /** A CHEF!'s ink: flashing until it is heard, then held. */
+  const asked = (w, now) => (w.asking.heard ? INK.chef[0] : flash(INK.chef, now))
+  /** 0 fresh, 1 late, 2 over, for a wait of `ms`. */
+  const late = (ms) => WAIT.filter((t) => ms >= t).length
 
-  /** A ticket's five rows, in the ticket's ink. */
+  /** A ticket's five rows, in the ticket's ink, and a CHEF! ticket's head `[ink, ground]` once late. */
   function ticket(w, now) {
     const inner = TICKET.w - 2
-    const age = ago(now - (w.asking?.at ?? w.seen))
-    const head = `${id(w)}${age.padStart(inner - 4)}`
-    const foot = w.asking ? (Math.floor(now / POLL_MS) % 2 ? 'CHEF!' : '  CHEF!') : base(w.file) || 'firing…'
-    const rows = [`.${'-'.repeat(inner)}.`, `|${fit(head, inner)}|`, `|${fit(w.bench, inner)}|`, `|${fit(foot, inner)}|`, `'${'-'.repeat(inner)}'`]
-    return { rows, color: w.asking ? flash(INK.chef, now) : INK.paper }
+    const waited = now - (w.asking?.at ?? w.seen)
+    const head = `${id(w)}${ago(waited).padStart(inner - 4)}`
+    const foot = w.asking?.heard ? 'HEARD' : w.asking ? (Math.floor(now / POLL_MS) % 2 ? 'CHEF!' : '  CHEF!') : base(w.file) || 'firing…'
+    const rows = [`.${'-'.repeat(inner)}.`, `|${fit(head, inner)}|`, `|${fit(`${markOf(w.bench).glyph} ${w.bench}`, inner)}|`, `|${fit(foot, inner)}|`, `'${'-'.repeat(inner)}'`]
+    return { rows, color: w.asking ? asked(w, now) : INK.paper, head: w.asking ? INK.head[late(waited)] : null }
   }
 
   /** What standing beside a cook or a plate reads. */
@@ -214,6 +274,26 @@
     if (w.said) return `${id(w)} plated: ${w.said.text} · ${ago(now - w.said.at)} ago`
     return w.file ? `${id(w)} on ${w.file} · ${ago(now - w.at)} ago` : `${id(w)} firing · ${ago(now - w.seen)} ago`
   }
+
+  /** A package's mark drawn over the cell its row left for it, in the mark's own ink. */
+  const inked = (key, name, x, y) => {
+    const m = markOf(name)
+    return { key, x, y, text: m.glyph, color: m.ink, layer: 12 }
+  }
+
+  /** The sessions on the rail and the line; a stopped one is on the pass, or gone once bumped. */
+  const cooks   = (ws) => ws.filter((w) => w.asking || !w.said)
+  const plating = (ws) => ws.filter((w) => w.said && !w.asking && !w.said.bumped)
+
+  /** The plates the pass has room for, each `{ w, x }`. */
+  function platesOf(ws) {
+    const slots = Math.floor((PASS.w - 2) / PLATE)
+    return plating(ws).slice(0, slots).map((w, i) => ({ w, x: PASS.x + 2 + i * PLATE }))
+  }
+
+  /** The plate a figure at `me` stands in front of, and the station. */
+  const inFront   = (plates, me) => me && me.y > PASS.y && me.y <= PASS.y + 2 && plates.find((p) => Math.abs(p.x + 3 - me.x) <= 3)
+  const atStation = (line, me) => me && me.y > LINE.y && me.y <= LINE.y + 3 && line.find((s) => me.x >= s.x && me.x < s.x + s.w)
 
   /** The stations along the line, one per package being cooked, each `{ name, x, w, cooks }`. */
   function stations(cooking) {
@@ -242,8 +322,7 @@
   function placed(ws, v, me, now, rung, menu, list) {
     const out = []
     if (rung) out.push({ key: 'bell', x: BELL.x - 1, y: BELL.y, text: '\\ô/', color: rung.kind === 'chef' ? INK.chef[0] : INK.order[0], layer: 11 })
-    const cooking = ws.filter((w) => w.asking || !w.said)
-    const plated  = ws.filter((w) => w.said && !w.asking)
+    const cooking = cooks(ws)
 
     // ─── the rail ───────────────────────────────────────────
     const over = cooking.length > TICKETS
@@ -251,7 +330,11 @@
     hung.forEach((w, i) => {
       const t = ticket(w, now)
       const x = RAIL.x + 1 + i * (TICKET.w + TICKET.gap)
-      t.rows.forEach((text, r) => out.push({ key: `t:${w.session}:${r}`, x, y: RAIL.y + 1 + r, text, color: t.color, layer: 11 }))
+      t.rows.forEach((text, r) => {
+        const [color, ground] = r === 1 && t.head ? t.head : [t.color]
+        out.push({ key: `t:${w.session}:${r}`, x, y: RAIL.y + 1 + r, text, color, ground, layer: 11 })
+      })
+      out.push(inked(`tm:${w.session}`, w.bench, x + 1, RAIL.y + 3))
     })
     if (over) {
       const x = RAIL.x + 1 + (TICKETS - 1) * (TICKET.w + TICKET.gap)
@@ -265,22 +348,30 @@
       out.push({ key: 'quiet', x: LINE.x + Math.floor((LINE.w - text.length) / 2), y: LINE.y, text, color: INK.dim, ground: INK.tag, layer: 11 })
     }
     for (const s of line) {
-      const label = `| ${s.name.slice(0, s.w - 6)} |`
-      out.push({ key: `s:${s.name}`, x: s.x + Math.floor((s.w - label.length) / 2), y: LINE.y, text: label, color: INK.chalk, ground: INK.tag, layer: 11 })
+      const label = `| ${markOf(s.name).glyph} ${s.name.slice(0, s.w - 8)} |`
+      const lx = s.x + Math.floor((s.w - label.length) / 2)
+      out.push({ key: `s:${s.name}`, x: lx, y: LINE.y, text: label, color: INK.chalk, ground: INK.tag, layer: 11 })
+      out.push({ ...inked(`sm:${s.name}`, s.name, lx + 2, LINE.y), ground: INK.tag })
       const shown = s.cooks.slice(0, SEATS)
       const mid = s.x + Math.floor(s.w / 2)
       const left = mid - (shown.length - 1)
-      shown.forEach((w, i) => out.push({ key: `c:${w.session}`, x: left + 2 * i, y: LINE.y - 1, text: w.asking ? '?' : '✻', color: w.asking ? flash(INK.chef, now) : INK.paper, layer: 11 }))
+      shown.forEach((w, i) => out.push({ key: `c:${w.session}`, x: left + 2 * i, y: LINE.y - 1, text: w.asking ? '?' : '✻', color: w.asking ? asked(w, now) : INK.paper, layer: 11 }))
       if (s.cooks.length > SEATS) out.push({ key: `c+:${s.name}`, x: left + 2 * SEATS, y: LINE.y - 1, text: `+${s.cooks.length - SEATS}`, color: INK.paper, layer: 11 })
-      const asks = s.cooks.some((w) => w.asking)
-      const says = [s.cooks.length > 1 && `! ${s.cooks.length} here`, asks && 'CHEF!'].filter(Boolean).join(' · ')
-      if (says) out.push({ key: `n:${s.name}`, x: s.x + 1, y: LINE.y + 1, text: says.slice(0, s.w - 1), color: asks ? flash(INK.chef, now) : INK.hot, layer: 11 })
+      const asks = s.cooks.filter((w) => w.asking)
+      const unheard = asks.find((w) => !w.asking.heard)
+      const says = [s.cooks.length > 1 && `! ${s.cooks.length} here`, asks.length && (unheard ? 'CHEF!' : 'HEARD')].filter(Boolean).join(' · ')
+      if (says) out.push({ key: `n:${s.name}`, x: s.x + 1, y: LINE.y + 1, text: says.slice(0, s.w - 1), color: asks.length ? asked(unheard ?? asks[0], now) : INK.hot, layer: 11 })
     }
 
     // ─── the pass ───────────────────────────────────────────
-    const slots = Math.floor((PASS.w - 2) / PLATE)
-    const plates = plated.slice(0, slots).map((w, i) => ({ w, x: PASS.x + 2 + i * PLATE }))
-    for (const p of plates) out.push({ key: `p:${p.w.session}`, x: p.x, y: PASS.y - 1, text: `(${id(p.w)})`, color: INK.plate, layer: 11 })
+    const plates = platesOf(ws)
+    for (const p of plates) {
+      const waited = now - p.w.said.at
+      const color = INK.plate[late(waited)]
+      const age = ago(waited)
+      out.push({ key: `p:${p.w.session}`, x: p.x, y: PASS.y - 1, text: `(${id(p.w)})`, color, layer: 11 })
+      out.push({ key: `pa:${p.w.session}`, x: p.x + Math.floor((PLATE - 2 - age.length) / 2), y: PASS.y, text: age, color, layer: 11 })
+    }
     if (plates.length) {
       const text = Math.floor(now / POLL_MS) % 2 ? '* ORDER UP *' : '· ORDER UP ·'
       out.push({ key: 'order', x: PASS.x + Math.floor((PASS.w - text.length) / 2), y: LAMPS.y - 1, text, color: flash(INK.order, now), layer: 11 })
@@ -293,7 +384,7 @@
     const chalked = !menu
       ? eightySix(LEDGER).map((r) => {
         const n = String(r.n)
-        return { key: r.name, text: `${fit(r.name, inner - n.length - 1)} ${n}`, hot: r.hot }
+        return { key: r.name, text: `${markOf(r.name).glyph} ${fit(r.name, inner - n.length - 3)} ${n}`, hot: r.hot, mark: r.name }
       })
       : !list ? [{ key: 'reading', text: '…', hot: false }]
       : !list.length ? [{ key: 'none', text: menu.menu === 'chef' ? 'no rulings waiting' : 'nothing ready', hot: false }]
@@ -301,12 +392,13 @@
       : list
     chalked.slice(0, BOARD.h - 3).forEach((r, i) => {
       out.push({ key: `b:${r.key}`, x: BOARD.x + 2, y: BOARD.y + 2 + i, text: fit(r.text, inner), color: r.hot ? INK.hot : INK.chalk, layer: 11 })
+      if (r.mark) out.push(inked(`bm:${r.key}`, r.mark, BOARD.x + 2, BOARD.y + 2 + i))
     })
 
     // ─── what the chef reads ────────────────────────────────
     if (me) {
-      const atLine = me.y > LINE.y && me.y <= LINE.y + 3 && line.find((s) => me.x >= s.x && me.x < s.x + s.w)
-      const atPass = me.y > PASS.y && me.y <= PASS.y + 2 && plates.find((p) => Math.abs(p.x + 3 - me.x) <= 3)
+      const atLine = atStation(line, me)
+      const atPass = inFront(plates, me)
       const read = atLine ? atLine.cooks.slice(0, SEATS) : atPass ? [atPass.w] : []
       read.forEach((w, i) => out.push({ key: `r:${w.session}`, x: me.x, y: me.y + 1 + i, text: reading(w, now), layer: 12, surface: true }))
     }

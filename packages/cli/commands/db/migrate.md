@@ -75,8 +75,11 @@ if (flag['create-only']) {
     return
   }
   log.info('Creating migration from schema changes...')
+  const before = new Set(migrationFiles($))
   $.exec({ command: `${ls} migrate create${named} --schema ${schema}${withOps}` })
-  log.success('Migration file created in db/migrations/')
+  const written = migrationFiles($).filter(f => !before.has(f))
+  if (written.length) log.success(`Migration file created: ${written.map(f => path.relative($.paths.root, f)).join(', ')}`)
+  else log.info('No migration file written')
   return
 }
 

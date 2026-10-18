@@ -516,9 +516,15 @@ await page.close()
 | `windowSize` | `'1280,900'` | |
 | `args` | `[]` | Further Chrome flags, appended — `--enable-unsafe-extension-debugging` for a drive that loads an extension. `--remote-debugging-port` and `--user-data-dir` are the driver's and are refused |
 
-The handle is `{ navigate, evaluate, clickAt, press, type, key, newPage, cmd, send, on, errors, close }`.
+The handle is `{ navigate, evaluate, waitFor, clickAt, fill, press, type, key, shot, newPage, cmd, send, on, errors, failed, close }`.
 `errors` holds what the page threw, its `console.error` calls, and any console
 warning starting `[Mesa]` — a render the framework survived but corrupted.
+`failed` holds `'<status> <url>'` for each response of 400 and above, the
+favicon aside — kept apart from `errors` because a signed-out page asking for
+its account gets a 401 by design. `waitFor(expr, { ms, label })` polls until the
+expression is truthy and answers it; `fill(selector, text)` replaces a field's
+text through the keyboard; `shot(path)` writes a PNG. An app that wants its
+servers started and stopped around the browser uses `@frontierjs/testing/drive`.
 A drive with a stricter policy, or one counting WebSocket frames, reads the
 events itself: `on('Runtime.consoleAPICalled', (params) => …)` answers its own
 unsubscribe. `cmd(method, params)` is a CDP call on the page; `send(method,

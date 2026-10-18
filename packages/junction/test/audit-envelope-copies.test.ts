@@ -71,8 +71,7 @@ describe('the browser client asks the owner when a push arrives', () => {
 
 describe('the two unimportable copies ask the owner', () => {
 
-  // FJS-2451: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('mcp run.ts reads the list envelope through envelope.ts, not its own kind test', () => {
+  test('mcp run.ts reads the list envelope through envelope.ts, not its own kind test', () => {
     const src = readFileSync(`${here}../../mcp/src/client/run.ts`, 'utf8')
     expect(src).toMatch(/\b(isListResult|isServiceResult|unwrapResult|resultData)\b/)
     expect(src).not.toMatch(/kind === 'list' && Array\.isArray/)
